@@ -2,7 +2,7 @@
 // message dispatcher handle_post_handshake, which is static there, and the
 // record loop hspost_read above it. The harness includes that translation
 // unit to reach the static. The session is zeroed with a live buffer length,
-// a send callback that swallows the KeyUpdate reply, and an on_ticket
+// a send callback that swallows the alert of a failure, and an on_ticket
 // callback that touches every ch_ticket field so any bad pointer or length
 // the ticket parser hands out trips AddressSanitizer.
 //

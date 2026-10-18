@@ -23,7 +23,7 @@ stack_connect_webpki_without_mlkem,8304
 stack_connect_webpki_device_without_mlkem,7344
 stack_read,1712
 stack_connect_pq,16000
-stack_write,944
+stack_write,1520
 stack_close,896
 session_struct_server_arm64,1992
 session_struct_server_rv32,1824

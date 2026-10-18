@@ -1,0 +1,37 @@
+invariant: INV-36
+file: chapulin_record.zig
+catches: test/zig-build-check.sh
+reason: read's error set leaves out KeyUpdateLimit, so CH_KEY_UPDATE_LIMIT
+  is a code the set does not name, and fromCode panics on it. One peer that
+  sends one KeyUpdate past a full run then stops the caller's process.
+  loop_key_update_run.zig has the server read that KeyUpdate and expects
+  error.KeyUpdateLimit.
+
+--- old
+        pub fn read(self: *Self, input: []const u8, pt: []u8, reply: []u8) error{ Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit }!Read {
+            const whole = c.ch_record_whole_len(input.ptr, input.len);
+            self.io.begin(input[0..whole], reply);
+            defer self.io.end();
+            const rc = c.ch_read(&self.record.t, pt.ptr, pt.len);
+            self.io.reply_len = self.io.written;
+            var out: Read = .{ .consumed = self.io.taken, .pt_len = 0, .reply_len = self.io.written, .peer_closed = false };
+            if (rc > 0) {
+                out.pt_len = @intCast(rc);
+            } else if (rc == 0) {
+                out.peer_closed = true;
+            } else if (rc != c.CH_RECORD_AGAIN) {
+                try chapulin.fromCode(error{ Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit }, rc);
+--- new
+        pub fn read(self: *Self, input: []const u8, pt: []u8, reply: []u8) error{ Invalid, Proto, Auth, Cap, Io }!Read {
+            const whole = c.ch_record_whole_len(input.ptr, input.len);
+            self.io.begin(input[0..whole], reply);
+            defer self.io.end();
+            const rc = c.ch_read(&self.record.t, pt.ptr, pt.len);
+            self.io.reply_len = self.io.written;
+            var out: Read = .{ .consumed = self.io.taken, .pt_len = 0, .reply_len = self.io.written, .peer_closed = false };
+            if (rc > 0) {
+                out.pt_len = @intCast(rc);
+            } else if (rc == 0) {
+                out.peer_closed = true;
+            } else if (rc != c.CH_RECORD_AGAIN) {
+                try chapulin.fromCode(error{ Invalid, Proto, Auth, Cap, Io }, rc);

@@ -32,10 +32,15 @@
 //   - the sender cap: with 2^48 - 2 KeyUpdates sent, the write sends the
 //     last one RFC 9846 §4.7.3 allows; with 2^48 - 1 sent, it fails with
 //     CH_ECAP and internal_error under the old key, which the reader reads
-//     as the peer's fatal alert.
+//     as the peer's fatal alert;
+//   - the answer the reader's request owes: at the ceiling one KeyUpdate is
+//     the answer and retires the key, and three records before it the
+//     answer goes first and the write's three records follow under the
+//     next key, with no second KeyUpdate.
 // Then ch_writable_len against the real ch_write at the ceiling and one and
-// two records before it, and ChaCha20-Poly1305 at the same sequence
-// numbers, where no KeyUpdate goes out.
+// two records before it, with no answer owed and with one owed, and
+// ChaCha20-Poly1305 at the same sequence numbers, where no KeyUpdate goes
+// out.
 #ifndef CH_TEST_KEY_LIMIT_CASES_H
 #define CH_TEST_KEY_LIMIT_CASES_H
 
@@ -275,6 +280,58 @@ static void key_limit_check_sender_cap(uint16_t suite, int server_writes) {
     CHECK(ch_alert_received(pair.reader) == ALERT_INTERNAL_ERROR);
 }
 
+// The reader asks the writer for a KeyUpdate, as a peer does: it seals a
+// KeyUpdate with request_update 1 under its write key, moves that key on,
+// and seals one byte of data under the next. The writer reads the byte
+// and sends nothing back, and owes the answer.
+static void key_limit_request_answer(const key_limit_pair *pair) {
+    static const uint8_t requested[5] = {HS_KEY_UPDATE, 0, 0, 1, 1};
+    uint8_t *out = pair->back->bytes + pair->back->len;
+    size_t room = sizeof pair->back->bytes - pair->back->len;
+    size_t n = 0;
+    CHECK(rec_seal(&pair->reader->wr, REC_HANDSHAKE, requested, sizeof requested, out, room, &n) ==
+          0);
+    pair->back->len += n;
+    rec_dir_update(pair->reader->wr_secret, &pair->reader->wr);
+    CHECK(rec_seal(&pair->reader->wr, REC_APPDATA, (const uint8_t *)"r", 1, out + n, room - n,
+                   &n) == 0);
+    pair->back->len += n;
+    uint8_t got[8];
+    size_t sends = pair->wire->sends;
+    CHECK(ch_read(pair->writer, got, sizeof got) == 1 && got[0] == 'r');
+    CHECK(pair->wire->sends == sends && pair->writer->key_update_owed == 1);
+}
+
+// The answer a request owes meets the ceiling. At the ceiling, the one
+// KeyUpdate the write sends is the answer and retires the key. Three
+// records before it, the answer goes first, at the key's third-to-last
+// sequence number, and moves the writer to the next key, so the write's
+// three records follow it and no second KeyUpdate goes out.
+static void key_limit_check_owed_answer(uint16_t suite, int server_writes) {
+    key_limit_pair pair;
+    CHECK(key_limit_open_pair(suite, server_writes, &pair));
+    key_limit_request_answer(&pair);
+    key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
+    uint64_t epochs = pair.writer->send_epochs;
+    uint8_t got[8];
+    CHECK(ch_write(pair.writer, (const uint8_t *)"g", 1) == CH_OK);
+    CHECK(pair.wire->sends == 2 && pair.wire->send_len[0] == CH_KEY_UPDATE_RECORD_LEN);
+    CHECK(pair.writer->send_epochs == epochs + 1 && pair.writer->key_update_owed == 0);
+    CHECK(pair.writer->wr.seq == 1);
+    CHECK(ch_read(pair.reader, got, sizeof got) == 1 && got[0] == 'g');
+
+    CHECK(key_limit_open_pair(suite, server_writes, &pair));
+    key_limit_request_answer(&pair);
+    key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 3);
+    pair.writer->peer_limit = KEY_LIMIT_RECORD;
+    epochs = pair.writer->send_epochs;
+    const size_t three_records = 3 * (size_t)KEY_LIMIT_RECORD;
+    CHECK(ch_write(pair.writer, key_limit_data, three_records) == CH_OK);
+    CHECK(pair.wire->sends == 4 && pair.wire->send_len[0] == CH_KEY_UPDATE_RECORD_LEN);
+    CHECK(pair.writer->send_epochs == epochs + 1 && pair.writer->wr.seq == 3);
+    CHECK(key_limit_read_all(pair.reader, key_limit_got, key_limit_data, three_records));
+}
+
 // The bytes one ch_write of n bytes sends from the writer as it stands.
 // The writer and the pipe are put back afterwards, so each call starts
 // from the same sequence number.
@@ -292,25 +349,35 @@ static size_t key_limit_sent_by_write(const key_limit_pair *pair, size_t n) {
 // ch_writable_len against the ch_write that sends what it counts, at the
 // least limit a peer's record_size_limit leaves, 63 bytes: at the ceiling
 // and one and two records before it, for every cap up to three records, a
-// KeyUpdate record and one byte, the answer's records fit cap and one
-// byte more does not. The rows under it are the exact boundary: at the
-// ceiling a record of one byte costs a KeyUpdate record as well, and one
-// record before it the first record does not and the second does. At the
-// largest cap it counts one KeyUpdate and no second (tls.h).
+// KeyUpdate record and one byte, the records of what it returns fit cap
+// and one byte more does not. The rows under it are the exact boundary:
+// at the ceiling a record of one byte costs a KeyUpdate record as well,
+// and one record before it the first record does not and the second
+// does. At the largest cap it counts one KeyUpdate and no second (tls.h).
 static void key_limit_check_writable_len(uint16_t suite) {
     key_limit_pair pair;
     CHECK(key_limit_open_pair(suite, 0, &pair));
     pair.writer->peer_limit = 63;
     const size_t record = 63 + REC_OVERHEAD;
-    for (uint64_t back = 1; back <= 3; back++) {
-        key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - back);
-        for (size_t cap = 0; cap <= 3 * record + CH_KEY_UPDATE_RECORD_LEN + 1; cap++) {
-            size_t n = ch_writable_len(pair.writer, cap);
-            CHECK(key_limit_sent_by_write(&pair, n) <= cap);
-            CHECK(key_limit_sent_by_write(&pair, n + 1) > cap);
+    for (uint8_t owed = 0; owed <= 1; owed++) {
+        pair.writer->key_update_owed = owed;
+        for (uint64_t back = 1; back <= 3; back++) {
+            key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - back);
+            for (size_t cap = 0; cap <= 3 * record + CH_KEY_UPDATE_RECORD_LEN + 1; cap++) {
+                size_t n = ch_writable_len(pair.writer, cap);
+                CHECK(key_limit_sent_by_write(&pair, n) <= cap);
+                CHECK(key_limit_sent_by_write(&pair, n + 1) > cap);
+            }
         }
     }
+    // With an answer owed two records before the ceiling, the KeyUpdate goes
+    // first, and the next key carries REC_AES_GCM_RECORDS_MAX - 1 records.
+    key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 2);
     const size_t key_update_and_byte = CH_KEY_UPDATE_RECORD_LEN + REC_OVERHEAD + 1;
+    CHECK(ch_writable_len(pair.writer, key_update_and_byte - 1) == 0);
+    CHECK(ch_writable_len(pair.writer, key_update_and_byte) == 1);
+    CHECK(ch_writable_len(pair.writer, SIZE_MAX) == (size_t)(REC_AES_GCM_RECORDS_MAX - 1) * 63);
+    pair.writer->key_update_owed = 0;
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
     CHECK(ch_writable_len(pair.writer, key_update_and_byte - 1) == 0);
     CHECK(ch_writable_len(pair.writer, key_update_and_byte) == 1);
@@ -352,6 +419,7 @@ static void check_key_limit(void) {
             key_limit_check_boundary(suites[i], server_writes);
             key_limit_check_one_write(suites[i], server_writes);
             key_limit_check_sender_cap(suites[i], server_writes);
+            key_limit_check_owed_answer(suites[i], server_writes);
         }
         key_limit_check_writable_len(suites[i]);
     }

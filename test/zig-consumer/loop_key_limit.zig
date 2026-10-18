@@ -15,7 +15,8 @@
 //!   and the second record;
 //! - read returns the plaintext on both sides of the KeyUpdate, reads the
 //!   KeyUpdate record as a record of no plaintext, and sends nothing into
-//!   reply, because the KeyUpdate's request_update is 0;
+//!   reply: a read sends no KeyUpdate, and this one's request_update is 0,
+//!   so the reader owes none either;
 //! - neither side reports an alert;
 //! - the next write sends no KeyUpdate, and the reader reads it under the
 //!   key the KeyUpdate moved it to.
@@ -47,8 +48,8 @@ const overhead: usize = c.REC_OVERHEAD;
 /// One write of two records: a whole record, then 100 bytes.
 var data: [per_record + 100]u8 = undefined;
 var got: [data.len]u8 = undefined;
-/// Room for everything one read may send: a KeyUpdate answer and an alert.
-var reply: [record.key_update_record_len + record.alert_record_len]u8 = undefined;
+/// Room for everything one read may send: the alert of a read that fails.
+var reply: [record.alert_record_len]u8 = undefined;
 
 /// Each server selects the one suite its list names.
 const aes_128 = [_]chapulin.Suite{.aes_128_gcm_sha256};

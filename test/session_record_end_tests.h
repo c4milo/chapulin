@@ -11,13 +11,15 @@
 // One connected session, the peer key its records arrive under, and the
 // key that opens what the session sends back. peer_secret follows the
 // peer's KeyUpdates, so a case moves the peer to its next key with
-// rec_dir_update(peer_secret, &peer).
+// rec_dir_update(peer_secret, &peer), and reader_secret follows the
+// session's own.
 typedef struct {
     mock_io m;
     ch_tls t;
     rec_dir peer;
     uint8_t peer_secret[SHA256_LEN];
     rec_dir reader;
+    uint8_t reader_secret[SHA256_LEN];
 } record_end_case;
 
 static void record_end_start(record_end_case *c) {
@@ -26,10 +28,9 @@ static void record_end_start(record_end_case *c) {
     ch_rand_bytes(c->peer_secret, sizeof c->peer_secret);
     TEST_CPU_DIR(c->peer);
     rec_dir_init(&c->peer, c->peer_secret);
-    uint8_t wr_secret[SHA256_LEN];
-    mock_session(&c->t, &c->m, rxbuf, sizeof rxbuf, c->peer_secret, wr_secret);
+    mock_session(&c->t, &c->m, rxbuf, sizeof rxbuf, c->peer_secret, c->reader_secret);
     TEST_CPU_DIR(c->reader);
-    rec_dir_init(&c->reader, wr_secret);
+    rec_dir_init(&c->reader, c->reader_secret);
 }
 
 // A refused record: ch_read returns CH_EPROTO, the session is dead, and
@@ -45,17 +46,23 @@ static void check_refused(record_end_case *c, int rc) {
     CHECK(at == c->m.tx_len);
 }
 
-// The one record an accepted update_requested gets back: a KeyUpdate
-// with update_not_requested, under the write key the session started
-// with, and nothing after it.
+// The one answer an accepted update_requested gets: nothing from the
+// read, and then from the next ch_write a KeyUpdate with
+// update_not_requested under the write key the session started with,
+// before the write's one data record under the next key.
 static void check_one_answer(record_end_case *c) {
+    CHECK(c->m.tx_len == 0 && c->t.key_update_owed == 1);
+    CHECK(ch_write(&c->t, (const uint8_t *)"ok", 2) == CH_OK);
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;
     size_t at = mock_pop_client_record(&c->m, 0, &c->reader, pt, sizeof pt, &pt_len, &type);
     const uint8_t answer[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
     CHECK(type == REC_HANDSHAKE && pt_len == sizeof answer && memcmp(pt, answer, pt_len) == 0);
-    CHECK(at == c->m.tx_len && at == CH_KEY_UPDATE_RECORD_LEN);
+    CHECK(at == CH_KEY_UPDATE_RECORD_LEN);
+    rec_dir_update(c->reader_secret, &c->reader);
+    at = mock_pop_client_record(&c->m, at, &c->reader, pt, sizeof pt, &pt_len, &type);
+    CHECK(type == REC_APPDATA && pt_len == 2 && at == c->m.tx_len);
 }
 
 static void test_key_update_ends_record(void) {
@@ -66,8 +73,9 @@ static void test_key_update_ends_record(void) {
     uint8_t out[16];
     record_end_case c;
 
-    // The last valid record: the KeyUpdate ends it. The session answers
-    // the request and reads the data under the key the peer moved to.
+    // The last valid record: the KeyUpdate ends it. The session reads the
+    // data under the key the peer moved to, and answers the request with
+    // its next write.
     record_end_start(&c);
     mock_push(&c.m, &c.peer, REC_HANDSHAKE, requested, 5);
     rec_dir_update(c.peer_secret, &c.peer);

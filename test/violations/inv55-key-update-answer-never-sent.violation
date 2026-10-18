@@ -1,0 +1,13 @@
+invariant: INV-55
+file: tls_write.c
+catches: unit
+reason: ch_write never sends the answer a request owes, so a peer that
+  asked for a KeyUpdate keeps reading under the write key it wanted
+  retired. bin/unit requires a KeyUpdate record from the write after a
+  request.
+
+--- old
+    if (t->key_update_owed) {
+        return 0;
+    }
+--- new

@@ -1,8 +1,9 @@
 invariant: INV-12
 file: handshake_post.c
 catches: unit
-reason: the KeyUpdate reply is sealed with the receive direction's rec_dir, so one
-  key and sequence counter now covers records travelling both ways
+reason: the KeyUpdate this side sends is sealed with the receive direction's
+  rec_dir, so one key and sequence counter now covers records that go both
+  ways. bin/unit opens the answer to a request under this side's write key
 
 --- old
     if (rec_seal(&t->wr, REC_HANDSHAKE, msg, sizeof msg, t->tx, sizeof t->tx, &out_len) != 0 ||

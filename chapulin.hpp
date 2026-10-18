@@ -53,6 +53,11 @@ enum class Status : int {
     // yet, and the session stays connected (tcp_nonblocking.h, INV-13).
     again = CH_RECORD_AGAIN,
 #endif
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+    // The code a TCP read adds (result.h): the peer sent one KeyUpdate past
+    // CH_KEY_UPDATE_RUN_MAX in a row (session.h), and the session is dead.
+    key_update_limit = CH_KEY_UPDATE_LIMIT,
+#endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // The two codes a TRANSPORT=quic-nonblocking object adds (quic_cfg.h). discard leaves
     // the session live: RFC 9001 §5.5 says a packet that fails to

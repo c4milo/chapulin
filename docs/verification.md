@@ -1664,28 +1664,36 @@ The entries are grouped by area:
 
 - **Harness:** `writable_len` (fast)
 - **Proves:**
-  - `ch_writable_len` is safe and free of UB for any `peer_limit` and
-    any `cap`;
-  - its answer is the most plaintext `ch_write` sends in `cap` bytes:
-    the real `ch_write` hands `cfg.send` at most `cap` bytes for the
-    answer, and more than `cap` bytes for one byte more.
+  - `ch_writable_len` is safe and free of UB for any `peer_limit`, any
+    `key_update_owed` and any `cap`;
+  - the value it returns is the most plaintext `ch_write` sends in `cap`
+    bytes, with an answer to the peer's KeyUpdate owed and with none: the
+    real `ch_write` hands `cfg.send` at most `cap` bytes for that much
+    plaintext, and more than `cap` bytes for one byte more;
+  - on the way, that `ch_write` seals no data record while an answer is
+    owed, sends a KeyUpdate only then, and leaves none owed after a write
+    of a byte or more (INV-55).
 
-  `rec_seal` and `io_send_all` are stubbed to their contracts: a sealed
-  record is `REC_OVERHEAD` bytes longer than its plaintext, which
-  [record](#record) proves, and the stub send counts what it is handed.
-- **Bound:** the second claim at `cap` ≤ 1,603 B, three whole records
-  of `CH_TX_PT` bytes and one byte, and `peer_limit` ≥ 63, the least a
-  connected session holds, at the default `CH_TX_PT` of 512. The
-  claim is an equality over a division, and at 16 bits of `cap` a model
-  of it returned no verdict in 600 s. `bin/unit` checks the answer
-  against `ch_write` for every `cap` up to three records and one byte at
-  three limits, and at `SIZE_MAX`.
+  `rec_seal`, `hspost_send_key_update` and `io_send_all` are stubbed to
+  their contracts: a sealed record is `REC_OVERHEAD` bytes longer than
+  its plaintext, which [record](#record) proves, a KeyUpdate is one
+  record of `CH_KEY_UPDATE_RECORD_LEN` bytes that leaves no answer owed,
+  and the stub send counts what it is handed.
+- **Bound:** the second claim at `cap` ≤ 1,630 B, three whole records
+  of `CH_TX_PT` bytes, a KeyUpdate record and one byte, and
+  `peer_limit` ≥ 63, the least a connected session holds, at the default
+  `CH_TX_PT` of 512. The claim is an equality over a division, and at 16
+  bits of `cap` a model of it returned no verdict in 600 s. `bin/unit`
+  checks the value against `ch_write` for every `cap` up to three
+  records, a KeyUpdate record and one byte at three limits, with an
+  answer owed and with none, and at `SIZE_MAX`.
 - **Not proved:** `tls.c`: `ch_connect`, `ch_read`, `ch_close` and
   `ch_export`, and `tlsi_config_ok`. Tests cover them. The one-suite
   build compiles no AES-GCM ceiling, so this harness reads none;
   [writable_len_suite](#writable_len_suite) proves the build that does.
-  That no unsigned sum or product in `records_fill` wraps is Lean's
-  `recordsFill_fits`, which that entry states.
+  That no unsigned sum or product in `records_fill` and
+  `fill_across_key_update` wraps is Lean's `recordsFill_fits` and
+  `fillAcrossKeyUpdate_fits`, which that entry states.
 
 #### writable_len_suite
 
@@ -1693,18 +1701,21 @@ The entries are grouped by area:
 - **Build:** `SUITE=aesgcm`.
 - **Proves:**
   - `writable_len_suite_any`: `ch_writable_len` is safe and free of UB
-    for any `peer_limit`, any suite code point, any write sequence number
-    and any `cap`, the path that counts a KeyUpdate included;
-  - `writable_len_suite`: its answer is the most plaintext `ch_write`
-    sends in `cap` bytes, the KeyUpdate record `ch_write` sends at an
-    AES-GCM write key's ceiling included: the real `ch_write` hands
-    `cfg.send` at most `cap` bytes for the answer, and more than `cap`
-    bytes for one byte more;
+    for any `peer_limit`, any suite code point, any write sequence
+    number, any `key_update_owed` and any `cap`, the path that counts a
+    KeyUpdate included;
+  - `writable_len_suite`: the value it returns is the most plaintext
+    `ch_write` sends in `cap` bytes, the KeyUpdate record `ch_write`
+    sends at an AES-GCM write key's ceiling or for an owed answer
+    included: the real `ch_write` hands `cfg.send` at most `cap` bytes
+    for that much plaintext, and more than `cap` bytes for one byte more;
   - on the way, what `ch_write` does at the ceiling: under AES-GCM it
     seals no data record at the key's last sequence number,
-    `REC_AES_GCM_RECORDS_MAX - 1`, sends the KeyUpdate there and nowhere
-    else, and returns with that last sequence number still free; under
-    ChaCha20-Poly1305 it sends no KeyUpdate.
+    `REC_AES_GCM_RECORDS_MAX - 1`, and returns with that last sequence
+    number still free; it sends a KeyUpdate there or for an owed answer
+    and at no other time, so under ChaCha20-Poly1305 for an owed answer
+    alone; it seals no data record while an answer is owed, and leaves
+    none owed after a write of a byte or more.
 
   The two claims sit in two harnesses because each costs a division, and
   in one formula they returned no verdict in 14 minutes.
@@ -1720,10 +1731,11 @@ The entries are grouped by area:
     product `records_fill` computes is below `2^w`;
   - `fillAcrossKeyUpdate_fits`: when `room` is below the count
     `records_fill` returns for `cap`, each product and sum
-    `fill_across_key_update` computes is at most `cap`, its answer
-    included;
-  - `writableLen_le_cap`: the answer is at most `cap`, at every limit and
-    every `room`, `SIZE_MAX` for a ChaCha20-Poly1305 key among them.
+    `fill_across_key_update` computes is at most `cap`, the value it
+    returns included, for every count of records per key;
+  - `writableLen_le_cap`: the value it returns is at most `cap`, at
+    every limit, every `room` and every count of records per key,
+    `SIZE_MAX` for a ChaCha20-Poly1305 key among them.
 
   15 bits is the least width the proofs need, because `limit +
   REC_OVERHEAD` is 16406 at the largest limit, and C gives every `size_t`
@@ -1743,22 +1755,22 @@ The entries are grouped by area:
   their contracts: a sealed record is `REC_OVERHEAD` bytes longer than
   its plaintext and moves the sequence number on by one, and a KeyUpdate
   is one record of `CH_KEY_UPDATE_RECORD_LEN` bytes followed by the next
-  key at sequence number 0.
+  key at sequence number 0, with no answer owed.
 - **Bound:** `writable_len_suite` at `peer_limit` ≥ 63, `cap` up to three
   whole records of the session's own limit, a KeyUpdate record and one
   byte (1,630 B at `CH_TX_PT`), each of the three suites, every write
-  sequence number below `REC_AES_GCM_RECORDS_MAX`, and a KeyUpdate count
-  below 2^48 − 1. So `ch_write` turns at most four times, and the
-  KeyUpdate falls before the first record, between two, or after the
-  last whole one. A cap of three records of `CH_TX_PT` instead, the
-  bound [writable_len](#writable_len) takes, lets `ch_write` turn 20 times
-  at a limit of 63, and with the KeyUpdate term that formula returned no
-  verdict in 10 minutes; `test/key_limit_cases.h` sweeps every cap up to
-  three records at a limit of 63 against the real `ch_write`. A write here
-  crosses the ceiling once at most, so no answer stops at the one
-  KeyUpdate `ch_writable_len` counts (tls.h); `test/key_limit_cases.h`
-  checks that answer at `SIZE_MAX`, and the write at the KeyUpdate count's
-  cap.
+  sequence number below `REC_AES_GCM_RECORDS_MAX`, an answer owed and
+  none, and a KeyUpdate count below 2^48 − 1. So `ch_write` turns at
+  most four times, and the KeyUpdate falls before the first record,
+  between two, or after the last whole one. A cap of three records of
+  `CH_TX_PT` instead, the bound [writable_len](#writable_len) takes, lets
+  `ch_write` turn 20 times at a limit of 63, and with the KeyUpdate term
+  that formula returned no verdict in 10 minutes;
+  `test/key_limit_cases.h` sweeps every cap up to three records at a
+  limit of 63 against the real `ch_write`. A write here crosses the
+  ceiling once at most, so no value here stops at the one KeyUpdate
+  `ch_writable_len` counts (tls.h); `test/key_limit_cases.h` checks that
+  value at `SIZE_MAX`, and the write at the KeyUpdate count's cap.
 
 ### Client handshake
 
@@ -1975,11 +1987,18 @@ The entries are grouped by area:
   bytes and consumes no more than its input, hands `on_ticket` no
   ticket whose `ticket_lifetime` is 0, rekeys on a KeyUpdate only
   when it is the last message of its input, the one RFC 9846 §5.1 lets
-  precede a key change (INV-39), and writes no alert but three, each
-  only on a failure: decode_error for a message that does not parse
-  (§6), illegal_parameter for a request_update neither 0 nor 1
-  (§4.7.3, INV-14), and internal_error for a KeyUpdate reply that could
-  not be sealed or sent (§6.2, INV-13).
+  precede a key change (INV-39), and writes no alert but two, each only
+  on a failure: decode_error for a message that does not parse (§6) and
+  illegal_parameter for a request_update neither 0 nor 1 (§4.7.3,
+  INV-14). From any `key_update_run`, `key_update_owed` and
+  `send_epochs` it also proves the run limit and the answer (INV-55):
+  the parser seals and sends nothing; a rekey moves the read direction
+  alone and adds one to a run below `CH_KEY_UPDATE_RUN_MAX`; the
+  KeyUpdate after a full run returns `CH_KEY_UPDATE_LIMIT` with the
+  caller's unexpected_message and rekeys nothing; the limit refuses only
+  a KeyUpdate that the other refusals admit, one byte long with
+  request_update 0 or 1, the last five bytes of the input; and an answer
+  comes to be owed only after a rekey below the sender's epoch cap.
 - **Bound:** messages ≤ 128 B.
 
 ### Server

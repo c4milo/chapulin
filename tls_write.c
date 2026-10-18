@@ -1,7 +1,8 @@
 // The connected session's send path, in both roles and on both TCP
 // transports: ch_write and ch_writable_len, whose contracts tls.h states,
-// and the KeyUpdate ch_write sends as the last record an AES-GCM write key
-// seals (record.h). tls.c holds the other public calls tls.h declares.
+// and the KeyUpdate ch_write sends before a data record, as the answer the
+// peer's request owes or as the last record an AES-GCM write key seals
+// (record.h). tls.c holds the other public calls tls.h declares.
 #include "tls.h"
 
 #include "ch_assert.h"
@@ -16,55 +17,81 @@ static size_t record_plaintext_max(const ch_tls *t) {
     return t->peer_limit < CH_TX_PT ? t->peer_limit : CH_TX_PT;
 }
 
+// How many data records one write key seals before ch_write sends the
+// KeyUpdate that retires it. An AES-GCM key seals at sequence numbers 0 to
+// REC_AES_GCM_RECORDS_MAX - 1 (record.h), and the last of them is the
+// KeyUpdate's, so it seals REC_AES_GCM_RECORDS_MAX - 1 data records. A
+// ChaCha20-Poly1305 key has no such limit, because its sequence number
+// would wrap first (rfc9846.txt:3752-3754), so for one this returns
+// SIZE_MAX. A build without -DCH_SUITE_AES_GCM runs ChaCha20-Poly1305
+// alone. A KeyUpdate keeps the direction's suite (record.h), so the key
+// after one seals as many as the key before it.
+static size_t records_per_key(const ch_tls *t) {
 #ifdef CH_SUITE_AES_GCM
-// How many more data records ch_write seals under the current write key
-// before it must send the KeyUpdate that retires the key. An AES-GCM key
-// seals at sequence numbers 0 to REC_AES_GCM_RECORDS_MAX - 1 (record.h),
-// and the last of them is the KeyUpdate's, so a data record takes a
-// sequence number below REC_AES_GCM_RECORDS_MAX - 1. A ChaCha20-Poly1305
-// key has no such limit, because its sequence number would wrap first
-// (rfc9846.txt:3752-3754), so the answer for one is SIZE_MAX. ch_write and
-// ch_writable_len both read the ceiling here, as they both read the record
-// limit through record_plaintext_max.
-static size_t records_before_key_update(const ch_tls *t) {
-    if (!suite_runs_aes_gcm(t->wr.suite)) {
-        return SIZE_MAX;
+    if (suite_runs_aes_gcm(t->wr.suite)) {
+        return REC_AES_GCM_RECORDS_MAX - 1;
     }
-    uint64_t last = REC_AES_GCM_RECORDS_MAX - 1;
-    // At most 2^24 - 1, which the cast keeps whole: ct.h refuses a size_t
-    // of fewer than 32 bits.
-    return t->wr.seq < last ? (size_t)(last - t->wr.seq) : 0;
+#endif
+    (void)t;
+    return SIZE_MAX;
 }
 
-// The step ch_write takes before each record it seals. RFC 9846 §5.5 has a
-// sender close the connection or send a KeyUpdate while a key is still
-// below its AEAD's usage limit (rfc9846.txt:3743-3744). When an AES-GCM
-// write key has no data record left, this sends a KeyUpdate at the key's
-// last sequence number, REC_AES_GCM_RECORDS_MAX - 1, and moves the write
-// direction to the next key (hspost_send_key_update). The record that
-// follows goes out at sequence number 0 of the next key, and the peer
-// opens it because its read direction moved to that key when it read the
-// KeyUpdate. The KeyUpdate asks for no answer: the key at its ceiling is
-// this side's write key, and the peer's write key keeps a count of its own.
+// How many more data records ch_write seals under the current write key
+// before it sends a KeyUpdate. It is 0 while the peer's request is owed an
+// answer (ch_tls.key_update_owed), because RFC 9846 §4.7.3 sends that
+// answer before the next data record (rfc9846.txt:3367-3370). Otherwise it
+// is the part of records_per_key the key has not sealed: an AES-GCM data
+// record takes a sequence number below REC_AES_GCM_RECORDS_MAX - 1.
+// ch_write and ch_writable_len both read it, as they both read the record
+// limit through record_plaintext_max.
+static size_t records_before_key_update(const ch_tls *t) {
+    if (t->key_update_owed) {
+        return 0;
+    }
+    size_t per_key = records_per_key(t);
+    if (per_key == SIZE_MAX) {
+        return SIZE_MAX;
+    }
+    // At most 2^24 - 1, which the cast keeps whole: ct.h refuses a size_t
+    // of fewer than 32 bits.
+    return t->wr.seq < per_key ? (size_t)(per_key - t->wr.seq) : 0;
+}
+
+// The step ch_write takes before each data record it seals. When the
+// current write key has no data record left, it sends one KeyUpdate and
+// moves the write direction to the next key (hspost_send_key_update). The
+// record that follows goes out under that key, and the peer opens it
+// because its read direction moved to that key when it read the KeyUpdate.
+// The KeyUpdate asks for no answer. Two causes make it due, and one
+// KeyUpdate serves both when they fall due at one record:
+//   - an answer is owed: the peer asked for one (handshake_post.c), and RFC
+//     9846 §4.7.3 sends it before the next data record
+//     (rfc9846.txt:3367-3370). One answer serves every request read since
+//     the last KeyUpdate this side sent (rfc9846.txt:3370-3373).
+//   - an AES-GCM key is at its ceiling: RFC 9846 §5.5 has a sender close
+//     the connection or send a KeyUpdate while a key is still below its
+//     AEAD's usage limit (rfc9846.txt:3743-3744), and this KeyUpdate takes
+//     the key's last sequence number, REC_AES_GCM_RECORDS_MAX - 1.
 //
-// RFC 9846 §4.7.3 lets a sender send HSPOST_SEND_EPOCHS_MAX KeyUpdates. A
-// key at its ceiling after that many cannot be replaced, so the session
-// closes: tlsi_fail seals internal_error at that last sequence number and
-// wipes the keys, and ch_write returns CH_ECAP, its code for a record it
-// cannot seal (tls.h).
+// RFC 9846 §4.7.3 lets a sender send HSPOST_SEND_EPOCHS_MAX KeyUpdates. No
+// answer is owed at that cap (handle_key_update), and a key at its ceiling
+// after that many cannot be replaced, so the session closes: tlsi_fail
+// seals internal_error at that last sequence number and wipes the keys,
+// and ch_write returns CH_ECAP, its code for a record it cannot seal
+// (tls.h).
 //
 // ch_write is the one sender that checks. Every other record sealed under
 // an application write key is a single record that cannot pass the
 // ceiling:
 //   - a server's NewSessionTicket goes out at sequence number 0 of the key
 //     its handshake installed;
-//   - the answer to a peer's KeyUpdate moves the write direction to the
-//     next key right after its one record;
 //   - an alert, from ch_close or from tlsi_fail, is the last record before
 //     the keys are wiped.
-// After every record ch_write seals, the key has at least its last
-// sequence number left, and each of those three takes at most that one.
-static int key_update_at_ceiling(ch_tls *t) {
+// After every record ch_write seals, an AES-GCM key has at least its last
+// sequence number left, and each of those two takes at most that one.
+// Neither sends an owed answer first, because §4.7.3 owes it before
+// application data alone, and no data record follows either of them.
+static int key_update_before_record(ch_tls *t) {
     if (records_before_key_update(t) != 0) {
         return CH_OK;
     }
@@ -78,14 +105,6 @@ static int key_update_at_ceiling(ch_tls *t) {
     }
     return rc;
 }
-#else
-// A build without -DCH_SUITE_AES_GCM runs ChaCha20-Poly1305 alone, whose
-// only limit is the wrap rec_seal refuses, so there is nothing to send.
-static int key_update_at_ceiling(ch_tls *t) {
-    (void)t;
-    return CH_OK;
-}
-#endif
 
 int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
     CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states (tls.c)
@@ -96,7 +115,7 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
     size_t limit = record_plaintext_max(t);
     while (n > 0) {
         size_t take = n < limit ? n : limit;
-        int rc = key_update_at_ceiling(t);
+        int rc = key_update_before_record(t);
         if (rc != CH_OK) {
             return rc; // it failed the session
         }
@@ -119,8 +138,8 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
 // What cap bytes of records carry at limit bytes of plaintext per record:
 // the most plaintext, and through *records the number of records ch_write
 // sends it in. cap holds `whole` records of limit bytes of plaintext, each
-// REC_OVERHEAD bytes longer on the wire, and less than one more. So the
-// answer is the larger of two: the whole records' plaintext, and what is
+// REC_OVERHEAD bytes longer on the wire, and less than one more. So it
+// returns the larger of two: the whole records' plaintext, and what is
 // left of cap once whole + 1 records' overhead is paid, which is less than
 // whole + 1 records of plaintext and is larger only when the last record
 // carries a byte. ch_write sends exactly those records for that many
@@ -146,36 +165,35 @@ static size_t records_fill(size_t cap, size_t limit, size_t *records) {
     return in_whole;
 }
 
-#ifdef CH_SUITE_AES_GCM
-// ch_writable_len's answer when the records cap carries are more than the
-// room records the write key has left (records_before_key_update).
+// What ch_writable_len returns when the records cap carries are more than
+// the room records the write key has left (records_before_key_update).
 // ch_write sends room whole records under that key, then the KeyUpdate
-// record, then the rest under the next key. So the answer is room records
+// record, then the rest under the next key. So it returns room records
 // of plaintext and what cap carries after them and after the KeyUpdate's
 // CH_KEY_UPDATE_RECORD_LEN bytes. It counts one KeyUpdate and no second:
-// under the next key it counts at most the REC_AES_GCM_RECORDS_MAX - 1
-// records that go out before that key's own KeyUpdate (tls.h).
+// under the next key it counts at most the per_key records that go out
+// before that key's own KeyUpdate, the records_per_key of the session
+// (tls.h).
 //
 // No sum or product here wraps a size_t, whatever its width:
 // spec/lean/Spec/TlsWrite.lean's fillAcrossKeyUpdate_fits proves each is at
 // most cap. The records cap carries are more than room, and every one but
 // the last is whole, so room whole records fit in cap.
-static size_t fill_across_key_update(size_t cap, size_t limit, size_t room) {
+static size_t fill_across_key_update(size_t cap, size_t limit, size_t room, size_t per_key) {
     size_t left = cap - room * (limit + REC_OVERHEAD);
     size_t rest = left > CH_KEY_UPDATE_RECORD_LEN ? left - CH_KEY_UPDATE_RECORD_LEN : 0;
     size_t records = 0;
     size_t after = records_fill(rest, limit, &records);
-    if (records > REC_AES_GCM_RECORDS_MAX - 1) {
-        after = (REC_AES_GCM_RECORDS_MAX - 1) * limit;
+    if (records > per_key) {
+        after = per_key * limit;
     }
     return room * limit + after;
 }
-#endif
 
 // tls.h states the contract. spec/lean/Spec/TlsWrite.lean models this
-// function and its two helpers, writableLen_le_cap proves that the answer
-// is at most cap, and test/diff_writable_len.h compares the model with
-// this code.
+// function and its two helpers, writableLen_le_cap proves that the value
+// it returns is at most cap, and test/diff_writable_len.h compares the
+// model with this code.
 size_t ch_writable_len(const ch_tls *t, size_t cap) {
     size_t limit = record_plaintext_max(t);
     if (limit == 0) {
@@ -183,12 +201,10 @@ size_t ch_writable_len(const ch_tls *t, size_t cap) {
     }
     size_t records = 0;
     size_t fill = records_fill(cap, limit, &records);
-#ifdef CH_SUITE_AES_GCM
     size_t room = records_before_key_update(t);
     if (records > room) {
-        return fill_across_key_update(cap, limit, room);
+        return fill_across_key_update(cap, limit, room, records_per_key(t));
     }
-#endif
     return fill;
 }
 

@@ -8,6 +8,6 @@ reason: the ceiling is counted one record too late, so ch_write seals a data
   second record.
 
 --- old
-    uint64_t last = REC_AES_GCM_RECORDS_MAX - 1;
+        return REC_AES_GCM_RECORDS_MAX - 1;
 --- new
-    uint64_t last = REC_AES_GCM_RECORDS_MAX;
+        return REC_AES_GCM_RECORDS_MAX;

@@ -1,0 +1,39 @@
+invariant: INV-55
+file: handshake_post.c
+catches: unit
+reason: the run limit refuses a KeyUpdate before the parser's other
+  refusals, so after a full run a request_update of 2 gets unexpected_message
+  where RFC 9846 section 4.7.3 requires illegal_parameter, and a body of two
+  bytes gets it where section 6 names decode_error. bin/unit sends each
+  after a full run and requires CH_EPROTO and its own alert.
+
+--- old
+    if (msg_len != 1) {
+        *alert = ALERT_DECODE_ERROR;
+        return CH_EPROTO;
+    }
+    if (body[0] > 1) {
+        *alert = ALERT_ILLEGAL_PARAMETER;
+        return CH_EPROTO;
+    }
+    if (!ends_input) {
+        return CH_EPROTO;
+    }
+    if (t->key_update_run >= CH_KEY_UPDATE_RUN_MAX) {
+        return CH_KEY_UPDATE_LIMIT;
+    }
+--- new
+    if (t->key_update_run >= CH_KEY_UPDATE_RUN_MAX) {
+        return CH_KEY_UPDATE_LIMIT;
+    }
+    if (msg_len != 1) {
+        *alert = ALERT_DECODE_ERROR;
+        return CH_EPROTO;
+    }
+    if (body[0] > 1) {
+        *alert = ALERT_ILLEGAL_PARAMETER;
+        return CH_EPROTO;
+    }
+    if (!ends_input) {
+        return CH_EPROTO;
+    }

@@ -930,14 +930,19 @@ launch fast full io_send 17 ""
 # (docs/decisions.md 76).
 launch fast full record_whole_len 2 "" -DCH_TRANSPORT_TCP_NONBLOCKING buf.c
 # writable_len: ch_writable_len over any peer_limit and any cap, then its
-# answer written through the real ch_write at caps up to 1,603 bytes and a
-# peer_limit from 63, with rec_seal and io_send_all stubbed to their
+# answer written through the real ch_write at caps up to 1,630 bytes and a
+# peer_limit from 63, with and without an owed KeyUpdate answer, with
+# rec_seal, hspost_send_key_update and io_send_all stubbed to their
 # contracts. ch_write.1 is its record loop, which turns at most 20 times
 # there. Measured the same way (PROVE_ONLY=writable_len PROVE_NO_CACHE=1):
 # 420 properties, 58 s, 185 MB. The harness records the forms that took
 # longer. With the send path in tls_write.c, which the harness includes in
 # place of tls.c: 71 properties, 77 s, 200 MB at a load average near 25.
-# The 349 that went were tls.c's calls, which no path here reaches.
+# The 349 that went were tls.c's calls, which no path here reaches. With
+# the owed answer (docs/decisions.md 138), measured on 2026-10-18 on an
+# ubuntu-24.04 runner (PROVE_ONLY=writable_len PROVE_NO_CACHE=1
+# /usr/bin/time -v, cbmc 6.11.0, kissat): 118 properties, 210 s, 0.11 GB
+# peak.
 launch fast full writable_len 2 "ch_write.1:21"
 # writable_len_suite: the answer through the real ch_write in the
 # -DCH_SUITE_AES_GCM build, where ch_write sends a KeyUpdate at an AES-GCM
@@ -955,12 +960,17 @@ launch fast full writable_len 2 "ch_write.1:21"
 # In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=writable_len_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
-# 143 properties, 44 s, 0.07 GB peak.
+# 143 properties, 44 s, 0.07 GB peak. With the owed answer
+# (docs/decisions.md 138), measured on 2026-10-18 on an ubuntu-24.04 runner
+# (PROVE_ONLY=writable_len_suite PROVE_NO_CACHE=1 /usr/bin/time -v):
+# 169 properties, 45 s, 0.04 GB peak.
 launch fast full writable_len_suite 2 "ch_write.1:5" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=writable_len_suite_any PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
-# 72 properties, 1 s, 0.02 GB peak.
+# 72 properties, 1 s, 0.02 GB peak. With any key_update_owed, measured on
+# 2026-10-18 on an ubuntu-24.04 runner the same way: 78 properties, under
+# a second, 0.02 GB peak.
 launch fast full writable_len_suite_any 2 "" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # keysched: 13 s under this script's own flags. Extract and Expand-Label sequencing
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
@@ -1032,9 +1042,14 @@ launch fast full epoch 40 "" ct.c proof/ct_wipe_stub.c
 # properties, 130 s, 2.43 GB peak at a load average near 15. With the
 # ticket zeroed before handle_ticket fills it (docs/decisions.md 79): 759
 # properties, 115 s, 3.42 GB peak on 2026-09-29. With internal_error for a
-# KeyUpdate reply that could not be sealed or sent (docs/decisions.md 76):
+# KeyUpdate answer that could not be sealed or sent (docs/decisions.md 76):
 # 765 properties, 139 s, 5.13 GB peak at a load average between 20 and 30
-# on 2026-09-29, under the weight of 6.
+# on 2026-09-29, under the weight of 6. With the answer left to ch_write,
+# the run limit, and the assertion that the limit refuses only a KeyUpdate
+# the other refusals admit (docs/decisions.md 138), measured on 2026-10-18
+# on an ubuntu-24.04 runner (PROVE_ONLY=handshake_post PROVE_NO_CACHE=1
+# /usr/bin/time -v bash proof/run.sh slow): 771 properties, 123 s, 1.45 GB
+# peak.
 launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c proof/ct_wipe_stub.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,

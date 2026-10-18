@@ -1,0 +1,13 @@
+invariant: INV-38
+file: tls_write.c
+catches: unit
+reason: ch_writable_len does not count the KeyUpdate record ch_write sends
+  first while an answer is owed, so it returns 27 bytes too many and a
+  caller that sizes its output by it gets a write that does not fit.
+  bin/unit holds what it returns to the real ch_write at every cap with
+  an answer owed.
+
+--- old
+    size_t room = records_before_key_update(t);
+--- new
+    size_t room = t->key_update_owed ? SIZE_MAX : records_before_key_update(t);

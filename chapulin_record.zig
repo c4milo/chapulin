@@ -37,9 +37,9 @@ pub const Progress = struct { consumed: usize, written: usize };
 /// What read did. consumed: input bytes taken, 0, one whole record, or the
 /// 5-byte header of a record whose length field no peer may send. pt_len:
 /// plaintext written into pt, 0 when the record held a ticket or a
-/// KeyUpdate. reply_len: bytes ch_read sent into reply. peer_closed: ch_read
-/// returned 0, because the peer's close_notify arrived, now or earlier, or
-/// this side closed.
+/// KeyUpdate. reply_len: bytes ch_read sent into reply, the alert of a read
+/// that failed or 0. peer_closed: ch_read returned 0, because the peer's
+/// close_notify arrived, now or earlier, or this side closed.
 pub const Read = struct { consumed: usize, pt_len: usize, reply_len: usize, peer_closed: bool };
 
 /// The wire length of one sealed alert record, 24 bytes: what close
@@ -47,10 +47,9 @@ pub const Read = struct { consumed: usize, pt_len: usize, reply_len: usize, peer
 pub const alert_record_len: usize = if (has_record) c.CH_ALERT_RECORD_LEN else @compileError("alert_record_len needs TRANSPORT=tcp-nonblocking");
 
 /// The wire length of one sealed KeyUpdate record, 27 bytes
-/// (CH_KEY_UPDATE_RECORD_LEN). ch_read answers a KeyUpdate that asks for
-/// an answer, and a record carries at most one KeyUpdate, as its last
-/// message (RFC 9846 §5.1), so a read of one record writes at most one of
-/// these into reply, and alert_record_len more if it fails.
+/// (CH_KEY_UPDATE_RECORD_LEN). write sends one before its first record
+/// when the peer asked for one, and one as the last record an AES-GCM
+/// write key seals, and writableLen counts it. read sends none.
 pub const key_update_record_len: usize = if (has_record) c.CH_KEY_UPDATE_RECORD_LEN else @compileError("key_update_record_len needs TRANSPORT=tcp-nonblocking");
 
 const Side = enum { client, server };
@@ -158,8 +157,8 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// ch_tls.server_cert_type.
         pub const serverCertType = if (@hasField(c.ch_tls, "server_cert_type")) serverCertTypeOf else @compileError("serverCertType needs TRUST=webpki");
         /// Reserved. No C call starts a record-mode KeyUpdate: write sends
-        /// one inside ch_write as the last record an AES-GCM write key
-        /// seals, and read answers the peer's inside ch_read.
+        /// one inside ch_write, as the answer the peer's request owes or as
+        /// the last record an AES-GCM write key seals.
         pub const keyUpdate = @compileError("chapulin has no call that starts a record-mode KeyUpdate");
 
         fn initClient(self: *Self, values: chapulin.Client) error{Invalid}!void {
@@ -281,15 +280,13 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// and comes out of the next read, which takes no input. A caller
         /// calls read until consumed and pt_len are both 0.
         ///
-        /// reply takes what ch_read sends: key_update_record_len bytes for
-        /// a KeyUpdate in the record that asks for an answer (RFC 9846
-        /// §4.7.3), and alert_record_len more when the read fails. A
-        /// record carries at most one KeyUpdate, as its last message (RFC
-        /// 9846 §5.1), so a reply of key_update_record_len +
-        /// alert_record_len bytes is never short. A reply too short for
-        /// what ch_read sends fails the read with error.Io and the session
-        /// with it.
-        pub fn read(self: *Self, input: []const u8, pt: []u8, reply: []u8) error{ Invalid, Proto, Auth, Cap, Io }!Read {
+        /// reply takes what ch_read sends: the alert of a read that fails,
+        /// alert_record_len bytes, and nothing else. A KeyUpdate that asks
+        /// for an answer gets it from the next write (RFC 9846 §4.7.3). A
+        /// reply too short for the alert fails the read with error.Io.
+        /// error.KeyUpdateLimit is CH_KEY_UPDATE_LIMIT: the peer sent one
+        /// KeyUpdate past CH_KEY_UPDATE_RUN_MAX in a row (session.h).
+        pub fn read(self: *Self, input: []const u8, pt: []u8, reply: []u8) error{ Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit }!Read {
             const whole = c.ch_record_whole_len(input.ptr, input.len);
             self.io.begin(input[0..whole], reply);
             defer self.io.end();
@@ -301,7 +298,7 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             } else if (rc == 0) {
                 out.peer_closed = true;
             } else if (rc != c.CH_RECORD_AGAIN) {
-                try chapulin.fromCode(error{ Invalid, Proto, Auth, Cap, Io }, rc);
+                try chapulin.fromCode(error{ Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit }, rc);
             }
             return out;
         }
@@ -309,10 +306,10 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// Seals all of pt into output and returns the bytes written, or
         /// returns error.Cap with nothing sealed and the session as it was
         /// when pt.len > writableLen(output.len). It never seals part of
-        /// pt, as ch_write does not. Under SUITE=aesgcm the bytes written
-        /// may hold one KeyUpdate record of key_update_record_len bytes,
-        /// which ch_write sends as the last record an AES-GCM write key
-        /// seals, and writableLen counts.
+        /// pt, as ch_write does not. The bytes written may hold one
+        /// KeyUpdate record of key_update_record_len bytes, first when the
+        /// peer asked for one, or as the last record an AES-GCM write key
+        /// seals, and writableLen counts it.
         pub fn write(self: *Self, pt: []const u8, output: []u8) error{ Proto, Cap, Io }!usize {
             if (pt.len > self.writableLen(output.len)) return error.Cap;
             self.io.begin(&.{}, output);

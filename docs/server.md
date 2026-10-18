@@ -742,8 +742,9 @@ is `illegal_parameter` (`rfc9846.txt:3789-3791`, with the description at
 | A NewSessionTicket from the client, which §4.7.1 gives the server alone to send | `unexpected_message` (10) | 1054-1058, 3194-3196 | 1054-1058 |
 | A KeyUpdate before the client's Finished | `unexpected_message` (10) | 3346-3349 | 3346-3349 |
 | A ClientHello answered with a ServerHello, the client Finished, or a KeyUpdate, with bytes after it in its record (INV-39) | `unexpected_message` (10) | 3464-3470 | 3464-3470 |
+| A KeyUpdate after `CH_KEY_UPDATE_RUN_MAX` (16) in a row with no record of application data of a byte or more between them (INV-55), which `ch_read` returns as `CH_KEY_UPDATE_LIMIT` | `unexpected_message` (10) | none; 3351-3352 rekeys for every KeyUpdate and sets no limit | design's choice; 3911-3914 |
 
-Eight rows say "design's choice" and each one is defensible on its own line.
+Nine rows say "design's choice" and each one is defensible on its own line.
 `rfc9846.txt:1742-1744` reads "Servers MUST be prepared to receive ClientHellos
 that include this extension but do not include 0x0304 in the list of versions",
 which is an obligation with no alert, and `rfc9846.txt:3972-3973` describes
@@ -760,7 +761,14 @@ the RFC rule the bound departs from. `rfc9846.txt:2397-2398` reads "A client
 MUST NOT include the 'early_data' extension in its followup ClientHello",
 addressed to the client and naming no alert. `rfc9846.txt:1673-1674` reads
 "There MUST NOT be more than one extension of the same type in a given
-extension block" and names no alert.
+extension block" and names no alert. The KeyUpdate run row has no
+obligation behind it either: §4.7.3 rekeys for every KeyUpdate and sets no
+limit on how many a peer sends. The bound makes a peer send a byte of
+application data for each 16 KeyUpdates, so the caller's own protocol sees
+its traffic. It does not bound the rate of rekeys, which a caller bounds in
+its own protocol. `rfc9846.txt:3911-3914` describes `unexpected_message` as
+an inappropriate message, and `docs/decisions.md` entry 138 gives the
+reasons for the count and the alert.
 `rfc9846.txt:2264-2275` is the `UncompressedPointRepresentation` struct and its
 prose, and `rfc9846.txt:2277-2286` says only that "peers MUST validate each
 other's public value Q"; neither names an alert, and `rfc9846.txt:3790` gives
@@ -2484,7 +2492,7 @@ Most of the work. Each row was read at the line given.
 | `mlkem.[ch]` | Reused as it stood. `srv_kex.c` calls `mlkem_encaps_derand` (`mlkem.h:40`), which already had known-answer vectors and a CBMC harness. The function takes its 32-byte message `m` from the caller, so a server that selects the hybrid draws it through `ch_rand_bytes` in `encapsulate` (`srv_kex.c`), one of the ten sites INV-4 lists ("Key exchange" below). |
 | `handshake_record.[ch]` | Reusable. `accept_record` decrypts with `t->rd` (`handshake_record.c:35`), which is already the read direction. The ChangeCipherSpec tolerance at `handshake_record.c:53-58` is what `rfc9846.txt:1793-1797` requires of a stateless server, already written and already capped at four. |
 | the CertificateVerify signed content | **Moved, then reused.** See below. |
-| `handshake_post.[ch]` | A role arm. A server receives no NewSessionTicket and may write them; KeyUpdate receipt and the one-response rule are the same in both directions. |
+| `handshake_post.[ch]` | A role arm. A server receives no NewSessionTicket and may write them; KeyUpdate receipt, the one answer `ch_write` sends for a run of requests and the run limit are the same in both directions (`docs/decisions.md` 138). |
 | `p256.c` | One call, `p256_ecdsa_verify` (`p256.h:16`), from `ch_srv_check`. Point validation is *not* one of them; `on_curve` is static (`p256.c:295`) and `p256_ecdh.c` does its own. |
 | `rsa.[ch]`, `rsa_mont.c` | One call, `rsa_pss_verify` (`rsa.h:34`), from `ch_srv_check`. The signing arithmetic shares none of it. |
 | `x509*.[ch]`, `webpki*.[ch]`, `pem.[ch]`, `rsa_pkcs1.[ch]` | None of them. A server that sends opaque DER and requests no client certificate links no certificate reader and no certificate-signature verifier. |

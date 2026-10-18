@@ -25,6 +25,11 @@
 // TRANSPORT=tcp-nonblocking's ch_read found no record yet; the session stays
 // live (tcp_nonblocking.h, INV-13).
 #define CH_RECORD_AGAIN (-9)
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+// The code a TCP build adds, which ch_read alone returns. The peer sent one KeyUpdate more than
+// CH_KEY_UPDATE_RUN_MAX (session.h) in a row, and the session is dead (docs/decisions.md 138).
+#define CH_KEY_UPDATE_LIMIT (-10)
+#endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // The two codes a TRANSPORT=quic-nonblocking build adds, which ch_quic_open alone returns.
 // quic_cfg.h states what each means.
@@ -52,6 +57,10 @@ static inline const char *ch_result_text(int rc) {
         return "the configuration or the call was refused, and nothing was sent";
     case CH_RECORD_AGAIN:
         return "no whole record has arrived yet";
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+    case CH_KEY_UPDATE_LIMIT:
+        return "the peer sent too many KeyUpdates without application data";
+#endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     case CH_QUIC_DISCARD:
         return "the packet did not open; drop it";

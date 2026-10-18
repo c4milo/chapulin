@@ -237,7 +237,11 @@ static int read_alert(ch_tls *t, size_t pt_len) {
 
 // Reads and dispatches one record: application data lands in the buffer,
 // post-handshake messages are handled, and close_notify closes the read
-// side and returns CH_ECLOSED.
+// side and returns CH_ECLOSED. A record of application data with one byte
+// or more ends the run of KeyUpdates CH_KEY_UPDATE_RUN_MAX bounds
+// (session.h). An empty one gives the caller nothing and ends no run, so
+// the caller receives a byte of data for each CH_KEY_UPDATE_RUN_MAX
+// KeyUpdates (docs/decisions.md 138).
 static int dispatch_one_record(ch_tls *t) {
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
     if (t->post_fill > 0) { // the next record continues a message (session.h)
@@ -270,6 +274,9 @@ static int dispatch_one_record(ch_tls *t) {
     if (inner_type == REC_APPDATA) {
         t->pt_off = 0;
         t->pt_len = pt_len;
+        if (pt_len > 0) {
+            t->key_update_run = 0;
+        }
         return CH_OK;
     }
     if (inner_type == REC_HANDSHAKE) {
@@ -281,6 +288,10 @@ static int dispatch_one_record(ch_tls *t) {
     tlsi_fail(t, ALERT_UNEXPECTED_MESSAGE);
     return CH_EPROTO;
 }
+
+// One ch_read has room under its quiet cap for a full run and the KeyUpdate
+// after it, so the run limit can refuse that KeyUpdate (session.h).
+_Static_assert(CH_KEY_UPDATE_RUN_MAX < CH_QUIET_CAP, "a run and one more fit under the quiet cap");
 
 int ch_read(ch_tls *t, uint8_t *p, size_t n) {
     // Contract-point guard: no input can set an undefined state; only

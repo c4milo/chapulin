@@ -62,6 +62,8 @@ test "each ch_err code maps to its error, and CH_OK to none" {
     if (has_quic) {
         try expectError(error.Discard, chapulin.fromCode(E, c.CH_QUIC_DISCARD));
         try expectError(error.AeadLimit, chapulin.fromCode(E, c.CH_QUIC_AEAD_LIMIT));
+    } else {
+        try expectError(error.KeyUpdateLimit, chapulin.fromCode(E, c.CH_KEY_UPDATE_LIMIT));
     }
     // A call's own set keeps the codes it names.
     try expectError(error.Cap, chapulin.fromCode(error{ Invalid, Cap }, c.CH_ECAP));

@@ -566,15 +566,15 @@ last `ROLE=server` stub, as the entry said it would.
   Both callbacks are still required at configuration time, because
   `ch_read` and `ch_write` call them once the session is connected, and
   by then the caller holds the bytes. Once connected, `ch_read` calls
-  `cfg.send` in two cases alone: the reply to a KeyUpdate whose sender
-  asked for one (RFC 9846 §4.7.3), and the alert of a failure. The
-  peer's close_notify is neither, and neither is the peer's fatal
-  alert, which fails the session with no alert sent (INV-22). The
-  `ch_read` that reads either sends nothing, and `ch_close` sends this
-  side's close_notify through `cfg.send` as one record, whenever the
-  caller makes it. A caller whose `cfg.send` holds only input while
-  `ch_read` runs, as colibri's does, therefore sees no send it did not
-  ask for when the peer closes or aborts.
+  `cfg.send` in one case alone: the alert of a failure. A KeyUpdate
+  whose sender asked for an answer gets it from the next `ch_write`
+  (RFC 9846 §4.7.3, INV-55). The peer's close_notify is no failure, and
+  the peer's fatal alert fails the session with no alert sent (INV-22).
+  The `ch_read` that reads either sends nothing, and `ch_close` sends this side's close_notify through
+  `cfg.send` as one record, whenever the caller makes it. A caller whose
+  `cfg.send` holds only input while `ch_read` runs, as colibri's does,
+  therefore sees no send it did not ask for when the peer closes, aborts
+  or asks for a KeyUpdate.
 - **Mechanism.** The blocking driver is not in the object. `handshake.c`
   is filtered out by `TRANSPORT_FILTER`, `srv_handshake.c` by the server
   arm, and `tls.c` and `srv.c` guard their accept and connect calls out.
@@ -614,6 +614,10 @@ last `ROLE=server` stub, as the entry said it would.
   `ch_close`.
   `test/violations/inv22-read-answers-close-notify.violation` makes
   that `ch_read` send a close_notify and requires the binary to fail.
+  `test/tcp_nonblocking_record_end_tests.h` has the connected server read
+  KeyUpdates that ask for an answer, one record a call, and requires each
+  read to send nothing; `inv28-read-answers-key-update` answers inside
+  `ch_read` again, and the binary fails.
 
   That is the behavioral half, that neither driver calls a callback. The
   mechanism half, that a tcp-nonblocking object holds no blocking driver to
@@ -903,15 +907,18 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** Structural arithmetic in `record.c`;
   `rec_dir_update` is the only reset; the epoch cap is
   `HSPOST_SEND_EPOCHS_MAX`, which `handle_key_update` and `ch_write`
-  both read. `rec_seal` refuses an AES-GCM record at or past the
-  ceiling, beside the wrap. `ch_write` (`tls_write.c`) reads
-  `records_before_key_update` before each record it seals, and when an
-  AES-GCM key has no data record left, `key_update_at_ceiling` sends a
-  KeyUpdate at the key's last sequence number through
+  both read: a request read at the cap owes no answer. `rec_seal`
+  refuses an AES-GCM record at or past the ceiling, beside the wrap.
+  `ch_write` (`tls_write.c`) reads `records_before_key_update` before
+  each record it seals, and when an AES-GCM key has no data record left,
+  or an answer to the peer's request is owed (INV-55),
+  `key_update_before_record` sends one KeyUpdate through
   `hspost_send_key_update`, which seals, sends and rekeys, or fails the
-  session with internal_error and `CH_ECAP` when the cap is spent. Every
-  other record sealed under an application write key is a single one
-  that takes at most that last sequence number.
+  session with internal_error and `CH_ECAP` when the cap is spent. At
+  the ceiling that KeyUpdate takes the key's last sequence number, and
+  an owed answer sent earlier leaves the next key at sequence number 0.
+  Every other record sealed under an application write key is a single
+  one that takes at most that last sequence number.
 - **Check.** CBMC (record and handshake_post harnesses cover the guards);
   Lean theorem (`Spec.Record.nonce_inj`): distinct sequence numbers
   below 2^64 give distinct nonces, so a repeat needs a repeated
@@ -923,14 +930,18 @@ last `ROLE=server` stub, as the entry said it would.
     AES-GCM record at or past the ceiling and nothing else, at any
     sequence number; `writable_len_suite` proves, at its bound, that
     `ch_write` seals no data record at an AES-GCM key's last sequence
-    number, sends the KeyUpdate there and nowhere else, never under
-    ChaCha20, and leaves the key with that last sequence number free.
+    number and leaves the key with that last sequence number free. It
+    sends a KeyUpdate at that last sequence number or for an owed answer
+    (INV-55), and at no other time, so under ChaCha20-Poly1305 for an
+    owed answer alone. It seals no data record while an answer is owed.
   - Tests: `test/key_limit_cases.h` runs in `bin/tcp_blocking_key_limit`,
     `bin/webpki_loop_aes` and `bin/webpki_loop_aes_extern`. Under both
     AES-GCM suites each end of a connection writes across the ceiling
     while the peer reads on, one write of three records sends one
     KeyUpdate, and at the cap the write fails; ChaCha20 sends none at the
-    same sequence numbers. `bin/aes_suite_test` holds `rec_seal`'s
+    same sequence numbers. An answer owed at the ceiling goes out as the
+    one KeyUpdate there, and one owed three records before it goes out
+    first, with no second KeyUpdate in that write. `bin/aes_suite_test` holds `rec_seal`'s
     refusal to its exact boundary. `test/zig-consumer/loop_key_limit.zig`
     has each end write across the ceiling through the Zig API (INV-36).
   - Violations: `inv10-aes-gcm-ceiling-no-key-update`,
@@ -1023,9 +1034,10 @@ last `ROLE=server` stub, as the entry said it would.
   build, which seals no TLS record, refuses any value but 512
   (docs/decisions.md 71). A caller that sizes its own buffers asks C
   rather than restating the rule (docs/decisions.md 72):
-  `ch_writable_len` answers the most plaintext one `ch_write` sends in
+  `ch_writable_len` returns the most plaintext one `ch_write` sends in
   `cap` bytes of records, the KeyUpdate record `ch_write` sends at an
-  AES-GCM write key's ceiling included (INV-10); `ch_record_whole_len`
+  AES-GCM write key's ceiling or for an owed answer included (INV-10,
+  INV-55); `ch_record_whole_len`
   answers where the record at the front of the caller's bytes ends, and
   `REC_HDR` for a length field above 2^14 + 256, which no peer may send;
   and
@@ -1053,12 +1065,13 @@ last `ROLE=server` stub, as the entry said it would.
     so a raised `CH_TX_PT` adds nothing to the handshake's stack (INV-19).
   - The framing calls: `ch_write` and `ch_writable_len` read the send
     limit through one helper, `record_plaintext_max` (`tls_write.c`), and
-    the AES-GCM ceiling through another, `records_before_key_update`.
+    the KeyUpdate that falls due, at the AES-GCM ceiling or for an owed
+    answer, through another, `records_before_key_update`.
     `ch_writable_len` counts `REC_OVERHEAD` per record, the length
     `rec_seal` adds, and `CH_KEY_UPDATE_RECORD_LEN` once when the write
-    it sizes crosses the ceiling; it counts no second KeyUpdate, so its
-    answer stops at the records the key has left and
-    `REC_AES_GCM_RECORDS_MAX - 1` more (tls.h).
+    it sizes sends a KeyUpdate; it counts no second KeyUpdate, so under
+    AES-GCM the value it returns stops at the records the key has left and
+    `REC_AES_GCM_RECORDS_MAX - 1` more (`records_per_key`, tls.h).
     `ch_record_whole_len` (`tcp_nonblocking_frame.c`) reads the length
     field through the `rbuf` reader. `tls_write.c` asserts the two record
     lengths are 24 and 27.
@@ -1087,29 +1100,34 @@ last `ROLE=server` stub, as the entry said it would.
   - CBMC: `srv_accept` proves that the server's `peer_limit` never
     exceeds `CH_TX_PT` after the client's limit is stored.
   - CBMC: `record_whole_len` proves `ch_record_whole_len`'s whole
-    contract for every `n` up to 2^20, and `writable_len` runs
-    `ch_writable_len`'s answer through the real `ch_write` for every
-    `cap` up to 1,603 bytes and every `peer_limit` from 63.
-    `writable_len_suite` does the same in the `SUITE=aesgcm` build for
-    every `cap` up to three records of the session's own limit, a
-    KeyUpdate record and one byte, over each suite and every write
-    sequence number below the ceiling, the KeyUpdate record included.
+    contract for every `n` up to 2^20, and `writable_len` runs the value
+    `ch_writable_len` returns through the real `ch_write` for every
+    `cap` up to 1,630 bytes and every `peer_limit` from 63, with an
+    answer owed and with none. `writable_len_suite` does the same in the
+    `SUITE=aesgcm` build for every `cap` up to three records of the
+    session's own limit, a KeyUpdate record and one byte, over each
+    suite, every write sequence number below the ceiling and an answer
+    owed and none, the KeyUpdate record included.
     `inv38-whole-len-one-byte-short` and
     `inv38-writable-len-overhead-short` require each to fail.
   - Lean theorem: `spec/lean/Spec/TlsWrite.lean` models
     `ch_writable_len`, `records_fill` and `fill_across_key_update` with
     one `let` per C local, and proves that no sum or product they
     compute wraps a `size_t` of 15 bits or more (`recordsFill_fits`,
-    `fillAcrossKeyUpdate_fits`) and that the answer is at most `cap`
-    (`writableLen_le_cap`), at every `cap`, every limit from 1 to 16384
-    and every room. `test/diff_writable_len.h` holds the model to the C
+    `fillAcrossKeyUpdate_fits`) and that the value it returns is at most
+    `cap` (`writableLen_le_cap`), at every `cap`, every limit from 1 to
+    16384, every room and every count of records per key.
+    `test/diff_writable_len.h` holds the model to the C
     in `bin/diff` and, under `SUITE=aesgcm` at `CH_TX_PT=16384`, in
     `bin/diff_webpki_aes`. `inv38-writable-len-last-record-no-overhead`
     requires `bin/diff` to fail.
-  - `bin/unit` sweeps every `cap` up to three records and one byte at
-    limits of 63, 200 and `CH_TX_PT`, checks the answer at `SIZE_MAX`,
-    and checks that `ch_close` and a KeyUpdate answer send 24 and 27
-    bytes; `bin/tcp_nonblocking_loop_test` holds `ch_record_whole_len` to
+  - `bin/unit` sweeps every `cap` up to three records, a KeyUpdate
+    record and one byte at limits of 63, 200 and `CH_TX_PT`, with an
+    answer owed and with none, checks the value at `SIZE_MAX`, and
+    checks that `ch_close` and a KeyUpdate answer send 24 and 27 bytes.
+    `inv38-writable-len-skips-owed-answer` counts no KeyUpdate record
+    while an answer is owed, and `bin/unit` fails;
+    `bin/tcp_nonblocking_loop_test` holds `ch_record_whole_len` to
     a record one byte short, a whole one, the largest the RFC allows and
     the first length past it. `inv38-writable-len-ignores-peer-limit` and
     `inv38-whole-len-oversize-waits` require them to fail.
@@ -2109,9 +2127,11 @@ last `ROLE=server` stub, as the entry said it would.
   `build.h` computes under that object's defines: the record format, one
   bit per build define that changes a public layout or bound, the sizes
   of `ch_cfg`, `ch_tls`, `ch_ticket`, `ch_record`, `ch_quic` and
-  `ch_rsa_priv`, and four bounds. A consumer that computes the same
-  values under its own defines, through `ch_build_matches(&ch_build)` or
-  field by field, reads equal values exactly when its defines give the
+  `ch_rsa_priv`, and five bounds, the last of them
+  `CH_KEY_UPDATE_RUN_MAX` in a TCP object (INV-55). A consumer that
+  computes the same values under its own defines, through
+  `ch_build_matches(&ch_build)` or field by field, reads equal values
+  exactly when its defines give the
   object's layouts, bounds and axes, and a consumer compiled for another
   transport names another record and does not link. No library source
   reads the record or calls the comparison. Beside each object, the
@@ -2275,7 +2295,7 @@ last `ROLE=server` stub, as the entry said it would.
   comparison builds only values both builds accept, so
   `test/tx-record-builds.sh` holds `build.zig`'s `TX_RECORD` refusals to
   the Makefile's, and `inv36-zig-build-tx-record-past-2-14` requires it
-  to fail. Seventeen more break the API, the module, the public headers or
+  to fail. Eighteen more break the API, the module, the public headers or
   the reverse check in `matches.zig`, and `test/zig-build-check.sh`
   catches each:
   `inv36-zig-module-drops-object` takes the object off the module, so
@@ -2288,6 +2308,9 @@ last `ROLE=server` stub, as the entry said it would.
   record, which only the `SUITE=aesgcm` loop's write across the ceiling
   notices;
   `inv36-zig-api-auth-proto-swapped` swaps two codes in the error table;
+  `inv36-zig-api-read-drops-key-update-limit` leaves `KeyUpdateLimit` out
+  of `read`'s error set, so `fromCode` panics when the server in
+  `loop_key_update_run.zig` reads one KeyUpdate past a full run;
   `inv36-zig-api-close-without-notify` closes without a close_notify;
   `inv36-zig-api-ticket-drops-binding` zeroes a copied ticket's binding,
   so it no longer resumes; `inv36-zig-api-ticket-drops-quic-version`
@@ -2836,8 +2859,8 @@ last `ROLE=server` stub, as the entry said it would.
   and send nothing once `ch_tls.alert_received` is set. Each send writes
   internal_error where the transport refused it: `srv_out.c` for every
   server record and CRYPTO push, `send_staged` in `handshake.c` for the
-  blocking client, `take_key_update` for `ch_read`'s KeyUpdate reply,
-  and `ch_write` itself. The two non-blocking servers return a failed
+  blocking client, `key_update_before_record` for the KeyUpdate
+  `ch_write` sends, and `ch_write` itself. The two non-blocking servers return a failed
   ticket before they wipe `hs`, so `tcp_nonblocking_fail` and
   `quic_fail` read its alert. Each entry
   checks its configuration or its arguments before it sends a byte, and
@@ -2890,8 +2913,8 @@ last `ROLE=server` stub, as the entry said it would.
   catch them. A refused send is tested in each driver, and each test
   requires internal_error:
   - `bin/unit` (`test/session_hello_tests.h`,
-    `test/session_alert_tests.h`) fails `ch_connect`'s hello and
-    `ch_read`'s KeyUpdate reply;
+    `test/session_alert_tests.h`) fails `ch_connect`'s hello and the
+    KeyUpdate answer `ch_write` sends for a peer's request;
   - `bin/srv_flight_test` fails the blocking server's ServerHello and
     ticket;
   - `bin/srv_tcp_nonblocking_test` fails the tcp-nonblocking
@@ -2901,7 +2924,7 @@ last `ROLE=server` stub, as the entry said it would.
     server's ticket, which must report 0x0150.
 
   `inv13-client-refused-send-keeps-default-alert`,
-  `inv13-key-update-reply-refused-keeps-default-alert`,
+  `inv13-key-update-answer-refused-keeps-default-alert`,
   `inv13-srv-refused-record-keeps-default-alert` and
   `inv13-srv-quic-refused-push-keeps-default-alert` each drop one send's
   internal_error, and `inv13-tcp-nonblocking-ticket-failure-wipes-its-alert`
@@ -3651,8 +3674,8 @@ last `ROLE=server` stub, as the entry said it would.
     client Finished, before `srv_complete` installs the application
     read key;
   - `ch_read`, in either role, refuses a KeyUpdate with bytes after it
-    in its record, before it rekeys or answers, so one record never gets
-    two KeyUpdate answers.
+    in its record, before it rekeys or owes an answer, so no message that
+    starts after a KeyUpdate finishes under the next key.
 
   A ClientHello answered with a HelloRetryRequest precedes no key
   change, because the read key does not change before the second
@@ -3692,9 +3715,10 @@ last `ROLE=server` stub, as the entry said it would.
   rests on reading, not on a proof. Boundary tests hold each check at
   the record's end and one byte past it:
   - `bin/unit` (`test/session_record_end_tests.h`) for the KeyUpdate:
-    one that ends its record is answered, and one with a byte after it,
-    two in one record, and one followed by the first byte of a ticket
-    whose rest comes under the next key are refused before any answer;
+    one that ends its record is read, and the next write answers it, and
+    one with a byte after it, two in one record, and one followed by the
+    first byte of a ticket whose rest comes under the next key are
+    refused before any rekey;
     a KeyUpdate split across two records, and a ticket then a KeyUpdate
     in one record, are read;
   - `bin/tcp_nonblocking_loop_test`
@@ -3731,6 +3755,107 @@ last `ROLE=server` stub, as the entry said it would.
   looks at what the last one did to the keys, and a message that starts
   under one key finishes under the next.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
+
+### INV-55 — a run of the peer's KeyUpdates gets one answer and has a limit
+
+- **Claim.** On both TCP transports and in both roles, a peer's
+  KeyUpdates cost this side bounded work (docs/decisions.md 138):
+  - `ch_read` sends no record for a KeyUpdate. One whose request_update
+    is 1 makes an answer owed, `ch_tls.key_update_owed`, unless this
+    side has sent 2^48 − 1 KeyUpdates (INV-10).
+  - The next `ch_write` of a byte or more sends one KeyUpdate,
+    request_update 0, before its first data record. RFC 9846 §4.7.3
+    owes the answer before the next record of application data, and one
+    answer serves every request read while this side is silent
+    (`rfc9846.txt:3367-3373`). So a run of requests costs one write-side
+    rekey. The KeyUpdate an AES-GCM write key sends at its ceiling is
+    that answer when both fall due at one record (INV-10). `ch_close`
+    sends no KeyUpdate, because §4.7.3 owes the answer before
+    application data alone.
+  - `ch_read` reads at most `CH_KEY_UPDATE_RUN_MAX`, 16, KeyUpdates in a
+    row. A record of application data with one byte or more ends a run,
+    and nothing else does: not an empty data record, not a
+    NewSessionTicket, not a user_canceled alert and not a KeyUpdate this
+    side sends. The next KeyUpdate fails the session with
+    unexpected_message and `CH_KEY_UPDATE_LIMIT` (`result.h`). It meets
+    every refusal INV-14 and INV-39 make first, and it is refused before
+    the rekey. Every KeyUpdate the limit admits moves the read key, as
+    §4.7.3 requires (`rfc9846.txt:3351-3352`), and no rule of the reader
+    reads the peer's epoch count (`rfc9846.txt:3404-3405`).
+  - One `ch_read` call fails with `CH_EPROTO` and unexpected_message once
+    it has read `CH_QUIET_CAP`, 32, records that give no data. A full run
+    and the KeyUpdate after it leave room for 15 other such records in
+    one call. With more, the quiet cap ends the call first.
+- **Mechanism.** `take_key_update` (`handshake_post.c`) checks
+  `ch_tls.key_update_run` against the limit after its other refusals,
+  and `handle_key_update` adds one to it, rekeys `rd` and sets
+  `key_update_owed`. `dispatch_one_record` (`tls.c`) clears
+  `key_update_run` for a data record of a byte or more.
+  `records_before_key_update` (`tls_write.c`) returns 0 while an answer
+  is owed, so `key_update_before_record` sends the KeyUpdate before the
+  next data record, and `hspost_send_key_update` clears
+  `key_update_owed`. `ch_writable_len` reads the same
+  `records_before_key_update`, so it counts that record (INV-38). The
+  limit is one constant in `session.h` that no define changes, and the
+  build record holds it (INV-35). `tls.c` asserts at compile time that
+  it is below `CH_QUIET_CAP`.
+- **Check.**
+  - CBMC: `handshake_post` starts from any `key_update_run`, any
+    `key_update_owed` and any epoch count, and proves that the parser
+    seals and sends nothing, that a rekey moves the read direction alone
+    and adds one to a run below the limit, that the KeyUpdate after a
+    full run returns `CH_KEY_UPDATE_LIMIT` with unexpected_message and
+    rekeys nothing, that the limit refuses only a KeyUpdate that the
+    refusals of INV-14 and INV-39 admit, and that an answer comes to be
+    owed only after a rekey below the epoch cap. `writable_len` and
+    `writable_len_suite`
+    prove that `ch_write` seals no data record while an answer is owed
+    and leaves none owed after a write of a byte or more.
+  - Tests: `bin/unit` (`test/session_update_run_tests.h`) reads a full
+    run of requests and sends nothing, gets one KeyUpdate before the data
+    of the next write and none from the write after it, and reads two
+    full runs that each end at one byte of data. It refuses one KeyUpdate
+    past a full run, past a full run and an empty data record, past a
+    full run and a user_canceled alert, and past a full run and a
+    ticket, each with `CH_KEY_UPDATE_LIMIT` and one unexpected_message
+    alert, and it closes a session that owes an answer with one alert
+    record. After a full run it refuses a body of two bytes with
+    decode_error, a request_update of 2 with illegal_parameter and a byte
+    after the KeyUpdate with unexpected_message, each with `CH_EPROTO`.
+    It holds the quiet cap's room to the record: with 15 empty data
+    records among a full run the limit refuses the next KeyUpdate, and
+    with 16 the quiet cap ends the read first.
+    `bin/tcp_nonblocking_loop_test`
+    (`test/tcp_nonblocking_record_end_tests.h`) runs the same limit on a
+    connected server that reads one record a call, as colibri's server
+    does, and a KeyUpdate past a full run fails there after the server's
+    own answer too. `test/key_limit_cases.h` sends an answer owed at an
+    AES-GCM ceiling as the one KeyUpdate there.
+    `test/zig-consumer/loop_key_update_run.zig` has the Zig API's `read`
+    return `error.KeyUpdateLimit` for one KeyUpdate past a full run
+    (INV-36).
+  - Violations caught by `bin/unit`:
+    `inv55-key-update-answer-per-request`,
+    `inv55-key-update-answer-owed-after-send`,
+    `inv55-key-update-answer-one-record-late`,
+    `inv55-key-update-answer-never-sent`,
+    `inv55-key-update-run-unbounded`, `inv55-key-update-run-one-late`,
+    `inv55-key-update-run-one-early`,
+    `inv55-key-update-run-limit-eproto`,
+    `inv55-key-update-run-limit-first`,
+    `inv55-key-update-run-never-reset`,
+    `inv55-key-update-run-reset-by-empty-record`,
+    `inv55-key-update-run-reset-by-user-canceled` and
+    `inv55-close-sends-owed-answer`. A tcp-blocking `ch_read` returns
+    only data, a close or an error, so no write falls inside a run there.
+    `inv55-key-update-run-reset-by-answer` lets this side's KeyUpdate
+    end a run, and `bin/tcp_nonblocking_loop_test` catches it.
+- **Violation.** A PR answers each request inside `ch_read`, lets an
+  empty record, a ticket, a user_canceled alert or this side's own
+  KeyUpdate end a run, checks the limit before the other refusals, makes
+  the limit a define, or sends the owed KeyUpdate from `ch_close`.
+- See [decisions: Protocol surface](decisions.md#protocol-surface),
+  entry 138.
 
 ## Timing
 

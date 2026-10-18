@@ -127,6 +127,7 @@ for a `@compileError` declaration too.
 | `exportKeyingMaterial` | `ch_export` (EXPORTER=on) |
 | `hookContext` | `ch_keylog` (KEYLOG=on) |
 | `Error.Discard`, `Error.AeadLimit` | `CH_QUIC_DISCARD` (a QUIC object) |
+| `Error.KeyUpdateLimit` | `CH_KEY_UPDATE_LIMIT` (a TCP object) |
 | a record session's `keyUpdate` | never: the name is reserved |
 
 Each public header declares a call only under the defines of the
@@ -455,6 +456,7 @@ returns.
 | `CH_EINVAL` | `error.Invalid` | Nothing was sent. From `init`, failed until the next `init`: C refused the configuration, a stale ticket or a server identity its flight could not use among the refusals. From any other call, as it was: the call came out of order or an argument was refused. A server's `recordIn` never returns it, and its `cryptoIn` returns it only for a level the call refuses on entry. |
 | `CH_QUIC_DISCARD` | `error.Discard` | Live. The caller drops the packet. |
 | `CH_QUIC_AEAD_LIMIT` | `error.AeadLimit` | Dead. |
+| `CH_KEY_UPDATE_LIMIT` | `error.KeyUpdateLimit` | Dead. The peer sent one KeyUpdate past `CH_KEY_UPDATE_RUN_MAX` in a row (docs/decisions.md 138). |
 | `CH_RECORD_AGAIN` | none | `read` returns `pt_len = 0`. |
 | `CH_ECLOSED` | none | No call returns it. |
 
@@ -495,7 +497,7 @@ after `init`: `cfg.io` points at its hook, and `cfg.rand_io` at its
 | `Server.sni()` | `sni_buf[0..ch_sni_len]`, null when 0 | none |
 | `recordState()` | `ch_record_state` | none |
 | `alertSent()`, `alertReceived()` | `ch_alert_sent`, `ch_alert_received` on `record.t` (alert.h); each null when 0 | none |
-| `read(input, pt, reply)` | `ch_record_whole_len`, then `ch_read` | Invalid, Proto, Auth, Cap, Io |
+| `read(input, pt, reply)` | `ch_record_whole_len`, then `ch_read` | Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit |
 | `write(pt, output)` | `ch_writable_len`, then `ch_write` | Proto, Cap, Io |
 | `writableLen(cap)` | `ch_writable_len` | none |
 | `close(output)` | `ch_close` | Io |
@@ -517,9 +519,9 @@ probes its own passes the order it chose.
 
 A record session's `keyUpdate` is reserved: no C call starts a
 record-mode KeyUpdate, so it is a `@compileError` that says so. `write`
-sends one inside `ch_write` as the last record an AES-GCM write key
-seals, and `read` answers the peer's KeyUpdate inside `ch_read`, so no
-such call is planned (docs/decisions.md 78).
+sends one inside `ch_write`, as the answer a peer's request owes or as
+the last record an AES-GCM write key seals, so no such call is planned
+(docs/decisions.md 78 and 138).
 
 ### A handshake
 
@@ -578,7 +580,8 @@ them through the API's `recv`. The `Read` it returns says:
 - `pt_len`: plaintext written into `pt`. 0 when the record held a
   ticket or a KeyUpdate. Plaintext `pt` cannot hold stays in the receive
   buffer, and the next `read` returns it and takes no input.
-- `reply_len`: bytes `ch_read` sent into `reply`.
+- `reply_len`: bytes `ch_read` sent into `reply`, the alert of a read
+  that failed, or 0.
 - `peer_closed`: `ch_read` returned 0, because the peer's close_notify
   arrived, now or earlier, or because this side closed.
 
@@ -587,19 +590,18 @@ reports no `Read`. It leaves the session dead, except `error.Invalid`
 for an empty `pt` and `error.Proto` for a session that is not
 connected, which change nothing.
 
-`reply` takes what `ch_read` sends. It answers a KeyUpdate in the record
-that asks for an answer (RFC 9846 §4.7.3) with one sealed KeyUpdate
-record of `key_update_record_len`, 27 bytes. A record carries at most one
-KeyUpdate, as its last message: RFC 9846 §5.1 lets no handshake message
-span the key change a KeyUpdate makes, so `ch_read` refuses a record
-with bytes after one (INV-39). A read that fails adds one alert record
-of `alert_record_len`, 24 bytes, and `alertSent` names its alert. A read
-that fails on the peer's fatal alert adds nothing, because RFC 9846 §6.2
-has both sides close at once, and `alertReceived` names the peer's
-alert. So a `reply` of
-`key_update_record_len + alert_record_len` bytes is never short. A
-`reply` too short for what `ch_read` sends fails the read with
-`error.Io` and the session with it.
+`reply` takes what `ch_read` sends: one alert record of
+`alert_record_len`, 24 bytes, when the read fails, and `alertSent` names
+its alert. A read that fails on the peer's fatal alert sends nothing,
+because RFC 9846 §6.2 has both sides close at once, and `alertReceived`
+names the peer's alert. So a `reply` of `alert_record_len` bytes is never
+short. A `reply` too short for the alert fails the read with `error.Io`.
+A KeyUpdate that asks for an answer gets it from the next `write`
+(RFC 9846 §4.7.3), and `read` sends nothing for it. `read` takes at most
+`CH_KEY_UPDATE_RUN_MAX` KeyUpdates in a row, and a record of application
+data with one byte or more ends a run. The next one fails the read with
+`error.KeyUpdateLimit` and the session with it, and `alertSent` names
+unexpected_message (docs/decisions.md 138).
 
 ### Writing and closing
 
@@ -610,12 +612,13 @@ message at a time sizes `output` once and never loops. `ch_write` cuts
 records of the smaller of `CH_TX_PT` and `peerLimit()`, and
 `ch_writable_len` counts in the same limit, so a caller needs neither
 number to size a write. At `TX_RECORD=16384` a record carries 16,384
-bytes; the API adds nothing for it. Under `SUITE=aesgcm`, a write that
-takes an AES-GCM write key to its ceiling carries one KeyUpdate record
-among its records, `key_update_record_len` bytes, and `writableLen`
-counts it. A caller that sizes `output` for its largest message adds
-`key_update_record_len` bytes there, or the write that crosses the
-ceiling returns `error.Cap` with nothing sealed.
+bytes; the API adds nothing for it. A write carries one KeyUpdate record
+of `key_update_record_len` bytes before its records when a peer's
+request is owed an answer, and, under `SUITE=aesgcm`, among its records
+when it takes an AES-GCM write key to its ceiling; one record serves
+both, and `writableLen` counts it. A caller that sizes `output` for its
+largest message adds `key_update_record_len` bytes there, or such a
+write returns `error.Cap` with nothing sealed.
 
 `close(output)` sends this side's close_notify into `output`, at most
 `alert_record_len` bytes, and wipes the session's keys: that is
@@ -750,8 +753,9 @@ The constants a caller sizes storage by keep their C names in
 `chapulin.c`: `CH_TX_PT`, `CH_TX_STAGE`, `CH_MIN_RXBUF`, `CH_ALPN_MAX`,
 `CH_SPKI_PIN_MAX`, `CH_SPKI_PIN_LEN`, `CH_TICKET_ID_MAX`,
 `CH_SRV_COOKIE_KEY_LEN`, `CH_SRV_TICKET_KEY_LEN`, `CH_QUIC_TOKEN_KEY_LEN`,
-`CH_QUIC_TOKEN_MAX`, `CH_TRANSPORT_PARAMS_MAX`, `CH_QUIC_RETRY_TAG_LEN`
-and the rest. The API's types use them and rename none.
+`CH_QUIC_TOKEN_MAX`, `CH_TRANSPORT_PARAMS_MAX`, `CH_QUIC_RETRY_TAG_LEN`,
+`CH_KEY_UPDATE_RUN_MAX` and the rest. The API's types use them and rename
+none.
 
 ## Sizes
 
@@ -843,7 +847,16 @@ each through the module alone (INV-36):
     counts it, and one byte less of `output` is refused whole. The reader
     reads the plaintext on both sides of the KeyUpdate and sends nothing,
     neither side reports an alert, and the next write goes out under the
-    next key.
+    next key;
+  - in every object, one KeyUpdate past a run of `CH_KEY_UPDATE_RUN_MAX`
+    (docs/decisions.md 138), which the server's `read` refuses with
+    `error.KeyUpdateLimit`, and `alertSent` names unexpected_message
+    (`loop_key_update_run.zig`). The server reads each KeyUpdate in a call
+    of its own. No call sends a KeyUpdate alone, so the test sets the
+    client's `key_update_owed` before each write of one byte. It hands
+    the server the KeyUpdate record and drops the data record, which
+    would end the run. Then it moves the server's read sequence number
+    past the dropped record.
 
   Over QUIC:
   - a handshake at each level, with `keysReady` checked at each step;

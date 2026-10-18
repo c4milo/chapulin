@@ -147,6 +147,7 @@ int main(void) {
         {"min_rxbuf",            ch_build.min_rxbuf,            CH_BUILD_MIN_RXBUF           },
         {"x509_max",             ch_build.x509_max,             CH_BUILD_X509_MAX            },
         {"transport_params_max", ch_build.transport_params_max, CH_BUILD_TRANSPORT_PARAMS_MAX},
+        {"key_update_run_max",   ch_build.key_update_run_max,   CH_BUILD_KEY_UPDATE_RUN_MAX  },
     };
     size_t differ = 0;
     for (size_t i = 0; i < sizeof fields / sizeof fields[0]; i++) {

@@ -1,45 +1,16 @@
 // What the connected session sends, sized in advance: ch_writable_len
-// against the ch_write that sends what it counts, and the records ch_read
-// sends in answer to KeyUpdates (tls.h). Included by session_tests.h after
-// the mock helpers exist; not a standalone translation unit.
+// against the ch_write that sends what it counts, the KeyUpdate a peer's
+// request owes among it (tls.h). Included by session_tests.h after the
+// mock helpers exist; not a standalone translation unit.
 #ifndef CH_SESSION_WRITE_TESTS_H
 #define CH_SESSION_WRITE_TESTS_H
-
-// What one ch_read sends in answer to KeyUpdates: CH_KEY_UPDATE_RECORD_LEN
-// bytes for each one whose sender asked for an answer (tls.h). A record
-// carries at most one KeyUpdate, as its last message (INV-39), so two
-// such messages come in two records, each under the key the one before
-// it moved to, and get two records back. A caller that sizes the bytes
-// ch_read may send sizes them for that.
-static void test_key_update_replies(void) {
-    uint8_t secret[SHA256_LEN];
-    ch_rand_bytes(secret, sizeof secret);
-    rec_dir server;
-    TEST_CPU_DIR(server);
-    rec_dir_init(&server, secret);
-    mock_io m = {0};
-    static uint8_t rxbuf[1024];
-    ch_tls t;
-    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
-    const uint8_t update_requested[5] = {24, 0, 0, 1, 1};
-    uint8_t next[SHA256_LEN];
-    memcpy(next, secret, sizeof next);
-    mock_push(&m, &server, REC_HANDSHAKE, update_requested, sizeof update_requested);
-    rec_dir_update(next, &server);
-    mock_push(&m, &server, REC_HANDSHAKE, update_requested, sizeof update_requested);
-    rec_dir_update(next, &server);
-    // The client's read key moved twice; the data after follows it.
-    mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
-    uint8_t out[16];
-    CHECK(ch_read(&t, out, sizeof out) == 4);
-    CHECK(m.sends == 2 && m.sent == 2 * (size_t)CH_KEY_UPDATE_RECORD_LEN);
-}
 
 // request_update has two values (RFC 9846 §4.7.3), and any other ends the
 // connection with illegal_parameter (rfc9846.txt:3362-3365). 1 is the last
 // value read as a request, 2 the first refused, and 255 the last byte
-// there is. A refused KeyUpdate sends no reply, only that alert, under
-// the write key the session had.
+// there is. The read of an accepted one sends nothing, and a request owes
+// one answer. A refused KeyUpdate owes no answer and sends that alert alone,
+// under the write key the session had.
 static void read_key_update_request(uint8_t request) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
@@ -61,7 +32,7 @@ static void read_key_update_request(uint8_t request) {
         rec_dir_update(secret, &server);
         mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
         CHECK(ch_read(&t, out, sizeof out) == 4);
-        CHECK(ch_alert_sent(&t) == 0 && m.sends == (int)request);
+        CHECK(ch_alert_sent(&t) == 0 && m.sends == 0 && t.key_update_owed == request);
         return;
     }
     CHECK(ch_read(&t, out, sizeof out) == CH_EPROTO);
@@ -124,17 +95,28 @@ static size_t sent_by_write(ch_tls *t, const uint8_t *p, size_t n) {
     return m->sent - before;
 }
 
+// The same while the peer's request is owed an answer: a write of a byte
+// or more sends the KeyUpdate record first, and a write of none sends
+// nothing and still owes it.
+static size_t sent_by_write_owed(ch_tls *t, const uint8_t *p, size_t n) {
+    t->key_update_owed = 1;
+    size_t sent = sent_by_write(t, p, n);
+    CHECK(t->key_update_owed == (n == 0));
+    return sent;
+}
+
 // ch_writable_len against the ch_write that sends what it counts (tls.h).
-// For each record limit and every cap up to three whole records and one
-// byte, the answer's records fit cap and one byte more does not. The
-// limits are 63, the least a peer's record_size_limit of 64 leaves; 200,
-// a limit between; and CH_TX_PT itself. mock_send counts every byte it is
+// For each record limit and every cap up to three whole records, a
+// KeyUpdate record and one byte, the records of what it returns fit cap
+// and one byte more does not, with no answer owed and with one owed. The
+// limits are 63, the least a peer's record_size_limit of 64 leaves; 200, a
+// limit between; and CH_TX_PT itself. mock_send counts every byte it is
 // handed in m.sent.
 static void test_writable_len(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     static uint8_t rxbuf[1024];
-    static const uint8_t msg[3 * (CH_TX_PT + REC_OVERHEAD) + 2] = {0};
+    static const uint8_t msg[3 * (CH_TX_PT + REC_OVERHEAD) + CH_KEY_UPDATE_RECORD_LEN + 2] = {0};
     const uint16_t limits[3] = {63, 200, CH_TX_PT};
     for (size_t i = 0; i < sizeof limits / sizeof limits[0]; i++) {
         mock_io m = {0};
@@ -142,10 +124,14 @@ static void test_writable_len(void) {
         mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
         t.peer_limit = limits[i];
         size_t record_max = (size_t)limits[i] + REC_OVERHEAD;
-        for (size_t cap = 0; cap <= 3 * record_max + 1; cap++) {
+        for (size_t cap = 0; cap <= 3 * record_max + CH_KEY_UPDATE_RECORD_LEN + 1; cap++) {
             size_t n = ch_writable_len(&t, cap);
             CHECK(sent_by_write(&t, msg, n) <= cap);
             CHECK(sent_by_write(&t, msg, n + 1) > cap);
+            t.key_update_owed = 1;
+            n = ch_writable_len(&t, cap);
+            CHECK(sent_by_write_owed(&t, msg, n) <= cap);
+            CHECK(sent_by_write_owed(&t, msg, n + 1) > cap);
         }
     }
 
@@ -167,6 +153,22 @@ static void test_writable_len(void) {
     size_t rest = SIZE_MAX - whole * (CH_TX_PT + REC_OVERHEAD);
     CHECK(ch_writable_len(&t, SIZE_MAX) ==
           whole * CH_TX_PT + (rest > REC_OVERHEAD ? rest - REC_OVERHEAD : 0));
+    // An answer owed: its KeyUpdate record comes first, then the rows above
+    // shifted by its 27 bytes, and at SIZE_MAX whole records after it.
+    t.peer_limit = CH_TX_PT;
+    t.key_update_owed = 1;
+    size_t key_update = CH_KEY_UPDATE_RECORD_LEN;
+    CHECK(ch_writable_len(&t, 0) == 0);
+    CHECK(ch_writable_len(&t, key_update + REC_OVERHEAD) == 0);
+    CHECK(ch_writable_len(&t, key_update + REC_OVERHEAD + 1) == 1);
+    CHECK(ch_writable_len(&t, key_update + CH_TX_PT + 2 * (size_t)REC_OVERHEAD) == CH_TX_PT);
+    CHECK(ch_writable_len(&t, key_update + CH_TX_PT + 2 * (size_t)REC_OVERHEAD + 1) ==
+          CH_TX_PT + 1);
+    whole = (SIZE_MAX - key_update) / (CH_TX_PT + REC_OVERHEAD);
+    rest = SIZE_MAX - key_update - whole * (CH_TX_PT + REC_OVERHEAD);
+    CHECK(ch_writable_len(&t, SIZE_MAX) ==
+          whole * CH_TX_PT + (rest > REC_OVERHEAD ? rest - REC_OVERHEAD : 0));
+    t.key_update_owed = 0;
     // A session with no limit, as a zeroed one has: nothing.
     t.peer_limit = 0;
     CHECK(ch_writable_len(&t, 4096) == 0);

@@ -4,19 +4,21 @@
 // every width w of 15 bits or more, and these rows compare the model with
 // the C, so that the proof is about the code that ships.
 //
-// Each row sets one ch_tls's peer_limit, and in a -DCH_SUITE_AES_GCM build
-// its write key's suite and sequence number, which is all ch_writable_len
-// reads (tls.h). It sends the spec the limit and the room those fields
-// give:
+// Each row sets one ch_tls's peer_limit and key_update_owed, and in a
+// -DCH_SUITE_AES_GCM build its write key's suite and sequence number, which
+// is all ch_writable_len reads (tls.h). It sends the spec the limit, the
+// room and the records per key those fields give:
 //
 //   - the limit is peer_limit, or CH_TX_PT for a peer_limit above it
 //     (record_plaintext_max);
-//   - the room is SIZE_MAX for a ChaCha20-Poly1305 key, and for a build
-//     without -DCH_SUITE_AES_GCM, which has no room
-//     (Spec.TlsWrite.writableLen_of_cap_le_room). Under AES-GCM a row
-//     picks the room and sets the sequence number to
+//   - the room is 0 while key_update_owed is set. Otherwise it is
+//     SIZE_MAX for a ChaCha20-Poly1305 key and in a build without
+//     -DCH_SUITE_AES_GCM (Spec.TlsWrite.writableLen_of_cap_le_room).
+//     Under AES-GCM a row picks the room and sets the sequence number to
 //     REC_AES_GCM_RECORDS_MAX - 1 less the room, or to that number and past
-//     it for a room of 0 (records_before_key_update).
+//     it for a room of 0 (records_before_key_update);
+//   - the records per key are REC_AES_GCM_RECORDS_MAX - 1 under AES-GCM and
+//     SIZE_MAX otherwise (records_per_key).
 //
 // The limits are 0, 1, 63, a limit between, CH_TX_PT and the limits beside
 // it, and DIFF_WRITABLE_RANDOM_LIMITS drawn at random. Each is compared at
@@ -30,11 +32,12 @@
 //
 // bin/diff runs at the default CH_TX_PT of 512. The Makefile's diff-webpki
 // builds bin/diff_webpki_aes at CH_TX_PT=16384 under -DCH_SUITE_AES_GCM, so
-// there the limits run up to 2^14 and fill_across_key_update runs.
+// there the limits run up to 2^14. Each build compares its limits again
+// with key_update_owed set, so fill_across_key_update runs in both.
 //
 // Included by test/diff_test.c after diff_driver.h (single translation
 // unit). spec/lean/Main.lean serves the op:
-//   writable_len <cap> <limit> <room>
+//   writable_len <cap> <limit> <room> <per_key>
 // with every number in decimal, and answers in decimal.
 #ifndef CH_DIFF_WRITABLE_LEN_H
 #define CH_DIFF_WRITABLE_LEN_H
@@ -54,12 +57,23 @@ static long diff_writable_rows;
 // The session every row asks about.
 static ch_tls diff_writable_session;
 
-// Compares ch_writable_len's answer for cap with the spec's, at the limit
-// and room the session's fields give. Returns the answer.
+// The records per key the session's write key seals (records_per_key).
+static size_t diff_writable_per_key(void) {
+#ifdef CH_SUITE_AES_GCM
+    if (suite_runs_aes_gcm(diff_writable_session.wr.suite)) {
+        return REC_AES_GCM_RECORDS_MAX - 1;
+    }
+#endif
+    return SIZE_MAX;
+}
+
+// Compares ch_writable_len's answer for cap with the spec's, at the limit,
+// room and records per key the session's fields give. Returns the answer.
 static size_t diff_writable_row(size_t cap, size_t limit, size_t room) {
     size_t answer = ch_writable_len(&diff_writable_session, cap);
-    char cmd[96];
-    (void)snprintf(cmd, sizeof cmd, "writable_len %zu %zu %zu", cap, limit, room);
+    char cmd[128];
+    (void)snprintf(cmd, sizeof cmd, "writable_len %zu %zu %zu %zu", cap, limit, room,
+                   diff_writable_per_key());
     char want[32];
     (void)snprintf(want, sizeof want, "%zu", answer);
     diff_writable_rows++;
@@ -103,20 +117,26 @@ static void diff_writable_peer_limit(uint16_t peer_limit, size_t room) {
     diff_writable_caps(peer_limit < CH_TX_PT ? peer_limit : CH_TX_PT, room);
 }
 
-// The limits at a room of SIZE_MAX: 0, which no connected session holds;
-// 1; 63, what RFC 8449's least record_size_limit leaves; 200; CH_TX_PT and
-// one below it; one above it and UINT16_MAX, which leave CH_TX_PT; and
+// The limits at a room of SIZE_MAX, and at a room of 0 with
+// key_update_owed set: 0, which no connected session holds; 1; 63, what
+// RFC 8449's least record_size_limit leaves; 200; CH_TX_PT and one below
+// it; one above it and UINT16_MAX, which leave CH_TX_PT; and
 // DIFF_WRITABLE_RANDOM_LIMITS drawn from 1 to CH_TX_PT.
 static void diff_writable_limits(void) {
     const uint16_t peer_limits[] = {
         0, 1, 63, 200, CH_TX_PT - 1, CH_TX_PT, CH_TX_PT + 1, UINT16_MAX,
     };
-    for (size_t i = 0; i < sizeof peer_limits / sizeof peer_limits[0]; i++) {
-        diff_writable_peer_limit(peer_limits[i], SIZE_MAX);
+    for (uint8_t owed = 0; owed <= 1; owed++) {
+        size_t room = owed ? 0 : SIZE_MAX;
+        diff_writable_session.key_update_owed = owed;
+        for (size_t i = 0; i < sizeof peer_limits / sizeof peer_limits[0]; i++) {
+            diff_writable_peer_limit(peer_limits[i], room);
+        }
+        for (int i = 0; i < DIFF_WRITABLE_RANDOM_LIMITS; i++) {
+            diff_writable_peer_limit((uint16_t)(1 + rng_below(CH_TX_PT)), room);
+        }
     }
-    for (int i = 0; i < DIFF_WRITABLE_RANDOM_LIMITS; i++) {
-        diff_writable_peer_limit((uint16_t)(1 + rng_below(CH_TX_PT)), SIZE_MAX);
-    }
+    diff_writable_session.key_update_owed = 0;
 }
 
 #ifdef CH_SUITE_AES_GCM
@@ -177,14 +197,19 @@ static void diff_writable_aes_seq(uint64_t seq, size_t room) {
 }
 
 // The rooms: 0, at the sequence number of the key's KeyUpdate record, one
-// past it and at UINT64_MAX; 1 and 2, the last data records; 2^24 - 2 and
-// 2^24 - 1, the key's first; and DIFF_WRITABLE_RANDOM_ROOMS drawn at
-// random.
+// past it and at UINT64_MAX, and with key_update_owed set at the key's
+// first sequence number and two before its last; 1 and 2, the last data
+// records; 2^24 - 2 and 2^24 - 1, the key's first; and
+// DIFF_WRITABLE_RANDOM_ROOMS drawn at random.
 static void diff_writable_aes(void) {
     const uint64_t last = REC_AES_GCM_RECORDS_MAX - 1;
     diff_writable_aes_seq(last, 0);
     diff_writable_aes_seq(last + 1, 0);
     diff_writable_aes_seq(UINT64_MAX, 0);
+    diff_writable_session.key_update_owed = 1;
+    diff_writable_aes_seq(0, 0);
+    diff_writable_aes_seq(last - 2, 0);
+    diff_writable_session.key_update_owed = 0;
     const size_t rooms[] = {1, 2, REC_AES_GCM_RECORDS_MAX - 2, REC_AES_GCM_RECORDS_MAX - 1};
     for (size_t i = 0; i < sizeof rooms / sizeof rooms[0]; i++) {
         diff_writable_aes_seq(last - rooms[i], rooms[i]);

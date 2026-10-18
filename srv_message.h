@@ -398,8 +398,9 @@ size_t srv_build_new_session_ticket(uint8_t *out, size_t cap, uint32_t lifetime,
 // endpoint that receives a KeyUpdate with request_update set to
 // update_requested to send one of its own with update_not_requested
 // (rfc9846.txt:3362-3365 covers the byte's two legal values), and
-// handshake_post.c already holds that one-response rule for the
-// client, in a direction-neutral form.
+// handshake_post.c and tls_write.c already hold that rule for both roles:
+// one answer, before the next data record, for every request read since
+// the last KeyUpdate this side sent.
 //
 // Requires cap bytes at out and a request_update of 0
 // (update_not_requested) or 1 (update_requested).

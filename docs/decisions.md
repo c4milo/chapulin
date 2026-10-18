@@ -12498,3 +12498,182 @@ does nothing more.
       bit, and the only gain is a CH_EINVAL in place of a lost packet.
     - **A copy of the header in `quic.c`.** It needs a cap on the header
       length, a new refusal and 25 more bytes of stack.
+
+138. **A run of the peer's KeyUpdates gets one answer from the next
+    `ch_write`, and `ch_read` reads at most 16 of them in a row.**
+    colibri's review of its server against denial of service found that a
+    peer can make chapulin derive keys at any rate
+    ([issue 195](https://github.com/c4milo/chapulin/issues/195)). Each
+    KeyUpdate rekeyed the read side, and each request also rekeyed the
+    write side and sent a record from inside `ch_read`. A KeyUpdate record
+    is 27 bytes, so each 27 bytes from the peer made this side derive a
+    key. On 2026-10-18 Camilo ruled on four points: one answer for a run
+    of requests, a count of KeyUpdates with no clock, a constant in every
+    build, and a result code that names the limit.
+
+    - **One answer.** A KeyUpdate with request_update 1 sets
+      `ch_tls.key_update_owed`. The next `ch_write` of a byte or more
+      sends one KeyUpdate, request_update 0, before its first data
+      record, and seals the data under the next key. RFC 9846 §4.7.3 owes
+      the answer before the next record of application data, and it
+      describes one answer for the requests that arrive while the
+      receiver is silent (`rfc9846.txt:3367-3373`). So a run of requests
+      costs one rekey of the write side. At this side's epoch cap a
+      request owes nothing, because §4.7.3 has the receiver ignore it
+      there (`rfc9846.txt:3405-3408`).
+    - **Where the answer leaves.** `ch_write` is now the one caller of
+      `hspost_send_key_update`. Before each data record,
+      `key_update_before_record` sends a KeyUpdate when an answer is owed
+      or when an AES-GCM write key has no data record left (entry 78). One
+      KeyUpdate serves both, because any KeyUpdate this side sends answers
+      the requests read before it, and `hspost_send_key_update` clears
+      `key_update_owed`. `ch_writable_len` reads the same
+      `records_before_key_update`, which returns 0 while an answer is
+      owed, so it counts the KeyUpdate record (INV-38).
+    - **Where the answer does not leave.** `ch_close` sends its
+      close_notify and no KeyUpdate: §4.7.3 owes the answer before
+      application data, and no data follows a close. The answer there
+      would cost a rekey and a record for a peer that reads only the
+      close. The alert of a failure follows the same rule. Under
+      `TRANSPORT=tcp-nonblocking`, `ch_read` now calls `cfg.send` for the
+      alert of a failure alone (INV-28). colibri's adapter holds only
+      input during `ch_read`, so it sees no KeyUpdate there, and its
+      bound on the answers one read may owe has nothing left to count.
+    - **A peer that waits.** A peer may ask for a KeyUpdate and send
+      nothing more until the answer arrives. If this side then waits to
+      read, both sides wait. §4.7.3 allows that state: it owes the answer
+      before this side's next data record and at no other time, and its
+      note says a requester may receive any number of messages before the
+      answer (`rfc9846.txt:3377-3384`). The answer leaves with this
+      side's next write.
+    - **The limit.** `ch_read` reads at most `CH_KEY_UPDATE_RUN_MAX`
+      KeyUpdates in a row. This is BoringSSL's rule, a count with no
+      clock. The next KeyUpdate fails the session with
+      `CH_KEY_UPDATE_LIMIT`, -10, and unexpected_message, which
+      `ch_alert_sent` names. `take_key_update` refuses it after its three
+      other refusals, decode_error and illegal_parameter (INV-14) and
+      bytes after the KeyUpdate (INV-39), and before the rekey. Every
+      KeyUpdate the limit admits still moves the read key, as §4.7.3
+      requires (`rfc9846.txt:3351-3352`). The 2^48 - 1 epoch cap stays a
+      rule for this side's sends alone (`rfc9846.txt:3404-3405`).
+    - **What ends a run.** A record of application data with one byte or
+      more ends a run, and nothing else does. RFC 9846 §5.1 allows an
+      empty data record as cover traffic (`rfc9846.txt:3481-3484`), and
+      `ch_read` still reads one. But it gives the caller nothing, so it
+      ends no run. Then the caller receives a byte of data for each 16
+      KeyUpdates, and its own protocol sees the peer's traffic. If an
+      empty record ended a run, a peer could send KeyUpdates and give the
+      caller no data at all. The two rules cost a peer nearly the same
+      bytes: an empty record after each 16 KeyUpdates is 22 bytes, and a
+      record of one byte is 23. A NewSessionTicket, a user_canceled alert
+      and a KeyUpdate this side sends do not end a run either, because
+      the ruling names application data alone, and none of them gives
+      the caller data.
+    - **What the rule bounds.** A peer must give the caller one byte of
+      data for each 16 KeyUpdates. A byte of data costs this side at most
+      16 rekeys of the read side, and the caller's own protocol sees each
+      byte. The write side rekeys once for each answer, and an answer
+      leaves only with a write of this side.
+    - **What the rule does not bound.** It does not bound the read-side
+      rekeys for each byte on the wire. 16 KeyUpdates of 27 bytes and one
+      record of one byte, 23 bytes, make this side rekey 16 times for 455
+      bytes, 28.4 bytes for each rekey. Before this entry a KeyUpdate
+      alone made it rekey once for 27 bytes, so the rekeys a peer causes
+      for each wire byte fell by about 5%. Nor does it bound them for
+      each second, which needs a clock. The issue asked for a limit in a
+      period. A caller that needs a rate bound applies one in its own
+      protocol. Every caller sees each byte of data, and a
+      `TRANSPORT=tcp-nonblocking` caller that hands `ch_read` one record a
+      call also sees each record that gives no data.
+    - **Why 16.** The ruling gave 32 as an example. One `ch_read` fails
+      with `CH_EPROTO` once it has read 32 records and returned no data,
+      `CH_QUIET_CAP`, and a KeyUpdate record is one of them. At 32, a
+      caller that hands one `ch_read` many records gets `CH_EPROTO` from
+      that cap before the 33rd KeyUpdate. A `TRANSPORT=tcp-blocking`
+      `ch_read` returns only data, a close or an error, so a run never
+      spans two of its calls, and that build could never return
+      `CH_KEY_UPDATE_LIMIT`. At 16, one call has room for a full run, the
+      KeyUpdate after it and 15 other records that give no data, and
+      `tls.c` asserts that the run limit stays below `CH_QUIET_CAP`. A run
+      that carries 16 or more such records in one call still fails with
+      `CH_EPROTO` from the quiet cap, under the same unexpected_message.
+      A tcp-blocking call reads a whole run, so there
+      `CH_KEY_UPDATE_LIMIT` names the run limit only for a run that
+      carries 15 or fewer of them. A tcp-nonblocking call that is handed
+      a whole run does the same. colibri's server hands `ch_read` one
+      record a call, so the quiet cap never fails there, and the limit is
+      the one bound across its calls.
+    - **One constant.** The issue offered a `ch_cfg` field. The ruling
+      keeps one value in every build, and no define changes it, so an
+      auditor reads one number. `session.h` defines it, and the build
+      record holds it: `ch_build_info` appends `key_update_run_max`, 0
+      in a QUIC object, and `CH_BUILD_VERSION` moves to 2.
+    - **The result code.** `CH_KEY_UPDATE_LIMIT` sits beside
+      `CH_QUIC_AEAD_LIMIT`, the other code that names a limit. A TCP
+      object declares it. A QUIC object does not, because RFC 9001 §6
+      refuses a TLS KeyUpdate there (`rfc9001.txt:1566-1568`). The Zig
+      API maps it to `error.KeyUpdateLimit` in a TCP object, and the C++
+      wrapper to `Status::key_update_limit`. The session is dead after
+      it, so INV-13's list of results that are not errors stays as it
+      was.
+    - **A second division.** While an answer is owed, `ch_writable_len`
+      counts the KeyUpdate record first, through `fill_across_key_update`,
+      which every build now compiles. That function divides what `cap`
+      holds after the KeyUpdate record by the length of a record, the
+      second division in `ch_writable_len`. Both operands are public, as
+      the first division's are (entry 72). `lint-wide-multiply` holds
+      `tls_write.c` at 2, and at 3 under the mips gcc at `-O2`, which
+      copies the first division into the two arms of
+      `record_plaintext_max`.
+    - **The fields and the stack.** `key_update_owed` and
+      `key_update_run` are one byte each. They sit in the padding before
+      `epoch_seen`, so `sizeof(ch_tls)` did not change in any build that
+      `bench/sram.sh` measures. `ch_write` now rekeys in every build, so
+      its peak stack on arm64 rose from 944 to 1,520 bytes, which
+      `bench/sram.sh` measures and docs/performance.md shows.
+
+    `test/session_update_run_tests.h` holds the limit at its boundary in
+    `bin/unit`: 16 in a row are read, one more is refused, a byte of data
+    ends a run, and an empty record, a user_canceled alert and a ticket
+    do not. After a full run, a body of two bytes, a request_update of 2
+    and a byte after the KeyUpdate each get their own refusal first. The
+    file also holds the quiet cap's room of 15 records, one answer for a
+    run and none at a close. `test/tcp_nonblocking_record_end_tests.h`
+    runs the limit on a server that reads one record a call, with the
+    server's own answer inside a run. `test/key_limit_cases.h` sends an
+    answer owed at an AES-GCM ceiling as the one KeyUpdate there.
+    `test/zig-consumer/loop_key_update_run.zig` has the Zig API's `read`
+    return `error.KeyUpdateLimit`. INV-55 names its fourteen mutants:
+    `bin/unit` catches thirteen, and `bin/tcp_nonblocking_loop_test`
+    catches the one that a tcp-blocking read cannot meet.
+    `inv28-read-answers-key-update`,
+    `inv38-writable-len-skips-owed-answer` and
+    `inv36-zig-api-read-drops-key-update-limit` hold INV-28, INV-38 and
+    the Zig API's error set.
+
+    `spec/lean/Spec/TlsWrite.lean`'s `fillAcrossKeyUpdate` and
+    `writableLen` take the records per key as a parameter, because a
+    ChaCha20-Poly1305 session now sends a KeyUpdate too, with no cut
+    after it. The four harnesses that compile a changed file ran on an
+    ubuntu-24.04 runner under cbmc 6.11.0 and kissat with
+    `PROVE_NO_CACHE=1`. `handshake_post` proved 771 properties in 123 s
+    at 1.45 GB, with the assertion that the limit refuses only a
+    KeyUpdate the other refusals admit. `writable_len` proved 118 in
+    210 s at 0.11 GB, `writable_len_suite` 169 in 45 s and
+    `writable_len_suite_any` 78 in under a second. Their cover runs read
+    83.0%, 87.4% and 47.7% for the last three, each above its floor, and
+    `proof/reach-floors.txt` now holds those numbers.
+
+    Rejected:
+
+    - **A clock or a rate.** A period needs a clock, and a raw or ca
+      client reads none.
+    - **A `ch_cfg` field.** It gives one session a limit another session
+      does not have, and the build record could not hold it.
+    - **Refuse a second request while an answer is owed.** §4.7.3 forbids
+      the requester a second request until it reads a KeyUpdate. But a
+      KeyUpdate this side sends at an AES-GCM ceiling can cross the first
+      request, and then a second request is legal. The limit bounds such
+      a run anyway.
+    - **Send the owed answer from `ch_close`.** It costs a rekey and a
+      record that no data record follows.

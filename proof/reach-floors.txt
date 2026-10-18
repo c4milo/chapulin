@@ -465,9 +465,9 @@ webpki_spki 41.4
 webpki_ticket 57.1
 webpki_ticket_host 61.4
 webpki_time 33.3
-writable_len 82.5
-writable_len_suite 85.3
-writable_len_suite_any 41.8
+writable_len 83.0
+writable_len_suite 87.4
+writable_len_suite_any 47.7
 x25519 25.6
 x25519_mul_alias_a 27.0
 x25519_mul_alias_b 27.0

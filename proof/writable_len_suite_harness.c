@@ -1,12 +1,12 @@
 // Proves, in a -DCH_SUITE_AES_GCM build: ch_writable_len's answer
 // (tls_write.c) is the most plaintext the real ch_write sends in cap bytes,
-// the KeyUpdate record ch_write sends at an AES-GCM write key's ceiling
-// included, at a bound: for every peer_limit from 63 up, every cap up to
-// three whole records of the session's own record limit, a KeyUpdate
-// record and one byte, each of the three suites and every write sequence
-// number below REC_AES_GCM_RECORDS_MAX (record.h), ch_write hands cfg.send
-// at most cap bytes for the answer, and more than cap bytes for one byte
-// more.
+// the KeyUpdate record ch_write sends at an AES-GCM write key's ceiling or
+// while key_update_owed is set included, at a bound: for every peer_limit
+// from 63 up, every cap up to three whole records of the session's own
+// record limit, a KeyUpdate record and one byte, each of the three suites,
+// every write sequence number below REC_AES_GCM_RECORDS_MAX (record.h), and
+// with key_update_owed set and clear, ch_write hands cfg.send at most cap
+// bytes for the answer, and more than cap bytes for one byte more.
 // proof/writable_len_suite_any_harness.c proves ch_writable_len safe and
 // UB-free over any input in this build; the two claims sit apart because
 // each costs a division, and docs/proofs.md splits a formula along its
@@ -14,9 +14,12 @@
 //
 // On the way it proves what ch_write does at the ceiling. Under AES-GCM no
 // data record takes the key's last sequence number,
-// REC_AES_GCM_RECORDS_MAX - 1; the KeyUpdate takes that one and no other;
-// and when a write returns, the key still has that last sequence number
-// free. Under ChaCha20-Poly1305 no KeyUpdate goes out at all.
+// REC_AES_GCM_RECORDS_MAX - 1, and when a write returns, the key still has
+// that last sequence number free. A KeyUpdate goes out at that sequence
+// number or while key_update_owed is set, and at no other time, so under
+// ChaCha20-Poly1305 it goes out only while key_update_owed is set. No data
+// record goes out while key_update_owed is set, and a write leaves it
+// clear.
 //
 // proof/writable_len_harness.c proves the one-suite build, where neither
 // the ceiling nor ch_writable_len's KeyUpdate term compiles. This is the
@@ -24,10 +27,11 @@
 // (record.h): it writes n + REC_OVERHEAD bytes and moves the sequence
 // number on by one. hspost_send_key_update is its contract
 // (handshake_post.h): one record of CH_KEY_UPDATE_RECORD_LEN bytes sent
-// under the current key, then the next key at sequence number 0 and one
-// more KeyUpdate counted. send_epochs stays below HSPOST_SEND_EPOCHS_MAX,
-// so tlsi_fail is a stub that fails the proof, because no path here may
-// call it; test/key_limit_cases.h tests the write at the cap.
+// under the current key, then the next key at sequence number 0, one more
+// KeyUpdate counted and key_update_owed clear. send_epochs stays below
+// HSPOST_SEND_EPOCHS_MAX, so tlsi_fail is a stub that fails the proof,
+// because no path here may call it; test/key_limit_cases.h tests the write
+// at the cap.
 //
 // Why the bounds. The cap holds three records of the session's own limit,
 // a KeyUpdate record and one byte, so ch_write loops at most four times,
@@ -58,6 +62,9 @@ uint64_t nondet_u64(void);
 // The bytes ch_write handed cfg.send.
 static size_t sent_bytes;
 
+// The session ch_write writes from, which the stubs read.
+static ch_tls t;
+
 int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     (void)cfg;
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(p, n), "send: the record is readable");
@@ -77,21 +84,27 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(pt, n), "seal: pt readable");
     __CPROVER_assert(REC_OVERHEAD + n <= cap, "seal: ch_write stages a record its buffer holds");
     __CPROVER_assert(__CPROVER_w_ok(out, n + REC_OVERHEAD), "seal: out writable");
+    __CPROVER_assert(t.key_update_owed == 0, "seal: no data record while key_update_owed is set");
     d->seq++;
     *out_len = n + REC_OVERHEAD;
     return 0;
 }
 
 // handshake_post.h's contract: one KeyUpdate record sent under the current
-// key, then the next key at sequence number 0, and one more counted.
-int hspost_send_key_update(ch_tls *t) {
-    __CPROVER_assert(suite_runs_aes_gcm(t->wr.suite), "key update: under AES-GCM alone");
-    __CPROVER_assert(t->wr.seq == REC_AES_GCM_RECORDS_MAX - 1,
-                     "key update: at the key's last sequence number");
-    __CPROVER_assert(t->send_epochs < HSPOST_SEND_EPOCHS_MAX, "key update: below the sender cap");
+// key, then the next key at sequence number 0, one more counted and
+// key_update_owed clear.
+int hspost_send_key_update(ch_tls *session) {
+    __CPROVER_assert(session == &t, "key update: the session written from");
+    __CPROVER_assert(session->key_update_owed == 1 ||
+                         (suite_runs_aes_gcm(session->wr.suite) &&
+                          session->wr.seq == REC_AES_GCM_RECORDS_MAX - 1),
+                     "key update: key_update_owed set, or an AES-GCM key's last sequence number");
+    __CPROVER_assert(session->send_epochs < HSPOST_SEND_EPOCHS_MAX,
+                     "key update: below the sender cap");
     sent_bytes += CH_KEY_UPDATE_RECORD_LEN;
-    t->wr.seq = 0;
-    t->send_epochs++;
+    session->wr.seq = 0;
+    session->send_epochs++;
+    session->key_update_owed = 0;
     return CH_OK;
 }
 
@@ -117,23 +130,26 @@ _Static_assert(WRITE_CAP_MAX < (1 << WRITE_CAP_BITS), "the cap's bits hold the l
 _Static_assert((REC_AES_GCM_RECORDS_MAX & (REC_AES_GCM_RECORDS_MAX - 1)) == 0,
                "the ceiling is a power of two");
 
-static ch_tls t;
 static uint8_t plaintext[WRITE_CAP_MAX + 1];
 
 // The bytes ch_write hands cfg.send for n bytes of plaintext, from the
-// session main set up; the sequence number and the KeyUpdate count are put
-// back afterwards. An AES-GCM key still has its last sequence number free
-// when the write returns.
+// session main set up; the sequence number, the KeyUpdate count and
+// key_update_owed are put back afterwards. An AES-GCM key still has its
+// last sequence number free when the write returns, and a write of a byte
+// or more leaves key_update_owed clear.
 static size_t written(size_t n) {
     uint64_t seq = t.wr.seq;
     uint64_t epochs = t.send_epochs;
+    uint8_t owed = t.key_update_owed;
     sent_bytes = 0;
     int rc = ch_write(&t, plaintext, n);
     __CPROVER_assert(rc == CH_OK, "write: every record goes out");
     __CPROVER_assert(!suite_runs_aes_gcm(t.wr.suite) || t.wr.seq < REC_AES_GCM_RECORDS_MAX,
                      "write: an AES-GCM key keeps its last sequence number free");
+    __CPROVER_assert(n == 0 || t.key_update_owed == 0, "write: key_update_owed clear after it");
     t.wr.seq = seq;
     t.send_epochs = epochs;
+    t.key_update_owed = owed;
     return sent_bytes;
 }
 
@@ -156,6 +172,7 @@ int main(void) {
     t.wr.seq = nondet_u64() & ((uint64_t)REC_AES_GCM_RECORDS_MAX - 1);
     t.send_epochs = nondet_u64();
     __CPROVER_assume(t.send_epochs < HSPOST_SEND_EPOCHS_MAX);
+    t.key_update_owed = nondet_u8() & 1;
     size_t write_cap = nondet_size_t() & (((size_t)1 << WRITE_CAP_BITS) - 1);
     size_t limit = t.peer_limit < CH_TX_PT ? t.peer_limit : CH_TX_PT;
     __CPROVER_assume(write_cap <= 3 * (limit + REC_OVERHEAD) + CH_KEY_UPDATE_RECORD_LEN + 1);

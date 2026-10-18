@@ -199,19 +199,23 @@ int hspost_send_key_update(ch_tls *t) {
     }
     rec_dir_update(t->wr_secret, &t->wr);
     t->send_epochs++;
+    t->key_update_owed = 0;
     return CH_OK;
 }
 
-// One KeyUpdate: the read direction always rekeys — receivers are
-// forbidden from enforcing the peer's epoch cap (RFC 9846 §4.7.3) — and
-// a reply goes out only when requested and while our own epoch count is
-// under the cap the same section puts on senders.
-static int handle_key_update(ch_tls *t, uint8_t request) {
+// One KeyUpdate that the run limit admits. It adds one to the run, and
+// the read direction always rekeys: RFC 9846 §4.7.3 has the receiver
+// update its receiving keys (rfc9846.txt:3351-3352), and a receiver must
+// not enforce the sender's epoch cap (rfc9846.txt:3404-3405). A request
+// sets the one answer ch_write owes before its next data record
+// (tls_write.c), so a run of requests gets one answer. At this side's own
+// epoch cap §4.7.3 has it ignore the request (rfc9846.txt:3405-3408).
+static void handle_key_update(ch_tls *t, uint8_t request) {
+    t->key_update_run++;
     rec_dir_update(t->rd_secret, &t->rd);
-    if (request != 1 || t->send_epochs >= HSPOST_SEND_EPOCHS_MAX) {
-        return CH_OK;
+    if (request == 1 && t->send_epochs < HSPOST_SEND_EPOCHS_MAX) {
+        t->key_update_owed = 1;
     }
-    return hspost_send_key_update(t);
 }
 
 // One NewSessionTicket. RFC 9846 §4.7.1 gives the message to the server to
@@ -236,10 +240,9 @@ static int take_ticket(ch_tls *t, const uint8_t *body, size_t msg_len, uint8_t *
 // request_update has two values, and §4.7.3 ends the connection on any
 // other with illegal_parameter (rfc9846.txt:3362-3365). Each writes its
 // alert to *alert. A KeyUpdate with bytes after it keeps the
-// unexpected_message the caller set. Each refusal comes before the rekey.
-// A reply that cannot be sealed or sent is this side's failure and not
-// the peer's, so it writes internal_error (rfc9846.txt:3979-3981), the
-// alert ch_write names when the same call fails there.
+// unexpected_message the caller set. So does a KeyUpdate after a run of
+// CH_KEY_UPDATE_RUN_MAX, which returns CH_KEY_UPDATE_LIMIT (session.h).
+// Each refusal comes before the rekey, and this call sends nothing.
 static int take_key_update(ch_tls *t, const uint8_t *body, size_t msg_len, int ends_input,
                            uint8_t *alert) {
     if (msg_len != 1) {
@@ -253,11 +256,11 @@ static int take_key_update(ch_tls *t, const uint8_t *body, size_t msg_len, int e
     if (!ends_input) {
         return CH_EPROTO;
     }
-    int rc = handle_key_update(t, body[0]);
-    if (rc != CH_OK) {
-        *alert = ALERT_INTERNAL_ERROR;
+    if (t->key_update_run >= CH_KEY_UPDATE_RUN_MAX) {
+        return CH_KEY_UPDATE_LIMIT;
     }
-    return rc;
+    handle_key_update(t, body[0]);
+    return CH_OK;
 }
 
 // Handles the complete post-handshake messages in pt[0..n) — only

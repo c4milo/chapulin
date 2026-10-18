@@ -1,0 +1,17 @@
+invariant: INV-28
+file: handshake_post.c
+catches: tcp_nonblocking_loop_test
+reason: inv55-key-update-answer-per-request's edit, with the tcp-nonblocking
+  loop as the catcher: ch_read calls cfg.send to answer a KeyUpdate, which
+  a caller whose send holds only input during ch_read, as colibri's does,
+  does not expect. The connected server reads a request, and the loop
+  requires that read to call cfg.send no time.
+
+--- old
+    if (request == 1 && t->send_epochs < HSPOST_SEND_EPOCHS_MAX) {
+        t->key_update_owed = 1;
+    }
+--- new
+    if (request == 1 && t->send_epochs < HSPOST_SEND_EPOCHS_MAX) {
+        (void)hspost_send_key_update(t);
+    }

@@ -25,17 +25,22 @@ The model takes these facts from the C, which `tls_write.c`, `cfg.h`,
   16384.
 - `ch_writable_len` returns 0 when `limit` is 0, before `records_fill`
   divides. So every division here is by 23 or more.
-- `records_before_key_update` gives `room`. Under AES-GCM it computes
-  `last - seq` in `uint64_t` when `seq < last`, where `last` is
-  `REC_AES_GCM_RECORDS_MAX - 1`, and answers 0 otherwise. So `room` is 0 to
-  2^24 - 1, which a `size_t` of 24 bits or more holds unchanged, and
-  `ct.h` refuses any build whose `size_t` has fewer than 32 bits. Under
-  ChaCha20-Poly1305 it answers `SIZE_MAX`. Every theorem here takes any
-  `room`, so none of them depends on what the cast to `size_t` keeps.
-- A build without `-DCH_SUITE_AES_GCM` has no `room` and no
-  `fill_across_key_update`, and returns what `records_fill` returns.
-  `writableLen_of_cap_le_room` proves that `writableLen` returns the same for
-  every `room` of `cap` or more, and `SIZE_MAX` is such a `room`.
+- `records_per_key` gives `perKey`, the data records one write key seals
+  before `ch_write` sends the KeyUpdate that retires it:
+  `REC_AES_GCM_RECORDS_MAX - 1` under AES-GCM, and `SIZE_MAX` under
+  ChaCha20-Poly1305 and in a build without `-DCH_SUITE_AES_GCM`.
+- `records_before_key_update` gives `room`. It answers 0 while
+  `key_update_owed` is set, because the KeyUpdate that a peer's request
+  owes goes out before the next data record. Otherwise under AES-GCM it
+  computes `perKey - seq` in `uint64_t` when `seq < perKey`, and answers 0
+  otherwise. So `room` is 0 to 2^24 - 1, which a `size_t` of 24 bits or
+  more holds unchanged, and `ct.h` refuses any build whose `size_t` has
+  fewer than 32 bits. Under ChaCha20-Poly1305 it answers `SIZE_MAX`. Every
+  theorem here takes any `room` and any `perKey`, so none of them depends
+  on what the cast to `size_t` keeps.
+- `writableLen_of_cap_le_room` proves that `writableLen` returns what
+  `records_fill` returns for every `room` of `cap` or more, and `SIZE_MAX`
+  is such a `room`.
 
 This module is written from the C, not from an RFC, and CONTRACT.md says why.
 `test/diff_writable_len.h` compares `writableLen` with the C's
@@ -93,8 +98,8 @@ def recordsFill (cap limit : Nat) : RecordsFill :=
   else
     { whole, inWhole, overhead, withOneMore, records := whole, fill := inWhole }
 
-/-- What `fill_across_key_update` computes for one `cap`, `limit` and `room`:
-its four locals, under the C's names, and its result. -/
+/-- What `fill_across_key_update` computes for one `cap`, `limit`, `room` and
+`perKey`: its four locals, under the C's names, and its result. -/
 structure FillAcross where
   /-- `left`: what `cap` holds after `room` whole records. -/
   left : Nat
@@ -102,38 +107,35 @@ structure FillAcross where
   rest : Nat
   /-- `records`: how many records `records_fill` counts in `rest`. -/
   records : Nat
-  /-- `after`: the plaintext of those records, cut to
-  `REC_AES_GCM_RECORDS_MAX - 1` records when there are more. -/
+  /-- `after`: the plaintext of those records, cut to `perKey` records when
+  there are more. -/
   after : Nat
   /-- The return value, `room * limit + after`. -/
   fill : Nat
 
-/-- `fill_across_key_update (cap, limit, room)`: the most plaintext `cap` bytes
-carry when `ch_write` sends `room` whole records under the current key, then
-the KeyUpdate record, then the rest under the next key. `ch_writable_len`
-calls it only when `room` is below the count `records_fill` returns for `cap`.
-`cap - room * (limit + REC_OVERHEAD)` stops at 0 here where the C's would
-wrap, and `fillAcrossKeyUpdate_fits` proves that the product is at most `cap`
-at every call, so the two agree there. -/
-def fillAcrossKeyUpdate (cap limit room : Nat) : FillAcross :=
+/-- `fill_across_key_update (cap, limit, room, per_key)`: the most plaintext
+`cap` bytes carry when `ch_write` sends `room` whole records under the current
+key, then the KeyUpdate record, then at most `perKey` records under the next
+key. `ch_writable_len` calls it only when `room` is below the count
+`records_fill` returns for `cap`. `cap - room * (limit + REC_OVERHEAD)` stops
+at 0 here where the C's would wrap, and `fillAcrossKeyUpdate_fits` proves that
+the product is at most `cap` at every call, so the two agree there. -/
+def fillAcrossKeyUpdate (cap limit room perKey : Nat) : FillAcross :=
   let left := cap - room * (limit + recOverhead)
   let rest := if left > keyUpdateRecordLen then left - keyUpdateRecordLen else 0
   let records := (recordsFill rest limit).records
-  let after :=
-    if records > aesGcmRecordsMax - 1 then (aesGcmRecordsMax - 1) * limit
-    else (recordsFill rest limit).fill
+  let after := if records > perKey then perKey * limit else (recordsFill rest limit).fill
   { left, rest, records, after, fill := room * limit + after }
 
 /-- `ch_writable_len (t, cap)`, where `limit` is what `record_plaintext_max (t)`
-answers and `room` is what `records_before_key_update (t)` answers. A build
-without `-DCH_SUITE_AES_GCM` has no `room`, and `SIZE_MAX` stands for it
-(`writableLen_of_cap_le_room`). -/
-def writableLen (cap limit room : Nat) : Nat :=
+answers, `room` is what `records_before_key_update (t)` answers and `perKey`
+is what `records_per_key (t)` answers. -/
+def writableLen (cap limit room perKey : Nat) : Nat :=
   if limit = 0 then 0
   else
     let records := (recordsFill cap limit).records
     let fill := (recordsFill cap limit).fill
-    if records > room then (fillAcrossKeyUpdate cap limit room).fill else fill
+    if records > room then (fillAcrossKeyUpdate cap limit room perKey).fill else fill
 
 /-- `records_fill`'s count is `whole`, or `whole + 1` when one more record
 carries a byte. -/
@@ -194,62 +196,63 @@ theorem recordsFill_fits (w cap limit : Nat) (h_width : 15 ≤ w) (h_cap : cap <
 
 /-- Every product and sum `fill_across_key_update` computes is at most `cap`, so
 it fits the `size_t` that holds `cap`: `room * (limit + REC_OVERHEAD)`, which
-is `room` whole records; the clamp's `(REC_AES_GCM_RECORDS_MAX - 1) * limit`,
-when the clamp runs; and the return value, `room * limit + after`. `room` is
-below the records `cap` carries, as `ch_writable_len` checks before the call,
-and every one of them but the last is whole, so `room` whole records fit `cap`.
-`rest` is at most `cap`, so `recordsFill_fits` covers the `records_fill` call
-on it, and `limit + REC_OVERHEAD`. -/
-theorem fillAcrossKeyUpdate_fits (cap limit room : Nat)
+is `room` whole records; the clamp's `per_key * limit`, when the clamp runs;
+and the return value, `room * limit + after`. `room` is below the records
+`cap` carries, as `ch_writable_len` checks before the call, and every one of
+them but the last is whole, so `room` whole records fit `cap`. `rest` is at
+most `cap`, so `recordsFill_fits` covers the `records_fill` call on it, and
+`limit + REC_OVERHEAD`. -/
+theorem fillAcrossKeyUpdate_fits (cap limit room perKey : Nat)
     (h_room : room < (recordsFill cap limit).records) :
     room * (limit + recOverhead) ≤ cap ∧
-      ((fillAcrossKeyUpdate cap limit room).records > aesGcmRecordsMax - 1 →
-        (aesGcmRecordsMax - 1) * limit ≤ cap) ∧
-      (fillAcrossKeyUpdate cap limit room).fill ≤ cap := by
+      ((fillAcrossKeyUpdate cap limit room perKey).records > perKey → perKey * limit ≤ cap) ∧
+      (fillAcrossKeyUpdate cap limit room perKey).fill ≤ cap := by
   have h_room_whole : room ≤ (recordsFill cap limit).whole := by
     rcases recordsFill_records cap limit with h_count | h_count <;> omega
   have h_room_fits : room * (limit + recOverhead) ≤ cap :=
     Nat.le_trans (Nat.mul_le_mul_right _ h_room_whole) (recordsFill_whole_mul_le cap limit)
   -- rest is what cap holds after those records and the KeyUpdate record.
   have h_rest_fits :
-      (fillAcrossKeyUpdate cap limit room).rest + room * (limit + recOverhead) ≤ cap := by
+      (fillAcrossKeyUpdate cap limit room perKey).rest + room * (limit + recOverhead) ≤ cap := by
     simp only [fillAcrossKeyUpdate]
     split <;> omega
-  generalize h_rest : (fillAcrossKeyUpdate cap limit room).rest = rest at h_rest_fits
+  generalize h_rest : (fillAcrossKeyUpdate cap limit room perKey).rest = rest at h_rest_fits
   simp only [fillAcrossKeyUpdate] at h_rest ⊢
   rw [h_rest]
-  -- The clamp runs only when rest holds REC_AES_GCM_RECORDS_MAX - 1 whole records,
-  -- whose plaintext is at most rest.
+  -- The clamp runs only when rest holds perKey whole records, whose plaintext
+  -- is at most rest.
   have h_fill_le := recordsFill_fill_le rest limit
-  have h_clamp : (recordsFill rest limit).records > aesGcmRecordsMax - 1 →
-      (aesGcmRecordsMax - 1) * limit ≤ rest := by
+  have h_clamp : (recordsFill rest limit).records > perKey → perKey * limit ≤ rest := by
     intro h_over
-    have h_whole_at_least : aesGcmRecordsMax - 1 ≤ (recordsFill rest limit).whole := by
+    have h_whole_at_least : perKey ≤ (recordsFill rest limit).whole := by
       rcases recordsFill_records rest limit with h_count | h_count <;> omega
-    calc (aesGcmRecordsMax - 1) * limit
+    calc perKey * limit
         ≤ (recordsFill rest limit).whole * limit := Nat.mul_le_mul_right limit h_whole_at_least
       _ ≤ (recordsFill rest limit).fill := recordsFill_whole_mul_le_fill rest limit
       _ ≤ rest := h_fill_le
   have h_product := Nat.mul_add room limit recOverhead
   split <;> omega
 
-/-- `ch_writable_len`'s answer is at most `cap`, for every `limit` and every
-`room`, `SIZE_MAX` for a ChaCha20-Poly1305 key among them. -/
-theorem writableLen_le_cap (cap limit room : Nat) : writableLen cap limit room ≤ cap := by
+/-- `ch_writable_len`'s answer is at most `cap`, for every `limit`, every
+`room` and every `perKey`, `SIZE_MAX` for a ChaCha20-Poly1305 key among
+them. -/
+theorem writableLen_le_cap (cap limit room perKey : Nat) :
+    writableLen cap limit room perKey ≤ cap := by
   simp only [writableLen]
   split
   · exact Nat.zero_le cap
   · split
     · rename_i h_crosses
-      exact (fillAcrossKeyUpdate_fits cap limit room h_crosses).2.2
+      exact (fillAcrossKeyUpdate_fits cap limit room perKey h_crosses).2.2
     · exact recordsFill_fill_le cap limit
 
 /-- At a `room` of `cap` or more, `ch_writable_len` answers what `records_fill`
 answers and counts no KeyUpdate. `SIZE_MAX`, the `room` of a ChaCha20-Poly1305
-key, is at least every `cap` a `size_t` holds, so this is the answer of a
-build without `-DCH_SUITE_AES_GCM`, which has no `room`. -/
-theorem writableLen_of_cap_le_room (cap limit room : Nat) (h_limit_pos : 1 ≤ limit)
-    (h_room : cap ≤ room) : writableLen cap limit room = (recordsFill cap limit).fill := by
+key while `key_update_owed` is clear, is at least every `cap` a `size_t`
+holds. -/
+theorem writableLen_of_cap_le_room (cap limit room perKey : Nat) (h_limit_pos : 1 ≤ limit)
+    (h_room : cap ≤ room) :
+    writableLen cap limit room perKey = (recordsFill cap limit).fill := by
   have h_records := recordsFill_records_le cap limit
   simp only [writableLen]
   rw [if_neg (by omega), if_neg (by omega)]
@@ -257,28 +260,39 @@ theorem writableLen_of_cap_le_room (cap limit room : Nat) (h_limit_pos : 1 ≤ l
 set_option compiler.extract_closed false in
 /-- The rows the C's own tests state, at the two limits they use. At a limit of
 512, `tls.h`'s: a record of no byte, of one byte, of 512 bytes, and one byte
-more; and 0 at a limit of 0. At a limit of 63, `test/key_limit_cases.h`'s: at
-an AES-GCM key's ceiling a record of one byte costs a KeyUpdate record as well;
-one record before it, the first record does not and the second does; and at
-the largest `cap` one KeyUpdate and no second. `2^64 - 1` is `SIZE_MAX` on a
-64-bit host. -/
+more; and 0 at a limit of 0. `test/session_write_tests.h`'s with
+`key_update_owed` set under ChaCha20-Poly1305: the KeyUpdate record first, and
+no cut after it. At a
+limit of 63, `test/key_limit_cases.h`'s: at an AES-GCM key's ceiling a record
+of one byte costs a KeyUpdate record as well; one record before it, the first
+record does not and the second does; and at the largest `cap` one KeyUpdate
+and no second. `2^64 - 1` is `SIZE_MAX` on a 64-bit host. -/
 def selftest (_ : Unit) : Bool :=
   let sizeMax := 2 ^ 64 - 1
+  let aesPerKey := aesGcmRecordsMax - 1
   let record := 63 + recOverhead
   let keyUpdateAndByte := keyUpdateRecordLen + recOverhead + 1
-  writableLen recOverhead 512 sizeMax == 0 &&
-  writableLen (recOverhead + 1) 512 sizeMax == 1 &&
-  writableLen (512 + recOverhead) 512 sizeMax == 512 &&
-  writableLen (512 + 2 * recOverhead) 512 sizeMax == 512 &&
-  writableLen (512 + 2 * recOverhead + 1) 512 sizeMax == 513 &&
-  writableLen 4096 0 sizeMax == 0 &&
-  writableLen (keyUpdateAndByte - 1) 63 0 == 0 &&
-  writableLen keyUpdateAndByte 63 0 == 1 &&
-  writableLen sizeMax 63 0 == (aesGcmRecordsMax - 1) * 63 &&
-  writableLen (recOverhead + 1) 63 1 == 1 &&
-  writableLen record 63 1 == 63 &&
-  writableLen (record + keyUpdateAndByte - 1) 63 1 == 63 &&
-  writableLen (record + keyUpdateAndByte) 63 1 == 64 &&
-  writableLen sizeMax 63 1 == aesGcmRecordsMax * 63
+  let wholeAfter := (sizeMax - keyUpdateRecordLen) / (512 + recOverhead)
+  let restAfter := sizeMax - keyUpdateRecordLen - wholeAfter * (512 + recOverhead)
+  writableLen recOverhead 512 sizeMax sizeMax == 0 &&
+  writableLen (recOverhead + 1) 512 sizeMax sizeMax == 1 &&
+  writableLen (512 + recOverhead) 512 sizeMax sizeMax == 512 &&
+  writableLen (512 + 2 * recOverhead) 512 sizeMax sizeMax == 512 &&
+  writableLen (512 + 2 * recOverhead + 1) 512 sizeMax sizeMax == 513 &&
+  writableLen 4096 0 sizeMax sizeMax == 0 &&
+  writableLen (keyUpdateRecordLen + recOverhead) 512 0 sizeMax == 0 &&
+  writableLen (keyUpdateRecordLen + recOverhead + 1) 512 0 sizeMax == 1 &&
+  writableLen (keyUpdateRecordLen + 512 + 2 * recOverhead) 512 0 sizeMax == 512 &&
+  writableLen (keyUpdateRecordLen + 512 + 2 * recOverhead + 1) 512 0 sizeMax == 513 &&
+  writableLen sizeMax 512 0 sizeMax ==
+    wholeAfter * 512 + (if restAfter > recOverhead then restAfter - recOverhead else 0) &&
+  writableLen (keyUpdateAndByte - 1) 63 0 aesPerKey == 0 &&
+  writableLen keyUpdateAndByte 63 0 aesPerKey == 1 &&
+  writableLen sizeMax 63 0 aesPerKey == (aesGcmRecordsMax - 1) * 63 &&
+  writableLen (recOverhead + 1) 63 1 aesPerKey == 1 &&
+  writableLen record 63 1 aesPerKey == 63 &&
+  writableLen (record + keyUpdateAndByte - 1) 63 1 aesPerKey == 63 &&
+  writableLen (record + keyUpdateAndByte) 63 1 aesPerKey == 64 &&
+  writableLen sizeMax 63 1 aesPerKey == aesGcmRecordsMax * 63
 
 end Spec.TlsWrite

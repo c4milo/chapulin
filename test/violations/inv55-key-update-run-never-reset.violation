@@ -1,0 +1,13 @@
+invariant: INV-55
+file: tls.c
+catches: unit
+reason: a record of application data does not end a run of KeyUpdates,
+  so the limit counts every KeyUpdate of the session and refuses a peer
+  that rekeys between its data. bin/unit reads a full run, a byte of data
+  and a second full run.
+
+--- old
+        if (pt_len > 0) {
+            t->key_update_run = 0;
+        }
+--- new

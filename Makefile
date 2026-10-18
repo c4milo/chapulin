@@ -7195,16 +7195,18 @@ lint-impact:
 #
 # Ceilings are file:count and hold on every spec below unless
 # WIDEMUL_CEILING_SPEC names the spec and file. Going over fails. Coming in
-# under only prints, because the only non-zero entries are one public
-# division whose lowering is a compiler choice and a recorded leak that is
+# under only prints, because the only non-zero entries are two public
+# divisions whose lowering is a compiler choice and a recorded leak that is
 # meant to fall, and zero cannot be undershot, so every other module is
-# held exactly. The division is tls_write.c's in ch_writable_len, the
-# caller's buffer length by the length of a record (docs/decisions.md 72).
+# held exactly. The divisions are tls_write.c's in ch_writable_len: the
+# caller's buffer length by the length of a record (docs/decisions.md 72),
+# and what that length holds after a KeyUpdate record by the same length
+# (docs/decisions.md 138). Both operands of each are public.
 WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
                    x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_parser_ee.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
-                   tls.c:0 tls_write.c:1 drbg.c:0 softmul.c:0 tcp_nonblocking.c:0 tcp_nonblocking_frame.c:0 \
+                   tls.c:0 tls_write.c:2 drbg.c:0 softmul.c:0 tcp_nonblocking.c:0 tcp_nonblocking_frame.c:0 \
                    tcp_nonblocking_step.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
                    quic_fail.c:0 srv_quic.c:0 quic_token.c:0 srv_tcp_nonblocking.c:0 \
@@ -7925,14 +7927,17 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # calls to __muldi3 there, which is the point of the spec
 # (https://github.com/c4milo/chapulin/issues/107).
 #
-# tls_write.c reads two divu under the -O2 spec, from ch_writable_len's one
-# division of the caller's cap by a record's length. gcc copies the
-# function body into both arms of the smaller-of in
-# record_plaintext_max: one arm divides by peer_limit + 22 and the
-# other by CH_TX_PT + 22, so each path still runs one division, and
-# every operand is a public length. Measured with Ubuntu 24.04's
-# mips-linux-gnu-gcc 12.4.0 under this spec's flags; CI run 36285635999
-# failed on it.
+# tls_write.c reads three divu under the -O2 spec, from ch_writable_len's
+# two divisions of a public length by a record's length: the caller's
+# cap, and what it holds after a KeyUpdate record (docs/decisions.md 138).
+# gcc copies the first division into both arms of the smaller-of in
+# record_plaintext_max, where one arm divides by peer_limit + 22 and the
+# other by CH_TX_PT + 22, and keeps the second division once, which both
+# arms reach. Each path still runs at most the two divisions, and every
+# operand is a public length. Measured with Ubuntu 24.04's
+# mips-linux-gnu-gcc 12.4.0 under this spec's flags: CI run 36285635999
+# failed on the copy when the function divided once, and run 39160780495
+# read three.
 # A host object's native copies (docs/decisions.md 87 and 89) have their
 # own branch ceilings, in the table below, which BRANCH_CEILING takes in
 # whole. The copy differs from the file under its own names in the
@@ -7998,7 +8003,7 @@ QUIC_PACKET_BRANCH_CEILING := \
   mips32r2-gcc/quic_packet.c:46 mips32r2-gcc-O2/quic_packet.c:52 rv32imac-gcc/quic_packet.c:55 \
   rv32ic-gcc/quic_packet.c:55 arm64/quic_packet.c@host:34 x86-64/quic_packet.c@host:34
 WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
-                        mips32r2-gcc-O2/tls_write.c:2
+                        mips32r2-gcc-O2/tls_write.c:3
 # The files the branch count covers: the arithmetic under the record
 # layer, whose every input is a key, a word or a block. Almost every
 # branch they hold is loop control on a public count; the two exceptions
@@ -8503,8 +8508,9 @@ lint-wide-multiply-gcc:
 # new `/` anywhere hid behind sha3's __udivsi3
 # (https://github.com/c4milo/chapulin/issues/85). Now a symbol is judged in
 # the file that pulls it. tls_write.c's __udivsi3 is ch_writable_len's
-# one division, the caller's buffer length by the length of a record,
-# both public (docs/decisions.md 72); its __mulsi3 is the
+# two divisions, the caller's buffer length and what it holds after a
+# KeyUpdate record, each by the length of a record, all public
+# (docs/decisions.md 72 and 138); its __mulsi3 is the
 # same call's count of whole records times their plaintext, which
 # softmul.c supplies in constant time like every other.
 #

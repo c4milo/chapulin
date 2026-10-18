@@ -5,6 +5,8 @@
 // after the message that precedes a key change: the ServerHello and the
 // server Finished the client reads, the ClientHello and the client
 // Finished the server reads, and a KeyUpdate the connected server reads.
+// The connected server also reads runs of KeyUpdates up to
+// CH_KEY_UPDATE_RUN_MAX and one past it, one record a call.
 // Each runs twice, with 0 bytes added and with 1, so the edit is shown to
 // be sound before the byte it adds is shown to be refused, and each
 // refusal's alert record is read back: in the clear before the refusing
@@ -163,52 +165,135 @@ static void server_reads_client(ch_record *client, ch_record *server, const ch_c
     }
 }
 
-// Seals pt as one record under the client's application write key, hands
-// it to the connected server's ch_read, and returns the result and the
-// one record the server sent, opened under the write key it held before.
-static int server_reads_update(ch_record *client, ch_record *server, const uint8_t *pt, size_t n,
-                               uint8_t *sent_type, uint8_t sent[16], size_t *sent_len) {
-    memset(&held, 0, sizeof held);
+// Seals pt as one record of type under the client's application write key
+// and hands it to the connected server's ch_read, which reads it through
+// server_recv, one record a call, as colibri's server reads. Returns the
+// result. What the server sends goes to held, through server_send.
+static int server_reads_record(ch_record *client, ch_record *server, uint8_t type,
+                               const uint8_t *pt, size_t n) {
     memset(&to_server, 0, sizeof to_server);
-    server_sends = 0;
     server->t.cfg.send = server_send;
     server->t.cfg.recv = server_recv;
     size_t out_len = 0;
-    CHECK(rec_seal(&client->t.wr, REC_HANDSHAKE, pt, n, to_server.bytes, sizeof to_server.bytes,
-                   &out_len) == 0);
+    CHECK(rec_seal(&client->t.wr, type, pt, n, to_server.bytes, sizeof to_server.bytes, &out_len) ==
+          0);
     to_server.len = out_len;
-    rec_dir reader = server->t.wr;
     uint8_t got[16];
-    int rc = ch_read(&server->t, got, sizeof got);
-    CHECK(server_sends == 1 && held.len == record_at(held.bytes, 0));
-    CHECK(rec_open(&reader, held.bytes, held.len, sent, 16, sent_len, sent_type) == 0);
-    return rc;
+    return ch_read(&server->t, got, sizeof got);
+}
+
+// Opens the record at held.bytes + at under reader, and returns where the
+// next record starts.
+static size_t open_held(rec_dir *reader, size_t at, uint8_t *type, uint8_t sent[16],
+                        size_t *sent_len) {
+    size_t end = at + record_at(held.bytes, at);
+    CHECK(end <= held.len);
+    CHECK(rec_open(reader, held.bytes + at, end - at, sent, 16, sent_len, type) == 0);
+    return end;
+}
+
+// A connected pair whose server sends into held, and a copy of the
+// server's write key, which opens what it sends.
+static rec_dir start_held_server(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+                                 const ch_cfg *scfg) {
+    (void)run_handshake(client, server, ccfg, scfg);
+    CHECK(ch_record_state(server) == CH_ST_CONNECTED);
+    memset(&held, 0, sizeof held);
+    server_sends = 0;
+    return server->t.wr;
+}
+
+// The server's next write, after it read a request: the answer under the
+// write key reader holds, then the write's data under the next key, which
+// reader moves to with secret, the server's write secret before the write.
+static size_t check_answer_then_data(ch_record *server, rec_dir *reader, uint8_t *secret,
+                                     size_t at) {
+    static const uint8_t answer[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
+    size_t sends = server_sends;
+    CHECK(ch_write(&server->t, (const uint8_t *)"ok", 2) == CH_OK && server_sends == sends + 2);
+    uint8_t type = 0;
+    uint8_t sent[16];
+    size_t sent_len = 0;
+    size_t next = open_held(reader, at, &type, sent, &sent_len);
+    CHECK(type == REC_HANDSHAKE && sent_len == sizeof answer);
+    CHECK(memcmp(sent, answer, sizeof answer) == 0 && next - at == CH_KEY_UPDATE_RECORD_LEN);
+    rec_dir_update(secret, reader);
+    next = open_held(reader, next, &type, sent, &sent_len);
+    CHECK(type == REC_APPDATA && sent_len == 2 && next == held.len);
+    return next;
 }
 
 // The record colibri sent a connected server: two KeyUpdates that each
 // ask for an answer, in one record. One of them in its own record is the
-// last valid shape and gets its one answer.
+// last valid shape: the read sends nothing, and the server's next write
+// sends its one answer before the data.
 static void test_server_key_update_ends_record(ch_record *client, ch_record *server,
                                                const ch_cfg *ccfg, const ch_cfg *scfg) {
     static const uint8_t two_requested[10] = {HS_KEY_UPDATE, 0, 0, 1, 1, HS_KEY_UPDATE, 0, 0, 1, 1};
-    static const uint8_t answer[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
     uint8_t type = 0;
     uint8_t sent[16];
     size_t sent_len = 0;
 
-    (void)run_handshake(client, server, ccfg, scfg);
-    CHECK(ch_record_state(server) == CH_ST_CONNECTED);
-    int rc = server_reads_update(client, server, two_requested, 5, &type, sent, &sent_len);
+    rec_dir reader = start_held_server(client, server, ccfg, scfg);
+    uint8_t secret[SHA256_LEN];
+    memcpy(secret, server->t.wr_secret, sizeof secret);
+    int rc = server_reads_record(client, server, REC_HANDSHAKE, two_requested, 5);
     CHECK(rc == CH_RECORD_AGAIN && ch_record_state(server) == CH_ST_CONNECTED);
-    CHECK(type == REC_HANDSHAKE && sent_len == sizeof answer);
-    CHECK(memcmp(sent, answer, sizeof answer) == 0 && held.len == CH_KEY_UPDATE_RECORD_LEN);
+    CHECK(server_sends == 0 && server->t.key_update_owed == 1);
+    (void)check_answer_then_data(server, &reader, secret, 0);
 
-    (void)run_handshake(client, server, ccfg, scfg);
-    rc = server_reads_update(client, server, two_requested, sizeof two_requested, &type, sent,
-                             &sent_len);
-    CHECK(rc == CH_EPROTO && ch_record_state(server) == CH_ST_FAILED);
+    reader = start_held_server(client, server, ccfg, scfg);
+    rc = server_reads_record(client, server, REC_HANDSHAKE, two_requested, sizeof two_requested);
+    CHECK(rc == CH_EPROTO && ch_record_state(server) == CH_ST_FAILED && server_sends == 1);
+    CHECK(open_held(&reader, 0, &type, sent, &sent_len) == held.len);
     CHECK(type == REC_ALERT && sent_len == 2 && sent[0] == 2);
     CHECK(sent[1] == ALERT_UNEXPECTED_MESSAGE && held.len == CH_ALERT_RECORD_LEN);
+}
+
+// Reads count KeyUpdates that each ask for an answer, one a call, as
+// colibri's server reads them. Each read returns CH_RECORD_AGAIN, and the
+// client's write key follows each KeyUpdate it sealed.
+static void server_reads_requests(ch_record *client, ch_record *server, size_t count) {
+    static const uint8_t requested[5] = {HS_KEY_UPDATE, 0, 0, 1, 1};
+    for (size_t i = 0; i < count; i++) {
+        CHECK(server_reads_record(client, server, REC_HANDSHAKE, requested, sizeof requested) ==
+              CH_RECORD_AGAIN);
+        rec_dir_update(client->t.wr_secret, &client->t.wr);
+    }
+}
+
+// The run limit across reads, the shape colibri's server reads in
+// (docs/decisions.md 138). Two full runs of requests, each ended by a data
+// record of one byte, send nothing and owe one answer, which the next
+// write sends. Then a third full run, and a write that sends the answer.
+// The server's own KeyUpdate ends no run, so one more KeyUpdate from the
+// client fails the session with CH_KEY_UPDATE_LIMIT and an
+// unexpected_message alert.
+static void test_server_key_update_run(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+                                       const ch_cfg *scfg) {
+    rec_dir reader = start_held_server(client, server, ccfg, scfg);
+    uint8_t secret[SHA256_LEN];
+    memcpy(secret, server->t.wr_secret, sizeof secret);
+    for (int run = 0; run < 2; run++) {
+        server_reads_requests(client, server, CH_KEY_UPDATE_RUN_MAX);
+        CHECK(server->t.key_update_run == CH_KEY_UPDATE_RUN_MAX);
+        CHECK(server_reads_record(client, server, REC_APPDATA, (const uint8_t *)"a", 1) == 1);
+    }
+    CHECK(server_sends == 0 && server->t.key_update_run == 0);
+    size_t at = check_answer_then_data(server, &reader, secret, 0);
+
+    server_reads_requests(client, server, CH_KEY_UPDATE_RUN_MAX);
+    at = check_answer_then_data(server, &reader, secret, at);
+    CHECK(server->t.key_update_run == CH_KEY_UPDATE_RUN_MAX);
+    static const uint8_t update[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
+    int rc = server_reads_record(client, server, REC_HANDSHAKE, update, sizeof update);
+    CHECK(rc == CH_KEY_UPDATE_LIMIT && ch_record_state(server) == CH_ST_FAILED);
+    CHECK(ch_alert_sent(&server->t) == ALERT_UNEXPECTED_MESSAGE);
+    uint8_t type = 0;
+    uint8_t sent[16];
+    size_t sent_len = 0;
+    CHECK(open_held(&reader, at, &type, sent, &sent_len) == held.len);
+    CHECK(type == REC_ALERT && sent_len == 2 && sent[1] == ALERT_UNEXPECTED_MESSAGE);
 }
 
 static void test_record_end(ch_record *client, ch_record *server, const ch_cfg *ccfg,
@@ -220,6 +305,7 @@ static void test_record_end(ch_record *client, ch_record *server, const ch_cfg *
         server_reads_client(client, server, ccfg, scfg, 1, extra);
     }
     test_server_key_update_ends_record(client, server, ccfg, scfg);
+    test_server_key_update_run(client, server, ccfg, scfg);
 }
 
 #endif

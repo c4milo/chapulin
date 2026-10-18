@@ -1,7 +1,7 @@
 // Proves, in a -DCH_SUITE_AES_GCM build: ch_writable_len (tls_write.c) is
 // memory-safe and UB-free for any peer_limit, any suite code point, any
-// write sequence number and any cap, the path that counts a KeyUpdate
-// included. It is proof/writable_len_harness.c's first claim, over the
+// write sequence number, any key_update_owed and any cap, the path that
+// counts a KeyUpdate included. It is proof/writable_len_harness.c's first claim, over the
 // build where that path compiles.
 //
 // Not proved here: that no unsigned sum or product on that path wraps. C
@@ -72,6 +72,7 @@ int main(void) {
     any.peer_limit = (uint16_t)nondet_u32();
     any.wr.suite = (uint16_t)nondet_u32();
     any.wr.seq = nondet_u64();
+    any.key_update_owed = nondet_u8();
     (void)ch_writable_len(&any, nondet_size_t());
     return 0;
 }

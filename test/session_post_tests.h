@@ -10,7 +10,8 @@
 
 // Post-handshake behavior the e2e cannot reach: a NewSessionTicket
 // fragmented across records (RFC 9846 §5.1), a KeyUpdate that rekeys both
-// directions, then application data under the updated key.
+// directions, then application data under the updated key. The read sends
+// nothing, and the next ch_write sends the answer before its data.
 static void test_post_handshake(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
@@ -20,7 +21,7 @@ static void test_post_handshake(void) {
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
-    // Keep the write secret so the reply can be opened, not just counted.
+    // Keep the write secret so the answer can be opened, not just counted.
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     rec_dir reader;
@@ -63,25 +64,30 @@ static void test_post_handshake(void) {
     CHECK(got == 4 && memcmp(out, "hola", 4) == 0);
     CHECK(m.tickets == 1);
     CHECK(t.state == CH_ST_CONNECTED);
+    // The answer waits for the next data record (RFC 9846 §4.7.3).
+    CHECK(m.sends == 0 && t.key_update_owed == 1);
 
-    // Open the reply rather than counting bytes. §4.7.3 answers an
+    // Open the answer rather than counting bytes. §4.7.3 answers an
     // update_requested with update_not_requested, and the client rekeys
     // its own write direction straight after sending it. Counting alone
     // passes even when that second rekey is missing, which would leave
     // every later record sealed under the retired key.
-    uint8_t reply[16];
-    size_t reply_len = 0;
-    uint8_t reply_type = 0;
-    size_t at =
-        mock_pop_client_record(&m, 0, &reader, reply, sizeof reply, &reply_len, &reply_type);
-    const uint8_t want_reply[5] = {24, 0, 0, 1, 0};
-    CHECK(reply_type == REC_HANDSHAKE && reply_len == sizeof want_reply);
-    CHECK(memcmp(reply, want_reply, sizeof want_reply) == 0);
-    // The one record the reply takes is the length tls.h names.
+    CHECK(ch_write(&t, (const uint8_t *)"si", 2) == CH_OK);
+    CHECK(m.sends == 2 && t.key_update_owed == 0);
+    uint8_t sent[16];
+    size_t sent_len = 0;
+    uint8_t sent_type = 0;
+    size_t at = mock_pop_client_record(&m, 0, &reader, sent, sizeof sent, &sent_len, &sent_type);
+    const uint8_t want_answer[5] = {24, 0, 0, 1, 0};
+    CHECK(sent_type == REC_HANDSHAKE && sent_len == sizeof want_answer);
+    CHECK(memcmp(sent, want_answer, sizeof want_answer) == 0);
+    // The one record the answer takes is the length tls.h names.
     CHECK(at == CH_KEY_UPDATE_RECORD_LEN);
     // Follow the client's write-side rekey; everything after opens under
     // the new secret, and under the old one it does not.
     rec_dir_update(wr_secret, &reader);
+    at = mock_pop_client_record(&m, at, &reader, sent, sizeof sent, &sent_len, &sent_type);
+    CHECK(sent_type == REC_APPDATA && sent_len == 2 && memcmp(sent, "si", 2) == 0);
 
     // Zero-length reads are a caller bug, never the close sentinel.
     CHECK(ch_read(&t, out, 0) == CH_EINVAL);
@@ -99,11 +105,11 @@ static void test_post_handshake(void) {
     // It opens only if the client rekeyed its write direction above, and
     // it takes the length tls.h names.
     size_t close_at = at;
-    at = mock_pop_client_record(&m, at, &reader, reply, sizeof reply, &reply_len, &reply_type);
+    at = mock_pop_client_record(&m, at, &reader, sent, sizeof sent, &sent_len, &sent_type);
     CHECK(at - close_at == CH_ALERT_RECORD_LEN);
-    CHECK(reply_type == REC_ALERT && reply_len == 2);
-    CHECK(reply[0] == 1 && reply[1] == 0);
-    CHECK(at == m.tx_len); // the reply and the close_notify, nothing else
+    CHECK(sent_type == REC_ALERT && sent_len == 2);
+    CHECK(sent[0] == 1 && sent[1] == 0);
+    CHECK(at == m.tx_len); // the answer, the data and the close_notify, nothing else
     size_t after_close = m.sent;
     ch_close(&t);
     CHECK(m.sent == after_close); // keys wiped: nothing more on the wire
@@ -446,8 +452,8 @@ static void test_seq_exhaustion(void) {
 }
 
 // RFC 9846 conformance the e2e cannot steer: a user_canceled alert is
-// read through until close_notify arrives, and a sender at the KeyUpdate
-// epoch cap ignores update_requested instead of replying.
+// read through until close_notify arrives. test_key_update_at_epoch_cap
+// (session_update_run_tests.h) holds the KeyUpdate epoch cap.
 static void test_alerts_and_epochs(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
@@ -466,26 +472,6 @@ static void test_alerts_and_epochs(void) {
     mock_push(&m, &server, REC_ALERT, close_notify, 2);
     uint8_t out[16];
     CHECK(ch_read(&t, out, sizeof out) == 0);
-
-    // At the epoch cap: the receive keys still update (we can read data
-    // under the peer's new key) but no reply KeyUpdate goes out.
-    mock_io m2 = {0};
-    ch_tls t2;
-    mock_session(&t2, &m2, rxbuf, sizeof rxbuf, secret, NULL);
-    t2.send_epochs = 0xffffffffffffULL;
-    rec_dir server2;
-    TEST_CPU_DIR(server2);
-    rec_dir_init(&server2, secret);
-    const uint8_t key_update[5] = {24, 0, 0, 1, 1};
-    mock_push(&m2, &server2, REC_HANDSHAKE, key_update, sizeof key_update);
-    uint8_t s2[SHA256_LEN];
-    memcpy(s2, secret, sizeof s2);
-    rec_dir_update(s2, &server2);
-    mock_push(&m2, &server2, REC_APPDATA, (const uint8_t *)"hola", 4);
-    size_t sent_before = m2.sent;
-    int got = ch_read(&t2, out, sizeof out);
-    CHECK(got == 4 && memcmp(out, "hola", 4) == 0);
-    CHECK(m2.sent == sent_before); // no reply at the cap
 }
 
 #endif

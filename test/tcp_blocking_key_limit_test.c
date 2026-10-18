@@ -234,8 +234,9 @@ int main(void) {
     if (failures == 0) {
         (void)printf("tcp_blocking_key_limit: under AES-128-GCM and AES-256-GCM each end sent one"
                      " KeyUpdate at its write key's last sequence number and the other read on"
-                     " across it, the sender cap failed the write with internal_error, and"
-                     " ChaCha20 sent none\n");
+                     " across it, the sender cap failed the write with internal_error, an"
+                     " answer owed at the ceiling went out as its one KeyUpdate, and ChaCha20"
+                     " sent none\n");
         return 0;
     }
     (void)fprintf(stderr, "tcp_blocking_key_limit: %d failures\n", failures);

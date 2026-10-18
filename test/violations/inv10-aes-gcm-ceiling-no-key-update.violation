@@ -7,10 +7,10 @@ reason: ch_write never takes the step before a record, so an AES-GCM write
   counts two records where a KeyUpdate record belongs between them.
 
 --- old
-        int rc = key_update_at_ceiling(t);
+        int rc = key_update_before_record(t);
         if (rc != CH_OK) {
             return rc; // it failed the session
         }
 --- new
         int rc = CH_OK;
-        (void)key_update_at_ceiling;
+        (void)key_update_before_record;

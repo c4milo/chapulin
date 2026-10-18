@@ -1,0 +1,17 @@
+invariant: INV-55
+file: handshake_post.c
+catches: unit
+reason: ch_read answers each request at once, so a run of requests costs
+  one write-side rekey and one send inside ch_read apiece, where RFC 9846
+  section 4.7.3 has one answer serve every request read while this side
+  is silent. bin/unit reads a full run of requests, requires no send from
+  that read and one KeyUpdate from the next write.
+
+--- old
+    if (request == 1 && t->send_epochs < HSPOST_SEND_EPOCHS_MAX) {
+        t->key_update_owed = 1;
+    }
+--- new
+    if (request == 1 && t->send_epochs < HSPOST_SEND_EPOCHS_MAX) {
+        (void)hspost_send_key_update(t);
+    }

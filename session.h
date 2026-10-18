@@ -36,6 +36,19 @@
 #define CH_QUIET_CAP 32
 #endif
 
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+// The most KeyUpdates one run holds. A run is the KeyUpdates a connected
+// TCP session reads with no record of application data of one byte or
+// more between them. ch_read refuses the next KeyUpdate of a full run
+// with unexpected_message and CH_KEY_UPDATE_LIMIT (result.h), before it
+// rekeys. Every build holds 16, and no define changes it: the build
+// record holds the value (build.h), and docs/decisions.md 138 states why
+// 16. tls.c requires it below CH_QUIET_CAP, and tls.h states which of the
+// two limits one ch_read meets first. A TRANSPORT=quic-nonblocking build
+// reads no TLS KeyUpdate.
+#define CH_KEY_UPDATE_RUN_MAX 16
+#endif
+
 // TX staging past the record header. One array serves two lifetimes
 // that never overlap: ClientHello construction, then sealed-record
 // staging. See docs/decisions.md 22 and 71.
@@ -336,6 +349,20 @@ typedef struct {
     // persist; the session stays up. Both stay zero outside CA builds.
     uint32_t epoch;
     uint8_t epoch_store_failed;
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+    // 1 when the peer asked for a KeyUpdate below this side's epoch cap
+    // and this side has not sent one since. RFC 9846 §4.7.3 owes one
+    // answer before the next record of application data
+    // (rfc9846.txt:3367-3373), so ch_write sends it then. One answer serves
+    // every request read before it. key_update_run counts the KeyUpdates
+    // ch_read read since the last record of application data with a byte
+    // or more, up to CH_KEY_UPDATE_RUN_MAX.
+    // Both sit in the padding before epoch_seen, so sizeof(ch_tls) did not
+    // change when they were added. A TRANSPORT=quic-nonblocking build
+    // declares neither, because RFC 9001 §6 forbids the TLS KeyUpdate.
+    uint8_t key_update_owed;
+    uint8_t key_update_run;
+#endif
 #ifdef CH_TRUST_WEBPKI
     // 1 when the cfg of the init call set on_ticket. The init call then
     // wrote ticket_config_hash. handshake_post.c gives a ticket to

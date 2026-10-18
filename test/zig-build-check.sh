@@ -58,7 +58,10 @@
 #     on_ticket, store no configuration hash and keep no ticket, and its
 #     ticket must still resume (docs/decisions.md 132). Under
 #     SUITE=aesgcm its record-mode loop also has each side write across
-#     its AES-GCM write key's ceiling (loop_key_limit.zig).
+#     its AES-GCM write key's ceiling (loop_key_limit.zig). In every
+#     object it has the server read one KeyUpdate past the run limit,
+#     which read must return as error.KeyUpdateLimit
+#     (loop_key_update_run.zig).
 #
 # matches.zig reads only the headers chapulin.c is translated from, and
 # build.zig translates x509_ca.h and drbg.h only for an object that

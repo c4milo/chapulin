@@ -237,10 +237,10 @@ field wins, which is how the mips gcc spec below runs a second time at `-O2`.
 A new spec starts from the default multiply ceilings and no branch ceilings,
 so the first thing it reports is the conditional-branch count of each
 arithmetic file it compiles. Read every file it reports above its multiply
-ceiling as the finding it is. The one public division, `ch_writable_len`'s
-in tls_write.c, is the exception: a compiler that copies it into two paths,
-as the mips gcc does at `-O2`, reports two, which you record for your label
-with `WIDEMUL_CEILING_SPEC="mycore/tls_write.c:2"`. Record the branch counts
+ceiling as the finding it is. The two public divisions, `ch_writable_len`'s
+in tls_write.c, are the exception: a compiler that copies them into two
+paths, as the mips gcc does at `-O2`, reports more, three there, which you
+record for your label with `WIDEMUL_CEILING_SPEC="mycore/tls_write.c:3"`. Record the branch counts
 with
 `BRANCH_CEILING="mycore/ct.c:2 mycore/sha256.c:12 ..."` once you have read
 the branches and found each to be loop control.
@@ -252,21 +252,23 @@ the lint. Every source not listed is at zero under every compiler.
 
 | compiler | poly1305.c | x25519.c | mlkem_poly.c | p256_scalar.c | tls_write.c |
 | --- | --- | --- | --- | --- | --- |
-| clang 23, Cortex-M3, mips32r2, rv32imac | 0 | 0 | 0 | 0 | 1 |
-| Arm GNU gcc 15.3, Cortex-M3 | 0 | 0 | 0 | 0 | 1 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2 | 0 | 0 | 0 | 0 | 1 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 2 `madd` | 0 | 0 | 2 `madd` | 2 `divu` |
-| Bootlin gcc 14.3, rv32imac | 0 | 0 | 0 | 0 | 1 |
-| Bootlin gcc 14.3, rv32ic | 0 | 0 | 0 | 0 | 1 |
+| clang 23, Cortex-M3, mips32r2, rv32imac | 0 | 0 | 0 | 0 | 2 |
+| Arm GNU gcc 15.3, Cortex-M3 | 0 | 0 | 0 | 0 | 2 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2 | 0 | 0 | 0 | 0 | 2 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 2 `madd` | 0 | 0 | 2 `madd` | 3 `divu` |
+| Bootlin gcc 14.3, rv32imac | 0 | 0 | 0 | 0 | 2 |
+| Bootlin gcc 14.3, rv32ic | 0 | 0 | 0 | 0 | 2 |
 
-tls_write.c's column is the one public division, `ch_writable_len`'s: the
-caller's buffer length by the length of a record. It is one division
-instruction, `udiv` on Cortex-M3 and `divu` on mips32r2 and rv32imac, and on
-rv32ic one call to `__udivsi3`. At `-O2` the mips gcc copies the function's
-body into both arms of `record_plaintext_max`'s choice between `peer_limit`
-and `CH_TX_PT`, so one arm divides by `peer_limit + REC_OVERHEAD` and the
-other by `CH_TX_PT + REC_OVERHEAD`. Each path still runs one division, and
-every operand is a public length.
+tls_write.c's column is the two public divisions, `ch_writable_len`'s: the
+caller's buffer length by the length of a record, and what that length
+holds after a KeyUpdate record by the same length (`docs/decisions.md` 138).
+Each is one division instruction, `udiv` on Cortex-M3 and `divu` on mips32r2
+and rv32imac, and on rv32ic one call to `__udivsi3`. At `-O2` the mips gcc
+copies the first division into both arms of `record_plaintext_max`'s choice
+between `peer_limit` and `CH_TX_PT`, so one arm divides by
+`peer_limit + REC_OVERHEAD` and the other by `CH_TX_PT + REC_OVERHEAD`, and
+it keeps the second division once, which both arms reach. Each path still
+runs at most the two divisions, and every operand is a public length.
 
 rv32ic has no multiply or divide instruction to count, so that spec counts
 the runtime routines instead: a 64-bit product is a call to `__muldi3`, which
@@ -590,7 +592,8 @@ was compiled with and includes its public headers. Include it before any
 other chapulin header, or compile with `-include bin/chapulin.h`, and pass
 no chapulin define yourself (`docs/building.md`). Every packaged object also
 exports its build record (`build.h`): the axes, struct sizes and bounds it
-was compiled with. Compare it once at startup, before the first session:
+was compiled with, and in a TCP object the run limit on the peer's
+KeyUpdates. Compare it once at startup, before the first session:
 
 ```c
 #include "build.h"
@@ -606,10 +609,11 @@ name your defines select, so the call above reads the record of the transport
 you compile for, and a program built for another transport than the object's
 fails to link.
 
-A program in another language reads the same symbol. `ch_build_info` is twelve
-`uint32_t` fields with no padding, and each `CH_BUILD_` macro is the value
-your defines give the field of the same name. Compare `version` first and the
-other fields only when it matches. A Zig program that depends on the
+A program in another language reads the same symbol. `ch_build_info` is
+thirteen `uint32_t` fields with no padding, and each `CH_BUILD_` macro is the
+value your defines give the field of the same name. Compare `version` first
+and the other fields only when it matches. Format 2 appended
+`key_update_run_max`, so a record of format 1 differs at `version`. A Zig program that depends on the
 package imports its module `chapulin`, the Zig API (`docs/zig.md`), whose
 `buildMatches()` calls the same predicate on its own object's record. The
 module's `chapulin.c` holds the headers, which translate-c makes under the

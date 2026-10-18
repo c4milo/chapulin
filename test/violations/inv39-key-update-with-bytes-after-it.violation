@@ -3,16 +3,16 @@ file: handshake_post.c
 catches: unit
 reason: ch_read rekeys on a KeyUpdate that has bytes after it in its
   record and reads on, in either role. colibri sent a server one record
-  holding two KeyUpdates and got two answers, and a message that starts
-  after a KeyUpdate finishes under the next key. RFC 9846 section 5.1
-  makes that unexpected_message. test/session_record_end_tests.h holds
-  the KeyUpdate that ends its record and the one with a byte after it.
+  holding two KeyUpdates, and a message that starts after a KeyUpdate
+  finishes under the next key. RFC 9846 section 5.1 makes that
+  unexpected_message. test/session_record_end_tests.h holds the KeyUpdate
+  that ends its record and the one with a byte after it.
 
 --- old
     if (!ends_input) {
         return CH_EPROTO;
     }
-    int rc = handle_key_update(t, body[0]);
+    if (t->key_update_run >= CH_KEY_UPDATE_RUN_MAX) {
 --- new
     (void)ends_input;
-    int rc = handle_key_update(t, body[0]);
+    if (t->key_update_run >= CH_KEY_UPDATE_RUN_MAX) {

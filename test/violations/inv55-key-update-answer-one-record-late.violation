@@ -1,0 +1,16 @@
+invariant: INV-55
+file: tls_write.c
+catches: unit
+reason: ch_write seals one data record under the old key before the
+  answer a request owes, where RFC 9846 section 4.7.3 sends the answer
+  before the next record of application data. bin/unit requires the
+  KeyUpdate record first in the write after a request.
+
+--- old
+    if (t->key_update_owed) {
+        return 0;
+    }
+--- new
+    if (t->key_update_owed) {
+        return 1;
+    }

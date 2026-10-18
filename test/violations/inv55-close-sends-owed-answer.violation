@@ -1,0 +1,19 @@
+invariant: INV-55
+file: tls.c
+catches: unit
+reason: ch_close sends the owed KeyUpdate before its close_notify, a
+  rekey and a record that no data record follows, where RFC 9846 section
+  4.7.3 owes the answer before application data alone. bin/unit requires
+  the close of a session that owes an answer to send one alert record.
+
+--- old
+    if (t->keys) {
+        (void)tlsi_send_alert(t, 1, ALERT_CLOSE_NOTIFY);
+    }
+--- new
+    if (t->keys) {
+        if (t->key_update_owed) {
+            (void)hspost_send_key_update(t);
+        }
+        (void)tlsi_send_alert(t, 1, ALERT_CLOSE_NOTIFY);
+    }

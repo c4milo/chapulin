@@ -483,10 +483,12 @@ int main(void) {
                      " stale one is refused; a close_notify closes one direction and ch_read"
                      " sends nothing; the server takes secp256r1 only when x25519 is not"
                      " listed; each end refuses a message before a key change that does not"
-                     " end its record; each end emits its failure's alert in the clear before"
-                     " its write key and sealed after, sends nothing after the peer's fatal"
-                     " alert and answers a 3-byte one with decode_error; the server refuses a"
-                     " client's NewSessionTicket\n",
+                     " end its record; the server answers a run of KeyUpdates with one, and"
+                     " refuses one past the run limit, which its own answer does not end;"
+                     " each end emits its failure's alert in the clear before its write key"
+                     " and sealed after, sends nothing after the peer's fatal alert and"
+                     " answers a 3-byte one with decode_error; the server refuses a client's"
+                     " NewSessionTicket\n",
                      (unsigned)LOOP_GROUP, rounds);
         return 0;
     }

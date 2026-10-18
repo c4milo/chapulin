@@ -35,8 +35,9 @@
 #endif
 
 // The format of ch_build_info. A later format appends fields and raises
-// this number, so version is the one field every format holds.
-#define CH_BUILD_VERSION 1U
+// this number, so version is the one field every format holds. Format 2
+// appended key_update_run_max (docs/decisions.md 138).
+#define CH_BUILD_VERSION 2U
 
 // One bit of ch_build_info.axes per build define that changes a public
 // layout or a public bound. Each bit is named after its define, and the
@@ -215,6 +216,15 @@
 #else
 #define CH_BUILD_TRANSPORT_PARAMS_MAX 0U
 #endif
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+// CH_KEY_UPDATE_RUN_MAX is the most KeyUpdates a TCP session reads in a
+// row (session.h). No define changes it, so a record from another release
+// of this tree is what a difference here shows.
+#define CH_BUILD_KEY_UPDATE_RUN_MAX ((uint32_t)CH_KEY_UPDATE_RUN_MAX)
+#else
+// A QUIC build reads no TLS KeyUpdate, so it holds no run limit.
+#define CH_BUILD_KEY_UPDATE_RUN_MAX 0U
+#endif
 
 // The record. Every field is a uint32_t, so the struct has no padding
 // and the same layout in every language that reads it. Each field holds
@@ -233,11 +243,12 @@ typedef struct {
     uint32_t min_rxbuf;            // CH_BUILD_MIN_RXBUF
     uint32_t x509_max;             // CH_BUILD_X509_MAX
     uint32_t transport_params_max; // CH_BUILD_TRANSPORT_PARAMS_MAX
+    uint32_t key_update_run_max;   // CH_BUILD_KEY_UPDATE_RUN_MAX
 } ch_build_info;
 
 #ifndef __cplusplus
-_Static_assert(sizeof(ch_build_info) == 12 * sizeof(uint32_t),
-               "ch_build_info holds twelve uint32_t fields and no padding");
+_Static_assert(sizeof(ch_build_info) == 13 * sizeof(uint32_t),
+               "ch_build_info holds thirteen uint32_t fields and no padding");
 #endif
 
 // The record of the object this program links, defined in build.c. Its
@@ -278,7 +289,8 @@ static inline int ch_build_matches(const ch_build_info *b) {
            b->sizeof_ch_rsa_priv == CH_BUILD_SIZEOF_CH_RSA_PRIV &&
            b->tx_stage == CH_BUILD_TX_STAGE && b->min_rxbuf == CH_BUILD_MIN_RXBUF &&
            b->x509_max == CH_BUILD_X509_MAX &&
-           b->transport_params_max == CH_BUILD_TRANSPORT_PARAMS_MAX;
+           b->transport_params_max == CH_BUILD_TRANSPORT_PARAMS_MAX &&
+           b->key_update_run_max == CH_BUILD_KEY_UPDATE_RUN_MAX;
 }
 
 #endif

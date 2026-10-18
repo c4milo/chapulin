@@ -1,0 +1,19 @@
+invariant: INV-55
+file: tls.c
+catches: unit
+reason: a user_canceled alert ends a run of KeyUpdates. It gives the caller
+  no data, and ch_read reads past it, so a peer that sends one after each
+  KeyUpdate sends KeyUpdates with no limit. A tcp-nonblocking caller that
+  hands ch_read one record a call meets no quiet cap either. bin/unit sends
+  a full run, a user_canceled alert and one KeyUpdate more, and requires
+  CH_KEY_UPDATE_LIMIT.
+
+--- old
+        // ch_read's quiet cap bounds a hostile stream of these like any
+        // other record that carries no data.
+        return CH_OK;
+--- new
+        // ch_read's quiet cap bounds a hostile stream of these like any
+        // other record that carries no data.
+        t->key_update_run = 0;
+        return CH_OK;

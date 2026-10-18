@@ -1,0 +1,19 @@
+invariant: INV-13
+file: tls_write.c
+catches: unit
+reason: a KeyUpdate that ch_write could not send fails the session with
+  unexpected_message, which says the peer sent a message out of order,
+  where the failure is this side's own send. bin/unit has the peer ask for
+  a KeyUpdate, fails the send of the answer the next ch_write owes, and
+  requires internal_error from ch_alert_sent.
+
+--- old
+    int rc = hspost_send_key_update(t);
+    if (rc != CH_OK) {
+        tlsi_fail(t, ALERT_INTERNAL_ERROR);
+    }
+--- new
+    int rc = hspost_send_key_update(t);
+    if (rc != CH_OK) {
+        tlsi_fail(t, ALERT_UNEXPECTED_MESSAGE);
+    }

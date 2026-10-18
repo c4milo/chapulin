@@ -147,8 +147,9 @@ static void test_alert_inside_message(void) {
 // here a protected record whose inner type is change_cipher_spec, which
 // RFC 9846 §5 refuses with unexpected_message (rfc9846.txt:3433-3435),
 // and a send that fails. A failed send is this side's failure and not the
-// peer's, so both ch_write and the reply ch_read owes a KeyUpdate answer
-// it with internal_error (RFC 9846 §6.2, rfc9846.txt:3979-3981).
+// peer's, so ch_write answers it with internal_error (RFC 9846 §6.2,
+// rfc9846.txt:3979-3981), for a data record and for the KeyUpdate answer
+// a peer's request owes before one.
 static void test_failure_alert_recorded(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
@@ -189,9 +190,13 @@ static void test_failure_alert_recorded(void) {
     rec_dir_init(&peer, secret);
     mock_session(&t3, &m3, rxbuf, sizeof rxbuf, secret, NULL);
     mock_push(&m3, &peer, REC_HANDSHAKE, update_requested, sizeof update_requested);
+    rec_dir_update(secret, &peer);
+    mock_push(&m3, &peer, REC_APPDATA, (const uint8_t *)"x", 1);
+    CHECK(ch_read(&t3, out, sizeof out) == 1 && m3.sends == 0);
     m3.fail_after = 1;
-    CHECK(ch_read(&t3, out, sizeof out) == CH_EIO);
+    CHECK(ch_write(&t3, (const uint8_t *)"x", 1) == CH_EIO);
     CHECK(ch_alert_sent(&t3) == ALERT_INTERNAL_ERROR && ch_alert_received(&t3) == 0);
+    CHECK(t3.state == CH_ST_FAILED && t3.send_epochs == 0);
 }
 
 #endif

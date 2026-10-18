@@ -1,0 +1,11 @@
+invariant: INV-55
+file: handshake_post.c
+catches: unit
+reason: the KeyUpdate past a full run fails the read with CH_EPROTO, the
+  code of every protocol failure, so a caller cannot report the run limit
+  as the reason the session ended. bin/unit requires CH_KEY_UPDATE_LIMIT.
+
+--- old
+        return CH_KEY_UPDATE_LIMIT;
+--- new
+        return CH_EPROTO;

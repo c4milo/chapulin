@@ -1,0 +1,13 @@
+invariant: INV-55
+file: handshake_post.c
+catches: unit
+reason: ch_read takes every KeyUpdate a peer sends, each a key
+  derivation, with no limit on a run, so a peer can send KeyUpdates and
+  no data at all. bin/unit requires the KeyUpdate after a full run to
+  fail the read with CH_KEY_UPDATE_LIMIT.
+
+--- old
+    if (t->key_update_run >= CH_KEY_UPDATE_RUN_MAX) {
+        return CH_KEY_UPDATE_LIMIT;
+    }
+--- new

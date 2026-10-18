@@ -44,9 +44,9 @@ const has_clock = @hasField(c.ch_cfg, "clock_io");
 /// One error per ch_err code a call returns, named as chapulin.hpp's Status names it. Each call's
 /// error set is the part of this one its C call returns. CH_RECORD_AGAIN and CH_ECLOSED are no
 /// error here: record sessions' read reports the first as pt_len 0, and no call returns the second.
-/// A TCP object's set lacks Discard and AeadLimit, whose codes only a QUIC object's headers
-/// declare.
-pub const Error = if (@hasDecl(c, "CH_QUIC_DISCARD")) AnyError else error{ Io, Proto, Auth, Cap, Invalid };
+/// An object's set holds the codes its headers declare: Discard and AeadLimit in a QUIC object's
+/// alone, and KeyUpdateLimit in a TCP object's alone.
+pub const Error = error{ Io, Proto, Auth, Cap, Invalid } || (if (@hasDecl(c, "CH_QUIC_DISCARD")) error{ Discard, AeadLimit } else error{KeyUpdateLimit});
 const AnyError = error{
     /// CH_EIO: an output slice could not take what C sent. The session is dead.
     Io,
@@ -67,6 +67,9 @@ const AnyError = error{
     Discard,
     /// CH_QUIC_AEAD_LIMIT: RFC 9001 §6.6's integrity limit. The session is dead.
     AeadLimit,
+    /// CH_KEY_UPDATE_LIMIT: the peer sent one KeyUpdate past CH_KEY_UPDATE_RUN_MAX in a row. The
+    /// session is dead.
+    KeyUpdateLimit,
 };
 
 /// The C code each error stands for.
@@ -79,6 +82,7 @@ fn codeOf(comptime err: AnyError) c_int {
         error.Invalid => c.CH_EINVAL,
         error.Discard => c.CH_QUIC_DISCARD,
         error.AeadLimit => c.CH_QUIC_AEAD_LIMIT,
+        error.KeyUpdateLimit => c.CH_KEY_UPDATE_LIMIT,
     };
 }
 

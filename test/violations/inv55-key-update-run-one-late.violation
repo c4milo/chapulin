@@ -1,0 +1,11 @@
+invariant: INV-55
+file: handshake_post.c
+catches: unit
+reason: the run limit takes one KeyUpdate more than CH_KEY_UPDATE_RUN_MAX,
+  the number the build record states. bin/unit sends one KeyUpdate past a
+  full run and requires CH_KEY_UPDATE_LIMIT for it.
+
+--- old
+    if (t->key_update_run >= CH_KEY_UPDATE_RUN_MAX) {
+--- new
+    if (t->key_update_run > CH_KEY_UPDATE_RUN_MAX) {

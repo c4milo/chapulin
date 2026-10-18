@@ -37,8 +37,9 @@
 // direction with ch_close, which sends this side's close_notify through
 // cfg.send as one record and leaves the session CH_ST_CLOSED, whichever
 // side closed first. ch_record_close after it is safe. ch_read calls cfg.send
-// in two cases alone: to answer a KeyUpdate whose sender asked for one
-// (RFC 9846 §4.7.3), and to send the alert of a failure.
+// in one case alone: to send the alert of a failure. A KeyUpdate whose
+// sender asked for an answer gets it from the next ch_write, before that
+// call's data (RFC 9846 §4.7.3, docs/decisions.md 138).
 //
 // Result codes match quic.h's meanings. CH_OK means the call did what it
 // says. CH_EINVAL from ch_record_init means it refused the configuration,

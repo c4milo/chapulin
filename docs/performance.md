@@ -89,7 +89,7 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16816 |
 | peak stack, `ch_connect` (`KEX=pq`) | 16000 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
-| peak stack, `ch_write` / `ch_close` | 944 / 896 |
+| peak stack, `ch_write` / `ch_close` | 1520 / 896 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 12736 |
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12912 |
 

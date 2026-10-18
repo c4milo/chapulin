@@ -195,7 +195,10 @@ the choice down is the only part a compiler can hold you to.
 Any error kills the session. The stack wipes its keys and you
 reconnect. `ch_result_text(rc)` (`result.h`) gives a short English text
 for each result code, for your log. Devices recover by reconnecting anyway, and the rule removes
-the whole resumable-error state space from the code and the proofs.
+the whole resumable-error state space from the code and the proofs. One
+limit has a code of its own: a TCP session's `ch_read` returns
+`CH_KEY_UPDATE_LIMIT` when the peer sends too many KeyUpdates in a row
+(below).
 
 Read what a session reports through the calls of `session_report.h`,
 which `tls.h`, `tcp_nonblocking.h` and `quic.h` include:
@@ -311,23 +314,43 @@ how to cut and size its bytes:
   into `cap` bytes of records, at the smaller of the peer's
   `record_size_limit` and `CH_TX_PT` per record. Pass at most that much
   when your send buffer holds `cap` bytes. Both TCP transports export it.
-  Under `SUITE=aesgcm` it also counts the KeyUpdate record below when the
-  write crosses an AES-GCM write key's ceiling, so a buffer sized for
-  your largest write holds 27 bytes more.
+  It also counts the KeyUpdate record below when the write sends one, so
+  a buffer sized for your largest write holds 27 bytes more.
 - `CH_ALERT_RECORD_LEN`, 24, is what `ch_close` sends, and what a failing
   `ch_read` sends, unless the peer's fatal alert failed it: that read
   sends nothing. A handshake that fails once its side's write key is
   installed gives one too, through `ch_record_out` or `on_record_out`;
-  one that fails before it gives the alert in the clear, 7 bytes. `CH_KEY_UPDATE_RECORD_LEN`, 27, is what `ch_read` sends
-  for each KeyUpdate that asks for an answer. A record carries at most
-  one KeyUpdate, as its last message (RFC 9846 §5.1), so a record gets
-  at most one answer, and a record with bytes after a KeyUpdate fails
-  the read.
+  one that fails before it gives the alert in the clear, 7 bytes.
+  `CH_KEY_UPDATE_RECORD_LEN`, 27, is one KeyUpdate record, which only
+  `ch_write` sends. `ch_read` sends no record but that alert.
+- A peer's KeyUpdate that asks for an answer gets it from your next
+  `ch_write` of one byte or more: one KeyUpdate record before its data,
+  under the old key, and the data under the next key (RFC 9846 §4.7.3).
+  One answer serves every request read since your side's last KeyUpdate.
+  A session that never writes again never answers, which §4.7.3 allows:
+  it owes the answer before its next data record, and `ch_close` sends
+  its close_notify alone. A record carries at most one KeyUpdate, as its
+  last message (RFC 9846 §5.1), and a record with bytes after a KeyUpdate
+  fails the read.
+- `ch_read` reads at most `CH_KEY_UPDATE_RUN_MAX`, 16, KeyUpdates in a row
+  (`session.h`). A record of application data with one byte or more ends
+  a run, and an empty one does not. The next KeyUpdate fails the read
+  with `CH_KEY_UPDATE_LIMIT` and an unexpected_message alert, so your log
+  can name the run limit as the reason the session ended
+  ([`docs/decisions.md`](decisions.md) 138). The build record holds the
+  number (`build.h`). One `ch_read` also fails with `CH_EPROTO` and the
+  same alert once it has read 32 records that give no data,
+  `CH_QUIET_CAP`. A `TRANSPORT=tcp-blocking` call reads a whole run, so a
+  run that carries 16 or more empty records, tickets or user_canceled
+  alerts fails there with `CH_EPROTO` first. The limit does not bound how
+  fast a peer sends KeyUpdates: for a rate bound, count in your own
+  protocol, which sees each byte of data.
 - Under `SUITE=aesgcm`, `ch_write` sends one KeyUpdate record of its own,
   `CH_KEY_UPDATE_RECORD_LEN` bytes, as the last of the
   `REC_AES_GCM_RECORDS_MAX` records, 2^24, that an AES-GCM write key
   seals, which RFC 9846 §5.5 requires of a sender. It seals the rest of
   that write under the next key, and the peer reads across the change.
+  When an answer is owed at that record, the one KeyUpdate is both.
   RFC 9846 §4.7.3 lets a sender send 2^48 - 1 KeyUpdates, and a session
   that has sent that many cannot replace a key at its ceiling: that
   `ch_write` returns `CH_ECAP` and fails the session with internal_error.

@@ -1,0 +1,13 @@
+invariant: INV-55
+file: handshake_post.c
+catches: unit
+reason: a KeyUpdate this side sends leaves the answer owed, so every
+  later write sends one more KeyUpdate and rekeys once more, where one
+  answer serves the requests read before it. bin/unit requires the
+  second write after a run of requests to send its data record alone.
+
+--- old
+    t->send_epochs++;
+    t->key_update_owed = 0;
+--- new
+    t->send_epochs++;

@@ -1,0 +1,17 @@
+invariant: INV-55
+file: handshake_post.c
+catches: tcp_nonblocking_loop_test
+reason: the KeyUpdate this side sends ends the peer's run, so a peer that
+  asks for an answer and gets one each run sends KeyUpdates with no limit
+  and no data. A tcp-blocking ch_read returns only data, so no write falls
+  inside a run there, and bin/unit cannot see it. The tcp-nonblocking loop's
+  server reads a full run of requests one a call, writes the answer, and
+  requires CH_KEY_UPDATE_LIMIT for the next KeyUpdate.
+
+--- old
+    t->send_epochs++;
+    t->key_update_owed = 0;
+--- new
+    t->send_epochs++;
+    t->key_update_owed = 0;
+    t->key_update_run = 0;

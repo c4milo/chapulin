@@ -9,11 +9,14 @@
 //! side's handshake failure before and after its write key, whose alert
 //! record the other side reads. At TX_RECORD=16384 the records carry
 //! CH_TX_PT bytes each. Under SUITE=aesgcm, loop_key_limit.zig then has
-//! each side write across its AES-GCM write key's ceiling.
+//! each side write across its AES-GCM write key's ceiling, and
+//! loop_key_update_run.zig has the server refuse one KeyUpdate past the
+//! run limit in every object.
 const std = @import("std");
 const chapulin = @import("chapulin");
 const fixture = @import("fixture.zig");
 const key_limit = @import("loop_key_limit.zig");
+const key_update_run = @import("loop_key_update_run.zig");
 const c = chapulin.c;
 const check = fixture.check;
 const record = chapulin.record;
@@ -384,6 +387,7 @@ pub fn run() !void {
     try refusals();
     try failureAlerts();
     try key_limit.run();
-    const across = if (key_limit.runs) ", and each side's write across its AES-GCM write key's ceiling under both AES-GCM suites" else "";
-    std.debug.print("a record-mode client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, a resumed ticket, a stale one refused, a client that takes no tickets, first with no ticket and then with one it resumes, both closes, four refusals and each side's failure alert on each side of its write key{s}\n", .{ c.CH_TX_PT, payload.len, across });
+    try key_update_run.run();
+    const across = if (key_limit.runs) ", each side's write across its AES-GCM write key's ceiling under both AES-GCM suites" else "";
+    std.debug.print("a record-mode client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, a resumed ticket, a stale one refused, a client that takes no tickets, first with no ticket and then with one it resumes, both closes, four refusals, each side's failure alert on each side of its write key{s}, and error.KeyUpdateLimit for one KeyUpdate past a run of {d}\n", .{ c.CH_TX_PT, payload.len, across, c.CH_KEY_UPDATE_RUN_MAX });
 }

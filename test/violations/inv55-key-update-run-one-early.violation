@@ -1,0 +1,11 @@
+invariant: INV-55
+file: handshake_post.c
+catches: unit
+reason: the run limit refuses the last KeyUpdate of a full run, one fewer
+  than CH_KEY_UPDATE_RUN_MAX, the number the build record states. bin/unit
+  reads two full runs, each ended by a data record of one byte.
+
+--- old
+    if (t->key_update_run >= CH_KEY_UPDATE_RUN_MAX) {
+--- new
+    if (t->key_update_run >= CH_KEY_UPDATE_RUN_MAX - 1) {

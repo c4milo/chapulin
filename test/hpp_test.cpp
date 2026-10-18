@@ -651,6 +651,11 @@ int main() {
     CHECK(std::strcmp(chapulin::status_text(chapulin::Status::ok), "success") == 0);
     CHECK(std::strcmp(chapulin::status_text(chapulin::Status::invalid),
                       ch_result_text(CH_EINVAL)) == 0);
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+    CHECK(static_cast<int>(chapulin::Status::key_update_limit) == CH_KEY_UPDATE_LIMIT);
+    CHECK(std::strcmp(chapulin::status_text(chapulin::Status::key_update_limit),
+                      ch_result_text(CH_KEY_UPDATE_LIMIT)) == 0);
+#endif
 
     // Read result mapping.
     {

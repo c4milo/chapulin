@@ -20,4 +20,5 @@ const ch_build_info ch_build = {
     .min_rxbuf = CH_BUILD_MIN_RXBUF,
     .x509_max = CH_BUILD_X509_MAX,
     .transport_params_max = CH_BUILD_TRANSPORT_PARAMS_MAX,
+    .key_update_run_max = CH_BUILD_KEY_UPDATE_RUN_MAX,
 };

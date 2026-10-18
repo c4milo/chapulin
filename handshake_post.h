@@ -108,10 +108,13 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 // not one byte and a NewSessionTicket whose fields do not fill it
 // (§6, rfc9846.txt:3785-3788); illegal_parameter for a KeyUpdate whose
 // request_update is neither 0 nor 1 (§4.7.3, rfc9846.txt:3362-3365);
-// bad_record_mac for a record that does not
-// open; and what hsr_refuse_alert chose for an alert record between two
-// records of one message, whose error alert is the peer's fatal alert
-// and is answered with nothing. A TRANSPORT=tcp-nonblocking
+// unexpected_message and CH_KEY_UPDATE_LIMIT for a KeyUpdate after a run
+// of CH_KEY_UPDATE_RUN_MAX (session.h); bad_record_mac for a record that
+// does not open; and what hsr_refuse_alert chose for an alert record
+// between two records of one message, whose error alert is the peer's
+// fatal alert and is answered with nothing. It sends no record but that
+// alert: a KeyUpdate that asks for an answer sets ch_tls.key_update_owed,
+// and ch_write sends the answer. A TRANSPORT=tcp-nonblocking
 // build also returns CH_RECORD_AGAIN when the next fragment has not
 // arrived: the fragment bytes so far stay at the front of cfg.buf,
 // t->post_fill counts them, and the caller passes that count back here
@@ -134,16 +137,19 @@ int hspost_read(ch_tls *t, size_t pt_len);
 // Sends one KeyUpdate whose request_update is update_not_requested (0),
 // as one record of CH_KEY_UPDATE_RECORD_LEN bytes (tls.h) under the
 // current write key, then moves the write direction to the next traffic
-// secret and adds one to t->send_epochs. RFC 9846 §4.7.3 has a sender
-// seal its KeyUpdate under the old key and send everything after it under
-// the new one (rfc9846.txt:3349-3351, 3391-3392). Two callers send one:
-// handle_key_update, to answer a peer that asked for one, and ch_write
-// (tls_write.c), as the last of the REC_AES_GCM_RECORDS_MAX records an
-// AES-GCM write key seals (record.h).
+// secret, adds one to t->send_epochs and clears t->key_update_owed. RFC
+// 9846 §4.7.3 has a sender seal its KeyUpdate under the old key and send
+// everything after it under the new one (rfc9846.txt:3349-3351,
+// 3391-3392). Any KeyUpdate this side sends answers every request the
+// peer sent before it, so one answer serves a run of them
+// (rfc9846.txt:3370-3373). ch_write (tls_write.c) is the one caller. It
+// sends one before a data record when an answer is owed, or when the record
+// would be the last of the REC_AES_GCM_RECORDS_MAX an AES-GCM write key
+// seals (record.h), and one KeyUpdate serves both.
 //
-// Requires t->send_epochs below HSPOST_SEND_EPOCHS_MAX. Each caller checks
-// that first, because the two answer the cap differently: a peer's request
-// goes unanswered there, and ch_write fails the session.
+// Requires t->send_epochs below HSPOST_SEND_EPOCHS_MAX. A request read at
+// that cap owes no answer (handle_key_update), and ch_write fails the
+// session at an AES-GCM ceiling there.
 //
 // Returns CH_OK, or CH_EIO when the record could not be sealed or sent.
 // The write key is still the old one then, and the caller fails the

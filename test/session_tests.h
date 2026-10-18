@@ -3,9 +3,9 @@
 // semantics) and ch_connect's config validation. This file holds the
 // mock transport every one of those tests drives; the tests themselves
 // live in session_post_tests.h, session_record_end_tests.h,
-// session_write_tests.h, session_alert_tests.h, session_cfg_tests.h and
-// session_hello_tests.h, included at the bottom. Included by test/unit_test.c only, after its
-// CHECK macro and includes.
+// session_write_tests.h, session_update_run_tests.h, session_alert_tests.h,
+// session_cfg_tests.h and session_hello_tests.h, included at the bottom.
+// Included by test/unit_test.c only, after its CHECK macro and includes.
 #ifndef CH_SESSION_TESTS_H
 #define CH_SESSION_TESTS_H
 
@@ -21,7 +21,7 @@ typedef struct {
     size_t len;
     size_t off;
     int tickets;
-    size_t sent;      // bytes the client transmitted (KeyUpdate replies etc.)
+    size_t sent;      // bytes the client transmitted (data, KeyUpdates, alerts)
     uint8_t tx[4096]; // capture of everything the client sent
     size_t tx_len;
     int sends;      // send calls so far
@@ -114,6 +114,7 @@ static size_t mock_pop_client_record(mock_io *m, size_t at, rec_dir *reader, uin
 #include "session_post_tests.h"
 #include "session_record_end_tests.h"
 #include "session_ticket_tests.h"
+#include "session_update_run_tests.h"
 #include "session_write_tests.h"
 
 #endif

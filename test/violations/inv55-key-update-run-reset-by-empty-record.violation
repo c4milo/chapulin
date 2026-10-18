@@ -1,0 +1,14 @@
+invariant: INV-55
+file: tls.c
+catches: unit
+reason: an empty record of application data ends a run of KeyUpdates, so
+  a peer that sends one after each KeyUpdate sends KeyUpdates with no
+  limit and gives the caller no data. bin/unit sends a full run, an empty
+  data record and one KeyUpdate more, and requires CH_KEY_UPDATE_LIMIT.
+
+--- old
+        if (pt_len > 0) {
+            t->key_update_run = 0;
+        }
+--- new
+        t->key_update_run = 0;
