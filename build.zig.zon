@@ -43,6 +43,7 @@
         "chacha20_vector.h",
         "chapulin.hpp",
         "chapulin.zig",
+        "chapulin_cpu.zig",
         "chapulin_pem.zig",
         "chapulin_quic.zig",
         "chapulin_record.zig",

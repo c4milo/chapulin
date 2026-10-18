@@ -2,11 +2,12 @@
 
 A Zig program runs chapulin's record-mode and QUIC sessions through Zig
 values, Zig errors and session types it places in its own memory. It
-never builds a `ch_cfg` or writes a C callback. The API is five files at
+never builds a `ch_cfg` or writes a C callback. The API is six files at
 the repository root: `chapulin.zig`, `chapulin_record.zig`,
-`chapulin_quic.zig`, `chapulin_ticket.zig` and `chapulin_pem.zig`.
-`chapulin_ticket.zig` holds `Ticket`, and `chapulin_pem.zig` holds
-`Chain`, `EcdsaP256Key` and `Anchors`. The API is chapulin.hpp's kind of
+`chapulin_quic.zig`, `chapulin_ticket.zig`, `chapulin_pem.zig` and
+`chapulin_cpu.zig`. `chapulin_ticket.zig` holds `Ticket`,
+`chapulin_pem.zig` holds `Chain`, `EcdsaP256Key` and `Anchors`, and
+`chapulin_cpu.zig` holds `Cpu` and `cpuBits`. The API is chapulin.hpp's kind of
 wrapper: each call
 forwards to the C call of the same name. It adds four things and no
 more:

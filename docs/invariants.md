@@ -2219,8 +2219,8 @@ last `ROLE=server` stub, as the entry said it would.
   binary that runs the provisioning walk outside a
   CA build defines `CH_X509_CA_TEST`, which no object's defines include.
   `build.zig` copies `chapulin.zig`, `chapulin_record.zig`,
-  `chapulin_quic.zig` and `chapulin_ticket.zig` into a directory of the
-  configuration's own, roots
+  `chapulin_quic.zig`, `chapulin_ticket.zig`, `chapulin_pem.zig` and
+  `chapulin_cpu.zig` into a directory of the configuration's own, roots
   the module there, and adds the object to it with `addObjectFile`. The
   Makefile runs the host test on `$(CC)`'s predefined macros
   (`HOST_TARGET`) and `build.zig` on the resolved target's architecture
