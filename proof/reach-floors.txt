@@ -113,9 +113,10 @@
 # srv_parser_frozen reaches 40.7% where srv_parser_walk reaches 78.6%,
 # because it drives the duplicate check and the walk of the frozen digest
 # alone. The rest of srv_parser.c is the walk harness's.
-# rsa_ifma_sign_wipe, rsa_ifma_sign_wipe_webpki and srv_parser_count
-# printed 3.3%, 3.2% and 17.2% in that run. They carry no floor until the
-# cause of that low reach is known.
+# rsa_ifma_sign_wipe and rsa_ifma_sign_wipe_webpki took their floors from
+# the same run, and the comment above their lines says why their reach is
+# low. srv_parser_count printed 17.2% in that run. It carries no floor
+# until the cause of that low reach is known.
 
 aead 97.4
 aead_forge 96.9
@@ -327,6 +328,27 @@ rsa_ifma_sign_select 22.3
 rsa_ifma_sign_select_webpki 21.8
 rsa_ifma_sign_setup 24.7
 rsa_ifma_sign_setup_webpki 24.4
+# The two rsa_ifma_sign_wipe lines took their floors from nightly run
+# 39109704185 on 2026-10-18. Run 39117425286, on the same runner image,
+# gave the same counts and listed each location as reached or not.
+# Each harness calls rsa_ifma_sign_wipe_below and nothing else. Its 11
+# reached locations are all the locations of the code that it proves.
+# They are the 2 of main, the 2 of rsa_ifma_sign_wipe_below, the 2 of
+# wipe_frame and the 5 of the ct_wipe stub. The last ct_wipe location
+# follows the loop, so the loop ends inside the bound of ct_wipe.0.
+# The harness compiles all of rsa_ifma_sign.c, and no path from main
+# reaches the other 326 locations, 331 under CH_TRUST_WEBPKI. Of those, 3
+# are ct_mul128 in ct.h and ch_assert_fail in proof/harness.h. The rest
+# are the exponentiation in rsa_ifma_sign.c, rsa_ifma_product.h and the
+# lane model in test/rsa_ifma_model_lanes.h. The rsa_ifma_sign_pair,
+# rsa_ifma_sign_select, rsa_ifma_sign_setup and rsa_ifma_sign_power
+# harnesses prove them.
+# With one location fewer, the two harnesses read 3.0% and 2.9%, below
+# their floors. With the bound of ct_wipe.0 one pass short, run
+# 39118123345 read 7 of 337 and 7 of 342. The cover run did not reach
+# the 4 locations after the loop.
+rsa_ifma_sign_wipe 3.3
+rsa_ifma_sign_wipe_webpki 3.2
 rsa_ifma_sums 42.4
 rsa_mont64_addcarry_sums 43.4
 rsa_mont64_blocks_sums 43.1
