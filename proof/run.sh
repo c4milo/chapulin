@@ -481,6 +481,10 @@ launch slow:5 noovf x25519_sqr 65 ""
 # took internal_error (docs/decisions.md 76). Measured through
 # proof/prove-one.sh on 2026-09-30, at a load average between 30 and 45:
 # psk 1861 properties in 206 s at 6.09 GB, pin 1863 in 123 s at 3.04 GB.
+# With rand_draw writing zero to the bytes before the source runs
+# (docs/decisions.md 141), through proof/prove-one.sh with PROVE_NO_CACHE=1
+# on 2026-10-20 at a load average near 106: psk 1867 properties in 612 s at
+# 2.37 GB, pin 1869 in 242 s at 2.98 GB.
 launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c proof/ct_wipe_stub.c
 launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c proof/ct_wipe_stub.c
 # ML-KEM's chained-product functions, one formula each; the inverse
@@ -1088,7 +1092,10 @@ launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_P
 # asserting false at the P-256 share, the refused point and the refused
 # P-256 secret fails all three. With both draws through rand_draw, which
 # reads the session's configuration (docs/decisions.md 77), measured the
-# same way on 2026-09-27: 573 properties, 2.8 s, 0.14 GB.
+# same way on 2026-09-27: 573 properties, 2.8 s, 0.14 GB. With rand_draw
+# writing zero to the bytes before the source runs (docs/decisions.md 141),
+# through proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load
+# average near 106: 603 properties, 18 s, 0.09 GB.
 launch fast full srv_kex 66 "fill_nondet.0:66,same.0:33,zero.0:65" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The TRUST=webpki client's three-group rules (docs/decisions.md 63):
 # handshake_groups.c with ch_rand_bytes, the P-256 keygen and exchange, and
@@ -1101,7 +1108,10 @@ launch fast full srv_kex 66 "fill_nondet.0:66,same.0:33,zero.0:65" ct.c proof/ct
 # secret accepted and refused, and the x25519 secret refused -- fails all
 # five, so every arm is reached. With the draw through rand_draw
 # (docs/decisions.md 77), measured the same way on 2026-09-27: 259
-# properties, 1.9 s, 0.04 GB.
+# properties, 1.9 s, 0.04 GB. With rand_draw writing zero to the bytes
+# before the source runs (docs/decisions.md 141), through
+# proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load average
+# near 106: 277 properties, 10 s, 0.05 GB.
 launch fast full handshake_groups 66 "fill_nondet.0:66,zero.0:65" -DCH_TRUST_WEBPKI ct.c proof/ct_wipe_stub.c
 # The parser half of the hybrid build
 # (https://github.com/c4milo/chapulin/issues/47). parse_key_share is driven
@@ -1855,7 +1865,10 @@ launch fast full poly1305 85 "blocks.0:8" ct.c proof/ct_wipe_stub.c
 # fails. The RSA-PSS salt drawn here and handed to rsa_pss_sign, with
 # ch_rand_bytes stubbed to its contract (docs/decisions.md 77), took it to
 # 474 properties, 8 s and 0.56 GB, PROVE_ONLY=srv_auth PROVE_NO_CACHE=1
-# /usr/bin/time -l, and an assert of 0 in that stub fails.
+# /usr/bin/time -l, and an assert of 0 in that stub fails. With rand_draw
+# writing zero to the salt before the source runs (docs/decisions.md 141),
+# through proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load
+# average near 106: 474 properties, 48 s, 0.63 GB.
 launch fast full srv_auth 385 "" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The server's ticket selection and issue, srv_resume.c, over any
 # identities and binders lists up to the bounds the harness states, any
@@ -1886,7 +1899,10 @@ launch fast full srv_auth 385 "" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # 124 s, 2.71 GB of address space and 1.68 GB resident, sampled from
 # /proc, well under the nightly's cap of about 13 GB. Dropping the
 # version test from ticket_holds fails the assertion that a selected
-# ticket records the session's version.
+# ticket records the session's version. With rand_draw writing zero to the
+# bytes before the source runs (docs/decisions.md 141), through
+# proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load average
+# near 106: 1072 properties, 632 s, 1.56 GB peak.
 launch slow full srv_resume 120 "fill_nondet.0:122,find_ticket.0:24,binder_at.0:36,ct_wipe.0:92,ct_memeq.0:33" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # gcm and gcm_forge have no launch line, for the reason
 # aead_inplace has none: neither formula returned a verdict, and an
@@ -2239,8 +2255,11 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # machine. With tlsi_fail recording the alert it chooses and choosing none
 # after the peer's fatal alert (docs/decisions.md 75): 906 properties,
 # 45 s, 2.64 GB. With ch_srv_accept marking its session a server's
-# (INV-14): 912 properties, 38 s, 2.64 GB. The weight is 3 because the
-# peaks above pass the fast tier's 2 GB default.
+# (INV-14): 912 properties, 38 s, 2.64 GB. With keys_ok's refusal of a
+# server key of zero bytes or a ticket key equal to the cookie key
+# (docs/decisions.md 139), through proof/prove-one.sh with PROVE_NO_CACHE=1
+# on 2026-10-20 at a load average near 106: 973 properties, 138 s, 1.34 GB.
+# The weight is 3 because the peaks above pass the fast tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c proof/ct_wipe_stub.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
 # srv_accept's layering: srv_tcp_nonblocking.c and tcp_nonblocking_frame.c
