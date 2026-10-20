@@ -30,7 +30,7 @@ permissions:
   contents: read
 jobs:
   # Fast signal while the proof tiers grind: line coverage over the
-  # library sources, held to the Makefile's COVERAGE_FLOOR. Five host
+  # library sources, held to the Makefile's COVERAGE_FLOOR. Six host
   # binaries run in an RSA build and in an ECDSA build, and thirteen in
   # a TRUST=webpki build. No proofs, no e2e, minutes not hours.
   coverage:

@@ -5079,7 +5079,7 @@ else
 endif
 	./test/handshake_sequence_shards.sh ./bin/handshake_sequence_pq
 
-# Line coverage over the library sources, merged across five host test
+# Line coverage over the library sources, merged across six host test
 # binaries in an RSA build and an ECDSA build, and thirteen in a
 # TRUST=webpki build. Per-pin object dirs share .gcno
 # files, so each binary run accumulates counts into the same .gcda set
@@ -5197,7 +5197,7 @@ else
 	  $(COV_CC) $$def test/x509_strict_test.c $$strict_objs -o $$d/x509strict_test; \
 	  $(COV_CC) test/handshake_sequence_test.c \
 	    $(patsubst %.c,$$d/%.o,$(HANDSHAKE_SEQUENCE_SRCS)) -o $$d/handshake_sequence_test; \
-	  for b in unit rsa_test handshake_strict_test x509strict_test handshake_sequence_test; do \
+	  for b in unit drbg_test rsa_test handshake_strict_test x509strict_test handshake_sequence_test; do \
 	    if ENUM_DEPTH=4 ./$$d/$$b > /dev/null; then \
 	      echo "| $$b | $$pin | pass |" >> bin/coverage.md; \
 	    else \
