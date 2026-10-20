@@ -83,7 +83,7 @@ fn sampleTicket() !chapulin.Ticket {
     var fields: chapulin.Ticket.Fields = if (has_webpki)
         .{ .identity = "identity", .psk = &psk, .age_add = 0xfedc_ba98, .lifetime_s = 7200, .epoch = 9, .binding = &binding }
     else
-        .{ .identity = "identity", .psk = &psk, .age_add = 0xfedc_ba98, .lifetime_s = 7200, .epoch = 9 };
+        .{ .identity = "identity", .psk = &psk, .age_add = 0xfedc_ba98, .lifetime_s = 7200, .epoch = 9, .trust_hash = &binding };
     if (has_quic) fields.quic_version = .v2;
     return chapulin.Ticket.fromFields(fields);
 }
@@ -296,7 +296,7 @@ test "Ticket.fromFields: the identity cap and the hash lengths" {
     var fields: Fields = if (has_webpki)
         .{ .identity = id_max[0..c.CH_TICKET_ID_MAX], .psk = psk[0..32], .age_add = 1, .lifetime_s = 2, .binding = &binding }
     else
-        .{ .identity = id_max[0..c.CH_TICKET_ID_MAX], .psk = psk[0..32], .age_add = 1, .lifetime_s = 2 };
+        .{ .identity = id_max[0..c.CH_TICKET_ID_MAX], .psk = psk[0..32], .age_add = 1, .lifetime_s = 2, .trust_hash = &binding };
     const ticket = try chapulin.Ticket.fromFields(fields);
     try expectEqual(@as(usize, c.CH_TICKET_ID_MAX), ticket.ticket.identity_len);
     try expect(ticket.ticket.identity == null);
@@ -322,7 +322,7 @@ test "Ticket.fromFields and fromOnTicket under TRANSPORT=quic-nonblocking: the t
     var fields: chapulin.Ticket.Fields = if (has_webpki)
         .{ .identity = "id", .psk = &psk, .age_add = 1, .lifetime_s = 2, .binding = &binding }
     else
-        .{ .identity = "id", .psk = &psk, .age_add = 1, .lifetime_s = 2 };
+        .{ .identity = "id", .psk = &psk, .age_add = 1, .lifetime_s = 2, .trust_hash = &binding };
     try expectEqual(@as(u32, 0), (try chapulin.Ticket.fromFields(fields)).ticket.quic_version);
     fields.quic_version = .v1;
     try expectEqual(@as(u32, c.CH_QUIC_VERSION_1), (try chapulin.Ticket.fromFields(fields)).ticket.quic_version);

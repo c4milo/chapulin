@@ -442,6 +442,8 @@ int main(int argc, char **argv) {
     test_connect_hello_send_fails();
     test_epoch_cfg();
     test_ticket_age_cfg();
+    test_ticket_trust_cfg();
+    test_ticket_trust_slot();
     test_ticket_obfuscated_age();
     test_ch_write();
     test_writable_len();

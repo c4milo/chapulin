@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_post.c
+catches: tcp_nonblocking_loop_test
+reason: a resumed session names its own PSK, the presented ticket's, as
+  the trust of each ticket it receives, where it owes that ticket's trust,
+  the pin. The next resumption then holds no such trust and is refused.
+  test/tcp_nonblocking_resume_tests.h resumes the ticket a resumed session
+  received.
+
+--- old
+    if (t->cfg.ticket != NULL) {
+        memcpy(out, t->cfg.ticket->ticket.trust_hash, SHA256_LEN);
+        return;
+    }
+--- new

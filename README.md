@@ -23,7 +23,7 @@ protects you from the bad guys.
 | Key exchange | x25519, the X25519MLKEM768 post-quantum hybrid, and secp256r1. A device build offers one group; web PKI clients and servers hold all three. |
 | Server authentication | Pre-shared key, pinned public key, pinned CA, or web PKI: a certificate chain, SPKI pins, or both |
 | PEM files | Decodes certificate chains, P-256 keys, CA bundles and CA certificates from bytes your program reads |
-| Memory, default build | 3120 B static working set on a 32-bit device, receive buffer included; 4992 B peak stack, measured on arm64; 30.3 kB of flash |
+| Memory, default build | 3120 B static working set on a 32-bit device, receive buffer included; 5008 B peak stack, measured on arm64; 31.3 kB of flash |
 | Dependencies | C11 and libc. No `malloc` anywhere. |
 | License | Apache-2.0 |
 

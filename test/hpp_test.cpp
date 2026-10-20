@@ -83,6 +83,21 @@ constexpr size_t kPinLen = 64;
 #else
 constexpr size_t kPinLen = 384;
 #endif
+#ifndef CH_TRUST_WEBPKI
+// The trust_hash of a ticket whose handshake a pin of kPinLen bytes of 0x03
+// authenticated: SHA-256 over "chapulin ticket trust", the kind byte 1 and
+// the pin (handshake_post.h, docs/decisions.md 142). The object exports no
+// hash, so the test holds the value, which Python's hashlib computed.
+#ifdef CH_PIN_ECDSA
+constexpr uint8_t kPinTrust[32] = {0xe3, 0x72, 0x5a, 0x7c, 0xbb, 0xea, 0x60, 0xa3, 0xe1, 0x41, 0x25,
+                                   0x7c, 0x33, 0x66, 0xd7, 0x51, 0x41, 0xd7, 0xb4, 0x49, 0x68, 0xe8,
+                                   0xfd, 0x6d, 0x3b, 0x12, 0xda, 0xad, 0x2e, 0x69, 0x67, 0x2f};
+#else
+constexpr uint8_t kPinTrust[32] = {0x3a, 0xe5, 0x34, 0x05, 0x9b, 0x29, 0x92, 0x76, 0x3f, 0x8a, 0x10,
+                                   0x2f, 0x5c, 0x1a, 0x56, 0xc6, 0xd9, 0xd3, 0xb8, 0x0a, 0x54, 0x3d,
+                                   0x02, 0x01, 0xe5, 0x81, 0xbb, 0xbb, 0x1d, 0x2b, 0x1a, 0x07};
+#endif
+#endif
 #endif
 
 #ifdef CH_TRUST_WEBPKI
@@ -527,10 +542,12 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
         ticket.identity = id;
         ticket.identity_len = sizeof id;
         ticket.lifetime_s = 60;
+        std::memcpy(ticket.trust_hash, kPinTrust, sizeof kPinTrust);
         static ch_saved_ticket saved;
         CHECK(chapulin::ticket_save(saved, ticket) == chapulin::Status::ok);
         CHECK(saved.ticket.identity == nullptr && std::memcmp(saved.identity, id, sizeof id) == 0);
-        // The pin stays set: the resumed hello offers the ticket alone.
+        // The pin stays set: the resumed hello offers the ticket alone, and
+        // the ticket's trust_hash names that pin.
         uint8_t pin[kPinLen];
         std::memset(pin, 0x03, sizeof pin);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);

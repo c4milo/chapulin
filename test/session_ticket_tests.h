@@ -26,6 +26,12 @@ static void test_ticket_age_cfg(void) {
     cfg.io = &m;
     static ch_saved_ticket saved;
     test_ticket_fill(&saved, psk, sizeof psk, (const uint8_t *)"ticket", 6, 3600);
+    // The pin of the last full handshake before the ticket stays in its slot
+    // (ticket.h).
+    static const uint8_t pin[256] = {0xc1};
+    cfg.server_pubkey = pin;
+    cfg.server_pubkey_len = sizeof pin;
+    test_ticket_trust_pin(&saved, pin, sizeof pin);
     cfg.ticket = &saved;
 
     // A ticket that arrived this millisecond.
@@ -76,12 +82,114 @@ static void test_ticket_age_cfg(void) {
 
     // An external PSK carries no ticket, so no age is judged.
     cfg.ticket = NULL;
+    cfg.server_pubkey = NULL;
+    cfg.server_pubkey_len = 0;
     cfg.ticket_age_ms = 0x100000005ULL;
     cfg.psk = psk;
     cfg.psk_len = sizeof psk;
     cfg.psk_id = (const uint8_t *)"ticket";
     cfg.psk_id_len = 6;
     CHECK(ch_connect(&t, &cfg) == CH_EIO);
+}
+
+// A kept ticket resumes only under the trust of the last full handshake
+// (ticket.h's trust_hash, docs/decisions.md 142). The key in either pin
+// slot, or the external PSK, must hash to it. A key in neither slot, or
+// another PSK, is refused before a byte is sent, and so is a PSK with the
+// bytes of the pin that issued the ticket, because the kind is hashed too.
+static void test_ticket_trust_cfg(void) {
+    static uint8_t rxbuf[CH_MIN_RXBUF];
+    static const uint8_t psk[32] = {1};
+    static const uint8_t issuer[256] = {0xc1};
+    static const uint8_t other[256] = {0xc3};
+    mock_io m = {0};
+    ch_cfg cfg = {0};
+    TEST_CPU_CFG(cfg);
+    ch_tls t;
+    cfg.buf = rxbuf;
+    cfg.buf_len = sizeof rxbuf;
+    cfg.send = mock_send;
+    cfg.recv = mock_recv;
+    cfg.io = &m;
+    static ch_saved_ticket saved;
+    test_ticket_fill(&saved, psk, sizeof psk, (const uint8_t *)"ticket", 6, 3600);
+    test_ticket_trust_pin(&saved, issuer, sizeof issuer);
+    cfg.ticket = &saved;
+
+    cfg.server_pubkey = issuer;
+    cfg.server_pubkey_len = sizeof issuer;
+    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    cfg.server_pubkey = other;
+    cfg.server_pubkey2 = issuer;
+    cfg.server_pubkey2_len = sizeof issuer;
+    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    int sends_before = m.sends;
+    cfg.server_pubkey2 = other;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL && m.sends == sends_before);
+    cfg.server_pubkey2 = NULL;
+    cfg.server_pubkey2_len = 0;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL && m.sends == sends_before);
+
+    // The external PSK as the trust.
+    static const uint8_t external[32] = {9};
+    cfg.server_pubkey = NULL;
+    cfg.server_pubkey_len = 0;
+    cfg.psk = external;
+    cfg.psk_len = sizeof external;
+    cfg.psk_id = (const uint8_t *)"device";
+    cfg.psk_id_len = 6;
+    test_ticket_trust_psk(&saved, external, sizeof external);
+    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    test_ticket_trust_psk(&saved, psk, sizeof psk);
+    int sends_after_psk = m.sends;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL && m.sends == sends_after_psk);
+    test_ticket_trust_pin(&saved, external, sizeof external);
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL && m.sends == sends_after_psk);
+}
+
+// The trust_hash of a ticket this session receives, after a handshake
+// that the key in pin slot slot authenticated (ch_tls.pin_slot).
+static void trust_after_slot(uint8_t slot, const uint8_t *key_a, const uint8_t *key_b,
+                             size_t key_len, uint8_t out[SHA256_LEN]) {
+    uint8_t secret[SHA256_LEN];
+    ch_rand_bytes(secret, sizeof secret);
+    rec_dir server;
+    TEST_CPU_DIR(server);
+    rec_dir_init(&server, secret);
+    mock_io m = {0};
+    static uint8_t rxbuf[1024];
+    ch_tls t;
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
+    t.cfg.server_pubkey = key_a;
+    t.cfg.server_pubkey_len = key_len;
+    t.cfg.server_pubkey2 = key_b;
+    t.cfg.server_pubkey2_len = key_len;
+    t.pin_slot = slot;
+    uint8_t msg[96];
+    const uint8_t empty_exts[2] = {0, 0};
+    size_t msg_len = build_ticket_msg(msg, sizeof msg, 3600, 2, empty_exts, sizeof empty_exts);
+    mock_push(&m, &server, REC_HANDSHAKE, msg, msg_len);
+    mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
+    uint8_t got[16];
+    CHECK(ch_read(&t, got, sizeof got) == 4 && m.tickets == 1);
+    memcpy(out, m.trust_hash, SHA256_LEN);
+}
+
+// A ticket names the key in the pin slot that authenticated its
+// handshake. So a ticket from a handshake that the key in slot B
+// authenticated still resumes after step 3 of a rotation moves that key
+// to slot A (docs/rotation.md).
+static void test_ticket_trust_slot(void) {
+    static const uint8_t current[256] = {0xc1};
+    static const uint8_t staged[256] = {0xc3};
+    uint8_t got[SHA256_LEN];
+    uint8_t want[SHA256_LEN];
+    trust_after_slot(1, current, staged, sizeof current, got);
+    hspost_trust_hash(HSPOST_TRUST_PIN, current, sizeof current, want);
+    CHECK(memcmp(got, want, SHA256_LEN) == 0);
+    trust_after_slot(2, current, staged, sizeof current, got);
+    hspost_trust_hash(HSPOST_TRUST_PIN, staged, sizeof staged, want);
+    CHECK(memcmp(got, want, SHA256_LEN) == 0);
 }
 
 // ch_ticket_obfuscated_age: the age plus ticket_age_add, modulo 2^32 (RFC

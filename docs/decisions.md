@@ -12780,3 +12780,76 @@ does nothing more.
       sites check already. A second check in `rand_draw` repeats theirs.
     - **`= {0}` at the three stack arrays.** It fixes the three sites and
       leaves the next new site to remember the rule.
+
+142. **A raw or ca ticket names the trust that authenticated the last
+    full handshake before it, `ch_ticket.trust_hash`, and a client
+    resumes it only under that trust.** In the raw and ca modes a kept ticket held no record of the
+    key that its handshake checked, so a client resumed it under any
+    configuration. A push that removed a stolen key from both pin slots
+    thus did not stop resumption. Whoever also held that server's ticket
+    key could open each kept ticket for its PSK and resume as the server
+    with every device that kept one. The webpki mode binds its tickets
+    already (entry 47). On 2026-10-19 Camilo approved this fix from the
+    second API audit (entry 133 states the request).
+
+    - **The rule.** When a ticket arrives, `ticket_trust` writes its
+      `trust_hash`. A session that presented a ticket copies that
+      ticket's `trust_hash`, because it read no pin. A session keyed by
+      an external PSK hashes the PSK. Any other session hashes the key in
+      the pin slot that matched, `ch_tls.pin_slot`, which is a CA key in
+      a ca build. `ch_connect`, `ch_record_init` and `ch_quic_init`
+      refuse a presented ticket whose `trust_hash` neither pin slot nor
+      the external PSK hashes to (`hspost_trust_holds`). The refusal is
+      `CH_EINVAL` before a byte is sent.
+    - **The hash.** `hspost_trust_hash` is SHA-256 over the label
+      `chapulin ticket trust`, one byte of kind and the bytes. The kind
+      byte keeps a pin and a PSK of the same bytes apart.
+    - **Constant time.** Each compare is `ct_memeq`, and an OR joins the
+      three results. The branch after them reads one bit. `trust_names`
+      wipes each hash it compares, and `hspost_trust_hash` wipes its
+      SHA-256 state.
+    - **What it costs.** 32 bytes in each `ch_ticket`, up to three
+      SHA-256 calls at init when a ticket is presented, and one for each
+      ticket that arrives. As `bench/sram.sh` measures it, `ch_connect`
+      peaks 16 bytes higher in each raw and ca build. `ch_read` peaks 160
+      bytes higher on arm64 at `-O2`, where clang inlines the hash into
+      `hspost_read`'s frame. On mips32r2 at `-Os` that frame grows by the
+      32 bytes of the new field. `handshake_post.c` adds 578 bytes of
+      flash there. The default build's total moved from 30.3 kB to
+      31.3 kB, because no commit since ba60bf42 had run
+      `bench/device-ram.sh`.
+    - **What breaks.** A ticket kept before this change holds no
+      `trust_hash`, so each client entry refuses it, and the next
+      connection runs a full handshake. A caller that stores tickets
+      field by field stores `trust_hash` too, and the Zig `Fields` take
+      it (docs/zig.md).
+    - **What a reader of the storage learns.** The `trust_hash` of an
+      external PSK is a hash of a secret, so its reader can test guesses
+      of the PSK offline. The same record holds the ticket's own PSK,
+      with which its reader resumes as the device. So the storage must
+      keep both secret already (ticket.h). A random PSK of entry 140's
+      16 bytes or more leaves nothing to guess.
+
+    `test/session_ticket_tests.h` holds the rule at init: a ticket
+    resumes under its key in slot A or slot B or under its PSK, and is
+    refused under any other trust. It also requires that a new ticket
+    names the key in the slot that matched. `test/tcp_nonblocking_resume_tests.h`
+    resumes the ticket that a resumed session received. `test/e2e.sh`
+    resumes in each raw and ca mode, and `test/tls_client.c` keeps the
+    trust in its ticket file. Five mutants hold the rule:
+    `inv14-ticket-trust-unchecked`, `inv14-ticket-trust-slot-b-ignored`,
+    `inv14-ticket-trust-kind-unhashed`, `inv14-ticket-trust-not-passed-on`
+    and `inv14-ticket-trust-slot-a-always`.
+
+    Rejected:
+
+    - **An HMAC keyed by the ticket's PSK, as entry 47's binding is.** A
+      resumed session would then have to find which key the presented
+      ticket names before it binds a new ticket under the new PSK. The
+      plain hash passes from the presented ticket to the new one as it
+      is.
+    - **The slot number in place of the hash.** Step 3 of a rotation
+      moves the key in slot B to slot A (docs/rotation.md), so after it
+      the number names another key.
+    - **The key itself in the ticket.** An RSA-3072 key is 384 bytes,
+      twelve times the hash.

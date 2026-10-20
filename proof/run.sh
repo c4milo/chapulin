@@ -1049,7 +1049,11 @@ launch fast full epoch 40 "" ct.c proof/ct_wipe_stub.c
 # the other refusals admit (docs/decisions.md 138), measured on 2026-10-18
 # on an ubuntu-24.04 runner (PROVE_ONLY=handshake_post PROVE_NO_CACHE=1
 # /usr/bin/time -v bash proof/run.sh slow): 771 properties, 123 s, 1.45 GB
-# peak.
+# peak. With the trust a raw or ca ticket names, over any presented ticket,
+# external PSK and pin slot, and the trust check over the same slots
+# (docs/decisions.md 142): 1002 properties, 673 s, 1.9 GB peak on an M1 Pro
+# on 2026-10-19 (PROVE_NO_CACHE=1 proof/prove-one.sh handshake_post), at a
+# load average near 106, so the weight stays 6.
 launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c proof/ct_wipe_stub.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,
@@ -2132,7 +2136,11 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # (docs/decisions.md 79): quic_driver 1790 properties, 93 s, 0.99 GB, on
 # 2026-09-29. With the ch_cfg.cpu each packet stub takes first
 # (docs/decisions.md 89): quic_driver 1813 properties, 125 s, 0.99 GB, on
-# 2026-10-03.
+# 2026-10-03. With the floor on an external PSK's length and the trust
+# check of a presented ticket, a contract stub in proof/quic_driver_stubs.h
+# (docs/decisions.md 140 and 142): quic_driver 1895 properties, 1092 s on
+# 2026-10-20 (PROVE_NO_CACHE=1 proof/prove-one.sh quic_driver), at a load
+# average near 106, 1.5 GB peak.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where

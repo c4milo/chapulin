@@ -19,6 +19,63 @@
 // session's ch_cfg.cpu names (cpu.h's CH_CFG_CPU).
 #include "cpu.h"
 #include "webpki_ticket.h"
+#else
+#include "sha256.h"
+#endif
+
+#ifdef HSPOST_TICKET_TRUST
+static const uint8_t trust_label[] = "chapulin ticket trust";
+
+void hspost_trust_hash(uint8_t kind, const uint8_t *bytes, size_t len, uint8_t out[SHA256_LEN]) {
+    sha256 s;
+    sha256_init(&s);
+    sha256_update(&s, trust_label, sizeof trust_label - 1);
+    sha256_update(&s, &kind, 1);
+    sha256_update(&s, bytes, len);
+    sha256_final(&s, out);
+    ct_wipe(&s, sizeof s);
+}
+
+// Whether the len bytes at bytes, of kind, hash to want. Reads nothing
+// when bytes is NULL, an unset slot, and answers 0.
+static uint32_t trust_names(uint8_t kind, const uint8_t *bytes, size_t len,
+                            const uint8_t want[SHA256_LEN]) {
+    if (bytes == NULL) {
+        return 0;
+    }
+    uint8_t hash[SHA256_LEN];
+    hspost_trust_hash(kind, bytes, len, hash);
+    uint32_t same = ct_memeq(hash, want, SHA256_LEN);
+    ct_wipe(hash, sizeof hash);
+    return same;
+}
+
+int hspost_trust_holds(const ch_cfg *cfg, const ch_ticket *ticket) {
+    uint32_t held = trust_names(HSPOST_TRUST_PIN, cfg->server_pubkey, cfg->server_pubkey_len,
+                                ticket->trust_hash) |
+                    trust_names(HSPOST_TRUST_PIN, cfg->server_pubkey2, cfg->server_pubkey2_len,
+                                ticket->trust_hash) |
+                    trust_names(HSPOST_TRUST_PSK, cfg->psk, cfg->psk_len, ticket->trust_hash);
+    return held != 0;
+}
+
+// The trust a ticket this session receives names (ticket.h). A session
+// that resumed a ticket read no pin, so it passes that ticket's trust on.
+// One keyed by an external PSK names the PSK, and one a pin authenticated
+// names the key in the slot that matched, ch_tls.pin_slot.
+static void ticket_trust(const ch_tls *t, uint8_t out[SHA256_LEN]) {
+    if (t->cfg.ticket != NULL) {
+        memcpy(out, t->cfg.ticket->ticket.trust_hash, SHA256_LEN);
+        return;
+    }
+    if (t->cfg.psk != NULL) {
+        hspost_trust_hash(HSPOST_TRUST_PSK, t->cfg.psk, t->cfg.psk_len, out);
+        return;
+    }
+    int second = t->pin_slot == 2;
+    hspost_trust_hash(HSPOST_TRUST_PIN, second ? t->cfg.server_pubkey2 : t->cfg.server_pubkey,
+                      second ? t->cfg.server_pubkey2_len : t->cfg.server_pubkey_len, out);
+}
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -166,6 +223,10 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *aler
     // init call wrote the hash, because takes_tickets is 1.
     webpki_ticket_binding(CH_CFG_CPU(t->cfg), ticket.psk, ticket.psk_len, t->ticket_config_hash,
                           ticket.binding);
+#elif defined(HSPOST_TICKET_TRUST)
+    // A ROLE=server object holds no client, and take_ticket refuses the
+    // message on each of its sessions, so it defines no ticket_trust.
+    ticket_trust(t, ticket.trust_hash);
 #endif
     t->cfg.on_ticket(t->cfg.io, &ticket);
     ct_wipe(ticket.psk, sizeof ticket.psk);

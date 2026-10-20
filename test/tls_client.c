@@ -45,8 +45,8 @@ static void put_hex(FILE *f, const uint8_t *p, size_t n) {
 }
 
 // Persists one ticket as "identity-hex psk-hex age_add lifetime_s" so a later run can resume
-// with it. A fifth field carries the rest of the ticket: the CA build's epoch, or the webpki
-// build's binding in hex.
+// with it. The rest of the ticket follows: the webpki build's binding in hex, or the epoch,
+// 0 outside a CA build, and the trust_hash in hex.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
     (void)fprintf(stderr, "ticket: id %zu bytes, lifetime %us\n", ticket->identity_len,
@@ -62,12 +62,12 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)fputc(' ', f);
     put_hex(f, ticket->psk, ticket->psk_len);
     (void)fprintf(f, " %u %u", ticket->age_add, ticket->lifetime_s);
-#ifdef CH_TRUST_CA
-    (void)fprintf(f, " %u", ticket->epoch);
-#endif
 #ifdef CH_TRUST_WEBPKI
     (void)fputc(' ', f);
     put_hex(f, ticket->binding, sizeof ticket->binding);
+#else
+    (void)fprintf(f, " %u ", ticket->epoch);
+    put_hex(f, ticket->trust_hash, sizeof ticket->trust_hash);
 #endif
     (void)fputc('\n', f);
     (void)fclose(f);
@@ -115,8 +115,10 @@ static int parse_u32(const char *s, uint32_t *out) {
 }
 
 // Loads a ticket saved by on_ticket into saved. The run reconnects within moments, so the
-// ticket's age is 0. The fifth field stays text in extra, which keeps "0" when there is none.
-static int load_ticket(const char *path, ch_saved_ticket *saved, char extra[2 * SHA256_LEN + 1]) {
+// ticket's age is 0. The fifth and sixth fields stay text in extra and trust, which keep "0"
+// when they are absent.
+static int load_ticket(const char *path, ch_saved_ticket *saved, char extra[2 * SHA256_LEN + 1],
+                       char trust[2 * SHA256_LEN + 1]) {
     FILE *f = fopen(path, "r");
     if (f == NULL) {
         return -1;
@@ -128,7 +130,8 @@ static int load_ticket(const char *path, ch_saved_ticket *saved, char extra[2 * 
     char psk_hex[2 * 48 + 1];
     char age_str[16];
     char lifetime_str[16];
-    int rc = fscanf(f, "%640s %96s %15s %15s %64s", id_hex, psk_hex, age_str, lifetime_str, extra);
+    int rc = fscanf(f, "%640s %96s %15s %15s %64s %64s", id_hex, psk_hex, age_str, lifetime_str,
+                    extra, trust);
     (void)fclose(f);
     memset(saved, 0, sizeof *saved);
     if (rc < 4 || parse_u32(age_str, &saved->ticket.age_add) != 0 ||
@@ -206,11 +209,16 @@ static int epoch_store_file(void *io, uint32_t value) {
 }
 #endif
 
-// A ticket file's fifth field: the webpki binding, required, or the epoch, "0" when absent.
-static int load_ticket_extra(const char *extra, ch_saved_ticket *saved) {
+// A ticket file's fifth and sixth fields: the webpki binding, required, or the epoch and the
+// trust_hash, both required.
+static int load_ticket_extra(const char *extra, const char *trust, ch_saved_ticket *saved) {
 #ifdef CH_TRUST_WEBPKI
+    (void)trust;
     return unhex(extra, saved->ticket.binding, SHA256_LEN) == SHA256_LEN ? 0 : -1;
 #else
+    if (unhex(trust, saved->ticket.trust_hash, SHA256_LEN) != SHA256_LEN) {
+        return -1;
+    }
     return parse_u32(extra, &saved->ticket.epoch);
 #endif
 }
@@ -220,7 +228,9 @@ static int load_ticket_extra(const char *extra, ch_saved_ticket *saved) {
 static int setup_ticket(const char *path, ch_cfg *cfg) {
     static ch_saved_ticket saved;
     char extra[2 * SHA256_LEN + 1] = "0";
-    if (load_ticket(path, &saved, extra) != 0 || load_ticket_extra(extra, &saved) != 0) {
+    char trust[2 * SHA256_LEN + 1] = "0";
+    if (load_ticket(path, &saved, extra, trust) != 0 ||
+        load_ticket_extra(extra, trust, &saved) != 0) {
         (void)fprintf(stderr, "bad ticket file: %s\n", path);
         return -1;
     }
@@ -237,12 +247,15 @@ static int setup_ticket(const char *path, ch_cfg *cfg) {
 #endif
 
 // Fills the auth part of cfg: one branch per argv form — "pin:..." for
-// pinned-key mode, "@file" for a saved ticket, or an external psk-hex +
-// identity pair. The CA-mode build adds its "ca:" form as one more
-// branch here.
+// pinned-key mode, or an external psk-hex + identity pair. The CA-mode
+// build adds its "ca:" form as one more branch here. A saved ticket goes
+// beside the trust that issued it, which ch_connect requires
+// (docs/decisions.md 142): "@file" after a pin or a CA key, and
+// "identity@file" after a PSK.
 static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap) {
     if (strncmp(argv[3], "pin:", 4) == 0) {
-        return setup_pin(argv[3] + 4, cfg);
+        int rc = setup_pin(argv[3] + 4, cfg);
+        return rc == 0 && argv[4][0] == '@' ? setup_ticket(argv[4] + 1, cfg) : rc;
     }
 #ifdef CH_TRUST_WEBPKI
     if (strncmp(argv[3], "webpki:", 7) == 0) {
@@ -254,19 +267,21 @@ static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap) {
     if (strncmp(argv[3], "ca:", 3) == 0) {
         // The CA build reads the same slots as a CA key; the prefix
         // only names the operator's intent.
-        return setup_pin(argv[3] + 3, cfg);
-    }
-    if (argv[3][0] == '@') {
-        return setup_ticket(argv[3] + 1, cfg);
+        int rc = setup_pin(argv[3] + 3, cfg);
+        return rc == 0 && argv[4][0] == '@' ? setup_ticket(argv[4] + 1, cfg) : rc;
     }
     cfg->psk = psk;
     cfg->psk_len = unhex(argv[3], psk, psk_cap);
     if (cfg->psk_len == 0) {
         return -1;
     }
+    char *ticket_path = strchr(argv[4], '@');
+    if (ticket_path != NULL) {
+        *ticket_path++ = '\0';
+    }
     cfg->psk_id = (const uint8_t *)argv[4];
     cfg->psk_id_len = strlen(argv[4]);
-    return 0;
+    return ticket_path != NULL ? setup_ticket(ticket_path, cfg) : 0;
 }
 
 // Owns the TCP setup: resolves host and port, connects with a 10-second
@@ -325,9 +340,12 @@ static int echo_lines(ch_tls *tls) {
 int main(int argc, char **argv) {
     if (argc < 5 || argc > 7) {
         (void)fprintf(stderr,
-                      "usage: %s host port psk-hex psk-id [save-ticket-file [epoch-file]]\n"
-                      "       %s host port @ticket-file - [save-ticket-file [epoch-file]]\n"
-                      "       %s host port pin:hex[,hex2] - [save-ticket-file [epoch-file]]\n"
+                      "usage: %s host port psk-hex psk-id[@ticket-file] [save-ticket-file "
+                      "[epoch-file]]\n"
+                      "       %s host port pin:hex[,hex2] -|@ticket-file [save-ticket-file "
+                      "[epoch-file]]\n"
+                      "       %s host port ca:hex[,hex2] -|@ticket-file [save-ticket-file "
+                      "[epoch-file]]\n"
                       "       %s host port webpki:name-file,spki-file|- @ticket-file|- "
                       "[save-ticket-file]\n",
                       argv[0], argv[0], argv[0], argv[0]);

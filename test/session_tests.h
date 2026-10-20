@@ -21,6 +21,9 @@ typedef struct {
     size_t len;
     size_t off;
     int tickets;
+#ifndef CH_TRUST_WEBPKI
+    uint8_t trust_hash[SHA256_LEN]; // the trust_hash of the last ticket
+#endif
     size_t sent;      // bytes the client transmitted (data, KeyUpdates, alerts)
     uint8_t tx[4096]; // capture of everything the client sent
     size_t tx_len;
@@ -55,7 +58,11 @@ static int mock_recv(void *io, uint8_t *p, size_t n) {
 }
 
 static void mock_on_ticket(void *io, const ch_ticket *ticket) {
+#ifndef CH_TRUST_WEBPKI
+    memcpy(((mock_io *)io)->trust_hash, ticket->trust_hash, SHA256_LEN);
+#else
     (void)ticket;
+#endif
     ((mock_io *)io)->tickets++;
 }
 

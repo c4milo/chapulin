@@ -1,0 +1,13 @@
+invariant: INV-14
+file: handshake_post.c
+catches: unit
+reason: a ticket names the key in pin slot A whichever slot authenticated
+  the handshake. A ticket from a handshake that the key in slot B
+  authenticated is then refused once step 3 of a rotation moves that key
+  to slot A.
+
+--- old
+    int second = t->pin_slot == 2;
+--- new
+    int second = 0;
+    (void)t->pin_slot;

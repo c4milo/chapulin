@@ -52,6 +52,14 @@ typedef struct {
     // The configuration the ticket is bound to: every client entry refuses the ticket under
     // another hostname, other anchors or other pins (webpki_ticket.h).
     uint8_t binding[SHA256_LEN];
+#else
+    // The trust that authenticated the last full handshake before this ticket: the SHA-256 of
+    // the key in the pin slot that matched, ch_tls.pin_slot's, which is a CA key in a CA build,
+    // or of the external PSK (handshake_post.h's hspost_trust_hash). Every client entry refuses
+    // the ticket when neither pin slot nor the external PSK of its configuration has this hash.
+    // So a ticket is refused once its key leaves both slots (docs/decisions.md 142). A ticket
+    // from a resumed session names the trust of the ticket it resumed.
+    uint8_t trust_hash[SHA256_LEN];
 #endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // The negotiated QUIC version of the connection the ticket arrived on, which RFC 9369

@@ -1,0 +1,14 @@
+invariant: INV-14
+file: handshake_post.h
+catches: unit
+reason: a raw or ca client presents a kept ticket whose trust its
+  configuration no longer holds, so a device keeps resuming the tickets of
+  a server key it rotated away, for up to seven days.
+  test/session_ticket_tests.h's rows with the issuing key in neither slot
+  require CH_EINVAL before a byte is sent.
+
+--- old
+    if (!hspost_trust_holds(cfg, &saved->ticket)) {
+        return 0;
+    }
+--- new

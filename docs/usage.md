@@ -310,8 +310,14 @@ return `CH_EINVAL`, before a byte is sent, when that is below the stored
 epoch, because an epoch bump since then retired the ticket
 ([`docs/ca.md`](ca.md)). Each leaves `CH_EPOCH_REVOKED` in the session,
 where `ch_epoch_status` reads it and tells this refusal from the others.
-Under `TRUST=webpki` it holds the binding to the hostname, anchors and
-pins that received it, and over QUIC the version of that connection.
+In a raw or ca build it holds `trust_hash`: the hash of the pin, the CA
+key or the external PSK that authenticated the full handshake. So keep
+that pin, CA key or PSK set beside the ticket. The three calls refuse
+the ticket when neither pin slot nor the PSK of the configuration has
+that hash, so removing a key from both slots retires every ticket it
+issued ([`docs/rotation.md`](rotation.md)). Under `TRUST=webpki` it holds
+the binding to the hostname, anchors and pins that received it, and over
+QUIC the version of that connection.
 Every such refusal means the ticket cannot be used again: drop it, zero
 it, and connect in full. The ticket holds a PSK, so store it as you store
 a key.

@@ -35,6 +35,9 @@ typedef struct {
     uint8_t psk[SHA256_LEN];
     uint32_t lifetime_s;
     uint32_t age_add;
+#ifndef CH_TRUST_WEBPKI
+    uint8_t trust_hash[SHA256_LEN];
+#endif
 } kept_ticket;
 
 static kept_ticket last_ticket;
@@ -48,6 +51,9 @@ static void keep_ticket(void *io, const ch_ticket *ticket) {
     memcpy(last_ticket.psk, ticket->psk, SHA256_LEN);
     last_ticket.lifetime_s = ticket->lifetime_s;
     last_ticket.age_add = ticket->age_add;
+#ifndef CH_TRUST_WEBPKI
+    memcpy(last_ticket.trust_hash, ticket->trust_hash, SHA256_LEN);
+#endif
     tickets_kept++;
 }
 
@@ -77,6 +83,9 @@ static void resume_config(ch_cfg *cfg, const kept_ticket *t) {
     test_ticket_fill(&resume_saved, t->psk, SHA256_LEN, t->identity, t->identity_len,
                      t->lifetime_s);
     resume_saved.ticket.age_add = t->age_add;
+#ifndef CH_TRUST_WEBPKI
+    memcpy(resume_saved.ticket.trust_hash, t->trust_hash, SHA256_LEN);
+#endif
     cfg->ticket = &resume_saved;
     cfg->ticket_age_ms = 5000;
 }
@@ -143,6 +152,14 @@ static void test_resumption(void) {
     CHECK(tickets_kept == 2 && last_ticket.lifetime_s == SRV_TICKET_LIFETIME - 5);
     CHECK(memcmp(last_ticket.psk, first.psk, SHA256_LEN) != 0);
     CHECK(io_calls == 0);
+
+    // The ticket the resumed session received resumes too. That session
+    // read no pin, so its ticket names the trust of the ticket it presented.
+    kept_ticket second = last_ticket;
+    resume_config(&ccfg, &second);
+    test_clock_set(&scfg, test_server_seconds(), LOOP_NOW + 10);
+    (void)run_handshake(&client, &server, &ccfg, &scfg);
+    CHECK(server.t.psk_selected == 1 && ch_record_state(&client) == CH_ST_CONNECTED);
 
     // The lifetime's exact boundary on the server's clock: the first
     // ticket resumes at the last valid second and not one second later.

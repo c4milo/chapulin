@@ -210,7 +210,7 @@ pub fn stored(taken: *const chapulin.Ticket) !chapulin.Ticket {
     var fields: chapulin.Ticket.Fields = if (has_webpki)
         .{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_s = t.lifetime_s, .epoch = t.epoch, .binding = &t.binding }
     else
-        .{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_s = t.lifetime_s, .epoch = t.epoch };
+        .{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_s = t.lifetime_s, .epoch = t.epoch, .trust_hash = &t.trust_hash };
     if (has_quic) fields.quic_version = @as(chapulin.quic.Version, @enumFromInt(t.quic_version));
     return chapulin.Ticket.fromFields(fields);
 }

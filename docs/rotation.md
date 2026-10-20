@@ -32,6 +32,18 @@ mode still requires slot A; a config with only slot B is an error.
 Retire the old private key only after step 3 reaches every device you
 still care about; until then it is the recovery path for stragglers.
 
+A kept ticket names the key that authenticated the last full handshake
+before it (`ch_ticket.trust_hash`). A device resumes the ticket only
+while that key is in one of its two slots. Step 3 moves the new key from
+slot B to slot A, so a ticket from a handshake that the new key
+authenticated still resumes. A ticket from before step 2 names the old
+key, which step 3 removes, so the device runs one full handshake in its
+place. A push that removes a key from both slots makes each device refuse
+every ticket from a handshake that key authenticated. An emergency
+rotation after a theft of the server key needs that: the thief can open
+those tickets with the old server's ticket key, and the next connection
+is a full handshake against the new pin (docs/decisions.md 142).
+
 ## Devices that stay offline
 
 A device that sleeps through both pushes wakes up holding two pins the

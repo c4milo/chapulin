@@ -107,6 +107,8 @@ static struct {
     uint32_t quic_version;
 #ifdef CH_TRUST_WEBPKI
     uint8_t binding[SHA256_LEN];
+#else
+    uint8_t trust_hash[SHA256_LEN];
 #endif
     size_t count;
 } kept;
@@ -124,6 +126,8 @@ static void keep_ticket(void *io, const ch_ticket *ticket) {
     kept.quic_version = ticket->quic_version;
 #ifdef CH_TRUST_WEBPKI
     memcpy(kept.binding, ticket->binding, SHA256_LEN);
+#else
+    memcpy(kept.trust_hash, ticket->trust_hash, SHA256_LEN);
 #endif
     kept.count++;
 }
@@ -218,6 +222,12 @@ static void present_ticket(ch_cfg *cfg) {
     presented.ticket.quic_version = kept.quic_version;
 #ifdef CH_TRUST_WEBPKI
     memcpy(presented.ticket.binding, kept.binding, SHA256_LEN);
+#else
+    memcpy(presented.ticket.trust_hash, kept.trust_hash, SHA256_LEN);
+    // The pin of the last full handshake before the ticket stays in its
+    // slot, as a caller keeps its configuration, so the ticket's trust holds.
+    cfg->server_pubkey = p256_sign_vectors[0].pub;
+    cfg->server_pubkey_len = sizeof p256_sign_vectors[0].pub;
 #endif
     cfg->ticket = &presented;
     cfg->ticket_age_ms = 1000;

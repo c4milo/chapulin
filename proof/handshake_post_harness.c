@@ -11,6 +11,12 @@
 // peer that reaches a connected session feeds it arbitrary decrypted
 // bytes.
 //
+// It also proves the trust code of a raw or ca ticket memory-safe
+// (docs/decisions.md 142): ticket_trust under a presented ticket, an
+// external PSK or either pin slot, and hspost_trust_holds over pins and a
+// PSK of up to 16 bytes, each of them set or unset. SHA-256 is a stub
+// that asserts its contract.
+//
 // It also proves the run limit and the answer (docs/decisions.md 138),
 // from any key_update_run, any key_update_owed and any send_epochs. The
 // parser seals and sends nothing, so a request is answered by ch_write
@@ -113,6 +119,22 @@ void ks_res_psk(size_t hash_len, const uint8_t *res_master, const uint8_t *nonce
     fill_nondet(psk, hash_len);
 }
 
+// The hash a raw or ca ticket's trust_hash takes (handshake_post.c's
+// hspost_trust_hash): every byte it is handed is readable, and the digest
+// lands in 32 writable bytes.
+void sha256_init(sha256 *s) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256: state writable");
+}
+void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256: state writable");
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "sha256: input readable");
+}
+void sha256_final(sha256 *s, uint8_t out[SHA256_LEN]) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256: state writable");
+    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "sha256: digest writable");
+    fill_nondet(out, SHA256_LEN);
+}
+
 // These exist so handshake_post.c links; handle_post_handshake never
 // calls them.
 void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]) {
@@ -152,6 +174,40 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
 
 #include "handshake_post.c"
 
+// The trust a ticket can name (handshake_post.c's ticket_trust): two pin
+// slots and an external PSK of up to 16 bytes each, and a presented ticket
+// of any trust_hash.
+static uint8_t pin_a[16];
+static uint8_t pin_b[16];
+static uint8_t external_psk[16];
+static ch_saved_ticket presented;
+
+// bytes, filled with any value, or NULL, an unset slot, under any length
+// up to cap.
+static const uint8_t *nondet_slot(uint8_t *bytes, size_t cap, size_t *len) {
+    fill_nondet(bytes, cap);
+    *len = nondet_size_t();
+    __CPROVER_assume(*len <= cap);
+    return (nondet_u8() & 1) ? bytes : NULL;
+}
+
+// What a connected session holds when a ticket arrives. A session that
+// presented no ticket and holds no PSK authenticated by a pin, so
+// ch_tls.pin_slot is 1 or 2 and that slot is set.
+static void havoc_trust(void) {
+    session.cfg.server_pubkey = nondet_slot(pin_a, sizeof pin_a, &session.cfg.server_pubkey_len);
+    session.cfg.server_pubkey2 = nondet_slot(pin_b, sizeof pin_b, &session.cfg.server_pubkey2_len);
+    session.cfg.psk = nondet_slot(external_psk, sizeof external_psk, &session.cfg.psk_len);
+    fill_nondet(presented.ticket.trust_hash, sizeof presented.ticket.trust_hash);
+    session.cfg.ticket = (nondet_u8() & 1) ? &presented : NULL;
+    session.pin_slot = nondet_u8();
+    if (session.cfg.ticket == NULL && session.cfg.psk == NULL) {
+        __CPROVER_assume(session.pin_slot == 1
+                             ? session.cfg.server_pubkey != NULL
+                             : session.pin_slot == 2 && session.cfg.server_pubkey2 != NULL);
+    }
+}
+
 int main(void) {
     memset(&session, 0, sizeof session);
     uint8_t buf[128];
@@ -170,6 +226,7 @@ int main(void) {
     session.send_epochs = nondet_u64();
     session.key_update_run = nondet_u8();
     session.key_update_owed = nondet_u8() & 1;
+    havoc_trust();
     uint8_t run_before = session.key_update_run;
     uint8_t owed_before = session.key_update_owed;
 
@@ -220,5 +277,10 @@ int main(void) {
         // 9846 §5.1).
         __CPROVER_assert(rekeys == 0 || used == n, "a KeyUpdate ends the input");
     }
+    // The check every client entry runs on a presented ticket, over the
+    // same slots, any of them unset: it reads each set slot for its length
+    // alone, and answers 0 or 1.
+    int held = hspost_trust_holds(&session.cfg, &presented.ticket);
+    __CPROVER_assert(held == 0 || held == 1, "the trust check answers 0 or 1");
     return 0;
 }

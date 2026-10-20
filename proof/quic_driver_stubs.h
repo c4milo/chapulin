@@ -25,6 +25,9 @@
 //                             refuses, and otherwise 1 or 0, over a
 //                             readable pseudo-packet.
 //   quic_keys_update          the secret and the set rewritten.
+//   hspost_trust_holds        1 or 0, over a readable configuration and
+//                             ticket, which is what handshake_post.h
+//                             states.
 //   the two §6.6 questions    quic_packet.c's own arithmetic, repeated
 //                             so the limit paths are inside the formula.
 //
@@ -35,12 +38,23 @@
 //
 // WHAT THIS NO LONGER PROVES: that those calls meet their contracts.
 // handshake_psk and handshake_pin prove the two flight handlers,
-// quic_initial, quic_packet and quic_retry prove the packet calls, and
-// quic_keys proves the key update.
+// quic_initial, quic_packet and quic_retry prove the packet calls,
+// quic_keys proves the key update, and handshake_post proves the trust
+// check.
 #ifndef CH_PROOF_QUIC_DRIVER_STUBS_H
 #define CH_PROOF_QUIC_DRIVER_STUBS_H
 
 #include "quic_version.h"
+
+#ifndef CH_TRUST_WEBPKI
+// The trust check ch_quic_init runs on a presented ticket
+// (hspost_present_ticket).
+int hspost_trust_holds(const ch_cfg *cfg, const ch_ticket *ticket) {
+    __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "trust: configuration readable");
+    __CPROVER_assert(__CPROVER_r_ok(ticket, sizeof *ticket), "trust: ticket readable");
+    return nondet_u8() & 1;
+}
+#endif
 
 // The two flight handlers ch_quic_init calls.
 void hsf_begin(handshake_state *h) {

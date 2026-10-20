@@ -81,14 +81,14 @@ The image's C library and the caller's own functions set those frames.
 
 | call | arm64 |
 |---|---|
-| peak stack, `ch_connect` (RSA-3072 verify) | 4992 |
-| peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3104 |
-| peak stack, `ch_connect` (PSK) | 2768 |
-| peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5456 / 3248 |
+| peak stack, `ch_connect` (RSA-3072 verify) | 5008 |
+| peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3120 |
+| peak stack, `ch_connect` (PSK) | 2784 |
+| peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5472 / 3264 |
 | peak stack, `ch_connect` (`TRUST=webpki`) | 16688 |
 | peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16816 |
-| peak stack, `ch_connect` (`KEX=pq`) | 16000 |
-| peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
+| peak stack, `ch_connect` (`KEX=pq`) | 16016 |
+| peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1872 |
 | peak stack, `ch_write` / `ch_close` | 1520 / 896 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 12736 |
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12912 |
@@ -102,7 +102,7 @@ The image's C library and the caller's own functions set those frames.
 - The stack grows because ML-KEM's K-PKE encrypt holds three polynomial
   vectors and two polynomials: 5,744 bytes in that one frame, against a
   2,560-byte budget for every other build (INV-19 carries the per-build
-  numbers). The whole chain peaks at 16,000 bytes, through
+  numbers). The whole chain peaks at 16,016 bytes, through
   `mlkem_decaps` into K-PKE encrypt, the matrix sampler and Keccak, so
   the hybrid build needs about three times the stack of the classic one
   rather than the single frame's 5,744.
@@ -325,14 +325,14 @@ not multiply and the verifies read only public bytes.
 
 ### Flash
 
-Flash is 30.3 kB for the default build (`.text` + `.rodata`, `-Os`),
+Flash is 31.3 kB for the default build (`.text` + `.rodata`, `-Os`),
 of which the multiply decomposition is 2.2 kB, nearly all of it
 poly1305's unrolled block: the `total (CH_NATIVE_WIDEMUL)` row of
 [`bench/results-device.csv`](../bench/results-device.csv) sizes the same
 modules over the native multiply.
 
 The `TRUST=raw-ecdsa` build trades 2.3 kB of RSA for 5.8 kB of P-256
-and totals 33.8 kB. Its verify costs 4.0 times the default's on
+and totals 34.8 kB. Its verify costs 4.0 times the default's on
 mips32r2, so the 64-byte pin costs both flash and handshake time.
 
 ### The hybrid key exchange

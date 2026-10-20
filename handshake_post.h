@@ -21,6 +21,34 @@
 
 #include "session.h"
 
+// Defined in an object that holds a client of a raw or ca build, the
+// objects whose tickets carry trust_hash (ticket.h). A ROLE=server object
+// exports no client entry, so it compiles no trust code, and its dead
+// ch_quic_init calls none.
+#if !defined(CH_TRUST_WEBPKI) && (!defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH))
+#define HSPOST_TICKET_TRUST 1
+#endif
+
+#ifdef HSPOST_TICKET_TRUST
+// What a raw or ca ticket's trust_hash names (ticket.h): a pin slot's key,
+// the server key in a raw build and a CA key in a ca build, or the
+// external PSK. The kind is hashed with the bytes, so a key and a PSK
+// with the same bytes name two trusts.
+#define HSPOST_TRUST_PIN 1
+#define HSPOST_TRUST_PSK 2
+
+// Writes the SHA-256 of the label "chapulin ticket trust", kind and the
+// len bytes at bytes into out, and wipes the hash state, which a PSK
+// passes through. Defined in handshake_post.c.
+void hspost_trust_hash(uint8_t kind, const uint8_t *bytes, size_t len, uint8_t out[SHA256_LEN]);
+
+// Whether cfg still holds the trust ticket names: a pin slot's key or the
+// external PSK whose hash is ticket->trust_hash, compared with ct_memeq.
+// It reads cfg as the caller wrote it, before hspost_present_ticket
+// overwrites the PSK fields. Defined in handshake_post.c.
+int hspost_trust_holds(const ch_cfg *cfg, const ch_ticket *ticket);
+#endif
+
 // Writes the ticket cfg presents into the PSK fields of cfg, which is the
 // session's own copy of the caller's configuration, so every later step
 // reads the ticket's PSK and identity as the PSK it offers. Every client
@@ -32,8 +60,10 @@
 //
 // Returns 1 with no ticket, and 1 once it wrote the ticket. Returns 0 for
 // a PSK that is no hash length this build holds, which also keeps every
-// read of the PSK inside ch_ticket.psk, and for a lifetime of 0, which RFC
-// 9846 §4.7.1 says to discard at once (rfc9846.txt:3258-3259). The
+// read of the PSK inside ch_ticket.psk, for a lifetime of 0, which RFC
+// 9846 §4.7.1 says to discard at once (rfc9846.txt:3258-3259), and in a
+// raw or ca build for a ticket whose trust cfg no longer holds
+// (hspost_trust_holds). The
 // identity's length is the PSK identity's, so every entry's own rule
 // refuses one of 0 bytes or above CH_TICKET_ID_MAX, as it refuses an
 // external PSK's.
@@ -51,6 +81,13 @@ static inline int hspost_present_ticket(ch_cfg *cfg) {
     if ((psk_len != SHA256_LEN && psk_len != HKDF_HASH_MAX) || saved->ticket.lifetime_s == 0) {
         return 0;
     }
+#ifdef HSPOST_TICKET_TRUST
+    // A ticket is refused once the pin of its last full handshake leaves
+    // both slots, or once the external PSK changes (docs/decisions.md 142).
+    if (!hspost_trust_holds(cfg, &saved->ticket)) {
+        return 0;
+    }
+#endif
     cfg->psk = saved->ticket.psk;
     cfg->psk_len = psk_len;
     cfg->psk_id = saved->identity;

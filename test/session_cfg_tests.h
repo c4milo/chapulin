@@ -102,6 +102,7 @@ static void test_epoch_cfg(void) {
     static uint8_t psk[32] = {1};
     static ch_saved_ticket saved;
     test_ticket_fill(&saved, psk, sizeof psk, (const uint8_t *)"d", 1, 3600);
+    test_ticket_trust_pin(&saved, cfg.server_pubkey, cfg.server_pubkey_len);
     cfg.ticket = &saved;
     epoch_mark = 10;
     saved.ticket.epoch = 9;

@@ -36,8 +36,9 @@ pub const Ticket = extern struct {
     }
 
     /// The fields fromFields takes. binding is the ticket's ch_ticket.binding, which a TRUST=webpki
-    /// object alone has, and quic_version its ch_ticket.quic_version, a QUIC object's alone, whose
-    /// null init refuses as a resuming ticket's version.
+    /// object alone has, trust_hash its ch_ticket.trust_hash, which every other object has, and
+    /// quic_version its ch_ticket.quic_version, a QUIC object's alone, whose null init refuses as
+    /// a resuming ticket's version.
     pub const Fields = if (has_webpki) struct {
         identity: []const u8,
         psk: []const u8,
@@ -52,6 +53,7 @@ pub const Ticket = extern struct {
         age_add: u32,
         lifetime_s: u32,
         epoch: u32 = 0,
+        trust_hash: *const [c.SHA256_LEN]u8,
         quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
     };
 
@@ -71,7 +73,7 @@ pub const Ticket = extern struct {
         out.ticket.age_add = fields.age_add;
         out.ticket.lifetime_s = fields.lifetime_s;
         out.ticket.epoch = fields.epoch;
-        if (has_webpki) out.ticket.binding = fields.binding.*;
+        if (has_webpki) out.ticket.binding = fields.binding.* else out.ticket.trust_hash = fields.trust_hash.*;
         if (has_quic) out.ticket.quic_version = quic.versionCode(fields.quic_version);
         return out;
     }

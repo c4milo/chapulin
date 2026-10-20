@@ -13,22 +13,22 @@ rsa_mont,1436,0,1436,2360,rsa_vp1,1308,2384
 buf,1252,0,1252,32,wb_mark,1044,48
 record,1156,19,1175,88,rec_open,1195,112
 keysched,828,177,1005,96,ks_handshake,993,128
-io,368,0,368,48,io_read_record,308,80
-handshake_message,880,0,880,64,hs_build_client_hello,816,112
+io,452,0,452,48,io_read_record,392,80
+handshake_message,884,0,884,64,hs_build_client_hello,824,112
 handshake_parser,1200,32,1232,88,hsp_parse_server_hello,1084,144
 handshake_parser_ee,416,0,416,88,hsp_parse_encrypted_exts,308,128
-handshake_record,1468,36,1504,184,hsr_restart_transcript,1312,208
-session,376,0,376,64,tlsi_send_alert,352,48
+handshake_record,1468,36,1504,184,hsr_restart_transcript,1304,208
+session,376,0,376,64,tlsi_send_alert,348,48
 handshake_auth,736,34,770,216,hsa_hash_signed_content,674,240
-handshake_flight,2012,201,2213,208,hsf_build_client_hello,2101,208
-handshake,968,0,968,576,ch_handshake,892,640
-handshake_post,1328,5,1333,168,hspost_read,1097,224
-tls,1640,31,1671,96,ch_read,1335,96
-tls_write,424,37,461,80,ch_write,357,80
+handshake_flight,2040,201,2241,208,hsf_build_client_hello,2129,208
+handshake,968,0,968,576,ch_handshake,888,640
+handshake_post,1884,27,1911,200,hspost_read,1659,272
+tls,1760,31,1791,96,ch_read,1411,96
+tls_write,632,37,669,80,ch_write,473,96
 # softmul: no function compiled for mips32r2 or the host, so -fstack-usage wrote no .su and its frame is 0
 softmul,0,0,0,0,,0,0
 # build: no function compiled for mips32r2 or the host, so -fstack-usage wrote no .su and its frame is 0
-build,0,48,48,0,,48,0
-total,29652,1395,31047,2360,rsa_vp1,26027,2384
-total (CH_NATIVE_WIDEMUL),27364,1395,28759,2360,rsa_vp1,24603,2384
+build,0,52,52,0,,52,0
+total,30652,1421,32073,2360,rsa_vp1,26889,2384
+total (CH_NATIVE_WIDEMUL),28364,1421,29785,2360,rsa_vp1,25465,2384
 p256 (TRUST=raw-ecdsa),5624,264,5888,752,p256_ecdsa_verify,4832,800

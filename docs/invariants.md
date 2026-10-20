@@ -3037,8 +3037,10 @@ last `ROLE=server` stub, as the entry said it would.
   (docs/decisions.md 59). Every client entry, `ch_connect`,
   `ch_record_init` and `ch_quic_init`, refuses with `CH_EINVAL` and
   sends nothing a configuration whose presented `ticket` has a lifetime
-  of 0 or a PSK of no hash length the build holds
-  (`hspost_present_ticket`), or whose `ticket_age_ms` is above the
+  of 0 or a PSK of no hash length the build holds, or, in a raw or ca
+  build, a `trust_hash` that neither pin slot nor the external PSK of the
+  configuration hashes to (`hspost_present_ticket`,
+  `hspost_trust_holds`, docs/decisions.md 142), or whose `ticket_age_ms` is above the
   ticket's `lifetime_s` seconds or above `CH_TICKET_LIFETIME_MAX`
   seconds, seven days (`hspost_ticket_age_ok`, handshake_post.h). Each also
   refuses, the same way, a PSK whose identity is not 1 to

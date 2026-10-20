@@ -140,6 +140,12 @@ static void configure(ch_cfg *cfg, uint32_t ticket_epoch) {
     cfg->buf_len = sizeof rxbuf;
     test_ticket_fill(&saved, psk, sizeof psk, identity, sizeof identity, 3600);
     saved.ticket.epoch = ticket_epoch;
+    // The CA key of the last full handshake before the ticket stays in its
+    // slot (ticket.h's trust_hash).
+    static const uint8_t ca_key[256] = {0xc5};
+    cfg->server_pubkey = ca_key;
+    cfg->server_pubkey_len = sizeof ca_key;
+    test_ticket_trust_pin(&saved, ca_key, sizeof ca_key);
     cfg->ticket = &saved;
     cfg->epoch_load = epoch_load;
     cfg->epoch_store = epoch_store;

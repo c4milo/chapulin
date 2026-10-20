@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+#include "handshake_post.h"
 #include "ticket.h"
 
 static inline void test_ticket_fill(ch_saved_ticket *out, const uint8_t *key, size_t key_len,
@@ -17,5 +18,20 @@ static inline void test_ticket_fill(ch_saved_ticket *out, const uint8_t *key, si
     out->ticket.identity_len = id_len;
     out->ticket.lifetime_s = lifetime_s;
 }
+
+#ifdef HSPOST_TICKET_TRUST
+// Names key, a pin slot's bytes, as the trust of the last full handshake
+// before out (ticket.h's trust_hash), so a configuration with key in a slot
+// takes it.
+static inline void test_ticket_trust_pin(ch_saved_ticket *out, const uint8_t *key, size_t key_len) {
+    hspost_trust_hash(HSPOST_TRUST_PIN, key, key_len, out->ticket.trust_hash);
+}
+
+// Names key, an external PSK, as the trust of the last full handshake
+// before out.
+static inline void test_ticket_trust_psk(ch_saved_ticket *out, const uint8_t *key, size_t key_len) {
+    hspost_trust_hash(HSPOST_TRUST_PSK, key, key_len, out->ticket.trust_hash);
+}
+#endif
 
 #endif

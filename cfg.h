@@ -321,9 +321,10 @@ typedef struct {
     // refuses with CH_EINVAL, before a byte is sent, a ticket with an identity of 0 or more
     // than CH_TICKET_ID_MAX bytes, with a PSK that is no hash length this build holds, or with
     // a lifetime of 0, and under TRUST=webpki a ticket beside an external PSK. It refuses the
-    // ticket on the rules ch_ticket's fields state as well: its age, its epoch, its binding
-    // and its QUIC version (ticket.h). The bytes must outlive the session, as every pointer
-    // here must.
+    // ticket on the rules ch_ticket's fields state as well: its age, its epoch, its binding,
+    // its trust_hash and its QUIC version (ticket.h). In a raw or ca build that means the
+    // pin, CA key or external PSK that issued the ticket stays set beside it. The bytes must
+    // outlive the session, as every pointer here must.
     const ch_saved_ticket *ticket;
     // The ticket's age in milliseconds: the time since on_ticket handed it over, on the
     // caller's clock. Every client entry refuses with CH_EINVAL, before a byte is sent, an

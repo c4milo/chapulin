@@ -224,7 +224,7 @@ grep -q "^ticket:" "$DIR/err" || {
 # The server accepts the ticket-derived PSK only if our resumption secret,
 # binder label, and age math all match its own.
 MSG='otra vez'
-expect resumption "zev arto" "$DIR/err2" ./bin/tlsclient 127.0.0.1 "$PORT" "@$DIR/ticket" -
+expect resumption "zev arto" "$DIR/err2" ./bin/tlsclient 127.0.0.1 "$PORT" "$PSK" "$ID@$DIR/ticket"
 grep -q "^resuming" "$DIR/err2" || {
     echo "FAIL e2e resumption: did not use the ticket"
     exit 1
@@ -274,7 +274,7 @@ expect pin-ecdsa "soterces nis" "$DIR/err3" \
     exit 1
 }
 MSG='de nuevo'
-expect pin-ecdsa-resume "oveun ed" "$DIR/err3" ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT2" "@$DIR/ticket2" -
+expect pin-ecdsa-resume "oveun ed" "$DIR/err3" ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT2" "pin:$PUB" "@$DIR/ticket2"
 
 # --- This tree's server, with the same P-256 key and certificate: OpenSSL's
 # s_client, then this tree's own pinned client, each make a full handshake
@@ -326,7 +326,7 @@ expect chsrv-chapulin "soterces nis" "$DIR/err15" \
 }
 MSG='de nuevo'
 expect chsrv-chapulin-resume "oveun ed" "$DIR/err15" \
-    ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT15" "@$DIR/ticket15" -
+    ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT15" "pin:$PUB" "@$DIR/ticket15"
 # Four connections in order: full, resumed, full, resumed.
 [ "$(grep '^handshake: ' "$CHSRV_LOG" | tr '\n' ' ')" = \
   "handshake: full handshake: resumed handshake: full handshake: resumed " ] || {
@@ -429,7 +429,7 @@ grep -q "^group 0x001d$" "$DIR/err5" || {
 expect_fail pin-rsa-require-pq -6 "$DIR/err5b" \
     env REQUIRE_PQ=1 ./bin/tlsclient 127.0.0.1 "$PORT4" "pin:$MOD" -
 MSG='otra ronda'
-expect pin-rsa-resume "adnor arto" "$DIR/err5" ./bin/tlsclient 127.0.0.1 "$PORT4" "@$DIR/ticket4" -
+expect pin-rsa-resume "adnor arto" "$DIR/err5" ./bin/tlsclient 127.0.0.1 "$PORT4" "pin:$MOD" "@$DIR/ticket4"
 
 # --- Rotation (docs/rotation.md): stage a second RSA key as slot B, then
 # restart the server on it. Against the old server both pins match slot A;
@@ -759,7 +759,7 @@ expect_fail ca-epoch-revoked -3 "$DIR/err14" \
 # CH_EINVAL, -6, which every refused configuration shares. The epoch
 # status, CH_EPOCH_REVOKED (3), is what names the retired ticket.
 expect_fail ca-epoch-ticket -6 "$DIR/err14" \
-    ./bin/tlsclient_ca 127.0.0.1 "$PORT15" "@$DIR/epoch.ticket" - - "$DIR/epoch.state"
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT15" "ca:$CAMOD" "@$DIR/epoch.ticket" - "$DIR/epoch.state"
 grep -q "^epoch status 3$" "$DIR/err14" || {
     echo "FAIL e2e ca-epoch-ticket: the refusal was not the retired ticket"
     cat "$DIR/err14"
@@ -1106,7 +1106,7 @@ if command -v go >/dev/null 2>&1; then
         exit 1
     }
     MSG='una mas'
-    expect go-ecdsa-resume "sam anu" "$DIR/err4" ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT3" "@$DIR/ticket3" -
+    expect go-ecdsa-resume "sam anu" "$DIR/err4" ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT3" "pin:$PUB" "@$DIR/ticket3"
 
     MSG='go grande'
     expect go-rsa "ednarg og" "$DIR/err6" \
@@ -1116,7 +1116,7 @@ if command -v go >/dev/null 2>&1; then
         exit 1
     }
     MSG='ultima'
-    expect go-rsa-resume "amitlu" "$DIR/err6" ./bin/tlsclient 127.0.0.1 "$PORT5" "@$DIR/ticket5" -
+    expect go-rsa-resume "amitlu" "$DIR/err6" ./bin/tlsclient 127.0.0.1 "$PORT5" "pin:$MOD" "@$DIR/ticket5"
 
     # --- One direction closed at a time (RFC 9846 §6.1). The server
     # answers the first line, then sends close_notify with Go's CloseWrite
@@ -1171,7 +1171,7 @@ if command -v go >/dev/null 2>&1; then
     }
     MSG='otra vuelta'
     expect go-pq-resume "atleuv arto" "$DIR/err_pq" \
-        ./bin/tlsclient_pq 127.0.0.1 "$PORT17" "@$DIR/ticket_pq" -
+        ./bin/tlsclient_pq 127.0.0.1 "$PORT17" "pin:$MOD" "@$DIR/ticket_pq"
     MSG='no debe pasar'
     expect_fail go-pq-refuses-classic -2 "$DIR/err_pq" \
         ./bin/tlsclient 127.0.0.1 "$PORT17" "pin:$MOD" -

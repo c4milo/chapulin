@@ -1,0 +1,13 @@
+invariant: INV-14
+file: handshake_post.c
+catches: unit
+reason: the trust check reads pin slot A and the external PSK and not
+  slot B. A ticket from a handshake that the key in slot B authenticated
+  is then refused while that key is in slot B alone, between steps 2 and
+  3 of a rotation. test/session_ticket_tests.h's row with the
+  issuer in slot B requires the hello to go out.
+
+--- old
+                    trust_names(HSPOST_TRUST_PIN, cfg->server_pubkey2, cfg->server_pubkey2_len,
+                                ticket->trust_hash) |
+--- new
