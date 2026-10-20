@@ -12714,3 +12714,35 @@ does nothing more.
       and it still passes a constant the caller typed.
     - **Derive the ticket key from the cookie key.** A leaked cookie key
       would then open every ticket too.
+
+140. **A client refuses an external PSK shorter than 16 bytes,
+    `CH_PSK_LEN_MIN`.** `ch_connect`, `ch_record_init` and
+    `ch_quic_init` took an external PSK of any length of 1 byte or more.
+    RFC 9846 warns that a low-entropy PSK falls to a dictionary attack on
+    the binder of one recorded handshake, even with the key exchange
+    (rfc9846.txt:711-720). In PSK mode the PSK is the only proof of
+    either end, so whoever finds it can stand in for the server or the
+    device. On 2026-10-19 Camilo approved the floor from the second API
+    audit (entry 133 states the request).
+
+    - **The rule.** `tls.c`'s `psk_configured` and `quic_config.c`'s
+      `trust_config_ok` require `psk_len >= CH_PSK_LEN_MIN`, and a
+      shorter PSK is `CH_EINVAL` before a byte is sent. A presented
+      ticket's PSK is 32 or 48 bytes, so no ticket falls below the floor.
+    - **Why 16.** 128 bits is the strength of the weakest primitives
+      this tree runs, AES-128 and X25519. A floor can count bytes and
+      cannot measure entropy, so 16
+      random bytes pass and 16 bytes of a password pass too. cfg.h and
+      docs/usage.md say to draw the PSK from a strong random source.
+
+    `test/session_hello_tests.h` and `test/quic_driver_test.c` hold the
+    boundary: 16 bytes stage a hello and 15 are refused. Two mutants hold
+    the rule: `inv14-psk-length-floor-dropped` and
+    `inv14-quic-psk-length-floor-dropped`.
+
+    Rejected:
+
+    - **A floor of 32 bytes.** It refuses a 16-byte random key, which is
+      as strong as AES-128 and X25519.
+    - **A floor that only warns.** chapulin has no channel for a warning,
+      and every other rule here refuses.

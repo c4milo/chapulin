@@ -103,7 +103,7 @@ static int psk_id_len_ok(size_t len) {
 // Whether a PSK is the configured auth mode. Both callers below ask, and
 // tlsi_epoch_init takes the answer.
 static int psk_configured(const ch_cfg *cfg) {
-    return cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL &&
+    return cfg->psk != NULL && cfg->psk_len >= CH_PSK_LEN_MIN && cfg->psk_id != NULL &&
            psk_id_len_ok(cfg->psk_id_len) && cfg->server_pubkey == NULL;
 }
 

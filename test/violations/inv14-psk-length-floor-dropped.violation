@@ -1,0 +1,13 @@
+invariant: INV-14
+file: tls.c
+catches: unit
+reason: ch_connect takes an external PSK of any length, so a device keyed
+  with a short or password-length PSK falls to a dictionary attack on the
+  binder of one recorded handshake (rfc9846.txt:711-720).
+  test/session_hello_tests.h's row one byte under CH_PSK_LEN_MIN requires
+  CH_EINVAL before a byte is sent.
+
+--- old
+    return cfg->psk != NULL && cfg->psk_len >= CH_PSK_LEN_MIN && cfg->psk_id != NULL &&
+--- new
+    return cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL &&

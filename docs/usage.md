@@ -6,7 +6,7 @@ The public calls, the configuration each trust mode takes, and what the server r
 static uint8_t rxbuf[2048];
 // PSK mode (provisioned shared key)…
 ch_cfg cfg = {
-    .psk = psk, .psk_len = 32,
+    .psk = psk, .psk_len = 32, // at least CH_PSK_LEN_MIN, 16 bytes, from a strong random source
     .psk_id = (const uint8_t *)"device-42", .psk_id_len = 9, // 1 to CH_TICKET_ID_MAX
     .buf = rxbuf, .buf_len = sizeof rxbuf,
     .send = my_send, .recv = my_recv, .io = &sock,

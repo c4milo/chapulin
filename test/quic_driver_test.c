@@ -134,6 +134,14 @@ static void test_config_refusals(void) {
     CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && q.tx_len == 0);
     cfg.psk_id_len = 0;
     CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && q.tx_len == 0);
+
+    // The external PSK's length floor, tls.c's too: CH_PSK_LEN_MIN bytes
+    // stage the hello, and one byte fewer is refused with nothing staged.
+    cfg.psk_id_len = 9;
+    cfg.psk_len = CH_PSK_LEN_MIN;
+    CHECK(ch_quic_init(&q, &cfg) == CH_OK && q.tx_len > 0);
+    cfg.psk_len = CH_PSK_LEN_MIN - 1;
+    CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && q.tx_len == 0);
 }
 
 // The hello goes out whole at Initial, the connection ID installs the

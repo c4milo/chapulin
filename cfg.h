@@ -274,11 +274,17 @@ typedef struct {
 #define CH_TRANSPORT_PARAMS_MAX 256
 #endif
 
+// The shortest external PSK every client entry takes, 16 bytes or 128 bits. A low-entropy PSK
+// falls to a dictionary attack on the binder of one recorded handshake (rfc9846.txt:711-720).
+// No rule can measure entropy, so this floor refuses the password-length case alone.
+#define CH_PSK_LEN_MIN 16
+
 typedef struct {
     // Authentication is one of two modes:
     //  - PSK: psk/psk_id set, an external PSK. Every client entry refuses
-    //    with CH_EINVAL a psk_id_len that is not 1 to CH_TICKET_ID_MAX
-    //    bytes, the most a ClientHello holds.
+    //    with CH_EINVAL a psk_len below CH_PSK_LEN_MIN and a psk_id_len
+    //    that is not 1 to CH_TICKET_ID_MAX bytes, the most a ClientHello
+    //    holds. Draw the PSK from a strong random source.
     //  - Pinned key: psk NULL, server_pubkey = the server's raw public
     //    key, provisioned like a PSK would be. The key is an RSA modulus
     //    (256..384 bytes big-endian, RSA-2048 to RSA-3072 — the cap

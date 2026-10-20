@@ -122,7 +122,7 @@ static int psk_id_len_ok(size_t len) {
 // a pin is a provisioning mistake and gets refused, not resolved. The
 // optional second pin obeys every slot-A rule and never stands alone.
 static int trust_config_ok(const ch_cfg *cfg) {
-    int psk_ok = cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL &&
+    int psk_ok = cfg->psk != NULL && cfg->psk_len >= CH_PSK_LEN_MIN && cfg->psk_id != NULL &&
                  psk_id_len_ok(cfg->psk_id_len) && cfg->server_pubkey == NULL;
     int pin_ok =
         cfg->psk == NULL && cfg->server_pubkey != NULL && pin_len_ok(cfg->server_pubkey_len);

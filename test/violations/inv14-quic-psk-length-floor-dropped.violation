@@ -1,0 +1,13 @@
+invariant: INV-14
+file: quic_config.c
+catches: quic_driver_test
+reason: ch_quic_init takes an external PSK of any length, which tls.c's
+  rule refuses below CH_PSK_LEN_MIN, so a QUIC client keyed with a short
+  PSK falls to a dictionary attack on its binder (rfc9846.txt:711-720).
+  test/quic_driver_test.c's row one byte under the floor requires
+  CH_EINVAL with nothing staged.
+
+--- old
+    int psk_ok = cfg->psk != NULL && cfg->psk_len >= CH_PSK_LEN_MIN && cfg->psk_id != NULL &&
+--- new
+    int psk_ok = cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL &&
