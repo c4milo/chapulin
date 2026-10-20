@@ -12746,3 +12746,37 @@ does nothing more.
       as strong as AES-128 and X25519.
     - **A floor that only warns.** chapulin has no channel for a warning,
       and every other rule here refuses.
+
+141. **`rand_draw` writes zero to the bytes before the source runs.**
+    Every draw site checks for a source that returns without writing:
+    `CH_ASSERT` fires when the drawn bytes are all zero. That check
+    assumes the buffer held zeros before the draw. The session buffers
+    do, because each init call zeroes its session, and the two P-256
+    sites and the ticket draw zero their own. Three sites draw into a
+    stack array that nothing zeroed: the RSA-PSS salt in `srv_auth.c`,
+    the ML-KEM randomness in `srv_kex.c` and the ServerHello random in
+    `srv_flight.c`. Under a source that writes nothing, those hold
+    whatever the stack held, which passes the check and goes to the peer
+    as a salt or a random, or into a shared secret. On 2026-10-19 Camilo
+    approved a check on draws from the second API audit (entry 133 states
+    the request). The audit had said that such a source goes unnoticed.
+    That held for these three sites alone.
+
+    - **The rule.** `rand_draw` calls `ct_wipe` on the n bytes, then the
+      source. One line covers every site and every pattern, so a site
+      added later cannot miss it.
+    - **What it costs.** One `ct_wipe` per draw, a few per handshake.
+    - **What it does not check.** A source that writes a constant other
+      than zero, or a weak generator, still passes. Nothing here can tell
+      a weak generator from a strong one (rand.h).
+
+    `test/tcp_blocking_session_tests.h` draws into bytes that hold 0xa5
+    from a source that writes nothing, and requires zeros. The mutant
+    `inv04-rand-draw-keeps-stale-bytes` drops the write.
+
+    Rejected:
+
+    - **A fixed fill before the draw and a check that it changed.** The
+      sites check already. A second check in `rand_draw` repeats theirs.
+    - **`= {0}` at the three stack arrays.** It fixes the three sites and
+      leaves the next new site to remember the rule.

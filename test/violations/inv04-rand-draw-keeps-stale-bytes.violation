@@ -1,0 +1,15 @@
+invariant: INV-4
+file: rand_draw.h
+catches: tcp_blocking_loop_session
+reason: rand_draw calls the source without writing zero first, so a source
+  that returns without writing leaves the bytes the buffer held. The draw
+  sites check for zeros, and a stack buffer's old bytes pass that check,
+  then go to the peer as an RSA-PSS salt or a ServerHello random.
+  test/tcp_blocking_session_tests.h draws into 0xa5 bytes from a source
+  that writes nothing and requires zeros.
+
+--- old
+    ct_wipe(p, n);
+#ifdef CH_RAND_SESSION
+--- new
+#ifdef CH_RAND_SESSION

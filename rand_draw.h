@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "cfg.h"
+#include "ct.h"
 #include "rand.h"
 
 // Writes n random bytes at p from the source cfg names: the session's
@@ -21,7 +22,13 @@
 // holds, never another session's. Under RAND=session an init call or
 // ch_srv_check accepted that configuration first, so rand_source_ok holds
 // for it.
+//
+// It writes zero to the n bytes first. A source that returns without
+// writing then leaves zeros, which every draw site refuses with CH_ASSERT
+// (INV-4), and not the stack bytes a buffer held before, which a site
+// could send to the peer as a salt or a random.
 static inline void rand_draw(const ch_cfg *cfg, uint8_t *p, size_t n) {
+    ct_wipe(p, n);
 #ifdef CH_RAND_SESSION
     cfg->rand_bytes(cfg->rand_io, p, n);
 #else

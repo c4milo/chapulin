@@ -38,6 +38,7 @@ static int run_seeded(uint64_t client_seed, uint64_t server_seed, crossed *out) 
            cross(out->to_client, &out->to_client_len, to_client.bytes, to_client.len);
 }
 
+#include "rand_draw.h"
 #include "rand_session_cases.h"
 
 // Each init call refuses a configuration with no source, with CH_EINVAL,
@@ -77,11 +78,34 @@ static void check_session_refusals(void) {
     CHECK(contextless_calls == SESSION_CLIENT_DRAWS + 1 && stray_draws == 0 && hook_draws == 0);
 }
 
+// A source that returns and writes nothing, which rand.h forbids. It
+// keeps the pointer it was handed and nothing else.
+static uint8_t *silent_target;
+static void silent_draw(void *io, uint8_t *p, size_t n) {
+    (void)io;
+    (void)n;
+    silent_target = p;
+}
+
+// rand_draw writes zero to the bytes before the source runs, so a source
+// that writes nothing leaves zeros, which every draw site refuses with
+// CH_ASSERT. Bytes that held 0xa5 before the draw read zero after it.
+static void check_silent_source_leaves_zeros(void) {
+    ch_cfg cfg = {0};
+    cfg.rand_bytes = silent_draw;
+    uint8_t drawn[32];
+    memset(drawn, 0xa5, sizeof drawn);
+    rand_draw(&cfg, drawn, sizeof drawn);
+    static const uint8_t zero[sizeof drawn] = {0};
+    CHECK(silent_target == drawn && memcmp(drawn, zero, sizeof drawn) == 0);
+}
+
 static void test_session(void) {
     check_session_draws();
     check_session_replay();
     check_session_refusals();
     check_pss_salt_from_source();
+    check_silent_source_leaves_zeros();
 }
 
 #endif

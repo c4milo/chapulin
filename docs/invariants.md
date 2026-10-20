@@ -171,7 +171,10 @@ last `ROLE=server` stub, as the entry said it would.
 
   Every site checks for a source that returns without writing:
   CH_ASSERT fires when the drawn bytes are all zero, and for the salt
-  `rsa_pss_sign` checks the bytes it is handed. The two P-256 sites
+  `rsa_pss_sign` checks the bytes it is handed. `rand_draw` writes zero
+  to the bytes before the source runs, so such a source leaves zeros at
+  every site, a stack buffer's included, and not the bytes the buffer
+  held before (docs/decisions.md 141). The two P-256 sites
   check a range instead. They draw again when a candidate falls outside
   [1, n-1], zero included, up to `P256_ECDH_DRAWS` times, and CH_ASSERT
   fires after the last one. A working generator fails that many draws
