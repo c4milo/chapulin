@@ -121,7 +121,7 @@ typedef struct ch_record {
 // reads CH_EPOCH_REVOKED, as it does after ch_connect.
 //
 // Requires: r and cfg are not NULL, and cfg outlives the session.
-int ch_record_init(ch_record *r, const ch_cfg *cfg);
+int CH_MUST_USE ch_record_init(ch_record *r, const ch_cfg *cfg);
 
 // Delivers n bytes the caller read from its socket and reports how many
 // it consumed. It takes whole records only and runs the handshake as far
@@ -142,7 +142,7 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg);
 // ch_record_out unless the failure was the peer's fatal alert (above). A
 // record delivered here once ch_record_state reports CH_ST_CONNECTED
 // fails the session too: that record is ch_read's.
-int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
+int CH_MUST_USE ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 
 // Collects bytes the caller must send. out_len is 0 when nothing is
 // owed, which is the normal answer while waiting for the peer. A caller
@@ -159,7 +159,7 @@ int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 // progress. Returns CH_EINVAL on a session that failed or closed and
 // holds no staged byte. Neither changes the session, and neither writes
 // *out_len.
-int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len);
+int CH_MUST_USE ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len);
 #endif
 
 // CH_ST_START while the handshake runs, CH_ST_CONNECTED once it is done

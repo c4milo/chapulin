@@ -59,7 +59,7 @@
 // was sent and the session is dead.
 //
 // Requires: r and cfg are not NULL, and cfg outlives the session.
-int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
+int CH_MUST_USE ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 
 // Delivers n bytes the caller read from its socket and reports how many
 // it consumed. It takes whole records only and runs the handshake as far
@@ -101,7 +101,7 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 // fatal alert, in the clear or protected, is the exception: the call
 // returns CH_EPROTO and pushes nothing, ch_alert_received names the
 // alert, and ch_alert_sent reads 0 (RFC 9846 §6.2).
-int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
+int CH_MUST_USE ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 
 #endif // CH_ROLE_SERVER && CH_TRANSPORT_TCP_NONBLOCKING
 #endif

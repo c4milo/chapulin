@@ -1,0 +1,12 @@
+invariant: INV-36
+file: result.h
+catches: test/zig-build-check.sh
+reason: CH_MUST_USE expands to nothing under gcc and clang, so every mark
+  stays in the headers and no compiler warns where a caller drops a result
+  code. tools/must-use.py reads the headers after the preprocessor and
+  requires warn_unused_result.
+
+--- old
+#define CH_MUST_USE __attribute__((warn_unused_result))
+--- new
+#define CH_MUST_USE

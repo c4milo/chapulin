@@ -46,7 +46,9 @@
 #     Before it, tools/public-constants.py lists the lengths and caps the
 #     public headers' comments name in regions the object compiles, and
 #     fails when one is not defined for the consumer; matches.zig then
-#     requires chapulin.c to declare and evaluate each one.
+#     requires chapulin.c to declare and evaluate each one. Then
+#     tools/must-use.py requires each public call that returns int to
+#     carry CH_MUST_USE, expanded to warn_unused_result.
 #   - unit.zig, the API's unit tests: each value's toCfg field by field,
 #     the Ticket constructors, the error of every ch_err code, and every
 #     declaration the object has, compiled.
@@ -382,6 +384,12 @@ check() {
     python3 tools/public-constants.py "$cc" "$out/$name/lib-headers.txt" "$out/$name/lib-def.txt" \
         > "$out/$name/constants.txt" ||
         fail "$name: a public header names a constant this object's consumer cannot see"
+    # Each public call that returns a result code warns where a caller
+    # drops it (result.h's CH_MUST_USE, docs/decisions.md 143).
+    local marked
+    marked=$(python3 tools/must-use.py "$cc" "$out/$name/lib-headers.txt" "$out/$name/lib-def.txt") ||
+        fail "$name: a public call that returns a result code carries no CH_MUST_USE"
+    echo "lint-zig-build: $name: the $marked public calls that return int carry CH_MUST_USE"
 
     local symbol declared=()
     for symbol in $(exports "$zig_obj"); do declared+=("-Dexport=$symbol"); done

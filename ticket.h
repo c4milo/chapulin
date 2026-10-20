@@ -82,7 +82,7 @@ typedef struct {
 // those bytes are valid. Returns CH_OK. Returns CH_EINVAL, and writes nothing, for a ticket
 // whose identity is NULL or empty, or longer than CH_TICKET_ID_MAX, which on_ticket is never
 // handed. Static inline, so no object exports it.
-static inline int ch_ticket_save(ch_saved_ticket *out, const ch_ticket *ticket) {
+static inline int CH_MUST_USE ch_ticket_save(ch_saved_ticket *out, const ch_ticket *ticket) {
     if (ticket->identity == NULL || ticket->identity_len == 0 ||
         ticket->identity_len > CH_TICKET_ID_MAX) {
         return CH_EINVAL;

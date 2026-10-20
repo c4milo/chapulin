@@ -35,7 +35,7 @@
 // below keep their contracts in both roles, because record.[ch] names
 // no side.
 #if (!defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
-int ch_connect(ch_tls *t, const ch_cfg *cfg);
+int CH_MUST_USE ch_connect(ch_tls *t, const ch_cfg *cfg);
 #endif
 
 // Sends n bytes as one or more records. Returns CH_OK or an error. It
@@ -65,7 +65,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg);
 // after that many cannot be replaced: that write returns CH_ECAP and
 // leaves the session dead, after it tries to send internal_error under the
 // old key.
-int ch_write(ch_tls *t, const uint8_t *p, size_t n);
+int CH_MUST_USE ch_write(ch_tls *t, const uint8_t *p, size_t n);
 
 // The most plaintext one ch_write seals into cap bytes of records, so a
 // caller whose send takes at most cap bytes per call knows how much to
@@ -153,7 +153,7 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 // been handled, a ticket or a KeyUpdate among them; the caller calls
 // ch_read again once it holds the next whole record. tcp_nonblocking.h states
 // the recv contract that goes with it.
-int ch_read(ch_tls *t, uint8_t *p, size_t n);
+int CH_MUST_USE ch_read(ch_tls *t, uint8_t *p, size_t n);
 
 #ifdef CH_EXPORTER
 // The longest exporter label this build takes, not counting a
@@ -185,8 +185,8 @@ int ch_read(ch_tls *t, uint8_t *p, size_t n);
 //
 // It reads the session and changes nothing in it, so a caller may call
 // it as often as it likes and in any order against ch_read and ch_write.
-int ch_export(const ch_tls *t, const char *label, const uint8_t *context, size_t context_len,
-              uint8_t *out, size_t out_len);
+int CH_MUST_USE ch_export(const ch_tls *t, const char *label, const uint8_t *context,
+                          size_t context_len, uint8_t *out, size_t out_len);
 #endif
 
 // Sends close_notify (only under live keys) and wipes all key material,

@@ -12853,3 +12853,49 @@ does nothing more.
       the number names another key.
     - **The key itself in the ticket.** An RSA-3072 key is 384 bytes,
       twelve times the hash.
+
+143. **Each public call that returns a result code carries `CH_MUST_USE`,
+    gcc's and clang's `warn_unused_result`.** A caller who drops a code
+    gets no warning. Such a caller can use bytes that `ch_export` or a
+    PEM call did not write, or go on after `ch_build_matches` or
+    `ch_srv_check` said no. On 2026-10-19 Camilo approved the marks from
+    the second API audit (entry 133 states the request).
+
+    - **The rule.** `result.h` defines `CH_MUST_USE` as
+      `__attribute__((warn_unused_result))` under gcc and clang, and as
+      nothing under another compiler. Each public call that returns
+      `int` carries it, and so does `ch_quic_retry_ok`, whose `uint8_t`
+      is a verdict. A call that reports state, such as `ch_alert_sent`,
+      carries none.
+    - **Where the mark sits.** Between the return type and the name, as
+      in `int CH_MUST_USE ch_connect(...)`. Semgrep parses a declaration
+      that starts with an unknown macro only in part, and skips the
+      span, so no INV rule would read those lines (lint-invariants).
+      gcc takes no attribute after the parameters of a definition, and
+      `ch_build_matches` and `ch_ticket_save` are definitions.
+    - **The C++ wrapper.** `Status`, `Read`, `Written`, `Opened`,
+      `Pubkey` and `Anchors` are `[[nodiscard]]`, and so is
+      `build_matches`. A mark on the type covers each method that returns
+      it.
+    - **What it costs a caller.** gcc warns through a `(void)` cast,
+      which clang and the C++ attribute accept. A caller that drops a
+      result on purpose keeps it in a variable and casts that to `void`,
+      as `test/tls_server.c` does after its last write. Zig makes every
+      caller use a result already.
+
+    `tools/must-use.py` reads each object's public headers after the
+    preprocessor, under the object's defines, and requires
+    `warn_unused_result` on each call that returns `int`.
+    `test/zig-build-check.sh` runs it for each object it builds, so a new
+    call without the mark fails `make lint-zig-build`. Two mutants hold
+    the rule: `inv36-header-connect-unmarked` and
+    `inv36-must-use-expands-to-nothing`.
+
+    Rejected:
+
+    - **C23's `[[nodiscard]]` in C.** The tree is C11, and the firmware
+      compilers it serves predate C23.
+    - **A mark on every call that returns a value.** A dropped
+      `ch_alert_sent` or `ch_writable_len` costs nothing. A warning there
+      gives a caller one more cast to write, and casts hide the warnings
+      that matter.

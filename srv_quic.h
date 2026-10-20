@@ -61,7 +61,7 @@
 // negotiated version is the original one (ch_quic_negotiated_version).
 //
 // Requires: q and cfg are not NULL, and cfg outlives the session.
-int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg);
+int CH_MUST_USE ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg);
 
 // Delivers n CRYPTO bytes the peer sent at one encryption level. The
 // server's own bytes leave through cfg.srv.on_crypto_out during this
@@ -100,7 +100,7 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg);
 // quic_fail as a client does, so it keeps the write keys of each level it
 // had installed, and ch_quic_seal_close seals that close once at each
 // (docs/quic_server.md, "When the handshake fails").
-int ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n);
+int CH_MUST_USE ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n);
 
 // Writes the Retry integrity tag of RFC 9001 section 5.8 over the Retry
 // pseudo-packet the caller built, which is the server half of what
@@ -117,7 +117,8 @@ int ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n)
 //
 // Returns CH_OK and writes CH_QUIC_RETRY_TAG_LEN bytes. Returns CH_EINVAL and writes
 // nothing when this build derives no keys for version (quic_version.h).
-int ch_srv_quic_retry_tag(uint32_t version, const uint8_t *pseudo, size_t n, uint8_t *tag);
+int CH_MUST_USE ch_srv_quic_retry_tag(uint32_t version, const uint8_t *pseudo, size_t n,
+                                      uint8_t *tag);
 
 #endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

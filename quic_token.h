@@ -140,10 +140,10 @@ typedef struct {
 // simulation replays a token exactly. RFC 9000 §8.1.4 requires a token to be
 // difficult to guess (rfc9000.txt:2429), and the tag is what makes it so: a
 // client without the key cannot compute the 32 bytes that end the token.
-int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], uint32_t version,
-                           const uint8_t *address, size_t address_len,
-                           const ch_quic_retry_cids *cids, uint64_t issued_seconds, uint8_t *out,
-                           size_t cap, size_t *out_len);
+int CH_MUST_USE ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], uint32_t version,
+                                       const uint8_t *address, size_t address_len,
+                                       const ch_quic_retry_cids *cids, uint64_t issued_seconds,
+                                       uint8_t *out, size_t cap, size_t *out_len);
 
 // Checks the n token bytes a client's Initial carried and, when they verify,
 // writes the two connection IDs they hold to *cids.
@@ -195,10 +195,10 @@ int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], uint32_t ve
 // received a Retry accepts no second one (rfc9000.txt:2295-2301), and RFC
 // 9369 section 4.1 lets it drop the packet of a client that switched
 // versions (rfc9369.txt:224-227).
-int ch_srv_quic_token_check(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], uint32_t version,
-                            const uint8_t *token, size_t n, const uint8_t *address,
-                            size_t address_len, uint64_t now_seconds, uint64_t lifetime_seconds,
-                            ch_quic_retry_cids *cids);
+int CH_MUST_USE ch_srv_quic_token_check(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], uint32_t version,
+                                        const uint8_t *token, size_t n, const uint8_t *address,
+                                        size_t address_len, uint64_t now_seconds,
+                                        uint64_t lifetime_seconds, ch_quic_retry_cids *cids);
 
 #endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

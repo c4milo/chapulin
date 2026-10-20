@@ -223,6 +223,12 @@ limit has a code of its own: a TCP session's `ch_read` returns
 `CH_KEY_UPDATE_LIMIT` when the peer sends too many KeyUpdates in a row
 (below).
 
+Check every result code. Each call that returns one carries `CH_MUST_USE`
+(`result.h`), so gcc and clang warn where your code drops it. gcc warns
+through a `(void)` cast too. Where a result changes nothing, keep it in a
+variable and cast the variable to `void`. The C++ wrapper's `Status` and
+result types are `[[nodiscard]]` for the same reason.
+
 Read what a session reports through the calls of `session_report.h`,
 which `tls.h`, `tcp_nonblocking.h` and `quic.h` include:
 

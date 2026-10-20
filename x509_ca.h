@@ -66,8 +66,8 @@
 // this #if, so x509_ca.c defines the transport's symbol in every build
 // that compiles it.
 #if defined(CH_TRUST_CA) || defined(CH_X509_CA_TEST)
-int ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],
-                       uint8_t key[CH_X509_KEY_MAX], size_t *key_len);
+int CH_MUST_USE ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],
+                                   uint8_t key[CH_X509_KEY_MAX], size_t *key_len);
 #endif
 
 #endif

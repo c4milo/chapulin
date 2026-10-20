@@ -115,7 +115,11 @@ static void echo_reversed(ch_tls *t) {
             line[i] = line[body - 1 - i];
             line[body - 1 - i] = c;
         }
-        (void)ch_write(t, line, len);
+        // The server closes after the reply whether or not it went out, so
+        // the result changes nothing. gcc warns on a (void) cast of a
+        // CH_MUST_USE call (result.h), so the result goes to a variable.
+        int rc = ch_write(t, line, len);
+        (void)rc;
     }
     ch_close(t);
 }

@@ -2208,7 +2208,9 @@ last `ROLE=server` stub, as the entry said it would.
   of its own. Its `chapulin.c` declares every name the object exports, and
   every function it declares under a `ch_` name is one the object exports
   or imports, so a program that calls a function the object lacks fails to
-  compile rather than to link. Its types have the layout the object's
+  compile rather than to link. Each public call that returns `int`, a
+  result code or a verdict, carries `CH_MUST_USE`, so gcc and clang warn
+  where a caller drops the result. Its types have the layout the object's
   build record describes. `chapulin.c` is translated from `x509_ca.h`,
   `pem_files.h` and `drbg.h` only where the object exports a call of
   theirs. For any other object, each declares no `ch_` function the
@@ -2282,7 +2284,12 @@ last `ROLE=server` stub, as the entry said it would.
   `matches.zig`, `tools/public-constants.py` lists every length and cap
   the public headers' comments name in the regions the object compiles,
   and fails when the consumer cannot see one; `matches.zig` then
-  declares and evaluates each. check-slow runs the script over every
+  declares and evaluates each. `tools/must-use.py` then requires each
+  public call that returns `int` to carry `CH_MUST_USE` once the
+  preprocessor expands it to `warn_unused_result` (result.h,
+  docs/decisions.md 143). `inv36-header-connect-unmarked` drops the mark
+  from `ch_connect`, and `inv36-must-use-expands-to-nothing` defines it
+  empty, and the script refuses both. check-slow runs the script over every
   `lib-check` build's configuration too.
   The same target runs `test/localize-check.sh`, which compares the
   localizer with `llvm-objcopy -G` on nine ELF targets and with

@@ -11,7 +11,7 @@ reason: x509_ca.h declares ch_pubkey_from_pem in every build again, so a
 
 --- old
 #if defined(CH_TRUST_CA) || defined(CH_X509_CA_TEST)
-int ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],
+int CH_MUST_USE ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],
 --- new
 #if 1
-int ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],
+int CH_MUST_USE ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],

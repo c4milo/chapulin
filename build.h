@@ -279,7 +279,7 @@ extern const ch_build_info ch_build;
 // in another format compares unequal before any later field is read, and
 // a header newer than the object never reads past the end of the
 // object's shorter record.
-static inline int ch_build_matches(const ch_build_info *b) {
+static inline int CH_MUST_USE ch_build_matches(const ch_build_info *b) {
     return b->version == CH_BUILD_VERSION && b->axes == CH_BUILD_AXES &&
            b->sizeof_ch_cfg == CH_BUILD_SIZEOF_CH_CFG &&
            b->sizeof_ch_tls == CH_BUILD_SIZEOF_CH_TLS &&

@@ -3,6 +3,9 @@
 // -fno-exceptions -fno-rtti, allocates nothing, and adds no runtime cost
 // over the C calls it forwards to. The one thing it buys: a session wipes
 // its keys when it leaves scope, so a missed ch_close cannot leak them.
+// Status and each result type are [[nodiscard]], as each C call they
+// carry is CH_MUST_USE (result.h), so the compiler warns where a caller
+// drops one (docs/decisions.md 143).
 //
 // The caller still owns the lifetimes the C API owns — the receive
 // buffer, the PSK or pin bytes, and the I/O context must outlive the
@@ -40,7 +43,7 @@ extern "C" {
 
 namespace chapulin {
 
-enum class Status : int {
+enum class [[nodiscard]] Status : int {
     ok = CH_OK,
     io = CH_EIO,
     proto = CH_EPROTO,
@@ -220,7 +223,7 @@ enum class QuicVersion : uint32_t {
 // and is meaningful only when ok(). A Status::cap result means the buffer
 // was short, nothing was written and the same call may run again with a
 // larger one.
-struct Written {
+struct [[nodiscard]] Written {
     int value = 0;
     size_t size = 0;
     bool ok() const {
@@ -236,7 +239,7 @@ struct Written {
 // CH_QUIC_KEY_CURRENT or CH_QUIC_KEY_NEXT). All three are meaningful only
 // when ok(); a Status::discard result means the caller drops the packet
 // and keeps the session.
-struct Opened {
+struct [[nodiscard]] Opened {
     int value = 0;
     uint64_t packet_number = 0;
     size_t plaintext_len = 0;
@@ -253,7 +256,7 @@ struct Opened {
 // Result of a read: >0 bytes, 0 once the peer's close_notify arrived, <0
 // on error. The close_notify closes the peer's direction alone (tls.h), so
 // after at_end() the session still writes until close().
-struct Read {
+struct [[nodiscard]] Read {
     int value = 0;
     bool ok() const {
         return value > 0;
@@ -509,7 +512,7 @@ class Config {
 
 #ifdef CH_TRUST_CA
 // Result of a provisioning decode: the key length when ok().
-struct Pubkey {
+struct [[nodiscard]] Pubkey {
     int value = 0;
     size_t size = 0;
     bool ok() const {
@@ -538,7 +541,7 @@ inline Pubkey pubkey_from_pem(ConstBytes pem, uint8_t (&der_scratch)[CH_X509_MAX
 
 #ifdef CH_TRUST_WEBPKI
 // Result of a CA bundle decode: the anchor count when ok().
-struct Anchors {
+struct [[nodiscard]] Anchors {
     int value = 0;
     size_t count = 0;
     bool ok() const {
@@ -588,7 +591,7 @@ inline Status ticket_save(ch_saved_ticket &out, const ch_ticket &ticket) {
 // links was compiled with the struct sizes, bounds and axes these headers
 // compute under this program's defines (build.h). Call it once at
 // startup and refuse to run when it answers false.
-inline bool build_matches() {
+[[nodiscard]] inline bool build_matches() {
     return ch_build_matches(&ch_build) != 0;
 }
 

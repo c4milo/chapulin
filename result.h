@@ -6,6 +6,18 @@
 #ifndef CH_RESULT_H
 #define CH_RESULT_H
 
+// CH_MUST_USE marks each public call that returns one of these codes, or a verdict. The code says
+// whether the caller can go on, and a caller that drops it can use bytes the call did not write,
+// or go on after a check that failed. gcc and clang then warn where a caller drops it, and gcc
+// warns through a (void) cast too. Another compiler gets no mark. The mark sits between the return
+// type and the name, the one place where Semgrep parses it before a definition and a declaration
+// alike (docs/decisions.md 143).
+#if defined(__GNUC__) || defined(__clang__)
+#define CH_MUST_USE __attribute__((warn_unused_result))
+#else
+#define CH_MUST_USE
+#endif
+
 // The result codes. Each call's header says which it returns and what each
 // leaves; INV-13 is the rule across calls. CH_EINVAL is a refusal on entry:
 // an init call leaves its session failed until the next init, and every

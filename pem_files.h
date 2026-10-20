@@ -89,8 +89,8 @@
 //  - a block whose outer fields do not read.
 // der and chain then hold unspecified bytes. Certificates are public, so
 // the call wipes nothing.
-int ch_chain_from_pem(const uint8_t *pem, size_t pem_len, uint8_t *der, size_t der_len,
-                      ch_cert *chain, size_t chain_max, uint8_t *chain_count);
+int CH_MUST_USE ch_chain_from_pem(const uint8_t *pem, size_t pem_len, uint8_t *der, size_t der_len,
+                                  ch_cert *chain, size_t chain_max, uint8_t *chain_count);
 
 // Decodes a P-256 private key. The file holds one PRIVATE KEY block, a
 // PKCS #8 PrivateKeyInfo (RFC 5958), or one EC PRIVATE KEY block, a SEC 1
@@ -140,8 +140,9 @@ int ch_chain_from_pem(const uint8_t *pem, size_t pem_len, uint8_t *der, size_t d
 // which ch_identity points at and which chapulin never copies
 // (srv_cfg.h). The other is the text in pem, which the caller wipes once
 // this returns.
-int ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len, const uint8_t *leaf,
-                         size_t leaf_len, uint8_t priv[32], uint8_t pub[64]);
+int CH_MUST_USE ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len,
+                                     const uint8_t *leaf, size_t leaf_len, uint8_t priv[32],
+                                     uint8_t pub[64]);
 #endif
 
 #ifdef CH_TRUST_WEBPKI
@@ -195,8 +196,9 @@ int ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len, const
 //  - text or a block that the grammar refuses;
 //  - a certificate whose outer fields do not read.
 // der and anchors then hold unspecified bytes.
-int ch_anchors_from_pem(const uint8_t *pem, size_t pem_len, uint8_t *der, size_t der_len,
-                        ch_trust_anchor *anchors, size_t anchor_max, size_t *anchor_count);
+int CH_MUST_USE ch_anchors_from_pem(const uint8_t *pem, size_t pem_len, uint8_t *der,
+                                    size_t der_len, ch_trust_anchor *anchors, size_t anchor_max,
+                                    size_t *anchor_count);
 #endif
 
 #endif

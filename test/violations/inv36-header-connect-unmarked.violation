@@ -1,0 +1,12 @@
+invariant: INV-36
+file: tls.h
+catches: test/zig-build-check.sh
+reason: ch_connect returns its result code without CH_MUST_USE, so a
+  caller that drops the code and writes to a session whose handshake
+  failed gets no warning from the compiler. tools/must-use.py requires the
+  mark on each public call that returns int.
+
+--- old
+int CH_MUST_USE ch_connect(ch_tls *t, const ch_cfg *cfg);
+--- new
+int ch_connect(ch_tls *t, const ch_cfg *cfg);

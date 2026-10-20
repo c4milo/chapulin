@@ -9,7 +9,7 @@ reason: tls.h declares ch_connect by role alone again, so a
 
 --- old
 #if (!defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
-int ch_connect(ch_tls *t, const ch_cfg *cfg);
+int CH_MUST_USE ch_connect(ch_tls *t, const ch_cfg *cfg);
 --- new
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
-int ch_connect(ch_tls *t, const ch_cfg *cfg);
+int CH_MUST_USE ch_connect(ch_tls *t, const ch_cfg *cfg);

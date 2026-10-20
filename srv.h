@@ -110,7 +110,7 @@
 //
 // A TRANSPORT=tcp-blocking object alone defines it (srv.c), so no other
 // build declares it.
-int ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
+int CH_MUST_USE ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
 #endif
 
 // Checks at boot that this build can sign with each provisioned
@@ -147,7 +147,7 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
 #else
 #define ch_srv_check ch_srv_check_tcp_blocking
 #endif
-int ch_srv_check(const ch_cfg *cfg);
+int CH_MUST_USE ch_srv_check(const ch_cfg *cfg);
 
 #endif // CH_ROLE_SERVER
 #endif

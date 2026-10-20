@@ -77,7 +77,7 @@
 // CA build's epoch check wrote them; nothing went out and no secret was drawn that a caller
 // must wipe. A CA build's ticket that the stored epoch retired is one of those refusals, and
 // epoch_status then reads CH_EPOCH_REVOKED, as it does after ch_connect (docs/ca.md).
-int ch_quic_init(ch_quic *q, const ch_cfg *cfg);
+int CH_MUST_USE ch_quic_init(ch_quic *q, const ch_cfg *cfg);
 #endif
 
 // Stores the Destination Connection ID that RFC 9001 §5.2 derives the Initial secrets
@@ -106,7 +106,7 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg);
 // Returns CH_EINVAL and writes neither field when dcid_len is above CH_QUIC_DCID_MAX, RFC
 // 9000 §17.2's cap on a version 1 connection ID, or when the session is dead. The check
 // runs first, so a refusal leaves both fields and the session as they were.
-int ch_quic_initial_keys(ch_quic *q, const uint8_t *dcid, size_t dcid_len);
+int CH_MUST_USE ch_quic_initial_keys(ch_quic *q, const uint8_t *dcid, size_t dcid_len);
 
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 // Delivers the n bytes that CRYPTO frames carried at one encryption level and runs the
@@ -141,7 +141,7 @@ int ch_quic_initial_keys(ch_quic *q, const uint8_t *dcid, size_t dcid_len);
 // peer's, not the caller's: hsr_peek_message answers it with ALERT_INTERNAL_ERROR for a
 // message header naming a body that could never fit cfg.buf_len, which is a failure rather
 // than a call to retry.
-int ch_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n);
+int CH_MUST_USE ch_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n);
 
 // Hands out the one handshake message the client owes at that level, whole or not at all.
 // The caller frames it into CRYPTO frames and keeps the bytes for retransmission, which
@@ -160,7 +160,8 @@ int ch_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n);
 // staged message. That short buffer is the caller's, not the peer's, so the session stays
 // live and the caller calls again with a larger one. Returns CH_EINVAL and changes nothing
 // when level is above CH_LEVEL_APPLICATION or the session is dead.
-int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size_t *out_len);
+int CH_MUST_USE ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap,
+                                   size_t *out_len);
 
 // Makes version the session's negotiated version, the one switch RFC 9369 §4.1 gives a client:
 // it learns the negotiated version from the first long header whose Version field differs from
@@ -178,7 +179,7 @@ int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size
 // (quic_version.h); and version is not the negotiated version. Returns CH_EINVAL and changes
 // nothing otherwise. This build derives version 1 and version 2, so a session started in
 // either may switch to the other once.
-int ch_quic_switch_version(ch_quic *q, uint32_t version);
+int CH_MUST_USE ch_quic_switch_version(ch_quic *q, uint32_t version);
 #endif
 
 // Reports q->t.quic_negotiated_version: the version every Handshake and 1-RTT packet carries
@@ -239,9 +240,9 @@ uint32_t ch_quic_negotiated_version(const ch_quic *q);
 // returns CH_EINVAL and no packet goes out under them. A 1-RTT key update writes a new
 // set whose count starts at zero, and §6.6 makes the caller initiate one before the
 // limit (rfc9001.txt:1803-1805).
-int ch_quic_seal(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn, size_t pn_len,
-                 const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out,
-                 size_t cap, size_t *out_len);
+int CH_MUST_USE ch_quic_seal(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn,
+                             size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
+                             size_t pt_len, uint8_t *out, size_t cap, size_t *out_len);
 
 // The largest packet ch_quic_seal_close seals, header and tag included: RFC 9000 §14's
 // smallest maximum datagram size, which every QUIC path carries (rfc9000.txt:4598-4599).
@@ -261,9 +262,10 @@ int ch_quic_seal(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn, size_
 // Returns CH_ECAP when cap is short, and CH_EINVAL when the session has not failed, when
 // that bit is clear, when hdr_len + pt_len + 16 is above CH_QUIC_CLOSE_MAX, or for a
 // refusal ch_quic_seal lists; both change nothing, so the keys stay for a later call.
-int ch_quic_seal_close(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn, size_t pn_len,
-                       const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
-                       uint8_t *out, size_t cap, size_t *out_len);
+int CH_MUST_USE ch_quic_seal_close(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn,
+                                   size_t pn_len, const uint8_t *hdr, size_t hdr_len,
+                                   const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
+                                   size_t *out_len);
 
 // Removes header protection, recovers the packet number and removes packet protection from
 // one packet, in place in pkt. The three run in one call because RFC 9001 §9.5 requires
@@ -341,9 +343,10 @@ int ch_quic_seal_close(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn,
 // §5.7, which forbids a client from processing a 1-RTT packet before the TLS handshake is
 // complete even when it already holds the keys (rfc9001.txt:1484-1486): the caller buffers
 // the packet and delivers it again once ch_quic_state reports CH_ST_CONNECTED.
-int ch_quic_open(ch_quic *q, uint8_t level, uint32_t version, uint8_t *pkt, size_t pkt_len,
-                 size_t pn_off, uint64_t largest_pn, uint64_t current_phase_lowest_pn,
-                 uint8_t *key_set, uint64_t *pn, size_t *pt_len);
+int CH_MUST_USE ch_quic_open(ch_quic *q, uint8_t level, uint32_t version, uint8_t *pkt,
+                             size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                             uint64_t current_phase_lowest_pn, uint8_t *key_set, uint64_t *pn,
+                             size_t *pt_len);
 
 // Recomputes RFC 9001 §5.8's Retry Integrity Tag over the Retry pseudo-packet the caller
 // built and compares it with ct_memeq against the tag the packet carried, under the key
@@ -368,8 +371,8 @@ int ch_quic_open(ch_quic *q, uint8_t level, uint32_t version, uint8_t *pkt, size
 //
 // Returns 1 for a matching tag in the original version and 0 otherwise, in a time that
 // depends on n and version alone.
-uint8_t ch_quic_retry_ok(const ch_quic *q, uint32_t version, const uint8_t *pseudo, size_t n,
-                         const uint8_t tag[CH_QUIC_RETRY_TAG_LEN]);
+uint8_t CH_MUST_USE ch_quic_retry_ok(const ch_quic *q, uint32_t version, const uint8_t *pseudo,
+                                     size_t n, const uint8_t tag[CH_QUIC_RETRY_TAG_LEN]);
 
 // Runs RFC 9001 §6's packet-level key update on the 1-RTT keys. It advances the send
 // secret with the negotiated version's "quic ku" label (§6.1, rfc9001.txt:1605-1613;
@@ -405,7 +408,7 @@ uint8_t ch_quic_retry_ok(const ch_quic *q, uint32_t version, const uint8_t *pseu
 // Returns CH_EINVAL and changes nothing, leaving every key set and q->key_phase as they
 // were, when the session is dead or q->t.state is below CH_ST_CONNECTED, because there is
 // then no 1-RTT set to advance.
-int ch_quic_key_update(ch_quic *q);
+int CH_MUST_USE ch_quic_key_update(ch_quic *q);
 
 // Reports q->key_phase, the Key Phase bit the current 1-RTT send set carries, which
 // ch_quic_seal writes into byte 0 of every short header it seals. chapulin holds the
@@ -438,7 +441,7 @@ void ch_quic_drop_previous_keys(ch_quic *q);
 // one whose keys were never installed. Returns CH_OK once that level's keys are zero and
 // both its bits in q->levels_ready are clear, and CH_EINVAL, wiping nothing and clearing
 // no bit, when level is above CH_LEVEL_APPLICATION.
-int ch_quic_discard(ch_quic *q, uint8_t level);
+int CH_MUST_USE ch_quic_discard(ch_quic *q, uint8_t level);
 
 // Reports q->t.state: CH_ST_START, CH_ST_CONNECTED, CH_ST_CLOSED or CH_ST_FAILED
 // (session.h). CH_ST_CONNECTED is the handshake complete in the sense of RFC 9001 §4.1.1
