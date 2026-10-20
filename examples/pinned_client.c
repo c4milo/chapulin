@@ -233,8 +233,9 @@ static int io_recv(void *io, uint8_t *p, size_t n) {
 }
 
 // Opens the TCP connection. Firmware replaces this with whatever its own
-// stack calls; chapulin never sees it. The receive timeout does matter:
-// it is the entire bound on a peer that goes quiet mid-handshake.
+// stack calls; chapulin never sees it. The two timeouts do matter: the
+// receive timeout is the entire bound on a peer that goes quiet, and the
+// send timeout on a peer that stops reading.
 static int dial(const char *host, const char *port) {
     struct addrinfo hints = {0};
     hints.ai_socktype = SOCK_STREAM;
@@ -249,6 +250,7 @@ static int dial(const char *host, const char *port) {
     }
     struct timeval timeout = {10, 0};
     (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+    (void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout);
     int rc = connect(fd, ai->ai_addr, ai->ai_addrlen);
     freeaddrinfo(ai);
     if (rc != 0) {

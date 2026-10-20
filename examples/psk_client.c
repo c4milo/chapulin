@@ -114,7 +114,8 @@ static int io_recv(void *io, uint8_t *p, size_t n) {
 }
 
 // Opens the TCP connection and returns the socket, or -1. The receive
-// timeout is what stops a silent server from blocking io_recv forever.
+// timeout stops a silent server from blocking io_recv forever, and the
+// send timeout stops one that reads nothing from blocking io_send.
 static int tcp_connect(const char *host, const char *port) {
     struct addrinfo hints = {0};
     hints.ai_socktype = SOCK_STREAM;
@@ -126,6 +127,7 @@ static int tcp_connect(const char *host, const char *port) {
     if (fd >= 0) {
         struct timeval timeout = {10, 0};
         (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+        (void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout);
         if (connect(fd, ai->ai_addr, ai->ai_addrlen) != 0) {
             (void)close(fd);
             fd = -1;

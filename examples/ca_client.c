@@ -183,9 +183,10 @@ static int io_recv(void *io, uint8_t *p, size_t n) {
     return got <= 0 ? -1 : (int)got;
 }
 
-// Replace on a device: opens the TCP connection. The receive timeout is
-// what bounds a handshake against a server that stops answering,
-// because chapulin's callbacks block and the library owns no timer.
+// Replace on a device: opens the TCP connection. The receive timeout
+// bounds a server that stops answering, and the send timeout one that
+// stops reading, because chapulin's callbacks block and the library owns
+// no timer.
 static int dial(const char *host, const char *port) {
     struct addrinfo hints = {0};
     hints.ai_socktype = SOCK_STREAM;
@@ -197,6 +198,7 @@ static int dial(const char *host, const char *port) {
     if (fd >= 0) {
         struct timeval timeout = {10, 0};
         (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+        (void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout);
         if (connect(fd, ai->ai_addr, ai->ai_addrlen) != 0) {
             (void)close(fd);
             fd = -1;

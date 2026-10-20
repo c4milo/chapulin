@@ -274,6 +274,11 @@ typedef struct {
 #define CH_TRANSPORT_PARAMS_MAX 256
 #endif
 
+// The configuration every init call copies into its session. Start from a zeroed ch_cfg, as
+// `ch_cfg cfg = {0};` writes it: init reads every field, and a field left 0 or NULL is unset.
+// Each pointer must stay valid for the life of the session, because the copy keeps the
+// pointer and not the bytes it points at.
+//
 // The shortest external PSK every client entry takes, 16 bytes or 128 bits. A low-entropy PSK
 // falls to a dictionary attack on the binder of one recorded handshake (rfc9846.txt:711-720).
 // No rule can measure entropy, so this floor refuses the password-length case alone.

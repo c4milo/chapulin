@@ -31,6 +31,13 @@ chapulin header, or compile with `-include bin/chapulin.h`. Then call
 `ch_build_matches(&ch_build)` once at startup, and stop when it returns
 0 ([`docs/building.md`](building.md)).
 
+Start each `ch_cfg` from zero, as `ch_cfg cfg = {0};` does. An init
+call reads every field, and a field left 0 or NULL is unset. Keep each
+pointer in the configuration valid for the life of the session: the
+session copies the pointer, not the bytes. Set a send timeout and a
+receive timeout on the socket, because each call waits as long as your
+callbacks do, and chapulin has no clock to stop them.
+
 A `TRUST=webpki` build takes no pin, and a PSK only as a ticket it
 bound itself. It takes the roots it trusts, the server's hostname and
 a clock, a function that answers Unix time in seconds:
@@ -84,10 +91,26 @@ The anchor, hostname, clock and pin fields exist only in a `TRUST=webpki`
 build, so a raw or ca build that sets one fails to compile. On an arm64
 or x86-64 host, a `TRUST=webpki`, `ROLE=server` or `ROLE=both` object is a
 host object (`-DCH_CPU_RUNTIME`, [`docs/building.md`](building.md)), and
-`cpu` takes the bits your own probe of the CPU found (`cpu_cfg.h`).
+`cpu` takes what you know about the CPU, in `cpu_cfg.h`'s bits.
 `CH_CPU_PROBED` says you wrote the field, and every init call refuses a
 value without it, or with a bit the object does not define for its
-architecture. chapulin probes nothing. The hostname
+architecture. chapulin probes nothing.
+
+Set `CH_CPU_PROBED` alone unless you know the timing mode of the thread.
+That value runs the portable code, which is constant time on every CPU.
+Each `CH_CPU_CONSTANT_TIME_*` bit states more than a probe of the CPU
+finds:
+
+- the instructions exist on the CPU;
+- this thread runs them in constant time: PSTATE.DIT is set on arm64, or
+  the operating system set DOITM on x86-64.
+
+A bit set without that mode can leak keys through timing. The other
+bits, `CH_CPU_AVX2`, `CH_CPU_VAES`, `CH_CPU_AVX512` and
+`CH_CPU_AVX512_IFMA`, state no timing. Set one only when your probe
+found it, because an instruction the CPU lacks stops the program.
+
+The hostname
 goes out as the ClientHello's `server_name`, and the hello offers five
 signature schemes, because a public chain's links may be signed by any
 of them.
