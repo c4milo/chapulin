@@ -1,0 +1,13 @@
+invariant: INV-14
+file: srv.c
+catches: srv_auth_test
+reason: a server takes a ticket_key with cookie_key's bytes, one key for
+  an HMAC and an AEAD, which srv_cfg.h forbids. test/srv_identity_tests.h
+  passes the same array and a copy of it, and requires CH_EINVAL for
+  both.
+
+--- old
+    return !ct_memeq(srv->ticket_key, unfilled_key, sizeof unfilled_key) &&
+           !ct_memeq(srv->ticket_key, srv->cookie_key, CH_SRV_TICKET_KEY_LEN);
+--- new
+    return !ct_memeq(srv->ticket_key, unfilled_key, sizeof unfilled_key);

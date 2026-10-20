@@ -400,6 +400,7 @@ int main(void) {
     test_sign_refused();
     test_check();
     test_identity_rules();
+    test_server_keys();
     if (failures == 0) {
         (void)printf("srv_auth: the HelloRetryRequest random, the signed content, the identity "
                      "slots, the rules they are held to at entry, and both signers\n");

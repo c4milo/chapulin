@@ -10,7 +10,7 @@ reason: srv_config_ok stops asking srv_identities_usable, so a server
   with nothing sent.
 
 --- old
-    return srv_identity_live(cfg) != 0 && srv_identities_usable(cfg) &&
-           cfg->srv.cookie_key != NULL && sni_ok(&cfg->srv);
+    return srv_identity_live(cfg) != 0 && srv_identities_usable(cfg) && keys_ok(&cfg->srv) &&
+           sni_ok(&cfg->srv);
 --- new
-    return srv_identity_live(cfg) != 0 && cfg->srv.cookie_key != NULL && sni_ok(&cfg->srv);
+    return srv_identity_live(cfg) != 0 && keys_ok(&cfg->srv) && sni_ok(&cfg->srv);

@@ -125,14 +125,37 @@ static int suites_run_here(const ch_cfg *cfg) {
 }
 #endif
 
+// The bytes of a key nothing filled: a static array holds them until
+// something writes it.
+static const uint8_t unfilled_key[CH_SRV_COOKIE_KEY_LEN];
+_Static_assert(CH_SRV_COOKIE_KEY_LEN == CH_SRV_TICKET_KEY_LEN,
+               "the two server keys are one length");
+
+// The two keys' rules (srv_cfg.h): cookie_key set, and ticket_key NULL
+// or set. A key whose bytes are all zero is refused as unset. Whoever
+// guesses it mints cookies, or with ticket_key resumes as this server
+// with every client that kept a ticket. A ticket_key with the bytes of
+// cookie_key is refused too: srv_cfg.h gives each its own key. The keys
+// are secret, so each compare is ct_memeq's.
+static int keys_ok(const ch_srv_cfg *srv) {
+    if (srv->cookie_key == NULL || ct_memeq(srv->cookie_key, unfilled_key, sizeof unfilled_key)) {
+        return 0;
+    }
+    if (srv->ticket_key == NULL) {
+        return 1;
+    }
+    return !ct_memeq(srv->ticket_key, unfilled_key, sizeof unfilled_key) &&
+           !ct_memeq(srv->ticket_key, srv->cookie_key, CH_SRV_TICKET_KEY_LEN);
+}
+
 // The server's own fields: at least one provisioned identity to prove
 // this endpoint with, every provisioned identity one the flight can
-// sign with and send, and the key the HelloRetryRequest cookie is minted
-// under. RFC 9846 §9.2 makes the cookie extension mandatory to implement
-// and a stateless retry cannot be minted without that key, so a NULL
-// cookie_key refuses the configuration rather than the first client that
-// sends an empty client_shares list. An identity the flight cannot use
-// is refused here for the same reason (srv_auth.h).
+// sign with and send, and the two keys. RFC 9846 §9.2 makes the cookie
+// extension mandatory to implement and a stateless retry cannot be
+// minted without its key, so an unset cookie_key fails the
+// configuration rather than the first client that sends an empty
+// client_shares list. An identity the flight cannot use is refused here
+// for the same reason (srv_auth.h).
 static int srv_fields_ok(const ch_cfg *cfg) {
 #ifdef CH_SUITE_AES_GCM
     if (!suites_ok(&cfg->srv)) {
@@ -144,8 +167,8 @@ static int srv_fields_ok(const ch_cfg *cfg) {
         return 0;
     }
 #endif
-    return srv_identity_live(cfg) != 0 && srv_identities_usable(cfg) &&
-           cfg->srv.cookie_key != NULL && sni_ok(&cfg->srv);
+    return srv_identity_live(cfg) != 0 && srv_identities_usable(cfg) && keys_ok(&cfg->srv) &&
+           sni_ok(&cfg->srv);
 }
 
 // The transport the caller supplies, and the buffer every message this

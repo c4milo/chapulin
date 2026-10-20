@@ -77,7 +77,9 @@
 // srv_auth.h);
 // cfg.srv.cookie_key is NULL, because §9.2 makes the cookie extension
 // mandatory to implement and a stateless HelloRetryRequest cannot be
-// minted without that key; cfg.buf or cfg.send or cfg.recv is NULL;
+// minted without that key; either key is all zero bytes, or
+// cfg.srv.ticket_key holds cookie_key's bytes (srv_cfg.h); cfg.buf or
+// cfg.send or cfg.recv is NULL;
 // cfg.buf_len is below the floor this build needs; cfg.srv.sni_cap is
 // not 0 while cfg.srv.sni_buf is NULL; cfg.srv.require_server_name is
 // set while cfg.srv.sni_buf is NULL, because a server that requires a

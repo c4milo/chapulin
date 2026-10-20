@@ -229,4 +229,44 @@ static void test_identity_rules(void) {
     }
 }
 
+// ch_srv_accept under one pair of keys. A refused pair returns CH_EINVAL
+// before any I/O, and an accepted one CH_EIO from the first read.
+static int keys_case(const uint8_t *cookie_key, const uint8_t *ticket_key) {
+    ch_cfg cfg;
+    usable_config(&cfg);
+    cfg.buf = accept_buf;
+    cfg.buf_len = sizeof accept_buf;
+    cfg.send = count_send;
+    cfg.recv = count_recv;
+    cfg.srv.cookie_key = cookie_key;
+    cfg.srv.ticket_key = ticket_key;
+    send_calls = 0;
+    recv_calls = 0;
+    ch_tls t;
+    return ch_srv_accept(&t, &cfg);
+}
+
+// The two keys' rules (srv.c's keys_ok): a key of all zero bytes is
+// refused, and a ticket_key with cookie_key's bytes, in the same array
+// or in another one. A key whose last byte alone is set is a key.
+static void test_server_keys(void) {
+    static const uint8_t zero[CH_SRV_TICKET_KEY_LEN];
+    static const uint8_t ticket_key[CH_SRV_TICKET_KEY_LEN] = {0x51};
+    uint8_t last_set[CH_SRV_TICKET_KEY_LEN] = {0};
+    last_set[sizeof last_set - 1] = 1;
+    uint8_t copy[CH_SRV_COOKIE_KEY_LEN];
+    memcpy(copy, accept_cookie_key, sizeof copy);
+
+    CHECK(keys_case(accept_cookie_key, NULL) == CH_EIO && recv_calls > 0);
+    CHECK(keys_case(accept_cookie_key, ticket_key) == CH_EIO && recv_calls > 0);
+    CHECK(keys_case(last_set, ticket_key) == CH_EIO && recv_calls > 0);
+    CHECK(keys_case(accept_cookie_key, last_set) == CH_EIO && recv_calls > 0);
+
+    CHECK(keys_case(zero, NULL) == CH_EINVAL && send_calls == 0 && recv_calls == 0);
+    CHECK(keys_case(zero, ticket_key) == CH_EINVAL && recv_calls == 0);
+    CHECK(keys_case(accept_cookie_key, zero) == CH_EINVAL && recv_calls == 0);
+    CHECK(keys_case(accept_cookie_key, accept_cookie_key) == CH_EINVAL && recv_calls == 0);
+    CHECK(keys_case(accept_cookie_key, copy) == CH_EINVAL && recv_calls == 0);
+}
+
 #endif

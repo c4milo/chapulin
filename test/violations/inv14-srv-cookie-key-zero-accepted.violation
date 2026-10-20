@@ -1,0 +1,12 @@
+invariant: INV-14
+file: srv.c
+catches: srv_auth_test
+reason: a server takes a cookie_key of all zero bytes, the bytes a static
+  array holds until something fills it, so anyone mints the cookies of
+  its HelloRetryRequest. test/srv_identity_tests.h's zero cookie_key rows
+  require CH_EINVAL before any I/O.
+
+--- old
+    if (srv->cookie_key == NULL || ct_memeq(srv->cookie_key, unfilled_key, sizeof unfilled_key)) {
+--- new
+    if (srv->cookie_key == NULL) {

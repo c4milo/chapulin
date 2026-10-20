@@ -12677,3 +12677,40 @@ does nothing more.
       a run anyway.
     - **Send the owed answer from `ch_close`.** It costs a rekey and a
       record that no data record follows.
+
+139. **A server refuses a key of all zero bytes, and a ticket key with
+    the cookie key's bytes.** `srv_fields_ok` checked `cookie_key` for
+    NULL alone, and `ticket_key` not at all. A caller who passed a static
+    array before filling it, or one key for both, got a server that
+    starts. Whoever knows the ticket key opens each ticket for its PSK
+    and resumes as this server with every client that kept one
+    (srv_cfg.h). On 2026-10-19 Camilo approved this fix from the second
+    API audit (entry 133 states the request).
+
+    - **The rule.** `keys_ok` refuses a `cookie_key` that is NULL or all
+      zero bytes, and a `ticket_key` that is all zero bytes or holds
+      `cookie_key`'s bytes, in the same array or in another one. A NULL
+      `ticket_key` still issues no ticket. Every server init call reads
+      it through `srv_config_ok`, and each refusal is `CH_EINVAL` before
+      any I/O. `ch_srv_check` checks the identities alone, as before.
+    - **Constant time.** Each compare is `ct_memeq`, against
+      `unfilled_key`, a static array of zero bytes, or against the other
+      key. The branch after it reads one bit, whether the key is refused.
+    - **What it does not check.** A key of other low entropy, such as
+      `{7}` or a fixed test value, passes. No rule can measure entropy,
+      and the tests use such keys.
+
+    `test/srv_identity_tests.h` holds the boundary: a key whose last byte
+    alone is set passes, and an all-zero one fails. Three mutants hold
+    the rules: `inv14-srv-cookie-key-zero-accepted`,
+    `inv14-srv-ticket-key-zero-accepted` and
+    `inv14-srv-ticket-key-is-cookie-key`. `inv14-srv-identity-check-dropped`
+    moved to the new text.
+
+    Rejected:
+
+    - **Refuse a low-entropy key by a test of its bytes.** A test that
+      refuses `{7}` refuses a random key that happens to look like it,
+      and it still passes a constant the caller typed.
+    - **Derive the ticket key from the cookie key.** A leaked cookie key
+      would then open every ticket too.

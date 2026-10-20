@@ -2909,7 +2909,9 @@ every rule this section summarizes.
 
 **What the caller supplies.** `ch_cfg.srv.ticket_key`, 32 bytes of
 ChaCha20-Poly1305 key (`CH_SRV_TICKET_KEY_LEN`), one per deployment and not the
-cookie key; NULL issues no ticket and accepts none. And
+cookie key; NULL issues no ticket and accepts none. Every init call refuses a
+key of all zero bytes, and one with the cookie key's bytes, with `CH_EINVAL`
+(docs/decisions.md 139). And
 `ch_cfg.now_seconds` with `ch_cfg.clock_io`, its clock: a function that
 answers seconds from one epoch on every server that shares the key. Each of
 `ch_srv_accept`, `ch_srv_record_init` and `ch_srv_quic_init` calls it once
