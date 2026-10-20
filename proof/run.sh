@@ -2257,8 +2257,12 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # 45 s, 2.64 GB. With ch_srv_accept marking its session a server's
 # (INV-14): 912 properties, 38 s, 2.64 GB. With keys_ok's refusal of a
 # server key of zero bytes or a ticket key equal to the cookie key
-# (docs/decisions.md 139), through proof/prove-one.sh with PROVE_NO_CACHE=1
-# on 2026-10-20 at a load average near 106: 973 properties, 138 s, 1.34 GB.
+# (docs/decisions.md 139), and the two keys in arrays of their own, of any
+# bytes: 979 properties, 64 s, 2.21 GB on 2026-10-20 at a load average near
+# 30 (PROVE_NO_CACHE=1 proof/prove-one.sh srv_accept). The first run after
+# keys_ok kept cookie_key in scratch, which holds zeros alone, so keys_ok
+# refused every path: 973 properties held over the refusal alone, and
+# proof-reach read 27.6% (proof/reach-floors.txt).
 # The weight is 3 because the peaks above pass the fast tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c proof/ct_wipe_stub.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with

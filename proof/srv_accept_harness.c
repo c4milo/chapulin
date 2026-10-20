@@ -263,6 +263,12 @@ static void fill_alpn(ch_alpn_protocol *protocol, const uint8_t *name) {
     __CPROVER_assume(protocol->name_len <= CH_ALPN_NAME_MAX);
 }
 
+// The two server keys keys_ok judges (docs/decisions.md 139), each of any
+// bytes, all zero among them. scratch holds zeros alone, so a key in it
+// is always refused, and the flight would never run.
+static uint8_t cookie_bytes[CH_SRV_COOKIE_KEY_LEN];
+static uint8_t ticket_bytes[CH_SRV_TICKET_KEY_LEN];
+
 // The configuration fields ch_srv_accept reads, each stored through its
 // own type. Everything else is zero, which is what a caller who never
 // set a field leaves there.
@@ -283,7 +289,15 @@ static void fill_cfg(ch_cfg *cfg, ch_alpn_protocol *protocols, const uint8_t *na
     cfg->require_pq = nondet_int();
     cfg->buf = (nondet_u8() & 1) ? scratch : NULL;
     cfg->buf_len = nondet_size_t();
-    cfg->srv.cookie_key = (nondet_u8() & 1) ? scratch : NULL;
+    // Each key set or unset, and the ticket key as the cookie key's own
+    // array too, the shape of a caller who passes one key for both.
+    fill_nondet(cookie_bytes, sizeof cookie_bytes);
+    fill_nondet(ticket_bytes, sizeof ticket_bytes);
+    cfg->srv.cookie_key = (nondet_u8() & 1) ? cookie_bytes : NULL;
+    uint8_t ticket_shape = nondet_u8();
+    cfg->srv.ticket_key = ticket_shape == 0   ? NULL
+                          : ticket_shape == 1 ? cookie_bytes
+                                              : ticket_bytes;
     cfg->srv.sni_buf = (nondet_u8() & 1) ? scratch : NULL;
     cfg->srv.sni_cap = nondet_size_t();
     cfg->srv.require_server_name = nondet_u8();
