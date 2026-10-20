@@ -5917,8 +5917,12 @@ lint-invariants-run:
 	# skips the file the same way: inv-23 took over the default five
 	# seconds on test/mlkem_vectors.h at a load average of 70. So the
 	# scan sets no time limit, and its result does not depend on load.
+	# The rule tests set none either. Under docker-check at load averages
+	# of 160 to 217 they failed twice on an unchanged tree: 16 of the 17
+	# rules that .semgrep/invariants.c names reported a ruleid
+	# annotation with no YAML rule.
 	@mkdir -p bin; rm -f bin/semgrep-scan.json; \
-	$(SEMGREP) --metrics=off --test \
+	$(SEMGREP) --metrics=off --test --timeout 0 \
 	  --config .semgrep/invariants.yml .semgrep/invariants.c > bin/semgrep-test.log 2>&1 & \
 	test_pid=$$!; \
 	$(SEMGREP) scan --metrics=off --quiet --error --timeout 0 --json-output=bin/semgrep-scan.json \
