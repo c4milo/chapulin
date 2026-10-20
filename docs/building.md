@@ -2,9 +2,11 @@
 
 The Makefile targets and the build variables that choose what a packaged object carries.
 
-`make check` runs the gate: build with warnings as errors, linters,
-unit tests, end-to-end against OpenSSL and Go, the differential oracle,
-and the fast proof tier.
+`make check` builds with warnings as errors and runs the linters, the
+unit tests, the strict-parser and Wycheproof vectors, and the library
+builds. `make check-slow` runs `make check` first. It then runs the
+end-to-end tests against OpenSSL and Go, the differential oracle, the
+fast tier of `test/violations/` and the fast proof tier (below).
 
 Other targets:
 
@@ -55,13 +57,16 @@ Other targets:
   `TX_RECORD=N` sets `CH_TX_PT`, the most plaintext one outgoing record
   carries, to N bytes, a decimal integer from 512 to 16384; the peer's
   `record_size_limit` can still lower it. Empty, the default, leaves 512.
-  A host that sends bulk data raises it to send fewer, larger records,
-  and `ch_tls` grows to hold one sealed record: in stompy's `TRUST=webpki
-  TRANSPORT=tcp-nonblocking ROLE=both` object it measures 17,280 bytes at
-  `TX_RECORD=16384` against 3,280 at the default. It changes only what the
-  object sends; `cfg.buf_len` still sets the records it receives. A QUIC
-  object seals no TLS record, so `TRANSPORT=quic-nonblocking` refuses it
-  (decision 71).
+  A host that sends bulk data raises it to send fewer, larger records.
+  `ch_tls` then grows to hold one sealed record. A `sizeof` probe
+  measured it under Apple clang 21 on arm64, with the defines that
+  `make print-lib-def` prints for
+  `TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both RAND=extern`. It
+  gave 17,272 bytes at `TX_RECORD=16384` and 3,272 at the default.
+  Decision 71 gives 8 bytes less for each, because `ch_tls` grew after
+  that decision. `TX_RECORD` changes only what the object sends;
+  `cfg.buf_len` still sets the records it receives. A QUIC object seals no TLS record, so
+  `TRANSPORT=quic-nonblocking` refuses it (decision 71).
   `RAND` is the one build variable with no default: `extern`, `drbg` or
   `session`. Compose with
   `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or `TRUST=webpki`, and `KEX=pq`;
@@ -115,10 +120,11 @@ Other targets:
   wrote the field, `CH_CPU_CONSTANT_TIME_AES`,
   `CH_CPU_CONSTANT_TIME_MULTIPLY` and `CH_CPU_CONSTANT_TIME_SHA256` where
   you state those instructions run in constant time on that CPU in the
-  mode your thread runs in, on x86-64 `CH_CPU_AVX2`, `CH_CPU_VAES` and
-  `CH_CPU_AVX512_IFMA`, and on arm64 `CH_CPU_CONSTANT_TIME_SHA512` and
-  `CH_CPU_CONSTANT_TIME_SHA3`. Every init call and `ch_srv_check` refuse a
-  value without `CH_CPU_PROBED`, and one with a bit this object does not
+  mode your thread runs in, on x86-64 `CH_CPU_AVX2`, `CH_CPU_VAES`,
+  `CH_CPU_AVX512_IFMA` and `CH_CPU_AVX512`, and on arm64
+  `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`. Every
+  init call, `ch_srv_check` and `ch_p256_key_from_pem` refuse a value
+  without `CH_CPU_PROBED`, and one with a bit this object does not
   define for its architecture, such as `CH_CPU_AVX2` on arm64 or
   `CH_CPU_CONSTANT_TIME_SHA512` on x86-64. chapulin probes nothing and
   sets no CPU mode.
@@ -301,7 +307,7 @@ Other targets:
   headers as C. `build.zig` compiles every source into one relocatable
   object, and `tools/localize_symbols.zig` makes every symbol but the
   public API local, as `objcopy -G` and `nmedit -s` do for make, so one
-  image links objects of two transports. `make lint-zig-build` builds eight
+  image links objects of two transports. `make lint-zig-build` builds seven
   configurations both ways and requires the same sources, defines,
   exports and build record, and builds and runs Zig programs against
   each module (decisions 69, 70 and 73, INV-36).

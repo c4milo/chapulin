@@ -60,7 +60,9 @@ figure beyond a user-supplied 16 kB frame buffer.
 published 2026-06): TLS 1.3-only client, optional DTLS 1.3, and it
 publishes real numbers — .text 37.5–96.2 KiB and peak stack
 9.7–111.6 kB depending on the algorithm set. The most serious new
-entrant; still 3–10x chapulin's stack and no proofs, no C ABI.
+entrant, with no proofs and no C ABI. chapulin's `ch_connect` peaks at
+2,768 to 5,456 B of stack in its raw and ca modes without `KEX=pq`,
+measured on arm64 ([performance.md](performance.md)).
 
 **NetX Duo Secure** (MIT since the 2024 move to Eclipse ThreadX;
 ex-Express Logic/Azure RTOS). TLS 1.2 + 1.3 client/server built for
@@ -135,22 +137,40 @@ magnitude above kB-class.
 
 ## Table stakes vs. cuts (per [draft-ietf-uta-tls13-iot-profile](https://datatracker.ietf.org/doc/html/draft-ietf-uta-tls13-iot-profile) + RFC 9257)
 
-Kept: HRR handling, KeyUpdate, NewSessionTicket → resumption PSK,
-record_size_limit (MTI, and the enabler of the SRAM headline), RFC 9257
-binder discipline, ECDHE-PSK (`psk_dhe_ke`), pluggable RNG.
-Cut: 0-RTT (profile says MUST NOT), DTLS, X.509 beyond the profiled
-CA-mode chain check, RFC 7250 raw public keys outside the host-side
-`TRUST=webpki` mode (which takes them under SPKI pins, docs/webpki.md),
-compressed certs,
-CID, exporters. Known deviation: the profile's MTI suite is
-AES-128-CCM-8; ChaCha-only is deliberate (no tables ⇒ constant time on
-anything) and fine when both ends are ours.
+Kept:
+
+- HRR handling, KeyUpdate, and NewSessionTicket → resumption PSK.
+- record_size_limit (MTI, and the enabler of the SRAM headline).
+- RFC 9257 binder discipline, ECDHE-PSK (`psk_dhe_ke`) and a pluggable
+  RNG.
+
+Cut:
+
+- 0-RTT (the profile says MUST NOT), DTLS, compressed certs and CID.
+- X.509 beyond the profiled CA-mode chain check and the host-side
+  `TRUST=webpki` chain walk.
+- RFC 7250 raw public keys outside `TRUST=webpki`, which takes them
+  under SPKI pins (docs/webpki.md).
+
+Exporters are off by default; `EXPORTER=on` adds `ch_export`
+([building.md](building.md)).
+
+Known deviation: the profile's MTI suite is AES-128-CCM-8, and no build
+offers it. A raw or ca client offers ChaCha20 alone on purpose: it uses
+no tables, so it runs in constant time on any core. That is fine when
+both ends are ours. `SUITE=aesgcm` adds the two AES-GCM suites to a
+`TRUST=webpki` client or a server role ([building.md](building.md)).
 
 ## The number to beat
 
 Every competitor's RAM claim hides the 16,384+ B max record buffer.
 Published minima for a working TLS 1.3 PSK client: wolfSSL ~6.2 kB heap
 (buffers extra), mbedTLS ~9–15 kB (buffers extra), SharkSSL 13 kB
-total-system (cert-based). chapulin: 1,056 B session + a 2 kB record
-buffer = ~3 kB total static, zero heap, buffer included — with
-record_size_limit making the small buffer safe rather than hopeful.
+total-system (cert-based). chapulin's default build uses 3,120 B of
+static working set on a 32-bit device with a 2,048 B receive buffer,
+and no heap. That is the 1,072 B `ch_tls` session struct and the
+buffer, measured by `bench/sram.sh` for rv32
+([performance.md](performance.md)). The buffer must hold each whole
+handshake message the server sends, and `CH_MIN_RXBUF` sets its floor,
+512 B in that build. The client sends `record_size_limit` sized to that
+buffer, so a peer that honors it sends no larger record.

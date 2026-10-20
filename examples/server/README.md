@@ -2,15 +2,19 @@
 
 This directory holds configuration for servers other people wrote, not
 code. A `ROLE=server` build of chapulin serves TLS 1.3 itself
-([`docs/server.md`](../../docs/server.md)), but it has completed no
-handshake against another stack yet, so the two stacks below are what
-`test/e2e.sh` drives a chapulin client against.
+([`docs/server.md`](../../docs/server.md)), and `test/e2e.sh` runs it
+against OpenSSL's `s_client`. This document covers the other case: a
+chapulin client and a server that another stack runs. The client is a
+raw or ca build over TCP, with a pre-shared key, a pinned key or a
+pinned CA. A `TRUST=webpki` client offers several groups and signature
+schemes, and it can send `server_name` and ALPN.
+[`docs/webpki.md`](../../docs/webpki.md) states its profile.
 
 Two stacks are covered: OpenSSL 3 and Go's `crypto/tls`. Every command
 here comes from [`test/e2e.sh`](../../test/e2e.sh), which runs real
-handshakes against both on every `make check`. That script is written
-for a test harness. This document is written for someone configuring a
-server.
+handshakes against both. `make check-slow` runs that script, and so does
+the `slow` job of CI's check workflow. That script is written for a test
+harness. This document is written for someone configuring a server.
 
 The client-side examples in [`examples/`](../) show the other half.
 [`docs/ca.md`](../../docs/ca.md) is the contract for running a CA; read
@@ -18,8 +22,8 @@ it before you issue anything.
 
 ## The profile a chapulin client offers
 
-chapulin negotiates nothing. Its ClientHello carries exactly one of
-everything:
+A raw or ca client negotiates nothing. Its ClientHello carries exactly
+one of everything:
 
 | ClientHello field | value |
 | --- | --- |
@@ -28,7 +32,7 @@ everything:
 | `supported_groups` | x25519 (0x001d), or X25519MLKEM768 (0x11ec) in a `KEX=pq` build |
 | `key_share` | one share of that group |
 | `psk_key_exchange_modes` | psk_dhe_ke |
-| `signature_algorithms` | rsa_pss_rsae_sha256 (0x0804), or ecdsa_secp256r1_sha256 (0x0403) in a `PIN=ecdsa` build. Pinned-key and CA modes only |
+| `signature_algorithms` | rsa_pss_rsae_sha256 (0x0804), or ecdsa_secp256r1_sha256 (0x0403) in a `TRUST=raw-ecdsa` or `TRUST=ca-ecdsa` build. Pinned-key and CA modes only |
 | `record_size_limit` | the receive buffer minus 21 bytes, capped at 16385 (RFC 8449) |
 | `pre_shared_key` | PSK mode only, last extension |
 
@@ -43,7 +47,7 @@ There is no fallback to anything.
 
 ## What the server must not do
 
-Each item names the `ch_err` code the client returns (`cfg.h`).
+Each item names the `ch_err` code the client returns (`result.h`).
 
 - **Do not enable 0-RTT.** OpenSSL: never pass `-early_data`, and leave
   `SSL_CTX_set_max_early_data` at its default of 0. Go's server has no
@@ -72,9 +76,10 @@ Each item names the `ch_err` code the client returns (`cfg.h`).
 
 ## Record size
 
-The client advertises `record_size_limit` (RFC 8449) equal to its
-receive buffer, so a peer that honors the extension can never overflow
-that buffer. Neither stack honors it. OpenSSL's headers through 3.6
+The client advertises a `record_size_limit` (RFC 8449) of its receive
+buffer minus 21 bytes: the 5-byte record header and the 16-byte tag.
+So a whole record from a peer that honors the extension fits the
+buffer. Neither stack honors it. OpenSSL's headers through 3.6
 define no constant for the extension, only RFC 6066's older
 `max_fragment_length`; Go's `tls.Config` has no field for it. Both
 ignore what the client asked for.
@@ -200,7 +205,7 @@ The certificate's own signature does not matter. `req -x509` self-signs
 with PKCS#1 v1.5 and the client never reads it. Only CertificateVerify
 is checked, and TLS 1.3 already forbids v1.5 there.
 
-### PIN=ecdsa build: P-256, pin the raw point
+### TRUST=raw-ecdsa build: P-256, pin the raw point
 
 ```sh
 openssl ecparam -name prime256v1 -genkey -noout -out server.key
@@ -246,7 +251,8 @@ ln, err := tls.Listen("tcp", "127.0.0.1:4433", &tls.Config{
 ```
 
 [`test/goecho/main.go`](../../test/goecho/main.go) is this server with
-an echo loop around it. The e2e suite runs it against both PIN builds.
+an echo loop around it. The e2e suite runs it against a `TRUST=raw-rsa`
+client and a `TRUST=raw-ecdsa` client.
 
 - There is no `CipherSuites` line because that field covers TLS 1.0
   through 1.2 only; Go's own documentation says TLS 1.3 suites are not
@@ -316,7 +322,7 @@ openssl rsa -in root.key -noout -modulus \
   | sed 's/^Modulus=//' | tr 'A-F' 'a-f'
 ```
 
-For a `PIN=ecdsa` build, generate P-256 keys with
+For a `TRUST=ca-ecdsa` build, generate P-256 keys with
 `openssl ecparam -name prime256v1 -genkey -noout` and drop the two
 `-sigopt` flags: OpenSSL signs ecdsa-with-SHA256 with a P-256 key by
 default. Pin the root's raw point with the `openssl ec` recipe above.
@@ -405,8 +411,9 @@ On OpenSSL before 3.4, `openssl ca -startdate` sets an absolute
 notBefore and does take `-sigopt` for PSS, but it needs a CA section in
 `openssl.cnf` with an index and a serial file. That is a different
 workflow rather than a drop-in for `x509 -req`, and `docs/ca.md` does
-not give the recipe, so `test/e2e.sh` skips its epoch tests on an
-OpenSSL that lacks `x509 -req -not_before` and prints why.
+not give the recipe. So on an OpenSSL that lacks
+`x509 -req -not_before`, `test/e2e.sh` skips its epoch tests and prints
+why. On CI it fails there instead.
 
 Turning the epoch on is fleet-wide and one-way. Once a device carries
 the callbacks, every server certificate it authenticates must have an
@@ -448,7 +455,7 @@ to stderr.
 
 ```sh
 make bin/tlsclient          # default build, RSA pin
-make bin/tlsclient_ecdsa    # PIN=ecdsa
+make bin/tlsclient_ecdsa    # TRUST=raw-ecdsa
 make bin/tlsclient_ca       # TRUST=ca-rsa
 make bin/tlsclient_ca_ecdsa # TRUST=ca-ecdsa
 
@@ -460,11 +467,11 @@ echo hola | ./bin/tlsclient_ca 127.0.0.1 4433 "ca:$ROOT_MODULUS_HEX" -
 Pinned and CA modes use no psk-id, so pass `-` for that argument.
 
 A failed handshake prints `handshake failed: N`, where N is the
-`ch_err` code from `cfg.h`. Three of them come up while configuring a
+`ch_err` code from `result.h`. Three of them come up while configuring a
 server: `-2` (`CH_EPROTO`, the server broke the profile), `-3`
 (`CH_EAUTH`, the key or the PSK does not match what the device holds),
 and `-4` (`CH_ECAP`, a record larger than the receive buffer).
 
 `./test/e2e.sh` runs the whole suite — both stacks, all three modes,
-both PIN builds, key rotation, the CA negatives, and the epoch — and
-`make check` runs it for you.
+both signature algorithms, key rotation, the CA negatives, and the epoch
+— and `make check-slow` runs it for you.
