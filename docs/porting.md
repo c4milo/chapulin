@@ -569,9 +569,11 @@ reasoning and the failure modes.
 
 ## 3. The receive buffer
 
-You size it and the client advertises that size as its `record_size_limit`
-(RFC 8449), so a peer can never send a record it cannot hold. `CH_MIN_RXBUF` is
-the floor for your build. In pinned mode the server's Certificate must also fit:
+You size it. The client advertises a `record_size_limit` (RFC 8449) of the
+buffer less 21 bytes, so a peer that honors the extension sends no record the
+buffer cannot hold. OpenSSL and Go ignore it, and a longer record fails the
+session with `CH_ECAP` (`examples/server/README.md`, "Record size").
+`CH_MIN_RXBUF` is the floor for your build. In pinned mode the server's Certificate must also fit:
 about 600 bytes for P-256, about 1.2 kB for RSA-3072.
 
 ## 4. Authentication

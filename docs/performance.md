@@ -185,10 +185,14 @@ packages for those builds on this host, which holds both multiplies.
 
 ### The receive buffer
 
-You size the receive buffer, and the client advertises that size as its
-`record_size_limit` ([RFC 8449](https://www.rfc-editor.org/rfc/rfc8449)),
-so a peer can never send a record the buffer cannot hold. Each trust
-mode adds one rule:
+You size the receive buffer. The client advertises a `record_size_limit`
+([RFC 8449](https://www.rfc-editor.org/rfc/rfc8449)) of the buffer less
+21 bytes: the 5-byte record header and the 16-byte tag. A peer that
+honors the extension sends no record that the buffer cannot hold.
+OpenSSL and Go ignore it, so a server on those stacks must cap its own
+records ([`examples/server/README.md`](../examples/server/README.md),
+"Record size"). A record longer than the buffer fails the session with
+`CH_ECAP`. Each trust mode adds one rule:
 
 - **Pinned mode.** The server's Certificate message must also fit. A
   self-signed P-256 certificate needs about 600 bytes and an RSA-3072

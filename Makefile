@@ -2799,7 +2799,7 @@ bin/quic_test_hw: test/quic_vectors.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 # that holds the instruction path where a proof cannot reach. Both
 # implementations are in one binary under two names, which a library
 # object may never do and a test binary may, the way the test binaries
-# compile both PIN algorithms. test/aes_equiv_soft.c and
+# compile both pinned algorithms. test/aes_equiv_soft.c and
 # test/aes_equiv_hw.c compile the two sources in under those names, so
 # neither is on the line twice; the second defines the host object's
 # CH_CPU_RUNTIME itself, so the first compiles quic_aes_soft.c under
@@ -5079,8 +5079,9 @@ else
 endif
 	./test/handshake_sequence_shards.sh ./bin/handshake_sequence_pq
 
-# Line coverage over the library sources, merged across the five host
-# test binaries and both PIN builds. Per-pin object dirs share .gcno
+# Line coverage over the library sources, merged across five host test
+# binaries in an RSA build and an ECDSA build, and thirteen in a
+# TRUST=webpki build. Per-pin object dirs share .gcno
 # files, so each binary run accumulates counts into the same .gcda set
 # and gcovr merges the whole tree into one number. The gate reads that
 # one number only — per-file floors invite gaming and churn.
@@ -5241,8 +5242,8 @@ else
 	# costs minutes at -O0. The filter keeps the report to the root
 	# library sources; test mains and generated code stay out.
 	# suspicious_hits.warn: the x25519 ladder legitimately racks up
-	# billions of hits across both PIN runs; the counter magnitude
-	# does not affect line coverage.
+	# billions of hits across the RSA and ECDSA runs; the counter
+	# magnitude does not affect line coverage.
 	$(GCOVR) --root . bin/cov --filter '^[a-z0-9_]+\.c$$' \
 	  --merge-mode-functions=separate \
 	  --gcov-executable "$(GCOV_TOOL)" \
