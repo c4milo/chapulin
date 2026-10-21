@@ -2279,7 +2279,9 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # keys of 32 bytes of any value: 979 properties, 301 s to 334 s in five
 # runs, 1.42 GB, which is over the five minutes of the fast tier. With
 # zeros and one byte of any value in each key, and the assert on the keys'
-# rules: 998 properties, 101 s to 114 s in three runs, 1.42 GB.
+# rules: 998 properties, 101 s to 114 s in three runs, 1.42 GB. With
+# ch_srv_check's assert on the same rules: 999 properties, 145 s, 1.43 GB
+# (run 39589768232).
 # The weight is 3 because the peaks above pass the fast tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c proof/ct_wipe_stub.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with

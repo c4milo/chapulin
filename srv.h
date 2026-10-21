@@ -128,7 +128,8 @@ int CH_MUST_USE ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
 // Returns CH_OK when at least one identity is provisioned and every
 // provisioned identity signed and verified. Returns CH_EINVAL for a
 // configuration that cannot serve: no identity at all, an identity the
-// flight could not sign with or send (ch_srv_accept above), under
+// flight could not sign with or send (ch_srv_accept above), a
+// cookie_key or ticket_key that ch_srv_accept refuses (srv_cfg.h), under
 // RAND=session a NULL cfg.rand_bytes, which it checks before it signs
 // because an RSA-PSS signature draws its salt from that source, or a
 // slot whose signer refused or whose signature the verifier rejected. It

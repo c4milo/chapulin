@@ -1,0 +1,12 @@
+invariant: INV-14
+file: srv.c
+catches: srv_auth_test
+reason: ch_srv_check accepts a cookie_key or ticket_key that ch_srv_accept
+  refuses, such as a key of all zero bytes that nothing filled. The
+  operator then learns of it at the first client, not at boot.
+  test/srv_identity_tests.h's check_keys_case rows require CH_EINVAL.
+
+--- old
+    if (live == 0 || !srv_identities_usable(cfg) || !keys_ok(&cfg->srv)) {
+--- new
+    if (live == 0 || !srv_identities_usable(cfg)) {

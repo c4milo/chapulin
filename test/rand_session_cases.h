@@ -144,6 +144,9 @@ static void check_pss_salt_from_source(void) {
     }
     CHECK(memcmp(sigs[0], sigs[1], sizeof rsa_sign_2048_n) != 0);
 
+    // ch_srv_check applies the keys' rules too, so the check holds a key.
+    static const uint8_t check_cookie_key[CH_SRV_COOKIE_KEY_LEN] = {5};
+    cfg.srv.cookie_key = check_cookie_key;
     seed_source(&server_source, 0x5a17);
     CHECK(ch_srv_check(&cfg) == CH_OK);
     CHECK(server_source.calls == 1 && hook_draws == 0);

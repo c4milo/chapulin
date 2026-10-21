@@ -284,7 +284,8 @@ CRT integers after its modulus and private exponent (`rsa_sign.h`), and a
 session that states its multiply signs with them. `toCfg()` answers `error.Invalid` for a chain
 longer than `chain_count`'s `u8` holds, and `check()` runs
 `ch_srv_check`: each provisioned key signs, and the signature verifies.
-It takes no session.
+It also refuses a `cookie_key` or `ticket_key` that a server init call
+refuses. It takes no session.
 
 ### PEM files
 

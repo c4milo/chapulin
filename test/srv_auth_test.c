@@ -363,9 +363,13 @@ static void test_sign_rsa(void) {
 // The boot-time check over whole configurations, which is what
 // ch_srv_check runs before a server accepts anything.
 static void test_check(void) {
+    static const uint8_t check_cookie_key[CH_SRV_COOKIE_KEY_LEN] = {3};
     ch_cfg live;
 
     memset(&live, 0, sizeof live);
+    // ch_srv_check applies the keys' rules too (srv_identity_tests.h),
+    // so each configuration here holds a usable cookie_key.
+    live.srv.cookie_key = check_cookie_key;
     // No identity at all is the configuration ch_srv_check refuses.
     CHECK(ch_srv_check(&live) == CH_EINVAL);
 

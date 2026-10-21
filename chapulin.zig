@@ -342,7 +342,8 @@ const ServerValues = struct {
         return cfg;
     }
 
-    /// ch_srv_check: each provisioned key signs, and the signature verifies. It takes no session
+    /// ch_srv_check: each provisioned key signs, the signature verifies, and the two keys meet the
+    /// rules a server init call applies (srv_cfg.h). It takes no session
     /// and runs no I/O. Under RAND=session the RSA-PSS signature draws its salt from random, which
     /// C holds for the call alone.
     pub fn check(values: ServerValues) error{Invalid}!void {

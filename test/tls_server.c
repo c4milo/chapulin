@@ -159,6 +159,8 @@ int main(int argc, char **argv) {
     boot.srv.ecdsa_p256.priv_len = sizeof priv;
     boot.srv.ecdsa_p256.pub = pub;
     boot.srv.ecdsa_p256.pub_len = sizeof pub;
+    boot.srv.cookie_key = cookie_key;
+    boot.srv.ticket_key = ticket_key;
 #ifdef CH_CPU_RUNTIME
     // ch_srv_check refuses a host object's configuration that does not
     // describe the CPU, as ch_srv_accept does below (cpu_cfg.h).

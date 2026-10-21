@@ -372,6 +372,9 @@ int main(void) {
     // on the same configuration before the session exists.
     int rc = ch_srv_check(&cfg);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "check answers one of its two codes");
+    if (rc == CH_OK) {
+        __CPROVER_assert(keys_meet_rules(&cfg.srv), "check takes only keys that meet their rules");
+    }
 
     flight_calls = 0;
     rc = ch_srv_accept(&t, &cfg);

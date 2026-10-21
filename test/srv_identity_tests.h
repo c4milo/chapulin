@@ -246,6 +246,15 @@ static int keys_case(const uint8_t *cookie_key, const uint8_t *ticket_key) {
     return ch_srv_accept(&t, &cfg);
 }
 
+// ch_srv_check under one pair of keys and a usable identity.
+static int check_keys_case(const uint8_t *cookie_key, const uint8_t *ticket_key) {
+    ch_cfg cfg;
+    usable_config(&cfg);
+    cfg.srv.cookie_key = cookie_key;
+    cfg.srv.ticket_key = ticket_key;
+    return ch_srv_check(&cfg);
+}
+
 // The two keys' rules (srv.c's keys_ok): a key of all zero bytes is
 // refused, and a ticket_key with cookie_key's bytes, in the same array
 // or in another one. A key whose last byte alone is set is a key.
@@ -267,6 +276,16 @@ static void test_server_keys(void) {
     CHECK(keys_case(accept_cookie_key, zero) == CH_EINVAL && recv_calls == 0);
     CHECK(keys_case(accept_cookie_key, accept_cookie_key) == CH_EINVAL && recv_calls == 0);
     CHECK(keys_case(accept_cookie_key, copy) == CH_EINVAL && recv_calls == 0);
+
+    // ch_srv_check applies the same rules at boot.
+    CHECK(check_keys_case(accept_cookie_key, NULL) == CH_OK);
+    CHECK(check_keys_case(accept_cookie_key, ticket_key) == CH_OK);
+    CHECK(check_keys_case(last_set, ticket_key) == CH_OK);
+    CHECK(check_keys_case(NULL, NULL) == CH_EINVAL);
+    CHECK(check_keys_case(zero, NULL) == CH_EINVAL);
+    CHECK(check_keys_case(accept_cookie_key, zero) == CH_EINVAL);
+    CHECK(check_keys_case(accept_cookie_key, accept_cookie_key) == CH_EINVAL);
+    CHECK(check_keys_case(accept_cookie_key, copy) == CH_EINVAL);
 }
 
 #endif

@@ -153,8 +153,11 @@ static void provision(ch_cfg *cfg) {
 }
 
 static int check_identity(void) {
+    // ch_srv_check applies the keys' rules too, so the check holds a key.
+    static const uint8_t check_cookie_key[CH_SRV_COOKIE_KEY_LEN] = {7};
     ch_cfg cfg;
     base_config(&cfg);
+    cfg.srv.cookie_key = check_cookie_key;
     provision(&cfg);
     return ch_srv_check(&cfg) == CH_OK ? 0 : failed("ch_srv_check refused a P-256 identity");
 }

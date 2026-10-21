@@ -1946,8 +1946,10 @@ fixed message with each provisioned key and verifies it with the verifier
 already in the object — `p256_ecdsa_verify` (`p256.h:16`) for the ECDSA
 identity and `rsa_pss_verify` (`rsa.h:34`) for the RSA one. It catches a broken
 signer and a key the operator paired with the wrong certificate, once, at boot,
-with a local error code instead of a client-side alert on every connection. It
-reads no chain bytes, so it catches neither a chain whose end-entity key is not
+with a local error code instead of a client-side alert on every connection.
+It also refuses a `cookie_key` or `ticket_key` that every server init call
+refuses: one of all zero bytes, or a `ticket_key` with `cookie_key`'s bytes
+(`docs/decisions.md` 139). It reads no chain bytes, so it catches neither a chain whose end-entity key is not
 the provisioned public key nor a fallback chain signed with the SHA-1 that
 `rfc9846.txt:2958-2960` forbids; a provisioning script does both off the
 device.

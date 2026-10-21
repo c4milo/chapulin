@@ -243,7 +243,9 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
 
 int ch_srv_check(const ch_cfg *cfg) {
     uint8_t live = srv_identity_live(cfg);
-    if (live == 0 || !srv_identities_usable(cfg)) {
+    // The two keys follow the rules ch_srv_accept applies, so a key that
+    // nothing filled fails here, at boot, and not at the first client.
+    if (live == 0 || !srv_identities_usable(cfg) || !keys_ok(&cfg->srv)) {
         return CH_EINVAL;
     }
 #ifdef CH_RAND_SESSION

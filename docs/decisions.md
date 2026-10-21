@@ -12692,7 +12692,12 @@ does nothing more.
       `cookie_key`'s bytes, in the same array or in another one. A NULL
       `ticket_key` still issues no ticket. Every server init call reads
       it through `srv_config_ok`, and each refusal is `CH_EINVAL` before
-      any I/O. `ch_srv_check` checks the identities alone, as before.
+      any I/O. `ch_srv_check` applies the same rules too, before it
+      signs, so a key that nothing filled fails at boot. Camilo approved
+      that on 2026-10-21, after
+      https://github.com/c4milo/chapulin/issues/199. Its rows in
+      `test/srv_identity_tests.h`, the `srv_accept` harness's assert and
+      `inv14-srv-check-takes-unfilled-key` hold it.
     - **Constant time.** Each compare is `ct_memeq`, against
       `unfilled_key`, a static array of zero bytes, or against the other
       key. The branch after it reads one bit, whether the key is refused.
