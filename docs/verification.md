@@ -2017,7 +2017,16 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   - a handshake that fails after a handler ran wipes the record keys
     and leaves a dead session;
   - only a flight that got as far as `srv_complete` answers `CH_OK`.
-- **Bound:** ALPN offers ≤ 8 names of ≤ 32 B.
+
+  The flight runs only under a `cookie_key` that is set and not all
+  zero, and a `ticket_key` that is NULL, or neither all zero nor the
+  bytes of `cookie_key` (`docs/decisions.md` entry 139).
+- **Bound:** ALPN offers ≤ 8 names of ≤ 32 B. Each server key holds
+  zeros and one byte of any value, its last. `keys_ok` reads the key
+  bytes through `ct_memeq` alone, which [ct](#ct) proves equal to a plain
+  comparison, so that byte gives each answer `keys_ok` can give. Keys of
+  32 bytes of any value reached the same locations, and the proof took
+  over 300 s on the runner.
 - **Not proved:** any message this server writes. The fourteen
   `srv_flight.h` handlers, `srv_resume.h`'s ticket call, `srv_auth.h`'s
   three entry points, `handshake_record.h`'s check before a key change,

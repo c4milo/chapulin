@@ -415,7 +415,8 @@ softmul 91.3
 # harness put cookie_key in its scratch array, which holds zeros alone,
 # and keys_ok refuses a key of zero bytes (docs/decisions.md 139). So every
 # path ended at CH_EINVAL, and the proof passed over the refusal alone. The
-# keys now take arrays of their own, of any bytes, and the floor holds.
+# keys now take arrays of their own, which hold zeros and one byte of any
+# value, and the floor holds.
 srv_accept 95.1
 srv_auth 92.8
 srv_cookie 62.2

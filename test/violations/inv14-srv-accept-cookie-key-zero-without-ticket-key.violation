@@ -1,0 +1,15 @@
+invariant: INV-14
+file: srv.c
+catches: proof/prove-one.sh srv_accept
+reason: a server with no ticket_key takes a cookie_key of all zero bytes,
+  so anyone mints the cookies of its HelloRetryRequest. The srv_accept
+  harness gives each key zeros and one byte of any value, and requires
+  that the flight runs only under keys that meet srv_cfg.h's rules.
+
+--- old
+static int keys_ok(const ch_srv_cfg *srv) {
+--- new
+static int keys_ok(const ch_srv_cfg *srv) {
+    if (srv->ticket_key == NULL) {
+        return srv->cookie_key != NULL;
+    }
