@@ -148,6 +148,12 @@ epoch 34.4
 gcm_avx512_wipe 97.2
 gcm_avx512_wipe_quic 96.8
 handshake_groups 92.5
+# handshake_post sat in the no-floor list below, from cover runs before
+# the cover command passed --slice-formula. On 2026-10-21 the runner
+# measured it in 515 s at 1.68 GB resident: 59.5% (238/400), every
+# location of the trust code of docs/decisions.md 142 among them. At
+# e1db679b, before that code, it read 51.0% (172/337) in 666 s.
+handshake_post 59.5
 handshake_record 85.5
 hello_build 76.9
 # hello_build_suite and hello_build_webpki took their floors on 2026-10-01
@@ -657,7 +663,6 @@ x509parse_ecdsa 83.9
 #   handshake_parser
 #   handshake_parser_suite
 #   handshake_pin
-#   handshake_post
 #   handshake_psk
 #   hkdf384_expand
 #   hkdf384_expand_label
