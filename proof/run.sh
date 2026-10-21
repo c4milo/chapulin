@@ -2161,7 +2161,11 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # and the asserts on an accepted one held over no path. With init_buf at
 # the floor, on an ubuntu-24.04 runner on 2026-10-21 (PROVE_ONLY=quic_driver
 # PROVE_NO_CACHE=1 /usr/bin/time -v bash proof/run.sh fast): 1896
-# properties, 117 s, 1.04 GB.
+# properties, 117 s, 1.04 GB. ch_quic_open discarded every packet here
+# too, because 12 bytes hold no header protection sample, so no packet
+# call ran. With a 20-byte packet, and key_phase held to the one bit
+# every entry keeps, measured the same way: 1897 properties, 61 s,
+# 1.04 GB. Without that hold the open stub's assert of one bit fails.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where

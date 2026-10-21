@@ -2436,6 +2436,12 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     admits, and refuses a receive buffer one byte under `CH_MIN_RXBUF`;
   - a packet call refuses a version its level does not admit, and an
     open refused so counts no failure and changes no bit or state;
+  - `ch_quic_open` opens no 1-RTT packet before the handshake completes
+    (RFC 9001 §5.7);
+  - an open that meets the integrity limit keeps exactly the write bits
+    it found;
+  - `key_phase` stays one bit after every entry, and the 1-RTT open
+    receives one bit;
   - `ch_quic_retry_ok` answers 0 in any version but the original;
   - `ch_quic_switch_version` succeeds only for a live client session that
     waits for the ServerHello with no server byte taken, has not
@@ -2453,6 +2459,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 - **Bound:** 12 B receive buffer, 32 B staged message. `ch_quic_init`
   alone takes a buffer of `CH_MIN_RXBUF` bytes, which it stores and does
   not read, because it refuses every buffer under that floor.
+  `ch_quic_open` takes a packet of 20 B, the shortest that holds a
+  header protection sample, because it discards a shorter one before
+  the packet call.
 
 #### quic_step
 

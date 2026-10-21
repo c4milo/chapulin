@@ -18,6 +18,12 @@ static int version_admitted(uint8_t level, uint32_t version) {
 
 static void drive_packets(void) {
     uint8_t pkt[CH_PROOF_RXBUF];
+    // The packet ch_quic_open takes: QUIC_PN_MAX_LEN bytes of packet
+    // number, then the QUIC_HP_SAMPLE_LEN bytes of the header protection
+    // sample (RFC 9001 section 5.4.2). ch_quic_open discards a packet with
+    // fewer bytes from the packet number offset before it calls a packet
+    // stub, so a CH_PROOF_RXBUF packet calls none.
+    uint8_t packet[QUIC_PN_MAX_LEN + QUIC_HP_SAMPLE_LEN];
     uint8_t out[CH_PROOF_RXBUF + 4 + GCM_TAG];
     uint8_t hdr[4];
     uint8_t tag[GCM_TAG];
@@ -48,12 +54,12 @@ static void drive_packets(void) {
     version = nondet_u32();
     size_t pkt_len = nondet_size_t();
     size_t pn_off = nondet_size_t();
-    __CPROVER_assume(pkt_len <= sizeof pkt && pn_off <= pkt_len);
+    __CPROVER_assume(pkt_len <= sizeof packet && pn_off <= pkt_len);
     uint8_t was_state = q.t.state;
     uint64_t was_failures = q.open_failures;
     uint8_t was_ready = q.levels_ready;
     int admitted = version_admitted(level, version);
-    rc = ch_quic_open(&q, level, version, pkt, pkt_len, pn_off, nondet_u64(), nondet_u64(),
+    rc = ch_quic_open(&q, level, version, packet, pkt_len, pn_off, nondet_u64(), nondet_u64(),
                       &key_set, &pn, &pt_len);
     __CPROVER_assert(rc == CH_EINVAL || live, "a dead session opens no packet");
     if (!admitted) {

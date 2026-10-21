@@ -161,16 +161,17 @@ static void havoc_keys(void) {
     havoc_set(&q.app_rx[CH_QUIC_KEY_NEXT], NULL);
 }
 
-// Any saved state a call can meet, with the one invariant every entry
+// Any saved state a call can meet, with the two invariants every entry
 // establishes and this harness asserts again on exit: the unread window
-// sits inside the receive buffer.
+// sits inside the receive buffer, and key_phase is one bit, which
+// ch_quic_init writes as 0 and ch_quic_key_update flips.
 static void havoc_session(void) {
     q.step = nondet_u8();
     q.rx_level = nondet_u8();
     q.tx_level = nondet_u8();
     q.alert = nondet_u8();
     q.endpoint = nondet_u8();
-    q.key_phase = nondet_u8();
+    q.key_phase = nondet_u8() & 1;
     q.levels_ready = nondet_u8();
     q.error_code = nondet_u64();
     q.open_failures = nondet_u64();
@@ -206,6 +207,7 @@ static void assert_window(void) {
     __CPROVER_assert(q.t.pt_off <= q.t.pt_len && q.t.pt_len <= q.t.cfg.buf_len,
                      "window inside the buffer");
     __CPROVER_assert(q.tx_len <= CH_PROOF_TX, "staged message inside the staging array");
+    __CPROVER_assert(q.key_phase <= 1, "the key phase stays one bit");
 }
 
 // Whether n bytes are all zero, as one answer, so each check below is

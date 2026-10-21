@@ -1,0 +1,13 @@
+invariant: INV-22
+file: quic.c
+catches: proof/prove-one.sh quic_driver
+reason: ch_quic_open opens a 1-RTT packet before the handshake completes,
+  which RFC 9001 section 5.7 forbids a client. The quic_driver harness
+  opens a packet that holds a header protection sample, at any level and
+  over any saved state, and requires that a 1-RTT packet opens only in a
+  connected session.
+
+--- old
+    if (level == CH_LEVEL_APPLICATION && q->t.state != CH_ST_CONNECTED) {
+--- new
+    if (0) {
