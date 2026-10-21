@@ -37,7 +37,10 @@
 //
 // Bounds. CH_PROOF_RXBUF is 12, the value handshake_record's own
 // harness uses, so every state this harness drives is inside the window
-// that proof discharges. CH_TX_STAGE keeps the build's own 1141,
+// that proof discharges. CH_MIN_RXBUF is 490 or more in every QUIC
+// build, so ch_quic_init refuses a 12-byte buffer. It stores the buffer
+// and reads none of it, so it takes init_buf, of CH_MIN_RXBUF bytes,
+// which nothing reads or writes. CH_TX_STAGE keeps the build's own 1141,
 // because quic.c's static assertion holds it against CH_HELLO_MAX, and
 // CH_PROOF_TX bounds the staged length at 32 instead: the drain is a
 // memcpy of tx_len bytes and one length compare, so a larger tx_len
@@ -117,6 +120,7 @@ int hsq_advance(ch_quic *q) {
 #include "quic_fail.c"
 
 static uint8_t buf[CH_PROOF_RXBUF];
+static uint8_t init_buf[CH_MIN_RXBUF];
 static ch_quic q;
 static ch_cfg cfg;
 static ch_alpn_protocol alpn;
@@ -371,10 +375,12 @@ static void build_cfg(void) {
 
 int main(void) {
     build_cfg();
-    fill_nondet(buf, sizeof buf);
     cfg.on_level_ready = (nondet_u8() & 1) ? NULL : level_ready;
     cfg.transport_params_len = (nondet_u8() & 1) ? 0 : sizeof params;
-    cfg.buf_len = (nondet_u8() & 1) ? 1 : sizeof buf;
+    // The receive buffer floor at its edge: one byte short of
+    // CH_MIN_RXBUF, which ch_quic_init refuses, or CH_MIN_RXBUF.
+    cfg.buf = init_buf;
+    cfg.buf_len = (nondet_u8() & 1) ? CH_MIN_RXBUF - 1 : CH_MIN_RXBUF;
     cfg.quic_original_version = nondet_u32();
     int rc = ch_quic_init(&q, &cfg);
     if (rc != CH_OK) {
@@ -382,6 +388,8 @@ int main(void) {
         __CPROVER_assert(q.t.state == CH_ST_FAILED, "a refused config leaves a dead session");
         __CPROVER_assert(q.tx_len == 0, "a refused config stages nothing");
     } else {
+        __CPROVER_assert(cfg.buf_len >= CH_MIN_RXBUF,
+                         "an accepted config's buffer holds the floor");
         __CPROVER_assert(quic_version_derived(cfg.quic_original_version),
                          "an accepted config names a version this build derives");
         __CPROVER_assert(q.t.quic_negotiated_version == cfg.quic_original_version,

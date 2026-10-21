@@ -2433,7 +2433,7 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     that level (`docs/decisions.md` entry 57);
   - `ch_quic_init` refuses an original version `quic_version_derived`
     does not admit and starts the negotiated version at the one it
-    admits;
+    admits, and refuses a receive buffer one byte under `CH_MIN_RXBUF`;
   - a packet call refuses a version its level does not admit, and an
     open refused so counts no failure and changes no bit or state;
   - `ch_quic_retry_ok` answers 0 in any version but the original;
@@ -2450,7 +2450,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   (`proof/quic_driver_stubs.h`). [quic_step](#quic_step) proves the step
   table against the same `hsq_advance` contract, so the two read as a
   pair.
-- **Bound:** 12 B receive buffer, 32 B staged message.
+- **Bound:** 12 B receive buffer, 32 B staged message. `ch_quic_init`
+  alone takes a buffer of `CH_MIN_RXBUF` bytes, which it stores and does
+  not read, because it refuses every buffer under that floor.
 
 #### quic_step
 

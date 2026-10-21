@@ -2156,7 +2156,12 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # check of a presented ticket, a contract stub in proof/quic_driver_stubs.h
 # (docs/decisions.md 140 and 142): quic_driver 1895 properties, 1092 s on
 # 2026-10-20 (PROVE_NO_CACHE=1 proof/prove-one.sh quic_driver), at a load
-# average near 106, 1.5 GB peak.
+# average near 106, 1.5 GB peak. Until then ch_quic_init refused every
+# configuration here, because its 12-byte buffer is under CH_MIN_RXBUF,
+# and the asserts on an accepted one held over no path. With init_buf at
+# the floor, on an ubuntu-24.04 runner on 2026-10-21 (PROVE_ONLY=quic_driver
+# PROVE_NO_CACHE=1 /usr/bin/time -v bash proof/run.sh fast): 1896
+# properties, 117 s, 1.04 GB.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where
