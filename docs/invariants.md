@@ -3104,7 +3104,13 @@ last `ROLE=server` stub, as the entry said it would.
   entries whose frames and bytes pass the room the handshake header's
   3-byte length leaves. The flight's own refusal of such an identity
   returns `CH_EAUTH` with internal_error, never `CH_EINVAL`
-  (docs/decisions.md 74). `ch_quic_init` and `ch_srv_quic_init` refuse
+  (docs/decisions.md 74). The same four calls refuse a `cookie_key` that
+  is NULL or of all zero bytes, and a `ticket_key` of all zero bytes or
+  with `cookie_key`'s bytes (srv.c's `keys_ok`, docs/decisions.md 139).
+  `inv14-srv-cookie-key-zero-accepted`,
+  `inv14-srv-ticket-key-zero-accepted`, `inv14-srv-ticket-key-is-cookie-key`
+  and `inv14-srv-check-takes-unfilled-key` each require one of them to
+  fail. `ch_quic_init` and `ch_srv_quic_init` refuse
   with `CH_EINVAL`, and send nothing, an original QUIC version this build
   derives no keys for, 0 among them; INV-7 states the version rules. INV-38
   states the refusals of a `CH_TX_PT` or a `record_size_limit` out of

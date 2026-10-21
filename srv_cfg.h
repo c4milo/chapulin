@@ -141,8 +141,8 @@ typedef struct {
     // §9.2 makes the cookie extension mandatory to implement and a
     // stateless retry cannot be minted without it. It returns CH_EINVAL
     // for a key of all zero bytes too, which is what a static array
-    // holds until something fills it. Draw the key from a strong random
-    // source.
+    // holds until something fills it, and so does ch_srv_check. Draw the
+    // key from a strong random source.
     const uint8_t *cookie_key;
 
     // Where to put the server_name a ClientHello carried (RFC 6066 §3),
@@ -170,8 +170,8 @@ typedef struct {
     // deployment, so a ticket one server issued resumes on another that
     // holds the same key. NULL issues no ticket and accepts none, and
     // every handshake then authenticates with a certificate. Every init
-    // call returns CH_EINVAL for a key of all zero bytes and for one with
-    // cookie_key's bytes.
+    // call and ch_srv_check return CH_EINVAL for a key of all zero bytes
+    // and for one with cookie_key's bytes.
     //
     // It is as valuable as the private keys above: whoever holds it can
     // resume as this server with any client that kept a ticket, until
