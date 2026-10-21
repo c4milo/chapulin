@@ -421,8 +421,9 @@ softmul 91.3
 # and keys_ok refuses a key of zero bytes (docs/decisions.md 139). So every
 # path ended at CH_EINVAL, and the proof passed over the refusal alone. The
 # keys now take arrays of their own, which hold zeros and one byte of any
-# value, and the floor holds.
-srv_accept 95.1
+# value. On 2026-10-21 the harness read 95.5% (423/443), every location of
+# keys_ok among them, and lost no location it reached at 95.1% (391/411).
+srv_accept 95.5
 srv_auth 92.8
 srv_cookie 62.2
 srv_kex 94.7
