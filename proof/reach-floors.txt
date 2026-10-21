@@ -255,12 +255,17 @@ poly1305_ifma_product 51.6
 poly1305_ifma_sums 74.4
 quic_config_webpki 97.4
 quic_config_webpki_suite 96.8
-# quic_driver took 74.5 from nightly run 39430743979 on 2026-10-20, down
-# from 75.0. proof/quic_driver_stubs.h gained a contract stub of
-# hspost_trust_holds, which ch_quic_init calls on a presented ticket
-# (docs/decisions.md 142). This harness presents no ticket, so no path
-# reaches the stub's locations.
-quic_driver 74.5
+# quic_driver read 74.5% (687/922) in nightly run 39430743979 on
+# 2026-10-20, down from 75.0% (687/916). Its six new locations, all
+# unreached, were the trust check of a presented ticket in
+# hspost_present_ticket and the contract stub of that check
+# (docs/decisions.md 142). The harness presented no ticket. The cover
+# output, location by location, showed two older gaps too. ch_quic_init
+# refused every configuration, because the buffer was under
+# CH_MIN_RXBUF. ch_quic_open discarded every packet, because 12 bytes
+# hold no header protection sample. With the three fixed, it read 89.9%
+# (841/936) on 2026-10-21.
+quic_driver 89.9
 # quic_initial carries a floor where five other TRANSPORT=quic-nonblocking
 # harnesses carry none: aes, aes256, gcm_refusal, gcm_safety and ghash,
 # listed below. Its cover command converges in seconds, because every

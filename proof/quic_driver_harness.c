@@ -26,6 +26,12 @@
 // for the one CONNECTION_CLOSE ch_quic_seal_close seals there
 // (docs/decisions.md 57); assert_dead and drive_close state the rules.
 //
+// ch_quic_init takes a configuration with no ticket or with a ticket of
+// any PSK length, identity length, lifetime and QUIC version, at any age.
+// The trust check of docs/decisions.md 142 is a contract stub that
+// answers 1 or 0. So the ticket rules quic_config.c applies run here, and
+// an accepted ticket is offered alone, with both pin slots dropped.
+//
 // The QUIC version rules of docs/decisions.md 79 run over any saved
 // versions and any version a caller passes: ch_quic_init refuses an
 // original version quic_version_derived does not admit and starts the
@@ -353,6 +359,10 @@ static void drive_switch(void) {
                      "a second switch is refused");
 }
 
+// The ticket ch_quic_init can be handed, and the rules an accepted one
+// meets.
+#include "quic_driver_ticket.h"
+
 // The configuration ch_quic_init judges. Three fields vary, one per
 // rule quic.h adds to the trust mode's: the callback, the encoded
 // transport parameters and the receive buffer floor.
@@ -384,6 +394,9 @@ int main(void) {
     cfg.buf = init_buf;
     cfg.buf_len = (nondet_u8() & 1) ? CH_MIN_RXBUF - 1 : CH_MIN_RXBUF;
     cfg.quic_original_version = nondet_u32();
+    havoc_ticket();
+    cfg.ticket = (nondet_u8() & 1) ? &saved : NULL;
+    cfg.ticket_age_ms = nondet_u64();
     int rc = ch_quic_init(&q, &cfg);
     if (rc != CH_OK) {
         __CPROVER_assert(rc == CH_EINVAL, "ch_quic_init has one refusal code");
@@ -400,6 +413,9 @@ int main(void) {
         __CPROVER_assert(q.step == HSQ_STEP_AWAIT_SERVER_HELLO, "the first step waits on the SH");
         __CPROVER_assert(q.tx_level == CH_LEVEL_INITIAL && q.rx_level == CH_LEVEL_INITIAL,
                          "both levels start at Initial");
+        if (cfg.ticket != NULL) {
+            assert_ticket_accepted();
+        }
     }
 
     // The entries over arbitrary saved state, each operand havocked

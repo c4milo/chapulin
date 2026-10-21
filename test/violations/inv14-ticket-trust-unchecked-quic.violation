@@ -1,0 +1,13 @@
+invariant: INV-14
+file: handshake_post.h
+catches: proof/prove-one.sh quic_driver
+reason: ch_quic_init offers a kept ticket whose trust its configuration
+  no longer holds, so a device resumes the tickets of a server key it
+  rotated away. The quic_driver harness presents a ticket of any fields
+  and requires that an accepted one passed the trust check.
+
+--- old
+    if (!hspost_trust_holds(cfg, &saved->ticket)) {
+        return 0;
+    }
+--- new

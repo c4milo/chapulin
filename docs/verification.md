@@ -2434,6 +2434,12 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   - `ch_quic_init` refuses an original version `quic_version_derived`
     does not admit and starts the negotiated version at the one it
     admits, and refuses a receive buffer one byte under `CH_MIN_RXBUF`;
+  - `ch_quic_init` accepts a presented ticket only when the trust check
+    answered 1, its PSK is a hash length, its identity fits a
+    ClientHello, its lifetime is 1 s or more, its age is inside that
+    lifetime and 7 days, and it comes from the original version. The
+    session then offers the ticket's PSK and identity and no pin
+    (`docs/decisions.md` entries 79 and 142);
   - a packet call refuses a version its level does not admit, and an
     open refused so counts no failure and changes no bit or state;
   - `ch_quic_open` opens no 1-RTT packet before the handshake completes
@@ -2452,8 +2458,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   The QUIC arm of `handshake_record.c` and all of `quic_config.c` in a
   raw build are compiled in, and [quic_config_webpki](#quic_config_webpki)
   proves its `TRUST=webpki` arm. `hsq_advance`, the two flight handlers
-  `ch_quic_init` calls, and the packet calls are contract stubs
-  (`proof/quic_driver_stubs.h`). [quic_step](#quic_step) proves the step
+  `ch_quic_init` calls, the trust check of a presented ticket and the
+  packet calls are contract stubs (`proof/quic_driver_stubs.h`). [quic_step](#quic_step) proves the step
   table against the same `hsq_advance` contract, so the two read as a
   pair.
 - **Bound:** 12 B receive buffer, 32 B staged message. `ch_quic_init`

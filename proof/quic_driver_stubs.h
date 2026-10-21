@@ -26,8 +26,11 @@
 //                             readable pseudo-packet.
 //   quic_keys_update          the secret and the set rewritten.
 //   hspost_trust_holds        1 or 0, over a readable configuration and
-//                             ticket, which is what handshake_post.h
-//                             states.
+//                             ticket, read before the ticket's PSK is
+//                             written into the configuration, which is
+//                             what handshake_post.h states. It writes
+//                             its answer to trust_answer, so the harness
+//                             can assert that a refusal holds.
 //   the two §6.6 questions    quic_packet.c's own arithmetic, repeated
 //                             so the limit paths are inside the formula.
 //
@@ -47,12 +50,20 @@
 #include "quic_version.h"
 
 #ifndef CH_TRUST_WEBPKI
+// The last answer of the stub below, and TRUST_UNASKED before the first
+// call. It is the harness's own record and models nothing in the code.
+#define TRUST_UNASKED 2
+static int trust_answer = TRUST_UNASKED;
+
 // The trust check ch_quic_init runs on a presented ticket
-// (hspost_present_ticket).
+// (hspost_present_ticket). handshake_post.h says it reads the PSK fields
+// as the caller wrote them, so they do not yet name the ticket's PSK.
 int hspost_trust_holds(const ch_cfg *cfg, const ch_ticket *ticket) {
     __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "trust: configuration readable");
     __CPROVER_assert(__CPROVER_r_ok(ticket, sizeof *ticket), "trust: ticket readable");
-    return nondet_u8() & 1;
+    __CPROVER_assert(cfg->psk != ticket->psk, "trust: the PSK fields are the caller's");
+    trust_answer = nondet_u8() & 1;
+    return trust_answer;
 }
 #endif
 

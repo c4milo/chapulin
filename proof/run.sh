@@ -2166,6 +2166,8 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # call ran. With a 20-byte packet, and key_phase held to the one bit
 # every entry keeps, measured the same way: 1897 properties, 61 s,
 # 1.04 GB. Without that hold the open stub's assert of one bit fails.
+# With a presented ticket of any fields, the same way: 1911 properties,
+# 114 s to 169 s in three runs, 1.04 GB.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where
