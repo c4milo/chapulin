@@ -4466,12 +4466,15 @@ check-hash-builds:
 # aead job failed to link that way (docs/decisions.md 88). It costs about
 # 45 s of CPU and 9 s of wall on an M1 Pro, and it is skipped when it
 # passed before on the same inputs: every .c and .h file, the scripts it
-# runs, the Makefile, which they read lists and flags from, the
-# compiler's version and the system's release (tools/stamp.py).
+# runs, the Makefile, which they read lists and flags from, build.zig and
+# the localizer it runs, the compiler's and Zig's versions and the
+# system's release (tools/stamp.py).
 check-script-builds:
 	+@mkdir -p bin/check; python3 tools/stamp.py check-script-builds --content '*.[ch]' \
 	  --content 'bench/*.sh' --content test/qemu-m3.sh --content test/script-builds.sh \
-	  $(STAMP_MAKEFILES) --output '$(CC) --version' --output 'uname -srm' -- \
+	  --content build.zig --content tools/localize_symbols.zig \
+	  $(STAMP_MAKEFILES) --output '$(CC) --version' --output '$(ZIG) version' \
+	  --output 'uname -srm' -- \
 	  env CC='$(CC)' ./test/script-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
 # The Wycheproof tests, then the total docs/verification.md states against
