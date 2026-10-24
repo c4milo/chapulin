@@ -4365,7 +4365,7 @@ last `ROLE=server` stub, as the entry said it would.
   CertificateVerify signed content (decision 145). A `TRUST=webpki` client hands its value to the hash
   of its configuration and to the binding of each ticket it receives or
   presents (decision 132). The binding's key is the ticket's PSK.
-  Twenty violations break those rules.
+  Twenty-one violations break those rules.
   `inv16-sha256-instructions-without-bit` inverts the SHA-256 predicate
   and `inv16-sha256-reads-sha512-bit` reads another hash's bit;
   `inv16-hkdf-extract-entry-inverted` and
@@ -4375,6 +4375,9 @@ last `ROLE=server` stub, as the entry said it would.
   hands the nonce's HMACs 0 in place of the session's value, and
   `inv16-srv-signed-content-on-portable` hashes the signed content on
   `sha256.c`. The counting tests catch those seven.
+  `inv16-p256-sign-nonce-midstates-stale` keeps the HMAC midstates of an
+  old K in the nonce generator, and the RFC 6979 vectors of
+  `bin/p256_sign_test` catch it (decision 147).
   `inv16-sha512-instructions-without-bit`,
   `inv16-sha512-reads-sha256-bit` and
   `inv16-sha512-update-entry-inverted` do the same to `sha512.h`, and

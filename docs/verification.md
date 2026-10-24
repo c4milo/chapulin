@@ -1038,9 +1038,11 @@ The entries are grouped by area:
 - **Harness:** `p256_sign` (fast)
 - **Proves:** the RFC 6979 generator and the DER writer, with the
   arithmetic stubbed:
-  - the generator spends the same number of HMAC calls whatever the
-    candidate nonces were, which is the constant-time claim about the
-    retry;
+  - the generator spends the same number of HMACs and of keys whatever
+    the candidate nonces were, which is the constant-time claim about
+    the retry. SHA-256 is the contract stub, and the harness counts two
+    finals per HMAC and two starts per K, one for each midstate
+    (decision 147);
   - the DER writer stays inside `P256_SIG_MAX`, writes a minimal
     INTEGER, and refuses a short capacity rather than truncating, with no
     byte written past it;
@@ -5452,10 +5454,10 @@ and token MACs, an SPKI pin's hash,
 the server's hash of a ClientHello's frozen bytes and the webpki ticket
 binding make such calls, and each starts and ends its context on that
 path. `p256_sign_cpu`, which a server signs a CertificateVerify through,
-takes the session's value and hands it to `hmac_sha256_cpu` for each
-HMAC of the RFC 6979 nonce (decision 102). A server's
-`srv_hash_signed_content` takes the value as well, for the SHA-256 of
-the CertificateVerify signed content (decision 145).
+takes the session's value and hands it to `sha256.h`'s entries for each
+SHA-256 of the RFC 6979 nonce's HMACs (decisions 102 and 147). A
+server's `srv_hash_signed_content` takes the value as well, for the
+SHA-256 of the CertificateVerify signed content (decision 145).
 
 CBMC cannot unwind an intrinsic, so no harness compiles `sha256_hw.c` or
 `sha512_hw.c`, and the [sha256](#sha256), [sha512](#sha512),

@@ -13090,3 +13090,39 @@ does nothing more.
     `inv11-srv-transcript-selected-wrong-hash` feeds the
     CertificateVerify to SHA-256 in a SHA-384 session, and
     `bin/webpki_loop_aes` fails it.
+
+147. **The RFC 6979 nonce generator computes HMAC_K's two midstates once
+    for each K.** Each HMAC-SHA-256 of the generator compressed the
+    block of K XOR ipad and the block of K XOR opad again, although K
+    changes only seven times in sixteen HMACs. The count of
+    [#188](https://github.com/c4milo/chapulin/issues/188) on 2026-10-21
+    put the nonce at 0.047 M instructions of a 0.220 M signature under
+    `0xe7`, and Camilo approved the change that day.
+
+    - **The rule.** `nonce_generator` holds `inner` and `outer`, SHA-256
+      after the one pad block each (RFC 2104). `generator_key` writes
+      them each time K changes, and `generator_hmac` starts each HMAC
+      from copies of them. The generator makes 48 compressions where
+      `hmac_sha256` made 66.
+    - **The same bytes.** The HMAC is RFC 2104's, so every candidate,
+      every nonce and every signature is the same as before. The
+      generator still runs four candidates and every update whatever
+      their values, so the constant-time argument of decision 102 is
+      unchanged.
+    - **The path.** Each SHA-256 call goes to `sha256.h`'s entries in a
+      host object, on the instructions under
+      `CH_CPU_CONSTANT_TIME_SHA256`, and to `sha256.c` in a device
+      object. `hmac_sha256_cpu` is no longer on this path.
+    - **Secrets.** The midstates derive from K, so `derive_nonce` wipes
+      them with K and V, and `generator_key` and `generator_hmac` wipe
+      their pad block and their copy of a midstate.
+
+    `bin/p256_sign_test` and its host twin sign the RFC 6979 vectors,
+    the host Wycheproof test runs the ECDSA suite, and `bin/diff`
+    compares signatures with the Lean spec. `bin/hash_runtime_test`
+    counts the generator's SHA-256 calls under each value, and
+    `inv16-p256-sign-nonce-on-portable` still fails it. The `p256_sign`
+    harness now stubs SHA-256 and counts two starts per K and two finals
+    per HMAC, whatever the candidates were.
+    `inv16-p256-sign-nonce-midstates-stale` keeps the midstates of an old
+    K, and the RFC 6979 vectors catch it.

@@ -13,10 +13,11 @@
 //   (proof/harness.h routes ch_assert_fail into __CPROVER_assert);
 //
 //   that the generator runs its candidates a literal NONCE_CANDIDATES
-//   times and calls the HMAC the same number of times whatever those
-//   candidates were, which is the constant-time claim p256_sign.h makes
-//   about the retry. A conditional retry would show up as a count that
-//   depends on the stubbed usable masks;
+//   times, computes the HMAC midstates and finishes the HMACs the same
+//   number of times whatever those candidates were, which is the
+//   constant-time claim p256_sign.h makes about the retry. A conditional
+//   retry would show up as a count that depends on the stubbed usable
+//   masks;
 //
 //   that the DER writer stays inside P256_SIG_MAX for every pair of
 //   32-byte scalars, that it writes a minimal INTEGER, and that a short
@@ -25,42 +26,57 @@
 //
 // Layered proof, in the shape hkdf_harness.c uses. Three things below
 // are stubs that assert their callers' contract and havoc their
-// outputs: hmac_sha256, whose own proof is proof/hkdf_harness.c; the
-// scalar arithmetic, whose proof is proof/p256_scalar_harness.c; and
-// the point arithmetic, whose proof is proof/p256_point_harness.c.
+// outputs: SHA-256's three calls, whose own proof is
+// proof/sha256_harness.c; the scalar arithmetic, whose proof is
+// proof/p256_scalar_harness.c; and the point arithmetic, whose proof is
+// proof/p256_point_harness.c. The generator's HMAC is its own code over
+// the SHA-256 stubs, so its memory accesses are under proof here, and
+// the RFC 6979 vectors and the differential hold its bytes.
 // Nothing here depends on an arithmetic value, which is why the formula
 // converges at all: the real p256_sign runs 512 complete point
 // additions, and a proof that unrolled them would return no verdict.
 #include "harness.h"
 
-#include "hkdf.h"
 #include "p256_point_stubs.h"
 #include "p256_scalar_stubs.h"
 
 #include "p256_sign.c"
 
-// Counts the stubbed HMAC calls one derive_nonce spends, which is how
-// prove_nonce_cost_is_fixed states the constant-time claim about the
-// retry. Nothing in p256_sign.c reads it.
-static unsigned hmac_calls = 0;
+// Counts the stubbed SHA-256 starts and finals one derive_nonce spends,
+// which is how prove_nonce_cost_is_fixed states the constant-time claim
+// about the retry. Each K takes two starts, one for each midstate, and
+// each HMAC takes two finals. Nothing in p256_sign.c reads them. The
+// stubs leave the state as it was: no value of it reaches an assertion,
+// and the finals havoc each digest.
+static unsigned sha256_starts = 0;
+static unsigned sha256_finals = 0;
 
 // --- stubs ---
 
-void hmac_sha256(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len,
-                 uint8_t out[SHA256_LEN]) {
-    __CPROVER_assert(key_len == 0 || __CPROVER_r_ok(key, key_len), "hmac_sha256: key readable");
-    __CPROVER_assert(msg_len == 0 || __CPROVER_r_ok(msg, msg_len), "hmac_sha256: message readable");
-    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "hmac_sha256: output writable");
-    hmac_calls++;
+void sha256_init(sha256 *s) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256_init: ctx writable");
+    sha256_starts++;
+}
+
+void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256_update: ctx writable");
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "sha256_update: input readable");
+}
+
+void sha256_final(sha256 *s, uint8_t out[SHA256_LEN]) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256_final: ctx writable");
+    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "sha256_final: output writable");
+    sha256_finals++;
     fill_nondet(out, SHA256_LEN);
 }
 
 // --- the proofs ---
 
 // The generator produces NONCE_CANDIDATES candidates and spends the same
-// number of HMAC calls whatever the stubbed predicates answered. Two
+// number of HMACs and keys whatever the stubbed predicates answered. Two
 // HMACs per generator_update and one per generator_next: two updates in
-// generator_init, then per candidate one next and one update.
+// generator_init, then per candidate one next and one update. One key
+// for K's first value and one per generator_update.
 static void prove_nonce_cost_is_fixed(void) {
     uint8_t priv[P256_PRIV_LEN];
     uint8_t z_octets[P256_SCALAR_LEN];
@@ -68,13 +84,16 @@ static void prove_nonce_cost_is_fixed(void) {
 
     fill_nondet(priv, sizeof priv);
     fill_nondet(z_octets, sizeof z_octets);
-    hmac_calls = 0;
-    // A device object reads no cpu (GENERATOR_HMAC), so any value runs the
-    // same calls.
+    sha256_starts = 0;
+    sha256_finals = 0;
+    // A device object reads no cpu (GENERATOR_UPDATE), so any value runs
+    // the same calls.
     (void)derive_nonce(nondet_u32(), &k, priv, z_octets);
     __CPROVER_assert(
-        hmac_calls == 4 + 3 * NONCE_CANDIDATES,
+        sha256_finals == 2 * (4 + 3 * NONCE_CANDIDATES),
         "derive_nonce: the HMAC count does not depend on which candidates were usable");
+    __CPROVER_assert(sha256_starts == 2 * (1 + 2 + NONCE_CANDIDATES),
+                     "derive_nonce: the key count does not depend on which candidates were usable");
 }
 
 // The DER writer, over any two 32-byte scalars and any capacity. The

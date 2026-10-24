@@ -846,14 +846,18 @@ launch fast full p256_point_ladder 34 ""
 # them would return no verdict. The stubs havoc every candidate nonce, so
 # the proof covers every acceptance pattern the four candidates can have,
 # including none of them. Two claims beyond memory safety: the generator
-# spends the same number of HMAC calls whatever those candidates were,
+# spends the same number of HMACs and keys whatever those candidates were,
 # which is the constant-time claim p256_sign.h makes about the retry, and
 # the DER writer stays inside P256_SIG_MAX and writes a minimal INTEGER
 # for every pair of 32-byte scalars. Measured (cbmc 6.11.0, kissat,
 # /usr/bin/time -l): 791 properties, 36 s, and 1.2 GB of cbmc; and 792
 # properties, 15 s, 1.24 GB once p256_sign_key_ok became a call of its
-# own and the harness called it directly too.
-launch fast:3 full p256_sign 100 "" buf.c ct.c proof/ct_wipe_stub.c
+# own and the harness called it directly too. The generator keeps two
+# SHA-256 midstates beside K and V (docs/decisions.md 147), so its wipe
+# covers 288 bytes and ct_wipe unwinds 289 times. Measured on GitHub's
+# ubuntu-24.04 runner (cbmc 6.11.0, kissat, prove-one.sh with
+# PROVE_NO_CACHE=1): 831 properties in 29 s, and a reach of 77.1%.
+launch fast:3 full p256_sign 100 "ct_wipe.0:289" buf.c ct.c proof/ct_wipe_stub.c
 # p256_ecdh is the three public entries over the scalar and point layers
 # stubbed to their contracts, proof/p256_scalar_stubs.h and
 # proof/p256_point_stubs.h, which p256_sign shares: memory safety over any

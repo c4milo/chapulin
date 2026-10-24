@@ -10,7 +10,6 @@
 #include "buf.h"
 #include "ch_assert.h"
 #include "ct.h"
-#include "hkdf.h"
 #include "p256_point.h"
 #include "p256_scalar.h"
 #include "sha256.h"
@@ -27,25 +26,72 @@
 #define NONCE_CANDIDATES 4
 
 // The RFC 6979 §3.2 HMAC_DRBG state. K and V are each one SHA-256 output.
+// inner and outer are HMAC_K's two midstates (RFC 2104 §4): SHA-256 after
+// the one block of K XOR ipad, and after the one block of K XOR opad.
+// generator_key writes them each time K changes, and each HMAC under that
+// K starts from copies of them. So an HMAC compresses its message and the
+// inner hash, and never the two pad blocks again. The midstates derive
+// from K, which the private key derives, so derive_nonce wipes them with
+// K and V.
 typedef struct {
     uint8_t k[SHA256_LEN];
     uint8_t v[SHA256_LEN];
+    sha256 inner;
+    sha256 outer;
 } nonce_generator;
 
-// One HMAC-SHA-256 of the generator, keyed with K. cpu is the ch_cfg.cpu
-// value p256_sign_cpu takes, and 0 from p256_sign. In a host object the
-// HMAC runs through hkdf.h's hmac_sha256_cpu, on the SHA-256 instructions
-// when cpu holds CH_CPU_CONSTANT_TIME_SHA256 and on the portable code when
-// it does not, as 0 does not. A device object holds one SHA-256, so there
-// the macro discards cpu and makes the call this file made before
-// p256_sign_cpu existed.
+// sha256_update and sha256_final on the path cpu picks. cpu is the
+// ch_cfg.cpu value p256_sign_cpu takes, and 0 from p256_sign. In a host
+// object the calls go to sha256.h's entries: on the SHA-256 instructions
+// when cpu holds CH_CPU_CONSTANT_TIME_SHA256, and on the portable code
+// when it does not, as 0 does not. A device object holds one SHA-256, so
+// there the macros discard cpu and call sha256.c.
 #ifdef CH_CPU_RUNTIME
-#define GENERATOR_HMAC(cpu, g, msg, msg_len, out)                                                  \
-    hmac_sha256_cpu((cpu), (g)->k, SHA256_LEN, (msg), (msg_len), (out))
+#define GENERATOR_UPDATE(cpu, s, in, n) sha256_update_cpu((cpu), (s), (in), (n))
+#define GENERATOR_FINAL(cpu, s, out) sha256_final_cpu((cpu), (s), (out))
 #else
-#define GENERATOR_HMAC(cpu, g, msg, msg_len, out)                                                  \
-    ((void)(cpu), hmac_sha256((g)->k, SHA256_LEN, (msg), (msg_len), (out)))
+#define GENERATOR_UPDATE(cpu, s, in, n) ((void)(cpu), sha256_update((s), (in), (n)))
+#define GENERATOR_FINAL(cpu, s, out) ((void)(cpu), sha256_final((s), (out)))
 #endif
+
+// The RFC 2104 pad bytes.
+#define GENERATOR_IPAD 0x36
+#define GENERATOR_OPAD 0x5c
+
+// Writes g->inner and g->outer from g->k. K is SHA256_LEN bytes, shorter
+// than a block, so the HMAC key is K followed by zero bytes (RFC 2104
+// §2). Each midstate costs one compression, on the path cpu picks.
+static void generator_key(uint32_t cpu, nonce_generator *g) {
+    uint8_t pad[SHA256_BLOCK];
+    for (size_t i = 0; i < SHA256_BLOCK; i++) {
+        uint8_t key_byte = i < SHA256_LEN ? g->k[i] : 0;
+        pad[i] = (uint8_t)(key_byte ^ GENERATOR_IPAD);
+    }
+    sha256_init(&g->inner);
+    GENERATOR_UPDATE(cpu, &g->inner, pad, SHA256_BLOCK);
+    for (size_t i = 0; i < SHA256_BLOCK; i++) {
+        uint8_t key_byte = i < SHA256_LEN ? g->k[i] : 0;
+        pad[i] = (uint8_t)(key_byte ^ GENERATOR_OPAD);
+    }
+    sha256_init(&g->outer);
+    GENERATOR_UPDATE(cpu, &g->outer, pad, SHA256_BLOCK);
+    ct_wipe(pad, sizeof pad);
+}
+
+// One HMAC-SHA-256 of the generator, keyed with K: the same bytes as
+// hkdf.h's hmac_sha256 over g->k, from the midstates generator_key wrote
+// for the current K. out may not alias msg. The two hashes run on the
+// path cpu picks (GENERATOR_UPDATE, GENERATOR_FINAL).
+static void generator_hmac(uint32_t cpu, const nonce_generator *g, const uint8_t *msg,
+                           size_t msg_len, uint8_t out[SHA256_LEN]) {
+    sha256 s = g->inner;
+    GENERATOR_UPDATE(cpu, &s, msg, msg_len);
+    GENERATOR_FINAL(cpu, &s, out);
+    s = g->outer;
+    GENERATOR_UPDATE(cpu, &s, out, SHA256_LEN);
+    GENERATOR_FINAL(cpu, &s, out);
+    ct_wipe(&s, sizeof s);
+}
 
 // The longest message the generator hashes: V, one separator byte, the
 // private scalar and the reduced message hash (RFC 6979 §3.2 steps d
@@ -55,8 +101,9 @@ typedef struct {
 // K = HMAC_K(V || separator || priv || z), then V = HMAC_K(V). This is
 // RFC 6979 §3.2 step d with separator 0x00 and step f with 0x01; step h
 // step 3's update is the same shape with no priv and no z, which the
-// caller asks for by passing tail_len 0. Each HMAC runs on the path cpu
-// picks (GENERATOR_HMAC).
+// caller asks for by passing tail_len 0. The new K gets its midstates
+// before the second HMAC, which it keys. Each HMAC runs on the path cpu
+// picks (generator_hmac).
 static void generator_update(uint32_t cpu, nonce_generator *g, uint8_t separator,
                              const uint8_t *tail, size_t tail_len) {
     uint8_t input[GENERATOR_INPUT_MAX];
@@ -72,12 +119,12 @@ static void generator_update(uint32_t cpu, nonce_generator *g, uint8_t separator
     // an overrun here means the constant and the callers disagree.
     CH_ASSERT(w.err == 0);
     // Each HMAC writes a separate buffer and is copied over the state
-    // afterwards. hmac_sha256 happens to tolerate an output that aliases
-    // its key or its message, but nothing in hkdf.h promises that, and a
-    // generator that depended on it would break silently.
-    GENERATOR_HMAC(cpu, g, input, w.len, next);
+    // afterwards, because generator_hmac's output may not alias its
+    // message.
+    generator_hmac(cpu, g, input, w.len, next);
     memcpy(g->k, next, SHA256_LEN);
-    GENERATOR_HMAC(cpu, g, g->v, SHA256_LEN, next);
+    generator_key(cpu, g);
+    generator_hmac(cpu, g, g->v, SHA256_LEN, next);
     memcpy(g->v, next, SHA256_LEN);
     ct_wipe(input, sizeof input);
     ct_wipe(next, sizeof next);
@@ -93,6 +140,7 @@ static void generator_init(uint32_t cpu, nonce_generator *g, const uint8_t priv[
     memcpy(tail + P256_PRIV_LEN, z_octets, P256_SCALAR_LEN);
     memset(g->v, 0x01, SHA256_LEN);
     memset(g->k, 0x00, SHA256_LEN);
+    generator_key(cpu, g);
     generator_update(cpu, g, 0x00, tail, sizeof tail);
     generator_update(cpu, g, 0x01, tail, sizeof tail);
     ct_wipe(tail, sizeof tail);
@@ -103,7 +151,7 @@ static void generator_init(uint32_t cpu, nonce_generator *g, const uint8_t priv[
 // loop the RFC writes runs once.
 static void generator_next(uint32_t cpu, nonce_generator *g, p256_scalar *candidate) {
     uint8_t next[SHA256_LEN];
-    GENERATOR_HMAC(cpu, g, g->v, SHA256_LEN, next);
+    generator_hmac(cpu, g, g->v, SHA256_LEN, next);
     memcpy(g->v, next, SHA256_LEN);
     p256_scalar_from_bytes(candidate, g->v);
     ct_wipe(next, sizeof next);
@@ -114,7 +162,8 @@ static void generator_next(uint32_t cpu, nonce_generator *g, p256_scalar *candid
 // earlier candidates were, so the sequence of candidates is exactly the
 // RFC's and the cost is the same for every key and message. Returns all
 // ones when some candidate was usable and zero when none was. Every HMAC
-// runs on the path cpu picks (GENERATOR_HMAC).
+// runs on the path cpu picks (generator_hmac). The wipe of g covers K, V
+// and the two midstates.
 static uint32_t derive_nonce(uint32_t cpu, p256_scalar *k, const uint8_t priv[P256_PRIV_LEN],
                              const uint8_t z_octets[P256_SCALAR_LEN]) {
     nonce_generator g;
@@ -243,7 +292,7 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
 }
 
 // p256_sign's contract, with the multiplies under widemul and the nonce
-// generator's HMACs on the path cpu picks (GENERATOR_HMAC).
+// generator's HMACs on the path cpu picks (generator_hmac).
 static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
                        const uint8_t msg_hash[32], uint8_t *sig, size_t cap, size_t *sig_len) {
     p256_scalar d;

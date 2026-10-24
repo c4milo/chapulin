@@ -269,8 +269,8 @@ static void row_hmac_sha256(uint32_t cpu) {
 }
 
 // p256_sign_cpu, whose nonce generator runs sixteen HMAC-SHA-256 calls
-// through hmac_sha256_cpu. The row adds the multiply bit, so the signature
-// runs on the wide files under every value: the 32-bit files take thirty
+// over seven pairs of midstates, each SHA-256 through sha256.h's entries. The row adds the multiply
+// bit, so the signature runs on the wide files under every value: the 32-bit files take thirty
 // times as long, and the hash calls are the same on either.
 static void row_p256_sign(uint32_t cpu) {
     static const uint8_t priv[P256_PRIV_LEN] = {0xc9, 0xaf, 0xa9, 0xd8, 0x45, 0xba, 0x75, 0x16,

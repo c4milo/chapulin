@@ -1,0 +1,15 @@
+invariant: INV-16
+file: p256_sign.c
+catches: p256_sign_test
+reason: generator_update writes a new K and keeps the midstates of the
+  old one, so every HMAC after the first update runs under a key RFC 6979
+  never named (docs/decisions.md 147). Every nonce is then a function of
+  the private key and the message still, so a signature verifies, and a
+  test that checks only verification passes. The RFC 6979 vectors in
+  bin/p256_sign_test pin each signature's bytes.
+
+--- old
+    memcpy(g->k, next, SHA256_LEN);
+    generator_key(cpu, g);
+--- new
+    memcpy(g->k, next, SHA256_LEN);
