@@ -33,6 +33,7 @@
 #include "keysched.h"
 #include "sha512.h"
 #include "test_hash.h"
+#include "transcript.h"
 
 #ifndef CH_HASH_SHA384
 #error "test/hkdf384_test.c runs the SHA-384 key schedule: build it with -DCH_HASH_SHA384"
@@ -185,14 +186,56 @@ static void test_sha384_schedule(void) {
     CHECK(eq_hex(iv, sizeof iv, "4256d2e0e88babdd05eb2f27"));
 }
 
+// transcript_update_selected at each hash length, against a transcript
+// that updates both hashes: the selected hash gives the same digest, and
+// the other hash keeps the state it had before the selection, byte for
+// byte. A server selects its suite after the ClientHello, so the
+// transcript takes one message on both hashes and then the rest on one
+// (docs/decisions.md 146).
+static void test_transcript_selected(void) {
+    static const size_t hash_lens[] = {SHA256_LEN, SHA384_LEN};
+    uint8_t hello[300];
+    uint8_t rest[700];
+    for (size_t i = 0; i < sizeof hello; i++) {
+        hello[i] = (uint8_t)(3 * i + 1);
+    }
+    for (size_t i = 0; i < sizeof rest; i++) {
+        rest[i] = (uint8_t)(5 * i + 2);
+    }
+    for (size_t h = 0; h < 2; h++) {
+        size_t hash_len = hash_lens[h];
+        ch_transcript both;
+        ch_transcript one;
+        transcript_init(&both);
+        transcript_update(&both, hello, sizeof hello);
+        one = both;
+        ch_transcript before = one;
+        transcript_update(&both, rest, 100);
+        transcript_update(&both, rest + 100, sizeof rest - 100);
+        transcript_update_selected(&one, hash_len, rest, 100);
+        transcript_update_selected(&one, hash_len, rest + 100, sizeof rest - 100);
+        uint8_t want[SHA384_LEN];
+        uint8_t got[SHA384_LEN];
+        transcript_hash_after(&both, hash_len, NULL, 0, want);
+        transcript_hash_after(&one, hash_len, NULL, 0, got);
+        CHECK(memcmp(want, got, hash_len) == 0);
+        if (hash_len == SHA384_LEN) {
+            CHECK(memcmp(&one.sha256_state, &before.sha256_state, sizeof one.sha256_state) == 0);
+        } else {
+            CHECK(memcmp(&one.sha384_state, &before.sha384_state, sizeof one.sha384_state) == 0);
+        }
+    }
+}
+
 int main(int argc, char **argv) {
     test_take_cpu(argc, argv);
+    test_transcript_selected();
     test_rfc4231_sha384();
     test_dispatch_sha256();
     test_sha384_schedule();
     if (failures == 0) {
         (void)printf("hkdf384: RFC 4231 HMAC-SHA-384 and a TLS_AES_256_GCM_SHA384 key schedule "
-                     "agree\n");
+                     "agree, and a transcript after a selection runs the selected hash alone\n");
     }
     return failures != 0;
 }

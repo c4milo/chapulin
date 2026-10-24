@@ -1,6 +1,8 @@
 // Proves: in a CH_HASH_SHA384 build, the transcript's two hashes and its
 // three readers are memory safe for both hash lengths the build holds:
-// transcript_update over any message up to 64 bytes, hsr_transcript_hash
+// transcript_update over any message up to 64 bytes,
+// transcript_update_selected over any such message at either hash length,
+// hsr_transcript_hash
 // and transcript_hash_after with and without bytes after the transcript,
 // and hsr_restart_transcript, which hashes the first ClientHello at
 // hash_len and writes RFC 9846 §4.4.1's synthetic message and the retry.
@@ -36,6 +38,9 @@ int main(void) {
 
     size_t hash_len = nondet_size_t();
     __CPROVER_assume(hash_len == SHA256_LEN || hash_len == SHA384_LEN);
+    size_t selected_n = nondet_size_t();
+    __CPROVER_assume(selected_n <= sizeof msg);
+    transcript_update_selected(&t.transcript, hash_len, msg, selected_n);
     uint8_t out[HKDF_HASH_MAX];
     __CPROVER_assert(hsr_transcript_hash(&h, hash_len, out) == CH_OK, "hash: never fails");
 

@@ -1,0 +1,13 @@
+invariant: INV-11
+file: srv_flight.c
+catches: webpki_loop_aes
+reason: the server hashes its CertificateVerify into the SHA-256
+  transcript whatever suite it selected. In a TLS_AES_256_GCM_SHA384
+  session the SHA-384 transcript, which every later read takes, then
+  lacks that message, and the client's Finished fails to verify
+  (docs/decisions.md 146).
+
+--- old
+    TRANSCRIPT_UPDATE_SELECTED_CPU(h->t->cfg.cpu, &h->t->transcript, sel->hash_len, msg, n);
+--- new
+    TRANSCRIPT_UPDATE_SELECTED_CPU(h->t->cfg.cpu, &h->t->transcript, SHA256_LEN, msg, n);

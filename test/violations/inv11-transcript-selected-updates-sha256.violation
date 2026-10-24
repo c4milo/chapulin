@@ -1,0 +1,20 @@
+invariant: INV-11
+file: transcript.h
+catches: hkdf384_test
+reason: transcript_update_selected feeds SHA-256 as well as SHA-384 in a
+  SHA-384 session, so a server hashes every message after its ServerHello
+  twice, as it did before docs/decisions.md 146. Every digest a session
+  reads is the same, so no handshake fails. test/hkdf384_test.c requires
+  the SHA-256 state unchanged after an update at SHA384_LEN.
+
+--- old
+    if (hash_len == SHA384_LEN) {
+        sha512_update(&t->sha384_state, in, n);
+        return;
+    }
+--- new
+    if (hash_len == SHA384_LEN) {
+        sha512_update(&t->sha384_state, in, n);
+        sha256_update(&t->sha256_state, in, n);
+        return;
+    }

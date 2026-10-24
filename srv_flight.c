@@ -272,7 +272,8 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, msg, n);
+    // From here on the transcript runs the selected hash alone (transcript.h).
+    TRANSCRIPT_UPDATE_SELECTED_CPU(t->cfg.cpu, &t->transcript, sel->hash_len, msg, n);
     return srv_out_plain(h, n);
 }
 
@@ -328,7 +329,6 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
 
 int srv_send_encrypted_extensions(handshake_state *h, const selection *sel) {
     ch_tls *t = h->t;
-    (void)sel; // this message carries nothing the selection decides
     // The protocol the parser selected out of the caller's list, which
     // srv_handshake.c copied onto the session before this call, or none.
     const ch_alpn_protocol *selected = NULL;
@@ -355,7 +355,7 @@ int srv_send_encrypted_extensions(handshake_state *h, const selection *sel) {
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, msg, n);
+    TRANSCRIPT_UPDATE_SELECTED_CPU(t->cfg.cpu, &t->transcript, sel->hash_len, msg, n);
     return srv_out_sealed(h, msg, n);
 }
 
@@ -415,7 +415,7 @@ int srv_send_certificate_verify(handshake_state *h, const selection *sel) {
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    TRANSCRIPT_UPDATE_CPU(h->t->cfg.cpu, &h->t->transcript, msg, n);
+    TRANSCRIPT_UPDATE_SELECTED_CPU(h->t->cfg.cpu, &h->t->transcript, sel->hash_len, msg, n);
     return srv_out_sealed(h, msg, n);
 }
 
@@ -429,7 +429,7 @@ int srv_send_finished(handshake_state *h) {
     uint8_t msg[SRV_FINISHED_MAX];
     size_t n = srv_build_finished(msg, sizeof msg, verify_data, hash_len);
     CH_ASSERT(n == 4 + hash_len);
-    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, msg, n);
+    TRANSCRIPT_UPDATE_SELECTED_CPU(t->cfg.cpu, &t->transcript, hash_len, msg, n);
     int rc = srv_out_sealed(h, msg, n);
     if (rc != CH_OK) {
         return rc;
@@ -481,7 +481,7 @@ int srv_read_client_finished(handshake_state *h) {
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;
     }
-    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, raw, raw_len);
+    TRANSCRIPT_UPDATE_SELECTED_CPU(t->cfg.cpu, &t->transcript, hash_len, raw, raw_len);
     return CH_OK;
 }
 

@@ -13051,3 +13051,42 @@ does nothing more.
     `srv_auth.c`. Its row of `test/hash_runtime_srv.h` counts the calls
     under each value, and `inv16-srv-signed-content-on-portable` fails
     that count.
+
+146. **A server updates the selected transcript hash alone once it has
+    selected its suite.** A build with `CH_HASH_SHA384` runs SHA-256 and
+    SHA-384 side by side over every handshake message, because a client
+    hashes its ClientHello before a ServerHello names the hash. A server
+    knows the hash before it writes its ServerHello. It still ran both
+    hashes to the end, and read one. The count of
+    [#188](https://github.com/c4milo/chapulin/issues/188) on 2026-10-21
+    found the SHA-256 one in a SHA-384 handshake, and Camilo approved the
+    change that day.
+
+    - **The rule.** `transcript_update_selected` updates the hash at
+      `hash_len` alone. A server calls it for the ServerHello, the
+      EncryptedExtensions, the Certificate, the CertificateVerify and
+      both Finished messages, at the selected suite's `hash_len`. The
+      other hash stops there, in both directions: a ChaCha20 or
+      AES-128-GCM session stops its SHA-384 too.
+    - **Why it is safe.** Each read after the selection takes the
+      suite's `hash_len`: the key schedule, the CertificateVerify, both
+      Finished messages and the resumption secret. A ticket resumes only
+      at the selected suite's hash (`srv_resume.c`, `ticket_suite_matches`).
+      The reads that need both hashes come before the selection. The
+      binders are hashed when the ClientHello arrives, at both lengths.
+      The HelloRetryRequest writes its synthetic message before the
+      ServerHello, and the second ClientHello updates both hashes as
+      before.
+    - **What stays.** The client keeps both hashes, and so does
+      `hsr_restart_transcript`, which both roles call.
+    - **Constant time.** The branch reads `hash_len`, which the
+      ServerHello sends in the clear.
+
+    `test/hkdf384_test.c` holds the digest at each length to a transcript
+    that runs both hashes, and requires the other hash's state unchanged.
+    `inv11-transcript-selected-updates-sha256` fails that test. The
+    `transcript384` harness proves the call at both lengths, and the
+    transcript row of `bin/hash_runtime_test` counts it under each value.
+    `inv11-srv-transcript-selected-wrong-hash` feeds the
+    CertificateVerify to SHA-256 in a SHA-384 session, and
+    `bin/webpki_loop_aes` fails it.

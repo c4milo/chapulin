@@ -142,12 +142,15 @@ int srv_out_sealed(handshake_state *h, const uint8_t *pt, size_t n) {
 
 #endif
 
-// Hashes what the writer holds and sends it as one sealed record.
+// Hashes what the writer holds and sends it as one sealed record. The
+// Certificate is the one message the writer holds, and it goes out after
+// srv_store_selection, so the session's hash_len names the selected hash.
 void srv_frag_flush(srv_frag *f) {
     if (f->rc != CH_OK || f->len == 0) {
         return;
     }
-    TRANSCRIPT_UPDATE_CPU(f->h->t->cfg.cpu, &f->h->t->transcript, f->buf, f->len);
+    TRANSCRIPT_UPDATE_SELECTED_CPU(f->h->t->cfg.cpu, &f->h->t->transcript, f->h->t->hash_len,
+                                   f->buf, f->len);
     f->rc = srv_out_sealed(f->h, f->buf, f->len);
     f->len = 0;
 }

@@ -337,13 +337,15 @@ static void row_ks_exporter(uint32_t cpu) {
 #endif
 
 // transcript.h's entries. A build with SHA-384 hashes the transcript with
-// both hashes, so the update runs SHA-256 at either hash length, and the
-// digest runs the one hash_len names.
+// both hashes, so the update runs SHA-256 at either hash length, the
+// update after a selection runs the one hash_len names, and so does the
+// digest.
 static void row_transcript(uint32_t cpu) {
     ch_transcript t;
     transcript_init(&t);
     transcript_update_cpu(cpu, &t, input, 100);
-    transcript_hash_after_cpu(cpu, &t, row_hash_len, input + 100, 50, output);
+    transcript_update_selected_cpu(cpu, &t, row_hash_len, input + 100, 70);
+    transcript_hash_after_cpu(cpu, &t, row_hash_len, input + 170, 50, output);
 }
 
 // A record direction, which reads its own cpu: keyed under row_suite, then

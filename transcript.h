@@ -15,6 +15,14 @@
 // the retry's suite names. From there on the other hash covers bytes no
 // rule defines, and nothing reads it, because the ServerHello must
 // repeat the retry's suite (rfc9846.txt:1489-1491).
+//
+// A server knows the suite before it writes its ServerHello, so from there
+// on it updates the selected hash alone (transcript_update_selected). The
+// other hash then stops, and nothing reads it: each later read takes the
+// suite's hash_len, and a server accepts a ticket only at that hash
+// (srv_resume.c). The binders and the retry's synthetic message come
+// before the selection, so they read both hashes as before
+// (docs/decisions.md 146).
 #ifndef CH_TRANSCRIPT_H
 #define CH_TRANSCRIPT_H
 
@@ -51,6 +59,23 @@ static inline void transcript_update(ch_transcript *t, const uint8_t *in, size_t
 #endif
 }
 
+// transcript_update for the hash at hash_len alone: the other hash keeps
+// its state. In a build without CH_HASH_SHA384 it is transcript_update.
+// Requires hash_len SHA256_LEN, or SHA384_LEN in a CH_HASH_SHA384 build.
+// A caller that uses it reads the transcript at hash_len alone from then
+// on, because the other hash no longer covers every message.
+static inline void transcript_update_selected(ch_transcript *t, size_t hash_len, const uint8_t *in,
+                                              size_t n) {
+#ifdef CH_HASH_SHA384
+    if (hash_len == SHA384_LEN) {
+        sha512_update(&t->sha384_state, in, n);
+        return;
+    }
+#endif
+    CH_ASSERT(hash_len == SHA256_LEN);
+    sha256_update(&t->sha256_state, in, n);
+}
+
 // Writes into digest the hash at hash_len of every byte so far followed
 // by the n bytes at after, and leaves t as it was. A caller that wants the
 // transcript alone passes n 0. The PSK binder is the caller that passes
@@ -75,8 +100,9 @@ static inline void transcript_hash_after(const ch_transcript *t, size_t hash_len
 }
 
 #ifdef CH_CPU_RUNTIME
-// transcript_update and transcript_hash_after for one session of a host object, each with the
-// session's ch_cfg.cpu first and under the same contract, as sha256.h's entries are
+// transcript_update, transcript_update_selected and transcript_hash_after for one session of a
+// host object, each with the session's ch_cfg.cpu first and under the same contract, as
+// sha256.h's entries are
 // (docs/decisions.md 93). Each hash of the transcript takes cpu on its own, because a
 // CH_HASH_SHA384 build runs both over the same bytes. transcript_init writes the two initial
 // values alone and takes no description of the CPU.
@@ -86,6 +112,18 @@ static inline void transcript_update_cpu(uint32_t cpu, ch_transcript *t, const u
 #ifdef CH_HASH_SHA384
     sha512_update_cpu(cpu, &t->sha384_state, in, n);
 #endif
+}
+
+static inline void transcript_update_selected_cpu(uint32_t cpu, ch_transcript *t, size_t hash_len,
+                                                  const uint8_t *in, size_t n) {
+#ifdef CH_HASH_SHA384
+    if (hash_len == SHA384_LEN) {
+        sha512_update_cpu(cpu, &t->sha384_state, in, n);
+        return;
+    }
+#endif
+    CH_ASSERT(hash_len == SHA256_LEN);
+    sha256_update_cpu(cpu, &t->sha256_state, in, n);
 }
 
 static inline void transcript_hash_after_cpu(uint32_t cpu, const ch_transcript *t, size_t hash_len,
@@ -106,14 +144,16 @@ static inline void transcript_hash_after_cpu(uint32_t cpu, const ch_transcript *
 #endif
 #endif
 
-// The two calls as a source compiled into both objects makes them for a session, with its
+// The three calls as a source compiled into both objects makes them for a session, with its
 // ch_cfg.cpu first: a host object passes the value to the entry above, and a device object
 // calls the portable call and never evaluates cpu (hkdf.h states the rule).
 #ifdef CH_CPU_RUNTIME
 #define TRANSCRIPT_UPDATE_CPU(cpu, ...) transcript_update_cpu((cpu), __VA_ARGS__)
+#define TRANSCRIPT_UPDATE_SELECTED_CPU(cpu, ...) transcript_update_selected_cpu((cpu), __VA_ARGS__)
 #define TRANSCRIPT_HASH_AFTER_CPU(cpu, ...) transcript_hash_after_cpu((cpu), __VA_ARGS__)
 #else
 #define TRANSCRIPT_UPDATE_CPU(cpu, ...) transcript_update(__VA_ARGS__)
+#define TRANSCRIPT_UPDATE_SELECTED_CPU(cpu, ...) transcript_update_selected(__VA_ARGS__)
 #define TRANSCRIPT_HASH_AFTER_CPU(cpu, ...) transcript_hash_after(__VA_ARGS__)
 #endif
 

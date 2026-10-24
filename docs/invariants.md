@@ -990,8 +990,13 @@ last `ROLE=server` stub, as the entry said it would.
   message at `SHA256_LEN` and `inv11-client-psk-hash-unchecked` takes a
   PSK under a suite of another hash (`bin/webpki_session_aes`), and
   `inv11-srv-ticket-any-hash` resumes a ticket under a suite of another
-  hash (`bin/webpki_loop_aes`). `transcript384` proves the transcript's
-  two hashes and the retry's restart. The schedule
+  hash (`bin/webpki_loop_aes`). After its ServerHello a server updates
+  the selected hash alone (decisions.md 146).
+  `inv11-transcript-selected-updates-sha256` feeds SHA-256 too
+  (`bin/hkdf384_test`), and `inv11-srv-transcript-selected-wrong-hash`
+  feeds a SHA-384 session's CertificateVerify to SHA-256
+  (`bin/webpki_loop_aes`). `transcript384` proves the transcript's
+  two hashes, the update after a selection and the retry's restart. The schedule
   rests on HMAC-SHA-256 and HMAC-SHA-384, which the Wycheproof suite checks directly, and
   `bin/unit` pins its key-length boundary: a 64-byte key used as it is
   and a 65-byte key hashed first (RFC 2104 §2).
