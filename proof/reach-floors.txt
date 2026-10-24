@@ -130,7 +130,8 @@ certparse_webpki 26.3
 certverify_webpki 38.2
 chacha20 98.1
 ct 94.1
-ct_wipe 90.9
+ct_wipe 92.6
+ct_wipe_u32 92.6
 ctwidemul 92.9
 drbg 81.7
 # eeparse_webpki fell from 29.5 to 29.4 when handshake_parser.c gained

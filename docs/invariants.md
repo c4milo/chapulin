@@ -4055,7 +4055,7 @@ last `ROLE=server` stub, as the entry said it would.
   and the compressed pair on rv32 — in the arithmetic files
   under the record layer (`BRANCH_SRCS`) and holds each at a ceiling
   measured per compiler (`BRANCH_CEILING`). Those ceilings are not
-  zero: ct_memeq's loop and ct_wipe's test of n, the block loops,
+  zero: ct_memeq's loop and ct_wipe's three loops, the block loops,
   x25519's ladder, Keccak's round and lane counters and softmul's fixed
   32 and 64 iterations all branch on public counts, and the count cannot
   tell those from a
@@ -5440,10 +5440,14 @@ last `ROLE=server` stub, as the entry said it would.
   That binary compiles `ct_wipe.c` into the same unit as the vector
   Poly1305, so the compiler can inline `ct_wipe` at the end of the call,
   as link-time optimization would. `ct-wipe-plain-memset` makes
-  `ct_wipe` call `memset` by name instead of through `ct_wipe.c`'s
-  volatile function pointer; the compiler then deletes the call as a
-  store nothing reads, and the test catches it under Apple clang 21 and
-  gcc 13 (decision 91).
+  `ct_wipe` call `memset` by name instead of storing through volatile
+  lvalues; the compiler then deletes the call as a store nothing reads,
+  and the test catches it (decisions 91 and 144).
+  `ct-wipe-word-store-not-volatile` drops the volatile qualifier from the
+  word stores, and `make lint-runtime-symbols` catches the call to
+  `memset` that a hosted compile writes in the loop's place.
+  `ct-wipe-skips-last-byte` leaves the last byte of a tail, and `bin/unit`
+  catches it.
   The wide P-256 files wipe every object they name that held a secret,
   and a compiler also keeps words in stack slots no `ct_wipe` can name.
   So `widemul.h` calls `p256_wide_wipe_below` after each wide call whose

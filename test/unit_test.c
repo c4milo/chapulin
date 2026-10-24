@@ -277,18 +277,23 @@ static void test_ct(void) {
     CHECK(memcmp(a, z, 7) == 0);
 
     // ct_wipe writes zero to p[0..n) and no byte before or after it, for
-    // each n from 0 to 32 at an offset of 4. A null p with n 0 is valid.
-    uint8_t span[40];
-    for (size_t n = 0; n <= 32; n++) {
-        memset(span, 0xA5, sizeof span);
-        ct_wipe(span + 4, n);
-        size_t wrong = 0;
-        for (size_t i = 0; i < sizeof span; i++) {
-            uint8_t want = (i >= 4 && i < 4 + n) ? 0 : 0xA5;
-            wrong += span[i] != want;
+    // each n from 0 to 96 at each offset from 0 to 31 of a 32-byte
+    // boundary. That covers each count of head bytes, words and tail bytes
+    // of a word of 4, 8 or 16 bytes (docs/decisions.md 144). A null p
+    // with n 0 is valid.
+    _Alignas(32) uint8_t span[32 + 96 + 32];
+    size_t wrong = 0;
+    for (size_t offset = 0; offset < 32; offset++) {
+        for (size_t n = 0; n <= 96; n++) {
+            memset(span, 0xA5, sizeof span);
+            ct_wipe(span + offset, n);
+            for (size_t i = 0; i < sizeof span; i++) {
+                uint8_t want = (i >= offset && i < offset + n) ? 0 : 0xA5;
+                wrong += span[i] != want;
+            }
         }
-        CHECK(wrong == 0);
     }
+    CHECK(wrong == 0);
     ct_wipe(NULL, 0);
 }
 

@@ -7789,7 +7789,11 @@ WIDEMUL_SPECS := \
 #   byte.
 # ct.c@host, 9 and 4: ct_memeq's test of n for zero and its loop, which
 #   clang runs several bytes a pass with a test of n for each width.
-#   ct_wipe.c@host, 1 and 1: its test of n for zero.
+#   ct_wipe.c@host, 5 and 11: its three loops, over the bytes before the
+#   first aligned address, over the 16-byte words and over the bytes after
+#   them. On x86-64 clang runs the head loop and the word loop several
+#   iterations a pass, with a test of the count for each part. Each reads
+#   the length or the address, both public (docs/decisions.md 144).
 # drbg.c@host, 5 and 5: ch_drbg_seed's CH_ASSERT on the seed's length, and
 #   ch_rand_bytes' tests of whether the generator was seeded and of n for
 #   zero and its loop over n.
@@ -8221,40 +8225,40 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # in the comment above WIDE64_SPECS, at the flags a host object is
 # compiled with.
 BRANCH_CEILING := \
-  m3/ct.c:2 m3/ct_wipe.c:1 m3/sha256.c:17 m3/sha3.c:38 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
+  m3/ct.c:2 m3/ct_wipe.c:7 m3/sha256.c:17 m3/sha3.c:38 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
   m3/aead.c:4 m3/x25519.c:33 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:45 m3/drbg.c:9 \
   m3/softmul.c:0 m3/aes.c:3 m3/quic_aes_soft.c:12 m3/aes_extern.c:0 \
-  m3/gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:2 mips32r2/ct_wipe.c:1 mips32r2/sha256.c:16 mips32r2/sha3.c:25 \
+  m3/gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:2 mips32r2/ct_wipe.c:6 mips32r2/sha256.c:16 mips32r2/sha3.c:25 \
   mips32r2/hkdf.c:16 mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 \
   mips32r2/x25519.c:31 mips32r2/p256_field.c:21 mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:38 \
   mips32r2/drbg.c:8 mips32r2/softmul.c:0 mips32r2/aes.c:2 mips32r2/quic_aes_soft.c:12 \
-  mips32r2/aes_extern.c:0 mips32r2/gcm.c:16 mips32r2/rsa_sign.c:27 rv32imac/ct.c:2 rv32imac/ct_wipe.c:1 \
+  mips32r2/aes_extern.c:0 mips32r2/gcm.c:16 mips32r2/rsa_sign.c:27 rv32imac/ct.c:2 rv32imac/ct_wipe.c:7 \
   rv32imac/sha256.c:17 rv32imac/sha3.c:32 rv32imac/hkdf.c:18 rv32imac/chacha20.c:8 \
   rv32imac/poly1305.c:18 rv32imac/aead.c:2 rv32imac/x25519.c:31 rv32imac/p256_field.c:21 \
   rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:38 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
   rv32imac/aes.c:3 rv32imac/quic_aes_soft.c:12 rv32imac/aes_extern.c:0 \
-  rv32imac/gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:1 m3-gcc/ct_wipe.c:1 m3-gcc/sha256.c:12 \
+  rv32imac/gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:1 m3-gcc/ct_wipe.c:4 m3-gcc/sha256.c:12 \
   m3-gcc/sha3.c:21 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
   m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:14 m3-gcc/mlkem_poly.c:39 \
   m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 m3-gcc/aes.c:3 m3-gcc/quic_aes_soft.c:9 \
-  m3-gcc/aes_extern.c:0 m3-gcc/gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:1 mips32r2-gcc/ct_wipe.c:1 \
+  m3-gcc/aes_extern.c:0 m3-gcc/gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:1 mips32r2-gcc/ct_wipe.c:3 \
   mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:17 mips32r2-gcc/hkdf.c:18 \
   mips32r2-gcc/chacha20.c:6 mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 \
   mips32r2-gcc/x25519.c:20 mips32r2-gcc/p256_field.c:13 mips32r2-gcc/mlkem.c:14 \
   mips32r2-gcc/mlkem_poly.c:43 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
   mips32r2-gcc/aes.c:3 mips32r2-gcc/quic_aes_soft.c:9 mips32r2-gcc/aes_extern.c:0 \
   mips32r2-gcc/gcm.c:13 mips32r2-gcc/rsa_sign.c:23 \
-  mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:1 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:32 \
+  mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:6 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:32 \
   mips32r2-gcc-O2/hkdf.c:23 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
   mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/p256_field.c:24 \
   mips32r2-gcc-O2/mlkem.c:18 \
   mips32r2-gcc-O2/mlkem_poly.c:41 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
-  rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:1 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:22 rv32imac-gcc/hkdf.c:23 \
+  rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:4 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:22 rv32imac-gcc/hkdf.c:23 \
   rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
   rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
   rv32imac-gcc/mlkem_poly.c:41 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/aes_extern.c:0 \
-  rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:1 rv32ic-gcc/ct_wipe.c:1 \
+  rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:1 rv32ic-gcc/ct_wipe.c:4 \
   rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:22 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
   rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
   rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:41 \
@@ -8290,7 +8294,7 @@ BRANCH_CEILING := \
   x86-64/rsa_ifma_sign.c@512:65 \
   arm64/x25519.c@host:8 x86-64/x25519.c@host:12 \
   arm64/mlkem_poly.c@host:56 x86-64/mlkem_poly.c@host:59 \
-  arm64/ct.c@host:9 x86-64/ct.c@host:4 arm64/ct_wipe.c@host:1 x86-64/ct_wipe.c@host:1 \
+  arm64/ct.c@host:9 x86-64/ct.c@host:4 arm64/ct_wipe.c@host:5 x86-64/ct_wipe.c@host:11 \
   arm64/base64.c@host:0 x86-64/base64.c@host:0 \
   arm64/sha256.c@host:28 x86-64/sha256.c@host:35 arm64/sha3.c@host:75 x86-64/sha3.c@host:84 \
   arm64/hkdf.c@host:19 x86-64/hkdf.c@host:19 arm64/chacha20.c@host:1 x86-64/chacha20.c@host:3 \
@@ -8539,6 +8543,16 @@ RV_ALLOWED := poly1305.c:__mulsi3 x25519.c:__mulsi3 mlkem_poly.c:__mulsi3 \
 # admitted calls would bind to libgcc's and the allowlist would keep
 # passing. So the definitions are asserted, not assumed.
 RV_SOFTMUL := __muldi3 __mulsi3
+# The files whose object refers to no function at all: no runtime routine
+# and no libc call. ct_wipe.c writes every byte itself through volatile
+# lvalues and calls no memset (docs/decisions.md 144). Where a compiler
+# reads a loop of stores that are not volatile, it writes a call to
+# memset in the loop's place. A hosted compile at -O2 does that, and a
+# freestanding one does not, because -ffreestanding implies -fno-builtin.
+# So the gate holds these files on rv32ic as above, and also compiles
+# them hosted at -O2 for arm64 and x86-64, as a host object compiles them.
+CALL_FREE_SRCS := ct_wipe.c
+CALL_FREE_MACHINES := aarch64-none-elf x86_64-unknown-linux-gnu
 .PHONY: lint-runtime-symbols
 lint-runtime-symbols:
 ifeq ($(CLANG_RV),)
@@ -8579,12 +8593,27 @@ lint-runtime-symbols-run:
 	   done; \
 	 done; \
 	 [ "$$seen" -gt 0 ] || { echo "lint-runtime-symbols: read no undefined symbol from any object; llvm-nm or the build failed"; rc=1; }; \
+	 for f in $(CALL_FREE_SRCS); do \
+	   for m in rv32ic $(CALL_FREE_MACHINES); do \
+	     o=$$d/$${f%.c}.o; \
+	     if [ "$$m" != rv32ic ]; then \
+	       o=$$d/$${f%.c}-$$m.o; \
+	       $(CLANG_RV) -target $$m -O2 -std=c11 -nostdlibinc -Itools/freestanding -D_DEFAULT_SOURCE \
+	         -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -c $$f -o $$o 2>/dev/null \
+	         || { echo "lint-runtime-symbols: $$f does not build for $$m"; rc=1; continue; }; \
+	     fi; \
+	     [ -f "$$o" ] || { echo "lint-runtime-symbols: no object of $$f for $$m"; rc=1; continue; }; \
+	     calls=$$($(LLVM_NM) -u $$o 2>/dev/null | awk '{print $$2}' | tr '\n' ' '); \
+	     [ -z "$$calls" ] \
+	       || { echo "lint-runtime-symbols: $$f refers to $$calls on $$m; CALL_FREE_SRCS holds it to no call at all (docs/decisions.md 144)"; rc=1; }; \
+	   done; \
+	 done; \
 	 def=$$($(LLVM_NM) --defined-only $$d/softmul.o 2>/dev/null | awk '{print $$3}' | grep -E '^__' | sort | tr '\n' ' '); \
 	 want=$$(echo $(RV_SOFTMUL) | tr ' ' '\n' | sort | tr '\n' ' '); \
 	 [ "$$def" = "$$want" ] \
 	   || { echo "lint-runtime-symbols: softmul.c defines '$$def' on rv32ic; RV_SOFTMUL expects '$$want'"; rc=1; }; \
 	 rm -rf $$d; \
-	 [ $$rc -eq 0 ] && echo "lint-runtime-symbols: on rv32ic each file pulls only the runtime calls RV_ALLOWED records, and softmul.c defines $(RV_SOFTMUL)"; exit $$rc
+	 [ $$rc -eq 0 ] && echo "lint-runtime-symbols: on rv32ic each file pulls only the runtime calls RV_ALLOWED records, softmul.c defines $(RV_SOFTMUL), and $(CALL_FREE_SRCS) calls nothing on rv32ic, arm64 or x86-64"; exit $$rc
 
 .PHONY: lint-bench-numbers
 lint-bench-numbers:

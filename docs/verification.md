@@ -151,32 +151,41 @@ The entries are grouped by area:
   p[0..n) and no byte past it.
 - **Bound:** inputs ≤ 64 B.
 - **Not proved:** the stub is not the `ct_wipe` that ships. It is the
-  byte loop `ct_wipe` was before `ct_wipe.c` began to call `memset`
-  through a volatile function pointer, one volatile store per byte, and
-  every launch line that links `ct.c` links it in place of `ct_wipe.c`.
-  So each of those harnesses proves its own code over the loop, and its
-  formula and its `ct_wipe.0` unwind bound did not change when the
-  shipped body did. The two have one contract, zero over p[0..n) and no
-  other byte written: this harness proves it of the stub and `ct_wipe`
-  proves it of `ct_wipe.c` (docs/decisions.md 91).
+  byte loop `ct_wipe` was before docs/decisions.md 91, one volatile store
+  per byte, and every launch line that links `ct.c` links it in place of
+  `ct_wipe.c`. So each of those harnesses proves its own code over the
+  loop, and its formula and its `ct_wipe.0` unwind bound did not change
+  when the shipped body did. The two have one contract, zero over
+  p[0..n) and no other byte written: this harness proves it of the stub,
+  and `ct_wipe` and `ct_wipe_u32` prove it of `ct_wipe.c`
+  (docs/decisions.md 91 and 144).
 
-#### ct_wipe
+#### ct_wipe and ct_wipe_u32
 
-- **Harness:** `ct_wipe` (fast)
+- **Harnesses:** `ct_wipe` (fast), `ct_wipe_u32` (fast)
 - **Proves:** `ct_wipe.c`, the `ct_wipe` that ships, is memory-safe and
-  UB-free, writes zero to p[0..n) and no other byte, and makes no call
-  when n is 0, so a null p with nothing to wipe is safe.
-- **Bound:** none on the length: a heap buffer of every size CBMC's
-  pointer encoding holds, and every offset and n inside it, with one
-  nondet index for every byte.
-- **Not proved:** CBMC reads the volatile pointer as the `memset` it was
-  initialized with and runs its own model of `memset`, so the libc's
-  `memset` is not proved, and neither is the property the pointer exists
-  for, that no compiler deletes the call. That is a property of the
-  compiler's output, not of the C: docs/decisions.md 91 records the
-  disassembly read for each compiler and target, and
+  UB-free, writes zero to p[0..n) and no other byte, and does no pointer
+  arithmetic when n is 0, so a null p with nothing to wipe is safe.
+  `ct_wipe` proves the 16-byte word of a 64-bit target, and
+  `ct_wipe_u32` removes `__SIZEOF_INT128__` before it includes the file,
+  so it proves the 4-byte word of a 32-bit target.
+- **Bound:** a heap buffer of up to 96 bytes, every offset into it, and
+  every n up to 64 that fits, with one nondet index for every byte. The
+  offset gives every count of head bytes, and n gives up to 4 words of
+  16 bytes or 16 words of 4 bytes, and every count of tail bytes. A
+  larger n adds passes of the word loop, each of which stores the same
+  type at the next address.
+- **Not proved:** that no compiler deletes, merges or replaces a store.
+  The volatile lvalues are what forbids that, and it is a property of
+  the compiler's output, not of the C. docs/decisions.md 144 records the
+  assembly read for each compiler and target. `make
+  lint-runtime-symbols` holds `ct_wipe.c`'s object to no call at all, on
+  rv32ic and hosted at `-O2` on arm64 and x86-64, and
   `bin/poly1305_equiv_test` checks the stack after a wipe whose body the
-  compiler can see.
+  compiler can see. CBMC applies no effective-type rule, so the proof
+  does not show that a compiler orders the word stores against the
+  caller's own stores. That rests on gcc's and clang's documented
+  meaning of the attribute.
 
 #### ctwidemul
 

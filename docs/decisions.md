@@ -5135,6 +5135,11 @@ does nothing more.
     and calls `memset` through it when n is not 0. `ct.c` keeps
     `ct_memeq`, and `ct.h` declares both.
 
+    Entry 144 replaces this body: `ct_wipe` now stores bytes and words
+    itself through volatile lvalues and calls no `memset`. The proof stub
+    below stays, and so does the volatile pointer's argument where
+    `sha512.c` and `gcm_avx512.c` call `wipe_frame`.
+
     - **Why the compiler keeps the call.** A volatile object is read each
       time the abstract machine reads it (C11 5.1.2.3p6), so the compiler
       loads the pointer at every call and cannot tell which function the
@@ -12904,3 +12909,125 @@ does nothing more.
       `ch_alert_sent` or `ch_writable_len` costs nothing. A warning there
       gives a caller one more cast to write, and casts hide the warnings
       that matter.
+
+144. **`ct_wipe` writes the bytes itself, a word at a time, through
+    volatile lvalues, and calls no `memset`.** On a Neoverse-N2 a server
+    handshake of colibri's object retired 207,043 of its 1,307,477
+    instructions in the image's own `memset`
+    ([#188](https://github.com/c4milo/chapulin/issues/188)). Zig 0.16
+    links its compiler_rt `memset` into every image it builds, and that
+    `memset` stores one byte per iteration. Entry 91 sent every wipe
+    through it. Camilo ruled on 2026-10-21 that `ct_wipe` writes the bytes
+    itself. This entry amends entry 91.
+
+    - **The body.** `ct_wipe` stores single bytes up to the first address
+      that the size of a word divides, then whole words, then the bytes
+      after the last word. The word is `unsigned __int128` where the
+      compiler defines `__SIZEOF_INT128__`, which gcc and clang do on
+      every 64-bit target, and `uint32_t` on the 32-bit targets. arm64
+      stores a word with one `stp xzr, xzr`, and gcc for x86-64 with one
+      `movaps`. The length and the address are public, so the three loops
+      branch on nothing secret. When n is 0 no loop runs and no pointer
+      arithmetic happens, so a null p with n of 0 stays valid.
+    - **Why the compiler keeps each store.** Every store goes through a
+      volatile lvalue. A volatile access is a side effect the compiler
+      must perform as the abstract machine does (C11 5.1.2.3p2 and p6).
+      So it cannot delete a store, merge two, or omit one that no later
+      read needs, even where it inlines `ct_wipe` into a caller whose
+      buffer ends after the call. It cannot replace a loop with a call to
+      `memset` either, because `memset`'s stores are not volatile.
+    - **The effective-type rule.** A store through a `uint32_t` or wider
+      lvalue into an object of another type breaks C11 6.5p7, which is
+      why entry 91 rejected wider stores. The word type carries gcc's and
+      clang's `may_alias` attribute, which gives it the rule of a
+      character type, so the store may write an object of any type and
+      the compiler may not move the caller's later stores ahead of it. A
+      compiler without the attribute, one that defines neither
+      `__GNUC__` nor `__clang__`, compiles the byte loop of entry 91's
+      time, through `unsigned char`, which 6.5p7 allows for every object.
+      The conversion of `byte + head` to a word pointer is aligned by
+      construction (6.3.2.3p7). The conversion of p to `uintptr_t` that
+      finds the head is implementation-defined (6.3.2.3p6), and every
+      target this tree builds for maps it to the address.
+    - **The output read.** A scratch unit compiled `ct_wipe.c` beside four
+      functions that fill a stack buffer through a function in another
+      unit, wipe it and return: 64 bytes, 16 KiB, a struct of
+      `uint32_t`, `uint64_t` and bytes, and 35 bytes at an odd offset.
+      It compiled at `-O2` and `-Os` under clang 23.1.5 for arm64 and
+      x86-64 Linux, `thumbv7m-none-eabi -mcpu=cortex-m3`,
+      `mips-linux-musl -march=mips32r2` and `riscv32-unknown-elf` at
+      rv32imac and rv32ic; gcc 13.3 for x86-64 and arm64 Linux; the mips
+      lane's gcc 12.4; the Arm GNU gcc 15.3.1 the m3 lane pins; and the
+      riscv32 lane's Bootlin gcc 14.3 at rv32imac and rv32ic (scratch
+      run 40141232680). No output names `memset`. Where a compiler
+      inlines `ct_wipe`, each wipe keeps its loops of stores; where it
+      does not, the caller calls `ct_wipe`. The m3 gcc at `-O2`, which
+      knows the stack's alignment, keeps one `str` loop of 16 passes over
+      the 64-byte buffer and drops the head and tail loops, which run no
+      pass there.
+    - **The checks.** `make lint-runtime-symbols` holds `ct_wipe.c`'s
+      object to no call at all on rv32ic, and hosted at `-O2` on arm64
+      and x86-64, where a compiler writes a `memset` call in place of a
+      loop of plain stores. `ct-wipe-word-store-not-volatile` drops the
+      qualifier from the word stores and the lint fails.
+      `ct-wipe-plain-memset` now replaces the body with a `memset` call,
+      and `bin/poly1305_equiv_test` still finds the powers of r on the
+      stack. `bin/unit` wipes each n from 0 to 96 at each offset from 0
+      to 31 of a 32-byte boundary between guard bytes, and
+      `ct-wipe-skips-last-byte` fails it. `BRANCH_CEILING` records the
+      loops: 7 on m3 and rv32imac and 6 on mips32r2 under clang, 4, 3, 6,
+      4 and 4 under the five gcc specs, and 5 and 11 on the two 64-bit
+      specs.
+    - **The proofs.** `proof/ct_wipe_stub.c` stays the byte loop, so no
+      other formula changes, and its contract is the new body's: zero
+      over p[0..n) and no other byte written. `ct_wipe` proves `ct_wipe.c`
+      to that contract with the 16-byte word, and `ct_wipe_u32` with the
+      4-byte word, at every offset into a 96-byte buffer and every n up
+      to 64. On the ubuntu-24.04 runner each proved 53 properties, in 85
+      s and 187 MB and in 32 s and 108 MB (scratch run 40140932780). A
+      scratch harness showed that CBMC's model of the address admits a
+      head of 0, 1, 7 and 15 bytes, and the cover run reached every
+      location of the function. Entry 91's harness had no bound on n,
+      because it read CBMC's model of `memset`; the loops now take one.
+
+    Cost: flash. On mips32r2 `ct_wipe.o` takes 140 bytes where it took
+    56, and the default build's flash rises from 32,073 to 32,157 bytes
+    (`bench/device-ram.sh`); `ct_wipe`'s frame falls from 24 bytes to 0.
+    Under the pinned clang at `-Os` the function takes 98 bytes on the
+    Cortex-M3 where it took 24, and 82 on rv32 where it took 22; under the
+    m3 gcc it takes 66 where it took 24. On a target whose `memset` stores
+    words or vectors, `ct_wipe` can retire a few more instructions than
+    the call did: on the M1 Pro under Apple clang 21, with libSystem's
+    `memset`, a handshake of `bench/primitives.sh`'s ECDSA program under
+    `ch_cfg.cpu` 0x67 moved within the runs' spread of 0.6%.
+
+    Gain, counted on GitHub's Neoverse-N2 runner by
+    `bench/handshake-n2.sh` on colibri's object (scratch run
+    40140089286), against the counts of b1f66fad:
+
+    - Under `ch_cfg.cpu` 0xe7, a server handshake retired 1,170,988
+      instructions where it retired 1,307,477, 10.4% fewer, and the
+      image's `memset` 42,162 where it retired 207,043. OpenSSL 3.6.4
+      retired 1,345,593 in the same run.
+    - Under 0x07, colibri's value, 1,674,879 where 1,829,644, 8.5% fewer.
+      Under 0x03, 0.3% fewer.
+    - The armv8-a build retired 15.8% fewer under 0xe7 and 13.0% fewer
+      under 0x07.
+    - On the M1 Pro, with a byte-loop `memset` linked in libSystem's
+      place, the ECDSA handshake under 0x67 retired 2,442,575 where it
+      retired 2,685,081, 9.0% fewer.
+
+    Rejected:
+
+    - **A single loop that tests the alignment at each byte.** It took 30
+      to 50 fewer bytes of flash and about 10 instructions for each 8
+      bytes on arm64, where the three loops take 4 for each 16.
+    - **An 8-byte word on 64-bit targets.** arm64 then stores 8 bytes
+      with each `str` where `stp` stores 16, so the word loop runs twice
+      as many passes, and every 64-bit target this tree builds for has
+      the 16-byte type.
+    - **`memcpy` of a zero word.** The copy is not volatile, so the
+      compiler may delete it, and `-ffreestanding` makes it a call.
+    - **Keeping `memset` and asking each image for a faster one.** A Zig
+      program that links no libc gets compiler_rt's, and chapulin cannot
+      choose a consumer's runtime.

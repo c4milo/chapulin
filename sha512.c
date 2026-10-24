@@ -89,10 +89,10 @@ static void wipe_frame(void) {
     ct_wipe(below, sizeof below);
 }
 
-// compress_blocks calls wipe_frame through this pointer, for the reason ct_wipe.c calls memset
-// through one: the pointer is a volatile object, so the compiler cannot tell which function the
-// call runs and cannot compile it into the caller, where the array would join the caller's
-// frame and lie above the frame it is there to wipe.
+// compress_blocks calls wipe_frame through this pointer, which is a volatile object
+// (docs/decisions.md 91). So the compiler cannot tell which function the call runs and cannot
+// compile it into the caller, where the array would join the caller's frame and lie above the
+// frame it is there to wipe.
 static void (*const volatile wipe_frame_call)(void) = wipe_frame;
 
 // The compression function over blocks whole blocks at p, and the wipe of the stack it used.

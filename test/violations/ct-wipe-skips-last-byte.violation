@@ -1,0 +1,12 @@
+invariant: INV-17
+file: ct_wipe.c
+catches: unit
+reason: ct_wipe leaves the last byte of a tail, the bytes after the last
+  whole word, as it was. A wipe of a length that a word does not divide
+  then leaves one secret byte. bin/unit wipes each length from 0 to 96 at
+  each offset from 0 to 31 between guard bytes and reads every byte back.
+
+--- old
+    for (size_t i = tail; i < n; i++) {
+--- new
+    for (size_t i = tail; i + 1 < n; i++) {

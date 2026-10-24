@@ -119,7 +119,7 @@ RELOCATION = re.compile(r"^\s+[0-9a-f]+:\s+([A-Z0-9_]+)\s+(\S+)$")
 # The declarator of a function pointer whose qualifiers include volatile,
 # such as (*const volatile name)(. chapulin calls a function through such
 # a pointer so that the compiler cannot delete the call or compile the
-# callee into the caller (ct_wipe.c, p256_wide_wipe.c). The walk follows
+# callee into the caller (sha512.c, p256_wide_wipe.c). The walk follows
 # the call to the function the pointer's initializer names, and stops on a
 # declaration of another form. Each one in the tree has this form:
 #     static void (*const volatile wipe_frame_call)(void) = wipe_frame;

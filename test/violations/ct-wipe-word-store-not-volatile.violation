@@ -1,0 +1,15 @@
+invariant: INV-17
+file: ct_wipe.c
+catches: test/lint-runtime-symbols.sh
+reason: ct_wipe stores its whole words through an lvalue that is not
+  volatile. Every byte is still zero, so no vector notices, but a hosted
+  compile at -O2 reads the loop as a fill and writes a call to memset in
+  its place, the call docs/decisions.md 144 removed. Inlined at the end of
+  a caller, those stores are ones the compiler may delete as no later read
+  needs them. lint-runtime-symbols holds ct_wipe.c to no call at all on
+  arm64 and x86-64.
+
+--- old
+        ((volatile ct_wipe_word *)(byte + head))[i] = 0;
+--- new
+        ((ct_wipe_word *)(byte + head))[i] = 0;

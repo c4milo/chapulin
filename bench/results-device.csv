@@ -1,7 +1,7 @@
-# Homebrew clang version 23.1.3 (LLVM_MAJOR=23, tools/toolchain.env); device -target mips-none-elf -mcpu=mips32r2 -Os; host arm64-apple-darwin25.6.0 -Os
+# Homebrew clang version 23.1.4 (LLVM_MAJOR=23, tools/toolchain.env); device -target mips-none-elf -mcpu=mips32r2 -Os; host arm64-apple-darwin25.6.0 -Os
 module,mips_text_B,mips_rodata_B,mips_flash_B,mips_max_frame_B,mips_max_frame_fn,host_flash_B,host_max_frame_B
 ct,64,0,64,0,ct_memeq,52,0
-ct_wipe,52,4,56,24,ct_wipe,36,0
+ct_wipe,140,0,140,0,ct_wipe,108,0
 sha256,1388,256,1644,288,compress,1660,336
 hkdf,1356,258,1614,280,hmac_sha256,1534,320
 chacha20,1108,0,1108,160,chacha20_xor,1004,208
@@ -29,6 +29,6 @@ tls_write,632,37,669,80,ch_write,473,96
 softmul,0,0,0,0,,0,0
 # build: no function compiled for mips32r2 or the host, so -fstack-usage wrote no .su and its frame is 0
 build,0,52,52,0,,52,0
-total,30652,1421,32073,2360,rsa_vp1,26889,2384
-total (CH_NATIVE_WIDEMUL),28364,1421,29785,2360,rsa_vp1,25465,2384
+total,30740,1417,32157,2360,rsa_vp1,26961,2384
+total (CH_NATIVE_WIDEMUL),28452,1417,29869,2360,rsa_vp1,25537,2384
 p256 (TRUST=raw-ecdsa),5624,264,5888,752,p256_ecdsa_verify,4832,800

@@ -24,10 +24,10 @@ static void wipe_frame(void) {
     ct_wipe(below, sizeof below);
 }
 
-// The entries call wipe_frame through this pointer, for the reason ct_wipe.c calls memset through
-// one: the pointer is a volatile object, so the compiler cannot tell which function the call
-// runs and cannot compile it into an entry, where the array would join the entry's frame and lie
-// above the kernel's frames it is there to wipe.
+// The entries call wipe_frame through this pointer, which is a volatile object
+// (docs/decisions.md 91). So the compiler cannot tell which function the call runs and cannot
+// compile it into an entry, where the array would join the entry's frame and lie above the
+// kernel's frames it is there to wipe.
 static void (*const volatile wipe_frame_call)(void) = wipe_frame;
 
 void gcm_seal_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],

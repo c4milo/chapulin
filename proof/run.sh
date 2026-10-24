@@ -2339,13 +2339,15 @@ launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:5
 # Until the split lands the handlers are tested by bin/srv_flight_test
 # and guarded by four .violation mutants, and docs/verification.md says so.
 # ct proves ct_memeq and the contract of proof/ct_wipe_stub.c, the
-# ct_wipe every other line links; ct_wipe proves ct_wipe.c, the body that
-# ships, memset through a volatile function pointer, to the same contract
-# over a heap buffer of every size, with no loop to unwind. Measured on
-# the M1 Pro: ct 3.2 s and 89 MB, ct_wipe 0.5 s and 22 MB
-# (docs/decisions.md 91).
+# ct_wipe every other line links. ct_wipe proves ct_wipe.c, the body that
+# ships, to the same contract with its 16-byte word, and ct_wipe_u32 with
+# the 4-byte word of a 32-bit target, over a heap buffer of up to 96 bytes
+# and n up to 64 (docs/decisions.md 144). The head loop and the tail loop
+# each run at most 15 times, and the word loop at most 4 times with the
+# 16-byte word and 16 times with the 4-byte one.
 launch fast full ct 65 ""
-launch fast full ct_wipe 1 ""
+launch fast full ct_wipe 1 "ct_wipe.0:16,ct_wipe.1:17,ct_wipe.2:16"
+launch fast full ct_wipe_u32 1 "ct_wipe.0:16,ct_wipe.1:17,ct_wipe.2:16"
 # The 16x16 decomposition, which is what every other proof rests on. Those
 # formulas verify the single-multiply form, because the launch line above
 # asserts CH_NATIVE_WIDEMUL; a target with no constant-time widening multiply
