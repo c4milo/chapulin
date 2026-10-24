@@ -94,8 +94,9 @@ ROOTS = {
 
 # The parts of a signature: the outermost part root under the signature's
 # root. k·G is chapulin's table or ladder and OpenSSL's EC_POINT_mul. The
-# nonce is RFC 6979's HMAC-SHA-256 for chapulin and the call that draws k
-# for OpenSSL. The rest is the inversions, the scalar arithmetic and the
+# nonce is RFC 6979's HMAC-SHA-256 for chapulin, with the generator's own
+# functions that p256_sign.c keeps out of line (generator_), and the call
+# that draws k for OpenSSL. The rest is the inversions, the scalar arithmetic and the
 # DER, and for OpenSSL also the digest of the signed content and the EVP
 # calls around the signature.
 PARTS = {
@@ -107,7 +108,7 @@ PARTS = {
     "sign_nonce": (
         {"ossl_bn_gen_dsa_nonce_fixed_top", "bn_gen_dsa_nonce_fixed_top",
          "BN_generate_dsa_nonce", "ossl_gen_deterministic_nonce_k"},
-        ("hmac", "sha256_"),
+        ("hmac", "sha256_", "generator_"),
     ),
 }
 
