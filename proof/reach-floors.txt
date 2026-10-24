@@ -503,10 +503,16 @@ x25519_mul_inputs_alias 26.6
 x25519_ops 49.5
 x25519_sqr 26.6
 x25519_tail 52.2
+# x25519_wide_edwards and x25519_wide_select took their floors from GitHub
+# run 40142481095 of 2026-10-24, measured with proof/coverage.py --reach
+# --only on the nightly's runner image. x25519_wide_select compiles the
+# whole of x25519_wide.c and calls recode() and select_entry() alone.
+x25519_wide_edwards 54.9
 x25519_wide_invert 52.6
 x25519_wide_mul 25.0
 x25519_wide_mul128 66.7
 x25519_wide_ops 46.7
+x25519_wide_select 22.7
 x25519_wide_sqr 16.7
 x25519_wide_step 58.3
 x25519_wide_tail 57.5

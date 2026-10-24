@@ -27,6 +27,12 @@ void x25519_wide_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN])
 // x25519_wide()'s return value (INV-3), decided after this returns.
 void x25519_wide_ladder(uint8_t out[X25519_LEN], const uint8_t clamped[X25519_LEN],
                         const uint8_t point[X25519_LEN]);
+
+// out = the u-coordinate of clamped * 9, for a scalar x25519.c has already clamped: the value
+// x25519_wide_ladder() writes for the point 9, from the table of multiples of edwards25519's
+// base point in x25519_wide_table.h (x25519_wide_edwards.h, docs/decisions.md 148).
+// x25519_wide_base calls it, and x25519_wide does not.
+void x25519_wide_base_mul(uint8_t out[X25519_LEN], const uint8_t clamped[X25519_LEN]);
 #endif
 
 #endif

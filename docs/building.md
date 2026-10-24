@@ -140,8 +140,10 @@ Other targets:
   session: Poly1305, ML-KEM and RSA signing (decision 87). X25519
   takes its second copy from another file: with the bit a session runs
   `x25519_wide.c`'s five 51-bit words on the 64x64->128 multiply, and
-  without it the 16-word field on the decomposition, so the bit states
-  the multiply at both widths (decisions 52 and 89). P-256 takes its
+  computes a public key from `x25519_wide_table.h`'s 30 KiB of multiples
+  of the base point, and without it the 16-word field's ladder on the
+  decomposition, so the bit states the multiply at both widths
+  (decisions 52, 89 and 148). P-256 takes its
   second copy the same way: with the bit a session signs and exchanges
   keys on the four 64-bit words of `p256_wide_field.c` and
   `p256_wide_scalar.c`, and computes k·G from `p256_wide_table.c`'s

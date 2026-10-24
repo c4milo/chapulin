@@ -1,0 +1,14 @@
+invariant: INV-16
+file: x25519_wide_table.h
+catches: x25519_equiv_test
+reason: one word of one entry of the table of multiples of the base point
+  is off by one: y + x of 7 * 256^17 * B, entry [17][6]. The key
+  generation reads it for one digit value at two of 64 positions, so a
+  random scalar is wrong about one time in eight and no published vector
+  need notice. bin/x25519_equiv_test reads every entry of the table and its
+  negative on scalars of one nonzero digit, against both ladders.
+
+--- old
+        {{UINT64_C(0x4a42c7ad58195), UINT64_C(0x5c8667e799eff), UINT64_C(0x02e5e74c850a1), UINT64_C(0x3f0db614e869a), UINT64_C(0x31771a4856730)},
+--- new
+        {{UINT64_C(0x4a42c7ad58196), UINT64_C(0x5c8667e799eff), UINT64_C(0x02e5e74c850a1), UINT64_C(0x3f0db614e869a), UINT64_C(0x31771a4856730)},

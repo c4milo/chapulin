@@ -2418,6 +2418,22 @@ launch fast full x25519_wide_ops 256 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTI
 launch fast full x25519_wide_step 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full x25519_wide_tail 41 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+# The wide field's key generation, x25519_wide_edwards.h (docs/decisions.md
+# 144), under the same flags. x25519_wide_select runs recode() and
+# select_entry() on their real bodies and the shipped table: the digits add
+# up to the scalar, and the scan returns the row's entry, its negative or the
+# identity, word for word. x25519_wide_edwards runs one addition of an entry
+# and one doubling over the contract above, the inductive step of the key
+# generation's loops, and the sums of its tail. Both read a row whose
+# words are unconstrained below 2^51: a row of the shipped table at a
+# symbolic index ran out of memory in cbmc's conversion to SSA within 12 s.
+# Measured one line at a time with PROVE_ONLY=<name> PROVE_NO_CACHE=1
+# /usr/bin/time -v ./proof/run.sh fast on a GitHub ubuntu-24.04 runner
+# (cbmc 6.11.0, kissat 4.0.4), on 2026-10-24, run 40142481095:
+#   x25519_wide_select   1892 properties, 38 s, 161 MB
+#   x25519_wide_edwards  1941 properties,  6 s, 203 MB
+launch fast full x25519_wide_select 65 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_edwards 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # The wide P-256 arithmetic of a host object (docs/decisions.md 94): four
 # 64-bit words under p256_wide_field.c and p256_wide_scalar.c, the point
 # formulas in p256_wide_point.c, the two scalar multiplications in
@@ -2506,7 +2522,7 @@ launch fast full p256_wide_field_mul 6 "ct_wipe.0:33" --object-bits 10 ct.c proo
 launch fast full p256_wide_scalar 34 "" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_point 100 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_digit 66 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check --no-array-field-sensitivity
+launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_wipe 2 "ct_wipe.0:3073" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # The wide inverse, p256_wide_inverse.c (docs/decisions.md 115), in four harnesses.
 # p256_wide_inverse_steps holds the approximations and one step to references that branch,

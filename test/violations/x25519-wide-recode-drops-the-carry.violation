@@ -1,0 +1,11 @@
+invariant: INV-16
+file: x25519_wide_edwards.h
+catches: x25519_equiv_test
+reason: recode moves a digit of 8 or more into [-8, 7] and does not pass
+  the 16 it took away to the digit above, so the digits sum to s minus 16
+  times every carry. Almost every scalar gives a wrong key.
+
+--- old
+        e[i] += carry;
+--- new
+        e[i] += 0 * carry;

@@ -1224,7 +1224,13 @@ last `ROLE=server` stub, as the entry said it would.
   tighter bounds on the real multiply, and `x25519_wide_ops` the linear
   ops, `unpack`, and that `pack` writes a value below p. The base case,
   `a = d = 1`, `c = 0` and `b = x`, is read from
-  `x25519_wide_ladder()`'s prologue. The values are held by
+  `x25519_wide_ladder()`'s prologue. The key generation
+  (`x25519_wide_edwards.h`, decision 148) keeps the same bounds on the
+  four coordinates of its point: `x25519_wide_edwards` proves one
+  addition of a table entry and one doubling from any point inside them
+  back into them over the same contract, with every operand of a
+  product under 2^54, and the sums of its tail in the forms `invert()`
+  and `mul` take. Its base case is the identity, (0, 1, 1, 0). The values are held by
   `bin/x25519_equiv_test` against the 16-word field, and by the RFC
   7748, Wycheproof and Lean differential runs over this field.
 - **Violation.** A PR drops `carry_columns`' last carry, so word 0 keeps
@@ -1233,7 +1239,10 @@ last `ROLE=server` stub, as the entry said it would.
   2^256. `make test-invariants` runs both: `inv34-x25519-wide-carry-dropped`
   through `proof/prove-one.sh x25519_wide_step`, in the nightly's
   proof-backed job, and `inv34-x25519-wide-fold-not-19` through
-  `bin/x25519_equiv_test`.
+  `bin/x25519_equiv_test`. `inv34-x25519-wide-doubling-subtracts-from-2p`
+  subtracts a sum of two squares over 2p in the key generation's
+  doubling, where a word of the sum can pass 2p's, and runs through
+  `proof/prove-one.sh x25519_wide_edwards`.
 - See [decisions: Engineering](decisions.md#engineering), entry 52.
 
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
@@ -4151,9 +4160,23 @@ last `ROLE=server` stub, as the entry said it would.
   values that instruction reads come from, and what each entry's
   branches read. They hold `x25519_wide.c`'s
   divisions and 128-bit runtime calls at zero and its conditional
-  branches at 2 on each, the ladder's steps and a count of squarings.
+  branches at 8 on arm64 and 9 on x86-64: the ladder's steps, a count of
+  squarings, the test of whether a caller passed a point, which reads an
+  address, and the loops of the key generation in
+  `x25519_wide_edwards.h` over its 64 digits, its 32 rows, the eight
+  entries of a row and, on x86-64, its four doublings (decision 148).
   `inv16-x25519-wide-cswap-branch` writes that field's `cswap` as an
-  `if` on the scalar bit and both counts rise by two. No gcc spec
+  `if` on the scalar bit and both counts rise by two.
+  `inv16-x25519-wide-table-scan-skips-unselected` makes the scan of a
+  row pass over the entries a digit does not name,
+  `inv16-x25519-wide-negation-branch` negates an entry under an `if` on
+  the digit's sign, and `inv16-x25519-wide-equal-mask-not-volatile`
+  builds the scan's mask without the volatile read, after which clang
+  for x86-64 jumps on each comparison of the digit with an entry's
+  number. Each count rises past its ceiling. The Semgrep rule
+  `inv-16-x25519-wide-no-subscript-by-digit` refuses a read of the table
+  at an index the digit gives, which `inv16-x25519-wide-table-read-by-index`
+  writes. No gcc spec
   measures the file: no CI lane runs a 64-bit gcc through
   `lint-wide-multiply-gcc`. The same two specs compile
   `chacha20_vector.c`, whose intrinsics no 32-bit spec targets, and hold

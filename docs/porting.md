@@ -74,7 +74,10 @@ the 16-word field every object holds. A session with the bit runs the wide
 field, and one without it the 16-word field on the decomposition, so the bit
 states the multiply at both widths: Arm's and Intel's lists name both. No build
 variable chooses the field, and a device object, a 64-bit one among them, holds
-the 16-word field alone (decisions 52 and 89).
+the 16-word field alone (decisions 52 and 89). The host object also holds a
+30 KiB table of multiples of the base point, constants that a session with the
+bit reads for a key generation, every entry of a row at each step (decision
+148).
 
 The bit picks P-256's arithmetic the same way. A host object holds a field and a
 scalar of four 64-bit words, `p256_wide_field.c` and `p256_wide_scalar.c`, with

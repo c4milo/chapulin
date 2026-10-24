@@ -1,0 +1,14 @@
+invariant: INV-16
+file: x25519_wide_edwards.h
+catches: test/lint-wide-multiply.sh
+reason: equal_mask builds its mask from the bit as computed, with no read
+  back from a volatile object. clang 23 for x86-64 then sees that the mask
+  is all ones exactly when the digit's size is the entry's number, and it
+  loads word 4 of each entry under a jump on that comparison: eight jumps
+  on the digit in every scan. The values are right, so only the count of
+  conditional branches on the x86-64 spec sees it (docs/decisions.md 148).
+
+--- old
+    volatile uint64_t differ = (uint64_t)(((ct_u128)(a ^ b) + UINT64_MAX) >> 64);
+--- new
+    uint64_t differ = (uint64_t)(((ct_u128)(a ^ b) + UINT64_MAX) >> 64);

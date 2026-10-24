@@ -13127,6 +13127,132 @@ does nothing more.
     `inv16-p256-sign-nonce-midstates-stale` keeps the midstates of an old
     K, and the RFC 6979 vectors catch it.
 
+148. **A host session whose `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_MULTIPLY`
+    computes an X25519 public key from a table of multiples of the base
+    point, on the twisted Edwards form of the curve.** Item 5 of
+    [#188](https://github.com/c4milo/chapulin/issues/188)'s plan.
+    `x25519_wide_base` ran the wide field's ladder on u = 9: 255 steps,
+    393,621 instructions on a Neoverse-N2, where OpenSSL 3.6.4 takes
+    227,086 with ref10's fixed-base multiplication. Camilo approved the
+    item with item 2 for host objects, and again on 2026-10-21.
+
+    - **What runs.** `x25519_wide_base` clamps the scalar in `x25519.c`
+      as before and calls `x25519_wide_base_mul`, in
+      `x25519_wide_edwards.h`, which `x25519_wide.c` includes after its
+      field. It computes s·B on edwards25519, -x² + y² = 1 + d x² y², in
+      extended coordinates (X : Y : Z : T) over the wide field, and
+      returns u = (Z + Y) / (Z - Y), which is (1 + y) / (1 - y). RFC 7748
+      section 4.1 gives that map and states that it takes B, whose y is
+      4/5, to u = 9. The map takes a sum of points to the sum of their
+      images, so the u of s·B is the u of s times the point u = 9, which
+      the ladder computes. `recode` writes the clamped scalar as 64
+      digits in [-8, 8]. The key generation adds the entries of the 32
+      odd digits, doubles the sum four times and adds the entries of the
+      32 even digits: 64 additions of seven products each
+      (madd-2008-hwcd-3 and the four products back to extended
+      coordinates), four doublings and one inversion, where the ladder
+      runs 255 steps of ten products. The shared secret keeps the
+      ladder. A session without the bit and a device object keep the
+      16-word field's ladder, which stays the reference.
+    - **The table.** `x25519_wide_table.h` holds 32 rows of eight
+      entries: entry [i][j] is (j + 1)·256^i·B as y + x, y - x and
+      2dxy, each five words of 51 bits below 2^51. That is 30,720 bytes
+      of constants, inside the 64 KiB L1 data cache of the Neoverse-N2
+      and of the M1's efficiency cores, and the 128 KiB of its
+      performance cores. Entry 109 saw a time that followed the scalar
+      on the M1 Pro only for a table larger than the L1 data cache. The
+      x86-64 cores here have 32 to 48 KiB of L1 data cache, so the table
+      fits theirs too. `tools/x25519_wide.py` writes the file from RFC
+      7748's curve with Python's integers. It checks that d is not a
+      square and -1 is, that B is on the curve and maps to u = 9, and
+      that every entry is on the curve. `make lint-x25519-wide` fails
+      when the file is not what the script prints.
+    - **Constant time.** `select_entry` reads all eight entries of its
+      row in the same order for every digit and keeps one by mask. It
+      negates by mask: a swap of y + x with y - x, and 2p - 2dxy for
+      2dxy. `recode` is arithmetic on every digit. The addition is
+      complete on this curve, because d is not a square and -1 is, so
+      the identity and a point and its negative need no branch. No
+      branch and no address depends on the scalar. The pinned clang 23
+      for x86-64 first compiled the scan's mask as a comparison of the
+      digit's size with the entry's number, and loaded word 4 of each
+      entry under a jump on it. `equal_mask` now reads its bit back from
+      a volatile object before it builds the mask, as entry 125 does for
+      `mlk_poly_frommsg`. `lint-wide-multiply` holds `x25519_wide.c` at 8
+      conditional branches on arm64 and 9 on x86-64, where it held 2, and
+      the Makefile's comment above `WIDE64_SPECS` names each loop and the
+      test of whether `clamp_and_ladder`'s caller passed a point, which
+      reads an address. `x25519.c` compiles for a device object as it did,
+      so the 32-bit specs' counts do not move. gcc
+      13.3 for x86-64 and arm64, read on the GitHub runners, writes the
+      digit's comparison as `adc` and `cset`, and each of its
+      conditional branches closes a loop over a public count or checks
+      the stack protector's canary. `bin/timing_x25519_wide` times the
+      key generation for a scalar whose digits are nearly all 1, so
+      that every scan keeps the same entry and none negates, against
+      random scalars.
+    - **Gain.** Instructions of one key generation, with the ladder on 9
+      as it ran before:
+
+      | build, counter | ladder on 9 | table |
+      | --- | --- | --- |
+      | Neoverse-N2, `bench/handshake-n2.sh`'s QEMU trace of a handshake | 393,095 | 132,403 |
+      | Neoverse-N2, Zig 0.16.0 for `neoverse_n2`, perf_events | 392,743 | 131,851 |
+      | Neoverse-N2, Zig 0.16.0 for the base armv8-a, perf_events | 454,386 | 149,877 |
+      | M1 Pro, Apple clang 21, `proc_pid_rusage` | 372,427 | 129,650 |
+      | x86-64, gcc 13.3, callgrind | 623,719 | 214,790 |
+      | arm64, gcc 13.3, callgrind | 476,918 | 170,161 |
+
+      The first row is the count of `bench/handshake-n2.sh`, where OpenSSL
+      3.6.4's key generation takes 227,086: chapulin's takes 0.58 of
+      OpenSSL's instructions where it took 1.73 times them. The second
+      row times one call of the same code in a loop. The server's
+      handshake under `0xe7` takes 883,086 instructions where it took
+      1,143,505, 0.66 of OpenSSL 3.6.4's (docs/performance.md, "What
+      decision 148 changed"). The callgrind
+      rows count a program of 100 key generations and divide by 100, so
+      each holds about a hundredth of the program's start. The shared
+      secret does not move.
+    - **What holds it.** `bin/x25519_equiv_test` holds the key generation
+      to the 16-word field's ladder and to the wide field's ladder on 9:
+      RFC 7748 section 6.1's two public keys, scalars of one nonzero
+      digit that read every entry of the table and its negative, scalars
+      of repeated bytes and of one set bit, eight scalars m L + r whose
+      digits cancel down to 2B, -B and the like, and 10,000 random
+      scalars. `bin/diff_x25519_wide` holds it to the Lean ladder on 500
+      random scalars, and `bin/unit_host` runs RFC 7748's vectors and
+      the handshakes on it. Wycheproof's X25519 vectors exercise the
+      shared secret alone. `x25519_wide_select` proves that the digits
+      add up to the clamped scalar and that the scan returns the row's
+      entry, its negative or the identity, word for word, for every
+      digit. `x25519_wide_edwards` proves that an addition and a doubling
+      keep INV-34's bounds, over the multiply contract. Twelve
+      violations break the table, its generator, the scan, the
+      negation, the digits, the mask, the doubling's bound and the
+      bit's dispatch, and the named check catches each.
+    - **Cost.** 30,720 bytes of constants and 4,368 bytes of code in a
+      host object, under Apple clang 21 at `-O2`. A device object holds
+      neither.
+
+    Not covered:
+
+    - No harness and no Lean theorem proves that the formulas compute a
+      sum of points, or that the map takes s·B to the point the ladder
+      computes. The equivalence binary and the differential hold the
+      output to the ladder on the scalars above.
+    - No run on this tree has timed the table on a machine with less
+      than 64 KiB of L1 data cache.
+
+    Rejected:
+
+    - **64 rows and no doubling.** The four doublings take eight products
+      each, about 4,800 instructions on the M1 Pro, and the table would
+      take 61,440 bytes, nearly all of the N2's 64 KiB L1 data cache.
+    - **The Montgomery curve as a short Weierstrass curve, with the
+      complete formulas of Renes, Costello and Batina.** Their mixed
+      addition takes eleven products and five products by the curve's
+      constants, where the Edwards addition takes seven products.
+
 149. **A server computes each ClientHello's frozen digest on the path
     its session's `ch_cfg.cpu` picks.** `srv_parse_client_hello` ran
     `sha256.c` for `client_hello.frozen` in every session. So a session

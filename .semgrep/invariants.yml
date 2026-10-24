@@ -71,6 +71,30 @@ rules:
       - pattern: $ROW[index]
       - pattern: $ROW[$DIGIT.index]
 
+  - id: inv-16-x25519-wide-no-subscript-by-digit
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-16: x25519_wide_edwards.h reads a row of the table of
+      multiples of the base point whole: every entry in order, with one
+      kept by mask. A digit, its size and its sign are bits of a private
+      key, so a subscript by one of them is a load whose address names
+      them, which the cache keeps (docs/decisions.md 148). Scan the row
+      as select_entry does: add_digit subscripts the table by the row, a
+      loop counter, and select_entry subscripts the row by the loop's
+      entry j alone.
+    paths:
+      include: ['x25519_wide_edwards.h']
+    pattern-either:
+      - pattern: $ARRAY[<... digit ...>]
+      - pattern: $ARRAY[<... size ...>]
+      - pattern: $ARRAY[<... negative ...>]
+      - patterns:
+          - pattern: row[$ENTRY]
+          - metavariable-regex:
+              metavariable: $ENTRY
+              regex: ^(?!j$)
+
   - id: inv-16-p256-wide-no-borrow-from-zero
     languages: [c]
     severity: ERROR

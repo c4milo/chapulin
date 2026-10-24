@@ -1,0 +1,14 @@
+invariant: INV-16
+file: x25519_wide_edwards.h
+catches: test/lint-invariants.sh
+reason: select_entry loads the one entry its digit names, so the address
+  of the load is the digit's size, three bits of the private key, and the
+  cache line it touched says which. The values are right for every digit
+  but zero, which the identity below the read covers, so the vectors, the
+  equivalence binary and the time all pass. The Semgrep rule
+  inv-16-x25519-wide-no-subscript-by-digit refuses the subscript.
+
+--- old
+            word_pair entry_low = {row[j][element][0], row[j][element][1]};
+--- new
+            word_pair entry_low = {row[(size + 7) & 7][element][0], row[(size + 7) & 7][element][1]};

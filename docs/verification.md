@@ -670,9 +670,11 @@ The entries are grouped by area:
 
 #### x25519_wide
 
-- **Harnesses:** `x25519_wide_mul` (fast), `x25519_wide_sqr` (fast), `x25519_wide_ops` (fast), `x25519_wide_step` (fast), `x25519_wide_invert` (fast), `x25519_wide_tail` (fast), `x25519_wide_mul128` (fast)
+- **Harnesses:** `x25519_wide_mul` (fast), `x25519_wide_sqr` (fast), `x25519_wide_ops` (fast), `x25519_wide_step` (fast), `x25519_wide_invert` (fast), `x25519_wide_tail` (fast), `x25519_wide_mul128` (fast), `x25519_wide_select` (fast), `x25519_wide_edwards` (fast)
 - **Build:** a host object's wide field (`x25519_wide.c`, INV-34), under
-  `-DCH_CPU_RUNTIME`, with `--unsigned-overflow-check` on every line.
+  `-DCH_CPU_RUNTIME`, with `--unsigned-overflow-check` on every line, and
+  the key generation the file includes from `x25519_wide_edwards.h` with
+  the table in `x25519_wide_table.h` (decision 148).
 - **Proves:**
   - On the real 64x64->128 multiply, `mul` and `sqr` over any operands
     whose words are under 2^54 wrap nothing: every column sum stays
@@ -690,13 +692,43 @@ The entries are grouped by area:
     `x25519_wide_mul128` proves on the real multiply.
   - The 255 steps follow by induction from a base case read off
     `x25519_wide_ladder()`'s prologue.
+  - The key generation. `x25519_wide_select` proves, on the real bodies,
+    that `recode()` writes every clamped scalar as 64 digits in [-8, 8]
+    whose sum e_0 + 16 e_1 + ... + 16^63 e_63 is the scalar, and that
+    `select_entry()` returns, word for word, the row's entry at the
+    digit's size, its negative for a negative digit, and the identity
+    for zero, for every digit and every row whose words are under 2^51,
+    which every row of the shipped table is (`tools/x25519_wide.py`).
+    `x25519_wide_edwards` proves one addition of an entry, through
+    `select_entry()` on such a row at any digit, and one doubling, each with
+    the four products after it, from any point inside INV-34's bounds
+    back into them, over the multiply contract, with every operand of a
+    product under 2^54. It also proves the tail's sums: Z + Y under
+    2^54, and Z - Y, carried twice, in the form `x25519_wide_invert`
+    proves `invert()` on. The 64 additions and four doublings follow by
+    induction from the identity, (0, 1, 1, 0). A row of the shipped
+    table at a symbolic index ran out of memory in cbmc's conversion to
+    SSA, so neither harness reads the table itself: the script and
+    `make lint-x25519-wide` hold its words under 2^51, and the
+    equivalence binary holds its values.
 
   One step over the real products also converged, in 64 s at 4.5 GB,
   and has no launch line. The field's two entries, `x25519_wide` and
   `x25519_wide_base`, are `x25519.c`'s clamp and all-zero check compiled
-  a second time around this ladder. No harness drives them: [x25519](#x25519)
-  proves that text around the 16-word ladder, and the vectors below run
-  it around this one.
+  a second time around this ladder and the key generation. No harness
+  drives them: [x25519](#x25519) proves that text around the 16-word
+  ladder, and the vectors below run it around this field.
+
+  What no harness proves of the key generation: that its formulas
+  compute the sum of two points and that u = (1 + y) / (1 - y) of s * B
+  is the u the ladder computes for s and 9. `tools/x25519_wide.py` and
+  `make lint-x25519-wide` hold the table to RFC 7748's curve, and
+  `bin/x25519_equiv_test` holds the key generation to the 16-word
+  field's ladder and to this field's ladder on 9: RFC 7748 section
+  6.1's two public keys, scalars that read every entry of the table and
+  its negative, scalars whose digits cancel down to small multiples of
+  B, and 10,000 random scalars. bin/diff_x25519_wide holds it to the
+  Lean ladder of spec/lean/Spec/X25519.lean on 500 random scalars.
 - **Bound:** operand words < 2^54; between the ladder's operations,
   word 1 < 2^51 + 2^20 and every other word < 2^51.
 

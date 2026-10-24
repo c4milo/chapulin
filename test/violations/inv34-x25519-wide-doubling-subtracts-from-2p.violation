@@ -1,0 +1,13 @@
+invariant: INV-34
+file: x25519_wide_edwards.h
+catches: proof/prove-one.sh x25519_wide_edwards
+reason: double_point subtracts H = YY + XX from (X + Y)^2 over 2p where it
+  takes 4p. H's words reach 2^52 + 2^14, above 2p's, so a word of E wraps
+  past zero when H's word is above (X + Y)^2's plus 2p's. The harness sees
+  the wrap on its own, with --unsigned-overflow-check, before any vector
+  reaches a wrong value.
+
+--- old
+        o->e[i] = o->g[i] + FOUR_P[i] - sum;
+--- new
+        o->e[i] = o->g[i] + TWO_P[i] - sum;

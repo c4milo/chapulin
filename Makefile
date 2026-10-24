@@ -266,7 +266,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
         pem.c base64.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
-HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h rsa_avx2.h rsa_avx2_lanes.h rsa_avx2_number.h ch_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h x25519_wide_edwards.h x25519_wide_table.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h rsa_avx2.h rsa_avx2_lanes.h rsa_avx2_number.h ch_assert.h \
         pem.h base64.h pem_blocks.h x509_pem.h pem_files.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
@@ -4307,7 +4307,7 @@ bin/diff: test/diff_test.c $(DIFF_SRCS) $(HDRS) $(TESTH)
 run-%: bin/%
 	./bin/$*
 
-.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-p256-wide lint-frame-align lint-schedule-order prove diff fmt clean
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-p256-wide lint-x25519-wide lint-frame-align lint-schedule-order prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, the
@@ -5749,7 +5749,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build lint-p256-wide lint-frame-align lint-schedule-order
+lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build lint-p256-wide lint-x25519-wide lint-frame-align lint-schedule-order
 
 # The Zig build a Zig project depends on (build.zig, docs/decisions.md 69),
 # held to make's, and the Zig API its module carries (docs/zig.md). zig
@@ -7692,9 +7692,17 @@ WIDEMUL_SPECS := \
 # The entries, with arm64's count and then x86-64's. An entry with no body
 # on a target is at zero there.
 #
-# x25519_wide.c, 2 and 2: the 255 ladder steps and sqr_times' count. The
-#   loops over the five words are unrolled, and cswap and pack's conditional
-#   subtraction stay masks.
+# x25519_wide.c, 8 and 9: the 255 ladder steps and sqr_times' count, the
+#   test in x25519.c's clamp_and_ladder() of whether its caller passed a
+#   point, which reads an address, and five loops of the key generation
+#   (x25519_wide_edwards.h, docs/decisions.md 148): recode()'s two loops over
+#   the 64 digits, the two loops over the 32 rows of the table, and
+#   select_entry()'s loop over the eight entries of a row. x86-64 holds one
+#   more, the four doublings, which arm64 unrolls. The loops over the five words are unrolled, and cswap,
+#   pack's conditional subtraction, equal_mask and the negation of an entry
+#   stay masks. Before equal_mask read its bit back from a volatile object,
+#   x86-64 held 15: a jump on each comparison of a digit's size with an
+#   entry's number, around the load of word 4 of the entry.
 # x25519.c@host, 8 and 12: the 255 ladder steps, the inverse's 254
 #   squarings and its two tests of a squaring's number against 2 and 4, and
 #   mul's two loops over its products and its loop over the 15 words it
@@ -8281,7 +8289,7 @@ BRANCH_CEILING := \
   rv32imac-gcc/sha512_compress.c:5 rv32ic-gcc/sha512.c:14 rv32ic-gcc/sha512_compress.c:5 \
   m3/base64.c:0 mips32r2/base64.c:0 rv32imac/base64.c:0 m3-gcc/base64.c:0 mips32r2-gcc/base64.c:0 \
   mips32r2-gcc-O2/base64.c:0 rv32imac-gcc/base64.c:0 rv32ic-gcc/base64.c:0 \
-  arm64/x25519_wide.c:2 x86-64/x25519_wide.c:2 arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:26 \
+  arm64/x25519_wide.c:8 x86-64/x25519_wide.c:9 arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:26 \
   arm64/chacha20_avx2.c:0 x86-64/chacha20_avx2.c:31 \
   arm64/chacha20_avx512.c:0 x86-64/chacha20_avx512.c:77 \
   arm64/poly1305_vector.c:0 x86-64/poly1305_vector.c:0 \
@@ -8654,6 +8662,18 @@ ifeq ($(CLANG_RV),)
 else
 	@python3 tools/p256-wide-carry.py "$(CLANG_RV)" p256_wide_word.h
 endif
+
+# The table of multiples of edwards25519's base point that x25519_wide.c's
+# key generation reads (docs/decisions.md 148). tools/x25519_wide.py writes
+# x25519_wide_table.h from RFC 7748's definition of the curves with
+# Python's integers, and this fails when the checked-in file is not what
+# the script prints: a hand edit of the table, or an edit of the script
+# without its output.
+lint-x25519-wide:
+	@python3 tools/x25519_wide.py table | cmp -s - x25519_wide_table.h \
+	  || { echo "lint-x25519-wide: x25519_wide_table.h is not what tools/x25519_wide.py table prints;" \
+	       "regenerate it with: python3 tools/x25519_wide.py table > x25519_wide_table.h"; exit 1; }
+	@echo "lint-x25519-wide: x25519_wide_table.h is what tools/x25519_wide.py table prints"
 
 # chacha20_avx2.c's pass and keccak_avx2.c's permutation hold more 256-bit
 # values than AVX2 has registers, so their loops store values to 32-byte

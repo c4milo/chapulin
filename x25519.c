@@ -6,9 +6,10 @@
 // host object compiles it a second time inside x25519_wide.c, which defines
 // CH_X25519_WIDE and renames the two entries: that copy holds no field of
 // its own and calls x25519_wide.c's radix-2^51 ladder (docs/decisions.md
-// 89). The clamp and the all-zero check sit after both fields, in
-// clamp_and_ladder() and x25519(), so one line decides each whichever
-// field runs (INV-3).
+// 89), and for x25519_base that file's table of multiples of the base point
+// (docs/decisions.md 148). The clamp and the all-zero check sit after both
+// fields, in clamp_and_ladder() and x25519(), so one line decides each
+// whichever field runs (INV-3).
 #ifdef CH_X25519_WIDE
 #include "x25519_wide.h"
 #else
@@ -218,7 +219,10 @@ static void ladder(uint8_t out[X25519_LEN], const uint8_t z[X25519_LEN],
 
 // RFC 7748 section 5: clamp a copy of the scalar, then run the ladder of the
 // field this build compiled. The clamp is here rather than in either ladder,
-// so the two fields cannot clamp differently.
+// so the two fields cannot clamp differently. In the wide field a null point
+// names the base point, whose multiple x25519_wide.c computes from its table
+// of multiples (docs/decisions.md 148); the 16-word field runs the ladder on
+// the point 9.
 static void clamp_and_ladder(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
                              const uint8_t point[X25519_LEN]) {
     uint8_t z[X25519_LEN];
@@ -229,7 +233,11 @@ static void clamp_and_ladder(uint8_t out[X25519_LEN], const uint8_t scalar[X2551
     z[0] &= 248;
     z[31] = (z[31] & 127) | 64;
 #ifdef CH_X25519_WIDE
-    x25519_wide_ladder(out, z, point);
+    if (point == NULL) {
+        x25519_wide_base_mul(out, z);
+    } else {
+        x25519_wide_ladder(out, z, point);
+    }
 #else
     ladder(out, z, point);
 #endif
@@ -244,6 +252,10 @@ int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
 }
 
 void x25519_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
+#ifdef CH_X25519_WIDE
+    clamp_and_ladder(out, scalar, NULL);
+#else
     static const uint8_t nine[X25519_LEN] = {9};
     clamp_and_ladder(out, scalar, nine);
+#endif
 }

@@ -1,0 +1,23 @@
+invariant: INV-16
+file: x25519_wide_edwards.h
+catches: test/lint-wide-multiply.sh
+reason: select_entry negates an entry under an if on the digit's sign
+  instead of by mask, so the sign of each of the 64 digits of the private
+  key is on the control path. The values are right, so only the count of
+  conditional branches sees it.
+
+--- old
+    cswap(o->y_plus_x, o->y_minus_x, negative);
+    for (size_t w = 0; w < 5; w++) {
+        uint64_t minus = TWO_P[w] - o->xy2d[w];
+        o->xy2d[w] ^= negative_mask & (o->xy2d[w] ^ minus);
+    }
+--- new
+    if (negative) {
+        for (size_t w = 0; w < 5; w++) {
+            uint64_t swapped = o->y_plus_x[w];
+            o->y_plus_x[w] = o->y_minus_x[w];
+            o->y_minus_x[w] = swapped;
+            o->xy2d[w] = TWO_P[w] - o->xy2d[w];
+        }
+    }

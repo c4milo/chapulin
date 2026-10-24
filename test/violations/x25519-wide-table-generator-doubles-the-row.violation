@@ -1,0 +1,15 @@
+invariant: INV-16
+file: tools/x25519_wide.py
+catches: test/lint-x25519-wide.sh
+reason: the generator steps through a row by adding the previous entry to
+  itself, so a row holds 1, 2, 4, ..., 128 times its power of B where the
+  key generation reads 1 to 8. Every entry is still on the curve, so the
+  script's own checks pass. make lint-x25519-wide compares the script's
+  output with the checked-in table, which bin/x25519_equiv_test holds to
+  the ladder, so a generator that drifts from the table fails before
+  anyone regenerates the file with it.
+
+--- old
+            row.append(add(row[-1], base))
+--- new
+            row.append(add(row[-1], row[-1]))

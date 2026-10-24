@@ -1,0 +1,15 @@
+invariant: INV-16
+file: widemul.h
+catches: widemul_runtime_test
+reason: widemul_x25519_base runs the wide field's key generation, with its
+  table and its 64x64->128 products, for every answer, so a session whose
+  caller stated nothing about the multiply runs it. Every byte still comes
+  out the same. bin/widemul_runtime_test counts the calls into each copy
+  and requires the 16-word field alone without the constant-time answer.
+
+--- old
+    if (widemul_native(widemul)) {
+        x25519_wide_base(out, scalar);
+--- new
+    if (widemul_native(widemul) || 1) {
+        x25519_wide_base(out, scalar);

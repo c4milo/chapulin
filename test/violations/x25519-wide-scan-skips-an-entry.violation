@@ -1,0 +1,14 @@
+invariant: INV-16
+file: x25519_wide_edwards.h
+catches: x25519_equiv_test
+reason: select_entry stops its scan before the row's last entry, so a
+  digit of size 8 selects nothing and the addition adds the all-zero
+  element, which is no point at all. Only digits of 8 and -8 go wrong.
+  bin/x25519_equiv_test reads both on every row, against both ladders.
+
+--- old
+    for (size_t j = 0; j < X25519_WIDE_TABLE_ENTRIES; j++) {
+        uint64_t mask = equal_mask(size, j + 1);
+--- new
+    for (size_t j = 0; j < X25519_WIDE_TABLE_ENTRIES - 1; j++) {
+        uint64_t mask = equal_mask(size, j + 1);

@@ -1,0 +1,12 @@
+invariant: INV-16
+file: x25519_wide_table.h
+catches: test/lint-x25519-wide.sh
+reason: the checked-in table differs from what tools/x25519_wide.py table
+  prints: one word of the last entry of the last row changed by hand.
+  make lint-x25519-wide compares the file with the script's output, so the
+  file is a product of the script and never an input anyone edits.
+
+--- old
+         {UINT64_C(0x390d042c84266), UINT64_C(0x1efe32a8fdc75), UINT64_C(0x6925ee7ae1238), UINT64_C(0x4af9281d0e832), UINT64_C(0x0fef911191df8)}},
+--- new
+         {UINT64_C(0x390d042c84266), UINT64_C(0x1efe32a8fdc75), UINT64_C(0x6925ee7ae1238), UINT64_C(0x4af9281d0e832), UINT64_C(0x0fef911191df9)}},

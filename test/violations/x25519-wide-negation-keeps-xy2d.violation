@@ -1,0 +1,13 @@
+invariant: INV-16
+file: x25519_wide_edwards.h
+catches: x25519_equiv_test
+reason: select_entry swaps y + x and y - x for a negative digit and keeps
+  2dxy, so it adds (-x, y) with the T term of (x, y): a point that is on
+  no curve. Every scalar with a negative digit, which is almost every
+  scalar, gives a wrong key, and bin/x25519_equiv_test holds the key
+  generation to both ladders.
+
+--- old
+        o->xy2d[w] ^= negative_mask & (o->xy2d[w] ^ minus);
+--- new
+        o->xy2d[w] ^= 0 & negative_mask & (o->xy2d[w] ^ minus);

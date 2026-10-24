@@ -15,8 +15,11 @@
 //     result and a return value of 0 whatever the scalar;
 //   - every u in [p, 2^255), which each field must reduce to u - p;
 //   - each of those again with bit 255 set, which RFC 7748 masks off;
+//   - for the base point, the scalars run_base_edges() and
+//     run_base_entries() name, which stress the digits of
+//     x25519_wide_base and read every entry of its table;
 //   - 10,000 random scalars and u-coordinates, half of them with bit 255
-//     set, and 1,000 random scalars times the base point.
+//     set, and 10,000 random scalars times the base point.
 //
 // The random pairs come from the seeded generator below, so an ordinary
 // run replays exactly and the nightly can vary CH_X25519_EQUIV_SEED.
@@ -114,17 +117,30 @@ static int compare(const char *case_name, const uint8_t scalar[X25519_LEN],
     return wide_ok;
 }
 
+// The base point three ways: the 16-word field's ladder on 9, the wide
+// field's table of multiples of edwards25519's base point
+// (x25519_wide_base), and the wide field's ladder on 9, which the key
+// generation no longer runs. The scalar is clamped here as RFC 7748 clamps
+// it, for the ladder that takes a clamped scalar.
 static void compare_base(const char *case_name, const uint8_t scalar[X25519_LEN],
                          uint8_t out[X25519_LEN]) {
+    static const uint8_t nine[X25519_LEN] = {9};
     uint8_t portable_out[X25519_LEN];
+    uint8_t ladder_out[X25519_LEN];
+    uint8_t clamped[X25519_LEN];
+    memcpy(clamped, scalar, X25519_LEN);
+    clamped[0] &= 248;
+    clamped[31] = (uint8_t)((clamped[31] & 127) | 64);
     x25519_base(portable_out, scalar);
     x25519_wide_base(out, scalar);
-    if (memcmp(portable_out, out, X25519_LEN) != 0) {
+    x25519_wide_ladder(ladder_out, clamped, nine);
+    if (memcmp(portable_out, out, X25519_LEN) != 0 || memcmp(ladder_out, out, X25519_LEN) != 0) {
         failures++;
         (void)fprintf(stderr, "FAIL %s: the fields differ on the base point\n", case_name);
-        print_hex("scalar  ", scalar, X25519_LEN);
-        print_hex("portable", portable_out, X25519_LEN);
-        print_hex("wide    ", out, X25519_LEN);
+        print_hex("scalar     ", scalar, X25519_LEN);
+        print_hex("portable   ", portable_out, X25519_LEN);
+        print_hex("wide ladder", ladder_out, X25519_LEN);
+        print_hex("wide table ", out, X25519_LEN);
         return;
     }
     compared++;
@@ -259,6 +275,76 @@ static void run_non_canonical(void) {
     }
 }
 
+// Scalars that stress x25519_wide_base's digits and sums. The bytes 0x00,
+// 0x77, 0x88, 0xff, 0x08 and 0x80 repeated, after the clamp, make digits of
+// 0 and 7 alone, carries from every digit (8 becomes -8 with a carry), or
+// both in turn. One set bit at each position makes one digit of 1, 2, 4
+// or 8 and zeros elsewhere. Each scalar in SMALL_MULTIPLES is m L + r for
+// L the order of the base point, m between 3 and 7, and r one of 2, 4, 5,
+// 7, L - 1, L - 3, L - 4 and L - 6: a multiple of 8 that the clamp keeps,
+// whose 64 additions cancel down to 2B, -B and the like.
+static const char *const SMALL_MULTIPLES[] = {
+    "90f7c22d9e526e1006adcdd137db397d00000000000000000000000000000060",
+    "b84fd773698c49605973de8b7ae77b5300000000000000000000000000000040",
+    "80cbb88ab8b58068dc49c57416d5189200000000000000000000000000000070",
+    "a823cdd083ef5bb82f10d62e59e15a6800000000000000000000000000000050",
+    "a023cdd083ef5bb82f10d62e59e15a6800000000000000000000000000000050",
+    "78cbb88ab8b58068dc49c57416d5189200000000000000000000000000000070",
+    "b04fd773698c49605973de8b7ae77b5300000000000000000000000000000040",
+    "88f7c22d9e526e1006adcdd137db397d00000000000000000000000000000060",
+};
+
+static void run_base_edges(void) {
+    static const uint8_t fills[] = {0x00, 0x77, 0x88, 0xff, 0x08, 0x80};
+    uint8_t k[X25519_LEN];
+    uint8_t out[X25519_LEN];
+    for (size_t i = 0; i < sizeof fills; i++) {
+        memset(k, fills[i], sizeof k);
+        compare_base("base fill", k, out);
+    }
+    for (size_t bit = 0; bit < (size_t)8 * X25519_LEN; bit++) {
+        memset(k, 0, sizeof k);
+        k[bit / 8] = (uint8_t)(1U << (bit % 8));
+        compare_base("base one bit", k, out);
+    }
+    for (size_t i = 0; i < sizeof SMALL_MULTIPLES / sizeof SMALL_MULTIPLES[0]; i++) {
+        unhex(SMALL_MULTIPLES[i], k);
+        compare_base("base small multiple", k, out);
+    }
+}
+
+// Every entry of x25519_wide_base's table, and its negative, once each. The
+// scalar is 2^254, which the clamp sets, plus n 16^m for each nibble n from
+// 1 to 15 and each position m from 1 to 62: digit m is n for n up to 7, and
+// n - 16 with a carry of 1 into digit m + 1 for n from 8. So positions 2i
+// and 2i + 1 read every entry of row i but row 0's at position 0, which
+// position 1 reads. Then 8 at m and 7 at m + 1 make digits -8 and +8, and a
+// digit of +8 reads entry 8 unnegated. Position 0 takes 0 or 8 alone,
+// because the clamp clears bits 0 to 2.
+static void run_base_entries(void) {
+    uint8_t k[X25519_LEN];
+    uint8_t out[X25519_LEN];
+    for (size_t m = 1; m < 63; m++) {
+        for (unsigned n = 1; n < 16; n++) {
+            memset(k, 0, sizeof k);
+            k[31] = 0x40;
+            k[m / 2] |= (uint8_t)(n << (4 * (m % 2)));
+            compare_base("base table entry", k, out);
+        }
+        if (m < 62) {
+            memset(k, 0, sizeof k);
+            k[31] = 0x40;
+            k[m / 2] |= (uint8_t)(8U << (4 * (m % 2)));
+            k[(m + 1) / 2] |= (uint8_t)(7U << (4 * ((m + 1) % 2)));
+            compare_base("base table entry 8", k, out);
+        }
+    }
+    memset(k, 0, sizeof k);
+    k[0] = 0x08;
+    k[31] = 0x40;
+    compare_base("base table position 0", k, out);
+}
+
 static void run_random(void) {
     for (int i = 0; i < 10000; i++) {
         uint8_t k[X25519_LEN];
@@ -269,7 +355,7 @@ static void run_random(void) {
         u[31] = (uint8_t)((u[31] & 0x7f) | ((i & 1) << 7));
         (void)compare("random", k, u, out);
     }
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 10000; i++) {
         uint8_t k[X25519_LEN];
         uint8_t out[X25519_LEN];
         rng_fill(k, sizeof k);
@@ -283,6 +369,8 @@ int main(void) {
     run_iterated();
     run_low_order();
     run_non_canonical();
+    run_base_edges();
+    run_base_entries();
     run_random();
     if (failures != 0) {
         (void)printf("x25519_equiv: %d failures (seed 0x%016llx)\n", failures,

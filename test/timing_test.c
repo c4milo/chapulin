@@ -236,6 +236,13 @@ static void chacha_run(void) {
 
 // x25519: fixed scalar vs fresh random scalars on the base point. A
 // ladder that branches on scalar bits or skips work per word shows here.
+// Under TEST_X25519_WIDE the base point's multiple comes from the table of
+// x25519_wide_edwards.h (docs/decisions.md 148), and main sets the fixed
+// scalar to bytes of 0x11: every four-bit digit is then 1 but the lowest,
+// 0, and the top one, 5, so nearly every scan keeps the first entry of its
+// row and none negates, where a random scalar's digits name every entry and
+// half of them are negative. A scan that passes over the entries a digit
+// does not name, or a negation under a branch, shows here.
 static uint8_t x_scalar_fixed[X25519_LEN];
 static uint8_t x_scalar[X25519_LEN];
 
@@ -457,6 +464,9 @@ int main(void) {
     ch_rand_bytes(poly_key_fixed, sizeof poly_key_fixed);
     ch_rand_bytes(chacha_key_fixed, sizeof chacha_key_fixed);
     ch_rand_bytes(x_scalar_fixed, sizeof x_scalar_fixed);
+#ifdef TEST_X25519_WIDE
+    memset(x_scalar_fixed, 0x11, sizeof x_scalar_fixed);
+#endif
     ch_rand_bytes(poly_msg, sizeof poly_msg);
     ch_rand_bytes(chacha_buf, sizeof chacha_buf);
 
