@@ -142,6 +142,10 @@ const ch_identity *srv_identity_for(const ch_cfg *cfg, uint16_t sigalg);
 // The move is owed and is not this header's to make; until it is made
 // this is a second copy of the assembly.
 //
+// cpu is the session's ch_cfg.cpu, which a host object hands to
+// sha256.h's entries: the hash runs on the SHA-256 instructions where cpu
+// holds CH_CPU_CONSTANT_TIME_SHA256. A device object reads no value.
+//
 // Requires transcript_hash pointing at hash_len readable bytes, the
 // transcript hash as it stands after the Certificate message;
 // hash_len from SHA256_LEN to SRV_COOKIE_HASH_MAX; sigalg naming a
@@ -152,8 +156,8 @@ const ch_identity *srv_identity_for(const ch_cfg *cfg, uint16_t sigalg);
 // stages the content in its own frame and wipes that staging with
 // ct_wipe before it returns, because the transcript hash inside it is
 // derived from secrets.
-void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, size_t hash_len,
-                             uint8_t out[SHA256_LEN]);
+void srv_hash_signed_content(uint32_t cpu, uint16_t sigalg, const uint8_t *transcript_hash,
+                             size_t hash_len, uint8_t out[SHA256_LEN]);
 
 // Signs the CertificateVerify content for one connection: it builds
 // the digest with srv_hash_signed_content and hands it to the signer

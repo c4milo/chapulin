@@ -4356,18 +4356,20 @@ last `ROLE=server` stub, as the entry said it would.
   pinned clang (docs/verification.md, "The hash instructions").
   `p256_sign_cpu`, which a host object's server signs through, hands
   the session's value to each HMAC of its RFC 6979 nonce
-  (decision 102). A `TRUST=webpki` client hands its value to the hash
+  (decision 102). A server hands its value to the SHA-256 of its
+  CertificateVerify signed content (decision 145). A `TRUST=webpki` client hands its value to the hash
   of its configuration and to the binding of each ticket it receives or
   presents (decision 132). The binding's key is the ticket's PSK.
-  Nineteen violations break those rules.
+  Twenty violations break those rules.
   `inv16-sha256-instructions-without-bit` inverts the SHA-256 predicate
   and `inv16-sha256-reads-sha512-bit` reads another hash's bit;
   `inv16-hkdf-extract-entry-inverted` and
   `inv16-ks-exporter-entry-inverted` each invert one entry,
   `inv16-record-keys-direction-under-every-bit` keys a record direction
-  under a value with every bit, and `inv16-p256-sign-nonce-on-portable`
-  hands the nonce's HMACs 0 in place of the session's value. The
-  counting tests catch those six.
+  under a value with every bit, `inv16-p256-sign-nonce-on-portable`
+  hands the nonce's HMACs 0 in place of the session's value, and
+  `inv16-srv-signed-content-on-portable` hashes the signed content on
+  `sha256.c`. The counting tests catch those seven.
   `inv16-sha512-instructions-without-bit`,
   `inv16-sha512-reads-sha256-bit` and
   `inv16-sha512-update-entry-inverted` do the same to `sha512.h`, and

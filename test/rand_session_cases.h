@@ -20,6 +20,7 @@
 #ifndef CH_TEST_RAND_SESSION_CASES_H
 #define CH_TEST_RAND_SESSION_CASES_H
 
+#include "cpu.h"
 #include "rand_session.h"
 #include "rsa.h"
 #include "rsa_sign.h"
@@ -120,8 +121,8 @@ static void check_pss_salt_from_source(void) {
     uint8_t transcript_hash[SHA256_LEN];
     memset(transcript_hash, 0x33, sizeof transcript_hash);
     uint8_t digest[SHA256_LEN];
-    srv_hash_signed_content(SIGALG_RSA_PSS_RSAE_SHA256, transcript_hash, sizeof transcript_hash,
-                            digest);
+    srv_hash_signed_content(CH_CFG_CPU(cfg), SIGALG_RSA_PSS_RSAE_SHA256, transcript_hash,
+                            sizeof transcript_hash, digest);
     static uint8_t sigs[2][SRV_SIG_MAX];
     for (size_t k = 0; k < 2; k++) {
         seed_source(&server_source, 0x5a17 + k);

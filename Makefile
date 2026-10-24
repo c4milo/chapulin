@@ -637,7 +637,7 @@ TESTH := test/session_report_tests.h test/session_ticket_tests.h test/test_ticke
          test/diff_pem_files_calls.h test/timing_pem.h test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
          test/hash_instructions_cpu.h test/hash_runtime_count.h test/hash_runtime_quic.h \
-         test/hash_runtime_webpki.h test/sha2_equiv_copies.h \
+         test/hash_runtime_srv.h test/hash_runtime_webpki.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
          test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h \
          test/sha2_equiv_residue512_avx2.h test/avx2_registers.h test/sha2_equiv_length512.h \
@@ -3198,10 +3198,11 @@ bin/mlkem_avx2_equiv_test: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_TEST_
 # (docs/decisions.md 127). The first binary is a QUIC TRUST=webpki
 # object with the suites. Its rows hold a record direction, a QUIC
 # level's keys and webpki_ticket.h's three calls (docs/decisions.md 132).
-# The second is a TCP object with the suites and the
+# The second is a TCP server object with the suites and the
 # exporter, which a QUIC object does not hold, so the two exporter entries
-# have a row. Both link the P-256 signer, whose nonce's HMACs follow the
-# SHA-256 bit (p256_sign_cpu).
+# have a row. It links srv_auth.c, whose signed content's SHA-256 follows
+# the SHA-256 bit (test/hash_runtime_srv.h). Both link the P-256 signer,
+# whose nonce's HMACs follow the SHA-256 bit (p256_sign_cpu).
 HASH_RUNTIME_COUNTED := sha256.c sha256_hw.c sha512.c $(call sha512_avx2_apart,$(SHA512_HW_SRCS)) \
                         sha512_compress_blocks.c
 HASH_RUNTIME_TEST_SRCS := test/hash_runtime_count.c test/hash_runtime_compress_count.c \
@@ -3216,10 +3217,10 @@ bin/hash_runtime_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH
 	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I. -Itest -o $@ \
 	  test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS)
 bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) sha256.c sha512.c \
-                                sha512_compress_blocks.c hkdf.c keysched.c $(HDRS) $(TESTH)
+                                sha512_compress_blocks.c hkdf.c keysched.c srv_auth.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) $(EXPORTER_DEF) -I. -Itest -o $@ test/hash_runtime_test.c \
-	  $(HASH_RUNTIME_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -I. -Itest -o $@ \
+	  test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) srv_auth.c
 # Which calls an x86-64 host object sends to its kernels under each
 # ch_cfg.cpu value (docs/decisions.md 89, 90, 107, 110 and 119 to 122):
 # chacha20_avx2.c's AVX2 ChaCha20 and mlkem_avx2.c's copy of ML-KEM, which

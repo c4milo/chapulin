@@ -5448,12 +5448,14 @@ A call that takes no value runs no hash instruction. Its SHA-256 runs
 `sha256.c`, and its SHA-384 `sha512.c`, which in a host object is the
 first arm of [SHA-512 in a host object](#sha-512-in-a-host-object). The
 DRBG, the certificate verifiers, the RSA signer, `p256_sign`, the cookie
-and token MACs, the CertificateVerify content hash, an SPKI pin's hash,
+and token MACs, an SPKI pin's hash,
 the server's hash of a ClientHello's frozen bytes and the webpki ticket
 binding make such calls, and each starts and ends its context on that
 path. `p256_sign_cpu`, which a server signs a CertificateVerify through,
 takes the session's value and hands it to `hmac_sha256_cpu` for each
-HMAC of the RFC 6979 nonce (decision 102).
+HMAC of the RFC 6979 nonce (decision 102). A server's
+`srv_hash_signed_content` takes the value as well, for the SHA-256 of
+the CertificateVerify signed content (decision 145).
 
 CBMC cannot unwind an intrinsic, so no harness compiles `sha256_hw.c` or
 `sha512_hw.c`, and the [sha256](#sha256), [sha512](#sha512),

@@ -102,8 +102,8 @@ const ch_identity *srv_identity_for(const ch_cfg *cfg, uint16_t sigalg) {
     return id;
 }
 
-void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, size_t hash_len,
-                             uint8_t out[SHA256_LEN]) {
+void srv_hash_signed_content(uint32_t cpu, uint16_t sigalg, const uint8_t *transcript_hash,
+                             size_t hash_len, uint8_t out[SHA256_LEN]) {
     // The SignatureScheme names the hash run over the content, and the
     // cipher suite names the transcript hash that goes inside it. Both
     // schemes this build signs with name SHA-256, so one arm covers
@@ -120,10 +120,19 @@ void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, si
     memcpy(content + SRV_SIGNED_PAD_LEN, srv_cv_context, sizeof srv_cv_context);
     memcpy(content + SRV_SIGNED_PAD_LEN + sizeof srv_cv_context, transcript_hash, hash_len);
 
+    // The hash runs on the path cpu picks: sha256.h's entries in a host
+    // object, and sha256.c's calls in a device object, which holds one
+    // SHA-256 and reads no value.
     sha256 s;
     sha256_init(&s);
+#ifdef CH_CPU_RUNTIME
+    sha256_update_cpu(cpu, &s, content, SRV_SIGNED_PAD_LEN + sizeof srv_cv_context + hash_len);
+    sha256_final_cpu(cpu, &s, out);
+#else
+    (void)cpu;
     sha256_update(&s, content, SRV_SIGNED_PAD_LEN + sizeof srv_cv_context + hash_len);
     sha256_final(&s, out);
+#endif
 
     // Both the staging array and the hash context hold the transcript
     // hash, which is derived from secrets.
@@ -246,7 +255,7 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
     }
 
     uint8_t digest[SHA256_LEN];
-    srv_hash_signed_content(sigalg, transcript_hash, hash_len, digest);
+    srv_hash_signed_content(CH_CFG_CPU(*cfg), sigalg, transcript_hash, hash_len, digest);
     int signed_ok = sign_digest(cfg, id, sigalg, digest, sig, cap, sig_len);
     // The digest is the SHA-256 of a content that holds the transcript
     // hash, which is derived from secrets.
@@ -296,7 +305,7 @@ int srv_identity_check(const ch_cfg *cfg, uint16_t sigalg) {
     uint8_t transcript[SHA256_LEN];
     memset(transcript, 0, sizeof transcript);
     uint8_t digest[SHA256_LEN];
-    srv_hash_signed_content(sigalg, transcript, sizeof transcript, digest);
+    srv_hash_signed_content(CH_CFG_CPU(*cfg), sigalg, transcript, sizeof transcript, digest);
 
     // Every byte in this frame is public: a constant message, its
     // digest, and a signature over it. The private key was never copied

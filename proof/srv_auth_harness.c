@@ -244,7 +244,7 @@ int main(void) {
     (void)srv_identity_for(&cfg, any_sigalg);
 
     fill_nondet(transcript, sizeof transcript);
-    srv_hash_signed_content(nondet_scheme(), transcript, nondet_hash_len(), digest);
+    srv_hash_signed_content(nondet_u32(), nondet_scheme(), transcript, nondet_hash_len(), digest);
 
     make_identities(&cfg);
     fill_nondet(transcript, sizeof transcript);

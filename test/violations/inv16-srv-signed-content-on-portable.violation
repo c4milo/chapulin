@@ -1,0 +1,22 @@
+invariant: INV-16
+file: srv_auth.c
+catches: hash_runtime_exporter_test
+reason: srv_hash_signed_content hashes a CertificateVerify's signed
+  content on sha256.c whatever the session's ch_cfg.cpu states, so a
+  server that stated the SHA-256 instructions runs that hash on the
+  portable code. Every signature is the same, because both paths
+  compute the same digest, so no vector fails.
+  bin/hash_runtime_exporter_test's srv_hash_signed_content row counts
+  the calls on the wrong path.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    sha256_update_cpu(cpu, &s, content, SRV_SIGNED_PAD_LEN + sizeof srv_cv_context + hash_len);
+    sha256_final_cpu(cpu, &s, out);
+#else
+--- new
+#ifdef CH_CPU_RUNTIME
+    (void)cpu;
+    sha256_update(&s, content, SRV_SIGNED_PAD_LEN + sizeof srv_cv_context + hash_len);
+    sha256_final(&s, out);
+#else

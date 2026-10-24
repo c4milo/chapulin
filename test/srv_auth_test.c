@@ -112,15 +112,15 @@ static void test_signed_content(void) {
 
     // Both schemes name SHA-256 over the content, so both reach the
     // same digest for one transcript.
-    srv_hash_signed_content(SIGALG_ECDSA_P256_SHA256, transcript, SHA256_LEN, digest);
+    srv_hash_signed_content(0, SIGALG_ECDSA_P256_SHA256, transcript, SHA256_LEN, digest);
     CHECK(memcmp(digest, want32, sizeof want32) == 0);
 
     memset(digest, POISON, sizeof digest);
-    srv_hash_signed_content(SIGALG_RSA_PSS_RSAE_SHA256, transcript, SHA256_LEN, digest);
+    srv_hash_signed_content(0, SIGALG_RSA_PSS_RSAE_SHA256, transcript, SHA256_LEN, digest);
     CHECK(memcmp(digest, want32, sizeof want32) == 0);
 
     memset(digest, POISON, sizeof digest);
-    srv_hash_signed_content(SIGALG_ECDSA_P256_SHA256, transcript, SRV_COOKIE_HASH_MAX, digest);
+    srv_hash_signed_content(0, SIGALG_ECDSA_P256_SHA256, transcript, SRV_COOKIE_HASH_MAX, digest);
     CHECK(memcmp(digest, want48, sizeof want48) == 0);
 }
 
@@ -242,7 +242,7 @@ static void test_sign_ecdsa(void) {
     memset(&live, 0, sizeof live);
     provision_ecdsa(&live);
     memset(transcript, 0x11, sizeof transcript);
-    srv_hash_signed_content(SIGALG_ECDSA_P256_SHA256, transcript, sizeof transcript, digest);
+    srv_hash_signed_content(0, SIGALG_ECDSA_P256_SHA256, transcript, sizeof transcript, digest);
 
     CHECK(srv_sign_certificate_verify(&live, SIGALG_ECDSA_P256_SHA256, transcript,
                                       sizeof transcript, sig, sizeof sig, &sig_len,
@@ -253,7 +253,7 @@ static void test_sign_ecdsa(void) {
     // The signature covers this transcript and not a constant: the
     // digest of a transcript one bit away does not verify under it.
     transcript[0] ^= 0x01;
-    srv_hash_signed_content(SIGALG_ECDSA_P256_SHA256, transcript, sizeof transcript, digest);
+    srv_hash_signed_content(0, SIGALG_ECDSA_P256_SHA256, transcript, sizeof transcript, digest);
     CHECK(p256_ecdsa_verify(p256_sign_vectors[0].pub, digest, sig, sig_len) == 0);
     transcript[0] ^= 0x01;
 
@@ -330,7 +330,7 @@ static void test_sign_rsa(void) {
     memset(&live, 0, sizeof live);
     provision_rsa(&live);
     memset(transcript, 0x22, sizeof transcript);
-    srv_hash_signed_content(SIGALG_RSA_PSS_RSAE_SHA256, transcript, sizeof transcript, digest);
+    srv_hash_signed_content(0, SIGALG_RSA_PSS_RSAE_SHA256, transcript, sizeof transcript, digest);
 
     CHECK(srv_sign_certificate_verify(&live, SIGALG_RSA_PSS_RSAE_SHA256, transcript,
                                       sizeof transcript, sig, sizeof sig, &sig_len,
@@ -339,7 +339,7 @@ static void test_sign_rsa(void) {
     CHECK(rsa_pss_verify(rsa_sign_2048_n, sizeof rsa_sign_2048_n, digest, sig, sig_len) == 1);
 
     transcript[0] ^= 0x01;
-    srv_hash_signed_content(SIGALG_RSA_PSS_RSAE_SHA256, transcript, sizeof transcript, digest);
+    srv_hash_signed_content(0, SIGALG_RSA_PSS_RSAE_SHA256, transcript, sizeof transcript, digest);
     CHECK(rsa_pss_verify(rsa_sign_2048_n, sizeof rsa_sign_2048_n, digest, sig, sig_len) == 0);
     transcript[0] ^= 0x01;
 

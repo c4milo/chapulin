@@ -181,7 +181,8 @@
 #     ch_cfg.cpu value and run no instruction a bit names
 #     (test/hash_runtime_test.c). The first is a QUIC TRUST=webpki object,
 #     as the Makefile builds it, so its rows hold the ticket's hash calls
-#     (docs/decisions.md 132).
+#     (docs/decisions.md 132). The second is a TCP server object, so its
+#     rows hold the signed content's hash (test/hash_runtime_srv.h).
 #
 # On a model without AVX-512 IFMA, which rsa_ifma.c's kernel runs:
 #
@@ -795,8 +796,9 @@ fi
 "$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI "${runtime[@]}" \
     -o "$arm64_out/hash_runtime_test" test/hash_runtime_test.c "${arm64_hash_count_srcs[@]}" \
     "${hash_count_quic_srcs[@]}" || exit 1
-"$arm64_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -o "$arm64_out/hash_runtime_exporter_test" \
-    test/hash_runtime_test.c "${arm64_hash_count_srcs[@]}" || exit 1
+"$arm64_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -DCH_ROLE_SERVER \
+    -o "$arm64_out/hash_runtime_exporter_test" test/hash_runtime_test.c "${arm64_hash_count_srcs[@]}" \
+    srv_auth.c || exit 1
 for b in hash_runtime_test hash_runtime_exporter_test; do
     expect_arm64 "$no_sha512" 0 \
         "a hash call ran on a path its ch_cfg.cpu value does not name" "$b"
@@ -816,8 +818,9 @@ build_webpki_loop || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI "${runtime[@]}" \
     -o "$x86_out/hash_runtime_test" test/hash_runtime_test.c "${hash_count_srcs[@]}" \
     "${hash_count_quic_srcs[@]}" || exit 1
-"$x86_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -o "$x86_out/hash_runtime_exporter_test" \
-    test/hash_runtime_test.c "${hash_count_srcs[@]}" || exit 1
+"$x86_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -DCH_ROLE_SERVER \
+    -o "$x86_out/hash_runtime_exporter_test" test/hash_runtime_test.c "${hash_count_srcs[@]}" \
+    srv_auth.c || exit 1
 loops=(quic_loop_aes webpki_loop_aes)
 
 # No AES-NI, PCLMULQDQ or AVX2.

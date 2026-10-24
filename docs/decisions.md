@@ -13031,3 +13031,23 @@ does nothing more.
     - **Keeping `memset` and asking each image for a faster one.** A Zig
       program that links no libc gets compiler_rt's, and chapulin cannot
       choose a consumer's runtime.
+145. **A server hashes its CertificateVerify signed content on the path
+    its session's `ch_cfg.cpu` picks.** `srv_hash_signed_content` ran
+    `sha256.c` in every session. So a session that stated
+    `CH_CPU_CONSTANT_TIME_SHA256` still ran one portable SHA-256 in each
+    full handshake. The count of
+    [#188](https://github.com/c4milo/chapulin/issues/188) on 2026-10-21
+    found it, and Camilo approved the fix that day.
+
+    - **The rule.** `srv_hash_signed_content` takes the value first. A
+      host object hands it to `sha256.h`'s entries, and a device object
+      reads no value. `srv_sign_certificate_verify` and
+      `srv_identity_check` pass `CH_CFG_CPU` of their configuration.
+    - **Constant time.** The bit states the instructions' timing, and
+      every other SHA-256 of the session already rests on it. The entry
+      branches once on the bit, which is not secret.
+
+    `bin/hash_runtime_exporter_test` is now a server object and links
+    `srv_auth.c`. Its row of `test/hash_runtime_srv.h` counts the calls
+    under each value, and `inv16-srv-signed-content-on-portable` fails
+    that count.

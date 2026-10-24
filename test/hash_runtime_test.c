@@ -37,13 +37,15 @@
 //
 // The rows: sha256.h's three entries and sha512.h's five; hkdf.h's five
 // and keysched.h's, at each hash length; p256_sign_cpu, whose RFC 6979
-// nonce runs HMAC-SHA-256; transcript.h's two; a record direction's keying
+// nonce runs HMAC-SHA-256; transcript.h's two; in a server role
+// srv_hash_signed_content, the SHA-256 of a CertificateVerify's signed
+// content (test/hash_runtime_srv.h); a record direction's keying
 // and its KeyUpdate, which read the direction's cpu, under each suite; in
 // a QUIC build a level's keys, their update and an Initial packet
 // (test/hash_runtime_quic.h); and in a TRUST=webpki build webpki_ticket.h's
 // three calls (test/hash_runtime_webpki.h). The Makefile builds the file
 // twice: as a QUIC TRUST=webpki object with the suites, and as a TCP
-// object with the exporter, whose two entries a QUIC object lacks.
+// server object with the exporter, whose two entries a QUIC object lacks.
 //
 // One row computes more than hashes: the Initial packet's seal runs
 // AES-128-GCM, on the path the value's AES and VAES bits pick. That row
@@ -363,6 +365,7 @@ static void row_record_direction(uint32_t cpu) {
 }
 
 #include "hash_runtime_quic.h"
+#include "hash_runtime_srv.h"
 #include "hash_runtime_webpki.h"
 
 // The rows that take no hash length and no suite.
@@ -387,21 +390,24 @@ static const row fixed_rows[] = {
 
 // The rows that run the hash row_hash_len names.
 static const row hash_rows[] = {
-    {"hmac_cpu",              row_hmac             },
-    {"hkdf_extract_cpu",      row_hkdf_extract     },
-    {"hkdf_expand_cpu",       row_hkdf_expand      },
-    {"hkdf_expand_label_cpu", row_hkdf_expand_label},
-    {"ks_early_cpu",          row_ks_early         },
-    {"ks_verify_data_cpu",    row_ks_verify_data   },
-    {"ks_handshake_cpu",      row_ks_handshake     },
-    {"ks_master_cpu",         row_ks_master        },
-    {"ks_res_master_cpu",     row_ks_res_master    },
-    {"ks_res_psk_cpu",        row_ks_res_psk       },
+    {"hmac_cpu",                row_hmac              },
+    {"hkdf_extract_cpu",        row_hkdf_extract      },
+    {"hkdf_expand_cpu",         row_hkdf_expand       },
+    {"hkdf_expand_label_cpu",   row_hkdf_expand_label },
+    {"ks_early_cpu",            row_ks_early          },
+    {"ks_verify_data_cpu",      row_ks_verify_data    },
+    {"ks_handshake_cpu",        row_ks_handshake      },
+    {"ks_master_cpu",           row_ks_master         },
+    {"ks_res_master_cpu",       row_ks_res_master     },
+    {"ks_res_psk_cpu",          row_ks_res_psk        },
 #ifdef CH_EXPORTER
-    {"ks_exp_master_cpu",     row_ks_exp_master    },
-    {"ks_exporter_cpu",       row_ks_exporter      },
+    {"ks_exp_master_cpu",       row_ks_exp_master     },
+    {"ks_exporter_cpu",         row_ks_exporter       },
 #endif
-    {"the transcript",        row_transcript       },
+    {"the transcript",          row_transcript        },
+#ifdef CH_ROLE_SERVER
+    {"srv_hash_signed_content", row_srv_signed_content},
+#endif
 };
 
 // The rows that run under the suite row_suite names.
