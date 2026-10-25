@@ -179,15 +179,19 @@ static void run_p256_verify(size_t n) {
            "p256_ecdsa_verify refused RFC 6979 A.2.5");
 }
 
-// The signature through p256_sign_cpu, the entry a server signs through:
-// the value picks the multiply and the path of the nonce's HMACs.
+// The signature through p256_sign_hedged_cpu, the entry a server signs
+// through, with its hedged nonce and its two checks (docs/decisions.md
+// 153): the value picks the multiply and the path of the nonce's HMACs.
+// The noise is the first hedged vector's, so the row signs the same bytes
+// every time and prepare_p256_sign can check them.
 static void run_p256_sign(size_t n) {
     (void)n;
     uint8_t sig[P256_SIG_MAX];
     size_t sig_len = 0;
-    const p256_sign_vector *v = &p256_sign_vectors[0];
-    expect(p256_sign_cpu(bench_cpu, v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1,
-           "p256_sign_cpu failed");
+    const p256_hedged_vector *v = &p256_hedged_vectors[0];
+    expect(p256_sign_hedged_cpu(bench_cpu, v->priv, v->msg_hash, v->noise, sig, sizeof sig,
+                                &sig_len) == 1,
+           "p256_sign_hedged_cpu failed");
     bench_consume(sig, 1);
 }
 
@@ -195,11 +199,12 @@ static void prepare_p256_sign(size_t n) {
     (void)n;
     uint8_t sig[P256_SIG_MAX];
     size_t sig_len = 0;
-    const p256_sign_vector *v = &p256_sign_vectors[0];
-    expect(p256_sign_cpu(bench_cpu, v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1,
-           "p256_sign_cpu failed");
+    const p256_hedged_vector *v = &p256_hedged_vectors[0];
+    expect(p256_sign_hedged_cpu(bench_cpu, v->priv, v->msg_hash, v->noise, sig, sizeof sig,
+                                &sig_len) == 1,
+           "p256_sign_hedged_cpu failed");
     expect(sig_len == v->sig_len && memcmp(sig, v->sig, sig_len) == 0,
-           "p256_sign missed RFC 6979 A.2.5");
+           "p256_sign_hedged missed its first hedged vector");
 }
 
 // A random scalar from test/p256_ecdh_vectors.h, (1 of 3) in each table.

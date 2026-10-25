@@ -71,8 +71,9 @@ ROOTS = {
         (),
     ),
     "sign": (
-        {"p256_sign_cpu", "p256_sign", "EVP_DigestSign", "EVP_DigestSignInit",
-         "EVP_DigestSignInit_ex", "EVP_DigestSignUpdate", "EVP_DigestSignFinal"},
+        {"p256_sign_hedged_cpu", "p256_sign_hedged", "p256_sign_cpu", "p256_sign",
+         "EVP_DigestSign", "EVP_DigestSignInit", "EVP_DigestSignInit_ex", "EVP_DigestSignUpdate",
+         "EVP_DigestSignFinal"},
         (),
     ),
     "key_schedule": (

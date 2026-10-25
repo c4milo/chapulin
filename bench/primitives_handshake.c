@@ -347,7 +347,8 @@ static counted CALLS[] = {
     {"x25519_base",         (void (*)(void))x25519_base,         {0, 0}},
     {"rsa_pss_sign",        (void (*)(void))rsa_pss_sign,        {0, 0}},
     {"rsa_pss_verify",      (void (*)(void))rsa_pss_verify,      {0, 0}},
-    {"p256_sign",           (void (*)(void))p256_sign,           {0, 0}},
+    // The server signs through the hedged entry (docs/decisions.md 153).
+    {"p256_sign",           (void (*)(void))p256_sign_hedged,    {0, 0}},
     {"p256_ecdsa_verify",   (void (*)(void))p256_ecdsa_verify,   {0, 0}},
     {"hkdf_extract",        (void (*)(void))hkdf_extract,        {0, 0}},
     {"hkdf_expand_label",   (void (*)(void))hkdf_expand_label,   {0, 0}},
