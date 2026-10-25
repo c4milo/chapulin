@@ -144,12 +144,12 @@ pruned from the call graph (`STACK_PRUNE=rsa_sign64_pss`) the deepest
 chain is the encapsulation to the client's key into K-PKE encrypt and
 Keccak, at 10,464 bytes. With the encapsulation pruned as well
 (`STACK_PRUNE=rsa_sign64_pss,srv_kex_share`) it is the ECDSA signer on
-the wide P-256 field, at 5,936 bytes. After each wide operation,
+the wide P-256 field, at 6,176 bytes. After each wide operation,
 `p256_wide_wipe_below` writes zero over the stack below it, in a frame
 of 3,120 bytes. A device object holds neither the 64-bit signer nor the
 wide field: its `ch_srv_accept` peaks at 10,432 bytes, through the
 encapsulation (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`).
-There the signer's deepest chain is `rsa_sign.c`'s ladder, at 5,280
+There the signer's deepest chain is `rsa_sign.c`'s ladder, at 5,360
 bytes (`STACK_PRUNE=srv_kex_share`).
 
 **`SUITE=aesgcm`.** `bench/sram.sh` measures a `SUITE=aesgcm` build as the
@@ -1272,6 +1272,34 @@ count of the tree with entry 148:
 - On the M1 Pro, Apple clang 21 at `-O2`, `proc_pid_rusage` counts 372,726 instructions for a
   shared secret before entry 152 and 340,978 with it, and 129,818 and 119,682 for key
   generation. Decision 152 gives the x86-64 counts under gcc 13 and two clangs.
+
+What decision 153 adds. The server's ECDSA signature now takes a hedged nonce, and the signer
+checks that k·G is on the curve and that s·k = z + r·d before a signature leaves it. The tables
+above count the tree before that entry, and the next run of `bench/handshake-n2.sh` on the arm64
+runner records the N2 figures. On the M1 Pro, Apple clang 21 at `-O2`, `proc_pid_rusage` over
+2,000 calls of a program that signs with the RFC 6979 key gives these counts of one signature:
+
+| M1 Pro, instructions of one P-256 signature | before entry 153 | RFC 6979 with both checks | hedged with both checks |
+| --- | --- | --- | --- |
+| host object, `0xe7` | 172,683 | 179,127 | 179,944 |
+| host object, `0x05` | 332,936 | 339,208 | 352,127 |
+| host object, `0x01` | 16,288,929 | 16,314,992 | 16,332,321 |
+| device object, `WIDEMUL=native` | 5,491,941 | 5,501,123 | 5,512,328 |
+| device object, the 16x16 decomposition | 16,290,539 | 16,319,254 | 16,327,462 |
+
+- The two checks add about 6,400 instructions on the wide field, which a host session that
+  states its multiply runs, and 9,000 to 29,000 on the 32-bit field: two squares and a product
+  for the curve equation, two scalar products for s·k and r·d. A count moves by up to 0.05% from
+  one run to the next on a loaded machine, so the 16 M rows carry that much noise.
+- The hedged nonce adds four SHA-256 compressions: steps d and f each hash 224 bytes where they
+  hashed 97. That is about 800 instructions on the SHA-256 instructions and 13,000 on the
+  portable code.
+- Under `0xe7` a signature costs 1.04 times what it cost before. On the Neoverse-N2 count above,
+  the handshake under `0xe7` takes 0.821 M with a 0.165 M signature, so the change adds about
+  0.007 M, under 1% of the handshake, if the N2 pays what the M1 pays.
+- The bench's `p256_sign` row now times `p256_sign_hedged_cpu`, the server's path, over the first
+  hedged vector's noise. Its CSVs keep the earlier entry's figures until the next run records
+  them.
 
 #### The count of 2026-10-01
 
