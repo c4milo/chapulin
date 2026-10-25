@@ -1,0 +1,13 @@
+invariant: INV-58
+file: srv_auth.c
+catches: srv_auth_test
+reason: sign_ecdsa fills the noise with a constant instead of a draw, so
+  the server signs one transcript the same way every time, and the hedge
+  is gone. Every signature still verifies. bin/srv_auth_test signs one
+  transcript twice and requires two signatures, and requires the first to
+  be p256_sign_hedged's over the noise the hook wrote.
+
+--- old
+    rand_draw(cfg, noise, sizeof noise);
+--- new
+    memset(noise, 1, sizeof noise);

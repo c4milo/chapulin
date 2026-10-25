@@ -1,0 +1,14 @@
+invariant: INV-58
+file: p256_sign.c
+catches: p256_sign_test
+reason: the zeros after the noise are one byte short, so the private
+  scalar no longer starts a SHA-256 block of the step d and f input
+  (draft-irtf-cfrg-det-sigs-with-noise-05 section 4). The nonce is still
+  a function of the key, the noise and the message, so every signature
+  verifies. The hedged vectors in bin/p256_sign_test pin each
+  signature's bytes.
+
+--- old
+#define HEDGED_NOISE_PAD (2 * SHA256_BLOCK - SHA256_LEN - 1 - P256_NOISE_LEN)
+--- new
+#define HEDGED_NOISE_PAD (2 * SHA256_BLOCK - SHA256_LEN - 2 - P256_NOISE_LEN)

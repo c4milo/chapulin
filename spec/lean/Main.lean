@@ -134,6 +134,7 @@ def selftestAll (_ : Unit) : String :=
     ("x25519", Spec.X25519.selftest),
     ("x25519_edwards", Spec.X25519Edwards.selftest),
     ("p256", Spec.P256.selftest),
+    ("p256_nonce", Spec.P256Nonce.selftest),
     ("p256_wide_point", Spec.P256WidePoint.selftest),
     ("p256_wide_inverse", Spec.P256WideInverse.selftest),
     ("rsa", Spec.Rsa.selftest),
@@ -586,6 +587,25 @@ def dispatch : List String → Option String
     let h ← hexArg? hash
     guard (db.size == 32 && kb.size == 32 && h.size == 32)
     match Spec.P256.ecdsaSign (bytesToNatBE db) (bytesToNatBE kb) (bytesToNatBE h) with
+    | some (r, s) =>
+      return s!"{bytesToHex (natToBytesBE r 32)} {bytesToHex (natToBytesBE s 32)}"
+    | none => return "FAIL"
+  | ["p256_sign_rfc6979", d, hash] => do
+    -- p256_sign: the nonce RFC 6979 derives from d and the hash (Spec/P256Nonce.lean).
+    let db ← hexArg? d
+    let h ← hexArg? hash
+    guard (db.size == 32 && h.size == 32)
+    match Spec.P256Nonce.sign? (bytesToNatBE db) h none with
+    | some (r, s) =>
+      return s!"{bytesToHex (natToBytesBE r 32)} {bytesToHex (natToBytesBE s 32)}"
+    | none => return "FAIL"
+  | ["p256_sign_hedged", d, noise, hash] => do
+    -- p256_sign_hedged: the nonce the hedged form derives from d, 32 bytes of noise and the hash.
+    let db ← hexArg? d
+    let zb ← hexArg? noise
+    let h ← hexArg? hash
+    guard (db.size == 32 && zb.size == 32 && h.size == 32)
+    match Spec.P256Nonce.sign? (bytesToNatBE db) h (some zb) with
     | some (r, s) =>
       return s!"{bytesToHex (natToBytesBE r 32)} {bytesToHex (natToBytesBE s 32)}"
     | none => return "FAIL"

@@ -1,0 +1,13 @@
+invariant: INV-58
+file: p256_sign.c
+catches: p256_sign_test
+reason: sign_hedged no longer refuses all-zero noise, which is what a
+  random source that returns without writing leaves after rand_draw
+  (INV-4). Every signature over one message is then the same bytes again,
+  and nothing downstream notices. bin/p256_sign_test signs with zero
+  noise and requires CH_ASSERT to fire.
+
+--- old
+        CH_ASSERT(!ct_memeq(noise, unwritten, P256_NOISE_LEN));
+--- new
+        (void)unwritten;

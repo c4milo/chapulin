@@ -4,13 +4,14 @@
 // the contract each function below meets and the reasons behind it.
 //
 // Two signers do the arithmetic and this file calls one of them per
-// scheme: p256_sign for SIGALG_ECDSA_P256_SHA256 and rsa_pss_sign for
-// SIGALG_RSA_PSS_RSAE_SHA256. The RSA-PSS salt is the one random input
-// either signer takes, and this file draws it from the source the
-// configuration names (sign_rsa_pss, INV-4). The boot-time check calls
-// the matching verifier, p256_ecdsa_verify or rsa_pss_verify, which a
-// ROLE=server object already carries, and in a host object
-// rsa_pss_verify_cpu under the configuration's ch_cfg.cpu.
+// scheme: p256_sign_hedged for SIGALG_ECDSA_P256_SHA256 and rsa_pss_sign
+// for SIGALG_RSA_PSS_RSAE_SHA256. Each signer takes one random input, the
+// ECDSA nonce's noise and the RSA-PSS salt, and this file draws each from
+// the source the configuration names (sign_ecdsa and sign_rsa_pss,
+// INV-4). The boot-time check calls the matching verifier,
+// p256_ecdsa_verify or rsa_pss_verify, which a ROLE=server object already
+// carries, and in a host object rsa_pss_verify_cpu under the
+// configuration's ch_cfg.cpu.
 //
 // No line here reads a byte behind ch_identity.priv. This file tests
 // priv_len against the size of the type the scheme's signer declares
@@ -219,6 +220,28 @@ static int sign_rsa_pss(const ch_cfg *cfg, const ch_identity *id, const uint8_t 
     return signed_ok;
 }
 
+// Signs one digest with the ECDSA identity under noise drawn for this
+// signature alone, from the source cfg names. p256_sign_hedged checks
+// k*G and s before it writes a byte of the signature (docs/decisions.md
+// 153), and it holds the noise to rand.h's
+// contract: CH_ASSERT fires on an all-zero draw. The noise goes into the
+// nonce, so it is as secret as the nonce, and it is wiped.
+static int sign_ecdsa(const ch_cfg *cfg, const ch_identity *id, const uint8_t digest[SHA256_LEN],
+                      uint8_t *sig, size_t cap, size_t *sig_len) {
+    uint8_t noise[P256_NOISE_LEN];
+    rand_draw(cfg, noise, sizeof noise);
+#ifdef CH_CPU_RUNTIME
+    // The session's ch_cfg.cpu picks the multiply and the path of the
+    // nonce's HMAC-SHA-256 (p256_sign.h).
+    int signed_ok = p256_sign_hedged_cpu(cfg->cpu, id->priv, digest, noise, sig, cap, sig_len);
+#else
+    int signed_ok =
+        p256_sign_hedged(widemul_answer(cfg), id->priv, digest, noise, sig, cap, sig_len);
+#endif
+    ct_wipe(noise, sizeof noise);
+    return signed_ok;
+}
+
 // Signs one digest with the identity the scheme names. Returns 1 on
 // success and 0 on refusal, the convention both signers use. It passes
 // the private key as a pointer: the signer reads the bytes behind it
@@ -227,13 +250,7 @@ static int sign_digest(const ch_cfg *cfg, const ch_identity *id, uint16_t sigalg
                        const uint8_t digest[SHA256_LEN], uint8_t *sig, size_t cap,
                        size_t *sig_len) {
     if (sigalg == SIGALG_ECDSA_P256_SHA256) {
-#ifdef CH_CPU_RUNTIME
-        // The session's ch_cfg.cpu picks the multiply and the path of the
-        // nonce's HMAC-SHA-256 (p256_sign.h).
-        return p256_sign_cpu(cfg->cpu, id->priv, digest, sig, cap, sig_len);
-#else
-        return p256_sign(widemul_answer(cfg), id->priv, digest, sig, cap, sig_len);
-#endif
+        return sign_ecdsa(cfg, id, digest, sig, cap, sig_len);
     }
     return sign_rsa_pss(cfg, id, digest, sig, cap, sig_len);
 }

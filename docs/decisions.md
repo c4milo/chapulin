@@ -13552,3 +13552,114 @@ does nothing more.
       shared secret a connection.
     - **Assembly.** The C closed the gap, and the compiler is not the
       limit.
+
+153. **A server signs ECDSA P-256 with a hedged nonce, and the signer
+    checks k·G and s before a signature leaves it.** Camilo chose this on
+    2026-10-25 from a report on fault attacks. RFC 6979 signs one message
+    the same way every time. One correct signature and one that a fault
+    changed, over the same message, can then recover the private key.
+
+    - **The nonce.** `p256_sign_hedged` derives k by the hedged form of
+      draft-irtf-cfrg-det-sigs-with-noise-05, section 4. Steps d and f of
+      RFC 6979 section 3.2 take V, the separator, 32 bytes of noise Z,
+      63 zero bytes, the private key, 32 zero bytes and the reduced
+      hash. So the key starts a SHA-256 block of its own, after Z
+      changed the state. All other steps are RFC 6979's. The hedged
+      input is 224 bytes and RFC 6979's is 97, so the two forms never
+      hash the same input.
+    - **The noise.** Z is 32 bytes, the length of int2octets(x), as the
+      draft asks. `sign_ecdsa` in `srv_auth.c` draws it through
+      `rand_draw` for each signature, at boot in `ch_srv_check` and once
+      per handshake, and wipes it (INV-4). A weak source costs no more
+      than RFC 6979: with the same Z twice, k is still a function of the
+      key, the message and Z. `p256_sign_hedged` refuses all-zero Z with
+      CH_ASSERT, as `rsa_pss_sign` refuses its salt.
+    - **The two checks.** Every entry of `p256_sign.c` runs both, the
+      RFC 6979 entries too. First, the affine k·G must satisfy
+      y² = x³ − 3x + b before r is taken from it: `p256_point_on_curve`
+      on a device object's 32-bit field, and `p256_wide_point_on_curve`
+      on the wide field in a host session that states its multiply.
+      Second, s·k must equal z + r·d mod n: `scalar_check` multiplies r
+      by d again rather than read the product s came from, and compares
+      the bytes of the two sides with `ct_memeq`. Both checks touch k and d, so both
+      are constant time: they run on the arithmetic the signer already
+      runs, no branch reads their inputs, and their verdicts are masks.
+      `compute_signature` combines them with the finite mask and the
+      nonzero masks of r and s.
+    - **The copy.** The DER signature goes to an array of the signer's
+      own, and `write_if_checked`, the one function that writes a
+      signature, copies it to the caller only on the combined verdict. A
+      signature that fails is an error: the call returns 0, the caller's
+      buffer and length keep their bytes, and
+      `srv_sign_certificate_verify` answers `CH_EAUTH` with
+      internal_error, as for every refusal of a signer (decision 74). No
+      new result code is needed.
+    - **What the checks catch.** A fault that moves k·G off the curve,
+      in the multiplication or in the affine conversion. A fault in s,
+      in the inverse of k, or in either product r·d. The checks see the
+      value the fault left in k·G or in s.
+    - **What they miss.** A fault that moves k·G to another point of the
+      curve gives an r for a nonce nobody chose, and an s that is
+      consistent with it. A fault in d, or in k after k·G, gives an s
+      that the scalar check computes from the same wrong value. A fault
+      that skips a check passes. A verification under the public key
+      catches the first two, and the first form of this entry ran one:
+      `p256_ecdsa_verify` after each signature, about 560,000
+      instructions on the wide verifier, 3.2 times the signature on a
+      host object. Camilo ruled for the two checks instead, on the same
+      day.
+    - **Both objects.** A host object signs through
+      `p256_sign_hedged_cpu`, a device object through
+      `p256_sign_hedged`, and both hedge. A `SIGN_HEDGED` build switch,
+      which docs/server.md's question seven proposed, is not added. A
+      device server already draws for each handshake, so the hedge adds
+      one draw of 32 bytes.
+    - **RFC 6979 stays.** `p256_sign` and `p256_sign_cpu` keep the
+      deterministic nonce. No library call signs through them. The RFC
+      6979 vectors, the Wycheproof suite and the differential check them,
+      and so they check the generator and the two checks that the hedged
+      form shares.
+
+    The cost, from `proc_pid_rusage` over 2,000 calls of a program
+    that signs with the RFC 6979 key, on an M1 Pro with Apple clang 21
+    at `-O2`, instructions per signature:
+
+    | object, `ch_cfg.cpu` | before | RFC 6979 with both checks | hedged with both checks |
+    | --- | --- | --- | --- |
+    | host, `0xe7` | 172,683 | 179,127 | 179,944 |
+    | host, `0x05` | 332,936 | 339,208 | 352,127 |
+    | host, `0x01` | 16,288,929 | 16,314,992 | 16,332,321 |
+    | device, `WIDEMUL=native` | 5,491,941 | 5,501,123 | 5,512,328 |
+    | device, the 16x16 decomposition | 16,290,539 | 16,319,254 | 16,327,462 |
+
+    The two checks add about 6,400 instructions on the wide field and
+    9,000 to 29,000 on the 32-bit one. The hedge adds four SHA-256
+    compressions, two in each of steps d and f: about 800 instructions
+    on the SHA-256 instructions and 13,000 on the portable code. A count
+    moves by up to 0.05% from one run to the next on a loaded machine,
+    so the 16 M rows carry that much noise. Under `0xe7` a signature
+    costs 1.04 times what it cost before.
+    `bench/handshake-n2.sh` needs the arm64 runner, so this entry gives
+    the M1 counts, and the next run of the script records the N2 figure.
+
+    What holds it: `bin/p256_sign_fault_test` and its host twin build
+    `p256_sign.c` with `CH_P256_SIGN_FAULT_TEST`. Its two hooks change
+    one word of a coordinate of k·G, or one word of s, and the test
+    requires each entry to refuse with the buffer kept, under both
+    multiplies. `bin/p256_sign_test` signs ten hedged vectors from
+    `test/gen_p256_sign_vectors.py`, which computes them with Python's
+    integers and `hmac`, and requires a fixed Z to give fixed bytes, two
+    values of Z to give two signatures that both verify, and CH_ASSERT
+    on zero Z. `bin/srv_auth_test` requires the server's signature to be
+    `p256_sign_hedged`'s over the noise the hook wrote, and two
+    signatures of one transcript to differ.
+    `spec/lean/Spec/P256Nonce.lean` writes both nonces from the two
+    texts, checks RFC 6979 A.2.5's nonces, and proves that the hedged
+    tail is 191 bytes, that the key starts a block, and that no hedged
+    tail is an RFC 6979 tail. `bin/diff_p256_wide` holds r and s of both
+    C entries to it, byte for byte. The `p256_sign` harness proves the
+    tail byte for byte, the same HMAC count in both forms, and that a
+    signature reaches the caller only after both checks passed, over
+    every verdict and every value the stubs can give. The `p256_point` and `p256_wide_point` harnesses prove the
+    two on-curve tests.
+    Nine violations under INV-58 and INV-16 are new.

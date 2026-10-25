@@ -164,12 +164,47 @@ void p256_point_base_mul(p256_point *o, const p256_scalar *k) {
     p256_point_mul(o, k, &p256_point_generator);
 }
 
-uint32_t p256_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {
-    p256_fe x;
-    p256_fe y;
+// All ones when the Montgomery-domain pair (x, y) satisfies
+// y^2 = x^3 - 3x + b, zero otherwise. Three additions stand in for the
+// constant 3, which keeps one more derived constant out of the file. No
+// branch reads a coordinate. The caller wipes x and y; this wipes its
+// own three values.
+static uint32_t curve_equation_mask(const p256_fe *x, const p256_fe *y) {
     p256_fe lhs;
     p256_fe rhs;
     p256_fe three_x;
+    p256_fe_sqr(&lhs, y);
+    p256_fe_sqr(&rhs, x);
+    p256_fe_mul(&rhs, &rhs, x);
+    p256_fe_add(&three_x, x, x);
+    p256_fe_add(&three_x, &three_x, x);
+    p256_fe_sub(&rhs, &rhs, &three_x);
+    p256_fe_add(&rhs, &rhs, &B_MONT);
+    uint32_t equal = p256_fe_equal_mask(&lhs, &rhs);
+    ct_wipe(&lhs, sizeof lhs);
+    ct_wipe(&rhs, sizeof rhs);
+    ct_wipe(&three_x, sizeof three_x);
+    return equal;
+}
+
+uint32_t p256_point_on_curve(const uint8_t x[P256_FE_LEN], const uint8_t y[P256_FE_LEN]) {
+    p256_fe x_mont;
+    p256_fe y_mont;
+    p256_fe_from_bytes(&x_mont, x);
+    p256_fe_from_bytes(&y_mont, y);
+    // The range test is a mask, not a branch: these coordinates are k*G's.
+    uint32_t reduced = p256_fe_reduced_mask(&x_mont) & p256_fe_reduced_mask(&y_mont);
+    p256_fe_to_mont(&x_mont, &x_mont);
+    p256_fe_to_mont(&y_mont, &y_mont);
+    uint32_t on_curve = reduced & curve_equation_mask(&x_mont, &y_mont);
+    ct_wipe(&x_mont, sizeof x_mont);
+    ct_wipe(&y_mont, sizeof y_mont);
+    return on_curve;
+}
+
+uint32_t p256_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {
+    p256_fe x;
+    p256_fe y;
 
     // SEC 1 section 2.3.3's tag for an uncompressed point. Both returns
     // below read the peer's bytes, which are public.
@@ -185,17 +220,7 @@ uint32_t p256_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) 
     p256_fe_to_mont(&o->x, &x);
     p256_fe_to_mont(&o->y, &y);
     o->z = p256_fe_one_mont;
-
-    // y^2 = x^3 - 3x + b. Three additions stand in for the constant 3,
-    // which keeps one more derived constant out of the file.
-    p256_fe_sqr(&lhs, &o->y);
-    p256_fe_sqr(&rhs, &o->x);
-    p256_fe_mul(&rhs, &rhs, &o->x);
-    p256_fe_add(&three_x, &o->x, &o->x);
-    p256_fe_add(&three_x, &three_x, &o->x);
-    p256_fe_sub(&rhs, &rhs, &three_x);
-    p256_fe_add(&rhs, &rhs, &B_MONT);
-    return p256_fe_equal_mask(&lhs, &rhs);
+    return curve_equation_mask(&o->x, &o->y);
 }
 
 uint32_t p256_point_affine(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN], const p256_point *a) {

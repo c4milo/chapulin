@@ -348,7 +348,7 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-4: randomness is consumed at ten audited sites, all in six
+      INV-4: randomness is consumed at eleven audited sites, all in six
       files: handshake_flight.c, handshake_groups.c, srv_flight.c,
       srv_kex.c, srv_resume.c and srv_auth.c. This rule refuses a
       rand_draw call in any other file; inv-4-randomness-calls holds the
@@ -364,22 +364,22 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-4: the ten rand_draw calls in the six files
-      inv-4-randomness-files admits sit in eight functions. hsf_begin
+      INV-4: the eleven rand_draw calls in the six files
+      inv-4-randomness-files admits sit in nine functions. hsf_begin
       (handshake_flight.c) holds three: the key-share scalar, the
-      ClientHello random and the ML-KEM seed. Each of the other seven
+      ClientHello random and the ML-KEM seed. Each of the other eight
       holds one: draw_p256_key (handshake_groups.c), srv_begin and
       srv_send_server_hello (srv_flight.c), encapsulate and p256_share
-      (srv_kex.c), srv_send_new_session_ticket (srv_resume.c) and
-      sign_rsa_pss (srv_auth.c). A call in any other function, a second
-      call in one of the seven or a fourth in hsf_begin is a new site. It
-      needs its own seeding audit — amend docs/invariants.md in the same
-      PR.
+      (srv_kex.c), srv_send_new_session_ticket (srv_resume.c), and
+      sign_rsa_pss and sign_ecdsa (srv_auth.c). A call in any other
+      function, a second call in one of the eight or a fourth in
+      hsf_begin is a new site. It needs its own seeding audit — amend
+      docs/invariants.md in the same PR.
     paths:
       include: [handshake_flight.c, handshake_groups.c, srv_auth.c, srv_flight.c, srv_kex.c,
                 srv_resume.c]
     pattern-either:
-      # A call outside the eight functions.
+      # A call outside the nine functions.
       - patterns:
           - pattern: rand_draw(...)
           - pattern-not-inside: '$T hsf_begin(...) { ... }'
@@ -390,6 +390,7 @@ rules:
           - pattern-not-inside: '$T p256_share(...) { ... }'
           - pattern-not-inside: '$T srv_send_new_session_ticket(...) { ... }'
           - pattern-not-inside: '$T sign_rsa_pss(...) { ... }'
+          - pattern-not-inside: '$T sign_ecdsa(...) { ... }'
       # A function other than hsf_begin that holds two calls. Inside a
       # function body, `...` also matches statements nested in a branch,
       # a loop or a block, so the two calls match wherever they sit.

@@ -12,7 +12,11 @@
 //   caller combine it with mask arithmetic;
 //
 //   that every mask p256_point_add hands p256_fe_cmov is 0 or all ones,
-//   over the stub in proof/p256_field_stubs.h.
+//   over the stub in proof/p256_field_stubs.h;
+//
+//   memory safety and absence of UB in p256_point_on_curve, the signer's
+//   check of k*G (docs/decisions.md 153), over any 64 bytes, and that its
+//   answer is a mask.
 //
 // Layered proof, in the shape hkdf_harness.c uses: the field arithmetic
 // is stubbed and the real bodies are proven in
@@ -80,8 +84,19 @@ static void prove_affine_x(void) {
                      "p256_point_affine_x: the answer is a mask, not a flag");
 }
 
+static void prove_on_curve(void) {
+    uint8_t x[P256_FE_LEN];
+    uint8_t y[P256_FE_LEN];
+    fill_nondet(x, sizeof x);
+    fill_nondet(y, sizeof y);
+    uint32_t on_curve = p256_point_on_curve(x, y);
+    __CPROVER_assert(on_curve == 0 || on_curve == UINT32_MAX,
+                     "p256_point_on_curve: the answer is a mask, not a flag");
+}
+
 int main(void) {
     prove_add_aliasing();
     prove_affine_x();
+    prove_on_curve();
     return 0;
 }

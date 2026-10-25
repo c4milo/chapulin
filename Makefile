@@ -630,7 +630,7 @@ RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c rsa_if
                    test/rsa_avx2_instructions.c test/diff_rsa_avx2_test.c \
                    test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c
 LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
-          test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
+          test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_sign_fault_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c test/webpki_encrypted_exts_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
@@ -3816,17 +3816,29 @@ P256_ECDH_TEST_SRCS := p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c 
 bin/p256_ecdh_test: test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
-# ECDSA P-256 signing against Python's integers and RFC 6979 A.2.5, and
-# every signature checked again by the independent verifier in p256.c.
-# Its own binary, out of the packaged object like p384_test: no client
-# links a signer, and the module stays testable without the rest of the
-# stack. p256.c is on the line as the cross-check, not as a dependency --
+# ECDSA P-256 signing against Python's integers and RFC 6979 A.2.5, the
+# hedged form against the same generator's fixed-noise vectors, and every
+# signature checked again by the independent verifier in p256.c. Its own
+# binary, out of the packaged object like p384_test: no client links a
+# signer, and the module stays testable without the rest of the stack.
+# p256.c is on the line as the cross-check, not as a dependency --
 # p256_sign.c calls nothing in it, which is the whole point of the file
 # (p256_sign.h).
 P256_SIGN_SRC := p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c sha256.c hkdf.c buf.c ct.c ct_wipe.c
 bin/p256_sign_test: test/p256_sign_test.c $(P256_SIGN_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -Itest -o $@ test/p256_sign_test.c $(P256_SIGN_SRC)
+# The signer's two checks against injected faults (docs/decisions.md 153):
+# test/p256_sign_fault_test.c changes one word of k*G or of s through the
+# hooks CH_P256_SIGN_FAULT_TEST compiles into p256_sign.c, and requires
+# each entry to refuse and to leave the caller's buffer as it was. No
+# library object takes the define. The host twin runs both multiplies,
+# so the wide field's check and the 32-bit one each see the faults.
+P256_SIGN_FAULT_DEF := -DCH_P256_SIGN_FAULT_TEST
+bin/p256_sign_fault_test: test/p256_sign_fault_test.c $(P256_SIGN_SRC) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(P256_SIGN_FAULT_DEF) -I. -Itest -o $@ test/p256_sign_fault_test.c \
+	  $(P256_SIGN_SRC)
 RSA_PKCS1_TEST_SRCS := rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c
 bin/rsa_pkcs1_test: test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -4147,13 +4159,14 @@ bin/$(1)_host: $(2) $(3) $$(call host_srcs,$(3)) $$(HDRS) $$(TESTH)
 	@mkdir -p bin
 	$$(CC) $$(HOST_CFLAGS) -DCH_CPU_RUNTIME $(4) -I. -Itest -o $$@ $(2) $$(call host_srcs,$(3))
 endef
-HOST_VECTOR_TESTS := unit mlkem_test mlkem_test_1024 p256_ecdh_test p256_sign_test rsa_sign_test sha512_test hkdf384_test \
+HOST_VECTOR_TESTS := unit mlkem_test mlkem_test_1024 p256_ecdh_test p256_sign_test p256_sign_fault_test rsa_sign_test sha512_test hkdf384_test \
                      rsa_test rsa_pkcs1_test
 $(eval $(call HOST_VECTOR_BIN,unit,test/unit_test.c,$(SRCS),))
 $(eval $(call HOST_VECTOR_BIN,mlkem_test,test/mlkem_test.c,$(MLKEM_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,mlkem_test_1024,test/mlkem_test.c,$(MLKEM_TEST_SRCS),-DCH_MLKEM_1024))
 $(eval $(call HOST_VECTOR_BIN,p256_ecdh_test,test/p256_ecdh_test.c,$(P256_ECDH_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,p256_sign_test,test/p256_sign_test.c,$(P256_SIGN_SRC),))
+$(eval $(call HOST_VECTOR_BIN,p256_sign_fault_test,test/p256_sign_fault_test.c,$(P256_SIGN_SRC),$(P256_SIGN_FAULT_DEF)))
 $(eval $(call HOST_VECTOR_BIN,rsa_sign_test,test/rsa_sign_test.c,$(RSA_SIGN_TEST_SRCS),$(RSA_WIDE_DEF)))
 # FIPS 180-4's SHA-384 and SHA-512 vectors, RFC 4231's HMAC-SHA-384 and
 # the TLS_AES_256_GCM_SHA384 key schedule, as a host object's session runs
@@ -4463,7 +4476,8 @@ CHECK_BUILDS := bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient
 # host test passed; check-skips says which were left out.
 CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_test sha3_test sha3_equiv_test \
                   sha512_test \
-                  hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test \
+                  hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test p256_sign_fault_test \
+                  rsa_pkcs1_test \
                   webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test \
                   webpki_chain_test pem_files_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 \
                   quic_driver_test \

@@ -34,6 +34,8 @@ uint32_t p256_point_from_bytes_decomposed_counted(p256_point *o, const uint8_t i
 uint32_t p256_point_affine_decomposed_counted(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
                                               const p256_point *a);
 uint32_t p256_point_affine_x_decomposed_counted(uint8_t out[P256_FE_LEN], const p256_point *a);
+uint32_t p256_point_on_curve_decomposed_counted(const uint8_t x[P256_FE_LEN],
+                                                const uint8_t y[P256_FE_LEN]);
 void p256_scalar_mul_decomposed_counted(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
 void p256_scalar_inverse_decomposed_counted(p256_scalar *o, const p256_scalar *a);
 int rsa_pss_sign_decomposed_counted(const ch_rsa_priv *k, const uint8_t msg_hash[32],
@@ -54,6 +56,8 @@ void p256_wide_base_mul_counted(p256_point *o, const p256_scalar *k);
 uint32_t p256_wide_point_from_bytes_counted(p256_point *o, const uint8_t in[P256_POINT_LEN]);
 uint32_t p256_wide_point_affine_counted(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
                                         const p256_point *a);
+uint32_t p256_wide_point_on_curve_counted(const uint8_t x[P256_FE_LEN],
+                                          const uint8_t y[P256_FE_LEN]);
 void p256_wide_scalar_mul_counted(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
 void p256_wide_scalar_inverse_counted(p256_scalar *o, const p256_scalar *a);
 int rsa_sign64_pss_counted(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
@@ -121,6 +125,11 @@ uint32_t p256_point_affine(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN], const
 uint32_t p256_point_affine_x(uint8_t out[P256_FE_LEN], const p256_point *a) {
     widemul_decomposed_calls++;
     return p256_point_affine_x_decomposed_counted(out, a);
+}
+
+uint32_t p256_point_on_curve(const uint8_t x[P256_FE_LEN], const uint8_t y[P256_FE_LEN]) {
+    widemul_decomposed_calls++;
+    return p256_point_on_curve_decomposed_counted(x, y);
 }
 
 void p256_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scalar *b) {
@@ -199,6 +208,11 @@ uint32_t p256_wide_point_affine(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
                                 const p256_point *a) {
     widemul_native_calls++;
     return p256_wide_point_affine_counted(x, y, a);
+}
+
+uint32_t p256_wide_point_on_curve(const uint8_t x[P256_FE_LEN], const uint8_t y[P256_FE_LEN]) {
+    widemul_native_calls++;
+    return p256_wide_point_on_curve_counted(x, y);
 }
 
 void p256_wide_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scalar *b) {

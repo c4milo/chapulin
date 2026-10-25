@@ -10,6 +10,7 @@
 // p256_scalar.c and p256_point.c carry and reproduces RFC 6979 A.2.5
 // before it prints a vector, so the answers here come from Python's
 // integers and hashlib's HMAC rather than from the C under test.
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -31,7 +32,17 @@ static int failures = 0;
         }                                                                                          \
     } while (0)
 
+// test_hedged_zero_noise expects CH_ASSERT to fire. While expect_assert
+// is set, ch_assert_fail jumps back to it instead of exiting, as in
+// test/drbg_test.c.
+static jmp_buf assert_return;
+static volatile int expect_assert;
+
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
+    if (expect_assert) {
+        expect_assert = 0;
+        longjmp(assert_return, 1);
+    }
     (void)fprintf(stderr, "CH_ASSERT %s at %s:%d\n", cond, file, line);
     exit(2);
 }
@@ -255,9 +266,134 @@ static void test_der_shape(void) {
     }
 }
 
+// Hedged signatures (docs/decisions.md 153), byte for byte against the
+// generator's hedged vectors, under p256_sign_hedged. The same noise
+// gives the same bytes, which is the one property a fixed answer can
+// hold; each signature verifies under the vector's public point; and the
+// hedged bytes differ from the RFC 6979 bytes for the same key and
+// message.
+static void test_hedged_vectors(void) {
+    for (size_t i = 0; i < sizeof p256_hedged_vectors / sizeof p256_hedged_vectors[0]; i++) {
+        const p256_hedged_vector *v = &p256_hedged_vectors[i];
+        uint8_t sig[P256_SIG_MAX];
+        uint8_t again[P256_SIG_MAX];
+        uint8_t plain[P256_SIG_MAX];
+        size_t sig_len = 0;
+        size_t again_len = 0;
+        size_t plain_len = 0;
+
+        CHECK(p256_sign_hedged(TEST_WIDEMUL, v->priv, v->msg_hash, v->noise, sig, sizeof sig,
+                               &sig_len) == 1);
+        CHECK(sig_len == v->sig_len);
+        CHECK(same_bytes(sig, v->sig, sig_len));
+        CHECK(p256_ecdsa_verify(v->pub, v->msg_hash, sig, sig_len) == 1);
+
+        CHECK(p256_sign_hedged(TEST_WIDEMUL, v->priv, v->msg_hash, v->noise, again, sizeof again,
+                               &again_len) == 1);
+        CHECK(again_len == sig_len && same_bytes(again, sig, sig_len));
+
+        CHECK(p256_sign(TEST_WIDEMUL, v->priv, v->msg_hash, plain, sizeof plain, &plain_len) == 1);
+        CHECK(!(plain_len == sig_len && same_bytes(plain, sig, sig_len)));
+    }
+}
+
+// Two noises give two signatures of one message under one key, and each
+// verifies. One bit of the noise is enough to change the nonce. This is
+// what removes the shape a differential fault attack wants: one correct
+// and one faulted signature over the same nonce.
+static void test_hedged_noise_binding(void) {
+    const p256_sign_vector *v = &p256_sign_vectors[0];
+    uint8_t noise[P256_NOISE_LEN];
+    uint8_t sig[P256_SIG_MAX];
+    uint8_t other[P256_SIG_MAX];
+    size_t sig_len = 0;
+    size_t other_len = 0;
+
+    memset(noise, 0x5a, sizeof noise);
+    CHECK(p256_sign_hedged(TEST_WIDEMUL, v->priv, v->msg_hash, noise, sig, sizeof sig, &sig_len) ==
+          1);
+    noise[P256_NOISE_LEN - 1] ^= 0x01;
+    CHECK(p256_sign_hedged(TEST_WIDEMUL, v->priv, v->msg_hash, noise, other, sizeof other,
+                           &other_len) == 1);
+    CHECK(!(other_len == sig_len && same_bytes(other, sig, sig_len)));
+    CHECK(p256_ecdsa_verify(v->pub, v->msg_hash, sig, sig_len) == 1);
+    CHECK(p256_ecdsa_verify(v->pub, v->msg_hash, other, other_len) == 1);
+}
+
+// Signs with all-zero noise and returns 1 when CH_ASSERT fired, 0 when
+// the call returned.
+static int sign_zero_noise_asserts(const uint8_t noise[P256_NOISE_LEN], uint8_t *sig,
+                                   size_t *sig_len) {
+    const p256_sign_vector *v = &p256_sign_vectors[0];
+    if (setjmp(assert_return) != 0) {
+        return 1;
+    }
+    expect_assert = 1;
+    (void)p256_sign_hedged(TEST_WIDEMUL, v->priv, v->msg_hash, noise, sig, P256_SIG_MAX, sig_len);
+    expect_assert = 0;
+    return 0;
+}
+
+// All-zero noise is what a source that returns without writing leaves
+// after rand_draw (INV-4), and p256_sign_hedged refuses it with CH_ASSERT
+// before it signs. One nonzero byte, the last, is enough to sign.
+static void test_hedged_zero_noise(void) {
+    uint8_t noise[P256_NOISE_LEN];
+    uint8_t sig[P256_SIG_MAX];
+    size_t sig_len = 0;
+    memset(noise, 0, sizeof noise);
+    memset(sig, 0xaa, sizeof sig);
+    CHECK(sign_zero_noise_asserts(noise, sig, &sig_len) == 1);
+    CHECK(sig[0] == 0xaa && sig_len == 0);
+    noise[P256_NOISE_LEN - 1] = 1;
+    CHECK(sign_zero_noise_asserts(noise, sig, &sig_len) == 0);
+    CHECK(sig_len > 0);
+}
+
+// The output boundary of the hedged entry: the exact length works and
+// one byte less fails with no byte written.
+static void test_hedged_buffer_boundary(void) {
+    const p256_hedged_vector *v = &p256_hedged_vectors[0];
+    uint8_t sig[P256_SIG_MAX + 1];
+    size_t sig_len = 0;
+
+    memset(sig, 0xaa, sizeof sig);
+    CHECK(p256_sign_hedged(TEST_WIDEMUL, v->priv, v->msg_hash, v->noise, sig, v->sig_len,
+                           &sig_len) == 1);
+    CHECK(sig_len == v->sig_len);
+    CHECK(sig[v->sig_len] == 0xaa);
+
+    memset(sig, 0xaa, sizeof sig);
+    sig_len = 0;
+    CHECK(p256_sign_hedged(TEST_WIDEMUL, v->priv, v->msg_hash, v->noise, sig,
+                           (size_t)v->sig_len - 1, &sig_len) == 0);
+    CHECK(sig[0] == 0xaa && sig_len == 0);
+}
+
 #ifdef CH_CPU_RUNTIME
-// p256_sign_cpu, the entry a host object's server signs through, writes
-// every vector's bytes under the value this binary runs under, once with
+// p256_sign_hedged_cpu, the entry a host object's server signs through,
+// writes every hedged vector's bytes with the SHA-256 bit and without it.
+static void test_hedged_cpu(void) {
+    uint32_t with_sha256 = test_cpu | (test_cpu_hash_bits() & CH_CPU_CONSTANT_TIME_SHA256);
+    uint32_t without_sha256 = test_cpu & ~(uint32_t)CH_CPU_CONSTANT_TIME_SHA256;
+    const uint32_t values[] = {with_sha256, without_sha256};
+    for (size_t c = 0; c < sizeof values / sizeof values[0]; c++) {
+        for (size_t i = 0; i < sizeof p256_hedged_vectors / sizeof p256_hedged_vectors[0]; i++) {
+            const p256_hedged_vector *v = &p256_hedged_vectors[i];
+            uint8_t sig[P256_SIG_MAX];
+            size_t sig_len = 0;
+            CHECK(p256_sign_hedged_cpu(values[c], v->priv, v->msg_hash, v->noise, sig, sizeof sig,
+                                       &sig_len) == 1);
+            CHECK(sig_len == v->sig_len);
+            CHECK(same_bytes(sig, v->sig, sig_len));
+        }
+    }
+}
+#endif
+
+#ifdef CH_CPU_RUNTIME
+// p256_sign_cpu, the RFC 6979 form of the entry a host object's server
+// signs through, writes every vector's bytes under the value this binary runs under, once with
 // the SHA-256 bit, so the nonce's HMACs run on the instructions, and once
 // without it. A CPU without the instructions runs the first only where the
 // environment does not require them (test_cpu_hash_bits); the row then
@@ -303,6 +439,13 @@ int main(int argc, char **argv) {
     test_key_boundary();
     test_buffer_boundary();
     test_der_shape();
+    test_hedged_vectors();
+    test_hedged_noise_binding();
+    test_hedged_buffer_boundary();
+    test_hedged_zero_noise();
+#ifdef CH_CPU_RUNTIME
+    test_hedged_cpu();
+#endif
     if (failures == 0) {
         (void)printf("p256_sign: all tests passed\n");
     }

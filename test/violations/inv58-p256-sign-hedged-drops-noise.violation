@@ -1,0 +1,13 @@
+invariant: INV-58
+file: p256_sign.c
+catches: p256_sign_test
+reason: sign_hedged hands sign_digest no noise, so the hedged entry signs
+  with the RFC 6979 nonce. Two signatures over one message are the same
+  bytes again, which is the shape a differential fault attack wants. Each
+  signature still verifies. bin/p256_sign_test requires the hedged
+  vectors' bytes and requires them to differ from the RFC 6979 bytes.
+
+--- old
+    return sign_digest(widemul, cpu, priv, msg_hash, noise, sig, cap, sig_len);
+--- new
+    return sign_digest(widemul, cpu, priv, msg_hash, NULL, sig, cap, sig_len);

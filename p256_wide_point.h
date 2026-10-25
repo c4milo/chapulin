@@ -101,6 +101,10 @@ void p256_wide_point_add_jacobian_incomplete(p256_wide_jacobian *o, const p256_w
 // two early returns read the peer's bytes, which are public.
 uint32_t p256_wide_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]);
 
+// p256_point_on_curve on the wide field: all ones when x and y, 32 big-endian bytes each, are
+// both below p and satisfy y^2 = x^3 - 3x + b, zero otherwise, with no branch on either.
+uint32_t p256_wide_point_on_curve(const uint8_t x[P256_FE_LEN], const uint8_t y[P256_FE_LEN]);
+
 // p256_point_affine on the wide field: writes a's affine coordinates as 32 big-endian bytes
 // each, and returns all ones when a is a finite point and zero when it is the point at
 // infinity. y may be NULL for a caller that wants X alone. Both outputs are written either

@@ -222,6 +222,16 @@ static inline uint32_t widemul_p256_point_affine(uint8_t widemul, uint8_t x[P256
     return p256_point_affine(x, y, a);
 }
 
+static inline uint32_t widemul_p256_point_on_curve(uint8_t widemul, const uint8_t x[P256_FE_LEN],
+                                                   const uint8_t y[P256_FE_LEN]) {
+    if (widemul_native(widemul)) {
+        uint32_t on_curve = p256_wide_point_on_curve(x, y);
+        p256_wide_wipe_below();
+        return on_curve;
+    }
+    return p256_point_on_curve(x, y);
+}
+
 static inline uint32_t widemul_p256_point_affine_x(uint8_t widemul, uint8_t out[P256_FE_LEN],
                                                    const p256_point *a) {
     if (widemul_native(widemul)) {
@@ -376,6 +386,12 @@ static inline uint32_t widemul_p256_point_affine(uint8_t widemul, uint8_t x[P256
                                                  uint8_t y[P256_FE_LEN], const p256_point *a) {
     (void)widemul;
     return p256_point_affine(x, y, a);
+}
+
+static inline uint32_t widemul_p256_point_on_curve(uint8_t widemul, const uint8_t x[P256_FE_LEN],
+                                                   const uint8_t y[P256_FE_LEN]) {
+    (void)widemul;
+    return p256_point_on_curve(x, y);
 }
 
 static inline uint32_t widemul_p256_point_affine_x(uint8_t widemul, uint8_t out[P256_FE_LEN],

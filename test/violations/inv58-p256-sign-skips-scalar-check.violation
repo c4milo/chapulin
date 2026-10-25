@@ -1,0 +1,13 @@
+invariant: INV-58
+file: p256_sign.c
+catches: p256_sign_fault_test
+reason: compute_signature takes every s as s*k = z + r*d, so a fault in s,
+  in the inverse of k or in r*d still gives a signature. Such an s beside
+  a correct one can recover the key. Every good signature still verifies,
+  so the vectors pass. bin/p256_sign_fault_test changes one word of s and
+  requires a refusal with the buffer as it was.
+
+--- old
+    uint32_t consistent = scalar_check(widemul, &s, k, d, z, &r);
+--- new
+    uint32_t consistent = scalar_check(widemul, &s, k, d, z, &r) | 0xffffffffU;

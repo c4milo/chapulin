@@ -168,21 +168,23 @@ void srv_hash_signed_content(uint32_t cpu, uint16_t sigalg, const uint8_t *trans
 // session that states its multiply runs rsa_sign64.c, and srv_cfg.h
 // states the type each one reads through ch_identity.priv. This call
 // tests priv_len against the size of that type and passes the pointer
-// on, so it reads no byte of a private key itself. An RSA-PSS signature
-// takes a 32-byte salt this call draws through rand_draw from the
-// source cfg names, so a server signing with the RSA identity needs
-// entropy per handshake; the ECDSA nonce is derived and draws none.
+// on, so it reads no byte of a private key itself. Each signature takes
+// 32 bytes this call draws through rand_draw from the source cfg names:
+// an RSA-PSS salt, or the noise of the hedged ECDSA nonce. So a server
+// needs entropy for each signature with either identity.
 //
 // Two obligations belong to the signer and are stated here because the
 // caller cannot check them. Every routine that touches the private
 // scalar or the nonce is constant time in both: no branch and no
 // memory index depends on either, and neither signer may call into
 // p256.c or rsa.c, whose arithmetic is deliberately variable time
-// because every input it reads is public (p256.h, rsa.h). And the
-// ECDSA nonce is derived from the key and the message with RFC 6979
-// rather than drawn from a random source, so two signatures can never
-// share a nonce; docs/server.md's open question seven settles whether
-// the default hedges that derivation with fresh bytes.
+// because every input it reads is public (p256.h, rsa.h). The ECDSA
+// signer checks each signature in constant time before it writes it: k*G
+// on the curve and s*k = z + r*d (p256_sign.h). rsa_sign64.c checks its
+// RSA signatures against the public exponent. And the ECDSA nonce is derived from the key, the
+// message and the drawn noise by the hedged form of RFC 6979, so a weak
+// source makes it no worse than RFC 6979, and two signatures over one
+// message do not share a nonce (docs/decisions.md 153).
 //
 // Requires a cfg whose selected identity srv_identity_for accepts and
 // for which rand_source_ok holds, which every init call checks (rand.h);
@@ -211,7 +213,8 @@ void srv_hash_signed_content(uint32_t cpu, uint16_t sigalg, const uint8_t *trans
 // every configuration behind the first and every key a signer refuses
 // for its value. What can still cause the second is ECDSA's own refusal,
 // no nonce candidate in range or an r or s of zero, each below 2^-127
-// (p256_sign.h), and key bytes the caller changed after that check. By
+// (p256_sign.h), a signature that failed a check after a fault, in
+// either signer, and key bytes the caller changed after that check. By
 // then the flight has sent its ServerHello, so the code cannot be
 // CH_EINVAL, which says nothing was sent. It is CH_EAUTH: this side's
 // authentication failed (docs/decisions.md 74). The flight signs into
@@ -251,9 +254,10 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
 // Requires a cfg the caller owns, for which rand_source_ok holds, as
 // ch_srv_check checks first (rand.h), and a sigalg srv_identity_for
 // accepts. Runs no I/O and touches no session. It draws a salt for the
-// RSA identity from the source cfg names, because rsa_pss_sign salts
-// every signature, so a device seeds its generator, or a RAND=session
-// caller sets cfg.rand_bytes, before it calls this.
+// RSA identity, or the nonce's noise for the ECDSA one, from the source
+// cfg names, because each signer takes fresh bytes for every signature,
+// so a device seeds its generator, or a RAND=session caller sets
+// cfg.rand_bytes, before it calls this.
 //
 // Returns CH_OK when the signature verified. Returns CH_EINVAL when
 // the slot is not provisioned, when its key lengths are not the ones

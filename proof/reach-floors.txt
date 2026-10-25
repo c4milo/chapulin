@@ -179,7 +179,13 @@ p256_ecdh 79.7
 p256_field 95.5
 p256_mul 86.7
 p256_point 61.0
-p256_point_ladder 51.3
+# docs/decisions.md 153 put p256_point_on_curve into p256_point.c, 15
+# locations that p256_point_ladder compiles and does not call, so its
+# share fell from 99 of 193 to 99 of 208 with no location less reached.
+# The floor is that count from proof/coverage.py --reach --only on an
+# arm64 macOS machine with the pinned cbmc; the next nightly records the
+# runner's.
+p256_point_ladder 47.6
 p256_scalar 93.0
 p256_sign 75.2
 p256_wide_digit 65.6

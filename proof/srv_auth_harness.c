@@ -34,12 +34,13 @@
 // key test, rsa_pss_sign_key_ok, is inline in rsa_sign.h, so it runs
 // here as written.
 //
-// The RSA-PSS salt is the one random input either signer takes, and
-// srv_auth.c's sign_rsa_pss draws it through rand_draw, which calls
-// ch_rand_bytes under the RAND=extern pattern every harness declares.
-// ch_rand_bytes is a contract stub too: it asserts the salt buffer is
-// writable at the length drawn and fills it with nondet bytes, and the
-// signer stub asserts the salt is readable at RSA_PSS_SALT_LEN.
+// Each signer takes one random input, the RSA-PSS salt and the ECDSA
+// nonce's noise, and srv_auth.c's sign_rsa_pss and sign_ecdsa draw each
+// through rand_draw, which calls ch_rand_bytes under the RAND=extern
+// pattern every harness declares. ch_rand_bytes is a contract stub too:
+// it asserts the buffer is writable at the length drawn and fills it with
+// nondet bytes, and each signer stub asserts its input is readable at
+// RSA_PSS_SALT_LEN or P256_NOISE_LEN.
 //
 // What this does not reach: any claim that a signature is correct. The
 // stubs return an unconstrained verdict, so the proof covers both
@@ -57,13 +58,15 @@
 // buffers the real function reads and writes at the lengths it uses,
 // and then havocs its outputs, so the proof considers every answer the
 // real function could give.
-int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
-              uint8_t *sig, size_t cap, size_t *sig_len) {
+int p256_sign_hedged(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
+                     const uint8_t noise[P256_NOISE_LEN], uint8_t *sig, size_t cap,
+                     size_t *sig_len) {
     (void)widemul;
-    __CPROVER_assert(__CPROVER_r_ok(priv, P256_PRIV_LEN), "p256_sign: key readable");
-    __CPROVER_assert(__CPROVER_r_ok(msg_hash, SHA256_LEN), "p256_sign: digest readable");
-    __CPROVER_assert(__CPROVER_w_ok(sig, cap), "p256_sign: output writable");
-    __CPROVER_assert(__CPROVER_w_ok(sig_len, sizeof *sig_len), "p256_sign: length writable");
+    __CPROVER_assert(__CPROVER_r_ok(priv, P256_PRIV_LEN), "p256_sign_hedged: key readable");
+    __CPROVER_assert(__CPROVER_r_ok(msg_hash, SHA256_LEN), "p256_sign_hedged: digest readable");
+    __CPROVER_assert(__CPROVER_r_ok(noise, P256_NOISE_LEN), "p256_sign_hedged: noise readable");
+    __CPROVER_assert(__CPROVER_w_ok(sig, cap), "p256_sign_hedged: output writable");
+    __CPROVER_assert(__CPROVER_w_ok(sig_len, sizeof *sig_len), "p256_sign_hedged: length writable");
     if (!nondet_u8()) {
         return 0;
     }

@@ -283,6 +283,21 @@ static void row_p256_sign(uint32_t cpu) {
                         P256_SIG_MAX, &sig_len) == 1);
 }
 
+// p256_sign_hedged_cpu, the entry a server signs through (docs/decisions.md
+// 153): the same sixteen HMAC-SHA-256 calls over the hedged tail, then the
+// two checks, which hash nothing. The key is RFC 6979 A.2.5's.
+static void row_p256_sign_hedged(uint32_t cpu) {
+    static const uint8_t priv[P256_PRIV_LEN] = {0xc9, 0xaf, 0xa9, 0xd8, 0x45, 0xba, 0x75, 0x16,
+                                                0x6b, 0x5c, 0x21, 0x57, 0x67, 0xb1, 0xd6, 0x93,
+                                                0x4e, 0x50, 0xc3, 0xdb, 0x36, 0xe8, 0x9b, 0x12,
+                                                0x7b, 0x8a, 0x62, 0x2b, 0x12, 0x0f, 0x67, 0x21};
+    uint8_t noise[P256_NOISE_LEN];
+    memset(noise, 0x5a, sizeof noise);
+    size_t sig_len = 0;
+    CHECK(p256_sign_hedged_cpu(cpu | CH_CPU_CONSTANT_TIME_MULTIPLY, priv, transcript_hash, noise,
+                               output, P256_SIG_MAX, &sig_len) == 1);
+}
+
 static void row_hmac(uint32_t cpu) {
     hmac_cpu(cpu, row_hash_len, key, KEY, input, INPUT, output);
 }
@@ -381,6 +396,7 @@ static const row fixed_rows[] = {
     {"sha384_of_cpu",                          row_sha384_of                },
     {"hmac_sha256_cpu",                        row_hmac_sha256              },
     {"p256_sign_cpu",                          row_p256_sign                },
+    {"p256_sign_hedged_cpu",                   row_p256_sign_hedged         },
 #ifdef CH_ROLE_SERVER
     {"srv_parse_client_hello",                 row_srv_parse_client_hello   },
 #endif

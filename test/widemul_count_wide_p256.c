@@ -21,6 +21,7 @@
 #define p256_wide_scalar_inverse p256_wide_scalar_inverse_counted
 #define p256_wide_point_from_bytes p256_wide_point_from_bytes_counted
 #define p256_wide_point_affine p256_wide_point_affine_counted
+#define p256_wide_point_on_curve p256_wide_point_on_curve_counted
 #define p256_wide_mul p256_wide_mul_counted
 #define p256_wide_base_mul p256_wide_base_mul_counted
 

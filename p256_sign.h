@@ -37,6 +37,11 @@
 // P-256 private key and the shape a provisioning step writes.
 #define P256_PRIV_LEN 32
 
+// The fresh bytes p256_sign_hedged puts into the nonce, the random data
+// Z of draft-irtf-cfrg-det-sigs-with-noise-05 section 4, which asks for
+// the length of int2octets(x): 32 bytes on this curve.
+#define P256_NOISE_LEN 32
+
 // What the constant-time claim covers, and what it does not.
 //
 // Covered. Every value derived from the private scalar or from the nonce
@@ -70,14 +75,27 @@
 // refused configuration or the failed handshake reveals anyway, and it
 // does not vary from one signature to the next.
 //
-// Not covered, third: fault injection. A deterministic nonce signs one
-// message the same way every time, which is the shape a differential
+// Fault injection (docs/decisions.md 153). A deterministic nonce signs
+// one message the same way every time, which is the shape a differential
 // fault attack wants: one correct signature and one faulted signature
-// over the same message recover the key. This file does not verify its
-// own output before returning it. docs/server.md records the trade
-// against a randomized nonce, whose own failure mode -- a repeated nonce
-// from a weak entropy source -- is also full key recovery and needs no
-// fault to reach.
+// over the same message recover the key. p256_sign_hedged puts
+// P256_NOISE_LEN fresh bytes into the nonce, so two signatures over one
+// message use two nonces. A weak source of the noise costs nothing that
+// RFC 6979 does not already give.
+//
+// Every entry runs two checks before it writes a byte of a signature,
+// both constant time. The affine k*G must satisfy y^2 = x^3 - 3x + b
+// before r is taken from it, and s*k must equal z + r*d mod n. A fault
+// that moves k*G off the curve, or that changes s, the inverse of k or
+// the product r*d, fails one of them, and the call writes nothing.
+//
+// What the checks miss. A fault that moves k*G to another point of the
+// curve gives a consistent r and s for a nonce nobody chose. A fault in
+// the key d, or in k after k*G, gives an s that the scalar check computes
+// from the same wrong value. A fault that skips a check passes. A full
+// verification under the public key would catch the first two, at about
+// three times the cost of the signature on a host object, and decision
+// 153 states why this file does not run one.
 
 // Whether priv is a private scalar p256_sign signs with: a value from 1
 // to n-1, read as 32 big-endian bytes. p256_sign runs this test first,
@@ -94,14 +112,16 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]);
 // success and 0 when p256_sign_key_ok refuses the key, when cap is
 // below the length the signature needs, or when the nonce generator
 // produced no candidate below the group order in its fixed number of
-// tries. The 1-or-0 return is p256_ecdsa_verify's, because a caller that
-// holds both should read one convention; the caller turns a 0 into the
-// alert it sends.
+// tries, or when a check failed (above). On every 0 sig and *sig_len
+// keep what they held. The 1-or-0 return is p256_ecdsa_verify's, because
+// a caller that holds both should read one convention; the caller turns
+// a 0 into the alert it sends.
 //
 // The nonce is RFC 6979 deterministic, derived from the private scalar
-// and msg_hash by HMAC-SHA-256 (hkdf.h:13). No entropy is drawn here, so
-// a weak generator at signing time cannot repeat a nonce, and two
-// signatures over one message under one key are byte-identical. The
+// and msg_hash by HMAC-SHA-256 (hkdf.h:13). No entropy is drawn here, and
+// two signatures over one message under one key are byte-identical, so
+// the RFC 6979 vectors and the differential check this call. No library
+// call signs through it: a server signs through p256_sign_hedged. The
 // derivation stays on SHA-256 whatever the handshake selected, because
 // it is this file's own construction and not a protocol value.
 //
@@ -127,13 +147,51 @@ int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t 
 // instructions when cpu holds CH_CPU_CONSTANT_TIME_SHA256, the caller's
 // statement that they run in constant time on this CPU, and on the
 // portable code when it does not. Both paths compute the same HMAC, so
-// the signature is the one p256_sign writes under the same answer. A
-// server's CertificateVerify and ch_srv_check sign through this call
-// (srv_auth.c); p256_sign stays for a caller with no session's value,
-// and its nonce runs on the portable code (docs/decisions.md 93, 102
-// and 147).
+// the signature is the one p256_sign writes under the same answer. The
+// RFC 6979 vectors hold both paths through this call; a server signs
+// through p256_sign_hedged_cpu (docs/decisions.md 93, 102, 147 and 153).
 int p256_sign_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
                   uint8_t *sig, size_t cap, size_t *sig_len);
+#endif
+
+// p256_sign with the nonce hedged, the entry a server signs through
+// (srv_auth.c, docs/decisions.md 153).
+//
+// The nonce. Steps d and f of RFC 6979 §3.2 take the hedged input of
+// draft-irtf-cfrg-det-sigs-with-noise-05 section 4: V, the separator,
+// noise, zero bytes to the end of the second SHA-256 block, priv, zero
+// bytes to the end of the third block, and the reduced message hash. All
+// other steps are RFC 6979's, so the same priv, msg_hash and noise give
+// the same signature. noise is P256_NOISE_LEN bytes that the caller drew
+// for this signature alone, through rand_draw (INV-4), and keeps secret.
+// An all-zero noise is the mark of a source that wrote nothing, and
+// CH_ASSERT fires on it, as rsa_pss_sign does on its salt.
+//
+// Returns what p256_sign returns, after the same two checks. widemul is
+// the answer the multiplies run under, as for p256_sign, and the nonce's
+// HMACs run on the portable code.
+int p256_sign_hedged(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
+                     const uint8_t noise[P256_NOISE_LEN], uint8_t *sig, size_t cap,
+                     size_t *sig_len);
+
+#ifdef CH_CPU_RUNTIME
+// p256_sign_hedged for one session of a host object, with the session's
+// ch_cfg.cpu first, as p256_sign_cpu is p256_sign's. Both checks run on
+// the field and the scalar arithmetic cpu picks, wide under the multiply
+// bit and 32-bit without it.
+int p256_sign_hedged_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
+                         const uint8_t msg_hash[32], const uint8_t noise[P256_NOISE_LEN],
+                         uint8_t *sig, size_t cap, size_t *sig_len);
+#endif
+
+#ifdef CH_P256_SIGN_FAULT_TEST
+#include "p256_point.h"
+#include "p256_scalar.h"
+// The two hooks a build with CH_P256_SIGN_FAULT_TEST calls, which
+// test/p256_sign_fault_test.c defines: on k*G before its affine form, and
+// on s before the scalar check. No library object takes the define.
+void p256_sign_fault_point(p256_point *point);
+void p256_sign_fault_scalar(p256_scalar *s);
 #endif
 
 #endif

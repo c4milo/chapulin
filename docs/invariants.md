@@ -131,7 +131,7 @@ last `ROLE=server` stub, as the entry said it would.
   (`rand_draw.h`), which calls the one source the build's entropy
   pattern names: `ch_rand_bytes` under `RAND=extern` and `RAND=drbg`,
   and under `RAND=session` the `rand_bytes` of the session's own
-  `ch_cfg`, handed that session's `rand_io`. It draws at exactly ten
+  `ch_cfg`, handed that session's `rand_io`. It draws at exactly eleven
   sites in six files. A client draws at four of them:
   - `hsf_begin` in `handshake_flight.c` draws the x25519 key-share
     scalar and the ClientHello random, and in the `KEX=pq` and
@@ -141,7 +141,7 @@ last `ROLE=server` stub, as the entry said it would.
     client's P-256 scalar, only when a HelloRetryRequest names
     secp256r1 (decisions.md 63).
 
-  A server draws at the other six:
+  A server draws at the other seven:
   - `srv_begin` in `srv_flight.c` draws the x25519 key-share scalar.
     `ch_srv_accept`, `ch_srv_record_init` and `ch_srv_quic_init` call
     it.
@@ -166,12 +166,20 @@ last `ROLE=server` stub, as the entry said it would.
     `ch_srv_check` signs once at boot when that identity is
     provisioned, and `srv_sign_certificate_verify` signs once per
     handshake whose CertificateVerify uses rsa_pss_rsae_sha256.
-    `p256_sign.c` draws nothing: it derives each ECDSA nonce from the
-    key and the message by RFC 6979.
+  - `sign_ecdsa` in `srv_auth.c` draws the 32 bytes of noise of the
+    hedged ECDSA nonce each time the server signs with its ECDSA
+    identity, hands them to `p256_sign_hedged`, which draws nothing
+    itself, and wipes them (decisions.md 153). `ch_srv_check` signs once
+    at boot when that identity is provisioned, and
+    `srv_sign_certificate_verify` signs once per handshake whose
+    CertificateVerify uses ecdsa_secp256r1_sha256. A weak draw here
+    costs no more than RFC 6979: with the same noise twice, the nonce is
+    a function of the key, the message and that noise.
 
   Every site checks for a source that returns without writing:
   CH_ASSERT fires when the drawn bytes are all zero, and for the salt
-  `rsa_pss_sign` checks the bytes it is handed. `rand_draw` writes zero
+  and the noise `rsa_pss_sign` and `p256_sign_hedged` check the bytes
+  they are handed. `rand_draw` writes zero
   to the bytes before the source runs, so such a source leaves zeros at
   every site, a stack buffer's included, and not the bytes the buffer
   held before (docs/decisions.md 141). The two P-256 sites
@@ -209,8 +217,8 @@ last `ROLE=server` stub, as the entry said it would.
   in any file other than `handshake_flight.c`, `handshake_groups.c`,
   `srv_flight.c`, `srv_kex.c`, `srv_resume.c` and `srv_auth.c`.
   `inv-4-randomness-calls` reads only those six files and refuses a call
-  outside the eight functions the claim names, a fourth call in
-  `hsf_begin`, and a second call in any of the other seven. It counts a
+  outside the nine functions the claim names, a fourth call in
+  `hsf_begin`, and a second call in any of the other eight. It counts a
   call in a branch, a loop or a block the same as one at the top of the
   function. `test/lint-invariants.sh` fails on each of five violations:
   - `inv04-draw-in-handshake-post` adds a call to `handshake_post.c`.
@@ -1780,6 +1788,74 @@ last `ROLE=server` stub, as the entry said it would.
   `inv42-rsa-sign64-ifma-check-skips-stack-wipe`, which
   `bin/rsa_ifma_sign_model_test` catches.
 - See [decisions: Engineering](decisions.md#engineering), entries 95 and 120.
+
+### INV-58 — a server's ECDSA signature takes fresh noise and leaves only after two checks
+
+- **Claim.** Every ECDSA P-256 signature a server makes, in
+  `srv_sign_certificate_verify` and in `ch_srv_check`, goes through
+  `p256_sign_hedged` or, in a host object, `p256_sign_hedged_cpu`. Its
+  nonce is the hedged form of RFC 6979 in
+  draft-irtf-cfrg-det-sigs-with-noise-05 section 4, over 32 bytes of
+  noise that `sign_ecdsa` draws for that signature alone (INV-4). Every
+  entry of `p256_sign.c` runs two checks before it writes a byte of a
+  signature: the affine k·G satisfies y² = x³ − 3x + b, and
+  s·k ≡ z + r·d (mod n). A signature that fails either is an error: the
+  call returns 0, the caller's buffer and length keep what they held, and
+  the session fails closed with internal_error and `CH_EAUTH` (INV-13).
+- **Mechanism.** A deterministic nonce signs one message the same way
+  every time. One correct signature and one that a fault changed, over
+  the same message, then recover the key. With fresh noise, two
+  signatures of one message take two nonces, and a weak source is no
+  worse than RFC 6979. The checks stop a faulted signature at the
+  signer. `p256_point_on_curve` or `p256_wide_point_on_curve` tests k·G
+  on the field the signer multiplied on, and `scalar_check` multiplies
+  s by k and r by d again and compares the two sides' bytes with
+  `ct_memeq`.
+  Both are constant time in k, d and k·G: no branch and no index reads
+  them, and their verdicts are masks that `compute_signature` combines.
+  `write_if_checked` is the one function that writes a signature, and it
+  copies the candidate only on the combined verdict. The candidate is
+  wiped on either verdict. CH_ASSERT refuses all-zero noise, which a
+  source that wrote nothing leaves after `rand_draw`.
+- **What it misses.** A fault that moves k·G to another point of the
+  curve gives a consistent r and s for a nonce nobody chose. A fault in
+  d, or in k after k·G, gives an s that the scalar check computes from
+  the same wrong value. A fault that skips a check passes. Decision 153
+  states why a full verification under the public key, which catches the
+  first two, is not run.
+- **Check.** `bin/p256_sign_fault_test` and its host twin build
+  `p256_sign.c` with `CH_P256_SIGN_FAULT_TEST`, whose two hooks change
+  one word of a coordinate of k·G, or one word of s. For each
+  coordinate, three words of each, and both entries, they require a
+  refusal with the buffer and the length kept, and they run under both
+  multiplies. `bin/p256_sign_test` and its host twin sign ten hedged
+  vectors byte for byte, from `test/gen_p256_sign_vectors.py`, under a
+  fixed noise each, require two values of noise to give two signatures
+  that verify, and CH_ASSERT on zero noise. `bin/srv_auth_test`
+  requires the server's signature to be `p256_sign_hedged`'s over the
+  noise the hook wrote, and two signatures of one transcript to differ.
+  `bin/diff_p256_wide` holds r and s of both entries to
+  `spec/lean/Spec/P256Nonce.lean`. CBMC's `p256_sign` harness proves the
+  hedged tail byte for byte, and that each entry writes its outputs only
+  after both checks passed, over every verdict the on-curve stub can give
+  and every value the scalar stubs can give the comparison. The `p256_point` and `p256_wide_point` harnesses prove the two
+  on-curve tests.
+- **Violation.** A PR takes every k·G as on the curve, takes every s as
+  consistent, copies the candidate before the verdict, signs the hedged
+  entry without its noise, shortens the zeros after the noise, drops the
+  CH_ASSERT on zero noise, or has the server fill the noise with a
+  constant: `inv58-p256-sign-skips-on-curve-check`,
+  `inv58-p256-sign-skips-scalar-check` and
+  `inv58-p256-sign-written-before-checks`, each of which
+  `bin/p256_sign_fault_test` catches;
+  `inv58-p256-sign-hedged-drops-noise`,
+  `inv58-p256-sign-hedged-noise-pad-short` and
+  `inv58-p256-sign-hedged-zero-noise-unchecked`, each of which
+  `bin/p256_sign_test` catches; and `inv58-srv-ecdsa-noise-not-drawn`,
+  which `bin/srv_auth_test` catches. Or it runs the on-curve check on the
+  other field: `inv16-widemul-dispatch-p256-point-on-curve-inverted`,
+  which `bin/widemul_runtime_test` catches.
+- See [decisions: Engineering](decisions.md#engineering), entry 153.
 
 ### INV-43 — a host object's ECDSA P-256 verifier gives the portable code's verdict
 
@@ -4446,26 +4522,27 @@ last `ROLE=server` stub, as the entry said it would.
   `test/hash-builds.sh` holds each hash's instructions to its file and
   each copy's calls to the `_hw` names, for x86-64 and arm64 under the
   pinned clang (docs/verification.md, "The hash instructions").
-  `p256_sign_cpu`, which a host object's server signs through, hands
-  the session's value to each HMAC of its RFC 6979 nonce
-  (decision 102). A server hands its value to the SHA-256 of its
+  `p256_sign_hedged_cpu`, which a host object's server signs through,
+  and `p256_sign_cpu` hand the session's value to each HMAC of the
+  nonce (decisions 102 and 153). A server hands its value to the SHA-256 of its
   CertificateVerify signed content (decision 145), and to the SHA-256
   of each ClientHello's frozen digest (decision 149). A `TRUST=webpki`
   client hands its value to the hash
   of its configuration and to the binding of each ticket it receives or
   presents (decision 132). The binding's key is the ticket's PSK.
-  Twenty-two violations break those rules.
+  Twenty-three violations break those rules.
   `inv16-sha256-instructions-without-bit` inverts the SHA-256 predicate
   and `inv16-sha256-reads-sha512-bit` reads another hash's bit;
   `inv16-hkdf-extract-entry-inverted` and
   `inv16-ks-exporter-entry-inverted` each invert one entry,
   `inv16-record-keys-direction-under-every-bit` keys a record direction
   under a value with every bit, `inv16-p256-sign-nonce-on-portable`
-  hands the nonce's HMACs 0 in place of the session's value,
+  and `inv16-p256-sign-hedged-nonce-on-portable` each hand a nonce's
+  HMACs 0 in place of the session's value,
   `inv16-srv-signed-content-on-portable` hashes the signed content on
   `sha256.c`, and `inv16-srv-client-hello-digest-on-portable` computes
   the frozen digest on `sha256.c`. The counting tests catch those
-  eight.
+  nine.
   `inv16-p256-sign-nonce-midstates-stale` keeps the HMAC midstates of an
   old K in the nonce generator, and the RFC 6979 vectors of
   `bin/p256_sign_test` catch it (decision 147).

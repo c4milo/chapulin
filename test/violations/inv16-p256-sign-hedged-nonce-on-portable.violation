@@ -1,0 +1,15 @@
+invariant: INV-16
+file: p256_sign.c
+catches: hash_runtime_test
+reason: p256_sign_hedged_cpu, the entry a server signs through, hands its
+  nonce generator 0 in place of the session's ch_cfg.cpu. A server that
+  stated the SHA-256 instructions then runs the sixteen HMAC-SHA-256 calls
+  of every hedged nonce on the portable code (docs/decisions.md 102 and
+  153). Every signature is the same, because both paths compute the same
+  HMAC, so no vector fails. bin/hash_runtime_test counts the calls
+  p256_sign_hedged_cpu makes into each path under every ch_cfg.cpu value.
+
+--- old
+    return sign_hedged(widemul_of_cpu(cpu), cpu, priv, msg_hash, noise, sig, cap, sig_len);
+--- new
+    return sign_hedged(widemul_of_cpu(cpu), 0, priv, msg_hash, noise, sig, cap, sig_len);

@@ -35,9 +35,14 @@ What the draws protect:
   and hands it to `rsa_pss_sign`, which draws nothing itself. The
   signature carries the salt in the clear.
 
-An ECDSA signature draws nothing: `p256_sign` derives its nonce from the
-key and the message by RFC 6979, so a weak seed cannot repeat an ECDSA
-nonce.
+- **An ECDSA nonce's noise.** A server with an ECDSA identity draws 32
+  bytes each time it signs, at the same two points as the salt.
+  `srv_auth.c` draws them and hands them to `p256_sign_hedged`, which
+  puts them into the RFC 6979 nonce by the hedged form of
+  draft-irtf-cfrg-det-sigs-with-noise and draws nothing itself
+  (docs/decisions.md 153). The noise stays secret. A weak seed cannot
+  repeat an ECDSA nonce over two messages: with the same noise twice,
+  the nonce is still a function of the key, the message and the noise.
 
 Devices that generate keys at first boot, before any entropy exists, are
 a documented disaster class: Heninger, Durumeric, Wustrow, Halderman,

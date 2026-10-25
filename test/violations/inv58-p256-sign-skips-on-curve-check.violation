@@ -1,0 +1,13 @@
+invariant: INV-58
+file: p256_sign.c
+catches: p256_sign_fault_test
+reason: compute_signature takes every k*G as on the curve, so a fault that
+  moves k*G off the curve still gives a signature, and its r comes from a
+  point no nonce made. Every good signature still verifies, so the vectors
+  pass. bin/p256_sign_fault_test changes one word of each coordinate of
+  k*G and requires a refusal with the buffer as it was.
+
+--- old
+    uint32_t on_curve = widemul_p256_point_on_curve(widemul, x_bytes, y_bytes);
+--- new
+    uint32_t on_curve = widemul_p256_point_on_curve(widemul, x_bytes, y_bytes) | 0xffffffffU;

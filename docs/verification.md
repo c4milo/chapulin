@@ -1117,11 +1117,26 @@ The entries are grouped by area:
     INTEGER, and refuses a short capacity rather than truncating, with no
     byte written past it;
   - `p256_sign_key_ok`, the key test a server also runs on its
-    configuration, reads the key and answers 1 or 0.
-- **Bound:** any key, any message hash, any capacity ≤ `P256_SIG_MAX`.
+    configuration, reads the key and answers 1 or 0;
+  - the tail of RFC 6979's steps d and f, byte for byte: priv ‖ z
+    without noise, and the hedged form's noise ‖ 63 zeros ‖ priv ‖ 32
+    zeros ‖ z with it, so that the key starts a SHA-256 block. The HMAC
+    and key counts above hold for both forms (decision 153);
+  - `p256_sign` and `p256_sign_hedged` write the signature and its
+    length only after both checks answered all ones, k·G on the curve
+    and s·k = z + r·d (decision 153), and on every refusal leave both as
+    they were. The checks are stubs with free verdicts, so this covers a
+    signature a fault changed. `p256_point` and `p256_wide_point` prove
+    the real on-curve checks' memory safety and masks.
+- **Bound:** any key, any message hash, any noise that is not all zero,
+  any capacity ≤ `P256_SIG_MAX`.
 - **Not proved:** whether a signature is genuine. `test/p256_sign_test.c`
-  checks that against RFC 6979 A.2.5 and Python, and the Wycheproof lane
-  hands every signature to the independent verifier in `p256.c`.
+  checks that against RFC 6979 A.2.5 and Python, for both nonces, and
+  the Wycheproof lane hands every signature to the independent verifier
+  in `p256.c`. `bin/diff_p256_wide` holds r and s of both nonces to
+  `spec/lean/Spec/P256Nonce.lean`. That the checks refuse a fault rests
+  on `bin/p256_sign_fault_test`, which changes one word of k·G or of s
+  through test-only hooks and requires a refusal.
 
 #### p384
 
@@ -5525,9 +5540,10 @@ first arm of [SHA-512 in a host object](#sha-512-in-a-host-object). The
 DRBG, the certificate verifiers, the RSA signer, `p256_sign`, the cookie
 and token MACs, an SPKI pin's hash and the webpki ticket binding make
 such calls, and each starts and ends its context on that
-path. `p256_sign_cpu`, which a server signs a CertificateVerify through,
-takes the session's value and hands it to `sha256.h`'s entries for each
-SHA-256 of the RFC 6979 nonce's HMACs (decisions 102 and 147). A
+path. `p256_sign_cpu`, and `p256_sign_hedged_cpu`, which a server signs a
+CertificateVerify through, take the session's value and hand it to
+`sha256.h`'s entries for each SHA-256 of the nonce's HMACs (decisions
+102, 147 and 153). A
 server's `srv_hash_signed_content` takes the value as well, for the
 SHA-256 of the CertificateVerify signed content (decision 145). So does
 `srv_parse_client_hello`, for the SHA-256 of a ClientHello's frozen
@@ -6813,13 +6829,16 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
 3. The x25519 rows, ten times over the wide X25519 field, 1,501
    comparisons, where the compiler passes the host test. The spec
    computes over natural numbers mod p, so one model serves both fields.
-4. The wide P-256 rows, 4,327 comparisons, where the compiler
+4. The wide P-256 rows, 4,427 comparisons, where the compiler
    passes the host test: 25 key generations, signatures and key
    exchanges through `p256_ecdh_keygen`, `p256_sign` and `p256_ecdh`
    under each answer, so the wide P-256 files and the 32-bit files each
    answer the spec. The key generation must write the spec's public
    key. The spec's verifier must accept the signature and refuse it for
-   a hash with one byte changed. The key exchange with the spec's point
+   a hash with one byte changed. r and s from `p256_sign` and from
+   `p256_sign_hedged` must be the spec's, from the nonces
+   `spec/lean/Spec/P256Nonce.lean` derives (decision 153). The key
+   exchange with the spec's point
    b G must give the X coordinate of the spec's (a b) G. Then 75
    incomplete mixed additions through
    `p256_wide_point_add_affine_incomplete` against

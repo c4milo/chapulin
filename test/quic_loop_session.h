@@ -3,9 +3,10 @@
 // bin/quic_loop_session builds quic_loop_test.c with -DCH_RAND_SESSION
 // under TRUST=raw-ecdsa, as bin/quic_loop_test is built. The client draws
 // its x25519 scalar and its random in ch_quic_init, and the server its
-// x25519 scalar in ch_srv_quic_init, its random for the ServerHello, and
-// the ticket's nonces once the client Finished arrives. Its ECDSA
-// signature draws nothing, so the RSA-PSS salt is checked on its own
+// x25519 scalar in ch_srv_quic_init, its random for the ServerHello, the
+// noise of its ECDSA nonce for the CertificateVerify (docs/decisions.md
+// 153), and the ticket's nonces once the client Finished arrives. Its
+// identity is the ECDSA one, so the RSA-PSS salt is checked on its own
 // (check_pss_salt_from_source). The client pins the server's key through
 // test/quic_loop_close.h's pinned_client_config.
 #ifndef CH_TEST_QUIC_LOOP_SESSION_H
@@ -16,7 +17,7 @@
 #endif
 
 #define SESSION_CLIENT_DRAWS 2
-#define SESSION_SERVER_DRAWS 3
+#define SESSION_SERVER_DRAWS 4
 #define SESSION_SERVER_RANDOM_DRAW 1
 #define SESSION_RANDOM_OFF 6
 

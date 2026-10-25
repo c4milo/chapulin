@@ -120,6 +120,14 @@ void p256_point_base_mul(p256_point *o, const p256_scalar *k);
 // satisfies the curve equation generates the whole group.
 uint32_t p256_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]);
 
+// All ones when x and y, 32 big-endian bytes each, are both below p and
+// satisfy y^2 = x^3 - 3x + b, zero otherwise. Unlike
+// p256_point_from_bytes it is constant time in both coordinates: no
+// branch reads either, and the range test is a mask. p256_sign.c runs it
+// on the affine k*G before r is taken from it, so a fault that moves k*G
+// off the curve gives no signature (docs/decisions.md 153).
+uint32_t p256_point_on_curve(const uint8_t x[P256_FE_LEN], const uint8_t y[P256_FE_LEN]);
+
 // Writes a's affine coordinates as 32 big-endian bytes each, and returns
 // all ones when a is a finite point and zero when a is the point at
 // infinity. y may be NULL for a caller that wants X alone.

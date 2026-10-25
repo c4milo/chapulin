@@ -25,6 +25,7 @@
 #include "srv.h"
 #include "srv_flight.h"
 #include "srv_handshake.h"
+#include "widemul.h"
 
 // The key pairs the signing cases provision. Both come from the vector
 // headers the signers' own binaries read, so no key is hand-copied
@@ -43,11 +44,19 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     abort();
 }
 
-// srv_flight.c draws through this hook, and this binary links that source
-// because srv_handshake.c calls it. No case here reaches a draw, so the
-// bytes never matter; the definition exists so the image links.
+// srv_auth.c draws the RSA-PSS salt and the ECDSA nonce's noise through
+// this hook, and srv_flight.c, which this binary links because
+// srv_handshake.c calls it, draws through it too. Each call writes a
+// different run of bytes, none of them zero, and the last draw stays in
+// last_draw, so a case can sign again with the noise the server drew.
+static uint8_t last_draw[64];
+static uint8_t draw_count = 0;
 void ch_rand_bytes(uint8_t *p, size_t n) {
-    memset(p, 1, n);
+    draw_count++;
+    for (size_t i = 0; i < n; i++) {
+        p[i] = (uint8_t)(draw_count + i) | 0x01;
+    }
+    memcpy(last_draw, p, n < sizeof last_draw ? n : sizeof last_draw);
 }
 
 static int failures = 0;
@@ -274,6 +283,41 @@ static void test_sign_ecdsa(void) {
                                       &alert) == CH_OK);
 }
 
+// The server signs through the hedged nonce (docs/decisions.md 153). The
+// signature is the one p256_sign_hedged writes over the noise the server
+// drew, and two signatures of one transcript differ and both verify.
+static void test_sign_ecdsa_hedged(void) {
+    ch_cfg live;
+    uint8_t transcript[SHA256_LEN];
+    uint8_t digest[SHA256_LEN];
+    uint8_t sig[SRV_SIG_MAX];
+    uint8_t again[SRV_SIG_MAX];
+    uint8_t want[P256_SIG_MAX];
+    size_t sig_len = 0;
+    size_t again_len = 0;
+    size_t want_len = 0;
+    uint8_t alert = 0;
+
+    memset(&live, 0, sizeof live);
+    provision_ecdsa(&live);
+    memset(transcript, 0x44, sizeof transcript);
+    srv_hash_signed_content(0, SIGALG_ECDSA_P256_SHA256, transcript, sizeof transcript, digest);
+
+    CHECK(srv_sign_certificate_verify(&live, SIGALG_ECDSA_P256_SHA256, transcript,
+                                      sizeof transcript, sig, sizeof sig, &sig_len,
+                                      &alert) == CH_OK);
+    CHECK(p256_sign_hedged(widemul_answer(&live), p256_sign_vectors[0].priv, digest, last_draw,
+                           want, sizeof want, &want_len) == 1);
+    CHECK(want_len == sig_len && memcmp(want, sig, sig_len) == 0);
+
+    CHECK(srv_sign_certificate_verify(&live, SIGALG_ECDSA_P256_SHA256, transcript,
+                                      sizeof transcript, again, sizeof again, &again_len,
+                                      &alert) == CH_OK);
+    CHECK(!(again_len == sig_len && memcmp(again, sig, sig_len) == 0));
+    CHECK(p256_ecdsa_verify(p256_sign_vectors[0].pub, digest, sig, sig_len) == 1);
+    CHECK(p256_ecdsa_verify(p256_sign_vectors[0].pub, digest, again, again_len) == 1);
+}
+
 // What the caller sees when the signer itself refuses. A scalar of 32
 // 0xff bytes is above the group order, which p256_sign refuses
 // (p256_sign.h), so this reaches the one path that runs a signer and
@@ -400,6 +444,7 @@ int main(void) {
     test_signed_content();
     test_identity();
     test_sign_ecdsa();
+    test_sign_ecdsa_hedged();
     test_sign_rsa();
     test_sign_refused();
     test_check();

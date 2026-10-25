@@ -2,7 +2,7 @@ invariant: INV-16
 file: p256_sign.c
 catches: hash_runtime_test
 reason: p256_sign_cpu hands its nonce generator 0 in place of the
-  session's ch_cfg.cpu, so a server that stated the SHA-256 instructions
+  session's ch_cfg.cpu, so a session that stated the SHA-256 instructions
   runs the sixteen HMAC-SHA-256 calls of every signature's RFC 6979 nonce
   on the portable code (docs/decisions.md 102). Every signature is the
   same, because both paths compute the same HMAC, so no vector fails.
@@ -10,6 +10,6 @@ reason: p256_sign_cpu hands its nonce generator 0 in place of the
   path under every ch_cfg.cpu value.
 
 --- old
-    return sign_digest(widemul_of_cpu(cpu), cpu, priv, msg_hash, sig, cap, sig_len);
+    return sign_digest(widemul_of_cpu(cpu), cpu, priv, msg_hash, NULL, sig, cap, sig_len);
 --- new
-    return sign_digest(widemul_of_cpu(cpu), 0, priv, msg_hash, sig, cap, sig_len);
+    return sign_digest(widemul_of_cpu(cpu), 0, priv, msg_hash, NULL, sig, cap, sig_len);

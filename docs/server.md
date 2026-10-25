@@ -1423,7 +1423,9 @@ determinism — mix fresh bytes into the HMAC_DRBG input — which keeps the
 nonce-reuse resistance and loses the "no runtime entropy" property.
 
 **v1 signs with plain RFC 6979 and `SIGN_HEDGED=1` mixes 32 fresh bytes into
-the seed.** Plain is the default because nonce reuse is instantaneous and total
+the seed.** Decision 153 replaced this on 2026-10-25: every server object now
+hedges, and checks k·G and s before a signature leaves the signer.
+Plain is the default because nonce reuse is instantaneous and total
 while a fault attack needs physical access and equipment, and because a
 deterministic signer is the only one a fixed test vector and the Lean oracle
 can check end to end. The hedge is one extra HMAC input below the signing
@@ -2492,7 +2494,7 @@ Most of the work. Each row was read at the line given.
 | `record.[ch]` | Unchanged as control flow; the suite and the hash length appear in three lines. `rec_dir_init` derives `AEAD_KEY` bytes at `record.c:7`, and `rec_seal` and `rec_open` call the ChaCha20-Poly1305 functions by name at `record.c:56` and `record.c:82`. |
 | `chacha20.[ch]`, `poly1305.[ch]`, `aead.[ch]` | Unchanged, and not enough: `rfc9846.txt:4540` requires AES-128-GCM beside them and `:4542` makes AES-256-GCM a SHOULD the scope takes. |
 | `x25519.[ch]` | Unchanged and symmetric. The client's all-zero refusal (`handshake.c:300`) is the check a server makes too. |
-| `mlkem.[ch]` | Reused as it stood. `srv_kex.c` calls `mlkem_encaps_derand` (`mlkem.h:40`), which already had known-answer vectors and a CBMC harness. The function takes its 32-byte message `m` from the caller, so a server that selects the hybrid draws it through `ch_rand_bytes` in `encapsulate` (`srv_kex.c`), one of the ten sites INV-4 lists ("Key exchange" below). |
+| `mlkem.[ch]` | Reused as it stood. `srv_kex.c` calls `mlkem_encaps_derand` (`mlkem.h:40`), which already had known-answer vectors and a CBMC harness. The function takes its 32-byte message `m` from the caller, so a server that selects the hybrid draws it through `ch_rand_bytes` in `encapsulate` (`srv_kex.c`), one of the eleven sites INV-4 lists ("Key exchange" below). |
 | `handshake_record.[ch]` | Reusable. `accept_record` decrypts with `t->rd` (`handshake_record.c:35`), which is already the read direction. The ChangeCipherSpec tolerance at `handshake_record.c:53-58` is what `rfc9846.txt:1793-1797` requires of a stateless server, already written and already capped at four. |
 | the CertificateVerify signed content | **Moved, then reused.** See below. |
 | `handshake_post.[ch]` | A role arm. A server receives no NewSessionTicket and may write them; KeyUpdate receipt, the one answer `ch_write` sends for a run of requests and the run limit are the same in both directions (`docs/decisions.md` 138). |
@@ -3093,7 +3095,10 @@ every target, and now at two key sizes. Build both, measure on rv32 against the
 table version's measured 1,312 text bytes, and record the answer in
 `docs/decisions.md`.
 
-**Seven: plain RFC 6979 or hedged determinism as the default?** The design takes
+**Seven: plain RFC 6979 or hedged determinism as the default?** Settled on
+2026-10-25 by docs/decisions.md 153: every server object signs with the hedged
+nonce, checks k·G and s before a signature leaves the signer, and no build
+switch exists. The text below is the question as it stood. The design takes
 plain with `SIGN_HEDGED=1` available, and states the fault-attack exposure it
 accepts. Settle this before `p256_sign.c` is written, and settle the two
 smaller RFC 6979 questions with it: the retry loop's CBMC unwind bound, and
@@ -3133,7 +3138,7 @@ server ("Key exchange" above, `docs/decisions.md` entry 54). The QUIC server
 had already landed (`docs/quic_server.md`), and it runs the hybrid like the
 other two drivers. The draw the question priced, the 32-byte ML-KEM
 encapsulation message `m` (`mlkem.h:40-41`), happens in `srv_kex.c`'s
-`encapsulate`, one of the ten sites INV-4 lists, and only when the server
+`encapsulate`, one of the eleven sites INV-4 lists, and only when the server
 selects the hybrid. The note on `quic_keys.h`'s three entry points typed
 `secret[SHA256_LEN]` (`:88`, `:100`, `:124`) belongs to question one, and
 stands.

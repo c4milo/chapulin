@@ -8,11 +8,11 @@ reason: the P-256 counterpart of the x25519 zero check — a peer point that
   cases carry)
 
 --- old
-    p256_fe_add(&rhs, &rhs, &B_MONT);
-    return p256_fe_equal_mask(&lhs, &rhs);
+    o->z = p256_fe_one_mont;
+    return curve_equation_mask(&o->x, &o->y);
 --- new
-    p256_fe_add(&rhs, &rhs, &B_MONT);
+    o->z = p256_fe_one_mont;
     // Both coordinates are below p and the form byte is 0x04, so the
     // point is well formed.
-    (void)p256_fe_equal_mask(&lhs, &rhs);
+    (void)curve_equation_mask(&o->x, &o->y);
     return 0xffffffffU;

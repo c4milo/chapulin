@@ -2,7 +2,7 @@
 // (test/rand_session_cases.h), and the refusals of their two init calls.
 // bin/tcp_nonblocking_loop_session builds tcp_nonblocking_loop_test.c
 // with -DCH_RAND_SESSION and the KEX=pq client, so a full handshake runs
-// seven of the ten draw sites: the client draws its x25519 scalar, its
+// seven of the eleven draw sites: the client draws its x25519 scalar, its
 // random and the ML-KEM seed in ch_record_init, and the
 // server its x25519 scalar in ch_srv_record_init, then the ML-KEM
 // encapsulation randomness and its random for the ServerHello, then the

@@ -1,8 +1,9 @@
 // ECDSA P-256 signing (see p256_sign.h for the contracts, the
 // constant-time claim and the one stated narrowing against RFC 6979).
-// Three things live here and nothing else: the RFC 6979 nonce generator,
-// the four scalar operations that make s, and the DER writer. The
-// arithmetic is p256_scalar.c's and p256_point.c's.
+// Four things live here and nothing else: the RFC 6979 nonce generator
+// with its hedged form, the scalar operations that make s, the two checks
+// of a signature, and the DER writer. The arithmetic is p256_scalar.c's
+// and p256_point.c's.
 #include "p256_sign.h"
 
 #include <string.h>
@@ -93,15 +94,33 @@ static void generator_hmac(uint32_t cpu, const nonce_generator *g, const uint8_t
     ct_wipe(&s, sizeof s);
 }
 
-// The longest message the generator hashes: V, one separator byte, the
-// private scalar and the reduced message hash (RFC 6979 §3.2 steps d
-// and f).
-#define GENERATOR_INPUT_MAX (SHA256_LEN + 1 + P256_PRIV_LEN + P256_SCALAR_LEN)
+// The zero bytes the hedged form puts after the noise and after the
+// private scalar (draft-irtf-cfrg-det-sigs-with-noise-05 section 4). The
+// first count ends V, the separator, the noise and the zeros at the end of
+// the second block: 32 + 1 + 32 + 63 is 128. The second ends the private
+// scalar and the zeros at the end of the third block: 32 + 32 is 64. So
+// the private scalar starts a block of its own, after the noise changed
+// the state.
+#define HEDGED_NOISE_PAD (2 * SHA256_BLOCK - SHA256_LEN - 1 - P256_NOISE_LEN)
+#define HEDGED_KEY_PAD (SHA256_BLOCK - P256_PRIV_LEN)
 
-// K = HMAC_K(V || separator || priv || z), then V = HMAC_K(V). This is
-// RFC 6979 §3.2 step d with separator 0x00 and step f with 0x01; step h
-// step 3's update is the same shape with no priv and no z, which the
-// caller asks for by passing tail_len 0. The new K gets its midstates
+// The longest tail generator_tail writes: the noise, its zeros, the
+// private scalar, its zeros and the reduced message hash, which the draft
+// calls provided_data. RFC 6979's tail is the private scalar and the
+// reduced message hash alone.
+#define GENERATOR_TAIL_MAX                                                                         \
+    (P256_NOISE_LEN + HEDGED_NOISE_PAD + P256_PRIV_LEN + HEDGED_KEY_PAD + P256_SCALAR_LEN)
+
+// The longest message the generator hashes: V, one separator byte and the
+// longest tail (RFC 6979 §3.2 steps d and f, and the draft's steps d and
+// f).
+#define GENERATOR_INPUT_MAX (SHA256_LEN + 1 + GENERATOR_TAIL_MAX)
+
+// K = HMAC_K(V || separator || tail), then V = HMAC_K(V). With the tail
+// generator_tail writes, this is RFC 6979 §3.2 step d with separator 0x00
+// and step f with 0x01, or the hedged form's steps d and f. Step h step
+// 3's update is the same shape with no tail, which the caller asks for by
+// passing tail_len 0. The new K gets its midstates
 // before the second HMAC, which it keys. Each HMAC runs on the path cpu
 // picks (generator_hmac).
 static void generator_update(uint32_t cpu, nonce_generator *g, uint8_t separator,
@@ -130,19 +149,47 @@ static void generator_update(uint32_t cpu, nonce_generator *g, uint8_t separator
     ct_wipe(next, sizeof next);
 }
 
-// RFC 6979 §3.2 steps a through g. z_octets is bits2octets(h1), which
-// for this curve is the 32 bytes of the message hash reduced mod n,
-// because qlen, hlen and the octet length are all the same here.
+// The tail of steps d and f into tail, and its length into *tail_len.
+// With noise NULL it is RFC 6979's: priv || z_octets. With noise it is
+// the hedged form's: noise || zeros || priv || zeros || z_octets
+// (HEDGED_NOISE_PAD, HEDGED_KEY_PAD). The test of noise reads the pointer
+// the entry passed, never a byte of the noise.
+static void generator_tail(uint8_t tail[GENERATOR_TAIL_MAX], size_t *tail_len,
+                           const uint8_t priv[P256_PRIV_LEN],
+                           const uint8_t z_octets[P256_SCALAR_LEN], const uint8_t *noise) {
+    static const uint8_t zeros[HEDGED_NOISE_PAD] = {0};
+    wbuf w;
+    wb_init(&w, tail, GENERATOR_TAIL_MAX);
+    if (noise != NULL) {
+        wb_bytes(&w, noise, P256_NOISE_LEN);
+        wb_bytes(&w, zeros, HEDGED_NOISE_PAD);
+    }
+    wb_bytes(&w, priv, P256_PRIV_LEN);
+    if (noise != NULL) {
+        wb_bytes(&w, zeros, HEDGED_KEY_PAD);
+    }
+    wb_bytes(&w, z_octets, P256_SCALAR_LEN);
+    // GENERATOR_TAIL_MAX is the hedged tail's length, so an overrun here
+    // means the constant and this function disagree.
+    CH_ASSERT(w.err == 0);
+    *tail_len = w.len;
+}
+
+// RFC 6979 §3.2 steps a through g, or with noise the hedged form's, whose
+// steps d and f take the longer tail (generator_tail). z_octets is
+// bits2octets(h1), which for this curve is the 32 bytes of the message
+// hash reduced mod n, because qlen, hlen and the octet length are all the
+// same here.
 static void generator_init(uint32_t cpu, nonce_generator *g, const uint8_t priv[P256_PRIV_LEN],
-                           const uint8_t z_octets[P256_SCALAR_LEN]) {
-    uint8_t tail[P256_PRIV_LEN + P256_SCALAR_LEN];
-    memcpy(tail, priv, P256_PRIV_LEN);
-    memcpy(tail + P256_PRIV_LEN, z_octets, P256_SCALAR_LEN);
+                           const uint8_t z_octets[P256_SCALAR_LEN], const uint8_t *noise) {
+    uint8_t tail[GENERATOR_TAIL_MAX];
+    size_t tail_len = 0;
+    generator_tail(tail, &tail_len, priv, z_octets, noise);
     memset(g->v, 0x01, SHA256_LEN);
     memset(g->k, 0x00, SHA256_LEN);
     generator_key(cpu, g);
-    generator_update(cpu, g, 0x00, tail, sizeof tail);
-    generator_update(cpu, g, 0x01, tail, sizeof tail);
+    generator_update(cpu, g, 0x00, tail, tail_len);
+    generator_update(cpu, g, 0x01, tail, tail_len);
     ct_wipe(tail, sizeof tail);
 }
 
@@ -163,14 +210,15 @@ static void generator_next(uint32_t cpu, nonce_generator *g, p256_scalar *candid
 // RFC's and the cost is the same for every key and message. Returns all
 // ones when some candidate was usable and zero when none was. Every HMAC
 // runs on the path cpu picks (generator_hmac). The wipe of g covers K, V
-// and the two midstates.
+// and the two midstates. noise is NULL for RFC 6979, and P256_NOISE_LEN
+// bytes for the hedged form (generator_tail).
 static uint32_t derive_nonce(uint32_t cpu, p256_scalar *k, const uint8_t priv[P256_PRIV_LEN],
-                             const uint8_t z_octets[P256_SCALAR_LEN]) {
+                             const uint8_t z_octets[P256_SCALAR_LEN], const uint8_t *noise) {
     nonce_generator g;
     p256_scalar candidate;
     uint32_t found = 0;
 
-    generator_init(cpu, &g, priv, z_octets);
+    generator_init(cpu, &g, priv, z_octets, noise);
     *k = p256_scalar_zero;
     for (int i = 0; i < NONCE_CANDIDATES; i++) {
         generator_next(cpu, &g, &candidate);
@@ -250,37 +298,80 @@ static void signature_scalar(uint8_t widemul, p256_scalar *s, const p256_scalar 
     ct_wipe(&product, sizeof product);
 }
 
-// r and s for one nonce, as the 32 big-endian bytes the DER writer
-// takes. Returns 1 when both are usable and 0 when either came out zero,
-// which p256_sign.h states is the one place this file narrows RFC 6979.
-static int compute_signature(uint8_t widemul, const p256_scalar *k, const p256_scalar *d,
-                             const p256_scalar *z, uint8_t r_bytes[P256_SCALAR_LEN],
-                             uint8_t s_bytes[P256_SCALAR_LEN]) {
+// The fault hooks of test/p256_sign_fault_test.c (p256_sign.h), which
+// every other build compiles to nothing.
+#ifdef CH_P256_SIGN_FAULT_TEST
+#define FAULT_POINT(point) p256_sign_fault_point(point)
+#define FAULT_SCALAR(s) p256_sign_fault_scalar(s)
+#else
+#define FAULT_POINT(point) ((void)(point))
+#define FAULT_SCALAR(s) ((void)(s))
+#endif
+
+// The scalar check: all ones when s*k = z + r*d mod n, zero otherwise.
+// It multiplies r by d again rather than read signature_scalar's product,
+// so a fault in either multiply or in the inverse of k gives a mismatch.
+// Every step is constant time (widemul.h, p256_scalar.h), because k and d
+// are secret: both sides are below n, so their bytes are the same exactly
+// when the scalars are, and ct_memeq compares them. Every value is wiped.
+static uint32_t scalar_check(uint8_t widemul, const p256_scalar *s, const p256_scalar *k,
+                             const p256_scalar *d, const p256_scalar *z, const p256_scalar *r) {
+    p256_scalar lhs;
+    p256_scalar rhs;
+    uint8_t lhs_bytes[P256_SCALAR_LEN];
+    uint8_t rhs_bytes[P256_SCALAR_LEN];
+    widemul_p256_scalar_mul(widemul, &lhs, s, k);
+    widemul_p256_scalar_mul(widemul, &rhs, r, d);
+    p256_scalar_add(&rhs, z, &rhs);
+    p256_scalar_to_bytes(lhs_bytes, &lhs);
+    p256_scalar_to_bytes(rhs_bytes, &rhs);
+    // ct_memeq answers 1 or 0, and 0 - 1 is all ones.
+    uint32_t equal = 0U - ct_memeq(lhs_bytes, rhs_bytes, P256_SCALAR_LEN);
+    ct_wipe(&lhs, sizeof lhs);
+    ct_wipe(&rhs, sizeof rhs);
+    ct_wipe(lhs_bytes, sizeof lhs_bytes);
+    ct_wipe(rhs_bytes, sizeof rhs_bytes);
+    return equal;
+}
+
+// r and s for one nonce, as the DER writer's 32-byte values, and the two
+// checks (docs/decisions.md 153). Returns all ones when k*G is finite and
+// on the curve, s*k = z + r*d mod n, and neither r nor s is zero (the one
+// narrowing of RFC 6979, p256_sign.h); zero otherwise. Every step runs
+// whatever the answers are, and masks combine them, so no branch reads
+// k*G, k or d. The caller writes r and s only on all ones.
+static uint32_t compute_signature(uint8_t widemul, const p256_scalar *k, const p256_scalar *d,
+                                  const p256_scalar *z, uint8_t r_bytes[P256_SCALAR_LEN],
+                                  uint8_t s_bytes[P256_SCALAR_LEN]) {
     p256_point point;
-    p256_scalar r = p256_scalar_zero;
-    p256_scalar s = p256_scalar_zero;
+    p256_scalar r;
+    p256_scalar s;
     uint8_t x_bytes[P256_FE_LEN];
-    int rc = 0;
+    uint8_t y_bytes[P256_FE_LEN];
 
     widemul_p256_point_base_mul(widemul, &point, k);
-    // The point is k*G for a k in [1, n-1], so it is never the point at
-    // infinity and the mask is always all ones. Reading it anyway keeps a
-    // faulted multiplication from producing a signature over bytes that
-    // are not a coordinate.
-    if (widemul_p256_point_affine_x(widemul, x_bytes, &point)) {
-        p256_scalar_from_bytes(&r, x_bytes);
-        p256_scalar_reduce(&r, &r);
-        signature_scalar(widemul, &s, k, d, z, &r);
-        p256_scalar_to_bytes(r_bytes, &r);
-        p256_scalar_to_bytes(s_bytes, &s);
-        // r and s are public: they go on the wire. A zero in either is
-        // below 2^-127.
-        rc = !p256_scalar_zero_mask(&r) && !p256_scalar_zero_mask(&s);
-    }
+    FAULT_POINT(&point);
+    // k is in [1, n-1], so k*G is never the point at infinity. The mask is
+    // read anyway, so a faulted multiplication that reached infinity gives
+    // no signature.
+    uint32_t finite = widemul_p256_point_affine(widemul, x_bytes, y_bytes, &point);
+    // The on-curve check, before r is taken from x.
+    uint32_t on_curve = widemul_p256_point_on_curve(widemul, x_bytes, y_bytes);
+    p256_scalar_from_bytes(&r, x_bytes);
+    p256_scalar_reduce(&r, &r);
+    signature_scalar(widemul, &s, k, d, z, &r);
+    FAULT_SCALAR(&s);
+    uint32_t consistent = scalar_check(widemul, &s, k, d, z, &r);
+    p256_scalar_to_bytes(r_bytes, &r);
+    p256_scalar_to_bytes(s_bytes, &s);
+    uint32_t usable =
+        finite & on_curve & consistent & ~p256_scalar_zero_mask(&r) & ~p256_scalar_zero_mask(&s);
 
     ct_wipe(&s, sizeof s);
     ct_wipe(&point, sizeof point);
-    return rc;
+    ct_wipe(x_bytes, sizeof x_bytes);
+    ct_wipe(y_bytes, sizeof y_bytes);
+    return usable;
 }
 
 int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
@@ -291,16 +382,40 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
     return usable != 0;
 }
 
+// sig = candidate when checked is all ones and candidate fits cap, and no
+// byte of sig otherwise; returns 1 when it wrote. This is the one place
+// the file writes a signature, and proof/p256_sign_harness.c proves that
+// sig and *sig_len keep what they held unless both checks passed. The
+// verdict is what the caller sees, so the branch on it tells no more.
+static int write_if_checked(uint32_t checked, const uint8_t *candidate, size_t candidate_len,
+                            uint8_t *sig, size_t cap, size_t *sig_len) {
+    int fits = candidate_len <= cap;
+    if (checked != 0 && fits) {
+        memcpy(sig, candidate, candidate_len);
+        *sig_len = candidate_len;
+        return 1;
+    }
+    return 0;
+}
+
 // p256_sign's contract, with the multiplies under widemul and the nonce
-// generator's HMACs on the path cpu picks (generator_hmac).
+// generator's HMACs on the path cpu picks (generator_hmac). noise is NULL
+// for the RFC 6979 nonce and P256_NOISE_LEN bytes for the hedged one
+// (derive_nonce). The DER signature goes to a candidate array first, and
+// to sig only after both checks passed (write_if_checked). The candidate
+// is wiped on either verdict: one that failed is what a fault made of the
+// nonce or of the key.
 static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
-                       const uint8_t msg_hash[32], uint8_t *sig, size_t cap, size_t *sig_len) {
+                       const uint8_t msg_hash[32], const uint8_t *noise, uint8_t *sig, size_t cap,
+                       size_t *sig_len) {
     p256_scalar d;
     p256_scalar z;
     p256_scalar k;
     uint8_t z_octets[P256_SCALAR_LEN];
     uint8_t r_bytes[P256_SCALAR_LEN];
     uint8_t s_bytes[P256_SCALAR_LEN];
+    uint8_t candidate[P256_SIG_MAX];
+    size_t candidate_len = 0;
     int rc = 0;
 
     // The key must be in [1, n-1]. This branch reads the configured key,
@@ -318,27 +433,65 @@ static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PR
     p256_scalar_reduce(&z, &z);
     p256_scalar_to_bytes(z_octets, &z);
 
-    if (derive_nonce(cpu, &k, priv, z_octets) &&
-        compute_signature(widemul, &k, &d, &z, r_bytes, s_bytes)) {
-        rc = write_signature(sig, cap, sig_len, r_bytes, s_bytes);
+    if (derive_nonce(cpu, &k, priv, z_octets, noise)) {
+        uint32_t checked = compute_signature(widemul, &k, &d, &z, r_bytes, s_bytes);
+        // The candidate holds the longest signature, so this never refuses.
+        if (write_signature(candidate, sizeof candidate, &candidate_len, r_bytes, s_bytes)) {
+            rc = write_if_checked(checked, candidate, candidate_len, sig, cap, sig_len);
+        }
     }
 
     ct_wipe(&d, sizeof d);
     ct_wipe(&z, sizeof z);
     ct_wipe(&k, sizeof k);
     ct_wipe(z_octets, sizeof z_octets);
+    // r and s go on the wire when the checks pass, but a pair that a fault
+    // changed must not stay on the stack, so both are wiped.
+    ct_wipe(r_bytes, sizeof r_bytes);
     ct_wipe(s_bytes, sizeof s_bytes);
+    ct_wipe(candidate, sizeof candidate);
     return rc;
+}
+
+// p256_sign_hedged's contract, with the multiplies under widemul and the
+// nonce generator's HMACs on the path cpu picks.
+static int sign_hedged(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
+                       const uint8_t msg_hash[32], const uint8_t noise[P256_NOISE_LEN],
+                       uint8_t *sig, size_t cap, size_t *sig_len) {
+    // INV-4's check on the noise draw, which the caller makes
+    // (srv_auth.c). A source that returns without writing leaves the noise
+    // zero, and then every signature over one message is the same bytes
+    // again. A real draw is all zero with probability 2^-256, so this
+    // checks the integrator's source against rand.h's contract, which is
+    // what CH_ASSERT is for. ct_memeq reads every byte, and its one
+    // verdict goes to the assertion.
+    {
+        static const uint8_t unwritten[P256_NOISE_LEN] = {0};
+        CH_ASSERT(!ct_memeq(noise, unwritten, P256_NOISE_LEN));
+    }
+    return sign_digest(widemul, cpu, priv, msg_hash, noise, sig, cap, sig_len);
 }
 
 int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
               uint8_t *sig, size_t cap, size_t *sig_len) {
-    return sign_digest(widemul, 0, priv, msg_hash, sig, cap, sig_len);
+    return sign_digest(widemul, 0, priv, msg_hash, NULL, sig, cap, sig_len);
+}
+
+int p256_sign_hedged(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
+                     const uint8_t noise[P256_NOISE_LEN], uint8_t *sig, size_t cap,
+                     size_t *sig_len) {
+    return sign_hedged(widemul, 0, priv, msg_hash, noise, sig, cap, sig_len);
 }
 
 #ifdef CH_CPU_RUNTIME
 int p256_sign_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
                   uint8_t *sig, size_t cap, size_t *sig_len) {
-    return sign_digest(widemul_of_cpu(cpu), cpu, priv, msg_hash, sig, cap, sig_len);
+    return sign_digest(widemul_of_cpu(cpu), cpu, priv, msg_hash, NULL, sig, cap, sig_len);
+}
+
+int p256_sign_hedged_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
+                         const uint8_t msg_hash[32], const uint8_t noise[P256_NOISE_LEN],
+                         uint8_t *sig, size_t cap, size_t *sig_len) {
+    return sign_hedged(widemul_of_cpu(cpu), cpu, priv, msg_hash, noise, sig, cap, sig_len);
 }
 #endif

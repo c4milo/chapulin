@@ -875,8 +875,17 @@ launch fast full p256_point_ladder 34 ""
 # SHA-256 midstates beside K and V (docs/decisions.md 147), so its wipe
 # covers 288 bytes and ct_wipe unwinds 289 times. Measured on GitHub's
 # ubuntu-24.04 runner (cbmc 6.11.0, kissat, prove-one.sh with
-# PROVE_NO_CACHE=1): 831 properties in 29 s, and a reach of 77.1%.
-launch fast:3 full p256_sign 100 "ct_wipe.0:289" buf.c ct.c proof/ct_wipe_stub.c
+# PROVE_NO_CACHE=1): 831 properties in 29 s, and a reach of 77.1%. The
+# hedged entry (docs/decisions.md 153) adds the tail's two forms byte for
+# byte and the claim that each entry writes a signature only after the
+# on-curve stub and the scalar check's ct_memeq both passed. The harness
+# writes ct_memeq out, so it keeps the answer, and the line drops ct.c,
+# which has its own harness. Its frame holds more objects than 2^8, so
+# the line takes --object-bits 10. Measured through prove-one.sh with
+# PROVE_NO_CACHE=1 on an arm64 macOS machine: 876 properties in 66 s at a
+# load average near 25, 187 s near 75, 2.0 GB of resident memory at the
+# peak, and a reach of 81.0%.
+launch fast:3 full p256_sign 100 "ct_wipe.0:289" --object-bits 10 buf.c proof/ct_wipe_stub.c
 # p256_ecdh is the three public entries over the scalar and point layers
 # stubbed to their contracts, proof/p256_scalar_stubs.h and
 # proof/p256_point_stubs.h, which p256_sign shares: memory safety over any
@@ -1899,7 +1908,10 @@ launch fast full poly1305 85 "blocks.0:8" ct.c proof/ct_wipe_stub.c
 # /usr/bin/time -l, and an assert of 0 in that stub fails. With rand_draw
 # writing zero to the salt before the source runs (docs/decisions.md 141),
 # through proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load
-# average near 106: 474 properties, 48 s, 0.63 GB.
+# average near 106: 474 properties, 48 s, 0.63 GB. The ECDSA noise drawn
+# in sign_ecdsa and handed to the p256_sign_hedged stub, which asserts the
+# noise readable (docs/decisions.md 153), took it to 479 properties, 8 s
+# and 0.34 GB of resident memory, the same way on 2026-10-25.
 launch fast full srv_auth 385 "" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The server's ticket selection and issue, srv_resume.c, over any
 # identities and binders lists up to the bounds the harness states, any

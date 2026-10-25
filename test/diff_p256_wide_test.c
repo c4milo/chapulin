@@ -13,15 +13,20 @@
 // modulo p and n, so it states no word representation and serves both
 // copies unchanged.
 //
-// Five rows, each on fresh random inputs. The first three run under both answers:
+// Six rows, each on fresh random inputs. The first four run under both answers:
 //
 //   key generation: the point p256_ecdh_keygen writes for a scalar d is the
 //   spec's p256_pub of d;
 //
 //   signature: the spec's p256_verify accepts what p256_sign writes for the
 //   key and a hash, under the spec's own public key, and refuses it for a
-//   hash with one byte changed. The C side picks the nonce (RFC 6979), so
-//   the spec cannot predict r and s, and its verifier is what judges them;
+//   hash with one byte changed. This row judges r and s by the spec's
+//   verifier alone;
+//
+//   nonce: r and s that p256_sign writes are the spec's p256_sign_rfc6979
+//   of the key and the hash, and r and s that p256_sign_hedged writes are
+//   the spec's p256_sign_hedged of the key, the noise and the hash, byte
+//   for byte (spec/lean/Spec/P256Nonce.lean);
 //
 //   key exchange: the X coordinate p256_ecdh writes for a scalar a and the
 //   spec's point b G is the X coordinate of the spec's (a b mod n) G. The
@@ -173,6 +178,61 @@ static void diff_sign(uint8_t widemul) {
     expect(cmd, "1");
     (void)snprintf(cmd, sizeof cmd, "p256_verify %s %s %s %s", pub_hex, bad_hex, r_hex, s_hex);
     expect(cmd, "0");
+}
+
+// The r and s of a signature as "r-hex s-hex", the shape of the spec's
+// reply.
+static void signature_reply(char *out, size_t out_size, const uint8_t *sig) {
+    uint8_t r[P256_SCALAR_LEN];
+    uint8_t s[P256_SCALAR_LEN];
+    char r_hex[HEX_LEN(P256_SCALAR_LEN)];
+    char s_hex[HEX_LEN(P256_SCALAR_LEN)];
+    read_signature(r, s, sig);
+    (void)hex_encode(r_hex, r, sizeof r);
+    (void)hex_encode(s_hex, s, sizeof s);
+    (void)snprintf(out, out_size, "%s %s", r_hex, s_hex);
+}
+
+// The nonce, byte for byte: r and s from p256_sign are the spec's
+// p256_sign_rfc6979 of the same key and hash, and r and s from
+// p256_sign_hedged are the spec's p256_sign_hedged of the same key, noise
+// and hash (spec/lean/Spec/P256Nonce.lean, docs/decisions.md 153). The
+// spec's model of the derivation is RFC 6979's text and the draft's, so
+// this row holds the C's HMAC_DRBG and its hedged tail to both.
+static void diff_sign_nonce(uint8_t widemul) {
+    uint8_t d[P256_SCALAR_LEN];
+    uint8_t hash[32];
+    uint8_t noise[P256_NOISE_LEN];
+    uint8_t sig[P256_SIG_MAX];
+    size_t sig_len = 0;
+    draw_scalar(d);
+    rng_fill(hash, sizeof hash);
+    rng_fill(noise, sizeof noise);
+    // CH_ASSERT refuses all-zero noise (INV-4), so one byte is never zero.
+    noise[0] |= 1;
+
+    char d_hex[HEX_LEN(P256_SCALAR_LEN)];
+    char hash_hex[HEX_LEN(32)];
+    char noise_hex[HEX_LEN(P256_NOISE_LEN)];
+    char want[2 * HEX_LEN(P256_SCALAR_LEN)];
+    char cmd[512];
+    (void)hex_encode(d_hex, d, sizeof d);
+    (void)hex_encode(hash_hex, hash, sizeof hash);
+    (void)hex_encode(noise_hex, noise, sizeof noise);
+
+    if (p256_sign(widemul, d, hash, sig, sizeof sig, &sig_len) != 1) {
+        die("p256_sign refused a scalar below 2^255");
+    }
+    signature_reply(want, sizeof want, sig);
+    (void)snprintf(cmd, sizeof cmd, "p256_sign_rfc6979 %s %s", d_hex, hash_hex);
+    expect(cmd, want);
+
+    if (p256_sign_hedged(widemul, d, hash, noise, sig, sizeof sig, &sig_len) != 1) {
+        die("p256_sign_hedged refused a scalar below 2^255");
+    }
+    signature_reply(want, sizeof want, sig);
+    (void)snprintf(cmd, sizeof cmd, "p256_sign_hedged %s %s %s", d_hex, noise_hex, hash_hex);
+    expect(cmd, want);
 }
 
 static void diff_ecdh(uint8_t widemul) {
@@ -408,6 +468,7 @@ int main(int argc, char **argv) {
         for (int round = 0; round < ROUNDS; round++) {
             diff_keygen(ANSWERS[i]);
             diff_sign(ANSWERS[i]);
+            diff_sign_nonce(ANSWERS[i]);
             diff_ecdh(ANSWERS[i]);
         }
     }

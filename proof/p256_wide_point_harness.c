@@ -23,7 +23,8 @@
 //   memory safety in p256_wide_point_from_bytes over any 65 bytes, and that
 //   its answer is 0 or UINT32_MAX, the mask p256_point.h promises, whichever
 //   64-bit mask the field gave it: the low half of a 64-bit mask is a 32-bit
-//   one;
+//   one, and the same of p256_wide_point_on_curve over any 64 bytes, the
+//   signer's check of k*G (docs/decisions.md 153);
 //
 //   memory safety in p256_wide_point_affine with and without a y output,
 //   that its answer is 0 or UINT32_MAX, and that the three wipes it makes
@@ -163,6 +164,17 @@ static void prove_from_bytes(void) {
                      "p256_wide_point_from_bytes: the answer is a mask, not a flag");
 }
 
+// The signer's check of k*G (docs/decisions.md 153), over any 64 bytes.
+static void prove_on_curve(void) {
+    uint8_t x[P256_FE_LEN];
+    uint8_t y[P256_FE_LEN];
+    fill_nondet(x, sizeof x);
+    fill_nondet(y, sizeof y);
+    uint32_t on_curve = p256_wide_point_on_curve(x, y);
+    __CPROVER_assert(on_curve == 0 || on_curve == UINT32_MAX,
+                     "p256_wide_point_on_curve: the answer is a mask, not a flag");
+}
+
 static void prove_affine(void) {
     p256_point a;
     uint8_t x[P256_FE_LEN];
@@ -192,6 +204,7 @@ int main(void) {
     prove_add_affine_incomplete();
     prove_jacobian();
     prove_from_bytes();
+    prove_on_curve();
     prove_affine();
     prove_copies();
     return 0;

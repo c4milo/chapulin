@@ -13,6 +13,7 @@ import Spec.X25519
 import Spec.X25519Edwards
 import Spec.Weierstrass
 import Spec.P256
+import Spec.P256Nonce
 import Spec.P256WidePoint
 import Spec.P256WideInverse
 import Spec.Rsa
