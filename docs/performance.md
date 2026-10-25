@@ -1071,7 +1071,7 @@ answers with one 256-byte record, and each side sends close_notify.
 
 The section holds two counts. [`bench/handshake-n2.sh`](../bench/handshake-n2.sh) made the first
 on 2026-10-25, over `ct_wipe`'s word stores (docs/decisions.md 144) and the fixes of entries 145
-to 147. `make lint-bench-numbers` holds its three tables to `bench/results-handshake-n2.csv`
+to 147 and 149. `make lint-bench-numbers` holds its three tables to `bench/results-handshake-n2.csv`
 (`tools/bench_handshake.py`). The script counted the tree at d0731465 on 2026-10-21 too, and
 "What changed since 2026-10-21" below gives those figures. The second count is the count of
 2026-10-01, at c798fb8. No script made it, and this section keeps it as the record of that date.
@@ -1124,15 +1124,15 @@ The script counts this way:
 
 | server side of the second connection on the Neoverse-N2, M instructions | handshake, perf_events | request, response and close_notify, perf_events | whole connection, perf stat | handshake, callgrind | handshake against OpenSSL 3.6.4 |
 | --- | --- | --- | --- | --- | --- |
-| chapulin, Neoverse-N2 build, `0xe7` | 1.153 | 0.015 | 1.168 | — | 0.86 |
+| chapulin, Neoverse-N2 build, `0xe7` | 1.144 | 0.015 | 1.159 | — | 0.85 |
 | chapulin, Neoverse-N2 build, `0x07` | 1.555 | 0.015 | 1.571 | — | 1.16 |
-| chapulin, Neoverse-N2 build, `0x03` | 43.599 | 0.015 | 43.614 | — | 32.40 |
-| chapulin, base armv8-a build, `0xe7` | 1.310 | 0.015 | 1.324 | — | 0.97 |
-| chapulin, base armv8-a build, `0x07` | 1.720 | 0.015 | 1.734 | 1.734 | 1.28 |
-| chapulin, base armv8-a build, `0x03` | 37.779 | 0.015 | 37.793 | 37.794 | 28.07 |
-| OpenSSL 3.6.4, static | 1.346 | 0.038 | 1.385 | 1.605 | 1.00 |
-| OpenSSL 3.0.13, shared | 1.877 | 0.047 | 1.926 | 2.143 | 1.39 |
-| OpenSSL 3.0.13, static | 1.873 | 0.046 | 1.922 | — | 1.39 |
+| chapulin, Neoverse-N2 build, `0x03` | 43.598 | 0.015 | 43.614 | — | 32.40 |
+| chapulin, base armv8-a build, `0xe7` | 1.300 | 0.015 | 1.315 | — | 0.97 |
+| chapulin, base armv8-a build, `0x07` | 1.720 | 0.015 | 1.735 | 1.734 | 1.28 |
+| chapulin, base armv8-a build, `0x03` | 37.779 | 0.015 | 37.794 | 37.794 | 28.08 |
+| OpenSSL 3.6.4, static | 1.346 | 0.038 | 1.385 | 1.606 | 1.00 |
+| OpenSSL 3.0.13, shared | 1.877 | 0.047 | 1.926 | 2.143 | 1.40 |
+| OpenSSL 3.0.13, static | 1.874 | 0.046 | 1.921 | — | 1.39 |
 
 | server side of the second connection, M instructions (QEMU's trace) | Neoverse-N2 build, `0xe7` | Neoverse-N2 build, `0x07` | Neoverse-N2 build, `0x03` | base armv8-a build, `0xe7` | OpenSSL 3.6.4, static | OpenSSL 3.0.13, static |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -1143,9 +1143,9 @@ The script counts this way:
 | of which the nonce | 0.023 | 0.182 | 0.182 | 0.028 | 0.011 | 0.021 |
 | of which the rest | 0.039 | 0.039 | 1.716 | 0.040 | 0.117 | 0.159 |
 | HKDF and HMAC of the key schedule | 0.094 | 0.284 | 0.284 | 0.093 | 0.309 | 0.459 |
-| hashes of the transcript, the signed content and the ClientHello | 0.024 | 0.077 | 0.077 | 0.025 | 0.018 | 0.016 |
+| hashes of the transcript, the signed content and the ClientHello | 0.015 | 0.076 | 0.076 | 0.015 | 0.018 | 0.016 |
 | certificate, other messages and their records | 0.084 | 0.084 | 0.084 | 0.107 | 0.215 | 0.257 |
-| the handshake | 1.153 | 1.555 | 43.598 | 1.310 | 1.347 | 1.874 |
+| the handshake | 1.144 | 1.555 | 43.598 | 1.300 | 1.347 | 1.874 |
 | one request's records and the two close_notify | 0.015 | 0.015 | 0.015 | 0.015 | 0.038 | 0.046 |
 | of the handshake, the image's own memset | 0.042 | 0.040 | 0.040 | 0.070 | 0.000 | 0.000 |
 | of the handshake, the C library | 0.000 | 0.000 | 0.000 | 0.000 | 0.162 | 0.233 |
@@ -1163,50 +1163,51 @@ The script counts this way:
 What the count of 2026-10-25 shows:
 
 - chapulin runs fewer instructions than OpenSSL 3.6.4 on this connection when the session states
-  every bit the Neoverse-N2 has. Under `0xe7` the Neoverse-N2 build's handshake takes 1,153,254
-  instructions, 0.86 of OpenSSL 3.6.4's 1,345,742 and 0.61 of OpenSSL 3.0.13's 1,877,130. The
-  whole connection takes 1.168 M against 1.385 M and 1.926 M.
+  every bit the Neoverse-N2 has. Under `0xe7` the Neoverse-N2 build's handshake takes 1,143,505
+  instructions, 0.85 of OpenSSL 3.6.4's 1,345,558 and 0.61 of OpenSSL 3.0.13's 1,877,122. The
+  whole connection takes 1.159 M against 1.385 M and 1.926 M.
 - Under `0x07`, the value colibri states today, chapulin runs more instructions: 1.16 times
-  OpenSSL 3.6.4's handshake, and 0.83 of OpenSSL 3.0.13's. The three SHA bits remove 402,240
-  instructions. The key schedule, the transcript hashes, the signed content's digest and the
-  nonce's HMAC-SHA-256 then run on the SHA instructions. Only the caller can state those bits, so
+  OpenSSL 3.6.4's handshake, and 0.83 of OpenSSL 3.0.13's. The three SHA bits remove 411,949
+  instructions. The key schedule, the transcript hashes, the signed content's digest, the
+  ClientHello digest and the nonce's SHA-256 calls then run on the SHA instructions. Only the caller can state those bits, so
   this change is colibri's.
-- Under `0xe7` three stages cost more than OpenSSL 3.6.4's. X25519 key generation costs 0.393 M
+- Under `0xe7` two stages cost more than OpenSSL 3.6.4's. X25519 key generation costs 0.393 M
   against 0.227 M: chapulin runs the whole ladder, and OpenSSL computes the public key from a
-  table of multiples of the base point. The row of hashes costs 0.024 M against 0.018 M. Most of
-  chapulin's is the SHA-384 transcript and the ClientHello digest, which runs on the portable
-  SHA-256. The X25519 shared secret costs 0.393 M against 0.380 M. The signature, the key
-  schedule, the messages and the request cost less than OpenSSL's.
-- 42,243 of the 1,153,051 instructions of the trace, 4%, run in the image's own `memset`. Zig
+  table of multiples of the base point. The X25519 shared secret costs 0.393 M against 0.380 M.
+  The row of hashes now costs 0.015 M against 0.018 M, because the ClientHello digest runs on
+  the SHA-256 instructions (decision 149). The signature, the key schedule, the hashes, the
+  messages and the request cost less than OpenSSL's.
+- 42,258 of the 1,143,768 instructions of the trace, 4%, run in the image's own `memset`. Zig
   0.16 links `memset` from its compiler_rt into each image it links, and that `memset` writes one
   byte at a time. `ct_wipe` calls it no longer (decision 144), so these are the calls that clear
   a structure before its first use. The OpenSSL servers, which gcc links, call the C library's
   `memset`, and their row of the C library holds it.
 - The Neoverse-N2 build costs fewer instructions than the base build on the paths of a host
-  session: 1.153 M against 1.310 M under `0xe7`. Under `0x03` it costs more, 43.60 M against
+  session: 1.144 M against 1.300 M under `0xe7`. Under `0x03` it costs more, 43.60 M against
   37.78 M, because `x25519.c`'s `mul` holds SVE instructions, as on 2026-10-01.
 - callgrind agrees with the trace on the base build. Under `0x07` X25519 and k·G are the same to
-  the instruction, and the signature differs by 38 instructions. callgrind's handshake under
-  `0x07` is 0.9% larger than the trace's, and 336 instructions of that difference are in
+  the instruction, and the signature differs by 51 instructions. callgrind's handshake under
+  `0x07` is 0.9% larger than the trace's, and 318 instructions of that difference are in
   `memset`. Under valgrind OpenSSL finds no SHA-512 instructions and runs SHA-384 in scalar code,
   so callgrind counts its handshakes 19% and 14% above perf_events.
 
 What changed since 2026-10-21. The script counted d0731465 that day, before docs/decisions.md 144
-to 147, on the same runner type under Linux 7.0:
+to 147 and 149, on the same runner type under Linux 7.0:
 
 | Neoverse-N2 build, M instructions | `0xe7`, 2026-10-21 | `0xe7`, 2026-10-25 | `0x07`, 2026-10-21 | `0x07`, 2026-10-25 |
 | --- | --- | --- | --- | --- |
-| the handshake, perf_events | 1.307 | 1.153 | 1.830 | 1.555 |
-| the handshake against OpenSSL 3.6.4 | 0.97 | 0.86 | 1.36 | 1.16 |
+| the handshake, perf_events | 1.307 | 1.144 | 1.830 | 1.555 |
+| the handshake against OpenSSL 3.6.4 | 0.97 | 0.85 | 1.36 | 1.16 |
 | CertificateVerify: the P-256 ECDSA signature | 0.220 | 0.165 | 0.416 | 0.324 |
 | HKDF and HMAC of the key schedule | 0.158 | 0.094 | 0.381 | 0.284 |
-| hashes of the transcript, the signed content and the ClientHello | 0.046 | 0.024 | 0.150 | 0.077 |
+| hashes of the transcript, the signed content and the ClientHello | 0.046 | 0.015 | 0.150 | 0.076 |
 | of the handshake, the image's own memset | 0.207 | 0.042 | 0.221 | 0.040 |
 
 - Two kinds of change are in the new column. `ct_wipe` stores words and calls no `memset`
   (decision 144), which every stage that wipes a secret gains from. The fixes of entries 145 to
-  147 remove hash work: the signed content's digest runs on the session's path, the SHA-256
-  transcript stops at the ServerHello, and the nonce keeps its HMAC midstates for each K.
+  147 and 149 remove hash work: the signed content's digest and the ClientHello digest run on
+  the session's path, the SHA-256 transcript stops at the ServerHello, and the nonce keeps its
+  HMAC midstates for each K.
 - A count of the fixes alone, on 2026-10-24 over 773ac1da, put the handshake at 1,281,526
   instructions under `0xe7` and 1,707,844 under `0x07`. So the fixes removed 25,951 and 121,800
   instructions, and `ct_wipe`'s word stores most of the rest.
