@@ -3010,7 +3010,7 @@ client's share is the ML-KEM-768 encapsulation key, 1,184 bytes, then its
 x25519 value; the server encapsulates to that key and answers with the
 1,088-byte ciphertext, then its own x25519 value, 1,120 bytes in all; and the
 input keying material is the ML-KEM shared secret, then the x25519 one. That
-order is the one `handshake_flight.c`'s `hybrid_secret` reads, so a chapulin
+order is the one `handshake_flight.c`'s `kem_secret` reads, so a chapulin
 client and a chapulin server agree on it, and OpenSSL 3.6's `s_client` agrees
 with both in `test/e2e.sh`.
 

@@ -33,6 +33,8 @@
 #define MLKEM_Q 3329    // field modulus
 #define MLKEM_N 256     // polynomial degree
 #define MLKEM_SS_LEN 32 // shared secret
+// Where dk holds ek: after the K-PKE decryption key, 384 bytes per rank (FIPS 203 Algorithm 16).
+#define MLKEM_DK_EK_AT ((size_t)384 * MLKEM_K)
 
 // Derives (ek, dk) from a 32-byte d and 32-byte z (FIPS 203 Algorithm
 // 16, ML-KEM.KeyGen_internal). d seeds the K-PKE key pair; z is the

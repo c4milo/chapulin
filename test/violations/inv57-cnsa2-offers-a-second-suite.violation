@@ -1,0 +1,14 @@
+invariant: INV-57
+file: handshake_message.c
+catches: cnsa2_test
+reason: the hello lists TLS_AES_128_GCM_SHA256 after the profile's
+  suite, so a server may select a suite CNSA 2.0 does not admit.
+  test_cnsa2_hello reads the cipher_suites vector and requires one entry.
+
+--- old
+    wb_u16(&w, 2); // one suite, CNSA 2.0's
+    wb_u16(&w, SUITE_AES_256_GCM_SHA384);
+--- new
+    wb_u16(&w, 4); // one suite, CNSA 2.0's
+    wb_u16(&w, SUITE_AES_256_GCM_SHA384);
+    wb_u16(&w, 0x1301);

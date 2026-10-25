@@ -1,7 +1,7 @@
 // Proves: parse_key_share under -DCH_KEX_PQ — the one hybrid arm of the
 // ServerHello parser — is memory-safe and UB-free on any extension
 // bytes, and that when it accepts, the ciphertext pointer it hands back
-// is one hybrid_secret may dereference: MLKEM_CT_LEN readable bytes
+// is one kem_secret may dereference: MLKEM_CT_LEN readable bytes
 // inside the caller's message.
 //
 // That last property is the link between two proofs. hybrid_secret's
@@ -90,7 +90,7 @@ int main(void) {
         // contract.
         __CPROVER_assert(info.group == CH_GROUP_X25519MLKEM768,
                          "acceptance records the hybrid group");
-        // The contract hybrid_secret depends on: a whole ciphertext,
+        // The contract kem_secret depends on: a whole ciphertext,
         // readable, inside the bytes this parser actually consumed.
         // Against e.off rather than against body, because body is
         // larger than the message: a short read would still land

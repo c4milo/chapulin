@@ -35,8 +35,8 @@ typedef struct {
     const uint8_t *identity;
     size_t identity_len;
     // The PSK is as long as the hash of the suite the session ran (RFC 9846 §4.7.1):
-    // SHA256_LEN, or SHA384_LEN after a TLS_AES_256_GCM_SHA384 session, which only a
-    // SUITE=aesgcm TRUST=webpki client runs. psk_len says which.
+    // SHA256_LEN, or SHA384_LEN after a TLS_AES_256_GCM_SHA384 session, which a SUITE=aesgcm
+    // TRUST=webpki client and a PROFILE=cnsa2 client run. psk_len says which.
     uint8_t psk[HKDF_HASH_MAX];
     size_t psk_len;
     // ticket_lifetime in seconds, as the server sent it. Every client entry refuses the ticket

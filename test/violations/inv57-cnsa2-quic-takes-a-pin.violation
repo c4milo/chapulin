@@ -1,0 +1,11 @@
+invariant: INV-57
+file: quic_config.c
+catches: cnsa2_quic_test
+reason: ch_quic_init drops the profile's pin refusal, which tls.c keeps,
+  so a QUIC session of the profile stages a hello for a pinned config.
+  test_cnsa2_quic_cfg requires CH_EINVAL with nothing staged.
+
+--- old
+    if (pin_ok && !CH_TAKES_PINS) {
+--- new
+    if (pin_ok && !CH_TAKES_PINS && 0) {

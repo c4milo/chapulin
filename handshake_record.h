@@ -44,7 +44,7 @@ typedef struct {
     ch_tls *t;
     uint8_t priv[X25519_LEN];
     uint8_t pub[X25519_LEN];
-#ifdef CH_KEX_HYBRID
+#ifdef CH_KEX_MLKEM
     // ML-KEM (d, z) seed. The key pair re-expands from it on demand
     // (build and decapsulation), so the share the HRR retry resends is
     // identical by construction and no 2400-byte key lives in state.

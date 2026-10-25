@@ -27,6 +27,7 @@ const Suite = enum { chacha, aesgcm };
 const Aes = enum { soft, @"extern" };
 const Rand = enum { @"extern", drbg, session };
 const Kex = enum { x25519, pq };
+const Profile = enum { general, cnsa2 };
 const Widemul = enum { decomposed, native };
 const Setting = enum { on, off };
 
@@ -34,6 +35,7 @@ const Setting = enum { on, off };
 /// default: the Makefile gives RAND none, and it tells a KEX value the
 /// command line set from its default.
 const Config = struct {
+    profile: Profile,
     transport: Transport,
     role: Role,
     trust: Trust,
@@ -247,14 +249,19 @@ const cflags = [_][]const u8{
 };
 
 pub fn build(b: *std.Build) void {
+    const profile = b.option(Profile, "PROFILE", "general, or cnsa2 for CNSA 2.0's algorithms alone in a raw or ca client") orelse .general;
+    const suite_option = b.option(Suite, "SUITE", "chacha, or aesgcm for the AES-GCM suites beside it");
+    const kex_option = b.option(Kex, "KEX", "The key exchange group of a raw or ca client");
+    refuseProfileAxes(profile, suite_option, kex_option);
     const config = Config{
+        .profile = profile,
         .transport = b.option(Transport, "TRANSPORT", "What TLS runs over and who does the I/O") orelse .@"tcp-blocking",
         .role = b.option(Role, "ROLE", "client, server, or both for a host") orelse .client,
         .trust = b.option(Trust, "TRUST", "How the server key is trusted; none for ROLE=server") orelse .@"raw-rsa",
-        .suite = b.option(Suite, "SUITE", "chacha, or aesgcm for the AES-GCM suites beside it") orelse .chacha,
+        .suite = if (profile == .cnsa2) .aesgcm else suite_option orelse .chacha,
         .aes = b.option(Aes, "AES", "A device object's AES: soft, or extern for the image's ch_aes_block"),
         .rand = b.option(Rand, "RAND", "The entropy pattern, which has no default (cfg.h)"),
-        .kex = b.option(Kex, "KEX", "The key exchange group of a raw or ca client"),
+        .kex = kex_option,
         .widemul = b.option(Widemul, "WIDEMUL", "A device object's widening multiply (ct.h): decomposed, or native"),
         .exporter = b.option(Setting, "EXPORTER", "ch_export, RFC 9846 section 7.5") orelse .off,
         .keylog = b.option(Setting, "KEYLOG", "The ch_keylog hook (keylog.h)") orelse .off,
@@ -364,6 +371,15 @@ pub fn build(b: *std.Build) void {
     lists_step.dependOn(&b.addInstallFile(lists.add("lib-headers.txt", lines(b, plan.headers)), "lib-headers.txt").step);
 }
 
+/// The Makefile's refusals of a SUITE or KEX value beside PROFILE=cnsa2,
+/// which fixes both (docs/decisions.md 151). It raises them before any
+/// other axis block, so this runs before refuseUnbuildable.
+fn refuseProfileAxes(profile: Profile, suite: ?Suite, kex: ?Kex) void {
+    if (profile != .cnsa2) return;
+    if (suite) |value| std.process.fatal("PROFILE=cnsa2 fixes the cipher suite at TLS_AES_256_GCM_SHA384: drop SUITE={t}", .{value});
+    if (kex) |value| std.process.fatal("PROFILE=cnsa2 fixes the key exchange at ML-KEM-1024: drop KEX={t}", .{value});
+}
+
 /// Every $(error) the Makefile's axis blocks raise for a combination of
 /// values, in the Makefile's order and with its words.
 fn refuseUnbuildable(config: Config) void {
@@ -388,8 +404,14 @@ fn refuseUnbuildable(config: Config) void {
     if (config.keylog == .on and config.role == .client and config.trust != .webpki) {
         fatal("KEYLOG=on is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both", .{});
     }
-    if (config.suite == .aesgcm and config.role == .client and config.trust != .webpki) {
-        fatal("SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both", .{});
+    if (config.suite == .aesgcm and config.role == .client and config.profile == .general and config.trust != .webpki) {
+        fatal("SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server, ROLE=both or PROFILE=cnsa2", .{});
+    }
+    if (config.profile == .cnsa2 and !deviceClient(config)) {
+        fatal("PROFILE=cnsa2 is a raw or ca client's profile: TRUST={t} ROLE={t} is not one (docs/decisions.md 151)", .{ config.trust, config.role });
+    }
+    if (config.profile == .cnsa2 and config.aes != .@"extern") {
+        fatal("PROFILE=cnsa2 runs AES-256 on a device object: use AES=extern, with -DCH_AES_EXTERN_CONSTANT_TIME in CFLAGS", .{});
     }
     if (config.tx_record) |text| {
         if (config.transport == .@"quic-nonblocking") {
@@ -541,6 +563,12 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     });
 
     if (config.kex == .pq) defs = concat(b, &.{ defs, &.{"-DCH_KEX_PQ"} });
+    // The profile's one group, ML-KEM-1024. Its object holds no X25519
+    // field, which it never runs (docs/decisions.md 151).
+    if (config.profile == .cnsa2) {
+        defs = concat(b, &.{ defs, &.{ "-DCH_PROFILE_CNSA2", "-DCH_MLKEM_1024" } });
+        lib_srcs = concat(b, &.{ without(b, lib_srcs, &.{"x25519.c"}), &kex_hybrid_srcs });
+    }
     if (config.kex == .pq or config.trust == .webpki or config.role != .client) lib_srcs = concat(b, &.{ lib_srcs, &kex_hybrid_srcs });
     // CPU_RUNTIME_DEF: the host object, which each session's ch_cfg.cpu
     // describes the CPU to.

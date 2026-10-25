@@ -24,7 +24,7 @@
 // bytes, then its own x25519 public value. The shared secret is the
 // ML-KEM shared secret, then the x25519 one. The ML-KEM bytes come first
 // in all three despite the group's name, and handshake_flight.c's
-// hybrid_secret reads them in the same order on the client.
+// kem_secret reads them in the same order on the client.
 //
 // secp256r1 follows RFC 9846 §4.3.8.2 and §7.4.2. Each side's
 // key_exchange is its point in the 65-byte uncompressed form, and the
@@ -127,7 +127,7 @@ int srv_kex_share(handshake_state *h, const client_hello *ch, uint16_t group,
 // ch->x25519_share; for X25519MLKEM768, h->mlkem_ss, then the x25519
 // shared secret of h->priv and the x25519 public value that ends
 // ch->hybrid_share, the order RFC 10024 fixes and handshake_flight.c's
-// hybrid_secret computes on the client; for secp256r1, the P-256 shared
+// kem_secret computes on the client; for secp256r1, the P-256 shared
 // secret of h->p256_priv and ch->p256_share, P256_SECRET_LEN bytes.
 //
 // Requires srv_kex_share to have run for the same group and ch, and the

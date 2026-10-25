@@ -69,7 +69,14 @@
 // defines none of the three, and a client source that reads one fails to compile there.
 // No server source reads them: a server role holds both groups whatever KEX says and
 // names each one directly (srv_kex.h).
-#ifdef CH_KEX_PQ
+#ifdef CH_PROFILE_CNSA2
+// ML-KEM-1024 alone: the encapsulation key out, the ciphertext back (draft-ietf-tls-mlkem).
+#include "mlkem.h"
+#define CH_KEX_GROUP CH_GROUP_MLKEM1024
+#define CH_KEX_CLIENT_SHARE MLKEM_EK_LEN
+#define CH_KEX_SERVER_SHARE MLKEM_CT_LEN
+#define CH_KEX_IKM_LEN MLKEM_SS_LEN
+#elif defined(CH_KEX_PQ)
 #define CH_KEX_GROUP CH_GROUP_X25519MLKEM768
 #define CH_KEX_CLIENT_SHARE CH_HYBRID_CLIENT_SHARE
 #define CH_KEX_SERVER_SHARE CH_HYBRID_SERVER_SHARE
@@ -77,6 +84,11 @@
 #define CH_KEX_GROUP CH_GROUP_X25519
 #define CH_KEX_CLIENT_SHARE 32
 #define CH_KEX_SERVER_SHARE 32
+#endif
+// The input keying material handshake_flight.c's kem_secret writes: ML-KEM-1024's secret alone
+// under PROFILE=cnsa2, and in a hybrid client ML-KEM-768's secret, then x25519's (RFC 10024).
+#ifndef CH_KEX_IKM_LEN
+#define CH_KEX_IKM_LEN (MLKEM_SS_LEN + X25519_LEN)
 #endif
 // A TRUST=webpki client offers both groups in every build (docs/decisions.md entry 53).
 // supported_groups lists X25519MLKEM768 and then x25519, and key_share carries an entry
@@ -187,6 +199,10 @@
 #ifdef CH_CLIENT_AES_SUITES
 #define CH_HELLO_AES_SUITES_MAX 4
 #define CH_HELLO_SHA384_BINDER_MAX (SHA384_LEN - SHA256_LEN)
+#elif defined(CH_PROFILE_CNSA2)
+// One suite, as the fixed sum counts, and a SHA-384 binder on every PSK.
+#define CH_HELLO_AES_SUITES_MAX 0
+#define CH_HELLO_SHA384_BINDER_MAX (SHA384_LEN - SHA256_LEN)
 #else
 #define CH_HELLO_AES_SUITES_MAX 0
 #define CH_HELLO_SHA384_BINDER_MAX 0
@@ -261,7 +277,12 @@
 // other build presents SHA-256 PSKs alone. The length is public: the
 // caller chose it and the binder's length shows it on the wire.
 static inline size_t hs_psk_hash_len(const ch_cfg *cfg) {
-#ifdef CH_CLIENT_AES_SUITES
+#ifdef CH_PROFILE_CNSA2
+    // The profile's one suite hashes with SHA-384, so its external PSK and
+    // its tickets both run there (docs/decisions.md 151).
+    (void)cfg;
+    return SHA384_LEN;
+#elif defined(CH_CLIENT_AES_SUITES)
     if (cfg->ticket != NULL && cfg->psk_len == SHA384_LEN) {
         return SHA384_LEN;
     }
@@ -293,7 +314,8 @@ static inline const uint16_t *hs_offered_suites(const ch_cfg *cfg, size_t *count
 
 #ifdef CH_SUITE_AES_GCM
 // Whether the ClientHello cfg builds listed suite: one hs_offered_suites
-// names in a CH_CLIENT_AES_SUITES build, and ChaCha20 in every other.
+// names in a CH_CLIENT_AES_SUITES build, TLS_AES_256_GCM_SHA384 under
+// PROFILE=cnsa2, and ChaCha20 in every other.
 // RFC 9846 makes a ServerHello or a HelloRetryRequest that names another
 // suite an illegal_parameter abort (rfc9846.txt:1373-1376, 1484-1485). A
 // predicate over public values.
@@ -307,6 +329,9 @@ static inline int hs_suite_offered(const ch_cfg *cfg, uint16_t suite) {
         }
     }
     return 0;
+#elif defined(CH_PROFILE_CNSA2)
+    (void)cfg;
+    return suite == SUITE_AES_256_GCM_SHA384;
 #else
     (void)cfg;
     return suite == SUITE_CHACHA20_POLY1305_SHA256;
@@ -334,6 +359,8 @@ static inline int hs_suite_offered(const ch_cfg *cfg, uint16_t suite) {
 // every hello, so a PSK hello carries both ahead of pre_shared_key.
 // The hybrid share carries the ML-KEM encapsulation key ahead of the
 // x25519 public value, so a CH_KEX_HYBRID builder takes both. A
+// PROFILE=cnsa2 builder takes both too and writes the ML-KEM-1024 key
+// alone, and pub is then unused. A
 // CH_KEX_TWO_GROUPS build lists CH_GROUP_X25519MLKEM768, CH_GROUP_X25519
 // and CH_GROUP_SECP256R1 in supported_groups and sends a key share for the
 // first two in that order, the x25519 one over the same pub the hybrid
@@ -345,7 +372,7 @@ static inline int hs_suite_offered(const ch_cfg *cfg, uint16_t suite) {
 // CH_CLIENT_AES_SUITES build lists the cipher suites hs_offered_suites
 // names, in that order, and every other build lists ChaCha20 alone.
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
-#ifdef CH_KEX_HYBRID
+#ifdef CH_KEX_MLKEM
                              const uint8_t ek[MLKEM_EK_LEN],
 #endif
 #ifdef CH_KEX_TWO_GROUPS

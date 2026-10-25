@@ -55,7 +55,7 @@ typedef struct {
     // cannot show, so handshake_groups.c checks it.
     uint16_t group;
     uint8_t server_pub[X25519_LEN];
-#ifdef CH_KEX_HYBRID
+#ifdef CH_KEX_MLKEM
     // The ML-KEM ciphertext, MLKEM_CT_LEN bytes into the caller's
     // message — like cookie, the pointer dies at the next record read;
     // the handshake decapsulates before one runs. It stays NULL when

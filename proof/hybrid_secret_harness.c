@@ -1,4 +1,4 @@
-// Proves: hybrid_secret — the KEX=pq handshake's shared-secret
+// Proves: kem_secret — the KEX=pq handshake's shared-secret
 // derivation — is memory-safe and UB-free for any stored seed, any
 // server ciphertext, and any server x25519 share, and that its refusal
 // path leaves no key material behind. Two asserts carry the contract:
@@ -7,8 +7,11 @@
 // so a rejected key exchange cannot leave half a secret on the stack. A
 // third holds the seed: on both exits all 64 bytes of h.dz are zero,
 // because the dk has been expanded from it and nothing reads it again.
+// proof/kem_secret_cnsa2_harness.c proves the same function under
+// PROFILE=cnsa2, where the ikm is ML-KEM-1024's 32 bytes alone and no
+// x25519 runs, so CH_OK is the only exit.
 //
-// This is the only harness that builds with -DCH_KEX_PQ
+// This harness and key_share's build with -DCH_KEX_PQ
 // (https://github.com/c4milo/chapulin/issues/47). The hybrid ServerHello
 // parser is still unproven: proof/handshake_parser bounds its message at 256
 // bytes and a hybrid key_share extension is 1,128, so the accepting path there
@@ -17,7 +20,7 @@
 // Layered proof, the handshake-stubs-handshake_parser pattern: mlkem and x25519
 // are stubs asserting their headers' contracts and havocing outputs, so
 // mlkem.c, mlkem_poly.c, sha3.c and x25519.c are NOT linked. What is
-// under proof is hybrid_secret's own pointer handling and wipe
+// under proof is kem_secret's own pointer handling and wipe
 // discipline, not the lattice arithmetic — mlkem's six harnesses and
 // x25519's seven prove that separately. Driving the real primitives
 // here would put a 2,400-byte expansion and 256 symbolic multiplies in
@@ -30,7 +33,7 @@
 #include "x25519.h"
 
 // The ciphertext the harness hands in, so the stub can assert that
-// hybrid_secret passed the pointer through unchanged.
+// kem_secret passed the pointer through unchanged.
 static const uint8_t *expected_ct;
 
 void mlkem_keygen_dk(uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32], const uint8_t z[32]) {
@@ -61,7 +64,7 @@ int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN], const uint
     return (nondet_u8() & 1) ? 1 : 0;
 }
 
-// handshake_flight.c holds the static hybrid_secret this harness
+// handshake_flight.c holds the static kem_secret this harness
 // drives; handshake.c is included beside it because the driver still
 // ships and this is the one harness whose own file names it, which is
 // how tools/proof-cover.py credits a source.
@@ -89,10 +92,14 @@ int main(void) {
     info.server_ct = record;
     fill_nondet(info.server_pub, sizeof info.server_pub);
 
-    uint8_t ikm[MLKEM_SS_LEN + X25519_LEN];
-    int rc = hybrid_secret(&h, &info, ikm);
+    uint8_t ikm[CH_KEX_IKM_LEN];
+    int rc = kem_secret(&h, &info, ikm);
 
-    __CPROVER_assert(rc == CH_OK || rc == CH_EPROTO, "hybrid_secret returns OK or EPROTO");
+#ifdef CH_PROFILE_CNSA2
+    __CPROVER_assert(rc == CH_OK, "kem_secret runs no refusal under the profile");
+#else
+    __CPROVER_assert(rc == CH_OK || rc == CH_EPROTO, "kem_secret returns OK or EPROTO");
+#endif
     if (rc != CH_OK) {
         // INV-3: a refused key exchange leaves no key material behind.
         for (size_t i = 0; i < sizeof ikm; i++) {

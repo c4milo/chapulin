@@ -1242,6 +1242,70 @@ else
     skip "openssl pq test: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
+# --- The PROFILE=cnsa2 client (docs/decisions.md 151): ML-KEM-1024
+# alone, TLS_AES_256_GCM_SHA384 alone and an external PSK. s_server's
+# -psk ties a PSK to SHA-256, so the server takes the PSK as an
+# SSL_SESSION bound to the suite. asn1parse writes it from the fields
+# OpenSSL reads: the version, TLS 1.3, the suite, an empty session id,
+# the PSK as the master key, the start time and a timeout. Each TCP
+# client runs a full handshake, and the record client resumes the
+# ticket. A wrong PSK and a server without ML-KEM-1024 each fail the
+# handshake closed. OpenSSL 3.5 lists MLKEM1024 beside X25519MLKEM768.
+if "$OPENSSL" list -tls-groups 2>/dev/null | tr ':' '\n' | grep -qix mlkem1024; then
+    CNSA2_PSK=$(printf '5a%.0s' $(seq 48))
+    cat > "$DIR/cnsa2.cnf" <<CNF
+asn1 = SEQUENCE:session
+[session]
+version = INTEGER:1
+ssl_version = INTEGER:0x0304
+cipher = FORMAT:HEX,OCTETSTRING:1302
+session_id = OCTETSTRING:
+master_key = FORMAT:HEX,OCTETSTRING:$CNSA2_PSK
+time = EXPLICIT:1,INTEGER:$(date +%s)
+timeout = EXPLICIT:2,INTEGER:7200
+CNF
+    "$OPENSSL" asn1parse -genconf "$DIR/cnsa2.cnf" -out "$DIR/cnsa2.der" -noout
+    {
+        echo "-----BEGIN SSL SESSION PARAMETERS-----"
+        "$OPENSSL" base64 -in "$DIR/cnsa2.der"
+        echo "-----END SSL SESSION PARAMETERS-----"
+    } > "$DIR/cnsa2.pem"
+    start_server -tls1_3 -ciphersuites TLS_AES_256_GCM_SHA384 -groups MLKEM1024 \
+        -psk_session "$DIR/cnsa2.pem" -psk_identity cnsa2-01 -nocert -rev
+    PORT_CNSA2=$SRV_PORT
+    MSG='perfil cnsa'
+    expect cnsa2 "asnc lifrep" "$DIR/err_cnsa2" \
+        ./bin/tlsclient_cnsa2 127.0.0.1 "$PORT_CNSA2" "$CNSA2_PSK" cnsa2-01 "$DIR/ticket_cnsa2"
+    if ! grep -q "^group 0x0202$" "$DIR/err_cnsa2" || ! grep -q "^suite 0x1302$" "$DIR/err_cnsa2"; then
+        echo "FAIL e2e cnsa2: client did not report ML-KEM-1024 and TLS_AES_256_GCM_SHA384"
+        cat "$DIR/err_cnsa2"
+        exit 1
+    fi
+    MSG='de nuevo'
+    expect cnsa2-resume "oveun ed" "$DIR/err_cnsa2_resume" \
+        ./bin/tlsclient_cnsa2 127.0.0.1 "$PORT_CNSA2" "$CNSA2_PSK" "cnsa2-01@$DIR/ticket_cnsa2"
+    if ! grep -q "^resuming" "$DIR/err_cnsa2_resume" ||
+        ! grep -q "^group 0x0202$" "$DIR/err_cnsa2_resume"; then
+        echo "FAIL e2e cnsa2-resume: the client did not resume the ticket over ML-KEM-1024"
+        cat "$DIR/err_cnsa2_resume"
+        exit 1
+    fi
+    MSG='sin bloqueo'
+    expect cnsa2-tcp-nonblocking "oeuqolb nis" "$DIR/err_cnsa2_nb" \
+        ./bin/tlsclient_cnsa2_tcp_nonblocking 127.0.0.1 "$PORT_CNSA2" "$CNSA2_PSK" cnsa2-01
+    MSG='no debe pasar'
+    expect_fail cnsa2-wrong-psk -2 "$DIR/err_cnsa2_wrong" \
+        ./bin/tlsclient_cnsa2 127.0.0.1 "$PORT_CNSA2" "$(printf '5b%.0s' $(seq 48))" cnsa2-01
+    start_server -tls1_3 -ciphersuites TLS_AES_256_GCM_SHA384 -groups X25519MLKEM768:X25519 \
+        -psk_session "$DIR/cnsa2.pem" -psk_identity cnsa2-01 -nocert -rev
+    expect_fail cnsa2-no-mlkem1024 -2 "$DIR/err_cnsa2_group" \
+        ./bin/tlsclient_cnsa2 127.0.0.1 "$SRV_PORT" "$CNSA2_PSK" cnsa2-01
+    CNSA2_TESTS=" + cnsa2 x5"
+else
+    CNSA2_TESTS=""
+    skip "cnsa2 test: $("$OPENSSL" version) does not list MLKEM1024 (needs 3.5)"
+fi
+
 # --- The web PKI client against a server that holds secp256r1 alone, as
 # nghttpd 1.52.0 on OpenSSL 3.0 does. The first hello lists secp256r1
 # after the two groups it shares and carries no secp256r1 share, so the
@@ -1436,4 +1500,4 @@ fi
 chsrv_aes_tests ./bin/tlsserver_aes_extern chsrv-aes-extern TLS_CHACHA20_POLY1305_SHA256
 CHSRV_AES_TESTS="$CHSRV_AES_TESTS + chapulin server aesgcm AES=extern x7"
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_TESTS} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_TESTS} + webpki rsa + webpki-resume x3 + webpki-rpk x8 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_TESTS}${OPENSSL_PQ_TESTS}${AES_SUITE_TESTS}${CHSRV_AES_TESTS} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_TESTS} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_TESTS} + webpki rsa + webpki-resume x3 + webpki-rpk x8 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_TESTS}${OPENSSL_PQ_TESTS}${CNSA2_TESTS}${AES_SUITE_TESTS}${CHSRV_AES_TESTS} + examples x4 OK"

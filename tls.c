@@ -124,7 +124,8 @@ int tlsi_config_ok(const ch_cfg *cfg) {
     if (cfg->server_pubkey2 != NULL && (!pin_ok || !pin_len_ok(cfg->server_pubkey2_len))) {
         return 0;
     }
-    if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->buf_len < CH_MIN_RXBUF) {
+    if ((!psk_ok && !pin_ok) || (pin_ok && !CH_TAKES_PINS) || cfg->buf == NULL ||
+        cfg->buf_len < CH_MIN_RXBUF) {
         return 0;
     }
 #ifdef CH_RAND_SESSION
@@ -140,11 +141,11 @@ int tlsi_config_ok(const ch_cfg *cfg) {
         return 0;
     }
 #endif
-#ifndef CH_KEX_PQ
+#if !defined(CH_KEX_PQ) && !defined(CH_PROFILE_CNSA2)
     // require_pq asks that the key exchange be post-quantum, and this
     // build offers x25519 alone, so no handshake it runs can satisfy the
-    // flag. A request the build cannot enforce is a provisioning mistake,
-    // not a no-op.
+    // flag. PROFILE=cnsa2 offers ML-KEM-1024 alone, so it admits the flag. A request the build
+    // cannot enforce is a provisioning mistake, not a no-op.
     if (cfg->require_pq) {
         return 0;
     }

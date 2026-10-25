@@ -1,0 +1,13 @@
+invariant: INV-57
+file: handshake_message.h
+catches: cnsa2_test
+reason: the profile's external PSK runs SHA-256, the hash of no suite it
+  offers, so the binder is 32 bytes and the server cannot check it. The
+  mock server reads a 48-byte binder and both handshakes fail.
+
+--- old
+    (void)cfg;
+    return SHA384_LEN;
+--- new
+    (void)cfg;
+    return SHA256_LEN;

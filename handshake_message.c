@@ -5,10 +5,13 @@
 // A raw or ca client is a device image that pins the endpoint it talks
 // to, and it offers ChaCha20 alone (docs/decisions.md entry 45), so it has
 // no use for the AES suite; the Makefile refuses SUITE=aesgcm for it the
-// same way. A build that carries the server role may take the define,
-// because its server selects the suite whatever its client offers.
-#if defined(CH_SUITE_AES_GCM) && !defined(CH_TRUST_WEBPKI) && !defined(CH_ROLE_SERVER)
-#error "CH_SUITE_AES_GCM is refused for a raw or ca client: use TRUST=webpki or a server role"
+// same way. PROFILE=cnsa2 is the one exception: it offers
+// TLS_AES_256_GCM_SHA384 alone (docs/decisions.md 151). A build that carries the server role may
+// take the define, because its server selects the suite whatever its client offers.
+#if defined(CH_SUITE_AES_GCM) && !defined(CH_TRUST_WEBPKI) && !defined(CH_ROLE_SERVER) &&          \
+    !defined(CH_PROFILE_CNSA2)
+#error                                                                                             \
+    "CH_SUITE_AES_GCM is refused for a raw or ca client: use TRUST=webpki, a server role or PROFILE=cnsa2"
 #endif
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_pin.h"
@@ -190,7 +193,7 @@ static void write_two_groups(wbuf *w, const ch_cfg *cfg, const uint8_t ek[MLKEM_
 #endif
 
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
-#ifdef CH_KEX_HYBRID
+#ifdef CH_KEX_MLKEM
                              const uint8_t ek[MLKEM_EK_LEN],
 #endif
 #ifdef CH_KEX_TWO_GROUPS
@@ -208,6 +211,9 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_u8(&w, 0); // empty legacy_session_id: no middlebox compat needed
 #ifdef CH_CLIENT_AES_SUITES
     write_cipher_suites(&w, cfg);
+#elif defined(CH_PROFILE_CNSA2)
+    wb_u16(&w, 2); // one suite, CNSA 2.0's
+    wb_u16(&w, SUITE_AES_256_GCM_SHA384);
 #else
     wb_u16(&w, 2); // one suite
     wb_u16(&w, SUITE_CHACHA20_POLY1305_SHA256);
@@ -247,10 +253,15 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_u16(&w, 2 + 2 + CH_KEX_CLIENT_SHARE); // client_shares length
     wb_u16(&w, CH_KEX_GROUP);
     wb_u16(&w, CH_KEX_CLIENT_SHARE);
+#ifdef CH_PROFILE_CNSA2
+    (void)pub;
+    wb_bytes(&w, ek, MLKEM_EK_LEN); // ML-KEM-1024 alone
+#else
 #ifdef CH_KEX_HYBRID
     wb_bytes(&w, ek, MLKEM_EK_LEN); // ML-KEM first (RFC 10024)
 #endif
     wb_bytes(&w, pub, 32);
+#endif
 #endif
 
     // Sent in both modes: without it a server (Go enforces this) will not

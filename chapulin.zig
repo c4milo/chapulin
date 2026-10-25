@@ -363,6 +363,7 @@ pub const Group = enum(u16) {
     x25519 = c.CH_GROUP_X25519,
     x25519mlkem768 = c.CH_GROUP_X25519MLKEM768,
     secp256r1 = c.CH_GROUP_SECP256R1,
+    mlkem1024 = c.CH_GROUP_MLKEM1024,
     _,
 };
 

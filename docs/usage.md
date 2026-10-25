@@ -169,7 +169,8 @@ it has; a program that does passes the order it chose.
 depends on the build.
 
 `ch_group(&tls)` reports the key-exchange group the ServerHello selected:
-`CH_GROUP_X25519` or `CH_GROUP_X25519MLKEM768` (`cfg.h`), and 0 until
+`CH_GROUP_X25519` or `CH_GROUP_X25519MLKEM768` (`cfg.h`), or
+`CH_GROUP_MLKEM1024` under `PROFILE=cnsa2` (`profile_cfg.h`), and 0 until
 the handshake accepts the ServerHello's key_share. Set
 `ch_cfg.require_pq` and the handshake fails closed when that group is
 not `CH_GROUP_X25519MLKEM768`. Under `KEX=pq` in a raw or ca build the
@@ -178,7 +179,8 @@ offers the hybrid alone. A `TRUST=webpki` build lists x25519 too, with a
 key share, and the flag drops both from its hello, so that hello is the
 one-group hello and a server without the hybrid cannot move it. A
 classic build cannot satisfy the flag, so `ch_connect` returns
-`CH_EINVAL` before it sends a byte.
+`CH_EINVAL` before it sends a byte. A `PROFILE=cnsa2` build offers
+ML-KEM-1024 alone, so every handshake it runs satisfies the flag.
 [`docs/decisions.md`](decisions.md) entry 12 says why a device
 build offers one group, entry 39 why the webpki mode offers two, and
 entry 53 why it sends a key share for each.

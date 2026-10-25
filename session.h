@@ -97,6 +97,8 @@
 // webpki value does.
 #ifdef CH_TRUST_WEBPKI
 #define CH_TX_HELLO (2650 + CH_TX_AES_SUITES)
+#elif defined(CH_PROFILE_CNSA2)
+#define CH_TX_HELLO 2693
 #elif defined(CH_KEX_PQ)
 #define CH_TX_HELLO 2325
 #elif defined(CH_ROLE_SERVER)
@@ -125,6 +127,8 @@
 // five schemes and the 7-byte server_certificate_type of a config with
 // SPKI pins and anchors: 1801 + 262 + 270 + 2 + 36 + 2 + 16 + 7.
 #define CH_TX_HELLO (2396 + CH_TX_AES_SUITES)
+#elif defined(CH_PROFILE_CNSA2) // the pq sum below, at a 1568-byte key and a 48-byte binder
+#define CH_TX_HELLO 2169
 #elif defined(CH_KEX_PQ)
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.
@@ -249,8 +253,8 @@ typedef struct {
     uint8_t psk_selected;
     // The NamedGroup of the key exchange that ran. hello_exchange
     // (handshake.c) writes it from the ServerHello: the code point
-    // parse_key_share accepted — CH_GROUP_X25519 or
-    // CH_GROUP_X25519MLKEM768 (cfg.h), one per raw or ca build, and
+    // parse_key_share accepted — CH_GROUP_X25519, CH_GROUP_X25519MLKEM768 or,
+    // under PROFILE=cnsa2, CH_GROUP_MLKEM1024 (cfg.h), one per raw or ca build, and
     // whichever the ServerHello selected under CH_KEX_TWO_GROUPS, which
     // may also be CH_GROUP_SECP256R1 after a retry that named it — and 0
     // before any ServerHello or when it carried no key_share. A server

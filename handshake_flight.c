@@ -31,28 +31,26 @@ static void early_secret_without_psk(handshake_state *h) {
 
 void hsf_begin(handshake_state *h) {
     ch_tls *t = h->t;
-    rand_draw(&t->cfg, h->priv, sizeof h->priv);
-    rand_draw(&t->cfg, h->random, sizeof h->random);
-#ifdef CH_KEX_HYBRID
-    rand_draw(&t->cfg, h->dz, sizeof h->dz);
-#endif
     // The caller zeroed h, so a source that returned without writing
-    // leaves every one of them zero, and nothing downstream would notice:
+    // leaves each draw below zero, and nothing downstream would notice:
     // the handshake completes and the peer can predict the key. A real
-    // draw is all-zero with probability 2^-256, so this checks the
+    // draw is all-zero with probability 2^-256, so each check tests the
     // integrator's source against rand.h's contract rather than checking
     // peer input, which is what CH_ASSERT is for. It cannot tell a weak
     // generator from a strong one; nothing here can.
-    {
-        static const uint8_t unwritten[X25519_LEN] = {0};
-        CH_ASSERT(!ct_memeq(h->priv, unwritten, sizeof h->priv));
-        CH_ASSERT(!ct_memeq(h->random, unwritten, sizeof h->random));
-#ifdef CH_KEX_HYBRID
-        CH_ASSERT(!ct_memeq(h->dz, unwritten, 32));
-        CH_ASSERT(!ct_memeq(h->dz + 32, unwritten, 32));
-#endif
-    }
+    static const uint8_t unwritten[X25519_LEN] = {0};
+#ifndef CH_PROFILE_CNSA2 // PROFILE=cnsa2 runs no x25519, so it draws no x25519 key
+    rand_draw(&t->cfg, h->priv, sizeof h->priv);
+    CH_ASSERT(!ct_memeq(h->priv, unwritten, sizeof h->priv));
     widemul_x25519_base(widemul_answer(&t->cfg), h->pub, h->priv);
+#endif
+    rand_draw(&t->cfg, h->random, sizeof h->random);
+    CH_ASSERT(!ct_memeq(h->random, unwritten, sizeof h->random));
+#ifdef CH_KEX_MLKEM
+    rand_draw(&t->cfg, h->dz, sizeof h->dz);
+    CH_ASSERT(!ct_memeq(h->dz, unwritten, 32));
+    CH_ASSERT(!ct_memeq(h->dz + 32, unwritten, 32));
+#endif
     if (t->cfg.psk != NULL) {
         KS_EARLY_CPU(t->cfg.cpu, hs_psk_hash_len(&t->cfg), t->cfg.psk, t->cfg.psk_len,
                      t->cfg.ticket != NULL, h->early, h->binder_key);
@@ -82,7 +80,7 @@ static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap
     size_t n =
         hs_build_client_hello(out, cap, &t->cfg, ek, h->retry_group != 0 ? h->p256_pub : NULL,
                               h->pub, h->random, record_size_limit, cookie, h->cookie_len);
-#elif defined(CH_KEX_HYBRID)
+#elif defined(CH_KEX_MLKEM)
     size_t n = hs_build_client_hello(out, cap, &t->cfg, ek, h->pub, h->random, record_size_limit,
                                      cookie, h->cookie_len);
 #else
@@ -107,7 +105,7 @@ static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap
     return n;
 }
 
-#ifdef CH_KEX_HYBRID
+#ifdef CH_KEX_MLKEM
 // Expands the stored (d, z) seed into the FIPS 203 dk layout and hands
 // its ek slice to the builder. The expansion is deterministic, so a cookie
 // retry resends the identical share, and a retry to secp256r1 expands
@@ -124,29 +122,30 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap) {
 #endif
     uint8_t dk[MLKEM_DK_LEN];
     mlkem_keygen_dk_cpu(CH_CFG_CPU(h->t->cfg), dk, h->dz, h->dz + 32);
-    size_t n = build_client_hello_ek(h, out, cap, dk + 1152);
+    size_t n = build_client_hello_ek(h, out, cap, dk + MLKEM_DK_EK_AT);
     ct_wipe(dk, sizeof dk);
     return n;
 }
 
 // Decapsulates into ikm[0..31] and runs x25519 into ikm[32..63] — ML-KEM first, RFC 10024's
-// order despite the group's name. The ct pointer reads out of the live ServerHello bytes; no
-// read of a further message sits between the parse and this. The seed h->dz is wiped as soon
-// as the dk is expanded from it, its last use. Decapsulation cannot fail (a tampered
-// ciphertext yields the implicit-reject secret); the x25519 all-zero refusal stays, and on it
-// the half-built secret is wiped.
-static int hybrid_secret(handshake_state *h, const server_hello_info *info,
-                         uint8_t ikm[MLKEM_SS_LEN + X25519_LEN]) {
+// order despite the group's name. PROFILE=cnsa2 stops after ikm[0..31], ML-KEM-1024's secret
+// alone. The ct pointer reads out of the live ServerHello bytes; no read of a further message
+// sits between the parse and this. The seed h->dz is wiped as soon as the dk is expanded from
+// it, its last use. Decapsulation cannot fail (a tampered ciphertext yields the implicit-reject
+// secret); the x25519 all-zero refusal stays, and on it the half-built secret is wiped.
+static int kem_secret(handshake_state *h, const server_hello_info *info, uint8_t *ikm) {
     uint8_t widemul = widemul_answer(&h->t->cfg);
     uint8_t dk[MLKEM_DK_LEN];
     mlkem_keygen_dk_cpu(CH_CFG_CPU(h->t->cfg), dk, h->dz, h->dz + 32);
     ct_wipe(h->dz, sizeof h->dz);
     mlkem_decaps_cpu(CH_CFG_CPU(h->t->cfg), widemul, ikm, info->server_ct, dk);
     ct_wipe(dk, sizeof dk);
+#ifndef CH_PROFILE_CNSA2
     if (!widemul_x25519(widemul, ikm + MLKEM_SS_LEN, h->priv, info->server_pub)) {
         ct_wipe(ikm, MLKEM_SS_LEN + X25519_LEN);
         return CH_EPROTO;
     }
+#endif
     return CH_OK;
 }
 #else
@@ -306,17 +305,17 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info) {
 }
 
 int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *info) {
-#ifdef CH_KEX_HYBRID
-    uint8_t ecdhe[MLKEM_SS_LEN + X25519_LEN];
+#ifdef CH_KEX_MLKEM
+    uint8_t ecdhe[CH_KEX_IKM_LEN];
     size_t ecdhe_len = sizeof ecdhe;
 #ifdef CH_KEX_TWO_GROUPS
     // x25519 and secp256r1 run in handshake_groups.c, and either one's
     // 32-byte secret is the whole input keying material.
     int shared_ok = info->group == CH_GROUP_X25519MLKEM768
-                        ? hybrid_secret(h, info, ecdhe) == CH_OK
+                        ? kem_secret(h, info, ecdhe) == CH_OK
                         : hsg_classic_secret(h, info, ecdhe, &ecdhe_len) == CH_OK;
 #else
-    int shared_ok = hybrid_secret(h, info, ecdhe) == CH_OK;
+    int shared_ok = kem_secret(h, info, ecdhe) == CH_OK;
 #endif
 #else
     uint8_t ecdhe[X25519_LEN];

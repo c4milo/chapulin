@@ -129,6 +129,9 @@ static int trust_config_ok(const ch_cfg *cfg) {
     if (cfg->server_pubkey2 != NULL && (!pin_ok || !pin_len_ok(cfg->server_pubkey2_len))) {
         return 0;
     }
+    if (pin_ok && !CH_TAKES_PINS) {
+        return 0; // PROFILE=cnsa2 takes an external PSK alone (profile_cfg.h)
+    }
 #ifndef CH_PIN_ECDSA
     // Every real modulus is odd, a product of odd primes, so an even pin
     // in either slot is provisioning corruption. tls.c refuses it here
@@ -228,7 +231,7 @@ int quic_config_ok(ch_tls *t) {
     if (!ticket_version_ok(cfg)) {
         return CH_EINVAL;
     }
-#ifndef CH_KEX_HYBRID
+#ifndef CH_KEX_MLKEM
     // require_pq asks that the key exchange be post-quantum, and this
     // build offers x25519 alone, so no handshake it runs can satisfy
     // the flag. tls.c refuses it before it sends a byte for the same

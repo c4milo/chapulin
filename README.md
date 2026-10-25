@@ -130,6 +130,7 @@ first value listed is the default.
 | `TRANSPORT` | `tcp-blocking`, `tcp-nonblocking`, `quic-nonblocking` | What TLS runs over, and whether chapulin or your code does the I/O |
 | `KEX` | `x25519`, `pq` | The key exchange of a raw or ca client |
 | `SUITE` | `chacha`, `aesgcm` | Adds the AES-GCM suites to a web PKI client or a server |
+| `PROFILE` | `general`, `cnsa2` | `cnsa2` makes a raw or ca client on CNSA 2.0's algorithms alone: ML-KEM-1024, `TLS_AES_256_GCM_SHA384` and an external PSK, on `AES=extern` ([`docs/building.md`](docs/building.md)) |
 | `AES` | `soft`, `extern` | A device object's AES, when its build uses AES: the table, for QUIC's public keys alone, or the `ch_aes_block` your image defines |
 | `EXPORTER` | `off`, `on` | Adds `ch_export`, the TLS exporter |
 | `KEYLOG` | `off`, `on` | Hands each traffic secret to a hook you define, for an NSS key log |

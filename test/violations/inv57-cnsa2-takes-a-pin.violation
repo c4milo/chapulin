@@ -1,0 +1,11 @@
+invariant: INV-57
+file: profile_cfg.h
+catches: cnsa2_test
+reason: the profile takes a pin, so ch_connect sends a hello for a
+  pinned config and would authenticate the server by RSA or ECDSA, which
+  CNSA 2.0 retires. test_cnsa2_cfg requires CH_EINVAL with no send.
+
+--- old
+#define CH_TAKES_PINS 0
+--- new
+#define CH_TAKES_PINS 1

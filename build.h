@@ -74,6 +74,11 @@
 //                          ch_quic, whose ch_cfg copy holds the caller's
 //                          cpu, and whose record directions record it:
 //                          the define of a host object
+//   CH_PROFILE_CNSA2       ch_tls, ch_record, ch_quic, CH_TX_STAGE and
+//                          CH_MIN_RXBUF: the ML-KEM-1024 seed and share,
+//                          and the SHA-384 binder (docs/decisions.md 151).
+//                          Its CH_MLKEM_1024 takes no bit, because cfg.h
+//                          refuses the profile without it
 //
 // Left out, because no public layout or bound reads them: RAND=extern and
 // RAND=drbg, CH_ROLE_BOTH, the AES implementations
@@ -99,6 +104,7 @@
 #define CH_BUILD_KEYLOG 0x200U
 #define CH_BUILD_RAND_SESSION 0x400U
 #define CH_BUILD_CPU_RUNTIME 0x2000U
+#define CH_BUILD_PROFILE_CNSA2 0x4000U
 
 // Each CH_BUILD_IF_ value is its bit when this translation unit defines
 // the define it names, and 0 when it does not. CH_BUILD_AXES is their
@@ -163,12 +169,17 @@
 #else
 #define CH_BUILD_IF_CPU_RUNTIME 0U
 #endif
+#ifdef CH_PROFILE_CNSA2
+#define CH_BUILD_IF_PROFILE_CNSA2 CH_BUILD_PROFILE_CNSA2
+#else
+#define CH_BUILD_IF_PROFILE_CNSA2 0U
+#endif
 #define CH_BUILD_AXES                                                                              \
     (CH_BUILD_IF_TRUST_CA | CH_BUILD_IF_TRUST_WEBPKI | CH_BUILD_IF_PIN_ECDSA |                     \
      CH_BUILD_IF_KEX_PQ | CH_BUILD_IF_TRANSPORT_QUIC_NONBLOCKING |                                 \
      CH_BUILD_IF_TRANSPORT_TCP_NONBLOCKING | CH_BUILD_IF_SUITE_AES_GCM | CH_BUILD_IF_ROLE_SERVER | \
      CH_BUILD_IF_EXPORTER | CH_BUILD_IF_KEYLOG | CH_BUILD_IF_RAND_SESSION |                        \
-     CH_BUILD_IF_CPU_RUNTIME)
+     CH_BUILD_IF_CPU_RUNTIME | CH_BUILD_IF_PROFILE_CNSA2)
 
 // The sizes of the public structs a consumer declares or reads, in
 // bytes, and 0 for a struct this build does not declare. A server role

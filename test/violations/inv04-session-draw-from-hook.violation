@@ -11,8 +11,8 @@ reason: hsf_begin draws the ClientHello random from ch_rand_bytes, with a
 
 --- old
     rand_draw(&t->cfg, h->random, sizeof h->random);
-#ifdef CH_KEX_HYBRID
+    CH_ASSERT(!ct_memeq(h->random, unwritten, sizeof h->random));
 --- new
     void ch_rand_bytes(uint8_t *p, size_t n);
     ch_rand_bytes(h->random, sizeof h->random);
-#ifdef CH_KEX_HYBRID
+    CH_ASSERT(!ct_memeq(h->random, unwritten, sizeof h->random));

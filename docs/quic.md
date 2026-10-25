@@ -1755,7 +1755,7 @@ and `pt_len`.
 | --- | --- | --- | --- |
 | `hs.t` | `ch_tls *` | none: every public entry rewrites it to `&q->t` | every `hsf_` and `hsa_` function reaches `cfg`, the transcript, `group`, `pin_slot` and the epoch fields through it |
 | `hs.priv`, `hs.pub`, `hs.random` | `uint8_t[32]` each | any bytes | the retry ClientHello resends the same share and random (`handshake_flight.c:81-90`), and `priv` feeds x25519 at the accepted ServerHello (`handshake_flight.c:324`). Wiped at the end of `hsf_derive_handshake_secrets` |
-| `hs.dz`, `KEX=pq` and `TRUST=webpki` only | `uint8_t[64]` | any bytes | the seed re-expands for the retry share and for decapsulation (`hsf_build_client_hello`, `hybrid_secret`). Wiped in `hsf_derive_handshake_secrets` once the dk is expanded, or, when a webpki ServerHello selects x25519, before the exchange runs (`x25519_secret`) |
+| `hs.dz`, `KEX=pq`, `TRUST=webpki` and `PROFILE=cnsa2` only | `uint8_t[64]` | any bytes | the seed re-expands for the retry share and for decapsulation (`hsf_build_client_hello`, `kem_secret`). Wiped in `hsf_derive_handshake_secrets` once the dk is expanded, or, when a webpki ServerHello selects x25519, before the exchange runs (`x25519_secret`) |
 | `hs.early`, `hs.binder_key` | `uint8_t[32]` each | any bytes | the retry binder (`handshake_flight.c:102`) and `ks_handshake` (`handshake_flight.c:350`). Wiped with `priv` |
 | `hs.handshake_secret` | `uint8_t[32]` | any bytes | `ks_master` at the Finished step (`handshake_flight.c:477`) |
 | `hs.c_hs`, `hs.s_hs` | `uint8_t[32]` each | any bytes | the client Finished (`handshake_flight.c:488`) and the server Finished check (`handshake_flight.c:458`); `s_hs` also seeds the Handshake-level packet keys |

@@ -71,6 +71,7 @@
 #if defined(CH_KEX_PQ) || defined(CH_KEX_TWO_GROUPS)
 #define CH_KEX_HYBRID
 #endif
+#include "profile_cfg.h" // PROFILE=cnsa2's group and rules, and CH_KEX_MLKEM
 
 // The most plaintext one outgoing record carries, which the peer's
 // record_size_limit may lower; records are staged in the session struct so
@@ -133,6 +134,8 @@ _Static_assert(CH_TX_PT >= 512 && CH_TX_PT <= 16384, "CH_TX_PT runs from 512 to 
 #endif
 #ifdef CH_KEX_HYBRID
 #define CH_KEX_MIN_RXBUF (5 + 4 + 40 + 6 + 1128 + 6)
+#elif defined(CH_PROFILE_CNSA2)
+#define CH_KEX_MIN_RXBUF CH_PROFILE_KEX_MIN_RXBUF
 #else
 #define CH_KEX_MIN_RXBUF 512
 #endif
@@ -166,7 +169,7 @@ _Static_assert(CH_TX_PT >= 512 && CH_TX_PT <= 16384, "CH_TX_PT runs from 512 to 
          : (CH_QUIC_KEX_MIN_RXBUF > CH_QUIC_PARAMS_MIN_RXBUF ? CH_QUIC_KEX_MIN_RXBUF               \
                                                              : CH_QUIC_PARAMS_MIN_RXBUF))
 #define CH_MIN_RXBUF CH_QUIC_MIN_RXBUF
-#elif defined(CH_TRUST_CA) || defined(CH_TRUST_WEBPKI) || defined(CH_KEX_PQ)
+#elif defined(CH_TRUST_CA) || defined(CH_TRUST_WEBPKI) || defined(CH_KEX_MLKEM)
 #define CH_MIN_RXBUF (CH_TRUST_MIN_RXBUF > CH_KEX_MIN_RXBUF ? CH_TRUST_MIN_RXBUF : CH_KEX_MIN_RXBUF)
 #else
 // Neither feature raises the floor, so the base profile's 512 stands on its own.

@@ -175,6 +175,7 @@
         "poly1305_vector.c",
         "poly1305_vector.h",
         "poly1305_vector_native.c",
+        "profile_cfg.h",
         "quic.c",
         "quic.h",
         "quic_aes_soft.c",

@@ -485,6 +485,10 @@ launch slow:5 noovf x25519_sqr 65 ""
 # (docs/decisions.md 141), through proof/prove-one.sh with PROVE_NO_CACHE=1
 # on 2026-10-20 at a load average near 106: psk 1867 properties in 612 s at
 # 2.37 GB, pin 1869 in 242 s at 2.98 GB.
+# hsf_begin then checked each draw right after it, and PROFILE=cnsa2 took
+# no x25519 draw (docs/decisions.md 151). Measured the same way on
+# 2026-10-25 at a load average near 35: psk 1867 properties in 561 s at
+# 2.43 GB, pin 1869 in 137 s at 1.28 GB.
 launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c proof/ct_wipe_stub.c
 launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c proof/ct_wipe_stub.c
 # ML-KEM's chained-product functions, one formula each; the inverse
@@ -1079,19 +1083,27 @@ launch fast full epoch 40 "" ct.c proof/ct_wipe_stub.c
 # load average near 106, so the weight stays 6.
 launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c proof/ct_wipe_stub.c session.c
 # The only launch line that builds the hybrid key exchange
-# (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,
+# (https://github.com/c4milo/chapulin/issues/47). kem_secret over any seed,
 # any server ciphertext and any server share, with mlkem and x25519 stubbed to
 # their headers' contracts — their own harnesses prove the arithmetic, and
 # driving a 2400-byte expansion and 256 symbolic multiplies here would be the
 # shape docs/proofs.md says not to build. Re-measured with handshake_flight.c
 # beside handshake.c: 639 properties, 2.9 s, 74 MB (kissat), where it read 508
-# in 3 s and 78 MB before the handlers moved out of the driver. hybrid_secret
+# in 3 s and 78 MB before the handlers moved out of the driver. kem_secret
 # now wipes the seed h->dz once the dk is expanded from it, and the harness
 # asserts all 64 bytes zero on both exits: 641 properties, 3.6 s, 75 MB
-# (PROVE_NO_CACHE=1 /usr/bin/time -l over this script). The hybrid ServerHello
+# (PROVE_NO_CACHE=1 /usr/bin/time -l over this script). Renamed kem_secret
+# when PROFILE=cnsa2 took its ML-KEM-1024 arm (docs/decisions.md 151):
+# 671 properties, 12 s, 85 MB at a load average near 30. The hybrid ServerHello
 # parser stays unproven: the 256-byte handshake_parser bound cannot hold a
 # 1,128-byte key share.
 launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_PQ ct.c proof/ct_wipe_stub.c
+# The same function under PROFILE=cnsa2 (docs/decisions.md 151): an
+# ML-KEM-1024 dk of 3168 bytes, a 32-byte ikm and no x25519, so CH_OK is
+# the only exit, and both wipes of the seed hold. Measured through
+# proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-25 at a load average
+# near 30: 737 properties, 16 s, 101 MB.
+launch fast full kem_secret_cnsa2 65 "fill_nondet.0:3169,ct_wipe.0:3169" -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME ct.c proof/ct_wipe_stub.c
 # The server's half of the hybrid, and its group choice: srv_kex.c over any
 # groups and shares a parsed ClientHello reports, with mlkem_encaps_derand,
 # x25519 and ch_rand_bytes stubbed to their headers' contracts, the shape
@@ -2186,7 +2198,10 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # every entry keeps, measured the same way: 1897 properties, 61 s,
 # 1.04 GB. Without that hold the open stub's assert of one bit fails.
 # With a presented ticket of any fields, the same way: 1911 properties,
-# 114 s to 169 s in three runs, 1.04 GB.
+# 114 s to 169 s in three runs, 1.04 GB. With quic_config.c's pin rule
+# read from CH_TAKES_PINS (docs/decisions.md 151), through
+# proof/prove-one.sh at a load average near 33: 1911 properties, 237 s,
+# 1.90 GB.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where

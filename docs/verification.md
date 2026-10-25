@@ -794,6 +794,25 @@ The entries are grouped by area:
 - **Not proved:** the rest of the hybrid driver. The differential, the
   sequence enumeration and the e2e tests cover it.
 
+#### kem_secret_cnsa2
+
+- **Harness:** `kem_secret_cnsa2` (fast)
+- **Build:** `PROFILE=cnsa2`. It is the only harness that builds
+  `-DCH_PROFILE_CNSA2`.
+- **Proves:**
+  - the profile's shared-secret derivation, `kem_secret` at
+    ML-KEM-1024, is safe for any stored seed and any 1568-byte
+    ciphertext;
+  - it returns `CH_OK`, because the profile runs no x25519 and so has no
+    refusal (decision 151);
+  - both exits leave the 64-byte ML-KEM seed zero.
+
+  ML-KEM is stubbed to its contract at K = 4, which
+  [mlkem_1024](#mlkem_1024) proves.
+- **Bound:** the full domain.
+- **Not proved:** the rest of the profile's driver. `bin/cnsa2_test`,
+  `bin/cnsa2_quic_test` and the e2e tests against OpenSSL cover it.
+
 ### Signatures
 
 #### p256

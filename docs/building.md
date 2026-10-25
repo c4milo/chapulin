@@ -108,6 +108,20 @@ Other targets:
   `build.zig` refuse an `AES` value for a host object, and the values
   `AES=hw` and `AES=runtime`, which chose the instructions when the object
   was built, are gone (decision 89).
+  `PROFILE=cnsa2` builds a raw or ca client with CNSA 2.0's algorithms
+  alone (decision 151). It offers `TLS_AES_256_GCM_SHA384` alone and
+  ML-KEM-1024 alone, group 0x0202, and it authenticates by an external
+  PSK alone, with a SHA-384 binder. The Makefile then sets `SUITE=aesgcm`
+  itself and refuses a `SUITE` or `KEX` value beside the profile. The
+  profile takes `AES=extern`, and the build's `CFLAGS` carry
+  `-DCH_AES_EXTERN_CONSTANT_TIME`, the statement `ct.h` asks for. For
+  example: `make lib PROFILE=cnsa2 AES=extern RAND=extern
+  CFLAGS='-std=c11 -Os -DCH_AES_EXTERN_CONSTANT_TIME'`. `ch_connect`,
+  `ch_record_init` and `ch_quic_init` refuse a pin or a CA key there with
+  `CH_EINVAL`. `TRUST=webpki`, `ROLE=server` and `ROLE=both` refuse the
+  profile. Size `cfg.buf_len` at `CH_MIN_RXBUF` or more: 1637 bytes over
+  TCP and 1632 over QUIC. `PROFILE=general`, the default, is every other
+  build.
 - On an arm64 or x86-64 host, `TRUST=webpki`, `ROLE=server` and
   `ROLE=both` build a host object (decision 89). The Makefile and
   `build.zig` run the host test on the compiler: it targets arm64 or

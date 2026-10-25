@@ -6,7 +6,7 @@
 // hybrid's second half starts: share + MLKEM_CT_LEN, ikm + MLKEM_SS_LEN
 // and ch->hybrid_share + MLKEM_EK_LEN. They are the concatenations RFC
 // 10024 defines, over arrays that hold both halves, and
-// handshake_flight.c's hybrid_secret writes ikm + MLKEM_SS_LEN the same
+// handshake_flight.c's kem_secret writes ikm + MLKEM_SS_LEN the same
 // way. The third reads peer bytes, and the parser held the client's
 // share to exactly CH_HYBRID_CLIENT_SHARE bytes before this file sees
 // it, so the x25519 half is the X25519_LEN bytes that end it.

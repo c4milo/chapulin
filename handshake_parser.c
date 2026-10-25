@@ -88,9 +88,10 @@ static int parse_retry_group(rbuf *e, server_hello_info *info) {
 #endif
 
 #ifdef CH_SUITE_AES_GCM
-// Whether this client's ClientHello can offer suite: ChaCha20 always, and
-// the two AES-GCM suites from the client that offers all three
-// (CH_CLIENT_AES_SUITES). RFC 9846 §4.2.3 makes any other suite an
+// Whether this client's ClientHello can offer suite: ChaCha20, and the two
+// AES-GCM suites from the client that offers all three
+// (CH_CLIENT_AES_SUITES), or TLS_AES_256_GCM_SHA384 alone under
+// PROFILE=cnsa2. RFC 9846 §4.2.3 makes any other suite an
 // illegal_parameter abort (rfc9846.txt:1373-1376). A caller's
 // ch_cfg.cipher_suites can offer fewer, and hsf_read_server_hello holds
 // the suite to the ones the hello listed (hs_suite_offered).
@@ -98,6 +99,8 @@ static int suite_offered(uint16_t suite) {
 #ifdef CH_CLIENT_AES_SUITES
     return suite == SUITE_CHACHA20_POLY1305_SHA256 || suite == SUITE_AES_128_GCM_SHA256 ||
            suite == SUITE_AES_256_GCM_SHA384;
+#elif defined(CH_PROFILE_CNSA2)
+    return suite == SUITE_AES_256_GCM_SHA384;
 #else
     return suite == SUITE_CHACHA20_POLY1305_SHA256;
 #endif
@@ -135,18 +138,21 @@ static int parse_key_share(rbuf *e, server_hello_info *info, int hrr) {
         return CH_EPROTO;
     }
 #endif
-#ifdef CH_KEX_HYBRID
+#ifdef CH_KEX_MLKEM
     const uint8_t *ct = rb_bytes(e, MLKEM_CT_LEN);
     if (ct == NULL) {
         return CH_EPROTO;
     }
     info->server_ct = ct;
 #endif
+#ifndef CH_PROFILE_CNSA2
+    // The profile's share is the ML-KEM-1024 ciphertext alone.
     const uint8_t *pub = rb_bytes(e, X25519_LEN);
     if (pub == NULL) {
         return CH_EPROTO;
     }
     memcpy(info->server_pub, pub, X25519_LEN);
+#endif
     info->group = group;
     info->have_share = 1;
     return CH_OK;

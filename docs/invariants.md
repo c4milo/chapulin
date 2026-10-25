@@ -1941,6 +1941,36 @@ last `ROLE=server` stub, as the entry said it would.
   fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
   `sha3_round` proof and one the `sha3_stream` proof.
 
+### INV-57 — a PROFILE=cnsa2 client offers one suite, one group and one authentication
+
+- **Claim.** A `PROFILE=cnsa2` client lists TLS_AES_256_GCM_SHA384 alone
+  and ML-KEM-1024 alone, sends one key share, and authenticates by an
+  external PSK alone, under SHA-384. Its ServerHello parser takes that
+  suite and that group alone (decision 151).
+- **Mechanism.** `hs_build_client_hello` writes one suite and the
+  ML-KEM-1024 key alone under `CH_PROFILE_CNSA2`, and `hs_psk_hash_len`
+  answers `SHA384_LEN`, so the binder and a ticket's PSK are 48 bytes.
+  `handshake_parser.c`'s `suite_offered` takes 0x1302 alone, and the key
+  share must name `CH_KEX_GROUP`, 0x0202, with a 1568-byte ciphertext.
+  `profile_cfg.h` sets `CH_TAKES_PINS` to 0, and `tls.c` and
+  `quic_config.c` refuse a pinned configuration on it.
+- **Check.** `bin/cnsa2_test`, `bin/cnsa2_test_ca` and
+  `bin/cnsa2_tcp_nonblocking` read the hello's suites, groups, shares and
+  binder, refuse a pin, and run a full and a resumed handshake against a
+  mock server that checks the binder and the Finished. Each ServerHello
+  with another suite, another group or a short ciphertext must fail with
+  illegal_parameter before any key. `bin/cnsa2_quic_test` runs the pin
+  refusal and both handshakes over QUIC. e2e runs the profile against
+  OpenSSL.
+- **Violation.** A PR lets the profile take a pin; or drops the QUIC
+  refusal; or lists a second suite; or runs the binder at SHA-256.
+  `inv57-cnsa2-takes-a-pin`, `inv57-cnsa2-offers-a-second-suite` and
+  `inv57-cnsa2-binder-at-sha256` fail `bin/cnsa2_test`.
+  `inv57-cnsa2-quic-takes-a-pin` fails `bin/cnsa2_quic_test`. Two
+  checks hold the ServerHello's suite, the parser's list and the
+  flight's `hs_suite_offered`, so no edit to one of them alone can take
+  a second suite.
+
 ### INV-56 — mlkem.c computes FIPS 203 at the parameter set its object holds
 
 - **Claim.** An object built with `-DCH_MLKEM_1024` computes ML-KEM-1024,
@@ -5753,10 +5783,13 @@ last `ROLE=server` stub, as the entry said it would.
   build's budget. The budget is 2,560 bytes by default (measured worst:
   `rsa_vp1` at 2,400); 3,072 under `KEX=pq`, where
   `hsf_build_client_hello` holds ML-KEM's 2,400-byte decapsulation key
-  (measured 2,640 with clang 23 on arm64); and 4,096 under
+  (measured 2,640 with clang 23 on arm64); 4,096 under
+  `PROFILE=cnsa2`, whose `hsf_build_client_hello` holds ML-KEM-1024's
+  3,168-byte key (measured 3,520 with Apple clang 21 on arm64,
+  decision 151); and 4,096 under
   `TRUST=webpki`, whose `rsa_vp1` verifies RSA-4096 over 128 words
   (measured 3,168 with clang 23 on arm64 and 3,128 with Arm GNU gcc 16.2
-  on the Cortex-M3). Those two frames are the 32-bit arithmetic's, which a
+  on the Cortex-M3). The two `rsa_vp1` frames are the 32-bit arithmetic's, which a
   device object compiles. A host object's `rsa_vp1` calls `rsa_mont64.c`,
   whose largest frame is `rsa_mont64_public`'s: 848 bytes at the device
   bound and 1,104 at the `TRUST=webpki` one (Apple clang 21, arm64).
@@ -5781,7 +5814,9 @@ last `ROLE=server` stub, as the entry said it would.
   object (decisions.md 53) and every server role (decisions.md 54):
   K-PKE encrypt holds three polynomial vectors
   and two polynomials (measured worst: `mlk_pke_encrypt` at 5,744 with
-  gcc 13.3 and 6,224 with clang 21 and 23 on arm64). That ceiling is
+  gcc 13.3 and 6,224 with clang 21 and 23 on arm64). Under
+  `PROFILE=cnsa2` they get 8,192, because ML-KEM-1024's vectors hold four
+  polynomials (measured 7,760 with Apple clang 21 on arm64). That ceiling is
   per file, so a new buffer in any other file of those objects still
   fails at its build's budget. A server's own sources keep the 2,560-byte
   device budget: the largest, `srv_send_server_hello`, holds the

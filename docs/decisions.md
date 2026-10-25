@@ -13338,3 +13338,73 @@ does nothing more.
     - **ML-KEM-1024 vectors checked into the tree.** Wycheproof's vectors
       come from the pinned checkout at test time, as ML-KEM-768's do.
       The spec holds the digests of one case, not its 4,736 bytes.
+151. **`PROFILE=cnsa2` offers ML-KEM-1024, TLS_AES_256_GCM_SHA384 and an
+    external PSK, each alone.** Stage 2 of the CNSA 2.0 profile
+    (https://github.com/c4milo/chapulin/issues/182). Entry 150 records the
+    plan's six rulings. On 2026-10-25 Camilo ruled the two questions of
+    this stage as recommended: raw and ca clients only, on all three
+    transports.
+
+    - **The rule.** A `PROFILE=cnsa2` client lists one cipher suite,
+      TLS_AES_256_GCM_SHA384, and one group, ML-KEM-1024 (0x0202,
+      draft-ietf-tls-mlkem). Its one key share is the 1568-byte
+      encapsulation key, and the ServerHello's is the 1568-byte
+      ciphertext. The 32-byte shared secret is the whole input keying
+      material. The key schedule, the binder and a ticket's PSK run
+      SHA-384. A ServerHello that names another suite or group, or that
+      carries a ciphertext of another length, fails the handshake.
+    - **One authentication.** CNSA 2.0 admits no RSA or ECDSA, and ML-DSA
+      is a later stage. So the profile takes an external PSK alone, under
+      psk_dhe_ke. `ch_connect`, `ch_record_init` and `ch_quic_init` refuse
+      a pin or a CA key with `CH_EINVAL` before a byte is sent.
+      `profile_cfg.h`'s `CH_TAKES_PINS` is 0 in this build alone.
+      `require_pq` passes, because every handshake the profile runs
+      satisfies it.
+    - **Raw and ca clients only.** A server role takes no external PSK,
+      and a TRUST=webpki client refuses one, so neither could
+      authenticate. The Makefile, `build.zig` and `profile_cfg.h` refuse
+      the profile there. TRUST still names the object's sources, and no
+      session of the profile runs its verifier.
+    - **The object.** The Makefile sets `SUITE=aesgcm` and refuses a
+      SUITE or KEX value beside the profile. It adds the ML-KEM sources
+      under `-DCH_MLKEM_1024` and drops `x25519.c`, which the profile
+      never runs. The traffic key is AES-256 on a device object, so the
+      profile takes `AES=extern`, and the build's CFLAGS carry
+      `CH_AES_EXTERN_CONSTANT_TIME`, the statement `ct.h` asks for. The
+      build record carries `CH_BUILD_PROFILE_CNSA2`.
+    - **The sizes.** The largest hello is 2169 bytes over TCP and 2693
+      over QUIC, and the receive floor is 1637 bytes over TCP and 1632
+      over QUIC. Each follows from the 1568-byte key share or ciphertext
+      and the 48-byte binder.
+    - **The stack.** The 3168-byte dk puts `hsf_build_client_hello` at
+      3,520 bytes and `hsf_derive_handshake_secrets` at 3,264 (Apple
+      clang 21 -O2, arm64), so the profile's library frames take a 4 kB
+      ceiling. At ML-KEM-1024, K-PKE encrypt holds four polynomials to a
+      vector and measures 7,760 bytes, so ML-KEM's ceiling is 8 kB there.
+      `check-stack-cnsa2` and `check-stack-cnsa2-quic` hold both.
+    - **What holds it.** `bin/cnsa2_test` runs a mock server's two
+      handshakes, one under the external PSK and one that resumes the
+      ticket. The mock checks the binder and the client Finished,
+      encapsulates against the client's key and keys each record with
+      AES-256-GCM. It runs under TRUST=raw-rsa and TRUST=ca-rsa and on
+      tcp-nonblocking, and `bin/cnsa2_quic_test` runs the same mock over
+      QUIC's CRYPTO bytes. e2e runs the TCP clients against OpenSSL 3.5,
+      a resumption included, and a wrong PSK and a server without
+      ML-KEM-1024 each fail closed. The `kem_secret_cnsa2` harness proves
+      the profile's decapsulation and wipes. `check-lib-cnsa2` and its
+      three siblings package the object on each transport and on a CA
+      trust mode, `lint-trust-separation` holds its sources and refusals,
+      and `lint-zig-build` holds `build.zig` to the Makefile. INV-57's
+      four mutants each fail a test.
+
+    Rejected:
+
+    - **The profile on a server.** It needs a server that takes an
+      external PSK. That is a feature of its own, and ML-DSA makes it
+      unnecessary.
+    - **X25519MLKEM1024 or a classic group beside ML-KEM-1024.** CNSA 2.0
+      lists ML-KEM-1024 alone, and entry 150's plan ruled for the pure
+      group.
+    - **Pins kept in the profile, with the CNSA 2.0 algorithms around
+      them.** An RSA or ECDSA verifier is the algorithm CNSA 2.0 retires.
+      A build that offers it is not the profile.

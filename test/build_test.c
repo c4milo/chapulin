@@ -109,6 +109,9 @@ static uint32_t axes_from_defines(void) {
 #ifdef CH_CPU_RUNTIME
     axes |= CH_BUILD_CPU_RUNTIME;
 #endif
+#ifdef CH_PROFILE_CNSA2
+    axes |= CH_BUILD_PROFILE_CNSA2;
+#endif
     return axes;
 }
 
