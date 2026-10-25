@@ -719,9 +719,13 @@ The entries are grouped by area:
   drives them: [x25519](#x25519) proves that text around the 16-word
   ladder, and the vectors below run it around this field.
 
-  What no harness proves of the key generation: that its formulas
-  compute the sum of two points and that u = (1 + y) / (1 - y) of s * B
-  is the u the ladder computes for s and 9. `tools/x25519_wide.py` and
+  `spec/lean/Spec/X25519Edwards.lean` proves the key generation's
+  arithmetic: its formulas compute the Edwards addition law, which is
+  complete on this curve, and u = (1 + y) / (1 - y) takes every sum to
+  the sum on the Montgomery curve, so the loop writes the u of s times
+  the image of B. `bin/diff_x25519_wide` holds the formulas to the
+  model. What no proof states is that the ladder computes that u for s
+  and 9. `tools/x25519_wide.py` and
   `make lint-x25519-wide` hold the table to RFC 7748's curve, and
   `bin/x25519_equiv_test` holds the key generation to the 16-word
   field's ladder and to this field's ladder on 9: RFC 7748 section

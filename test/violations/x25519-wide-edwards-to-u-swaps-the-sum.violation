@@ -1,0 +1,15 @@
+invariant: INV-16
+file: x25519_wide_edwards.h
+catches: diff_x25519_wide
+reason: to_u writes (Z - Y) / (Z + Y), the u of the negated y, which is
+  1 / u: another point than the ladder's. bin/diff_x25519_wide holds to_u
+  to spec/lean/Spec/X25519Edwards.lean's toU, which is what makes the Lean
+  proof that the key generation writes the u of s B a proof about this
+  file.
+
+--- old
+    add(numerator, p->z, p->y);
+    sub(denominator, p->z, p->y);
+--- new
+    sub(numerator, p->z, p->y);
+    add(denominator, p->z, p->y);

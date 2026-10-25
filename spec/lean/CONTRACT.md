@@ -174,6 +174,17 @@ Spec.P256WideInverse.inverse : (m y : Nat) → ZMod m                   -- p256_
                         -- modulo an odd m for y coprime to it, and 0 for y = 0. Line op:
                         -- `p256_wide_inverse <m> <y>` → `<inverse>`, each 32 bytes of
                         -- hex, m odd and y below m.
+Spec.X25519Edwards.addEntry : Extended R → Entry R → Completed R      -- add_entry of
+                        -- x25519_wide_edwards.h, written from the C (below), over any
+                        -- commutative ring; with toExtended, the line op
+                        -- `x25519_edwards_add <X> <Y> <Z> <T> <y+x> <y-x> <2dxy>` →
+                        -- `<X3> <Y3> <Z3> <T3>`, each 32 little-endian bytes of hex below
+                        -- 2^255 - 19.
+Spec.X25519Edwards.doublePoint : Extended R → Completed R             -- double_point; with
+                        -- toExtended, `x25519_edwards_double <X> <Y> <Z> <T>` →
+                        -- `<X3> <Y3> <Z3> <T3>`, the same way.
+Spec.X25519Edwards.toU : Extended R → R                               -- to_u, (Z + Y) (Z - Y)^-1:
+                        -- `x25519_edwards_u <X> <Y> <Z> <T>` → `<u>`, the same way.
 Spec.RsaIfma.product  : (n m0inv a b m : Nat) → Array Nat             -- almost_montgomery_product,
                         -- written from the C (below): n rounds on the digits of a and b, and
                         -- normalize_digits, in 8 ⌈n / 8⌉ lanes. Line op:
@@ -847,6 +858,41 @@ answers with `inverse` and `inversePublic` at both moduli in
 `bin/diff_p256_wide`. That the C's combinations compute the model's sums on
 every input stays with the differential and the C's tests.
 
+## X25519Edwards models the C
+
+`Spec/X25519Edwards.lean` breaks rule 1 on purpose, as
+`Spec/P256WidePoint.lean` does. `addEntry`, `doublePoint`, `toExtended` and
+`toU` are `x25519_wide_edwards.h`'s `add_entry`, `double_point`,
+`to_extended` and `to_u`, written from the C with one `let` for each C
+statement (docs/decisions.md 148). The claim is about that code: the
+key generation computes s B on edwards25519 and writes the u of its image on
+curve25519, which is the u the ladder computes for s and 9. No standard
+states those steps.
+
+`addEntry_represents` and `doublePoint_represents` prove that the steps
+compute the twisted Edwards addition law over every field in which 2 is not
+zero, wherever its denominators are not zero, and `product_sq_ne_one` that
+they are never zero for two points of the curve when d is not a square and
+-1 is. `toMont` maps a point to the Montgomery curve, as a Weierstrass curve
+of Mathlib, by u = (1 + y) / (1 - y) (RFC 7748 section 4.1), and
+`toMont_add` proves that it takes a sum to the sum of the images, for every
+two points. `toMont_baseMul` and `toU_baseMulExtended` carry that through
+`x25519_wide_base_mul`'s loop: the u it writes is the u of the sum of the
+digits times the image of B. That the digits add up to the clamped scalar is
+`proof/x25519_wide_select_harness.c`'s. That the ladder computes the u of a
+multiple in Mathlib's group is stated nowhere: bin/x25519_equiv_test and the
+differential's base rows hold the two to the same bytes.
+
+The C computes in radix 2^51 with redundant words, so each element is packed
+to its canonical bytes on the C side. The three rows of
+`test/diff_x25519_test.c` take random elements, 0 and 1 among them, and
+entries `select_entry` takes from the table, run each routine in the C, and
+compare it with the model over `ZMod p`, element for element, in
+`bin/diff_x25519_wide`. The violations
+`x25519-wide-edwards-double-f-once` and
+`x25519-wide-edwards-to-u-swaps-the-sum` change one step each, and each
+requires `bin/diff_x25519_wide` to fail.
+
 ## RsaIfma models the C
 
 `Spec/RsaIfma.lean` breaks rule 1 for the same reason. `round` is `rsa_ifma.c`'s `add_round`,
@@ -1189,6 +1235,24 @@ Spec.P256WidePoint, the incomplete additions, the Jacobian doubling and the two
                                a Z of zero stays zero through both loops, over any
                                -- commutative ring: from the point at infinity, every
                                -- multiple and every sum is the point at infinity
+Spec.X25519Edwards, the key generation of x25519_wide_edwards.h (above,
+  "X25519Edwards models the C"); `Represents a p` says the extended point `a`
+  holds the affine point `p`, and `c : Params F` carries d, 2 ≠ 0, d not a
+  square and -1 a square:
+  addEntry_represents          2 ≠ 0 → a holds p → 1 ± d x1 x2 y1 y2 ≠ 0 → the
+                               -- addition of q's entry holds edAdd d p q
+  doublePoint_represents       a holds p → p on the curve → 1 ± d x² y² ≠ 0 → the
+                               -- doubling holds edAdd d p p
+  product_sq_ne_one            2 ≠ 0 → d not a square → -1 a square → two points of
+                               -- the curve → (d x1 x2 y1 y2)² ≠ 1: the law is complete
+  neg_of_sum_zero              a sum that is the identity is a point and its negative
+  toMont_add                   toMont (P + Q) = toMont P + toMont Q, every P and Q
+  toMont_neg, toMont_nsmul, toMont_zsmul
+                               the map takes negatives and multiples to the same
+  toMont_baseMul               toMont (baseMul B e) = (∑ j < 64, e j 16 ^ j) • toMont B
+  baseMulExtended_represents   the loop in extended coordinates holds baseMul's point
+  toU_baseMulExtended          (baseMul B e).x ≠ 0 → the u the loop writes is montU of
+                               -- (∑ j < 64, e j 16 ^ j) • toMont B
 Spec.P256WideInverse, the rounds of p256_wide_inverse.c (above, "P256WideInverse
   models the C"); `start a b` is the steps' state at the start of a round on `a`
   and `b`, and `pairStep^[t]` the exact values after `t` steps:
@@ -1515,6 +1579,7 @@ means the module's selftest plus the differential oracle carry it;
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
 | P256WidePoint | 13 | the incomplete additions, the Jacobian doubling and the two conversions `p256_wide_point.c` runs, modeled from the C: the incomplete mixed addition gives `P + Q` for a finite `P` and an affine `Q` whose x differ, over every field, and the loop of windows 1 to 41 in `p256_wide_base_mul` meets that condition at every addition, so it computes the sum of the windows' multiples of `G`, at P-256 with `p` and `n` prime and `n • G = 0` as hypotheses; the conversions keep every point; the Jacobian doubling gives `P + P` for every point of every curve y² = x³ - 3x + b over every field in which 2 is not zero, the point at infinity and a point with y = 0 among them; the incomplete Jacobian addition gives `P + Q` for two finite points whose x differ, over every field; and `p256_wide_mul`'s odd multiples and windows 62 to 1 meet that condition at every addition, at P-256 for every finite point with `p` and `n` prime and `n • P = 0` as hypotheses. The two complete additions, the top window of k·G, window 0 of the key exchange and both corrections stay with the C's tests and the differential |
+| X25519Edwards | 60 | the key generation `x25519_wide_edwards.h` runs, modeled from the C: its addition of an entry and its doubling compute the twisted Edwards addition law over every field in which 2 is not zero, which is complete when d is not a square and -1 is; the map u = (1 + y) / (1 - y) to the Montgomery curve, as a Weierstrass curve of Mathlib, takes every sum to the sum of the images; and the loop of 64 additions and four doublings writes the u of the sum of its digits times the image of B. The digits' sum is CBMC's, and the ladder's agreement with Mathlib's group stays with the equivalence binary and the differential |
 | P256WideInverse | 14 | the binary GCD `p256_wide_inverse.c` runs, modeled from the C: a round's 31 steps on 64-bit approximations take 31 bits off `a` and `b` between them while `a` is not zero, the steps whose comparison of the approximations differs from that of the exact values included; a round keeps `b` odd, `gcd a b`, and `a = u y` and `b = v y` modulo an odd `m`, and leaves a zero `a` zero; 17 rounds invert every `y` coprime to an odd `m` below `2 ^ 256` and send 0 to 0, at P-256's `p` and `n` with each prime as a hypothesis; and the rounds stopped at the first zero `a`, as the verifier's entry runs them, give the same answer for every `y`. That the C's combinations compute the model's sums stays with the C's tests and the differential |
 | RsaAvx2 | 11 | the AVX2 kernel of `rsa_avx2.c`, modeled from the C with a lane in a `Nat`: a square's rows put in each lane what the multiplication of `a` by itself puts there; no triangle's sum and no sum of the last pass passes `2 ^ 64` at the C's digit widths and counts; `RSA_AVX2_DIGIT_COUNT` leaves `4 m < 2 ^ (D n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-D n) mod m`; and the chain `rsa_avx2_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`. That the instructions compute the lane model's values stays with `bin/rsa_avx2_equiv_test`, and the order in which the C adds a lane's numbers with the C's tests and the differential |
 | RsaIfma | 13 | the AVX-512 IFMA kernels of `rsa_ifma.c` and `rsa_ifma_sign.c` and `rsa_mont.c`'s `power_of_two_mod`, modeled from the C with a lane in a `Nat`: no lane, `digit_zero` or scalar sum passes its C type in 128 rounds or fewer; `RSA_IFMA_DIGIT_COUNT` leaves `4 m < 2 ^ (52 n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-52 n) mod m`; `normalize_digits` keeps its lanes' number modulo `2 ^ (52 count)` and writes digits below `2 ^ 52`, the mask arithmetic of its second loop included; `power_of_two_mod` starts below `m` and writes `2 ^ e mod m`; the chain `rsa_ifma_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`; and signing's 4-bit window, its table and its moves between `rsa_mont64.c`'s domain and the kernel's compute `b ^ e R mod m` for the base `b R mod m` and the exponent's bytes. That the instructions compute the lane model's values stays with `bin/rsa_ifma_equiv_test`, and `times_word_mod`'s division with the C's tests and the differential |

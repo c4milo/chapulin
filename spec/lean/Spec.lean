@@ -10,6 +10,7 @@ import Spec.Aead
 import Spec.Record
 import Spec.TlsWrite
 import Spec.X25519
+import Spec.X25519Edwards
 import Spec.Weierstrass
 import Spec.P256
 import Spec.P256WidePoint

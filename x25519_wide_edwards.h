@@ -9,7 +9,8 @@
 // curve25519, the curve of the ladder, and it takes a sum of two points to the sum of their
 // images. It takes B, the point whose y is 4/5, to the point whose u is 9. So the u of s * B is
 // the u that the ladder computes for s and 9, and x25519_wide_base_mul computes s * B on
-// edwards25519 and then that u.
+// edwards25519 and then that u. spec/lean/Spec/X25519Edwards.lean proves both facts and the
+// formulas below, and bin/diff_x25519_wide holds the formulas to that model.
 //
 // The points. A point is (X : Y : Z : T), with x = X / Z, y = Y / Z and T = X Y / Z: the
 // extended coordinates of Hisil, Wong, Carter and Dawson (2008). An addition writes a point in
@@ -231,13 +232,28 @@ static void add_digit(edwards_point *sum, edwards_entry *entry, edwards_sum *par
     to_extended(sum, partial);
 }
 
+// out = u = (1 + y) / (1 - y) = (Z + Y) / (Z - Y) of a point. Two carry passes take the
+// denominator's words under 2^51, the form the ladder hands invert(). invert() takes zero to zero,
+// so the identity, whose Z - Y is zero, gives 0.
+static void to_u(uint8_t out[X25519_LEN], const edwards_point *p) {
+    fe numerator;
+    fe denominator;
+    add(numerator, p->z, p->y);
+    sub(denominator, p->z, p->y);
+    carry_words(denominator);
+    carry_words(denominator);
+    invert(denominator, denominator);
+    mul(numerator, numerator, denominator);
+    pack(out, numerator);
+    ct_wipe(numerator, sizeof numerator);
+    ct_wipe(denominator, sizeof denominator);
+}
+
 void x25519_wide_base_mul(uint8_t out[X25519_LEN], const uint8_t clamped[X25519_LEN]) {
     int64_t e[DIGITS];
     edwards_point sum;
     edwards_sum partial;
     edwards_entry entry;
-    fe numerator;
-    fe denominator;
     recode(e, clamped);
 
     // The identity: x = 0 and y = 1.
@@ -261,24 +277,15 @@ void x25519_wide_base_mul(uint8_t out[X25519_LEN], const uint8_t clamped[X25519_
         add_digit(&sum, &entry, &partial, row, e[2 * row]);
     }
 
-    // u = (1 + y) / (1 - y) = (Z + Y) / (Z - Y). s * B is not the identity, so Z - Y is not
-    // zero. B's order L is an odd prime above 2^252. A clamped s is a multiple of 8, at least
-    // 2^254 and below 2^255, which is below 8 L, so L does not divide it. Two carry passes
-    // take the denominator's words under 2^51, the form the ladder hands invert().
-    add(numerator, sum.z, sum.y);
-    sub(denominator, sum.z, sum.y);
-    carry_words(denominator);
-    carry_words(denominator);
-    invert(denominator, denominator);
-    mul(numerator, numerator, denominator);
-    pack(out, numerator);
+    // s * B is not the identity, so Z - Y is not zero. B's order L is an odd prime above 2^252.
+    // A clamped s is a multiple of 8, at least 2^254 and below 2^255, which is below 8 L, so L
+    // does not divide it.
+    to_u(out, &sum);
 
     ct_wipe(e, sizeof e);
     ct_wipe(&sum, sizeof sum);
     ct_wipe(&partial, sizeof partial);
     ct_wipe(&entry, sizeof entry);
-    ct_wipe(numerator, sizeof numerator);
-    ct_wipe(denominator, sizeof denominator);
 }
 
 #endif

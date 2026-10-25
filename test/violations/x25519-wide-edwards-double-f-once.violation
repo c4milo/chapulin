@@ -1,0 +1,13 @@
+invariant: INV-16
+file: x25519_wide_edwards.h
+catches: diff_x25519_wide
+reason: double_point takes F = Z^2 - G where the formula takes 2 Z^2 - G,
+  so the doubling writes another point. bin/diff_x25519_wide holds the
+  doubling to spec/lean/Spec/X25519Edwards.lean's doublePoint, element for
+  element, which is what makes the Lean proof that the steps double a point
+  a proof about this file.
+
+--- old
+        o->f[i] = 2 * o->f[i] + FOUR_P[i] - difference;
+--- new
+        o->f[i] = o->f[i] + FOUR_P[i] - difference;

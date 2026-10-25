@@ -13226,7 +13226,7 @@ does nothing more.
       add up to the clamped scalar and that the scan returns the row's
       entry, its negative or the identity, word for word, for every
       digit. `x25519_wide_edwards` proves that an addition and a doubling
-      keep INV-34's bounds, over the multiply contract. Twelve
+      keep INV-34's bounds, over the multiply contract. Fourteen
       violations break the table, its generator, the scan, the
       negation, the digits, the mask, the doubling's bound and the
       bit's dispatch, and the named check catches each.
@@ -13234,12 +13234,26 @@ does nothing more.
       host object, under Apple clang 21 at `-O2`. A device object holds
       neither.
 
+    - **Why the map is right.** `spec/lean/Spec/X25519Edwards.lean`
+      models `add_entry`, `double_point`, `to_extended` and `to_u` from
+      the C. It proves that they compute the twisted Edwards addition
+      law, that the law is complete when d is not a square and -1 is,
+      and that the map u = (1 + y) / (1 - y) to the Montgomery curve, as
+      a Weierstrass curve of Mathlib, takes every sum of two points to
+      the sum of their images. `toU_baseMulExtended` carries that through
+      the loop: the u it writes is the u of the sum of the digits times
+      the image of B. The proofs are polynomial identities modulo the
+      curve's equation, and a Python script with SymPy found the
+      multipliers that `linear_combination` checks. `bin/diff_x25519_wide`
+      holds the C's four routines to the model, element for element,
+      on 6,000 rows, and two violations change a step each.
+
     Not covered:
 
-    - No harness and no Lean theorem proves that the formulas compute a
-      sum of points, or that the map takes s·B to the point the ladder
-      computes. The equivalence binary and the differential hold the
-      output to the ladder on the scalars above.
+    - No theorem states that the ladder of `spec/lean/Spec/X25519.lean`
+      computes the u of s times the point u = 9 in Mathlib's group. The
+      equivalence binary and the differential hold the key generation to
+      the ladder on the scalars above.
     - No run on this tree has timed the table on a machine with less
       than 64 KiB of L1 data cache.
 

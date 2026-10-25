@@ -4943,7 +4943,7 @@ endif
 # second model.
 bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o $@ test/diff_x25519_test.c x25519_wide.c ct.c ct_wipe.c
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o $@ test/diff_x25519_test.c ct.c ct_wipe.c
 
 # The constant-time P-256 arm: a key generation, a signature and a key
 # exchange against spec/lean/Spec/P256.lean, under both answers, so the

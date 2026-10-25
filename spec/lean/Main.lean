@@ -28,6 +28,17 @@ def p256Coordinates? (args : List String) : Option (List (ZMod Spec.P256.p)) := 
   guard (coordinates.all fun c => c.size == 32 && bytesToNatBE c < Spec.P256.p)
   return coordinates.map fun c => (bytesToNatBE c : ZMod _)
 
+/-- The field elements of an `x25519_edwards_` row: 32 little-endian bytes each, below p, as
+`pack` writes them. -/
+def edwardsElements? (args : List String) : Option (List (ZMod Spec.X25519Edwards.p)) := do
+  let elements ← args.mapM hexArg?
+  guard (elements.all fun e => e.size == 32 && bytesToNatLE e < Spec.X25519Edwards.p)
+  return elements.map fun e => (bytesToNatLE e : ZMod _)
+
+/-- Field elements as an `x25519_edwards_` reply. -/
+def emitEdwards (elements : List (ZMod Spec.X25519Edwards.p)) : String :=
+  " ".intercalate (elements.map fun v => bytesToHex (natToBytesLE v.val 32))
+
 /-- The QUIC version a `quic_` row names by its Version field in decimal,
 and nothing for a field `Spec.Quic.Version.ofField?` does not read. -/
 def quicVersion? (field : String) : Option Spec.Quic.Version := do
@@ -121,6 +132,7 @@ def selftestAll (_ : Unit) : String :=
     ("record", Spec.Record.selftest),
     ("tls_write", Spec.TlsWrite.selftest),
     ("x25519", Spec.X25519.selftest),
+    ("x25519_edwards", Spec.X25519Edwards.selftest),
     ("p256", Spec.P256.selftest),
     ("p256_wide_point", Spec.P256WidePoint.selftest),
     ("p256_wide_inverse", Spec.P256WideInverse.selftest),
@@ -388,6 +400,22 @@ def dispatch : List String → Option String
     let k ← hexArg? scalar
     guard (k.size == 32)
     return emit (Spec.X25519.base k)
+  | ["x25519_edwards_add", x, y, z, t, yPlusX, yMinusX, xy2d] => do
+    -- add_entry, then to_extended, of x25519_wide_edwards.h (Spec/X25519Edwards.lean).
+    let e ← edwardsElements? [x, y, z, t, yPlusX, yMinusX, xy2d]
+    let o := Spec.X25519Edwards.toExtended (Spec.X25519Edwards.addEntry
+      ⟨e[0]!, e[1]!, e[2]!, e[3]!⟩ ⟨e[4]!, e[5]!, e[6]!⟩)
+    return emitEdwards [o.x, o.y, o.z, o.t]
+  | ["x25519_edwards_double", x, y, z, t] => do
+    -- double_point, then to_extended, the same way.
+    let e ← edwardsElements? [x, y, z, t]
+    let o := Spec.X25519Edwards.toExtended (Spec.X25519Edwards.doublePoint
+      ⟨e[0]!, e[1]!, e[2]!, e[3]!⟩)
+    return emitEdwards [o.x, o.y, o.z, o.t]
+  | ["x25519_edwards_u", x, y, z, t] => do
+    -- The u x25519_wide_base_mul writes last, (Z + Y) / (Z - Y).
+    let e ← edwardsElements? [x, y, z, t]
+    return emitEdwards [Spec.X25519Edwards.toU ⟨e[0]!, e[1]!, e[2]!, e[3]!⟩]
   | ["drbg", key, nstr] => do
     let k ← hexArg? key
     let n ← nstr.toNat?
