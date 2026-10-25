@@ -504,9 +504,12 @@ Home: github.com/c4milo.
   compresses whole blocks on `sha512_compress_blocks.c` and wipes the
   stack below each compression call, as it does for every session whose
   value does not pick `sha512_hw.c` (docs/decisions.md 93 and 127).
-  `p256_sign_cpu`, the entry a
-  host object's server signs through, hands the session's value to each
-  HMAC of its RFC 6979 nonce (docs/decisions.md 102).
+  `p256_sign_hedged_cpu`, the entry a host object's server signs through,
+  hands the session's value to each HMAC of its nonce, which RFC 6979
+  derives with 32 drawn bytes of noise (draft-irtf-cfrg-det-sigs-with-noise),
+  and before it writes a signature it checks in constant time that k·G is
+  on the curve and that s·k ≡ z + r·d (mod n) (docs/decisions.md 102 and
+  153).
   `ch_p256_key_from_pem` computes a key's point on the wide P-256 field
   under `CH_CPU_CONSTANT_TIME_MULTIPLY`, as `p256_sign_cpu` signs
   (docs/decisions.md 131). CBMC cannot read an
