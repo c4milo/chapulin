@@ -25,7 +25,7 @@ reason: the parser counts the extensions after the walk and the frozen
             return rc;
         }
     }
-    add_frozen_extensions(&p.frozen, exts, exts_len);
+    add_frozen_extensions(cpu, &p.frozen, exts, exts_len);
 --- new
     // One extension of each type per block (rfc9846.txt:1673-1674);
     // illegal_parameter is this design's choice under §6
@@ -39,7 +39,7 @@ reason: the parser counts the extensions after the walk and the frozen
             return rc;
         }
     }
-    add_frozen_extensions(&p.frozen, exts, exts_len);
+    add_frozen_extensions(cpu, &p.frozen, exts, exts_len);
     if (srv_ext_over_max(exts, exts_len)) {
         return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
     }

@@ -445,16 +445,20 @@ srv_kex 94.7
 # statements of srv_ext_over_max. Its return of 1 runs in the fourth
 # pass of the loop, the last pass that srv_ext_over_max.0:4 lets the
 # cover run take.
-# No path from main reaches the other 304 locations. Of those, 237 are
+# No path from main reaches the other 308 locations. Of those, 241 are
 # the ClientHello walk in srv_parser.c and the helpers that it calls in
 # srv_parser_ext.h and suite.h. The srv_parser_walk and srv_parser_frozen
 # harnesses prove them. 61 are rb_u24 and the wbuf writer in buf.c,
 # which the buf harness proves. The last 6 are the stubs of SHA-256 and
 # srv_read_extension in the harness, and ch_assert_fail.
-# With one location fewer, the harness reads 16.9%, below its floor.
+# With one location fewer, the harness reads 16.7%, below its floor.
 # With srv_ext_over_max.0:3, run 39118123345 read 62 of 367. The cover
 # run did not reach the return of 1.
-srv_parser_count 17.2
+# The floor fell from 17.2 to 17.0 when frozen_update and frozen_final
+# joined srv_parser.c (docs/decisions.md 149). Their 4 locations are in
+# the walk, which no path from main reaches. Run 40158675820 read 63 of
+# 371.
+srv_parser_count 17.0
 srv_parser_ext 72.4
 srv_parser_frozen 40.7
 srv_parser_walk 78.6

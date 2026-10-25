@@ -437,6 +437,11 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 // its EncryptedExtensions carries no early_data, which is the rejection
 // signal (rfc9846.txt:2426-2428).
 //
+// cpu is the session's ch_cfg.cpu, which a host object hands to
+// sha256.h's entries for the frozen digest: the digest runs on the
+// SHA-256 instructions where cpu holds CH_CPU_CONSTANT_TIME_SHA256. A
+// device object reads no value.
+//
 // Requires n readable bytes at body and a ch the caller has zeroed.
 // offered and offered_count are cfg.alpn_protocols and cfg.alpn_count,
 // the protocol names the caller offers; passing NULL and 0 offers none
@@ -448,7 +453,7 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 // description above. It writes no partial verdict: a refused message
 // leaves ch holding whatever the walk reached, and the session dies, so
 // no caller reads it.
-int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
+int srv_parse_client_hello(uint32_t cpu, const uint8_t *body, size_t n, client_hello *ch,
                            const ch_alpn_protocol *offered, size_t offered_count, uint8_t *alert);
 
 #endif // CH_ROLE_SERVER

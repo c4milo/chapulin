@@ -4362,19 +4362,23 @@ last `ROLE=server` stub, as the entry said it would.
   `p256_sign_cpu`, which a host object's server signs through, hands
   the session's value to each HMAC of its RFC 6979 nonce
   (decision 102). A server hands its value to the SHA-256 of its
-  CertificateVerify signed content (decision 145). A `TRUST=webpki` client hands its value to the hash
+  CertificateVerify signed content (decision 145), and to the SHA-256
+  of each ClientHello's frozen digest (decision 149). A `TRUST=webpki`
+  client hands its value to the hash
   of its configuration and to the binding of each ticket it receives or
   presents (decision 132). The binding's key is the ticket's PSK.
-  Twenty-one violations break those rules.
+  Twenty-two violations break those rules.
   `inv16-sha256-instructions-without-bit` inverts the SHA-256 predicate
   and `inv16-sha256-reads-sha512-bit` reads another hash's bit;
   `inv16-hkdf-extract-entry-inverted` and
   `inv16-ks-exporter-entry-inverted` each invert one entry,
   `inv16-record-keys-direction-under-every-bit` keys a record direction
   under a value with every bit, `inv16-p256-sign-nonce-on-portable`
-  hands the nonce's HMACs 0 in place of the session's value, and
+  hands the nonce's HMACs 0 in place of the session's value,
   `inv16-srv-signed-content-on-portable` hashes the signed content on
-  `sha256.c`. The counting tests catch those seven.
+  `sha256.c`, and `inv16-srv-client-hello-digest-on-portable` computes
+  the frozen digest on `sha256.c`. The counting tests catch those
+  eight.
   `inv16-p256-sign-nonce-midstates-stale` keeps the HMAC midstates of an
   old K in the nonce generator, and the RFC 6979 vectors of
   `bin/p256_sign_test` catch it (decision 147).

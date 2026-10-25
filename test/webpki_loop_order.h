@@ -103,7 +103,7 @@ static void check_offer_orders(void) {
         client_hello ch;
         memset(&ch, 0, sizeof ch);
         uint8_t alert = 0;
-        CHECK(srv_parse_client_hello(body, n, &ch, NULL, 0, &alert) == CH_OK);
+        CHECK(srv_parse_client_hello(0, body, n, &ch, NULL, 0, &alert) == CH_OK);
         selection sel;
         CHECK(select_by_default_order(&ch, &sel) == CH_OK);
         CHECK(sel.suite == ORDER_DEFAULT_PICK);

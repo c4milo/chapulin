@@ -140,7 +140,7 @@ int main(void) {
     int duplicate = srv_ext_duplicate(block, n);
     __CPROVER_assert(duplicate == 0 || duplicate == 1, "the duplicate answer is 0 or 1");
     sha256 s;
-    add_frozen_extensions(&s, block, n);
+    add_frozen_extensions(nondet_u32(), &s, block, n);
 
     for (size_t k = 0; k < calls; k++) {
         __CPROVER_assert(call_at[k] >= block && call_len[k] <= n &&

@@ -23,12 +23,14 @@
 // section, the alert and the return on one line.
 //
 // The frozen digest takes one sha256_update over the head as the walk
-// reads it. Once the walk has accepted every extension, add_frozen_extensions
-// adds one sha256_update per extension the digest covers, over its type,
-// length and body as they sit in the message, in ascending type order
-// rather than in the order the client sent them. frozen_covers names the
-// five extensions the digest leaves out, and docs/decisions.md 59 states
-// why the order is the types' and not the wire's.
+// reads it. Once the walk has accepted every extension,
+// add_frozen_extensions adds one sha256_update per extension the digest
+// covers, over its type, length and body as they sit in the message, in
+// ascending type order rather than in the order the client sent them.
+// frozen_covers names the five extensions the digest leaves out, and
+// docs/decisions.md 59 states why the order is the types' and not the
+// wire's. Each update and the final run on the path the session's
+// ch_cfg.cpu picks, through frozen_update and frozen_final.
 #include "srv_parser.h"
 #include "srv_parser_ext.h"
 
@@ -88,10 +90,32 @@ static int frozen_covers(uint16_t type) {
            type != EXT_PRE_SHARED_KEY && type != EXT_PADDING;
 }
 
+// One update and the final of the frozen digest, on the path cpu picks:
+// sha256.h's entries in a host object, and sha256.c's calls in a device
+// object, which holds one SHA-256 and reads no value. The bytes are the
+// client's and are public (docs/decisions.md 149).
+static void frozen_update(uint32_t cpu, sha256 *frozen, const uint8_t *in, size_t n) {
+#ifdef CH_CPU_RUNTIME
+    sha256_update_cpu(cpu, frozen, in, n);
+#else
+    (void)cpu;
+    sha256_update(frozen, in, n);
+#endif
+}
+
+static void frozen_final(uint32_t cpu, sha256 *frozen, uint8_t out[SHA256_LEN]) {
+#ifdef CH_CPU_RUNTIME
+    sha256_final_cpu(cpu, frozen, out);
+#else
+    (void)cpu;
+    sha256_final(frozen, out);
+#endif
+}
+
 // The fields before the extension block, §4.2.2's legacy_version
 // through legacy_compression_methods, and the head's share of the
 // frozen digest.
-static int parse_head(rbuf *r, const uint8_t *body, hello_parse *p) {
+static int parse_head(uint32_t cpu, rbuf *r, const uint8_t *body, hello_parse *p) {
     client_hello *ch = p->ch;
     // legacy_version is read and not judged. §4.2.2 has a server that
     // sees supported_versions ignore it (rfc9846.txt:1306-1313), and a
@@ -134,7 +158,7 @@ static int parse_head(rbuf *r, const uint8_t *body, hello_parse *p) {
         return srv_refuse(p->alert, ALERT_ILLEGAL_PARAMETER);
     }
     // Every byte read so far is frozen across a HelloRetryRequest.
-    sha256_update(&p->frozen, body, p->n - rb_left(r));
+    frozen_update(cpu, &p->frozen, body, p->n - rb_left(r));
     return CH_OK;
 }
 
@@ -256,7 +280,7 @@ static const uint8_t *next_covered(const uint8_t *exts, size_t n, uint32_t lowes
 // (n + 1) * n header reads. srv_parse_client_hello has refused a block
 // of more than SRV_CLIENT_HELLO_EXT_MAX extensions before it calls this,
 // and docs/decisions.md 59 gives the worst case that leaves.
-static void add_frozen_extensions(sha256 *frozen, const uint8_t *exts, size_t n) {
+static void add_frozen_extensions(uint32_t cpu, sha256 *frozen, const uint8_t *exts, size_t n) {
     // The smallest type the next pass may add. It is 32 bits wide, so the
     // pass after type 0xffff looks above every type and finds none.
     uint32_t lowest_type = 0;
@@ -267,7 +291,7 @@ static void add_frozen_extensions(sha256 *frozen, const uint8_t *exts, size_t n)
         if (ext == NULL) {
             return;
         }
-        sha256_update(frozen, ext, 4 + len);
+        frozen_update(cpu, frozen, ext, 4 + len);
         lowest_type = (uint32_t)type + 1;
     }
 }
@@ -348,7 +372,7 @@ static int check_required(const client_hello *ch, uint8_t *alert) {
     return CH_OK;
 }
 
-int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
+int srv_parse_client_hello(uint32_t cpu, const uint8_t *body, size_t n, client_hello *ch,
                            const ch_alpn_protocol *offered, size_t offered_count, uint8_t *alert) {
     hello_parse p;
     p.n = n;
@@ -363,7 +387,7 @@ int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
 
     rbuf r;
     rb_init(&r, body, n);
-    int rc = parse_head(&r, body, &p);
+    int rc = parse_head(cpu, &r, body, &p);
     if (rc != CH_OK) {
         return rc;
     }
@@ -408,8 +432,8 @@ int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
             return rc;
         }
     }
-    add_frozen_extensions(&p.frozen, exts, exts_len);
-    sha256_final(&p.frozen, ch->frozen);
+    add_frozen_extensions(cpu, &p.frozen, exts, exts_len);
+    frozen_final(cpu, &p.frozen, ch->frozen);
     return check_required(ch, alert);
 }
 

@@ -39,7 +39,8 @@
 // and keysched.h's, at each hash length; p256_sign_cpu, whose RFC 6979
 // nonce runs HMAC-SHA-256; transcript.h's two; in a server role
 // srv_hash_signed_content, the SHA-256 of a CertificateVerify's signed
-// content (test/hash_runtime_srv.h); a record direction's keying
+// content, and srv_parse_client_hello, whose frozen digest is a SHA-256
+// of the ClientHello (test/hash_runtime_srv.h); a record direction's keying
 // and its KeyUpdate, which read the direction's cpu, under each suite; in
 // a QUIC build a level's keys, their update and an Initial packet
 // (test/hash_runtime_quic.h); and in a TRUST=webpki build webpki_ticket.h's
@@ -380,6 +381,9 @@ static const row fixed_rows[] = {
     {"sha384_of_cpu",                          row_sha384_of                },
     {"hmac_sha256_cpu",                        row_hmac_sha256              },
     {"p256_sign_cpu",                          row_p256_sign                },
+#ifdef CH_ROLE_SERVER
+    {"srv_parse_client_hello",                 row_srv_parse_client_hello   },
+#endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     {"quic_initial_seal",                      row_quic_initial             },
 #endif

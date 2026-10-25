@@ -2109,7 +2109,9 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   duplicate check and the frozen digest's walk run real inside it, and
   never over more extensions than `SRV_CLIENT_HELLO_EXT_MAX`, which the
   harness takes at 4 (`docs/decisions.md` 59). SHA-256 is a stub that
-  keeps no context.
+  keeps no context. The session's `ch_cfg.cpu` is unconstrained, and a
+  harness compiles the portable path, which reads no value
+  (`docs/decisions.md` 149).
 - **Bound:** messages ≤ 64 B, five empty extensions after the head, one
   past the harness's bound.
 
@@ -5450,14 +5452,15 @@ A call that takes no value runs no hash instruction. Its SHA-256 runs
 `sha256.c`, and its SHA-384 `sha512.c`, which in a host object is the
 first arm of [SHA-512 in a host object](#sha-512-in-a-host-object). The
 DRBG, the certificate verifiers, the RSA signer, `p256_sign`, the cookie
-and token MACs, an SPKI pin's hash,
-the server's hash of a ClientHello's frozen bytes and the webpki ticket
-binding make such calls, and each starts and ends its context on that
+and token MACs, an SPKI pin's hash and the webpki ticket binding make
+such calls, and each starts and ends its context on that
 path. `p256_sign_cpu`, which a server signs a CertificateVerify through,
 takes the session's value and hands it to `sha256.h`'s entries for each
 SHA-256 of the RFC 6979 nonce's HMACs (decisions 102 and 147). A
 server's `srv_hash_signed_content` takes the value as well, for the
-SHA-256 of the CertificateVerify signed content (decision 145).
+SHA-256 of the CertificateVerify signed content (decision 145). So does
+`srv_parse_client_hello`, for the SHA-256 of a ClientHello's frozen
+bytes (decision 149).
 
 CBMC cannot unwind an intrinsic, so no harness compiles `sha256_hw.c` or
 `sha512_hw.c`, and the [sha256](#sha256), [sha512](#sha512),

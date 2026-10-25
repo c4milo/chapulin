@@ -185,8 +185,7 @@ int hsr_transcript_hash(handshake_state *s, size_t hash_len, uint8_t *out) {
     return CH_OK;
 }
 
-// Everything srv_parse_client_hello writes, each member through its own
-// type.
+// Everything srv_parse_client_hello writes, each member by its own type.
 static void fill_hello(client_hello *ch) {
     fill_nondet(ch->random, sizeof ch->random);
     fill_nondet(ch->session_id, sizeof ch->session_id);
@@ -213,8 +212,9 @@ static void fill_hello(client_hello *ch) {
     fill_nondet(ch->frozen, sizeof ch->frozen);
 }
 
-int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
+int srv_parse_client_hello(uint32_t cpu, const uint8_t *body, size_t n, client_hello *ch,
                            const ch_alpn_protocol *offered, size_t offered_count, uint8_t *alert) {
+    (void)cpu;
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(body, n), "parse: body readable");
     __CPROVER_assert(__CPROVER_w_ok(ch, sizeof *ch), "parse: hello writable");
     (void)offered;

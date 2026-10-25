@@ -224,7 +224,7 @@ static int parse_with(const uint8_t *body, size_t n, const ch_alpn_protocol *off
                       size_t count) {
     memset(&parsed, 0, sizeof parsed);
     parsed_alert = ALERT_SEED;
-    return srv_parse_client_hello(body, n, &parsed, offered, count, &parsed_alert);
+    return srv_parse_client_hello(0, body, n, &parsed, offered, count, &parsed_alert);
 }
 
 static int parse(const uint8_t *body, size_t n) {

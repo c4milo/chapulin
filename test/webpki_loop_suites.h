@@ -144,7 +144,7 @@ static void check_h3spec_offer(void) {
     client_hello ch;
     memset(&ch, 0, sizeof ch);
     uint8_t alert = 0;
-    CHECK(srv_parse_client_hello(body, n, &ch, NULL, 0, &alert) == CH_OK);
+    CHECK(srv_parse_client_hello(0, body, n, &ch, NULL, 0, &alert) == CH_OK);
     CHECK(ch.suites == (SRV_SUITE_AES_128_GCM | SRV_SUITE_AES_256_GCM));
 
     selection sel;

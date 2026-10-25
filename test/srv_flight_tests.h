@@ -40,18 +40,18 @@ static int send_rc; // nonzero makes the next send fail
 static ch_tls sess;
 static handshake_state hs;
 
-// The message a handler is handed, what the stand-in parser reports, and
-// the result it reports it with. The two client_hello objects are not
-// one: srv_read_client_hello zeroes its output before the parse, so a
-// case that scripted the parser through that same object would erase its
-// own script.
+// The message a handler is handed, what the stand-in parser reports, and the result it
+// reports it with. The two client_hello objects are not one: srv_read_client_hello zeroes
+// its output before the parse, so a case that scripted the parser through that same
+// object would erase its own script.
 static client_hello flight_hello;
 static client_hello parse_result;
 static int parse_rc;
 static uint8_t parse_alert;
 
-int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
+int srv_parse_client_hello(uint32_t cpu, const uint8_t *body, size_t n, client_hello *ch,
                            const ch_alpn_protocol *offered, size_t offered_count, uint8_t *alert) {
+    (void)cpu;
     (void)body;
     (void)n;
     (void)offered;

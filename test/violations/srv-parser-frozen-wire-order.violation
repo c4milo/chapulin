@@ -12,7 +12,7 @@ reason: the frozen digest adds the covered extensions in the order the client
   complete the handshake.
 
 --- old
-    add_frozen_extensions(&p.frozen, exts, exts_len);
+    add_frozen_extensions(cpu, &p.frozen, exts, exts_len);
 --- new
     (void)add_frozen_extensions;
     rbuf wire;
@@ -23,6 +23,6 @@ reason: the frozen digest adds the covered extensions in the order the client
         size_t len = rb_u16(&wire);
         rb_skip(&wire, len);
         if (frozen_covers(type)) {
-            sha256_update(&p.frozen, ext, 4 + len);
+            frozen_update(cpu, &p.frozen, ext, 4 + len);
         }
     }

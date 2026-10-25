@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "cpu.h"
 #include "ct.h"
 #include "keylog.h"
 #include "keysched.h"
@@ -39,8 +40,7 @@ void srv_begin(handshake_state *h) {
     transcript_init(&h->t->transcript);
 }
 
-// Copies the two values the session keeps past the hello, which sits in
-// a buffer the next record overwrites.
+// Copies the two values the session keeps past the hello, which the next record overwrites.
 static void copy_hello_fields(ch_tls *t, const client_hello *ch) {
     t->session_id_len = ch->session_id_len;
     memcpy(t->session_id, ch->session_id, ch->session_id_len);
@@ -73,8 +73,8 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch) {
     memset(ch, 0, sizeof *ch);
     // The parser overwrites this on every refusal it makes.
     h->alert = ALERT_DECODE_ERROR;
-    rc = srv_parse_client_hello(raw + 4, raw_len - 4, ch, t->cfg.alpn_protocols, t->cfg.alpn_count,
-                                &h->alert);
+    rc = srv_parse_client_hello(CH_CFG_CPU(t->cfg), raw + 4, raw_len - 4, ch, t->cfg.alpn_protocols,
+                                t->cfg.alpn_count, &h->alert);
     if (rc != CH_OK) {
         return rc;
     }

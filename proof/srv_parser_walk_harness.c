@@ -112,7 +112,7 @@ int main(void) {
     uint8_t seed = nondet_u8();
     uint8_t alert = seed;
 
-    int rc = srv_parse_client_hello(msg, n, &ch, NULL, 0, &alert);
+    int rc = srv_parse_client_hello(nondet_u32(), msg, n, &ch, NULL, 0, &alert);
     __CPROVER_assert(rc == CH_OK || rc == CH_EPROTO, "the parser accepts or returns CH_EPROTO");
     if (rc == CH_OK) {
         __CPROVER_assert(alert == seed, "an accepted hello keeps the caller's seed");

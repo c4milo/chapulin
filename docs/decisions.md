@@ -13126,3 +13126,28 @@ does nothing more.
     per HMAC, whatever the candidates were.
     `inv16-p256-sign-nonce-midstates-stale` keeps the midstates of an old
     K, and the RFC 6979 vectors catch it.
+
+149. **A server computes each ClientHello's frozen digest on the path
+    its session's `ch_cfg.cpu` picks.** `srv_parse_client_hello` ran
+    `sha256.c` for `client_hello.frozen` in every session. So a session
+    that stated `CH_CPU_CONSTANT_TIME_SHA256` still ran one portable
+    SHA-256 over each ClientHello. The count of
+    [#188](https://github.com/c4milo/chapulin/issues/188) found it, and
+    Camilo approved the fix on 2026-10-25. Entry 145 made the same change
+    for the CertificateVerify signed content.
+
+    - **The rule.** `srv_parse_client_hello` takes the value first.
+      `frozen_update` and `frozen_final` hand it to `sha256.h`'s entries
+      in a host object, and a device object reads no value.
+      `srv_read_client_hello` passes `CH_CFG_CPU` of the session's
+      configuration.
+    - **Constant time.** The digest covers the client's bytes, which are
+      public. The bit states the instructions' timing, and every other
+      SHA-256 of the session already rests on it.
+
+    `bin/hash_runtime_exporter_test` now links `srv_parser.c` and
+    `srv_parser_ext.c`. Its `srv_parse_client_hello` row parses one
+    hello and counts the digest's calls under each value.
+    `inv16-srv-client-hello-digest-on-portable` fails that count. The
+    `srv_parser_walk` and `srv_parser_frozen` harnesses pass an
+    unconstrained value, and their portable path reads none.

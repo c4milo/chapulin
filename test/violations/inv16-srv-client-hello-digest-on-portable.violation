@@ -1,0 +1,38 @@
+invariant: INV-16
+file: srv_parser.c
+catches: hash_runtime_exporter_test
+reason: srv_parse_client_hello computes a ClientHello's frozen digest on
+  sha256.c whatever the session's ch_cfg.cpu states, so a server that
+  stated the SHA-256 instructions runs that hash on the portable code.
+  Both paths compute the same digest, so no vector and no cookie check
+  fails. bin/hash_runtime_exporter_test's srv_parse_client_hello row
+  counts the calls on the wrong path.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    sha256_update_cpu(cpu, frozen, in, n);
+#else
+    (void)cpu;
+    sha256_update(frozen, in, n);
+#endif
+}
+
+static void frozen_final(uint32_t cpu, sha256 *frozen, uint8_t out[SHA256_LEN]) {
+#ifdef CH_CPU_RUNTIME
+    sha256_final_cpu(cpu, frozen, out);
+#else
+--- new
+#ifdef CH_CPU_RUNTIME
+    (void)cpu;
+    sha256_update(frozen, in, n);
+#else
+    (void)cpu;
+    sha256_update(frozen, in, n);
+#endif
+}
+
+static void frozen_final(uint32_t cpu, sha256 *frozen, uint8_t out[SHA256_LEN]) {
+#ifdef CH_CPU_RUNTIME
+    (void)cpu;
+    sha256_final(frozen, out);
+#else
