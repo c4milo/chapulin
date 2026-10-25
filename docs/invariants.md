@@ -1196,8 +1196,8 @@ last `ROLE=server` stub, as the entry said it would.
   lies in [0, 2^51 + 2^20), and every word of `x` lies in [0, 2^51).
   Every product the field computes takes a first operand a under 2^55
   and a second b under 2^60, so every product is under
-  2^(width_of(a) + width_of(b)), where width_of(x) is the least k from
-  51 to 60 with x < 2^k (`proof/x25519_wide_bound.h`), and so under
+  2^(width_of(a) + width_of(b)), where width_of(x) is the least k of 53,
+  54, 55, 59 and 60 with x < 2^k (`proof/x25519_wide_bound.h`), and so under
   2^115. Columns 1 to 4 of `mul` and `sqr` on operands whose words are
   under 2^54 are under 2^115, and no unsigned value wraps. On the real
   multiply the bounds are tighter: the same `mul` and `sqr` make every

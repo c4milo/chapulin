@@ -3,10 +3,16 @@
 // ct_mul128 meets. Both files include it, so the stub and its proof read
 // one definition.
 //
-// width_of(x) is the least k from 51 to 60 with x < 2^k, for an x under
-// 2^60. A product of a and b is under 2^(width_of(a) + width_of(b)). Each
-// comparison is of x shifted by a constant, so the solver reads it as a test
-// of x's top bits (docs/proofs.md).
+// width_of(x) is the least k of 53, 54, 55, 59 and 60 with x < 2^k, for an
+// x under 2^60. A product of a and b is under 2^(width_of(a) +
+// width_of(b)). Each comparison is of x shifted by a constant, so the solver
+// reads it as a test of x's top bits (docs/proofs.md).
+//
+// The five widths are the fewest that keep the columns below under 2^115.
+// Every k from 51 to 60 gave the same proofs, and x25519_wide_invert took
+// 271 s and 4.2 GB on a GitHub runner under it, where these five take 131 s
+// and 3.5 GB: in invert() every word is under 2^53, so every operand but a
+// multiple of 19 or 38 takes one width (docs/decisions.md 152).
 //
 // Why the contract needs it: x25519_wide.c's carry_columns() adds the
 // carries out of columns 1 to 4 as 64-bit words, and the fold of column 4's
@@ -23,10 +29,8 @@
 #include <stdint.h>
 
 static unsigned width_of(uint64_t x) {
-    return 51U + (unsigned)((x >> 51) != 0) + (unsigned)((x >> 52) != 0) +
-           (unsigned)((x >> 53) != 0) + (unsigned)((x >> 54) != 0) + (unsigned)((x >> 55) != 0) +
-           (unsigned)((x >> 56) != 0) + (unsigned)((x >> 57) != 0) + (unsigned)((x >> 58) != 0) +
-           (unsigned)((x >> 59) != 0);
+    return 53U + (unsigned)((x >> 53) != 0) + (unsigned)((x >> 54) != 0) +
+           4U * (unsigned)((x >> 55) != 0) + (unsigned)((x >> 59) != 0);
 }
 
 #endif

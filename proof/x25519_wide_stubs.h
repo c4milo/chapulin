@@ -52,7 +52,7 @@ uint64_t nondet_u64(void);
 static ct_u128 stub_mul128(uint64_t a, uint64_t b) {
     __CPROVER_assert(a < MUL128_FIRST, "ct_mul128's first operand is under 2^55");
     __CPROVER_assert(b < MUL128_SECOND, "ct_mul128's second operand is under 2^60");
-    // The high word holds width_of(a) + width_of(b) - 64 bits, from 38 to 51.
+    // The high word holds width_of(a) + width_of(b) - 64 bits, from 42 to 51.
     uint64_t high = nondet_u64() >> (128U - width_of(a) - width_of(b));
     return ((ct_u128)high << 64) | nondet_u64();
 }

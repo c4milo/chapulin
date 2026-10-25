@@ -13466,12 +13466,17 @@ does nothing more.
       ladder proofs had bounded each product by 2^115, and five such
       products do not sum under 2^115. `proof/x25519_wide_bound.h` now
       bounds a product of a and b by 2^(width_of(a) + width_of(b)), where
-      width_of(x) is the least k from 51 to 60 with x < 2^k, and
-      `x25519_wide_mul128` proves the real multiply meets it. Under it
+      width_of(x) is the least k of 53, 54, 55, 59 and 60 with x < 2^k,
+      and `x25519_wide_mul128` proves the real multiply meets it. Under it
       columns 1 to 4 stay under 2^115. Column 0 holds four products of a
       word under 2^54 by 19 times a word, which the contract bounds by
       2^115 + 2^108, so its carry stays 128 bits wide. That costs about
-      7,100 instructions on the N2.
+      7,100 instructions on the N2. The contract costs proof time: on a
+      GitHub runner `x25519_wide_invert` takes 131 s and 3.5 GB where it
+      took 22 s and 1.5 GB, and `x25519_wide_step`, `x25519_wide_tail`
+      and `x25519_wide_edwards` take 9, 6 and 15 s where they took 3, 4
+      and 7 s. With every width from 51 to 60 the inversion took 271 s
+      and 4.2 GB.
     - **In place.** Out of line, each call of `mul` or `sqr` passed its
       operands through memory, and its callers kept their values in the
       stack frame across it. The host object holds 15 KB more code on

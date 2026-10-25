@@ -2437,17 +2437,26 @@ launch fast full x25519_ops 260 ""
 #   x25519_wide_ops     1613 properties, 2 s, 44 MB
 #   x25519_wide_step    1509 properties, 6 s, 224 MB
 #   x25519_wide_tail    1511 properties, 4 s, 141 MB
-#   x25519_wide_invert  1487 properties, 19 s, 2.7 GB, hence fast:3
+#   x25519_wide_invert  1487 properties, 19 s, 2.7 GB, then fast:3
 # One step over the real products instead of the contract also converged,
 # in 64 s at 4.5 GB, past what this tier admits; it has no line, and the
 # contract's composition is what x25519_wide_step states.
+# docs/decisions.md 152 bounds a product under the contract by its
+# operands' widths (proof/x25519_wide_bound.h), so the proofs see each carry
+# that carry_columns narrows to a word. On a GitHub runner (ubuntu-24.04,
+# the same cbmc and kissat), /usr/bin/time -v read these lines before and
+# after it:
+#   x25519_wide_step     3 s, 127 MB, then  9 s, 277 MB
+#   x25519_wide_tail     4 s,  99 MB, then  6 s, 150 MB
+#   x25519_wide_invert  22 s, 1.5 GB, then 131 s, 3.5 GB, hence fast:4
+#   x25519_wide_edwards  7 s, 203 MB, then 15 s, 532 MB
 launch fast full x25519_wide_mul128 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full x25519_wide_mul 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full x25519_wide_sqr 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full x25519_wide_ops 256 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full x25519_wide_step 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full x25519_wide_tail 41 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast:4 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # The wide field's key generation, x25519_wide_edwards.h (docs/decisions.md
 # 144), under the same flags. x25519_wide_select runs recode() and
 # select_entry() on their real bodies and the shipped table: the digits add
