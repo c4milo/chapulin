@@ -91,7 +91,7 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1872 |
 | peak stack, `ch_write` / `ch_close` | 1520 / 896 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 12736 |
-| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12912 |
+| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12896 |
 
 ### What the larger builds pay for
 
@@ -144,7 +144,7 @@ pruned from the call graph (`STACK_PRUNE=rsa_sign64_pss`) the deepest
 chain is the encapsulation to the client's key into K-PKE encrypt and
 Keccak, at 10,464 bytes. With the encapsulation pruned as well
 (`STACK_PRUNE=rsa_sign64_pss,srv_kex_share`) it is the ECDSA signer on
-the wide P-256 field, at 5,744 bytes. After each wide operation,
+the wide P-256 field, at 5,936 bytes. After each wide operation,
 `p256_wide_wipe_below` writes zero over the stack below it, in a frame
 of 3,120 bytes. A device object holds neither the 64-bit signer nor the
 wide field: its `ch_srv_accept` peaks at 10,432 bytes, through the
