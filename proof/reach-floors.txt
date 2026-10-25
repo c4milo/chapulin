@@ -104,7 +104,8 @@
 #   - mlkem_basemul reaches 37 of 285: the 9 of its own file, and the 28
 #     of mlk_poly_basemul and the three functions below it.
 #   - x25519_wide_sqr reaches 48 of 287: the 8 of main, and the 40 of sqr
-#     and the two functions below it.
+#     and the two functions below it. It reaches 53 of 436 since
+#     docs/decisions.md 152, for the reason given above its floor below.
 #   - rsa_avx2_number reaches 64 of 549: the 27 of main and the stubs that
 #     write its inputs, and the 37 of the three conversions and the
 #     functions below them. No lane operation runs.
@@ -503,19 +504,29 @@ x25519_mul_inputs_alias 26.6
 x25519_ops 49.5
 x25519_sqr 26.6
 x25519_tail 52.2
-# x25519_wide_edwards and x25519_wide_select took their floors from GitHub
-# run 40142481095 of 2026-10-24, measured with proof/coverage.py --reach
-# --only on the nightly's runner image. x25519_wide_select compiles the
-# whole of x25519_wide.c and calls recode() and select_entry() alone.
-x25519_wide_edwards 54.9
-x25519_wide_invert 52.6
-x25519_wide_mul 25.0
-x25519_wide_mul128 66.7
-x25519_wide_ops 46.7
-x25519_wide_select 22.7
-x25519_wide_sqr 16.7
-x25519_wide_step 58.3
-x25519_wide_tail 57.5
+# x25519_wide_edwards and x25519_wide_select took their first floors from
+# GitHub run 40142481095 of 2026-10-24, measured with proof/coverage.py
+# --reach --only on the nightly's runner image. x25519_wide_select compiles
+# the whole of x25519_wide.c and calls recode() and select_entry() alone.
+# Every x25519_wide floor below is from GitHub run 40209301011 of
+# 2026-10-25, at docs/decisions.md 152 (f96c5192), measured the same way.
+# Decision 148 put the key generation into x25519_wide.c, 124 locations
+# that six of these harnesses compile and do not call, and their shares
+# fell under the floors of 2026-10-18 with no location less reached. Run
+# 40213592767 counted each before and after decision 152, which reaches
+# more: x25519_wide_step 183 of 438 then 210 of 467, x25519_wide_tail 187
+# of 449 then 196 of 478, x25519_wide_invert 154 of 417 then 163 of 446,
+# x25519_wide_ops 171 of 490 then 196 of 515, x25519_wide_mul 72 of 412
+# then 77 of 437, and x25519_wide_sqr 48 of 411 then 53 of 436.
+x25519_wide_edwards 57.6
+x25519_wide_invert 36.5
+x25519_wide_mul 17.6
+x25519_wide_mul128 80.0
+x25519_wide_ops 38.1
+x25519_wide_select 23.4
+x25519_wide_sqr 12.2
+x25519_wide_step 45.0
+x25519_wide_tail 41.0
 x509_pem 55.5
 x509_pem_key 34.0
 x509ca 75.5
