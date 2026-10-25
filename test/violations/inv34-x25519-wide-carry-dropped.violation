@@ -10,8 +10,8 @@ reason: dropping carry_columns' last carry leaves all of r0 in word 0 and
   test-invariants-proof-backed job with the other proof-backed mutants.
 
 --- old
-    o[0] = (uint64_t)(r0 & WORD_MASK);
-    o[1] = (uint64_t)(t1 & WORD_MASK) + (uint64_t)(r0 >> WORD_BITS);
+    o[0] = r0 & WORD_MASK;
+    o[1] = ((uint64_t)t1 & WORD_MASK) + (r0 >> WORD_BITS);
 --- new
-    o[0] = (uint64_t)r0;
-    o[1] = (uint64_t)(t1 & WORD_MASK);
+    o[0] = r0;
+    o[1] = (uint64_t)t1 & WORD_MASK;

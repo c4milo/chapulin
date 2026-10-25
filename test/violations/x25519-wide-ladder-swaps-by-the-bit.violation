@@ -1,0 +1,13 @@
+invariant: INV-16
+file: x25519_wide.c
+catches: x25519_equiv_test
+reason: each step swaps the points once, by the step's scalar bit exclusive-or
+  the bit of the step before, since the step no longer swaps them back at
+  its end (docs/decisions.md 152). A swap by the bit alone leaves them
+  swapped after every step whose bit is 1, which changes the result for
+  nearly every scalar, and the comparison with the 16-word field sees it.
+
+--- old
+        step(a, b, c, d, e, f, x, bit ^ r);
+--- new
+        step(a, b, c, d, e, f, x, r);

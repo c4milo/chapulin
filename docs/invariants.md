@@ -1194,19 +1194,25 @@ last `ROLE=server` stub, as the entry said it would.
   between the ladder's operations
   words 0, 2, 3 and 4 of `a`, `b`, `c` and `d` lie in [0, 2^51), word 1
   lies in [0, 2^51 + 2^20), and every word of `x` lies in [0, 2^51).
-  Every product the field computes takes a first operand under 2^55 and
-  a second under 2^60, so every product is under 2^115, and no unsigned
-  value wraps. On the real multiply the bounds are tighter: `mul` and
-  `sqr` on operands whose words are under 2^54 make every product under
-  38 * 2^108, every column sum under 77 * 2^108 (under 2^115) and every
-  carry between columns under 2^64, and leave word 1 under
-  2^51 + 2^13. The field computes in `uint64_t` and `unsigned __int128`,
+  Every product the field computes takes a first operand a under 2^55
+  and a second b under 2^60, so every product is under
+  2^(width_of(a) + width_of(b)), where width_of(x) is the least k from
+  51 to 60 with x < 2^k (`proof/x25519_wide_bound.h`), and so under
+  2^115. Columns 1 to 4 of `mul` and `sqr` on operands whose words are
+  under 2^54 are under 2^115, and no unsigned value wraps. On the real
+  multiply the bounds are tighter: the same `mul` and `sqr` make every
+  product under 38 * 2^108, every column sum under 77 * 2^108 (under
+  2^115), column 4 under 5 * 2^108 and every carry between columns under
+  2^64, and leave word 1 under 2^51 + 2^13. The field computes in `uint64_t` and `unsigned __int128`,
   where C defines every wrap, so a word that leaves these ranges does
   not fault: it computes a wrong value.
 - **Mechanism.** `carry_columns` keeps each column's low 51 bits and
-  carries the rest to the next column 128 bits wide, so no bit of a sum
-  is dropped; the top carry comes in at the bottom times 19 and the last
-  carry stops at word 1. `add` of two such results stays under 2^53.
+  carries the rest to the next column. Column 0's carry is 128 bits
+  wide. The other carries are words that `column_carry` computes with a
+  multiply of the high half by 2^13, which wraps for a column of 2^115 or
+  more, so a proof reports a dropped bit as a wrap (decision 152). The top
+  carry comes in at the bottom times 19, in a word, and the last carry
+  stops at word 1. `add` of two such results stays under 2^53.
   `sub` computes a + 2p - b, and a result of `mul` never has a word above
   2p's. `step()` applies at most one `add` or `sub` to a value before the
   next product takes it, so every operand the ladder hands a product is
@@ -1243,7 +1249,11 @@ last `ROLE=server` stub, as the entry said it would.
   subtracts a sum of two squares over 2p in the key generation's
   doubling, where a word of the sum can pass 2p's, and runs through
   `proof/prove-one.sh x25519_wide_edwards`.
-- See [decisions: Engineering](decisions.md#engineering), entry 52.
+  `inv34-x25519-wide-column-0-carry-narrowed` narrows column 0's carry to
+  a word, which the multiply contract cannot show is exact, and runs
+  through `proof/prove-one.sh x25519_wide_tail`.
+- See [decisions: Engineering](decisions.md#engineering), entries 52 and
+  152.
 
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 

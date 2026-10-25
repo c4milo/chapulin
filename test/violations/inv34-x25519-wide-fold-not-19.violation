@@ -9,6 +9,6 @@ reason: the carry out of the top column is worth 19 at the bottom because
   also object run only in the nightly's proof-backed job.
 
 --- old
-    ct_u128 r0 = (t0 & WORD_MASK) + (t4 >> WORD_BITS) * 19;
+    uint64_t r0 = ((uint64_t)t0 & WORD_MASK) + column_carry(t4) * 19;
 --- new
-    ct_u128 r0 = (t0 & WORD_MASK) + (t4 >> WORD_BITS) * 38;
+    uint64_t r0 = ((uint64_t)t0 & WORD_MASK) + column_carry(t4) * 38;

@@ -1,0 +1,18 @@
+invariant: INV-34
+file: x25519_wide.c
+catches: proof/prove-one.sh x25519_wide_tail
+reason: carry_columns adds column 0's carry in 128 bits because the multiply
+  contract cannot show that column 0 is under 2^115: it holds four products
+  of a word by 19 times a word, and over operand words under 2^54 the
+  contract bounds their sum by 2^115 + 2^108 (docs/decisions.md 152). The
+  real column is under 2^114.3, so the values stay right and the vectors
+  pass. Narrowed to a word through column_carry, the multiply by 2^13 wraps
+  under the contract, and x25519_wide_tail, whose operands reach 2^54,
+  reports it.
+
+--- old
+    t1 += t0 >> WORD_BITS;
+    t2 += column_carry(t1);
+--- new
+    t1 += column_carry(t0);
+    t2 += column_carry(t1);

@@ -415,6 +415,14 @@ def dispatch : List String → Option String
     let u ← hexArg? point
     guard (k.size == 32 && u.size == 32)
     return emit (Spec.X25519.scalarMult k u)
+  | ["x25519_ladder", scalar, point] => do
+    -- x25519_wide_ladder of x25519_wide.c: the ladder on the scalar's bytes as they come, with
+    -- no clamp. The ladder reads bits 254 down to 0, so bit 0 may be 1, and its last swap runs.
+    let k ← hexArg? scalar
+    let u ← hexArg? point
+    guard (k.size == 32 && u.size == 32)
+    return emit (Spec.X25519.encodeUCoordinate
+      (Spec.X25519.ladder (bytesToNatLE k) (Spec.X25519.decodeUCoordinate u)))
   | ["x25519_base", scalar] => do
     let k ← hexArg? scalar
     guard (k.size == 32)

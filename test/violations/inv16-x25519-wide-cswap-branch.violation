@@ -5,16 +5,27 @@ reason: cswap takes the secret scalar bit, and writing the swap as an if
   on that bit puts the bit on the control path of every ladder step. The
   values stay right, so the vectors, the equivalence binary and the
   proofs all pass; only the count of what the compiler emits sees it.
-  The pinned clang emits two more conditional branches for x25519_wide.c
-  on both 64-bit specs, 4 against the file's ceiling of 2.
+  The pinned clang emits three more conditional branches for
+  x25519_wide.c on both 64-bit specs: 11 against the file's ceiling of 8
+  on arm64, and 12 against 9 on x86-64.
 
 --- old
     uint64_t mask = (uint64_t)((int64_t)(bit << 63) >> 63);
-    for (size_t i = 0; i < 5; i++) {
-        uint64_t t = mask & (p[i] ^ q[i]);
-        p[i] ^= t;
-        q[i] ^= t;
-    }
+    uint64_t t0 = mask & (p[0] ^ q[0]);
+    uint64_t t1 = mask & (p[1] ^ q[1]);
+    uint64_t t2 = mask & (p[2] ^ q[2]);
+    uint64_t t3 = mask & (p[3] ^ q[3]);
+    uint64_t t4 = mask & (p[4] ^ q[4]);
+    p[0] ^= t0;
+    p[1] ^= t1;
+    p[2] ^= t2;
+    p[3] ^= t3;
+    p[4] ^= t4;
+    q[0] ^= t0;
+    q[1] ^= t1;
+    q[2] ^= t2;
+    q[3] ^= t3;
+    q[4] ^= t4;
 --- new
     if (bit != 0) {
         for (size_t i = 0; i < 5; i++) {

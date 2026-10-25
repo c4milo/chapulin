@@ -13408,3 +13408,126 @@ does nothing more.
     - **Pins kept in the profile, with the CNSA 2.0 algorithms around
       them.** An RSA or ECDSA verifier is the algorithm CNSA 2.0 retires.
       A build that offers it is not the profile.
+
+152. **The wide X25519 field's ladder swaps the points once a step, carries
+    columns 1 to 4 in 64-bit words, and runs its products in place.**
+    [#188](https://github.com/c4milo/chapulin/issues/188) set the goal on
+    2026-10-25: an X25519 shared secret in a host session that states its
+    multiply costs no more instructions than OpenSSL 3.6.4's on a
+    Neoverse-N2. `bench/handshake-n2.sh` counted 393,447 instructions for
+    chapulin and 380,382 for OpenSSL, whose arm64 build runs its C
+    `fe51_mul` code.
+
+    - **Where the instructions went.** A QEMU trace of one shared secret
+      on the Zig build for `neoverse_n2`, split by the function of each
+      instruction's source line: the 64x64->128 products 106,140,
+      `carry_columns` 102,427, the sums of products and the multiples of
+      19 in `mul` 75,933, the same in `sqr` 37,820, `cswap` 31,110,
+      `sub` 16,575, `add` 11,985, and the step and loop 9,487. By call
+      site, the 255 steps took 362,100 and the inversion 25,521. The
+      inversion is 6.5% of the total, so a binary GCD in its place could
+      remove at most about that much, and the gap was 13,065.
+    - **What OpenSSL does otherwise.** Its ladder is RFC 7748 section
+      5's: one conditional swap of each pair a step, by the step's bit
+      exclusive-or the bit before. Its `fe51_mul` takes each column's
+      carry as a 64-bit word and folds the top carry times 19 in a word.
+      The products, the squares, the multiply by the constant and the
+      inversion chain are the same as this field's.
+    - **The four changes.** Each figure is what the change removes from
+      the shared secret with the other three in place, on the N2 build,
+      under Zig's clang 21 for x86-64 and under gcc 13 for x86-64:
+
+      | change | Neoverse-N2 | x86-64, clang 21 | x86-64, gcc 13 |
+      | --- | --- | --- | --- |
+      | one swap of each pair a step | 9,140 | 16,511 | 21,345 |
+      | carries out of columns 1 to 4 and the fold in words | 13,112 | 27,169 | 45,069 |
+      | `add`, `sub` and `cswap` without loops | -281 | -1,275 | 32,975 |
+      | `mul`, `sqr` and `mul_a24` always in place | 11,318 | 62,201 | 44,001 |
+
+      gcc compiled the loops of `add`, `sub` and `cswap` to vector code
+      behind a test of whether the operands overlap. That test reads
+      addresses and not values, and the straight code needs none.
+    - **The swap.** The step no longer swaps the points back at its end,
+      and the next step's swap is by its own bit exclusive-or the bit
+      before it. After the last step a swap by bit 0 restores the order. A
+      clamped scalar's bit 0 is 0, so `x25519_wide` never needs that
+      swap, but `x25519_wide_ladder` does not rely on the clamp.
+      `spec/lean/Spec/X25519.lean` writes the ladder in this form
+      already, so the C now follows the model step for step, and no new
+      theorem is needed. `x25519.c`'s 16-word field keeps two swaps a
+      step and stays the reference.
+    - **The carries.** Columns 1 to 4 are under 2^115 for operand words
+      under 2^54, so their carries fit in 64 bits; column 4 holds no
+      product times 19, so its carry times 19 plus 51 bits fits too.
+      `column_carry` multiplies the high half by 2^13 rather than
+      shifting it, so a column of 2^115 or more is a wrap that
+      `--unsigned-overflow-check` reports, and both compilers emit the
+      same instructions as for the shift. The multiply contract of the
+      ladder proofs had bounded each product by 2^115, and five such
+      products do not sum under 2^115. `proof/x25519_wide_bound.h` now
+      bounds a product of a and b by 2^(width_of(a) + width_of(b)), where
+      width_of(x) is the least k from 51 to 60 with x < 2^k, and
+      `x25519_wide_mul128` proves the real multiply meets it. Under it
+      columns 1 to 4 stay under 2^115. Column 0 holds four products of a
+      word under 2^54 by 19 times a word, which the contract bounds by
+      2^115 + 2^108, so its carry stays 128 bits wide. That costs about
+      7,100 instructions on the N2.
+    - **In place.** Out of line, each call of `mul` or `sqr` passed its
+      operands through memory, and its callers kept their values in the
+      stack frame across it. The host object holds 15 KB more code on
+      arm64 and 14 KB more on x86-64. On the base armv8-a target the
+      calls in place cost 34,815 more instructions than out of line, and
+      the four changes together still take that build from 455,016 to
+      447,363.
+    - **Gain.** Instructions of one shared secret and one key generation,
+      from QEMU 8.2.2 traces of a program that runs each once, except the
+      M1 Pro's, which `proc_pid_rusage` counts over 2,000 calls:
+
+      | build | shared secret, before | after | key generation, before | after |
+      | --- | --- | --- | --- | --- |
+      | Neoverse-N2, Zig 0.16.0 for `neoverse_n2` | 393,457 | 345,042 | 132,412 | 118,834 |
+      | arm64, Zig 0.16.0 for the base armv8-a | 455,016 | 447,363 | 150,367 | 134,865 |
+      | arm64, gcc 13.3 | 476,282 | 362,492 | 169,543 | 151,662 |
+      | M1 Pro, Apple clang 21 | 372,726 | 340,978 | 129,818 | 119,682 |
+      | x86-64, Zig 0.16.0's clang 21 | 594,153 | 490,389 | 187,013 | 174,172 |
+      | x86-64, the pinned clang 23 | 591,278 | 497,650 | 189,884 | 176,875 |
+      | x86-64, gcc 13.3 | 622,720 | 454,635 | 214,098 | 179,807 |
+
+      On the N2 the shared secret takes 0.91 of OpenSSL 3.6.4's 380,382
+      instructions. docs/performance.md gives `bench/handshake-n2.sh`'s
+      count of the whole handshake after the change.
+    - **Constant time.** No branch and no address depends on the scalar
+      or a word. cswap selects with the same shift mask as before, and
+      the scalar bit reaches it through an exclusive-or alone.
+      `lint-wide-multiply` holds `x25519_wide.c` at 8 conditional
+      branches on arm64 and 9 on x86-64, as before, and the clang and gcc
+      disassembly of the ladder holds one conditional branch, the loop's,
+      besides the loops over public counts in `load_le64`,
+      `store_le64`, `sqr_times` and the stack protector's check.
+    - **What holds it.** `bin/x25519_equiv_test` holds the field to the
+      16-word field on 22,437 inputs, RFC 7748's iterated vector to 1,000
+      rounds among them, and a local run of the 1,000,000 rounds wrote
+      the RFC's value. `bin/diff_x25519_wide` holds the ladder to the
+      Lean ladder on 1,000 scalars that no clamp has touched, the row
+      that runs the last swap with bit 0 at 1. The `x25519_wide` harnesses
+      prove the bounds over the new contract and on the real multiply.
+      Three violations are new: the last swap dropped, caught by the
+      differential; the swap by the bit alone, caught by the equivalence
+      binary; and column 0's carry narrowed, caught by
+      `x25519_wide_tail`.
+
+    Rejected:
+
+    - **A binary GCD for the inversion**, as `p256_wide_inverse.c` runs
+      for P-256 (entry 115). The inversion is 25,521 instructions, 6.5%
+      of a shared secret, and the four changes closed the gap without it.
+      A GCD would also need a Lean theorem for its iteration bound.
+    - **Column 0's carry in a word too.** It saves about 7,100 more
+      instructions on the N2, but the contract cannot show the column is
+      under 2^115, and a contract fine enough to show it needs bounds
+      below a power of two, which are comparisons and not bit structure.
+    - **A vector ladder.** Published vector ladders gain 1.15 to 1.5
+      times warm and lose up to 3.8 times cold, and a TLS server runs one
+      shared secret a connection.
+    - **Assembly.** The C closed the gap, and the compiler is not the
+      limit.

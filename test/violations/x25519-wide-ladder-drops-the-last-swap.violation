@@ -1,0 +1,16 @@
+invariant: INV-16
+file: x25519_wide.c
+catches: diff_x25519_wide
+reason: the ladder swaps the points once a step, by the step's bit exclusive-or
+  the bit before, so after the last step the points stay swapped when bit 0
+  is 1, and a cswap by bit 0 undoes that. A clamped scalar's bit 0 is 0, so
+  x25519_wide() and every vector run right without it. bin/diff_x25519_wide
+  runs x25519_wide_ladder on scalars that no clamp has touched against the
+  Lean ladder, and about half of them set bit 0 (docs/decisions.md 152).
+
+--- old
+    cswap(a, b, bit);
+    cswap(c, d, bit);
+    invert(c, c);
+--- new
+    invert(c, c);

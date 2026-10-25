@@ -13,6 +13,9 @@
 //
 // The rows draw fresh random inputs on every call, so each is run ten times:
 // 1,000 scalar multiplications of a random point and 500 of the base point.
+// One more row runs x25519_wide_ladder on 1,000 scalars that no clamp has
+// touched against the Lean ladder on the same bits, the one row whose
+// scalars can set bit 0 (docs/decisions.md 152).
 //
 // The binary includes x25519_wide.c rather than linking it, to reach the key
 // generation's formulas in x25519_wide_edwards.h, and three more rows hold
@@ -149,6 +152,28 @@ static void diff_edwards_u(void) {
     expect(cmd, want);
 }
 
+// x25519_wide_ladder on a scalar that no clamp has touched, against the Lean
+// ladder on the same bits. A clamped scalar's bit 0 is 0, and x25519_wide()
+// passes no other, so this row is what runs the ladder's last cswap with bit
+// 1: about half of the random scalars here set bit 0.
+static void diff_ladder(void) {
+    uint8_t scalar[X25519_LEN];
+    uint8_t point[X25519_LEN];
+    uint8_t out[X25519_LEN];
+    rng_fill(scalar, sizeof scalar);
+    rng_fill(point, sizeof point);
+    x25519_wide_ladder(out, scalar, point);
+    char key_hex[2 * X25519_LEN + 1];
+    char point_hex[2 * X25519_LEN + 1];
+    char want[2 * X25519_LEN + 1];
+    (void)hex_encode(key_hex, scalar, sizeof scalar);
+    (void)hex_encode(point_hex, point, sizeof point);
+    (void)hex_encode(want, out, sizeof out);
+    char cmd[512];
+    (void)snprintf(cmd, sizeof cmd, "x25519_ladder %s %s", key_hex, point_hex);
+    expect(cmd, want);
+}
+
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "spec/lean/.lake/build/bin/diffspec";
     (void)printf("diff x25519 wide: seed 0x%016llx\n", (unsigned long long)rng_seed_from_env());
@@ -157,6 +182,9 @@ int main(int argc, char **argv) {
     for (int round = 0; round < 10; round++) {
         diff_x25519();
         diff_x25519_base();
+    }
+    for (int i = 0; i < 1000; i++) {
+        diff_ladder();
     }
     for (int i = 0; i < 2000; i++) {
         diff_edwards_add();

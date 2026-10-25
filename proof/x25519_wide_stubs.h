@@ -12,44 +12,49 @@
 // from reading the real definition again.
 //
 // WHAT THE STUB MODELS: ct_mul128 asserts its first operand is under 2^55
-// and its second under 2^60, and returns any value under 2^115. That domain
-// is what mul, sqr and mul_a24 hand the multiply when their operands' words
-// are under 2^54: a word or a doubled word first, and a word, a doubled
-// word, 19 times a word, 38 times a word or a24 second. The bound is bit
-// structure, a shift of an unconstrained value, rather than a comparison,
-// for the reason docs/proofs.md gives.
+// and its second under 2^60, and returns any value under
+// 2^(width_of(a) + width_of(b)), the bound proof/x25519_wide_bound.h states.
+// That domain is what mul, sqr and mul_a24 hand the multiply when their
+// operands' words are under 2^54: a word or a doubled word first, and a
+// word, a doubled word, 19 times a word, 38 times a word or a24 second. The
+// bound is bit structure, a shift of an unconstrained value, rather than a
+// comparison, for the reason docs/proofs.md gives; the shift is the one
+// width_of() picks.
 //
 // WHAT DISCHARGES THE CONTRACT: x25519_wide_mul128_harness.c proves the real
-// ct_mul128 returns a product under 2^115 for every operand pair in that
-// domain, with every check on. Nothing in x25519_wide_step or
-// x25519_wide_tail reads a product's value beyond that bound: every
-// property is a bound, so a proof over every value under 2^115 covers the
-// real products.
+// ct_mul128 returns a product under that bound for every operand pair in
+// that domain, with every check on. Nothing in x25519_wide_step,
+// x25519_wide_tail, x25519_wide_invert or x25519_wide_edwards reads a
+// product's value beyond that bound: every property is a bound, so a proof
+// over every value under it covers the real products.
 //
 // What the contract gives up: its bound is looser than the real products,
-// which are under 38 * 2^108 for the same operands. So the word-1 bound these
-// two harnesses carry, 2^51 + 2^20, is looser than the 2^51 + 2^13 that
-// x25519_wide_mul_harness.c and x25519_wide_sqr_harness.c prove on the real
-// multiply. Both are INV-34's; the looser one is what the induction uses.
+// which are under 38 * 2^108 for the same operands. Up to docs/decisions.md
+// 152 it was 2^115 for every product, and under it word 1 of a result was
+// under 2^51 + 2^20. The harnesses still carry that word-1 bound, which
+// holds under the present contract too, where word 1 is under 2^51 + 2^13.
+// Both are INV-34's; the looser one is what the induction uses.
 #ifndef CH_X25519_WIDE_STUBS_H
 #define CH_X25519_WIDE_STUBS_H
 
 #include "harness.h"
 
 #include "ct.h"
+#include "x25519_wide_bound.h"
 // From here on the multiply x25519_wide.c calls is the contract below.
 #define ct_mul128 stub_mul128
 
 #define MUL128_FIRST ((uint64_t)1 << 55)
 #define MUL128_SECOND ((uint64_t)1 << 60)
 
-ct_u128 nondet_u128(void);
 uint64_t nondet_u64(void);
 
 static ct_u128 stub_mul128(uint64_t a, uint64_t b) {
     __CPROVER_assert(a < MUL128_FIRST, "ct_mul128's first operand is under 2^55");
     __CPROVER_assert(b < MUL128_SECOND, "ct_mul128's second operand is under 2^60");
-    return nondet_u128() >> 13;
+    // The high word holds width_of(a) + width_of(b) - 64 bits, from 38 to 51.
+    uint64_t high = nondet_u64() >> (128U - width_of(a) - width_of(b));
+    return ((ct_u128)high << 64) | nondet_u64();
 }
 
 #include "x25519_wide.c"

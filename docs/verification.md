@@ -678,7 +678,8 @@ The entries are grouped by area:
 - **Proves:**
   - On the real 64x64->128 multiply, `mul` and `sqr` over any operands
     whose words are under 2^54 wrap nothing: every column sum stays
-    under 2^115 and every carry under 2^64. They leave words 0, 2, 3 and
+    under 2^115, so every carry that `column_carry` narrows to a word is
+    exact, and every carry is under 2^64. They leave words 0, 2, 3 and
     4 under 2^51 and word 1 under 2^51 + 2^13.
   - add, sub, `mul_a24`, cswap, unpack and pack are safe at the same
     bounds; cswap swaps exactly when its bit is 1, and pack writes a
@@ -688,8 +689,11 @@ The entries are grouped by area:
     `x25519_wide_invert` proves the whole inversion chain, and
     `x25519_wide_tail` the output form of every product and the final
     multiply and pack. Those three replace the multiply with a contract,
-    operands under 2^55 and 2^60 to a product under 2^115, which
-    `x25519_wide_mul128` proves on the real multiply.
+    operands a under 2^55 and b under 2^60 to a product under
+    2^(width_of(a) + width_of(b)), at most 2^115
+    (`proof/x25519_wide_bound.h`), which `x25519_wide_mul128` proves on
+    the real multiply. Under it columns 1 to 4 stay under 2^115, so
+    those proofs see each word-wide carry as exact too (decision 152).
   - The 255 steps follow by induction from a base case read off
     `x25519_wide_ladder()`'s prologue.
   - The key generation. `x25519_wide_select` proves, on the real bodies,
@@ -733,6 +737,10 @@ The entries are grouped by area:
   its negative, scalars whose digits cancel down to small multiples of
   B, and 10,000 random scalars. bin/diff_x25519_wide holds it to the
   Lean ladder of spec/lean/Spec/X25519.lean on 500 random scalars.
+  The ladder swaps the points once a step, as that Lean ladder does
+  (decision 152), and bin/diff_x25519_wide holds `x25519_wide_ladder` to
+  it on 1,000 scalars that no clamp has touched, so the last swap runs
+  with bit 0 at 1 too.
 - **Bound:** operand words < 2^54; between the ladder's operations,
   word 1 < 2^51 + 2^20 and every other word < 2^51.
 
