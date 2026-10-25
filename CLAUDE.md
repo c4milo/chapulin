@@ -193,7 +193,11 @@ Home: github.com/c4milo.
   that each wipes the stack below the kernel's frames), in a host object
   alone ← `x25519.[ch]` with `x25519_wide.[ch]` (the
   radix-2^51 field, a host session whose caller sets
-  CH_CPU_CONSTANT_TIME_MULTIPLY) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
+  CH_CPU_CONSTANT_TIME_MULTIPLY) with `x25519_wide_edwards.h` and
+  `x25519_wide_table.h` (that field's key generation: the public key from
+  a 30 KiB table of multiples of edwards25519's base point, which each
+  scan reads whole, included by `x25519_wide.c` alone; tools/x25519_wide.py
+  writes the table) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
   key exchange over `p256_point`, `p256_scalar` and `p256_field`, every
   server role and TRUST=webpki) with the `p256_wide_*` files (the same
   arithmetic on four 64-bit words, an inverse by the binary GCD of
