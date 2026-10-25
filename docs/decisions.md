@@ -13291,3 +13291,50 @@ does nothing more.
     `inv16-srv-client-hello-digest-on-portable` fails that count. The
     `srv_parser_walk` and `srv_parser_frozen` harnesses pass an
     unconstrained value, and their portable path reads none.
+150. **ML-KEM-1024 compiles from ML-KEM-768's text, one parameter set to
+    an object.** Stage 1 of the CNSA 2.0 profile
+    (https://github.com/c4milo/chapulin/issues/182). On 2026-10-24
+    Camilo ruled the six questions of the plan as recommended: a
+    `PROFILE=cnsa2` axis, pure ML-KEM-1024 as its key exchange, a strict
+    profile, device objects under `AES=extern`'s statement, the profile
+    before ML-DSA under external PSKs alone, and hedged ML-DSA signing.
+    This entry is the first of them that lands.
+
+    - **The rule.** `-DCH_MLKEM_1024` gives `mlkem.h` K = 4 and
+      `mlkem_poly.h` du = 11 and dv = 5, and its absence gives
+      ML-KEM-768. Every length, each offset inside `dk` and each noise
+      nonce derives from `MLKEM_K`, and `mlkem_poly.c` holds
+      ByteEncode_11 and ByteEncode_5 beside the 10-bit and 4-bit forms.
+      No build passes the define yet. Stage 2's `PROFILE=cnsa2` does.
+    - **One set to an object.** Nothing picks a parameter set at run
+      time. The profile offers ML-KEM-1024 alone, and every other build
+      offers ML-KEM-768 alone, so no object needs both.
+    - **The host copies.** The vector NTT reads one polynomial, so it
+      serves both sets unchanged. `mlkem_avx2.c` samples a row's
+      `MLKEM_K` entries on the four Keccak states, one to a state at
+      K = 4. The SHA-3-instruction copies compile from the same text.
+    - **What holds it.** `bin/mlkem_test_1024` checks the round trip,
+      the implicit-reject secret SHAKE256(z || c) and the modulus check,
+      in each lane `bin/mlkem_test` runs in. `bin/wycheproof_mlkem1024_test`
+      runs Wycheproof's 511 ML-KEM-1024 cases through
+      `wycheproof_test.c`'s own runners, in each lane that builds that
+      file. `bin/mlkem_hw_equiv_test_1024` and
+      `bin/mlkem_avx2_equiv_test_1024` hold the copies to `mlkem.c`.
+      The `mlkem_1024` and `mlkem_poly_1024` harnesses prove the KEM
+      layer and the compression at K = 4. `Spec/MlKem.lean` takes a
+      `Params` value, states each size theorem for any parameter set,
+      and checks Wycheproof's first ML-KEM-1024 key pair by its SHA3-256
+      digests. `bin/diff_mlkem1024` holds the C to the spec.
+    - **What stays.** ML-KEM-768's vectors, Wycheproof suites, proofs
+      and differential run unchanged on the new text, and they pass.
+
+    Rejected:
+
+    - **Both sets in one object, picked at run time.** Every ML-KEM
+      function would need a second copy under other names, and a host
+      object holds two copies of `mlkem.c` already. No build needs it.
+    - **A second source file for ML-KEM-1024.** Two texts to audit, where
+      the sets differ in three constants and two packing routines.
+    - **ML-KEM-1024 vectors checked into the tree.** Wycheproof's vectors
+      come from the pinned checkout at test time, as ML-KEM-768's do.
+      The spec holds the digests of one case, not its 4,736 bytes.

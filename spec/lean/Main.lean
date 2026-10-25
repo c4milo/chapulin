@@ -202,6 +202,25 @@ def dispatch : List String → Option String
     let ctb ← hexArg? ct
     guard (dkb.size == 2400 && ctb.size == 1088)
     return emit (Spec.MlKem.decaps dkb ctb)
+  -- The same three at ML-KEM-1024 (FIPS 203 Table 2: k = 4, du = 11, dv = 5).
+  | ["mlkem1024_keygen", d, z] => do
+    let db ← hexArg? d
+    let zb ← hexArg? z
+    guard (db.size == 32 && zb.size == 32)
+    let (ek, dk) := Spec.MlKem.keygen db zb Spec.MlKem.ml1024
+    return s!"{emit ek} {emit dk}"
+  | ["mlkem1024_encaps", ek, m] => do
+    let ekb ← hexArg? ek
+    let mb ← hexArg? m
+    guard (mb.size == 32)
+    match Spec.MlKem.encaps ekb mb Spec.MlKem.ml1024 with
+    | some (ct, ss) => return s!"{emit ct} {emit ss}"
+    | none => return "FAIL"
+  | ["mlkem1024_decaps", dk, ct] => do
+    let dkb ← hexArg? dk
+    let ctb ← hexArg? ct
+    guard (dkb.size == 3168 && ctb.size == 1568)
+    return emit (Spec.MlKem.decaps dkb ctb Spec.MlKem.ml1024)
   | ["hmac", k, m] => do
     return emit (Spec.Hkdf.hmac (← hexArg? k) (← hexArg? m))
   | ["hkdf_extract", salt, ikm] => do

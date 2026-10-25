@@ -2,21 +2,23 @@ import Spec.Bytes
 import Spec.Sha3
 
 /-!
-ML-KEM-768, written from FIPS 203 (Module-Lattice-Based Key-Encapsulation
-Mechanism Standard) only.
+ML-KEM-768 and ML-KEM-1024, written from FIPS 203 (Module-Lattice-Based
+Key-Encapsulation Mechanism Standard) only.
 
 This is the differential oracle for the C ML-KEM port: it computes
-byte-identical ML-KEM-768 output. Definitional style throughout —
-coefficients are plain `Nat` reduced mod `q = 3329`, a polynomial is an
-`Array Nat` of length 256, and a vector is an `Array` of three
-polynomials. The no-division rule of the C build does not apply here; the
-spec uses `Nat` `%` and `/` freely, as FIPS 203 §2.3 permits for a
+byte-identical ML-KEM output at either parameter set. Definitional style
+throughout — coefficients are plain `Nat` reduced mod `q = 3329`, a
+polynomial is an `Array Nat` of length 256, and a vector is an `Array` of
+`k` polynomials. The no-division rule of the C build does not apply here;
+the spec uses `Nat` `%` and `/` freely, as FIPS 203 §2.3 permits for a
 reference description.
 
-Parameter set (FIPS 203 §8, Table 2, ML-KEM-768): `k = 3`, `q = 3329`,
-`n = 256`, `eta1 = eta2 = 2`, `du = 10`, `dv = 4`. Key sizes: encapsulation
-key 1184 bytes, decapsulation key 2400 bytes, ciphertext 1088 bytes,
-shared secret 32 bytes.
+Parameter sets (FIPS 203 §8, Table 2): `q = 3329`, `n = 256` and
+`eta1 = eta2 = 2` in both, and `Params` holds the rest. ML-KEM-768 has
+`k = 3`, `du = 10`, `dv = 4`: encapsulation key 1184 bytes, decapsulation
+key 2400 bytes, ciphertext 1088 bytes. ML-KEM-1024 has `k = 4`, `du = 11`,
+`dv = 5`: 1568, 3168 and 1568 bytes. The shared secret is 32 bytes in
+both. Each call takes the set, and ML-KEM-768 by default.
 
 The hash and XOF functions are FIPS 203 §4.1: G = SHA3-512, H = SHA3-256,
 J = SHAKE256 (32-byte output), XOF = SHAKE128, PRF = SHAKE256. They come
@@ -30,8 +32,22 @@ open Spec.Sha3
 /-- FIPS 203 §8, Table 2: the field modulus `q = 3329`. -/
 def q : Nat := 3329
 
-/-- FIPS 203 §8, Table 2: the module rank `k = 3` for ML-KEM-768. -/
-def k : Nat := 3
+/-- FIPS 203 §8, Table 2: what a parameter set fixes beside `q`, `n` and
+`eta`: the module rank `k` and the ciphertext compression parameters `du`
+and `dv`. -/
+structure Params where
+  /-- The module rank: the number of polynomials in a vector. -/
+  k : Nat
+  /-- The bits each coefficient of `u` keeps in a ciphertext. -/
+  du : Nat
+  /-- The bits each coefficient of `v` keeps in a ciphertext. -/
+  dv : Nat
+
+/-- FIPS 203 §8, Table 2: ML-KEM-768. -/
+def ml768 : Params := ⟨3, 10, 4⟩
+
+/-- FIPS 203 §8, Table 2: ML-KEM-1024. -/
+def ml1024 : Params := ⟨4, 11, 5⟩
 
 /-- FIPS 203 §8, Table 2: the CBD parameter `eta1 = 2` (secret and error
 noise in key generation). -/
@@ -40,12 +56,6 @@ def eta1 : Nat := 2
 /-- FIPS 203 §8, Table 2: the CBD parameter `eta2 = 2` (error noise in
 encryption). -/
 def eta2 : Nat := 2
-
-/-- FIPS 203 §8, Table 2: the ciphertext compression parameter `du = 10`. -/
-def du : Nat := 10
-
-/-- FIPS 203 §8, Table 2: the ciphertext compression parameter `dv = 4`. -/
-def dv : Nat := 4
 
 /-- The SHAKE128 output length, in bytes, that `sampleNTT` draws from for
 rejection sampling. FIPS 203 §4.2.2 squeezes the XOF lazily; a spec draws
@@ -150,10 +160,10 @@ def polyCompress (d : Nat) (p : Array Nat) : Array Nat := p.map (compress d)
 /-- Apply `Decompress_d` to every coefficient of a polynomial. -/
 def polyDecompress (d : Nat) (p : Array Nat) : Array Nat := p.map (decompress d)
 
-/-- Concatenate `ByteEncode_d` of the three polynomials of a rank-3 vector.
-The output length is `3 * 32 * d` bytes. -/
-def encode3 (v : Array (Array Nat)) (d : Nat) : ByteArray :=
-  byteEncode v[0]! d ++ byteEncode v[1]! d ++ byteEncode v[2]! d
+/-- Concatenate `ByteEncode_d` of the `n` polynomials of a vector, in
+order. The output length is `n * 32 * d` bytes. -/
+def encodeVec (n : Nat) (v : Array (Array Nat)) (d : Nat) : ByteArray :=
+  (List.range n).foldl (fun acc i => acc ++ byteEncode v[i]! d) ByteArray.empty
 
 /-! ## Polynomial arithmetic mod q -/
 
@@ -281,52 +291,57 @@ def hashJ (b : ByteArray) : ByteArray := shake256 b 32
 the secret `s` and error `e`, and form `t = A s + e` in the NTT domain.
 Returns `(ek_PKE, dk_PKE)` where `ek_PKE = ByteEncode_12(t) ‖ rho` and
 `dk_PKE = ByteEncode_12(s)`. -/
-def pkeKeygen (d : ByteArray) : ByteArray × ByteArray :=
-  let rs := hashG (d ++ ByteArray.mk #[UInt8.ofNat k])
+def pkeKeygen (d : ByteArray) (P : Params := ml768) : ByteArray × ByteArray :=
+  let rs := hashG (d ++ ByteArray.mk #[UInt8.ofNat P.k])
   let rho := rs.1
   let sigma := rs.2
-  let s := Array.ofFn (n := 3) fun i => ntt (samplePolyCBD eta1 (prf eta1 sigma i.val))
-  let e := Array.ofFn (n := 3) fun i => ntt (samplePolyCBD eta1 (prf eta1 sigma (3 + i.val)))
-  let th := Array.ofFn (n := 3) fun i =>
+  let s := Array.ofFn (n := P.k) fun i => ntt (samplePolyCBD eta1 (prf eta1 sigma i.val))
+  let e := Array.ofFn (n := P.k) fun i =>
+    ntt (samplePolyCBD eta1 (prf eta1 sigma (P.k + i.val)))
+  let th := Array.ofFn (n := P.k) fun i =>
     polyAdd e[i.val]!
-      ((List.range 3).foldl
+      ((List.range P.k).foldl
         (fun acc j => polyAdd acc (mulNtt (sampleNTT rho j i.val) s[j]!))
         (Array.replicate 256 0))
-  (encode3 th 12 ++ rho, encode3 s 12)
+  (encodeVec P.k th 12 ++ rho, encodeVec P.k s 12)
 
 /-- FIPS 203 §5.2, Algorithm 14 (K-PKE.Encrypt): decode `t` and `rho` from
 `ek`, regenerate the transposed matrix (`A^T[i][j]` from XOF over
 `rho ‖ i ‖ j`), sample `y`, `e1`, `e2` from `r`, and form
 `u = NTT^{-1}(A^T y) + e1` and `v = NTT^{-1}(t^T y) + e2 + Decompress_1(m)`.
 Returns `ByteEncode_du(Compress_du(u)) ‖ ByteEncode_dv(Compress_dv(v))`. -/
-def pkeEncrypt (ek m r : ByteArray) : ByteArray :=
-  let th := Array.ofFn (n := 3) fun i => byteDecode (ek.extract (384 * i.val) (384 * i.val + 384)) 12
-  let rho := ek.extract (384 * 3) (384 * 3 + 32)
-  let y := Array.ofFn (n := 3) fun i => ntt (samplePolyCBD eta1 (prf eta1 r i.val))
-  let e1 := Array.ofFn (n := 3) fun i => samplePolyCBD eta2 (prf eta2 r (3 + i.val))
-  let e2 := samplePolyCBD eta2 (prf eta2 r 6)
-  let u := Array.ofFn (n := 3) fun i =>
+def pkeEncrypt (ek m r : ByteArray) (P : Params := ml768) : ByteArray :=
+  let th := Array.ofFn (n := P.k) fun i =>
+    byteDecode (ek.extract (384 * i.val) (384 * i.val + 384)) 12
+  let rho := ek.extract (384 * P.k) (384 * P.k + 32)
+  let y := Array.ofFn (n := P.k) fun i => ntt (samplePolyCBD eta1 (prf eta1 r i.val))
+  let e1 := Array.ofFn (n := P.k) fun i => samplePolyCBD eta2 (prf eta2 r (P.k + i.val))
+  let e2 := samplePolyCBD eta2 (prf eta2 r (2 * P.k))
+  let u := Array.ofFn (n := P.k) fun i =>
     polyAdd
-      (invNtt ((List.range 3).foldl
+      (invNtt ((List.range P.k).foldl
         (fun acc j => polyAdd acc (mulNtt (sampleNTT rho i.val j) y[j]!))
         (Array.replicate 256 0)))
       e1[i.val]!
   let mu := polyDecompress 1 (byteDecode m 1)
-  let vacc := (List.range 3).foldl
+  let vacc := (List.range P.k).foldl
     (fun acc i => polyAdd acc (mulNtt th[i]! y[i]!)) (Array.replicate 256 0)
   let v := polyAdd (polyAdd (invNtt vacc) e2) mu
-  encode3 (u.map (polyCompress du)) du ++ byteEncode (polyCompress dv v) dv
+  encodeVec P.k (u.map (polyCompress P.du)) P.du ++ byteEncode (polyCompress P.dv v) P.dv
 
 /-- FIPS 203 §5.3, Algorithm 15 (K-PKE.Decrypt): decode and decompress
 `u` and `v` from the ciphertext, decode `s` from `dk`, and recover the
 message `m = ByteEncode_1(Compress_1(v - NTT^{-1}(s^T NTT(u))))`. -/
-def pkeDecrypt (dk c : ByteArray) : ByteArray :=
-  let u := Array.ofFn (n := 3) fun i =>
-    polyDecompress du (byteDecode (c.extract (320 * i.val) (320 * i.val + 320)) du)
-  let v := polyDecompress dv (byteDecode (c.extract (320 * 3) (320 * 3 + 128)) dv)
-  let s := Array.ofFn (n := 3) fun i => byteDecode (dk.extract (384 * i.val) (384 * i.val + 384)) 12
+def pkeDecrypt (dk c : ByteArray) (P : Params := ml768) : ByteArray :=
+  let uLen := 32 * P.du
+  let u := Array.ofFn (n := P.k) fun i =>
+    polyDecompress P.du (byteDecode (c.extract (uLen * i.val) (uLen * i.val + uLen)) P.du)
+  let v := polyDecompress P.dv
+    (byteDecode (c.extract (uLen * P.k) (uLen * P.k + 32 * P.dv)) P.dv)
+  let s := Array.ofFn (n := P.k) fun i =>
+    byteDecode (dk.extract (384 * i.val) (384 * i.val + 384)) 12
   let w := polySub v
-    (invNtt ((List.range 3).foldl
+    (invNtt ((List.range P.k).foldl
       (fun acc i => polyAdd acc (mulNtt s[i]! (ntt u[i]!))) (Array.replicate 256 0)))
   byteEncode (polyCompress 1 w) 1
 
@@ -335,51 +350,53 @@ def pkeDecrypt (dk c : ByteArray) : ByteArray :=
 /-- FIPS 203 §6.1, Algorithm 16 (ML-KEM.KeyGen_internal): the encapsulation
 key is `ek_PKE`; the decapsulation key bundles
 `dk_PKE ‖ ek ‖ H(ek) ‖ z`. -/
-def keygen (d z : ByteArray) : ByteArray × ByteArray :=
-  let kp := pkeKeygen d
+def keygen (d z : ByteArray) (P : Params := ml768) : ByteArray × ByteArray :=
+  let kp := pkeKeygen d P
   (kp.1, kp.2 ++ kp.1 ++ hashH kp.1 ++ z)
 
 /-- FIPS 203 §6.2, Algorithm 17 (ML-KEM.Encaps_internal): derive
 `(K, r) = G(m ‖ H(ek))`, encrypt `m` under randomness `r`, and return the
 ciphertext paired with the shared secret `K`. -/
-def encapsInternal (ek m : ByteArray) : ByteArray × ByteArray :=
+def encapsInternal (ek m : ByteArray) (P : Params := ml768) : ByteArray × ByteArray :=
   let kr := hashG (m ++ hashH ek)
-  (pkeEncrypt ek m kr.2, kr.1)
+  (pkeEncrypt ek m kr.2 P, kr.1)
 
 /-- FIPS 203 §6.3, Algorithm 18 (ML-KEM.Decaps_internal): decrypt to `m'`,
 re-derive `(K', r')`, re-encrypt, and return `K'` when the re-encryption
 reproduces the ciphertext, otherwise the implicit-reject secret
 `J(z ‖ c)`. -/
-def decapsInternal (dk c : ByteArray) : ByteArray :=
-  let dkPke := dk.extract 0 1152
-  let ekPke := dk.extract 1152 2336
-  let h := dk.extract 2336 2368
-  let z := dk.extract 2368 2400
-  let m' := pkeDecrypt dkPke c
+def decapsInternal (dk c : ByteArray) (P : Params := ml768) : ByteArray :=
+  let ekAt := 384 * P.k
+  let hAt := ekAt + 384 * P.k + 32
+  let dkPke := dk.extract 0 ekAt
+  let ekPke := dk.extract ekAt hAt
+  let h := dk.extract hAt (hAt + 32)
+  let z := dk.extract (hAt + 32) (hAt + 64)
+  let m' := pkeDecrypt dkPke c P
   let kr := hashG (m' ++ h)
   let kbar := hashJ (z ++ c)
-  let c' := pkeEncrypt ekPke m' kr.2
+  let c' := pkeEncrypt ekPke m' kr.2 P
   if bytesToHex c == bytesToHex c' then kr.1 else kbar
 
 /-- FIPS 203 §7.2, Algorithm 20 (ML-KEM.Encaps) input validation: `ek` has
-the right length and each of its three encoded polynomials survives a
+the right length and each of its `k` encoded polynomials survives a
 `ByteDecode_12`/`ByteEncode_12` round trip, i.e. every 12-bit value is
 below `q`. -/
-def modulusOk (ek : ByteArray) : Bool :=
-  ek.size == 1184 &&
-    (List.range 3).all fun i =>
+def modulusOk (ek : ByteArray) (P : Params := ml768) : Bool :=
+  ek.size == 384 * P.k + 32 &&
+    (List.range P.k).all fun i =>
       bytesToHex (byteEncode (byteDecode (ek.extract (384 * i) (384 * i + 384)) 12) 12)
         == bytesToHex (ek.extract (384 * i) (384 * i + 384))
 
-/-- ML-KEM-768 encapsulation (FIPS 203 §7.2): `none` when `ek` fails the
+/-- ML-KEM encapsulation (FIPS 203 §7.2): `none` when `ek` fails the
 modulus check, otherwise `some (ciphertext, shared secret)` with a
-1088-byte ciphertext and 32-byte secret. -/
-def encaps (ek m : ByteArray) : Option (ByteArray × ByteArray) :=
-  if modulusOk ek then some (encapsInternal ek m) else none
+`32 * (du * k + dv)`-byte ciphertext and 32-byte secret. -/
+def encaps (ek m : ByteArray) (P : Params := ml768) : Option (ByteArray × ByteArray) :=
+  if modulusOk ek P then some (encapsInternal ek m P) else none
 
-/-- ML-KEM-768 decapsulation (FIPS 203 §7.3): the 32-byte shared secret,
-with implicit reject built in. -/
-def decaps (dk ct : ByteArray) : ByteArray := decapsInternal dk ct
+/-- ML-KEM decapsulation (FIPS 203 §7.3): the 32-byte shared secret, with
+implicit reject built in. -/
+def decaps (dk ct : ByteArray) (P : Params := ml768) : ByteArray := decapsInternal dk ct P
 
 /-! ## Size theorems
 
@@ -393,10 +410,23 @@ sampling internals. -/
 theorem byteEncode_size (F : Array Nat) (d : Nat) : (byteEncode F d).size = 32 * d := by
   simp [byteEncode, ByteArray.size, Array.size_ofFn]
 
-/-- Encoding a rank-3 vector emits `96*d` bytes. -/
-theorem encode3_size (v : Array (Array Nat)) (d : Nat) : (encode3 v d).size = 96 * d := by
-  simp only [encode3, ByteArray.size_append, byteEncode_size]
-  omega
+/-- Appending `n` byte strings of `c` bytes each to `acc` adds `n * c`
+bytes. -/
+private theorem foldl_append_size (f : Nat → ByteArray) (c : Nat)
+    (h_each : ∀ i, (f i).size = c) (n : Nat) (acc : ByteArray) :
+    ((List.range n).foldl (fun acc i => acc ++ f i) acc).size = acc.size + n * c := by
+  induction n generalizing acc with
+  | zero => simp
+  | succ n ih =>
+    rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil,
+      ByteArray.size_append, ih, h_each, Nat.add_mul, Nat.one_mul, Nat.add_assoc]
+
+/-- Encoding a vector of `n` polynomials emits `n * (32 * d)` bytes. -/
+theorem encodeVec_size (n : Nat) (v : Array (Array Nat)) (d : Nat) :
+    (encodeVec n v d).size = n * (32 * d) := by
+  have h_sum := foldl_append_size (fun i => byteEncode v[i]! d) (32 * d)
+    (fun _ => byteEncode_size _ d) n ByteArray.empty
+  simpa [encodeVec] using h_sum
 
 private theorem hashH_size (b : ByteArray) : (hashH b).size = 32 := sha3_256_size b
 
@@ -406,56 +436,108 @@ private theorem hashG_fst_size (x : ByteArray) : (hashG x).1.size = 32 := by
 
 private theorem hashJ_size (x : ByteArray) : (hashJ x).size = 32 := shake256_size x 32
 
-private theorem pkeKeygen_fst_size (d : ByteArray) : (pkeKeygen d).1.size = 1184 := by
-  simp only [pkeKeygen, hashG, ByteArray.size_append, encode3_size, ByteArray.size_extract,
+private theorem pkeKeygen_fst_size (d : ByteArray) (P : Params) :
+    (pkeKeygen d P).1.size = 384 * P.k + 32 := by
+  simp only [pkeKeygen, hashG, ByteArray.size_append, encodeVec_size, ByteArray.size_extract,
     sha3_512_size]
   omega
 
-private theorem pkeKeygen_snd_size (d : ByteArray) : (pkeKeygen d).2.size = 1152 := by
-  simp only [pkeKeygen, encode3_size]
+private theorem pkeKeygen_snd_size (d : ByteArray) (P : Params) :
+    (pkeKeygen d P).2.size = 384 * P.k := by
+  simp only [pkeKeygen, encodeVec_size]
+  omega
 
-private theorem pkeEncrypt_size (ek m r : ByteArray) : (pkeEncrypt ek m r).size = 1088 := by
-  simp only [pkeEncrypt, ByteArray.size_append, encode3_size, byteEncode_size, du, dv]
+private theorem pkeEncrypt_size (ek m r : ByteArray) (P : Params) :
+    (pkeEncrypt ek m r P).size = P.k * (32 * P.du) + 32 * P.dv := by
+  simp only [pkeEncrypt, ByteArray.size_append, encodeVec_size, byteEncode_size]
 
-/-- The encapsulation key is always 1184 bytes (FIPS 203 §6.1). -/
-theorem keygen_ek_size (d z : ByteArray) : (keygen d z).1.size = 1184 := by
+/-- The encapsulation key is always `384 * k + 32` bytes (FIPS 203 §6.1). -/
+theorem keygen_ek_size (d z : ByteArray) (P : Params) :
+    (keygen d z P).1.size = 384 * P.k + 32 := by
   simp only [keygen]
-  exact pkeKeygen_fst_size d
+  exact pkeKeygen_fst_size d P
 
-/-- The decapsulation key is always 2400 bytes given a 32-byte `z`
-(FIPS 203 §6.1). -/
-theorem keygen_dk_size (d z : ByteArray) (hz : z.size = 32) : (keygen d z).2.size = 2400 := by
+/-- The decapsulation key is always `768 * k + 96` bytes given a 32-byte
+`z` (FIPS 203 §6.1). -/
+theorem keygen_dk_size (d z : ByteArray) (P : Params) (h_z : z.size = 32) :
+    (keygen d z P).2.size = 768 * P.k + 96 := by
   simp only [keygen, ByteArray.size_append]
-  rw [pkeKeygen_snd_size, pkeKeygen_fst_size, hashH_size, hz]
+  rw [pkeKeygen_snd_size, pkeKeygen_fst_size, hashH_size, h_z]
+  omega
 
-/-- A ciphertext returned by `encaps` is always 1088 bytes (FIPS 203 §6.2). -/
-theorem encaps_ct_size (ek m ct ss : ByteArray) (h : encaps ek m = some (ct, ss)) :
-    ct.size = 1088 := by
-  simp only [encaps] at h
-  split at h
-  · have he : encapsInternal ek m = (ct, ss) := Option.some.inj h
-    have hct : ct = (encapsInternal ek m).1 := by rw [he]
-    rw [hct]
+/-- A ciphertext returned by `encaps` is always `32 * (du * k + dv)` bytes,
+written `k * (32 * du) + 32 * dv` (FIPS 203 §6.2). -/
+theorem encaps_ct_size (ek m ct ss : ByteArray) (P : Params)
+    (h_encaps : encaps ek m P = some (ct, ss)) :
+    ct.size = P.k * (32 * P.du) + 32 * P.dv := by
+  simp only [encaps] at h_encaps
+  split at h_encaps
+  · have h_pair : encapsInternal ek m P = (ct, ss) := Option.some.inj h_encaps
+    have h_ct : ct = (encapsInternal ek m P).1 := by rw [h_pair]
+    rw [h_ct]
     simp only [encapsInternal]
-    exact pkeEncrypt_size ek m _
-  · simp at h
+    exact pkeEncrypt_size ek m _ P
+  · simp at h_encaps
 
 /-- The shared secret from `decaps` is always 32 bytes, on both the normal
 and the implicit-reject branch (FIPS 203 §6.3). -/
-theorem decaps_size (dk ct : ByteArray) : (decaps dk ct).size = 32 := by
+theorem decaps_size (dk ct : ByteArray) (P : Params) : (decaps dk ct P).size = 32 := by
   simp only [decaps, decapsInternal]
   split
   · exact hashG_fst_size _
   · exact hashJ_size _
 
+/-- FIPS 203 Table 3 for ML-KEM-768: ek 1184, dk 2400, ciphertext 1088. -/
+theorem sizes_768 (d z ek m ct ss : ByteArray) (h_z : z.size = 32)
+    (h_encaps : encaps ek m ml768 = some (ct, ss)) :
+    (keygen d z ml768).1.size = 1184 ∧ (keygen d z ml768).2.size = 2400 ∧ ct.size = 1088 := by
+  refine ⟨keygen_ek_size d z ml768, keygen_dk_size d z ml768 h_z, ?_⟩
+  exact encaps_ct_size ek m ct ss ml768 h_encaps
+
+/-- FIPS 203 Table 3 for ML-KEM-1024: ek 1568, dk 3168, ciphertext 1568. -/
+theorem sizes_1024 (d z ek m ct ss : ByteArray) (h_z : z.size = 32)
+    (h_encaps : encaps ek m ml1024 = some (ct, ss)) :
+    (keygen d z ml1024).1.size = 1568 ∧ (keygen d z ml1024).2.size = 3168 ∧ ct.size = 1568 := by
+  refine ⟨keygen_ek_size d z ml1024, keygen_dk_size d z ml1024 h_z, ?_⟩
+  exact encaps_ct_size ek m ct ss ml1024 h_encaps
+
 /-! ## Self-test
 
 FIPS 203 has no small published vectors, so the self-test pins one full
-known-answer vector generated by kyber-py (seed index 0 of the
+ML-KEM-768 known-answer vector generated by kyber-py (seed index 0 of the
 differential's KAT set, test/gen_mlkem_vectors.py): the exact key,
 ciphertext and shared secret bytes, plus one implicit-reject case with a
 single flipped ciphertext byte.
+
+At ML-KEM-1024 it pins Wycheproof's first key generation case
+(mlkem_1024_keygen_seed_test.json, tcId 1): the seed, and the SHA3-256
+digests of the ek and the dk that case gives, rather than their 4,736
+bytes. Then it checks that decapsulation recovers the secret
+encapsulation chose, and that one flipped ciphertext byte gives
+`J(z ‖ c)`.
 -/
+
+set_option compiler.extract_closed false in
+/-- The ML-KEM-1024 checks the module note above names. -/
+def selftest1024 : Bool :=
+  let seed := "7c9935a0b07694aa0c6d10e4db6b1add2fd81a25ccb148032dcd739936737f2d" ++
+    "8626ed79d451140800e03b59b956f8210e556067407d13dc90fa9e8b872bfb8f"
+  let ekDigest := "ebbe41cd4dea489dedd00e76ae0bcf54aa8550202920eb64d5892ad02b13f2e5"
+  let dkDigest := "ecfa369ec7e834204291fccb4d59c3fd1557b0ec3ab2ed7d50c98c01f292612e"
+  match hexToBytes? seed with
+  | some sb =>
+    let z := sb.extract 32 64
+    let (ek, dk) := keygen (sb.extract 0 32) z ml1024
+    let keysOk := bytesToHex (sha3_256 ek) == ekDigest && bytesToHex (sha3_256 dk) == dkDigest
+    let m := ByteArray.mk (Array.replicate 32 0x5a)
+    match encaps ek m ml1024 with
+    | some (ct, ss) =>
+      let ctBad := ct.set! 5 (ct[5]! ^^^ 1)
+      keysOk && bytesToHex (decaps dk ct ml1024) == bytesToHex ss
+        && bytesToHex (decaps dk ctBad ml1024) == bytesToHex (hashJ (z ++ ctBad))
+        && ct.size == 1568
+    | none => false
+  | none => false
 
 set_option compiler.extract_closed false in
 /-- The seed-0 known-answer vector and one implicit-reject case, checked
@@ -483,7 +565,7 @@ def selftest (_ : Unit) : Bool :=
           && bytesToHex (decaps dk ct) == ssWant
       | none => false
     let rejectOk := bytesToHex (decaps dk ctb) == ssBadWant
-    ekOk && dkOk && encOk && rejectOk
+    ekOk && dkOk && encOk && rejectOk && selftest1024
   | _, _, _, _ => false
 
 end Spec.MlKem

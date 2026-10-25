@@ -1,4 +1,5 @@
-// Z_q arithmetic and the Ring R_q = Z_q[X]/(X^256+1) for ML-KEM-768.
+// Z_q arithmetic and the Ring R_q = Z_q[X]/(X^256+1) for ML-KEM, at the
+// parameter set mlkem.h's MLKEM_K names.
 // Private to the mlkem_*.c files; nothing below tls.h includes it.
 //
 // A polynomial is 256 signed coefficients. Coefficients stay in the
@@ -14,12 +15,18 @@
 
 #include "mlkem.h"
 
-#define MLK_ETA 2               // CBD parameter: noise is centered binomial with eta=2
-#define MLK_DU 10               // ciphertext u compression bits
-#define MLK_DV 4                // ciphertext v compression bits
-#define MLK_POLY_BYTES 384      // 256 coefficients at 12 bits each
-#define MLK_POLYVEC_BYTES 1152  // MLK_POLY_BYTES * 3
-#define MLK_POLY_COMP_BYTES 128 // one poly at dv=4 bits: 256*4/8
+// eta1 and eta2 are 2 in both parameter sets (FIPS 203 Table 2).
+#define MLK_ETA 2 // CBD parameter: noise is centered binomial with eta=2
+#ifdef CH_MLKEM_1024
+#define MLK_DU 11 // ciphertext u compression bits
+#define MLK_DV 5  // ciphertext v compression bits
+#else
+#define MLK_DU 10 // ciphertext u compression bits
+#define MLK_DV 4  // ciphertext v compression bits
+#endif
+#define MLK_POLY_BYTES 384                                   // 256 coefficients at 12 bits each
+#define MLK_POLYVEC_BYTES ((size_t)MLK_POLY_BYTES * MLKEM_K) // the K polys of t-hat or s-hat
+#define MLK_POLY_COMP_BYTES ((size_t)32 * MLK_DV)            // one poly at dv bits: 256*dv/8
 // Rejection-sampling read cap, in three-byte groups: 1536 XOF bytes.
 // 704 already put the probability of needing more below 2^-128, and
 // the cap is what makes the sampling loop CBMC-unwindable.
@@ -29,8 +36,8 @@
 // spans two blocks.
 #define MLK_SAMPLE_CHUNK_GROUPS 8
 #define MLK_SAMPLE_CHUNKS 64
-#define MLK_POLYVEC_COMP_BYTES 960 // three polys at du=10 bits: 3*256*10/8
-#define MLK_CBD_BYTES 128          // PRF output feeding CBD: 64*eta
+#define MLK_POLYVEC_COMP_BYTES ((size_t)32 * MLK_DU * MLKEM_K) // K polys at du bits: K*256*du/8
+#define MLK_CBD_BYTES 128                                      // PRF output feeding CBD: 64*eta
 
 typedef struct {
     int16_t coeffs[MLKEM_N];
@@ -60,11 +67,11 @@ void mlk_poly_tomont(mlk_poly *p); // multiply every coefficient by R mod q
 void mlk_poly_tobytes(uint8_t out[MLK_POLY_BYTES], const mlk_poly *p);
 void mlk_poly_frombytes(mlk_poly *p, const uint8_t in[MLK_POLY_BYTES]);
 
-// Compress_du / Decompress_du over the u vector (du=10 bits).
+// Compress_du / Decompress_du over the u vector (du=10 or 11 bits).
 void mlk_polyvec_compress(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v);
 void mlk_polyvec_decompress(mlk_polyvec *v, const uint8_t in[MLK_POLYVEC_COMP_BYTES]);
 
-// Compress_dv / Decompress_dv over the v poly (dv=4 bits).
+// Compress_dv / Decompress_dv over the v poly (dv=4 or 5 bits).
 void mlk_poly_compress(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
 void mlk_poly_decompress(mlk_poly *p, const uint8_t in[MLK_POLY_COMP_BYTES]);
 

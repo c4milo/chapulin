@@ -1,4 +1,5 @@
-// bin/mlkem_hw_equiv_test: holds mlkem_hw.c and mlkem_poly_hw.c, ML-KEM-768
+// bin/mlkem_hw_equiv_test: holds mlkem_hw.c and mlkem_poly_hw.c, ML-KEM-768,
+// or ML-KEM-1024 in bin/mlkem_hw_equiv_test_1024 (-DCH_MLKEM_1024),
 // with its SHA-3 and SHAKE calls on arm64's SHA-3 instructions, to mlkem.c
 // and mlkem_poly.c, the code CBMC proves (docs/decisions.md 99). A copy is
 // its file's own text compiled once more under keccak_hw.h's names, so

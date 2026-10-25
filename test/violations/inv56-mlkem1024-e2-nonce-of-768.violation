@@ -1,0 +1,13 @@
+invariant: INV-56
+file: mlkem.c
+catches: test/wycheproof.sh
+reason: encryption draws e2 under nonce 6, ML-KEM-768's, where FIPS 203
+  gives 2k, 8 at ML-KEM-1024. Encapsulation and the re-encryption inside
+  decapsulation draw the same wrong noise, so every round trip still
+  agrees, and only known answers see it: Wycheproof's ML-KEM-1024 cases
+  fail, while the ML-KEM-768 ones, where 2k is 6, pass.
+
+--- old
+    mlk_sample_cbd(&noise, coins, (uint8_t)(2 * MLKEM_K)); // e2
+--- new
+    mlk_sample_cbd(&noise, coins, (uint8_t)6); // e2

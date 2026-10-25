@@ -211,7 +211,7 @@ static void compare_session_calls(void) {
     static uint8_t dk[MLKEM_DK_LEN];
     static uint8_t dk_cpu[MLKEM_DK_LEN];
     mlkem_keygen_dk(dk, d, z);
-    const uint8_t *ek = dk + 1152;
+    const uint8_t *ek = dk + (size_t)MLKEM_K * 384; // FIPS 203: dk = dkpke || ek || ...
     uint8_t ct[MLKEM_CT_LEN];
     uint8_t ss[MLKEM_SS_LEN];
     uint8_t back[MLKEM_SS_LEN];

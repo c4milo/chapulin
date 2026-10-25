@@ -738,7 +738,7 @@ The entries are grouped by area:
 
 #### mlkem
 
-- **Harnesses:** `mlkem` (fast), `mlkem_poly` (fast), `mlkem_ntt` (slow), `mlkem_invntt_low` (slow), `mlkem_invntt_high` (slow), `mlkem_basemul` (slow)
+- **Harnesses:** `mlkem` (fast), `mlkem_poly` (fast), `mlkem_1024` (fast), `mlkem_poly_1024` (fast), `mlkem_ntt` (slow), `mlkem_invntt_low` (slow), `mlkem_invntt_high` (slow), `mlkem_basemul` (slow)
 - **Proves:**
   - keygen, encaps and decaps are safe for every seed, message, and
     hostile key or ciphertext, with the polynomial layer stubbed to its
@@ -751,6 +751,13 @@ The entries are grouped by area:
   two halves of its inverse, and the base multiplication, whose
   chained-product overflow proofs are the SAT-hard part, each prove in
   their own slow-tier formula.
+
+  `mlkem_1024` and `mlkem_poly_1024` prove the first two claims at
+  ML-KEM-1024, under `-DCH_MLKEM_1024`: K = 4, and compression at
+  du = 11 and dv = 5 (decision 150). One object holds one parameter set,
+  so each set takes a formula of its own. The NTT, its inverse and the
+  base multiplication read one polynomial, so their four harnesses cover
+  both sets.
 - **Bound:** the full domain: every input is a fixed-size array, and the
   sampling read stops at its 1536-byte cap.
 
@@ -4498,7 +4505,8 @@ intrinsic, so no harness compiles the file, and these hold it (INV-46):
   too.
 - `bin/mlkem_test_host` runs the ML-KEM-768 known answers and the CCTV
   decapsulation anchors on the path, and the host Wycheproof test runs
-  Wycheproof's ML-KEM-768 suites on it.
+  Wycheproof's ML-KEM-768 suites on it. `bin/mlkem_test_1024_host` and
+  the host ML-KEM-1024 Wycheproof test do the same at ML-KEM-1024.
 - `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
   the pinned clang and holds its conditional branches at 7 on each:
   every one closes a loop whose count is a constant.
@@ -6659,6 +6667,14 @@ Three more suites run on every push and add evidence rather than proof.
   RSA-PSS signing;
 - ML-KEM-768.
 
+ML-KEM-1024's three suites, 511 cases, run in a binary of their own,
+`bin/wycheproof_mlkem1024_test`, built under `-DCH_MLKEM_1024` with the
+same runners, because one object holds one ML-KEM parameter set
+(decision 150). The 5,967 do not count them. They run in each lane that
+builds `test/wycheproof_test.c`: the device object, the host object under
+both values of the multiply bit, the decomposed multiply, the sanitizers
+on both objects, and the cross-compiled lane.
+
 `make check` fails when that total differs from the sum of the vectors
 `make wycheproof` generates (`tools/wycheproof-total.py`).
 
@@ -6703,7 +6719,7 @@ Line coverage is measured in CI, and the job fails below the Makefile's
 computes:
 
 - SHA-256, SHA-384 and SHA-512, SHA-3 and both SHAKE XOFs;
-- ML-KEM-768;
+- ML-KEM-768 and ML-KEM-1024;
 - HKDF and the key schedule;
 - ChaCha20, Poly1305 and the AEAD;
 - the DRBG;
@@ -6815,6 +6831,11 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    and `bin/diff_poly1305_ifma`'s 4,001, which hold `compute_powers` and
    a group step to `Spec/Poly1305Ifma.lean` digit for digit
    ([The AVX-512 IFMA Poly1305](#the-avx-512-ifma-poly1305)).
+7. The ML-KEM-1024 rows, 149 comparisons a run: `bin/diff_mlkem1024`
+   runs `test/diff_mlkem.h`'s keygen, encaps and decaps rows over
+   `mlkem.c` under `-DCH_MLKEM_1024` against `Spec/MlKem.lean` at its
+   `ml1024` parameter set, the tampered ciphertext and the refused key
+   among them (decision 150).
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose

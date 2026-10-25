@@ -89,7 +89,7 @@ void mlk_polyvec_compress(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec
 void mlk_polyvec_decompress(mlk_polyvec *v, const uint8_t in[MLK_POLYVEC_COMP_BYTES]) {
     __CPROVER_assert(__CPROVER_r_ok(in, MLK_POLYVEC_COMP_BYTES), "decompress input readable");
     __CPROVER_assert(__CPROVER_w_ok(v, sizeof *v), "decompress output writable");
-    for (unsigned k = 0; k < 3; k++) {
+    for (unsigned k = 0; k < MLKEM_K; k++) {
         havoc_poly(&v->vec[k]);
     }
 }

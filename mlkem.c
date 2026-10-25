@@ -1,5 +1,6 @@
-// ML-KEM-768 (FIPS 203): K-PKE (Algorithms 13-15) and the
-// Fujisaki-Okamoto KEM wrapper (Algorithms 16-18) around it.
+// ML-KEM (FIPS 203), at the parameter set mlkem.h's MLKEM_K names: K-PKE
+// (Algorithms 13-15) and the Fujisaki-Okamoto KEM wrapper (Algorithms
+// 16-18) around it.
 //
 // G = SHA3-512, H = SHA3-256, J = SHAKE256(32), PRF and XOF are SHAKE.
 // Every secret stack buffer is wiped before return. The one implicit
@@ -14,8 +15,16 @@
 #include "sha3.h"
 #include "widemul.h"
 
-#define MLK_DKPKE_BYTES 1152 // K-PKE secret key: ByteEncode12 of s-hat
-#define MLK_U_BYTES 960      // compressed u vector inside a ciphertext
+#define MLK_DKPKE_BYTES MLK_POLYVEC_BYTES  // K-PKE secret key: ByteEncode12 of s-hat
+#define MLK_U_BYTES MLK_POLYVEC_COMP_BYTES // compressed u vector inside a ciphertext
+
+// Where FIPS 203's dk = dkpke || ek || H(ek) || z holds each part.
+#define MLK_DK_EK_AT MLK_DKPKE_BYTES
+#define MLK_DK_H_AT (MLK_DK_EK_AT + MLKEM_EK_LEN)
+#define MLK_DK_Z_AT (MLK_DK_H_AT + 32)
+_Static_assert(MLK_DK_Z_AT + 32 == MLKEM_DK_LEN, "dk holds dkpke, ek, H(ek) and z");
+_Static_assert(MLK_POLYVEC_BYTES + 32 == MLKEM_EK_LEN, "ek holds t-hat and rho");
+_Static_assert(MLK_U_BYTES + MLK_POLY_COMP_BYTES == MLKEM_CT_LEN, "ct holds u and v");
 
 // The forward and inverse NTT and the base multiplication this object runs.
 // A host object runs them on eight lanes at a time (mlkem_vector.h) in
@@ -51,7 +60,7 @@ static void mlk_multiply_ntts(mlk_poly *r, const mlk_poly *a, const mlk_poly *b)
 // the Montgomery R^-1 factor that basemul introduces.
 static void mlk_polyvec_dot(mlk_poly *out, const mlk_polyvec *a, const mlk_polyvec *b) {
     mlk_poly prod;
-    for (unsigned j = 0; j < 3; j++) {
+    for (unsigned j = 0; j < MLKEM_K; j++) {
         mlk_multiply_ntts(&prod, &a->vec[j], &b->vec[j]);
         if (j == 0) {
             *out = prod;
@@ -78,7 +87,7 @@ static void mlk_matvec_row(mlk_poly *out, const uint8_t seed[32], unsigned i, in
                            const mlk_polyvec *s) {
     mlk_poly a;
     mlk_poly prod;
-    for (unsigned j = 0; j < 3; j++) {
+    for (unsigned j = 0; j < MLKEM_K; j++) {
         uint8_t x0 = transposed ? (uint8_t)i : (uint8_t)j;
         uint8_t x1 = transposed ? (uint8_t)j : (uint8_t)i;
         mlk_sample_ntt(&a, seed, x0, x1);
@@ -107,13 +116,13 @@ static void mlk_pke_keygen(uint8_t ek[MLKEM_EK_LEN], uint8_t dkpke[MLK_DKPKE_BYT
     sha3_512(gin, 33, g); // (rho, sigma) = G(d || k)
     const uint8_t *rho = g;
     const uint8_t *sigma = g + 32;
-    for (unsigned i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < MLKEM_K; i++) {
         mlk_sample_cbd(&s.vec[i], sigma, (uint8_t)i);
-        mlk_sample_cbd(&e.vec[i], sigma, (uint8_t)(3 + i));
+        mlk_sample_cbd(&e.vec[i], sigma, (uint8_t)(MLKEM_K + i));
         mlk_ntt(&s.vec[i]);
         mlk_ntt(&e.vec[i]);
     }
-    for (unsigned i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < MLKEM_K; i++) {
         mlk_matvec_row(&t.vec[i], rho, i, 0, &s); // t = A o s (with R^-1)
         mlk_poly_tomont(&t.vec[i]);               // undo the R^-1
         mlk_poly_add(&t.vec[i], &t.vec[i], &e.vec[i]);
@@ -121,7 +130,7 @@ static void mlk_pke_keygen(uint8_t ek[MLKEM_EK_LEN], uint8_t dkpke[MLK_DKPKE_BYT
         mlk_poly_tobytes(ek + (size_t)384 * i, &t.vec[i]);
         mlk_poly_tobytes(dkpke + (size_t)384 * i, &s.vec[i]);
     }
-    memcpy(ek + 1152, rho, 32);
+    memcpy(ek + MLK_POLYVEC_BYTES, rho, 32);
     ct_wipe(gin, sizeof gin);
     ct_wipe(g, sizeof g);
     ct_wipe(&s, sizeof s);
@@ -129,32 +138,32 @@ static void mlk_pke_keygen(uint8_t ek[MLKEM_EK_LEN], uint8_t dkpke[MLK_DKPKE_BYT
 }
 
 // K-PKE.Encrypt (Algorithm 14). coins seeds the noise; m is the 32-byte
-// message. Writes the 1088-byte ciphertext. widemul is the answer the
+// message. Writes the MLKEM_CT_LEN-byte ciphertext. widemul is the answer the
 // compression runs under (widemul.h).
 static void mlk_pke_encrypt(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN],
                             const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32],
                             const uint8_t coins[32]) {
-    const uint8_t *rho = ek + 1152;
+    const uint8_t *rho = ek + MLK_POLYVEC_BYTES;
     mlk_polyvec t;
     mlk_polyvec r;
     mlk_polyvec u;
     mlk_poly v;
     mlk_poly noise;
-    for (unsigned i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < MLKEM_K; i++) {
         mlk_poly_frombytes(&t.vec[i], ek + (size_t)384 * i);
         mlk_sample_cbd(&r.vec[i], coins, (uint8_t)i);
         mlk_ntt(&r.vec[i]);
     }
-    for (unsigned i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < MLKEM_K; i++) {
         mlk_matvec_row(&u.vec[i], rho, i, 1, &r); // A^T o r (with R^-1)
         mlk_invntt(&u.vec[i]);                    // inverse NTT absorbs R^-1
-        mlk_sample_cbd(&noise, coins, (uint8_t)(3 + i));
+        mlk_sample_cbd(&noise, coins, (uint8_t)(MLKEM_K + i));
         mlk_poly_add(&u.vec[i], &u.vec[i], &noise); // + e1
         mlk_poly_reduce(&u.vec[i]);
     }
     mlk_polyvec_dot(&v, &t, &r); // t o r (with R^-1)
     mlk_invntt(&v);
-    mlk_sample_cbd(&noise, coins, 6); // e2
+    mlk_sample_cbd(&noise, coins, (uint8_t)(2 * MLKEM_K)); // e2
     mlk_poly_add(&v, &v, &noise);
     mlk_poly_frommsg(&noise, m); // Decompress1(m)
     mlk_poly_add(&v, &v, &noise);
@@ -180,7 +189,7 @@ static void mlk_pke_decrypt(uint8_t widemul, uint8_t m[32], const uint8_t dkpke[
     mlk_poly w;
     mlk_polyvec_decompress(&u, ct);
     mlk_poly_decompress(&v, ct + MLK_U_BYTES);
-    for (unsigned i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < MLKEM_K; i++) {
         mlk_ntt(&u.vec[i]);
         mlk_poly_frombytes(&s.vec[i], dkpke + (size_t)384 * i);
     }
@@ -198,7 +207,7 @@ static void mlk_pke_decrypt(uint8_t widemul, uint8_t m[32], const uint8_t dkpke[
 // field at or above q would not round-trip. Reads only the public ek, so
 // the value-dependent branch leaks nothing. Returns nonzero on failure.
 static int mlk_modulus_check(const uint8_t ek[MLKEM_EK_LEN]) {
-    for (unsigned i = 0; i < 1152; i += 3) {
+    for (unsigned i = 0; i < MLK_POLYVEC_BYTES; i += 3) {
         uint16_t lo = (uint16_t)((ek[i] | ((uint16_t)ek[i + 1] << 8)) & 0xfff);
         uint16_t hi = (uint16_t)(((ek[i + 1] >> 4) | ((uint16_t)ek[i + 2] << 4)) & 0xfff);
         if (lo >= MLKEM_Q || hi >= MLKEM_Q) {
@@ -221,17 +230,17 @@ static void mlk_reject_secret(uint8_t out[32], const uint8_t z[32],
 
 void mlkem_keygen_dk(uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32], const uint8_t z[32]) {
     // dk = dkpke || ek || H(ek) || z, the ek written in place at
-    // dk + 1152: a caller that stores only the (d, z) seed re-expands
-    // into one dk-sized buffer and reads the ek out of the slice.
-    mlk_pke_keygen(dk + 1152, dk, d);
-    sha3_256(dk + 1152, MLKEM_EK_LEN, dk + 2336);
-    memcpy(dk + 2368, z, 32);
+    // dk + MLK_DK_EK_AT: a caller that stores only the (d, z) seed
+    // re-expands into one dk-sized buffer and reads the ek out of the slice.
+    mlk_pke_keygen(dk + MLK_DK_EK_AT, dk, d);
+    sha3_256(dk + MLK_DK_EK_AT, MLKEM_EK_LEN, dk + MLK_DK_H_AT);
+    memcpy(dk + MLK_DK_Z_AT, z, 32);
 }
 
 void mlkem_keygen_derand(uint8_t ek[MLKEM_EK_LEN], uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32],
                          const uint8_t z[32]) {
     mlkem_keygen_dk(dk, d, z);
-    memcpy(ek, dk + 1152, MLKEM_EK_LEN);
+    memcpy(ek, dk + MLK_DK_EK_AT, MLKEM_EK_LEN);
 }
 
 int mlkem_encaps_derand(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
@@ -254,9 +263,9 @@ int mlkem_encaps_derand(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[ML
 void mlkem_decaps(uint8_t widemul, uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
                   const uint8_t dk[MLKEM_DK_LEN]) {
     const uint8_t *dkpke = dk;
-    const uint8_t *ek = dk + 1152;
-    const uint8_t *h = dk + 2336; // H(ek)
-    const uint8_t *z = dk + 2368;
+    const uint8_t *ek = dk + MLK_DK_EK_AT;
+    const uint8_t *h = dk + MLK_DK_H_AT; // H(ek)
+    const uint8_t *z = dk + MLK_DK_Z_AT;
     uint8_t mp[32];
     uint8_t gin[64]; // m' || h
     uint8_t g[64];   // (K', r')

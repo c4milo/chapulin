@@ -68,7 +68,7 @@ int main(void) {
     mlk_polyvec v;
     uint8_t seed[32];
     uint8_t msg[32];
-    uint8_t packed[MLK_POLYVEC_COMP_BYTES]; // largest byte form: 960
+    uint8_t packed[MLK_POLYVEC_COMP_BYTES]; // largest byte form: 960, or 1408 at ML-KEM-1024
 
     fill_nondet(seed, sizeof seed);
     mlk_sample_ntt(&r, seed, nondet_u8(), nondet_u8());
@@ -100,7 +100,7 @@ int main(void) {
     mlk_poly_tobytes(packed, &a);
     fill_nondet(packed, sizeof packed);
     mlk_poly_frombytes(&r, packed);
-    for (unsigned k = 0; k < 3; k++) {
+    for (unsigned k = 0; k < MLKEM_K; k++) {
         fill_poly_nondet(&v.vec[k]);
     }
     mlk_polyvec_compress(packed, &v);

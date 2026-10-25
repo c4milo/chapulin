@@ -1941,6 +1941,30 @@ last `ROLE=server` stub, as the entry said it would.
   fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
   `sha3_round` proof and one the `sha3_stream` proof.
 
+### INV-56 — mlkem.c computes FIPS 203 at the parameter set its object holds
+
+- **Claim.** An object built with `-DCH_MLKEM_1024` computes ML-KEM-1024,
+  and every other object ML-KEM-768, each as FIPS 203 states it: K, du
+  and dv from Table 2, the lengths from Table 3, the dk layout, the noise
+  nonces and the compression of each set (decision 150).
+- **Mechanism.** `mlkem.h` and `mlkem_poly.h` set K, du and dv from the
+  one define, and `mlkem.c` derives each length, each offset inside dk
+  and each noise nonce from `MLKEM_K`. `mlkem_poly.c` packs u in 10 or
+  11 bits and v in 4 or 5, under `MLK_DU` and `MLK_DV`. One object holds
+  one set, and nothing picks between them at run time.
+- **Check.** At ML-KEM-1024, `bin/mlkem_test_1024` checks the round trip,
+  the implicit-reject secret SHAKE256(z || c) and the modulus check, and
+  `bin/wycheproof_mlkem1024_test` runs Wycheproof's 511 known answers.
+  At ML-KEM-768, `bin/mlkem_test` and the Wycheproof binary do the same
+  with the kyber-py, CCTV and Wycheproof vectors. `bin/diff` and
+  `bin/diff_mlkem1024` hold each set to `Spec/MlKem.lean`.
+- **Violation.** A PR drops a bit from the 11-bit packing; or keeps
+  ML-KEM-768's e2 nonce, 6, at K = 4. `inv56-mlkem1024-u-pack-drops-a-bit`
+  fails `bin/mlkem_test_1024`, because the decapsulation then rejects
+  every honest ciphertext. `inv56-mlkem1024-e2-nonce-of-768` keeps the
+  round trip whole, because both sides draw the same wrong noise, and
+  Wycheproof's known answers fail it (`test/wycheproof.sh`).
+
 ### INV-46 — a host object's ML-KEM NTT arithmetic gives the portable code's coefficients
 
 - **Claim.** `mlkem_vector.c`, which a host object runs for ML-KEM's

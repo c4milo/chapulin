@@ -713,6 +713,21 @@ launch fast full sha3_round 26 "keccak_f1600.0:25,reference_f1600.0:25,reference
 # and 2.8 GB / 186 s, basemul 3.6 GB / 254 s.
 launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089" ct.c proof/ct_wipe_stub.c
 launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c
+# The same two formulas at ML-KEM-1024 (docs/decisions.md 150), whose
+# object holds K = 4, du = 11 and dv = 5. The NTT, its inverse and the
+# base multiplication read one polynomial, so their four harnesses cover
+# both sets. mlkem_1024's bounds follow its sizes: the modulus check walks
+# 512 three-byte groups, the dk fill is 3168 bytes, the largest wipe is a
+# polyvec of 2048 bytes, and the ciphertext compare is 1568 bytes.
+# Measured on an M1 Pro on 2026-10-24 (PROVE_NO_CACHE=1
+# proof/prove-one.sh, cbmc 6.11.0, kissat), beside the two formulas at
+# ML-KEM-768 on the same text: mlkem 560 properties, 51 s, 1.9 GB;
+# mlkem_1024 560 properties, 148 s, 2.7 GB; mlkem_poly 1083 properties,
+# 310 s, 3.9 GB; mlkem_poly_1024 1269 properties, 263 s, 4.3 GB. The
+# macOS peaks read above the runner's, so mlkem_1024 takes the weight of
+# 3 that mlkem_poly takes.
+launch fast:3 full mlkem_1024 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
+launch fast:3 full mlkem_poly_1024 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain
 # and in-place-open shapes joined the formula. With rec_dir's suite and
 # its key and IV derived at the suite's hash (docs/decisions.md entry

@@ -1,4 +1,4 @@
-// ML-KEM-768 differential section: keygen, encaps, and decaps against
+// ML-KEM differential section: keygen, encaps, and decaps against
 // the Lean spec on random seeds, plus the two disagreement-prone
 // paths — a tampered ciphertext (both sides must derive the same
 // implicit-reject secret) and an encapsulation key that fails the
@@ -9,6 +9,15 @@
 
 #include "mlkem.h"
 #include "test_widemul.h"
+
+// The oracle's commands for this build's parameter set: bin/diff runs
+// ML-KEM-768, and bin/diff_mlkem1024 (-DCH_MLKEM_1024) ML-KEM-1024
+// (docs/decisions.md 150).
+#ifdef CH_MLKEM_1024
+#define DIFF_MLKEM "mlkem1024"
+#else
+#define DIFF_MLKEM "mlkem"
+#endif
 
 static void diff_mlkem_keygen(void) {
     for (int i = 0; i < 12; i++) {
@@ -28,7 +37,7 @@ static void diff_mlkem_keygen(void) {
         want[at] = ' ';
         (void)hex_encode(want + at + 1, dk, sizeof dk);
         char cmd[192];
-        (void)snprintf(cmd, sizeof cmd, "mlkem_keygen %s %s", d_hex, z_hex);
+        (void)snprintf(cmd, sizeof cmd, DIFF_MLKEM "_keygen %s %s", d_hex, z_hex);
         expect(cmd, want);
     }
 }
@@ -58,7 +67,7 @@ static void diff_mlkem_encaps(void) {
         want[at] = ' ';
         (void)hex_encode(want + at + 1, ss, sizeof ss);
         static char cmd[2 * MLKEM_EK_LEN + 128];
-        (void)snprintf(cmd, sizeof cmd, "mlkem_encaps %s %s", ek_hex, m_hex);
+        (void)snprintf(cmd, sizeof cmd, DIFF_MLKEM "_encaps %s %s", ek_hex, m_hex);
         expect(cmd, want);
     }
     // The modulus check: a coefficient encoding past q must be refused
@@ -82,7 +91,7 @@ static void diff_mlkem_encaps(void) {
         char m_hex[65];
         (void)hex_encode(m_hex, m, sizeof m);
         static char cmd[2 * MLKEM_EK_LEN + 128];
-        (void)snprintf(cmd, sizeof cmd, "mlkem_encaps %s %s", ek_hex, m_hex);
+        (void)snprintf(cmd, sizeof cmd, DIFF_MLKEM "_encaps %s %s", ek_hex, m_hex);
         expect(cmd, "FAIL");
     }
 }
@@ -117,7 +126,7 @@ static void diff_mlkem_decaps(void) {
         char want[2 * MLKEM_SS_LEN + 1];
         (void)hex_encode(want, out, sizeof out);
         static char cmd[2 * MLKEM_DK_LEN + 2 * MLKEM_CT_LEN + 128];
-        (void)snprintf(cmd, sizeof cmd, "mlkem_decaps %s %s", dk_hex, ct_hex);
+        (void)snprintf(cmd, sizeof cmd, DIFF_MLKEM "_decaps %s %s", dk_hex, ct_hex);
         expect(cmd, want);
     }
 }

@@ -632,7 +632,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
+TESTH := test/wycheproof_mlkem.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
          test/pem_files_bundle_tests.h test/pem_files_parameters_tests.h \
          test/diff_pem_files_calls.h test/timing_pem.h test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
@@ -2711,6 +2711,13 @@ MLKEM_TEST_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c ct_wipe.c
 bin/mlkem_test: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+# The same file under -DCH_MLKEM_1024, ML-KEM-1024's checks that need no
+# vector (docs/decisions.md 150). One object holds one parameter set, so
+# each set takes a binary of its own; bin/wycheproof_mlkem1024_test holds
+# its known answers.
+bin/mlkem_test_1024: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 # The TRANSPORT=quic-nonblocking driver through its sixteen public entries: the
 # configuration rules, the staged ClientHello, a ServerHello delivered
 # over CRYPTO bytes, the level rules RFC 9001 §4.1.3 states, and the one
@@ -3169,6 +3176,10 @@ MLKEM_HW_EQUIV_TEST_SRCS := $(call host_srcs,sha3.c mlkem.c mlkem_poly.c) ct.c c
 bin/mlkem_hw_equiv_test: test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS)
+bin/mlkem_hw_equiv_test_1024: test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -I. -Itest -o $@ test/mlkem_hw_equiv_test.c \
+	  $(MLKEM_HW_EQUIV_TEST_SRCS)
 # The vector NTT against mlkem_poly.c's loops, the code CBMC proves
 # (docs/decisions.md 101). mlkem_poly.c compiles to the same code in a host
 # object as in a device object, so the binary links it under its own names.
@@ -3184,6 +3195,11 @@ MLKEM_AVX2_EQUIV_TEST_SRCS := $(call host_srcs,sha3.c mlkem.c mlkem_poly.c) ct.c
 bin/mlkem_avx2_equiv_test: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mlkem_avx2_equiv_test.c \
+	  $(MLKEM_AVX2_EQUIV_TEST_SRCS)
+# At K = 4 the row sampler runs one entry on each of the four states.
+bin/mlkem_avx2_equiv_test_1024: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -I. -Itest -o $@ test/mlkem_avx2_equiv_test.c \
 	  $(MLKEM_AVX2_EQUIV_TEST_SRCS)
 # Which SHA-256 and which SHA-512 a host object's hash calls run under
 # each ch_cfg.cpu value (docs/decisions.md 93). test/hash_runtime_count.c
@@ -4001,6 +4017,9 @@ bin/unit_ct_widemul: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 bin/mlkem_test_ct_widemul: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+bin/mlkem_test_1024_ct_widemul: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLKEM_1024 -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 # The signer multiplies through ct_widemul in three files -- the field,
 # the scalar arithmetic and, through them, every point addition -- so its
 # vectors run over both forms for the reason the two above do.
@@ -4015,9 +4034,11 @@ bin/p256_field_test_ct_widemul: test/p256_field_test.c $(P256_FIELD_TEST_SRCS) $
 	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
 
 .PHONY: ct-widemul-check
-ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/p256_field_test_ct_widemul bin/p256_sign_test_ct_widemul
+ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/mlkem_test_1024_ct_widemul \
+                  bin/p256_field_test_ct_widemul bin/p256_sign_test_ct_widemul
 	./bin/unit_ct_widemul
 	./bin/mlkem_test_ct_widemul
+	./bin/mlkem_test_1024_ct_widemul
 	./bin/p256_field_test_ct_widemul
 	./bin/p256_sign_test_ct_widemul
 	$(MAKE) wycheproof-ct-widemul
@@ -4057,10 +4078,11 @@ bin/$(1)_host: $(2) $(3) $$(call host_srcs,$(3)) $$(HDRS) $$(TESTH)
 	@mkdir -p bin
 	$$(CC) $$(HOST_CFLAGS) -DCH_CPU_RUNTIME $(4) -I. -Itest -o $$@ $(2) $$(call host_srcs,$(3))
 endef
-HOST_VECTOR_TESTS := unit mlkem_test p256_ecdh_test p256_sign_test rsa_sign_test sha512_test hkdf384_test \
+HOST_VECTOR_TESTS := unit mlkem_test mlkem_test_1024 p256_ecdh_test p256_sign_test rsa_sign_test sha512_test hkdf384_test \
                      rsa_test rsa_pkcs1_test
 $(eval $(call HOST_VECTOR_BIN,unit,test/unit_test.c,$(SRCS),))
 $(eval $(call HOST_VECTOR_BIN,mlkem_test,test/mlkem_test.c,$(MLKEM_TEST_SRCS),))
+$(eval $(call HOST_VECTOR_BIN,mlkem_test_1024,test/mlkem_test.c,$(MLKEM_TEST_SRCS),-DCH_MLKEM_1024))
 $(eval $(call HOST_VECTOR_BIN,p256_ecdh_test,test/p256_ecdh_test.c,$(P256_ECDH_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,p256_sign_test,test/p256_sign_test.c,$(P256_SIGN_SRC),))
 $(eval $(call HOST_VECTOR_BIN,rsa_sign_test,test/rsa_sign_test.c,$(RSA_SIGN_TEST_SRCS),$(RSA_WIDE_DEF)))
@@ -4193,6 +4215,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
                                  bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/mlkem_hw_equiv_test \
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
+                                 bin/mlkem_hw_equiv_test_1024 bin/mlkem_avx2_equiv_test_1024 \
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
                                  bin/rsa_blocks_equiv_test bin/rsa_addcarry_equiv_test \
@@ -4338,7 +4361,8 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   sha512_test \
                   hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test \
                   webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test \
-                  webpki_chain_test pem_files_test webpki_auth_test webpki_encrypted_exts_test mlkem_test quic_driver_test \
+                  webpki_chain_test pem_files_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 \
+                  quic_driver_test \
                   quic_test $(patsubst bin/%,%,$(AES_EXTERN_BINS)) \
                   $(patsubst bin/%,%,$(X86_KERNEL_BINS) $(HOST_BINS)) \
                   srv_auth_test srv_test srv_quic_test srv_quic_both_test srv_tcp_nonblocking_test \
@@ -4915,6 +4939,8 @@ endif
 	./bin/diff_quic_extern
 	$(MAKE) bin/diff_pem_files
 	./bin/diff_pem_files
+	$(MAKE) bin/diff_mlkem1024
+	./bin/diff_mlkem1024
 ifneq ($(HOST_TARGET),)
 	$(MAKE) bin/diff_x25519_wide
 	./bin/diff_x25519_wide
@@ -4935,6 +4961,15 @@ else
 	@echo "SKIP diff's AVX2 binary: $(CC) fails the host test"
 endif
 endif
+
+# ML-KEM-1024's arm: test/diff_mlkem.h's rows against the oracle's
+# mlkem1024_ commands, over mlkem.c under -DCH_MLKEM_1024
+# (docs/decisions.md 150). Its own main, because one object holds one
+# ML-KEM parameter set; test/diff_mlkem1024_test.c says so.
+DIFF_MLKEM1024_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c ct_wipe.c
+bin/diff_mlkem1024: test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -Itest -o $@ test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS)
 
 # The wide field's arm: the x25519 rows against spec/lean/Spec/X25519.lean
 # with x25519_wide.c's entries answering, built as a host object builds
@@ -5299,8 +5334,9 @@ endef
         wycheproof-run-default wycheproof-run-host wycheproof-run-aes-extern
 wycheproof:
 	@$(call wycheproof_fetch,wycheproof); \
-	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(MAKE) --no-print-directory -j4 wycheproof-default wycheproof-host wycheproof-aes-extern
+	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h && \
+	$(MAKE) --no-print-directory -j4 wycheproof-default wycheproof-host wycheproof-aes-extern \
+	  wycheproof-mlkem1024 wycheproof-mlkem1024-host
 # The three tests build and run at once, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
@@ -5340,6 +5376,38 @@ WYCHEPROOF_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -DCH_TRA
   $(AES_HW_SRCS) quic_aes_soft.c
 WYCHEPROOF_AES_EXTERN = $(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN \
   $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_EXTERN_SRCS)
+# ML-KEM-1024's three suites (docs/decisions.md 150). One object holds one
+# ML-KEM parameter set, so they run in a binary of their own over
+# bin/wycheproof_mlkem1024_vectors.h, which the generator writes from the
+# same checkout. The runners are wycheproof_test.c's (test/wycheproof_mlkem.h).
+# The host binary runs the vector NTT, and under CH_CPU_CONSTANT_TIME_MULTIPLY
+# the native compression.
+WYCHEPROOF_MLKEM1024_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c ct_wipe.c
+WYCHEPROOF_MLKEM1024_DEFAULT = $(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -Itest -Ibin \
+  test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS)
+WYCHEPROOF_MLKEM1024_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -I. -Itest -Ibin \
+  test/wycheproof_mlkem1024_test.c $(call host_srcs,$(WYCHEPROOF_MLKEM1024_SRCS))
+.PHONY: wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-run-mlkem1024 \
+        wycheproof-run-mlkem1024-host
+wycheproof-mlkem1024:
+	@python3 tools/stamp.py wycheproof-mlkem1024 $(WYCHEPROOF_STAMP_INPUTS) \
+	  --output '$(WYCHEPROOF_MLKEM1024_DEFAULT) -E' -- $(MAKE) --no-print-directory wycheproof-run-mlkem1024
+wycheproof-run-mlkem1024:
+	@$(WYCHEPROOF_MLKEM1024_DEFAULT) -o bin/wycheproof_mlkem1024_test && ./bin/wycheproof_mlkem1024_test
+wycheproof-mlkem1024-host:
+ifeq ($(HOST_TARGET),)
+	$(call REQUIRE_ON_CI,wycheproof-mlkem1024-host)
+	@echo "SKIP the host ML-KEM-1024 Wycheproof test: $(CC) fails the host test"
+else
+	@python3 tools/stamp.py wycheproof-mlkem1024-host $(WYCHEPROOF_STAMP_INPUTS) \
+	  --output '$(WYCHEPROOF_MLKEM1024_HOST) -E' -- $(MAKE) --no-print-directory wycheproof-run-mlkem1024-host
+endif
+wycheproof-run-mlkem1024-host:
+	@set -e; $(WYCHEPROOF_MLKEM1024_HOST) -o bin/wycheproof_mlkem1024_test_host; \
+	for bits in $(HOST_VECTOR_CPU); do \
+	  echo "== bin/wycheproof_mlkem1024_test_host $$bits (host object):"; \
+	  ./bin/wycheproof_mlkem1024_test_host $$bits; \
+	done
 wycheproof-default:
 	@python3 tools/stamp.py wycheproof-default $(WYCHEPROOF_STAMP_INPUTS) \
 	  --output '$(WYCHEPROOF_DEFAULT) -E' -- $(MAKE) --no-print-directory wycheproof-run-default
@@ -5445,10 +5513,13 @@ webpki-auth-vectors:
 .PHONY: wycheproof-ct-widemul
 wycheproof-ct-widemul:
 	@$(call wycheproof_fetch,wycheproof-ct-widemul); \
-	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h && \
 	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
 	  $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
-	./bin/wycheproof_test_ct_widemul
+	./bin/wycheproof_test_ct_widemul && \
+	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLKEM_1024 -I. -Itest -Ibin -o bin/wycheproof_mlkem1024_test_ct_widemul \
+	  test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS) && \
+	./bin/wycheproof_mlkem1024_test_ct_widemul
 
 # Sanitizer lane: the deterministic suites under ASan + UBSan, test
 # binaries only — sanitized codegen must never leak into coverage,
@@ -5509,18 +5580,22 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_auth_test test/webpki_auth_test.c $(WEBPKI_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_encrypted_exts_test test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_1024 -I. -o bin/san/mlkem_test_1024 test/mlkem_test.c $(MLKEM_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_RSA_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(HANDSHAKE_SEQUENCE_SRCS)
-	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
-	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h && \
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
 	  $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
-	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
+	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test && \
+	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_1024 -I. -Itest -Ibin -o bin/san/wycheproof_mlkem1024_test \
+	  test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS) && \
+	echo "== wycheproof_mlkem1024_test (SAN -O$(O))" && ./bin/san/wycheproof_mlkem1024_test
 	# A host object's paths, where the compiler passes the host test. The
 	# four equivalence binaries: the wide X25519 field, the vector
 	# ChaCha20 and Poly1305, which run their cases on heap buffers that end
@@ -5621,6 +5696,13 @@ san-check:
 	  for bits in 0x5 $(X86_WYCHEPROOF_CPU) $(HASH_WYCHEPROOF_CPU); do \
 	    echo "== wycheproof_test_host $$bits (SAN -O$(O))"; ./bin/san/wycheproof_test_host $$bits; \
 	  done; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -I. -Itest -Ibin \
+	    -o bin/san/wycheproof_mlkem1024_test_host test/wycheproof_mlkem1024_test.c \
+	    $(call san_host_srcs,$(call host_srcs,$(WYCHEPROOF_MLKEM1024_SRCS))); \
+	  for bits in $(HOST_VECTOR_CPU); do \
+	    echo "== wycheproof_mlkem1024_test_host $$bits (SAN -O$(O))"; \
+	    ./bin/san/wycheproof_mlkem1024_test_host $$bits; \
+	  done; \
 	else \
 	  echo "SKIP san host object: $(CC) fails the host test"; \
 	fi
@@ -5678,6 +5760,8 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_1024 -I. -o bin/cross/mlkem_test_1024 test/mlkem_test.c \
+	  $(MLKEM_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_RSA_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
@@ -5685,16 +5769,20 @@ cross-check:
 	  $(HANDSHAKE_SEQUENCE_SRCS)
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
-	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h && \
 	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
-	    $(WYCHEPROOF_SRCS) $(AES_IMPL) ; \
+	    $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
+	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -DCH_MLKEM_1024 -static -I. -Itest -Ibin -o bin/cross/wycheproof_mlkem1024_test \
+	    test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS) ; \
 	else \
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mlkem_test_1024 handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
-	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi
+	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi; \
+	if [ -x wycheproof_mlkem1024_test ]; then echo "== wycheproof_mlkem1024_test ($(RUNNER))"; \
+	  $(RUNNER) ./wycheproof_mlkem1024_test; fi
 
 # Lean spec hygiene: the escape hatches that would quietly weaken the
 # proofs are banned from the model (spec/lean/Spec/, Spec.lean) — sorry,
@@ -6742,10 +6830,20 @@ endif
 # another file that dereferences it is reported on the first run, on a
 # run that analyses only the caller, and on one that analyses only the
 # callee.
+#
+# The base run leaves out CH_MLKEM_1024's configuration (-U). Under --force
+# the whole-program pass otherwise pairs a caller of ML-KEM-768, whose ek
+# is 1184 bytes, with the ML-KEM-1024 arm of mlk_pke_encrypt, which reads
+# that ek at byte 1536, and no object holds both sets (docs/decisions.md
+# 150). MLKEM1024_CPPCHECK_C gets a run of its own under the define.
 CPPCHECK_FLAGS := --std=c11 --enable=warning,style,performance,portability \
   --inline-suppr --suppress=missingIncludeSystem \
   --suppress=constParameterCallback --suppress=shiftTooManyBitsSigned \
-  $(HOST_RAND_DEF) --force --error-exitcode=1 --quiet
+  $(HOST_RAND_DEF) -UCH_MLKEM_1024 --force --error-exitcode=1 --quiet
+# ML-KEM-1024's sources and the tests that build it, in one set's
+# configuration: the files stop at an #error without the define.
+MLKEM1024_CPPCHECK_C := mlkem.c mlkem_poly.c test/mlkem_test.c test/diff_mlkem1024_test.c \
+  test/wycheproof_mlkem1024_test.c
 # A host object's native copies, and the units that compile them again
 # under counted names, define CH_WIDEMUL_NATIVE_COPY, which ct.h refuses
 # outside -DCH_CPU_RUNTIME. In cppcheck's base configuration that #error
@@ -6785,6 +6883,12 @@ lint-cppcheck-run:
 	mkdir -p $$build; \
 	$(CPPCHECK) $(CPPCHECK_FLAGS) $(WIDEMUL_NATIVE_COPY_DEFS) --cppcheck-build-dir=$$build -j$(LINT_JOBS) \
 	  --relative-paths=$(CURDIR) $(addprefix $(CURDIR)/,$(WIDEMUL_NATIVE_COPY_C))
+	@build=bin/cppcheck/$$(printf '%s\n' '$(CPPCHECK_FLAGS) -DCH_MLKEM_1024 $(MLKEM1024_CPPCHECK_C)' \
+	  | $(SHA256) | cut -c1-16); \
+	mkdir -p $$build; \
+	$(CPPCHECK) $(filter-out -UCH_MLKEM_1024,$(CPPCHECK_FLAGS)) -DCH_MLKEM_1024 -Itest \
+	  --cppcheck-build-dir=$$build -j$(LINT_JOBS) --relative-paths=$(CURDIR) \
+	  $(addprefix $(CURDIR)/,$(MLKEM1024_CPPCHECK_C))
 	# The QEMU and FreeRTOS smoke sources, with two suppressions:
 	# unusedStructMember, because the hardware, not C, reads the vector
 	# table entries; and comparePointers, because __bss_start and

@@ -9,8 +9,8 @@ reason: the row sampler takes A's indices where the caller asks for A^T's
   unguarded rather than caught.
 
 --- old
-        x0[j] = transposed ? (uint8_t)i : (uint8_t)j;
-        x1[j] = transposed ? (uint8_t)j : (uint8_t)i;
+        x0[j] = transposed ? (uint8_t)i : (uint8_t)entry;
+        x1[j] = transposed ? (uint8_t)entry : (uint8_t)i;
 --- new
-        x0[j] = transposed ? (uint8_t)j : (uint8_t)i;
-        x1[j] = transposed ? (uint8_t)i : (uint8_t)j;
+        x0[j] = transposed ? (uint8_t)entry : (uint8_t)i;
+        x1[j] = transposed ? (uint8_t)i : (uint8_t)entry;

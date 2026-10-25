@@ -34,24 +34,27 @@ Spec.Sha3.sha3_256    : ByteArray → ByteArray                          -- FIPS
 Spec.Sha3.sha3_512    : ByteArray → ByteArray                          -- FIPS 202, 64 bytes out
 Spec.Sha3.shake128    : ByteArray → (outLen : Nat) → ByteArray         -- FIPS 202 XOF
 Spec.Sha3.shake256    : ByteArray → (outLen : Nat) → ByteArray         -- FIPS 202 XOF
-Spec.MlKem.keygen     : (d z : ByteArray) → ByteArray × ByteArray      -- FIPS 203 §7.1,
-                        -- ML-KEM-768: (ek, dk) = (1184, 2400) bytes from the
-                        -- two 32-byte seeds, via §6.1's derandomized
-                        -- ML-KEM.KeyGen_internal. Line op:
-                        -- `mlkem_keygen <d> <z>` → `<ek> <dk>`.
-Spec.MlKem.encaps     : (ek m : ByteArray) → Option (ByteArray × ByteArray)
+Spec.MlKem.keygen     : (d z : ByteArray) → (P : Params := ml768) → ByteArray × ByteArray
+                        -- FIPS 203 §7.1 at the parameter set P, ml768 or
+                        -- ml1024: (ek, dk) = (1184, 2400) or (1568, 3168)
+                        -- bytes from the two 32-byte seeds, via §6.1's
+                        -- derandomized ML-KEM.KeyGen_internal. Line ops:
+                        -- `mlkem_keygen <d> <z>` and `mlkem1024_keygen <d> <z>`
+                        -- → `<ek> <dk>`.
+Spec.MlKem.encaps     : (ek m : ByteArray) → (P : Params := ml768) → Option (ByteArray × ByteArray)
                         -- FIPS 203 §7.2 with §6.2's derandomized
                         -- ML-KEM.Encaps_internal: some (ct, ss) =
-                        -- (1088, 32) bytes; none when ek fails §7.2's
-                        -- checks: not 1184 bytes, or a coefficient not
-                        -- reduced mod q.
-                        -- Line op: `mlkem_encaps <ek> <m>` →
-                        -- `<ct> <ss>` / `FAIL`.
-Spec.MlKem.decaps     : (dk ct : ByteArray) → ByteArray                -- FIPS 203 §7.3
+                        -- (1088, 32) or (1568, 32) bytes; none when ek
+                        -- fails §7.2's checks: not 384 k + 32 bytes, or a
+                        -- coefficient not reduced mod q.
+                        -- Line ops: `mlkem_encaps <ek> <m>` and
+                        -- `mlkem1024_encaps <ek> <m>` → `<ct> <ss>` / `FAIL`.
+Spec.MlKem.decaps     : (dk ct : ByteArray) → (P : Params := ml768) → ByteArray  -- FIPS 203 §7.3
                         -- via §6.3's ML-KEM.Decaps_internal: the 32-byte
                         -- shared secret; a tampered ciphertext yields the
                         -- implicit-reject secret J(z ‖ ct), never an error.
-                        -- Line op: `mlkem_decaps <dk> <ct>` → `<ss>`.
+                        -- Line ops: `mlkem_decaps <dk> <ct>` and
+                        -- `mlkem1024_decaps <dk> <ct>` → `<ss>`.
 Spec.Hkdf.hmac        : (key msg : ByteArray) → ByteArray              -- RFC 2104 w/ SHA-256
 Spec.Hkdf.extract     : (salt ikm : ByteArray) → ByteArray             -- RFC 5869
 Spec.Hkdf.expand      : (prk info : ByteArray) → (len : Nat) → ByteArray
@@ -1065,13 +1068,16 @@ Spec.Sha3.absorb_size        (absorb rate padded).size = 200           -- the st
 Spec.Sha3.squeeze_size       (squeeze rate state outLen).size = outLen -- at a real rate
 Spec.Sha3.pad_blocks         (pad rate domain msg).size % rate = 0     -- §B.2 pad10*1
 Spec.Sha3.pad_prefix         padding keeps the message as a prefix
-Spec.MlKem.keygen_ek_size    (keygen d z).1.size = 1184                -- FIPS 203 §6.1 key sizes
-Spec.MlKem.keygen_dk_size    z.size = 32 → (keygen d z).2.size = 2400
-Spec.MlKem.encaps_ct_size    encaps ek m = some (ct, ss) → ct.size = 1088   -- §6.2
-Spec.MlKem.decaps_size       (decaps dk ct).size = 32                  -- §6.3, both the normal
+Spec.MlKem.keygen_ek_size    (keygen d z P).1.size = 384 * P.k + 32    -- FIPS 203 §6.1 key sizes
+Spec.MlKem.keygen_dk_size    z.size = 32 → (keygen d z P).2.size = 768 * P.k + 96
+Spec.MlKem.encaps_ct_size    encaps ek m P = some (ct, ss) →           -- §6.2
+                             -- ct.size = P.k * (32 * P.du) + 32 * P.dv
+Spec.MlKem.decaps_size       (decaps dk ct P).size = 32                -- §6.3, both the normal
                              -- and the implicit-reject branch
+Spec.MlKem.sizes_768         ek 1184, dk 2400, ct 1088 at ml768        -- FIPS 203 Table 3
+Spec.MlKem.sizes_1024        ek 1568, dk 3168, ct 1568 at ml1024
 Spec.MlKem.byteEncode_size   (byteEncode F d).size = 32 * d            -- §4.2.1 ByteEncode_d,
-Spec.MlKem.encode3_size      (encode3 v d).size = 96 * d               -- and over a rank-3 vector
+Spec.MlKem.encodeVec_size    (encodeVec n v d).size = n * (32 * d)     -- and over an n-vector
 Spec.Drbg.next_key_eq_block  the next key is the counter-0 ChaCha20 block under the
                              -- current key, so key advance does not depend on how many
                              -- output bytes the request asked for (next_key_indep)
@@ -1575,7 +1581,7 @@ means the module's selftest plus the differential oracle carry it;
 | P384 | 7 | `Weierstrass` at the P-384 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^384`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.6 vectors and the differential |
 | RsaPkcs1 | 4 | the encoding is exactly the modulus length; a signature of the wrong length never verifies and a signed one has the right length; a digest length naming no hash never verifies; the arithmetic stays vector-checked |
 | Sha3 | 8 | output lengths for the two hashes and two XOFs, sponge state size, padding block alignment and message prefix; the permutation itself vector-checked |
-| MlKem | 6 | FIPS 203 §6.1-6.3 output-length contracts (ek 1184, dk 2400, ct 1088, shared secret 32 on both decapsulation branches) and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
+| MlKem | 8 | FIPS 203 §6.1-6.3 output-length contracts at any parameter set, with ML-KEM-768's (ek 1184, dk 2400, ct 1088) and ML-KEM-1024's (1568, 3168, 1568) stated apart, the shared secret 32 on both decapsulation branches, and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
 | P256WidePoint | 13 | the incomplete additions, the Jacobian doubling and the two conversions `p256_wide_point.c` runs, modeled from the C: the incomplete mixed addition gives `P + Q` for a finite `P` and an affine `Q` whose x differ, over every field, and the loop of windows 1 to 41 in `p256_wide_base_mul` meets that condition at every addition, so it computes the sum of the windows' multiples of `G`, at P-256 with `p` and `n` prime and `n • G = 0` as hypotheses; the conversions keep every point; the Jacobian doubling gives `P + P` for every point of every curve y² = x³ - 3x + b over every field in which 2 is not zero, the point at infinity and a point with y = 0 among them; the incomplete Jacobian addition gives `P + Q` for two finite points whose x differ, over every field; and `p256_wide_mul`'s odd multiples and windows 62 to 1 meet that condition at every addition, at P-256 for every finite point with `p` and `n` prime and `n • P = 0` as hypotheses. The two complete additions, the top window of k·G, window 0 of the key exchange and both corrections stay with the C's tests and the differential |

@@ -1,5 +1,8 @@
-// ML-KEM-768 (FIPS 203): the post-quantum KEM chapulin offers alongside
-// x25519 in the TLS 1.3 key_share. One parameter set, no negotiation.
+// ML-KEM (FIPS 203): the post-quantum KEM chapulin offers in the TLS 1.3
+// key_share. ML-KEM-768 sits beside x25519 in X25519MLKEM768, and
+// ML-KEM-1024 stands alone under PROFILE=cnsa2 (docs/decisions.md 150).
+// One object holds one parameter set: CH_MLKEM_1024 selects ML-KEM-1024,
+// and its absence ML-KEM-768. Nothing picks between them at run time.
 //
 // The entry points are derandomized: the caller supplies every random
 // byte (d, z, m), because chapulin draws only at the sites INV-4 lists,
@@ -16,27 +19,34 @@
 
 #include "sha3.h"
 
+#ifdef CH_MLKEM_1024
+#define MLKEM_K 4         // module rank
+#define MLKEM_EK_LEN 1568 // encapsulation key (public)
+#define MLKEM_DK_LEN 3168 // decapsulation key (secret)
+#define MLKEM_CT_LEN 1568 // ciphertext
+#else
 #define MLKEM_K 3         // module rank
-#define MLKEM_Q 3329      // field modulus
-#define MLKEM_N 256       // polynomial degree
 #define MLKEM_EK_LEN 1184 // encapsulation key (public)
 #define MLKEM_DK_LEN 2400 // decapsulation key (secret)
 #define MLKEM_CT_LEN 1088 // ciphertext
-#define MLKEM_SS_LEN 32   // shared secret
+#endif
+#define MLKEM_Q 3329    // field modulus
+#define MLKEM_N 256     // polynomial degree
+#define MLKEM_SS_LEN 32 // shared secret
 
 // Derives (ek, dk) from a 32-byte d and 32-byte z (FIPS 203 Algorithm
 // 16, ML-KEM.KeyGen_internal). d seeds the K-PKE key pair; z is the
 // implicit-reject secret, copied into dk. Both functions write the same
 // dk; mlkem_keygen_derand also copies the ek out. FIPS 203's dk layout
-// carries the ek at dk + 1152, so a caller that stores only the (d, z)
-// seed calls mlkem_keygen_dk and reads its ek there, spending one
+// carries the ek at dk + MLKEM_K * 384, so a caller that stores only the
+// (d, z) seed calls mlkem_keygen_dk and reads its ek there, spending one
 // dk-sized buffer instead of two.
 void mlkem_keygen_dk(uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32], const uint8_t z[32]);
 void mlkem_keygen_derand(uint8_t ek[MLKEM_EK_LEN], uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32],
                          const uint8_t z[32]);
 
 // Encapsulates against a peer ek using a 32-byte message m (FIPS 203
-// Algorithm 17, ML-KEM.Encaps_internal). Writes ct[1088] and ss[32].
+// Algorithm 17, ML-KEM.Encaps_internal). Writes ct[MLKEM_CT_LEN] and ss[32].
 // Returns 0 on success, nonzero if ek fails the FIPS 203 section 7.2
 // modulus check (a coefficient at or above q). This call and
 // mlkem_decaps take first the answer their compression runs under, a

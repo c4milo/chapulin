@@ -1,0 +1,13 @@
+invariant: INV-56
+file: mlkem_poly.c
+catches: mlkem_test_1024
+reason: ByteEncode_11 writes the last coefficient of each group of eight
+  without its top bit, so the ciphertext's u is not the one FIPS 203
+  packs. Decapsulation re-encrypts and finds another ciphertext, so it
+  answers the implicit-reject secret for every honest ciphertext, and the
+  round trip in bin/mlkem_test_1024 fails.
+
+--- old
+            out[o + 10] = (uint8_t)(t[7] >> 3);
+--- new
+            out[o + 10] = (uint8_t)((t[7] >> 3) & 0x7f);
