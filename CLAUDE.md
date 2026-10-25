@@ -51,7 +51,13 @@ Home: github.com/c4milo.
   (`srv_kex.[ch]`, docs/decisions.md 54 and 63). secp256r1 runs over the
   constant-time `p256_ecdh.[ch]`, never over `p256.[ch]`, which verifies
   public inputs and branches on them. ch_tls.group reports the group on
-  both sides. No X.509 parsing outside the certificate files. These are
+  both sides. PROFILE=cnsa2 (`profile_cfg.h`, docs/decisions.md 151)
+  is a raw or ca client on CNSA 2.0's algorithms alone:
+  TLS_AES_256_GCM_SHA384, ML-KEM-1024 (0x0202, -DCH_MLKEM_1024) and an
+  external PSK with a SHA-384 binder, on AES=extern with
+  CH_AES_EXTERN_CONSTANT_TIME. It refuses a pin or a CA key, holds no
+  x25519.c, and ROLE=server and TRUST=webpki refuse it. No X.509
+  parsing outside the certificate files. These are
   the canonical DER reader in x509_der.[ch], and the profile verifier in
   x509.[ch] and the provisioning reader in x509_ca.[ch] under the ca
   modes. They are also the chain verifier in webpki.[ch] with its pieces
