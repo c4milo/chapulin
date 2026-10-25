@@ -337,10 +337,11 @@ Home: github.com/c4milo.
   secret amount, which clang makes of some masked selects, is allowed in
   a host object alone: every arm64 and x86-64 core shifts by a register
   in the same time for every amount (docs/decisions.md 115). Comparisons go
-  through `ct_memeq`, and wipes through `ct_wipe`, which calls `memset`
-  through a volatile function pointer so the compiler cannot remove it,
-  while the proofs read a byte-loop stub in `proof/` with the same
-  contract (docs/decisions.md 91); a kernel that held secrets in 512-bit
+  through `ct_memeq`, and wipes through `ct_wipe`, which stores the bytes
+  itself, a word at a time, through volatile lvalues of a `may_alias`
+  type, so the compiler can neither remove a store nor replace the loop
+  with `memset`, while the proofs read a byte-loop stub in `proof/` with
+  the same contract (docs/decisions.md 91 and 144); a kernel that held secrets in 512-bit
   registers, or the entry that calls it, calls `avx512_wipe_registers`
   before it returns, because C
   names no register and VZEROUPPER and VZEROALL leave zmm16 to zmm31
