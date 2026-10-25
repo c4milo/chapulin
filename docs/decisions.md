@@ -13494,8 +13494,24 @@ does nothing more.
       | x86-64, gcc 13.3 | 622,720 | 454,635 | 214,098 | 179,807 |
 
       On the N2 the shared secret takes 0.91 of OpenSSL 3.6.4's 380,382
-      instructions. docs/performance.md gives `bench/handshake-n2.sh`'s
-      count of the whole handshake after the change.
+      instructions. `bench/handshake-n2.sh` on the runner counts it at
+      345,032 inside the server's handshake, and the handshake under
+      `0xe7` at 821,090 where it was 883,086, 0.61 of OpenSSL 3.6.4's
+      (docs/performance.md, "What decision 152 changed").
+    - **Time on x86-64.** `bench.yml` timed the tree on 2026-10-25 (run
+      40209314341), and OpenSSL 3.6.4 in the same jobs, whose x86-64
+      ladder is assembly. One shared secret:
+
+      | CPU, compiler | before, from the CSVs of 2026-10-13 | with entry 152 | OpenSSL 3.6.4 | ratio, before and now |
+      | --- | --- | --- | --- | --- |
+      | AMD EPYC 7763, gcc 13.3 | 54.2 µs | 39.9 µs | 36.5 µs | 1.48, 1.09 |
+      | AMD EPYC 7763, clang 23 | 47.1 µs | 42.5 µs | 36.5 µs | 1.29, 1.16 |
+      | Xeon Platinum 8573C, gcc 13.3 | 45.3 µs | 34.5 µs | 35.1 µs | 1.26, 0.98 |
+      | Xeon Platinum 8573C, clang 23 | 39.9 µs | 35.9 µs | 35.0 µs | 1.11, 1.03 |
+
+      The CSVs under bench/ and the table beside OpenSSL in
+      docs/performance.md keep the run of 2026-10-13 until a whole run
+      records them again.
     - **Constant time.** No branch and no address depends on the scalar
       or a word. cswap selects with the same shift mask as before, and
       the scalar bit reaches it through an exclusive-or alone.
