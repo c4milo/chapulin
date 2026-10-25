@@ -30,6 +30,7 @@ const std = @import("std");
 /// the text of the row, which the dependency parses as it parses -D.
 const Options = struct {
     target: std.Build.ResolvedTarget,
+    PROFILE: ?[]const u8 = null,
     TRANSPORT: ?[]const u8 = null,
     ROLE: ?[]const u8 = null,
     TRUST: ?[]const u8 = null,
