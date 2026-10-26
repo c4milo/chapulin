@@ -55,6 +55,22 @@ Spec.MlKem.decaps     : (dk ct : ByteArray) → (P : Params := ml768) → ByteAr
                         -- implicit-reject secret J(z ‖ ct), never an error.
                         -- Line ops: `mlkem_decaps <dk> <ct>` and
                         -- `mlkem1024_decaps <dk> <ct>` → `<ss>`.
+Spec.MlDsa.verify     : (pk msg ctx sig : ByteArray) → Bool
+                        -- FIPS 204 Algorithm 3 at ML-DSA-87: false for a
+                        -- key other than 2592 bytes, a signature other than
+                        -- 4627 bytes or a context over 255 bytes, else
+                        -- whether the challenge Algorithm 8 recomputes is
+                        -- the signature's c-tilde. Line op:
+                        -- `mldsa87_verify <pk> <msg> <ctx> <sig>` → `1` / `0`.
+Spec.MlDsa.challenge  : (pk mu sig : ByteArray) → Option ByteArray
+                        -- FIPS 204 Algorithm 8 up to c-tilde' =
+                        -- H(mu ‖ w1Encode(w1'), 64); none for a hint
+                        -- encoding HintBitUnpack refuses, a z coefficient
+                        -- at gamma1 - beta or past it, or a sampler that
+                        -- reaches its bound (6 SHAKE128 blocks for an entry
+                        -- of A, 272 SHAKE256 bytes for c; docs/decisions.md
+                        -- 154). Line op: `mldsa87_challenge <pk> <mu> <sig>`
+                        -- → `<c-tilde'>` / `FAIL`.
 Spec.Hkdf.hmac        : (key msg : ByteArray) → ByteArray              -- RFC 2104 w/ SHA-256
 Spec.Hkdf.extract     : (salt ikm : ByteArray) → ByteArray             -- RFC 5869
 Spec.Hkdf.expand      : (prk info : ByteArray) → (len : Nat) → ByteArray
@@ -1078,6 +1094,14 @@ Spec.MlKem.sizes_768         ek 1184, dk 2400, ct 1088 at ml768        -- FIPS 2
 Spec.MlKem.sizes_1024        ek 1568, dk 3168, ct 1568 at ml1024
 Spec.MlKem.byteEncode_size   (byteEncode F d).size = 32 * d            -- §4.2.1 ByteEncode_d,
 Spec.MlKem.encodeVec_size    (encodeVec n v d).size = n * (32 * d)     -- and over an n-vector
+Spec.MlDsa.sizes_87          pkLen = 2592 ∧ sigLen = 4627              -- FIPS 204 Table 2
+Spec.MlDsa.verify_false_of_pk_size     pk.size ≠ pkLen → verify … = false
+Spec.MlDsa.verify_false_of_long_context  255 < ctx.size → verify … = false  -- Algorithm 3 step 1
+Spec.MlDsa.challenge_of_verify  verify pk msg ctx sig = true → the challenge
+                             -- recomputed from pk, mu and sig is some c with
+                             -- c = sig's first 64 bytes (soundness of the compare)
+Spec.MlDsa.useHint_lt        useHint h r < 16                          -- Algorithm 40, m = 16
+Spec.MlDsa.w1Encode_size     (w1Encode w1).size = 128                  -- Algorithm 28, one row
 Spec.Drbg.next_key_eq_block  the next key is the counter-0 ChaCha20 block under the
                              -- current key, so key advance does not depend on how many
                              -- output bytes the request asked for (next_key_indep)
@@ -1582,6 +1606,7 @@ means the module's selftest plus the differential oracle carry it;
 | RsaPkcs1 | 4 | the encoding is exactly the modulus length; a signature of the wrong length never verifies and a signed one has the right length; a digest length naming no hash never verifies; the arithmetic stays vector-checked |
 | Sha3 | 8 | output lengths for the two hashes and two XOFs, sponge state size, padding block alignment and message prefix; the permutation itself vector-checked |
 | MlKem | 8 | FIPS 203 §6.1-6.3 output-length contracts at any parameter set, with ML-KEM-768's (ek 1184, dk 2400, ct 1088) and ML-KEM-1024's (1568, 3168, 1568) stated apart, the shared secret 32 on both decapsulation branches, and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
+| MlDsa | 6 | FIPS 204 Table 2's sizes at ML-DSA-87; a key of another length and a context over 255 bytes never verify; a signature verifies only when the challenge recomputed from it is its c-tilde; UseHint's value is under 16, through a lemma that Decompose's high part is in 0..15 for every input; and one row of w1Encode is 128 bytes. The NTT, the samplers and the rounding stay checked by Wycheproof's tcId 1 in the selftest, the C's vectors and the differential |
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
 | P256WidePoint | 13 | the incomplete additions, the Jacobian doubling and the two conversions `p256_wide_point.c` runs, modeled from the C: the incomplete mixed addition gives `P + Q` for a finite `P` and an affine `Q` whose x differ, over every field, and the loop of windows 1 to 41 in `p256_wide_base_mul` meets that condition at every addition, so it computes the sum of the windows' multiples of `G`, at P-256 with `p` and `n` prime and `n • G = 0` as hypotheses; the conversions keep every point; the Jacobian doubling gives `P + P` for every point of every curve y² = x³ - 3x + b over every field in which 2 is not zero, the point at infinity and a point with y = 0 among them; the incomplete Jacobian addition gives `P + Q` for two finite points whose x differ, over every field; and `p256_wide_mul`'s odd multiples and windows 62 to 1 meet that condition at every addition, at P-256 for every finite point with `p` and `n` prime and `n • P = 0` as hypotheses. The two complete additions, the top window of k·G, window 0 of the key exchange and both corrections stay with the C's tests and the differential |

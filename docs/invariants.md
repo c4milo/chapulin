@@ -2027,6 +2027,47 @@ last `ROLE=server` stub, as the entry said it would.
   fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
   `sha3_round` proof and one the `sha3_stream` proof.
 
+### INV-59 — mldsa87_verify accepts exactly FIPS 204's valid ML-DSA-87 signatures
+
+- **Claim.** `mldsa87_verify` returns 1 for a key, a message, a context
+  and a signature exactly when FIPS 204 Algorithm 3, ML-DSA.Verify, at
+  ML-DSA-87 accepts them, and 0 for every other input: a key or a
+  signature of another length, a context over 255 bytes, a hint encoding
+  HintBitUnpack refuses, a z coefficient at gamma1 - beta or past it, or
+  a challenge that does not match. The two sampling bounds are the one
+  difference, and each fails verification with a probability below
+  2^-347 (decision 154).
+- **Mechanism.** `mldsa87_verify` checks the three lengths before it
+  reads a byte, then hashes tr and mu with the domain byte 0.
+  `mld_hints_well_formed` makes HintBitUnpack's checks before any
+  polynomial step, `mld_poly_unpack_z` refuses a coefficient outside the
+  norm bound, and `mld_row_w1` samples entry `A[i][j]` from
+  `rho || j || i`. Every function in `mldsa_poly.c` reduces its inputs
+  before it adds or multiplies them, so no int32_t input makes it
+  overflow. The challenge compares through `ct_memeq`.
+- **Check.** CBMC, and known answers. The `mldsa` harness proves the
+  layer memory-safe for every length of each input, with the polynomial
+  layer stubbed, and that a wrong length or a long context gives 0. The
+  `mldsa_poly`, `mldsa_ntt` and `mldsa_coefficient` harnesses prove the
+  polynomial layer free of overflow over all of int32_t.
+  `bin/wycheproof_test` runs Wycheproof's 241 verify cases and the 156
+  valid signatures of its two signing suites. `bin/mldsa_test` holds
+  Decompose and UseHint at every input, the NTT to the ring product, and
+  whole signatures under a key whose t1 is 0, with each HintBitUnpack
+  refusal. `bin/diff_mldsa` holds the C to `Spec/MlDsa.lean`.
+- **Violation.** A PR lets a row's hint positions repeat or go down;
+  admits a z coefficient at gamma1 - beta; rounds Decompose's high bits
+  at the wrong point; drops the context's length check; samples
+  `A[j][i]` in place of `A[i][j]`; drops the inverse NTT's first
+  reduction; or lets a row's end pass omega.
+  `inv59-mldsa-hint-order-unchecked`, `inv59-mldsa-norm-bound-admits-edge`
+  and `inv59-mldsa-decompose-rounding` fail `bin/mldsa_test`.
+  `inv59-mldsa-context-length-unchecked` and
+  `inv59-mldsa-matrix-index-order` fail Wycheproof's cases
+  (`test/wycheproof.sh`). `inv59-mldsa-invntt-unreduced` fails the
+  `mldsa_ntt` proof, and `inv59-mldsa-hint-end-past-omega` fails the
+  `mldsa` proof.
+
 ### INV-57 — a PROFILE=cnsa2 client offers one suite, one group and one authentication
 
 - **Claim.** A `PROFILE=cnsa2` client lists TLS_AES_256_GCM_SHA384 alone

@@ -1,0 +1,12 @@
+invariant: INV-59
+file: mldsa.c
+catches: mldsa_test
+reason: HintBitUnpack's check that a row's positions increase is gone, so
+  a hint encoding with a repeated or a backward position decodes. FIPS 204
+  Algorithm 21 refuses it, and bin/mldsa_test's signature with a repeated
+  position in row 0 then verifies.
+
+--- old
+        } else if (at > 0 && !starts_run[at] && y[at - 1] >= y[at]) {
+--- new
+        } else if (0) {

@@ -1,0 +1,15 @@
+invariant: INV-59
+file: mldsa_poly.c
+catches: proof/prove-one.sh mldsa_ntt
+reason: the inverse NTT no longer reduces its inputs first, so a sum of
+  256 coefficients from all of int32_t overflows. The mldsa_ntt proof
+  holds the transform free of overflow on every input, and its
+  signed-overflow check fails.
+
+--- old
+    int32_t *w = p->coeffs;
+    mld_poly_reduce(p);
+    unsigned m = MLD_N;
+--- new
+    int32_t *w = p->coeffs;
+    unsigned m = MLD_N;

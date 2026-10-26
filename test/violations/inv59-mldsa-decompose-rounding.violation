@@ -1,0 +1,13 @@
+invariant: INV-59
+file: mldsa_poly.h
+catches: mldsa_test
+reason: Decompose rounds r / (2 gamma2) at a quarter of a step where it
+  rounds at a half, so near each boundary r1 is one less than FIPS 204
+  Algorithm 36 gives. Signatures whose w lands there fail, and
+  bin/mldsa_test's comparison with Algorithms 36 and 40 at every input
+  finds the inputs.
+
+--- old
+    r1 = (r1 * 1025 + (1 << 21)) >> 22;
+--- new
+    r1 = (r1 * 1025 + (1 << 20)) >> 22;

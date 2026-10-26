@@ -1,0 +1,12 @@
+invariant: INV-59
+file: mldsa_poly.c
+catches: mldsa_test
+reason: the norm check admits a z coefficient of exactly gamma1 - beta,
+  which FIPS 204 Algorithm 8 refuses, since it requires the infinity norm
+  below that bound. bin/mldsa_test's edge coefficient of gamma1 - beta
+  then decodes as under the bound.
+
+--- old
+        if (z0 >= bound || z0 <= -bound || z1 >= bound || z1 <= -bound) {
+--- new
+        if (z0 > bound || z0 < -bound || z1 > bound || z1 < -bound) {

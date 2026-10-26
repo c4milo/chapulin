@@ -1,0 +1,12 @@
+invariant: INV-59
+file: mldsa.c
+catches: proof/prove-one.sh mldsa
+reason: HintBitUnpack's check that a row's end is at most omega is gone,
+  so an end byte of up to 255 marks a run start past the end of the
+  76-byte array of starts. The mldsa proof's bound check on that array
+  fails.
+
+--- old
+        if (end < last || end > MLD_OMEGA) {
+--- new
+        if (end < last) {

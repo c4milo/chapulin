@@ -622,15 +622,19 @@ def select_lints(out, changed, csources, lib):
         out.add("lint", "make lint-size",
                 "the Zig API's files stay under 500 lines, as the C does")
     # lint-proof-cover asks which shipped source a harness proves, so a
-    # library source selects it and a test main does not. The frame budget
+    # library source selects it and a test main does not. It also reads
+    # every root source, a source no build packages yet included
+    # (tools/proof-cover.py's NOT_YET_PACKAGED), so a root .c file selects
+    # it too. The frame budget
     # is per packaged object, so select_modes above runs the frame-budget
     # check of each object that compiles a source instead of one
     # lint-stack for every source.
     for path in csources:
-        if path in lib:
+        if path in lib or ("/" not in path and path.endswith(".c")):
             out.add("lint", "make lint-proof-cover",
-                    f"{path} is shipped, so it needs a full harness or an "
-                    f"audit entry", ["test/lint-proof-cover.sh"])
+                    f"{path} is a root source, so it needs a build that packages "
+                    f"it and a full harness or an audit entry",
+                    ["test/lint-proof-cover.sh"])
     # lint-exact-fill reads the root .c files, so a root source selects it
     # whether or not the packaged object carries that source: the lint
     # judges the reader, not the object.

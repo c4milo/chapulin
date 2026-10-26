@@ -1,0 +1,12 @@
+invariant: INV-59
+file: mldsa.c
+catches: test/wycheproof.sh
+reason: the call takes a context of 256 bytes or more, which FIPS 204
+  Algorithm 3 refuses. Its length byte wraps to 0, so a signature made
+  with that byte verifies, and Wycheproof's case of a 256-byte context
+  signed with length byte 0 must fail.
+
+--- old
+    if (pk_len != MLDSA87_PK_LEN || sig_len != MLDSA87_SIG_LEN || ctx_len > MLDSA_CONTEXT_MAX) {
+--- new
+    if (pk_len != MLDSA87_PK_LEN || sig_len != MLDSA87_SIG_LEN) {

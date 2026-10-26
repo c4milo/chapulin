@@ -723,6 +723,74 @@ def gen_mlkem_full(d, out, lens=MLKEM_768):
     return len(rows)
 
 
+def gen_mldsa_verify(d, out):
+    """ML-DSA-87's verify suite, every case: a key or a signature of the
+    wrong length and a context over 255 bytes go to mldsa87_verify as they
+    are, and it must refuse them (docs/decisions.md 154)."""
+    blob = Blob()
+    rows = []
+    for g in d["testGroups"]:
+        pk = bytes_of(g["publicKey"])
+        for t in g["tests"]:
+            tc = uint_of(t["tcId"], 0xffffffff, "mldsa verify tcId")
+            msg = bytes_of(t["msg"])
+            ctx = bytes_of(t.get("ctx", ""))
+            sig = bytes_of(t["sig"])
+            if t["result"] not in ("valid", "invalid"):
+                raise SystemExit(f"mldsa verify tc{tc}: result {t['result']!r}")
+            off = blob.add(pk + msg + ctx + sig)
+            rows.append((tc, off, len(pk), len(msg), len(ctx), len(sig),
+                         1 if t["result"] == "valid" else 0))
+    emit_blob(out, "wp_mldsa_verify_data", blob)
+    out.append("static const struct { uint32_t tc; uint32_t off; uint16_t pk_len; uint16_t msg_len;"
+               " uint16_t ctx_len; uint16_t sig_len; uint8_t valid; } wp_mldsa_verify[] = {")
+    for row in rows:
+        out.append("    {" + ", ".join(str(v) for v in row) + "},")
+    out.append("};")
+    out.append("")
+    return len(rows)
+
+
+def gen_mldsa_signatures(files, out):
+    """The valid signatures of ML-DSA-87's two signing suites, which a
+    verifier must accept: by the message and context where the case has a
+    message, and by mu through mldsa87_challenge where it has mu alone. A
+    case a signer must refuse carries no signature to verify, and is
+    skipped."""
+    blob = Blob()
+    rows = []
+    skipped = 0
+    for path in files:
+        d = json.load(open(path))
+        for g in d["testGroups"]:
+            for t in g["tests"]:
+                tc = uint_of(t["tcId"], 0xffffffff, "mldsa sign tcId")
+                if t["result"] != "valid":
+                    skipped += 1
+                    continue
+                pk = bytes_of(g["publicKey"], 2592, f"mldsa sign tc{tc} publicKey")
+                sig = bytes_of(t["sig"], 4627, f"mldsa sign tc{tc} sig")
+                if "msg" in t:
+                    by_mu = 0
+                    msg = bytes_of(t["msg"])
+                    ctx = bytes_of(t.get("ctx", ""))
+                else:
+                    by_mu = 1
+                    msg = bytes_of(t["mu"], 64, f"mldsa sign tc{tc} mu")
+                    ctx = b""
+                rows.append((tc, blob.add(pk + msg + ctx + sig), len(msg), len(ctx), by_mu))
+    emit_blob(out, "wp_mldsa_sign_data", blob)
+    out.append("static const struct { uint32_t tc; uint32_t off; uint16_t msg_len; uint16_t ctx_len;"
+               " uint8_t by_mu; } wp_mldsa_sign[] = {")
+    for row in rows:
+        out.append("    {" + ", ".join(str(v) for v in row) + "},")
+    out.append("};")
+    out.append("")
+    out.append(f"#define WP_MLDSA_SIGN_SKIPPED {skipped} // cases a signer must refuse")
+    out.append("")
+    return len(rows)
+
+
 def main():
     src = Path(sys.argv[1])
     dst = Path(sys.argv[2])
@@ -783,10 +851,13 @@ def main():
     n_kk = gen_mlkem_keygen(json.load(open(v1 / "mlkem_768_keygen_seed_test.json")), out)
     n_ke = gen_mlkem_encaps(json.load(open(v1 / "mlkem_768_encaps_test.json")), out)
     n_kf = gen_mlkem_full(json.load(open(v1 / "mlkem_768_test.json")), out)
+    n_dv = gen_mldsa_verify(json.load(open(v1 / "mldsa_87_verify_test.json")), out)
+    n_ds = gen_mldsa_signatures([v1 / "mldsa_87_sign_seed_test.json",
+                                 v1 / "mldsa_87_sign_noseed_test.json"], out)
     # Every case above, summed: docs/verification.md states this total,
     # and tools/wycheproof-total.py holds the page to it.
     total = (n_x + n_d + n_a + n_h + n_m + n_h384 + n_m384 + n_g + n_g256 + n_e + n_e384
-             + n_e384_256 + n_e256_512 + n_r + n_rp + n_rs + n_kk + n_ke + n_kf)
+             + n_e384_256 + n_e256_512 + n_r + n_rp + n_rs + n_kk + n_ke + n_kf + n_dv + n_ds)
     out.append(f"#define WP_CASES_TOTAL {total}")
     dst.write_text("\n".join(out) + "\n")
     print(f"wycheproof vectors: x25519 {n_x}, ecdh-p256 {n_d}, aead {n_a}, hkdf {n_h}, hmac {n_m},"
@@ -794,7 +865,8 @@ def main():
           f" aes-128-gcm {n_g}, aes-256-gcm {n_g256},"
           f" ecdsa p256-sha256 {n_e} p384-sha384 {n_e384} p384-sha256 {n_e384_256}"
           f" p256-sha512 {n_e256_512}, rsa-pss {n_r}, rsa-pkcs1 {n_rp}, rsa-sign {n_rs},"
-          f" mlkem keygen {n_kk} encaps {n_ke} full {n_kf}, {total} in all (commit {commit[:12]})")
+          f" mlkem keygen {n_kk} encaps {n_ke} full {n_kf}, mldsa-87 verify {n_dv} signatures"
+          f" {n_ds}, {total} in all (commit {commit[:12]})")
     if len(sys.argv) > 3:
         gen_mlkem1024(v1, commit, Path(sys.argv[3]))
 

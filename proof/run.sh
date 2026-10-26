@@ -732,6 +732,22 @@ launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fil
 # 3 that mlkem_poly takes.
 launch fast:3 full mlkem_1024 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
 launch fast:3 full mlkem_poly_1024 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
+# ML-DSA-87 verification (docs/decisions.md 154), four formulas: the layer
+# in mldsa.c over stubs of the polynomial layer, the polynomial layer and
+# the two transforms over the contracts of the coefficient functions
+# (proof/mldsa_stubs.h), and those functions on every input. The loop
+# formulas hold no multiply. Every loop's count is a constant, so the
+# global bound covers each: 257 coefficients, and mldsa_poly's 640-byte z
+# fill. Measured on an M1 Pro on 2026-10-25 through proof/prove-one.sh,
+# under load 120 to 140 (cbmc 6.11.0, kissat), wall time and the peak of
+# cbmc and kissat together: mldsa 280 properties, 16 s, 0.5 GB; mldsa_poly
+# 561 properties, 77 s, 3.0 GB; mldsa_ntt 519 properties, 58 s, 2.0 GB;
+# mldsa_coefficient 25 properties, 3 s, 0.2 GB. mldsa_poly takes a weight
+# of 3 from its peak.
+launch fast full mldsa 258 "" ct.c proof/ct_wipe_stub.c
+launch fast:3 full mldsa_poly 642 ""
+launch fast full mldsa_ntt 258 "mld_poly_ntt.2:9,mld_poly_invntt_tomont.2:9"
+launch fast full mldsa_coefficient 2 ""
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain
 # and in-place-open shapes joined the formula. With rec_dir's suite and
 # its key and IV derived at the suite's hash (docs/decisions.md entry

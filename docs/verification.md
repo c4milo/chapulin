@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-107 of the 142 C sources in the tree root are compiled into a
+109 of the 144 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1201,6 +1201,38 @@ The entries are grouped by area:
   `p384_field.c`'s result and the verdict to `p384.c`'s 32-bit arm, and
   the host Wycheproof test holds the verdict to Wycheproof's; see
   [The host object's P-384](#the-host-objects-p-384).
+
+#### mldsa
+
+- **Harnesses:** `mldsa` (fast), `mldsa_poly` (fast), `mldsa_ntt` (fast), `mldsa_coefficient` (fast)
+- **Proves:**
+  - `mldsa87_verify` and `mldsa87_challenge` are safe for every key and
+    signature of every length up to one byte past its own, every message
+    up to 2^20 bytes and every context up to 256 bytes, with the
+    polynomial layer stubbed to its contracts. Each input is a heap
+    object of exactly its length, so a read past a length fails. A
+    verdict of 1 needs both lengths right and a context of at most 255
+    bytes. Each row's hint run lies inside the signature and holds at
+    most omega positions;
+  - every function in `mldsa_poly.c` is free of overflow over
+    coefficients from all of int32_t, with the coefficient functions in
+    `mldsa_poly.h` replaced by their contracts (`proof/mldsa_stubs.h`).
+    The inverse NTT's sums double each layer and stay inside int32_t
+    after eight. Every twiddle the transforms pass is at most
+    (q - 1) / 2, and both samplers stop at their bounds over every
+    SHAKE stream;
+  - `mldsa_coefficient` proves each coefficient function meets its
+    contract on every input: `mld_reduce32` stays within 6,291,200 and
+    congruent mod q, both products stay under q, and UseHint gives a
+    value in 0..15.
+
+  The composition gives up only the values. `bin/mldsa_test` holds them
+  to FIPS 204 written out in the test, Decompose and UseHint at every
+  input, and Wycheproof and the differential hold the whole
+  verification (decision 154).
+- **Bound:** the full domain of the polynomial layer: every coefficient
+  in int32_t, every byte string and every SHAKE stream. The layer's
+  bound is the lengths above.
 
 #### rsa
 
@@ -6699,7 +6731,7 @@ Three more suites run on every push and add evidence rather than proof.
 ### Wycheproof
 
 [Wycheproof](https://github.com/C2SP/wycheproof)'s attack-derived cases
-(`make wycheproof`), 5,967 across:
+(`make wycheproof`), 6,364 across:
 
 - x25519 and ECDH over P-256;
 - ChaCha20-Poly1305, AES-128-GCM and AES-256-GCM;
@@ -6708,12 +6740,15 @@ Three more suites run on every push and add evidence rather than proof.
   signature can pair with either curve;
 - RSA-PSS and RSA PKCS#1 v1.5 verification, up to RSA-4096, and
   RSA-PSS signing;
-- ML-KEM-768.
+- ML-KEM-768;
+- ML-DSA-87 verification: the 241 cases of the verify suite, every one,
+  and the 156 valid signatures of the two signing suites, 27 of them by
+  mu alone (decision 154).
 
 ML-KEM-1024's three suites, 511 cases, run in a binary of their own,
 `bin/wycheproof_mlkem1024_test`, built under `-DCH_MLKEM_1024` with the
 same runners, because one object holds one ML-KEM parameter set
-(decision 150). The 5,967 do not count them. They run in each lane that
+(decision 150). The 6,364 do not count them. They run in each lane that
 builds `test/wycheproof_test.c`: the device object, the host object under
 both values of the multiply bit, the decomposed multiply, the sanitizers
 on both objects, and the cross-compiled lane.
@@ -6882,6 +6917,12 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    `mlkem.c` under `-DCH_MLKEM_1024` against `Spec/MlKem.lean` at its
    `ml1024` parameter set, the tampered ciphertext and the refused key
    among them (decision 150).
+8. The ML-DSA-87 rows, 23 comparisons a run: `bin/diff_mldsa` holds
+   `mldsa87_challenge` to `Spec/MlDsa.lean` on random keys, mu and
+   signatures with well-formed hints, then with one hint encoding or one
+   z coefficient out of range, and `mldsa87_verify` on signatures valid
+   by construction, with one bit flipped, and at contexts of 255 and 256
+   bytes (decision 154).
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose

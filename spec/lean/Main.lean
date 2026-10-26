@@ -122,6 +122,7 @@ def selftestAll (_ : Unit) : String :=
     ("sha3", Spec.Sha3.selftest),
     ("sha512", Spec.Sha512.selftest),
     ("mlkem", Spec.MlKem.selftest),
+    ("mldsa", Spec.MlDsa.selftest),
     ("hkdf", Spec.Hkdf.selftest),
     ("chacha", Spec.ChaCha.selftest),
     ("poly", Spec.Poly.selftest),
@@ -222,6 +223,15 @@ def dispatch : List String → Option String
     let ctb ← hexArg? ct
     guard (dkb.size == 3168 && ctb.size == 1568)
     return emit (Spec.MlKem.decaps dkb ctb Spec.MlKem.ml1024)
+  -- ML-DSA-87 (FIPS 204): the verdict, and the challenge Verify_internal
+  -- recomputes from a key, mu and a signature.
+  | ["mldsa87_verify", pk, msg, ctx, sig] => do
+    return if Spec.MlDsa.verify (← hexArg? pk) (← hexArg? msg) (← hexArg? ctx) (← hexArg? sig)
+      then "1" else "0"
+  | ["mldsa87_challenge", pk, mu, sig] => do
+    match Spec.MlDsa.challenge (← hexArg? pk) (← hexArg? mu) (← hexArg? sig) with
+    | some c => return emit c
+    | none => return "FAIL"
   | ["hmac", k, m] => do
     return emit (Spec.Hkdf.hmac (← hexArg? k) (← hexArg? m))
   | ["hkdf_extract", salt, ikm] => do

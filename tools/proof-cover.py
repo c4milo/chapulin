@@ -583,6 +583,22 @@ COPIES = {
 }
 
 
+# Root sources that no build packages yet, each with the commit that will
+# package it. The check that every root source is shipped skips them, and
+# each must still be compiled by a harness under the `full` check set. An
+# entry is stale, and fails, once a build in BUILDS packages its file.
+NOT_YET_PACKAGED = {
+    "mldsa.c": (
+        "ML-DSA-87 verification (docs/decisions.md 154). Test binaries alone "
+        "compile it until the raw-mldsa and ca-mldsa TRUST values package it."
+    ),
+    "mldsa_poly.c": (
+        "ML-DSA-87's polynomial layer, which mldsa.c calls. It is packaged "
+        "with mldsa.c."
+    ),
+}
+
+
 # The two forms a stub body's marker takes, and the same pattern the
 # Makefile's SRV_STUB_SRCS greps for; QUIC_STUB_SRCS read the other one
 # until the TRANSPORT=quic-nonblocking mode was implemented. A file that still
@@ -693,6 +709,14 @@ def main():
     problems = []
 
     unpackaged = root_sources() - sources
+    for name in sorted(set(NOT_YET_PACKAGED) & sources):
+        problems.append(f"{name} is packaged now, so its NOT_YET_PACKAGED entry in "
+                        f"{Path(__file__).name} is stale. Delete it.")
+    for name in sorted(unpackaged & set(NOT_YET_PACKAGED)):
+        if name not in covered:
+            problems.append(f"{name} is in NOT_YET_PACKAGED, and no harness compiles it under "
+                            f"the `full` check set.")
+    unpackaged -= set(NOT_YET_PACKAGED)
     for name in sorted(unpackaged):
         problems.append(
             f"{name} is a root source, and no build in BUILDS packages it or a source that "
@@ -722,6 +746,9 @@ def main():
             f"sources compiled by a harness with the signed-overflow class on, "
             f"{len(COPIES)} copies of such a source or an audited one, "
             f"{len(AUDITED)} audited by hand")
+    if NOT_YET_PACKAGED:
+        line += (f", {len(NOT_YET_PACKAGED)} not yet packaged and compiled by such a "
+                 f"harness")
     if stubs:
         line += (f", {len(stubs)} still stubs that carry a stub marker "
                  f"and hold no code to prove")

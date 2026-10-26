@@ -133,6 +133,16 @@ STACK_BUDGET_SHA512_AVX2 := 384
 GCM_AVX512_BELOW_LEN := $(shell sed -n 's/^.define GCM_AVX512_BELOW_LEN \([0-9][0-9]*\)$$/\1/p' gcm_avx512_kernel.h)
 STACK_BUDGET_GCM_AVX512 := $(shell expr $(GCM_AVX512_BELOW_LEN) - 512)
 STACK_BUDGET_GCM_AVX512_WIPE := $(shell expr $(GCM_AVX512_BELOW_LEN) + 512)
+# mldsa.c, ML-DSA-87's verifier, gets a ceiling of its own, set from its
+# measured frame (docs/decisions.md 154). mldsa87_challenge holds NTT(z),
+# seven polynomials of 1,024 bytes, beside NTT(c), one entry of A and the
+# running sum: 10,704 bytes with Apple clang 21 -O2 on arm64 and 10,752
+# with gcc 13.3 -O2 on x86-64. 11 kB keeps the margin ML-KEM's ceiling
+# keeps. No packaged object holds the file yet, so lint-stack compiles
+# MLDSA_SRCS in every build it checks; mldsa_poly.c takes the build's
+# budget, as every other file does.
+MLDSA_SRCS := mldsa.c mldsa_poly.c
+STACK_BUDGET_MLDSA := 11264
 
 # cfg.h makes the entropy pattern a declared build choice with no
 # default, so every translation unit that sees cfg.h must say which
@@ -283,7 +293,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h x25519_wide_edwards.h x25519_wide_table.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h rsa_avx2.h rsa_avx2_lanes.h rsa_avx2_number.h ch_assert.h \
         pem.h base64.h pem_blocks.h x509_pem.h pem_files.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
-        tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
+        tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mldsa.h mldsa_poly.h mldsa_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
         p256_wide_mul.h p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
         p384_wide_field.h p384_wide_point.h p384_wide_verify.h \
@@ -629,11 +639,11 @@ RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c rsa_if
                    test/rsa_avx2_model_test.c test/rsa_avx2_equiv_test.c test/rsa_avx2_model.c \
                    test/rsa_avx2_instructions.c test/diff_rsa_avx2_test.c \
                    test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c
-LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
-          test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_sign_fault_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
+LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c mldsa.c mldsa_poly.c test/unit_test.c test/tls_client.c \
+          test/diff_test.c test/diff_mldsa_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_sign_fault_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c test/webpki_encrypted_exts_test.c \
-          test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
+          test/mlkem_test.c test/mldsa_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/cnsa2_test.c test/cnsa2_quic_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c test/tls_server.c \
@@ -667,7 +677,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/wycheproof_mlkem.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
+TESTH := test/wycheproof_mlkem.h test/wycheproof_mldsa.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
          test/pem_files_bundle_tests.h test/pem_files_parameters_tests.h \
          test/diff_pem_files_calls.h test/timing_pem.h test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
@@ -2787,6 +2797,14 @@ bin/mlkem_test: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 bin/mlkem_test_1024: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+# ML-DSA-87 verification against answers the test computes from FIPS 204:
+# the arithmetic, every Decompose and UseHint input, and whole signatures
+# under a key whose t1 is 0 (docs/decisions.md 154). Its own binary, out
+# of every packaged object until a TRUST value runs it.
+MLDSA_TEST_SRCS := mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c
+bin/mldsa_test: test/mldsa_test.c $(MLDSA_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ test/mldsa_test.c $(MLDSA_TEST_SRCS)
 # The TRANSPORT=quic-nonblocking driver through its sixteen public entries: the
 # configuration rules, the staged ClientHello, a ServerHello delivered
 # over CRYPTO bytes, the level rules RFC 9001 §4.1.3 states, and the one
@@ -4480,7 +4498,7 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   rsa_pkcs1_test \
                   webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test \
                   webpki_chain_test pem_files_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 \
-                  quic_driver_test \
+                  mldsa_test quic_driver_test \
                   quic_test $(patsubst bin/%,%,$(AES_EXTERN_BINS)) \
                   $(patsubst bin/%,%,$(X86_KERNEL_BINS) $(HOST_BINS)) \
                   srv_auth_test srv_test srv_quic_test srv_quic_both_test srv_tcp_nonblocking_test \
@@ -5080,6 +5098,8 @@ endif
 	./bin/diff_pem_files
 	$(MAKE) bin/diff_mlkem1024
 	./bin/diff_mlkem1024
+	$(MAKE) bin/diff_mldsa
+	./bin/diff_mldsa
 ifneq ($(HOST_TARGET),)
 	$(MAKE) bin/diff_x25519_wide
 	./bin/diff_x25519_wide
@@ -5109,6 +5129,14 @@ DIFF_MLKEM1024_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c ct_wipe.c
 bin/diff_mlkem1024: test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -Itest -o $@ test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS)
+
+# ML-DSA-87's arm: the challenge Verify_internal recomputes and the
+# verdict, against the oracle's mldsa87_ commands (docs/decisions.md 154).
+# Its own main, because no row of bin/diff runs mldsa.c.
+DIFF_MLDSA_SRCS := mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c
+bin/diff_mldsa: test/diff_mldsa_test.c $(DIFF_MLDSA_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -Itest -o $@ test/diff_mldsa_test.c $(DIFF_MLDSA_SRCS)
 
 # The wide field's arm: the x25519 rows against spec/lean/Spec/X25519.lean
 # with x25519_wide.c's entries answering, built as a host object builds
@@ -5504,7 +5532,7 @@ WYCHEPROOF_TEST_DEFS := $(AES_256_TEST_DEF) -DCH_HASH_SHA384
 WYCHEPROOF_SRCS := x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c \
   mlkem.c mlkem_poly.c sha3.c buf.c ct.c ct_wipe.c sha512.c sha512_compress.c p384.c p384_field.c \
   rsa_pkcs1.c rsa_sign.c aes.c gcm.c p256_sign.c p256_ecdh.c p256_point.c \
-  p256_scalar.c p256_field.c
+  p256_scalar.c p256_field.c mldsa.c mldsa_poly.c
 WYCHEPROOF_STAMP_INPUTS = $(STAMP_MAKEFILES) --output '$(CC) --version' --output 'uname -srm'
 # Each test's compile line without its output, so the stamp's -E run and
 # the compile read the same flags and the same sources.
@@ -5720,12 +5748,13 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_encrypted_exts_test test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_1024 -I. -o bin/san/mlkem_test_1024 test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mldsa_test test/mldsa_test.c $(MLDSA_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_RSA_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(HANDSHAKE_SEQUENCE_SRCS)
-	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 mldsa_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h && \
@@ -5901,6 +5930,7 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_1024 -I. -o bin/cross/mlkem_test_1024 test/mlkem_test.c \
 	  $(MLKEM_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mldsa_test test/mldsa_test.c $(MLDSA_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_RSA_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
@@ -5917,7 +5947,7 @@ cross-check:
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mlkem_test_1024 handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mlkem_test_1024 mldsa_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi; \
 	if [ -x wycheproof_mlkem1024_test ]; then echo "== wycheproof_mlkem1024_test ($(RUNNER))"; \
@@ -6077,7 +6107,7 @@ lint-stack:
 	  --output '$(CC) --version' --output 'uname -srm' -- $(MAKE) --no-print-directory lint-stack-run
 lint-stack-run:
 	@mkdir -p bin/obj; objs=$$(mktemp -d bin/obj/stack.XXXXXX); \
-	rc=0; for f in $(LIB_SRCS) drbg.c; do \
+	rc=0; for f in $(LIB_SRCS) drbg.c $(filter-out $(LIB_SRCS),$(MLDSA_SRCS)); do \
 	  budget=$(STACK_BUDGET); apart=; \
 	  case " $(KEX_HYBRID_SRCS) $(call hash_hw_of,$(KEX_HYBRID_SRCS)) $(STACK_KEX_HYBRID_COPIES) " in \
 	    *" $$f "*) budget=$(STACK_BUDGET_KEX_HYBRID) ;; esac; \
@@ -6088,6 +6118,7 @@ lint-stack-run:
 	  case "$$f" in sha512_avx2.c) budget=$(STACK_BUDGET_SHA512_AVX2); apart="$(call unit_cflags,sha512_avx2.c)" ;; esac; \
 	  case "$$f" in gcm_avx512_kernel.c) budget=$(STACK_BUDGET_GCM_AVX512) ;; esac; \
 	  case "$$f" in gcm_avx512.c) budget=$(STACK_BUDGET_GCM_AVX512_WIPE) ;; esac; \
+	  case "$$f" in mldsa.c) budget=$(STACK_BUDGET_MLDSA) ;; esac; \
 	  $(CC) $(STACK_CFLAGS) $(LIB_DEF) $$apart -Wframe-larger-than=$$budget -I. -c $$f -o $$objs/$$f.o || rc=1; \
 	  case "$$f" in gcm_avx512_kernel.c) \
 	    local_functions=$$(nm $$objs/$$f.o 2>/dev/null | awk '$$2 == "t" && $$3 !~ /^(\.|L|ltmp)/ {print $$3}' | tr '\n' ' '); \
@@ -6095,7 +6126,7 @@ lint-stack-run:
 	      echo "lint-stack: gcm_avx512_kernel.c defines [$$local_functions] beside its four functions; a kernel must call no function, so that its frame is all the stack it writes"; rc=1; \
 	    fi ;; esac; \
 	done; rm -rf $$objs; \
-	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B, its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B, the 512-bit AES-GCM kernel's under $(STACK_BUDGET_GCM_AVX512) B and its stack wipe's under $(STACK_BUDGET_GCM_AVX512_WIPE) B"; exit $$rc
+	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B, its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B, the 512-bit AES-GCM kernel's under $(STACK_BUDGET_GCM_AVX512) B, its stack wipe's under $(STACK_BUDGET_GCM_AVX512_WIPE) B and ML-DSA-87's verifier's under $(STACK_BUDGET_MLDSA) B"; exit $$rc
 
 # Every document must be named in the README; an orphaned doc is a doc
 # nobody finds. The second and third loops keep the invariants
@@ -7365,6 +7396,9 @@ lint-impact:
 #     signatures a public chain carries under TRUST=webpki — a CA's key,
 #     a certificate's digest and its signature, every byte from the wire
 #     or from the caller's anchor table, and the client never signs.
+#   mldsa.c, mldsa_poly.c: ML-DSA-87 verify. Every product is over the
+#     public key, the message's mu and the signature, and no file here
+#     signs (docs/decisions.md 154).
 #   x509.c, x509_der.c, x509_ca.c: the certificate readers. The
 #     certificate is public too (gcc lowers x509_der.c's decimal date
 #     digits to two madd on mips32r2, and nothing there is secret).
@@ -7731,7 +7765,7 @@ WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem_blocks.c x509.c x509_der.c x509_ca
                   webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
                   aes_hw.c ghash_hw.c gcm_hw.c gcm_vaes.c gcm_avx512.c gcm_avx512_kernel.c quic_initial.c \
-                  quic_retry.c build.c
+                  quic_retry.c build.c $(MLDSA_SRCS)
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather

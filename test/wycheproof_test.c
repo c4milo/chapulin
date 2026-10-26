@@ -22,6 +22,9 @@
 // this binary builds with -DCH_RSA_MODULUS_MAX=512, the value rsa.h
 // gives CH_RSA_MODULUS_MAX in the webpki build that
 // verifies a public chain; the device builds stop at RSA-3072.
+//
+// The ML-DSA-87 arms run every case of the verify suite and every valid
+// signature of the two signing suites (test/wycheproof_mldsa.h).
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,6 +57,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 
 #include "aead.h"
 #include "hkdf.h"
+#include "mldsa.h"
 #include "mlkem.h"
 #include "p256.h"
 #include "p256_ecdh.h"
@@ -385,6 +389,7 @@ static void run_rsa_sign(void) {
            COUNT(wp_rsa_sign), WP_RSA_SIGN_SKIPPED);
 }
 
+#include "wycheproof_mldsa.h"
 #include "wycheproof_mlkem.h"
 
 int main(int argc, char **argv) {
@@ -416,6 +421,8 @@ int main(int argc, char **argv) {
     run_mlkem_keygen();
     run_mlkem_encaps();
     run_mlkem_full();
+    run_mldsa_verify();
+    run_mldsa_signatures();
     if (failures) {
         printf("wycheproof: %d FAILURES\n", failures);
         return 1;

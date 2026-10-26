@@ -13663,3 +13663,102 @@ does nothing more.
     every verdict and every value the stubs can give. The `p256_point` and `p256_wide_point` harnesses prove the
     two on-curve tests.
     Nine violations under INV-58 and INV-16 are new.
+154. **ML-DSA-87 verification is a primitive of its own, `mldsa.[ch]` over
+    `mldsa_poly.[ch]`, and samples A one entry at a time.** Stage 3 of
+    the CNSA 2.0 profile
+    (https://github.com/c4milo/chapulin/issues/182), its first commit.
+    On 2026-10-25 Camilo ruled the four questions of this stage as
+    recommended: `raw-mldsa` and `ca-mldsa`, under `PROFILE=cnsa2` alone,
+    with the certificate a server sends today, and a stack ceiling for
+    `mldsa.c` set from its measured frame. The TRUST values are the next
+    commit. This one lands the verifier, and no build packages it yet.
+
+    - **The rule.** `mldsa87_verify` is FIPS 204 Algorithm 3,
+      ML-DSA.Verify, at ML-DSA-87 alone, over Algorithm 8,
+      Verify_internal: pure ML-DSA, with `M' = 0 || |ctx| || ctx || M`.
+      TLS signs with an empty context. The call takes each input's
+      length. A key other than 2592 bytes, a signature other than 4627
+      bytes and a context over 255 bytes each give 0, so every Wycheproof
+      case goes to the call whole. `mldsa87_challenge` is Algorithm 8 up
+      to the challenge it recomputes, for the differential and for the
+      signing suites' cases that give mu alone.
+    - **Two files.** `mldsa.c` holds the decoding, the hashes and the
+      order of the steps. `mldsa_poly.c` holds the NTT, the products,
+      the unpacking, UseHint and the two samplers, with the twiddles in
+      `mldsa_zetas.h`. One file would pass 500 lines, and the split
+      follows ML-KEM's, so each proof can stub the other layer.
+    - **The matrix.** Row i of w is the sum of `A[i][j] o NTT(z[j])`,
+      minus `NTT(c) o NTT(t1[i] * 2^d)`. `mld_row_w1` samples each entry
+      from rho just before its product, so one entry and the sum are
+      alive, not the row of seven the plan named. Each row's w1Encode
+      bytes go into the hash before the next row, so w1 is never held
+      whole either. NTT(z) and NTT(c) stay alive throughout.
+    - **The stack.** `mldsa87_challenge`'s frame is 10,704 bytes under
+      Apple clang 21 -O2 on arm64 and 10,752 under gcc 13.3 -O2 on
+      x86-64: NTT(z) is 7,168 of them. A painted stack measured 12,000
+      bytes for a whole `mldsa87_verify` under the same clang.
+      `STACK_BUDGET_MLDSA`, 11,264 bytes, applies to `mldsa.c` alone, and
+      `mldsa_poly.c` keeps each build's budget: its deepest frame,
+      `mld_sample_in_ball`, is 560 bytes. No build packages the files, so
+      `lint-stack` compiles `MLDSA_SRCS` in every build it checks.
+      `bench/sram.sh` measures the session when a TRUST value packages
+      them.
+    - **Every input is public.** The key, the message, the context and
+      the signature are public, so nothing here is constant time, as in
+      `p256.c` and `rsa.c`. The files join `WIDEMUL_PUBLIC`.
+    - **Every polynomial function takes all of int32_t.** Each one
+      reduces its inputs before it adds or multiplies them: the NTT and
+      its inverse reduce first, and each product reduces both operands.
+      So no input makes a sum overflow, and a proof needs no bound that
+      the caller's data meets. The inverse NTT's sums double each layer
+      and stay under 2^31 after eight. The extra reductions are 55,296
+      multiplies a verification, beside the 56 entries of A that SHAKE128
+      samples.
+    - **The two sampling bounds.** FIPS 204 loops until a sampler has
+      what it needs, and Appendix C lets an implementation stop at a
+      bound. RejNTTPoly reads at most 6 SHAKE128 blocks, 336 groups, for
+      an entry of A. Fewer than 256 of them fall under q with a
+      probability below 2^-546. SampleInBall reads at most 272 bytes of
+      SHAKE256: 8 sign bytes and 264 bytes of positions. Its 60
+      positions need more with a probability below 2^-347. At either
+      bound, verification fails. The key and the signature are public,
+      so a bound reached shows nothing secret, and finding an input that
+      reaches one is a preimage search. Wycheproof's case that needs 5
+      blocks for one entry verifies. The Lean model reads the same
+      prefixes, so the differential holds the C to it at the bounds too.
+    - **Not yet packaged.** `tools/proof-cover.py` fails a root source
+      that no build packages. Its `NOT_YET_PACKAGED` table names
+      `mldsa.c` and `mldsa_poly.c` until the TRUST values package them,
+      and still requires a `full` harness for each. An entry fails once a
+      build packages its file.
+    - **What holds it.** `bin/wycheproof_test` runs Wycheproof's 241
+      ML-DSA-87 verify cases, every one, and the 156 valid signatures of
+      the two signing suites, 17 and 10 of those by mu alone, in each
+      lane that builds that file. `bin/mldsa_test` holds the zetas, the
+      coefficient arithmetic, the NTT against the product mod X^256 + 1,
+      Decompose and UseHint at every r in [0, q) and r - q under both
+      hints, the unpacking and
+      SampleInBall to FIPS 204 written out in the test, and whole
+      signatures under a key whose t1 is 0. `Spec/MlDsa.lean` models
+      Algorithms 3 and 8 and their parts, checks Wycheproof's tcId 1, and
+      proves the sizes, two refusals, the soundness of the comparison and
+      the range of UseHint. `bin/diff_mldsa` holds the C to it on 23
+      comparisons a run. The `mldsa`, `mldsa_poly`, `mldsa_ntt` and
+      `mldsa_coefficient` harnesses prove the files memory-safe and free
+      of overflow over every input. INV-59's mutants each fail a test.
+
+    Rejected:
+
+    - **The matrix a row at a time**, as the plan said. A row is seven
+      entries, 7,168 bytes more than one entry, and nothing reads an
+      entry twice.
+    - **NTT(z) again for each row**, which saves the 7,168 bytes of
+      NTT(z) for 49 more transforms. Stage 3's ruling keeps z, and the
+      ceiling holds the frame where it is.
+    - **Bounds on the polynomial functions' inputs**, with each caller
+      held to them. The proofs would then rest on a chain of contracts
+      from the unpacking to the last product, and a bound in one place
+      could hollow a proof in another.
+    - **Fixed-size key and signature arguments.** The caller would then
+      check each length, and Wycheproof's cases of the wrong length
+      would test the runner, not the call.

@@ -1,0 +1,13 @@
+invariant: INV-59
+file: mldsa.c
+catches: test/wycheproof.sh
+reason: entry A[i][j] is sampled from rho || i || j, where FIPS 204
+  Algorithm 32 gives rho || j || i, so A is another matrix and no honest
+  signature verifies. bin/mldsa_test cannot see it, because its
+  signatures have z = 0 and A z is 0 for every A. Wycheproof's valid cases
+  fail.
+
+--- old
+        if (!mld_sample_ntt(&entry, pk, (uint8_t)j, (uint8_t)i)) {
+--- new
+        if (!mld_sample_ntt(&entry, pk, (uint8_t)i, (uint8_t)j)) {
