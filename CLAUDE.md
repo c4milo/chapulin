@@ -526,7 +526,9 @@ Home: github.com/c4milo.
   derives with 32 drawn bytes of noise (draft-irtf-cfrg-det-sigs-with-noise),
   and before it writes a signature it checks in constant time that k·G is
   on the curve and that s·k ≡ z + r·d (mod n) (docs/decisions.md 102 and
-  153).
+  153). `p256_sign.c` alone includes `p256_sign_der.h`, which writes r and
+  s as DER, and it calls the writer only after both checks passed, so a
+  refused pair is never encoded (docs/decisions.md 155).
   `ch_p256_key_from_pem` computes a key's point on the wide P-256 field
   under `CH_CPU_CONSTANT_TIME_MULTIPLY`, as `p256_sign_cpu` signs
   (docs/decisions.md 131). CBMC cannot read an
