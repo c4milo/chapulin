@@ -125,9 +125,11 @@ Home: github.com/c4milo.
   closed.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` with `ct_wipe.c` (constant-time bytes, and the wipe the
-  compiler cannot remove) and `avx512_wipe.[ch]` (the tree's one block of
-  assembly, 32 VPXORD and 7 KXORW, which zeros zmm0 to zmm31 and k1 to k7
-  for a kernel that held secrets in them, an x86-64 host object alone)
+  compiler cannot remove) and `avx512_wipe.[ch]` (a block of assembly,
+  32 VPXORD and 7 KXORW, which zeros zmm0 to zmm31 and k1 to k7 for a
+  kernel that held secrets in them, an x86-64 host object alone);
+  `gcm_arm64_passes.h` holds the tree's other assembly, the arm64 AES-GCM
+  passes (docs/decisions.md 158)
   ← `sha256.[ch]` with `sha256_hw.c` (SHA-256 on
   FEAT_SHA256 or the x86-64 SHA extensions, a host session whose caller
   sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` with
@@ -207,8 +209,8 @@ Home: github.com/c4milo.
   and the choice between them, which `gcm.c` alone includes) and with
   `ghash_hw.[ch]`
   (GHASH's multiply and data loop on the carry-less multiply),
-  `gcm_hw.[ch]` (counter mode over whole blocks, and the seal's and the
-  open's counter mode and GHASH in one loop) and `gcm_vaes.[ch]` (the
+  `gcm_hw.[ch]` (counter mode over whole blocks, and on x86-64 the seal's
+  and the open's counter mode and GHASH in one loop) and `gcm_vaes.[ch]` (the
   same three loops two blocks to a 256-bit register on VAES and
   VPCLMULQDQ, x86-64, and the entries that pick between the two for
   `gcm.c`), all over `ghash_vector.h` (the GHASH steps they share), and
@@ -217,8 +219,12 @@ Home: github.com/c4milo.
   a 512-bit register on VAES and VPCLMULQDQ, x86-64, a session whose
   caller sets CH_CPU_AVX512 beside CH_CPU_VAES and
   CH_CPU_CONSTANT_TIME_AES; the entries sit apart from the kernel, so
-  that each wipes the stack below the kernel's frames), in a host object
-  alone ← `x25519.[ch]` with `x25519_wide.[ch]` (the
+  that each wipes the stack below the kernel's frames), and
+  `gcm_arm64.[ch]` with `gcm_arm64_eor3.c` and `gcm_arm64_passes.h` (the
+  whole seal and the whole open on arm64, eight blocks a pass in inline
+  assembly, and a copy with FEAT_SHA3's EOR3 that
+  `CH_CPU_CONSTANT_TIME_SHA3` beside the AES bit picks, docs/decisions.md
+  158), in a host object alone ← `x25519.[ch]` with `x25519_wide.[ch]` (the
   radix-2^51 field, a host session whose caller sets
   CH_CPU_CONSTANT_TIME_MULTIPLY) with `x25519_wide_edwards.h` and
   `x25519_wide_table.h` (that field's key generation: the public key from
@@ -526,7 +532,9 @@ Home: github.com/c4milo.
   `CH_CPU_CONSTANT_TIME_SHA3`, an arm64 bit,
   runs its SHA-3, SHAKE and ML-KEM on `sha3_hw.c` and ML-KEM's copies
   over it, in an object that clang compiled; in an object gcc compiled
-  it picks nothing (docs/decisions.md 99). A hash call takes the
+  it picks nothing (docs/decisions.md 99). Beside the AES bit it also
+  runs AES-GCM on `gcm_arm64_eor3.c`, whose passes sum three values with
+  EOR3 (docs/decisions.md 158). A hash call takes the
   session's `ch_cfg.cpu` first, through the `_cpu` entries that end
   `sha256.h`, `sha512.h`, `sha3.h`, `hkdf.h`, `keysched.h`,
   `transcript.h` and `mlkem.h`, and a call that takes no value runs no
@@ -685,14 +693,16 @@ Home: github.com/c4milo.
   `gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
   that lowers one of their masked selects to a branch shows as a count
   that grows; `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c`,
-  `gcm_avx512.c` and `gcm_avx512_kernel.c` sit in `WIDE64_CEILING` for
+  `gcm_avx512.c`, `gcm_avx512_kernel.c`, `gcm_arm64.c` and
+  `gcm_arm64_eor3.c` sit in `WIDE64_CEILING` for
   their division count alone, at zero, and have not joined `BRANCH_SRCS`:
   the 32-bit specs' cores have no such instructions, and the two 64-bit
   specs, under which `sha256_hw.c`, `sha512_hw.c`'s arm64 arm and
   `sha512_avx2.c` hold a branch ceiling through their own target
   attribute, hold no branch count of theirs (docs/decisions.md 156).
   A host object holds the AES instructions: `aes_hw.c`, `ghash_hw.c`,
-  `gcm_hw.c`, `gcm_vaes.c` and `gcm_avx512_kernel.c` turn them on for
+  `gcm_hw.c`, `gcm_vaes.c`, `gcm_avx512_kernel.c`, `gcm_arm64.c` and
+  `gcm_arm64_eor3.c` turn them on for
   their own functions alone,
   so the rest of the object runs on any CPU of its architecture, and GHASH
   runs on the carry-less multiply, PMULL or PCLMULQDQ, wherever they run.
@@ -721,8 +731,9 @@ Home: github.com/c4milo.
   `test/aes_equiv_test.c` and `test/ghash_equiv_test.c`, by the published
   vectors in `bin/quic_test_hw`, by the host Wycheproof binary under both
   values of the bit and by the differential, `bin/diff_quic_hw`.
-  `aes_hw.c` expands a key a word at a time on arm64, and on x86-64 a
-  round key at a time in vector registers. The x86-64 expansion keeps no
+  `aes_hw.c` expands a key a round key at a time in vector registers on
+  both architectures, each with helpers of its own (docs/decisions.md 123
+  and 158). The x86-64 expansion keeps no
   array to wipe and calls nothing out of line (docs/decisions.md 123).
   `bin/aes_equiv_test` holds both expansions to the table and searches
   the stack each one leaves for a word it computed. The qemu lane's
@@ -780,7 +791,10 @@ Home: github.com/c4milo.
   and `rsa_avx2.c`'s do: an equivalence test holds it to the proven
   portable code, and
   docs/verification.md lists each source no harness compiles and what
-  holds it. `avx512_wipe.c`'s block of assembly carries none either, and
+  holds it. `avx512_wipe.c`'s block of assembly carries none either, nor
+  do `gcm_arm64.c` and `gcm_arm64_eor3.c`, whose passes are inline
+  assembly; `bin/aes_equiv_test` and `bin/ghash_equiv_test` hold them to
+  the proven code, and
   `tools/proof-cover.py` records what the block does. Portable C that
   a host object alone compiles carries harnesses as every module does:
   `sha512_compress_blocks`, `sha512_compress_blocks_steps` and
