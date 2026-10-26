@@ -354,7 +354,8 @@ Home: github.com/c4milo.
   secret amount, which clang makes of some masked selects, is allowed in
   a host object alone: every arm64 and x86-64 core shifts by a register
   in the same time for every amount (docs/decisions.md 115). Comparisons go
-  through `ct_memeq`, and wipes through `ct_wipe`, which stores the bytes
+  through `ct_memeq`, or `ct_memeq_public` for a verdict the caller sees,
+  and wipes through `ct_wipe`, which stores the bytes
   itself, a word at a time, through volatile lvalues of a `may_alias`
   type, so the compiler can neither remove a store nor replace the loop
   with `memset`, while the proofs read a byte-loop stub in `proof/` with
@@ -368,7 +369,12 @@ Home: github.com/c4milo.
   (docs/decisions.md 128 and 129); constant-time selects,
   where needed, are branchless mask arithmetic inline (x25519's `cswap`,
   poly1305's final reduction, `base64.c`'s nine character ranges), never
-  an `if`. A mask does not bind the
+  an `if`. `make ct-taint` runs a host object's secret-key operations
+  under Valgrind's Memcheck with each secret marked undefined, under each
+  `ch_cfg.cpu` value Valgrind can run, and fails on a branch or an
+  address a secret decides. `ct.h`'s `CT_DECLASSIFY` marks a verdict the
+  caller sees or a value the protocol publishes, and expands to nothing
+  outside that test binary (docs/decisions.md 155, INV-60). A mask does not bind the
   compiler: where it can prove a mask is all ones or zero it may write
   the mask as a choice and the choice as a jump, as clang for x86-64 did
   for a sign mask in x25519's `mul` and for a message bit in
@@ -388,7 +394,11 @@ Home: github.com/c4milo.
   file and compiler, and a native copy's count at that copy's own
   ceiling, and beside it the conditional-branch count of
   every arithmetic file, so a branch a compiler emits for a select
-  shows as a count that grows. The device specs compile freestanding at
+  shows as a count that grows. Apart from the multiplies it counts the
+  divisions and the division runtime calls of every file a secret passes
+  through, the KyberSlash class, and holds each at `DIVIDE_CEILING`, zero
+  but tls_write.c's two divisions of public lengths (docs/decisions.md
+  156). The device specs compile freestanding at
   `-Os`, as a firmware tree does, and the two 64-bit specs compile a
   host object's files hosted at `-O2`, as `make lib` and `build.zig` do
   (docs/decisions.md 126). A count cannot tell a jump on a secret from
@@ -659,11 +669,12 @@ Home: github.com/c4milo.
   `gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
   that lowers one of their masked selects to a branch shows as a count
   that grows; `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c`,
-  `gcm_avx512.c` and `gcm_avx512_kernel.c` have not joined: the 32-bit
-  specs' cores have no such instructions, and the
-  two 64-bit specs, under which `sha256_hw.c`, `sha512_hw.c`'s arm64
-  arm and `sha512_avx2.c` hold a branch ceiling through their own target
-  attribute, do not list them.
+  `gcm_avx512.c` and `gcm_avx512_kernel.c` sit in `WIDE64_CEILING` for
+  their division count alone, at zero, and have not joined `BRANCH_SRCS`:
+  the 32-bit specs' cores have no such instructions, and the two 64-bit
+  specs, under which `sha256_hw.c`, `sha512_hw.c`'s arm64 arm and
+  `sha512_avx2.c` hold a branch ceiling through their own target
+  attribute, hold no branch count of theirs (docs/decisions.md 156).
   A host object holds the AES instructions: `aes_hw.c`, `ghash_hw.c`,
   `gcm_hw.c`, `gcm_vaes.c` and `gcm_avx512_kernel.c` turn them on for
   their own functions alone,
