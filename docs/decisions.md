@@ -14094,3 +14094,212 @@ does nothing more.
         pipes' time idle, and an order no compiler keeps.
       - **A new CPU bit for EOR3.** It would state what
         `CH_CPU_CONSTANT_TIME_SHA3` states.
+
+159. **ML-DSA-87 signing is a primitive of its own, `mldsa_signer.[ch]`
+    over four files, constant time over every secret, and it verifies
+    each signature before it returns it.** Stage 4 of the CNSA 2.0 profile
+    (https://github.com/c4milo/chapulin/issues/182), its first commit.
+    Camilo ruled the stage's five questions on 2026-10-26 as recommended,
+    and the hedged form on 2026-10-24. This commit lands the signer and
+    the key file's reader. No build packages them until the
+    `PROFILE=cnsa2` server role, the next commit.
+
+    - **The rule.** `mldsa87_keygen` is FIPS 204 Algorithm 6,
+      ML-DSA.KeyGen_internal, from the 32-byte seed xi into the 4,896-byte
+      sk and the 2,592-byte pk. `mldsa87_sign` is Algorithm 2,
+      ML-DSA.Sign, hedged, pure ML-DSA with a context, over Algorithm 7,
+      Sign_internal. It takes each input's length and refuses a key of
+      the wrong length, a context over 255 bytes and a key whose s1 or s2
+      holds a value outside [-2, 2], which FIPS 204 §7.2 says skDecode
+      can return. Wycheproof's InvalidPrivateKey cases are of that kind.
+    - **The hedge.** The caller draws rnd, 32 bytes, through `rand_draw`
+      for each signature, as `srv_auth.c` draws the P-256 signer's Z
+      (decision 153). `rand_draw` stays in the session files, so the
+      primitive reads no `ch_cfg`. `mldsa87_sign` refuses rnd of 32 zero
+      bytes with CH_ASSERT, as every draw site refuses a source that
+      wrote nothing (INV-4). So no library call signs by the
+      deterministic variant. That variant, and Sign_internal from mu,
+      are callable in test binaries alone, through
+      `mldsa87_sign_any_rnd` and `mldsa87_sign_mu`. `mldsa_signer.h`
+      declares them and `mldsa_signer.c` defines them under
+      `CH_MLDSA_SIGN_TEST`, which the Makefile passes to no library
+      object. So no packaged object holds the symbols.
+    - **Five files.** `mldsa_signer.c` holds key generation, the hashes
+      and the rejection loop. `mldsa_sign_round.c` holds one round, which
+      combines its checks into one verdict, and `mldsa_sign_steps.c` the
+      round's steps, the signature's encoding and a row of key
+      generation. So a proof of the loop stubs the round, a proof of the
+      round stubs the steps, and each step's proof runs it once at its
+      real bounds. `mldsa_sign_poly.c`
+      holds the ring arithmetic and `mldsa_sign_pack.c` the encodings of
+      the key, the roundings and the samplers. None shares arithmetic with
+      `mldsa_poly.c`, whose multiply is the native one on public values.
+      The signer calls the verifier's sampler of A, `mld_sample_ntt`,
+      because A is public, and its SHA-3.
+    - **Constant time.** Every product goes through ct.h's
+      `ct_widemul_s`. Every reduction, rounding, norm check and hint is
+      mask arithmetic, and no function branches on a coefficient or
+      indexes memory with one. RejBoundedPoly and SampleInBall read a
+      fixed count of bytes, compute each test as a mask, and write each
+      kept value to all 256 positions by mask. The hints are bits until
+      the round passes. The round's verdict ORs every check, and the
+      count of hints against omega, into one word, and the loop branches
+      on that word alone. What shows in the time:
+      - the count of rounds. FIPS 204 §3.6.3 and Appendix C treat it as
+        public: it depends on the key, the message and rnd through a
+        hash alone;
+      - whether the key is in range, which the same key answers the same
+        way at every call;
+      - a sampler at its bound, which ends the call, with a probability
+        below 2^-256;
+      - the signature, after the round passed. Its encoding reads the
+        hint positions.
+      `lint-wide-multiply` counts no widening multiply in the five files
+      under any of its ten specs, and holds their branch counts. Each
+      branch was read by its C line under the five clang specs and the
+      Arm gcc, and by its instruction under the mips gcc at -O2, and the
+      riscv32 gcc's were counted function by function. Each is loop
+      control on a constant count, a verdict above, A's sampler,
+      CH_ASSERT, a length, or the encoding of the round that passed.
+      Under the two Cortex-M3 compilers, some masks of a
+      sign or an equality become IT blocks, which execute in one time
+      whichever way they go, as `quic_packet.c`'s do (Camilo's ruling of
+      2026-10-17).
+    - **The multiply.** The signer runs on ct.h's 16x16 decomposition in
+      every object, and on the native multiply where ct.h selects it: a
+      `WIDEMUL=native` device object and the test binaries. A host
+      object's `_native.c` copy and its dispatch through `widemul.h` are
+      not added. No object packages the signer yet, so no session has a
+      `ch_cfg.cpu` to choose with, and the copy costs little: the
+      decomposition costs 1.12 times the native multiply on a signature
+      and 1.01 times on key generation (the table below). SHA-3 and the
+      masked samplers take most of the time. The next commit can add the
+      copy where it measures a gain.
+    - **The check before a signature leaves (ruling 4).** `sign_checked`
+      verifies the signature with `mldsa87_verify` under the caller's pk
+      before it returns. On a refusal it writes zero to sig and returns
+      0. A fault in signing, an sk that is not pk's, or a pk the caller
+      mixed up gives no signature. The check costs 2.1 M instructions,
+      a ninth of a signature.
+    - **The bounds.** FIPS 204 Appendix C Table 3 sets the least limits.
+      The signer meets each one and destroys every intermediate value
+      when one is reached:
+      - the loop runs at most 814 rounds, Table 3's
+        ML-DSA.Sign_internal, and kappa stays inside ExpandMask's 16
+        bits;
+      - RejBoundedPoly reads 481 bytes of SHAKE256, Table 3's bound in
+        bytes;
+      - RejNTTPoly reads the verifier's 6 SHAKE128 blocks, 1,008 bytes,
+        above Table 3's 894;
+      - SampleInBall reads the verifier's 272 bytes, above Table 3's
+        221. So the signer places c exactly where the verifier does.
+    - **The ct0 check never rejects.** At ML-DSA-87 a coefficient of
+      c t0 is at most tau * 2^12 = 245,760 in absolute value, and gamma2
+      is 261,888. So Algorithm 7's check of ct0 against gamma2 passes for
+      every key skDecode reads, t0's 13 bits included. The signer keeps
+      it, as FIPS 204 writes it, and no test can make it reject.
+    - **The memory.** Neither s1, s2 nor t0 is held whole in the NTT
+      domain. Each step decodes one polynomial from sk and transforms
+      it, 23 more transforms a round than a key held in the NTT domain,
+      for 23 kB less stack. A round holds NTT(y) or z, w, NTT(c) and two
+      polynomials of work, 18 of 1,024 bytes. `sign_rounds` holds that
+      state and may not be inlined, so the verifier's frame never sits
+      below it. Its frame is 19,120 bytes under Apple clang 21 at -O2 on
+      arm64 and under gcc 13.3 at -O2 on x86-64, and
+      `STACK_BUDGET_MLDSA_SIGN`, 20,480 bytes, holds `mldsa_signer.c`.
+      `mldsa87_keygen`'s frame is 10,704 bytes under both. The other four
+      files keep each build's budget. No build packages the
+      files, so `lint-stack` compiles `MLDSA_SIGN_SRCS` in every build it
+      checks. `bench/sram.sh` measures the server's session when the
+      next commit packages them.
+    - **The key file (ruling 3).** `ch_mldsa_key_from_pem` reads one
+      PRIVATE KEY block, a PKCS #8 OneAsymmetricKey of id-ml-dsa-87
+      (draft-ietf-lamps-dilithium-certificates), and expands the seed
+      once into the caller's sk and pk. It takes two forms of
+      ML-DSA-87-PrivateKey: the seed alone, and both, the seed with its
+      expanded key. OpenSSL 3.5's `genpkey` writes both by default, so a
+      reader of the seed alone would refuse an operator's usual file. In
+      the both form the call expands the seed and compares the result
+      with the file's expanded key through `ct_memeq`, and refuses a file
+      whose halves differ. It refuses the expandedKey form, which holds
+      no seed to check it against. The leaf's SPKI must carry pk byte for
+      byte, and every copy of the seed is wiped on every path. The DER of
+      the both form is 4,962 bytes, so the call's frame is 5,168 bytes
+      under Apple clang 21 and 5,184 under gcc 13.3, over a server
+      build's 4 kB budget. The next
+      commit, which compiles it into an object, takes a ceiling for it
+      or moves the room. The call takes `cpu` and refuses what
+      `ch_p256_key_from_pem` refuses, so its signature does not change
+      when the native copy comes.
+    - **Not yet packaged.** `CH_SIGN_MLDSA` declares and defines the key
+      call and the two `x509_pem.c` readers it calls. It marks the object
+      that signs ML-DSA-87, and no build passes it yet. So the export
+      list, the Zig API and INV-36's declarations do not change in this
+      commit. `tools/proof-cover.py`'s `NOT_YET_PACKAGED` names the five
+      files until the server role packages them.
+
+    The cost, from `proc_pid_rusage` on an M1 Pro with Apple clang 21 at
+    -O2, instructions over 50 keys and 200 signatures from mu, each with
+    the check, at 3.79 rounds a signature:
+
+    | multiply | key generation | signature | round |
+    | --- | --- | --- | --- |
+    | 16x16 decomposition | 11,035,827 | 18,468,008 | 4,866,405 |
+    | native | 10,890,415 | 16,496,682 | 4,346,951 |
+
+    Inside them, one masked SampleInBall costs 481,599 instructions, against
+    9,173 for the verifier's sampler, and one masked RejBoundedPoly
+    590,401, fifteen of which make 80% of key generation.
+
+    What holds it:
+    - `bin/wycheproof_mldsa_library_test` runs every case of Wycheproof's
+      two signing suites, 165 in all: every valid one signs byte for
+      byte, and the nine invalid ones are refused with sig zeroed. The
+      seeded suite's keys must be its public keys. A seed of the wrong
+      length goes to `x509_pem_read_mldsa87_pkcs8` in a seed form of
+      that length, which refuses it. It runs again over the
+      decomposition in `ct-widemul-check`.
+    - `bin/mldsa_signer_test`, and its twin over the decomposition, hold
+      Decompose and Power2Round at every r in [0, q) to FIPS 204's
+      division form, the coefficient functions to 64-bit arithmetic, the
+      masked SampleInBall to the verifier's, and 48 keys and signatures
+      byte for byte to the test-only signer, `test/mldsa_sign.c`. Every
+      refusal has its boundary, and two hedged signatures of one
+      message differ.
+    - `bin/pem_files_mldsa_test` reads OpenSSL 3.5's files: the both
+      form and the seed form expand to one key, the expandedKey form, a
+      changed byte of the expanded key, another leaf, a P-256 key file,
+      a refused cpu value and the text cap's first byte over are
+      refused, and the stack below the calls holds no 8 bytes of the
+      seed, of K, or of NTT(s1[0]).
+    - `Spec/MlDsa.lean` models key generation and signing from FIPS 204,
+      and `bin/diff_mldsa` holds the C to it: keys, hedged and
+      deterministic signatures, a signature from mu, a long context and
+      a key out of range, 9 more comparisons a run. The theorems are the
+      key size, the two refusals, Power2Round's split and `packBits`'s
+      size.
+    - Sixteen CBMC formulas, from the signer's layer down to the
+      coefficient functions on both multiplies (docs/verification.md,
+      "mldsa_sign"). Two loops are not a formula whole: a masked
+      sampler's, which passed 7.8 GB in symbolic execution, so each of
+      its steps is proved from every state instead. A row of key
+      generation and a row of hints are proved at the first row and the
+      last, whose offsets into sk and pk bound the others.
+    - `bin/timing_mldsa`'s two rows, key generation and one round of
+      signing, in `make timing`.
+    - INV-62's nine mutants each fail a test.
+
+    Rejected:
+
+    - **The key in the NTT domain.** NTT(s1), NTT(s2) and NTT(t0) are 23
+      polynomials, 23 kB beside the round's 18 kB, to save 23 transforms
+      a round. The stack is the scarcer resource.
+    - **rnd drawn inside the signer.** It would read `ch_cfg` below the
+      session files, and the P-256 signer takes its noise from its
+      caller.
+    - **The reference's branching samplers.** They branch on the secret
+      stream, which CLAUDE.md's constant-time rule forbids, and the
+      masked forms cost a tenth of a round and four fifths of key
+      generation, which runs once at boot.
+    - **The expandedKey form.** It holds no seed, so nothing checks it,
+      and ruling 3 provisions the seed.

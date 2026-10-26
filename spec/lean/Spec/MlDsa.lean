@@ -276,6 +276,198 @@ def verify (pk msg ctx sig : ByteArray) : Bool :=
     | some c => c.data == (sig.extract 0 ctildeLen).data
     | none => false
 
+/-! ## Signing (FIPS 204 §5.1, §5.2, §6.1 and §6.2)
+
+The model of `mldsa_signer.c` (docs/decisions.md 159). It reads fixed
+prefixes of the XOFs, as verification does: 481 bytes of SHAKE256 for a
+polynomial of s1 or s2, FIPS 204 Appendix C Table 3's limit, and the
+verifier's prefixes for A and c. The rejection loop runs at most 814
+rounds, Table 3's limit for ML-DSA.Sign_internal. A bound reached gives
+`none`, as it gives 0 in the C. -/
+
+/-- FIPS 204 Table 1: the range of s1 and s2 at ML-DSA-87. -/
+def eta : Nat := 2
+
+/-- FIPS 204 Table 2: the secret key, `rho ‖ K ‖ tr ‖ s1 ‖ s2 ‖ t0`. -/
+def skLen : Nat := 32 + 32 + 64 + 32 * 3 * l + 32 * 3 * k + 32 * 13 * k
+
+/-- FIPS 204 Appendix C Table 3: the SHAKE256 bytes RejBoundedPoly reads. -/
+def etaStreamBytes : Nat := 481
+
+/-- FIPS 204 Appendix C Table 3: the rounds ML-DSA.Sign_internal runs. -/
+def signRounds : Nat := 814
+
+/-- A coefficient `v` as its residue in `[0, q)`. -/
+def toZq (v : Int) : Nat := (v % (q : Int)).toNat
+
+/-- A residue as its representative in `[-(q - 1) / 2, (q - 1) / 2]`. -/
+def centered (x : Nat) : Int := if x > (q - 1) / 2 then (x : Int) - q else x
+
+/-- FIPS 204 Algorithm 16, SimpleBitPack: 256 values of `width` bits, the
+low bit of each value first, eight bits a byte. -/
+def packBits (values : Array Nat) (width : Nat) : ByteArray :=
+  ByteArray.mk (Array.ofFn (n := 32 * width) fun byte =>
+    UInt8.ofNat ((List.range 8).foldl (fun acc b =>
+      let index := byte.val * 8 + b
+      acc + (values[index / width]! >>> (index % width)) % 2 * 2 ^ b) 0))
+
+/-- FIPS 204 Algorithm 17, BitPack with `b` the offset: each value is
+`b - v`, as skEncode and sigEncode write s1, s2, t0 and z. -/
+def packOffset (values : Array Int) (offset : Int) (width : Nat) : ByteArray :=
+  packBits (values.map fun v => (offset - v).toNat) width
+
+/-- FIPS 204 Algorithm 19, BitUnpack with `b` the offset. -/
+def unpackOffset (B : ByteArray) (offset : Int) (width : Nat) : Array Int :=
+  (unpackBits B width).map fun (v : Nat) => offset - (v : Int)
+
+/-- FIPS 204 Algorithm 31, RejBoundedPoly, at eta = 2, over
+`etaStreamBytes` bytes of SHAKE256(seed): each half-byte z under 15 gives
+`2 - (z mod 5)` (Algorithm 15, CoeffFromHalfByte), the low half first. -/
+def rejBoundedPoly (seed : ByteArray) : Option (Array Int) :=
+  let s := shake256 seed etaStreamBytes
+  let halves := (List.range etaStreamBytes).flatMap fun b => [s[b]!.toNat % 16, s[b]!.toNat / 16]
+  let kept := halves.filterMap fun z =>
+    if z < 15 then some ((2 : Int) - ((z % 5 : Nat) : Int)) else none
+  if 256 ≤ kept.length then some (kept.take 256).toArray else none
+
+/-- FIPS 204 Algorithm 35, Power2Round: `(r1, r0)` with
+`r = r1 * 2^13 + r0` and `r0 = r mod± 2^13`. -/
+def power2Round (r : Nat) : Nat × Int :=
+  let rp : Int := (r % q : Nat)
+  let r0 := modPm rp (2 ^ dropped)
+  (((rp - r0) / 2 ^ dropped).toNat, r0)
+
+/-- Row i of A, sampled from rho (FIPS 204 Algorithm 32, ExpandA). -/
+def matrixRow (rho : ByteArray) (i : Nat) : Option (List (Array Nat)) :=
+  (List.range l).mapM fun j => rejNttPoly (rho ++ ByteArray.mk #[UInt8.ofNat j, UInt8.ofNat i])
+
+/-- `NTT^-1(sum over j of a[j] o v[j])`. -/
+def rowTimes (a : List (Array Nat)) (vHat : List (Array Nat)) : Array Nat :=
+  invNtt ((a.zip vHat).foldl (fun acc (e, vh) => polyAdd acc (multiplyNtt e vh)) zero)
+
+/-- The two-byte little-endian nonce FIPS 204 appends in ExpandS and
+ExpandMask. -/
+def nonce (n : Nat) : ByteArray := ByteArray.mk #[UInt8.ofNat (n % 256), UInt8.ofNat (n / 256)]
+
+/-- FIPS 204 Algorithm 6, ML-DSA.KeyGen_internal: `(sk, pk)` from the seed
+xi. `none` when a sampler reaches its bound. -/
+def keyGen (xi : ByteArray) : Option (ByteArray × ByteArray) := do
+  let e := shake256 (xi ++ ByteArray.mk #[UInt8.ofNat k, UInt8.ofNat l]) 128
+  let rho := e.extract 0 32
+  let rhoP := e.extract 32 96
+  let s1 ← (List.range l).mapM fun r => rejBoundedPoly (rhoP ++ nonce r)
+  let s2 ← (List.range k).mapM fun r => rejBoundedPoly (rhoP ++ nonce (l + r))
+  let s1Hat := s1.map fun s => ntt (s.map toZq)
+  let t ← (List.range k).mapM fun i => do
+    let a ← matrixRow rho i
+    return polyAdd (rowTimes a s1Hat) (s2[i]!.map toZq)
+  let halves := t.map fun ti => ti.map power2Round
+  let pk := halves.foldl (fun acc h => acc ++ packBits (h.map (·.1)) 10) rho
+  let sk := rho ++ e.extract 96 128 ++ shake256 pk 64 ++
+    (s1 ++ s2).foldl (fun acc s => acc ++ packOffset s eta 3) ByteArray.empty ++
+    halves.foldl (fun acc h => acc ++ packOffset (h.map (·.2)) (2 ^ 12) 13) ByteArray.empty
+  return (sk, pk)
+
+/-- FIPS 204 Algorithm 39, MakeHint(z, r): whether adding z moves the high
+bits of r. -/
+def makeHint (z : Int) (r : Int) : Bool :=
+  (decompose (toZq r)).1 != (decompose (toZq (r + z))).1
+
+/-- FIPS 204 Algorithm 20, HintBitPack: the positions of each row's hints,
+then the running count at the end of each row. -/
+def hintBitPack (h : List (Array Bool)) : ByteArray :=
+  let rows := h.map fun row => (List.range 256).filter fun c => row[c]!
+  let positions := rows.flatten
+  let ends := (List.range k).map fun i => ((rows.take (i + 1)).map List.length).sum
+  ByteArray.mk ((positions ++ List.replicate (omega - positions.length) 0 ++ ends).map
+    UInt8.ofNat).toArray
+
+/-- The largest absolute value among the coefficients of a vector. -/
+def infNorm (v : List (Array Int)) : Nat :=
+  v.foldl (fun acc p => p.foldl (fun m c => max m c.natAbs) acc) 0
+
+/-- The parts of skDecode (FIPS 204 Algorithm 25) that a round reads, in
+the NTT domain, with K and the matrix A. -/
+structure SignKey where
+  /-- K, the key of rho''. -/
+  key : ByteArray
+  /-- A, row by row. -/
+  a : List (List (Array Nat))
+  /-- NTT(s1). -/
+  s1Hat : List (Array Nat)
+  /-- NTT(s2). -/
+  s2Hat : List (Array Nat)
+  /-- NTT(t0). -/
+  t0Hat : List (Array Nat)
+
+/-- One round of FIPS 204 Algorithm 7 at kappa: `some (some sig)` when it
+passes, `some none` when a check rejects it, and `none` when SampleInBall
+reaches its bound. -/
+def signRound (sk : SignKey) (mu rho2 : ByteArray) (kappa : Nat) :
+    Option (Option ByteArray) := do
+  let y := (List.range l).map fun j =>
+    unpackOffset (shake256 (rho2 ++ nonce (kappa + j)) 640) gamma1 20
+  let yHat := y.map fun p => ntt (p.map toZq)
+  let w := sk.a.map fun row => rowTimes row yHat
+  let w1 := w.map fun wi => w1Encode (wi.map fun c => (decompose c).1.toNat)
+  let ctilde := shake256 (w1.foldl (· ++ ·) mu) 64
+  let c ← sampleInBall ctilde
+  let cHat := ntt c
+  let times (sHat : Array Nat) : Array Int := (invNtt (multiplyNtt cHat sHat)).map centered
+  let z := (y.zip sk.s1Hat).map fun (yj, s) => (yj.zip (times s)).map fun (a, b) => a + b
+  let r := (w.zip sk.s2Hat).map fun (wi, s) =>
+    (wi.zip (times s)).map fun (a, b) => (a : Int) - b
+  let r0 := r.map fun ri => ri.map fun v => (decompose (toZq v)).2
+  let ct0 := sk.t0Hat.map times
+  let h := (ct0.zip r).map fun (ci, ri) =>
+    (ci.zip ri).map fun (cv, rv) => makeHint (-cv) (rv + cv)
+  let hints := (h.map fun row => (row.toList.filter id).length).sum
+  if gamma1 - beta ≤ infNorm z || gamma2 - beta ≤ infNorm r0 || gamma2 ≤ infNorm ct0 ||
+      omega < hints then
+    return none
+  return some (ctilde ++ z.foldl (fun acc p => acc ++ packOffset p gamma1 20) ByteArray.empty ++
+    hintBitPack h)
+
+/-- skDecode (FIPS 204 Algorithm 25) to the parts a round reads. `none`
+for a key of another length, a coefficient of s1 or s2 outside
+`[-eta, eta]`, which FIPS 204 §7.2 says skDecode may give for a key from
+an untrusted source, or an entry of A past its bound. -/
+def signKey (sk : ByteArray) : Option SignKey := do
+  guard (sk.size == skLen)
+  let part (start len : Nat) := sk.extract start (start + len)
+  let s := (List.range (l + k)).map fun r => unpackOffset (part (128 + 96 * r) 96) eta 3
+  guard (s.all fun p => p.all fun c => c.natAbs ≤ eta)
+  let t0 := (List.range k).map fun i =>
+    unpackOffset (part (128 + 96 * (l + k) + 416 * i) 416) (2 ^ 12) 13
+  let a ← (List.range k).mapM (matrixRow (sk.extract 0 32))
+  let hat (p : Array Int) := ntt (p.map toZq)
+  return { key := sk.extract 32 64, a := a, s1Hat := (s.take l).map hat,
+           s2Hat := (s.drop l).map hat, t0Hat := t0.map hat }
+
+/-- The rejection loop from round `round` on, with `rounds` rounds left. -/
+def signLoop (sk : SignKey) (mu rho2 : ByteArray) : Nat → Nat → Option ByteArray
+  | 0, _ => none
+  | rounds + 1, round =>
+    match signRound sk mu rho2 (round * l) with
+    | none => none
+    | some (some sig) => some sig
+    | some none => signLoop sk mu rho2 rounds (round + 1)
+
+/-- FIPS 204 Algorithm 7, ML-DSA.Sign_internal, from mu, at most
+`signRounds` rounds. -/
+def signMu (sk mu rnd : ByteArray) : Option ByteArray := do
+  let key ← signKey sk
+  signLoop key mu (shake256 (key.key ++ rnd ++ mu) 64) signRounds 0
+
+/-- FIPS 204 Algorithm 2, ML-DSA.Sign, pure ML-DSA: `none` for a context
+over 255 bytes or a key of another length, else Sign_internal over
+`M' = 0 ‖ |ctx| ‖ ctx ‖ M`, with mu from the key's tr. -/
+def sign (sk msg ctx rnd : ByteArray) : Option ByteArray :=
+  if 255 < ctx.size || sk.size != skLen then none
+  else
+    signMu sk (shake256 (sk.extract 64 128 ++ ByteArray.mk #[0, UInt8.ofNat ctx.size] ++ ctx ++
+      msg) 64) rnd
+
 /-! ## Theorems -/
 
 /-- FIPS 204 Table 2 at ML-DSA-87: a 2592-byte key and a 4627-byte
@@ -340,6 +532,34 @@ theorem useHint_lt (h : Bool) (r : Nat) : useHint h r < 16 := by
 are 1024. -/
 theorem w1Encode_size (w1 : Array Nat) : (w1Encode w1).size = 128 := by
   simp [w1Encode, ByteArray.size]
+
+/-- FIPS 204 Table 2 at ML-DSA-87: a 4896-byte secret key. -/
+theorem skLen_87 : skLen = 4896 := by decide
+
+/-- A context over 255 bytes is never signed (FIPS 204 Algorithm 2 step 1). -/
+theorem sign_none_of_long_context (sk msg ctx rnd : ByteArray) (h_long : 255 < ctx.size) :
+    sign sk msg ctx rnd = none := by
+  simp [sign, h_long]
+
+/-- A key of another length is never used (FIPS 204 Table 2). -/
+theorem sign_none_of_sk_size (sk msg ctx rnd : ByteArray) (h_size : sk.size ≠ skLen) :
+    sign sk msg ctx rnd = none := by
+  simp [sign, h_size]
+
+/-- Power2Round splits r into `r1 * 2^13 + r0` with `r0` in
+`(-2^12, 2^12]` (FIPS 204 Algorithm 35). -/
+theorem power2Round_spec (r : Nat) (h_reduced : r < q) :
+    ((power2Round r).1 : Int) * 2 ^ dropped + (power2Round r).2 = r ∧
+      -4096 < (power2Round r).2 ∧ (power2Round r).2 ≤ 4096 := by
+  have h_mod : r % q = r := Nat.mod_eq_of_lt h_reduced
+  simp only [power2Round, h_mod, modPm, dropped]
+  split_ifs <;> omega
+
+/-- `packBits` writes 32 bytes for each bit of width: 96 for s1 and s2,
+320 for t1, 416 for t0 and 640 for z. -/
+theorem packBits_size (values : Array Nat) (width : Nat) :
+    (packBits values width).size = 32 * width := by
+  simp [packBits, ByteArray.size]
 
 /-! ## Self-test
 

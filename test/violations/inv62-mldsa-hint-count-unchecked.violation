@@ -1,0 +1,12 @@
+invariant: INV-62
+file: mldsa_sign_round.c
+catches: proof/prove-one.sh mldsa_sign_round
+reason: a round passes with more than omega hints, which FIPS 204
+  Algorithm 7 rejects, and the signer encodes it. The mldsa_sign_round
+  proof holds that the round encodes only with at most omega hints, the
+  count the rows' steps added, and that assertion fails.
+
+--- old
+    reject |= (MLD_OMEGA - count) >> 31;
+--- new
+    (void)count;

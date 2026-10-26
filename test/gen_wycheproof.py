@@ -916,8 +916,58 @@ def gen_mldsa_signer(v1, commit, dst):
     out.append("};")
     out.append("")
     out.append(f"#define WP_MLDSA_SEED_CASES {len(rows)}")
+    out.append("")
+    n_lib = gen_mldsa_library_signer(v1, out)
     dst.write_text("\n".join(out) + "\n")
-    print(f"wycheproof mldsa-87 signer vectors: {len(rows)} (commit {commit[:12]})")
+    print(f"wycheproof mldsa-87 signer vectors: {len(rows)}, library signer {n_lib}"
+          f" (commit {commit[:12]})")
+
+
+def gen_mldsa_library_signer(v1, out):
+    """Every case of ML-DSA-87's two signing suites, for the library signer
+    mldsa_sign.c (docs/decisions.md 159): the seeded suite's seed, the
+    unseeded suite's expanded key, the public key, the rnd of a hedged case
+    or 32 zero bytes, the message and context or mu alone, the result, and
+    a valid case's signature. A field the suite leaves empty is 0 bytes
+    long, as a seed or a key of the wrong length is, so the runner hands
+    each case to the call whole."""
+    blob = Blob()
+    rows = []
+    for suite, name, key_field in ((0, "mldsa_87_sign_seed_test.json", "privateSeed"),
+                                   (1, "mldsa_87_sign_noseed_test.json", "privateKey")):
+        d = json.load(open(v1 / name))
+        for g in d["testGroups"]:
+            key = bytes_of(g.get(key_field) or "")
+            pk = bytes_of(g.get("publicKey") or "")
+            for t in g["tests"]:
+                tc = uint_of(t["tcId"], 0xffffffff, "mldsa library tcId")
+                if t["result"] not in ("valid", "invalid"):
+                    raise SystemExit(f"mldsa library tc{tc}: result {t['result']!r}")
+                valid = 1 if t["result"] == "valid" else 0
+                rnd = bytes_of(t["rnd"], 32, f"mldsa library tc{tc} rnd") if "rnd" in t else bytes(32)
+                if "msg" in t:
+                    by_mu = 0
+                    msg = bytes_of(t["msg"])
+                    ctx = bytes_of(t.get("ctx") or "")
+                else:
+                    by_mu = 1
+                    msg = bytes_of(t["mu"], 64, f"mldsa library tc{tc} mu")
+                    ctx = b""
+                sig = bytes_of(t["sig"], 4627, f"mldsa library tc{tc} sig") if valid else b""
+                if valid and (len(pk) != 2592 or not t.get("sig")):
+                    raise SystemExit(f"mldsa library tc{tc}: a valid case without a key or sig")
+                rows.append((tc, suite, blob.add(key + pk + rnd + msg + ctx + sig), len(key),
+                             len(pk), len(msg), len(ctx), by_mu, valid))
+    emit_blob(out, "wp_mldsa_library_data", blob)
+    out.append("static const struct { uint32_t tc; uint8_t suite; uint32_t off; uint16_t key_len;"
+               " uint16_t pk_len; uint16_t msg_len; uint16_t ctx_len; uint8_t by_mu;"
+               " uint8_t valid; } wp_mldsa_library[] = {")
+    for row in rows:
+        out.append("    {" + ", ".join(str(v) for v in row) + "},")
+    out.append("};")
+    out.append("")
+    out.append(f"#define WP_MLDSA_LIBRARY_CASES {len(rows)}")
+    return len(rows)
 
 
 def gen_mlkem1024(v1, commit, dst):

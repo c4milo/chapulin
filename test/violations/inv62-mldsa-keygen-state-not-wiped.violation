@@ -1,0 +1,14 @@
+invariant: INV-62
+file: mldsa_signer.c
+catches: pem_files_mldsa_test
+reason: key generation leaves its state on the stack: NTT(s1), a row of
+  t, s2 and the seeds. bin/pem_files_mldsa_test searches the stack below
+  the key call for two coefficients of NTT(s1[0]) and finds them.
+
+--- old
+    ct_wipe(&h, sizeof h);
+    ct_wipe(&st, sizeof st);
+    // A sampler at its bound, a verdict that FIPS 204 Appendix C treats as
+--- new
+    ct_wipe(&h, sizeof h);
+    // A sampler at its bound, a verdict that FIPS 204 Appendix C treats as

@@ -22,6 +22,10 @@
 #include "widemul.h"
 #endif
 
+#if defined(CH_ROLE_SERVER) && defined(CH_SIGN_MLDSA)
+#include "mldsa_signer.h"
+#endif
+
 #ifdef CH_ROLE_SERVER
 // Whether cert reads as a certificate's outer fields (x509_pem.h). The
 // call keeps neither the Name nor the key it finds.
@@ -174,6 +178,48 @@ int ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len, const
     if (!ok) {
         ct_wipe(priv, 32);
         ct_wipe(pub, 64);
+        return CH_EINVAL;
+    }
+    return CH_OK;
+}
+#endif
+
+#if defined(CH_ROLE_SERVER) && defined(CH_SIGN_MLDSA)
+_Static_assert(MLDSA87_SK_LEN == 4896 && MLDSA87_PK_LEN == 2592, "pem_files.h's ML-DSA-87 rooms");
+
+// Whether leaf is a certificate whose key is ML-DSA-87's key pk.
+static int leaf_holds_mldsa(const uint8_t *leaf, size_t leaf_len, const uint8_t pk[2592]) {
+    const uint8_t *name = NULL;
+    const uint8_t *spki = NULL;
+    size_t name_len = 0;
+    size_t spki_len = 0;
+    return x509_pem_read_subject_key(leaf, leaf_len, &name, &name_len, &spki, &spki_len) &&
+           x509_pem_spki_is_mldsa87(spki, spki_len, pk);
+}
+
+int ch_mldsa_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len, const uint8_t *leaf,
+                          size_t leaf_len, uint8_t sk[4896], uint8_t pk[2592]) {
+    CH_ASSERT(sk != NULL && pk != NULL);
+    CH_ASSERT(pem != NULL || pem_len == 0);
+    CH_ASSERT(leaf != NULL || leaf_len == 0);
+    uint8_t der[CH_PEM_MLDSA_KEY_DER_MAX];
+    uint8_t seed[MLDSA87_SEED_LEN] = {0};
+    const uint8_t *expanded = NULL;
+    wbuf w;
+    wb_init(&w, der, sizeof der);
+    // expanded points into der, so the call compares it before it wipes
+    // der. sk is written only by the expansion.
+    int ok = cpu_value_ok(cpu) && pem_len <= CH_PEM_MLDSA_KEY_TEXT_MAX &&
+             pem_decode_one(pem, pem_len, PEM_LABEL_PRIVATE_KEY, &w) &&
+             x509_pem_read_mldsa87_pkcs8(der, w.len, seed, &expanded) &&
+             mldsa87_keygen(sk, pk, seed) &&
+             (expanded == NULL || ct_memeq(expanded, sk, MLDSA87_SK_LEN) == 1) &&
+             leaf_holds_mldsa(leaf, leaf_len, pk);
+    ct_wipe(der, sizeof der);
+    ct_wipe(seed, sizeof seed);
+    if (!ok) {
+        ct_wipe(sk, MLDSA87_SK_LEN);
+        ct_wipe(pk, MLDSA87_PK_LEN);
         return CH_EINVAL;
     }
     return CH_OK;

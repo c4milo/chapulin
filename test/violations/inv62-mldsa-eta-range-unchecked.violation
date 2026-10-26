@@ -1,0 +1,13 @@
+invariant: INV-62
+file: mldsa_sign_pack.c
+catches: mldsa_signer_test
+reason: the range check of s1 and s2 accepts every 3-bit value, so a key
+  whose s1 or s2 skDecode decodes out of [-2, 2] signs.
+  bin/mldsa_signer_test requires a refusal for a key with a value of 5,
+  and a verdict of 0 for a packed value of 5 at the edge.
+
+--- old
+    return over ^ 1U;
+--- new
+    (void)over;
+    return 1U;

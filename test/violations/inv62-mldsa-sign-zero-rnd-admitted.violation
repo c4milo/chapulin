@@ -1,0 +1,11 @@
+invariant: INV-62
+file: mldsa_signer.c
+catches: mldsa_signer_test
+reason: mldsa87_sign signs with rnd of 32 zero bytes, the deterministic
+  variant, which a draw that wrote nothing leaves (INV-4). The hedge then
+  rests on nothing. bin/mldsa_signer_test requires CH_ASSERT on zero rnd.
+
+--- old
+    CH_ASSERT(rnd_drawn(rnd));
+--- new
+    (void)rnd_drawn;

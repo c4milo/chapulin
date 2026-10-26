@@ -41,7 +41,8 @@ RUN_VIA = {
 # The -run targets and the Wycheproof tests are the work behind a stamped
 # gate (tools/stamp.py): each is the command its gate runs when its
 # inputs changed, and a Wycheproof test reads the vectors the wycheproof
-# target writes. So each runs through the gate.
+# target writes. So each runs through the gate. The ML-DSA-87 signer's
+# test is one of them, so a source it compiles selects make wycheproof.
 GATE_COMMAND = {
     "wycheproof-ct-widemul": "make ct-widemul-check",
     "san-check": "make san-check SAN=1 O=0",
@@ -53,7 +54,7 @@ GATE_COMMAND = {
     "lint-trust-separation-run": "make lint-trust-separation",
     "lint-zig-build-run": "make lint-zig-build",
     **{target: "make wycheproof"
-       for build in ("default", "host", "aes-extern")
+       for build in ("default", "host", "aes-extern", "mldsa-library")
        for target in (f"wycheproof-{build}", f"wycheproof-run-{build}")},
 }
 

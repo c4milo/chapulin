@@ -84,4 +84,34 @@ int x509_pem_read_sec1(const uint8_t *der, size_t der_len, uint8_t scalar[32],
 // after the OBJECT IDENTIFIER answer 0. Returns 1 or 0.
 int x509_pem_parameters_are_p256(const uint8_t *der, size_t der_len);
 
+#ifdef CH_SIGN_MLDSA
+// Whether spki, a whole SubjectPublicKeyInfo TLV, is the ML-DSA-87 key
+// key, byte for byte: id-ml-dsa-87 with no parameters, and a BIT STRING
+// that holds the 2,592-byte key (draft-ietf-lamps-dilithium-certificates).
+// Returns 1 or 0.
+int x509_pem_spki_is_mldsa87(const uint8_t *spki, size_t spki_len, const uint8_t key[2592]);
+
+// Reads der as a PKCS #8 OneAsymmetricKey (RFC 5958 section 2) that holds
+// an ML-DSA-87 key (draft-ietf-lamps-dilithium-certificates). Its fields
+// are these:
+//  - version 0;
+//  - the AlgorithmIdentifier id-ml-dsa-87 with no parameters, byte for
+//    byte;
+//  - a privateKey OCTET STRING that fills the rest, so no attributes and
+//    no publicKey field. It holds an ML-DSA-87-PrivateKey in one of two
+//    forms: the seed, a [0] IMPLICIT OCTET STRING of 32 bytes, or both, a
+//    SEQUENCE of the seed's OCTET STRING and the expanded key's OCTET
+//    STRING of 4,896 bytes. OpenSSL 3.5 writes the both form by default.
+// The expandedKey form, the expanded key alone, holds no seed, and the
+// call refuses it (docs/decisions.md 159).
+//
+// Returns 1, and copies the seed to seed. Then *expanded points into der
+// at the expanded key in the both form, and is NULL in the seed form. The
+// caller expands the seed and compares the result with *expanded. Returns
+// 0 otherwise, and then it has written nothing to seed. The seed is a
+// secret, and so is der: the caller wipes both.
+int x509_pem_read_mldsa87_pkcs8(const uint8_t *der, size_t der_len, uint8_t seed[32],
+                                const uint8_t **expanded);
+#endif
+
 #endif

@@ -145,6 +145,70 @@ int CH_MUST_USE ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pe
                                      uint8_t pub[64]);
 #endif
 
+#if defined(CH_ROLE_SERVER) && defined(CH_SIGN_MLDSA)
+// The ML-DSA-87 key call. CH_SIGN_MLDSA marks the object that signs
+// ML-DSA-87, which the PROFILE=cnsa2 server role will be. No packaged
+// object defines it yet, so only test binaries declare and define this
+// call (docs/decisions.md 159).
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define ch_mldsa_key_from_pem ch_mldsa_key_from_pem_quic_nonblocking
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
+#define ch_mldsa_key_from_pem ch_mldsa_key_from_pem_tcp_nonblocking
+#else
+#define ch_mldsa_key_from_pem ch_mldsa_key_from_pem_tcp_blocking
+#endif
+
+// The longest ML-DSA-87 private key DER that the call decodes: a PKCS #8
+// OneAsymmetricKey in the both form, as OpenSSL 3.5 writes it. That is a
+// 4-byte SEQUENCE header and 4,958 bytes of content: version 3, the
+// AlgorithmIdentifier 13, the OCTET STRING header 4 and the
+// ML-DSA-87-PrivateKey 4,938. That is its own 4-byte header, the seed 34
+// and the expanded key 4,900.
+#define CH_PEM_MLDSA_KEY_DER_MAX 4962
+// The text cap of an ML-DSA-87 key file, derived as CH_PEM_KEY_TEXT_MAX
+// is, for the one PRIVATE KEY block.
+#define CH_PEM_MLDSA_KEY_BODY_MAX (4 * ((CH_PEM_MLDSA_KEY_DER_MAX + 2) / 3))
+#define CH_PEM_MLDSA_KEY_TEXT_MAX                                                                  \
+    (CH_PEM_MLDSA_KEY_BODY_MAX + (CH_PEM_MLDSA_KEY_BODY_MAX / 4) * 2 + 64)
+
+// Decodes an ML-DSA-87 private key and expands it. The file holds one
+// PRIVATE KEY block, a PKCS #8 OneAsymmetricKey (RFC 5958) in the seed
+// form or the both form (x509_pem_read_mldsa87_pkcs8). Outside the block
+// lie CR and LF alone. pem_len is at most CH_PEM_MLDSA_KEY_TEXT_MAX.
+//
+// cpu describes the CPU, as for ch_p256_key_from_pem, and the call
+// refuses the same values. The expansion runs on ct.h's 16x16
+// decomposition whatever the value (docs/decisions.md 159).
+//
+// Expands the 32-byte seed once, by FIPS 204 Algorithm 6, into sk, the
+// 4,896-byte secret key, and pk, the 2,592-byte public key. These are
+// what mldsa87_sign takes. In the both form the file's expanded key must
+// be sk, byte for byte, so a file whose two halves disagree is refused.
+//
+// leaf is the end-entity certificate's DER, chain[0] from
+// ch_chain_from_pem. Its subjectPublicKeyInfo must be ML-DSA-87's with
+// the key pk, byte for byte.
+//
+// Returns CH_OK. Returns CH_EINVAL, with sk and pk zeroed, for:
+//  - a cpu value that the object refuses;
+//  - a pem_len over the cap;
+//  - a block of any other label, ENCRYPTED PRIVATE KEY among them;
+//  - a form or a field that the grammar refuses, the expandedKey form
+//    among them, since it holds no seed;
+//  - an expanded key in the both form that is not the seed's;
+//  - an expansion whose sampler stops at its bound;
+//  - a leaf that is not a certificate, or whose key is not pk.
+//
+// The seed and sk are secrets. Before the call returns, on every path, it
+// wipes every copy it makes: the decoded DER, the base64 accumulator, its
+// copy of the seed and the expansion's state. Two copies are the
+// caller's: sk, and the text in pem, which the caller wipes once this
+// returns.
+int CH_MUST_USE ch_mldsa_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len,
+                                      const uint8_t *leaf, size_t leaf_len, uint8_t sk[4896],
+                                      uint8_t pk[2592]);
+#endif
+
 #ifdef CH_TRUST_WEBPKI
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #define ch_anchors_from_pem ch_anchors_from_pem_quic_nonblocking

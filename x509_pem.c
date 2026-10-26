@@ -229,3 +229,91 @@ int x509_pem_parameters_are_p256(const uint8_t *der, size_t der_len) {
     rb_init(&r, der, der_len);
     return x509_read_exact(&r, p256_parameters, sizeof p256_parameters) && rb_left(&r) == 0;
 }
+
+#ifdef CH_SIGN_MLDSA
+// id-ml-dsa-87 (draft-ietf-lamps-dilithium-certificates), the
+// AlgorithmIdentifier SEQUENCE whole, with no parameters.
+static const uint8_t mldsa87_algorithm[] = {0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48,
+                                            0x01, 0x65, 0x03, 0x04, 0x03, 0x13};
+// An ML-DSA-87 SubjectPublicKeyInfo around mldsa87_algorithm: its SEQUENCE
+// header of 2,610 bytes, then a BIT STRING of 2,593 bytes, the unused-bits
+// octet 0 and the 2,592-byte key.
+static const uint8_t mldsa87_spki_header[] = {0x30, 0x82, 0x0a, 0x32};
+static const uint8_t mldsa87_spki_key_header[] = {0x03, 0x82, 0x0a, 0x21, 0x00};
+// The two forms of ML-DSA-87-PrivateKey this file reads: the seed [0]
+// IMPLICIT OCTET STRING of 32 bytes, and the both SEQUENCE's seed and
+// expandedKey OCTET STRINGs.
+static const uint8_t mldsa_seed_form[] = {0x80, 0x20};
+static const uint8_t mldsa_both_seed[] = {0x04, 0x20};
+static const uint8_t mldsa_both_expanded[] = {0x04, 0x82, 0x13, 0x20};
+#define MLDSA87_SEED_BYTES 32
+#define MLDSA87_EXPANDED_BYTES 4896
+#define MLDSA87_KEY_BYTES 2592
+
+int x509_pem_spki_is_mldsa87(const uint8_t *spki, size_t spki_len,
+                             const uint8_t key[MLDSA87_KEY_BYTES]) {
+    CH_ASSERT(key != NULL);
+    CH_ASSERT(spki != NULL || spki_len == 0);
+    rbuf s;
+    rb_init(&s, spki, spki_len);
+    return x509_read_exact(&s, mldsa87_spki_header, sizeof mldsa87_spki_header) &&
+           x509_read_exact(&s, mldsa87_algorithm, sizeof mldsa87_algorithm) &&
+           x509_read_exact(&s, mldsa87_spki_key_header, sizeof mldsa87_spki_key_header) &&
+           x509_read_exact(&s, key, MLDSA87_KEY_BYTES) && rb_left(&s) == 0;
+}
+
+// ML-DSA-87-PrivateKey, which fills key: the seed form, or the both form
+// with the expanded key after the seed. Points *seed_at at the seed, and
+// *expanded at the expanded key or NULL.
+static int read_mldsa_private_key(const uint8_t *key, size_t key_len, const uint8_t **seed_at,
+                                  const uint8_t **expanded) {
+    rbuf r;
+    rb_init(&r, key, key_len);
+    if (tag_follows(&r, TAG_SEQUENCE)) {
+        size_t len = 0;
+        if (!x509_read_header(&r, TAG_SEQUENCE, &len) || len != rb_left(&r) ||
+            !x509_read_exact(&r, mldsa_both_seed, sizeof mldsa_both_seed)) {
+            return 0;
+        }
+        *seed_at = rb_bytes(&r, MLDSA87_SEED_BYTES);
+        if (!x509_read_exact(&r, mldsa_both_expanded, sizeof mldsa_both_expanded)) {
+            return 0;
+        }
+        *expanded = rb_bytes(&r, MLDSA87_EXPANDED_BYTES);
+    } else if (!x509_read_exact(&r, mldsa_seed_form, sizeof mldsa_seed_form)) {
+        return 0;
+    } else {
+        *seed_at = rb_bytes(&r, MLDSA87_SEED_BYTES);
+    }
+    return *seed_at != NULL && !r.err && rb_left(&r) == 0;
+}
+
+int x509_pem_read_mldsa87_pkcs8(const uint8_t *der, size_t der_len,
+                                uint8_t seed[MLDSA87_SEED_BYTES], const uint8_t **expanded) {
+    CH_ASSERT(seed != NULL && expanded != NULL);
+    CH_ASSERT(der != NULL || der_len == 0);
+    *expanded = NULL;
+    rbuf r;
+    rb_init(&r, der, der_len);
+    size_t len = 0;
+    if (!x509_read_header(&r, TAG_SEQUENCE, &len) || len != rb_left(&r) ||
+        !x509_read_exact(&r, pkcs8_version, sizeof pkcs8_version) ||
+        !x509_read_exact(&r, mldsa87_algorithm, sizeof mldsa87_algorithm)) {
+        return 0;
+    }
+    // privateKey fills the rest: no attributes [0], no publicKey [1].
+    size_t key_len = 0;
+    if (!x509_read_header(&r, TAG_OCTET_STRING, &key_len) || key_len != rb_left(&r)) {
+        return 0;
+    }
+    const uint8_t *key = rb_bytes(&r, key_len);
+    const uint8_t *seed_at = NULL;
+    const uint8_t *expanded_at = NULL;
+    if (key == NULL || !read_mldsa_private_key(key, key_len, &seed_at, &expanded_at)) {
+        return 0;
+    }
+    memcpy(seed, seed_at, MLDSA87_SEED_BYTES);
+    *expanded = expanded_at;
+    return 1;
+}
+#endif

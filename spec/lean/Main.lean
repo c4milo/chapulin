@@ -232,6 +232,20 @@ def dispatch : List String → Option String
     match Spec.MlDsa.challenge (← hexArg? pk) (← hexArg? mu) (← hexArg? sig) with
     | some c => return emit c
     | none => return "FAIL"
+  -- ML-DSA-87 signing (docs/decisions.md 159): sk and pk from a seed, and
+  -- the signature from sk, the message, the context and rnd, or from mu.
+  | ["mldsa87_keygen", xi] => do
+    match Spec.MlDsa.keyGen (← hexArg? xi) with
+    | some (sk, pk) => return emit (sk ++ pk)
+    | none => return "FAIL"
+  | ["mldsa87_sign", sk, msg, ctx, rnd] => do
+    match Spec.MlDsa.sign (← hexArg? sk) (← hexArg? msg) (← hexArg? ctx) (← hexArg? rnd) with
+    | some s => return emit s
+    | none => return "FAIL"
+  | ["mldsa87_sign_mu", sk, mu, rnd] => do
+    match Spec.MlDsa.signMu (← hexArg? sk) (← hexArg? mu) (← hexArg? rnd) with
+    | some s => return emit s
+    | none => return "FAIL"
   | ["hmac", k, m] => do
     return emit (Spec.Hkdf.hmac (← hexArg? k) (← hexArg? m))
   | ["hkdf_extract", salt, ikm] => do

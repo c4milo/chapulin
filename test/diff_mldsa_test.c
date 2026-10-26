@@ -14,16 +14,28 @@
 //   give, with a random message and context. Both sides must accept it,
 //   and must agree on it with one random bit flipped.
 // - mldsa87_verify with a context of 255 and of 256 bytes.
+// - mldsa87_keygen and mldsa87_sign, mldsa_signer.c, against the model of
+//   signing (docs/decisions.md 159): sk and pk from a random seed, then a
+//   signature of a random message and context under a random rnd, or 32
+//   zero bytes, and one from a random mu. Then a key whose s1 is out of
+//   range and a context of 256 bytes, which both sides refuse.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "ch_assert.h"
 #include "diff_driver.h"
 #include "mldsa.h"
 #include "mldsa_poly.h"
+#include "mldsa_signer.h"
 #include "sha3.h"
+
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
+    (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
+    abort();
+}
 
 #define DIFF_HINT_AT (MLDSA87_CTILDE_LEN + MLD_L * MLD_Z_BYTES)
 
@@ -215,6 +227,83 @@ static void diff_mldsa_verify(void) {
     expect_verify(pk, msg, 0, ctx, MLDSA_CONTEXT_MAX + 1, sig);
 }
 
+// The C's signature, or FAIL, against the model's.
+static void expect_sign(const uint8_t *sk, const uint8_t *msg, size_t msg_len, const uint8_t *ctx,
+                        size_t ctx_len, const uint8_t rnd[MLDSA87_RND_LEN], const uint8_t *pk) {
+    static uint8_t sig[MLDSA87_SIG_LEN];
+    static char want[2 * MLDSA87_SIG_LEN + 1];
+    if (mldsa87_sign_any_rnd(sig, sk, MLDSA87_SK_LEN, pk, MLDSA87_PK_LEN, msg, msg_len, ctx,
+                             ctx_len, rnd) == 1) {
+        (void)hex_encode(want, sig, sizeof sig);
+    } else {
+        (void)strcpy(want, "FAIL");
+    }
+    size_t at = (size_t)snprintf(request, sizeof request, "mldsa87_sign ");
+    at += put_hex(request + at, sk, MLDSA87_SK_LEN);
+    request[at++] = ' ';
+    at += put_hex(request + at, msg, msg_len);
+    request[at++] = ' ';
+    at += put_hex(request + at, ctx, ctx_len);
+    request[at++] = ' ';
+    (void)put_hex(request + at, rnd, MLDSA87_RND_LEN);
+    expect(request, want);
+}
+
+static void diff_mldsa_sign(void) {
+    static uint8_t sk[MLDSA87_SK_LEN];
+    static uint8_t pk[MLDSA87_PK_LEN];
+    static uint8_t keys[MLDSA87_SK_LEN + MLDSA87_PK_LEN];
+    static char want[2 * (MLDSA87_SK_LEN + MLDSA87_PK_LEN) + 1];
+    uint8_t seed[MLDSA87_SEED_LEN];
+    uint8_t rnd[MLDSA87_RND_LEN];
+    uint8_t msg[512];
+    uint8_t ctx[MLDSA_CONTEXT_MAX + 1];
+    for (int round = 0; round < 3; round++) {
+        rng_fill(seed, sizeof seed);
+        if (mldsa87_keygen(sk, pk, seed) != 1) {
+            die("mldsa87_keygen refused a seed");
+        }
+        memcpy(keys, sk, sizeof sk);
+        memcpy(keys + sizeof sk, pk, sizeof pk);
+        (void)hex_encode(want, keys, sizeof keys);
+        size_t at = (size_t)snprintf(request, sizeof request, "mldsa87_keygen ");
+        (void)put_hex(request + at, seed, sizeof seed);
+        expect(request, want);
+        size_t msg_len = rng_below(sizeof msg + 1);
+        size_t ctx_len = rng_below(MLDSA_CONTEXT_MAX + 1);
+        rng_fill(msg, msg_len);
+        rng_fill(ctx, ctx_len);
+        if (round == 0) {
+            memset(rnd, 0, sizeof rnd);
+        } else {
+            rng_fill(rnd, sizeof rnd);
+        }
+        expect_sign(sk, msg, msg_len, ctx, ctx_len, rnd, pk);
+    }
+    // From mu, with the key of the last round.
+    static uint8_t sig[MLDSA87_SIG_LEN];
+    uint8_t mu[MLDSA_MU_LEN];
+    rng_fill(mu, sizeof mu);
+    rng_fill(rnd, sizeof rnd);
+    if (mldsa87_sign_mu(sig, sk, pk, mu, rnd) != 0) {
+        (void)hex_encode(want, sig, sizeof sig);
+    } else {
+        (void)strcpy(want, "FAIL");
+    }
+    size_t at = (size_t)snprintf(request, sizeof request, "mldsa87_sign_mu ");
+    at += put_hex(request + at, sk, sizeof sk);
+    request[at++] = ' ';
+    at += put_hex(request + at, mu, sizeof mu);
+    request[at++] = ' ';
+    (void)put_hex(request + at, rnd, sizeof rnd);
+    expect(request, want);
+    // A context of 256 bytes, and a key whose first s1 value is 5.
+    rng_fill(ctx, sizeof ctx);
+    expect_sign(sk, msg, 0, ctx, MLDSA_CONTEXT_MAX + 1, rnd, pk);
+    sk[128] = (uint8_t)((sk[128] & 0xf8U) | 5U);
+    expect_sign(sk, msg, 0, NULL, 0, rnd, pk);
+}
+
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "spec/lean/.lake/build/bin/diffspec";
     (void)printf("diff mldsa-87: seed 0x%016llx\n", (unsigned long long)rng_seed_from_env());
@@ -222,6 +311,7 @@ int main(int argc, char **argv) {
     expect("selftest", "ok");
     diff_mldsa_challenge();
     diff_mldsa_verify();
+    diff_mldsa_sign();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }

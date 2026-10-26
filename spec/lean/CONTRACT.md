@@ -71,6 +71,22 @@ Spec.MlDsa.challenge  : (pk mu sig : ByteArray) → Option ByteArray
                         -- of A, 272 SHAKE256 bytes for c; docs/decisions.md
                         -- 154). Line op: `mldsa87_challenge <pk> <mu> <sig>`
                         -- → `<c-tilde'>` / `FAIL`.
+Spec.MlDsa.keyGen     : (xi : ByteArray) → Option (ByteArray × ByteArray)
+                        -- FIPS 204 Algorithm 6 at ML-DSA-87: (sk, pk) from
+                        -- the seed; none when RejBoundedPoly's 481 bytes or
+                        -- an entry of A's 6 blocks run out (docs/decisions.md
+                        -- 159). Line op: `mldsa87_keygen <xi>` → `<sk ‖ pk>`
+                        -- / `FAIL`.
+Spec.MlDsa.sign       : (sk msg ctx rnd : ByteArray) → Option ByteArray
+                        -- FIPS 204 Algorithm 2, pure ML-DSA, over Algorithm 7
+                        -- for at most 814 rounds; none for a context over 255
+                        -- bytes, a key other than 4896 bytes, an s1 or s2
+                        -- value outside [-2, 2], or a bound reached. Line op:
+                        -- `mldsa87_sign <sk> <msg> <ctx> <rnd>` → `<sig>` /
+                        -- `FAIL`.
+Spec.MlDsa.signMu     : (sk mu rnd : ByteArray) → Option ByteArray
+                        -- Algorithm 7, ML-DSA.Sign_internal, from mu. Line op:
+                        -- `mldsa87_sign_mu <sk> <mu> <rnd>` → `<sig>` / `FAIL`.
 Spec.Hkdf.hmac        : (key msg : ByteArray) → ByteArray              -- RFC 2104 w/ SHA-256
 Spec.Hkdf.extract     : (salt ikm : ByteArray) → ByteArray             -- RFC 5869
 Spec.Hkdf.expand      : (prk info : ByteArray) → (len : Nat) → ByteArray
@@ -1111,6 +1127,11 @@ Spec.MlDsa.challenge_of_verify  verify pk msg ctx sig = true → the challenge
                              -- c = sig's first 64 bytes (soundness of the compare)
 Spec.MlDsa.useHint_lt        useHint h r < 16                          -- Algorithm 40, m = 16
 Spec.MlDsa.w1Encode_size     (w1Encode w1).size = 128                  -- Algorithm 28, one row
+Spec.MlDsa.skLen_87          skLen = 4896                              -- FIPS 204 Table 2
+Spec.MlDsa.sign_none_of_long_context  255 < ctx.size → sign … = none   -- Algorithm 2 step 1
+Spec.MlDsa.sign_none_of_sk_size       sk.size ≠ skLen → sign … = none
+Spec.MlDsa.power2Round_spec  r < q → r = r1 * 2^13 + r0 ∧ -4096 < r0 ≤ 4096  -- Algorithm 35
+Spec.MlDsa.packBits_size     (packBits v w).size = 32 * w              -- Algorithm 16
 Spec.Drbg.next_key_eq_block  the next key is the counter-0 ChaCha20 block under the
                              -- current key, so key advance does not depend on how many
                              -- output bytes the request asked for (next_key_indep)

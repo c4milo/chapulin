@@ -1,0 +1,16 @@
+invariant: INV-62
+file: mldsa_sign_pack.c
+catches: test/lint-wide-multiply.sh
+reason: RejBoundedPoly writes a kept half-byte by its index, behind a
+  branch on whether it is kept, in place of the masked write to every
+  position. The values are the same, so no test of a key sees it, but the
+  branch reads the secret stream of s1 and s2, and its index the count of
+  values kept. lint-wide-multiply's branch count for mldsa_sign_pack.c
+  rises over its ceiling.
+
+--- old
+    store_at(p, *count, v, keep);
+--- new
+    if (keep != 0) {
+        p->coeffs[*count] = v;
+    }

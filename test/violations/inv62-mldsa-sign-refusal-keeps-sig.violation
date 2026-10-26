@@ -1,0 +1,15 @@
+invariant: INV-62
+file: mldsa_signer.c
+catches: mldsa_signer_test
+reason: a signature that fails the check under pk stays in the caller's
+  buffer when mldsa87_sign returns 0, so a caller that ignores the result
+  sends it. bin/mldsa_signer_test requires every byte of sig zero after
+  that refusal.
+
+--- old
+        !mldsa87_verify(pk, pk_len, msg, msg_len, ctx, ctx_len, sig, MLDSA87_SIG_LEN)) {
+        ct_wipe(sig, MLDSA87_SIG_LEN);
+        return 0;
+--- new
+        !mldsa87_verify(pk, pk_len, msg, msg_len, ctx, ctx_len, sig, MLDSA87_SIG_LEN)) {
+        return 0;

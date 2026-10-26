@@ -748,6 +748,52 @@ launch fast full mldsa 258 "" ct.c proof/ct_wipe_stub.c
 launch fast:3 full mldsa_poly 642 ""
 launch fast full mldsa_ntt 258 "mld_poly_ntt.2:9,mld_poly_invntt_tomont.2:9"
 launch fast full mldsa_coefficient 2 ""
+# ML-DSA-87 signing (docs/decisions.md 159), sixteen formulas. The
+# signer's layer in mldsa_signer.c, one formula for signing through 814
+# rounds and one for key generation, over stubs of a round, a row of key
+# generation, the samplers, the encodings, the transforms and
+# mldsa87_verify; ct_wipe there is the byte loop over sk, pk and sig and a
+# havoc over a typed state, whose byte loop passed 7.9 GB. One round in
+# mldsa_sign_round.c over stubs of its steps. Each step of
+# mldsa_sign_steps.c once, over stubs of its layers and of the
+# coefficient functions (proof/mldsa_sign_step_stubs.h): the commitment,
+# the response, the encoding, and the hints and a row of key generation at
+# the first row and the last. The products and the transforms over the
+# contracts of the coefficient functions (proof/mldsa_sign_stubs.h). The
+# encodings. One step of each masked sampler from every state: the whole
+# loop of RejBoundedPoly, 962 steps of a 256-position scan, passed 7.8 GB
+# in cbmc's symbolic execution after 1,108 s. And the coefficient
+# functions on every input, on the native multiply and on ct.h's 16x16
+# decomposition. Each loop's count is a constant, so the global bound
+# covers each but the round loop's 814, the 640-byte fills and the wipes
+# of sk and sig. Measured on an M1 Pro on 2026-10-26 through run.sh's flags
+# with kissat, under load 10 to 77, wall time and the peak of cbmc and
+# kissat together: mldsa_signer 343 properties, 53 s, 5.1 GB;
+# mldsa_signer_keygen 315, 10 s, 4.3 GB; mldsa_sign_round 122, 92 s, 0.4 GB;
+# mldsa_sign_commit 448, 376 s, 7.6 GB; mldsa_sign_response 360, 160 s,
+# 2.0 GB; mldsa_sign_hint_row 370, 51 s, 1.1 GB; mldsa_sign_hint_row0 370,
+# 49 s, 1.2 GB; mldsa_sign_keygen_row 448, 9 s, 0.8 GB;
+# mldsa_sign_keygen_row0 448, 8 s, 0.8 GB; mldsa_sign_encode 359, 12 s,
+# 0.4 GB; mldsa_sign_poly 244, 57 s, 2.9 GB; mldsa_sign_ntt 238, 190 s,
+# 2.0 GB; mldsa_sign_pack 265, 26 s, 1.6 GB; mldsa_sign_samplers 222,
+# 53 s, 0.7 GB; mldsa_sign_coefficient 61, 21 s, 0.2 GB;
+# mldsa_sign_coefficient_ct 60, 44 s, 0.1 GB. Each weight is its peak.
+launch fast:6 full mldsa_signer 816 "ct_wipe.0:4628" ct.c
+launch fast:5 full mldsa_signer_keygen 258 "ct_wipe.0:4897" ct.c
+launch fast full mldsa_sign_round 258 ""
+launch fast:8 full mldsa_sign_commit 258 "" ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_response 258 "" ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_hint_row 258 "" ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_hint_row0 258 "" ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_keygen_row 258 "" ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_keygen_row0 258 "" ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_encode 258 "fill_nondet.0:641" ct.c proof/ct_wipe_stub.c
+launch fast:3 full mldsa_sign_poly 258 "mlds_poly_ntt.2:9,mlds_poly_invntt_tomont.2:9"
+launch fast full mldsa_sign_ntt 258 "mlds_poly_ntt.2:9,mlds_poly_invntt_tomont.2:9"
+launch fast full mldsa_sign_pack 642 "" ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_samplers 258 "" ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_coefficient 2 ""
+launch fast full mldsa_sign_coefficient_ct 2 ""
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain
 # and in-place-open shapes joined the formula. With rec_dir's suite and
 # its key and IV derived at the suite's hash (docs/decisions.md entry

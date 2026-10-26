@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-109 of the 146 C sources in the tree root are compiled into a
+114 of the 151 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1244,6 +1244,73 @@ The entries are grouped by area:
 - **Bound:** the full domain of the polynomial layer: every coefficient
   in int32_t, every byte string and every SHAKE stream. The layer's
   bound is the lengths above.
+
+#### mldsa_sign
+
+- **Harnesses:** `mldsa_signer` (fast), `mldsa_signer_keygen` (fast), `mldsa_sign_keygen_row` (fast), `mldsa_sign_keygen_row0` (fast), `mldsa_sign_hint_row0` (fast), `mldsa_sign_round` (fast), `mldsa_sign_commit` (fast), `mldsa_sign_response` (fast), `mldsa_sign_hint_row` (fast), `mldsa_sign_encode` (fast), `mldsa_sign_poly` (fast), `mldsa_sign_ntt` (fast), `mldsa_sign_pack` (fast), `mldsa_sign_samplers` (fast), `mldsa_sign_coefficient` (fast), `mldsa_sign_coefficient_ct` (fast)
+- **Proves:**
+  - `mldsa87_keygen` and `mldsa87_sign` are safe for every seed, every
+    key and public key of every length up to one byte past its own,
+    every message up to 2^20 bytes, every context up to 256 bytes and
+    every nonzero rnd, with one round, the samplers, the encodings, the
+    transforms and `mldsa87_verify` stubbed to their contracts. A
+    signature of 1 needs both lengths right, a context of at most 255
+    bytes, a round that passed and a verdict of 1 from `mldsa87_verify`
+    over the signature returned. A refusal leaves sig zero, and key
+    generation's refusal leaves sk and pk zero. The loop runs at most
+    814 rounds, each at the next kappa (`mldsa_signer`,
+    `mldsa_signer_keygen`). The wipes of a round's state and of key
+    generation's are havocked in these two formulas, and the wipes of
+    sk, pk and sig are the byte loop: a byte loop over a struct of typed
+    arrays passed 7.9 GB;
+  - a row of key generation, at the first row and the last: every value
+    Power2Round splits is in [0, q), and s2's, t0's and t1's bytes land
+    inside sk and pk (`mldsa_sign_keygen_row`, `mldsa_sign_keygen_row0`);
+  - one round, `mlds_sign_round`, over every answer its steps can give:
+    it writes sig only when it returns 1, it encodes only a round with at
+    most omega hints, and it clears every hint bit before the first row
+    (`mldsa_sign_round`);
+  - each step of the round, once at its real bounds, with the polynomial
+    and encoding layers and the coefficient functions stubbed to their
+    contracts (`proof/mldsa_sign_step_stubs.h`): every value a step
+    decomposes is in [0, q), every value it checks against a norm bound
+    is under 2^30, and every sum fits int32_t. The commitment reads each
+    entry of A inside the matrix and the key's 15 polynomials of s1 and
+    s2 inside sk (`mldsa_sign_commit`). A row of hints, at the first row
+    and the last, sets bits of its own row alone and adds at most 256 to
+    the count (`mldsa_sign_hint_row`, `mldsa_sign_hint_row0`). The response is `mldsa_sign_response`, and
+    the encoding writes sig's 4,627 bytes and nothing past them for
+    every state (`mldsa_sign_encode`);
+  - every function in `mldsa_sign_poly.c` is free of overflow over
+    coefficients from all of int32_t, with the coefficient functions in
+    `mldsa_sign_poly.h` replaced by their contracts
+    (`proof/mldsa_sign_stubs.h`). The products end centered and the
+    frozen rows in [0, q) (`mldsa_sign_poly`, `mldsa_sign_ntt`);
+  - the encodings of `mldsa_sign_pack.c` at each width the signer packs,
+    3, 4, 10, 13 and 20 bits, write 32 bytes for each bit and nothing
+    past them, over every int32_t coefficient, and the range check of s1
+    and s2 answers 1 only for coefficients in [-2, 2]
+    (`mldsa_sign_pack`);
+  - one step of each masked sampler, from every state its loop reaches:
+    RejBoundedPoly's count grows by one exactly for a kept half-byte and
+    stays at most 256, SampleInBall's i grows by at most one, and each
+    coefficient is the one before or a value in range. By induction the
+    outputs are in range (`mldsa_sign_samplers`);
+  - each coefficient function meets its contract on every input, on the
+    native multiply and on ct.h's 16x16 decomposition: the reductions,
+    the two products, the freeze and the centering, Decompose and
+    Power2Round with FIPS 204's equations, and the masks
+    (`mldsa_sign_coefficient`, `mldsa_sign_coefficient_ct`).
+
+  The composition gives up the values, which the known answers hold:
+  Wycheproof's 165 signing cases, the test-only signer and the
+  differential (decision 159).
+- **Bound:** every length up to one byte past each input's own, every
+  coefficient in int32_t and every byte string. The loops of the two
+  samplers are not proved whole: 962 and 264 steps of a 256-position
+  scan passed 7.8 GB in cbmc's symbolic execution. Each step is proved
+  from every state, and the loops index their streams by constant
+  counts.
 
 #### rsa
 
@@ -3847,6 +3914,29 @@ either (INV-26).
 `make timing` checks constant time with a Welch's t-test, which is
 evidence, not proof. P-256 and RSA verification are variable-time on
 purpose, since all of their inputs are public.
+
+#### ML-DSA-87 signing
+
+The signer's five files hold every secret under mask arithmetic, and
+the verdicts that decision 159 lists are its only branches on values
+derived from a secret. These checks hold that:
+
+- `make lint-wide-multiply` counts no widening multiply in the five files
+  under the three clang 32-bit specs and the two 64-bit specs, and
+  `lint-wide-multiply-gcc` none under the five gcc specs. Each file sits
+  in `BRANCH_SRCS`, and every branch of each count was read: loop control
+  on constant counts, the verdicts, the sampler of A, CH_ASSERT, the
+  lengths and the encoding of the round that passed. Under the two
+  Cortex-M3 compilers some masks become IT blocks.
+  `inv62-mldsa-eta-sampler-branches` writes a kept half-byte by index
+  behind a branch, and the lint catches it.
+- `bin/timing_mldsa`, which `make timing` builds on the decomposition,
+  times key generation for one seed against fresh seeds, and one round
+  of signing for one key and rnd against 255 other pairs of 16 keys, each
+  pair chosen to sign in one round.
+- The taint lane does not run the signer yet. It reads the code a host
+  object runs, and no object holds the signer until the server role
+  packages it.
 
 #### The taint lane
 
@@ -6873,6 +6963,21 @@ CertificateVerify and their certificates carry FIPS 204's signatures
 (decision 157). No library source calls the signer, and the 6,364 do
 not count its cases.
 
+`bin/wycheproof_mldsa_library_test` holds the library's ML-DSA-87
+signer, `mldsa_signer.c`, to every case of both signing suites, 165 in
+all: 156 valid ones and nine a signer must refuse. A seeded case expands
+its seed with `mldsa87_keygen` and requires the suite's public key, and
+an unseeded case takes the suite's expanded key. Every valid case signs
+byte for byte: a hedged one through `mldsa87_sign`, a deterministic one
+through the test entry `mldsa87_sign_any_rnd`, and one by mu through
+`mldsa87_sign_mu`. Every invalid case returns 0 with sig zeroed: a
+context of 256 bytes, a key of 4,895 or 4,897 bytes, and a key whose s1
+or s2 is out of range. The seeded suite's seeds of 0, 31 and 33 bytes go
+to `x509_pem_read_mldsa87_pkcs8` in a seed form of that length, which
+refuses each. The binary runs again over ct.h's 16x16 decomposition in
+`ct-widemul-check` (decision 159). These cases are not in the 6,364
+either.
+
 ML-KEM-1024's three suites, 511 cases, run in a binary of their own,
 `bin/wycheproof_mlkem1024_test`, built under `-DCH_MLKEM_1024` with the
 same runners, because one object holds one ML-KEM parameter set
@@ -7045,12 +7150,15 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    `mlkem.c` under `-DCH_MLKEM_1024` against `Spec/MlKem.lean` at its
    `ml1024` parameter set, the tampered ciphertext and the refused key
    among them (decision 150).
-8. The ML-DSA-87 rows, 23 comparisons a run: `bin/diff_mldsa` holds
+8. The ML-DSA-87 rows, 32 comparisons a run: `bin/diff_mldsa` holds
    `mldsa87_challenge` to `Spec/MlDsa.lean` on random keys, mu and
    signatures with well-formed hints, then with one hint encoding or one
    z coefficient out of range, and `mldsa87_verify` on signatures valid
    by construction, with one bit flipped, and at contexts of 255 and 256
-   bytes (decision 154).
+   bytes (decision 154). Nine rows hold the signer to the model of
+   signing: sk and pk from three random seeds, a signature under each,
+   one with rnd of zero bytes, one from mu, and a context of 256 bytes
+   and a key out of range, which both sides refuse (decision 159).
 9. The ML-DSA-87 certificate rows, 27 comparisons a run:
    `bin/diff_x509_mldsa` holds `x509_verify_leaf` under
    `-DCH_PIN_MLDSA -DCH_TRUST_CA` to `Spec.X509`'s `parse .mldsa`, whose

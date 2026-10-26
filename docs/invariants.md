@@ -2028,6 +2028,61 @@ last `ROLE=server` stub, as the entry said it would.
   fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
   `sha3_round` proof and one the `sha3_stream` proof.
 
+### INV-62 — an ML-DSA-87 signature is FIPS 204's, hedged, constant time over the key, and checked before it leaves
+
+- **Claim.** `mldsa87_keygen` writes FIPS 204 Algorithm 6's sk and pk
+  for a seed. `mldsa87_sign` writes Algorithm 2's hedged signature, pure
+  ML-DSA with a context, at ML-DSA-87, for a nonzero rnd the caller drew,
+  and it returns the signature only after `mldsa87_verify` accepted it
+  under the caller's pk. Any other outcome returns 0 with sig zeroed: a
+  key or a context of the wrong size, an s1 or s2 value outside
+  [-2, 2], a failed check, or 814 rounds with no signature. Zero rnd stops
+  the call with CH_ASSERT. No branch and no address in the five files
+  depends on s1, s2, t0, K, rnd, y or c, but the verdicts decision 159
+  lists, the round's among them, which FIPS 204 treats as public.
+  `ch_mldsa_key_from_pem` reads the seed form and the both form of
+  PKCS #8, refuses a both form whose expanded key is not the seed's, and
+  wipes every copy of the seed.
+- **Mechanism.** `sign_checked` runs the loop, then the verifier, and
+  wipes sig on either refusal. `rnd_drawn` ORs the 32 bytes before the
+  CH_ASSERT reads them. `mlds_key_in_range` checks the 15 polynomials of
+  s1 and s2 before the first round. Every product goes through
+  `ct_widemul_s`, and every test is a mask: `mlds_at_least`,
+  `mlds_mask_eq` and `mlds_select`. RejBoundedPoly and SampleInBall
+  write each kept value to all 256 positions by mask (`store_at`,
+  `load_at`). `mlds_sign_round` ORs every check and the hint count's
+  test into one word, the one value the loop branches on. Key generation
+  and the loop wipe their state on every path.
+- **Check.** Known answers, a model and proofs.
+  `bin/wycheproof_mldsa_library_test` holds the signer to all 165 cases
+  of Wycheproof's two signing suites. `bin/mldsa_signer_test` holds it to
+  the test-only signer on 48 signatures, the roundings at every input
+  and each refusal at its boundary. `bin/pem_files_mldsa_test` holds the
+  key call to OpenSSL 3.5's files and searches the stack below it.
+  `bin/diff_mldsa` holds keys and signatures to `Spec/MlDsa.lean`. The
+  `mldsa_signer` harness proves that a signature leaves only after the
+  verifier's verdict of 1 and that a refusal leaves sig zero, and the
+  `mldsa_sign_round` harness that a round writes sig only when it
+  passes, with at most omega hints. `lint-wide-multiply` holds the four
+  files at no widening multiply and at their read branch counts.
+- **Violation.** A PR returns a signature without the check, keeps sig
+  after a refused check, admits zero rnd, leaves key generation's state
+  on the stack, admits an s1 or s2 value out of range, writes a sampled
+  value by index behind a branch, reads the both form without its
+  comparison, lets a round pass with more than omega hints, or admits a
+  low-bits coefficient at gamma2 - beta. `inv62-mldsa-sign-skips-verify`,
+  `inv62-mldsa-sign-refusal-keeps-sig`,
+  `inv62-mldsa-sign-zero-rnd-admitted` and
+  `inv62-mldsa-eta-range-unchecked` fail `bin/mldsa_signer_test`.
+  `inv62-mldsa-keygen-state-not-wiped` and
+  `inv62-mldsa-pem-both-form-unchecked` fail `bin/pem_files_mldsa_test`.
+  `inv62-mldsa-eta-sampler-branches` fails `lint-wide-multiply`.
+  `inv62-mldsa-hint-count-unchecked` fails the `mldsa_sign_round` proof,
+  and `inv62-mldsa-low-bits-bound-admits-edge` fails Wycheproof's cases
+  (`test/wycheproof.sh`). No mutant of the ct0 check fails a test: at
+  ML-DSA-87 a coefficient of c t0 is at most tau * 2^12 = 245,760, below
+  gamma2, so the check never rejects (decision 159).
+
 ### INV-61 — an ML-DSA-87 client checks the server by ML-DSA-87 alone, over the whole pinned key
 
 - **Claim.** A `TRUST=raw-mldsa` or `TRUST=ca-mldsa` client builds under

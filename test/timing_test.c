@@ -169,7 +169,7 @@ static double measure(prep_fn prep, run_fn run, size_t n, size_t warm) {
     return welch_t(latency[0], n, latency[1], n);
 }
 
-#ifndef TEST_P256_WIDE
+#if !defined(TEST_P256_WIDE) && !defined(TEST_MLDSA)
 // ct_memeq: equal buffers vs a difference at byte 0. An early-exit
 // compare finishes after one byte for class 1 and drives t positive.
 static uint8_t eq_a[64];
@@ -260,7 +260,7 @@ static void x_run(void) {
 }
 
 #include "timing_pem.h"
-#else
+#elif defined(TEST_P256_WIDE)
 // The wide P-256 files, through the entries a session calls, under the
 // constant-time answer (widemul.h, docs/decisions.md 94): one fixed scalar
 // against fresh random ones. A multiplication whose time moves with a
@@ -429,7 +429,9 @@ static void report(const char *name, double t) {
     }
 }
 
-#ifdef TEST_P256_WIDE
+#ifdef TEST_MLDSA
+#include "timing_mldsa.h"
+#elif defined(TEST_P256_WIDE)
 int main(void) {
     uint8_t draw[P256_SCALAR_LEN];
     uint8_t peer_priv[P256_SCALAR_LEN];

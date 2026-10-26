@@ -1,0 +1,13 @@
+invariant: INV-62
+file: mldsa_sign_steps.c
+catches: test/wycheproof.sh
+reason: a round passes with a low-bits coefficient of w - c s2 at exactly
+  gamma2 - beta, which FIPS 204 Algorithm 7 rejects, since it requires
+  the infinity norm below that bound. The signer then returns the
+  signature of an earlier round than FIPS 204's, and Wycheproof's
+  boundary cases sign at that edge.
+
+--- old
+        reject |= mlds_at_least(r0, MLD_GAMMA2 - MLD_BETA);
+--- new
+        reject |= mlds_at_least(r0, MLD_GAMMA2 - MLD_BETA + 1);
