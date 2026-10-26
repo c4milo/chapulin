@@ -1,0 +1,19 @@
+invariant: INV-17
+file: aes_hw.c
+catches: test/docker-aes-runtime-qemu.sh aes-equiv
+reason: the arm64 key expansion keeps a copy of each round key it builds
+  on in a volatile variable, so the last one, from which the expansion runs
+  backwards to the key, stays in the dead frame after the call. Under a
+  SUITE=aesgcm build that key is a traffic key. Every schedule is still
+  right, so no vector notices. bin/aes_equiv_test clears the stack below a
+  call, makes one expansion and looks for any word the expansion computed
+  in the bytes the call wrote. Only an arm64 compiler reads the line, so
+  the script builds that binary for arm64 and runs it under qemu-aarch64.
+
+--- old
+    aes_state zero = vdupq_n_u8(0);
+    v = veorq_u8(v, vextq_u8(zero, v, 12));
+--- new
+    volatile aes_state kept = v;
+    aes_state zero = vdupq_n_u8(0);
+    v = veorq_u8(kept, vextq_u8(zero, v, 12));

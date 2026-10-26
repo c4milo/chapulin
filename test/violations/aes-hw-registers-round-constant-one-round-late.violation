@@ -5,9 +5,9 @@ reason: the x86-64 AES-128 key expansion starts from the second round
   constant, so every round key after the key itself takes the constant of
   the round after its own, and every Initial packet and AES-128-GCM record
   runs under a schedule FIPS 197 does not define. bin/aes_equiv_test
-  compares each schedule with the table's byte for byte. Only an x86-64
-  compiler reads the line, so the script builds that binary for x86-64
-  and runs it under qemu-x86_64.
+  compares each schedule with the table's byte for byte. Both
+  architectures read the line, and the script builds that binary for each
+  and runs it under qemu.
 
 --- old
     store_block(round_keys, round_key);

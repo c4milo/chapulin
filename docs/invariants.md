@@ -5023,8 +5023,10 @@ last `ROLE=server` stub, as the entry said it would.
   `test/violations/aes-two-implementations-in-one-object.violation` is
   the mutant that proves it fires, and
   `aes-hw-diverges-from-soft.violation` breaks the host object's arm64
-  key expansion, `aes-hw-registers-round-constant-one-round-late.violation`
-  and `aes-hw-registers-shuffle-takes-word-2.violation` its x86-64 one, and
+  key expansion helpers,
+  `aes-hw-registers-shuffle-takes-word-2.violation` its x86-64 ones and
+  `aes-hw-registers-round-constant-one-round-late.violation` the shared
+  expansion, and
   each requires `test/docker-aes-runtime-qemu.sh aes-equiv`, which runs
   `bin/aes_equiv_test` for both architectures, to fail. That binary is
   what holds the path no proof reaches (docs/quic.md, "What the AES axis
@@ -5217,10 +5219,10 @@ last `ROLE=server` stub, as the entry said it would.
   AES-256 and requires `test/lint-trust-separation.sh` to fail.
   `aes256-traffic-key-wrong-round-count` records AES-128's round count
   beside an AES-256 schedule and requires the `aes_traffic` proof
-  to fail. `aes256-schedule-one-round-key-short` stops the host
-  object's arm64 AES-256 expansion one round key short,
-  `aes-hw-registers-256-last-round-key-unstored` leaves the x86-64 one's
-  last round key unstored, and
+  to fail. `aes-hw-registers-256-arm64-sub-word-takes-word-2` takes
+  SubWord of the wrong word in the host object's arm64 AES-256 step,
+  `aes-hw-registers-256-last-round-key-unstored` leaves the last round
+  key unstored, and
   `aes-hw-registers-256-second-step-takes-rot-word` rotates the temporary
   of the step AES-128 lacks; each requires
   `test/docker-aes-runtime-qemu.sh aes-equiv` to fail.
@@ -5828,17 +5830,17 @@ last `ROLE=server` stub, as the entry said it would.
   keystream, so no keystream stays live to that wipe; the same binary
   copies the stack below one seal and one open and requires none of them
   there, the last pass's keystream included.
-  `aes_hw.c`'s key expansion on x86-64 keeps every value in a variable of
-  vector type and stores the round keys to the caller's schedule alone,
-  and on arm64 it wipes the two words it builds each word in. Under a
+  `aes_hw.c`'s key expansion keeps every value in a variable of vector
+  type and stores the round keys to the caller's schedule alone, on both
+  architectures (decision 158). Under a
   `SUITE=aesgcm` build the key is a traffic key, and any one round key of
   AES-128 gives back the key. `bin/aes_equiv_test` clears the stack below
   one expansion of each size, makes the call, and requires no word of the
   schedule, nor any value a step computes, in the bytes the call wrote
   (`test/aes_equiv_residue.h`, decision 123).
-  `aes-hw-registers-round-key-on-stack` keeps the x86-64 round key in a
-  volatile variable, and `aes-hw-word-loop-keeps-its-word` drops arm64's
-  wipe of the word; `test/docker-aes-runtime-qemu.sh aes-equiv` catches
+  `aes-hw-registers-round-key-on-stack` keeps the round key in a
+  volatile variable, and `aes-hw-registers-arm64-round-key-on-stack`
+  keeps arm64's in one; `test/docker-aes-runtime-qemu.sh aes-equiv` catches
   each, built for the architecture its edit shows on.
   An AES-GCM open decrypts while it hashes, so a tag that does not match
   finds the plaintext written, and that plaintext exclusive-ored with the

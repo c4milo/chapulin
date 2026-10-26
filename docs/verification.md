@@ -4603,13 +4603,13 @@ other path.
 
 ### The host object's AES key expansions
 
-`aes_hw.c` expands an AES-128 or AES-256 key in one of two ways, by
-architecture (decision 123). On arm64 a loop computes FIPS 197 §5.2 a word
-at a time through two 4-byte arrays, which it wipes when it returns. On
-x86-64 the expansion computes a round key at a time in vector registers,
-on AESENCLAST and SSE2's shifts, shuffle, or and exclusive-or, and stores
-each round key to the schedule once. CBMC cannot unwind an intrinsic, so
-no harness compiles either, and `aes_hw.c` stays in
+`aes_hw.c` expands an AES-128 or AES-256 key a round key at a time in
+vector registers on both architectures (decisions 123 and 158), and stores
+each round key to the schedule once. Each architecture supplies five
+small helpers. On x86-64 they run AESENCLAST and SSE2's shifts, shuffle,
+or and exclusive-or. On arm64 they run AESE with a zero key, TBL, EXT and
+exclusive-or. CBMC cannot unwind an intrinsic, so no harness compiles
+either, and `aes_hw.c` stays in
 [the table of sources with no harness](#sources-with-no-launched-harness).
 These hold both:
 
@@ -4636,22 +4636,22 @@ These hold both:
   vectors on the instructions, the host Wycheproof binary runs the
   AES-GCM suites under each `ch_cfg.cpu` value `make check` passes it,
   and `bin/diff_quic_hw` runs the AES and GCM rows of the Lean
-  differential. CI's x86-64 `check` job runs the first two on the register
-  expansion, and its arm64 and macOS jobs run them on the word loop
+  differential. CI's x86-64 `check` job runs the first two on the x86-64
+  helpers, and its arm64 and macOS jobs run them on the arm64 helpers
   through `suite-check`. `make diff` runs the third, in CI's x86-64
   `slow` job.
 
 Eight violations break the two expansions, and the qemu part catches each,
 so each verdict is the same on every machine:
-`aes-hw-diverges-from-soft` and `aes256-schedule-one-round-key-short` break
-arm64's round constant and AES-256's length,
+`aes-hw-diverges-from-soft` and
+`aes-hw-registers-256-arm64-sub-word-takes-word-2` break arm64's
+helpers, `aes-hw-registers-shuffle-takes-word-2` breaks x86-64's,
 `aes-hw-registers-round-constant-one-round-late`,
-`aes-hw-registers-shuffle-takes-word-2`,
 `aes-hw-registers-256-last-round-key-unstored` and
-`aes-hw-registers-256-second-step-takes-rot-word` break x86-64's
-arithmetic, and `aes-hw-registers-round-key-on-stack` and
-`aes-hw-word-loop-keeps-its-word` leave a round key's word on the stack,
-one on each architecture.
+`aes-hw-registers-256-second-step-takes-rot-word` break the shared
+expansion, and `aes-hw-registers-round-key-on-stack` and
+`aes-hw-registers-arm64-round-key-on-stack` leave a round key on the
+stack, one on each architecture.
 
 What none of this shows:
 

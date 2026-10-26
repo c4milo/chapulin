@@ -1,0 +1,18 @@
+invariant: INV-26
+file: aes_hw.c
+catches: test/docker-aes-runtime-qemu.sh aes-equiv
+reason: the host object's arm64 AES-256 key expansion reads word 2 of a
+  round key into word 0 of the temporary of the step every second round
+  key takes, where FIPS 197 takes SubWord of word 3. That step is the one
+  AES-128 does not have, so only the AES-256 schedules change, the
+  schedules of TLS_AES_256_GCM_SHA384. CBMC cannot read the instructions
+  this file runs, so bin/aes_equiv_test is what holds it: it expands every
+  key under both implementations and compares all fifteen round keys byte
+  for byte before it compares a block. Only an arm64 compiler reads the
+  line, so the script builds that binary for arm64 and for x86-64 and runs
+  each under qemu.
+
+--- old
+static const uint8_t LAST_WORD_LANES[AES_BLOCK] = {12, 13, 14, 15, 12, 13, 14, 15,
+--- new
+static const uint8_t LAST_WORD_LANES[AES_BLOCK] = {8, 9, 10, 11, 12, 13, 14, 15,

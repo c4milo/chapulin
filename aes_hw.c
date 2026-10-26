@@ -11,10 +11,9 @@
 // ARMv8 crypto extensions on arm64, through <arm_neon.h>'s vaeseq_u8 and
 // vaesmcq_u8, and AES-NI on x86-64, through <wmmintrin.h>'s
 // _mm_aesenc_si128 and _mm_aesenclast_si128. cpu_cfg.h refuses a host
-// object for any other target. The two key expansions differ: arm64
-// computes a schedule a word at a time, in one loop for both key sizes,
-// and x86-64 a round key at a time in vector registers, in one function
-// per key size.
+// object for any other target. Both compute a key schedule a round key at
+// a time in vector registers, in one function per key size, over four
+// helpers that each architecture writes in its own instructions.
 //
 // The object compiles this file with no instruction flag, so the rest of
 // the object runs on any CPU of its architecture. The pragma below puts
@@ -118,13 +117,13 @@ typedef __m128i aes_state;
 // (test/aes_equiv_residue.h). __m128i may alias any type, so the casts
 // read and write the bytes as they lie.
 #ifdef AES_HW_ARM
-static aes_state load_block(const uint8_t p[AES_BLOCK]) {
+static inline __attribute__((always_inline)) aes_state load_block(const uint8_t p[AES_BLOCK]) {
     aes_state v;
     memcpy(&v, p, AES_BLOCK);
     return v;
 }
 
-static void store_block(uint8_t p[AES_BLOCK], aes_state v) {
+static inline __attribute__((always_inline)) void store_block(uint8_t p[AES_BLOCK], aes_state v) {
     memcpy(p, &v, AES_BLOCK);
 }
 #else
@@ -144,101 +143,23 @@ static inline __attribute__((always_inline)) uint8_t xtime(uint8_t b) {
     return (uint8_t)(((unsigned)b << 1) ^ (0x1bU & high_set));
 }
 
-#ifdef AES_HW_ARM
-// FIPS 197 §5.2's SubWord: the S-box applied to each of 4 bytes. The Arm
-// instructions reach it as a by-product of an instruction built for
-// something else, so no line reads a table.
-//
-// The bytes travel into the vector and back through memcpy, so this does
-// not assume host endianness: the same representation is packed and
-// unpacked, and SubWord treats each byte on its own, so no step depends
-// on which end a word starts at.
-static void sub_word(const uint8_t in[4], uint8_t out[4]) {
-    // vaeseq_u8(v, zero) is ShiftRows(SubBytes(v)). Replicating the word
-    // into all four columns makes ShiftRows move equal bytes between
-    // equal columns, so what comes back is SubBytes alone, and column 0
-    // holds SubWord of the input word.
-    uint32_t word;
-    memcpy(&word, in, 4);
-    uint8x16_t replicated = vreinterpretq_u8_u32(vdupq_n_u32(word));
-    uint8x16_t substituted = vaeseq_u8(replicated, vdupq_n_u8(0));
-    memcpy(out, &substituted, 4);
-}
-
-// FIPS 197 §5.2 for either key size, the same expansion quic_aes_soft.c
-// writes, with the instruction-backed SubWord above in place of the table
-// lookup. The two files agree byte for byte, which test/aes_equiv_test.c
-// checks. key_len is AES_128_KEY (Nk = 4) or AES_256_KEY (Nk = 8) and
-// schedule_len is the bytes of round keys that size fills; both are the
-// entry's own constants, never an operand, so every branch below reads
-// a public value.
-//
-// Each word is the word key_len bytes back exclusive-ored with a
-// temporary. The temporary is the word before it, which every key_len-th
-// byte takes RotWord, SubWord and the round constant first, and which
-// AES-256 alone also passes through SubWord halfway between two of those
-// (FIPS 197 §5.2, the Nk > 6 step).
-static void expand(const uint8_t *key, size_t key_len, uint8_t *round_keys, size_t schedule_len) {
-    uint8_t round_constant = 0x01;
-    memcpy(round_keys, key, key_len);
-    uint8_t word[4];
-    uint8_t substituted[4] = {0};
-    for (size_t i = key_len; i < schedule_len; i += 4) {
-        memcpy(word, &round_keys[i - 4], sizeof word);
-        if (i % key_len == 0) {
-            sub_word(word, substituted);
-            // RotWord, then the round constant on the first byte.
-            word[0] = (uint8_t)(substituted[1] ^ round_constant);
-            word[1] = substituted[2];
-            word[2] = substituted[3];
-            word[3] = substituted[0];
-            round_constant = xtime(round_constant);
-        } else if (key_len == AES_256_KEY && i % key_len == AES_BLOCK) {
-            sub_word(word, substituted);
-            memcpy(word, substituted, sizeof word);
-        }
-        for (size_t j = 0; j < sizeof word; j++) {
-            round_keys[i + j] = (uint8_t)(round_keys[i - key_len + j] ^ word[j]);
-        }
-    }
-    // Both temporaries hold bytes of the last round key. Under
-    // -DCH_SUITE_AES_GCM that is a traffic key, and this is the one
-    // implementation that build runs a traffic key on, so the wipe runs
-    // here and not in quic_aes_soft.c. Two calls and two fixed sizes, so
-    // the wipe itself reads nothing it was given.
-    ct_wipe(word, sizeof word);
-    ct_wipe(substituted, sizeof substituted);
-}
-
-static void expand_128(const uint8_t key[AES_128_KEY], uint8_t *round_keys) {
-    expand(key, AES_128_KEY, round_keys, (size_t)AES_ROUND_KEYS * AES_BLOCK);
-}
-
-#ifdef CH_AES_256
-static void expand_256(const uint8_t key[AES_256_KEY], uint8_t *round_keys) {
-    expand(key, AES_256_KEY, round_keys, (size_t)AES_256_ROUND_KEYS * AES_BLOCK);
-}
-#endif
-
-#else
-// FIPS 197 §5.2 on x86-64, a round key at a time. Each round key is one
-// vector value, computed from the round keys before it and stored to
-// round_keys once, and nothing reads the schedule back. The arm64
-// expansion above runs a word at a time through two arrays in memory and
-// reads each word back from round_keys; on x86-64 that took 10 to 21
-// times as long (docs/decisions.md 123). Every loop below runs a count the
-// key size fixes, so every branch reads a public value.
+// FIPS 197 §5.2 a round key at a time, on both architectures. Each round
+// key is one vector value, computed from the round keys before it and
+// stored to round_keys once, and nothing reads the schedule back. A word
+// loop, which ran each SubWord on a word copied into a vector register
+// and back out and read each word back from round_keys, took 10 to 21
+// times as long on x86-64 (docs/decisions.md 123) and 196 ns of an M1
+// Pro's 2.33 µs AES-128-GCM record of 16 KiB on arm64
+// (docs/decisions.md 158). Every loop below runs a count the key size
+// fixes, so every branch reads a public value.
 //
 // The C holds no array to wipe, and test/aes_equiv_residue.h checks that
 // the compilers add no stack slot. Every function the expansion calls is
-// always inlined, the five below, load_block, store_block and xtime, so
+// always inlined, the helpers below, load_block, store_block and xtime, so
 // the expansion makes no call: x86-64's calling convention keeps no
-// vector register across a call, and gcc 13 at -Os, which left one of
-// the five out of line, kept a round key in a stack slot across each call
-// to it.
-//
-// x86-64 is little-endian, so byte 0 of a word, the byte FIPS 197 writes
-// first, is bits 0 to 7 of its 32-bit lane.
+// vector register across a call, and arm64's keeps only the low half of
+// eight of them. gcc 13 at -Os, which left one helper out of line on
+// x86-64, kept a round key in a stack slot across each call to it.
 //
 // Each word of a new round key is the word Nk words back exclusive-ored
 // with the word before it, and the first word takes a temporary in place
@@ -246,6 +167,64 @@ static void expand_256(const uint8_t key[AES_256_KEY], uint8_t *round_keys) {
 // of the new round key is the temporary exclusive-ored with words 0 to i
 // of the round key Nk words back: prefix_xor of that round key, with the
 // temporary exclusive-ored into all four words.
+//
+// Four helpers differ between the architectures: prefix_xor,
+// rot_sub_last_word, sub_last_word and round_constant_words. Byte i of a
+// block is byte lane i of its vector on both, so a helper that moves bytes
+// names byte lanes.
+#ifdef AES_HW_ARM
+// Each word i of v becomes the exclusive-or of v's words 0 to i.
+// vextq_u8(zero, v, 12) is v moved up 4 byte lanes, with zeros in lanes 0
+// to 3, which moves each word up one place, and vextq_u8(zero, v, 8)
+// moves each word up two places.
+static inline __attribute__((always_inline)) aes_state prefix_xor(aes_state v) {
+    aes_state zero = vdupq_n_u8(0);
+    v = veorq_u8(v, vextq_u8(zero, v, 12));
+    return veorq_u8(v, vextq_u8(zero, v, 8));
+}
+
+// The 16 byte lanes vqtbl1q_u8 reads for rot_sub_last_word and
+// sub_last_word: word 3's bytes (a0, a1, a2, a3), in lanes 12 to 15, as
+// (a1, a2, a3, a0) in each of the four words, which is RotWord, and as
+// themselves in each word.
+static const uint8_t ROT_LAST_WORD_LANES[AES_BLOCK] = {13, 14, 15, 12, 13, 14, 15, 12,
+                                                       13, 14, 15, 12, 13, 14, 15, 12};
+#ifdef CH_AES_256
+static const uint8_t LAST_WORD_LANES[AES_BLOCK] = {12, 13, 14, 15, 12, 13, 14, 15,
+                                                   12, 13, 14, 15, 12, 13, 14, 15};
+#endif
+
+// SubWord of RotWord of v's last word, word 3, in all four words. The
+// table lookup copies the word, rotated, into all four words, and
+// vaeseq_u8(s, zero) is ShiftRows(SubBytes(s)): with four equal columns
+// ShiftRows moves equal bytes between equal columns, so what comes back
+// is SubBytes alone. The lanes the lookup reads are constants, so no
+// operand picks an address.
+static inline __attribute__((always_inline)) aes_state rot_sub_last_word(aes_state v) {
+    return vaeseq_u8(vqtbl1q_u8(v, vld1q_u8(ROT_LAST_WORD_LANES)), vdupq_n_u8(0));
+}
+
+#ifdef CH_AES_256
+static inline __attribute__((always_inline)) aes_state sub_last_word(aes_state v) {
+    return vaeseq_u8(vqtbl1q_u8(v, vld1q_u8(LAST_WORD_LANES)), vdupq_n_u8(0));
+}
+#endif
+
+// The round constant in byte 0 of each word and zeros elsewhere: the
+// constant in all 16 lanes, kept in the lanes the mask keeps.
+static const uint8_t FIRST_BYTE_OF_EACH_WORD[AES_BLOCK] = {0xff, 0, 0, 0, 0xff, 0, 0, 0,
+                                                           0xff, 0, 0, 0, 0xff, 0, 0, 0};
+
+static inline __attribute__((always_inline)) aes_state round_constant_words(uint8_t constant) {
+    return vandq_u8(vdupq_n_u8(constant), vld1q_u8(FIRST_BYTE_OF_EACH_WORD));
+}
+
+static inline __attribute__((always_inline)) aes_state xor_block(aes_state a, aes_state b) {
+    return veorq_u8(a, b);
+}
+#else
+// x86-64 is little-endian, so byte 0 of a word, the byte FIPS 197 writes
+// first, is bits 0 to 7 of its 32-bit lane.
 
 // Each word i of v becomes the exclusive-or of v's words 0 to i. The
 // shift by 4 bytes moves each word up one place and puts a zero in word
@@ -259,28 +238,41 @@ static inline __attribute__((always_inline)) aes_state prefix_xor(aes_state v) {
 // word 3 into all four words, and _mm_aesenclast_si128(s, zero) is
 // SubBytes(ShiftRows(s)): with four equal columns ShiftRows moves equal
 // bytes between equal columns, so what comes back is SubBytes alone.
-static inline __attribute__((always_inline)) aes_state sub_word_of_last_word(aes_state v) {
+static inline __attribute__((always_inline)) aes_state sub_last_word(aes_state v) {
     return _mm_aesenclast_si128(_mm_shuffle_epi32(v, 0xff), _mm_setzero_si128());
 }
 
-// RotWord on each word: the bytes (a0, a1, a2, a3) become (a1, a2, a3,
-// a0), which in a little-endian lane is a rotation right by 8 bits.
-static inline __attribute__((always_inline)) aes_state rot_word_each(aes_state v) {
-    return _mm_or_si128(_mm_srli_epi32(v, 8), _mm_slli_epi32(v, 24));
+// RotWord of SubWord of v's last word in all four words. RotWord turns
+// the bytes (a0, a1, a2, a3) into (a1, a2, a3, a0), which in a
+// little-endian lane is a rotation right by 8 bits. SubWord treats each
+// byte alone, so this is SubWord of RotWord too.
+static inline __attribute__((always_inline)) aes_state rot_sub_last_word(aes_state v) {
+    aes_state w = sub_last_word(v);
+    return _mm_or_si128(_mm_srli_epi32(w, 8), _mm_slli_epi32(w, 24));
 }
+
+// The round constant in the low byte of each 32-bit lane, which is byte 0
+// of each word.
+static inline __attribute__((always_inline)) aes_state round_constant_words(uint8_t constant) {
+    return _mm_set1_epi32((int)constant);
+}
+
+static inline __attribute__((always_inline)) aes_state xor_block(aes_state a, aes_state b) {
+    return _mm_xor_si128(a, b);
+}
+#endif
 
 // The round key after before, by the step every Nk-th word takes: the
 // temporary is RotWord(SubWord(w)) exclusive-ored with the round constant
-// on its first byte, w the last word of before. SubWord treats each byte
-// alone, so it gives what SubWord(RotWord(w)) gives. key is the round key
-// Nk words back: AES-128 passes before as key, and AES-256 the round key
+// on its first byte, w the last word of before. key is the round key Nk
+// words back: AES-128 passes before as key, and AES-256 the round key
 // before before.
 static inline __attribute__((always_inline)) aes_state next_round_key(aes_state key,
                                                                       aes_state before,
                                                                       uint8_t round_constant) {
-    aes_state temporary = _mm_xor_si128(rot_word_each(sub_word_of_last_word(before)),
-                                        _mm_set1_epi32((int)round_constant));
-    return _mm_xor_si128(prefix_xor(key), temporary);
+    aes_state temporary =
+        xor_block(rot_sub_last_word(before), round_constant_words(round_constant));
+    return xor_block(prefix_xor(key), temporary);
 }
 
 #ifdef CH_AES_256
@@ -292,7 +284,7 @@ static inline __attribute__((always_inline)) aes_state next_round_key(aes_state 
 // static inline function, and -Werror makes that an error.
 static inline __attribute__((always_inline)) aes_state next_second_round_key(aes_state key,
                                                                              aes_state first) {
-    return _mm_xor_si128(prefix_xor(key), sub_word_of_last_word(first));
+    return xor_block(prefix_xor(key), sub_last_word(first));
 }
 #endif
 
@@ -327,8 +319,6 @@ static void expand_256(const uint8_t key[AES_256_KEY], uint8_t *round_keys) {
     first = next_round_key(first, second, round_constant);
     store_block(&round_keys[(size_t)(AES_256_ROUND_KEYS - 1) * AES_BLOCK], first);
 }
-#endif
-
 #endif
 
 void aes_expand_round_keys(const uint8_t key[AES_128_KEY],

@@ -635,10 +635,11 @@ its counter block. `aes-hw-counter-short-pass-dropped.violation` skips a last
 pass shorter than eight blocks, and `aes-hw-counter-wrap-carries-into-iv.violation`
 carries a counter's wrap past 2^32 into the IV bytes; that binary fails each.
 `test/violations/aes-hw-diverges-from-soft.violation` starts the hardware key
-expansion from the wrong round constant and requires that binary to fail, so
-the equivalence check is itself checked. The two architectures expand a key in
-code of their own (decision 123), so that mutant edits arm64's and seven more
-edit one arm or the other. Each names `test/docker-aes-runtime-qemu.sh
+expansion with an unrotated word and requires that binary to fail, so the
+equivalence check is itself checked. The two architectures share the expansion
+and supply helpers of their own (decisions 123 and 158), so that mutant edits
+arm64's helpers and seven more edit the shared code or one architecture's
+helpers. Each names `test/docker-aes-runtime-qemu.sh
 aes-equiv`, which builds the binary for both architectures and runs each under
 qemu, so each lands on every machine. The binary also searches the stack each
 key expansion leaves for any word the expansion computed.

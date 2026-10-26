@@ -8,8 +8,8 @@ reason: the x86-64 AES-128 key expansion keeps its round key in a volatile
   key. Every schedule is still right, so no vector notices.
   bin/aes_equiv_test clears the stack below a call, makes one expansion
   and looks for any word of the schedule in the bytes the call wrote.
-  Only an x86-64 compiler reads the line, so the script builds that
-  binary for x86-64 and runs it under qemu-x86_64.
+  Both architectures read the line, and the script builds that binary
+  for each and runs it under qemu.
 
 --- old
     aes_state round_key = load_block(key);
