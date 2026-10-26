@@ -170,7 +170,18 @@ Home: github.com/c4milo.
   TRUST=raw-mldsa and TRUST=ca-mldsa, docs/decisions.md 154 and 157;
   `test/mldsa_sign.c` is an ML-DSA-87 signer for tests alone, which
   `bin/wycheproof_mldsa_sign_test` holds to Wycheproof's 92 seeded
-  signatures, and no library source calls it)
+  signatures, and no library source calls it) + `mldsa_signer.[ch]`
+  with `mldsa_sign_round.[ch]`, `mldsa_sign_steps.[ch]`,
+  `mldsa_sign_poly.[ch]` and `mldsa_sign_pack.[ch]` (ML-DSA-87 key
+  generation from the 32-byte seed and hedged signing, FIPS 204
+  Algorithms 2, 6 and 7, constant time over s1, s2, t0, K, rnd, y and c:
+  every product on ct.h's `ct_widemul_s`, both rejection samplers masked
+  over a fixed byte count, and the round's verdict the one branch on a
+  secret-derived value; each signature is verified with
+  `mldsa87_verify` before it leaves; `mldsa_signer.c` stays under
+  `STACK_BUDGET_MLDSA_SIGN`; test binaries alone compile them until the
+  PROFILE=cnsa2 server role packages them, and `CH_MLDSA_SIGN_TEST`
+  declares their two test entries, docs/decisions.md 159)
   ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) with `hash_hw.h`, `hkdf_hw.c` and `keysched_hw.c` (`hkdf.c`
@@ -339,7 +350,10 @@ Home: github.com/c4milo.
   `pem.[ch]`, `pem_blocks.[ch]`, `x509_pem.[ch]` and `p256_ecdh.[ch]`,
   and no library source reads it. Every object with a server role
   exports `ch_chain_from_pem` and `ch_p256_key_from_pem`. Every
-  TRUST=webpki object exports `ch_anchors_from_pem`. A program calls
+  TRUST=webpki object exports `ch_anchors_from_pem`. Under
+  `CH_SIGN_MLDSA`, which only the ML-DSA-87 signing object sets,
+  `ch_mldsa_key_from_pem` reads a PKCS #8 seed or both form and expands
+  the seed once. A program calls
   them while it reads its files, and no session calls them. None does
   I/O. Each reads bytes the caller read, and writes into rooms that the
   caller gives and sizes: a DER room's length and an array's entries. A
