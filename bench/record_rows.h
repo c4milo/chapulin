@@ -12,11 +12,12 @@
 #include "poly1305.h"
 #include "record.h"
 
-// The record sizes, as the plaintext bytes ch_write hands rec_seal: 1 KiB,
+// The record sizes, as the plaintext bytes ch_write hands rec_seal: 16
+// bytes, where the fixed work of a record is most of its cost, 1 KiB,
 // 16 KiB, the most RFC 9846 §5.1 lets a record carry, and 64 KiB, which no
 // record carries and only the AEAD rows run at, to show whether the cost
 // per byte moves past a record's size.
-#define BENCH_SIZE_COUNT 3
+#define BENCH_SIZE_COUNT 4
 #define BENCH_MAX_PLAINTEXT 65536
 extern const size_t bench_record_sizes[BENCH_SIZE_COUNT];
 
@@ -84,12 +85,12 @@ void bench_prepare(bench_state *b, bench_aead aead, size_t plaintext_len);
 void bench_reset_batch(bench_state *b);
 
 // Which record sizes a row runs at, one bit per entry of
-// bench_record_sizes: the two a TLS record can carry, or all three.
+// bench_record_sizes: the three a TLS record can carry, or all four.
 // BENCH_SIZES_FIXED marks a row whose cost does not depend on the size,
 // run once per AEAD.
-#define BENCH_SIZES_RECORD 0x3u
-#define BENCH_SIZES_ALL 0x7u
-#define BENCH_SIZES_FIXED 0x8u
+#define BENCH_SIZES_RECORD 0x7u
+#define BENCH_SIZES_ALL 0xfu
+#define BENCH_SIZES_FIXED 0x10u
 
 // One timed row: run is one operation. A row that refills the record
 // before each operation has the refill row's figure from the same run

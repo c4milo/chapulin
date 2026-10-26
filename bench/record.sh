@@ -56,8 +56,9 @@
 # nothing timed draws randomness.
 #
 # Two other libraries on the same machine follow when their tools are
-# present. `openssl speed -aead` runs over 16 KiB, and with -decrypt the
-# other way, in five one-second runs of each; OpenSSL divides by the user
+# present. `openssl speed -aead` runs over 16 KiB, and for AES-GCM over 16
+# bytes and 1 KiB too, and with -decrypt the other way, in five one-second
+# runs of each; OpenSSL divides by the user
 # CPU time its process took. The binary is the one test/e2e.sh takes
 # (bench/openssl.sh). What one operation of `speed -aead` holds depends on
 # the release, so each OpenSSL row's stage is openssl_ and the name of the
@@ -243,25 +244,27 @@ openssl_stage() { # $1 = aes or chacha, $2 = seal or open
     esac
 }
 
-# One `openssl speed -aead` figure: bytes per second over 16 KiB.
-openssl_rate() { # $1 = cipher, $2 = empty or -decrypt
-    "$OPENSSL_BIN" speed -mr -seconds 1 -bytes 16384 -aead -evp "$1" ${2:+"$2"} 2>/dev/null |
+# One `openssl speed -aead` figure: bytes per second over $3 bytes.
+openssl_rate() { # $1 = cipher, $2 = empty or -decrypt, $3 = bytes
+    "$OPENSSL_BIN" speed -mr -seconds 1 -bytes "$3" -aead -evp "$1" ${2:+"$2"} 2>/dev/null |
         awk -F: '/^\+F:/ { print $4 }'
 }
 
 # The median of five runs and their spread, as bench/record.c writes a row.
-openssl_rows() { # $1 = cipher, $2 = the aead column, $3 = the stage, $4 = empty or -decrypt
+# $1 = cipher, $2 = the aead column, $3 = the stage, $4 = bytes, $5 = empty or -decrypt
+openssl_rows() {
     local rates=()
     for _ in 1 2 3 4 5; do
-        rates+=("$(openssl_rate "$1" "${4:-}")")
+        rates+=("$(openssl_rate "$1" "${5:-}" "$4")")
     done
-    printf '%s\n' "${rates[@]}" | sort -g | awk -v aead="$2" -v stage="$3" -v build="$OPENSSL_LABEL" '
+    printf '%s\n' "${rates[@]}" | sort -g |
+        awk -v aead="$2" -v stage="$3" -v build="$OPENSSL_LABEL" -v bytes="$4" '
         { rate[NR] = $1 }
         END {
-            ns = 16384 * 1e9 / rate[3]
-            spread = 100 * (16384e9 / rate[1] - 16384e9 / rate[5]) / ns
-            printf "%s,%s,%s,16384,%.1f,%.4f,%.1f,%.1f,,\n", aead, build, stage, ns, ns / 16384,
-                rate[3] / 1e6, spread
+            ns = bytes * 1e9 / rate[3]
+            spread = 100 * (bytes * 1e9 / rate[1] - bytes * 1e9 / rate[5]) / ns
+            printf "%s,%s,%s,%d,%.1f,%.4f,%.1f,%.1f,,\n", aead, build, stage, bytes, ns,
+                ns / bytes, rate[3] / 1e6, spread
         }'
 }
 
@@ -299,12 +302,17 @@ LOAD_BEFORE=$(load)
         "$W/record_zig"
     fi
     if [ -n "$OPENSSL_BIN" ]; then
-        openssl_rows aes-128-gcm aes128gcm "$(openssl_stage aes seal)"
-        openssl_rows aes-128-gcm aes128gcm "$(openssl_stage aes open)" -decrypt
-        openssl_rows aes-256-gcm aes256gcm "$(openssl_stage aes seal)"
-        openssl_rows aes-256-gcm aes256gcm "$(openssl_stage aes open)" -decrypt
-        openssl_rows chacha20-poly1305 chacha20poly1305 "$(openssl_stage chacha seal)"
-        openssl_rows chacha20-poly1305 chacha20poly1305 "$(openssl_stage chacha open)" -decrypt
+        # AES-GCM at three of the record sizes, so that the fixed work of
+        # one operation shows beside the work on the bytes.
+        for bytes in 16 1024 16384; do
+            openssl_rows aes-128-gcm aes128gcm "$(openssl_stage aes seal)" "$bytes"
+            openssl_rows aes-128-gcm aes128gcm "$(openssl_stage aes open)" "$bytes" -decrypt
+            openssl_rows aes-256-gcm aes256gcm "$(openssl_stage aes seal)" "$bytes"
+            openssl_rows aes-256-gcm aes256gcm "$(openssl_stage aes open)" "$bytes" -decrypt
+        done
+        openssl_rows chacha20-poly1305 chacha20poly1305 "$(openssl_stage chacha seal)" 16384
+        openssl_rows chacha20-poly1305 chacha20poly1305 "$(openssl_stage chacha open)" 16384 \
+            -decrypt
     fi
 } >"$W/rows"
 LOAD_AFTER=$(load)

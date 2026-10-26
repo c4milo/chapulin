@@ -26,7 +26,7 @@
     "bench/record.c times the AES-GCM suites on the AES instructions: build it as bench/record.sh does"
 #endif
 
-const size_t bench_record_sizes[BENCH_SIZE_COUNT] = {1024, 16384, BENCH_MAX_PLAINTEXT};
+const size_t bench_record_sizes[BENCH_SIZE_COUNT] = {16, 1024, 16384, BENCH_MAX_PLAINTEXT};
 
 volatile uint8_t bench_sink;
 
@@ -255,7 +255,8 @@ static void run_counter_blocks_shifted(bench_state *b) {
 // The seal's whole passes, as seal_schedule hands them to the entry
 // BENCH_CPU names: counter mode and GHASH over the ciphertext in one loop,
 // over every whole pass of the record, in place, from the accumulator
-// ghash_data's row uses. Every record size the bench times is whole passes.
+// ghash_data's row uses. A 16-byte record holds no whole pass, so there the
+// row times the call alone.
 static void run_seal_passes(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
     bench_gcm_seal_passes(b->key.key.round_keys, b->key.key.rounds, b->counter, b->acc, b->subkey,
