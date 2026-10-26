@@ -1,0 +1,35 @@
+invariant: INV-16
+file: mlkem_poly.c
+catches: test/lint-wide-multiply.sh
+reason: the compression divides each secret coefficient by q, read from a
+  volatile object as a table of moduli would hold it, so no compiler can
+  turn the division into a multiply: udiv on the M3, divu on mips32r2
+  and rv32imac, udiv on arm64 and div on x86-64, and the division count
+  of every spec rises above its zero (docs/decisions.md 156). The
+  KyberSlash form, which divides by the constant q, is
+  inv16-mlkem-compress-kyberslash-quotient
+
+--- old
+static uint16_t mlk_compress(uint16_t x, unsigned d) {
+    // x < q and d <= 11, so the left operand is under 2^23 and this is a
+    // 32x32 product: the decomposition keeps it off the M3's variable-time
+    // umull. _opaque, because d is a compile-time constant at every call and
+    // the two smallest ones bound the operand under 2^16 -- d=1 reaches 8320
+    // and d=4 reaches 54912. That lets the optimiser prove the operand's high
+    // half is zero and rebuild a widening multiply from what is left, which
+    // clang 22 does on rv32imac for the d=1 call in mlk_poly_tomsg.
+    uint64_t t = ct_widemul_opaque(((uint32_t)x << d) + 1664U, 1290168U);
+    return (uint16_t)((t >> 32) & ((1U << d) - 1U));
+--- new
+static const volatile uint32_t mlk_compress_q = MLKEM_Q;
+static uint16_t mlk_compress(uint16_t x, unsigned d) {
+    // x < q and d <= 11, so the left operand is under 2^23 and this is a
+    // 32x32 product: the decomposition keeps it off the M3's variable-time
+    // umull. _opaque, because d is a compile-time constant at every call and
+    // the two smallest ones bound the operand under 2^16 -- d=1 reaches 8320
+    // and d=4 reaches 54912. That lets the optimiser prove the operand's high
+    // half is zero and rebuild a widening multiply from what is left, which
+    // clang 22 does on rv32imac for the d=1 call in mlk_poly_tomsg.
+    uint32_t q = mlk_compress_q;
+    uint32_t scaled = ((uint32_t)x << d) + q / 2U;
+    return (uint16_t)((scaled - scaled % q) / q % (1U << d));

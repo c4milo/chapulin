@@ -7506,54 +7506,6 @@ lint-impact:
 #   webpki_pin.c: SPKI pins and RFC 7250 raw public keys under
 #     TRUST=webpki. It hashes a server's public key and compares the
 #     hash with the caller's pins, which are hashes of public keys too.
-#   aes_hw.c: the AES forward cipher on the AES instructions, in a host
-#     object (-DCH_CPU_RUNTIME). It is the one AES source left on this
-#     list: aes.c, quic_aes_soft.c, aes_extern.c and gcm.c take a
-#     ceiling above, and this file cannot, because every spec below
-#     targets a core that fails the host test, where cpu_cfg.h stops the
-#     file's define. INV-26 admits three public keys to it, the Initial
-#     packet key and header protection key, both expanded from
-#     HKDF-Extract over the printed salt and the Destination Connection
-#     ID a long header carries in the clear (RFC 9001 §5.2), and the
-#     16-byte Retry key the RFC prints (§5.8), and in a SUITE=aesgcm
-#     object the traffic keys, which a session runs on it only under its
-#     caller's CH_CPU_CONSTANT_TIME_AES (docs/decisions.md 89).
-#     test/aes_equiv_test.c and the Wycheproof AES-GCM suite in the host
-#     Wycheproof test check it instead, and neither measures timing
-#     (docs/quic.md, "What the AES axis proves").
-#   ghash_hw.c: GHASH's multiply on the carry-less multiply
-#     instruction, in a host object, in place of gcm.c's portable one for
-#     a schedule on the AES instructions. It sits here for aes_hw.c's
-#     reason: every spec below targets a core that fails the host test.
-#     Its multiply is branchless and reads no table, and the hash subkey
-#     it takes is the forward cipher of a zero block under a key aes_hw.c
-#     takes. test/ghash_equiv_test.c and the Wycheproof AES-GCM suite in
-#     the host Wycheproof test check it instead, and neither measures timing.
-#   gcm_hw.c: counter mode over whole blocks and the seal's counter mode
-#     and GHASH in one loop, on the AES instructions and the carry-less
-#     multiply, in a host object. It sits here for aes_hw.c's reason, and
-#     takes the keys aes_hw.c and ghash_hw.c take. Its branches read the
-#     round count and the block count alone. test/aes_equiv_test.c,
-#     test/ghash_equiv_test.c and the Wycheproof AES-GCM suite in the
-#     host Wycheproof test check it instead, and none of them measures timing.
-#   gcm_vaes.c: gcm_hw.c's three loops on x86-64's 256-bit VAES and
-#     VPCLMULQDQ, in every host object on x86-64. It sits here for
-#     gcm_hw.c's reason and takes the keys gcm_hw.c takes: the 32-bit
-#     specs compile it to nothing, and the x86-64 spec measures no file
-#     in this list. Its branches read the round count and the block count
-#     alone. bin/aes_equiv_test, bin/ghash_equiv_test, bin/quic_test_hw
-#     and the host Wycheproof test check it on a CPU that has the
-#     instructions, and none of them measures timing.
-#   gcm_avx512.c, gcm_avx512_kernel.c: the whole seal and the whole open
-#     on x86-64's 512-bit VAES and VPCLMULQDQ, and the two entries that
-#     call them and wipe after them, in every host object on x86-64. They
-#     sit here for gcm_hw.c's reason and take the keys gcm_hw.c takes:
-#     the 32-bit specs compile them to nothing, and the x86-64 spec
-#     measures no file in this list. Their branches read the round
-#     count, the lengths and loop indices alone. bin/gcm_avx512_equiv_test,
-#     bin/quic_test_hw and the host Wycheproof test check them on a CPU
-#     that has the instructions, and none of them measures timing
-#     (docs/decisions.md 130).
 #   srv_parser.c, srv_parser_ext.c, srv_message.c, srv_cookie.c,
 #     srv_ticket.c, srv_auth.c, srv_resume.c, srv_kex.c, srv_flight.c,
 #     srv_handshake.c, srv.c: the ROLE=server protocol files. They are
@@ -7584,18 +7536,15 @@ lint-impact:
 #
 # Ceilings are file:count and hold on every spec below unless
 # WIDEMUL_CEILING_SPEC names the spec and file. Going over fails. Coming in
-# under only prints, because the only non-zero entries are two public
-# divisions whose lowering is a compiler choice and a recorded leak that is
-# meant to fall, and zero cannot be undershot, so every other module is
-# held exactly. The divisions are tls_write.c's in ch_writable_len: the
-# caller's buffer length by the length of a record (docs/decisions.md 72),
-# and what that length holds after a KeyUpdate record by the same length
-# (docs/decisions.md 138). Both operands of each are public.
+# under only prints, because the only non-zero entries are multiplies whose
+# lowering is a compiler choice, and zero cannot be undershot, so every
+# other module is held exactly. The divisions take a count and a ceiling of
+# their own, DIVIDE_CEILING below.
 WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
                    x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_parser_ee.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
-                   tls.c:0 tls_write.c:2 drbg.c:0 softmul.c:0 tcp_nonblocking.c:0 tcp_nonblocking_frame.c:0 \
+                   tls.c:0 tls_write.c:0 drbg.c:0 softmul.c:0 tcp_nonblocking.c:0 tcp_nonblocking_frame.c:0 \
                    tcp_nonblocking_step.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
                    quic_fail.c:0 srv_quic.c:0 quic_token.c:0 srv_tcp_nonblocking.c:0 \
@@ -7686,6 +7635,28 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # target. It adds, rotates, shifts and combines 64-bit words and
 # multiplies and divides nothing, so its ceiling is zero, and what the
 # specs hold is its branch count.
+#
+# The AES instructions' six files, AES_HW_SRCS, joined it from
+# WIDEMUL_PUBLIC for their division count (docs/decisions.md 156): aes_hw.c,
+# the forward cipher; ghash_hw.c, GHASH's multiply on the carry-less
+# multiply; gcm_hw.c, counter mode and the seal's and the open's loops;
+# gcm_vaes.c, those loops on x86-64's 256-bit VAES and VPCLMULQDQ; and
+# gcm_avx512.c and gcm_avx512_kernel.c, the whole seal and the whole open on
+# the 512-bit ones (docs/decisions.md 130). INV-26 admits three public keys
+# to them, and in a SUITE=aesgcm object the traffic keys, which a session
+# runs on them only under its caller's CH_CPU_CONSTANT_TIME_AES
+# (docs/decisions.md 89). No 32-bit spec targets a core with the
+# instructions, and cpu_cfg.h stops their define there, so these two specs
+# are the ones that can read them. Each compiles under the defines of a QUIC
+# host object with the suite, as aes.c@host does. They divide nothing, so
+# each ceiling is zero. They take no branch count: they are not in
+# BRANCH_SRCS, and their branches read the round count, the block count,
+# the lengths and loop indices alone. The taint lane runs them under
+# Valgrind where its virtual CPU has their instructions (make ct-taint,
+# docs/decisions.md 155), and bin/aes_equiv_test, bin/ghash_equiv_test,
+# bin/gcm_avx512_equiv_test, bin/quic_test_hw and the host Wycheproof test
+# hold their bytes. None of these measures timing (docs/quic.md, "What the
+# AES axis proves").
 WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20_avx512.c:0 \
                   poly1305_vector.c:0 \
                   poly1305_avx2.c:0 poly1305_native.c:0 mlkem_poly_native.c:0 \
@@ -7695,7 +7666,7 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20
                   rsa_avx2.c:0 \
                   sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 \
                   keccak_avx2.c:0 mlkem_avx2.c:0 avx512_wipe.c:0 sha512_compress_blocks.c:0 \
-                  sha512_avx2.c:0 \
+                  sha512_avx2.c:0 $(addsuffix :0,$(AES_HW_SRCS)) \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
 # Files the two 64-bit specs compile once more under other defines, each
 # entry name:ceiling, whose name is a file, an @ and a tag.
@@ -7833,13 +7804,13 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    mlkem_vector.c:-DCH_CPU_RUNTIME \
                    hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
-                   pem_files.c:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ
+                   pem_files.c:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
+                   $(addsuffix :$(WIDE64_HOST_AES_DEFINES),$(AES_HW_SRCS))
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem_blocks.c x509.c x509_der.c x509_ca.c \
                   p384.c p384_field.c $(P384_WIDE_SRCS) rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c \
                   webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
-                  aes_hw.c ghash_hw.c gcm_hw.c gcm_vaes.c gcm_avx512.c gcm_avx512_kernel.c quic_initial.c \
-                  quic_retry.c build.c $(MLDSA_SRCS)
+                  quic_initial.c quic_retry.c build.c $(MLDSA_SRCS)
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather
@@ -7918,9 +7889,24 @@ lint-codegen-partition:
 # The arm list carries the Thumb-2 forms whose product or quotient is
 # wider than 32 bits, the DSP ones included, so it holds on an M4 too;
 # mips carries the r6 spellings beside the r2 ones for the same reason.
-WIDEMUL_OPS_ARM := umull,umlal,umaal,smull,smlal,smlsld,smmul,smmla,smmls,smulw,smlaw,udiv,sdiv,__aeabi_uidiv,__aeabi_idiv,__aeabi_uldiv,__aeabi_ldiv,__udiv,__div,__umod,__mod
-WIDEMUL_OPS_MIPS := mult,multu,madd,maddu,msub,msubu,muh,muhu,div,divu,ddiv,ddivu,mod,modu,__udiv,__div,__umod,__mod
-WIDEMUL_OPS_RV := mulh,mulhu,mulhsu,div,divu,rem,remu,__udiv,__div,__umod,__mod
+#
+# The division tokens are listed apart, in DIVIDE_OPS_ARM, DIVIDE_OPS_MIPS
+# and DIVIDE_OPS_RV, and the gate counts them apart from the multiplies:
+# each file holds a division ceiling of its own, DIVIDE_CEILING, which is
+# zero for every file but one (below). A division is the KyberSlash class
+# of leak (https://kyberslash.cr.yp.to): a compiler writes udiv, div or
+# divu for a `/` or a `%` whose divisor is not a constant, and on a 32-bit
+# core a division of 64-bit operands is a call into the __udiv, __div,
+# __umod and __mod routines (__udivsi3, __udivdi3, __umoddi3 and the rest)
+# or the Arm EABI's __aeabi_uidiv and __aeabi_uldivmod, whose loops branch
+# on both operands. The tokens are prefixes, so each family takes its
+# 32-bit and its 64-bit routines.
+DIVIDE_OPS_ARM := udiv,sdiv,__aeabi_uidiv,__aeabi_idiv,__aeabi_uldiv,__aeabi_ldiv,__udiv,__div,__umod,__mod
+DIVIDE_OPS_MIPS := div,divu,ddiv,ddivu,mod,modu,__udiv,__div,__umod,__mod
+DIVIDE_OPS_RV := div,divu,rem,remu,__udiv,__div,__umod,__mod
+WIDEMUL_OPS_ARM := umull,umlal,umaal,smull,smlal,smlsld,smmul,smmla,smmls,smulw,smlaw,$(DIVIDE_OPS_ARM)
+WIDEMUL_OPS_MIPS := mult,multu,madd,maddu,msub,msubu,muh,muhu,$(DIVIDE_OPS_MIPS)
+WIDEMUL_OPS_RV := mulh,mulhu,mulhsu,$(DIVIDE_OPS_RV)
 # rv32ic has no M extension, so there is no mulh to count: a 64-bit
 # product is a call to __muldi3 and a division a call into the __div and
 # __mod family, and those names are the whole list. On a chapulin build
@@ -8272,8 +8258,13 @@ WIDEMUL_SPECS := \
 #   branch reads a digit of an exponent: table_select keeps an entry by a
 #   mask, which inv-16-rsa-ifma-table-read holds.
 # avx512_wipe.c holds none: it is one block of assembly with no branch.
-WIDE64_OPS_ARM64 := udiv,sdiv,__udivti3,__divti3,__umodti3,__modti3,__multi3
-WIDE64_OPS_X86 := div,idiv,__udivti3,__divti3,__umodti3,__modti3,__multi3
+DIVIDE_OPS_ARM64 := udiv,sdiv,__udivti3,__divti3,__umodti3,__modti3
+DIVIDE_OPS_X86 := div,idiv,__udivti3,__divti3,__umodti3,__modti3
+WIDE64_OPS_ARM64 := $(DIVIDE_OPS_ARM64),__multi3
+WIDE64_OPS_X86 := $(DIVIDE_OPS_X86),__multi3
+# Every division token of every spec. The gate counts a spec's token as a
+# division when it is on this list, and as a multiply when it is not.
+DIVIDE_TOKENS := $(DIVIDE_OPS_ARM),$(DIVIDE_OPS_MIPS),$(DIVIDE_OPS_RV),$(DIVIDE_OPS_ARM64),$(DIVIDE_OPS_X86)
 BRANCH_OPS_ARM64 := b.eq,b.ne,b.cs,b.hs,b.cc,b.lo,b.mi,b.pl,b.vs,b.vc,b.hi,b.ls,b.ge,b.lt,b.gt,b.le,cbz,cbnz,tbz,tbnz
 BRANCH_OPS_X86 := ja,jb,jc,je,jg,jl,jn,jo,jp,jr,js,jz
 WIDE64_SPECS := \
@@ -8328,8 +8319,8 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # calls to __muldi3 there, which is the point of the spec
 # (https://github.com/c4milo/chapulin/issues/107).
 #
-# tls_write.c reads three divu under the -O2 spec, from ch_writable_len's
-# two divisions of a public length by a record's length: the caller's
+# DIVIDE_CEILING_SPEC below records tls_write.c's three divu under the
+# -O2 spec, from ch_writable_len's two divisions of a public length by a record's length: the caller's
 # cap, and what it holds after a KeyUpdate record (docs/decisions.md 138).
 # gcc copies the first division into both arms of the smaller-of in
 # record_plaintext_max, where one arm divides by peer_limit + 22 and the
@@ -8403,8 +8394,21 @@ QUIC_PACKET_BRANCH_CEILING := \
   m3/quic_packet.c:59 mips32r2/quic_packet.c:42 rv32imac/quic_packet.c:46 m3-gcc/quic_packet.c:46 \
   mips32r2-gcc/quic_packet.c:46 mips32r2-gcc-O2/quic_packet.c:52 rv32imac-gcc/quic_packet.c:55 \
   rv32ic-gcc/quic_packet.c:55 arm64/quic_packet.c@host:34 x86-64/quic_packet.c@host:34
-WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
-                        mips32r2-gcc-O2/tls_write.c:3
+WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2
+# The division count, read from the same assembly with the DIVIDE_OPS
+# tokens (docs/decisions.md 156). DIVIDE_CEILING is file:count and holds on
+# every spec; DIVIDE_CEILING_SPEC is spec/file:count and holds where it
+# names the spec. A file neither names is held at zero, which is every
+# CODEGEN_SRCS file but one. Going over fails, and coming in under prints,
+# as for the multiply count.
+#
+# tls_write.c is the one: ch_writable_len divides the caller's buffer
+# length by the length of a record (docs/decisions.md 72), and what that
+# length holds after a KeyUpdate record by the same length
+# (docs/decisions.md 138). Every operand of both divisions is a public
+# length, and no key, plaintext or secret reaches either.
+DIVIDE_CEILING := tls_write.c:2
+DIVIDE_CEILING_SPEC := mips32r2-gcc-O2/tls_write.c:3
 # The files the branch count covers: the arithmetic under the record
 # layer, whose every input is a key, a word or a block. Almost every
 # branch they hold is loop control on a public count; the two exceptions
@@ -8754,6 +8758,11 @@ SHIFT_CALLS := __ashl,__lshr,__ashr,__aeabi_llsl,__aeabi_llsr,__aeabi_lasr
 SHIFT_CALL_FILES := aead.c:2 gcm.c:2 quic_packet.c:1 quic_token.c:1 record.c:1 sha256.c:1 sha3.c:3 \
                     sha512.c:1 srv_ticket.c:1
 SHIFT_CALL_CEILING := $(foreach s,mips32r2-gcc rv32imac-gcc rv32ic-gcc,$(addprefix $(s)/,$(SHIFT_CALL_FILES)))
+# The extended regular expression a comma-separated token list counts: an
+# opcode token matches a mnemonic at the start of an instruction, and a
+# token with a leading __ matches a routine's name after a space, a comma
+# or a parenthesis. An empty list gives an empty expression.
+WIDEMUL_TOKEN_PATTERN = awk -F, '{ o = ""; c = ""; for (i = 1; i <= NF; i++) { if ($$i ~ /^__/) c = c (c == "" ? "" : "|") $$i; else if ($$i != "") o = o (o == "" ? "" : "|") $$i } p = ""; if (o != "") p = "^[[:space:]]+(" o ")"; if (c != "") p = p (p == "" ? "" : "|") "[[:space:],(](" c ")"; print p }'
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)
 .PHONY: lint-wide-multiply lint-wide-multiply-gcc lint-wide-multiply-run
@@ -8808,16 +8817,19 @@ lint-wide-multiply-run:
 	   *) echo "lint-wide-multiply: spec $$arch names compiler '$$compiler'; it is clang or gcc"; exit 1 ;; \
 	   esac; \
 	   ccid=$$($$cc --version 2>&1); \
-	   ops=$$(echo "$$tokens" | tr ',' '\n' | grep -v '^__' | paste -sd '|' -); \
-	   calls=$$(echo "$$tokens" | tr ',' '\n' | grep '^__' | paste -sd '|' -); \
-	   pattern=""; \
-	   [ -z "$$ops" ] || pattern="^[[:space:]]+($$ops)"; \
-	   [ -z "$$calls" ] || pattern="$$pattern$${pattern:+|}[[:space:],(]($$calls)"; \
-	   [ -n "$$pattern" ] || { echo "lint-wide-multiply: spec $$arch lists no token to count"; exit 1; }; \
+	   mtokens=""; dtokens=""; \
+	   for t in $$(echo "$$tokens" | tr ',' ' '); do \
+	     case ",$(DIVIDE_TOKENS)," in *",$$t,"*) dtokens="$$dtokens$${dtokens:+,}$$t" ;; \
+	     *) mtokens="$$mtokens$${mtokens:+,}$$t" ;; esac; \
+	   done; \
+	   pattern=$$(printf '%s\n' "$$mtokens" | $(WIDEMUL_TOKEN_PATTERN)); \
+	   dpattern=$$(printf '%s\n' "$$dtokens" | $(WIDEMUL_TOKEN_PATTERN)); \
+	   [ -n "$$pattern" ] || { echo "lint-wide-multiply: spec $$arch lists no multiply token to count"; exit 1; }; \
+	   [ -n "$$dpattern" ] || { echo "lint-wide-multiply: spec $$arch lists no division token to count; the tokens take the DIVIDE_OPS list of its ISA"; exit 1; }; \
 	   [ -n "$$branches" ] || { echo "lint-wide-multiply: spec $$arch lists no conditional branch to count; the sixth field is the branch mnemonics of its ISA (BRANCH_OPS_ARM, BRANCH_OPS_MIPS or BRANCH_OPS_RV)"; exit 1; }; \
 	   bpattern="^[[:space:]]+($$(echo "$$branches" | tr ',' '\n' | sed 's/\./\\./g' | paste -sd '|' -))"; \
 	   spattern="[[:space:],(]($(subst $(COMMA),|,$(SHIFT_CALLS)))"; \
-	   ran="$$ran$$arch "; table=""; btable=""; stable=""; \
+	   ran="$$ran$$arch "; table=""; btable=""; stable=""; dtable=""; \
 	   files="$(WIDEMUL_CEILING)"; level="-Os"; freestanding="-ffreestanding"; \
 	   case " $(WIDE64_SPEC_NAMES) " in *" $$arch "*) \
 	     files="$(WIDE64_CEILING) $(WIDE64_REBUILT)"; level="-O2"; freestanding="" ;; \
@@ -8847,10 +8859,20 @@ lint-wide-multiply-run:
 	     n=$$(printf '%s\n' "$$asm" | grep -cE "$$pattern"); \
 	     [ "$$n" -eq 0 ] || table="$$table $$f=$$n"; \
 	     if [ "$$n" -gt "$$cap" ]; then \
-	       echo "lint-wide-multiply: $$f emits $$n wide multiplies or divisions on $$arch, ceiling is $$cap (see https://github.com/c4milo/chapulin/issues/53)"; \
+	       echo "lint-wide-multiply: $$f emits $$n wide multiplies on $$arch, ceiling is $$cap (see https://github.com/c4milo/chapulin/issues/53)"; \
 	       printf '%s\n' "$$asm" | grep -E "$$pattern" | head -5 | sed 's/^[[:space:]]*/lint-wide-multiply:   /'; rc=1; \
 	     elif [ "$$n" -lt "$$cap" ]; then \
 	       echo "lint-wide-multiply: $$f is down to $$n from $$cap on $$arch — lower the ceiling"; \
+	     fi; \
+	     d=$$(printf '%s\n' "$$asm" | grep -cE "$$dpattern"); \
+	     dcap=0; for o in $(DIVIDE_CEILING); do [ "$${o%%:*}" = "$$f" ] && dcap=$${o##*:}; done; \
+	     for o in $(DIVIDE_CEILING_SPEC); do [ "$${o%%:*}" = "$$arch/$$f" ] && dcap=$${o##*:}; done; \
+	     [ "$$d" -eq 0 ] || dtable="$$dtable $$f=$$d"; \
+	     if [ "$$d" -gt "$$dcap" ]; then \
+	       echo "lint-wide-multiply: $$f emits $$d divisions on $$arch, ceiling is $$dcap; a division takes a time that depends on its operands, so read each new one's operands in the C before recording it in DIVIDE_CEILING (docs/decisions.md 156)"; \
+	       printf '%s\n' "$$asm" | grep -E "$$dpattern" | head -5 | sed 's/^[[:space:]]*/lint-wide-multiply:   /'; rc=1; \
+	     elif [ "$$d" -lt "$$dcap" ]; then \
+	       echo "lint-wide-multiply: $$f is down to $$d divisions from $$dcap on $$arch — lower the ceiling"; \
 	     fi; \
 	     s=$$(printf '%s\n' "$$asm" | grep -cE "$$spattern"); \
 	     scap=0; for o in $(SHIFT_CALL_CEILING); do [ "$${o%%:*}" = "$$arch/$$f" ] && scap=$${o##*:}; done; \
@@ -8874,7 +8896,7 @@ lint-wide-multiply-run:
 	       echo "lint-wide-multiply: $$f is down to $$b conditional branches from $$bcap on $$arch — lower the ceiling"; \
 	     fi; \
 	   done; \
-	   echo "lint-wide-multiply: $$arch, $$($$cc --version 2>/dev/null | head -1):$${table:- every file at 0}; branches$$btable; shift calls$${stable:- none}"; \
+	   echo "lint-wide-multiply: $$arch, $$($$cc --version 2>/dev/null | head -1):$${table:- every file at 0}; divisions$${dtable:- none}; branches$$btable; shift calls$${stable:- none}"; \
 	 done; \
 	 [ -n "$$ran" ] || { echo "lint-wide-multiply: no $(WIDEMUL_RUN) spec ran$${got:+ — none matches $(WIDEMUL_GCC) ($$got); add one to WIDEMUL_SPECS}"; exit 1; }; \
 	 [ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling on $$ran"; exit $$rc

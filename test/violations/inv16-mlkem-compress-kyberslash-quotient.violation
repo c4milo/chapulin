@@ -1,0 +1,16 @@
+invariant: INV-16
+file: mlkem_poly.c
+catches: test/lint-wide-multiply.sh
+reason: KyberSlash's compression, the rounded quotient of a secret
+  coefficient by the constant q. clang writes the quotient as a multiply
+  by q's reciprocal on every spec, umull on the M3, multu on mips32r2 and
+  mulhu on rv32imac, which the multiply count holds at zero. The Arm gcc
+  at -Os writes udiv instead, and the m3 job's division count holds it
+  (docs/decisions.md 156)
+
+--- old
+    uint64_t t = ct_widemul_opaque(((uint32_t)x << d) + 1664U, 1290168U);
+    return (uint16_t)((t >> 32) & ((1U << d) - 1U));
+--- new
+    uint32_t scaled = ((uint32_t)x << d) + 1664U;
+    return (uint16_t)((scaled - scaled % 3329U) / 3329U % (1U << d));

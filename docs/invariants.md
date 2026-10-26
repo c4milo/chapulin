@@ -4237,13 +4237,23 @@ last `ROLE=server` stub, as the entry said it would.
   multiply over bytes the peer sent in the clear, and never in both).
   `lint-wide-multiply` compiles for Cortex-M3, mips32r2 and rv32imac
   under the pinned clang, and `lint-wide-multiply-gcc` under the gcc
-  each CI lane ships, and counts per file the widening multiplies, the
-  divisions and the 64-bit division runtime calls, each opcode matched
-  as a prefix so `umullne` counts as `umull`; every file holds a
-  recorded ceiling, zero except tls_write.c's one public division
-  (decision 72) and, under the mips gcc at `-O2`, the two `madd`
-  poly1305's block gets on 16-bit
-  operands ([#122](https://github.com/c4milo/chapulin/issues/122)).
+  each CI lane ships, and counts per file the widening multiplies, and
+  apart from them the divisions and the division runtime calls, each
+  opcode matched as a prefix so `umullne` counts as `umull`. Every file
+  holds a recorded ceiling of each count. The multiply ceilings are zero
+  except, under the mips gcc at `-O2`, the two `madd` poly1305's block
+  gets on 16-bit
+  operands ([#122](https://github.com/c4milo/chapulin/issues/122)). The
+  division ceilings (`DIVIDE_CEILING`) are zero except tls_write.c's two
+  divisions of public lengths (decisions 72, 138 and 156). A division by
+  a secret is the KyberSlash class of leak: the divider's time depends
+  on its operands. `inv16-mlkem-compress-modulo-divides` divides each
+  coefficient of ML-KEM's compression by q, read from a volatile object,
+  and the division count of every spec rises.
+  `inv16-mlkem-compress-kyberslash-quotient` divides by the constant q,
+  which clang writes as a multiply by the reciprocal, so the multiply
+  count rises; the Arm gcc at `-Os` writes `udiv`, which the m3 job's
+  division count holds.
   The same pass counts the conditional branches — `b<cond>`, `cbz`,
   `cbnz`, the table branches and the IT instruction on arm; `beq`,
   `bne` and the compare-with-zero forms on mips; the six base branches

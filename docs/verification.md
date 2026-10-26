@@ -3871,7 +3871,8 @@ What it does not check:
   under the pinned clang, and the x86-64 kernels job once, under gcc.
 - The time of an instruction. A division or a widening multiply whose
   time depends on a secret operand moves the bits through, and Memcheck
-  reports nothing. `make lint-wide-multiply` counts those instead.
+  reports nothing. `make lint-wide-multiply` counts those instead
+  (below).
 - Cache lines, execution ports, speculation and power. Memcheck models
   none of them.
 - Code that Valgrind does not run. Its virtual CPU has no AVX-512, no
@@ -3889,6 +3890,24 @@ What it does not check:
 `inv60-ct-memeq-returns-early` and `inv60-x25519-wide-table-read-by-digit`
 add a branch on a secret byte and a table read at a secret index, and
 the lane fails on each.
+
+#### Divisions
+
+A division takes a time that depends on its operands on most cores. A
+compiler writes UDIV, SDIV, DIV, IDIV or DIVU for a `/` or a `%` whose
+divisor is not a constant, and the Arm gcc at `-Os` writes UDIV for a
+constant divisor too. On a 32-bit core a division of 64-bit
+operands is a call into the compiler's runtime, `__udivdi3`,
+`__umoddi3` or `__aeabi_uldivmod`, whose loop branches on both
+operands. This is the KyberSlash class of leak. `make
+lint-wide-multiply` counts these instructions and calls per file in
+every source a secret passes through, apart from the multiplies, and
+holds each file at `DIVIDE_CEILING` (docs/decisions.md 156). Every
+ceiling is zero but tls_write.c's two divisions of public lengths.
+`inv16-mlkem-compress-modulo-divides` divides ML-KEM's coefficients by
+q and the lint fails. The count is of the code one compiler writes for
+one spec, and it sees a division and not its operands: a new one is
+read in the C before it is recorded.
 
 #### A key file's characters
 

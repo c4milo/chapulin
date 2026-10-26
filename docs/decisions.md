@@ -13840,3 +13840,43 @@ does nothing more.
     the install action caches the build by version and architecture. In
     an arm64 Linux container on an M1 Pro the lane takes 47 seconds
     under gcc and 47 under clang.
+
+156. **The codegen gate counts divisions apart from multiplies, and holds
+    each file at a division ceiling of its own.** Camilo chose it on
+    2026-10-25 with entry 155. A division takes a time that depends on
+    its operands on most cores. A compiler writes one for a `/` or a `%`
+    whose divisor is not a constant, and the Arm gcc at `-Os` writes one
+    for a constant divisor too. KyberSlash was such a division of a
+    secret coefficient by ML-KEM's q. `lint-wide-multiply` counted the division
+    tokens in the multiply count before this entry, so a file's one
+    count held both, and a division that took a multiply's place left
+    the count where it was.
+
+    - **The tokens.** `DIVIDE_OPS_ARM`, `DIVIDE_OPS_MIPS`,
+      `DIVIDE_OPS_RV`, `DIVIDE_OPS_ARM64` and `DIVIDE_OPS_X86` list each
+      ISA's division mnemonics and the runtime routines a 32-bit core
+      calls for a division: `__aeabi_uidiv` and `__aeabi_uldivmod` on
+      Arm, and the `__udiv`, `__div`, `__umod` and `__mod` families,
+      `__udivsi3`, `__udivdi3` and `__umoddi3` among them. A token is a
+      prefix, as for the multiplies.
+    - **The ceilings.** `DIVIDE_CEILING` is file:count on every spec, and
+      `DIVIDE_CEILING_SPEC` is spec/file:count. Every file is at zero
+      but `tls_write.c`, whose two divisions of public lengths entries
+      72 and 138 state: 2 on each spec, and 3 under the mips gcc at
+      `-O2`, which copies one of them. The multiply ceilings lose those
+      counts, so `tls_write.c` is at zero there.
+    - **More files.** The AES instructions' six files, which a host
+      object runs under a traffic key, left `WIDEMUL_PUBLIC` for
+      `WIDE64_CEILING`, so the two 64-bit specs count their divisions.
+      Each is at zero. They take no branch count.
+    - **What holds it.** `inv16-mlkem-compress-modulo-divides` divides
+      ML-KEM's coefficients by q, read from a volatile object, and the
+      division count of every spec rises.
+      `inv16-mlkem-compress-kyberslash-quotient` writes KyberSlash's
+      quotient by the constant q: clang writes a multiply by the
+      reciprocal, which the multiply count holds, and the Arm gcc at
+      `-Os` writes `udiv`, which the m3 job's division count holds.
+    - **What it misses.** The count sees an instruction and not its
+      operands, so a division of a public length and one of a secret
+      look the same: each new one is read in the C before it is
+      recorded. It reads the specs' compilers and no other.
