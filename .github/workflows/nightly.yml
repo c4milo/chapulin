@@ -379,7 +379,9 @@ jobs:
           sha256: ${{ env.VALGRIND_SHA256 }}
       - name: Install libc6-dbg for Valgrind
         # Valgrind reads the dynamic linker's symbols from this package.
-        run: sudo apt-get update -q && sudo apt-get install -y -q libc6-dbg
+        uses: ./.github/actions/apt-install
+        with:
+          packages: libc6-dbg
 
       - name: Break every invariant but the proof-backed ones and see what objects
         run: |
@@ -657,7 +659,9 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user
+      - uses: ./.github/actions/apt-install
+        with:
+          packages: gcc-mips-linux-gnu qemu-user
       - run: >
           make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
           CROSS_EXTRA="-fsanitize=undefined -fsanitize-undefined-trap-on-error"
@@ -675,7 +679,11 @@ jobs:
           path: bin/fuzz
           key: fuzz-corpus-${{ github.run_id }}
           restore-keys: fuzz-corpus-
-      - run: sudo apt-get update -q && sudo apt-get install -y -q clang
+      # libclang-rt-dev carries libFuzzer and the sanitizer runtimes, which
+      # clang only recommends, and apt-install leaves recommends out.
+      - uses: ./.github/actions/apt-install
+        with:
+          packages: clang libclang-rt-dev
       # FUZZ_TIME is per target and make fuzz runs eight, so the budget
       # is 8 x 295 s = 39 minutes 20 seconds inside the 45-minute cap.
       # Four targets at 600 fit; the fifth pushed the job to 50 and it

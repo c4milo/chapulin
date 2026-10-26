@@ -132,7 +132,9 @@ jobs:
       # qemu lane below, which qemu-user's qemu-aarch64 runs, and clang
       # builds that half's rows for the SHA-3 bit, because sha3_hw.c has a
       # body under clang alone (docs/decisions.md 99).
-      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user gcc-aarch64-linux-gnu libc6-dev-arm64-cross clang
+      - uses: ./.github/actions/apt-install
+        with:
+          packages: gcc-mips-linux-gnu qemu-user gcc-aarch64-linux-gnu libc6-dev-arm64-cross clang
       - name: Count wide multiplies, divisions and conditional branches under the mips gcc
         # lint-wide-multiply in the check job measures clang. This lane
         # ships gcc, whose lowering is its own measurement: it once put
@@ -205,6 +207,9 @@ jobs:
         with:
           version: ${{ env.VALGRIND_VERSION }}
           sha256: ${{ env.VALGRIND_SHA256 }}
+      - uses: ./.github/actions/apt-install
+        with:
+          packages: libc6-dbg
       - name: Run the secret-key operations under Memcheck with each secret marked undefined
         # The taint lane (docs/decisions.md 155, INV-60): a branch or a
         # memory address that a secret decides fails the step, once for
@@ -213,7 +218,6 @@ jobs:
         # run builds with the pinned clang, so the lane reads the code of
         # the compiler a development machine runs too.
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q libc6-dbg
           make ct-taint
           make ct-taint CC="$CLANG_RV"
 
@@ -242,6 +246,9 @@ jobs:
         with:
           version: ${{ env.VALGRIND_VERSION }}
           sha256: ${{ env.VALGRIND_SHA256 }}
+      - uses: ./.github/actions/apt-install
+        with:
+          packages: libc6-dbg
       - name: Run the secret-key operations under Memcheck with each secret marked undefined
         # The taint lane (docs/decisions.md 155, INV-60) on the CPU this
         # job requires, which has AVX2, so the AVX2 kernels run under
@@ -250,7 +257,6 @@ jobs:
         # values that name them. Valgrind reads the dynamic linker's
         # symbols from libc6-dbg.
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q libc6-dbg
           make ct-taint
 
   macos:
@@ -307,7 +313,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
-      - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
+      - uses: ./.github/actions/apt-install
+        with:
+          packages: qemu-system-arm
       # No clang-tidy here: make m3-check runs none. The freertos job
       # installs it because freertos-check lints its test programs.
       - name: Install the Arm GNU toolchain (pinned)
@@ -335,7 +343,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
-      - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
+      - uses: ./.github/actions/apt-install
+        with:
+          packages: qemu-system-arm
       - name: Install clang-tidy (apt.llvm.org, pinned major)
         # freertos-check lints its test programs against the fetched
         # kernel headers, so the lane needs the same pinned clang-tidy
@@ -366,7 +376,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
-      - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-user
+      - uses: ./.github/actions/apt-install
+        with:
+          packages: qemu-user
       - name: Install the Bootlin toolchain (pinned)
         uses: ./.github/actions/install-rv32
         with:
@@ -689,7 +701,9 @@ jobs:
         # looked for the ld.lld that llvm.sh installs, ld.lld-<major>, and
         # meanwhile its Cortex-M3 build stopped compiling unseen
         # (docs/invariants.md, INV-40).
-        run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
+        uses: ./.github/actions/apt-install
+        with:
+          packages: qemu-system-arm
 
       - name: Install Zig (pinned)
         # test/zig-build-check.sh --roster builds each lib-check build's

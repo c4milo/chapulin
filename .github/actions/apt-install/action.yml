@@ -1,0 +1,19 @@
+# Installs Ubuntu packages from the runner image's mirror, without the
+# packages they only recommend. On 2026-10-26 the mirror sent some files at
+# a few kB/s, and an install of qemu-system-arm with its recommended
+# packages (ceph, gstreamer, SDL) took 20 to 30 minutes, so the mips,
+# freertos, m3 and slow jobs ran out of time. Without them the same
+# install is 38 packages in place of 293.
+name: apt-install
+description: Install Ubuntu packages without recommends, with a bounded download
+inputs:
+  packages:
+    description: The packages to install, separated by spaces
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
