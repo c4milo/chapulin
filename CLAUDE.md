@@ -55,9 +55,21 @@ Home: github.com/c4milo.
   is a raw or ca client on CNSA 2.0's algorithms alone:
   TLS_AES_256_GCM_SHA384, ML-KEM-1024 (0x0202, -DCH_MLKEM_1024) and an
   external PSK with a SHA-384 binder, on AES=extern with
-  CH_AES_EXTERN_CONSTANT_TIME. It refuses a pin or a CA key, holds no
-  x25519.c, and ROLE=server and TRUST=webpki refuse it. No X.509
-  parsing outside the certificate files. These are
+  CH_AES_EXTERN_CONSTANT_TIME. It holds no x25519.c, and ROLE=server
+  and TRUST=webpki refuse it. Under the RSA and ECDSA trust values it
+  refuses a pin or a CA key. Under it alone, TRUST=raw-mldsa and
+  TRUST=ca-mldsa (-DCH_PIN_MLDSA) pin an ML-DSA-87 key, the whole 2592
+  bytes: the server's own in the raw mode, and a CA's in the ca mode,
+  which `x509.c` verifies over a chain of one or two id-ml-dsa-87
+  certificates whose signatures cover each TBS with its header. The
+  hello offers `mldsa87` (0x0906) alone, and `mldsa87_verify` checks the
+  CertificateVerify content whole, with an empty context. Those objects
+  carry neither `rsa.[ch]` nor `p256.[ch]`, and the external PSK stays.
+  Spec.X509 models the ML-DSA-87 arm, verifying the TBS DER itself with
+  Spec.MlDsa.verify, and `bin/diff_x509_mldsa` holds `x509.c` and
+  `hsa_signed_content` to it on certificates the test-only signer makes
+  (docs/decisions.md 157). No X.509 parsing outside the certificate
+  files. These are
   the canonical DER reader in x509_der.[ch], and the profile verifier in
   x509.[ch] and the provisioning reader in x509_ca.[ch] under the ca
   modes. They are also the chain verifier in webpki.[ch] with its pieces
@@ -152,9 +164,11 @@ Home: github.com/c4milo.
   (ML-DSA-87 verification, FIPS 204, over public inputs alone and so
   with no constant-time burden: the matrix A sampled one entry at a
   time, every polynomial function total over int32_t, and `mldsa.c`
-  under its own measured stack ceiling `STACK_BUDGET_MLDSA`; test
-  binaries alone compile them until TRUST=raw-mldsa and TRUST=ca-mldsa
-  package them, under PROFILE=cnsa2 alone, docs/decisions.md 154)
+  under its own measured stack ceiling `STACK_BUDGET_MLDSA`, packaged by
+  TRUST=raw-mldsa and TRUST=ca-mldsa, docs/decisions.md 154 and 157;
+  `test/mldsa_sign.c` is an ML-DSA-87 signer for tests alone, which
+  `bin/wycheproof_mldsa_sign_test` holds to Wycheproof's 92 seeded
+  signatures, and no library source calls it)
   ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) with `hash_hw.h`, `hkdf_hw.c` and `keysched_hw.c` (`hkdf.c`
