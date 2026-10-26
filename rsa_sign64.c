@@ -334,6 +334,7 @@ static int signature_verifies(uint32_t cpu, const ch_rsa_priv *k, const uint8_t 
 static int write_if_verified(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em,
                              const uint8_t *candidate, uint8_t *sig) {
     int verified = signature_verifies(cpu, k, em, candidate);
+    CT_DECLASSIFY(&verified, sizeof verified);
     if (verified) {
         memcpy(sig, candidate, k->n_len);
     }

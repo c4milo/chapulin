@@ -13762,3 +13762,81 @@ does nothing more.
     - **Fixed-size key and signature arguments.** The caller would then
       check each length, and Wycheproof's cases of the wrong length
       would test the runner, not the call.
+
+155. **A Valgrind taint lane reads the code a host object runs for a
+    branch or an address that a secret decides.** Camilo chose it on
+    2026-10-25 from a report on constant-time checks that read compiled
+    code. The constant-time rules hold for the C, and `lint-wide-multiply`
+    counts the branches a compiler writes, but a count cannot tell a jump
+    on a secret from a loop's. The lane tells them apart for one
+    execution.
+
+    - **The method.** ctgrind's and TIMECOP's, which BoringSSL's
+      `constant_time_test` and libsodium use. `bin/ct_taint_test` marks
+      each secret input undefined with `VALGRIND_MAKE_MEM_UNDEFINED`
+      (`test/ct_taint.h`), runs one operation, and marks each public
+      output defined again before it compares the output with the
+      expected bytes. Memcheck follows the undefined bits through each
+      instruction and reports each conditional jump and each memory
+      address they decide. A select by mask or by a conditional move is
+      no report. `--error-exitcode=1` makes a report fail the run.
+    - **What it runs.** Each secret-key operation of a host object
+      (INV-60 lists them), under each `ch_cfg.cpu` value that picks
+      another path on the machine: `0x1`, `0x5`, `0x3`, `0x7` and `0x27`
+      on both architectures, `0xf`, `0x1f`, `0x11f` and `0x31f` on
+      x86-64, and `0x67` on arm64. Each value is one Valgrind process. A
+      value whose instructions Valgrind's virtual CPU lacks prints SKIP:
+      on CI's x86-64 runner `0x27`, `0x1f`, `0x11f` and `0x31f`, because
+      Valgrind's CPUID reports no SHA extensions, no VAES and no
+      AVX-512. The SHA-3 bit is off the list: Valgrind 3.27.1 decodes no
+      EOR3, and the notes of 3.28.0 name EOR3 and none of RAX1, XAR and
+      BCAX. The AES software path is out by design: it runs QUIC's public
+      keys alone (INV-26).
+    - **Where a secret becomes public.** In the test, at `CT_PUBLIC`,
+      for a public key, a ciphertext, a signature and a verdict the
+      caller sees. In the library, at `ct.h`'s `CT_DECLASSIFY`, for a
+      verdict the code branches on before it returns: the AEAD tag
+      checks, P-256's range checks, the signers' key tests, nonce
+      verdict and check verdicts, the noise and salt assertions, r and s,
+      and ML-KEM's rho, which ek publishes. The tag checks and the two
+      assertions take `ct_memeq_public`, `ct_memeq` with its verdict
+      marked public. Each call states its reason.
+      The macro expands to nothing without `-DCH_CT_TAINT`, and the
+      Makefile refuses that define for every build but the test binary.
+      So the packaged object holds no client request, and the proofs,
+      the lints and the counts read the code they read before. No
+      Valgrind suppression file exists.
+    - **What it found.** No branch and no address on a secret, past the
+      verdicts and the published values above. One order is for Camilo
+      to rule on. `sign_digest` in `p256_sign.c` encodes r and s as DER
+      before `write_if_checked` reads the check verdict, and
+      `write_integer` branches on their leading bytes. For a pair that a
+      check refused, which never leaves the signer, the time of the
+      encoding still depends on how many leading bytes of r and s are
+      zero. The lane marks r and s public at the encoding, which is true
+      of every pair that passes. Encoding after the verdict removes the
+      branch on a refused pair.
+    - **Where it runs.** CI's arm64 job runs `make ct-taint` under gcc
+      and under the pinned clang. CI's x86-64 kernels job runs it under
+      gcc on a CPU with AVX2. The nightly's invariant jobs run the two
+      INV-60 violations through `test/ct-taint.sh`. On a development Mac,
+      `make ct-taint-docker` runs the lane in the docker-check image,
+      where Rosetta gives the virtual CPU no AVX2, so four values run.
+    - **The pin.** Valgrind 3.27.1, built from the source tarball by
+      `.github/actions/install-valgrind`, whose hash `tools/toolchain.env`
+      holds. Ubuntu 24.04's package is 3.22.0, and 3.28.0 came out two
+      days before this entry. Valgrind on arm64 reads the dynamic
+      linker's symbols from `libc6-dbg`, which each job installs.
+    - **What it does not see.** A branch that another input takes, the
+      code of another compiler, the time of an instruction whose operands
+      are defined, cache lines, ports and speculation, the AVX-512
+      kernels, and every device object. docs/verification.md, "The taint
+      lane", lists each.
+
+    The cost, from the wall clock of `make ct-taint` with the build: 23
+    seconds for six values on CI's arm64 runner, and 40 seconds for five
+    values on CI's x86-64 runner, an AMD EPYC 7763, under gcc 13.3. The
+    first run on a runner builds Valgrind, in about three minutes, and
+    the install action caches the build by version and architecture. In
+    an arm64 Linux container on an M1 Pro the lane takes 47 seconds
+    under gcc and 47 under clang.

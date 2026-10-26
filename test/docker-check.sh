@@ -52,6 +52,7 @@ if [ "${1:-}" != "--inside" ]; then
         .github/actions/install-cppcheck/install.sh
         .github/actions/install-cbmc/install.sh
         .github/actions/install-elan/install.sh
+        .github/actions/install-valgrind/install.sh
         .semgrep/requirements.txt)
     if command -v sha256sum >/dev/null 2>&1; then
         tag=$(cat "${context[@]}" tools/toolchain.env | sha256sum | cut -c1-16)

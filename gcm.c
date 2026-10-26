@@ -312,7 +312,7 @@ static void seal_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV]
 // mismatch the call wipes the n bytes the open wrote, and it wrote nothing
 // else at pt.
 static int tag_matches(uint8_t want[GCM_TAG], const uint8_t tag[GCM_TAG], uint8_t *pt, size_t n) {
-    uint32_t ok = ct_memeq(want, tag, GCM_TAG);
+    uint32_t ok = ct_memeq_public(want, tag, GCM_TAG);
     ct_wipe(want, GCM_TAG);
     if (!ok) {
         ct_wipe(pt, n);

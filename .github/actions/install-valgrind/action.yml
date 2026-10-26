@@ -1,0 +1,36 @@
+# Builds the pinned Valgrind into ~/valgrind-inst, cached by version and
+# by the runner's architecture, and exports its path as VALGRIND and the
+# directory of its headers as VALGRIND_INCLUDE, the two variables the
+# Makefile's ct-taint target reads. The runner's image has no Valgrind,
+# and Ubuntu 24.04's package is older than the pin by more than two
+# years. The pin values come from the job's env via
+# ./.github/actions/load-pins: version is VALGRIND_VERSION and sha256 is
+# VALGRIND_SHA256, which the tarball is checked against before it is
+# unpacked.
+name: install-valgrind
+description: Build the pinned Valgrind into ~/valgrind-inst and export VALGRIND
+inputs:
+  version:
+    description: The Valgrind release (VALGRIND_VERSION)
+    required: true
+  sha256:
+    description: The sha256 of the source tarball (VALGRIND_SHA256)
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/valgrind-inst
+        key: valgrind-${{ runner.os }}-${{ runner.arch }}-${{ inputs.version }}-inst
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
+    - shell: bash
+      run: |
+        echo "VALGRIND=$HOME/valgrind-inst/bin/valgrind" >> "$GITHUB_ENV"
+        echo "VALGRIND_INCLUDE=$HOME/valgrind-inst/include" >> "$GITHUB_ENV"

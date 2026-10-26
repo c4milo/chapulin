@@ -1,0 +1,17 @@
+invariant: INV-60
+file: x25519_wide_edwards.h
+catches: test/ct-taint.sh
+reason: select_entry reads one entry of the row, the one the scalar's
+  digit names, in place of all eight. The address of each load depends
+  on a secret digit, so a cache line tells the digit, and Memcheck
+  reports the load's address under every ch_cfg.cpu value with
+  CH_CPU_CONSTANT_TIME_MULTIPLY, which runs the wide field's key
+  generation
+
+--- old
+    for (size_t j = 0; j < X25519_WIDE_TABLE_ENTRIES; j++) {
+        uint64_t mask = equal_mask(size, j + 1);
+--- new
+    for (size_t pass = 0; pass < 1; pass++) {
+        size_t j = (size_t)(size + X25519_WIDE_TABLE_ENTRIES - 1) & (X25519_WIDE_TABLE_ENTRIES - 1);
+        uint64_t mask = equal_mask(size, j + 1);

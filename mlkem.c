@@ -116,6 +116,9 @@ static void mlk_pke_keygen(uint8_t ek[MLKEM_EK_LEN], uint8_t dkpke[MLK_DKPKE_BYT
     sha3_512(gin, 33, g); // (rho, sigma) = G(d || k)
     const uint8_t *rho = g;
     const uint8_t *sigma = g + 32;
+    // rho is public: ek carries it, and A's rejection sampling branches on
+    // the bytes it expands to.
+    CT_DECLASSIFY(g, 32);
     for (unsigned i = 0; i < MLKEM_K; i++) {
         mlk_sample_cbd(&s.vec[i], sigma, (uint8_t)i);
         mlk_sample_cbd(&e.vec[i], sigma, (uint8_t)(MLKEM_K + i));

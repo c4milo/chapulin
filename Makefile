@@ -172,6 +172,12 @@ HOST_RAND_DEF := -DCH_RAND_EXTERN
 HOST_WIDEMUL_DEF := -DCH_NATIVE_WIDEMUL
 CFLAGS += $(HOST_RAND_DEF) $(HOST_WIDEMUL_DEF)
 LIB_CFLAGS = $(filter-out $(HOST_RAND_DEF) $(HOST_WIDEMUL_DEF),$(CFLAGS))
+# -DCH_CT_TAINT turns on ct.h's CT_DECLASSIFY, a Valgrind client request,
+# and the ct-taint target passes it to bin/ct_taint_test alone
+# (docs/decisions.md 155). No library object and no other binary takes it.
+ifneq ($(filter -DCH_CT_TAINT%,$(CFLAGS)),)
+$(error CFLAGS holds -DCH_CT_TAINT, which builds the taint lane's test binary alone: make ct-taint passes it there)
+endif
 # The flags of the RAND=session builds of the loop tests, which hand each
 # session a source of its own (test/rand_session.h) in place of the host's
 # pattern.
@@ -652,7 +658,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/quic_driver_test.c test/quic_loop_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c \
           test/aes_extern_hook.c test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c \
-          test/gcm_avx512_equiv_test.c \
+          test/gcm_avx512_equiv_test.c test/ct_taint_test.c test/ct_taint_keys.c \
           test/aead_avx512_count.c test/rsa_avx2_count.c \
           test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
@@ -677,7 +683,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/wycheproof_mlkem.h test/wycheproof_mldsa.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
+TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wycheproof_mldsa.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
          test/pem_files_bundle_tests.h test/pem_files_parameters_tests.h \
          test/diff_pem_files_calls.h test/timing_pem.h test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
@@ -5885,6 +5891,68 @@ san-selftest:
 	  echo "san-selftest: the deliberate violation did not trip the sanitizer"; exit 1; \
 	else echo "san-selftest: sanitizer trips as required"; fi
 
+# The taint lane (docs/decisions.md 155, INV-60): a host object's
+# secret-key operations under Valgrind's Memcheck, with each secret input
+# marked undefined (test/ct_taint.h). Memcheck reports each conditional
+# jump and each memory address that an undefined value decides, so a
+# branch or a table index on a secret fails the run. It reads the code the
+# compiler wrote, at -O2 as a host object ships, which the constant-time
+# rules of the C cannot see. -g gives each report its source line.
+# CT_TAINT_SRCS is the operations' sources, and the binary links them as a
+# host object holds them (host_srcs) beside the AES instructions' six
+# files. VALGRIND names the program and VALGRIND_INCLUDE the directory of
+# <valgrind/memcheck.h>; CI's install-valgrind action sets both.
+CT_TAINT_SRCS := x25519.c chacha20.c poly1305.c aead.c hkdf.c keysched.c sha256.c sha512.c \
+                 sha512_compress.c sha3.c mlkem.c mlkem_poly.c buf.c ct.c ct_wipe.c p256_sign.c \
+                 p256_ecdh.c p256_point.c p256_scalar.c p256_field.c rsa_sign.c rsa_mont.c aes.c \
+                 gcm.c base64.c
+CT_TAINT_TEST_SRCS = test/ct_taint_keys.c $(call host_srcs,$(CT_TAINT_SRCS)) $(AES_HW_SRCS)
+# The recipe links the binary again on every run, so a run under another
+# CC tests that compiler's code.
+VALGRIND ?= $(shell command -v valgrind 2>/dev/null)
+VALGRIND_INCLUDE ?=
+CT_TAINT_DEF := -DCH_CT_TAINT
+# The ch_cfg.cpu values that pick another path on this architecture: the
+# portable code, the multiply bit, the AES bit with and without it, and
+# the SHA-256 bit; on x86-64 AVX2 and VAES beside those, and the two
+# AVX-512 bits; on arm64 the SHA-512 bit. Valgrind's virtual x86-64 CPU
+# reports no SHA extensions, no VAES and no AVX-512, so the binary prints
+# SKIP for 0x27, 0x1f, 0x11f and 0x31f there. The SHA-3 bit is not on the
+# list: Valgrind 3.27.1 decodes no EOR3, the first SHA-3 instruction
+# sha3_hw.c's Keccak runs, which then dies of SIGILL. The notes of 3.28.0
+# name EOR3 and none of RAX1, XAR and BCAX. Each run is one Valgrind
+# process.
+CT_TAINT_CPU := 0x1 0x5 0x3 0x7 0x27 \
+                $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f 0x31f,0x67)
+CT_TAINT_VALGRIND_FLAGS := --tool=memcheck --error-exitcode=1 --track-origins=yes \
+                           --exit-on-first-error=no --leak-check=no -q
+bin/ct_taint_test: test/ct_taint_test.c $(CT_TAINT_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -g $(HOST_SUITE_DEF) $(RSA_WIDE_DEF) $(CT_TAINT_DEF) \
+	  $(if $(VALGRIND_INCLUDE),-isystem $(VALGRIND_INCLUDE)) -I. -Itest -o $@ \
+	  test/ct_taint_test.c $(CT_TAINT_TEST_SRCS)
+.PHONY: ct-taint ct-taint-docker
+ct-taint:
+ifeq ($(HOST_TARGET),)
+	$(call REQUIRE_ON_CI,ct-taint)
+	@echo "SKIP the taint lane: $(CC) fails the host test"
+else ifeq ($(VALGRIND),)
+	$(call REQUIRE_ON_CI,ct-taint)
+	@echo "SKIP the taint lane: no valgrind; make ct-taint-docker runs it in the docker-check image"
+else
+	@rm -f bin/ct_taint_test
+	@$(MAKE) --no-print-directory bin/ct_taint_test
+	@echo "ct-taint: $$($(VALGRIND) --version), $$($(CC) --version | head -1)"
+	@set -e; for bits in $(CT_TAINT_CPU); do \
+	  echo "== valgrind bin/ct_taint_test $$bits"; \
+	  $(VALGRIND) $(CT_TAINT_VALGRIND_FLAGS) ./bin/ct_taint_test $$bits; \
+	done
+endif
+# The lane in the docker-check image, which builds the pinned Valgrind,
+# so a Mac runs it. Under Rosetta the image's CPU has no AVX2.
+ct-taint-docker:
+	test/docker-check.sh ct-taint
+
 # Big-endian MIPS lane: the byte-exact suites on the deployment ISA.
 # Every other test runs on little-endian x86-64; this lane proves no
 # host byte order leaked into the wire path or the crypto, and lets the
@@ -6415,7 +6483,7 @@ else
 	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
 	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c test/aead_avx512_count.c \
-	  test/gcm_avx512_equiv_test.c test/webpki_ticket_count.c \
+	  test/gcm_avx512_equiv_test.c test/webpki_ticket_count.c test/ct_taint_test.c test/ct_taint_keys.c \
 	  $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The wide X25519 field. x25519_wide.c guards its body on
@@ -6782,6 +6850,12 @@ else
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/x86_kernels_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest)
+	# The taint lane's two units (docs/decisions.md 155), under the defines
+	# bin/ct_taint_test builds with, less -DCH_CT_TAINT: with it each mark is
+	# a Valgrind client request, whose header the lint machine need not hold.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,test/ct_taint_test.c test/ct_taint_keys.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(HOST_SUITE_DEF) $(RSA_WIDE_DEF) -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,$(AES_HW_SRCS) aes.c gcm.c tls.c test/webpki_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI \

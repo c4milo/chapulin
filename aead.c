@@ -46,7 +46,7 @@ static int tag_matches(uint32_t cpu, uint8_t widemul, const uint8_t key[AEAD_KEY
                        const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG]) {
     uint8_t want[AEAD_TAG];
     mac(cpu, widemul, key, nonce, aad, aad_len, ct, n, want);
-    uint32_t ok = ct_memeq(want, tag, AEAD_TAG);
+    uint32_t ok = ct_memeq_public(want, tag, AEAD_TAG);
     ct_wipe(want, sizeof want);
     return ok != 0;
 }

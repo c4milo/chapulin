@@ -10,6 +10,7 @@ reason: write_if_verified writes the candidate to sig before it checks
 
 --- old
     int verified = signature_verifies(cpu, k, em, candidate);
+    CT_DECLASSIFY(&verified, sizeof verified);
     if (verified) {
         memcpy(sig, candidate, k->n_len);
     }

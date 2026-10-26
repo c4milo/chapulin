@@ -369,6 +369,18 @@ jobs:
           download-id: ${{ env.SDE_DOWNLOAD_ID }}
           sha256: ${{ env.SDE_SHA256 }}
 
+      - name: Install Valgrind (pinned)
+        # The INV-60 violations name test/ct-taint.sh, which runs make
+        # ct-taint under Valgrind. Without it the Makefile's REQUIRE_ON_CI
+        # fires on unedited source and violations.py reports ERROR.
+        uses: ./.github/actions/install-valgrind
+        with:
+          version: ${{ env.VALGRIND_VERSION }}
+          sha256: ${{ env.VALGRIND_SHA256 }}
+      - name: Install libc6-dbg for Valgrind
+        # Valgrind reads the dynamic linker's symbols from this package.
+        run: sudo apt-get update -q && sudo apt-get install -y -q libc6-dbg
+
       - name: Break every invariant but the proof-backed ones and see what objects
         run: |
           set -o pipefail

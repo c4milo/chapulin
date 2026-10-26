@@ -1,0 +1,20 @@
+invariant: INV-60
+file: ct.c
+catches: test/ct-taint.sh
+reason: ct_memeq returns at the first byte that differs, so its time
+  tells how many leading bytes of two secrets agree. The loop's exit
+  branches on a secret byte, and Memcheck reports the jump in every case
+  that compares secrets: a tag check, ML-KEM's re-encryption and the
+  signers' checks
+
+--- old
+    for (size_t i = 0; i < n; i++) {
+        diff |= (uint32_t)(a[i] ^ b[i]);
+    }
+--- new
+    for (size_t i = 0; i < n; i++) {
+        diff |= (uint32_t)(a[i] ^ b[i]);
+        if (diff != 0) {
+            return 0;
+        }
+    }

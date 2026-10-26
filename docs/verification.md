@@ -3819,6 +3819,77 @@ either (INV-26).
 evidence, not proof. P-256 and RSA verification are variable-time on
 purpose, since all of their inputs are public.
 
+#### The taint lane
+
+`make ct-taint` runs `bin/ct_taint_test`, a host object's secret-key
+operations, under Valgrind's Memcheck (docs/decisions.md 155, INV-60).
+The test marks each secret input undefined and marks each public output
+defined again before it compares the output with the expected bytes.
+Memcheck reports each conditional jump and each memory address that an
+undefined bit decides, and the run fails on the first report.
+
+What it checks:
+
+- The code the compiler wrote, at `-O2`, as a host object ships. A
+  mask that the compiler wrote as a jump, or a table read at a secret
+  index, is a report, whatever the C says.
+- X25519 on the 16-word field and the wide field, the ladder and the
+  key generation from the base point; P-256 key generation, ECDH, and
+  both signers, the hedged one among them; RSA-PSS signing on the ladder
+  and on the Chinese remainder theorem; ML-KEM-768 key generation,
+  encapsulation and decapsulation, with a ciphertext that matches and
+  one that the implicit rejection refuses; ChaCha20-Poly1305 and
+  AES-128-GCM and AES-256-GCM under a traffic key, the seal and the open
+  and a refused tag; HMAC, HKDF and the key schedule over SHA-256 and
+  SHA-384; SHA-256, SHA-384, SHA-512, SHA3-256, SHA3-512 and SHAKE256
+  on a secret message; `ct_memeq`; and `base64_class` over each byte of
+  a key file.
+- Each `ch_cfg.cpu` value that picks another path and whose
+  instructions Valgrind's virtual CPU has. On both architectures that is
+  the portable code (`0x1`), the multiply bit (`0x5`) and the AES bit
+  with and without it (`0x3`, `0x7`). On x86-64 it adds the AVX2
+  kernels (`0xf`), and on arm64 the SHA-256 bit (`0x27`) and the SHA-512
+  bit (`0x67`). CI's x86-64 runner, an AMD EPYC 7763, has the SHA
+  extensions and VAES, and Valgrind's CPUID reports neither, so `0x27`
+  and `0x1f` print SKIP there.
+- The places a secret value becomes public. Each is a `CT_DECLASSIFY`
+  call in the library, or `ct_memeq_public`, which calls it on
+  `ct_memeq`'s verdict, or a `CT_PUBLIC` call in the test. Each states
+  its reason. The library's calls mark the tag verdicts of `aead.c` and
+  `gcm.c`; the range verdicts of `p256_ecdh.c`; the key test, the nonce
+  verdict, the noise assertion, r and s at the DER writer and the check
+  verdict of `p256_sign.c`; the salt assertion and the 64-bit signer's
+  key test in `rsa_sign.c`; the check verdict of `rsa_sign64.c`; and rho
+  in `mlkem.c`'s key generation, which ek publishes.
+
+What it does not check:
+
+- Every input. Memcheck sees the one execution each case runs. A branch
+  that another key, another message length or another ciphertext would
+  take is not seen.
+- Every compiler. The arm64 job runs the binary twice, under gcc and
+  under the pinned clang, and the x86-64 kernels job once, under gcc.
+- The time of an instruction. A division or a widening multiply whose
+  time depends on a secret operand moves the bits through, and Memcheck
+  reports nothing. `make lint-wide-multiply` counts those instead.
+- Cache lines, execution ports, speculation and power. Memcheck models
+  none of them.
+- Code that Valgrind does not run. Its virtual CPU has no AVX-512, no
+  VAES and no x86-64 SHA extensions, so the values that name them print
+  SKIP, and `gcm_vaes.c`, the 512-bit kernels and `sha256_hw.c`'s x86-64
+  arm stay with their equivalence tests. Valgrind 3.27.1 decodes no
+  EOR3 on arm64, so the SHA-3 bit is not on the list, and `sha3_hw.c`
+  and ML-KEM's copies over it stay with theirs. A device object, and
+  every build for the Cortex-M3, mips32r2 or riscv32, runs under no
+  Valgrind here.
+- Under Rosetta, which runs the docker-check image on an Apple silicon
+  Mac, the virtual CPU has no AVX2 either, so `make ct-taint-docker`
+  prints SKIP for the AVX2 and VAES values there.
+
+`inv60-ct-memeq-returns-early` and `inv60-x25519-wide-table-read-by-digit`
+add a branch on a secret byte and a table read at a secret index, and
+the lane fails on each.
+
 #### A key file's characters
 
 A PRIVATE KEY or EC PRIVATE KEY block is the private scalar in base64,

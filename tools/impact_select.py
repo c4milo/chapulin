@@ -188,6 +188,9 @@ FULL_COMMANDS = [
                                        "cross-check under qemu-mips"),
     ("nightly", "test/docker-riscv32.sh", "the riscv32 cross lane, which runs "
                                           "cross-check under qemu-riscv32"),
+    ("nightly", "make ct-taint", "the taint lane, which runs the secret-key operations "
+                                 "under Valgrind's Memcheck in CI's arm64 and x86-64 "
+                                 "kernels jobs"),
     ("nightly", "test/docker-aes-runtime-qemu.sh",
      "the host object's qemu lane, which runs the rows of each ch_cfg.cpu "
      "value under qemu-x86_64 on CPU models without the instructions the "
@@ -451,6 +454,24 @@ def select_avx512_runs(out, changed):
                 f"{hits[0]} is compiled or run by bin/{name}, which "
                 f"{AVX512_RUN_SCRIPT} runs on a CPU with what CH_CPU_AVX512 "
                 f"names or under Intel SDE", [command])
+
+
+# test/ct-taint.sh runs make ct-taint, the taint lane, which links
+# bin/ct_taint_test and runs it under Valgrind's Memcheck
+# (docs/decisions.md 155). No check runs the target, because it needs
+# Valgrind, so a source the binary compiles, or the script, selects it here.
+CT_TAINT_SCRIPT = "test/ct-taint.sh"
+
+
+def select_ct_taint(out, changed):
+    """test/ct-taint.sh: a source bin/ct_taint_test compiles can break the
+    lane, and so can the script."""
+    compiled = out.mapping.sources.get("bin/ct_taint_test", set())
+    hits = [p for p in changed if p in compiled or p == CT_TAINT_SCRIPT]
+    if hits:
+        out.add("tests", f"make {script_target(CT_TAINT_SCRIPT)}",
+                f"{hits[0]} is compiled or run by bin/ct_taint_test, which the "
+                f"taint lane runs under Valgrind's Memcheck", [CT_TAINT_SCRIPT])
 
 
 # test/script-builds.sh builds the programs the bench and platform
@@ -877,6 +898,7 @@ def plan(changed, mapping):
     select_pairs(out, changed, lib)
     select_aes_runtime_qemu(out, changed)
     select_avx512_runs(out, changed)
+    select_ct_taint(out, changed)
     select_script_builds(out, changed)
     select_zig(out, changed, lib)
     select_codegen(out, csources, lib)

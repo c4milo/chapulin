@@ -8,6 +8,6 @@ reason: sign_hedged no longer refuses all-zero noise, which is what a
   noise and requires CH_ASSERT to fire.
 
 --- old
-        CH_ASSERT(!ct_memeq(noise, unwritten, P256_NOISE_LEN));
+        CH_ASSERT(!ct_memeq_public(noise, unwritten, P256_NOISE_LEN));
 --- new
         (void)unwritten;

@@ -48,7 +48,9 @@ int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
     p256_scalar_from_bytes(&k, draw);
     // The one branch on the draw. It reads whether the draw is in range,
     // which is the return code, and nothing else about it.
-    if (scalar_in_range_mask(&k) == 0) {
+    uint32_t in_range = scalar_in_range_mask(&k);
+    CT_DECLASSIFY(&in_range, sizeof in_range);
+    if (in_range == 0) {
         ct_wipe(&k, sizeof k);
         ct_wipe(priv, P256_SCALAR_LEN);
         ct_wipe(pub, P256_POINT_LEN);
@@ -88,9 +90,11 @@ int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
 
     p256_scalar_from_bytes(&k, priv);
     // Both branches read public values: the peer's point arrived on the
-    // wire, and a private key out of range is the caller's own error.
-    if (widemul_p256_point_from_bytes(widemul, &peer, point) == 0 ||
-        scalar_in_range_mask(&k) == 0) {
+    // wire, and a private key out of range is the caller's own error,
+    // which the return code reports.
+    uint32_t in_range = scalar_in_range_mask(&k);
+    CT_DECLASSIFY(&in_range, sizeof in_range);
+    if (widemul_p256_point_from_bytes(widemul, &peer, point) == 0 || in_range == 0) {
         ct_wipe(&k, sizeof k);
         ct_wipe(out, P256_SECRET_LEN);
         return 0;

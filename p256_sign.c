@@ -233,6 +233,7 @@ static uint32_t derive_nonce(uint32_t cpu, p256_scalar *k, const uint8_t priv[P2
     }
     ct_wipe(&candidate, sizeof candidate);
     ct_wipe(&g, sizeof g);
+    CT_DECLASSIFY(&found, sizeof found);
     return found;
 }
 
@@ -242,6 +243,7 @@ static uint32_t derive_nonce(uint32_t cpu, p256_scalar *k, const uint8_t priv[P2
 // value is r or s, both of which go on the wire, so reading their bytes
 // here leaks nothing that the signature does not already carry.
 static void write_integer(wbuf *w, const uint8_t value[P256_SCALAR_LEN]) {
+    CT_DECLASSIFY(value, P256_SCALAR_LEN);
     size_t lead = 0;
     while (lead < P256_SCALAR_LEN - 1 && value[lead] == 0) {
         lead++;
@@ -379,6 +381,7 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
     p256_scalar_from_bytes(&d, priv);
     uint32_t usable = p256_scalar_reduced_mask(&d) & ~p256_scalar_zero_mask(&d);
     ct_wipe(&d, sizeof d);
+    CT_DECLASSIFY(&usable, sizeof usable);
     return usable != 0;
 }
 
@@ -389,6 +392,7 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
 // verdict is what the caller sees, so the branch on it tells no more.
 static int write_if_checked(uint32_t checked, const uint8_t *candidate, size_t candidate_len,
                             uint8_t *sig, size_t cap, size_t *sig_len) {
+    CT_DECLASSIFY(&checked, sizeof checked);
     int fits = candidate_len <= cap;
     if (checked != 0 && fits) {
         memcpy(sig, candidate, candidate_len);
@@ -458,16 +462,14 @@ static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PR
 static int sign_hedged(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
                        const uint8_t msg_hash[32], const uint8_t noise[P256_NOISE_LEN],
                        uint8_t *sig, size_t cap, size_t *sig_len) {
-    // INV-4's check on the noise draw, which the caller makes
-    // (srv_auth.c). A source that returns without writing leaves the noise
-    // zero, and then every signature over one message is the same bytes
-    // again. A real draw is all zero with probability 2^-256, so this
-    // checks the integrator's source against rand.h's contract, which is
-    // what CH_ASSERT is for. ct_memeq reads every byte, and its one
-    // verdict goes to the assertion.
+    // INV-4's check on the noise draw, which the caller makes (srv_auth.c). A source that
+    // returns without writing leaves the noise zero, and then every signature over one message is
+    // the same bytes again. A real draw is all zero with probability 2^-256, so this checks the
+    // integrator's source against rand.h's contract, which is what CH_ASSERT is for. ct_memeq
+    // reads every byte, and its one verdict goes to the assertion.
     {
         static const uint8_t unwritten[P256_NOISE_LEN] = {0};
-        CH_ASSERT(!ct_memeq(noise, unwritten, P256_NOISE_LEN));
+        CH_ASSERT(!ct_memeq_public(noise, unwritten, P256_NOISE_LEN));
     }
     return sign_digest(widemul, cpu, priv, msg_hash, noise, sig, cap, sig_len);
 }

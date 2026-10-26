@@ -32,13 +32,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     GITHUB_PATH=/ci/path
 
 # What a runner's image already holds and `make check` or an install
-# script reads. gcc and g++ are Ubuntu 24.04's default, the major CI
+# script reads, and two packages for the taint lane: libc6-dbg, whose
+# symbols of the dynamic linker Valgrind reads, and bzip2, which unpacks
+# Valgrind's tarball. The x86-64 and arm64 jobs install both with apt. gcc and g++ are Ubuntu 24.04's default, the major CI
 # compiles with. llvm.sh needs gnupg, lsb-release and
 # software-properties-common, CBMC's package depends on bash-completion,
 # and the install scripts call sudo.
 RUN apt-get update -q \
     && apt-get install -y -q --no-install-recommends \
-        bash-completion ca-certificates cmake curl g++ gcc git gnupg libc6-dev \
+        bash-completion bzip2 ca-certificates cmake curl g++ gcc git gnupg libc6-dbg libc6-dev \
         lsb-release make python3 python3-pip software-properties-common sudo wget \
         xz-utils \
     && rm -rf /var/lib/apt/lists/* \
@@ -116,3 +118,14 @@ COPY .github/actions/install-elan/install.sh /ci/install-elan.sh
 ARG ELAN_INIT_SHA256
 RUN SHA256="$ELAN_INIT_SHA256" bash /ci/install-elan.sh \
     && rm -rf "${RUNNER_TEMP:?}"/*
+
+# Valgrind, as .github/actions/install-valgrind installs it, for `make
+# ct-taint` (docs/decisions.md 155). The last line does what that action's
+# action.yml does after the script.
+COPY .github/actions/install-valgrind/install.sh /ci/install-valgrind.sh
+ARG VALGRIND_VERSION
+ARG VALGRIND_SHA256
+RUN VERSION="$VALGRIND_VERSION" SHA256="$VALGRIND_SHA256" bash /ci/install-valgrind.sh \
+    && rm -rf "${RUNNER_TEMP:?}"/* \
+    && { echo "VALGRIND=$HOME/valgrind-inst/bin/valgrind"; \
+         echo "VALGRIND_INCLUDE=$HOME/valgrind-inst/include"; } >> "$GITHUB_ENV"

@@ -4682,6 +4682,61 @@ last `ROLE=server` stub, as the entry said it would.
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
+### INV-60 — no secret decides a branch or an address in the code a host object runs under the taint lane
+
+- **Claim.** In a host object, compiled at `-O2` as `make lib` compiles
+  it, no conditional jump and no memory address depends on a secret in
+  the operations `bin/ct_taint_test` runs, under each `ch_cfg.cpu` value
+  that picks another path on the machine. The secrets are each private
+  key and its CRT integers, each key-exchange scalar and seed, each
+  nonce input, salt and noise, each traffic key and HMAC key, each
+  plaintext, and each byte of a key file. The operations are X25519 on
+  both fields, P-256 key generation and ECDH, both P-256 signers, both
+  RSA-PSS signers, ML-KEM-768 key generation, encapsulation and
+  decapsulation, ChaCha20-Poly1305 and AES-GCM under a traffic key, HMAC,
+  HKDF and the key schedule over SHA-256 and SHA-384, SHA-256, SHA-384,
+  SHA-512, SHA3-256, SHA3-512 and SHAKE256 on secret input, `ct_memeq`,
+  and `base64_class` over a key file. A value stops being secret only at
+  a `CT_DECLASSIFY` call in the library, directly or through
+  `ct_memeq_public`, or at a `CT_PUBLIC` call in the test. Each call
+  states why the value is public: a verdict the caller sees, or a value
+  the protocol publishes.
+- **Mechanism.** The method of ctgrind and TIMECOP, which BoringSSL's
+  `constant_time_test` and libsodium use. The test marks each secret
+  undefined with Valgrind's `VALGRIND_MAKE_MEM_UNDEFINED`, and Memcheck
+  follows the undefined bits through every instruction the compiler
+  wrote. It reports each conditional jump whose condition, and each load
+  or store whose address, holds an undefined bit. A select by mask or by
+  a conditional move is no report: Memcheck carries the bits through it.
+  `ct.h`'s `CT_DECLASSIFY` and `test/ct_taint.h`'s marks expand to
+  nothing without `-DCH_CT_TAINT`, and the Makefile refuses that define
+  for every build but the test binary, so no library object holds a
+  client request. No Valgrind suppression file exists.
+- **What it misses.** One execution of each case, on the inputs the case
+  gives: a branch that only another input takes is not seen. One
+  compiler's code per run, at the machine's instruction set: the arm64
+  job runs gcc and the pinned clang, and the x86-64 job runs gcc. The
+  timing of an instruction whose operands are all defined to Memcheck's
+  eye: a division or a multiply whose time depends on a secret operand
+  is no report, which is why `lint-wide-multiply` counts those
+  (INV-16). Cache lines, ports and speculation: Memcheck models none of
+  them. A path whose instructions Valgrind's virtual CPU lacks: it has no
+  AVX-512, no VAES and no x86-64 SHA extensions, and Valgrind 3.27.1
+  decodes no arm64 EOR3, so the values that name those print SKIP or
+  stay off the list. Every device object, and the code of any target
+  Valgrind does not run: the Cortex-M3, mips32r2 and riscv32 builds.
+- **Check.** Dynamic. `make ct-taint` in CI's arm64 and x86-64 kernels
+  jobs (docs/decisions.md 155), and `make ct-taint-docker` in the
+  docker-check image on a development machine.
+  `inv60-ct-memeq-returns-early` makes `ct_memeq` return at the first
+  byte that differs, and `inv60-x25519-wide-table-read-by-digit` makes
+  the wide field's key generation read the one table entry its secret
+  digit names. `test/ct-taint.sh` fails on each.
+- **Violation.** A PR replaces a mask with an `if` on a secret bit, and
+  the compiler writes a jump for it. Or a PR looks up a secret byte in a
+  table for speed.
+- See [decisions: Engineering](decisions.md#engineering), entry 155.
+
 ### INV-26 — AES sees three public keys, and traffic keys only under a suite build
 
 - **Claim.** Under `TRANSPORT=quic-nonblocking` this tree carries an AES-128, and

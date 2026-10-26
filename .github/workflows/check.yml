@@ -200,6 +200,22 @@ jobs:
       # without them, as the mips job does for x86-64 (test/platforms.mk,
       # aes-runtime-disasm).
       - run: make -j"$(nproc)" aes-runtime-disasm
+      - name: Install Valgrind (pinned)
+        uses: ./.github/actions/install-valgrind
+        with:
+          version: ${{ env.VALGRIND_VERSION }}
+          sha256: ${{ env.VALGRIND_SHA256 }}
+      - name: Run the secret-key operations under Memcheck with each secret marked undefined
+        # The taint lane (docs/decisions.md 155, INV-60): a branch or a
+        # memory address that a secret decides fails the step, once for
+        # each ch_cfg.cpu value that picks another path on arm64. Valgrind
+        # reads the dynamic linker's symbols from libc6-dbg. The second
+        # run builds with the pinned clang, so the lane reads the code of
+        # the compiler a development machine runs too.
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q libc6-dbg
+          make ct-taint
+          make ct-taint CC="$CLANG_RV"
 
   x86-64-kernels:
     # The x86-64 kernels every x86-64 host object carries beside its
@@ -220,6 +236,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: make x86-64-kernels-check
+      - uses: ./.github/actions/load-pins
+      - name: Install Valgrind (pinned)
+        uses: ./.github/actions/install-valgrind
+        with:
+          version: ${{ env.VALGRIND_VERSION }}
+          sha256: ${{ env.VALGRIND_SHA256 }}
+      - name: Run the secret-key operations under Memcheck with each secret marked undefined
+        # The taint lane (docs/decisions.md 155, INV-60) on the CPU this
+        # job requires, which has AVX2, so the AVX2 kernels run under
+        # Valgrind's virtual CPU. That CPU reports no SHA extensions, no
+        # VAES and no AVX-512, and the binary prints SKIP for the four
+        # values that name them. Valgrind reads the dynamic linker's
+        # symbols from libc6-dbg.
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q libc6-dbg
+          make ct-taint
 
   macos:
     # macOS on Apple silicon as a supported platform: the arm64 job's

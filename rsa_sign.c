@@ -281,7 +281,7 @@ static void emsa_pss_encode(const uint8_t msg_hash[32], const uint8_t salt[SLEN]
     // which is what CH_ASSERT is for.
     {
         static const uint8_t unwritten[SLEN] = {0};
-        CH_ASSERT(!ct_memeq(salt, unwritten, SLEN));
+        CH_ASSERT(!ct_memeq_public(salt, unwritten, SLEN));
     }
 
     // H = Hash(0x00 * 8 || msg_hash || salt) sits between DB and the
@@ -331,7 +331,11 @@ int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
     // why each one. The 64-bit signer's test adds that the key's primes
     // multiply to its modulus (rsa_sign64.h).
 #ifdef CH_RSA_SIGN64
-    if (!rsa_sign64_key_ok(k)) {
+    // The verdict on the primes is the one a server's configuration check
+    // reports, so it is public.
+    int key_ok = rsa_sign64_key_ok(k);
+    CT_DECLASSIFY(&key_ok, sizeof key_ok);
+    if (!key_ok) {
         return 0;
     }
 #else

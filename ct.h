@@ -23,6 +23,31 @@ uint32_t ct_memeq(const uint8_t *a, const uint8_t *b, size_t n);
 // (ct_wipe.c says why). p may be null when n is 0.
 void ct_wipe(void *p, size_t n);
 
+// CT_DECLASSIFY(p, n) marks the n bytes at p as a value that is not secret
+// past this point: a verdict the caller sees, such as a tag check or a
+// range check, or a value the protocol publishes, such as ECDSA's r and s.
+// Each call says which, and the code branches on the bytes after it. The
+// macro expands to nothing in every build but one: the taint lane's test
+// binary, which -DCH_CT_TAINT builds (make ct-taint, docs/decisions.md 155).
+// There it tells Valgrind's Memcheck that the bytes are defined, so the
+// branch on them is no report. The Makefile refuses the define for every
+// other build.
+#ifdef CH_CT_TAINT
+#include <valgrind/memcheck.h>
+#define CT_DECLASSIFY(p, n) ((void)VALGRIND_MAKE_MEM_DEFINED((p), (n)))
+#else
+#define CT_DECLASSIFY(p, n) ((void)0)
+#endif
+
+// ct_memeq for a verdict the caller sees, such as a tag check or an
+// assertion: the same answer in the same time, marked public by
+// CT_DECLASSIFY before the caller branches on it.
+static inline uint32_t ct_memeq_public(const uint8_t *a, const uint8_t *b, size_t n) {
+    uint32_t verdict = ct_memeq(a, b, n);
+    CT_DECLASSIFY(&verdict, sizeof verdict);
+    return verdict;
+}
+
 // Whether the target's widening multiply is constant-time is a claim about
 // silicon, and no architecture macro carries it.
 //
