@@ -52,6 +52,10 @@
 #define bench_gcm_seal_passes gcm_seal_passes_hw
 #define bench_gcm_open_passes gcm_open_passes_hw
 #endif
+// On arm64 gcm.c runs each whole AEAD on gcm_arm64.c, whose passes have no
+// entry of their own, so the passes' rows exist on x86-64 alone, and the
+// counter mode rows time gcm_hw.c's loop, which the arm64 AEAD runs for
+// the seal's first pass (docs/decisions.md 158).
 
 // Whether the ChaCha20 rows run chacha20_avx512.c's kernel under BENCH_CPU,
 // as chacha20.c's use_avx512 picks it, or chacha20_avx2.c's, as its

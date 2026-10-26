@@ -88,7 +88,7 @@ const srcs = [_][]const u8{
 
 // The Makefile's named lists, each under its Makefile name.
 const aes_hw_srcs = [_][]const u8{
-    "aes_hw.c", "ghash_hw.c", "gcm_hw.c", "gcm_vaes.c", "gcm_avx512.c", "gcm_avx512_kernel.c",
+    "aes_hw.c", "ghash_hw.c", "gcm_hw.c", "gcm_arm64.c", "gcm_arm64_eor3.c", "gcm_vaes.c", "gcm_avx512.c", "gcm_avx512_kernel.c",
 };
 const quic_srcs_after_aes = [_][]const u8{
     "gcm.c",         "quic_keys.c", "quic_packet.c", "quic_initial.c", "quic_retry.c",

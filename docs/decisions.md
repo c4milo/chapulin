@@ -14005,3 +14005,92 @@ does nothing more.
       and P-256 arms do.** Signing is the part of FIPS 204 chapulin
       never runs, and a second signer to keep would buy no check the C
       signer, held to Wycheproof, does not already give.
+158. **On arm64 a host object runs AES-GCM's whole seal and open in
+    `gcm_arm64.c`, with passes of eight blocks in inline assembly, and
+    `CH_CPU_CONSTANT_TIME_SHA3` picks a copy with EOR3.** Camilo set the
+    goal on 2026-10-25: arm64 AES-GCM takes no more time than OpenSSL
+    3.6.4, for AES-128 and AES-256, seal and open, on a Neoverse N2 and
+    on the M1 Pro. Before this entry a 16 KiB record took 1.15 to 1.27
+    times OpenSSL's time on the N2, a 1 KiB one 1.29 to 2.05 times, and a
+    16-byte one 1.29 to 3.12 times. docs/performance.md, "arm64 AES-GCM
+    beside OpenSSL", holds the tables and the CSVs.
+
+    - **Where the time went.** Three parts, measured on the N2 under the
+      pinned clang:
+      - The key expansion: 194 ns for AES-128 and 335 ns for AES-256, a
+        word at a time through two 4-byte arrays. It now runs a round key
+        at a time in vector registers, as on x86-64 (decision 123), on
+        AESE with a zero key, TBL and EXT: 25 ns.
+      - The steps around the passes: about 100 ns of a 1 KiB record. Each
+        of `gcm.c`'s steps computed the powers of H it needed and wiped
+        them, and H, E(J0) and the last blocks each took a call of their
+        own.
+      - The passes: about 175 vector instructions a pass in the
+        compilers' code, with the two vector pipes busy 85% of the time.
+        A 16 KiB record's passes took 4.11 µs, where OpenSSL took 3.72 µs
+        for the whole AEAD.
+    - **A whole AEAD.** `gcm_arm64.c` runs the seal and the open as one
+      call, as `gcm_avx512.c` does on x86-64 (decision 130). One batch of
+      AES rounds computes H, E(J0) and the keystream of a short text.
+      One set of powers of H serves the associated data, the text and
+      the lengths block. One wipe at the end clears what the call
+      computed. `gcm.c` calls it for every schedule the instructions
+      expanded, a traffic key or a QUIC Initial key, and `gcm_hw.c`'s
+      passes stay on x86-64 alone.
+    - **Assembly for the passes.** A pass is eight blocks of counter
+      mode and GHASH over eight blocks of ciphertext. Changes to the C
+      moved each compiler's code by 2% to 6%, and neither compiler kept
+      the order of the AES rounds and the products. The passes are inline
+      assembly in `gcm_arm64_passes.h`, and C does the rest:
+      - Round key 0 holds the IV (`first_key`), so a counter buffer holds
+        zeros and the count alone, and no buffer holds a secret.
+      - The counts go to a ring of three buffers, two passes ahead. A
+        16-byte load that overlaps a 4-byte store still in flight waits
+        for it: 3.92 µs for a 16 KiB record's passes against 3.67 µs.
+      - GHASH runs Karatsuba with the middle terms of two blocks in one
+        register, and from 32 passes up it reduces two passes at a time
+        with H^9 to H^16. Below 32 passes the extra powers cost more than
+        the saved reductions.
+      - ISO C limits a string to 4,095 bytes and gcc an asm statement to
+        30 operands, so a pass is six statements that share their
+        registers as operands, and the pointers come in one struct.
+    - **The EOR3 copy and its bit.** `gcm_arm64_eor3.c` compiles the file
+      once more with FEAT_SHA3's EOR3, a three-way exclusive-or, in the
+      passes. `gcm_use_eor3` runs it for a session whose `ch_cfg.cpu`
+      holds `CH_CPU_CONSTANT_TIME_SHA3` beside the AES bit. That bit
+      already names FEAT_SHA3, EOR3 among its instructions, and states
+      that they run in constant time (decision 99), so no new bit names
+      the same statement again. The copy without EOR3 runs for every
+      other value and stays in every test.
+    - **Numbers.** On the N2, under `ch_cfg.cpu 0x83`, every cell takes
+      0.59 to 0.99 of OpenSSL's time on both compilers. Under `0x3` the
+      16 KiB cells take 0.99 to 1.02 of it and the others 0.58 to 0.99.
+      docs/performance.md, "arm64 AES-GCM beside OpenSSL", has the table.
+      On the M1 Pro, against Homebrew's OpenSSL 3.5.9, the 16-byte and
+      1 KiB cells take 0.55 to 0.93 of its time, and the 16 KiB cells 1.00
+      to 1.03 under `0x83` and 1.06 to 1.10 under `0x3`. The goal is not
+      met there yet: the passes keep the order the N2 measured best.
+    - **What holds it.** `bin/aes_equiv_test` holds each copy's seal and
+      open to `quic_aes_soft.c` and a bitwise GHASH, at every length from
+      0 to 300 bytes, at every length within a block and a byte of 1 to
+      128 passes, under three buffer layouts and both key sizes.
+      `bin/ghash_equiv_test` holds both copies to `gcm.c`'s proven GHASH
+      and searches the stack and the state each call leaves.
+      `bin/aes_runtime_test` counts which copy each `ch_cfg.cpu` value
+      runs. `bin/quic_test_hw`, the Wycheproof host binary under both
+      values of the AES bit, and `bin/diff_quic_hw` run the published
+      vectors. The taint lane (decision 155) runs the copy without EOR3
+      at 600 and 4,200 bytes, which includes paired passes.
+      `gcm-arm64-powers-wipe-skipped` and `gcm-arm64-eor3-copy-never-picked`
+      prove two of those checks fire, and eight `aes_hw.c` mutants hold the
+      key expansion on both architectures.
+    - **What none of it proves.** CBMC reads no assembly, so no harness
+      compiles either file. Valgrind 3.27.1 cannot decode EOR3, so the
+      taint lane does not run the EOR3 copy; its branches and addresses
+      are the other copy's, which differs in the instruction that sums
+      three registers.
+    - **Rejected:**
+      - **C with intrinsics for the passes.** See above: about 15% of the
+        pipes' time idle, and an order no compiler keeps.
+      - **A new CPU bit for EOR3.** It would state what
+        `CH_CPU_CONSTANT_TIME_SHA3` states.

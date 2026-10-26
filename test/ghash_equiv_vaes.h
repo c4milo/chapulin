@@ -35,5 +35,9 @@ static void run_on_vaes(void) {
     run_residue();
 }
 
+#else
+// Another target holds no such kernel.
+static void run_on_vaes(void) {
+}
 #endif // __x86_64__
 #endif

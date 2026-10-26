@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-109 of the 144 C sources in the tree root are compiled into a
+109 of the 146 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 35 sources are in no such harness:
+The other 37 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -57,7 +57,8 @@ The other 35 sources are in no such harness:
 | `srv_out.c`, `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_flight_test`, `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds its cipher and both architectures' key expansions to `quic_aes_soft.c`, and searches the stack each expansion leaves ([The host object's AES key expansions](#the-host-objects-aes-key-expansions)). |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
-| `gcm_hw.c` | It runs counter mode and the one-pass seal and open on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal and open to `gcm.c`'s proven one-block loop and portable GHASH. |
+| `gcm_hw.c` | It runs counter mode on the AES intrinsics, and on x86-64 the one-pass seal and open on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal and open to `gcm.c`'s proven one-block loop and portable GHASH. |
+| `gcm_arm64.c`, `gcm_arm64_eor3.c` | They run AES-GCM's whole seal and open on arm64, on the AES intrinsics and on inline assembly in `gcm_arm64_passes.h`, the second copy with EOR3 (decision 158). | `bin/aes_equiv_test` holds every seal and open of each copy to `quic_aes_soft.c` and a bitwise GHASH at every length from 0 to 300 bytes and beside pass counts up to 128, and `bin/ghash_equiv_test` holds them to `gcm.c`'s proven portable GHASH and searches the stack and the state each call leaves. `bin/quic_test_hw`, the Wycheproof host binary and `bin/diff_quic_hw` run the published vectors on them. |
 | `gcm_vaes.c` | It runs `gcm_hw.c`'s three loops on the 256-bit VAES and VPCLMULQDQ intrinsics. | On an x86-64 CPU with those instructions, `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test`, `bin/quic_test_hw` and the Wycheproof host binary run its seal and open against `gcm.c`'s proven one-block loop and portable GHASH and the published vectors ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `gcm_avx512_kernel.c` | It runs AES-GCM's whole seal and open on the 512-bit VAES, VPCLMULQDQ and AVX-512 intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with what `CH_CPU_AVX512` names, `bin/gcm_avx512_equiv_test` holds every seal and open to `gcm.c` on `gcm_hw.c`'s loops, which `bin/ghash_equiv_test` holds to the proven portable GHASH, at the ends of guarded pages, and `bin/quic_test_hw` and the Wycheproof host binary run the published vectors on it; the nightly's `rsa-ifma-sde` job runs them under Intel SDE ([The 512-bit AES-GCM kernel](#the-512-bit-aes-gcm-kernel)). |
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector ChaCha20](#the-vector-chacha20)). |

@@ -96,6 +96,7 @@ typedef uint8x16_t aes_state;
 typedef __m128i aes_state;
 #endif
 
+#ifndef GHASH_VECTOR_ARM
 // What the seal computes from the key, in one object for one wipe: the
 // GHASH state and the pass's counter blocks, which the rounds turn into
 // its keystream and the exclusive-or into its output.
@@ -103,6 +104,7 @@ typedef struct {
     ghash_state ghash;
     aes_state keystream[GCM_HW_PASS_BLOCKS];
 } gcm_hw_state;
+#endif
 
 // A block moves between memory and a vector register through memcpy
 // rather than a pointer cast, so no load assumes the round keys or the
@@ -270,6 +272,7 @@ static void xor_pass(const aes_state keystream[GCM_HW_PASS_BLOCKS], const uint8_
     }
 }
 
+#ifndef GHASH_VECTOR_ARM
 // xor_pass over a whole pass, with each block's output written back over
 // its keystream too. The keystream is gone as soon as the output is
 // written, and states holds the output from then on. Left in states until
@@ -287,6 +290,7 @@ static inline void xor_pass_in_place(aes_state states[GCM_HW_PASS_BLOCKS], const
         store_state(&out[b * AES_BLOCK], states[b]);
     }
 }
+#endif
 
 void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                            const uint8_t *in, size_t blocks, uint8_t *out) {
@@ -314,6 +318,8 @@ void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t cou
     ct_wipe(keystream, sizeof keystream);
 }
 
+// On arm64 gcm_arm64.c runs the whole AEAD, with passes of its own.
+#ifndef GHASH_VECTOR_ARM
 void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                         uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
                         size_t passes, uint8_t *out) {
@@ -385,6 +391,7 @@ void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
     set_counter_count(counter, count + (uint32_t)(passes * GCM_HW_PASS_BLOCKS));
     ct_wipe(&s, sizeof s);
 }
+#endif
 
 #ifdef __clang__
 #pragma clang attribute pop

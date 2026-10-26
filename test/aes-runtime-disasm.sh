@@ -4,11 +4,13 @@
 # 81, 88, 89 and 93):
 #
 #   - the AES and carry-less multiply instructions in aes_hw.c's,
-#     ghash_hw.c's, gcm_hw.c's, gcm_vaes.c's and gcm_avx512_kernel.c's
-#     functions. gcm_vaes.c holds the 256-bit kernels and
-#     gcm_avx512_kernel.c the 512-bit kernel on x86-64, and both hold
-#     nothing on arm64. gcm_avx512.c holds the kernel's entries and none of
-#     the instructions.
+#     ghash_hw.c's, gcm_hw.c's, gcm_vaes.c's, gcm_avx512_kernel.c's,
+#     gcm_arm64.c's and gcm_arm64_eor3.c's functions. gcm_vaes.c holds the
+#     256-bit kernels and gcm_avx512_kernel.c the 512-bit kernel on
+#     x86-64, and both hold nothing on arm64. gcm_arm64.c and its EOR3
+#     copy hold the whole AEAD on arm64 and nothing on x86-64
+#     (docs/decisions.md 158). gcm_avx512.c holds the kernel's entries and
+#     none of the instructions.
 #   - the SHA-256 instructions in sha256_hw.c's.
 #   - the SHA-512 instructions in sha512_hw.c's, which an object with
 #     SUITE=aesgcm alone packages. No x86-64 CPU this tree targets has
@@ -32,14 +34,20 @@
 # source's object and requires:
 #
 #   - no AES or carry-less multiply instruction in any object but
-#     aes_hw.o, ghash_hw.o, gcm_hw.o, gcm_vaes.o and gcm_avx512_kernel.o,
+#     aes_hw.o, ghash_hw.o, gcm_hw.o, gcm_vaes.o, gcm_avx512_kernel.o,
+#     gcm_arm64.o and gcm_arm64_eor3.o,
 #     no SHA-256
 #     instruction in any object but sha256_hw.o, and no SHA-512
 #     instruction in any object but sha512_hw.o;
 #   - an AES instruction in aes_hw.o, a carry-less multiply in ghash_hw.o,
-#     both in gcm_hw.o, a SHA-256 instruction in sha256_hw.o, and on arm64
+#     an AES instruction in gcm_hw.o, and on x86-64 a carry-less multiply
+#     there too, a SHA-256 instruction in sha256_hw.o, and on arm64
 #     a SHA-512 instruction in sha512_hw.o, so a disassembler that spells
 #     one another way fails the check rather than passes it;
+#   - on arm64, an AES instruction, a carry-less multiply and an eor3 in
+#     gcm_arm64_eor3.o, both of the first two in gcm_arm64.o, and,
+#     where the compiler is not Apple's, no eor3 in gcm_arm64.o, the copy
+#     a session without CH_CPU_CONSTANT_TIME_SHA3 runs;
 #   - on arm64, none of FEAT_SHA3's eor3, rax1, xar and bcax in
 #     sha512_hw.o. That file's target attribute turns them on beside the
 #     SHA-512 ones, a compiler writes them for plain C, and
@@ -140,7 +148,9 @@ for object in "${objects[@]}"; do
         # The sets the file may hold: a pattern that matches no mnemonic
         # for every file but the seven.
         case "$src" in
-        aes_hw.c | ghash_hw.c | gcm_hw.c | gcm_vaes.c | gcm_avx512_kernel.c) own="$aes|$clmul" ;;
+        aes_hw.c | ghash_hw.c | gcm_hw.c | gcm_vaes.c | gcm_avx512_kernel.c | gcm_arm64.c | gcm_arm64_eor3.c)
+            own="$aes|$clmul"
+            ;;
         sha256_hw.c) own="$sha256" ;;
         sha512_hw.c) own="$sha512" ;;
         *) own='^$' ;;
@@ -158,7 +168,26 @@ for object in "${objects[@]}"; do
         ghash_hw.c) holds "$object" "$(count "$found" "$clmul")" "carry-less multiply in ghash_hw.o" ;;
         gcm_hw.c)
             holds "$object" "$(count "$found" "$aes")" "AES instruction in gcm_hw.o"
-            holds "$object" "$(count "$found" "$clmul")" "carry-less multiply in gcm_hw.o"
+            # On arm64 gcm_hw.c runs counter mode alone (gcm_hw.h).
+            [ -n "$sha512_body" ] ||
+                holds "$object" "$(count "$found" "$clmul")" "carry-less multiply in gcm_hw.o"
+            ;;
+        gcm_arm64.c | gcm_arm64_eor3.c)
+            if [ -n "$sha512_body" ]; then
+                holds "$object" "$(count "$found" "$aes")" "AES instruction in ${src%.c}.o"
+                holds "$object" "$(count "$found" "$clmul")" "carry-less multiply in ${src%.c}.o"
+            fi
+            if [ -n "$sha512_body" ] && [ "$src" = gcm_arm64_eor3.c ]; then
+                holds "$object" "$(count "$(instructions "$o" '^eor3')" '^eor3')" "eor3 in gcm_arm64_eor3.o"
+            fi
+            if [ -n "$sha512_body" ] && [ "$src" = gcm_arm64.c ] && [ "$machine" = "${machine%apple*}" ]; then
+                while read -r label mnemonic; do
+                    [ -n "$label" ] || continue
+                    echo "aes-runtime-disasm: [$object]: gcm_arm64.c runs $mnemonic in $label, which" \
+                        "only gcm_arm64_eor3.c's copy may run" >&2
+                    rc=1
+                done <<< "$(instructions "$o" '^eor3')"
+            fi
             ;;
         sha256_hw.c) holds "$object" "$(count "$found" "$sha256")" "SHA-256 instruction in sha256_hw.o" ;;
         sha512_hw.c)
@@ -177,12 +206,12 @@ for object in "${objects[@]}"; do
     linked=$(count "$(instructions "$obj")" "$every")
     if [ "$linked" -ne "$in_files" ]; then
         echo "aes-runtime-disasm: [$object]: chapulin.o holds $linked of the instructions," \
-            "and aes_hw.o, ghash_hw.o, gcm_hw.o, gcm_vaes.o, gcm_avx512_kernel.o, sha256_hw.o and" \
-            "sha512_hw.o hold $in_files" >&2
+            "and aes_hw.o, ghash_hw.o, gcm_hw.o, gcm_vaes.o, gcm_avx512_kernel.o, gcm_arm64.o," \
+            "gcm_arm64_eor3.o, sha256_hw.o and sha512_hw.o hold $in_files" >&2
         rc=1
     fi
-    echo "aes-runtime-disasm: [$object]: $linked instructions, $in_files of them in aes_hw.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c, gcm_avx512_kernel.c, sha256_hw.c and sha512_hw.c"
+    echo "aes-runtime-disasm: [$object]: $linked instructions, $in_files of them in aes_hw.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c, gcm_avx512_kernel.c, gcm_arm64.c, gcm_arm64_eor3.c, sha256_hw.c and sha512_hw.c"
 done
 [ "$rc" -ne 0 ] ||
-    echo "aes-runtime-disasm: on $machine, no AES or carry-less multiply instruction outside aes_hw.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c and gcm_avx512_kernel.c, no SHA-256 instruction outside sha256_hw.c, no SHA-512 instruction outside sha512_hw.c and none of FEAT_SHA3's in it"
+    echo "aes-runtime-disasm: on $machine, no AES or carry-less multiply instruction outside aes_hw.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c, gcm_avx512_kernel.c, gcm_arm64.c and gcm_arm64_eor3.c, no SHA-256 instruction outside sha256_hw.c, no SHA-512 instruction outside sha512_hw.c and none of FEAT_SHA3's in it"
 exit "$rc"

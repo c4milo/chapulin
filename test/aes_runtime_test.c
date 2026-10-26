@@ -334,6 +334,20 @@ static void check_traffic_case(const traffic_case *c) {
     CHECK(k.key.cpu == RUNTIME_PRESENT && k.key.cpu_high == (uint8_t)(CH_CPU_AVX512 >> 8));
     gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
     CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
+#ifdef __aarch64__
+    // On arm64 CH_CPU_CONSTANT_TIME_SHA3 beside the AES bit runs
+    // gcm_arm64_eor3.c's copy, and every other value the copy without EOR3
+    // (docs/decisions.md 158).
+    unsigned long eor3_before = aes_runtime_eor3_calls;
+    aes_traffic_key_cpu(&k, RUNTIME_PRESENT);
+    gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
+    CHECK(aes_runtime_eor3_calls == eor3_before);
+    aes_traffic_key_cpu(&k, RUNTIME_PRESENT | CH_CPU_CONSTANT_TIME_SHA3);
+    gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
+    CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
+    CHECK(gcm_traffic_open(&k, iv, aad, aad_len, ct, n, tag, opened) == 1);
+    CHECK(memcmp(opened, pt, n) == 0 && aes_runtime_eor3_calls == eor3_before + 2);
+#endif
 }
 
 // FIPS 197 Appendix C.1 and C.3, the forward cipher under a 128-bit and a

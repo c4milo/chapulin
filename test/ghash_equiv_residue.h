@@ -29,7 +29,13 @@
 // The seal and the open are called through residue_seal_passes and
 // residue_open_passes: gcm_hw.c's entries, and on an x86-64 CPU that has
 // them gcm_vaes.c's in a second run, which keep the same state and wipe
-// it the same way (gcm_vaes.h).
+// it the same way (gcm_vaes.h). On arm64, which has no such entries, the
+// runs call gcm_arm64.c's whole seal and open through residue_seal_aead
+// and residue_open_aead instead, with no associated data, under a subkey
+// that is the forward cipher of the zero block and from a zero
+// accumulator, which is where those entries start GHASH; and on a CPU
+// with FEAT_SHA3 gcm_arm64_eor3.c's in a second run. Those runs also look
+// for the first counter block's keystream, which the tag takes.
 //
 // The portable multiply and residue_carryless_multiply compute them only
 // after the copy, so their own frames cannot hold them first.
@@ -41,6 +47,9 @@
 #define CH_GHASH_EQUIV_RESIDUE_H
 
 #include "gcm_hw.h"
+#ifdef __aarch64__
+#include "gcm_arm64.h"
+#endif
 
 // ghash_vector.h's GHASH_PASS_BLOCKS, which this binary does not include.
 #define RESIDUE_POWERS 8
@@ -58,6 +67,17 @@ static uint8_t residue_subkey[AES_BLOCK];
 static uint8_t residue_round_keys[AES_ROUND_KEYS * AES_BLOCK];
 static uint8_t residue_counter[AES_BLOCK];
 
+#ifdef __aarch64__
+// The entries each run's seal and open call: gcm_arm64.c's, unless the
+// test main names gcm_arm64_eor3.c's. A seal and an open take the same
+// shape of arguments.
+typedef void (*residue_aead)(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
+                             const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t n,
+                             uint8_t *out, uint8_t tag[AES_BLOCK]);
+static residue_aead residue_seal_aead = gcm_seal_arm64;
+static residue_aead residue_open_aead = gcm_open_arm64;
+static uint8_t residue_tag[AES_BLOCK];
+#else
 // The entry each run's seal and open call: gcm_hw.c's, unless the test
 // main names gcm_vaes.c's.
 typedef void (*residue_passes)(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
@@ -65,12 +85,25 @@ typedef void (*residue_passes)(const uint8_t *round_keys, size_t rounds, uint8_t
                                const uint8_t *in, size_t passes, uint8_t *out);
 static residue_passes residue_seal_passes = gcm_seal_passes_hw;
 static residue_passes residue_open_passes = gcm_open_passes_hw;
+#endif
 
 static __attribute__((noinline)) void residue_hash_call(void) {
     memcpy(residue_result, residue_acc, AES_BLOCK);
     gcm_hash_data_hw(residue_result, residue_subkey, residue_data, sizeof residue_data);
 }
 
+#ifdef __aarch64__
+// residue_counter's first twelve bytes are the nonce.
+static __attribute__((noinline)) void residue_seal_call(void) {
+    residue_seal_aead(residue_round_keys, AES_128_ROUNDS, residue_counter, NULL, 0, residue_data,
+                      sizeof residue_data, residue_sealed, residue_tag);
+}
+
+static __attribute__((noinline)) void residue_open_call(void) {
+    residue_open_aead(residue_round_keys, AES_128_ROUNDS, residue_counter, NULL, 0, residue_data,
+                      sizeof residue_data, residue_opened, residue_tag);
+}
+#else
 static __attribute__((noinline)) void residue_seal_call(void) {
     memcpy(residue_result, residue_acc, AES_BLOCK);
     uint8_t counter[AES_BLOCK];
@@ -87,6 +120,7 @@ static __attribute__((noinline)) void residue_open_call(void) {
     residue_open_passes(residue_round_keys, AES_128_ROUNDS, counter, residue_result, residue_subkey,
                         residue_data, RESIDUE_PASSES, residue_opened);
 }
+#endif
 
 // test/stack_residue.c, compiled as a source of its own.
 void stack_residue_take(volatile uint8_t *below, size_t n, uint8_t *copy);
@@ -239,7 +273,32 @@ static void residue_fresh_inputs(void) {
     rng_fill(key, sizeof key);
     aes_expand_round_keys(key, residue_round_keys);
     rng_fill(residue_counter, sizeof residue_counter);
+#ifdef __aarch64__
+    static const uint8_t zero[AES_BLOCK] = {0};
+    aes_cipher_block(residue_round_keys, zero, residue_subkey);
+    memset(residue_acc, 0, sizeof residue_acc);
+#endif
 }
+
+#ifdef __aarch64__
+// The first counter block's keystream, looked for in the copy the last
+// snapshot took.
+static int residue_mask(const char *run) {
+    uint8_t first[AES_BLOCK];
+    memcpy(first, residue_counter, AES_IV);
+    memset(&first[AES_IV], 0, AES_BLOCK - AES_IV - 1);
+    first[AES_BLOCK - 1] = 1;
+    uint8_t mask[AES_BLOCK];
+    aes_cipher_block(residue_round_keys, first, mask);
+    return residue_found(run, "first counter block's keystream", 1, mask, AES_BLOCK);
+}
+// On arm64 a whole AEAD also computes the first counter block's keystream.
+#define RESIDUE_MASK(run) residue_mask(run)
+#else
+// gcm_hw.c's passes take the counter from the caller and compute no such
+// keystream.
+#define RESIDUE_MASK(run) 0
+#endif
 
 static void run_residue(void) {
     rng_fill(residue_subkey, sizeof residue_subkey);
@@ -255,7 +314,8 @@ static void run_residue(void) {
     residue_seal_call();
     residue_snapshot();
     if (residue_look("one-pass seal", residue_sealed) ||
-        residue_keystream("one-pass seal", residue_data, residue_sealed)) {
+        residue_keystream("one-pass seal", residue_data, residue_sealed) ||
+        RESIDUE_MASK("one-pass seal")) {
         return;
     }
 
@@ -264,7 +324,7 @@ static void run_residue(void) {
     residue_fresh_inputs();
     residue_open_call();
     residue_snapshot();
-    if (residue_look("one-pass open", residue_data)) {
+    if (residue_look("one-pass open", residue_data) || RESIDUE_MASK("one-pass open")) {
         return;
     }
     (void)residue_keystream("one-pass open", residue_data, residue_opened);

@@ -20,5 +20,7 @@ extern unsigned long aes_runtime_instruction_calls;
 // Calls into ghash_hw.c's two entries and gcm_hw.c's one-pass seal, the
 // carry-less multiply.
 extern unsigned long aes_runtime_clmul_calls;
+// Calls into gcm_arm64_eor3.c's two entries, the copy with EOR3, on arm64.
+extern unsigned long aes_runtime_eor3_calls;
 
 #endif

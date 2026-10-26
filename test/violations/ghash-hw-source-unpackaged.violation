@@ -11,6 +11,6 @@ reason: a host object stops packaging ghash_hw.c, so it carries aes_hw.c
   instructions.
 
 --- old
-AES_HW_SRCS := aes_hw.c ghash_hw.c gcm_hw.c gcm_vaes.c
+AES_HW_SRCS := aes_hw.c ghash_hw.c gcm_hw.c $(GCM_ARM64_SRCS)
 --- new
-AES_HW_SRCS := aes_hw.c gcm_hw.c gcm_vaes.c
+AES_HW_SRCS := aes_hw.c gcm_hw.c $(GCM_ARM64_SRCS)

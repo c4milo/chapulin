@@ -5163,11 +5163,13 @@ last `ROLE=server` stub, as the entry said it would.
   source but `quic_initial.c` and `quic_retry.c`, the two permitted
   callers, with `aes.c`, `gcm.c` with `gcm_ghash.h`, the three AES
   implementations, `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c`, `gcm_vaes.h`,
-  `gcm_avx512.c`, `gcm_avx512.h`, `gcm_avx512_kernel.c` and
-  `gcm_avx512_kernel.h` excluded as the definition sites. `gcm_vaes.h` is
-  there for its three inline entries, which call `gcm_hw.c`'s loops or
-  `gcm_vaes.c`'s kernels for `gcm.c`, and `gcm_avx512.c` for its calls of
-  the kernel's four functions; a call to one of them from any other
+  `gcm_avx512.c`, `gcm_avx512.h`, `gcm_avx512_kernel.c`,
+  `gcm_avx512_kernel.h`, `gcm_arm64.c`, `gcm_arm64_eor3.c`, `gcm_arm64.h`
+  and `gcm_arm64_passes.h` excluded as the definition sites. `gcm_vaes.h`
+  is there for its three inline entries, which call `gcm_hw.c`'s loops or
+  `gcm_vaes.c`'s kernels for `gcm.c`, `gcm_arm64.h` for its two, which
+  call one of the two arm64 copies (decision 158), and `gcm_avx512.c` for
+  its calls of the kernel's four functions; a call to one of them from any other
   library source still matches the rule in that source.
 
   What `ct.h` refuses, and `test/quic-builds.sh` is the catch target for

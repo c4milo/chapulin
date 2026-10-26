@@ -56,6 +56,7 @@
 #include "ct.h"
 #ifdef CH_CPU_RUNTIME
 #include "ch_assert.h"
+#include "gcm_arm64.h"
 #include "gcm_avx512.h"
 #include "gcm_hw.h"
 #include "gcm_vaes.h"
@@ -176,6 +177,7 @@ static size_t counter_mode_whole_blocks(const aes_key_schedule *k, uint8_t count
     return blocks * AES_BLOCK;
 }
 
+#ifdef __x86_64__
 // The whole passes of GCM_HW_PASS_BLOCKS blocks on the AES instructions:
 // counter mode and GHASH over the ciphertext in one loop, from h's
 // accumulator, gcm_seal_passes_cpu when seal is set and
@@ -201,6 +203,20 @@ static size_t whole_passes(const aes_key_schedule *k, int seal, uint8_t counter[
                             out);
     }
     return passes * pass_bytes;
+}
+#endif // __x86_64__
+#endif
+
+#if defined(CH_CPU_RUNTIME) && defined(__aarch64__)
+// Whether k's whole AEAD runs on gcm_arm64.c: every schedule the AES
+// instructions run, in an arm64 host object (gcm_arm64.h).
+static int runs_arm64(const aes_key_schedule *k) {
+#ifdef CH_AES_TWO_CIPHERS
+    return on_instructions(k);
+#else
+    (void)k;
+    return 1;
+#endif
 }
 #endif
 
@@ -283,6 +299,13 @@ static void seal_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV]
         return;
     }
 #endif
+#if defined(CH_CPU_RUNTIME) && defined(__aarch64__)
+    if (runs_arm64(k)) {
+        gcm_seal_arm64_cpu(k->cpu, k->round_keys, instruction_rounds(k), nonce, aad, aad_len, pt, n,
+                           ct, tag);
+        return;
+    }
+#endif
     uint8_t first_counter[AES_BLOCK];
     first_counter_block(first_counter, nonce);
     // Counter mode advances the block it is given, so it gets a copy and
@@ -296,7 +319,7 @@ static void seal_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV]
     // hashed once counter mode has written it. done is at most n, so the
     // two pointers stay inside the buffers or one past their end.
     size_t done = 0;
-#ifdef CH_CPU_RUNTIME
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
     done = whole_passes(k, 1, counter, &h, pt, n, ct);
 #endif
     counter_mode(k, counter, &pt[done], n - done, &ct[done]);
@@ -331,6 +354,13 @@ static int open_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV],
         return tag_matches(want, tag, pt, n);
     }
 #endif
+#if defined(CH_CPU_RUNTIME) && defined(__aarch64__)
+    if (runs_arm64(k)) {
+        gcm_open_arm64_cpu(k->cpu, k->round_keys, instruction_rounds(k), nonce, aad, aad_len, ct, n,
+                           pt, want);
+        return tag_matches(want, tag, pt, n);
+    }
+#endif
     uint8_t first_counter[AES_BLOCK];
     first_counter_block(first_counter, nonce);
     uint8_t counter[AES_BLOCK];
@@ -344,7 +374,7 @@ static int open_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV],
     // address: gcm_hw.c's loop hashes each pass before it decrypts it, and
     // here GHASH runs over the rest before counter mode writes it.
     size_t done = 0;
-#ifdef CH_CPU_RUNTIME
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
     done = whole_passes(k, 0, counter, &h, ct, n, pt);
 #endif
     ghash_data(k, h.acc, h.subkey, &ct[done], n - done);

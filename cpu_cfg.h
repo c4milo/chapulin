@@ -165,7 +165,9 @@
 // alone. A session whose bit names instructions its CPU lacks faults on the first one. With
 // CH_CPU_CONSTANT_TIME_SHA3 an arm64 session runs SHA-3, SHAKE and ML-KEM's hashes on the SHA-3
 // instructions (sha3_hw.c, keccak_hw.h) where the object holds them, which is where clang compiled
-// it (CH_KECCAK_INSTRUCTIONS below), and on sha3.c everywhere else. A hash call that takes no value
+// it (CH_KECCAK_INSTRUCTIONS below), and on sha3.c everywhere else. Beside CH_CPU_CONSTANT_TIME_AES
+// it also runs AES-GCM on gcm_arm64_eor3.c, whose GHASH sums three values with EOR3, in place of
+// gcm_arm64.c (docs/decisions.md 158). A hash call that takes no value
 // runs no hash instruction in any object: a certificate's, a signature's and the DRBG's are such
 // calls, and they run sha256.c, sha512.c and sha3.c.
 // No bit picks what sha512.c runs. In a host object its calls compress on

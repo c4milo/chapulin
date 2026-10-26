@@ -252,6 +252,11 @@ static void run_counter_blocks_shifted(bench_state *b) {
     consume(b->rec[0]);
 }
 
+// The seal's and the open's passes exist on x86-64 alone: on arm64 gcm.c
+// runs each whole AEAD on gcm_arm64.c (docs/decisions.md 158), and the
+// rows below that time a stage alone time gcm.c's path, which an arm64
+// seal or open does not take.
+#ifdef __x86_64__
 // The seal's whole passes, as seal_schedule hands them to the entry
 // BENCH_CPU names: counter mode and GHASH over the ciphertext in one loop,
 // over every whole pass of the record, in place, from the accumulator
@@ -274,6 +279,7 @@ static void run_open_passes(bench_state *b) {
                           b->rec + REC_HDR, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK), b->rec);
     consume(b->rec[0]);
 }
+#endif
 
 static void run_compute_tag(bench_state *b) {
     bench_gcm_compute_tag(&b->key, b->nonce, b->rec, REC_HDR, b->rec + REC_HDR, b->len, b->tag);
@@ -367,8 +373,10 @@ static const bench_row AES_ROWS[] = {
     {"counter_mode_shifted",    ALL,    run_counter_mode_shifted,    0},
     {"counter_blocks_in_place", ALL,    run_counter_blocks_in_place, 0},
     {"counter_blocks_shifted",  ALL,    run_counter_blocks_shifted,  0},
+#ifdef __x86_64__
     {"seal_passes",             ALL,    run_seal_passes,             0},
     {"open_passes",             ALL,    run_open_passes,             0},
+#endif
     {"compute_tag",             ALL,    run_compute_tag,             0},
     {"ghash_data",              ALL,    run_ghash_data,              0},
     {"compute_tag_fixed",       FIXED,  run_compute_tag_fixed,       0},
@@ -388,8 +396,10 @@ static const bench_difference AES_DIFFERENCES[] = {
 static const bench_check AES_CHECKS[] = {
     {"seal_aes_gcm", {"key_expansion", "aead_seal", "key_wipe", NULL}},
     {"open_aes_gcm", {"key_expansion", "aead_open", "key_wipe", NULL}},
+#ifdef __x86_64__
     {"aead_seal",    {"seal_passes", "compute_tag_fixed", NULL}      },
     {"aead_open",    {"open_passes", "compute_tag_fixed", NULL}      },
+#endif
     {"compute_tag",  {"ghash_data", "compute_tag_fixed", NULL}       },
     {"rec_seal",     {"rec_seal_without_aead", "aead_seal", NULL}    },
     {"rec_open",     {"rec_open_without_aead", "aead_open", NULL}    },

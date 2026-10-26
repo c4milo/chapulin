@@ -270,9 +270,9 @@
 #                     x86-64 built with clang, for the violations of the
 #                     kernel's frame budget and of the two wiped lengths
 #                     that gcc's frames fit and clang's do not
-#   arm64-hash-count  the two counting binaries for arm64, for the
+#   arm64-hash-count  the three counting binaries for arm64, for the
 #                     violations of the entries an arm64 object alone
-#                     compiles
+#                     compiles and of the copy gcm_use_eor3 picks
 #   p256-equiv        bin/p256_equiv_test for x86-64 and for arm64, for the
 #                     violations of the intrinsics in p256_wide_word.h's
 #                     carry steps
@@ -421,9 +421,11 @@ read -r -a chacha20_equiv_srcs <<< "$(sed -n 23p <<< "$lists")"
 arm64_quic_srcs=()
 arm64_tcp_srcs=()
 arm64_hash_count_srcs=()
+arm64_runtime_test_srcs=()
 for src in "${quic_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_quic_srcs+=("$src"); done
 for src in "${tcp_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_tcp_srcs+=("$src"); done
 for src in "${hash_count_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_hash_count_srcs+=("$src"); done
+for src in "${runtime_test_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_runtime_test_srcs+=("$src"); done
 # sha512_avx2.c compiles apart from every other source: where gcc compiles
 # for x86-64 the Makefile gives that file a flag no other file gets
 # (SHA512_AVX2_UNIT there, docs/decisions.md 128). So each list a binary
@@ -791,8 +793,8 @@ if [ "$only" = sha2-equiv ]; then
     exit 0
 fi
 
-# The two counting binaries for arm64, which alone compiles the SHA-512
-# entries. They run no hash instruction, so the model without FEAT_SHA512
+# The two hash counting binaries for arm64, which alone compiles the
+# SHA-512 entries. They run no hash instruction, so the model without FEAT_SHA512
 # runs them.
 "$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI "${runtime[@]}" \
     -o "$arm64_out/hash_runtime_test" test/hash_runtime_test.c "${arm64_hash_count_srcs[@]}" \
@@ -804,8 +806,16 @@ for b in hash_runtime_test hash_runtime_exporter_test; do
     expect_arm64 "$no_sha512" 0 \
         "a hash call ran on a path its ch_cfg.cpu value does not name" "$b"
 done
+# bin/aes_runtime_test for arm64, which counts the calls into
+# gcm_arm64_eor3.c's copy under the SHA-3 bit and without it
+# (docs/decisions.md 158). That copy runs EOR3, so the max model runs it.
+"$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$arm64_out/aes_runtime_test" \
+    test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c \
+    "${arm64_runtime_test_srcs[@]}" || exit 1
+expect_arm64 max 0 "an AES-GCM call ran a copy gcm_use_eor3 does not pick for its ch_cfg.cpu value" \
+    aes_runtime_test present
 if [ "$only" = arm64-hash-count ]; then
-    echo "aes-runtime-qemu: the two counting binaries counted each hash's calls under every ch_cfg.cpu value in an arm64 object"
+    echo "aes-runtime-qemu: the two counting binaries counted each hash's calls under every ch_cfg.cpu value in an arm64 object, and bin/aes_runtime_test each AES-GCM copy's"
     exit 0
 fi
 

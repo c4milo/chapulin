@@ -38,6 +38,12 @@
 #   poly1305_ifma.c's. --build compiles it for every x86-64 target, and a
 #   run takes its rows only where /proc/cpuinfo names avx512ifma
 #
+#   0x83, the probe's bit, the AES bit and CH_CPU_CONSTANT_TIME_SHA3, on an
+#   arm64 CPU with FEAT_SHA3: the AES-128-GCM and AES-256-GCM rows again,
+#   whose seal and open passes run on gcm_arm64_eor3.c, with EOR3
+#   (docs/decisions.md 158). --build compiles it for every arm64 target,
+#   and a run takes its rows only where the CPU reports FEAT_SHA3
+#
 #   0x31f, those and CH_CPU_AVX512, on an x86-64 CPU with AVX-512F,
 #   AVX-512BW and AVX-512VL as well: the AES-128-GCM and AES-256-GCM rows
 #   again, whose whole AEADs, and the records and keyed AEADs over them,
@@ -193,6 +199,24 @@ if [ -n "$X86_64" ]; then
         fi
     fi
 fi
+# The arm64 EOR3 build. It compiles for every arm64 target, and its rows
+# run only where this CPU has FEAT_SHA3, which Linux names sha3 in
+# /proc/cpuinfo and macOS reports as hw.optional.arm.FEAT_SHA3.
+SHA3=""
+if [ -z "$X86_64" ]; then
+    "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x83 -o "$W/record_sha3" "${SRCS[@]}"
+    KERNELS_NOTE="no ch_cfg.cpu 0x83 rows: this CPU is not arm64 with FEAT_SHA3"
+    if [ "$(uname -s)" = Darwin ]; then
+        if [ "$(sysctl -n hw.optional.arm.FEAT_SHA3 2>/dev/null)" = 1 ]; then
+            SHA3=yes
+        fi
+    elif [ -r /proc/cpuinfo ] && grep -m1 '^Features' /proc/cpuinfo | grep -qw sha3; then
+        SHA3=yes
+    fi
+    if [ -n "$SHA3" ]; then
+        KERNELS_NOTE="ch_cfg.cpu 0x83 adds CH_CPU_CONSTANT_TIME_SHA3 to 0x3, the AES-GCM passes with EOR3"
+    fi
+fi
 if [ -n "$BUILD_ONLY" ]; then
     echo "record bench: --build built every binary and ran nothing" >&2
     exit 0
@@ -297,6 +321,9 @@ LOAD_BEFORE=$(load)
     fi
     if [ -n "$AVX512" ]; then
         "$W/record_avx512" ${QUICK:+"$QUICK"} aes128gcm aes256gcm
+    fi
+    if [ -n "$SHA3" ]; then
+        "$W/record_sha3" ${QUICK:+"$QUICK"} aes128gcm aes256gcm
     fi
     if [ -x "$W/record_zig" ]; then
         "$W/record_zig"

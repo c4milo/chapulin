@@ -58,6 +58,11 @@
 void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                            const uint8_t *in, size_t blocks, uint8_t *out);
 
+#ifdef __x86_64__
+// The seal's and the open's passes exist on x86-64 alone. On arm64 gcm.c
+// runs the whole AEAD on gcm_arm64.h's entries, whose passes are
+// gcm_arm64_passes.h's assembly.
+
 // The seal's counter mode and GHASH over passes * GCM_HW_PASS_BLOCKS whole
 // blocks in one loop: out gets gcm_counter_blocks_hw's output over them,
 // counter advances as it does there, and acc goes on through SP 800-38D
@@ -90,6 +95,7 @@ void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
 void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                         uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
                         size_t passes, uint8_t *out);
+#endif // __x86_64__
 
 #endif // CH_CPU_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

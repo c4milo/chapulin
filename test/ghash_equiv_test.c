@@ -432,9 +432,10 @@ static void compare_aead(const char *case_name, size_t aad_len, size_t n) {
 // every payload length up to three passes of gcm_hw.c's counter mode and
 // a block, GCM_HW_PASS_BLOCKS blocks a pass, under three associated-data
 // lengths, so each count of whole blocks in a last short pass meets each
-// length of a last partial block. Then random lengths up to MAX_AAD and
-// MAX_DATA.
+// length of a last partial block. Then test/ghash_equiv_lengths.h's, and
+// then random lengths up to MAX_AAD and MAX_DATA.
 #define AEAD_PASS_BYTES (8 * AES_BLOCK)
+#include "ghash_equiv_lengths.h"
 static void run_aead(void) {
     for (size_t aad_len = 0; aad_len <= 40; aad_len++) {
         for (size_t n = 0; n <= 48; n++) {
@@ -458,6 +459,7 @@ static void run_aead(void) {
             }
         }
     }
+    run_aead_edges();
     for (unsigned long i = 0; i < 100; i++) {
         size_t aad_len = (size_t)(rng_next() % (MAX_AAD + 1));
         size_t n = (size_t)(rng_next() % (MAX_DATA + 1));
@@ -473,6 +475,7 @@ static void run_aead(void) {
 
 #include "ghash_equiv_residue.h"
 
+#include "ghash_equiv_eor3.h"
 #include "ghash_equiv_vaes.h"
 
 int main(void) {
@@ -484,9 +487,8 @@ int main(void) {
     run_multiply_random();
     run_hash_data();
     run_aead();
-#ifdef __x86_64__
     run_on_vaes();
-#endif
+    run_on_eor3();
     printf("ghash equivalence: %lu multiplies, %lu data loops and %lu AEAD cases agree "
            "between the portable GHASH and the carry-less multiply (seed 0x%llx)\n",
            multiplies, loops, aeads, (unsigned long long)seed);

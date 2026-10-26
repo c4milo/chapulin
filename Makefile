@@ -304,7 +304,7 @@ HDRS := p256_sign_der.h ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
         p256_wide_mul.h p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
         p384_wide_field.h p384_wide_point.h p384_wide_verify.h \
-        handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h gcm_ghash.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_vaes.h gcm_avx512.h gcm_avx512_kernel.h gcm_avx512_ghash.h \
+        handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h gcm_ghash.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_arm64.h gcm_arm64_passes.h gcm_vaes.h gcm_avx512.h gcm_avx512_kernel.h gcm_avx512_ghash.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
         alert.h result.h session_report.h widemul.h widemul_native.h cpu_cfg.h cpu.h hash_hw.h profile_cfg.h
@@ -424,7 +424,11 @@ endif
 # every host test binary. The 512-bit kernel's entries call avx512_wipe.c,
 # which an x86-64 host object holds (AVX512_WIPE_SRCS), and host_srcs adds
 # it to a test binary that lists gcm.c.
-AES_HW_SRCS := aes_hw.c ghash_hw.c gcm_hw.c gcm_vaes.c gcm_avx512.c gcm_avx512_kernel.c
+# gcm_arm64.c and gcm_arm64_eor3.c hold the arm64 host object's whole
+# AES-GCM, with its passes in inline assembly, and have no body on any
+# other target (docs/decisions.md 158).
+GCM_ARM64_SRCS := gcm_arm64.c gcm_arm64_eor3.c
+AES_HW_SRCS := aes_hw.c ghash_hw.c gcm_hw.c $(GCM_ARM64_SRCS) gcm_vaes.c gcm_avx512.c gcm_avx512_kernel.c
 # AES-256 outside a suite build, for the test binaries and proof harnesses
 # that hold it to FIPS 197 and SP 800-38D on every AES value: on AES=soft
 # it compiles the software reference quic_aes_soft.c keeps for that, and
@@ -658,11 +662,11 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c \
           test/tcp_blocking_key_limit_test.c \
           test/quic_driver_test.c test/quic_loop_test.c test/quic_vectors.c test/diff_quic_test.c \
-          test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c \
+          test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c test/aes_equiv_arm64.c test/aes_equiv_arm64_eor3.c \
           test/aes_extern_hook.c test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c \
           test/gcm_avx512_equiv_test.c test/ct_taint_test.c test/ct_taint_keys.c \
           test/aead_avx512_count.c test/rsa_avx2_count.c \
-          test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
+          test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           chacha20_vector.c chacha20_avx2.c chacha20_avx512.c test/chacha20_equiv_test.c \
           test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c test/chacha20_equiv_avx512.c \
@@ -697,7 +701,7 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/sha512_portable.h \
          test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h test/x86_kernels_sha512.h test/x86_kernels_gcm.h \
          test/rsa_ifma_count.h test/aead_avx512_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
-         test/aes_equiv_counter.h test/aes_equiv_residue.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/gcm_avx512_residue.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
+         test/aes_equiv_counter.h test/aes_equiv_gcm.h test/aes_equiv_residue.h test/ghash_equiv_eor3.h test/ghash_equiv_lengths.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/gcm_avx512_residue.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
@@ -2317,9 +2321,9 @@ lint-trust-separation-run:
 	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_token.c | tr '\n' ' '); \
 	aes_files=$$(git ls-files 'aes*.c' 'gcm*.c' 'ghash*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$aes_files" ] || { echo "lint-trust-separation: git tracks no aes*.c, gcm*.c or ghash*.c file at the root, so the AES rows would check nothing"; rc=1; }; \
-	instructions="aes_hw.c ghash_hw.c gcm_hw.c gcm_vaes.c gcm_avx512.c gcm_avx512_kernel.c"; \
+	instructions="aes_hw.c ghash_hw.c gcm_hw.c gcm_vaes.c gcm_avx512.c gcm_avx512_kernel.c gcm_arm64.c gcm_arm64_eor3.c"; \
 	aes_always=$$(printf '%s\n' $$aes_files | grep -vxF -e aes_hw.c -e ghash_hw.c -e gcm_hw.c -e gcm_vaes.c \
-	  -e gcm_avx512.c -e gcm_avx512_kernel.c -e aes_extern.c | tr '\n' ' '); \
+	  -e gcm_avx512.c -e gcm_avx512_kernel.c -e gcm_arm64.c -e gcm_arm64_eor3.c -e aes_extern.c | tr '\n' ' '); \
 	check "TRANSPORT=tcp-blocking" "io.c record.c session.c handshake.c tls.c tls_write.c" "$$quic_files $$aes_files" "" "-DCH_TRANSPORT_QUIC_NONBLOCKING"; \
 	check "TRANSPORT=quic-nonblocking EXPORTER=off" "$$quic_always $$aes_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c tls_write.c $$instructions aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_CPU_RUNTIME -DCH_AES_256_TEST"; \
 	check "TRANSPORT=quic-nonblocking AES=soft EXPORTER=off" "quic_aes_soft.c" "$$instructions aes_extern.c" "" "-DCH_AES_EXTERN -DCH_CPU_RUNTIME"; \
@@ -2964,9 +2968,10 @@ bin/quic_test_hw: test/quic_vectors.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 # CH_CPU_RUNTIME, and ct.h refuses the test flags' CH_NATIVE_WIDEMUL
 # beside it. No unit on the line multiplies.
 AES_EQUIV_TEST_SRCS := test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c \
-                       test/stack_residue.c ct.c ct_wipe.c
+                       test/aes_equiv_arm64.c test/aes_equiv_arm64_eor3.c test/stack_residue.c ct.c \
+                       ct_wipe.c
 bin/aes_equiv_test: test/aes_equiv_test.c $(AES_EQUIV_TEST_SRCS) quic_aes_soft.c aes_hw.c gcm_hw.c \
-                    gcm_vaes.c $(HDRS) $(TESTH)
+                    gcm_arm64.c gcm_arm64_eor3.c gcm_vaes.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/aes_equiv_test.c \
 	  $(AES_EQUIV_TEST_SRCS)
@@ -3648,11 +3653,11 @@ AES_RUNTIME_TEST_SRCS := $(call host_srcs,aes.c gcm.c gcm_vaes.c gcm_avx512.c gc
                            quic_retry.c quic_packet.c \
                            quic_keys.c hkdf.c sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c \
                            buf.c ct.c ct_wipe.c)
-bin/aes_runtime_test: test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
+bin/aes_runtime_test: test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c \
                       $(AES_RUNTIME_TEST_SRCS) $(AES_HW_SRCS) quic_aes_soft.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest -o $@ \
-	  test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c $(AES_RUNTIME_TEST_SRCS)
+	  test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c $(AES_RUNTIME_TEST_SRCS)
 
 # The tcp-nonblocking server driver, over the same flight sources the blocking
 # server builds: srv_tcp_nonblocking.c replaces srv_handshake.c and
@@ -6604,8 +6609,8 @@ else
 	  test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) \
 	  $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c \
 	  test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c \
-	  test/aes_equiv_hw.c test/aes_extern_hook.c test/ghash_equiv_test.c test/ghash_equiv_soft.c \
-	  test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
+	  test/aes_equiv_hw.c test/aes_equiv_arm64.c test/aes_equiv_arm64_eor3.c test/aes_extern_hook.c test/ghash_equiv_test.c test/ghash_equiv_soft.c \
+	  test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c \
 	  $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
 	  test/tls_server.c srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c \
 	  test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c \
@@ -6981,10 +6986,21 @@ else
 	# test/aes_equiv_test.c does above, and test/aes_runtime_soft.c and
 	# test/aes_runtime_hw.c stay out for the same reason.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,$(AES_HW_SRCS) aes.c quic_aes_soft.c gcm.c quic_initial.c quic.c quic_config.c \
+	  $(call TIDY_EACH,$(filter-out $(GCM_ARM64_SRCS),$(AES_HW_SRCS)) aes.c quic_aes_soft.c gcm.c \
+	  quic_initial.c quic.c quic_config.c \
 	  srv_flight.c srv.c webpki_cfg.c test/aes_runtime_test.c test/quic_loop_test.c test/ghash_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI \
 	  -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest)
+	# gcm_arm64.c and its EOR3 copy, read for an arm64 target whatever the
+	# host, as the x86-64 kernels are read for theirs, with
+	# portability-no-assembler off for these two files alone: their passes
+	# are inline assembly, because neither compiler kept an order between
+	# the AES rounds and GHASH's products (docs/decisions.md 158). Every
+	# other check reads them. Freestanding, with tools/freestanding's
+	# string.h.
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler $(GCM_ARM64_SRCS), \
+	  -std=c11 --target=aarch64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -I.)
 	# The 512-bit AES-GCM kernel's equivalence test, under the defines
 	# bin/gcm_avx512_equiv_test builds with, with portability-no-assembler
 	# off for this file alone: on x86-64 it stores zmm0 to zmm31 and k1 to
@@ -7009,7 +7025,7 @@ else
 	  $(call TIDY_EACH,test/ct_taint_test.c test/ct_taint_keys.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(HOST_SUITE_DEF) $(RSA_WIDE_DEF) -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,$(AES_HW_SRCS) aes.c gcm.c tls.c test/webpki_loop_test.c, \
+	  $(call TIDY_EACH,$(filter-out $(GCM_ARM64_SRCS),$(AES_HW_SRCS)) aes.c gcm.c tls.c test/webpki_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI \
 	  -DCH_TRANSPORT_TCP_NONBLOCKING $(HOST_SUITE_DEF) -I.)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
@@ -8351,7 +8367,10 @@ WIDEMUL_SPECS := \
 #   masks. On x86-64 the seal and the open each test the cipher byte, the AES
 #   bit and CH_CPU_AVX512 with CH_CPU_VAES before they run the 512-bit
 #   kernel, three branches each, and the open's `if (!ok)` on the tag
-#   compiles once on each of its two paths (docs/decisions.md 130).
+#   compiles once on each of its two paths (docs/decisions.md 130). On
+#   arm64 the seal and the open each test the cipher byte before they run
+#   gcm_arm64.c's whole AEAD, and gcm_use_eor3's two bits before they pick
+#   its EOR3 copy, and run no pass of gcm_hw.c (docs/decisions.md 158).
 # p256_field.c@host, 4 and 4; p256_scalar.c@host, 4 and 4: mont_mul's two
 #   loops over the eight words, the inverse's 256 rounds and its test of a
 #   bit of the exponent, which is a build constant.
@@ -8862,7 +8881,7 @@ BRANCH_CEILING := \
   arm64/poly1305.c@host:21 x86-64/poly1305.c@host:19 arm64/aead.c@host:4 x86-64/aead.c@host:6 \
   arm64/mlkem.c@host:5 x86-64/mlkem.c@host:5 arm64/rsa_sign.c@host:55 x86-64/rsa_sign.c@host:47 \
   arm64/drbg.c@host:5 x86-64/drbg.c@host:5 \
-  arm64/aes.c@host:14 x86-64/aes.c@host:13 arm64/gcm.c@host:20 x86-64/gcm.c@host:32 \
+  arm64/aes.c@host:14 x86-64/aes.c@host:13 arm64/gcm.c@host:22 x86-64/gcm.c@host:32 \
   arm64/p256_field.c@host:4 x86-64/p256_field.c@host:4 \
   arm64/p256_scalar.c@host:4 x86-64/p256_scalar.c@host:4 \
   arm64/sha512.c@host:9 x86-64/sha512.c@host:9 \

@@ -1,0 +1,16 @@
+invariant: INV-34
+file: gcm_arm64.h
+catches: test/docker-aes-runtime-qemu.sh arm64-hash-count
+reason: gcm_use_eor3 reads CH_CPU_CONSTANT_TIME_SHA512 where it should read
+  CH_CPU_CONSTANT_TIME_SHA3, so a session whose caller stated FEAT_SHA3
+  runs the copy without EOR3, and one that stated FEAT_SHA512 alone runs
+  EOR3, an instruction its caller never stated. Every output stays right,
+  so no vector notices. bin/aes_runtime_test counts the calls into
+  gcm_arm64_eor3.c's entries under the AES bit with the SHA-3 bit and
+  without it. Only an arm64 compiler reads the line, so the script builds
+  that binary for arm64 and runs it under qemu-aarch64's max model.
+
+--- old
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA3) != 0 && (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
+--- new
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA512) != 0 && (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;

@@ -369,6 +369,32 @@ AUDITED = {
         "the AES bit. Delete this entry if a harness can ever compile the "
         "file."
     ),
+    "gcm_arm64.c": (
+        "an arm64 host object's whole AES-GCM seal and open: one batch of AES "
+        "rounds on the intrinsics, GHASH through ghash_vector.h's functions, "
+        "and the passes in gcm_arm64_passes.h's inline assembly, which CBMC "
+        "cannot read, so no harness compiles the file, and with no body on any "
+        "other target. The rounds and the hashing run on vector values. The "
+        "scalar bitwise operators take unsigned operands: counter_block shifts "
+        "a uint32_t count by the constants 8, 16 and 24, blocks_of tests a "
+        "size_t remainder, passes_counters shifts a uint32_t count, widened to "
+        "uint64_t, left by 32, and aead_finish multiplies size_t lengths, "
+        "widened to uint64_t, by 8 and reverses their bytes. The counts add as "
+        "uint32_t, which wraps modulo 2^32 as GCM's inc32 does, and the "
+        "offsets are size_t products of an index below the caller's count. The "
+        "assembly branches on nothing and addresses memory at a pointer the C "
+        "passes plus a constant. bin/aes_equiv_test holds both copies to "
+        "SP 800-38D computed on quic_aes_soft.c and a bitwise GHASH, under "
+        "AES-128 and AES-256, and bin/ghash_equiv_test holds them to gcm.c's "
+        "portable AEAD, which the gcm_safety and ghash harnesses prove. Delete "
+        "this entry if a harness can ever compile the file."
+    ),
+    "gcm_arm64_eor3.c": (
+        "gcm_arm64.c compiled once more with GCM_ARM64_EOR3, which changes "
+        "the assembly's exclusive-ors to EOR3 and the entries' names and adds "
+        "no C line: the entry for gcm_arm64.c holds for it. Delete this entry "
+        "with that one."
+    ),
     "gcm_vaes.c": (
         "an x86-64 host object's AES-GCM kernels, gcm_hw.c's three loops two "
         "blocks to a 256-bit register on the VAES, VPCLMULQDQ and AVX2 "

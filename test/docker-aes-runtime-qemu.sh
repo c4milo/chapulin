@@ -14,7 +14,7 @@
 # lint-stack-run for the x86-64 host object that holds that kernel, and
 # bin/sha2_equiv_test alone as clang builds it for x86-64, which
 # measures the stack the two SHA-512 compression functions write under
-# the compiler whose frames are the deepest; "arm64-hash-count" the two
+# the compiler whose frames are the deepest; "arm64-hash-count" the three
 # counting binaries for arm64, which alone compiles the SHA-512 entries;
 # "p256-equiv" bin/p256_equiv_test alone, for x86-64 and for arm64,
 # which holds the wide P-256 files to the files under their own names on

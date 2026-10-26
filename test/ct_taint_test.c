@@ -230,41 +230,45 @@ static void case_chacha20_poly1305(uint32_t cpu) {
     check(opened == 0, "chacha20-poly1305 refusal");
 }
 
+// The longest text case_aes_gcm seals: 32 passes of 8 blocks and a partial block, so on arm64 the
+// passes run two at a time (gcm_arm64_passes.h, docs/decisions.md 158).
+#define AES_GCM_TEXT_MAX 4200
+
 // AES-GCM under a traffic key, AES-128 and AES-256, on the instructions the session's
-// CH_CPU_CONSTANT_TIME_AES names. A session without the bit holds no AES-GCM traffic key
-// (suite.h), so the case runs only under the bit. The table cipher runs QUIC's public keys alone
-// (INV-26), and no case here gives it a key.
-static void case_aes_gcm(uint32_t cpu, size_t key_len) {
+// CH_CPU_CONSTANT_TIME_AES names, over n bytes of text. A session without the bit holds no AES-GCM
+// traffic key (suite.h), so the case runs only under the bit. The table cipher runs QUIC's public
+// keys alone (INV-26), and no case here gives it a key.
+static void case_aes_gcm(uint32_t cpu, size_t key_len, size_t n) {
     if ((cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
         return;
     }
     uint8_t key[32];
     uint8_t nonce[AES_IV];
     uint8_t aad[13];
-    uint8_t pt[600];
-    uint8_t ct[600];
-    uint8_t back[600];
+    static uint8_t pt[AES_GCM_TEXT_MAX];
+    static uint8_t ct[AES_GCM_TEXT_MAX];
+    static uint8_t back[AES_GCM_TEXT_MAX];
     uint8_t tag[GCM_TAG];
     fill(key, sizeof key, 10);
     fill(nonce, sizeof nonce, 11);
     fill(aad, sizeof aad, 12);
-    fill(pt, sizeof pt, 13);
+    fill(pt, n, 13);
     aes_traffic_key k;
     CT_SECRET(key, sizeof key);
-    CT_SECRET(pt, sizeof pt);
+    CT_SECRET(pt, n);
     aes_traffic_key_init_cpu(&k, cpu, key, key_len);
-    gcm_traffic_seal(&k, nonce, aad, sizeof aad, pt, sizeof pt, ct, tag);
+    gcm_traffic_seal(&k, nonce, aad, sizeof aad, pt, n, ct, tag);
     // Public: the ciphertext and the tag travel in the record.
-    CT_PUBLIC(ct, sizeof ct);
+    CT_PUBLIC(ct, n);
     CT_PUBLIC(tag, sizeof tag);
-    int opened = gcm_traffic_open(&k, nonce, aad, sizeof aad, ct, sizeof ct, tag, back);
+    int opened = gcm_traffic_open(&k, nonce, aad, sizeof aad, ct, n, tag, back);
     // Public: the verdict is the one the record layer acts on.
     CT_PUBLIC(&opened, sizeof opened);
-    CT_PUBLIC(back, sizeof back);
-    CT_PUBLIC(pt, sizeof pt);
-    check(opened == 1 && memcmp(back, pt, sizeof pt) == 0, "aes-gcm open");
+    CT_PUBLIC(back, n);
+    CT_PUBLIC(pt, n);
+    check(opened == 1 && memcmp(back, pt, n) == 0, "aes-gcm open");
     tag[0] ^= 1;
-    opened = gcm_traffic_open(&k, nonce, aad, sizeof aad, ct, sizeof ct, tag, back);
+    opened = gcm_traffic_open(&k, nonce, aad, sizeof aad, ct, n, tag, back);
     CT_PUBLIC(&opened, sizeof opened);
     check(opened == 0, "aes-gcm refusal");
     ct_wipe(&k, sizeof k);
@@ -299,8 +303,10 @@ int main(int argc, char **argv) {
     case_key_schedule(cpu, SHA256_LEN);
     case_key_schedule(cpu, SHA384_LEN);
     case_chacha20_poly1305(cpu);
-    case_aes_gcm(cpu, AES_128_KEY);
-    case_aes_gcm(cpu, AES_256_KEY);
+    case_aes_gcm(cpu, AES_128_KEY, 600);
+    case_aes_gcm(cpu, AES_256_KEY, 600);
+    case_aes_gcm(cpu, AES_128_KEY, AES_GCM_TEXT_MAX);
+    case_aes_gcm(cpu, AES_256_KEY, AES_GCM_TEXT_MAX);
     case_base64_key_file();
     failures += ct_taint_public_key_cases(cpu);
     if (failures != 0) {

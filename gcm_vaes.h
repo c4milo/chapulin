@@ -80,7 +80,9 @@ static inline int gcm_use_vaes(uint8_t cpu) {
 // first: on x86-64 the kernel of the same shape where gcm_use_vaes says
 // so, and gcm_hw.c's 128-bit loop for every other value and on arm64,
 // which has no such kernel. One branch a call, on a value that is not
-// secret, and no function pointer, as widemul.h picks a multiply.
+// secret, and no function pointer, as widemul.h picks a multiply. The
+// seal and the open exist on x86-64 alone: on arm64 gcm.c runs the whole
+// AEAD on gcm_arm64.h's entries.
 static inline void gcm_counter_blocks_cpu(uint8_t cpu, const uint8_t *round_keys, size_t rounds,
                                           uint8_t counter[AES_BLOCK], const uint8_t *in,
                                           size_t blocks, uint8_t *out) {
@@ -95,18 +97,15 @@ static inline void gcm_counter_blocks_cpu(uint8_t cpu, const uint8_t *round_keys
     gcm_counter_blocks_hw(round_keys, rounds, counter, in, blocks, out);
 }
 
+#ifdef __x86_64__
 static inline void gcm_seal_passes_cpu(uint8_t cpu, const uint8_t *round_keys, size_t rounds,
                                        uint8_t counter[AES_BLOCK], uint8_t acc[AES_BLOCK],
                                        const uint8_t subkey[AES_BLOCK], const uint8_t *in,
                                        size_t passes, uint8_t *out) {
-#ifdef __x86_64__
     if (gcm_use_vaes(cpu)) {
         gcm_seal_passes_vaes(round_keys, rounds, counter, acc, subkey, in, passes, out);
         return;
     }
-#else
-    (void)cpu;
-#endif
     gcm_seal_passes_hw(round_keys, rounds, counter, acc, subkey, in, passes, out);
 }
 
@@ -114,16 +113,13 @@ static inline void gcm_open_passes_cpu(uint8_t cpu, const uint8_t *round_keys, s
                                        uint8_t counter[AES_BLOCK], uint8_t acc[AES_BLOCK],
                                        const uint8_t subkey[AES_BLOCK], const uint8_t *in,
                                        size_t passes, uint8_t *out) {
-#ifdef __x86_64__
     if (gcm_use_vaes(cpu)) {
         gcm_open_passes_vaes(round_keys, rounds, counter, acc, subkey, in, passes, out);
         return;
     }
-#else
-    (void)cpu;
-#endif
     gcm_open_passes_hw(round_keys, rounds, counter, acc, subkey, in, passes, out);
 }
+#endif // __x86_64__
 
 #endif // CH_CPU_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
