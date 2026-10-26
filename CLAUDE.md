@@ -148,7 +148,14 @@ Home: github.com/c4milo.
   more to sample the matrix on it, an x86-64 session whose caller sets
   CH_CPU_AVX2), and with `keccak_hw.h`, `mlkem_hw.c` and
   `mlkem_poly_hw.c` (the two files compiled once more over
-  `sha3_hw.c`) ← `hkdf.[ch]`
+  `sha3_hw.c`) + `mldsa.[ch]`/`mldsa_poly.[ch]` with `mldsa_zetas.h`
+  (ML-DSA-87 verification, FIPS 204, over public inputs alone and so
+  with no constant-time burden: the matrix A sampled one entry at a
+  time, every polynomial function total over int32_t, and `mldsa.c`
+  under its own measured stack ceiling `STACK_BUDGET_MLDSA`; test
+  binaries alone compile them until TRUST=raw-mldsa and TRUST=ca-mldsa
+  package them, under PROFILE=cnsa2 alone, docs/decisions.md 154)
+  ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) with `hash_hw.h`, `hkdf_hw.c` and `keysched_hw.c` (`hkdf.c`
   and `keysched.c` compiled once more over the hash instructions, a host
