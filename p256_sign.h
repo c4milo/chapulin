@@ -65,8 +65,9 @@
 //
 // Not covered, first: the outputs. r and s are public -- they go on the
 // wire -- so the DER writer's leading-zero handling reads their values
-// and their lengths, and the two checks that reject a zero r or s are
-// ordinary branches. Nothing there reads the key or the nonce.
+// and their lengths. The writer runs only after both checks passed, so it
+// never reads a pair that a check refused (docs/decisions.md 155).
+// Nothing there reads the key or the nonce.
 //
 // Not covered, second: whether the configured key is in range. A key at
 // or above the group order, or zero, makes p256_sign_key_ok answer 0 and

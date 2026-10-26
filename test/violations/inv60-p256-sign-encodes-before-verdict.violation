@@ -1,0 +1,43 @@
+invariant: INV-60
+file: p256_sign.c
+catches: test/ct-taint.sh
+reason: write_if_checked writes the DER of r and s before it reads the
+  checks' verdict, so write_integer branches on the leading bytes of a
+  pair that a check refused and that never leaves the signer. The bytes
+  are still secret there, and Memcheck reports the branch in both P-256
+  signers' cases (docs/decisions.md 155)
+
+--- old
+    CT_DECLASSIFY(&checked, sizeof checked);
+    if (checked == 0) {
+        return 0;
+    }
+    CT_DECLASSIFY(r, P256_SCALAR_LEN);
+    CT_DECLASSIFY(s, P256_SCALAR_LEN);
+    uint8_t candidate[P256_SIG_MAX];
+    size_t candidate_len = 0;
+    // The array holds the longest signature, so write_signature never refuses.
+    int rc =
+        write_signature(candidate, sizeof candidate, &candidate_len, r, s) && candidate_len <= cap;
+    if (rc) {
+        memcpy(sig, candidate, candidate_len);
+        *sig_len = candidate_len;
+    }
+    ct_wipe(candidate, sizeof candidate);
+    return rc;
+--- new
+    uint8_t candidate[P256_SIG_MAX];
+    size_t candidate_len = 0;
+    int rc =
+        write_signature(candidate, sizeof candidate, &candidate_len, r, s) && candidate_len <= cap;
+    CT_DECLASSIFY(&checked, sizeof checked);
+    if (checked == 0) {
+        ct_wipe(candidate, sizeof candidate);
+        return 0;
+    }
+    if (rc) {
+        memcpy(sig, candidate, candidate_len);
+        *sig_len = candidate_len;
+    }
+    ct_wipe(candidate, sizeof candidate);
+    return rc;

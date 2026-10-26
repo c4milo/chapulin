@@ -131,6 +131,7 @@
         "p256_scalar.h",
         "p256_sign.c",
         "p256_sign.h",
+        "p256_sign_der.h",
         "p256_wide_field.c",
         "p256_wide_field.h",
         "p256_wide_inverse.c",

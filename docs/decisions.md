@@ -13797,25 +13797,30 @@ does nothing more.
       caller sees. In the library, at `ct.h`'s `CT_DECLASSIFY`, for a
       verdict the code branches on before it returns: the AEAD tag
       checks, P-256's range checks, the signers' key tests, nonce
-      verdict and check verdicts, the noise and salt assertions, r and s,
-      and ML-KEM's rho, which ek publishes. The tag checks and the two
-      assertions take `ct_memeq_public`, `ct_memeq` with its verdict
-      marked public. Each call states its reason.
+      verdict and check verdicts, the noise and salt assertions, r and s
+      once the check verdict passed, and ML-KEM's rho, which ek
+      publishes. The tag checks and the two assertions take
+      `ct_memeq_public`, `ct_memeq` with its verdict marked public. Each
+      call states its reason.
       The macro expands to nothing without `-DCH_CT_TAINT`, and the
       Makefile refuses that define for every build but the test binary.
       So the packaged object holds no client request, and the proofs,
       the lints and the counts read the code they read before. No
       Valgrind suppression file exists.
-    - **What it found.** No branch and no address on a secret, past the
-      verdicts and the published values above. One order is for Camilo
-      to rule on. `sign_digest` in `p256_sign.c` encodes r and s as DER
-      before `write_if_checked` reads the check verdict, and
-      `write_integer` branches on their leading bytes. For a pair that a
-      check refused, which never leaves the signer, the time of the
-      encoding still depends on how many leading bytes of r and s are
-      zero. The lane marks r and s public at the encoding, which is true
-      of every pair that passes. Encoding after the verdict removes the
-      branch on a refused pair.
+    - **What it found.** One branch on a secret, past the verdicts and
+      the published values above. `sign_digest` in `p256_sign.c` encoded
+      r and s as DER before `write_if_checked` read the check verdict,
+      and `write_integer` branches on their leading bytes. So for a pair
+      that a check refused, which never leaves the signer, the time of the
+      encoding depended on how many leading bytes of r and s were zero.
+      Camilo ruled on 2026-10-25 that the DER is written only after both
+      checks passed. `write_if_checked` now takes r and s, reads the
+      verdict, and only then encodes the pair and copies it, so a refused
+      pair is never encoded. The lane marks r and s public after the
+      verdict alone, and `inv60-p256-sign-encodes-before-verdict`, which
+      encodes before the verdict again, fails it. The DER writer moved
+      to `p256_sign_der.h`, which `p256_sign.c` alone includes, to keep
+      the file under 500 lines.
     - **Where it runs.** CI's arm64 job runs `make ct-taint` under gcc
       and under the pinned clang. CI's x86-64 kernels job runs it under
       gcc on a CPU with AVX2. The nightly's invariant jobs run the two

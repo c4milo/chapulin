@@ -1813,8 +1813,9 @@ last `ROLE=server` stub, as the entry said it would.
   `ct_memeq`.
   Both are constant time in k, d and k·G: no branch and no index reads
   them, and their verdicts are masks that `compute_signature` combines.
-  `write_if_checked` is the one function that writes a signature, and it
-  copies the candidate only on the combined verdict. The candidate is
+  `write_if_checked` is the one function that writes a signature. It
+  encodes r and s and copies the DER only on the combined verdict, so a
+  pair that a check refused is never encoded (decision 155). r and s are
   wiped on either verdict. CH_ASSERT refuses all-zero noise, which a
   source that wrote nothing leaves after `rand_draw`.
 - **What it misses.** A fault that moves k·G to another point of the
@@ -4741,7 +4742,9 @@ last `ROLE=server` stub, as the entry said it would.
   `inv60-ct-memeq-returns-early` makes `ct_memeq` return at the first
   byte that differs, and `inv60-x25519-wide-table-read-by-digit` makes
   the wide field's key generation read the one table entry its secret
-  digit names. `test/ct-taint.sh` fails on each.
+  digit names. `inv60-p256-sign-encodes-before-verdict` writes an ECDSA
+  signature's DER before the checks' verdict again. `test/ct-taint.sh`
+  fails on each.
 - **Violation.** A PR replaces a mask with an `if` on a secret bit, and
   the compiler writes a jump for it. Or a PR looks up a secret byte in a
   table for speed.

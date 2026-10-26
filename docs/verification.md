@@ -3857,8 +3857,8 @@ What it checks:
   `ct_memeq`'s verdict, or a `CT_PUBLIC` call in the test. Each states
   its reason. The library's calls mark the tag verdicts of `aead.c` and
   `gcm.c`; the range verdicts of `p256_ecdh.c`; the key test, the nonce
-  verdict, the noise assertion, r and s at the DER writer and the check
-  verdict of `p256_sign.c`; the salt assertion and the 64-bit signer's
+  verdict, the noise assertion, the check verdict, and r and s once that
+  verdict passed, of `p256_sign.c`; the salt assertion and the 64-bit signer's
   key test in `rsa_sign.c`; the check verdict of `rsa_sign64.c`; and rho
   in `mlkem.c`'s key generation, which ek publishes.
 

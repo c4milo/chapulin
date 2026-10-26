@@ -2,8 +2,9 @@
 // constant-time claim and the one stated narrowing against RFC 6979).
 // Four things live here and nothing else: the RFC 6979 nonce generator
 // with its hedged form, the scalar operations that make s, the two checks
-// of a signature, and the DER writer. The arithmetic is p256_scalar.c's
-// and p256_point.c's.
+// of a signature, and the copy of a signature that passed them. The DER
+// writer is p256_sign_der.h's. The arithmetic is p256_scalar.c's and
+// p256_point.c's.
 #include "p256_sign.h"
 
 #include <string.h>
@@ -13,6 +14,7 @@
 #include "ct.h"
 #include "p256_point.h"
 #include "p256_scalar.h"
+#include "p256_sign_der.h"
 #include "sha256.h"
 #include "widemul.h"
 
@@ -237,53 +239,6 @@ static uint32_t derive_nonce(uint32_t cpu, p256_scalar *k, const uint8_t priv[P2
     return found;
 }
 
-// One DER INTEGER holding a 32-byte big-endian scalar, minimal-length
-// per X.690 §8.3: leading zero bytes are dropped, and one zero byte is
-// written back when the top bit of the first content byte is set. The
-// value is r or s, both of which go on the wire, so reading their bytes
-// here leaks nothing that the signature does not already carry.
-static void write_integer(wbuf *w, const uint8_t value[P256_SCALAR_LEN]) {
-    CT_DECLASSIFY(value, P256_SCALAR_LEN);
-    size_t lead = 0;
-    while (lead < P256_SCALAR_LEN - 1 && value[lead] == 0) {
-        lead++;
-    }
-    size_t content_len = P256_SCALAR_LEN - lead;
-    int pad = (value[lead] & 0x80) != 0;
-    wb_u8(w, 0x02);
-    wb_u8(w, (uint8_t)(content_len + (size_t)pad));
-    if (pad) {
-        wb_u8(w, 0x00);
-    }
-    wb_bytes(w, value + lead, content_len);
-}
-
-// SEQUENCE { INTEGER r, INTEGER s }. The body is at most 70 bytes, so
-// its length always fits the short form and no definite-long header is
-// written. Returns 1 when the whole structure fit in cap.
-static int write_signature(uint8_t *sig, size_t cap, size_t *sig_len,
-                           const uint8_t r[P256_SCALAR_LEN], const uint8_t s[P256_SCALAR_LEN]) {
-    uint8_t body[P256_SIG_MAX];
-    wbuf inner;
-    wbuf outer;
-
-    wb_init(&inner, body, sizeof body);
-    write_integer(&inner, r);
-    write_integer(&inner, s);
-    if (inner.err) {
-        return 0;
-    }
-    wb_init(&outer, sig, cap);
-    wb_u8(&outer, 0x30);
-    wb_u8(&outer, (uint8_t)inner.len);
-    wb_bytes(&outer, body, inner.len);
-    if (outer.err) {
-        return 0;
-    }
-    *sig_len = outer.len;
-    return 1;
-}
-
 // s = k^-1 * (z + r*d) mod n, every step through p256_scalar.c, each
 // multiply under the answer widemul (widemul.h).
 static void signature_scalar(uint8_t widemul, p256_scalar *s, const p256_scalar *k,
@@ -385,30 +340,43 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
     return usable != 0;
 }
 
-// sig = candidate when checked is all ones and candidate fits cap, and no
-// byte of sig otherwise; returns 1 when it wrote. This is the one place
-// the file writes a signature, and proof/p256_sign_harness.c proves that
-// sig and *sig_len keep what they held unless both checks passed. The
-// verdict is what the caller sees, so the branch on it tells no more.
-static int write_if_checked(uint32_t checked, const uint8_t *candidate, size_t candidate_len,
-                            uint8_t *sig, size_t cap, size_t *sig_len) {
+// sig = the DER of r and s when checked is all ones and the DER fits cap,
+// and no byte of sig otherwise; returns 1 when it wrote. This is the one
+// place the file writes a signature, and proof/p256_sign_harness.c proves
+// that sig and *sig_len keep what they held unless both checks passed.
+// The verdict is what the caller sees, so the branch on it tells no more.
+// The DER writer branches on the leading bytes of r and s, so it runs only
+// after the verdict, on a pair that goes on the wire: a pair that a check
+// refused is never encoded (docs/decisions.md 155). The DER goes to an
+// array of this function's own first, which is wiped.
+static int write_if_checked(uint32_t checked, const uint8_t r[P256_SCALAR_LEN],
+                            const uint8_t s[P256_SCALAR_LEN], uint8_t *sig, size_t cap,
+                            size_t *sig_len) {
     CT_DECLASSIFY(&checked, sizeof checked);
-    int fits = candidate_len <= cap;
-    if (checked != 0 && fits) {
+    if (checked == 0) {
+        return 0;
+    }
+    CT_DECLASSIFY(r, P256_SCALAR_LEN);
+    CT_DECLASSIFY(s, P256_SCALAR_LEN);
+    uint8_t candidate[P256_SIG_MAX];
+    size_t candidate_len = 0;
+    // The array holds the longest signature, so write_signature never refuses.
+    int rc =
+        write_signature(candidate, sizeof candidate, &candidate_len, r, s) && candidate_len <= cap;
+    if (rc) {
         memcpy(sig, candidate, candidate_len);
         *sig_len = candidate_len;
-        return 1;
     }
-    return 0;
+    ct_wipe(candidate, sizeof candidate);
+    return rc;
 }
 
 // p256_sign's contract, with the multiplies under widemul and the nonce
 // generator's HMACs on the path cpu picks (generator_hmac). noise is NULL
 // for the RFC 6979 nonce and P256_NOISE_LEN bytes for the hedged one
-// (derive_nonce). The DER signature goes to a candidate array first, and
-// to sig only after both checks passed (write_if_checked). The candidate
-// is wiped on either verdict: one that failed is what a fault made of the
-// nonce or of the key.
+// (derive_nonce). r and s are encoded and copied to sig only after both
+// checks passed (write_if_checked), and are wiped on either verdict: a
+// pair that failed is what a fault made of the nonce or of the key.
 static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
                        const uint8_t msg_hash[32], const uint8_t *noise, uint8_t *sig, size_t cap,
                        size_t *sig_len) {
@@ -418,8 +386,6 @@ static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PR
     uint8_t z_octets[P256_SCALAR_LEN];
     uint8_t r_bytes[P256_SCALAR_LEN];
     uint8_t s_bytes[P256_SCALAR_LEN];
-    uint8_t candidate[P256_SIG_MAX];
-    size_t candidate_len = 0;
     int rc = 0;
 
     // The key must be in [1, n-1]. This branch reads the configured key,
@@ -439,10 +405,7 @@ static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PR
 
     if (derive_nonce(cpu, &k, priv, z_octets, noise)) {
         uint32_t checked = compute_signature(widemul, &k, &d, &z, r_bytes, s_bytes);
-        // The candidate holds the longest signature, so this never refuses.
-        if (write_signature(candidate, sizeof candidate, &candidate_len, r_bytes, s_bytes)) {
-            rc = write_if_checked(checked, candidate, candidate_len, sig, cap, sig_len);
-        }
+        rc = write_if_checked(checked, r_bytes, s_bytes, sig, cap, sig_len);
     }
 
     ct_wipe(&d, sizeof d);
@@ -453,7 +416,6 @@ static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PR
     // changed must not stay on the stack, so both are wiped.
     ct_wipe(r_bytes, sizeof r_bytes);
     ct_wipe(s_bytes, sizeof s_bytes);
-    ct_wipe(candidate, sizeof candidate);
     return rc;
 }
 

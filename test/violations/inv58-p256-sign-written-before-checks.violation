@@ -1,16 +1,39 @@
 invariant: INV-58
 file: p256_sign.c
 catches: p256_sign_fault_test
-reason: write_if_checked copies the candidate to sig before it reads the
+reason: write_if_checked copies the signature to sig before it reads the
   checks' verdict, so a signature that failed a check is in the caller's
   buffer when the call returns 0. A caller that ignores the return value
   sends it. bin/p256_sign_fault_test requires every byte of sig as it was
   after each refused fault.
 
 --- old
-    int fits = candidate_len <= cap;
---- new
-    int fits = candidate_len <= cap;
-    if (fits) {
-        memcpy(sig, candidate, candidate_len);
+    CT_DECLASSIFY(&checked, sizeof checked);
+    if (checked == 0) {
+        return 0;
     }
+    CT_DECLASSIFY(r, P256_SCALAR_LEN);
+    CT_DECLASSIFY(s, P256_SCALAR_LEN);
+    uint8_t candidate[P256_SIG_MAX];
+    size_t candidate_len = 0;
+    // The array holds the longest signature, so write_signature never refuses.
+    int rc =
+        write_signature(candidate, sizeof candidate, &candidate_len, r, s) && candidate_len <= cap;
+    if (rc) {
+        memcpy(sig, candidate, candidate_len);
+        *sig_len = candidate_len;
+    }
+    ct_wipe(candidate, sizeof candidate);
+    return rc;
+--- new
+    uint8_t candidate[P256_SIG_MAX];
+    size_t candidate_len = 0;
+    int rc =
+        write_signature(candidate, sizeof candidate, &candidate_len, r, s) && candidate_len <= cap;
+    if (rc) {
+        memcpy(sig, candidate, candidate_len);
+        *sig_len = candidate_len;
+    }
+    ct_wipe(candidate, sizeof candidate);
+    CT_DECLASSIFY(&checked, sizeof checked);
+    return rc && checked != 0;
