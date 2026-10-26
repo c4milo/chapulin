@@ -334,14 +334,20 @@ m3-check:
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/x509strict_test $(X509STRICT_RSA_SRCS)
 	$(M3_CC) $(M3_FLAGS) -DCH_PIN_ECDSA -I. -o bin/m3/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
 	# No QUIC transport is defined here, so test/wycheproof_test.c runs no
-	# AES-GCM suite and the line leaves aes.c and gcm.c out.
+	# AES-GCM suite and the line leaves aes.c and gcm.c out. The 4 MB image
+	# cannot hold every suite at once, so the ML-DSA-87 suites run in a
+	# binary of their own (docs/decisions.md 154).
 	@$(call wycheproof_fetch,m3 wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -I. -Ibin -o bin/m3/wycheproof_test test/wycheproof_test.c \
-	  $(filter-out aes.c gcm.c,$(WYCHEPROOF_SRCS))
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -DWYCHEPROOF_NO_MLDSA -I. -Ibin \
+	  -o bin/m3/wycheproof_test test/wycheproof_test.c $(filter-out aes.c gcm.c,$(WYCHEPROOF_SRCS)) && \
+	$(M3_CC) $(M3_FLAGS) -I. -Ibin -Itest -o bin/m3/wycheproof_mldsa_test test/wycheproof_mldsa_test.c \
+	  $(MLDSA_TEST_SRCS)
 	@set -e; for b in unit rsa_test sha3_test sha512_test p384_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mldsa_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (m3/qemu)"; $(M3_RUN) bin/m3/$$b; done; \
-	if [ -x bin/m3/wycheproof_test ]; then echo "== wycheproof_test (m3/qemu)"; $(M3_RUN) bin/m3/wycheproof_test; fi
+	if [ -x bin/m3/wycheproof_test ]; then echo "== wycheproof_test (m3/qemu)"; $(M3_RUN) bin/m3/wycheproof_test; fi; \
+	if [ -x bin/m3/wycheproof_mldsa_test ]; then echo "== wycheproof_mldsa_test (m3/qemu)"; \
+	  $(M3_RUN) bin/m3/wycheproof_mldsa_test; fi
 
 
 

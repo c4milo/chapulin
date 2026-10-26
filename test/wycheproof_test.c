@@ -24,7 +24,10 @@
 // verifies a public chain; the device builds stop at RSA-3072.
 //
 // The ML-DSA-87 arms run every case of the verify suite and every valid
-// signature of the two signing suites (test/wycheproof_mldsa.h).
+// signature of the two signing suites (test/wycheproof_mldsa.h). The
+// Cortex-M3 lane builds this file with -DWYCHEPROOF_NO_MLDSA, because its
+// 4 MB image cannot hold every suite at once, and runs those arms in
+// test/wycheproof_mldsa_test.c instead.
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -389,7 +392,9 @@ static void run_rsa_sign(void) {
            COUNT(wp_rsa_sign), WP_RSA_SIGN_SKIPPED);
 }
 
+#ifndef WYCHEPROOF_NO_MLDSA
 #include "wycheproof_mldsa.h"
+#endif
 #include "wycheproof_mlkem.h"
 
 int main(int argc, char **argv) {
@@ -421,8 +426,10 @@ int main(int argc, char **argv) {
     run_mlkem_keygen();
     run_mlkem_encaps();
     run_mlkem_full();
+#ifndef WYCHEPROOF_NO_MLDSA
     run_mldsa_verify();
     run_mldsa_signatures();
+#endif
     if (failures) {
         printf("wycheproof: %d FAILURES\n", failures);
         return 1;
