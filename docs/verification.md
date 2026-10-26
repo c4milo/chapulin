@@ -822,12 +822,14 @@ The entries are grouped by area:
 - **Not proved:** the rest of the profile's driver. `bin/cnsa2_test`,
   `bin/cnsa2_quic_test` and the e2e tests against OpenSSL cover it. No
   harness builds `handshake_auth.c` under `CH_PIN_MLDSA`, so the
-  ML-DSA-87 CertificateVerify arm and `hsa_signed_content` rest on
+  ML-DSA-87 CertificateVerify arm rests on
   `bin/cnsa2_test_mldsa`, `bin/cnsa2_test_ca_mldsa`,
   `bin/cnsa2_tcp_nonblocking_mldsa`, `bin/cnsa2_quic_test_ca_mldsa`, the
   e2e tests against OpenSSL 3.5's ML-DSA-87 server and INV-61's mutants
   (decision 157). `bin/x509strict_mldsa` holds the certificate profile
-  under ML-DSA-87, boundary by boundary.
+  under ML-DSA-87, boundary by boundary. `Spec.X509` models that
+  profile, and `bin/diff_x509_mldsa` holds the C to it and
+  `hsa_signed_content` to `Spec.HandshakeParser.verifyContent`.
 
 ### Signatures
 
@@ -7048,6 +7050,19 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    z coefficient out of range, and `mldsa87_verify` on signatures valid
    by construction, with one bit flipped, and at contexts of 255 and 256
    bytes (decision 154).
+9. The ML-DSA-87 certificate rows, 27 comparisons a run:
+   `bin/diff_x509_mldsa` holds `x509_verify_leaf` under
+   `-DCH_PIN_MLDSA -DCH_TRUST_CA` to `Spec.X509`'s `parse .mldsa`, whose
+   signature check is `Spec.MlDsa.verify` under the empty context. The C
+   test signer makes every certificate with fresh keys a run, because the
+   spec signs no ML-DSA-87 certificate. The rows are a leaf alone and a
+   leaf under an intermediate, each under the root and under a stranger;
+   a third entry; an intermediate with the leaf's extensions; ML-DSA-65's
+   identifier and NULL parameters in each identifier; a key and a
+   signature one byte short and long; a certificate at `CH_X509_MAX` and
+   one byte over; and eight random byte flips. Two more rows hold
+   `hsa_signed_content` to `verifyContent` at both transcript hash
+   lengths (decision 157). `inv61-mldsa-signed-span-short` fails it.
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose

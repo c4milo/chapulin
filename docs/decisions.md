@@ -13935,7 +13935,8 @@ does nothing more.
       and `mldsa.c` under `STACK_BUDGET_MLDSA`, and
       `check-stack-cnsa2-ca-mldsa` runs it on the ca mode.
     - **The external PSK stays.** The rulings did not settle it, so the
-      conservative choice keeps what entry 151 shipped. A raw or ca build
+      conservative choice keeps what entry 151 shipped, and Camilo ruled
+      on 2026-10-26 to keep it. A raw or ca build
       of every other trust mode takes a PSK in place of the pin, and
       entry 151 accepted an external PSK under ML-KEM-1024 as CNSA 2.0's.
       Removing it would change a stage 2 build's behavior. `CH_TAKES_PINS`
@@ -13957,9 +13958,29 @@ does nothing more.
       floor. `bin/x509strict_mldsa` holds the certificate profile. e2e
       runs seven cases against OpenSSL 3.5's ML-DSA-87 server. The
       `x509der_mldsa`, `x509parse_mldsa` and `x509ca_mldsa` harnesses
-      prove the certificate readers, and INV-61's eight mutants each
+      prove the certificate readers, and INV-61's nine mutants each
       fail a test. `check-lib-cnsa2-mldsa` and two siblings package the
       objects, and `lint-trust-separation` holds their sources.
+
+    - **The spec.** On 2026-10-26 Camilo ruled that the commit lands
+      with its spec. `Spec.X509` takes a third `Alg`, `mldsa`: the
+      identifier `mldsaAlgId` in both places, a SPKI key of exactly
+      2592 bytes, `certMax` 7808, and `signedBytes`, which is the TBS
+      DER itself for ML-DSA-87 and its SHA-256 for the other two.
+      `checkSignature` calls `Spec.MlDsa.verify` with the empty context,
+      so the spec assumes nothing about the signature: it runs FIPS
+      204's verifier, which `bin/diff_mldsa` holds the C to. The
+      theorems: `readSpki_mldsa_size`, the 2592-byte key;
+      `parse_mldsa_signed`, that an accepted list's key came from a
+      TBSCertificate whose whole DER verified under the CA key or under
+      an intermediate the CA key verified the same way;
+      `X509Ca.caKey?_mldsa_size` for provisioning; and
+      `HandshakeParser.verifyContent_size`, the 98 octets ahead of the
+      transcript hash. `readCertificate_hash` and `parse_key_signed`
+      now state `signedBytes` for every algorithm. The spec signs no
+      ML-DSA-87 certificate, so `bin/diff_x509_mldsa` makes them with
+      the C test signer and holds `x509.c` to `parse .mldsa` on 24 rows
+      a run, and `hsa_signed_content` to `verifyContent` on two.
 
     Rejected:
 
@@ -13978,5 +13999,9 @@ does nothing more.
       with `CH_ECAP` at the Certificate.
     - **A proof of `handshake_auth.c` under `CH_PIN_MLDSA`.** The arm is
       two calls on bytes the harnesses of the other builds already prove
-      safe. The mock tests, e2e and the mutants hold it, and
-      docs/verification.md states it as not proved.
+      safe. The mock tests, e2e, the differential's content rows and the
+      mutants hold it, and docs/verification.md states it as not proved.
+    - **An ML-DSA-87 signer in the spec, to mint certificates as the RSA
+      and P-256 arms do.** Signing is the part of FIPS 204 chapulin
+      never runs, and a second signer to keep would buy no check the C
+      signer, held to Wycheproof, does not already give.

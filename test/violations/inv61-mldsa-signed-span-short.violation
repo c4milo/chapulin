@@ -1,0 +1,13 @@
+invariant: INV-61
+file: x509.c
+catches: diff_x509_mldsa
+reason: the CA walk hands ML-DSA-87 the TBSCertificate less its last
+  byte, so every signature check fails and an accepted chain is
+  refused. Spec.X509's parse .mldsa verifies the whole TBS with its
+  header, and bin/diff_x509_mldsa's accept rows find the two verdicts
+  apart.
+
+--- old
+    signed_out->tbs_len = left_at_tbs - rb_left(&r);
+--- new
+    signed_out->tbs_len = left_at_tbs - rb_left(&r) - 1;

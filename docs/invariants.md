@@ -2060,20 +2060,25 @@ last `ROLE=server` stub, as the entry said it would.
   handshake at the floor with the largest Certificate it admits.
   `bin/cnsa2_quic_test_ca_mldsa` runs the pin rule and the chains over
   QUIC. `bin/x509strict_mldsa` holds the profile's boundaries under
-  ML-DSA-87. e2e runs both modes against OpenSSL 3.5. The
+  ML-DSA-87. `Spec.X509`'s `parse_mldsa_signed` proves that `parse
+  .mldsa` reports a 2592-byte key only after `Spec.MlDsa.verify` accepted
+  the TBS DER, header included, and `bin/diff_x509_mldsa` holds `x509.c`
+  to `parse .mldsa` and `hsa_signed_content` to `verifyContent`. e2e runs
+  both modes against OpenSSL 3.5. The
   `x509der_mldsa`, `x509parse_mldsa` and `x509ca_mldsa` harnesses prove
   the certificate readers memory-safe under `CH_PIN_MLDSA`.
 - **Violation.** A PR drops the NUL from the signed content; verifies a
   certificate over the TBS content without its header; lets the SPKI
   reader take a key of any length; takes a pin longer than 2592 bytes
   over TCP or QUIC; checks a CA build's CertificateVerify under the
-  pinned CA key; keeps the 512-byte raw floor; or builds the values
-  outside the profile. `inv61-mldsa-content-drops-nul`,
+  pinned CA key; keeps the 512-byte raw floor; hands ML-DSA-87 a TBS one
+  byte short; or builds the values outside the profile. `inv61-mldsa-content-drops-nul`,
   `inv61-mldsa-pin-length-at-least` and `inv61-mldsa-raw-floor-512`
   fail `bin/cnsa2_test_mldsa`, `inv61-mldsa-ca-cv-under-pin` fails
   `bin/cnsa2_test_ca_mldsa`, `inv61-mldsa-quic-pin-length-at-least`
   fails `bin/cnsa2_quic_test_ca_mldsa`, `inv61-mldsa-tbs-without-header`
-  and `inv61-mldsa-spki-any-length` fail `bin/x509strict_mldsa`, and
+  and `inv61-mldsa-spki-any-length` fail `bin/x509strict_mldsa`,
+  `inv61-mldsa-signed-span-short` fails `bin/diff_x509_mldsa`, and
   `inv61-mldsa-outside-profile` fails `lint-trust-separation`.
 
 ### INV-59 — mldsa87_verify accepts exactly FIPS 204's valid ML-DSA-87 signatures

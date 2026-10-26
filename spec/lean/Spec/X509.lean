@@ -2,6 +2,7 @@ import Spec.Bytes
 import Spec.Sha256
 import Spec.Rsa
 import Spec.P256
+import Spec.MlDsa
 import Spec.X509Der
 
 /-!
@@ -45,6 +46,9 @@ inductive Alg
   | rsa
   /-- ECDSA over NIST P-256 with SHA-256 (FIPS 186-4). -/
   | p256
+  /-- Pure ML-DSA-87 (FIPS 204) over the TBSCertificate itself, with an
+  empty context (RFC 9881 §2), PROFILE=cnsa2's TRUST=ca-mldsa. -/
+  | mldsa
 deriving BEq
 
 /-- Input cap: the largest certificate the profile admits, per
@@ -53,11 +57,13 @@ overridable per build; the spec models the defaults. -/
 def certMax : Alg → Nat
   | .p256 => 768
   | .rsa => 1536
+  | .mldsa => 7808
 
 /-- The line protocol's algorithm token. -/
 def algOf? : String → Option Alg
   | "rsa" => some .rsa
   | "p256" => some .p256
+  | "mldsa" => some .mldsa
   | _ => none
 
 /-- The CA signing key the oracle mints with: RSA modulus, private
@@ -96,12 +102,18 @@ absent or NULL; the profile admits exactly one). -/
 def sha256AlgNull : ByteArray :=
   tlv 0x30 (tlv 0x06 (hexConst "608648016503040201") ++ hexConst "0500")
 
+/-- id-ml-dsa-87, 2.16.840.1.101.3.4.3.19, with its parameters absent:
+RFC 9881 §2 names the one AlgorithmIdentifier for both the signature
+and the SubjectPublicKeyInfo. -/
+def mldsaAlgId : ByteArray := tlv 0x30 (tlv 0x06 (hexConst "608648016503040313"))
+
 /-- The build's one signature AlgorithmIdentifier. P-256:
 ecdsa-with-SHA256, parameters absent (RFC 5758 §3.2). RSA: RSASSA-PSS
 with SHA-256 in both hash slots, MGF1, saltLength 32, trailerField
-absent (RFC 4055 §3.1). -/
+absent (RFC 4055 §3.1). ML-DSA-87: `mldsaAlgId`. -/
 def sigAlg : Alg → ByteArray
   | .p256 => tlv 0x30 (tlv 0x06 (hexConst "2a8648ce3d040302"))
+  | .mldsa => mldsaAlgId
   | .rsa =>
     tlv 0x30 (tlv 0x06 (hexConst "2a864886f70d01010a") ++
       tlv 0x30 (tlv 0xa0 sha256AlgNull ++
@@ -109,11 +121,12 @@ def sigAlg : Alg → ByteArray
         tlv 0xa2 (tlv 0x02 (hexConst "20"))))
 
 /-- SubjectPublicKeyInfo AlgorithmIdentifier: rsaEncryption with its
-mandatory NULL parameters (RFC 3279 §2.3.1), or id-ecPublicKey with
-prime256v1 (RFC 5480 §2.1.1). -/
+mandatory NULL parameters (RFC 3279 §2.3.1), id-ecPublicKey with
+prime256v1 (RFC 5480 §2.1.1), or `mldsaAlgId` (RFC 9881 §2). -/
 def spkiAlgId : Alg → ByteArray
   | .rsa => tlv 0x30 (tlv 0x06 (hexConst "2a864886f70d010101") ++ hexConst "0500")
   | .p256 => tlv 0x30 (tlv 0x06 (hexConst "2a8648ce3d0201") ++ tlv 0x06 (hexConst "2a8648ce3d030107"))
+  | .mldsa => mldsaAlgId
 
 /-- publicExponent: 65537 and nothing else (the profile's fixed `e`). -/
 def rsaExponent : ByteArray := hexConst "0203010001"
@@ -186,7 +199,9 @@ def padOidExtensions : ByteArray :=
 bytes. RSA (RFC 3279 §2.3.1): modulus content is the required 0x00 pad
 plus a value of 256..384 bytes, a multiple of 8, top byte's bit set,
 odd; exponent exactly 65537. P-256 (RFC 5480 §2.2): BIT STRING with 0
-unused bits holding uncompressed 0x04‖X‖Y. -/
+unused bits holding uncompressed 0x04‖X‖Y. ML-DSA-87 (RFC 9881 §3):
+BIT STRING with 0 unused bits holding the whole 2592-byte public key,
+which pkDecode reads at any value (FIPS 204 Algorithm 23). -/
 def readSpki (alg : Alg) (b : ByteArray) (off : Nat) : Option (ByteArray × Nat) := do
   let (body, off') ← readTlv b off 0x30
   let o1 ← matchAt body 0 (spkiAlgId alg)
@@ -197,6 +212,9 @@ def readSpki (alg : Alg) (b : ByteArray) (off : Nat) : Option (ByteArray × Nat)
     guard (bits.size == 66)
     guard (bits[0]! == 0 ∧ bits[1]! == 0x04)
     some (bits.extract 2 66, off')
+  | .mldsa => do
+    guard (bits.size == Spec.MlDsa.pkLen + 1 ∧ bits[0]! == 0)
+    some (bits.extract 1 bits.size, off')
   | .rsa => do
     guard (bits.size ≠ 0 ∧ bits[0]! == 0) -- 0 unused bits
     let inner := bits.extract 1 bits.size
@@ -293,12 +311,21 @@ def readTbs (alg : Alg) (isCa : Bool) (tbs : ByteArray) : Option (ByteArray × O
   guard (if isCa then seen &&& 1 == 1 ∧ seen &&& 4 == 4 else seen &&& 1 == 1 ∧ seen &&& 2 == 2)
   some (key, epoch)
 
-/-- The CA signature over the exact TBSCertificate bytes: RSASSA-PSS
-(RFC 8017 §8.1.2, e = 65537) against the modulus bytes, or ECDSA
-(SEC 1 v2 §4.1.4) against the X‖Y point after canonical
-ECDSA-Sig-Value decoding. -/
+/-- What a CA's signature covers, given the complete DER of the
+TBSCertificate (RFC 5280 §4.1.1.3): RSASSA-PSS and ECDSA sign its
+SHA-256, and pure ML-DSA-87 signs the bytes themselves (FIPS 204
+Algorithm 2, RFC 9881 §2). -/
+def signedBytes : Alg → ByteArray → ByteArray
+  | .mldsa, tbsDer => tbsDer
+  | _, tbsDer => Spec.Sha256.sha256 tbsDer
+
+/-- The CA signature over `signedBytes`: RSASSA-PSS (RFC 8017 §8.1.2,
+e = 65537) against the modulus bytes, ECDSA (SEC 1 v2 §4.1.4) against
+the X‖Y point after canonical ECDSA-Sig-Value decoding, or ML-DSA-87's
+ML-DSA.Verify (FIPS 204 Algorithm 3) under the empty context. -/
 def checkSignature (alg : Alg) (caKey hash sig : ByteArray) : Bool :=
   match alg with
+  | .mldsa => Spec.MlDsa.verify caKey hash ByteArray.empty sig
   | .rsa => Spec.Rsa.pssVerify (bytesToNatBE caKey) 65537 hash sig
   | .p256 =>
     if caKey.size ≠ 64 then false
@@ -320,7 +347,7 @@ where
 signatureValue } (RFC 5280 §4.1), exact-fill at every level. The outer
 algorithm must byte-equal the pinned constant and the signature BIT
 STRING carries 0 unused bits. Returns `readTbs`'s key-and-epoch pair,
-the SHA-256 of the TBS bytes with their own header, and the
+`signedBytes` of the TBS bytes with their own header, and the
 signature — the chain step picks whose key must verify them. -/
 def readCertificate (alg : Alg) (isCa : Bool) (cert : ByteArray) :
     Option ((ByteArray × Option Nat) × ByteArray × ByteArray) := do
@@ -332,7 +359,7 @@ def readCertificate (alg : Alg) (isCa : Bool) (cert : ByteArray) :
   let (sig, o2) ← readTlv body o1 0x03
   guard (o2 == body.size)
   guard (sig.size ≥ 2 ∧ sig[0]! == 0) -- signature bits fill whole bytes
-  some (keyEpoch, Spec.Sha256.sha256 (slice body 0 tbsEnd), sig.extract 1 sig.size)
+  some (keyEpoch, signedBytes alg (slice body 0 tbsEnd), sig.extract 1 sig.size)
 
 /-- One CertificateEntry at `off` (RFC 9846 §4.5.1): u24 length,
 cert_data — at most the algorithm's `certMax` — empty (u16 0)
@@ -373,8 +400,14 @@ def parse (alg : Alg) (caKey list : ByteArray) : Option (ByteArray × Option Nat
 /-! ## Minting -/
 
 /-- SubjectPublicKeyInfo for the minted leaf: `leafKey` is the RSA
-modulus value (top bit set) or the P-256 X‖Y point. -/
+modulus value (top bit set), the P-256 X‖Y point, or the 2592-byte
+ML-DSA-87 key. No `CaKey` signs ML-DSA-87, so the spec mints no such
+certificate; the differential signs them on the C side. -/
 def mintSpki : Alg → ByteArray → Option ByteArray
+  | .mldsa, key =>
+    if key.size == Spec.MlDsa.pkLen then
+      some (tlv 0x30 (spkiAlgId .mldsa ++ tlv 0x03 (ByteArray.mk #[0] ++ key)))
+    else none
   | .p256, key =>
     if key.size == 64 then
       some (tlv 0x30 (spkiAlgId .p256 ++ tlv 0x03 (hexConst "0004" ++ key)))
@@ -458,7 +491,9 @@ variant fails on the missing EKU and the EKU-only variant on the
 missing keyUsage; the non-minimal-extnID variant fails on X.690
 §8.19.2 alone; a wrong CA key and a trailing byte fail. A minted chain parses back to the leaf key; the same chain
 fails under a wrong CA key, and a chain whose intermediate carries
-the leaf's extension arm fails on the profile. -/
+the leaf's extension arm fails on the profile. The ML-DSA-87
+identifier is the one x509.c pins, and its SPKI reader takes exactly a
+2592-byte key. -/
 def selftest (_ : Unit) : Bool :=
   let serial := hexConst "2a"
   let name := hexConst "310c300a06035504030c03636861"
@@ -517,6 +552,18 @@ def selftest (_ : Unit) : Bool :=
         | some l => (parse .p256 caPub l).isNone -- intermediate off its arm
         | none => false)
    | _, _ => false) &&
+  -- ML-DSA-87 arm: the identifier is the 13 bytes x509.c pins, and the
+  -- SPKI reader takes a 2592-byte key and refuses 2591 or 2593 bytes.
+  -- No CaKey signs ML-DSA-87, so the differential holds the signature
+  -- check against certificates the C test signer makes.
+  mldsaAlgId == hexConst "300b0609608648016503040313" &&
+  (let spkiOf := fun (key : ByteArray) =>
+     tlv 0x30 (mldsaAlgId ++ tlv 0x03 (ByteArray.mk #[0] ++ key))
+   let key := ByteArray.mk (Array.replicate 2592 0x5a)
+   mintSpki .mldsa key == some (spkiOf key) &&
+     (readSpki .mldsa (spkiOf key) 0).map Prod.fst == some key &&
+     (readSpki .mldsa (spkiOf (key.extract 0 2591)) 0).isNone &&
+     (readSpki .mldsa (spkiOf (key ++ ByteArray.mk #[0])) 0).isNone) &&
   -- RSA arm: the module's 2048-bit test key as the CA; the leaf
   -- modulus only has to satisfy the profile's shape checks.
   (let n := 0xa59931eebcc909b93406f4c6999c3b86e086bea972203cb921e806c42c0d73b87b9db6647e15753e232c1f8b8fdfac6210e9866b5eec09ffd62eacfc16b67bcd736d90dae48435130a247e054a4bf821b1c0ccd673ec3240f8686b46e22689c0ab86fd2329a8e10a0fcea94df123459a3ae4d2de6aad52b850c2955e38155be708e9f6dafdc9934e661503bc69463f962aa1f0dabb8427ce065a0f2e6e2bf7650ba0e9c4532d03fb50e5c45447090f00b1e99dd44ba351fb3c78dc2cbf7860e3285789f39a758eb8c314c493d5baf351ba82c3381e4c940574b37f891e63ed5daae377df24ab67d717d5621aa7dc87046359d5b61910ad63d01e56d9bec95a7b
@@ -648,16 +695,17 @@ theorem parse_sound (alg : Alg) (caKey list key : ByteArray) (epoch : Option Nat
     exact ⟨leafCert, o1, lh, ls, he, hslice, ho1', hc,
       Or.inr ⟨intCert, ik, iep, ih, is, by simpa using hif, hie, hislice, hio, hic, hs1, hs2⟩⟩
 
-/-- The digest an accepted certificate hands out is the SHA-256 of the
-complete DER encoding of the TBSCertificate the key came from — tag
-and length octets included, exactly the bytes RFC 5280 §4.1.1.3 says
-the signature covers. The key and epoch are `readTbs`'s reading of
-that same TBSCertificate. -/
+/-- What an accepted certificate hands the signature check is
+`signedBytes` of the complete DER encoding of the TBSCertificate the
+key came from — tag and length octets included, exactly the bytes RFC
+5280 §4.1.1.3 says the signature covers: their SHA-256 for RSA-PSS and
+ECDSA, and the bytes themselves for ML-DSA-87. The key and epoch are
+`readTbs`'s reading of that same TBSCertificate. -/
 theorem readCertificate_hash (alg : Alg) (isCa : Bool) (cert : ByteArray)
     (keyEpoch : ByteArray × Option Nat) (hash sig : ByteArray)
     (h : readCertificate alg isCa cert = some (keyEpoch, hash, sig)) :
     ∃ tbs, readTbs alg isCa tbs = some keyEpoch ∧
-      hash = Spec.Sha256.sha256 (tlv 0x30 tbs) := by
+      hash = signedBytes alg (tlv 0x30 tbs) := by
   unfold readCertificate at h
   simp only [Option.bind_eq_bind] at h
   obtain ⟨⟨body, o0⟩, hb, h⟩ := exists_of_bind_eq_some h
@@ -680,7 +728,7 @@ theorem readCertificate_hash (alg : Alg) (isCa : Bool) (cert : ByteArray)
 /--
 The chain reading of `parse_sound` (RFC 5280 §6.1). Whatever key
 `parse` reports, it came out of a TBSCertificate by `readTbs`, and the
-signature that verified is over the SHA-256 of that same
+signature that verified is over `signedBytes` of that same
 TBSCertificate's complete DER encoding — tag and length included — so
 no accepting path reports a key without checking a signature over the
 bytes that carried it.
@@ -694,14 +742,14 @@ theorem parse_key_signed (alg : Alg) (caKey list key : ByteArray) (epoch : Optio
     ∃ leafCert leafTbs leafSig signerKey,
       leafCert = slice list 3 leafCert.size ∧
       readCertificate alg false leafCert
-        = some ((key, epoch), Spec.Sha256.sha256 (tlv 0x30 leafTbs), leafSig) ∧
+        = some ((key, epoch), signedBytes alg (tlv 0x30 leafTbs), leafSig) ∧
       readTbs alg false leafTbs = some (key, epoch) ∧
-      checkSignature alg signerKey (Spec.Sha256.sha256 (tlv 0x30 leafTbs)) leafSig = true ∧
+      checkSignature alg signerKey (signedBytes alg (tlv 0x30 leafTbs)) leafSig = true ∧
       (signerKey = caKey ∨
         ∃ intCert intTbs intEpoch intSig,
           entryAt? alg list (3 + leafCert.size + 2) = some (intCert, list.size) ∧
           readTbs alg true intTbs = some (signerKey, intEpoch) ∧
-          checkSignature alg caKey (Spec.Sha256.sha256 (tlv 0x30 intTbs)) intSig = true) := by
+          checkSignature alg caKey (signedBytes alg (tlv 0x30 intTbs)) intSig = true) := by
   obtain ⟨leafCert, o1, lh, ls, _, hslice, ho1, hc, hbranch⟩ :=
     parse_sound alg caKey list key epoch h
   subst ho1
@@ -711,5 +759,84 @@ theorem parse_key_signed (alg : Alg) (caKey list key : ByteArray) (epoch : Optio
   · obtain ⟨intTbs, hit, rfl⟩ := readCertificate_hash alg true intCert (ik, iep) ih is hic
     exact ⟨leafCert, leafTbs, ls, ik, hslice, hc, hlt, hs2,
       Or.inr ⟨intCert, intTbs, iep, is, hie, hit, hs1⟩⟩
+
+/-! ## The ML-DSA-87 arm -/
+
+/-- The ML-DSA-87 arm of `readSpki` returns exactly the 2592-byte key
+(FIPS 204 Table 2, RFC 9881 §3): its guard fixes the BIT STRING at the
+key plus the unused-bits octet, and the arm returns what follows that
+octet. -/
+theorem readSpki_mldsa_size (b : ByteArray) (off : Nat) (key : ByteArray) (off' : Nat)
+    (h : readSpki .mldsa b off = some (key, off')) : key.size = Spec.MlDsa.pkLen := by
+  unfold readSpki at h
+  simp only [Option.bind_eq_bind] at h
+  obtain ⟨⟨body, bodyEnd⟩, -, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨o1, -, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨⟨bits, o2⟩, -, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨-, h⟩ := bind_guard_eq_some h
+  obtain ⟨h_bits, h⟩ := bind_guard_eq_some h
+  simp only [Option.some.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, -⟩ := h
+  have h_size : bits.size = Spec.MlDsa.pkLen + 1 := by simpa using h_bits.1
+  rw [ByteArray.size_extract, h_size]
+  omega
+
+/-- A key `readTbs` accepts is one `readSpki` read out of the same
+TBSCertificate. -/
+private theorem readTbs_spki (alg : Alg) (isCa : Bool) (tbs key : ByteArray)
+    (epoch : Option Nat) (h : readTbs alg isCa tbs = some (key, epoch)) :
+    ∃ off off', readSpki alg tbs off = some (key, off') := by
+  unfold readTbs at h
+  simp only [Option.bind_eq_bind] at h
+  obtain ⟨o1, -, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨o2, -, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨o3, -, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨⟨issuer, o4⟩, -, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨⟨validity, o5⟩, -, h⟩ := exists_of_bind_eq_some h
+  -- The two arms read notBefore apart and run the same rest.
+  cases isCa <;> simp only [Bool.false_eq_true, ↓reduceIte, Option.bind_some] at h
+  all_goals
+    obtain ⟨_, -, h⟩ := exists_of_bind_eq_some h
+    obtain ⟨_, -, h⟩ := exists_of_bind_eq_some h
+    obtain ⟨-, h⟩ := bind_guard_eq_some h
+    obtain ⟨⟨_, o6⟩, -, h⟩ := exists_of_bind_eq_some h
+    obtain ⟨⟨_, o7⟩, h_spki, h⟩ := exists_of_bind_eq_some h
+    obtain ⟨_, -, h⟩ := exists_of_bind_eq_some h
+    obtain ⟨-, h⟩ := bind_guard_eq_some h
+    obtain ⟨_, -, h⟩ := exists_of_bind_eq_some h
+    obtain ⟨-, h⟩ := bind_guard_eq_some h
+    obtain ⟨_, -, h⟩ := exists_of_bind_eq_some h
+    obtain ⟨-, h⟩ := bind_guard_eq_some h
+    simp only [Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    exact ⟨o6, o7, h_spki⟩
+
+/--
+The ML-DSA-87 reading of `parse_key_signed` (RFC 5280 §6.1, RFC 9881
+§2). A key `parse .mldsa` reports is a whole 2592-byte ML-DSA-87 key,
+read by `readTbs` out of a TBSCertificate whose complete DER — tag and
+length included, not a hash of it — verified under FIPS 204's
+ML-DSA.Verify with the empty context. The verifying key is the pinned
+CA key, or an intermediate's SPKI key out of a TBSCertificate the CA
+key verified the same way.
+-/
+theorem parse_mldsa_signed (caKey list key : ByteArray) (epoch : Option Nat)
+    (h : parse .mldsa caKey list = some (key, epoch)) :
+    key.size = Spec.MlDsa.pkLen ∧
+      ∃ leafTbs leafSig signerKey,
+        readTbs .mldsa false leafTbs = some (key, epoch) ∧
+        Spec.MlDsa.verify signerKey (tlv 0x30 leafTbs) ByteArray.empty leafSig = true ∧
+        (signerKey = caKey ∨
+          ∃ intTbs intEpoch intSig,
+            readTbs .mldsa true intTbs = some (signerKey, intEpoch) ∧
+            Spec.MlDsa.verify caKey (tlv 0x30 intTbs) ByteArray.empty intSig = true) := by
+  obtain ⟨_, leafTbs, leafSig, signerKey, -, -, h_leaf, h_verified, h_signer⟩ :=
+    parse_key_signed .mldsa caKey list key epoch h
+  obtain ⟨off, off', h_spki⟩ := readTbs_spki .mldsa false leafTbs key epoch h_leaf
+  refine ⟨readSpki_mldsa_size leafTbs off key off' h_spki,
+    leafTbs, leafSig, signerKey, h_leaf, h_verified, ?_⟩
+  rcases h_signer with h_ca | ⟨_, intTbs, intEpoch, intSig, -, h_int, h_int_verified⟩
+  · exact Or.inl h_ca
+  · exact Or.inr ⟨intTbs, intEpoch, intSig, h_int, h_int_verified⟩
 
 end Spec.X509

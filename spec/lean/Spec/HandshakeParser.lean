@@ -1172,6 +1172,17 @@ def verifyContent (transcriptHash : ByteArray) : ByteArray :=
   ByteArray.mk (Array.replicate 64 0x20) ++ ascii "TLS 1.3, server CertificateVerify"
     ++ ByteArray.mk #[0] ++ transcriptHash
 
+/-- The signed content is 98 octets ahead of the transcript hash: 64
+spaces, the 33-octet context string and its zero (RFC 9846 §4.5.2). So
+it is 146 octets over a SHA-384 transcript hash, the message pure
+ML-DSA-87 signs whole under TRUST=raw-mldsa and TRUST=ca-mldsa, which
+`hsa_signed_content` writes and the differential holds to this
+definition. -/
+theorem verifyContent_size (transcriptHash : ByteArray) :
+    (verifyContent transcriptHash).size = 98 + transcriptHash.size := by
+  simp only [verifyContent, ByteArray.size_append]
+  rfl
+
 /--
 RFC 9846 §4.5.2: `struct { SignatureScheme algorithm; opaque
 signature<0..2^16-1>; }`, filling the message exactly.

@@ -565,6 +565,15 @@ theorem readCertificate_rsa_size (cert k : ByteArray)
   obtain ⟨off, endOff, hspki⟩ := readTbs_spki .rsa tbs k htbs
   exact readSpki_rsa_size tbs off k endOff hspki
 
+/-- A key `readCertificate` accepts under `.mldsa` is the whole
+2592-byte ML-DSA-87 key `ch_cfg.server_pubkey` takes under
+TRUST=ca-mldsa (FIPS 204 Table 2). -/
+theorem readCertificate_mldsa_size (cert k : ByteArray)
+    (h : readCertificate .mldsa cert = some k) : k.size = Spec.MlDsa.pkLen := by
+  obtain ⟨tbs, htbs⟩ := readCertificate_tbs .mldsa cert k h
+  obtain ⟨off, endOff, hspki⟩ := readTbs_spki .mldsa tbs k htbs
+  exact readSpki_mldsa_size tbs off k endOff hspki
+
 /-- A certificate `readCertificate` accepts has exactly the shape the
 walk's doc-comment names: the outer SEQUENCE around the TBS SEQUENCE,
 the signatureAlgorithm SEQUENCE and the signature BIT STRING — nothing
@@ -629,5 +638,12 @@ theorem caKey?_rsa_size (derMax : Nat) (pem k : ByteArray)
     256 ≤ k.size ∧ k.size ≤ 384 ∧ k.size % 8 = 0 := by
   obtain ⟨der, hcert⟩ := caKey?_certificate .rsa derMax pem k h
   exact readCertificate_rsa_size der k hcert
+
+/-- Every key `caKey?` yields under `.mldsa` is the whole 2592-byte
+ML-DSA-87 key: it fills the ML-DSA-87 build's CH_X509_KEY_MAX exactly. -/
+theorem caKey?_mldsa_size (derMax : Nat) (pem k : ByteArray)
+    (h : caKey? .mldsa derMax pem = some k) : k.size = Spec.MlDsa.pkLen := by
+  obtain ⟨der, hcert⟩ := caKey?_certificate .mldsa derMax pem k h
+  exact readCertificate_mldsa_size der k hcert
 
 end Spec.X509Ca

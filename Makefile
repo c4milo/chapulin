@@ -652,6 +652,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/webpki_auth_test.c test/webpki_encrypted_exts_test.c \
           test/mlkem_test.c test/mldsa_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/cnsa2_test.c test/cnsa2_quic_test.c test/mldsa_sign.c test/x509_mldsa_test.c \
+          test/diff_x509_mldsa_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c test/tls_server.c \
           srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c \
@@ -5220,6 +5221,8 @@ endif
 	./bin/diff_mlkem1024
 	$(MAKE) bin/diff_mldsa
 	./bin/diff_mldsa
+	$(MAKE) bin/diff_x509_mldsa
+	./bin/diff_x509_mldsa
 ifneq ($(HOST_TARGET),)
 	$(MAKE) bin/diff_x25519_wide
 	./bin/diff_x25519_wide
@@ -5257,6 +5260,16 @@ DIFF_MLDSA_SRCS := mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c
 bin/diff_mldsa: test/diff_mldsa_test.c $(DIFF_MLDSA_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -Itest -o $@ test/diff_mldsa_test.c $(DIFF_MLDSA_SRCS)
+
+# The ML-DSA-87 arm of the certificate profile and the CertificateVerify
+# content, against Spec.X509's parse .mldsa and Spec.HandshakeParser's
+# verifyContent (docs/decisions.md 157), under the defines of a
+# PROFILE=cnsa2 TRUST=ca-mldsa object. The test-only signer makes each
+# certificate.
+bin/diff_x509_mldsa: test/diff_x509_mldsa_test.c $(SRCS) $(CNSA2_MLDSA_DEPS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -Itest -o $@ test/diff_x509_mldsa_test.c \
+	  $(SRCS) $(CNSA2_MLDSA_SRCS)
 
 # The wide field's arm: the x25519 rows against spec/lean/Spec/X25519.lean
 # with x25519_wide.c's entries answering, built as a host object builds
@@ -6587,7 +6600,7 @@ else
 	@$(call TIDY_EACH,$(filter-out webpki.c webpki_ticket.c webpki_pin.c \
 	  webpki_cfg.c handshake_groups.c x509_ca.c drbg.c test/drbg_test.c test/entropy_recipe.c \
 	  test/webpki_resume_test.c test/webpki_session_test.c test/cnsa2_test.c test/cnsa2_quic_test.c \
-	  test/x509_mldsa_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
+	  test/x509_mldsa_test.c test/diff_x509_mldsa_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
 	  test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) \
 	  $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c \
 	  test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c \
@@ -6930,7 +6943,8 @@ else
 	@$(call TIDY_EACH,tls.c handshake_auth.c handshake_message.c handshake_parser.c x509.c x509_der.c \
 	  test/cnsa2_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(CNSA2_DEF) -DCH_PIN_MLDSA -I. -Itest)
-	@$(call TIDY_EACH,handshake_auth.c x509_ca.c test/cnsa2_test.c test/x509_mldsa_test.c, \
+	@$(call TIDY_EACH,handshake_auth.c x509_ca.c test/cnsa2_test.c test/x509_mldsa_test.c \
+	  test/diff_x509_mldsa_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(CNSA2_DEF) -DCH_TRUST_CA -DCH_PIN_MLDSA -I. -Itest)
 	@$(call TIDY_EACH,quic_config.c test/cnsa2_quic_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA $(CNSA2_DEF) \
@@ -7277,9 +7291,9 @@ CNSA2_CPPCHECK_C := tls.c handshake_message.c handshake_parser.c handshake_fligh
 # the test mains, in the CA mode's configuration, which --force reads
 # with the raw arms as well.
 MLDSA_CPPCHECK_C := tls.c handshake_auth.c x509.c x509_der.c x509_ca.c quic_config.c test/cnsa2_test.c \
-  test/cnsa2_quic_test.c test/x509_mldsa_test.c
+  test/cnsa2_quic_test.c test/x509_mldsa_test.c test/diff_x509_mldsa_test.c
 CPPCHECK_C = $(filter-out $(WIDEMUL_NATIVE_COPY_C) test/cnsa2_test.c test/cnsa2_quic_test.c \
-  test/x509_mldsa_test.c,$(LINT_C))
+  test/x509_mldsa_test.c test/diff_x509_mldsa_test.c,$(LINT_C))
 .PHONY: lint-cppcheck-run
 lint-cppcheck-run:
 	@build=bin/cppcheck/$$(printf '%s\n' '$(CPPCHECK_FLAGS) $(CPPCHECK_C)' | $(SHA256) | cut -c1-16); \

@@ -39,7 +39,7 @@
 // The largest certificate the build admits: an ML-DSA-87 leaf holds a 2592-byte key and a
 // 4627-byte signature. OpenSSL 3.5 issues one of 7512 bytes under docs/ca.md's profile, and
 // the cap leaves about 300 bytes for longer names, as the RSA and P-256 caps do. cfg.h reads
-// CH_X509_MAX after this header.
+// CH_X509_MAX after this header, and spec/lean/Spec/X509.lean's certMax .mldsa is this number.
 #define CH_X509_DEFAULT_MAX_MLDSA 7808
 #ifndef CH_X509_MAX
 #define CH_X509_MAX CH_X509_DEFAULT_MAX_MLDSA
