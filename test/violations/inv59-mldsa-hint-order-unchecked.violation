@@ -9,4 +9,4 @@ reason: HintBitUnpack's check that a row's positions increase is gone, so
 --- old
         } else if (at > 0 && !starts_run[at] && y[at - 1] >= y[at]) {
 --- new
-        } else if (0) {
+        } else if (at > 0 && !starts_run[at] && 0) {
