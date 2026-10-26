@@ -105,7 +105,26 @@ finds:
 - this thread runs them in constant time: PSTATE.DIT is set on arm64, or
   the operating system set DOITM on x86-64.
 
-A bit set without that mode can leak keys through timing. The other
+A bit set without that mode can leak keys through timing.
+
+On Apple silicon, set PSTATE.DIT for every thread that runs a session,
+whatever bits you set. The data memory-dependent prefetcher (DMP) of
+these cores reads values in memory as addresses. GoFetch (Chen et al.,
+USENIX Security 2024, [gofetch.fail](https://gofetch.fail/)) used it to
+recover keys from constant-time code on the M1, and the portable code
+is no exception. On the M3 and later, PSTATE.DIT turns the DMP off. On
+the M1 and M2, no switch that a program can set turns it off, so this
+library cannot make a promise about the DMP there.
+
+The constant-time rules here cover time alone. They do not cover power
+or the frequency changes that follow power (Hertzbleed,
+[hertzbleed.com](https://hertzbleed.com/)), and Intel's DOIT
+guidance excludes those effects too. Each key exchange uses a new key,
+so an attacker gets few measurements of one secret. A server's signing
+key lives longer, so keep it on a machine where nobody untrusted can
+measure power.
+
+The other
 bits, `CH_CPU_AVX2`, `CH_CPU_VAES`, `CH_CPU_AVX512` and
 `CH_CPU_AVX512_IFMA`, state no timing. Set one only when your probe
 found it, because an instruction the CPU lacks stops the program.
