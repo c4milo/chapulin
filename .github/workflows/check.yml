@@ -134,7 +134,7 @@ jobs:
       # body under clang alone (docs/decisions.md 99).
       - uses: ./.github/actions/apt-install
         with:
-          packages: gcc-mips-linux-gnu qemu-user gcc-aarch64-linux-gnu libc6-dev-arm64-cross clang
+          packages: gcc-mips-linux-gnu libc6-dev-mips-cross qemu-user gcc-aarch64-linux-gnu libc6-dev-arm64-cross clang
       - name: Count wide multiplies, divisions and conditional branches under the mips gcc
         # lint-wide-multiply in the check job measures clang. This lane
         # ships gcc, whose lowering is its own measurement: it once put

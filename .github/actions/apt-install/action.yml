@@ -3,7 +3,10 @@
 # a few kB/s, and an install of qemu-system-arm with its recommended
 # packages (ceph, gstreamer, SDL) took 20 to 30 minutes, so the mips,
 # freertos, m3 and slow jobs ran out of time. Without them the same
-# install is 38 packages in place of 293.
+# install is 38 packages in place of 293. The same evening one 11 MB file
+# stalled twice, so the downloaded packages also go to the Actions cache,
+# one entry for each runner image and package list: a later job downloads
+# only the packages that changed since that entry.
 name: apt-install
 description: Install Ubuntu packages without recommends, with a bounded download
 inputs:
@@ -13,7 +16,18 @@ inputs:
 runs:
   using: composite
   steps:
+    - id: key
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: echo "packages=$(printf '%s' "$PACKAGES" | sha256sum | cut -c1-16)" >>"$GITHUB_OUTPUT"
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/apt-archives
+        key: apt-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageVersion }}-${{ steps.key.outputs.packages }}
+        restore-keys: apt-${{ runner.os }}-${{ runner.arch }}-
     - shell: bash
       env:
         PACKAGES: ${{ inputs.packages }}
+        ARCHIVES: ${{ runner.temp }}/apt-archives
       run: bash "$GITHUB_ACTION_PATH/install.sh"

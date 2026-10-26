@@ -661,7 +661,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/apt-install
         with:
-          packages: gcc-mips-linux-gnu qemu-user
+          packages: gcc-mips-linux-gnu libc6-dev-mips-cross qemu-user
       - run: >
           make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
           CROSS_EXTRA="-fsanitize=undefined -fsanitize-undefined-trap-on-error"
