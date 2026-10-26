@@ -26,7 +26,9 @@
 //                          keyCertSign (intermediate)
 //   x509_read_spki       : 448 bytes; a 3072-bit RSA SPKI measures 422
 //                          (the ECDSA SPKI is 91), so the bound covers
-//                          the largest admitted key with margin
+//                          the largest admitted key with margin. The
+//                          ML-DSA-87 SPKI measures 2614, and that build
+//                          reads 2624 bytes of its own
 //   x509_read_bitstring  : 448 bytes, the SPKI bound; the signature
 //                          BIT STRING (header + pad + 385 content)
 //                          also fits it
@@ -179,9 +181,26 @@ int main(void) {
     (void)x509_read_keyusage(ku, ku_len, ku_required);
 
     // x509_read_spki: the key postcondition x509.c's copy loop rests on
-    // (key readable for key_len, key_len within CH_X509_KEY_MAX).
+    // (key readable for key_len, key_len within CH_X509_KEY_MAX). The
+    // ML-DSA-87 SPKI measures 2614 bytes, past the 448-byte buffer, so
+    // under CH_PIN_MLDSA the arm reads a buffer of its own, which holds
+    // the largest admitted SPKI with margin.
     const uint8_t *key = NULL;
     size_t key_len = 0;
+#ifdef CH_PIN_MLDSA
+    static uint8_t spki_in[2624];
+    fill_nondet(spki_in, sizeof spki_in);
+    size_t spki_n = nondet_size_t();
+    __CPROVER_assume(spki_n <= sizeof spki_in);
+    rb_init(&r, spki_in, spki_n);
+    if (x509_read_spki(&r, &key, &key_len)) {
+        __CPROVER_assert(key >= spki_in && key <= spki_in + spki_n,
+                         "spki key points into the input");
+        __CPROVER_assert(key_len <= (size_t)(spki_in + spki_n - key),
+                         "spki key_len within the input");
+        __CPROVER_assert(key_len == 2592, "spki yields the one ML-DSA-87 key size");
+    }
+#else
     rb_init(&r, tlv, n);
     if (x509_read_spki(&r, &key, &key_len)) {
         __CPROVER_assert(key >= tlv && key <= tlv + n, "spki key points into the input");
@@ -193,6 +212,7 @@ int main(void) {
                          "spki yields a modulus in the verifier's admitted range");
 #endif
     }
+#endif
 
     // x509_read_bitstring at the SPKI/signature bound: on success the
     // bytes point into the input and fit what remains — the shape both

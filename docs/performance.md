@@ -37,6 +37,10 @@ and `size_t` lengths, so that build needs 120 bytes less than the host figure on
 | **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15402** | — |
 | `ch_tls` under `ROLE=server`, host object | 1992 | — |
 | **total static working set, `ROLE=server`, host object** (2048 buffer) | **4040** | — |
+| `ch_tls` under `PROFILE=cnsa2 TRUST=raw-mldsa` | 2984 | — |
+| **total static working set, `PROFILE=cnsa2 TRUST=raw-mldsa`** (7843 buffer, its floor) | **10827** | — |
+| `ch_tls` under `PROFILE=cnsa2 TRUST=ca-mldsa` | 2984 | — |
+| **total static working set, `PROFILE=cnsa2 TRUST=ca-mldsa`** (15656 buffer, its floor) | **18640** | — |
 
 ### Peak stack
 
@@ -92,6 +96,8 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_write` / `ch_close` | 1520 / 896 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 12736 |
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12896 |
+| peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 19456 |
+| peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`) | 22096 |
 
 ### What the larger builds pay for
 
@@ -168,6 +174,22 @@ same `ROLE=server` host object without the suite, and 304 larger for
 - a webpki client's configuration holds the caller's suite order, a
   pointer and a count ([`docs/decisions.md`](decisions.md) 80).
 
+**`TRUST=raw-mldsa` and `TRUST=ca-mldsa`.** The two ML-DSA-87 trust
+modes build under `PROFILE=cnsa2` alone, on `AES=extern`
+([`docs/decisions.md`](decisions.md) 157). `bench/sram.sh` measures
+their portable object on this host, so their rows have no rv32 column.
+The session struct is the same in both, because the blocking driver
+holds the handshake state on its stack. The receive floor holds one
+certificate of `CH_X509_MAX`, 7,808 bytes, in the raw mode and two in
+the CA mode, and the static working set adds that floor. Each
+`ch_connect` peaks through ML-KEM-1024's decapsulation, at 19,456 bytes
+in the raw mode and 22,096 in the CA mode. The CA mode's handshake
+state holds the leaf's 2,592-byte key, which is most of the difference.
+With ML-KEM's two calls pruned (`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`)
+the deepest chain is the ML-DSA-87 verify, at 13,376 bytes in the raw
+mode and 16,064 in the CA mode. A device that runs either mode gives
+`ch_connect` the larger peak.
+
 **A host object.** On arm64 and x86-64 the Makefile and `build.zig`
 build a `TRUST=webpki` client, `ROLE=server` and `ROLE=both` as a host
 object, whose `ch_cfg` holds `cpu`, the caller's description of its CPU
@@ -204,6 +226,12 @@ records ([`examples/server/README.md`](../examples/server/README.md),
   rather than mid-handshake.
 - **`TRUST=webpki`.** The build derives 12,338 bytes the same way, four
   certificates at its 3,072-byte cap.
+- **The ML-DSA-87 modes.** An ML-DSA-87 certificate holds a 2,592-byte
+  key and a 4,627-byte signature, and OpenSSL 3.5 issues one of about
+  7,500 bytes, so `CH_X509_MAX` is 7,808 there. `TRUST=raw-mldsa` derives
+  a floor of 7,843 bytes, one certificate at the cap plus the record that
+  completes it, and `TRUST=ca-mldsa` 15,656, two certificates
+  ([`docs/decisions.md`](decisions.md) 157).
 
 ### Provisioning buffers
 

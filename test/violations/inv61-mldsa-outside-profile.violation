@@ -1,0 +1,14 @@
+invariant: INV-61
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: the Makefile builds TRUST=raw-mldsa and TRUST=ca-mldsa without
+  PROFILE=cnsa2, so a general build would pin a CNSA 2.0 key beside the
+  general suites and groups. lint-trust-separation's two refused rows
+  require make to refuse both.
+
+--- old
+ifneq ($(filter raw-mldsa ca-mldsa,$(TRUST)),)
+ifneq ($(PROFILE),cnsa2)
+--- new
+ifneq ($(filter raw-mldsa ca-mldsa,$(TRUST)),)
+ifneq ($(PROFILE),$(PROFILE))

@@ -130,7 +130,7 @@ _Static_assert(CH_TX_PT >= 512 && CH_TX_PT <= 16384, "CH_TX_PT runs from 512 to 
 // and tls.c asserts that it matches them.
 #define CH_TRUST_MIN_RXBUF (4 * (3072 + 5) + 8 + 22)
 #else
-#define CH_TRUST_MIN_RXBUF 512
+#define CH_TRUST_MIN_RXBUF CH_RAW_TRUST_MIN_RXBUF // 512, or one certificate under CH_PIN_MLDSA
 #endif
 #ifdef CH_KEX_HYBRID
 #define CH_KEX_MIN_RXBUF (5 + 4 + 40 + 6 + 1128 + 6)
@@ -297,9 +297,9 @@ typedef struct {
     //    key, provisioned like a PSK would be. The key is an RSA modulus
     //    (256..384 bytes big-endian, RSA-2048 to RSA-3072 — the cap
     //    rsa.h sets for the modulus in the device modes; exponent
-    //    fixed at 65537, RSA-PSS) by default, or 64 P-256 bytes (X||Y,
-    //    ECDSA) when built with
-    //    -DCH_PIN_ECDSA — one algorithm per build, never both. An RSA
+    //    fixed at 65537, RSA-PSS) by default, 64 P-256 bytes (X||Y, ECDSA)
+    //    with -DCH_PIN_ECDSA, or a 2592-byte ML-DSA-87 key with
+    //    -DCH_PIN_MLDSA — one algorithm per build, never two. An RSA
     //    modulus must be odd (any product of odd primes is); an even pin
     //    is provisioning corruption and fails ch_connect with CH_EINVAL.
     //    The server proves possession by signing the handshake. A raw-pin

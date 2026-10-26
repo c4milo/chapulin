@@ -112,6 +112,15 @@ MEMORY = [
     ("`ch_tls` under `ROLE=server`, host object", [["session_struct_server_host_arm64"]]),
     ("**total static working set, `ROLE=server`, host object** (2048 buffer)",
      [["static_working_set_server_host_arm64"]]),
+    ("`ch_tls` under `PROFILE=cnsa2 TRUST=raw-mldsa`", [["session_struct_cnsa2_mldsa_arm64"]]),
+    ("**total static working set, `PROFILE=cnsa2 TRUST=raw-mldsa`** (7843 buffer, its floor)",
+     [["static_working_set_cnsa2_mldsa_arm64"]]),
+    ("`ch_tls` under `PROFILE=cnsa2 TRUST=ca-mldsa`", [["session_struct_cnsa2_ca_mldsa_arm64"]]),
+    ("**total static working set, `PROFILE=cnsa2 TRUST=ca-mldsa`** (15656 buffer, its floor)",
+     [["static_working_set_cnsa2_ca_mldsa_arm64"]]),
+    ("peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`)", [["stack_connect_cnsa2_mldsa"]]),
+    ("peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`)",
+     [["stack_connect_cnsa2_ca_mldsa"]]),
 ]
 
 # The stack figures that the Memory prose states. Each entry is a sentence
@@ -155,6 +164,10 @@ STACK_PROSE = [
     ("its key call peaks at {} bytes (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`)",
      [["stack_p256_key_from_pem_device"]]),
     ("So a host program gives the key call {} bytes of stack", [["stack_p256_key_from_pem"]]),
+    ("`ch_connect` peaks through ML-KEM-1024's decapsulation, at {} bytes in the raw mode and {} "
+     "in the CA mode", [["stack_connect_cnsa2_mldsa"], ["stack_connect_cnsa2_ca_mldsa"]]),
+    ("the deepest chain is the ML-DSA-87 verify, at {} bytes in the raw mode and {} in the CA mode",
+     [["stack_connect_cnsa2_mldsa_without_mlkem"], ["stack_connect_cnsa2_ca_mldsa_without_mlkem"]]),
 ]
 
 

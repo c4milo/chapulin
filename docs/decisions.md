@@ -13885,3 +13885,98 @@ does nothing more.
       operands, so a division of a public length and one of a secret
       look the same: each new one is read in the C before it is
       recorded. It reads the specs' compilers and no other.
+157. **`TRUST=raw-mldsa` and `TRUST=ca-mldsa` give `PROFILE=cnsa2` an
+    ML-DSA-87 server key.** Stage 3 of the CNSA 2.0 profile
+    (https://github.com/c4milo/chapulin/issues/182), its second commit,
+    over the verifier of entry 154. Camilo's rulings of 2026-10-25 hold:
+    the two values alone, under the profile alone, with the certificate a
+    server sends today, and the whole 2592-byte key as the pin.
+
+    - **The rule.** Each value sets `-DCH_PIN_MLDSA`, packages `mldsa.c`
+      and `mldsa_poly.c`, and drops `rsa.c`, `rsa_mont.c` and `p256.c`.
+      The Makefile and `build.zig` refuse either value outside
+      `PROFILE=cnsa2`, and `profile_cfg.h` refuses the define without
+      the profile or beside `CH_PIN_ECDSA`. The hello offers one scheme,
+      `mldsa87` (0x0906, draft-ietf-tls-mldsa). The CertificateVerify
+      must name it, and `mldsa87_verify` checks RFC 9846 §4.4.3's
+      content, 146 bytes over the SHA-384 transcript hash, with an empty
+      context. ML-DSA-87 signs the content whole, so
+      `hsa_signed_content` writes it and nothing hashes it first.
+    - **The raw mode.** The server sends an X.509 certificate, as a raw
+      RSA or ECDSA server does. The client hashes it into the transcript
+      and never parses it, and checks the CertificateVerify under pin
+      slot A, then slot B. A pin in either slot is 2592 bytes, the
+      length `CH_PIN_FIXED_LEN` names.
+    - **The ca mode.** The pin is a CA's key. `x509.c` verifies a chain
+      of one or two certificates under `id-ml-dsa-87`
+      (2.16.840.1.101.3.4.3.19) with its parameters absent, in both
+      AlgorithmIdentifiers and the SPKI, and a key of exactly 2592
+      bytes. ML-DSA-87 signs the TBSCertificate with its header, not a
+      hash of it, so `parse_certificate` keeps a copy of the reader at
+      the TBS header and reads the signed span again from it. The other
+      builds hash that span as before, through the same `signed_part`.
+      `ch_pubkey_from_pem` reads the CA's key from its certificate.
+    - **The sizes.** OpenSSL 3.5 issues an ML-DSA-87 leaf of 7512 bytes
+      under docs/ca.md's recipe, and a self-signed certificate of 7458.
+      `CH_X509_MAX` is 7808 bytes, about 300 above the leaf, the margin
+      the RSA and P-256 caps keep. So `CH_MIN_RXBUF` is 7843 bytes in
+      the raw mode, one certificate at the cap and the record that
+      completes it, and 15656 in the ca mode, two certificates. A raw
+      build reads no certificate, but a floor of 512 would refuse every
+      ML-DSA-87 server at setup time, so the raw floor holds one.
+      `bench/sram.sh` measures a session struct of 2984 bytes in both
+      modes, and static working sets of 10,827 and 18,640 bytes.
+    - **The stack.** `bench/sram.sh` measures `ch_connect` at 19,456
+      bytes in the raw mode and 22,096 in the ca mode, through
+      ML-KEM-1024's decapsulation. With ML-KEM pruned, the deepest chain
+      is the ML-DSA-87 verify, at 13,376 and 16,064 bytes. The ca mode's
+      handshake state holds the leaf's 2592-byte key on the blocking
+      driver's stack. `lint-stack` holds every library frame under 4 kB
+      and `mldsa.c` under `STACK_BUDGET_MLDSA`, and
+      `check-stack-cnsa2-ca-mldsa` runs it on the ca mode.
+    - **The external PSK stays.** The rulings did not settle it, so the
+      conservative choice keeps what entry 151 shipped. A raw or ca build
+      of every other trust mode takes a PSK in place of the pin, and
+      entry 151 accepted an external PSK under ML-KEM-1024 as CNSA 2.0's.
+      Removing it would change a stage 2 build's behavior. `CH_TAKES_PINS`
+      is 1 under `CH_PIN_MLDSA` and 0 in every other build of the
+      profile, which keeps the PSK alone.
+    - **The other trust modes stay in the profile.** `PROFILE=cnsa2
+      TRUST=raw-rsa` and its siblings keep entry 151's PSK-only object:
+      they hold no ML-DSA code and refuse a pin.
+    - **What holds it.** `test/mldsa_sign.c` is an ML-DSA-87 signer for
+      tests alone. `bin/wycheproof_mldsa_sign_test` holds it to the 92
+      valid cases of Wycheproof's seeded signing suite, keys and
+      signatures byte for byte. The mock server of `test/cnsa2_mock.h`
+      signs its CertificateVerify with it, and `test/mldsa_cert.h` builds
+      the chains at run time and signs them with it, so a strict test's
+      mutant inside the grammar is signed again. `bin/cnsa2_test_mldsa`,
+      `bin/cnsa2_test_ca_mldsa`, `bin/cnsa2_tcp_nonblocking_mldsa` and
+      `bin/cnsa2_quic_test_ca_mldsa` run the handshakes, the pin
+      boundary, the CertificateVerify refusals, the chains and the
+      floor. `bin/x509strict_mldsa` holds the certificate profile. e2e
+      runs seven cases against OpenSSL 3.5's ML-DSA-87 server. The
+      `x509der_mldsa`, `x509parse_mldsa` and `x509ca_mldsa` harnesses
+      prove the certificate readers, and INV-61's eight mutants each
+      fail a test. `check-lib-cnsa2-mldsa` and two siblings package the
+      objects, and `lint-trust-separation` holds their sources.
+
+    Rejected:
+
+    - **Fixed vectors in place of a test signer.** Wycheproof's seeded
+      cases sign fixed messages. The mock's transcript changes with each
+      hello's key share and random, and with each change to the hello's
+      bytes, so a fixed CertificateVerify would sign nothing the client
+      hashes. A signer held to every Wycheproof signature is the honest
+      way to sign a live transcript.
+    - **Certificates generated by OpenSSL and stored in the tree.** Three
+      ML-DSA-87 certificates are about 22 kB, and a stored mutant cannot
+      be signed again, so a grammar mutant would fail the signature
+      before it showed the parser's verdict.
+    - **A raw floor of 512 bytes**, as the other raw modes keep. It
+      would let a configuration pass setup and then fail every handshake
+      with `CH_ECAP` at the Certificate.
+    - **A proof of `handshake_auth.c` under `CH_PIN_MLDSA`.** The arm is
+      two calls on bytes the harnesses of the other builds already prove
+      safe. The mock tests, e2e and the mutants hold it, and
+      docs/verification.md states it as not proved.

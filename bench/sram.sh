@@ -96,6 +96,26 @@ QUIC_SESSION=$("$TMP/szq" | awk '{print $2}')
 cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $SUITE_DEFS -I. -o "$TMP/szq_aes" "$TMP/szq.c"
 QUIC_SESSION_AES=$("$TMP/szq_aes" | awk '{print $2}')
 
+# PROFILE=cnsa2 under the two ML-DSA-87 trust modes (docs/decisions.md
+# 157), on AES=extern, the profile's device object. Each struct and each
+# floor is read from the build. The raw floor holds one certificate of
+# CH_X509_MAX bytes and the CA floor two, and each is the buffer the
+# static working set adds.
+CNSA2_MLDSA_DEFS="-DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_AES_EXTERN"
+CNSA2_MLDSA_DEFS="$CNSA2_MLDSA_DEFS -DCH_AES_EXTERN_CONSTANT_TIME -DCH_PIN_MLDSA"
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -I. -o "$TMP/sz_mldsa" "$TMP/sz.c"
+SESSION_MLDSA=$("$TMP/sz_mldsa" | awk '{print $2}')
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -I. -o "$TMP/floor_mldsa" "$TMP/floor.c"
+RXBUF_MLDSA=$("$TMP/floor_mldsa" | awk '{print $2}')
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -DCH_TRUST_CA -I. -o "$TMP/sz_ca_mldsa" "$TMP/sz.c"
+SESSION_CA_MLDSA=$("$TMP/sz_ca_mldsa" | awk '{print $2}')
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -DCH_TRUST_CA -I. -o "$TMP/floor_ca_mldsa" "$TMP/floor.c"
+RXBUF_CA_MLDSA=$("$TMP/floor_ca_mldsa" | awk '{print $2}')
+
 # The same struct on a 32-bit target. The pointer fields are what move, so
 # the host number overstates what a device needs, and the README used to
 # publish only the host one with a sentence saying a 32-bit target shrinks
@@ -152,6 +172,10 @@ echo "session struct (TRUST=webpki, host object): ${SESSION_WEBPKI_HOST} B"
 echo "static working set:      $((SESSION_WEBPKI_HOST + RXBUF_WEBPKI)) B (TRUST=webpki, host object, its ${RXBUF_WEBPKI} B floor)"
 echo "session struct (ROLE=server, host object): ${SESSION_SERVER_HOST} B"
 echo "static working set:      $((SESSION_SERVER_HOST + RXBUF)) B (ROLE=server, host object, ${RXBUF} B receive buffer)"
+echo "session struct (PROFILE=cnsa2 TRUST=raw-mldsa): ${SESSION_MLDSA} B"
+echo "static working set:      $((SESSION_MLDSA + RXBUF_MLDSA)) B (PROFILE=cnsa2 TRUST=raw-mldsa, its ${RXBUF_MLDSA} B floor)"
+echo "session struct (PROFILE=cnsa2 TRUST=ca-mldsa): ${SESSION_CA_MLDSA} B"
+echo "static working set:      $((SESSION_CA_MLDSA + RXBUF_CA_MLDSA)) B (PROFILE=cnsa2 TRUST=ca-mldsa, its ${RXBUF_CA_MLDSA} B floor)"
 
 # Each stack.py report is saved whole, so the CSV rows below come from the
 # same run the report prints. STACK_MAKE names each build by its make
@@ -230,6 +254,25 @@ head -1 "$TMP/server_aes.stack"
 echo "-- TRUST=webpki SUITE=aesgcm --"
 stack_report webpki_aes "STACK_MAKE=TRUST=webpki SUITE=aesgcm"
 head -1 "$TMP/webpki_aes.stack"
+# The two ML-DSA-87 builds, each walked whole and then without ML-KEM's
+# two calls, which shows the deepest chain through the verifier.
+CNSA2_PRUNE=STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk
+echo "-- PROFILE=cnsa2 TRUST=raw-mldsa; ch_connect peak = ML-KEM-1024's decapsulation --"
+stack_report cnsa2_mldsa "STACK_MAKE=PROFILE=cnsa2 AES=extern TRUST=raw-mldsa" \
+    STACK_CFLAGS=-DCH_AES_EXTERN_CONSTANT_TIME
+head -1 "$TMP/cnsa2_mldsa.stack"
+echo "-- the same without ML-KEM; peak = the ML-DSA-87 verify --"
+stack_report cnsa2_mldsa_without_mlkem "STACK_MAKE=PROFILE=cnsa2 AES=extern TRUST=raw-mldsa" \
+    STACK_CFLAGS=-DCH_AES_EXTERN_CONSTANT_TIME "$CNSA2_PRUNE"
+head -1 "$TMP/cnsa2_mldsa_without_mlkem.stack"
+echo "-- PROFILE=cnsa2 TRUST=ca-mldsa; ch_connect peak = ML-KEM-1024's decapsulation --"
+stack_report cnsa2_ca_mldsa "STACK_MAKE=PROFILE=cnsa2 AES=extern TRUST=ca-mldsa" \
+    STACK_CFLAGS=-DCH_AES_EXTERN_CONSTANT_TIME
+head -1 "$TMP/cnsa2_ca_mldsa.stack"
+echo "-- the same without ML-KEM; peak = the chain's ML-DSA-87 verify --"
+stack_report cnsa2_ca_mldsa_without_mlkem "STACK_MAKE=PROFILE=cnsa2 AES=extern TRUST=ca-mldsa" \
+    STACK_CFLAGS=-DCH_AES_EXTERN_CONSTANT_TIME "$CNSA2_PRUNE"
+head -1 "$TMP/cnsa2_ca_mldsa_without_mlkem.stack"
 
 # The CSV carries every column or nothing: without the rv32 toolchain the
 # report above says "unmeasured", and the committed CSV keeps the last
@@ -306,6 +349,17 @@ TMPOUT="$TMP/results-sram.csv"
     row static_working_set_webpki_host_arm64 "$((SESSION_WEBPKI_HOST + RXBUF_WEBPKI))"
     row session_struct_server_host_arm64 "$SESSION_SERVER_HOST"
     row static_working_set_server_host_arm64 "$((SESSION_SERVER_HOST + RXBUF))"
+    row session_struct_cnsa2_mldsa_arm64 "$SESSION_MLDSA"
+    row receive_buffer_cnsa2_mldsa "$RXBUF_MLDSA"
+    row static_working_set_cnsa2_mldsa_arm64 "$((SESSION_MLDSA + RXBUF_MLDSA))"
+    row stack_connect_cnsa2_mldsa "$(peak cnsa2_mldsa ch_connect)"
+    row stack_connect_cnsa2_mldsa_without_mlkem "$(peak cnsa2_mldsa_without_mlkem ch_connect)"
+    row session_struct_cnsa2_ca_mldsa_arm64 "$SESSION_CA_MLDSA"
+    row receive_buffer_cnsa2_ca_mldsa "$RXBUF_CA_MLDSA"
+    row static_working_set_cnsa2_ca_mldsa_arm64 "$((SESSION_CA_MLDSA + RXBUF_CA_MLDSA))"
+    row stack_connect_cnsa2_ca_mldsa "$(peak cnsa2_ca_mldsa ch_connect)"
+    row stack_connect_cnsa2_ca_mldsa_without_mlkem "$(peak cnsa2_ca_mldsa_without_mlkem ch_connect)"
+    row stack_pubkey_from_pem_ca_mldsa "$(peak cnsa2_ca_mldsa ch_pubkey_from_pem_tcp_blocking)"
 } > "$TMPOUT"
 mv "$TMPOUT" bench/results-sram.csv
 echo "wrote bench/results-sram.csv" >&2

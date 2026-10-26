@@ -16,7 +16,7 @@
 
 // Largest single certificate the parser admits. Measured realistic
 // leaves and intermediates: 412..449 bytes (P-256), 1168..1205 bytes
-// (RSA-3072); the cap leaves margin for longer names and extra
+// (RSA-3072), 7470..7512 bytes (ML-DSA-87); the cap leaves margin for longer names and extra
 // extensions. A build with bigger certificates raises it; the
 // receive buffer must hold the whole Certificate flight, up to two
 // certificates plus framing.
@@ -34,6 +34,8 @@ _Static_assert(CH_X509_MAX <= 0x3fe0, "a Certificate message must fit one handsh
 // message buffer is reused before CertificateVerify arrives.
 #ifdef CH_PIN_ECDSA
 #define CH_X509_KEY_MAX 64
+#elif defined(CH_PIN_MLDSA)
+#define CH_X509_KEY_MAX 2592 // MLDSA87_PK_LEN
 #else
 #define CH_X509_KEY_MAX 384
 #endif

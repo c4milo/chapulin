@@ -138,8 +138,9 @@ STACK_BUDGET_GCM_AVX512_WIPE := $(shell expr $(GCM_AVX512_BELOW_LEN) + 512)
 # seven polynomials of 1,024 bytes, beside NTT(c), one entry of A and the
 # running sum: 10,704 bytes with Apple clang 21 -O2 on arm64 and 10,752
 # with gcc 13.3 -O2 on x86-64. 11 kB keeps the margin ML-KEM's ceiling
-# keeps. No packaged object holds the file yet, so lint-stack compiles
-# MLDSA_SRCS in every build it checks; mldsa_poly.c takes the build's
+# keeps. TRUST=raw-mldsa and TRUST=ca-mldsa package the files, and
+# lint-stack compiles MLDSA_SRCS in every other build it checks too, so a
+# frame that grows fails in every lane; mldsa_poly.c takes the build's
 # budget, as every other file does.
 MLDSA_SRCS := mldsa.c mldsa_poly.c
 STACK_BUDGET_MLDSA := 11264
@@ -650,7 +651,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c test/webpki_encrypted_exts_test.c \
           test/mlkem_test.c test/mldsa_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
-          test/cnsa2_test.c test/cnsa2_quic_test.c \
+          test/cnsa2_test.c test/cnsa2_quic_test.c test/mldsa_sign.c test/x509_mldsa_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c test/tls_server.c \
           srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c \
@@ -700,7 +701,8 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8439_tests.h test/rfc8448_vectors.h \
-         test/cnsa2_mock.h test/cnsa2_cases.h \
+         test/cnsa2_mock.h test/cnsa2_cases.h test/cnsa2_mldsa_cases.h test/cnsa2_mldsa_fixture.h \
+         test/mldsa_sign.h test/mldsa_cert.h \
          test/poly1305_equiv_residue.h test/poly1305_ifma_model.h test/poly1305_ifma_model_lanes.h \
          test/p256_equiv_field.h test/p256_equiv_residue.h \
          test/p256_equiv_table.h test/p256_verify_equiv_joint.h \
@@ -849,6 +851,24 @@ PUBLIC_CA := ch_pubkey_from_pem
 TRUST_FILTER := $(WEBPKI_SRCS)
 PIN_FILTER := rsa.c rsa_mont.c
 TRUST_ADD :=
+else ifeq ($(TRUST),raw-mldsa)
+# The ML-DSA-87 pair (docs/decisions.md 157): CNSA 2.0's signature, so
+# PROFILE=cnsa2's alone. The verifier joins the object, and RSA and P-256
+# leave it. ML-DSA's SHAKE256 is sha3.c, which the profile's ML-KEM-1024
+# brings.
+TRUST_DEF :=
+PIN_DEF := -DCH_PIN_MLDSA
+PUBLIC_CA :=
+TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER := rsa.c rsa_mont.c p256.c
+TRUST_ADD := $(MLDSA_SRCS)
+else ifeq ($(TRUST),ca-mldsa)
+TRUST_DEF := -DCH_TRUST_CA
+PIN_DEF := -DCH_PIN_MLDSA
+PUBLIC_CA := ch_pubkey_from_pem
+TRUST_FILTER := $(WEBPKI_SRCS)
+PIN_FILTER := rsa.c rsa_mont.c p256.c
+TRUST_ADD := $(MLDSA_SRCS)
 else ifeq ($(TRUST),none)
 # The server's value. A server proves its own identity and judges no
 # peer certificate, so it reads no certificate parser and names no
@@ -876,7 +896,14 @@ TRUST_FILTER := x509.c x509_ca.c
 PIN_FILTER :=
 TRUST_ADD := $(WEBPKI_CHAIN_SRCS) $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(WEBPKI_KEX_SRCS) $(PEM_FILES_SRCS)
 else
-$(error TRUST=$(TRUST) is not a trust mode; use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa, TRUST=ca-ecdsa, TRUST=webpki, or TRUST=none for ROLE=server)
+$(error TRUST=$(TRUST) is not a trust mode; use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa, TRUST=ca-ecdsa, TRUST=webpki, TRUST=raw-mldsa or TRUST=ca-mldsa under PROFILE=cnsa2, or TRUST=none for ROLE=server)
+endif
+# The ML-DSA-87 values pin CNSA 2.0's signature, and only PROFILE=cnsa2
+# holds CNSA 2.0's other algorithms beside it (docs/decisions.md 157).
+ifneq ($(filter raw-mldsa ca-mldsa,$(TRUST)),)
+ifneq ($(PROFILE),cnsa2)
+$(error TRUST=$(TRUST) pins an ML-DSA-87 key, CNSA 2.0's signature: build it with PROFILE=cnsa2 AES=extern)
+endif
 endif
 # Transport: TRANSPORT=tcp-blocking (default) runs the client over TLS records and
 # a socket the caller's I/O callbacks drive; TRANSPORT=quic-nonblocking runs the same
@@ -1118,7 +1145,8 @@ endif
 # that packages a server's device object on a development machine sets
 # HOST_TARGET empty on its command line: that is the host test's result
 # for a device target, and the build then passes no define.
-DEVICE_CLIENT := $(filter client-raw-rsa client-raw-ecdsa client-ca-rsa client-ca-ecdsa,$(ROLE)-$(TRUST))
+DEVICE_CLIENT := $(filter client-raw-rsa client-raw-ecdsa client-ca-rsa client-ca-ecdsa client-raw-mldsa \
+                   client-ca-mldsa,$(ROLE)-$(TRUST))
 CPU_RUNTIME_DEF := $(if $(HOST_TARGET),$(if $(DEVICE_CLIENT),,-DCH_CPU_RUNTIME))
 # A host object takes no AES value: it holds the AES instructions and,
 # over QUIC, the table for public keys. The test is $(origin AES), which
@@ -1494,7 +1522,7 @@ endif
 # traffic key is AES-256, so the object takes AES=extern, and the build's
 # CFLAGS carry CH_AES_EXTERN_CONSTANT_TIME, the statement ct.h asks for.
 ifeq ($(PROFILE),cnsa2)
-ifneq ($(ROLE)-$(filter raw-rsa raw-ecdsa ca-rsa ca-ecdsa,$(TRUST)),client-$(TRUST))
+ifneq ($(ROLE)-$(filter raw-rsa raw-ecdsa ca-rsa ca-ecdsa raw-mldsa ca-mldsa,$(TRUST)),client-$(TRUST))
 $(error PROFILE=cnsa2 is a raw or ca client's profile: TRUST=$(TRUST) ROLE=$(ROLE) is not one (docs/decisions.md 151))
 endif
 ifneq ($(AES),extern)
@@ -2125,11 +2153,11 @@ lint-trust-separation-run:
 	[ -n "$$webpki_files" ] || { echo "lint-trust-separation: git tracks no webpki*.c file at the root, so the webpki rows would check nothing"; rc=1; }; \
 	webpki_only="sha512.c sha512_compress_blocks.c p384.c p384_field.c p384_wide_field.c p384_wide_point.c p384_wide_verify.c rsa_pkcs1.c handshake_groups.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c $$webpki_files"; \
 	pem_readers="$(PEM_READER_SRCS)"; pem_files="$(PEM_FILES_SRCS)"; \
-	check "TRUST=raw-rsa" "rsa.c rsa_mont.c" "p256.c x509.c x509_ca.c $$pem_readers $$pem_files $$webpki_only" "" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
+	check "TRUST=raw-rsa" "rsa.c rsa_mont.c" "p256.c x509.c x509_ca.c $(MLDSA_SRCS) $$pem_readers $$pem_files $$webpki_only" "" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI -DCH_PIN_ECDSA -DCH_PIN_MLDSA"; \
 	check "TRUST=raw-ecdsa" "p256.c" "rsa.c rsa_mont.c x509.c x509_ca.c $$pem_readers $$pem_files $$webpki_only" "-DCH_PIN_ECDSA" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
 	check "TRUST=ca-rsa" "x509.c x509_ca.c rsa.c rsa_mont.c $$pem_readers" "p256.c $$pem_files $$webpki_only" "-DCH_TRUST_CA" "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
 	check "TRUST=ca-ecdsa" "x509.c x509_ca.c p256.c $$pem_readers" "rsa.c rsa_mont.c $$pem_files $$webpki_only" "-DCH_TRUST_CA -DCH_PIN_ECDSA" "-DCH_TRUST_WEBPKI"; \
-	check "TRUST=webpki" "rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c $$pem_readers $$pem_files $$webpki_only" "x509.c x509_ca.c" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "TRUST=webpki" "rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c $$pem_readers $$pem_files $$webpki_only" "x509.c x509_ca.c $(MLDSA_SRCS)" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_PIN_MLDSA -DCH_KEX_PQ"; \
 	check "ROLE=server TRUST=none" "$$pem_readers $$pem_files" "x509.c x509_ca.c $$webpki_files" "-DCH_ROLE_SERVER" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
 	check "ROLE=both TRUST=raw-rsa" "$$pem_readers $$pem_files" "x509.c x509_ca.c $$webpki_files" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
 	check "ROLE=both TRUST=ca-ecdsa" "x509.c x509_ca.c $$pem_readers $$pem_files" "$$webpki_files" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_CA" "-DCH_TRUST_WEBPKI"; \
@@ -2137,11 +2165,23 @@ lint-trust-separation-run:
 	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
 	cnsa2_want="sha3.c mlkem.c mlkem_poly.c aes.c aes_extern.c gcm.c sha512.c sha512_compress.c"; \
 	cnsa2_def="-DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_AES_EXTERN"; \
-	check "PROFILE=cnsa2 TRUST=raw-rsa AES=extern" "$$cnsa2_want rsa.c" "x25519.c quic_aes_soft.c" "$$cnsa2_def" "-DCH_KEX_PQ"; \
+	check "PROFILE=cnsa2 TRUST=raw-rsa AES=extern" "$$cnsa2_want rsa.c" "x25519.c quic_aes_soft.c $(MLDSA_SRCS)" "$$cnsa2_def" "-DCH_KEX_PQ -DCH_PIN_MLDSA"; \
 	check "PROFILE=cnsa2 TRUST=ca-ecdsa AES=extern" "$$cnsa2_want x509.c p256.c" "x25519.c quic_aes_soft.c" \
 	  "$$cnsa2_def -DCH_TRUST_CA" "-DCH_KEX_PQ"; \
 	check "PROFILE=cnsa2 TRUST=raw-rsa AES=extern TRANSPORT=quic-nonblocking" "$$cnsa2_want quic.c" \
 	  "x25519.c quic_aes_soft.c" "$$cnsa2_def -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_KEX_PQ"; \
+	check "PROFILE=cnsa2 TRUST=raw-mldsa AES=extern" "$$cnsa2_want $(MLDSA_SRCS)" \
+	  "rsa.c rsa_mont.c p256.c x509.c x509_ca.c $$pem_readers $$pem_files x25519.c quic_aes_soft.c" \
+	  "$$cnsa2_def -DCH_PIN_MLDSA" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "PROFILE=cnsa2 TRUST=ca-mldsa AES=extern" "$$cnsa2_want $(MLDSA_SRCS) x509.c x509_ca.c $$pem_readers" \
+	  "rsa.c rsa_mont.c p256.c $$pem_files x25519.c quic_aes_soft.c" "$$cnsa2_def -DCH_TRUST_CA -DCH_PIN_MLDSA" \
+	  "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "PROFILE=cnsa2 TRUST=ca-mldsa AES=extern TRANSPORT=quic-nonblocking" "$$cnsa2_want $(MLDSA_SRCS) quic.c x509.c" \
+	  "rsa.c p256.c x25519.c quic_aes_soft.c" "$$cnsa2_def -DCH_TRUST_CA -DCH_PIN_MLDSA -DCH_TRANSPORT_QUIC_NONBLOCKING" \
+	  "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	n=$$((n + 1)); refused_build "TRUST=raw-mldsa" "an ML-DSA-87 pin builds under PROFILE=cnsa2 alone" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
+	n=$$((n + 1)); refused_build "TRUST=ca-mldsa AES=extern" "an ML-DSA-87 pin builds under PROFILE=cnsa2 alone" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
+	n=$$((n + 1)); refused_build "PROFILE=cnsa2 ROLE=both TRUST=raw-mldsa AES=extern" "the profile is a raw or ca client's" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 TRUST=webpki AES=extern" "the profile is a raw or ca client's" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 ROLE=server TRUST=none AES=extern" "the profile is a raw or ca client's" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 TRUST=raw-rsa" "the profile runs AES-256 on AES=extern alone" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
@@ -2481,11 +2521,13 @@ LIB_OBJ := bin/obj/$(LIB_VARIANT)/chapulin.o
 # record, and the defines of two more consumers, each of which disagrees
 # with the object on one axis.
 #
-# The first moves CH_PIN_ECDSA: it adds the define where the object has
-# none and drops it where the object has it. No header refuses the
-# define in any build, and it changes no hook and no symbol name, so
-# that consumer links and reads a record whose axes differ from its
-# headers' in one bit.
+# The first moves the pinned algorithm's define, BUILD_PIN_MOVED: it adds
+# CH_PIN_ECDSA where the object has none and drops it where the object has
+# it. profile_cfg.h refuses CH_PIN_ECDSA beside CH_PIN_MLDSA, so an
+# ML-DSA-87 object's consumer drops CH_PIN_MLDSA instead, which leaves a
+# PROFILE=cnsa2 build of the PSK alone. No header refuses either move,
+# and neither changes a hook or a symbol name, so that consumer links and
+# reads a record whose axes differ from its headers' in one bit.
 #
 # The second moves the transport: a TRANSPORT=tcp-blocking object meets a
 # tcp-nonblocking consumer, and a tcp-nonblocking or QUIC object meets a
@@ -2494,9 +2536,14 @@ LIB_OBJ := bin/obj/$(LIB_VARIANT)/chapulin.o
 # define, so that consumer must fail to link (docs/decisions.md 61).
 # BUILD_OTHER_RECORD is the name its link reports missing.
 BUILD_TEST := bin/obj/$(LIB_VARIANT)/build_test
-ifneq ($(filter -DCH_PIN_ECDSA,$(LIB_DEF)),)
+ifneq ($(filter -DCH_PIN_MLDSA,$(LIB_DEF)),)
+BUILD_PIN_MOVED := CH_PIN_MLDSA
+BUILD_PIN_MOVED_DEF := $(filter-out -DCH_PIN_MLDSA,$(LIB_DEF))
+else ifneq ($(filter -DCH_PIN_ECDSA,$(LIB_DEF)),)
+BUILD_PIN_MOVED := CH_PIN_ECDSA
 BUILD_PIN_MOVED_DEF := $(filter-out -DCH_PIN_ECDSA,$(LIB_DEF))
 else
+BUILD_PIN_MOVED := CH_PIN_ECDSA
 BUILD_PIN_MOVED_DEF := $(LIB_DEF) -DCH_PIN_ECDSA
 endif
 ifeq ($(TRANSPORT),tcp-blocking)
@@ -2534,7 +2581,7 @@ endif
 # define it. The recipe rewrites the file only when its text changes, so
 # an unchanged header keeps its time.
 LIB_HEADER := bin/obj/$(LIB_VARIANT)/chapulin.h
-LIB_HEADER_AXES := CH_TRUST_CA CH_TRUST_WEBPKI CH_PIN_ECDSA CH_KEX_PQ CH_TRANSPORT_QUIC_NONBLOCKING \
+LIB_HEADER_AXES := CH_TRUST_CA CH_TRUST_WEBPKI CH_PIN_ECDSA CH_PIN_MLDSA CH_KEX_PQ CH_TRANSPORT_QUIC_NONBLOCKING \
                    CH_TRANSPORT_TCP_NONBLOCKING CH_SUITE_AES_GCM CH_ROLE_SERVER CH_ROLE_BOTH \
                    CH_EXPORTER CH_KEYLOG CH_RAND_EXTERN CH_RAND_DRBG CH_RAND_SESSION CH_CPU_RUNTIME \
                    CH_PROFILE_CNSA2 CH_MLKEM_1024
@@ -2671,7 +2718,7 @@ endif
 # a consumer reads it: test/build_test.c compiles against the headers
 # and links this object. Compiled under the object's own defines, it
 # must read a record equal to what its headers compute and exit 0.
-# Compiled with CH_PIN_ECDSA moved, it must read a difference and exit
+# Compiled with BUILD_PIN_MOVED moved, it must read a difference and exit
 # 1. It exits 2 when its own header view disagrees with the defines it
 # was given, and that fails either run. Compiled with the transport
 # moved, it must compile and then fail to link, and the link must name
@@ -2682,13 +2729,13 @@ endif
 	@$(BUILD_TEST) || { echo "lib-check: the build record disagrees with the headers compiled under this object's own defines"; exit 1; }
 	@$(CC) $(LIB_CFLAGS) $(BUILD_PIN_MOVED_DEF) -I. -o $(BUILD_TEST)_pin test/build_test.c $(LIB_OBJ)
 	@rc=0; $(BUILD_TEST)_pin > /dev/null || rc=$$?; \
-	[ $$rc -eq 1 ] || { echo "lib-check: a consumer compiled with CH_PIN_ECDSA moved must read a different build record, and it exited $$rc"; exit 1; }
+	[ $$rc -eq 1 ] || { echo "lib-check: a consumer compiled with $(BUILD_PIN_MOVED) moved must read a different build record, and it exited $$rc"; exit 1; }
 	@$(CC) $(LIB_CFLAGS) $(BUILD_TRANSPORT_MOVED_DEF) -I. -c test/build_test.c -o $(BUILD_TEST)_transport.o
 	@if $(CC) -o $(BUILD_TEST)_transport $(BUILD_TEST)_transport.o $(LIB_OBJ) 2> $(BUILD_TEST)_transport.err; then \
 	  echo "lib-check: a consumer compiled for another transport linked against this object; build.h must give each transport's record its own name"; exit 1; fi
 	@grep -q "$(BUILD_OTHER_RECORD)" $(BUILD_TEST)_transport.err || { cat $(BUILD_TEST)_transport.err; \
 	  echo "lib-check: a consumer compiled for another transport failed to link without naming $(BUILD_OTHER_RECORD)"; exit 1; }
-	@echo "lib-check: the build record matches this object's defines, differs from a consumer's with CH_PIN_ECDSA moved, and is not the record a consumer of another transport names"
+	@echo "lib-check: the build record matches this object's defines, differs from a consumer's with $(BUILD_PIN_MOVED) moved, and is not the record a consumer of another transport names"
 # The object's header (LIB_HEADER above), read the way a consumer reads
 # it. test/build_test.c compiled under the header alone, with no define
 # of its own, must read the record its headers compute and exit 0. The
@@ -4046,6 +4093,15 @@ bin/pemkey_ecdsa: $(PEMKEY_SRC) p256.c $(HDRS)
 	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -I. -o $@ $(PEMKEY_SRC) p256.c
 X509STRICT_RSA_SRCS := $(X509STRICT_SRC) rsa.c rsa_mont.c
 X509STRICT_ECDSA_SRCS := $(X509STRICT_SRC) p256.c
+# The ML-DSA-87 profile (docs/decisions.md 157), whose certificates
+# test/x509_mldsa_test.c builds and signs at run time with the test-only
+# signer.
+X509STRICT_MLDSA_SRCS := test/x509_mldsa_test.c pem.c base64.c x509.c x509_der.c x509_ca.c buf.c sha256.c \
+                         ct.c ct_wipe.c mldsa.c mldsa_poly.c sha3.c test/mldsa_sign.c
+bin/x509strict_mldsa: $(X509STRICT_MLDSA_SRCS) $(HDRS) $(TESTH) test/mldsa_cert.h test/mldsa_sign.h
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 $(AES_EXTERN_SUITE_DEF) -DCH_PIN_MLDSA -I. -Itest \
+	  -o $@ $(X509STRICT_MLDSA_SRCS)
 bin/x509strict: $(X509STRICT_RSA_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ $(X509STRICT_RSA_SRCS)
@@ -4424,7 +4480,32 @@ bin/tlsclient_webpki_aes_extern: test/tls_client.c $(WEBPKI_TEST_SRCS) aes.c $(A
 CNSA2_DEF := -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 $(AES_EXTERN_SUITE_DEF)
 CNSA2_SRCS := sha3.c mlkem.c mlkem_poly.c aes.c gcm.c sha512.c sha512_compress.c $(AES_EXTERN_SRCS)
 CNSA2_DEPS := $(CNSA2_SRCS) quic_aes_soft.c test/cnsa2_mock.h test/cnsa2_cases.h
-CNSA2_BINS := bin/cnsa2_test bin/cnsa2_test_ca bin/cnsa2_tcp_nonblocking bin/cnsa2_quic_test
+CNSA2_BINS := bin/cnsa2_test bin/cnsa2_test_ca bin/cnsa2_tcp_nonblocking bin/cnsa2_quic_test \
+              bin/cnsa2_test_mldsa bin/cnsa2_test_ca_mldsa bin/cnsa2_tcp_nonblocking_mldsa \
+              bin/cnsa2_quic_test_ca_mldsa
+# The two ML-DSA-87 trust modes (docs/decisions.md 157). The mock signs
+# its CertificateVerify and the CA tests sign their chains with the
+# test-only signer, test/mldsa_sign.c, which bin/wycheproof_mldsa_sign_test
+# holds to Wycheproof's seeded signing suite.
+CNSA2_MLDSA_SRCS := $(CNSA2_SRCS) mldsa.c mldsa_poly.c test/mldsa_sign.c
+CNSA2_MLDSA_DEPS := $(CNSA2_DEPS) mldsa.c mldsa_poly.c test/mldsa_sign.c test/mldsa_sign.h \
+                    test/mldsa_cert.h test/cnsa2_mldsa_cases.h test/cnsa2_mldsa_fixture.h
+bin/cnsa2_test_mldsa: test/cnsa2_test.c $(SRCS) $(CNSA2_MLDSA_DEPS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) $(CNSA2_MLDSA_SRCS)
+bin/cnsa2_test_ca_mldsa: test/cnsa2_test.c $(SRCS) $(CNSA2_MLDSA_DEPS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) \
+	  $(CNSA2_MLDSA_SRCS)
+bin/cnsa2_tcp_nonblocking_mldsa: test/cnsa2_test.c $(TCP_NONBLOCKING_SRCS) $(CNSA2_MLDSA_DEPS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -Itest -o $@ \
+	  test/cnsa2_test.c $(TCP_NONBLOCKING_SRCS) $(CNSA2_MLDSA_SRCS)
+bin/cnsa2_quic_test_ca_mldsa: test/cnsa2_quic_test.c $(QUIC_DRIVER_SRCS) $(CNSA2_MLDSA_DEPS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -Itest \
+	  -o $@ test/cnsa2_quic_test.c $(filter-out quic_aes_soft.c,$(QUIC_DRIVER_SRCS)) \
+	  $(filter-out aes.c gcm.c,$(CNSA2_MLDSA_SRCS)) x509.c x509_der.c
 bin/cnsa2_test: test/cnsa2_test.c $(SRCS) $(CNSA2_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(CNSA2_DEF) -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) $(CNSA2_SRCS)
@@ -4447,6 +4528,17 @@ bin/tlsclient_cnsa2_tcp_nonblocking: test/tcp_nonblocking_client.c $(TCP_NONBLOC
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING $(CNSA2_DEF) -I. -o $@ test/tcp_nonblocking_client.c \
 	  $(filter-out x25519.c,$(TCP_NONBLOCKING_SRCS)) $(CNSA2_SRCS)
+# The two ML-DSA-87 clients e2e runs against OpenSSL 3.5's ML-DSA-87
+# server, each pinning the whole 2592-byte key: the server's own, or its
+# CA's.
+bin/tlsclient_cnsa2_mldsa: test/tls_client.c $(SRCS) $(CNSA2_DEPS) mldsa.c mldsa_poly.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -o $@ test/tls_client.c $(filter-out x25519.c,$(SRCS)) \
+	  $(CNSA2_SRCS) mldsa.c mldsa_poly.c
+bin/tlsclient_cnsa2_ca_mldsa: test/tls_client.c $(SRCS) $(CNSA2_DEPS) mldsa.c mldsa_poly.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -o $@ test/tls_client.c \
+	  $(filter-out x25519.c,$(SRCS)) $(CNSA2_SRCS) mldsa.c mldsa_poly.c
 
 # Every differential arm builds with RSA_WIDE_DEF, CH_RSA_MODULUS_MAX at
 # 512: test/diff_rsa.h and test/diff_rsa_pkcs1.h sample a 4096-bit
@@ -4495,7 +4587,8 @@ run-%: bin/%
 # optional, and a change is not finished until check-slow passes too.
 CHECK_BUILDS := bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki \
                 $(if $(HOST_TARGET),bin/tlsclient_webpki_aes) bin/tlsclient_pq bin/tlsclient_tcp_nonblocking \
-                bin/tlsclient_cnsa2 bin/tlsclient_cnsa2_tcp_nonblocking bin/tlsserver
+                bin/tlsclient_cnsa2 bin/tlsclient_cnsa2_tcp_nonblocking bin/tlsclient_cnsa2_mldsa \
+                bin/tlsclient_cnsa2_ca_mldsa bin/tlsserver
 # The binaries check runs. The host object's are named only where the
 # host test passed; check-skips says which were left out.
 CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_test sha3_test sha3_equiv_test \
@@ -4513,17 +4606,18 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   quic_loop_session \
                   webpki_loop_tcp_nonblocking exporter_test srv_flight_test handshake_strict_test \
                   handshake_strict_pq handshake_strict_webpki webpki_session_test webpki_resume_test \
-                  webpki_resume_tcp_nonblocking x509strict x509strict_ecdsa \
+                  webpki_resume_tcp_nonblocking x509strict x509strict_ecdsa x509strict_mldsa \
                   ticket_epoch_tcp_nonblocking ticket_epoch_quic $(patsubst bin/%,%,$(CNSA2_BINS))
 CHECK_LIBRARY_BUILDS := check-lib-drbg check-lib-session check-lib-session-cxx check-lib-extern check-examples check-lib-ca-rsa check-lib-ca-ecdsa \
               check-lib-webpki check-lib-webpki-tcp-nonblocking check-lib-tx-record \
               check-lib-quic check-lib-quic-webpki-both check-lib-server check-lib-server-tcp-nonblocking \
               check-lib-raw-ecdsa-pq check-lib-cnsa2 check-lib-cnsa2-ca check-lib-cnsa2-tcp-nonblocking \
-              check-lib-cnsa2-quic check-lib-exporter check-lib-server-quic-keylog \
+              check-lib-cnsa2-quic check-lib-cnsa2-mldsa check-lib-cnsa2-ca-mldsa \
+              check-lib-cnsa2-ca-mldsa-quic check-lib-exporter check-lib-server-quic-keylog \
               check-lib-server-aes check-lib-server-aes-extern check-lib-quic-aes \
               check-lib-pair \
               check-stack-webpki check-stack-exporter check-stack-quic check-stack-server check-stack-suite \
-              check-stack-cnsa2 check-stack-cnsa2-quic
+              check-stack-cnsa2 check-stack-cnsa2-quic check-stack-cnsa2-ca-mldsa
 CHECK_RUN_HOST_VECTOR := $(patsubst bin/%,check-run-%,$(HOST_VECTOR_BINS))
 .PHONY: $(CHECK_LIBRARY_BUILDS) $(addprefix check-run-,$(CHECK_RUN_BINS)) $(CHECK_RUN_HOST_VECTOR) \
         check-chacha-builds check-mlkem-builds check-widemul-builds check-host-builds check-hash-builds \
@@ -4809,6 +4903,20 @@ check-lib-cnsa2-tcp-nonblocking:
 	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check $(CNSA2_LIB) TRANSPORT=tcp-nonblocking > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 check-lib-cnsa2-quic:
 	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check $(CNSA2_LIB) TRANSPORT=quic-nonblocking > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The two ML-DSA-87 trust modes (docs/decisions.md 157), and the CA one
+# over QUIC, whose ch_quic holds the handshake state with the leaf key.
+# Their rows spell the profile's variables out word by word, because
+# tools/impact_map.py reads a row's NAME=value words, and these two TRUST
+# values build under PROFILE=cnsa2 alone.
+check-lib-cnsa2-mldsa:
+	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern PROFILE=cnsa2 AES=extern \
+	  CFLAGS='$(CFLAGS) -DCH_AES_EXTERN_CONSTANT_TIME' TRUST=raw-mldsa > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+check-lib-cnsa2-ca-mldsa:
+	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern PROFILE=cnsa2 AES=extern \
+	  CFLAGS='$(CFLAGS) -DCH_AES_EXTERN_CONSTANT_TIME' TRUST=ca-mldsa > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+check-lib-cnsa2-ca-mldsa-quic:
+	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern PROFILE=cnsa2 AES=extern \
+	  CFLAGS='$(CFLAGS) -DCH_AES_EXTERN_CONSTANT_TIME' TRUST=ca-mldsa TRANSPORT=quic-nonblocking > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # The exporter axis: the one build that verifies PUBLIC_EXPORT against
 # a packaged object, since bin/exporter_test links $(SRCS) directly
 # and never reads LIB_SRCS or PUBLIC. It is lib-check alone until
@@ -4894,6 +5002,12 @@ check-stack-cnsa2:
 check-stack-cnsa2-quic:
 	@mkdir -p bin/check; $(MAKE) lint-stack $(CNSA2_LIB) TRANSPORT=quic-nonblocking EXPORTER=off \
 	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# TRUST=ca-mldsa, whose blocking driver holds the handshake state with
+# the leaf's 2592-byte key on its stack, and whose objects package mldsa.c
+# under its own ceiling (docs/decisions.md 157).
+check-stack-cnsa2-ca-mldsa:
+	@mkdir -p bin/check; $(MAKE) lint-stack RAND=extern PROFILE=cnsa2 AES=extern \
+	  CFLAGS='$(CFLAGS) -DCH_AES_EXTERN_CONSTANT_TIME' TRUST=ca-mldsa > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # The AES-GCM suites in a host object: aes.c, gcm.c and the AES files
 # under them, sha512_hw.c and sha512_avx2.c, which no other frame-budget
 # check of this target compiles. sha512_avx2.c's one function has a
@@ -5507,9 +5621,10 @@ endef
         wycheproof-run-default wycheproof-run-host wycheproof-run-aes-extern
 wycheproof:
 	@$(call wycheproof_fetch,wycheproof); \
-	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h && \
+	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h \
+	  bin/wycheproof_mldsa_sign_vectors.h && \
 	$(MAKE) --no-print-directory -j4 wycheproof-default wycheproof-host wycheproof-aes-extern \
-	  wycheproof-mlkem1024 wycheproof-mlkem1024-host
+	  wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-mldsa-sign
 # The three tests build and run at once, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
@@ -5560,6 +5675,18 @@ WYCHEPROOF_MLKEM1024_DEFAULT = $(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -Itest -Ibin 
   test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS)
 WYCHEPROOF_MLKEM1024_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -I. -Itest -Ibin \
   test/wycheproof_mlkem1024_test.c $(call host_srcs,$(WYCHEPROOF_MLKEM1024_SRCS))
+# The test-only ML-DSA-87 signer the PROFILE=cnsa2 mocks sign with,
+# held to the seeded signing suite over bin/wycheproof_mldsa_sign_vectors.h
+# (docs/decisions.md 157). It is test code alone, so it runs on the
+# portable files in one lane.
+WYCHEPROOF_MLDSA_SIGN = $(CC) $(CFLAGS) -I. -Itest -Ibin test/wycheproof_mldsa_sign_test.c \
+  test/mldsa_sign.c mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c
+.PHONY: wycheproof-mldsa-sign wycheproof-run-mldsa-sign
+wycheproof-mldsa-sign:
+	@python3 tools/stamp.py wycheproof-mldsa-sign $(WYCHEPROOF_STAMP_INPUTS) \
+	  --output '$(WYCHEPROOF_MLDSA_SIGN) -E' -- $(MAKE) --no-print-directory wycheproof-run-mldsa-sign
+wycheproof-run-mldsa-sign:
+	@$(WYCHEPROOF_MLDSA_SIGN) -o bin/wycheproof_mldsa_sign_test && ./bin/wycheproof_mldsa_sign_test
 .PHONY: wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-run-mlkem1024 \
         wycheproof-run-mlkem1024-host
 wycheproof-mlkem1024:
@@ -6460,7 +6587,7 @@ else
 	@$(call TIDY_EACH,$(filter-out webpki.c webpki_ticket.c webpki_pin.c \
 	  webpki_cfg.c handshake_groups.c x509_ca.c drbg.c test/drbg_test.c test/entropy_recipe.c \
 	  test/webpki_resume_test.c test/webpki_session_test.c test/cnsa2_test.c test/cnsa2_quic_test.c \
-	  test/webpki_chain_test.c test/webpki_auth_test.c \
+	  test/x509_mldsa_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
 	  test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) \
 	  $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c \
 	  test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c \
@@ -6797,6 +6924,17 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_TCP_NONBLOCKING $(CNSA2_DEF) -I. -Itest)
 	@$(call TIDY_EACH,quic_config.c test/cnsa2_quic_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(CNSA2_DEF) -I. -Itest)
+	# The profile's two ML-DSA-87 trust modes (docs/decisions.md 157): the
+	# sources whose arms CH_PIN_MLDSA picks and the test mains that run
+	# them, raw and CA, and the CA mode over QUIC.
+	@$(call TIDY_EACH,tls.c handshake_auth.c handshake_message.c handshake_parser.c x509.c x509_der.c \
+	  test/cnsa2_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(CNSA2_DEF) -DCH_PIN_MLDSA -I. -Itest)
+	@$(call TIDY_EACH,handshake_auth.c x509_ca.c test/cnsa2_test.c test/x509_mldsa_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(CNSA2_DEF) -DCH_TRUST_CA -DCH_PIN_MLDSA -I. -Itest)
+	@$(call TIDY_EACH,quic_config.c test/cnsa2_quic_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA $(CNSA2_DEF) \
+	  -DCH_PIN_MLDSA -I. -Itest)
 	# The QUIC mode: its sources and its three test mains, under every
 	# check.
 	@$(call TIDY_EACH,$(QUIC_SRCS), \
@@ -7093,7 +7231,7 @@ endif
 CPPCHECK_FLAGS := --std=c11 --enable=warning,style,performance,portability \
   --inline-suppr --suppress=missingIncludeSystem \
   --suppress=constParameterCallback --suppress=shiftTooManyBitsSigned \
-  $(HOST_RAND_DEF) -UCH_MLKEM_1024 -UCH_PROFILE_CNSA2 --force --error-exitcode=1 --quiet
+  $(HOST_RAND_DEF) -UCH_MLKEM_1024 -UCH_PROFILE_CNSA2 -UCH_PIN_MLDSA --force --error-exitcode=1 --quiet
 # ML-KEM-1024's sources and the tests that build it, in one set's
 # configuration: the files stop at an #error without the define.
 MLKEM1024_CPPCHECK_C := mlkem.c mlkem_poly.c test/mlkem_test.c test/diff_mlkem1024_test.c \
@@ -7134,7 +7272,14 @@ WIDEMUL_NATIVE_COPY_C := poly1305_native.c mlkem_poly_native.c \
 # refusal's condition is always false. The base run keeps the check there.
 CNSA2_CPPCHECK_C := tls.c handshake_message.c handshake_parser.c handshake_flight.c handshake_record.c \
   quic_config.c mlkem.c mlkem_poly.c test/cnsa2_test.c test/cnsa2_quic_test.c
-CPPCHECK_C = $(filter-out $(WIDEMUL_NATIVE_COPY_C) test/cnsa2_test.c test/cnsa2_quic_test.c,$(LINT_C))
+# The two ML-DSA-87 trust modes, which build under the profile alone
+# (docs/decisions.md 157): the sources whose arms CH_PIN_MLDSA picks, and
+# the test mains, in the CA mode's configuration, which --force reads
+# with the raw arms as well.
+MLDSA_CPPCHECK_C := tls.c handshake_auth.c x509.c x509_der.c x509_ca.c quic_config.c test/cnsa2_test.c \
+  test/cnsa2_quic_test.c test/x509_mldsa_test.c
+CPPCHECK_C = $(filter-out $(WIDEMUL_NATIVE_COPY_C) test/cnsa2_test.c test/cnsa2_quic_test.c \
+  test/x509_mldsa_test.c,$(LINT_C))
 .PHONY: lint-cppcheck-run
 lint-cppcheck-run:
 	@build=bin/cppcheck/$$(printf '%s\n' '$(CPPCHECK_FLAGS) $(CPPCHECK_C)' | $(SHA256) | cut -c1-16); \
@@ -7159,6 +7304,12 @@ lint-cppcheck-run:
 	  --suppress=knownConditionTrueFalse:handshake_flight.c \
 	  --cppcheck-build-dir=$$build -j$(LINT_JOBS) --relative-paths=$(CURDIR) \
 	  $(addprefix $(CURDIR)/,$(CNSA2_CPPCHECK_C))
+	@build=bin/cppcheck/$$(printf '%s\n' '$(CPPCHECK_FLAGS) $(CNSA2_DEF) -DCH_PIN_MLDSA $(MLDSA_CPPCHECK_C)' \
+	  | $(SHA256) | cut -c1-16); \
+	mkdir -p $$build; \
+	$(CPPCHECK) $(filter-out -UCH_MLKEM_1024 -UCH_PROFILE_CNSA2 -UCH_PIN_MLDSA,$(CPPCHECK_FLAGS)) $(CNSA2_DEF) \
+	  -DCH_PIN_MLDSA -Itest --cppcheck-build-dir=$$build -j$(LINT_JOBS) --relative-paths=$(CURDIR) \
+	  $(addprefix $(CURDIR)/,$(MLDSA_CPPCHECK_C))
 	# The QEMU and FreeRTOS smoke sources, with two suppressions:
 	# unusedStructMember, because the hardware, not C, reads the vector
 	# table entries; and comparePointers, because __bss_start and

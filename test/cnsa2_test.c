@@ -5,7 +5,9 @@
 // runs two whole handshakes: one under the external PSK and one that
 // resumes the ticket it issued (test/cnsa2_mock.h). It keys every record
 // with TLS_AES_256_GCM_SHA384. The Makefile builds this file under the
-// profile's defines, once for each of TRUST=raw-rsa and TRUST=ca-rsa.
+// profile's defines, once for each of TRUST=raw-rsa and TRUST=ca-rsa, and
+// once for each of TRUST=raw-mldsa and TRUST=ca-mldsa, where the mock also
+// authenticates by an ML-DSA-87 signature (test/cnsa2_mldsa_cases.h).
 // test/cnsa2_quic_test.c runs the same mock over QUIC, and test/e2e.sh
 // runs the profile against OpenSSL.
 #include <stdio.h>
@@ -14,11 +16,13 @@
 
 #include "buf.h"
 #include "ch_assert.h"
+#include "handshake_auth.h"
 #include "handshake_message.h"
 #include "handshake_parser.h"
 #include "keysched.h"
 #include "mlkem.h"
 #include "record.h"
+#include "sha256.h"
 #include "test_random.h"
 #include "test_widemul.h"
 #include "tls.h"
@@ -49,6 +53,18 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 
 #include "cnsa2_mock.h"
 
+// The queue holds a whole server flight. An ML-DSA-87 flight carries up to
+// three certificates of CH_X509_MAX bytes, one more than the profile
+// admits, and a 4627-byte signature.
+#ifdef CH_PIN_MLDSA
+#define MOCK_FLIGHT_MAX (3 * (CH_X509_MAX + 5) + 8 + 5000 + 2048)
+#else
+#define MOCK_FLIGHT_MAX (128 + MLKEM_CT_LEN)
+#endif
+#define MOCK_QUEUE_MAX (MOCK_FLIGHT_MAX + 4096)
+// The most plaintext one record of the mock's flight carries.
+#define MOCK_RECORD_PT 4096
+
 // The mock transport. send captures the ClientHello and opens every
 // record after it; recv answers the hello with the ServerHello in the
 // clear and EncryptedExtensions and Finished in one record under s_hs.
@@ -63,7 +79,7 @@ typedef struct {
     int rendered;
     uint8_t echo[64];
     size_t echo_len;
-    uint8_t queue[8192];
+    uint8_t queue[MOCK_QUEUE_MAX];
     size_t queue_len;
     size_t queue_off;
     rec_dir wr;
@@ -89,13 +105,35 @@ static void push_sealed(mock_server *s, uint8_t type, const uint8_t *msg, size_t
     s->queue_len += out_len;
 }
 
+// Seals each handshake message of the n bytes at msg in records of at
+// most MOCK_RECORD_PT bytes, and no record holds the end of one message
+// and the start of the next, as OpenSSL writes them.
+static void push_messages(mock_server *s, const uint8_t *msg, size_t n) {
+    rbuf r;
+    rb_init(&r, msg, n);
+    while (rb_left(&r) >= 4) {
+        rbuf header = r;
+        (void)rb_u8(&header);
+        size_t len = 4 + rb_u24(&header);
+        const uint8_t *m = rb_bytes(&r, len);
+        CHECK(m != NULL);
+        if (m == NULL) {
+            return;
+        }
+        for (size_t off = 0; off < len; off += MOCK_RECORD_PT) {
+            size_t take = len - off < MOCK_RECORD_PT ? len - off : MOCK_RECORD_PT;
+            push_sealed(s, REC_HANDSHAKE, m + off, take);
+        }
+    }
+}
+
 static void render_flight(mock_server *s) {
-    static uint8_t msg[128 + MLKEM_CT_LEN];
+    static uint8_t msg[MOCK_FLIGHT_MAX];
     push_clear(s, msg, mock_server_hello(&s->m, msg, sizeof msg));
     REC_DIR_INIT_SUITE(&s->wr, s->m.s_hs, SUITE_AES_256_GCM_SHA384);
     REC_DIR_INIT_SUITE(&s->rd, s->m.c_hs, SUITE_AES_256_GCM_SHA384);
     s->keys = 1;
-    push_sealed(s, REC_HANDSHAKE, msg, mock_server_flight(&s->m, NULL, 0, msg, sizeof msg));
+    push_messages(s, msg, mock_server_flight(&s->m, NULL, 0, msg, sizeof msg));
     REC_DIR_INIT_SUITE(&s->wr, s->m.s_ap, SUITE_AES_256_GCM_SHA384);
 }
 
@@ -199,7 +237,7 @@ static int test_connect(ch_tls **t, const ch_cfg *cfg) {
     *t = &record.t;
     int rc = ch_record_init(&record, cfg);
     while (rc == CH_OK) {
-        static uint8_t wire[8192];
+        static uint8_t wire[MOCK_QUEUE_MAX];
         size_t n = 0;
         rc = ch_record_out(&record, wire, sizeof wire, &n);
         CHECK(n <= sizeof wire);
@@ -232,6 +270,9 @@ static int test_connect(ch_tls **t, const ch_cfg *cfg) {
 #endif
 
 #include "cnsa2_cases.h"
+#ifdef CH_PIN_MLDSA
+#include "cnsa2_mldsa_cases.h"
+#endif
 
 int main(void) {
     test_cnsa2_cfg();
@@ -239,6 +280,9 @@ int main(void) {
     test_cnsa2_hello_boundary();
     test_cnsa2_handshake();
     test_cnsa2_server_hello_refusals();
+#ifdef CH_PIN_MLDSA
+    test_cnsa2_mldsa();
+#endif
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

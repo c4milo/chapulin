@@ -79,6 +79,10 @@
 //                          and the SHA-384 binder (docs/decisions.md 151).
 //                          Its CH_MLKEM_1024 takes no bit, because cfg.h
 //                          refuses the profile without it
+//   CH_PIN_MLDSA           CH_X509_MAX, CH_MIN_RXBUF, the handshake state
+//                          that ch_record and ch_quic hold in a CA mode,
+//                          and the length of a pinned key
+//                          (docs/decisions.md 157)
 //
 // Left out, because no public layout or bound reads them: RAND=extern and
 // RAND=drbg, CH_ROLE_BOTH, the AES implementations
@@ -105,6 +109,7 @@
 #define CH_BUILD_RAND_SESSION 0x400U
 #define CH_BUILD_CPU_RUNTIME 0x2000U
 #define CH_BUILD_PROFILE_CNSA2 0x4000U
+#define CH_BUILD_PIN_MLDSA 0x8000U
 
 // Each CH_BUILD_IF_ value is its bit when this translation unit defines
 // the define it names, and 0 when it does not. CH_BUILD_AXES is their
@@ -123,6 +128,11 @@
 #define CH_BUILD_IF_PIN_ECDSA CH_BUILD_PIN_ECDSA
 #else
 #define CH_BUILD_IF_PIN_ECDSA 0U
+#endif
+#ifdef CH_PIN_MLDSA
+#define CH_BUILD_IF_PIN_MLDSA CH_BUILD_PIN_MLDSA
+#else
+#define CH_BUILD_IF_PIN_MLDSA 0U
 #endif
 #ifdef CH_KEX_PQ
 #define CH_BUILD_IF_KEX_PQ CH_BUILD_KEX_PQ
@@ -179,7 +189,7 @@
      CH_BUILD_IF_KEX_PQ | CH_BUILD_IF_TRANSPORT_QUIC_NONBLOCKING |                                 \
      CH_BUILD_IF_TRANSPORT_TCP_NONBLOCKING | CH_BUILD_IF_SUITE_AES_GCM | CH_BUILD_IF_ROLE_SERVER | \
      CH_BUILD_IF_EXPORTER | CH_BUILD_IF_KEYLOG | CH_BUILD_IF_RAND_SESSION |                        \
-     CH_BUILD_IF_CPU_RUNTIME | CH_BUILD_IF_PROFILE_CNSA2)
+     CH_BUILD_IF_CPU_RUNTIME | CH_BUILD_IF_PROFILE_CNSA2 | CH_BUILD_IF_PIN_MLDSA)
 
 // The sizes of the public structs a consumer declares or reads, in
 // bytes, and 0 for a struct this build does not declare. A server role

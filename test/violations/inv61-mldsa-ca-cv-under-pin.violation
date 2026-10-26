@@ -1,0 +1,13 @@
+invariant: INV-61
+file: handshake_auth.c
+catches: cnsa2_test_ca_mldsa
+reason: a CA build checks the CertificateVerify under the pinned CA key
+  instead of the leaf key the chain vouched for, so the leaf's signature
+  fails and a root that signed a handshake itself would pass. Every CA
+  handshake of the mock fails.
+
+--- old
+        mldsa87_verify(h->leaf.key, h->leaf.key_len, content, content_len, NULL, 0, sig, sig_len);
+--- new
+        mldsa87_verify(h->t->cfg.server_pubkey, h->t->cfg.server_pubkey_len, content, content_len,
+                       NULL, 0, sig, sig_len);

@@ -3,8 +3,8 @@
 // handshake.c, which owns the state machine that calls this; the two
 // entry points below are the only ones it needs. The rest stays
 // private here, except hsa_hash_signed_content, which the differential
-// calls. A CH_TRANSPORT_QUIC_NONBLOCKING build declares a third, because its
-// driver reads one handshake message per call and the flight is two
+// calls, and hsa_signed_content, which bin/cnsa2_test calls. A CH_TRANSPORT_QUIC_NONBLOCKING build
+// declares a third, because its driver reads one handshake message per call and the flight is two
 // messages.
 #ifndef CH_HANDSHAKE_AUTH_H
 #define CH_HANDSHAKE_AUTH_H
@@ -81,6 +81,21 @@ int hsa_read_certificate_verify(handshake_state *h);
 // ecdsa_secp384r1_sha384 and SHA256_LEN under the other two. Writes the
 // digest and cannot fail.
 void hsa_hash_signed_content(uint16_t scheme, const uint8_t *hash, size_t hash_len, uint8_t *out);
+
+#ifdef CH_PIN_MLDSA
+// The bytes of the signed content above: 64 + 34 + hash_len. ML-DSA-87
+// signs them whole, with an empty context (draft-ietf-tls-mldsa), so a
+// TRUST=raw-mldsa or TRUST=ca-mldsa build hashes nothing before it
+// verifies. hsa_hash_signed_content's digest is the hash of these bytes,
+// and bin/cnsa2_test holds the two calls to that.
+#define HSA_SIGNED_CONTENT_MAX (64 + 34 + HKDF_HASH_MAX)
+
+// Writes the signed content to out and returns its length. Requires hash
+// pointing at hash_len readable bytes and hash_len from SHA256_LEN to
+// HKDF_HASH_MAX. Cannot fail.
+size_t hsa_signed_content(const uint8_t *hash, size_t hash_len,
+                          uint8_t out[HSA_SIGNED_CONTENT_MAX]);
+#endif
 
 // Raises the stored revocation epoch to the leaf's, once the peer has
 // proved it holds the leaf key. A no-op unless the caller configured

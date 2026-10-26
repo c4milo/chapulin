@@ -2,9 +2,9 @@
 // program is one: it compiles against the headers under defines of its
 // own and links bin/chapulin.o. lib-check builds it three times against
 // every object it checks. Compiled under the object's own defines it must
-// read ch_build equal to its header view and exit 0. Compiled with
-// CH_PIN_ECDSA moved it must read a difference and exit 1. Compiled with
-// the transport moved it must not link, because build.h then names
+// read ch_build equal to its header view and exit 0. Compiled with its
+// pinned algorithm's define moved it must read a difference and exit 1.
+// Compiled with the transport moved it must not link, because build.h then names
 // another transport's record. Exit 2 means the program's own header view
 // is wrong, whichever object it links.
 //
@@ -111,6 +111,9 @@ static uint32_t axes_from_defines(void) {
 #endif
 #ifdef CH_PROFILE_CNSA2
     axes |= CH_BUILD_PROFILE_CNSA2;
+#endif
+#ifdef CH_PIN_MLDSA
+    axes |= CH_BUILD_PIN_MLDSA;
 #endif
     return axes;
 }

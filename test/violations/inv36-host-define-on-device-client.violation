@@ -9,6 +9,7 @@ reason: the Makefile stops telling a device client from a host product, so
   four device clients to define no -DCH_CPU_RUNTIME under HOST_TARGET=yes.
 
 --- old
-DEVICE_CLIENT := $(filter client-raw-rsa client-raw-ecdsa client-ca-rsa client-ca-ecdsa,$(ROLE)-$(TRUST))
+DEVICE_CLIENT := $(filter client-raw-rsa client-raw-ecdsa client-ca-rsa client-ca-ecdsa client-raw-mldsa \
+                   client-ca-mldsa,$(ROLE)-$(TRUST))
 --- new
 DEVICE_CLIENT :=

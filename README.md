@@ -125,12 +125,12 @@ first value listed is the default.
 | Variable | Values | What it chooses |
 | --- | --- | --- |
 | `RAND` | `extern`, `drbg`, `session` (no default) | Your own `ch_rand_bytes`, the built-in seeded generator, or a source each session names in its configuration ([`docs/entropy.md`](docs/entropy.md)) |
-| `TRUST` | `raw-rsa`, `raw-ecdsa`, `ca-rsa`, `ca-ecdsa`, `webpki`, `none` | How a client checks the server; `none` is for a server role |
+| `TRUST` | `raw-rsa`, `raw-ecdsa`, `ca-rsa`, `ca-ecdsa`, `raw-mldsa`, `ca-mldsa`, `webpki`, `none` | How a client checks the server; the two `mldsa` values build under `PROFILE=cnsa2` alone, and `none` is for a server role |
 | `ROLE` | `client`, `server`, `both` | Which side of the handshake the object runs |
 | `TRANSPORT` | `tcp-blocking`, `tcp-nonblocking`, `quic-nonblocking` | What TLS runs over, and whether chapulin or your code does the I/O |
 | `KEX` | `x25519`, `pq` | The key exchange of a raw or ca client |
 | `SUITE` | `chacha`, `aesgcm` | Adds the AES-GCM suites to a web PKI client or a server |
-| `PROFILE` | `general`, `cnsa2` | `cnsa2` makes a raw or ca client on CNSA 2.0's algorithms alone: ML-KEM-1024, `TLS_AES_256_GCM_SHA384` and an external PSK, on `AES=extern` ([`docs/building.md`](docs/building.md)) |
+| `PROFILE` | `general`, `cnsa2` | `cnsa2` makes a raw or ca client on CNSA 2.0's algorithms alone: ML-KEM-1024, `TLS_AES_256_GCM_SHA384`, and an external PSK or, under `TRUST=raw-mldsa` and `TRUST=ca-mldsa`, an ML-DSA-87 server key, on `AES=extern` ([`docs/building.md`](docs/building.md)) |
 | `AES` | `soft`, `extern` | A device object's AES, when its build uses AES: the table, for QUIC's public keys alone, or the `ch_aes_block` your image defines |
 | `EXPORTER` | `off`, `on` | Adds `ch_export`, the TLS exporter |
 | `KEYLOG` | `off`, `on` | Hands each traffic secret to a hook you define, for an NSS key log |
@@ -174,6 +174,7 @@ A client checks the server in one of these ways, chosen when you build it.
 | Pre-shared key | a raw or ca build, with `cfg.psk` set | The server knows the shared key (ECDHE-PSK, so the session keeps forward secrecy) | A secret provisioned on both sides |
 | Pinned key | `TRUST=raw-rsa` (default) or `TRUST=raw-ecdsa` | The server's signature, against the public key you pinned. The client parses no certificate. | The server's public key |
 | Pinned CA | `TRUST=ca-rsa` or `TRUST=ca-ecdsa` | A chain of one or two certificates up to the CA key you pinned. No clock. | A CA you run ([`docs/ca.md`](docs/ca.md)) |
+| ML-DSA-87 | `PROFILE=cnsa2` with `TRUST=raw-mldsa` or `TRUST=ca-mldsa` | The pinned-key or pinned-CA check, with ML-DSA-87 signatures and a 2592-byte key | A receive buffer of 7843 bytes (raw) or 15656 (ca), each mode's floor |
 | Web PKI | `TRUST=webpki` | A public certificate chain to the roots you supply, the hostname and the dates. SPKI pins add a check that one pin names a key on the verified path. Pins alone replace the chain check, and one pin must name the server's key. | A 12 kB receive buffer. For a chain: a clock, a hostname and the roots. For pins alone: the pins ([`docs/webpki.md`](docs/webpki.md)). |
 
 The raw and ca modes are for devices: they read no clock and no names.
@@ -193,7 +194,7 @@ signature, a date or a name, and no session calls one.
 | `ch_chain_from_pem` | `ROLE=server`, `ROLE=both` | A certificate chain | The chain of a server identity |
 | `ch_p256_key_from_pem` | `ROLE=server`, `ROLE=both` | A P-256 key, PKCS #8 or SEC 1 | The scalar and the point of an ECDSA identity |
 | `ch_anchors_from_pem` | `TRUST=webpki` | A CA bundle | The roots that `ch_cfg.anchors` takes |
-| `ch_pubkey_from_pem` | `TRUST=ca-rsa`, `TRUST=ca-ecdsa` | One CA certificate | The key that `ch_cfg.server_pubkey` takes |
+| `ch_pubkey_from_pem` | `TRUST=ca-rsa`, `TRUST=ca-ecdsa`, `TRUST=ca-mldsa` | One CA certificate | The key that `ch_cfg.server_pubkey` takes |
 
 `pem_files.h` and `x509_ca.h` state each contract.
 [`docs/server.md`](docs/server.md), [`docs/webpki.md`](docs/webpki.md)

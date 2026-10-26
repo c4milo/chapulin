@@ -54,6 +54,14 @@ bytes instead.
 can pin any compliant server. Neither build carries the other's
 verifier.
 
+`PROFILE=cnsa2` adds a third algorithm, ML-DSA-87, CNSA 2.0's
+signature, in two values of its own: `TRUST=raw-mldsa` pins the
+server's 2592-byte key, and `TRUST=ca-mldsa` pins a CA's 2592-byte key
+and verifies a chain of ML-DSA-87 certificates. Both work as the modes
+above do, and the client offers the one scheme `mldsa87`. They build
+under the profile alone and carry neither the RSA nor the P-256
+verifier ([`docs/decisions.md`](decisions.md) 157).
+
 All modes accept session tickets, so reconnects resume over PSK. In
 pinned mode the client verifies a signature once per ticket lifetime,
 not once per connection.

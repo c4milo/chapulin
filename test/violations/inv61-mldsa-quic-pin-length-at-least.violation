@@ -1,0 +1,11 @@
+invariant: INV-61
+file: quic_config.c
+catches: cnsa2_quic_test_ca_mldsa
+reason: ch_quic_init takes a pin of the fixed length or longer, as the TCP
+  mutant above does for ch_connect. test_cnsa2_quic_mldsa_cfg requires
+  CH_EINVAL with nothing staged.
+
+--- old
+    return len == CH_PIN_FIXED_LEN;
+--- new
+    return len >= CH_PIN_FIXED_LEN;

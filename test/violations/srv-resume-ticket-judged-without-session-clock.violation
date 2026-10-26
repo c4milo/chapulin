@@ -1,7 +1,7 @@
 invariant: INV-14
 file: srv.c
 catches: test/e2e.sh
-builds: bin/tlsclient_tcp_nonblocking bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_aes bin/tlsclient_webpki_aes_extern bin/tlsclient_pq bin/tlsclient_cnsa2 bin/tlsclient_cnsa2_tcp_nonblocking bin/example_psk bin/example_pinned bin/example_ca bin/example_webpki bin/pemkey bin/pemkey_ecdsa bin/tlsserver bin/tlsserver_aes bin/tlsserver_aes_extern
+builds: bin/tlsclient_tcp_nonblocking bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_aes bin/tlsclient_webpki_aes_extern bin/tlsclient_pq bin/tlsclient_cnsa2 bin/tlsclient_cnsa2_tcp_nonblocking bin/tlsclient_cnsa2_mldsa bin/tlsclient_cnsa2_ca_mldsa bin/example_psk bin/example_pinned bin/example_ca bin/example_webpki bin/pemkey bin/pemkey_ecdsa bin/tlsserver bin/tlsserver_aes bin/tlsserver_aes_extern
 reason: ch_srv_accept reads no instant from the caller's clock, so the
   session's instant stays 0, and the blocking server issues no ticket and
   accepts none. A full handshake still completes, so only resumption

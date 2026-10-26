@@ -47,6 +47,8 @@
 
 #ifdef CH_PIN_ECDSA
 #include "p256.h"
+#elif defined(CH_PIN_MLDSA)
+#include "mldsa.h"
 #else
 #include "rsa.h"
 #endif
@@ -151,6 +153,17 @@ int x509_read_spki(rbuf *r, const uint8_t **key, size_t *key_len) {
     if (!havoc_read(r, rb_left(r))) {
         return 0;
     }
+#ifdef CH_PIN_MLDSA
+    // The 2592-byte key cannot sit inside a list the formula can carry:
+    // at a 2640-byte bound CBMC passed 8 GB before the solver ran. So the
+    // key is a readable object of its own, which keeps the copy into
+    // x509_leaf_info at its real length. x509der_mldsa proves the real
+    // reader's key inside its input.
+    static uint8_t mldsa_spki_key[2592];
+    *key = mldsa_spki_key;
+    *key_len = sizeof mldsa_spki_key;
+    return 1;
+#else
     size_t klen;
 #ifdef CH_PIN_ECDSA
     klen = 64;
@@ -163,6 +176,7 @@ int x509_read_spki(rbuf *r, const uint8_t **key, size_t *key_len) {
     *key = r->p + key_off;
     *key_len = klen;
     return 1;
+#endif
 }
 
 // On success the bytes point into the reader's buffer: the shape both
@@ -230,6 +244,18 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
     __CPROVER_assert(sig_len == 0 || __CPROVER_r_ok(sig_der, sig_len), "p256: sig readable");
     return nondet_u8() & 1;
 }
+#elif defined(CH_PIN_MLDSA)
+// The signed bytes are the TBS span in the caller's buffer, so the stub
+// asserts that span readable: the obligation the walker's at_tbs copy
+// carries.
+int mldsa87_verify(const uint8_t *pk, size_t pk_len, const uint8_t *msg, size_t msg_len,
+                   const uint8_t *ctx, size_t ctx_len, const uint8_t *sig, size_t sig_len) {
+    __CPROVER_assert(pk_len == 0 || __CPROVER_r_ok(pk, pk_len), "mldsa: key readable");
+    __CPROVER_assert(msg_len == 0 || __CPROVER_r_ok(msg, msg_len), "mldsa: signed bytes readable");
+    __CPROVER_assert(ctx == NULL && ctx_len == 0, "mldsa: the empty context");
+    __CPROVER_assert(sig_len == 0 || __CPROVER_r_ok(sig, sig_len), "mldsa: sig readable");
+    return nondet_u8() & 1;
+}
 #else
 int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], const uint8_t *sig,
                    size_t sig_len) {
@@ -245,7 +271,7 @@ int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], c
 int main(void) {
 // The proved bound; the header comment argues both numbers.
 #ifndef X509PARSE_BOUND
-#ifdef CH_PIN_ECDSA
+#if defined(CH_PIN_ECDSA) || defined(CH_PIN_MLDSA)
 #define X509PARSE_BOUND 256
 #else
 #define X509PARSE_BOUND 840
@@ -263,6 +289,14 @@ int main(void) {
     uint8_t ca_b[64];
     size_t ca_a_len = 64;
     size_t ca_b_len = 64;
+#elif defined(CH_PIN_MLDSA)
+    // ch_connect's one length. The verifier stub reads no key byte, so
+    // the keys stay zero rather than nondet, which keeps the formula
+    // under the 8 GB the run is capped at.
+    static uint8_t ca_a[2592];
+    static uint8_t ca_b[2592];
+    size_t ca_a_len = sizeof ca_a;
+    size_t ca_b_len = sizeof ca_b;
 #else
     uint8_t ca_a[384];
     uint8_t ca_b[384];
@@ -271,8 +305,10 @@ int main(void) {
     __CPROVER_assume(ca_a_len >= 256 && ca_a_len <= sizeof ca_a && ca_a_len % 8 == 0);
     __CPROVER_assume(ca_b_len >= 256 && ca_b_len <= sizeof ca_b && ca_b_len % 8 == 0);
 #endif
+#ifndef CH_PIN_MLDSA
     fill_nondet(ca_a, sizeof ca_a);
     fill_nondet(ca_b, sizeof ca_b);
+#endif
     const uint8_t *slot_b = ca_b;
     if (nondet_u8() & 1) {
         slot_b = NULL;
@@ -287,6 +323,8 @@ int main(void) {
         __CPROVER_assert(out.key_len <= CH_X509_KEY_MAX, "success: key fits the copy buffer");
 #ifdef CH_PIN_ECDSA
         __CPROVER_assert(out.key_len == 64, "success: the one P-256 key size");
+#elif defined(CH_PIN_MLDSA)
+        __CPROVER_assert(out.key_len == 2592, "success: the one ML-DSA-87 key size");
 #else
         __CPROVER_assert(out.key_len >= 256 && out.key_len <= 384 && out.key_len % 8 == 0,
                          "success: modulus in the verifier's admitted range");

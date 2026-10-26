@@ -1,0 +1,13 @@
+invariant: INV-61
+file: handshake_auth.c
+catches: cnsa2_test_mldsa
+reason: the ML-DSA-87 signed content loses the NUL byte after the context
+  string, so it is no longer RFC 9846 section 4.4.3's content. The mock
+  signs the content with the NUL, every pinned handshake fails, and
+  test_mldsa_signed_content's SHA-256 of the bytes no longer matches
+  hsa_hash_signed_content's digest.
+
+--- old
+    wb_bytes(&w, (const uint8_t *)ctx, sizeof ctx); // sizeof keeps the NUL
+--- new
+    wb_bytes(&w, (const uint8_t *)ctx, sizeof ctx - 1);

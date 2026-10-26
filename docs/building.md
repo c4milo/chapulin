@@ -122,6 +122,20 @@ Other targets:
   profile. Size `cfg.buf_len` at `CH_MIN_RXBUF` or more: 1637 bytes over
   TCP and 1632 over QUIC. `PROFILE=general`, the default, is every other
   build.
+- `TRUST=raw-mldsa` and `TRUST=ca-mldsa` give the profile an ML-DSA-87
+  server key (decision 157), and they build under `PROFILE=cnsa2` alone:
+  the Makefile and `build.zig` refuse them elsewhere. They set
+  `-DCH_PIN_MLDSA`, package `mldsa.c` and `mldsa_poly.c`, and drop
+  `rsa.c`, `rsa_mont.c` and `p256.c`. The hello offers one signature
+  scheme, `mldsa87` (0x0906). The pin, in either slot, is the whole
+  2592-byte key: the server's own key in the raw mode, and a CA's key in
+  the ca mode, which verifies a chain of one or two ML-DSA-87
+  certificates. The external PSK stays a second way in, as in every raw
+  or ca build. `CH_X509_MAX` is 7808 bytes, so `CH_MIN_RXBUF` is 7843
+  bytes in the raw mode and 15656 in the ca mode. For example: `make lib
+  PROFILE=cnsa2 TRUST=ca-mldsa AES=extern RAND=extern CFLAGS='-std=c11 -Os
+  -DCH_AES_EXTERN_CONSTANT_TIME'`. `ch_connect` peaks at about 22 kB of
+  stack in the ca mode (docs/performance.md).
 - On an arm64 or x86-64 host, `TRUST=webpki`, `ROLE=server` and
   `ROLE=both` build a host object (decision 89). The Makefile and
   `build.zig` run the host test on the compiler: it targets arm64 or

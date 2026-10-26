@@ -1276,6 +1276,17 @@ launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,writ
 # 47 s, 2.9 GB and 8.1 million at a load average of 27 to 49;
 # parse_ecdsa 983, 835 s, 7.1 GB and 10.0 million at a load average of 5
 # to 257, so its weight is now 8.
+# The ML-DSA-87 variants (docs/decisions.md 157), and the two walkers
+# again after x509.c's signed_part, measured under run.sh
+# (PROVE_ONLY=<name> PROVE_NO_CACHE=1 /usr/bin/time -l) on 2026-10-26,
+# with a watcher that stops a run past 8 GB resident (cbmc 6.11.0,
+# kissat): x509der_mldsa 906 properties, 70 s, 3.9 GB, its SPKI arm over
+# a 2624-byte buffer of its own; x509parse_mldsa 990, 580 s, 4.9 GB;
+# x509parse_ecdsa 983, 877 s, 7.8 GB; x509parse 983, 2032 s, 8.1 GB.
+# x509parse_mldsa's SPKI stub hands back the 2592-byte key in an object
+# of its own: a list that held it took the formula past 8 GB at 2640
+# bytes. Probes of assert(0) at its CH_OK tail and at the leaf-under-
+# intermediate refusal each fail at the 256-byte bound.
 # All four keep fixed arrays where webpki_cert takes a heap object of
 # the input's exact length (docs/proofs.md). As heap objects, x509der's
 # inputs made 6.5 million clauses but peaked at 4.9 GB in 52 s, and at
@@ -1403,7 +1414,10 @@ launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,writ
 #
 # x509ca proves the provisioning walk over any input, with the DER
 # primitives stubbed to the contracts x509der proves. Measured 7 s /
-# 0.34 GB rsa, 5 s / 0.15 GB ecdsa, 730 properties.
+# 0.34 GB rsa, 5 s / 0.15 GB ecdsa, 730 properties. x509ca_mldsa sets
+# CH_X509_MAX to 2688 in place of 7808, which passed 8 GB in 17 s, and
+# unwinds the wipe and the harness's check of the 2592-byte key: 760
+# properties, 24 s, 2.6 GB (docs/decisions.md 157).
 launch fast full base64 66 "" base64.c
 launch fast full pem_step 66 "" base64.c buf.c ct.c proof/ct_wipe_stub.c
 launch fast full pem_step_ecdsa 66 "" base64.c buf.c ct.c proof/ct_wipe_stub.c
@@ -1417,6 +1431,7 @@ launch fast:4 full pem_files 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anchors_
 launch fast:4 full pem_files_host 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anchors_from_pem_tcp_blocking.4:6" -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME buf.c ct.c proof/ct_wipe_stub.c
 launch fast:1 full x509ca 400 "fill_nondet.0:1537" buf.c ct.c proof/ct_wipe_stub.c
 launch fast:1 full x509ca_ecdsa 400 "fill_nondet.0:1537" buf.c ct.c proof/ct_wipe_stub.c
+launch fast:1 full x509ca_mldsa 400 "fill_nondet.0:2689,ct_wipe.0:2593,main.0:2593" buf.c ct.c proof/ct_wipe_stub.c
 # The TRUST=webpki pieces that read no certificate. webpki_time proves
 # the Time reader over 40 nondet bytes from any reader state and the
 # clock packer over every uint64. The packer's order, a later clock
@@ -1676,7 +1691,9 @@ launch fast full webpki_pin 5 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH
 launch fast full webpki_leaf_pin 6 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c proof/ct_wipe_stub.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
+launch fast:3 full x509der_mldsa 452 "fill_nondet.0:2625,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
 launch slow:8 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
+launch slow:8 full x509parse_mldsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
 launch slow:8 full x509parse 844 "fill_nondet.0:841,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 # The AES-128 forward cipher and the two aes_public_key constructors,

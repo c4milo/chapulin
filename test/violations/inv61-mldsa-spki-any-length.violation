@@ -1,0 +1,13 @@
+invariant: INV-61
+file: x509_der.c
+catches: x509strict_mldsa
+reason: the SPKI reader takes an ML-DSA-87 key of any length, so a
+  certificate whose key is 2591 or 2593 bytes passes the profile and
+  reaches the verifier. test_lengths requires unsupported_certificate
+  for both.
+
+--- old
+    if (!x509_read_bitstring(&s, &bits, &bits_len) || s.err || rb_left(&s) != 0 ||
+        bits_len != 2592) {
+--- new
+    if (!x509_read_bitstring(&s, &bits, &bits_len) || s.err || rb_left(&s) != 0) {

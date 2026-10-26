@@ -248,6 +248,38 @@ int x509_read_spki(rbuf *r, const uint8_t **key, size_t *key_len) {
     *key_len = 64;
     return 1;
 }
+#elif defined(CH_PIN_MLDSA)
+// id-ml-dsa-87 (2.16.840.1.101.3.4.3.19), parameters absent (RFC 9881
+// section 2). The same identifier names the signature algorithm in x509.c.
+static const uint8_t spki_algid[] = {0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48,
+                                     0x01, 0x65, 0x03, 0x04, 0x03, 0x13};
+
+int x509_read_spki(rbuf *r, const uint8_t **key, size_t *key_len) {
+    size_t len = 0;
+    if (!x509_read_header(r, 0x30, &len)) {
+        return 0;
+    }
+    const uint8_t *body = rb_bytes(r, len);
+    if (body == NULL) {
+        return 0;
+    }
+    rbuf s;
+    rb_init(&s, body, len);
+    if (!x509_read_exact(&s, spki_algid, sizeof spki_algid)) {
+        return 0;
+    }
+    // The key is the BIT STRING's whole content: rho, then t1, 2592
+    // bytes that pkDecode reads at any value (FIPS 204 Algorithm 23).
+    const uint8_t *bits = NULL;
+    size_t bits_len = 0;
+    if (!x509_read_bitstring(&s, &bits, &bits_len) || s.err || rb_left(&s) != 0 ||
+        bits_len != 2592) {
+        return 0;
+    }
+    *key = bits;
+    *key_len = bits_len;
+    return 1;
+}
 #else
 // rsaEncryption with its mandatory NULL parameters (RFC 3279 §2.3.1).
 static const uint8_t spki_algid[] = {0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,

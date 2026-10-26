@@ -587,16 +587,7 @@ COPIES = {
 # package it. The check that every root source is shipped skips them, and
 # each must still be compiled by a harness under the `full` check set. An
 # entry is stale, and fails, once a build in BUILDS packages its file.
-NOT_YET_PACKAGED = {
-    "mldsa.c": (
-        "ML-DSA-87 verification (docs/decisions.md 154). Test binaries alone "
-        "compile it until the raw-mldsa and ca-mldsa TRUST values package it."
-    ),
-    "mldsa_poly.c": (
-        "ML-DSA-87's polynomial layer, which mldsa.c calls. It is packaged "
-        "with mldsa.c."
-    ),
-}
+NOT_YET_PACKAGED = {}
 
 
 # The two forms a stub body's marker takes, and the same pattern the

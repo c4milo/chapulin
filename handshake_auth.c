@@ -14,9 +14,12 @@
 #include "handshake_record.h"
 #include "session.h"
 
-// Exactly one pinned-mode verifier is linked per build (Makefile PIN).
+// Exactly one pinned-mode verifier is linked per build (Makefile TRUST).
 #ifdef CH_PIN_ECDSA
 #include "p256.h"
+#elif defined(CH_PIN_MLDSA)
+#include "buf.h"
+#include "mldsa.h"
 #else
 #include "rsa.h"
 #endif
@@ -69,6 +72,22 @@ void hsa_hash_signed_content(uint16_t scheme, const uint8_t *hash, size_t hash_l
     sha256_final(&s, out);
 }
 
+#ifdef CH_PIN_MLDSA
+size_t hsa_signed_content(const uint8_t *hash, size_t hash_len,
+                          uint8_t out[HSA_SIGNED_CONTENT_MAX]) {
+    static const char ctx[] = "TLS 1.3, server CertificateVerify";
+    wbuf w;
+    wb_init(&w, out, HSA_SIGNED_CONTENT_MAX);
+    for (int i = 0; i < 64; i++) {
+        wb_u8(&w, ' ');
+    }
+    wb_bytes(&w, (const uint8_t *)ctx, sizeof ctx); // sizeof keeps the NUL
+    wb_bytes(&w, hash, hash_len);
+    CH_ASSERT(!w.err);
+    return w.len;
+}
+#endif
+
 #ifdef CH_TRUST_WEBPKI
 // The one CertificateVerify scheme the leaf's key family can produce.
 // RFC 9846 §4.3.3 binds the hash to the curve for ECDSA and requires
@@ -104,9 +123,9 @@ static int verify_leaf_signature(uint32_t cpu, const webpki_leaf_info *leaf,
 
 // CertificateVerify: parse, rebuild the §4.5.2 signed content over the
 // hash_len-byte transcript hash, and verify against pin slot A then B.
-// The CA and webpki builds swap in the chain's leaf key here. Only a
-// webpki build can run a suite whose hash is not SHA-256, so hash_len
-// is SHA256_LEN in the raw and ca arms.
+// The CA and webpki builds swap in the chain's leaf key here. A webpki
+// build may run, and PROFILE=cnsa2 runs, a suite whose hash is SHA-384, so
+// hash_len is SHA384_LEN there and SHA256_LEN in every other build.
 static int check_certificate_verify(handshake_state *h, const uint8_t *hash, size_t hash_len) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
@@ -144,14 +163,23 @@ static int check_certificate_verify(handshake_state *h, const uint8_t *hash, siz
     hsa_hash_signed_content(scheme, hash, hash_len, signed_hash);
     int sig_ok = verify_leaf_signature(CH_CFG_CPU(h->t->cfg), &h->leaf, signed_hash, sig, sig_len);
 #else
+#ifdef CH_PIN_MLDSA
+    // ML-DSA-87 signs the content itself, under an empty context.
+    uint8_t content[HSA_SIGNED_CONTENT_MAX];
+    size_t content_len = hsa_signed_content(hash, hash_len, content);
+#else
     uint8_t signed_hash[SHA256_LEN];
     hsa_hash_signed_content(CH_PIN_SIGALG, hash, hash_len, signed_hash);
+#endif
 #ifdef CH_TRUST_CA
     // The chain's leaf key signs the handshake; the pins already
     // vouched for the chain in hsa_server_auth.
     int sig_ok;
 #ifdef CH_PIN_ECDSA
     sig_ok = p256_ecdsa_verify(h->leaf.key, signed_hash, sig, sig_len);
+#elif defined(CH_PIN_MLDSA)
+    sig_ok =
+        mldsa87_verify(h->leaf.key, h->leaf.key_len, content, content_len, NULL, 0, sig, sig_len);
 #else
     sig_ok =
         RSA_PSS_VERIFY_CPU(h->t->cfg.cpu, h->leaf.key, h->leaf.key_len, signed_hash, sig, sig_len);
@@ -163,6 +191,9 @@ static int check_certificate_verify(handshake_state *h, const uint8_t *hash, siz
     for (int i = 0; i < 2 && !sig_ok && keys[i] != NULL; i++) {
 #ifdef CH_PIN_ECDSA
         sig_ok = p256_ecdsa_verify(keys[i], signed_hash, sig, sig_len);
+#elif defined(CH_PIN_MLDSA)
+        size_t len = i == 0 ? h->t->cfg.server_pubkey_len : h->t->cfg.server_pubkey2_len;
+        sig_ok = mldsa87_verify(keys[i], len, content, content_len, NULL, 0, sig, sig_len);
 #else
         size_t len = i == 0 ? h->t->cfg.server_pubkey_len : h->t->cfg.server_pubkey2_len;
         sig_ok = RSA_PSS_VERIFY_CPU(h->t->cfg.cpu, keys[i], len, signed_hash, sig, sig_len);
@@ -184,7 +215,7 @@ static int check_certificate_verify(handshake_state *h, const uint8_t *hash, siz
 // Certificate message with minimal framing checks — its contents are
 // authenticated by the signature, not by parsing — then require a
 // CertificateVerify whose signature (RSA-PSS by default, ECDSA-P256 under
-// CH_PIN_ECDSA) over the running transcript checks out against either
+// CH_PIN_ECDSA, ML-DSA-87 under CH_PIN_MLDSA) over the running transcript checks out against either
 // provisioned pin slot (slot B holds the staged next key, docs/rotation.md).
 #ifdef CH_TRUST_CA
 // The monotonic revocation rule (docs/ca.md), a no-op until the

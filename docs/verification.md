@@ -805,8 +805,9 @@ The entries are grouped by area:
 #### kem_secret_cnsa2
 
 - **Harness:** `kem_secret_cnsa2` (fast)
-- **Build:** `PROFILE=cnsa2`. It is the only harness that builds
-  `-DCH_PROFILE_CNSA2`.
+- **Build:** `PROFILE=cnsa2`. It and the three ML-DSA-87 variants of
+  the certificate harnesses, `x509der_mldsa`, `x509parse_mldsa` and
+  `x509ca_mldsa`, are the harnesses that build `-DCH_PROFILE_CNSA2`.
 - **Proves:**
   - the profile's shared-secret derivation, `kem_secret` at
     ML-KEM-1024, is safe for any stored seed and any 1568-byte
@@ -819,7 +820,14 @@ The entries are grouped by area:
   [mlkem_1024](#mlkem_1024) proves.
 - **Bound:** the full domain.
 - **Not proved:** the rest of the profile's driver. `bin/cnsa2_test`,
-  `bin/cnsa2_quic_test` and the e2e tests against OpenSSL cover it.
+  `bin/cnsa2_quic_test` and the e2e tests against OpenSSL cover it. No
+  harness builds `handshake_auth.c` under `CH_PIN_MLDSA`, so the
+  ML-DSA-87 CertificateVerify arm and `hsa_signed_content` rest on
+  `bin/cnsa2_test_mldsa`, `bin/cnsa2_test_ca_mldsa`,
+  `bin/cnsa2_tcp_nonblocking_mldsa`, `bin/cnsa2_quic_test_ca_mldsa`, the
+  e2e tests against OpenSSL 3.5's ML-DSA-87 server and INV-61's mutants
+  (decision 157). `bin/x509strict_mldsa` holds the certificate profile
+  under ML-DSA-87, boundary by boundary.
 
 ### Signatures
 
@@ -2733,27 +2741,40 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 
 #### x509der
 
-- **Harnesses:** `x509der` (fast), `x509der_ecdsa` (fast)
+- **Harnesses:** `x509der` (fast), `x509der_ecdsa` (fast), `x509der_mldsa` (fast)
 - **Proves:** every DER primitive stays safe on hostile bytes at the
   rbuf shape its caller hands it, honors the pointer contracts the
   walker rests on, and consumes no more than the per-primitive cap the
-  walker proof replays, in both builds.
-- **Bound:** inputs ≤ 448 B; keyusage at its 256 B extnValue cap.
+  walker proof replays, in all three builds. Under `CH_PIN_MLDSA` the
+  SPKI reader yields a key of exactly 2592 bytes inside its input
+  (decision 157).
+- **Bound:** inputs ≤ 448 B; keyusage at its 256 B extnValue cap. The
+  ML-DSA-87 SPKI reader reads 2624 B, past the 2614 B of the largest
+  SPKI it admits.
 
 #### x509parse
 
-- **Harnesses:** `x509parse` (slow), `x509parse_ecdsa` (slow)
+- **Harnesses:** `x509parse` (slow), `x509parse_ecdsa` (slow), `x509parse_mldsa` (slow)
 - **Proves:** the certificate walker stays safe on any entry list, with
-  the primitives stubbed to their proven contracts. Only the ECDSA build
-  proves the full two-entry flight.
-- **Bound:** ECDSA: ≤ 256 B, two entries. RSA: ≤ 840 B, one entry.
+  the primitives stubbed to their proven contracts. The ECDSA and
+  ML-DSA-87 builds prove the full two-entry flight. Under `CH_PIN_MLDSA`
+  the signature covers the TBS span itself, and the stub of
+  `mldsa87_verify` asserts that span readable in the caller's buffer and
+  the context empty.
+- **Bound:** ECDSA and ML-DSA-87: ≤ 256 B, two entries. RSA: ≤ 840 B,
+  one entry. The ML-DSA-87 SPKI stub hands back a 2592 B key in an
+  object of its own, because a list that holds the key itself took the
+  formula past 8 GB at 2640 B. `x509der_mldsa` proves the real reader's
+  key inside its input. Probes of `assert(0)` at the `CH_OK` tail and at
+  the refusal of a leaf under its intermediate each fail, so both are
+  reached at the bound.
 - **Not proved:** the RSA build's two-entry walk. The RSA bound holds one
   maximum certificate plus framing, so its two-entry walk rests on the
   ECDSA proof and on the walker being identical outside the SPKI arm.
 
 #### x509ca
 
-- **Harnesses:** `x509ca` (fast), `x509ca_ecdsa` (fast)
+- **Harnesses:** `x509ca` (fast), `x509ca_ecdsa` (fast), `x509ca_mldsa` (fast)
 - **Proves:** the provisioning walk stays safe on any input and honors
   its contract: a success yields a key inside `CH_X509_KEY_MAX`, and
   every rejection yields zero with the key wiped. DER primitives are
@@ -2761,6 +2782,11 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   deliberately returns lengths outside the real range, so the entry's
   own bound check is what keeps the copy in range.
 - **Bound:** any input; decoded certificate ≤ `CH_X509_MAX`.
+  `x509ca_mldsa` proves the 2592 B key under a `CH_X509_MAX` of 2688 B
+  in place of the build's 7808: at 7808 the formula passed 8 GB. The
+  stub's key length still runs past `CH_X509_KEY_MAX`, so the entry's
+  length check meets both sides, and the walk reads `CH_X509_MAX`
+  nowhere else (decision 157).
 
 ### Certificates: the PEM files an operator provisions
 
@@ -6834,6 +6860,15 @@ Three more suites run on every push and add evidence rather than proof.
 - ML-DSA-87 verification: the 241 cases of the verify suite, every one,
   and the 156 valid signatures of the two signing suites, 27 of them by
   mu alone (decision 154).
+
+`bin/wycheproof_mldsa_sign_test` holds the test-only ML-DSA-87 signer,
+`test/mldsa_sign.c`, to the 92 valid cases of the seeded signing suite:
+for each one the signer's public key and signature match Wycheproof's
+byte for byte, and `mldsa87_verify` accepts the signature. The mock
+servers of the `PROFILE=cnsa2` tests sign with that signer, so their
+CertificateVerify and their certificates carry FIPS 204's signatures
+(decision 157). No library source calls the signer, and the 6,364 do
+not count its cases.
 
 ML-KEM-1024's three suites, 511 cases, run in a binary of their own,
 `bin/wycheproof_mlkem1024_test`, built under `-DCH_MLKEM_1024` with the

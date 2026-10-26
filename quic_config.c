@@ -15,6 +15,8 @@
 #endif
 #ifdef CH_PIN_ECDSA
 #include "p256.h"
+#elif defined(CH_PIN_MLDSA)
+#include "mldsa.h"
 #else
 #include "rsa.h"
 #endif
@@ -100,12 +102,12 @@ static int trust_config_ok(const ch_cfg *cfg) {
     return webpki_cfg_ok(cfg);
 }
 #else
-// The pin length the build's one algorithm takes: 64 raw P-256 bytes
-// under CH_PIN_ECDSA, an RSA-2048..3072 modulus, a whole number of
-// 8-byte words, otherwise. Both pin slots obey it.
+// The pin length the build's one algorithm takes: CH_PIN_FIXED_LEN bytes
+// under CH_PIN_ECDSA and CH_PIN_MLDSA, an RSA-2048..3072 modulus, a whole
+// number of 8-byte words, otherwise. Both pin slots obey it.
 static int pin_len_ok(size_t len) {
-#ifdef CH_PIN_ECDSA
-    return len == 64;
+#ifdef CH_PIN_FIXED_LEN
+    return len == CH_PIN_FIXED_LEN;
 #else
     return len >= 256 && len <= 384 && len % 8 == 0;
 #endif
@@ -130,9 +132,9 @@ static int trust_config_ok(const ch_cfg *cfg) {
         return 0;
     }
     if (pin_ok && !CH_TAKES_PINS) {
-        return 0; // PROFILE=cnsa2 takes an external PSK alone (profile_cfg.h)
+        return 0; // PROFILE=cnsa2 takes a pin under CH_PIN_MLDSA alone (profile_cfg.h)
     }
-#ifndef CH_PIN_ECDSA
+#ifndef CH_PIN_FIXED_LEN // an RSA build
     // Every real modulus is odd, a product of odd primes, so an even pin
     // in either slot is provisioning corruption. tls.c refuses it here
     // for the same reason: inside the handshake it would surface as

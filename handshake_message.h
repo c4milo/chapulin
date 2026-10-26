@@ -103,7 +103,7 @@
 // session and parser headers that declare its fields sit below this one.
 
 // SignatureScheme code points (RFC 9846 §4.3.3). A raw or ca build
-// offers the first two, one per build (CH_PIN_SIGALG below). A
+// offers one of the first two, or ML-DSA-87 under PROFILE=cnsa2 (CH_PIN_SIGALG below). A
 // TRUST=webpki build offers all five, because it cannot know which
 // family signed the chain the server will send. The two PKCS#1 v1.5
 // schemes are offered for certificate signatures only: RFC 9846 §4.3.3
@@ -114,6 +114,10 @@
 #define SIGALG_ECDSA_P384_SHA384 0x0503
 #define SIGALG_RSA_PKCS1_SHA256 0x0401
 #define SIGALG_RSA_PKCS1_SHA384 0x0501
+// mldsa87 (draft-ietf-tls-mldsa): pure ML-DSA-87 over the whole signed
+// content, with an empty context. TRUST=raw-mldsa and TRUST=ca-mldsa offer it
+// alone (docs/decisions.md 157).
+#define SIGALG_MLDSA87 0x0906
 
 // The largest ClientHello this build can emit, as three variable terms
 // over a 137-byte remainder. The remainder is everything whose size a
@@ -215,10 +219,12 @@
 
 // Pinned mode verifies exactly one signature algorithm per build: RSA-PSS
 // by default (what stock cert-based endpoints hold), ECDSA P-256 with
-// -DCH_PIN_ECDSA. The unselected verify module stays out of the packaged
-// library object (see PIN in the Makefile).
+// -DCH_PIN_ECDSA, and ML-DSA-87 with -DCH_PIN_MLDSA. The unselected verify
+// modules stay out of the packaged library object (see TRUST in the Makefile).
 #ifdef CH_PIN_ECDSA
 #define CH_PIN_SIGALG SIGALG_ECDSA_P256_SHA256
+#elif defined(CH_PIN_MLDSA)
+#define CH_PIN_SIGALG SIGALG_MLDSA87
 #else
 #define CH_PIN_SIGALG SIGALG_RSA_PSS_RSAE_SHA256
 #endif

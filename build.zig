@@ -22,7 +22,7 @@ const std = @import("std");
 
 const Transport = enum { @"tcp-blocking", @"tcp-nonblocking", @"quic-nonblocking" };
 const Role = enum { client, server, both };
-const Trust = enum { @"raw-rsa", @"raw-ecdsa", @"ca-rsa", @"ca-ecdsa", webpki, none };
+const Trust = enum { @"raw-rsa", @"raw-ecdsa", @"ca-rsa", @"ca-ecdsa", @"raw-mldsa", @"ca-mldsa", webpki, none };
 const Suite = enum { chacha, aesgcm };
 const Aes = enum { soft, @"extern" };
 const Rand = enum { @"extern", drbg, session };
@@ -112,6 +112,9 @@ const p256_ecdh_srcs = [_][]const u8{ "p256_ecdh.c", "p256_point.c", "p256_scala
 const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
 const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_write.c" };
 const kex_hybrid_srcs = [_][]const u8{ "sha3.c", "mlkem.c", "mlkem_poly.c" };
+/// MLDSA_SRCS: ML-DSA-87's verifier, which TRUST=raw-mldsa and
+/// TRUST=ca-mldsa add (docs/decisions.md 157).
+const mldsa_srcs = [_][]const u8{ "mldsa.c", "mldsa_poly.c" };
 /// WIDEMUL_COPIED: the files built on ct.h's widening multiply that a
 /// host object compiles a second time, as <file>_native.c. x25519.c,
 /// p256_field.c, p256_scalar.c and rsa_sign.c are not among them: their
@@ -384,6 +387,9 @@ fn refuseProfileAxes(profile: Profile, suite: ?Suite, kex: ?Kex) void {
 /// values, in the Makefile's order and with its words.
 fn refuseUnbuildable(config: Config) void {
     const fatal = std.process.fatal;
+    if ((config.trust == .@"raw-mldsa" or config.trust == .@"ca-mldsa") and config.profile != .cnsa2) {
+        fatal("TRUST={t} pins an ML-DSA-87 key, CNSA 2.0's signature: build it with PROFILE=cnsa2 AES=extern", .{config.trust});
+    }
     const client_trusts = "use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa, TRUST=ca-ecdsa or TRUST=webpki";
     switch (config.role) {
         .server => if (config.trust != .none)
@@ -519,7 +525,7 @@ fn withEvex512(b: *std.Build, config: Config, target: std.Build.ResolvedTarget) 
 /// the one product that builds the portable object on a host target.
 fn deviceClient(config: Config) bool {
     return config.role == .client and switch (config.trust) {
-        .@"raw-rsa", .@"raw-ecdsa", .@"ca-rsa", .@"ca-ecdsa" => true,
+        .@"raw-rsa", .@"raw-ecdsa", .@"ca-rsa", .@"ca-ecdsa", .@"raw-mldsa", .@"ca-mldsa" => true,
         .webpki, .none => false,
     };
 }
@@ -706,12 +712,16 @@ fn headersDeclaring(b: *std.Build, names: Names) Names {
 }
 
 fn trustsCa(trust: Trust) bool {
-    return trust == .@"ca-rsa" or trust == .@"ca-ecdsa";
+    return trust == .@"ca-rsa" or trust == .@"ca-ecdsa" or trust == .@"ca-mldsa";
 }
 
-/// PIN_DEF: the ecdsa half of a pinned trust value.
+/// PIN_DEF: the ecdsa or mldsa half of a pinned trust value.
 fn pinDefs(trust: Trust) Names {
-    return if (trust == .@"raw-ecdsa" or trust == .@"ca-ecdsa") &.{"-DCH_PIN_ECDSA"} else &.{};
+    return switch (trust) {
+        .@"raw-ecdsa", .@"ca-ecdsa" => &.{"-DCH_PIN_ECDSA"},
+        .@"raw-mldsa", .@"ca-mldsa" => &.{"-DCH_PIN_MLDSA"},
+        else => &.{},
+    };
 }
 
 /// PIN_FILTER: the verifier a pinned trust value does not name.
@@ -719,6 +729,7 @@ fn pinFilter(trust: Trust) Names {
     return switch (trust) {
         .@"raw-rsa", .@"ca-rsa" => &.{"p256.c"},
         .@"raw-ecdsa", .@"ca-ecdsa" => &.{ "rsa.c", "rsa_mont.c" },
+        .@"raw-mldsa", .@"ca-mldsa" => &.{ "rsa.c", "rsa_mont.c", "p256.c" },
         .webpki, .none => &.{},
     };
 }
@@ -735,6 +746,8 @@ fn trustAxis(b: *std.Build, trust: Trust) Axis {
     return switch (trust) {
         .@"raw-rsa", .@"raw-ecdsa", .none => .{ .filter = &(certificate_srcs ++ webpki_srcs) },
         .@"ca-rsa", .@"ca-ecdsa" => .{ .defs = &.{"-DCH_TRUST_CA"}, .filter = &webpki_srcs },
+        .@"raw-mldsa" => .{ .filter = &(certificate_srcs ++ webpki_srcs), .add = &mldsa_srcs },
+        .@"ca-mldsa" => .{ .defs = &.{"-DCH_TRUST_CA"}, .filter = &webpki_srcs, .add = &mldsa_srcs },
         .webpki => .{
             .defs = &.{"-DCH_TRUST_WEBPKI"},
             .filter = &.{ "x509.c", "x509_ca.c" },

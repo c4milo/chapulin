@@ -23,14 +23,17 @@ ROOT = Path(__file__).resolve().parent.parent
 # value of ROLE, TRUST, TRANSPORT, SUITE, KEX, AES, RAND, the host test and the
 # x86-64 test that some build accepts, and the union of their lists is every
 # source an accepted build packages. A host object takes no AES or KEX value,
-# so the three host builds name neither. The last build is a device object
+# so the three host builds name neither. The eighth build is a device object
 # with the suites, which takes an AES value and, as a server, no KEX value: it
 # is the one build here that packages sha512_compress.c, whose place
 # sha512_compress_blocks.c takes in a host object (docs/decisions.md 127).
 # EXPORTER, KEYLOG, TX_RECORD and WIDEMUL change defines and no source, so each
 # build takes their defaults. A source that a later build packages under a
 # combination this list lacks is a root .c file outside the union, and
-# tools/proof-cover.py fails it until a build here packages it.
+# tools/proof-cover.py fails it until a build here packages it. The last
+# build is PROFILE=cnsa2's, which fixes SUITE and KEX and so names neither: it
+# packages ML-DSA-87's verifier, which TRUST=raw-mldsa and TRUST=ca-mldsa alone
+# hold (docs/decisions.md 157).
 BUILDS = [
     "ROLE=client TRUST=raw-rsa TRANSPORT=tcp-blocking SUITE=chacha KEX=x25519 AES=soft "
     "RAND=drbg HOST_TARGET=",
@@ -47,6 +50,8 @@ BUILDS = [
     "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking SUITE=aesgcm RAND=drbg HOST_TARGET=yes "
     "X86_64_TARGET=",
     "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=extern RAND=extern "
+    "HOST_TARGET=",
+    "PROFILE=cnsa2 ROLE=client TRUST=ca-mldsa TRANSPORT=tcp-blocking AES=extern RAND=extern "
     "HOST_TARGET=",
 ]
 

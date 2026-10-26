@@ -77,12 +77,12 @@ int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok) {
 #endif
 }
 #ifndef CH_TRUST_WEBPKI
-// The pin length the build's one algorithm takes: 64 raw P-256 bytes
-// under CH_PIN_ECDSA, an RSA-2048..3072 modulus, a whole number of
-// 8-byte words, otherwise. Both pin slots obey it.
+// The pin length the build's one algorithm takes: CH_PIN_FIXED_LEN bytes
+// under CH_PIN_ECDSA and CH_PIN_MLDSA, an RSA-2048..3072 modulus, a whole
+// number of 8-byte words, otherwise. Both pin slots obey it.
 static int pin_len_ok(size_t len) {
-#ifdef CH_PIN_ECDSA
-    return len == 64;
+#ifdef CH_PIN_FIXED_LEN
+    return len == CH_PIN_FIXED_LEN;
 #else
     return len >= 256 && len <= 384 && len % 8 == 0;
 #endif
@@ -150,7 +150,7 @@ int tlsi_config_ok(const ch_cfg *cfg) {
         return 0;
     }
 #endif
-#ifndef CH_PIN_ECDSA
+#ifndef CH_PIN_FIXED_LEN // an RSA build
     // Every real modulus is odd (a product of odd primes); an even pin in
     // either slot is provisioning corruption. Rejected here so the failure
     // points at the config -- inside the handshake it would surface as

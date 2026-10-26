@@ -2028,6 +2028,54 @@ last `ROLE=server` stub, as the entry said it would.
   fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
   `sha3_round` proof and one the `sha3_stream` proof.
 
+### INV-61 — an ML-DSA-87 client checks the server by ML-DSA-87 alone, over the whole pinned key
+
+- **Claim.** A `TRUST=raw-mldsa` or `TRUST=ca-mldsa` client builds under
+  `PROFILE=cnsa2` alone. It offers the one signature scheme `mldsa87`,
+  takes a pin of exactly 2592 bytes in either slot, and accepts a
+  CertificateVerify only when `mldsa87_verify` accepts RFC 9846 §4.4.3's
+  signed content under an empty context: against a pin in the raw mode,
+  and against the leaf key of a chain that verifies up to a pin in the ca
+  mode. A ca chain's signatures cover each TBSCertificate with its own
+  header. Its receive floor holds one certificate of `CH_X509_MAX`, 7808
+  bytes, in the raw mode and two in the ca mode (decision 157).
+- **Mechanism.** The Makefile and `build.zig` refuse the two values
+  outside the profile, and `profile_cfg.h` refuses `CH_PIN_MLDSA`
+  without `CH_PROFILE_CNSA2` or beside `CH_PIN_ECDSA`. `CH_PIN_SIGALG`
+  is 0x0906, and `hsp_parse_certificate_verify` refuses every other
+  scheme. `CH_PIN_FIXED_LEN` is 2592, which `tls.c` and `quic_config.c`
+  hold both slots to. `hsa_signed_content` writes the content through a
+  `wbuf`, and `check_certificate_verify` hands it to `mldsa87_verify`
+  with no context. `x509_read_spki` takes `id-ml-dsa-87` with its
+  parameters absent and a key of exactly 2592 bytes, and `x509.c`'s
+  `parse_certificate` reads the signed span again from a copy of the
+  reader taken at the TBS header. `CH_RAW_TRUST_MIN_RXBUF` sizes the raw
+  floor.
+- **Check.** `bin/cnsa2_test_mldsa`, `bin/cnsa2_test_ca_mldsa` and
+  `bin/cnsa2_tcp_nonblocking_mldsa` run pinned handshakes against a mock
+  that signs with the test-only signer, which
+  `bin/wycheproof_mldsa_sign_test` holds to Wycheproof's 92 signatures.
+  They refuse a pin one byte short or long, a bad CertificateVerify of
+  each kind, a third certificate and an unknown root, and complete a
+  handshake at the floor with the largest Certificate it admits.
+  `bin/cnsa2_quic_test_ca_mldsa` runs the pin rule and the chains over
+  QUIC. `bin/x509strict_mldsa` holds the profile's boundaries under
+  ML-DSA-87. e2e runs both modes against OpenSSL 3.5. The
+  `x509der_mldsa`, `x509parse_mldsa` and `x509ca_mldsa` harnesses prove
+  the certificate readers memory-safe under `CH_PIN_MLDSA`.
+- **Violation.** A PR drops the NUL from the signed content; verifies a
+  certificate over the TBS content without its header; lets the SPKI
+  reader take a key of any length; takes a pin longer than 2592 bytes
+  over TCP or QUIC; checks a CA build's CertificateVerify under the
+  pinned CA key; keeps the 512-byte raw floor; or builds the values
+  outside the profile. `inv61-mldsa-content-drops-nul`,
+  `inv61-mldsa-pin-length-at-least` and `inv61-mldsa-raw-floor-512`
+  fail `bin/cnsa2_test_mldsa`, `inv61-mldsa-ca-cv-under-pin` fails
+  `bin/cnsa2_test_ca_mldsa`, `inv61-mldsa-quic-pin-length-at-least`
+  fails `bin/cnsa2_quic_test_ca_mldsa`, `inv61-mldsa-tbs-without-header`
+  and `inv61-mldsa-spki-any-length` fail `bin/x509strict_mldsa`, and
+  `inv61-mldsa-outside-profile` fails `lint-trust-separation`.
+
 ### INV-59 — mldsa87_verify accepts exactly FIPS 204's valid ML-DSA-87 signatures
 
 - **Claim.** `mldsa87_verify` returns 1 for a key, a message, a context
@@ -2073,15 +2121,16 @@ last `ROLE=server` stub, as the entry said it would.
 
 - **Claim.** A `PROFILE=cnsa2` client lists TLS_AES_256_GCM_SHA384 alone
   and ML-KEM-1024 alone, sends one key share, and authenticates by an
-  external PSK alone, under SHA-384. Its ServerHello parser takes that
-  suite and that group alone (decision 151).
+  external PSK under SHA-384, or under `TRUST=raw-mldsa` and
+  `TRUST=ca-mldsa` by an ML-DSA-87 key as well (INV-61). Its ServerHello
+  parser takes that suite and that group alone (decision 151).
 - **Mechanism.** `hs_build_client_hello` writes one suite and the
   ML-KEM-1024 key alone under `CH_PROFILE_CNSA2`, and `hs_psk_hash_len`
   answers `SHA384_LEN`, so the binder and a ticket's PSK are 48 bytes.
   `handshake_parser.c`'s `suite_offered` takes 0x1302 alone, and the key
   share must name `CH_KEX_GROUP`, 0x0202, with a 1568-byte ciphertext.
-  `profile_cfg.h` sets `CH_TAKES_PINS` to 0, and `tls.c` and
-  `quic_config.c` refuse a pinned configuration on it.
+  `profile_cfg.h` sets `CH_TAKES_PINS` to 0 outside `CH_PIN_MLDSA`, and
+  `tls.c` and `quic_config.c` refuse a pinned configuration on it.
 - **Check.** `bin/cnsa2_test`, `bin/cnsa2_test_ca` and
   `bin/cnsa2_tcp_nonblocking` read the hello's suites, groups, shares and
   binder, refuse a pin, and run a full and a resumed handshake against a

@@ -181,6 +181,15 @@ one-group hello and a server without the hybrid cannot move it. A
 classic build cannot satisfy the flag, so `ch_connect` returns
 `CH_EINVAL` before it sends a byte. A `PROFILE=cnsa2` build offers
 ML-KEM-1024 alone, so every handshake it runs satisfies the flag.
+
+Under `PROFILE=cnsa2` with `TRUST=raw-mldsa` or `TRUST=ca-mldsa`, set
+`cfg.server_pubkey` to the whole 2592-byte ML-DSA-87 public key, with
+`cfg.server_pubkey_len` 2592: the server's key in the raw mode, or a
+CA's key in the ca mode, which `ch_pubkey_from_pem` reads from the CA's
+certificate. A key of any other length is refused with `CH_EINVAL`.
+Give `cfg.buf` `CH_MIN_RXBUF` bytes or more, 7843 in the raw mode and
+15656 in the ca mode, because an ML-DSA-87 certificate is about 7.5 kB
+([`docs/decisions.md`](decisions.md) entry 157).
 [`docs/decisions.md`](decisions.md) entry 12 says why a device
 build offers one group, entry 39 why the webpki mode offers two, and
 entry 53 why it sends a key share for each.

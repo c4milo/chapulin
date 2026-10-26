@@ -16,6 +16,8 @@
 
 #ifdef CH_PIN_ECDSA
 #include "p256.h"
+#elif defined(CH_PIN_MLDSA)
+#include "mldsa.h"
 #else
 #include "rsa.h"
 #endif
@@ -32,6 +34,11 @@ static const uint8_t version_v3[] = {0xa0, 0x03, 0x02, 0x01, 0x02};
 // ecdsa-with-SHA256, parameters absent (RFC 5758 §3.2).
 static const uint8_t pinned_sigalg[] = {0x30, 0x0a, 0x06, 0x08, 0x2a, 0x86,
                                         0x48, 0xce, 0x3d, 0x04, 0x03, 0x02};
+#elif defined(CH_PIN_MLDSA)
+// id-ml-dsa-87, parameters absent (RFC 9881 section 2): pure ML-DSA-87
+// over the TBS bytes, with an empty context.
+static const uint8_t pinned_sigalg[] = {0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48,
+                                        0x01, 0x65, 0x03, 0x04, 0x03, 0x13};
 #else
 // RSASSA-PSS, SHA-256 both places, MGF1, saltLength 32, trailerField
 // absent (RFC 4055 §3.1; measured from OpenSSL 3 issuance).
@@ -231,11 +238,23 @@ static int parse_tbs(const uint8_t *tbs, size_t tbs_len, int is_ca, const uint8_
     return CH_OK;
 }
 
+// What the CA's signature covers. RSA-PSS and ECDSA sign the SHA-256 of
+// the TBS bytes with their header. ML-DSA-87 signs those bytes themselves,
+// so the walker keeps a pointer to them in the caller's buffer.
+typedef struct {
+#ifdef CH_PIN_MLDSA
+    const uint8_t *tbs;
+    size_t tbs_len;
+#else
+    uint8_t hash[SHA256_LEN];
+#endif
+} signed_part;
+
 // One whole certificate: SEQUENCE { tbs, sigAlg, sigValue }. Yields
-// the SPKI key, the hash of the exact TBS bytes, and the signature —
-// all pointers into the caller's buffer — for the chain step.
+// the SPKI key, what the signature covers, and the signature, all
+// pointers into the caller's buffer or a hash of it, for the chain step.
 static int parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, const uint8_t **key,
-                             size_t *key_len, x509_leaf_info *leaf, uint8_t tbs_hash[SHA256_LEN],
+                             size_t *key_len, x509_leaf_info *leaf, signed_part *signed_out,
                              const uint8_t **sig_out, size_t *sig_len_out, uint8_t *alert) {
     rbuf r;
     rb_init(&r, cert, cert_len);
@@ -243,6 +262,12 @@ static int parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, co
     if (!x509_read_header(&r, 0x30, &body_len) || body_len != rb_left(&r)) {
         return CH_EPROTO;
     }
+#ifdef CH_PIN_MLDSA
+    // A copy of the reader at the TBS header, from which the TBS with its
+    // header is read again below.
+    rbuf at_tbs = r;
+    size_t left_at_tbs = rb_left(&r);
+#endif
     size_t tbs_len = 0;
     if (!x509_read_header(&r, 0x30, &tbs_len)) {
         return CH_EPROTO;
@@ -251,6 +276,12 @@ static int parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, co
     if (tbs == NULL) {
         return CH_EPROTO;
     }
+#ifdef CH_PIN_MLDSA
+    // The signed bytes are the TBS with its own header: the bytes the
+    // reader took since the copy, which holds them all.
+    signed_out->tbs_len = left_at_tbs - rb_left(&r);
+    signed_out->tbs = rb_bytes(&at_tbs, signed_out->tbs_len);
+#endif
     int rc = parse_tbs(tbs, tbs_len, is_ca, key, key_len, leaf, alert);
     if (rc != CH_OK) {
         return rc;
@@ -268,6 +299,7 @@ static int parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, co
         return CH_EPROTO;
     }
 
+#ifndef CH_PIN_MLDSA
     // The signed bytes are the TBS with its own header, re-emitted
     // rather than re-sliced so no pointer walks backwards.
     uint8_t hdr[4];
@@ -276,7 +308,8 @@ static int parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, co
     size_t hdr_len = x509_emit_header(0x30, tbs_len, hdr);
     sha256_update(&h, hdr, hdr_len);
     sha256_update(&h, tbs, tbs_len);
-    sha256_final(&h, tbs_hash);
+    sha256_final(&h, signed_out->hash);
+#endif
     *sig_out = sig;
     *sig_len_out = sig_len;
     return CH_OK;
@@ -284,14 +317,17 @@ static int parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, co
 
 // One signature check. Public inputs throughout: variable time is
 // deliberate and fine here.
-static int verify_one(const uint8_t *key, size_t key_len, const uint8_t hash[SHA256_LEN],
+static int verify_one(const uint8_t *key, size_t key_len, const signed_part *msg,
                       const uint8_t *sig, size_t sig_len) {
 #ifdef CH_PIN_ECDSA
     // The pins are validated at ch_connect and the SPKI reader emits
     // exactly 64 bytes; the check makes the contract local anyway.
-    return key_len == 64 && p256_ecdsa_verify(key, hash, sig, sig_len);
+    return key_len == 64 && p256_ecdsa_verify(key, msg->hash, sig, sig_len);
+#elif defined(CH_PIN_MLDSA)
+    // mldsa87_verify refuses a key or a signature of another length.
+    return mldsa87_verify(key, key_len, msg->tbs, msg->tbs_len, NULL, 0, sig, sig_len);
 #else
-    return key_len == sig_len && rsa_pss_verify(key, key_len, hash, sig, sig_len);
+    return key_len == sig_len && rsa_pss_verify(key, key_len, msg->hash, sig, sig_len);
 #endif
 }
 
@@ -310,11 +346,11 @@ static int read_entry(rbuf *r, const uint8_t **cert, size_t *cert_len) {
     return rb_u16(r) == 0 && !r->err;
 }
 
-// The pins' target: the hash and signature the CA key must verify,
+// The pins' target: the signed part and signature the CA key must verify,
 // plus the intermediate's key when one is present (then the leaf
 // verifies under it instead).
 typedef struct {
-    const uint8_t *hash;
+    const signed_part *msg;
     const uint8_t *sig;
     size_t sig_len;
     const uint8_t *int_key;
@@ -322,10 +358,9 @@ typedef struct {
 } chain_head;
 
 // Reads and parses the second CertificateEntry — the intermediate —
-// and points the chain head at it. int_hash is the caller's storage
+// and points the chain head at it. int_msg is the caller's storage
 // because the caller's verify runs after this returns.
-static int read_intermediate(rbuf *r, uint8_t int_hash[SHA256_LEN], chain_head *head,
-                             uint8_t *alert) {
+static int read_intermediate(rbuf *r, signed_part *int_msg, chain_head *head, uint8_t *alert) {
     const uint8_t *inter = NULL;
     size_t inter_len = 0;
     if (!read_entry(r, &inter, &inter_len)) {
@@ -338,11 +373,11 @@ static int read_intermediate(rbuf *r, uint8_t int_hash[SHA256_LEN], chain_head *
     const uint8_t *int_sig = NULL;
     size_t int_sig_len = 0;
     int rc = parse_certificate(inter, inter_len, 1, &head->int_key, &head->int_key_len, NULL,
-                               int_hash, &int_sig, &int_sig_len, alert);
+                               int_msg, &int_sig, &int_sig_len, alert);
     if (rc != CH_OK) {
         return rc;
     }
-    head->hash = int_hash;
+    head->msg = int_msg;
     head->sig = int_sig;
     head->sig_len = int_sig_len;
     return CH_OK;
@@ -360,12 +395,12 @@ int x509_verify_leaf(const uint8_t *list, size_t list_len, const uint8_t *ca_key
     }
     const uint8_t *leaf_key = NULL;
     size_t leaf_key_len = 0;
-    uint8_t leaf_hash[SHA256_LEN];
+    signed_part leaf_msg;
     const uint8_t *leaf_sig = NULL;
     size_t leaf_sig_len = 0;
     out->epoch = 0;
     out->epoch_ok = 0;
-    int rc = parse_certificate(leaf, leaf_len, 0, &leaf_key, &leaf_key_len, out, leaf_hash,
+    int rc = parse_certificate(leaf, leaf_len, 0, &leaf_key, &leaf_key_len, out, &leaf_msg,
                                &leaf_sig, &leaf_sig_len, alert);
     if (rc != CH_OK) {
         return rc;
@@ -374,10 +409,10 @@ int x509_verify_leaf(const uint8_t *list, size_t list_len, const uint8_t *ca_key
     // The chain head is what the pins vouch for: the intermediate
     // when one follows the leaf, the leaf itself otherwise. A third
     // certificate is off-profile — the root never travels.
-    chain_head head = {leaf_hash, leaf_sig, leaf_sig_len, NULL, 0};
-    uint8_t int_hash[SHA256_LEN];
+    chain_head head = {&leaf_msg, leaf_sig, leaf_sig_len, NULL, 0};
+    signed_part int_msg;
     if (rb_left(&r) != 0) {
-        rc = read_intermediate(&r, int_hash, &head, alert);
+        rc = read_intermediate(&r, &int_msg, &head, alert);
         if (rc != CH_OK) {
             return rc;
         }
@@ -387,7 +422,7 @@ int x509_verify_leaf(const uint8_t *list, size_t list_len, const uint8_t *ca_key
     const size_t ca_lens[2] = {ca_a_len, ca_b_len};
     uint8_t slot = 0;
     for (int i = 0; i < 2 && ca_keys[i] != NULL; i++) {
-        if (verify_one(ca_keys[i], ca_lens[i], head.hash, head.sig, head.sig_len)) {
+        if (verify_one(ca_keys[i], ca_lens[i], head.msg, head.sig, head.sig_len)) {
             slot = (uint8_t)(i + 1);
             break;
         }
@@ -397,7 +432,7 @@ int x509_verify_leaf(const uint8_t *list, size_t list_len, const uint8_t *ca_key
         return CH_EAUTH;
     }
     if (head.int_key != NULL &&
-        !verify_one(head.int_key, head.int_key_len, leaf_hash, leaf_sig, leaf_sig_len)) {
+        !verify_one(head.int_key, head.int_key_len, &leaf_msg, leaf_sig, leaf_sig_len)) {
         // The pins vouch for the intermediate, but the leaf does not
         // check out under it: a corrupt chain, not an unknown CA.
         *alert = ALERT_BAD_CERTIFICATE;

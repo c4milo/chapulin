@@ -1,0 +1,12 @@
+invariant: INV-61
+file: profile_cfg.h
+catches: cnsa2_test_mldsa
+reason: a raw-mldsa build keeps the 512-byte raw floor, so CH_MIN_RXBUF is
+  the ML-KEM-1024 ServerHello's 1637 bytes and a buffer at the floor
+  cannot hold an ML-DSA-87 certificate. test_mldsa_floor's handshake at
+  CH_X509_MAX fails with CH_ECAP.
+
+--- old
+#define CH_RAW_TRUST_MIN_RXBUF ((CH_X509_MAX + 5) + 8 + 22)
+--- new
+#define CH_RAW_TRUST_MIN_RXBUF 512

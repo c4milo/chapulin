@@ -1306,6 +1306,88 @@ else
     skip "cnsa2 test: $("$OPENSSL" version) does not list MLKEM1024 (needs 3.5)"
 fi
 
+# --- The two ML-DSA-87 trust modes of PROFILE=cnsa2 (docs/decisions.md
+# 157). OpenSSL 3.5 signs the CertificateVerify with mldsa87 over
+# MLKEM1024. The raw client pins the server's own 2592-byte key, the last
+# 2592 bytes of its SubjectPublicKeyInfo, and hashes the self-signed
+# certificate into the transcript unread. The CA client pins a root's key
+# and verifies the chain docs/ca.md issues, with the leaf alone and with
+# its intermediate. The raw client resumes its ticket, and a pin of
+# another key and a server that signs with ECDSA each fail closed.
+mldsa_pub() {
+    "$OPENSSL" pkey -in "$1" -pubout -outform DER 2>/dev/null | tail -c 2592 | od -An -tx1 -v | tr -d ' \n'
+}
+if "$OPENSSL" list -tls-signature-algorithms 2>/dev/null | tr ':' '\n' | grep -qix mldsa87 &&
+    [ -n "$CNSA2_TESTS" ]; then
+    MLDSA_SRV=(-tls1_3 -ciphersuites TLS_AES_256_GCM_SHA384 -groups MLKEM1024 -sigalgs mldsa87 -rev)
+    for k in mdraw mdroot mdint mdleaf mdother; do
+        "$OPENSSL" genpkey -algorithm ML-DSA-87 -out "$DIR/$k.key" 2>/dev/null
+    done
+    "$OPENSSL" req -new -x509 -key "$DIR/mdraw.key" -subj /CN=sapo -days 1 -out "$DIR/mdraw.pem" 2>/dev/null
+    "$OPENSSL" req -new -x509 -key "$DIR/mdroot.key" -subj /CN=fleet-root -days 3650 \
+        -out "$DIR/mdroot.pem" 2>/dev/null
+    "$OPENSSL" req -new -key "$DIR/mdint.key" -subj /CN=fleet-intermediate 2>/dev/null |
+    "$OPENSSL" x509 -req -CA "$DIR/mdroot.pem" -CAkey "$DIR/mdroot.key" -days 365 \
+        -extfile "$DIR/int.cnf" -out "$DIR/mdint.pem" 2>/dev/null
+    "$OPENSSL" req -new -key "$DIR/mdleaf.key" -subj /CN=controller-01 2>/dev/null |
+    "$OPENSSL" x509 -req -CA "$DIR/mdint.pem" -CAkey "$DIR/mdint.key" -days 14 \
+        -extfile "$DIR/leaf.cnf" -out "$DIR/mdleaf.pem" 2>/dev/null
+    "$OPENSSL" req -new -key "$DIR/mdleaf.key" -subj /CN=controller-01 2>/dev/null |
+    "$OPENSSL" x509 -req -CA "$DIR/mdroot.pem" -CAkey "$DIR/mdroot.key" -days 14 \
+        -extfile "$DIR/leaf.cnf" -out "$DIR/mdflat.pem" 2>/dev/null
+    MDRAWPUB=$(mldsa_pub "$DIR/mdraw.key")
+    MDROOTPUB=$(mldsa_pub "$DIR/mdroot.key")
+    MDOTHERPUB=$(mldsa_pub "$DIR/mdother.key")
+    if [ ${#MDRAWPUB} -ne 5184 ] || [ ${#MDROOTPUB} -ne 5184 ]; then
+        echo "FAIL e2e cnsa2-mldsa: could not extract the ML-DSA-87 public keys"
+        exit 1
+    fi
+    start_server "${MLDSA_SRV[@]}" -cert "$DIR/mdraw.pem" -key "$DIR/mdraw.key"
+    PORT_MDRAW=$SRV_PORT
+    MSG='firma reticular'
+    expect cnsa2-mldsa "raluciter amrif" "$DIR/err_mdraw" \
+        ./bin/tlsclient_cnsa2_mldsa 127.0.0.1 "$PORT_MDRAW" "pin:$MDRAWPUB" - "$DIR/ticket_mdraw"
+    if ! grep -q "^pin slot 1$" "$DIR/err_mdraw" || ! grep -q "^group 0x0202$" "$DIR/err_mdraw"; then
+        echo "FAIL e2e cnsa2-mldsa: the client did not report pin slot 1 over ML-KEM-1024"
+        cat "$DIR/err_mdraw"
+        exit 1
+    fi
+    MSG='otra firma'
+    expect cnsa2-mldsa-resume "amrif arto" "$DIR/err_mdraw_resume" \
+        ./bin/tlsclient_cnsa2_mldsa 127.0.0.1 "$PORT_MDRAW" "pin:$MDRAWPUB" "@$DIR/ticket_mdraw"
+    grep -q "^resuming" "$DIR/err_mdraw_resume" || {
+        echo "FAIL e2e cnsa2-mldsa-resume: the client did not resume its ticket"
+        cat "$DIR/err_mdraw_resume"
+        exit 1
+    }
+    MSG='no debe pasar'
+    expect_fail cnsa2-mldsa-wrong-pin -3 "$DIR/err_mdraw_wrong" \
+        ./bin/tlsclient_cnsa2_mldsa 127.0.0.1 "$PORT_MDRAW" "pin:$MDOTHERPUB" -
+    start_server "${MLDSA_SRV[@]}" -cert "$DIR/mdleaf.pem" -key "$DIR/mdleaf.key" -cert_chain "$DIR/mdint.pem"
+    PORT_MDCA=$SRV_PORT
+    start_server "${MLDSA_SRV[@]}" -cert "$DIR/mdflat.pem" -key "$DIR/mdleaf.key"
+    PORT_MDFLAT=$SRV_PORT
+    MSG='cadena reticular'
+    expect cnsa2-ca-mldsa "raluciter anedac" "$DIR/err_mdca" \
+        ./bin/tlsclient_cnsa2_ca_mldsa 127.0.0.1 "$PORT_MDCA" "ca:$MDROOTPUB" -
+    MSG='sin intermedia'
+    expect cnsa2-ca-mldsa-flat "aidemretni nis" "$DIR/err_mdflat" \
+        ./bin/tlsclient_cnsa2_ca_mldsa 127.0.0.1 "$PORT_MDFLAT" "ca:$MDROOTPUB" -
+    MSG='no debe pasar'
+    expect_fail cnsa2-ca-mldsa-wrong-ca -3 "$DIR/err_mdca_wrong" \
+        ./bin/tlsclient_cnsa2_ca_mldsa 127.0.0.1 "$PORT_MDCA" "ca:$MDOTHERPUB" -
+    # A server whose key is P-256 cannot sign mldsa87, so it shares no
+    # scheme with the client's one and the handshake fails.
+    start_server -tls1_3 -ciphersuites TLS_AES_256_GCM_SHA384 -groups MLKEM1024 \
+        -cert "$DIR/cert.pem" -key "$DIR/key.pem" -rev
+    expect_fail cnsa2-mldsa-ecdsa-server -2 "$DIR/err_md_ecdsa" \
+        ./bin/tlsclient_cnsa2_mldsa 127.0.0.1 "$SRV_PORT" "pin:$MDRAWPUB" -
+    CNSA2_MLDSA_TESTS=" + cnsa2 mldsa x7"
+else
+    CNSA2_MLDSA_TESTS=""
+    skip "cnsa2 mldsa test: $("$OPENSSL" version) lists no mldsa87 scheme or no MLKEM1024 (needs 3.5)"
+fi
+
 # --- The web PKI client against a server that holds secp256r1 alone, as
 # nghttpd 1.52.0 on OpenSSL 3.0 does. The first hello lists secp256r1
 # after the two groups it shares and carries no secp256r1 share, so the
@@ -1500,4 +1582,4 @@ fi
 chsrv_aes_tests ./bin/tlsserver_aes_extern chsrv-aes-extern TLS_CHACHA20_POLY1305_SHA256
 CHSRV_AES_TESTS="$CHSRV_AES_TESTS + chapulin server aesgcm AES=extern x7"
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_TESTS} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_TESTS} + webpki rsa + webpki-resume x3 + webpki-rpk x8 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_TESTS}${OPENSSL_PQ_TESTS}${CNSA2_TESTS}${AES_SUITE_TESTS}${CHSRV_AES_TESTS} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_TESTS} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_TESTS} + webpki rsa + webpki-resume x3 + webpki-rpk x8 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_TESTS}${OPENSSL_PQ_TESTS}${CNSA2_TESTS}${CNSA2_MLDSA_TESTS}${AES_SUITE_TESTS}${CHSRV_AES_TESTS} + examples x4 OK"

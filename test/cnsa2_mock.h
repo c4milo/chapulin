@@ -3,15 +3,21 @@
 // the secrets that key them; each test carries the bytes over its own
 // transport, records or CRYPTO bytes. It checks the client's SHA-384
 // binder and Finished, encapsulates against the client's ML-KEM-1024 key
-// and issues one ticket. Include it after CHECK, buf.h, keysched.h,
-// mlkem.h, transcript.h and test/hello_exts.h. Not a standalone
-// translation unit.
+// and issues one ticket. Under CH_PIN_MLDSA a hello with no PSK gets the
+// Certificate the test names and a CertificateVerify that the test-only
+// ML-DSA-87 signer signs (test/mldsa_sign.h, docs/decisions.md 157).
+// Include it after CHECK, buf.h, keysched.h, mlkem.h, transcript.h and
+// test/hello_exts.h. Not a standalone translation unit.
 #ifndef CH_CNSA2_MOCK_H
 #define CH_CNSA2_MOCK_H
 
 // The binder is SHA384_LEN bytes: the pre_shared_key extension ends in a
 // 2-byte list length, a 1-byte binder length and the binder.
 #define BINDER_TAIL (2 + 1 + SHA384_LEN)
+
+#ifdef CH_PIN_MLDSA
+#include "mldsa_sign.h"
+#endif
 
 static const uint8_t external_psk[SHA384_LEN] = {0x5a, 0x01, 0x02};
 static const uint8_t external_id[] = {'d', 'e', 'v', 'i', 'c', 'e', '1'};
@@ -35,6 +41,15 @@ typedef struct {
     int binder_ok;
     int resumed; // the hello offered the ticket a mock issued
     int client_finished_ok;
+    int pinned; // the hello offered no PSK, so the server authenticates by signature
+#ifdef CH_PIN_MLDSA
+    const uint8_t *cert_list; // the CertificateEntry list the Certificate carries
+    size_t cert_list_len;
+    const mldsa_test_key *signer; // the key that signs the CertificateVerify
+    uint16_t cv_scheme;           // when not 0, the scheme the CertificateVerify names
+    int cv_flip;                  // when not 0, the signature's byte 0 is flipped
+    int cv_delta;                 // bytes the signature's length moves by
+#endif
     ch_transcript transcript;
     uint8_t handshake_secret[SHA384_LEN];
     uint8_t c_hs[SHA384_LEN];
@@ -95,7 +110,16 @@ static void mock_check_binder(cnsa2_mock *m, uint8_t early[SHA384_LEN]) {
 // handshake traffic secrets.
 static size_t mock_server_hello(cnsa2_mock *m, uint8_t *out, size_t cap) {
     uint8_t early[SHA384_LEN];
-    mock_check_binder(m, early);
+    size_t psk_len = 0;
+    m->pinned = hello_ext(m->hello, m->hello_len, EXT_PRE_SHARED_KEY, &psk_len) == NULL;
+    if (m->pinned) {
+        // No PSK: the early secret is Extract(0, 0^48) (RFC 9846 §7.1).
+        static const uint8_t zeros[SHA384_LEN];
+        uint8_t binder_key[SHA384_LEN];
+        ks_early(SHA384_LEN, zeros, sizeof zeros, 0, early, binder_key);
+    } else {
+        mock_check_binder(m, early);
+    }
     size_t ek_len = 0;
     const uint8_t *ek = hello_key_share(m->hello, m->hello_len, CH_GROUP_MLKEM1024, &ek_len);
     CHECK(ek != NULL && ek_len == MLKEM_EK_LEN);
@@ -123,9 +147,11 @@ static size_t mock_server_hello(cnsa2_mock *m, uint8_t *out, size_t cap) {
     wb_u16(&w, m->sh_group != 0 ? m->sh_group : CH_GROUP_MLKEM1024);
     wb_u16(&w, (uint16_t)ct_len);
     wb_bytes(&w, ct, ct_len);
-    wb_u16(&w, EXT_PRE_SHARED_KEY);
-    wb_u16(&w, 2);
-    wb_u16(&w, 0); // the hello's one identity
+    if (!m->pinned) {
+        wb_u16(&w, EXT_PRE_SHARED_KEY);
+        wb_u16(&w, 2);
+        wb_u16(&w, 0); // the hello's one identity
+    }
     wb_patch16(&w, exts);
     wb_patch24(&w, body);
     CHECK(!w.err);
@@ -139,9 +165,49 @@ static size_t mock_server_hello(cnsa2_mock *m, uint8_t *out, size_t cap) {
     return w.len;
 }
 
+#ifdef CH_PIN_MLDSA
+// Writes the Certificate and the CertificateVerify after the w->len bytes
+// already in w, and adds both to the transcript. The signature covers RFC
+// 9846 §4.4.3's content: 64 spaces, the context string with its NUL, and
+// the transcript hash through the Certificate.
+static void mock_certificate(cnsa2_mock *m, wbuf *w) {
+    size_t at = w->len;
+    wb_u8(w, HS_CERTIFICATE);
+    size_t body = wb_mark(w, 3);
+    wb_u8(w, 0); // empty certificate_request_context
+    wb_u24(w, (uint32_t)m->cert_list_len);
+    wb_bytes(w, m->cert_list, m->cert_list_len);
+    wb_patch24(w, body);
+    CHECK(!w->err);
+    transcript_update(&m->transcript, w->p + at, w->len - at);
+    uint8_t hash[SHA384_LEN];
+    transcript_hash_after(&m->transcript, SHA384_LEN, NULL, 0, hash);
+    static const char context[] = "TLS 1.3, server CertificateVerify";
+    uint8_t content[64 + sizeof context + SHA384_LEN];
+    memset(content, ' ', 64);
+    memcpy(content + 64, context, sizeof context);
+    memcpy(content + 64 + sizeof context, hash, sizeof hash);
+    static const uint8_t no_rnd[32];
+    static uint8_t sig[MLDSA87_SIG_LEN + 1];
+    CHECK(mldsa_test_sign(m->signer, content, sizeof content, NULL, 0, no_rnd, sig));
+    sig[0] ^= (uint8_t)(m->cv_flip ? 1 : 0);
+    long sig_long = (long)MLDSA87_SIG_LEN + m->cv_delta;
+    size_t sig_len = (size_t)sig_long;
+    at = w->len;
+    wb_u8(w, HS_CERTIFICATE_VERIFY);
+    wb_u24(w, (uint32_t)(4 + sig_len));
+    wb_u16(w, m->cv_scheme != 0 ? m->cv_scheme : SIGALG_MLDSA87);
+    wb_u16(w, (uint16_t)sig_len);
+    wb_bytes(w, sig, sig_len);
+    CHECK(!w->err);
+    transcript_update(&m->transcript, w->p + at, w->len - at);
+}
+#endif
+
 // Writes EncryptedExtensions, whose extension block is the exts_len bytes
 // at exts, then the server Finished, into out. Returns their length, and
-// derives the application traffic secrets.
+// derives the application traffic secrets. A pinned handshake puts the
+// Certificate and the CertificateVerify between the two.
 static size_t mock_server_flight(cnsa2_mock *m, const uint8_t *exts, size_t exts_len, uint8_t *out,
                                  size_t cap) {
     wbuf w;
@@ -150,8 +216,14 @@ static size_t mock_server_flight(cnsa2_mock *m, const uint8_t *exts, size_t exts
     wb_u24(&w, (uint32_t)(2 + exts_len));
     wb_u16(&w, (uint16_t)exts_len);
     wb_bytes(&w, exts, exts_len);
-    CHECK(!w.err && w.len + 4 + SHA384_LEN <= cap);
+    CHECK(!w.err);
     transcript_update(&m->transcript, out, w.len);
+#ifdef CH_PIN_MLDSA
+    if (m->pinned) {
+        mock_certificate(m, &w);
+    }
+#endif
+    CHECK(!w.err && w.len + 4 + SHA384_LEN <= cap);
     uint8_t hash[SHA384_LEN];
     transcript_hash_after(&m->transcript, SHA384_LEN, NULL, 0, hash);
     uint8_t *finished = out + w.len;

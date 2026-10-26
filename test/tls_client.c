@@ -146,10 +146,16 @@ static int load_ticket(const char *path, ch_saved_ticket *saved, char extra[2 * 
 // Owns the "pin:<pubkey-hex>[,<pubkey2-hex>]" form: parses one or two
 // hex pins into cfg (the second pin is the staged rotation key).
 static int setup_pin(char *arg, ch_cfg *cfg) {
-    // Sized for the largest pin either build takes: an RSA-3072 modulus.
-    // ch_connect enforces the exact length its compiled algorithm needs.
+    // Sized for the largest pin a build takes: an ML-DSA-87 key under
+    // CH_PIN_MLDSA, an RSA-3072 modulus otherwise. ch_connect enforces the
+    // exact length its compiled algorithm needs.
+#ifdef CH_PIN_MLDSA
+    static uint8_t pin[2592];
+    static uint8_t pin2[2592];
+#else
     static uint8_t pin[384];
     static uint8_t pin2[384];
+#endif
     char *sep = strchr(arg, ',');
     if (sep != NULL) {
         *sep = 0;
@@ -358,7 +364,11 @@ int main(int argc, char **argv) {
     }
 
     uint8_t psk[64];
-#ifdef CH_TRUST_CA
+#ifdef CH_PIN_MLDSA
+    // The floor itself: one ML-DSA-87 certificate at the cap in a raw
+    // build, and two in a CA build (docs/decisions.md 157).
+    static uint8_t rxbuf[CH_MIN_RXBUF];
+#elif defined(CH_TRUST_CA)
     // The CA build's floor covers a two-certificate flight.
     static uint8_t rxbuf[4096];
 #elif defined(CH_TRUST_WEBPKI)

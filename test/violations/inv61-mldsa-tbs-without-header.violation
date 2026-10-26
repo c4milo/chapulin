@@ -1,0 +1,16 @@
+invariant: INV-61
+file: x509.c
+catches: x509strict_mldsa
+reason: the CA walk verifies an ML-DSA-87 certificate signature over the
+  TBS content without its header, where RFC 5280 signs the whole DER
+  TBSCertificate. The test signer signs the whole TLV, as OpenSSL does,
+  so test_accept's certificate fails.
+
+--- old
+    signed_out->tbs_len = left_at_tbs - rb_left(&r);
+    signed_out->tbs = rb_bytes(&at_tbs, signed_out->tbs_len);
+--- new
+    (void)at_tbs;
+    (void)left_at_tbs;
+    signed_out->tbs_len = tbs_len;
+    signed_out->tbs = tbs;
