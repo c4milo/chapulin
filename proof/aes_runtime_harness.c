@@ -153,6 +153,6 @@ int main(void) {
     __CPROVER_assert(loaded.key.instructions == AES_ON_INSTRUCTIONS,
                      "traffic: a loaded schedule records the instructions");
     aes_traffic_encrypt_block(&loaded, in, out);
-    aes_traffic_key_store(schedule, key, key_len);
+    (void)aes_traffic_key_store(schedule, nondet_u32(), key, key_len);
     return 0;
 }

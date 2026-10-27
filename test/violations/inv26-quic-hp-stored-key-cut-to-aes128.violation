@@ -11,6 +11,6 @@ reason: a host object stores the AES header protection key's schedule at
   computation.
 
 --- old
-        aes_traffic_key_store(h->schedule, h->key, suite_key_len(suite));
+        h->stored = (uint8_t)aes_traffic_key_store(h->schedule, cpu, h->key, suite_key_len(suite));
 --- new
-        aes_traffic_key_store(h->schedule, h->key, AES_128_KEY);
+        h->stored = (uint8_t)aes_traffic_key_store(h->schedule, cpu, h->key, AES_128_KEY);

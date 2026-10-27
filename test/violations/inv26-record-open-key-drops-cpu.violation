@@ -11,8 +11,8 @@ reason: the record layer's open builds its AES key and never records the
   reports unguarded rather than caught.
 
 --- old
-    aes_traffic_key_of(&k, d->cpu, d->schedule, d->key, suite_key_len(d->suite));
+    aes_traffic_key_of(&k, d->cpu, d->stored, d->schedule, d->key, suite_key_len(d->suite));
     int ok = gcm_traffic_open(&k, nonce, rec, REC_HDR, rec + REC_HDR, len, rec + REC_HDR + len, pt);
 --- new
-    aes_traffic_key_of(&k, 0, d->schedule, d->key, suite_key_len(d->suite));
+    aes_traffic_key_of(&k, 0, d->stored, d->schedule, d->key, suite_key_len(d->suite));
     int ok = gcm_traffic_open(&k, nonce, rec, REC_HDR, rec + REC_HDR, len, rec + REC_HDR + len, pt);

@@ -4972,7 +4972,9 @@ last `ROLE=server` stub, as the entry said it would.
   schedule beside the key instead, as `SUITE_AES_SCHEDULE_LEN` bytes in
   `rec_dir`, `quic_keys` and `quic_hp_key` (`suite.h`). `record.c` and
   `quic_keys.c` write it through `aes_traffic_key_store` when they derive
-  the key, a KeyUpdate and a QUIC key update rewrite it, and every wipe
+  the key, which stores only under the session's
+  `CH_CPU_CONSTANT_TIME_AES`, so keying runs no AES instruction without
+  the bit, a KeyUpdate and a QUIC key update rewrite it, and every wipe
   of the struct wipes it with the key. Each record, packet or mask copies
   it onto the frame through `aes_traffic_key_load`, which writes the
   round count, the cipher and the session's `cpu` itself, and wipes the

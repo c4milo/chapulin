@@ -11,8 +11,13 @@
 #include "quic_keys.h"
 
 // One level's packet protection keys and header protection key under
-// row_suite, and the key update.
-static void row_quic_keys(uint32_t cpu) {
+// row_suite, and the key update. Under the value's AES bit, keying an AES
+// suite expands each key on the AES instructions to store its schedule
+// (docs/decisions.md 160). A CPU without them faults there, so the row
+// clears that bit, which picks no hash path, and the value keeps every bit
+// a hash call reads.
+static void row_quic_keys(uint32_t cpu_value) {
+    uint32_t cpu = cpu_value & ~(uint32_t)CH_CPU_CONSTANT_TIME_AES;
     uint8_t traffic_secret[HKDF_HASH_MAX];
     memcpy(traffic_secret, pseudorandom_key, sizeof traffic_secret);
     quic_keys k;

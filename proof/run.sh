@@ -835,8 +835,8 @@ launch slow:4 full record 165 "" ct.c proof/ct_wipe_stub.c
 # With a host object's stored schedule (docs/decisions.md 160), whose
 # store and load are contract stubs here, on 2026-10-27
 # (PROVE_ONLY=record_suite PROVE_NO_CACHE=1, the summed resident size of
-# cbmc and the solver polled every two seconds, load near 10): 635
-# properties, 16 s, 0.54 GB.
+# cbmc and the solver polled every two seconds, load near 10): 730
+# properties, 14 s, 0.55 GB, with the store under the AES bit alone.
 launch fast full record_suite 250 "" ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The x25519 ladder keeps its words inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
@@ -1793,7 +1793,7 @@ launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -
 # 15): 148 properties, 1 s, 0.01 GB.
 # With aes_traffic_key_store and aes_traffic_key_load, whose 244 bytes the
 # unwindset bounds (docs/decisions.md 160), measured as record_suite's was
-# on 2026-10-27: 220 properties, 2 s, under 0.01 GB.
+# on 2026-10-27: 221 properties, 2 s, under 0.01 GB.
 launch fast full aes_traffic 45 "fill_nondet.0:245,ct_wipe.0:245" proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # aes.c in the QUIC host suite object, which holds the AES instructions
 # and the table, over contract stubs of both ciphers' six entries: an
@@ -1851,7 +1851,7 @@ launch fast full quic_keys 45 "fill_nondet.0:177" ct.c proof/ct_wipe_stub.c -DCH
 # 144 properties, 14 s, 0.57 GB peak.
 # With a host object's stored schedule (docs/decisions.md 160), whose
 # 244-byte wipe and stub fill the unwindset bounds, measured as
-# record_suite's was on 2026-10-27: 161 properties, 17 s, 0.71 GB.
+# record_suite's was on 2026-10-27: 179 properties, 14 s, 0.71 GB.
 launch fast full quic_keys_suite 60 "ct_wipe.0:245,fill_nondet.0:245" ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
 # are contract stubs the harness defines, so this formula holds the one
@@ -1918,8 +1918,8 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c proof/ct_wipe_stu
 # shifting by constants alone: 1158 properties, 15 s, 0.48 GB.
 # With a host object's stored schedule (docs/decisions.md 160): the stored
 # byte of a key set is unconstrained, so both the load and the expansion
-# run. Measured as record_suite's was on 2026-10-27: 1248 properties,
-# 14 s, 0.37 GB.
+# run. Measured as record_suite's was on 2026-10-27: 1260 properties,
+# 13 s, 0.37 GB.
 launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # AEAD_AES_128_GCM's memory safety, its refusal, which leaves zeros where
 # the plaintext went, and

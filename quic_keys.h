@@ -64,10 +64,11 @@ typedef struct {
     // (rfc9001.txt:1812-1813); a key update writes a new set and so
     // starts the count again. Both are public.
     uint16_t suite;
-    // 1 once quic_keys_init_suite wrote schedule below, and 0 in a set
-    // quic_keys_select chose, which copies no schedule, so quic_packet.c
-    // expands that set's key at each use. Public. A device object stores
-    // no schedule and never reads it.
+    // 1 when quic_keys_init_suite wrote schedule below, and 0 under
+    // ChaCha20, under a cpu without CH_CPU_CONSTANT_TIME_AES, and in a set
+    // quic_keys_select chose, which copies no schedule: quic_packet.c then
+    // expands the key at each use. Public. A device object stores no
+    // schedule and never reads it.
     uint8_t stored;
     uint64_t sealed;
 #endif
@@ -103,9 +104,11 @@ typedef struct {
     uint16_t suite;
 #endif
 #ifdef CH_AES_STORED_SCHEDULE
-    // The expanded schedule of key under an AES suite, as quic_keys holds
-    // one, which quic_hp_key_init_suite writes and quic_hp_mask copies.
+    // The expanded schedule of key under an AES suite, and whether it
+    // holds one, as quic_keys keeps them, which quic_hp_key_init_suite
+    // writes and quic_hp_mask reads.
     uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
+    uint8_t stored;
 #endif
 } quic_hp_key;
 

@@ -337,11 +337,16 @@ void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, size_t ke
     aes_traffic_key_cpu(k, cpu);
 }
 
-void aes_traffic_key_store(uint8_t *schedule, const uint8_t *key, size_t key_len) {
+int aes_traffic_key_store(uint8_t *schedule, uint32_t cpu, const uint8_t *key, size_t key_len) {
+    // cpu is the caller's description of its CPU, not a secret.
+    if ((cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
+        return 0;
+    }
     aes_traffic_key k;
     aes_traffic_key_init(&k, key, key_len);
     memcpy(schedule, &k, sizeof k);
     ct_wipe(&k, sizeof k);
+    return 1;
 }
 #endif
 

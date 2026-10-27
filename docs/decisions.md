@@ -14320,6 +14320,17 @@ does nothing more.
       update rewrite them, and every wipe of the struct wipes them. Each
       record, packet and mask copies them onto its frame through
       `aes_traffic_key_load` and wipes the copy there, as before.
+    - **Only under the AES bit.** The store runs the AES instructions, so
+      it stores only where the session's `ch_cfg.cpu` holds
+      `CH_CPU_CONSTANT_TIME_AES`, and it returns whether it stored. Each
+      key keeps the answer in its `stored` byte, and a key with none
+      expands at each use, as before. 955b83a3 stored under every value,
+      so keying an AES suite ran AES-NI under a value without the bit, and
+      `hash_runtime_test`, which keys every suite under every value, died
+      of SIGILL under `qemu-x86_64` on a model without AES-NI. A real
+      session selects no AES suite without the bit, but INV-26 says such
+      a session runs no AES instruction at all. The mutant
+      `inv26-stored-schedule-ignores-aes-bit` holds this.
     - **The load writes three fields itself.** The round count comes from
       the suite's key length, the cipher is the AES instructions, and the
       CPU value is the caller's, as `aes_traffic_key_cpu` writes it. A

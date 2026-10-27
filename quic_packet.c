@@ -42,7 +42,7 @@ static void seal_body(uint32_t cpu, quic_keys *k, const uint8_t nonce[AEAD_NONCE
 #ifdef CH_SUITE_AES_GCM
     if (suite_runs_aes_gcm(k->suite)) {
         aes_traffic_key key;
-        aes_traffic_key_of_set(&key, cpu, k->stored, k->schedule, k->key, suite_key_len(k->suite));
+        aes_traffic_key_of(&key, cpu, k->stored, k->schedule, k->key, suite_key_len(k->suite));
         gcm_traffic_seal(&key, nonce, aad, aad_len, pt, n, ct, ct + n);
         ct_wipe(&key, sizeof key);
         k->sealed++;
@@ -63,7 +63,7 @@ static int open_body(uint32_t cpu, const quic_keys *k, const uint8_t nonce[AEAD_
 #ifdef CH_SUITE_AES_GCM
     if (suite_runs_aes_gcm(k->suite)) {
         aes_traffic_key key;
-        aes_traffic_key_of_set(&key, cpu, k->stored, k->schedule, k->key, suite_key_len(k->suite));
+        aes_traffic_key_of(&key, cpu, k->stored, k->schedule, k->key, suite_key_len(k->suite));
         int ok = gcm_traffic_open(&key, nonce, aad, aad_len, ct, n, ct + n, pt);
         ct_wipe(&key, sizeof key);
         return ok;
@@ -155,7 +155,7 @@ void quic_hp_mask(const quic_hp_key *h, const uint8_t sample[QUIC_HP_SAMPLE_LEN]
     // under a key as long as the suite's (rfc9001.txt:1332-1336).
     if (suite_runs_aes_gcm(h->suite)) {
         aes_traffic_key k;
-        aes_traffic_key_of(&k, 0, h->schedule, h->key, suite_key_len(h->suite));
+        aes_traffic_key_of(&k, 0, h->stored, h->schedule, h->key, suite_key_len(h->suite));
         uint8_t block[AES_BLOCK];
         aes_traffic_encrypt_block(&k, sample, block);
         for (size_t i = 0; i < QUIC_HP_MASK_LEN; i++) {

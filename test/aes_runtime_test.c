@@ -414,6 +414,22 @@ static void check_stored_schedule(void) {
     }
 }
 
+// Keying under a value without CH_CPU_CONSTANT_TIME_AES stores no schedule
+// and runs no AES at all: such a session runs no AES instruction (INV-26),
+// so its keying expands nothing (docs/decisions.md 160).
+static void check_keying_without_aes_bit(void) {
+    uint8_t secret[SHA384_LEN];
+    memset(secret, 0x5a, sizeof secret);
+    quic_keys k;
+    quic_hp_key h;
+    reset_counts();
+    quic_keys_init_suite(RUNTIME_ABSENT, &k, 1, secret, SUITE_AES_256_GCM_SHA384);
+    quic_hp_key_init_suite(RUNTIME_ABSENT, &h, 1, secret, SUITE_AES_256_GCM_SHA384);
+    CHECK(k.stored == 0 && h.stored == 0);
+    CHECK(aes_runtime_instruction_calls == 0 && aes_runtime_table_calls == 0);
+    CHECK(aes_runtime_clmul_calls == 0);
+}
+
 // Every traffic key runs on the instructions and never on the table.
 static void check_traffic_keys(void) {
     reset_counts();
@@ -437,6 +453,7 @@ int main(int argc, char **argv) {
     }
     if (absent) {
         check_public_keys(RUNTIME_ABSENT);
+        check_keying_without_aes_bit();
     }
     if (failures == 0) {
         const char *which_bits = "without CH_CPU_CONSTANT_TIME_AES";

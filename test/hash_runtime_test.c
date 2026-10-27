@@ -365,8 +365,10 @@ static void row_transcript(uint32_t cpu) {
 }
 
 // A record direction, which reads its own cpu: keyed under row_suite, then
-// rekeyed as KeyUpdate rekeys it.
-static void row_record_direction(uint32_t cpu) {
+// rekeyed as KeyUpdate rekeys it. The row clears the value's AES bit, as
+// row_quic_keys does and for its reason (test/hash_runtime_quic.h).
+static void row_record_direction(uint32_t cpu_value) {
+    uint32_t cpu = cpu_value & ~(uint32_t)CH_CPU_CONSTANT_TIME_AES;
     uint8_t traffic_secret[HKDF_HASH_MAX];
     memcpy(traffic_secret, pseudorandom_key, sizeof traffic_secret);
     rec_dir d;

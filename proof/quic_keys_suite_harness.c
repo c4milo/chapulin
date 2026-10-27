@@ -70,12 +70,16 @@ void hkdf_expand_label_hw(size_t hash_len, const uint8_t *secret, const char *la
 // the contract aes.h states: the suite's key length, a key or a schedule
 // of SUITE_AES_SCHEDULE_LEN readable bytes, and a whole destination they
 // write with bytes no caller may assume.
-void aes_traffic_key_store(uint8_t *schedule, const uint8_t *key, size_t key_len) {
+int aes_traffic_key_store(uint8_t *schedule, uint32_t cpu, const uint8_t *key, size_t key_len) {
     __CPROVER_assert(key_len == expected_key_len, "aes store: the suite's key length");
     __CPROVER_assert(__CPROVER_r_ok(key, key_len), "aes store: key readable");
     __CPROVER_assert(__CPROVER_w_ok(schedule, SUITE_AES_SCHEDULE_LEN),
                      "aes store: schedule writable");
+    if ((cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
+        return 0;
+    }
     fill_nondet(schedule, SUITE_AES_SCHEDULE_LEN);
+    return 1;
 }
 #endif
 

@@ -11,8 +11,8 @@ reason: quic_packet.c's seal builds its AES key and never records the
   reports unguarded rather than caught.
 
 --- old
-        aes_traffic_key_of_set(&key, cpu, k->stored, k->schedule, k->key, suite_key_len(k->suite));
+        aes_traffic_key_of(&key, cpu, k->stored, k->schedule, k->key, suite_key_len(k->suite));
         gcm_traffic_seal(&key, nonce, aad, aad_len, pt, n, ct, ct + n);
 --- new
-        aes_traffic_key_of_set(&key, 0, k->stored, k->schedule, k->key, suite_key_len(k->suite));
+        aes_traffic_key_of(&key, 0, k->stored, k->schedule, k->key, suite_key_len(k->suite));
         gcm_traffic_seal(&key, nonce, aad, aad_len, pt, n, ct, ct + n);

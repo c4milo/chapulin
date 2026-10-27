@@ -69,9 +69,12 @@ typedef struct {
     // The expanded schedule of key under an AES-GCM suite, the bytes of
     // one aes_traffic_key, which rec_dir_init_suite writes with the key
     // and record.c copies onto its frame for each record. Zero under
-    // ChaCha20. A host object alone holds it (suite.h, docs/decisions.md
-    // 160).
+    // ChaCha20. stored is 1 when it holds one, and 0 under ChaCha20 or a
+    // cpu without CH_CPU_CONSTANT_TIME_AES, where record.c expands the key
+    // at each record instead. A host object alone holds the two (suite.h,
+    // docs/decisions.md 160).
     uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
+    uint8_t stored;
 #endif
 } rec_dir;
 

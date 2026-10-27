@@ -115,9 +115,11 @@ static inline const uint16_t *suite_session_default(const ch_cfg *cfg, size_t *c
 // A host object with the AES-GCM suites keeps each AES traffic key's
 // expanded schedule beside the key bytes: rec_dir, quic_keys and
 // quic_hp_key each hold SUITE_AES_SCHEDULE_LEN bytes of it. The key's
-// owner expands it once, when the key is derived or updated, and the
-// schedule is wiped with the key. A device object expands the key at each
-// use instead, because its SRAM is short (docs/decisions.md 160,
+// owner expands it once, when the key is derived or updated under a
+// ch_cfg.cpu that holds CH_CPU_CONSTANT_TIME_AES, and the schedule is
+// wiped with the key; without the bit nothing is stored and each use
+// expands the key. A device object expands the key at each use always,
+// because its SRAM is short (docs/decisions.md 160,
 // https://github.com/c4milo/chapulin/issues/205). The length is
 // sizeof(aes_traffic_key), whose body the files aes_traffic_key.h names
 // alone may see, so it is spelled here as that body's fields: fifteen

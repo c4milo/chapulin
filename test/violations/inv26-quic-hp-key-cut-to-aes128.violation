@@ -12,6 +12,6 @@ reason: AES header protection keys its cipher at AES-128's 16 bytes under
   with an independent computation; quic_packet_suite proves the length.
 
 --- old
-        aes_traffic_key_of(&k, 0, h->schedule, h->key, suite_key_len(h->suite));
+        aes_traffic_key_of(&k, 0, h->stored, h->schedule, h->key, suite_key_len(h->suite));
 --- new
-        aes_traffic_key_of(&k, 0, h->schedule, h->key, AES_128_KEY);
+        aes_traffic_key_of(&k, 0, h->stored, h->schedule, h->key, AES_128_KEY);

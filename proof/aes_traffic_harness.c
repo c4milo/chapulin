@@ -106,9 +106,15 @@ int main(void) {
     uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
     ran_expand_128 = 0;
     ran_expand_256 = 0;
-    aes_traffic_key_store(schedule, key, key_len);
-    __CPROVER_assert(key_len == AES_256_KEY ? ran_expand_256 : ran_expand_128,
-                     "the store expands at the key's length");
+    uint32_t store_cpu = nondet_u32();
+    int stored = aes_traffic_key_store(schedule, store_cpu, key, key_len);
+    if ((store_cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
+        __CPROVER_assert(stored == 0 && !ran_expand_128 && !ran_expand_256,
+                         "the store expands nothing without the AES bit");
+    } else {
+        __CPROVER_assert(stored == 1 && (key_len == AES_256_KEY ? ran_expand_256 : ran_expand_128),
+                         "the store expands at the key's length under the AES bit");
+    }
     fill_nondet(schedule, sizeof schedule);
     uint32_t cpu = nondet_u32();
     aes_traffic_key loaded;

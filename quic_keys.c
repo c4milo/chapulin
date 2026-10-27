@@ -42,11 +42,13 @@ void quic_keys_init_suite(uint32_t cpu, quic_keys *k, uint32_t version, const ui
     // The schedule of the key just derived, or zero under ChaCha20, so no
     // schedule of the previous key stays behind (suite.h).
     ct_wipe(k->schedule, sizeof k->schedule);
+    k->stored = 0;
     if (suite_runs_aes_gcm(suite)) {
-        aes_traffic_key_store(k->schedule, k->key, suite_key_len(suite));
+        k->stored = (uint8_t)aes_traffic_key_store(k->schedule, cpu, k->key, suite_key_len(suite));
     }
+#else
+    k->stored = 0;
 #endif
-    k->stored = 1;
 }
 
 void quic_hp_key_init_suite(uint32_t cpu, quic_hp_key *h, uint32_t version, const uint8_t *secret,
@@ -60,8 +62,9 @@ void quic_hp_key_init_suite(uint32_t cpu, quic_hp_key *h, uint32_t version, cons
     h->suite = suite;
 #ifdef CH_AES_STORED_SCHEDULE
     ct_wipe(h->schedule, sizeof h->schedule);
+    h->stored = 0;
     if (suite_runs_aes_gcm(suite)) {
-        aes_traffic_key_store(h->schedule, h->key, suite_key_len(suite));
+        h->stored = (uint8_t)aes_traffic_key_store(h->schedule, cpu, h->key, suite_key_len(suite));
     }
 #endif
 }

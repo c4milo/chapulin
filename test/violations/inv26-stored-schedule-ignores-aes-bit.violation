@@ -1,0 +1,18 @@
+invariant: INV-26
+file: aes.c
+catches: aes_runtime_test
+reason: aes_traffic_key_store expands a key on the AES instructions under
+  any ch_cfg.cpu value, so keying an AES-GCM suite runs them in a session
+  whose caller did not set CH_CPU_CONSTANT_TIME_AES, which runs no AES
+  instruction otherwise. On a CPU without them it dies of SIGILL, as
+  hash_runtime_test did under qemu at 955b83a3. bin/aes_runtime_test keys
+  a set under a value without the bit and counts the instructions' calls.
+
+--- old
+    if ((cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
+        return 0;
+    }
+    aes_traffic_key k;
+--- new
+    (void)cpu;
+    aes_traffic_key k;

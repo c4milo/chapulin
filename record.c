@@ -21,7 +21,7 @@ _Static_assert(SUITE_KEY_MAX == AEAD_KEY, "rec_dir.key holds the longest suite k
 static void seal_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE],
                          const uint8_t hdr[REC_HDR], uint8_t *body, size_t len) {
     aes_traffic_key k;
-    aes_traffic_key_of(&k, d->cpu, d->schedule, d->key, suite_key_len(d->suite));
+    aes_traffic_key_of(&k, d->cpu, d->stored, d->schedule, d->key, suite_key_len(d->suite));
     gcm_traffic_seal(&k, nonce, hdr, REC_HDR, body, len, body, body + len);
     ct_wipe(&k, sizeof k);
 }
@@ -29,7 +29,7 @@ static void seal_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE],
 static int open_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const uint8_t *rec,
                         size_t len, uint8_t *pt) {
     aes_traffic_key k;
-    aes_traffic_key_of(&k, d->cpu, d->schedule, d->key, suite_key_len(d->suite));
+    aes_traffic_key_of(&k, d->cpu, d->stored, d->schedule, d->key, suite_key_len(d->suite));
     int ok = gcm_traffic_open(&k, nonce, rec, REC_HDR, rec + REC_HDR, len, rec + REC_HDR + len, pt);
     ct_wipe(&k, sizeof k);
     return ok;
@@ -81,8 +81,10 @@ void rec_dir_init_suite(rec_dir *d, const uint8_t *secret, uint16_t suite) {
     // The schedule of the key just derived, or zero under ChaCha20, so no
     // schedule of the previous key stays behind (suite.h).
     ct_wipe(d->schedule, sizeof d->schedule);
+    d->stored = 0;
     if (suite_runs_aes_gcm(suite)) {
-        aes_traffic_key_store(d->schedule, d->key, suite_key_len(suite));
+        d->stored =
+            (uint8_t)aes_traffic_key_store(d->schedule, d->cpu, d->key, suite_key_len(suite));
     }
 #endif
 }
