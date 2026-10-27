@@ -98,6 +98,54 @@ static void test_flight_auth(void) {
     CHECK(hs.alert == ALERT_INTERNAL_ERROR);
 }
 
+// The record_size_limit value the server's EncryptedExtensions carries
+// for a hello whose own record_size_limit is offered, or -1 when the
+// message carries no such extension. offered is the value srv_parser.c
+// stores: 0 for an absent extension, and the wire value less one.
+static long sent_record_size_limit(uint16_t offered) {
+    selection sel;
+    hello_exchange(&sel);
+    flight_hello.record_size_limit = offered;
+    srv_store_selection(&hs, &flight_hello, &sel);
+    CHECK(srv_derive_handshake_secrets(&hs, &flight_hello, &sel) == CH_OK);
+    rec_dir rd;
+    TEST_CPU_DIR(rd);
+    rec_dir_init(&rd, hs.s_hs);
+    wire_len = 0;
+    CHECK(srv_send_encrypted_extensions(&hs, &sel) == CH_OK);
+    uint8_t plain[SRV_ENCRYPTED_EXTENSIONS_MAX];
+    size_t plain_len = 0;
+    uint8_t inner = 0;
+    CHECK(rec_open(&rd, wire, wire_len, plain, sizeof plain, &plain_len, &inner) == 0);
+    CHECK(inner == REC_HANDSHAKE && plain_len >= 6 && plain[0] == HS_ENCRYPTED_EXTENSIONS);
+    rbuf r;
+    rb_init(&r, plain + 6, plain_len < 6 ? 0 : plain_len - 6);
+    long found = -1;
+    while (!r.err && rb_left(&r) > 0) {
+        uint16_t type = rb_u16(&r);
+        uint16_t len = rb_u16(&r);
+        if (type == EXT_RECORD_SIZE_LIMIT && len == 2) {
+            found = rb_u16(&r);
+        } else {
+            rb_skip(&r, len);
+        }
+    }
+    CHECK(!r.err);
+    return found;
+}
+
+// RFC 9846 §4.3 forbids an extension response to an extension the client
+// did not send (rfc9846.txt:1582-1587), and a client that receives one
+// aborts the handshake. So a hello without record_size_limit gets an
+// EncryptedExtensions without it, and the smallest limit the parser
+// stores, 63 for the wire's 64, gets this server's own 0x4001
+// (https://github.com/c4milo/chapulin/issues/206).
+static void test_flight_record_size_limit_reply(void) {
+    CHECK(sent_record_size_limit(0) == -1);
+    CHECK(sent_record_size_limit(63) == 0x4001);
+    CHECK(sent_record_size_limit(0x3fff) == 0x4001);
+}
+
 // Builds the client Finished the server expects, sealed under the client
 // handshake write key, into the bytes the server will read.
 static void feed_client_finished(int correct) {

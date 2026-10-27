@@ -132,7 +132,7 @@ static int server_flight(ch_quic *q, const client_hello *ch, const selection *se
     if (rc != CH_OK) {
         return rc;
     }
-    srv_store_selection(&q->t, ch, sel);
+    srv_store_selection(h, ch, sel);
     rc = srv_derive_handshake_secrets(h, ch, sel);
     if (rc != CH_OK) {
         return rc;

@@ -52,7 +52,7 @@ static int server_flight(ch_record *r, const client_hello *ch, const selection *
     if (rc != CH_OK) {
         return rc;
     }
-    srv_store_selection(&r->t, ch, sel);
+    srv_store_selection(h, ch, sel);
     rc = srv_derive_handshake_secrets(h, ch, sel);
     if (rc != CH_OK) {
         return rc;
@@ -269,8 +269,10 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg) {
     r->hs.alert = ALERT_DECODE_ERROR;
     // This server's own record_size_limit, sized to the caller's buffer,
     // which srv_send_encrypted_extensions puts in the
-    // EncryptedExtensions. srv_store_selection lowers t->peer_limit to the
-    // client's own limit once the hello has been read.
+    // EncryptedExtensions when the hello offered the extension.
+    // srv_store_selection lowers t->peer_limit to the client's own limit
+    // once the hello has been read, and drops this value to 0 when the
+    // hello offered none.
     size_t room = r->t.cfg.buf_len - REC_HDR - AEAD_TAG;
     r->hs.record_size_limit = room > 0x4001 ? 0x4001 : (uint16_t)room;
     r->t.peer_limit = CH_TX_PT;

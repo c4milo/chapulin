@@ -2407,6 +2407,12 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # rules: 998 properties, 101 s to 114 s in three runs, 1.42 GB. With
 # ch_srv_check's assert on the same rules: 999 properties, 145 s, 1.43 GB
 # (run 39589768232).
+# srv_store_selection then took the handshake state and dropped the
+# server's record_size_limit for a hello that offered none
+# (https://github.com/c4milo/chapulin/issues/206). Through
+# proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-26 at a load average
+# near 15 (Apple M1, macOS, whose resident peaks read above the runner's):
+# 1011 properties, 103 s, 4.94 GB, and reach 95.6% against the 95.5 floor.
 # The weight is 3 because the peaks above pass the fast tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c proof/ct_wipe_stub.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with

@@ -100,6 +100,7 @@ int main(void) {
     test_flight_p256_refusals();
     test_flight_p256_retry();
     test_flight_auth();
+    test_flight_record_size_limit_reply();
     test_flight_finish();
     test_flight_finished_length();
     test_resume_select();

@@ -1,0 +1,16 @@
+invariant: INV-38
+file: srv_flight.h
+catches: srv_flight_test
+reason: the server sends its own record_size_limit in the
+  EncryptedExtensions to a hello that offered none, an extension response
+  RFC 9846 §4.3 forbids (rfc9846.txt:1582-1587). Every rustls client
+  aborts the handshake on it
+  (https://github.com/c4milo/chapulin/issues/206).
+  test_flight_record_size_limit_reply reads the message for a hello
+  without the extension.
+
+--- old
+    if (ch->record_size_limit == 0) {
+        h->record_size_limit = 0;
+    }
+--- new

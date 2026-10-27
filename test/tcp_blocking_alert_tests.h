@@ -63,7 +63,7 @@ static int alert_client_recv(void *io, uint8_t *p, size_t n) {
             rc = srv_send_server_hello(&srv_h, &ch, &sel);
         }
         if (rc == CH_OK) {
-            srv_store_selection(&srv_t, &ch, &sel);
+            srv_store_selection(&srv_h, &ch, &sel);
             rc = srv_derive_handshake_secrets(&srv_h, &ch, &sel);
         }
         if (rc != CH_OK) {

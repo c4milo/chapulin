@@ -2405,7 +2405,11 @@ straight-line writer cannot do.
 `srv_store_selection` (`srv_flight.h`) writes the client's `record_size_limit`
 into `peer_limit` only when it is smaller than the `CH_TX_PT` the driver
 seeded, so `peer_limit` is already at or below this build's own cap and the
-`min` above restates that bound rather than establishing it. The client lowers
+`min` above restates that bound rather than establishing it. When the hello
+carries no `record_size_limit`, the same call drops the server's own value to 0,
+so the EncryptedExtensions sends none: RFC 9846 §4.3 forbids a response to an
+extension the client did not send (`rfc9846.txt:1582-1587`,
+[#206](https://github.com/c4milo/chapulin/issues/206)). The client lowers
 its own the same way (`handshake_parser.c:233`). A send site that reads
 `peer_limit` alone is therefore correct, which is what keeps the staging array
 below the size derived next.

@@ -219,11 +219,16 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel);
 // (handshake_parser_ee.c). A QUIC build copies no limit: RFC 9001
 // section 4.1.3 removes the record layer it sizes, srv_parser.c refuses
 // the extension from a QUIC client, and ch_tls declares no peer_limit.
+// A hello with no record_size_limit drops h->record_size_limit to 0, so the EncryptedExtensions
+// sends none: RFC 9846 §4.3 forbids a response to an extension the client did not send
+// (rfc9846.txt:1582-1587, https://github.com/c4milo/chapulin/issues/206).
 //
 // Defined here, not in srv_flight.c, so the harnesses that prove
 // srv_handshake.c and srv_tcp_nonblocking.c with srv_flight.c
 // stubbed still prove the peer_limit rule over the real code.
-static inline void srv_store_selection(ch_tls *t, const client_hello *ch, const selection *sel) {
+static inline void srv_store_selection(handshake_state *h, const client_hello *ch,
+                                       const selection *sel) {
+    ch_tls *t = h->t;
     t->suite = sel->suite;
     t->hash_len = sel->hash_len;
     t->group = sel->group;
@@ -233,6 +238,9 @@ static inline void srv_store_selection(ch_tls *t, const client_hello *ch, const 
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     if (ch->record_size_limit != 0 && ch->record_size_limit < t->peer_limit) {
         t->peer_limit = ch->record_size_limit;
+    }
+    if (ch->record_size_limit == 0) {
+        h->record_size_limit = 0;
     }
 #endif
 }

@@ -138,7 +138,7 @@ static int serve_flight(void) {
     if (rc != CH_OK) {
         return rc;
     }
-    srv_store_selection(&srv_t, &ch, &sel);
+    srv_store_selection(&srv_h, &ch, &sel);
     rc = srv_derive_handshake_secrets(&srv_h, &ch, &sel);
     if (rc == CH_OK) {
         rc = srv_send_encrypted_extensions(&srv_h, &sel);

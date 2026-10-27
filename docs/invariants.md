@@ -1043,7 +1043,10 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** A record this endpoint sends carries at most the smaller
   of `CH_TX_PT` and the plaintext the peer's `record_size_limit`
   allows. A record it receives fits the buffer its own
-  `record_size_limit` advertised, or it is refused, never truncated.
+  `record_size_limit` advertised, or it is refused, never truncated. A
+  server's EncryptedExtensions carries its own `record_size_limit` only
+  when the ClientHello carried one, because RFC 9846 §4.3 forbids an
+  extension response the client did not ask for (rfc9846.txt:1582-1587).
   `CH_TX_PT` is 512 unless the build raises it with `TX_RECORD`. Every
   build refuses a value below 512 or above 2^14, the most plaintext RFC
   9846 §5.1 lets one record carry, and a `TRANSPORT=quic-nonblocking`
@@ -1162,7 +1165,13 @@ last `ROLE=server` stub, as the entry said it would.
 - **Violation.** A PR raises `CH_TX_PT` past 2^14, sizes a stack
   buffer by `CH_TX_PT`, lets a peer's `record_size_limit` raise the
   send size rather than lower it, or truncates a record the receive
-  buffer cannot hold.
+  buffer cannot hold. Or it sends the server's `record_size_limit` to a
+  hello that offered none: `inv38-srv-record-size-limit-unsolicited`
+  drops the rule from `srv_store_selection`, and
+  `bin/srv_flight_test`'s `test_flight_record_size_limit_reply` fails it.
+  That case reads the EncryptedExtensions for a hello without the
+  extension and for one at the parser's smallest value, 63
+  (https://github.com/c4milo/chapulin/issues/206).
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime),
   entries 22, 71, 72 and 78.
 
