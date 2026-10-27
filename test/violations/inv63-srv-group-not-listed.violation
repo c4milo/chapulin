@@ -1,0 +1,13 @@
+invariant: INV-63
+file: srv_kex.c
+catches: tcp_blocking_loop_test
+reason: the server selects X25519MLKEM768 for every hello, also for one
+  that lists x25519 alone, so its HelloRetryRequest names a group the
+  hello did not list. RFC 9846 §4.3.8 requires a group from the client's
+  supported_groups. test_reply_extensions sends a hello that lists x25519
+  alone and expects a ServerHello for it.
+
+--- old
+    if ((ch->groups & SRV_GROUP_X25519MLKEM768) != 0) {
+--- new
+    if (ch->groups != 0) {

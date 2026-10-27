@@ -1,0 +1,14 @@
+invariant: INV-63
+file: srv_flight.h
+catches: tcp_blocking_loop_test
+reason: the server sends its own record_size_limit in the
+  EncryptedExtensions to a hello that offered none
+  (https://github.com/c4milo/chapulin/issues/206). INV-38's mutant of the
+  same edit fails bin/srv_flight_test over a stand-in parser; this one
+  fails test_reply_extensions over the real parser and ch_srv_accept.
+
+--- old
+    if (ch->record_size_limit == 0) {
+        h->record_size_limit = 0;
+    }
+--- new

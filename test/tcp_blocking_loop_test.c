@@ -443,6 +443,7 @@ static void server_reads_client(int after_finished, size_t bytes) {
 }
 
 #include "tcp_blocking_alert_tests.h"
+#include "tcp_blocking_reply_tests.h"
 #include "tcp_blocking_retry_tests.h"
 #ifdef CH_RAND_SESSION
 #include "tcp_blocking_session_tests.h"
@@ -463,6 +464,7 @@ int main(void) {
         server_reads_retry_hello(bytes);
     }
     test_handshake_alerts();
+    test_reply_extensions();
 #ifdef CH_RAND_SESSION
     test_session();
 #endif
@@ -482,7 +484,8 @@ int main(void) {
                      " included, and refuse one byte after it with unexpected_message; each"
                      " reads the peer's fatal alert, in the clear or protected, and sends"
                      " nothing after it, and answers a 3-byte alert with decode_error; the"
-                     " server refuses a client's NewSessionTicket\n");
+                     " server refuses a client's NewSessionTicket and answers the smallest hello"
+                     " with no extension it did not ask for\n");
         return 0;
     }
     (void)fprintf(stderr, "tcp_blocking_loop: %d failures\n", failures);

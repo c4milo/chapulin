@@ -1,0 +1,17 @@
+invariant: INV-63
+file: srv_parser.c
+catches: tcp_blocking_loop_test
+reason: the parser seeds the selected protocol with index 0, the first
+  name on the server's ALPN list, so a hello that offered no ALPN gets an
+  EncryptedExtensions that names one. RFC 9846 §4.3 forbids that reply
+  (rfc9846.txt:1582-1587). test_reply_extensions reads the length of that
+  message's record for a hello without the extension.
+
+--- old
+    ch->alpn_selected = CH_ALPN_NONE;
+
+    rbuf r;
+--- new
+    ch->alpn_selected = 0;
+
+    rbuf r;

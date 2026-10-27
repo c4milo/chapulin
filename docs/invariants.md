@@ -2037,6 +2037,58 @@ last `ROLE=server` stub, as the entry said it would.
   fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
   `sha3_round` proof and one the `sha3_stream` proof.
 
+### INV-63 — a server sends no extension response to an extension the ClientHello did not carry
+
+- **Claim.** Every extension in a server's ServerHello,
+  HelloRetryRequest, EncryptedExtensions and Certificate answers an
+  extension of the same type in the ClientHello. The one exception is
+  the cookie in a HelloRetryRequest. RFC 9846 §4.3 states this rule
+  (rfc9846.txt:1582-1587), and a strict client such as rustls aborts the
+  handshake on a reply it did not ask for
+  (https://github.com/c4milo/chapulin/issues/206).
+- **Mechanism.** Each reply has a condition on the hello:
+  - supported_versions: `check_required` in `srv_parser.c` refuses a
+    hello without it, with protocol_version.
+  - key_share, in a ServerHello and in a HelloRetryRequest:
+    `srv_kex_group` picks a group the hello listed, and `srv_select`
+    refuses a hello that listed none. `check_required` refuses
+    supported_groups without key_share and key_share without
+    supported_groups.
+  - pre_shared_key: `ticket_offered` in `srv_resume.c` requires the
+    hello's pre_shared_key and psk_dhe_ke, and `select_ticket` selects
+    only an identity the parser read from that extension.
+  - record_size_limit: `srv_store_selection` writes 0 to the server's
+    own limit when the hello carried none, and
+    `srv_build_encrypted_extensions` sends no extension for 0 (INV-38).
+  - application_layer_protocol_negotiation: the parser writes
+    `CH_ALPN_NONE` before it reads an extension, and only the ALPN reader
+    writes another value.
+  - quic_transport_parameters: `take_transport_params` in `srv_quic.c`
+    refuses a QUIC hello without it, with missing_extension.
+  - Certificate: `srv_build_certificate_entry_suffix` writes an empty
+    extension list for each entry.
+- **Check.** `bin/tcp_blocking_loop_test`'s `test_reply_extensions`
+  sends a hand-written hello with the fewest extensions RFC 9846 §9.2
+  allows through the real parser and `ch_srv_accept`, to a server with
+  "h2" on its ALPN list. The ServerHello carries supported_versions and
+  an x25519 key_share alone, and the EncryptedExtensions record has the
+  length of an empty list. Without the share the reply is a
+  HelloRetryRequest with supported_versions, an x25519 key_share and the
+  cookie. Without supported_versions the reply is the protocol_version
+  alert alone. No client this tree builds sends such a hello, because
+  each one sends record_size_limit.
+- **Violation.** A PR sends a reply extension on the server's own
+  configuration and not on the hello's: a record_size_limit to every
+  hello, an ALPN name to a hello that offered none, a group the hello did
+  not list, or a supported_versions to a hello without it.
+  `inv63-srv-record-size-limit-unsolicited`,
+  `inv63-srv-alpn-unsolicited`, `inv63-srv-group-not-listed` and
+  `inv63-srv-versions-unchecked` fail `bin/tcp_blocking_loop_test`. The
+  pre_shared_key and Certificate rows have no mutant. A hello without
+  pre_shared_key holds no identity, so a `ticket_offered` without its
+  first term selects none and changes no reply, and the Certificate row
+  is a constant.
+
 ### INV-62 — an ML-DSA-87 signature is FIPS 204's, hedged, constant time over the key, and checked before it leaves
 
 - **Claim.** `mldsa87_keygen` writes FIPS 204 Algorithm 6's sk and pk
