@@ -335,6 +335,34 @@ expect chsrv-chapulin-resume "oveun ed" "$DIR/err15" \
     exit 1
 }
 
+# --- The same server against rustls, test/rustlsclient: a full handshake,
+# then one that resumes its ticket. rustls refuses an extension response
+# the hello did not ask for (RFC 9846 §4.3), and it sends no
+# record_size_limit, so this run fails the server of
+# https://github.com/c4milo/chapulin/issues/206 (INV-63). cargo builds it
+# at the Rust release tools/toolchain.env pins, with every crate at the
+# version and checksum Cargo.lock records. ---
+RUST_VERSION=$(sed -n 's/^RUST_VERSION=//p' tools/toolchain.env)
+if command -v cargo >/dev/null 2>&1; then
+    RUSTUP_TOOLCHAIN="$RUST_VERSION" cargo build -q --release --locked \
+        --manifest-path test/rustlsclient/Cargo.toml --target-dir "$DIR/rustls"
+    start_chserver "$DIR/cert.der" "$PRIV" "$PUB"
+    "$DIR/rustls/release/rustlsclient" "127.0.0.1:$SRV_PORT" "$DIR/cert.der" 'hola rustls' \
+        > "$DIR/rustls.log" 2>&1 || {
+        echo "FAIL chsrv-rustls: rustlsclient exited nonzero"
+        cat "$DIR/rustls.log" "$SRV_LOG"
+        exit 1
+    }
+    [ "$(tr '\n' ' ' < "$DIR/rustls.log")" = "full sltsur aloh resumed sltsur aloh " ] || {
+        echo "FAIL chsrv-rustls: want a full and a resumed handshake answering 'sltsur aloh'"
+        cat "$DIR/rustls.log" "$SRV_LOG"
+        exit 1
+    }
+    echo "ok   chsrv-rustls"
+else
+    skip "rustls client tests: cargo is not installed"
+fi
+
 # --- The same server's key exchange. It holds X25519MLKEM768 and x25519
 # and prefers the hybrid (docs/decisions.md 54), so each s_client group
 # list below names the group the server must select, and the server's

@@ -686,6 +686,13 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Install Rust (pinned)
+        # test/e2e.sh builds test/rustlsclient with it, the rustls client of
+        # its chsrv-rustls test. The runner image carries rustup.
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+
       - name: Install clang (apt.llvm.org, pinned major)
         # test/qemu-m3.sh compiles for the Cortex-M3 with the pinned clang
         # and links with the ld.lld-<major> that llvm.sh installs beside it.
@@ -754,6 +761,8 @@ jobs:
             || { echo "ld.lld-$LLVM_MAJOR is missing; llvm.sh installs it beside clang"; exit 1; }
           go version | grep -qF "go$GO_VERSION " \
             || { echo "go is not the pinned $GO_VERSION"; exit 1; }
+          rustc --version | grep -qF "rustc $RUST_VERSION " \
+            || { echo "rustc is not the pinned $RUST_VERSION"; exit 1; }
           [ "$(zig version)" = "$ZIG_VERSION" ] \
             || { echo "zig is not the pinned $ZIG_VERSION"; exit 1; }
           openssl version | grep -qF "OpenSSL $OPENSSL_VERSION " \

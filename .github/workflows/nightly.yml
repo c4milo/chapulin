@@ -290,6 +290,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: Install Rust (pinned)
+        # test/e2e.sh, a violation target, builds test/rustlsclient with it.
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
       - name: Install the Arm GNU toolchain (pinned)
         # The gcc codegen check (test/lint-wide-multiply-gcc.sh) is a
         # violation target and needs the Arm GNU gcc the m3 lane pins.
