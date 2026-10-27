@@ -289,6 +289,9 @@
 #                     registers
 #   aes-equiv         bin/aes_equiv_test for x86-64 and for arm64, for the
 #                     violations of aes_hw.c's two key expansions
+#   ghash-equiv       bin/ghash_equiv_test for arm64, for the violations
+#                     of gcm_arm64.c, whose whole AEAD has a body on arm64
+#                     alone
 #   mlkem-avx2        bin/mlkem_avx2_equiv_test for x86-64, for the
 #                     violations of keccak_avx2.c and mlkem_avx2.c
 #   rsa-ifma-callers  bin/tcp_blocking_loop_host and bin/webpki_auth_host
@@ -322,9 +325,10 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
-    mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2) ;;
+    mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
+    rsa-addcarry | rsa-avx2) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2]" >&2
     exit 2
     ;;
 esac
@@ -347,7 +351,7 @@ x86_cc=""
 arm64_cc=""
 x86_qemu=${QEMU_X86_64:-qemu-x86_64}
 arm64_qemu=${QEMU_AARCH64:-qemu-aarch64}
-if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
+if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ] && [ "$only" != ghash-equiv ]; then
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
@@ -413,8 +417,9 @@ read -r -a rsa_avx2_equiv_srcs <<< "$(sed -n 20p <<< "$lists")"
 read -r -a sha512_test_host_srcs <<< "$(sed -n 21p <<< "$lists")"
 read -r -a hkdf384_test_host_srcs <<< "$(sed -n 22p <<< "$lists")"
 read -r -a chacha20_equiv_srcs <<< "$(sed -n 23p <<< "$lists")"
-[ "${#chacha20_equiv_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-three lists" >&2; exit 1; }
+read -r -a ghash_equiv_srcs <<< "$(sed -n 24p <<< "$lists")"
+[ "${#ghash_equiv_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-four lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
 # unit with no declaration, which -Wpedantic refuses, so the arm64 builds
 # link these copies of the three lists they take, without it.
@@ -422,6 +427,8 @@ arm64_quic_srcs=()
 arm64_tcp_srcs=()
 arm64_hash_count_srcs=()
 arm64_runtime_test_srcs=()
+arm64_ghash_equiv_srcs=()
+for src in "${ghash_equiv_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_ghash_equiv_srcs+=("$src"); done
 for src in "${quic_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_quic_srcs+=("$src"); done
 for src in "${tcp_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_tcp_srcs+=("$src"); done
 for src in "${hash_count_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_hash_count_srcs+=("$src"); done
@@ -602,6 +609,26 @@ if [ -z "$only" ] || [ "$only" = aes-equiv ]; then
 fi
 if [ "$only" = aes-equiv ]; then
     echo "aes-runtime-qemu: bin/aes_equiv_test held aes_hw.c to the table and found no word of a schedule on the stack, on AES-NI for x86-64 and on the Arm AES instructions for arm64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = ghash-equiv ]; then
+    # ghash_hw.c's GHASH and gcm_arm64.c's whole seal and open against
+    # gcm.c's portable path, with the search of the stack below one seal
+    # and one open for a power of the hash subkey. gcm_arm64.c has a body
+    # on arm64 alone, so an x86-64 runner reads none of its lines, and the
+    # binary runs under qemu-aarch64's max model, which has the AES and
+    # carry-less multiply instructions. The rule in the Makefile passes
+    # CH_CPU_RUNTIME, so this line does too.
+    "$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME \
+        -o "$arm64_out/ghash_equiv_test" test/ghash_equiv_test.c "${arm64_ghash_equiv_srcs[@]}" ||
+        exit 1
+    expect_arm64 max 0 \
+        "ghash_hw.c or gcm_arm64.c and gcm.c's portable path disagree, or an arm64 seal or open left a power of the hash subkey on the stack" \
+        ghash_equiv_test
+fi
+if [ "$only" = ghash-equiv ]; then
+    echo "aes-runtime-qemu: bin/ghash_equiv_test held ghash_hw.c and gcm_arm64.c to gcm.c's portable path and found no power of the hash subkey on the stack, on the Arm AES and carry-less multiply instructions"
     exit 0
 fi
 

@@ -1,13 +1,14 @@
 invariant: INV-17
 file: gcm_arm64.c
-catches: ghash_equiv_test
+catches: test/docker-aes-runtime-qemu.sh ghash-equiv
 reason: the arm64 AES-GCM seal and open wipe their state only up to the
   powers of the hash subkey, so H to H^8, which the key fixes, stay in the
   dead frame after every call, and a later caller's uninitialized stack
   reads them. No output changes, so no vector notices. bin/ghash_equiv_test
   copies the stack below one seal and one open and requires no power of H
-  in the copy. Only an arm64 compiler reads the line, and CI's arm64 and
-  macOS jobs run the binary on their own CPUs.
+  in the copy. Only an arm64 compiler reads the line, and the nightly
+  runs its violations on x86-64, so the script builds that binary for
+  arm64 and runs it under qemu-aarch64's max model.
 
 --- old
     ct_wipe(s, offsetof(aead_state, ghash) + offsetof(ghash_state, powers) +

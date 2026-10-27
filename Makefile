@@ -1928,6 +1928,7 @@ print-aes-runtime-qemu-srcs:
 	@echo $(call sha512_avx2_named,$(call host_srcs,$(SHA512_TEST_SRCS) ct_wipe.c))
 	@echo $(call sha512_avx2_named,$(call host_srcs,$(HKDF384_SRCS)))
 	@echo $(call sha512_avx2_named,$(CHACHA20_EQUIV_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(GHASH_EQUIV_TEST_SRCS))
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources

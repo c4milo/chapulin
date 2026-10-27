@@ -23,7 +23,9 @@
 # builds for arm64, the one object that holds Keccak on the SHA-3
 # instructions; "aes-equiv" bin/aes_equiv_test alone, for x86-64 and for
 # arm64, which holds aes_hw.c's two key expansions to the table and
-# searches the stack each leaves; "rsa-ifma-callers"
+# searches the stack each leaves; "ghash-equiv" bin/ghash_equiv_test
+# alone, for arm64, which holds gcm_arm64.c's whole AEAD to gcm.c and
+# searches the stack each seal and open leaves; "rsa-ifma-callers"
 # bin/tcp_blocking_loop_host and bin/webpki_auth_host alone, for x86-64,
 # which count the RSA public operations each caller of the verifiers
 # sends to AVX-512 IFMA; and
@@ -55,7 +57,8 @@
 # SHA-512 entries with "arm64-hash-count", the two violations of the
 # intrinsics in p256_wide_word.h's carry steps with "p256-equiv", the
 # violations of what sha3_hw.c leaves on the stack with "keccak", the
-# violations of aes_hw.c's two key expansions with "aes-equiv", and the
+# violations of aes_hw.c's two key expansions with "aes-equiv", the
+# violation of gcm_arm64.c's wipe with "ghash-equiv", and the
 # violations that hand an RSA verifier 0 in place of a session's
 # ch_cfg.cpu with "rsa-ifma-callers", and the violations of the rows'
 # intrinsic, their wipes and the define that picks them with
