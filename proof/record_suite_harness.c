@@ -66,6 +66,10 @@ void hkdf_expand_label_hw(size_t hash_len, const uint8_t *secret, const char *la
 }
 #endif
 
+#ifndef CH_CPU_RUNTIME
+// A device object expands the key at each record. A host object's
+// record.c calls aes_traffic_key_store and aes_traffic_key_load instead,
+// whose stubs follow the host entries below (docs/decisions.md 160).
 void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len) {
     __CPROVER_assert(key_len == expected_key_len, "aes: the suite's key length");
     __CPROVER_assert(__CPROVER_r_ok(key, key_len), "aes: key readable");
@@ -75,6 +79,7 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
         k->key.round_keys[i] = nondet_u8();
     }
 }
+#endif
 
 void gcm_traffic_seal(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
                       size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
@@ -146,8 +151,7 @@ int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[
 #ifdef CH_CPU_RUNTIME
 // A host object's record.c calls the entries that take the session's
 // ch_cfg.cpu (aead.h, aes.h). The two AEAD entries keep aead_seal's and
-// aead_open's contracts, so each is the stub above, and the key's setter
-// writes the one field it names.
+// aead_open's contracts, so each is the stub above.
 void aead_seal_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
                    const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
                    uint8_t tag[AEAD_TAG]) {
@@ -162,8 +166,33 @@ int aead_open_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce
     return aead_open(0, key, nonce, aad, aad_len, ct, n, tag, pt);
 }
 
-void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
-    __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes cpu: schedule writable");
+// A host object stores each key's schedule when it derives the key and
+// loads a copy per use (aes.h, docs/decisions.md 160). Both stubs hold
+// the contract aes.h states: the suite's key length, a key or a schedule
+// of SUITE_AES_SCHEDULE_LEN readable bytes, and a whole destination they
+// write with bytes no caller may assume.
+void aes_traffic_key_store(uint8_t *schedule, const uint8_t *key, size_t key_len) {
+    __CPROVER_assert(key_len == expected_key_len, "aes store: the suite's key length");
+    __CPROVER_assert(__CPROVER_r_ok(key, key_len), "aes store: key readable");
+    __CPROVER_assert(__CPROVER_w_ok(schedule, SUITE_AES_SCHEDULE_LEN),
+                     "aes store: schedule writable");
+    fill_nondet(schedule, SUITE_AES_SCHEDULE_LEN);
+}
+
+void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, size_t key_len,
+                          uint32_t cpu) {
+    __CPROVER_assert(key_len == expected_key_len, "aes load: the suite's key length");
+    __CPROVER_assert(__CPROVER_r_ok(schedule, SUITE_AES_SCHEDULE_LEN),
+                     "aes load: schedule readable");
+    __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes load: key writable");
+    for (size_t i = 0; i < sizeof k->key.round_keys; i++) {
+        k->key.round_keys[i] = nondet_u8();
+    }
+    // The three fields aes_traffic_key_load writes whatever the bytes say.
+    k->key.rounds = key_len == AES_256_KEY ? AES_256_ROUNDS : AES_128_ROUNDS;
+#ifdef CH_AES_TWO_CIPHERS
+    k->key.instructions = AES_ON_INSTRUCTIONS;
+#endif
     k->key.cpu = (uint8_t)cpu;
     k->key.cpu_high = (uint8_t)(cpu >> 8);
 }

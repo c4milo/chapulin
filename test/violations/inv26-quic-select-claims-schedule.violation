@@ -1,0 +1,13 @@
+invariant: INV-26
+file: quic_packet.c
+catches: quic_suite_test
+reason: quic_keys_select marks the 1-RTT receive set it chose as one with
+  a stored schedule, though it copies none, so a host object opens every
+  1-RTT packet under AES-GCM with round keys nothing wrote, and none
+  opens. quic_suite_test, a host binary, opens AES-GCM 1-RTT packets
+  through quic_packet_open_application.
+
+--- old
+    out->stored = 0;
+--- new
+    out->stored = 1;

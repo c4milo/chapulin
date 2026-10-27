@@ -291,13 +291,13 @@ void quic_nonce(const uint8_t iv[AEAD_NONCE], uint64_t pn, uint8_t nonce[AEAD_NO
 uint8_t quic_key_set_select(uint8_t key_phase, uint8_t packet_key_phase, uint64_t pn,
                             uint64_t current_phase_lowest_pn);
 
-// Copies one of the CH_QUIC_KEY_SETS receive key sets into out,
-// without using selected as a memory index. It reads every byte of all
-// three sets and combines them under a mask built from selected, so
-// the addresses it reads are the same whichever set wins. CLAUDE.md's
-// rule against secret-dependent memory indices requires that here,
-// because selected comes from the Key Phase bit and the recovered
-// packet number, and §9.5 makes both secret (rfc9001.txt:2110-2112).
+// Copies one of the CH_QUIC_KEY_SETS receive key sets into out, without
+// using selected as a memory index. It reads every key and IV byte of all
+// three sets and combines them under a mask built from selected, so the
+// addresses it reads are the same whichever set wins. CLAUDE.md's rule
+// against secret-dependent memory indices requires that here, because
+// selected comes from the Key Phase bit and the recovered packet number,
+// and §9.5 makes both secret (rfc9001.txt:2110-2112).
 //
 // Requires: sets points at CH_QUIC_KEY_SETS readable quic_keys, the
 // three the session holds; selected is CH_QUIC_KEY_PREVIOUS,
@@ -305,8 +305,8 @@ uint8_t quic_key_set_select(uint8_t key_phase, uint8_t packet_key_phase, uint64_
 // quic_keys that does not overlap sets. A wiped set reads as zero and
 // opens no packet, which is what ch_quic_drop_previous_keys leaves.
 //
-// Writes out whole and cannot fail, so it returns nothing. out holds
-// key material, so the caller wipes it with ct_wipe on every path.
+// Writes out whole but for a host object's schedule, with out->stored 0 (docs/decisions.md 160).
+// It cannot fail. out holds key material, so the caller wipes it with ct_wipe on every path.
 void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, quic_keys *out);
 
 // Protects one packet under k and h and writes it whole into out:

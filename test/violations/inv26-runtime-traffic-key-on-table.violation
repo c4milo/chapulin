@@ -11,5 +11,11 @@ reason: a QUIC host object records the table in a traffic key's schedule,
 
 --- old
     k->key.instructions = AES_ON_INSTRUCTIONS;
+#endif
+#ifdef CH_CPU_RUNTIME
+    // No kernel until aes_traffic_key_cpu names the session's CPU.
 --- new
     k->key.instructions = AES_ON_TABLE;
+#endif
+#ifdef CH_CPU_RUNTIME
+    // No kernel until aes_traffic_key_cpu names the session's CPU.

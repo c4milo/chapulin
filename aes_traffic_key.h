@@ -15,11 +15,19 @@
 // Four sources include this header, and tools/quic-footprint.py fails on
 // a fifth:
 //
-//   aes.c          writes aes_traffic_key_init and the block entry
+//   aes.c          writes aes_traffic_key_init and the block entry, and in
+//                  a host object stores and loads a schedule's bytes
 //   gcm.c          reads the round keys out of one to run the AEAD
-//   record.c       builds one per record from rec_dir's key bytes
+//   record.c       builds one per record from rec_dir's key bytes, or in
+//                  a host object from rec_dir's stored schedule
 //   quic_packet.c  builds one per QUIC packet from quic_keys' key bytes,
-//                  and one per header protection mask from quic_hp_key's
+//                  and one per header protection mask from quic_hp_key's,
+//                  or in a host object from their stored schedules
+//
+// A stored schedule is bytes, SUITE_AES_SCHEDULE_LEN of them (suite.h),
+// so this body stays out of the headers that hold one, and quic_keys.c
+// stores one through aes_traffic_key_store without it (docs/decisions.md
+// 160).
 //
 // A build that never defines CH_SUITE_AES_GCM compiles none of it, and
 // ct.h refuses that define unless the build runs AES on the AES

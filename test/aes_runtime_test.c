@@ -38,9 +38,12 @@
 #include "ch_assert.h"
 #include "gcm.h"
 #include "quic_initial.h"
+#include "quic_keys.h"
+#include "quic_packet.h"
 #include "quic_retry.h"
 #include "quic_v1_vectors.h"
 #include "quic_v2_vectors.h"
+#include "suite.h"
 
 #ifndef CH_AES_TWO_CIPHERS
 #error                                                                                             \
@@ -364,6 +367,53 @@ static void check_traffic_block(const char *key_hex, const char *ct_hex) {
     CHECK(eq_hex(out, ct_hex));
 }
 
+// A stored schedule, loaded (docs/decisions.md 160). The load writes the
+// round count, the cipher and the session's value whatever the bytes say,
+// so zero bytes run the instructions at the suite's round count. A 1-RTT
+// packet whose Key Phase bit selects the next set, which no key update has
+// written, expands that set's zero key, opens nothing and runs no block on
+// the table.
+static void check_stored_schedule(void) {
+    static const uint8_t zero[SUITE_AES_SCHEDULE_LEN];
+    aes_traffic_key k;
+    memset(&k, 0xff, sizeof k);
+    aes_traffic_key_load(&k, zero, AES_256_KEY, RUNTIME_PRESENT);
+    CHECK(k.key.rounds == AES_256_ROUNDS && k.key.instructions == AES_ON_INSTRUCTIONS);
+    CHECK(k.key.cpu == RUNTIME_PRESENT && k.key.cpu_high == 0);
+    aes_traffic_key_load(&k, zero, AES_128_KEY, 0);
+    CHECK(k.key.rounds == AES_128_ROUNDS && k.key.instructions == AES_ON_INSTRUCTIONS);
+    CHECK(k.key.cpu == 0);
+
+    uint8_t secret[SHA384_LEN];
+    memset(secret, 0x5a, sizeof secret);
+    quic_keys tx;
+    quic_keys sets[CH_QUIC_KEY_SETS];
+    quic_hp_key h;
+    memset(sets, 0, sizeof sets);
+    quic_keys_init_suite(RUNTIME_PRESENT, &tx, 1, secret, SUITE_AES_256_GCM_SHA384);
+    quic_keys_init_suite(RUNTIME_PRESENT, &sets[CH_QUIC_KEY_CURRENT], 1, secret,
+                         SUITE_AES_256_GCM_SHA384);
+    quic_hp_key_init_suite(RUNTIME_PRESENT, &h, 1, secret, SUITE_AES_256_GCM_SHA384);
+    // A short header with no connection ID and packet number 0 in two bytes.
+    const uint8_t hdr[3] = {0x41, 0x00, 0x00};
+    uint8_t pt[64];
+    memset(pt, 0x61, sizeof pt);
+    for (uint8_t phase = 0; phase < 2; phase++) {
+        uint8_t pkt[128];
+        size_t n = 0;
+        CHECK(quic_packet_seal(RUNTIME_PRESENT, &tx, &h, CH_LEVEL_APPLICATION, phase, 0, 2, hdr,
+                               sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &n) == CH_OK);
+        uint8_t set = 0xff;
+        uint64_t pn = 0;
+        size_t pt_len = 0;
+        int rc = quic_packet_open_application(RUNTIME_PRESENT, sets, &h, 0, pkt, n, 1, 0, 0, &set,
+                                              &pn, &pt_len);
+        // Phase 0 is the current set's, and phase 1 the unwritten next one.
+        CHECK(rc == (phase == 0 ? CH_OK : CH_QUIC_DISCARD));
+        CHECK(set == (phase == 0 ? CH_QUIC_KEY_CURRENT : 0xff));
+    }
+}
+
 // Every traffic key runs on the instructions and never on the table.
 static void check_traffic_keys(void) {
     reset_counts();
@@ -372,6 +422,7 @@ static void check_traffic_keys(void) {
     check_traffic_block("000102030405060708090a0b0c0d0e0f", "69c4e0d86a7b0430d8cdb78070b4c55a");
     check_traffic_block("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
                         "8ea2b7ca516745bfeafc49904b496089");
+    check_stored_schedule();
     check_ran_on(RUNTIME_PRESENT);
 }
 

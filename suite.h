@@ -112,6 +112,30 @@ static inline const uint16_t *suite_session_default(const ch_cfg *cfg, size_t *c
 // both take 32 bytes.
 #define SUITE_KEY_MAX 32
 
+// A host object with the AES-GCM suites keeps each AES traffic key's
+// expanded schedule beside the key bytes: rec_dir, quic_keys and
+// quic_hp_key each hold SUITE_AES_SCHEDULE_LEN bytes of it. The key's
+// owner expands it once, when the key is derived or updated, and the
+// schedule is wiped with the key. A device object expands the key at each
+// use instead, because its SRAM is short (docs/decisions.md 160,
+// https://github.com/c4milo/chapulin/issues/205). The length is
+// sizeof(aes_traffic_key), whose body the files aes_traffic_key.h names
+// alone may see, so it is spelled here as that body's fields: fifteen
+// round keys of 16 bytes, the round count, the two CPU bytes, and in a
+// QUIC object the cipher byte (aes_schedule.h). aes.c asserts the two
+// agree, and aes_traffic_key_load writes the round count, the cipher and
+// the CPU value of each copy itself.
+#ifdef CH_SUITE_AES_GCM
+#ifdef CH_CPU_RUNTIME
+#define CH_AES_STORED_SCHEDULE
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define SUITE_AES_SCHEDULE_LEN (15 * 16 + 4)
+#else
+#define SUITE_AES_SCHEDULE_LEN (15 * 16 + 3)
+#endif
+#endif
+#endif
+
 // The hash length suite fixes, SHA256_LEN or SHA384_LEN, or 0 for a code
 // point this build does not hold.
 static inline size_t suite_hash_len(uint16_t suite) {

@@ -1,0 +1,13 @@
+invariant: INV-26
+file: aes.c
+catches: aes_runtime_test
+reason: aes_traffic_key_load keeps the round count the stored schedule
+  holds, so zero bytes, a wiped schedule's, would run the AES
+  instructions at round count 0, and gcm_hw.c would read round key
+  rounds - 1, far past the schedule. bin/aes_runtime_test loads zero
+  bytes and reads the round count back.
+
+--- old
+    k->key.rounds = key_len == AES_256_KEY ? AES_256_ROUNDS : AES_128_ROUNDS;
+--- new
+    (void)key_len;

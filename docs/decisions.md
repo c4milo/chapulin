@@ -14303,3 +14303,69 @@ does nothing more.
       generation, which runs once at boot.
     - **The expandedKey form.** It holds no seed, so nothing checks it,
       and ruling 3 provisions the seed.
+
+160. **A host object keeps each AES traffic key's expanded schedule
+    beside the key, and a device object expands the key at each use.**
+    colibri measured AES-256 key expansion at about 4% of its h3 server's
+    instructions (https://github.com/c4milo/chapulin/issues/205). Camilo
+    ruled on 2026-10-26: host objects store a schedule per key, written
+    when the key is derived or updated and wiped with the key, and device
+    objects keep the per-call expansion.
+
+    - **The rule.** Under `SUITE=aesgcm` in a host object, `rec_dir`,
+      `quic_keys` and `quic_hp_key` hold `SUITE_AES_SCHEDULE_LEN` bytes,
+      the body of one `aes_traffic_key` (`suite.h`). `rec_dir_init_suite`,
+      `quic_keys_init_suite` and `quic_hp_key_init_suite` write them
+      through `aes_traffic_key_store`, so a KeyUpdate and a QUIC key
+      update rewrite them, and every wipe of the struct wipes them. Each
+      record, packet and mask copies them onto its frame through
+      `aes_traffic_key_load` and wipes the copy there, as before.
+    - **The load writes three fields itself.** The round count comes from
+      the suite's key length, the cipher is the AES instructions, and the
+      CPU value is the caller's, as `aes_traffic_key_cpu` writes it. A
+      session writes `ch_cfg.cpu` after its init calls, so the stored
+      bytes hold none. A wiped schedule's bytes are zero. A first draft
+      loaded the chosen 1-RTT set's schedule, and a packet that selected
+      a wiped set then ran its AEAD on the S-box table, and on the
+      instructions `gcm_hw.c` read round key `rounds - 1` at round count
+      0, past the schedule. The chosen set now expands its key, below,
+      and the two writes stay, so no stored bytes decide the cipher or
+      the round count. The mutants
+      `inv26-stored-schedule-keeps-cipher-byte` and
+      `inv26-stored-schedule-keeps-round-count` hold them.
+    - **A 1-RTT open expands its key.** `quic_keys_select` chooses one of
+      three receive sets in constant time, because the set a packet
+      selects is secret (RFC 9001 §9.5). Masking three stored schedules
+      cost 998 instructions where one expansion costs 251, so the select
+      copies the key and IV alone, as it did, and marks the copy with
+      `stored` at 0. The packet's header protection key is stored, so
+      the open still saves one expansion.
+    - **The bytes stay out of the headers.** The schedule is a byte
+      array, so `aes_traffic_key.h` keeps its four includers.
+      `quic_keys.c` calls `aes_traffic_key_store` and joins the files
+      `inv-26-aes-traffic-keys-only` admits.
+
+    Measured with callgrind on x86-64 in the CI image (gcc 13, `-O2`, AES
+    instructions), TLS_AES_256_GCM_SHA384, 1,000 packets:
+
+    | Call | Payload | Before | After | Change |
+    |---|---|---|---|---|
+    | `quic_packet_seal` | 64 B | 3,354 | 2,899 | -13.6% |
+    | `quic_packet_seal` | 1,200 B | 8,649 | 8,194 | -5.3% |
+    | `quic_packet_open_application` | 64 B | 4,028 | 3,828 | -5.0% |
+    | `quic_packet_open_application` | 1,200 B | 9,368 | 9,168 | -2.1% |
+
+    The cost is SRAM. `bench/sram.sh` measures a `SUITE=aesgcm` host
+    `ch_tls` 480 bytes larger, two schedules. `ch_quic` in a
+    `ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking SUITE=aesgcm` host
+    object goes from 5,576 to 8,040 bytes: ten key sets and header
+    protection keys at 244 bytes each, and padding.
+
+    Rejected:
+
+    - **A schedule per key in every object.** A device object's SRAM is
+      the scarce resource, and its packet rate is low.
+    - **A masked copy of the three schedules.** It cost more than the
+      expansion it saved, above.
+    - **A pointer to the chosen set's schedule.** The set is secret, so
+      the address would be too.

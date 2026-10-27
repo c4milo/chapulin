@@ -1,0 +1,15 @@
+invariant: INV-26
+file: aes.c
+catches: aes_runtime_test
+reason: aes_traffic_key_load keeps the cipher byte the stored schedule
+  holds, so zero bytes, a wiped schedule's, would run their AEAD on the
+  S-box table, which INV-26 keeps every traffic key away from.
+  bin/aes_runtime_test loads zero bytes and reads the cipher byte back.
+
+--- old
+#ifdef CH_AES_TWO_CIPHERS
+    k->key.instructions = AES_ON_INSTRUCTIONS;
+#endif
+    aes_traffic_key_cpu(k, cpu);
+--- new
+    aes_traffic_key_cpu(k, cpu);

@@ -195,6 +195,58 @@ void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu);
 #define aes_traffic_key_init_cpu(k, cpu, key, key_len) aes_traffic_key_init((k), (key), (key_len))
 #endif
 
+#ifdef CH_CPU_RUNTIME
+// A host object's copy of a stored schedule: the SUITE_AES_SCHEDULE_LEN
+// bytes aes_traffic_key_init wrote when the key's owner derived the key
+// (suite.h, docs/decisions.md 160), copied into k. Then it writes the
+// fields no stored byte decides. The round count comes from key_len, the
+// cipher is the instructions, and cpu is recorded as aes_traffic_key_cpu
+// records it. So zero bytes, a wiped schedule's, still run the
+// instructions at the suite's round count, open nothing, and read no round
+// key past the schedule. A session writes its cpu after init, so the
+// stored bytes hold none.
+//
+// Requires: k points at one whole aes_traffic_key; schedule points at
+// SUITE_AES_SCHEDULE_LEN readable bytes that are aes_traffic_key_init's
+// output or zero; key_len is AES_128_KEY or AES_256_KEY, the suite's.
+// Writes k whole and cannot fail.
+void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, size_t key_len,
+                          uint32_t cpu);
+
+// Expands key into schedule as aes_traffic_key_init expands it, for a host
+// object's key owner to store beside the key: record.c when it derives a
+// record key, quic_keys.c when it derives a packet or header protection
+// key. The expansion is made on this call's frame and wiped there.
+//
+// Requires: schedule points at SUITE_AES_SCHEDULE_LEN writable bytes; key
+// points at key_len readable bytes; key_len is AES_128_KEY or AES_256_KEY.
+// Writes the SUITE_AES_SCHEDULE_LEN bytes and cannot fail.
+void aes_traffic_key_store(uint8_t *schedule, const uint8_t *key, size_t key_len);
+#endif
+
+// The round keys of one traffic key for one record or mask, written into
+// k, which the caller wipes after that use. A host object loads schedule,
+// and a device object expands key at each use and never evaluates
+// schedule, a field that build does not declare.
+//
+// aes_traffic_key_of_set is the same for a QUIC key set, whose stored
+// byte says whether it holds a schedule: a host object expands key where
+// stored is 0, the 1-RTT receive set quic_keys_select chose, because
+// masking three schedules costs more than one expansion. stored is
+// public, a fact of the call path.
+#ifdef CH_CPU_RUNTIME
+#define aes_traffic_key_of(k, cpu, schedule, key, key_len)                                         \
+    aes_traffic_key_load((k), (schedule), (key_len), (cpu))
+#define aes_traffic_key_of_set(k, cpu, stored, schedule, key, key_len)                             \
+    ((stored) ? aes_traffic_key_load((k), (schedule), (key_len), (cpu))                            \
+              : aes_traffic_key_init_cpu((k), (cpu), (key), (key_len)))
+#else
+#define aes_traffic_key_of(k, cpu, schedule, key, key_len)                                         \
+    aes_traffic_key_init_cpu((k), (cpu), (key), (key_len))
+#define aes_traffic_key_of_set(k, cpu, stored, schedule, key, key_len)                             \
+    aes_traffic_key_init_cpu((k), (cpu), (key), (key_len))
+#endif
+
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // One forward-cipher block under a traffic key: out = CIPH_k(in). It is
 // RFC 9001 §5.4.3's header protection mask, AES-ECB(hp_key, sample)

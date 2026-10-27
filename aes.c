@@ -33,6 +33,8 @@
 #include "hkdf.h"
 #ifdef CH_SUITE_AES_GCM
 #include "aes_traffic_key.h"
+#include "ct.h"
+#include "suite.h"
 #endif
 #if defined(CH_SUITE_AES_GCM) || defined(CH_AES_TWO_CIPHERS)
 #include "ch_assert.h"
@@ -318,6 +320,28 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
 void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
     k->key.cpu = (uint8_t)cpu;
     k->key.cpu_high = (uint8_t)(cpu >> 8);
+}
+
+_Static_assert(sizeof(aes_traffic_key) == SUITE_AES_SCHEDULE_LEN,
+               "a stored schedule holds one aes_traffic_key");
+
+void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, size_t key_len,
+                          uint32_t cpu) {
+    CH_ASSERT(key_len == AES_128_KEY || key_len == AES_256_KEY);
+    memcpy(k, schedule, sizeof *k);
+    // key_len is the suite's, which the ServerHello named in the clear.
+    k->key.rounds = key_len == AES_256_KEY ? AES_256_ROUNDS : AES_128_ROUNDS;
+#ifdef CH_AES_TWO_CIPHERS
+    k->key.instructions = AES_ON_INSTRUCTIONS;
+#endif
+    aes_traffic_key_cpu(k, cpu);
+}
+
+void aes_traffic_key_store(uint8_t *schedule, const uint8_t *key, size_t key_len) {
+    aes_traffic_key k;
+    aes_traffic_key_init(&k, key, key_len);
+    memcpy(schedule, &k, sizeof k);
+    ct_wipe(&k, sizeof k);
 }
 #endif
 

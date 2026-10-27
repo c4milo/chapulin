@@ -96,5 +96,32 @@ int main(void) {
     } else {
         __CPROVER_assert(ran_cipher_128 && !ran_cipher_256, "the dispatch runs AES-128");
     }
+#ifdef CH_CPU_RUNTIME
+    // A host object's stored schedule (docs/decisions.md 160). The store
+    // expands the key at its length into SUITE_AES_SCHEDULE_LEN bytes. The
+    // load copies any bytes and then writes the round count from key_len
+    // and the CPU value itself, whatever the bytes hold, so a wiped set's
+    // zero bytes still name a round count the cipher reads inside the
+    // schedule.
+    uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
+    ran_expand_128 = 0;
+    ran_expand_256 = 0;
+    aes_traffic_key_store(schedule, key, key_len);
+    __CPROVER_assert(key_len == AES_256_KEY ? ran_expand_256 : ran_expand_128,
+                     "the store expands at the key's length");
+    fill_nondet(schedule, sizeof schedule);
+    uint32_t cpu = nondet_u32();
+    aes_traffic_key loaded;
+    aes_traffic_key_load(&loaded, schedule, key_len, cpu);
+    __CPROVER_assert(loaded.key.rounds ==
+                         (key_len == AES_256_KEY ? AES_256_ROUNDS : AES_128_ROUNDS),
+                     "the load writes the suite's round count");
+    __CPROVER_assert(loaded.key.cpu == (uint8_t)cpu && loaded.key.cpu_high == (uint8_t)(cpu >> 8),
+                     "the load records the caller's cpu");
+    size_t at = nondet_u8();
+    __CPROVER_assume(at < sizeof loaded.key.round_keys);
+    __CPROVER_assert(loaded.key.round_keys[at] == schedule[at],
+                     "the load copies the stored round keys");
+#endif
     return 0;
 }

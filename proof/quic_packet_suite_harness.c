@@ -153,6 +153,24 @@ void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
     k->key.cpu = (uint8_t)cpu;
     k->key.cpu_high = (uint8_t)(cpu >> 8);
 }
+
+void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, size_t key_len,
+                          uint32_t cpu) {
+    __CPROVER_assert(key_len == expected_key_len, "aes load: the suite's key length");
+    __CPROVER_assert(__CPROVER_r_ok(schedule, SUITE_AES_SCHEDULE_LEN),
+                     "aes load: schedule readable");
+    __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes load: key writable");
+    for (size_t i = 0; i < sizeof k->key.round_keys; i++) {
+        k->key.round_keys[i] = nondet_u8();
+    }
+    // The three fields aes_traffic_key_load writes whatever the bytes say.
+    k->key.rounds = key_len == AES_256_KEY ? AES_256_ROUNDS : AES_128_ROUNDS;
+#ifdef CH_AES_TWO_CIPHERS
+    k->key.instructions = AES_ON_INSTRUCTIONS;
+#endif
+    k->key.cpu = (uint8_t)cpu;
+    k->key.cpu_high = (uint8_t)(cpu >> 8);
+}
 #endif
 
 #include "quic_packet.c"

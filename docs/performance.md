@@ -29,10 +29,10 @@ and `size_t` lengths, so that build needs 120 bytes less than the host figure on
 | **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15402** | **15282** |
 | `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1992 | 1824 |
 | **total static working set, `ROLE=server`** (2048 buffer) | **4040** | **3872** |
-| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2280 | — |
-| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4328** | — |
-| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3368 | — |
-| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15706** | — |
+| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2760 | — |
+| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4808** | — |
+| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3848 | — |
+| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **16186** | — |
 | `ch_tls` under `TRUST=webpki`, host object | 3064 | — |
 | **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15402** | — |
 | `ch_tls` under `ROLE=server`, host object | 1992 | — |
@@ -163,9 +163,13 @@ host object this host builds for it ([`docs/decisions.md`](decisions.md)
 89), so its rows are host figures and have no rv32 column. A suite build
 with `AES=extern` can run on a device with an AES peripheral
 ([`docs/decisions.md`](decisions.md) 68), and no script here measures one
-on a device target yet. Its session struct is 288 bytes larger than the
-same `ROLE=server` host object without the suite, and 304 larger for
+on a device target yet. Its session struct is 768 bytes larger than the
+same `ROLE=server` host object without the suite, and 784 larger for
 `TRUST=webpki`:
+
+- each of the two record directions holds its AES key's expanded
+  schedule, 243 bytes, so no record expands the key again
+  ([`docs/decisions.md`](decisions.md) 160);
 
 - the transcript runs a SHA-512 context beside SHA-256's;
 - the traffic secrets take SHA-384's 48 bytes;

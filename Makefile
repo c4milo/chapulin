@@ -8444,9 +8444,13 @@ WIDEMUL_SPECS := \
 # aead.c@host, 4 and 6: mac's tests of the session's multiply answer and of
 #   the CPU bits that pick a Poly1305, and aead_open's and aead_open_cpu's
 #   `if (!ok)` on the tag, which the caller is told.
-# aes.c@host, 14 and 13; gcm.c@host, 20 and 32: the bytes of a schedule that
+# aes.c@host, 19 and 18; gcm.c@host, 20 and 32: the bytes of a schedule that
 #   record its round count and which cipher expanded it, a key length
-#   against 16 and 32, the session's CPU bits, the lengths counter_mode
+#   against 16 and 32, aes_traffic_key_load's CH_ASSERT on its key_len,
+#   two branches, whose round count is a select, and in
+#   aes_traffic_key_store the inlined aes_traffic_key_init's CH_ASSERT and
+#   its choice of the AES-256 expansion, three (docs/decisions.md 160),
+#   the session's CPU bits, the lengths counter_mode
 #   takes and its loops, GHASH's block loop, multiply_by_subkey's 128 steps,
 #   and open's `if (!ok)` on the tag. multiply_by_subkey's two selects stay
 #   masks. On x86-64 the seal and the open each test the cipher byte, the AES
@@ -8687,7 +8691,7 @@ MLDSA_SIGN_BRANCH_CEILING := \
 QUIC_PACKET_BRANCH_CEILING := \
   m3/quic_packet.c:59 mips32r2/quic_packet.c:42 rv32imac/quic_packet.c:46 m3-gcc/quic_packet.c:46 \
   mips32r2-gcc/quic_packet.c:46 mips32r2-gcc-O2/quic_packet.c:52 rv32imac-gcc/quic_packet.c:55 \
-  rv32ic-gcc/quic_packet.c:55 arm64/quic_packet.c@host:34 x86-64/quic_packet.c@host:34
+  rv32ic-gcc/quic_packet.c:55 arm64/quic_packet.c@host:36 x86-64/quic_packet.c@host:36
 WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2
 # The division count, read from the same assembly with the DIVIDE_OPS
 # tokens (docs/decisions.md 156). DIVIDE_CEILING is file:count and holds on
@@ -8770,7 +8774,11 @@ DIVIDE_CEILING_SPEC := mips32r2-gcc-O2/tls_write.c:3
 # compiler's line table names for it, and each is one of these:
 #   - loop control over a constant count: the four bytes of a packet
 #     number field, the bytes of the header protection sample and mask,
-#     of the nonce, and of the keys and IVs quic_keys_select copies;
+#     of the nonce, and of the keys, IVs and, in a host object, the stored
+#     AES schedules quic_keys_select copies (docs/decisions.md 160);
+#   - in a host object, quic_keys_select's test of whether out overlaps
+#     sets, which picks the vector copy or the byte loop, one for each
+#     field it copies: it compares the two addresses and no byte;
 #   - first_byte_bits' compare of level, quic_packet_seal's compare of
 #     level, which picks the bit its Key Phase mask covers, and the
 #     compares of the suite, all of which the wire carries in the clear;
@@ -8991,7 +8999,7 @@ BRANCH_CEILING := \
   arm64/poly1305.c@host:21 x86-64/poly1305.c@host:19 arm64/aead.c@host:4 x86-64/aead.c@host:6 \
   arm64/mlkem.c@host:5 x86-64/mlkem.c@host:5 arm64/rsa_sign.c@host:55 x86-64/rsa_sign.c@host:47 \
   arm64/drbg.c@host:5 x86-64/drbg.c@host:5 \
-  arm64/aes.c@host:14 x86-64/aes.c@host:13 arm64/gcm.c@host:22 x86-64/gcm.c@host:32 \
+  arm64/aes.c@host:19 x86-64/aes.c@host:18 arm64/gcm.c@host:22 x86-64/gcm.c@host:32 \
   arm64/p256_field.c@host:4 x86-64/p256_field.c@host:4 \
   arm64/p256_scalar.c@host:4 x86-64/p256_scalar.c@host:4 \
   arm64/sha512.c@host:9 x86-64/sha512.c@host:9 \

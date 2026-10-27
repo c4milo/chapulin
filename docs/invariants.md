@@ -4965,10 +4965,20 @@ last `ROLE=server` stub, as the entry said it would.
   (docs/decisions.md entries 68 and 89). The
   key has its own type, `aes_traffic_key`,
   whose body lives in `aes_traffic_key.h` alone, so it cannot be passed
-  where an `aes_public_key` is expected or the reverse. And `record.c`
-  and `quic_packet.c` expand it on their own frame at each use and wipe
-  it there, so no schedule outlives the record, the packet or the mask it
-  protected, and no `rec_dir`, `quic_keys` or `quic_hp_key` holds one.
+  where an `aes_public_key` is expected or the reverse. In a device
+  object `record.c` and `quic_packet.c` expand it on their own frame at
+  each use and wipe it there, so no schedule outlives the record, the
+  packet or the mask it protected. A host object keeps each key's
+  schedule beside the key instead, as `SUITE_AES_SCHEDULE_LEN` bytes in
+  `rec_dir`, `quic_keys` and `quic_hp_key` (`suite.h`). `record.c` and
+  `quic_keys.c` write it through `aes_traffic_key_store` when they derive
+  the key, a KeyUpdate and a QUIC key update rewrite it, and every wipe
+  of the struct wipes it with the key. Each record, packet or mask copies
+  it onto the frame through `aes_traffic_key_load`, which writes the
+  round count, the cipher and the session's `cpu` itself, and wipes the
+  copy there. A 1-RTT open expands the set it chose instead, because
+  masking three schedules costs more than one expansion
+  (docs/decisions.md 160).
 
   The mechanism grew with the claim, and the growth is the cost. Two
   headers give a key a body: `aes_public_key.h` for `aes_public_key`, which
@@ -4983,8 +4993,8 @@ last `ROLE=server` stub, as the entry said it would.
   into the `aes_` and `gcm_` families but the two traffic families,
   outside the public-key callers, and
   `inv-26-aes-traffic-keys-only` matches every call into the
-  `aes_traffic_` and `gcm_traffic_` families outside `record.c` and
-  `quic_packet.c`.
+  `aes_traffic_` and `gcm_traffic_` families outside `record.c`,
+  `quic_keys.c` and `quic_packet.c`.
 
   A TLS cipher suite whose AEAD is AES-GCM encrypts application data
   under `hkdf_expand_label(hash_len, secret, "key", ...)` over a traffic
@@ -5207,7 +5217,8 @@ last `ROLE=server` stub, as the entry said it would.
   the accumulator and the sums of products before each reduction once at
   the end of each entry, not once per block. Under `AES=extern` a schedule holds the traffic key
   itself, not an expansion of it, and the same `ct_wipe` of the whole
-  `aes_traffic_key` in `record.c` and `quic_packet.c` wipes it;
+  `aes_traffic_key` in `record.c` and `quic_packet.c` wipes it, as it
+  is a device object;
   `aes_extern.c` keeps no copy of its own. What the hook or the
   peripheral keeps is the image's to clear (`aes_block.h`). Two
   places deliberately hold no wipe. `quic_aes_soft.c` holds none because

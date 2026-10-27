@@ -10,6 +10,7 @@
 
 #include "aead.h"
 #include "sha256.h"
+#include "suite.h"
 
 #define REC_HDR 5
 #define REC_OVERHEAD (REC_HDR + 1 + AEAD_TAG) // header + inner type + tag
@@ -39,10 +40,10 @@
 typedef struct {
     // The longest key a suite fixes. TLS_CHACHA20_POLY1305_SHA256 and
     // TLS_AES_256_GCM_SHA384 fill all 32; TLS_AES_128_GCM_SHA256 fills
-    // the first 16 and leaves the rest zero. record.c expands an AES key
-    // into round keys on its own frame at each use rather than keeping a
-    // schedule here, which is what keeps aes_traffic_key's body out of
-    // this header (INV-26).
+    // the first 16 and leaves the rest zero. A device object's record.c
+    // expands an AES key into round keys on its own frame at each use; a
+    // host object keeps the schedule in schedule below, as bytes, so
+    // aes_traffic_key's body stays out of this header (INV-26).
     uint8_t key[AEAD_KEY];
     uint8_t iv[AEAD_NONCE];
 #ifdef CH_CPU_RUNTIME
@@ -63,6 +64,14 @@ typedef struct {
     // Which AEAD this direction runs, as the suite's code point. A build
     // with one suite needs no such field and does not declare it.
     uint16_t suite;
+#endif
+#ifdef CH_AES_STORED_SCHEDULE
+    // The expanded schedule of key under an AES-GCM suite, the bytes of
+    // one aes_traffic_key, which rec_dir_init_suite writes with the key
+    // and record.c copies onto its frame for each record. Zero under
+    // ChaCha20. A host object alone holds it (suite.h, docs/decisions.md
+    // 160).
+    uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
 #endif
 } rec_dir;
 

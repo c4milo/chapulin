@@ -19,6 +19,9 @@
 #include "ct.h"
 #include "hkdf.h"
 #include "quic_version.h"
+#ifdef CH_AES_STORED_SCHEDULE
+#include "aes.h"
+#endif
 
 #ifdef CH_SUITE_AES_GCM
 void quic_keys_init_suite(uint32_t cpu, quic_keys *k, uint32_t version, const uint8_t *secret,
@@ -35,6 +38,15 @@ void quic_keys_init_suite(uint32_t cpu, quic_keys *k, uint32_t version, const ui
     HKDF_EXPAND_LABEL_CPU(cpu, hash_len, secret, labels.iv, NULL, 0, k->iv, AEAD_NONCE);
     k->suite = suite;
     k->sealed = 0;
+#ifdef CH_AES_STORED_SCHEDULE
+    // The schedule of the key just derived, or zero under ChaCha20, so no
+    // schedule of the previous key stays behind (suite.h).
+    ct_wipe(k->schedule, sizeof k->schedule);
+    if (suite_runs_aes_gcm(suite)) {
+        aes_traffic_key_store(k->schedule, k->key, suite_key_len(suite));
+    }
+#endif
+    k->stored = 1;
 }
 
 void quic_hp_key_init_suite(uint32_t cpu, quic_hp_key *h, uint32_t version, const uint8_t *secret,
@@ -46,6 +58,12 @@ void quic_hp_key_init_suite(uint32_t cpu, quic_hp_key *h, uint32_t version, cons
     HKDF_EXPAND_LABEL_CPU(cpu, suite_hash_len(suite), secret, quic_version_labels(version).hp, NULL,
                           0, h->key, suite_key_len(suite));
     h->suite = suite;
+#ifdef CH_AES_STORED_SCHEDULE
+    ct_wipe(h->schedule, sizeof h->schedule);
+    if (suite_runs_aes_gcm(suite)) {
+        aes_traffic_key_store(h->schedule, h->key, suite_key_len(suite));
+    }
+#endif
 }
 
 void quic_keys_init(uint32_t cpu, quic_keys *k, uint32_t version,
