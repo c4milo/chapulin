@@ -873,8 +873,10 @@ Home: github.com/c4milo.
   integrity-protected cookie, the dummy change_cipher_spec a client's
   non-empty session id obliges, KeyUpdate receipt, and a binder checked
   in constant time over the truncated ClientHello before it accepts one
-  of its own tickets (docs/server.md, "Resumption"). Both roles: the
-  message before each key change ends its record, or the connection ends
+  of its own tickets (docs/server.md, "Resumption"), and no reply
+  extension that the ClientHello did not carry, the HelloRetryRequest's
+  cookie aside (RFC 9846 §4.3, INV-63). Both roles: the message before
+  each key change ends its record, or the connection ends
   with unexpected_message (RFC 9846 §5.1, INV-39). A KeyUpdate that asks
   for an answer gets one KeyUpdate before this side's next data record,
   from ch_write, and one answer serves a run of requests (§4.7.3). ch_read
