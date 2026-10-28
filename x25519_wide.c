@@ -86,7 +86,8 @@ static inline __attribute__((always_inline)) uint64_t column_carry(ct_u128 t) {
 // 13,112 fewer instructions than with every carry in 128 bits
 // (docs/decisions.md 152).
 //
-// The attribute keeps it inside each of its three callers. Without it gcc 13
+// mul_a24 calls it, and mul and sqr run the same carries between their
+// columns (below). The attribute keeps it inside its caller. Without it gcc 13
 // compiled it once, out of line, and each product and square passed it eleven
 // words, six of them on x86-64's stack, where no wipe reaches them: an X25519
 // shared secret took 61.4 µs on an EPYC 7763 that way and 54.5 µs inlined
@@ -106,6 +107,19 @@ carry_columns(fe o, ct_u128 t0, ct_u128 t1, ct_u128 t2, ct_u128 t3, ct_u128 t4) 
     o[4] = (uint64_t)t4 & WORD_MASK;
 }
 
+// The end of carry_columns for mul and sqr, which have kept the low 51 bits
+// of columns 0 to 3 as r0 to r3 and carried into each next column already:
+// column 4's carry, times 19, goes to word 0, and word 0's carry to word 1.
+static inline __attribute__((always_inline)) void carry_top(fe o, uint64_t r0, uint64_t r1,
+                                                            uint64_t r2, uint64_t r3, ct_u128 t4) {
+    r0 += column_carry(t4) * 19;
+    o[0] = r0 & WORD_MASK;
+    o[1] = r1 + (r0 >> WORD_BITS);
+    o[2] = r2;
+    o[3] = r3;
+    o[4] = (uint64_t)t4 & WORD_MASK;
+}
+
 // mul, sqr and mul_a24 carry the attribute too, so each of their calls is
 // their code in place. Out of line, each call passed its operands through
 // memory and the callers kept their values in the stack frame across it. In
@@ -117,6 +131,16 @@ carry_columns(fe o, ct_u128 t0, ct_u128 t1, ct_u128 t2, ct_u128 t3, ct_u128 t4) 
 // o = a * b. Column k collects the products whose word indices sum to k, and
 // the ones that sum to k + 5 come in times 19. Every word of a and b is read
 // before o is written, so o may be a or b.
+//
+// Each column starts from the carry of the one below and keeps its low 51
+// bits at once, so one column sum is live at a time: carry_columns' carries
+// in its order, with each added before the column's products rather than
+// after. With the five sums live together, clang 23 for x86-64 kept them in
+// stack slots: a ladder step ran 1,807 instructions, 692 of them on the
+// stack. In this form it runs 1,746, 491 on the stack. An X25519 shared
+// secret takes 0.97 of its time under clang on an EPYC 7763 and on an M1
+// Pro, and 0.95 on a Neoverse N2. Under gcc 13 it takes 0.99 on the N2, and
+// its time on the EPYC does not move (docs/decisions.md 163).
 static inline __attribute__((always_inline)) void mul(fe o, const fe a, const fe b) {
     uint64_t b1_19 = b[1] * 19;
     uint64_t b2_19 = b[2] * 19;
@@ -124,15 +148,19 @@ static inline __attribute__((always_inline)) void mul(fe o, const fe a, const fe
     uint64_t b4_19 = b[4] * 19;
     ct_u128 t0 = ct_mul128(a[0], b[0]) + ct_mul128(a[1], b4_19) + ct_mul128(a[2], b3_19) +
                  ct_mul128(a[3], b2_19) + ct_mul128(a[4], b1_19);
-    ct_u128 t1 = ct_mul128(a[0], b[1]) + ct_mul128(a[1], b[0]) + ct_mul128(a[2], b4_19) +
-                 ct_mul128(a[3], b3_19) + ct_mul128(a[4], b2_19);
-    ct_u128 t2 = ct_mul128(a[0], b[2]) + ct_mul128(a[1], b[1]) + ct_mul128(a[2], b[0]) +
-                 ct_mul128(a[3], b4_19) + ct_mul128(a[4], b3_19);
-    ct_u128 t3 = ct_mul128(a[0], b[3]) + ct_mul128(a[1], b[2]) + ct_mul128(a[2], b[1]) +
-                 ct_mul128(a[3], b[0]) + ct_mul128(a[4], b4_19);
-    ct_u128 t4 = ct_mul128(a[0], b[4]) + ct_mul128(a[1], b[3]) + ct_mul128(a[2], b[2]) +
-                 ct_mul128(a[3], b[1]) + ct_mul128(a[4], b[0]);
-    carry_columns(o, t0, t1, t2, t3, t4);
+    uint64_t r0 = (uint64_t)t0 & WORD_MASK;
+    ct_u128 t1 = (t0 >> WORD_BITS) + ct_mul128(a[0], b[1]) + ct_mul128(a[1], b[0]) +
+                 ct_mul128(a[2], b4_19) + ct_mul128(a[3], b3_19) + ct_mul128(a[4], b2_19);
+    uint64_t r1 = (uint64_t)t1 & WORD_MASK;
+    ct_u128 t2 = column_carry(t1) + ct_mul128(a[0], b[2]) + ct_mul128(a[1], b[1]) +
+                 ct_mul128(a[2], b[0]) + ct_mul128(a[3], b4_19) + ct_mul128(a[4], b3_19);
+    uint64_t r2 = (uint64_t)t2 & WORD_MASK;
+    ct_u128 t3 = column_carry(t2) + ct_mul128(a[0], b[3]) + ct_mul128(a[1], b[2]) +
+                 ct_mul128(a[2], b[1]) + ct_mul128(a[3], b[0]) + ct_mul128(a[4], b4_19);
+    uint64_t r3 = (uint64_t)t3 & WORD_MASK;
+    ct_u128 t4 = column_carry(t3) + ct_mul128(a[0], b[4]) + ct_mul128(a[1], b[3]) +
+                 ct_mul128(a[2], b[2]) + ct_mul128(a[3], b[1]) + ct_mul128(a[4], b[0]);
+    carry_top(o, r0, r1, r2, r3, t4);
 }
 
 // o = a * a: mul's columns with each pair of distinct words taken once and
@@ -147,11 +175,19 @@ static inline __attribute__((always_inline)) void sqr(fe o, const fe a) {
     uint64_t a3_38 = a[3] * 38;
     uint64_t a4_19 = a[4] * 19;
     ct_u128 t0 = ct_mul128(a[0], a[0]) + ct_mul128(a1_2, a4_19) + ct_mul128(a2_2, a3_19);
-    ct_u128 t1 = ct_mul128(a[1], a0_2) + ct_mul128(a2_2, a4_19) + ct_mul128(a[3], a3_19);
-    ct_u128 t2 = ct_mul128(a[2], a0_2) + ct_mul128(a[1], a[1]) + ct_mul128(a[4], a3_38);
-    ct_u128 t3 = ct_mul128(a[3], a0_2) + ct_mul128(a[2], a1_2) + ct_mul128(a[4], a4_19);
-    ct_u128 t4 = ct_mul128(a[4], a0_2) + ct_mul128(a[3], a1_2) + ct_mul128(a[2], a[2]);
-    carry_columns(o, t0, t1, t2, t3, t4);
+    uint64_t r0 = (uint64_t)t0 & WORD_MASK;
+    ct_u128 t1 =
+        (t0 >> WORD_BITS) + ct_mul128(a[1], a0_2) + ct_mul128(a2_2, a4_19) + ct_mul128(a[3], a3_19);
+    uint64_t r1 = (uint64_t)t1 & WORD_MASK;
+    ct_u128 t2 =
+        column_carry(t1) + ct_mul128(a[2], a0_2) + ct_mul128(a[1], a[1]) + ct_mul128(a[4], a3_38);
+    uint64_t r2 = (uint64_t)t2 & WORD_MASK;
+    ct_u128 t3 =
+        column_carry(t2) + ct_mul128(a[3], a0_2) + ct_mul128(a[2], a1_2) + ct_mul128(a[4], a4_19);
+    uint64_t r3 = (uint64_t)t3 & WORD_MASK;
+    ct_u128 t4 =
+        column_carry(t3) + ct_mul128(a[4], a0_2) + ct_mul128(a[3], a1_2) + ct_mul128(a[2], a[2]);
+    carry_top(o, r0, r1, r2, r3, t4);
 }
 
 // o = a * a24.

@@ -14548,3 +14548,43 @@ does nothing more.
     - **A signature at every init call**, to test the key's
       coefficients there. `ch_srv_check` makes that test once at boot,
       and `mldsa87_sign` refuses an out-of-range key at every signature.
+
+163. **The wide X25519 field's `mul` and `sqr` carry each column into the
+    next as soon as its sum is complete.** The re-recorded table of
+    2026-10-28 put an X25519 shared secret at 1.09 times OpenSSL 3.6.4's
+    time under gcc on an EPYC 7763 and 1.17 times under clang, where
+    clang had taken 0.87 of gcc's time before decision 152.
+
+    - **Where the time went.** Both compilers run 190 multiplies a ladder
+      step. clang 23 ran 1,807 instructions a step, and 692 of them read
+      or wrote the stack; gcc 13 ran 1,584, and 365 touched the stack.
+      `mul` summed all five columns before `carry_columns` carried them,
+      so ten words of sums were live beside the operands, and x86-64 has
+      16 general registers. clang kept the sums in stack slots and added
+      into them there.
+    - **The change.** Column k now starts from the carry of column k - 1
+      and keeps its low 51 bits at once, and `carry_top` folds column 4's
+      carry into words 0 and 1. The additions and the carries are
+      `carry_columns`' own, in its order, so every value and every bound
+      of the proofs stays as it was. `mul_a24`, with one product a column,
+      keeps `carry_columns`.
+    - **Numbers.** clang's step is 1,746 instructions, 491 on the stack,
+      and gcc's 1,556, 360 on the stack. A throwaway job timed 2,000
+      shared secrets before and after in turn, nine rounds each, on three
+      EPYC runners and two N2 runners:
+
+      | CPU | clang 23 | gcc 13 |
+      | --- | --- | --- |
+      | EPYC 7763 | 42.4 to 42.7 µs to 41.2 to 41.3 | 40.0 µs, no move |
+      | Neoverse N2 | 41.1 to 41.7 µs to 39.1 to 39.6 | 36.0 µs to 35.5 |
+
+      On the M1 Pro under Apple clang 21 it took 28.4 to 29.4 µs where it
+      took 29.4 to 29.7. gcc keeps its lead over clang on x86-64, and the
+      gap to OpenSSL, whose x86-64 code on this CPU is MULX and ADX
+      assembly in radix 2^64, stays: about 1.09 under gcc and 1.13 under
+      clang.
+    - **What holds it.** `bin/x25519_equiv_test` holds the field to the
+      16-word one on arm64 and, built for x86-64, under Rosetta.
+      `bin/diff_x25519_wide` holds it to spec/lean/Spec/X25519.lean. The
+      `x25519_wide` harnesses prove the new form in CI's slow job and in
+      the nightly.
