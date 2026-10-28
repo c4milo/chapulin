@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-114 of the 151 C sources in the tree root are compiled into a
+115 of the 152 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -2411,6 +2411,34 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   sigalg code point, `hash_len` and the capacity.
 - **Not proved:** that a signature is correct. The stubs return an
   unconstrained verdict, so the proof covers both answers.
+
+#### srv_mldsa
+
+- **Harness:** `srv_mldsa` (fast)
+- **Proves:** the entries of `srv_mldsa.c`, a `PROFILE=cnsa2` server's
+  authentication (docs/decisions.md 162), read and write only inside
+  their own buffers and commit no undefined behavior, over an
+  unconstrained `mldsa87` slot, every SignatureScheme code point and
+  every selection hash length.
+  - Each key pointer names an object of the length
+    `ch_mldsa_key_from_pem` writes, an 8-byte object or NULL, and its
+    length measures it. The signer stub asserts the secret key readable
+    at 4,896 bytes and the public key at 2,592, so `key_lengths_match`
+    is the line the proof holds.
+  - The signer and the verifier stubs assert the context is empty.
+  - A refusal of `srv_mldsa_send_certificate_verify` names
+    internal_error.
+- **Bound:** the full domain at 716 properties, 13 s of solver time
+  and 0.13 GB of resident memory on an M1 Pro (2026-10-28).
+- **Not proved:** that a signature is correct. `mldsa87_sign`,
+  `mldsa87_verify`, the transcript snapshot, the two `srv_frag` calls,
+  the CertificateVerify head and the chain rule are contract stubs, and
+  [mldsa_sign](#mldsa_sign), [srv_message](#srv_message) and the
+  handshake record harnesses prove the real ones. The selection, the
+  cookie and the ticket under the profile have no harness of their own:
+  `srv_cookie`, `srv_ticket` and `srv_select_suite` prove the arms
+  outside the profile, and `bin/cnsa2_server_test` tests the profile's
+  arms at their boundaries.
 
 #### srv_cookie
 

@@ -99,8 +99,16 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 // CH_HYBRID_SERVER_SHARE) and pre_shared_key (6). That is 1216 bytes, and
 // session.h's CH_TX_SERVER_HELLO holds the same number, which
 // srv_flight.h asserts. An x25519 ServerHello is 1088 bytes shorter.
+// A PROFILE=cnsa2 server's key_share carries the ML-KEM-1024 ciphertext,
+// 4 + MLKEM_CT_LEN bytes behind the type and length words, so its longest
+// ServerHello is 1664 bytes (docs/decisions.md 162).
+#ifdef CH_PROFILE_CNSA2
+#define SRV_SERVER_HELLO_SHARE MLKEM_CT_LEN
+#else
+#define SRV_SERVER_HELLO_SHARE CH_HYBRID_SERVER_SHARE
+#endif
 #define SRV_SERVER_HELLO_MAX                                                                       \
-    (4 + 2 + SRV_RANDOM + 1 + SRV_SESSION_ID_MAX + 2 + 1 + 2 + 6 + 8 + CH_HYBRID_SERVER_SHARE + 6)
+    (4 + 2 + SRV_RANDOM + 1 + SRV_SESSION_ID_MAX + 2 + 1 + 2 + 6 + 8 + SRV_SERVER_HELLO_SHARE + 6)
 
 // The ticket_nonce every NewSessionTicket this server sends carries, in
 // bytes (RFC 9846 §4.7.1). RFC 9846 asks only that it be unique among the
@@ -360,6 +368,19 @@ size_t srv_build_certificate_entry_suffix(uint8_t *out, size_t cap);
 // sig_len is 0 or above 65535.
 size_t srv_build_certificate_verify(uint8_t *out, size_t cap, uint16_t sigalg, const uint8_t *sig,
                                     size_t sig_len);
+
+// The first SRV_CERT_VERIFY_HEAD_LEN bytes of the CertificateVerify that
+// srv_build_certificate_verify writes: the handshake header, the scheme and
+// the signature length, for a signature of sig_len bytes that follows
+// them. A PROFILE=cnsa2 server streams its 4,627-byte signature after them
+// through srv_frag, so no frame holds the whole message (srv_mldsa.h).
+//
+// Requires cap bytes at out and sig_len from 1 to 65535.
+//
+// Returns SRV_CERT_VERIFY_HEAD_LEN, or 0 when cap is short or sig_len is
+// out of range.
+#define SRV_CERT_VERIFY_HEAD_LEN 8
+size_t srv_build_certificate_verify_head(uint8_t *out, size_t cap, uint16_t sigalg, size_t sig_len);
 
 // Builds one Finished, handshake header included (RFC 9846 §4.5.3):
 // the verify_data and nothing else. Its length is the hash length the

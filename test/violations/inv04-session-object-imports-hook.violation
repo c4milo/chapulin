@@ -1,7 +1,7 @@
 invariant: INV-4
-file: srv_flight.c
+file: srv_kex.c
 catches: test/lib-check-rand-session.sh
-reason: srv_begin draws the server's x25519 scalar from ch_rand_bytes, with
+reason: srv_kex_begin draws the server's x25519 scalar from ch_rand_bytes, with
   a declaration of its own because a RAND=session build's rand.h declares
   none. The RAND=session object then imports a hook no image of such
   objects defines, so an image that links only RAND=session objects fails

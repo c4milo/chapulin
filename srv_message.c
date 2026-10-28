@@ -278,6 +278,21 @@ size_t srv_build_certificate_verify(uint8_t *out, size_t cap, uint16_t sigalg, c
     return w.err ? 0 : w.len;
 }
 
+size_t srv_build_certificate_verify_head(uint8_t *out, size_t cap, uint16_t sigalg,
+                                         size_t sig_len) {
+    if (sig_len == 0 || sig_len > UINT16_MAX) {
+        return 0;
+    }
+    wbuf w;
+    wb_init(&w, out, cap);
+    wb_u8(&w, HS_CERTIFICATE_VERIFY);
+    // The body: the scheme, the length, and the signature after them.
+    wb_u24(&w, (uint32_t)(2 + 2 + sig_len));
+    wb_u16(&w, sigalg);
+    wb_u16(&w, (uint16_t)sig_len);
+    return w.err ? 0 : w.len;
+}
+
 size_t srv_build_finished(uint8_t *out, size_t cap, const uint8_t *verify_data, size_t hash_len) {
     wbuf w;
     wb_init(&w, out, cap);

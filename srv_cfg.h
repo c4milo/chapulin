@@ -124,15 +124,29 @@ typedef struct {
     size_t pub_len;
 } ch_identity;
 
+// mldsa87 is the one identity of a PROFILE=cnsa2 server
+// (docs/decisions.md 162). priv points at the 4,896-byte ML-DSA-87
+// secret key and pub at the 2,592-byte public key, the two rooms
+// ch_mldsa_key_from_pem writes (pem_files.h). So priv_len is 4896 and
+// pub_len is 2592. mldsa87_sign reads priv. ch_srv_check's self-test
+// reads pub through mldsa87_verify.
+
 // The server's own configuration, which ch_cfg carries as one member.
 typedef struct {
+#ifdef CH_PROFILE_CNSA2
+    // The one signing identity a PROFILE=cnsa2 server offers. CNSA 2.0
+    // admits no ECDSA or RSA key, so the profile holds neither slot.
+    ch_identity mldsa87; // signs mldsa87
+#else
     // The two signing identities this server may offer, one per
     // signature scheme. The scheme the client and this build agree on
     // picks which one signs the CertificateVerify.
     ch_identity ecdsa_p256; // signs ecdsa_secp256r1_sha256
     ch_identity rsa_pss;    // signs rsa_pss_rsae_sha256
+#endif
 
-    // The HMAC-SHA-256 key that protects the HelloRetryRequest cookie
+    // The HMAC key that protects the HelloRetryRequest cookie,
+    // HMAC-SHA-256, or HMAC-SHA-384 under PROFILE=cnsa2 (srv_cookie.h)
     // (RFC 9846 §4.3.2, rfc9846.txt:1779-1783): CH_SRV_COOKIE_KEY_LEN
     // bytes, which this header defines above. One key per deployment,
     // so a second ClientHello that lands on a different session, or on
@@ -163,8 +177,9 @@ typedef struct {
     // CH_EINVAL for that pair.
     uint8_t require_server_name;
 
-    // The ChaCha20-Poly1305 key this server seals its resumption
-    // tickets under and opens them with: CH_SRV_TICKET_KEY_LEN bytes,
+    // The key this server seals its resumption tickets under and opens
+    // them with, ChaCha20-Poly1305's, or AES-256-GCM's under
+    // PROFILE=cnsa2 (srv_ticket.h): CH_SRV_TICKET_KEY_LEN bytes,
     // which this header defines above, a key of its own and not
     // cookie_key. One key per
     // deployment, so a ticket one server issued resumes on another that

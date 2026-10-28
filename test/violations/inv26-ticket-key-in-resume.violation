@@ -1,0 +1,16 @@
+invariant: INV-26
+file: srv_resume.c
+catches: test/lint-invariants.sh
+reason: srv_resume.c names a traffic-key entry, so a file outside the four
+  INV-26 admits would hand AES a key nobody reviewed for it. srv_ticket.c
+  is the server's one admitted file, and inv-26-aes-traffic-keys-only
+  fails on any other.
+
+--- old
+#include "widemul.h"
+--- new
+#include "widemul.h"
+#define SRV_RESUME_TRAFFIC_KEY(k, key) aes_traffic_key_init((k), (key), 32)
+static void srv_resume_traffic_key(aes_traffic_key *k, const uint8_t *key) {
+    aes_traffic_key_init(k, key, 32);
+}

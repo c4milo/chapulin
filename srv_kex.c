@@ -29,6 +29,85 @@
 // FIPS 203's encapsulation takes 32 bytes of randomness, m (mlkem.h).
 #define SRV_KEX_ENCAPS_RANDOM 32
 
+// Encapsulates to the client's encapsulation key: the ciphertext into
+// share, the ML-KEM shared secret into h->mlkem_ss. The randomness is
+// drawn here and nowhere earlier, so a server that selects x25519 draws
+// none, and it dies on both exits. key is the encapsulation key: the
+// first MLKEM_EK_LEN bytes of the client's share.
+static int encapsulate(handshake_state *h, const uint8_t *key, uint8_t share[SRV_KEX_SHARE_MAX]) {
+    static const uint8_t unwritten[SRV_KEX_ENCAPS_RANDOM] = {0};
+    uint8_t m[SRV_KEX_ENCAPS_RANDOM];
+    rand_draw(&h->t->cfg, m, sizeof m);
+    // rand.h's contract: the draw writes every byte, so all-zero is a hook
+    // that returned without writing, which is programmer error.
+    CH_ASSERT(!ct_memeq(m, unwritten, sizeof m));
+    // mlkem_encaps_derand runs FIPS 203 §7.2's modulus check on the
+    // encapsulation key before it writes anything, and answers nonzero
+    // when a coefficient is at or above the modulus. The key is public,
+    // so the branch on that verdict leaks nothing.
+    int refused = mlkem_encaps_derand_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), share,
+                                          h->mlkem_ss, key, m);
+    ct_wipe(m, sizeof m);
+    if (refused != 0) {
+        ct_wipe(h->mlkem_ss, sizeof h->mlkem_ss);
+        return CH_EPROTO;
+    }
+    return CH_OK;
+}
+
+#ifdef CH_PROFILE_CNSA2
+
+void srv_kex_begin(handshake_state *h) {
+    (void)h;
+}
+
+// ML-KEM-1024 alone (srv_kex.h). A hello that does not list it shares
+// nothing with this server.
+uint16_t srv_kex_group(const client_hello *ch) {
+    return (ch->groups & SRV_GROUP_MLKEM1024) != 0 ? CH_GROUP_MLKEM1024 : 0;
+}
+
+int srv_kex_shared(const client_hello *ch, uint16_t group) {
+    uint8_t bit = srv_group_bit(group);
+    return bit != 0 && (ch->shares & bit) != 0;
+}
+
+int srv_kex_share(handshake_state *h, const client_hello *ch, uint16_t group,
+                  uint8_t share[SRV_KEX_SHARE_MAX], size_t *share_len) {
+    CH_ASSERT(group == CH_GROUP_MLKEM1024 && ch->mlkem_share != NULL);
+    int rc = encapsulate(h, ch->mlkem_share, share);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    *share_len = MLKEM_CT_LEN;
+    return CH_OK;
+}
+
+// The ML-KEM-1024 shared secret is the whole input keying material, as
+// handshake_flight.c's kem_secret reads it on the profile's client. It
+// cannot be refused: decapsulation is the client's, and the encapsulation
+// above already ran the one check the server owes.
+int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,
+                   uint8_t ikm[SRV_KEX_SECRET_MAX], size_t *ikm_len) {
+    (void)ch;
+    CH_ASSERT(group == CH_GROUP_MLKEM1024);
+    memcpy(ikm, h->mlkem_ss, MLKEM_SS_LEN);
+    *ikm_len = MLKEM_SS_LEN;
+    ct_wipe(h->mlkem_ss, sizeof h->mlkem_ss);
+    return CH_OK;
+}
+
+#else // !CH_PROFILE_CNSA2
+
+void srv_kex_begin(handshake_state *h) {
+    static const uint8_t unwritten[X25519_LEN] = {0};
+    rand_draw(&h->t->cfg, h->priv, sizeof h->priv);
+    // rand.h's contract: the caller zeroed h, so an all-zero draw is a
+    // source that returned without writing.
+    CH_ASSERT(!ct_memeq(h->priv, unwritten, sizeof h->priv));
+    widemul_x25519_base(widemul_answer(&h->t->cfg), h->pub, h->priv);
+}
+
 uint16_t srv_kex_group(const client_hello *ch) {
     if ((ch->groups & SRV_GROUP_X25519MLKEM768) != 0) {
         return CH_GROUP_X25519MLKEM768;
@@ -45,32 +124,6 @@ uint16_t srv_kex_group(const client_hello *ch) {
 int srv_kex_shared(const client_hello *ch, uint16_t group) {
     uint8_t bit = srv_group_bit(group);
     return bit != 0 && (ch->shares & bit) != 0;
-}
-
-// Encapsulates to the client's encapsulation key: the ciphertext into
-// share, the ML-KEM shared secret into h->mlkem_ss. The randomness is
-// drawn here and nowhere earlier, so a server that selects x25519 draws
-// none, and it dies on both exits.
-static int encapsulate(handshake_state *h, const client_hello *ch,
-                       uint8_t share[SRV_KEX_SHARE_MAX]) {
-    static const uint8_t unwritten[SRV_KEX_ENCAPS_RANDOM] = {0};
-    uint8_t m[SRV_KEX_ENCAPS_RANDOM];
-    rand_draw(&h->t->cfg, m, sizeof m);
-    // rand.h's contract: the draw writes every byte, so all-zero is a hook
-    // that returned without writing, which is programmer error.
-    CH_ASSERT(!ct_memeq(m, unwritten, sizeof m));
-    // mlkem_encaps_derand runs FIPS 203 §7.2's modulus check on the
-    // encapsulation key before it writes anything, and answers nonzero
-    // when a coefficient is at or above the modulus. The key is public,
-    // so the branch on that verdict leaks nothing.
-    int refused = mlkem_encaps_derand_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), share,
-                                          h->mlkem_ss, ch->hybrid_share, m);
-    ct_wipe(m, sizeof m);
-    if (refused != 0) {
-        ct_wipe(h->mlkem_ss, sizeof h->mlkem_ss);
-        return CH_EPROTO;
-    }
-    return CH_OK;
 }
 
 // Checks the client's P-256 point, then draws this server's key pair: the
@@ -120,7 +173,7 @@ int srv_kex_share(handshake_state *h, const client_hello *ch, uint16_t group,
         return CH_OK;
     }
     CH_ASSERT(group == CH_GROUP_X25519MLKEM768 && ch->hybrid_share != NULL);
-    int rc = encapsulate(h, ch, share);
+    int rc = encapsulate(h, ch->hybrid_share, share);
     if (rc != CH_OK) {
         return rc;
     }
@@ -177,5 +230,7 @@ int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,
     }
     return CH_OK;
 }
+
+#endif // CH_PROFILE_CNSA2
 
 #endif // CH_ROLE_SERVER

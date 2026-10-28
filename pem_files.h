@@ -46,16 +46,29 @@
 #include "cfg.h"
 #include "pem.h"
 
+// A PROFILE=cnsa2 server holds no P-256 identity and no P-256 arithmetic,
+// so it defines the chain call and ch_mldsa_key_from_pem below, and not the
+// P-256 key call (docs/decisions.md 162).
+#if defined(CH_ROLE_SERVER) && !defined(CH_PROFILE_CNSA2)
+#define CH_PEM_P256_KEY_CALL
+#endif
+
 #ifdef CH_ROLE_SERVER
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #define ch_chain_from_pem ch_chain_from_pem_quic_nonblocking
-#define ch_p256_key_from_pem ch_p256_key_from_pem_quic_nonblocking
 #elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
 #define ch_chain_from_pem ch_chain_from_pem_tcp_nonblocking
-#define ch_p256_key_from_pem ch_p256_key_from_pem_tcp_nonblocking
 #else
 #define ch_chain_from_pem ch_chain_from_pem_tcp_blocking
+#endif
+#ifdef CH_PEM_P256_KEY_CALL
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define ch_p256_key_from_pem ch_p256_key_from_pem_quic_nonblocking
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
+#define ch_p256_key_from_pem ch_p256_key_from_pem_tcp_nonblocking
+#else
 #define ch_p256_key_from_pem ch_p256_key_from_pem_tcp_blocking
+#endif
 #endif
 
 // Decodes a certificate chain: one or more CERTIFICATE blocks,
@@ -91,7 +104,9 @@
 // the call wipes nothing.
 int CH_MUST_USE ch_chain_from_pem(const uint8_t *pem, size_t pem_len, uint8_t *der, size_t der_len,
                                   ch_cert *chain, size_t chain_max, uint8_t *chain_count);
+#endif
 
+#ifdef CH_PEM_P256_KEY_CALL
 // Decodes a P-256 private key. The file holds one PRIVATE KEY block, a
 // PKCS #8 PrivateKeyInfo (RFC 5958), or one EC PRIVATE KEY block, a SEC 1
 // ECPrivateKey (RFC 5915). One EC PARAMETERS block may come before an EC
@@ -147,9 +162,11 @@ int CH_MUST_USE ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pe
 
 #if defined(CH_ROLE_SERVER) && defined(CH_SIGN_MLDSA)
 // The ML-DSA-87 key call. CH_SIGN_MLDSA marks the object that signs
-// ML-DSA-87, which the PROFILE=cnsa2 server role will be. No packaged
-// object defines it yet, so only test binaries declare and define this
-// call (docs/decisions.md 159).
+// ML-DSA-87, the PROFILE=cnsa2 server role, which exports this call
+// (docs/decisions.md 159 and 162). Its frame holds the 4,962-byte DER, so
+// pem_files.c takes its own measured stack ceiling (Makefile
+// STACK_BUDGET_PEM_FILES_MLDSA). It runs once while the program
+// provisions, and no session calls it.
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #define ch_mldsa_key_from_pem ch_mldsa_key_from_pem_quic_nonblocking
 #elif defined(CH_TRANSPORT_TCP_NONBLOCKING)

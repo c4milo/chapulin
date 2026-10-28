@@ -125,6 +125,22 @@ static int suites_run_here(const ch_cfg *cfg) {
 }
 #endif
 
+#ifdef CH_CPU_RUNTIME
+// A PROFILE=cnsa2 server runs AES-256-GCM alone, its tickets included, and
+// a session without CH_CPU_CONSTANT_TIME_AES runs no AES-GCM suite, so the
+// profile refuses such a session rather than run no suite at all
+// (docs/decisions.md 162). Every other server takes any value cpu_bits_ok
+// takes.
+static int profile_cpu_ok(const ch_cfg *cfg) {
+#ifdef CH_PROFILE_CNSA2
+    return (cfg->cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
+#else
+    (void)cfg;
+    return 1;
+#endif
+}
+#endif
+
 // The bytes of a key nothing filled: a static array holds them until
 // something writes it.
 static const uint8_t unfilled_key[CH_SRV_COOKIE_KEY_LEN];
@@ -214,7 +230,7 @@ int srv_config_ok(const ch_cfg *cfg) {
 #ifdef CH_CPU_RUNTIME
     // The caller's description of its CPU, which picks what this session
     // runs (cpu_cfg.h), before any rule that reads it.
-    if (!cpu_bits_ok(cfg)) {
+    if (!cpu_bits_ok(cfg) || !profile_cpu_ok(cfg)) {
         return 0;
     }
 #endif
@@ -260,10 +276,14 @@ int ch_srv_check(const ch_cfg *cfg) {
 #ifdef CH_CPU_RUNTIME
     // Every init call refuses this description of the CPU, so the check
     // refuses it too, before either identity signs.
-    if (!cpu_bits_ok(cfg)) {
+    if (!cpu_bits_ok(cfg) || !profile_cpu_ok(cfg)) {
         return CH_EINVAL;
     }
 #endif
+#ifdef CH_PROFILE_CNSA2
+    // The profile's one identity signs and verifies once (srv_mldsa.h).
+    return srv_identity_check(cfg, SIGALG_MLDSA87);
+#else
     if ((live & SRV_IDENTITY_ECDSA_P256) != 0 &&
         srv_identity_check(cfg, SIGALG_ECDSA_P256_SHA256) != CH_OK) {
         return CH_EINVAL;
@@ -273,6 +293,7 @@ int ch_srv_check(const ch_cfg *cfg) {
         return CH_EINVAL;
     }
     return CH_OK;
+#endif
 }
 
 #endif // CH_ROLE_SERVER

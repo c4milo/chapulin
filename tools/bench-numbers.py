@@ -121,6 +121,10 @@ MEMORY = [
     ("peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`)", [["stack_connect_cnsa2_mldsa"]]),
     ("peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`)",
      [["stack_connect_cnsa2_ca_mldsa"]]),
+    ("`ch_tls` under `PROFILE=cnsa2 ROLE=server` (host object)", [["session_struct_cnsa2_server_arm64"]]),
+    ("**total static working set, `PROFILE=cnsa2 ROLE=server`** (2179 buffer, its floor)",
+     [["static_working_set_cnsa2_server_arm64"]]),
+    ("peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`)", [["stack_accept_cnsa2_server"]]),
 ]
 
 # The stack figures that the Memory prose states. Each entry is a sentence

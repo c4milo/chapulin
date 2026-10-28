@@ -53,6 +53,8 @@ BUILDS = [
     "HOST_TARGET=",
     "PROFILE=cnsa2 ROLE=client TRUST=ca-mldsa TRANSPORT=tcp-blocking AES=extern RAND=extern "
     "HOST_TARGET=",
+    "PROFILE=cnsa2 ROLE=server TRUST=none TRANSPORT=tcp-blocking RAND=extern HOST_TARGET=yes "
+    "X86_64_TARGET=yes",
 ]
 
 # make passes the variables its own command line set to every make below it,

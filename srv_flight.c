@@ -21,10 +21,9 @@
 #include "rand_draw.h"
 #include "srv_kex.h"
 #include "srv_message.h"
+#include "srv_mldsa.h"
 #include "srv_out.h"
 #include "srv_resume.h"
-#include "widemul.h"
-#include "x25519.h"
 
 // Holds the session's source to rand.h's contract: the caller zeroed what
 // this fills, so an all-zero draw is a source that returned without writing.
@@ -34,9 +33,7 @@ static void assert_drawn(const uint8_t *p, size_t n) {
 }
 
 void srv_begin(handshake_state *h) {
-    rand_draw(&h->t->cfg, h->priv, sizeof h->priv);
-    assert_drawn(h->priv, sizeof h->priv);
-    widemul_x25519_base(widemul_answer(&h->t->cfg), h->pub, h->priv);
+    srv_kex_begin(h);
     transcript_init(&h->t->transcript);
 }
 
@@ -109,8 +106,7 @@ static int alpn_mismatch(const ch_cfg *cfg, const client_hello *ch) {
 // when that is unset, the first in suite_session_default, the order suite.h
 // states for this build and its client offers in (docs/decisions.md 80),
 // ChaCha20 alone where a host object's caller did not set
-// CH_CPU_CONSTANT_TIME_AES (docs/decisions.md 81 and 89); 0 when there is
-// none.
+// CH_CPU_CONSTANT_TIME_AES (docs/decisions.md 81 and 89); 0 for none.
 static uint16_t select_suite(const ch_cfg *cfg, uint8_t offered) {
 #ifdef CH_SUITE_AES_GCM
     if (cfg->srv.cipher_suites != NULL) {
@@ -131,8 +127,8 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
         return CH_EPROTO;
     }
     sel->hash_len = (uint8_t)suite_hash_len(sel->suite); // rfc9846.txt:4055-4056
-    // The hybrid whenever the client listed it, then x25519, then
-    // secp256r1 (srv_kex.h). A hello that listed none has none in common.
+    // srv_kex.h's order: the hybrid, x25519, then secp256r1, or the
+    // profile's ML-KEM-1024. A hello that listed none has none in common.
     sel->group = srv_kex_group(ch);
     if (sel->group == 0) {
         return CH_EPROTO;
@@ -398,6 +394,9 @@ int srv_send_certificate(handshake_state *h, const selection *sel) {
 }
 
 int srv_send_certificate_verify(handshake_state *h, const selection *sel) {
+#ifdef CH_PROFILE_CNSA2
+    return srv_mldsa_send_certificate_verify(h, sel); // its signature's frame (srv_mldsa.h)
+#else
     uint8_t hash[HKDF_HASH_MAX];
     (void)hsr_transcript_hash(h, sel->hash_len, hash);
     uint8_t sig[SRV_SIG_MAX];
@@ -417,6 +416,7 @@ int srv_send_certificate_verify(handshake_state *h, const selection *sel) {
     }
     TRANSCRIPT_UPDATE_SELECTED_CPU(h->t->cfg.cpu, &h->t->transcript, sel->hash_len, msg, n);
     return srv_out_sealed(h, msg, n);
+#endif
 }
 
 int srv_send_finished(handshake_state *h) {

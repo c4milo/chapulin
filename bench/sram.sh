@@ -116,6 +116,18 @@ SESSION_CA_MLDSA=$("$TMP/sz_ca_mldsa" | awk '{print $2}')
 cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -DCH_TRUST_CA -I. -o "$TMP/floor_ca_mldsa" "$TMP/floor.c"
 RXBUF_CA_MLDSA=$("$TMP/floor_ca_mldsa" | awk '{print $2}')
 
+# The PROFILE=cnsa2 server (docs/decisions.md 162), a host object alone,
+# on each transport. Its floor holds the profile client's largest
+# ClientHello, read from the build.
+CNSA2_SERVER_DEFS="-DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME"
+CNSA2_SERVER_DEFS="$CNSA2_SERVER_DEFS -DCH_ROLE_SERVER -DCH_SIGN_MLDSA"
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_SERVER_DEFS -I. -o "$TMP/sz_cnsa2_server" "$TMP/sz.c"
+SESSION_CNSA2_SERVER=$("$TMP/sz_cnsa2_server" | awk '{print $2}')
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_SERVER_DEFS -I. -o "$TMP/floor_cnsa2_server" "$TMP/floor.c"
+RXBUF_CNSA2_SERVER=$("$TMP/floor_cnsa2_server" | awk '{print $2}')
+
 # The same struct on a 32-bit target. The pointer fields are what move, so
 # the host number overstates what a device needs, and the README used to
 # publish only the host one with a sentence saying a 32-bit target shrinks
@@ -174,6 +186,8 @@ echo "session struct (ROLE=server, host object): ${SESSION_SERVER_HOST} B"
 echo "static working set:      $((SESSION_SERVER_HOST + RXBUF)) B (ROLE=server, host object, ${RXBUF} B receive buffer)"
 echo "session struct (PROFILE=cnsa2 TRUST=raw-mldsa): ${SESSION_MLDSA} B"
 echo "static working set:      $((SESSION_MLDSA + RXBUF_MLDSA)) B (PROFILE=cnsa2 TRUST=raw-mldsa, its ${RXBUF_MLDSA} B floor)"
+echo "session struct (PROFILE=cnsa2 ROLE=server): ${SESSION_CNSA2_SERVER} B"
+echo "static working set:      $((SESSION_CNSA2_SERVER + RXBUF_CNSA2_SERVER)) B (PROFILE=cnsa2 ROLE=server, its ${RXBUF_CNSA2_SERVER} B floor)"
 echo "session struct (PROFILE=cnsa2 TRUST=ca-mldsa): ${SESSION_CA_MLDSA} B"
 echo "static working set:      $((SESSION_CA_MLDSA + RXBUF_CA_MLDSA)) B (PROFILE=cnsa2 TRUST=ca-mldsa, its ${RXBUF_CA_MLDSA} B floor)"
 
@@ -273,6 +287,16 @@ echo "-- the same without ML-KEM; peak = the chain's ML-DSA-87 verify --"
 stack_report cnsa2_ca_mldsa_without_mlkem "STACK_MAKE=PROFILE=cnsa2 AES=extern TRUST=ca-mldsa" \
     STACK_CFLAGS=-DCH_AES_EXTERN_CONSTANT_TIME "$CNSA2_PRUNE"
 head -1 "$TMP/cnsa2_ca_mldsa_without_mlkem.stack"
+# The PROFILE=cnsa2 server: ch_srv_accept's peak is the ML-DSA-87 signer's
+# rejection loop under the CertificateVerify, and ch_srv_check's the
+# same signer under the boot check. ch_mldsa_key_from_pem expands the seed.
+echo "-- PROFILE=cnsa2 ROLE=server; ch_srv_accept peak = the ML-DSA-87 signer --"
+stack_report cnsa2_server "STACK_MAKE=PROFILE=cnsa2 ROLE=server TRUST=none"
+head -1 "$TMP/cnsa2_server.stack"
+echo "-- the same without the signer; peak = ML-KEM-1024's encapsulation --"
+stack_report cnsa2_server_without_signer "STACK_MAKE=PROFILE=cnsa2 ROLE=server TRUST=none" \
+    STACK_PRUNE=mldsa87_sign
+head -1 "$TMP/cnsa2_server_without_signer.stack"
 
 # The CSV carries every column or nothing: without the rv32 toolchain the
 # report above says "unmeasured", and the committed CSV keeps the last
@@ -360,6 +384,11 @@ TMPOUT="$TMP/results-sram.csv"
     row stack_connect_cnsa2_ca_mldsa "$(peak cnsa2_ca_mldsa ch_connect)"
     row stack_connect_cnsa2_ca_mldsa_without_mlkem "$(peak cnsa2_ca_mldsa_without_mlkem ch_connect)"
     row stack_pubkey_from_pem_ca_mldsa "$(peak cnsa2_ca_mldsa ch_pubkey_from_pem_tcp_blocking)"
+    row session_struct_cnsa2_server_arm64 "$SESSION_CNSA2_SERVER"
+    row receive_buffer_cnsa2_server "$RXBUF_CNSA2_SERVER"
+    row static_working_set_cnsa2_server_arm64 "$((SESSION_CNSA2_SERVER + RXBUF_CNSA2_SERVER))"
+    row stack_accept_cnsa2_server "$(peak cnsa2_server ch_srv_accept)"
+    row stack_accept_cnsa2_server_without_signer "$(peak cnsa2_server_without_signer ch_srv_accept)"
 } > "$TMPOUT"
 mv "$TMPOUT" bench/results-sram.csv
 echo "wrote bench/results-sram.csv" >&2

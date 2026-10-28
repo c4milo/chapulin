@@ -70,15 +70,15 @@
 #else
 #define CH_TX_AES_SUITES 0
 #endif
-// A build with a server role stages its ServerHello in the same array, in
-// the clear and before any record is sealed, so the array also holds the
-// largest ServerHello: 1216 bytes, the one that carries the 1120-byte
-// X25519MLKEM768 share after the longest legacy_session_id_echo and a
-// pre_shared_key extension (SRV_SERVER_HELLO_MAX, srv_message.h, which
-// srv_flight.h asserts equal to this literal). It raises the two values
-// below it, the classic raw and ca ones over TLS and over QUIC; every
-// other value is larger already.
+// A server role stages its ServerHello in the same array, in the clear, so the array holds
+// the largest one (SRV_SERVER_HELLO_MAX, which srv_flight.h asserts equal): 1216 bytes with
+// the 1120-byte X25519MLKEM768 share, 1664 with PROFILE=cnsa2's 1568-byte ML-KEM-1024
+// ciphertext (docs/decisions.md 162). It raises the classic raw and ca values below.
+#ifdef CH_PROFILE_CNSA2
+#define CH_TX_SERVER_HELLO 1664
+#else
 #define CH_TX_SERVER_HELLO 1216
+#endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // A QUIC hello differs from the TCP one by three extensions. It drops
 // the 6-byte record_size_limit, because RFC 9001 §4.1.3 removes the
@@ -97,8 +97,8 @@
 // webpki value does.
 #ifdef CH_TRUST_WEBPKI
 #define CH_TX_HELLO (2650 + CH_TX_AES_SUITES)
-#elif defined(CH_PROFILE_CNSA2)
-#define CH_TX_HELLO 2693
+#elif defined(CH_PROFILE_CNSA2) && !defined(CH_ROLE_SERVER)
+#define CH_TX_HELLO 2698
 #elif defined(CH_KEX_PQ)
 #define CH_TX_HELLO 2325
 #elif defined(CH_ROLE_SERVER)
@@ -127,8 +127,8 @@
 // five schemes and the 7-byte server_certificate_type of a config with
 // SPKI pins and anchors: 1801 + 262 + 270 + 2 + 36 + 2 + 16 + 7.
 #define CH_TX_HELLO (2396 + CH_TX_AES_SUITES)
-#elif defined(CH_PROFILE_CNSA2) // the pq sum below, at a 1568-byte key and a 48-byte binder
-#define CH_TX_HELLO 2169
+#elif defined(CH_PROFILE_CNSA2) && !defined(CH_ROLE_SERVER) // pq sum, 1568 key, 133 cookie
+#define CH_TX_HELLO 2174
 #elif defined(CH_KEX_PQ)
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.

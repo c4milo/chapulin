@@ -62,10 +62,19 @@
 // ChaCha20 alone. Nothing here asks the CPU what it has: the caller
 // states it in ch_cfg.cpu, and a caller that wants another order names it
 // in ch_cfg.cipher_suites or ch_srv_cfg.cipher_suites.
+//
+// A PROFILE=cnsa2 server holds one suite, TLS_AES_256_GCM_SHA384, and
+// SUITE_CNSA2_SERVER marks it (docs/decisions.md 162). It selects no other
+// suite, so every function below answers for that suite alone.
 #if defined(CH_SUITE_AES_GCM) && defined(CH_CPU_RUNTIME)
 #define SUITE_AES_FIRST
 #endif
-#ifdef CH_SUITE_AES_GCM
+#if defined(CH_PROFILE_CNSA2) && defined(CH_ROLE_SERVER)
+#define SUITE_CNSA2_SERVER
+#endif
+#ifdef SUITE_CNSA2_SERVER
+#define SUITE_HELD_COUNT 1
+#elif defined(CH_SUITE_AES_GCM)
 #define SUITE_HELD_COUNT 3
 #else
 #define SUITE_HELD_COUNT 1
@@ -74,7 +83,9 @@
 // offers more than one suite (handshake_message.h). Each arm defines the
 // whole array, so no directive sits inside an initializer.
 #if defined(CH_ROLE_SERVER) || defined(CH_CLIENT_AES_SUITES)
-#ifdef SUITE_AES_FIRST
+#ifdef SUITE_CNSA2_SERVER
+static const uint16_t suite_default_order[SUITE_HELD_COUNT] = {SUITE_AES_256_GCM_SHA384};
+#elif defined(SUITE_AES_FIRST)
 static const uint16_t suite_default_order[SUITE_HELD_COUNT] = {
     SUITE_AES_256_GCM_SHA384, SUITE_AES_128_GCM_SHA256, SUITE_CHACHA20_POLY1305_SHA256};
 #elif defined(CH_SUITE_AES_GCM)
@@ -90,12 +101,16 @@ static const uint16_t suite_default_order[SUITE_HELD_COUNT] = {SUITE_CHACHA20_PO
 // which holds ChaCha20 alone, so it offers and selects no suite it cannot
 // run without that statement (docs/decisions.md 81 and 89). Every value
 // without the bit takes ChaCha20, the order that runs on any CPU. Public:
-// the hello lists these in the clear.
-#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
+// the hello lists these in the clear. A PROFILE=cnsa2 server takes no
+// session without the bit (srv.c), so its order is the one suite always.
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM) && !defined(SUITE_CNSA2_SERVER)
+#define SUITE_ORDER_WITHOUT_AES
+#endif
+#ifdef SUITE_ORDER_WITHOUT_AES
 static const uint16_t suite_order_without_aes[1] = {SUITE_CHACHA20_POLY1305_SHA256};
 #endif
 static inline const uint16_t *suite_session_default(const ch_cfg *cfg, size_t *count) {
-#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
+#ifdef SUITE_ORDER_WITHOUT_AES
     if ((cfg->cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
         *count = 1;
         return suite_order_without_aes;
@@ -141,6 +156,9 @@ static inline const uint16_t *suite_session_default(const ch_cfg *cfg, size_t *c
 // The hash length suite fixes, SHA256_LEN or SHA384_LEN, or 0 for a code
 // point this build does not hold.
 static inline size_t suite_hash_len(uint16_t suite) {
+#ifdef SUITE_CNSA2_SERVER
+    return suite == SUITE_AES_256_GCM_SHA384 ? SHA384_LEN : 0;
+#else
 #ifdef CH_SUITE_AES_GCM
     if (suite == SUITE_AES_256_GCM_SHA384) {
         return SHA384_LEN;
@@ -150,6 +168,7 @@ static inline size_t suite_hash_len(uint16_t suite) {
     }
 #endif
     return suite == SUITE_CHACHA20_POLY1305_SHA256 ? SHA256_LEN : 0;
+#endif
 }
 
 // The AEAD key length suite fixes: 16 bytes for AES-128-GCM and
@@ -197,6 +216,9 @@ static inline int suite_runs_here(const ch_cfg *cfg, uint16_t suite) {
 // The SRV_SUITE_ bit of a cipher suite code point, or 0 for a suite this
 // build does not hold. A predicate over a public value.
 static inline uint8_t srv_suite_bit(uint16_t suite) {
+#ifdef SUITE_CNSA2_SERVER
+    return suite == SUITE_AES_256_GCM_SHA384 ? SRV_SUITE_AES_256_GCM : 0;
+#else
 #ifdef CH_SUITE_AES_GCM
     if (suite == SUITE_AES_128_GCM_SHA256) {
         return SRV_SUITE_AES_128_GCM;
@@ -206,6 +228,7 @@ static inline uint8_t srv_suite_bit(uint16_t suite) {
     }
 #endif
     return suite == SUITE_CHACHA20_POLY1305_SHA256 ? SRV_SUITE_CHACHA20_POLY1305 : 0;
+#endif
 }
 
 // The first suite in order, count code points in the server's order of

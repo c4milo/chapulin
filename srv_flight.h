@@ -64,12 +64,11 @@ _Static_assert(SRV_SERVER_HELLO_MAX <= CH_TX_STAGE, "the largest ServerHello mus
 int srv_config_ok(const ch_cfg *cfg);
 
 // Draws the server's ephemeral secrets and starts the transcript.
-// Writes h->priv and h->pub and calls sha256_init on t->transcript. The
-// ML-KEM randomness is not drawn here: srv_send_server_hello draws it
-// through srv_kex_share, and only when the server selected the hybrid. It does not draw the
-// ServerHello random here: that value is drawn where the message is built, because a
-// HelloRetryRequest carries srv_hrr_random in its place and the two
-// messages are written at different call sites.
+// srv_kex_begin writes h->priv and h->pub, or nothing under PROFILE=cnsa2
+// (srv_kex.h), and this calls transcript_init on t->transcript. The
+// ML-KEM randomness is srv_kex_share's, drawn only for an ML-KEM group. The ServerHello
+// random is drawn where the message is built, because a HelloRetryRequest
+// carries srv_hrr_random in its place at another call site.
 //
 // Requires a handshake_state the caller has zeroed and whose t points
 // at the session. Runs before any message goes out or comes in, once

@@ -10,20 +10,39 @@
 #define CH_GROUP_MLKEM1024 0x0202
 
 // A PROFILE=cnsa2 client offers ML-KEM-1024 alone and TLS_AES_256_GCM_SHA384 alone, so it runs
-// no x25519. It authenticates by an external PSK, or by an ML-DSA-87 key under CH_PIN_MLDSA. The
-// Makefile and build.zig pass the define with CH_MLKEM_1024 and CH_SUITE_AES_GCM, and refuse it
-// outside a raw or ca client.
+// no x25519. It authenticates by an external PSK, or by an ML-DSA-87 key under CH_PIN_MLDSA. A
+// PROFILE=cnsa2 server selects the same suite and group alone, and signs with ML-DSA-87 alone
+// under CH_SIGN_MLDSA (docs/decisions.md 162). The Makefile and build.zig pass the define with
+// CH_MLKEM_1024 and CH_SUITE_AES_GCM, and refuse it beside TRUST=webpki and ROLE=both.
 #ifdef CH_PROFILE_CNSA2
-#if defined(CH_KEX_PQ) || defined(CH_TRUST_WEBPKI) || defined(CH_ROLE_SERVER)
+#if defined(CH_KEX_PQ) || defined(CH_TRUST_WEBPKI) || defined(CH_ROLE_BOTH)
 #error                                                                                             \
-    "PROFILE=cnsa2 is a raw or ca client's profile: drop CH_KEX_PQ, CH_TRUST_WEBPKI and any server role"
+    "PROFILE=cnsa2 is a raw or ca client's or a server's profile: drop CH_KEX_PQ, CH_TRUST_WEBPKI and CH_ROLE_BOTH"
+#endif
+// The profile's server is a host object alone: its sessions run AES-256-GCM on the AES
+// instructions, under the caller's CH_CPU_CONSTANT_TIME_AES. It signs with ML-DSA-87, so the
+// object holds the signer.
+#if defined(CH_ROLE_SERVER) && !defined(CH_CPU_RUNTIME)
+#error "a PROFILE=cnsa2 server is a host object: pass -DCH_CPU_RUNTIME"
+#endif
+#if defined(CH_ROLE_SERVER) && !defined(CH_SIGN_MLDSA)
+#error "a PROFILE=cnsa2 server signs with ML-DSA-87: pass -DCH_SIGN_MLDSA"
 #endif
 #if !defined(CH_MLKEM_1024) || !defined(CH_SUITE_AES_GCM)
 #error "PROFILE=cnsa2 builds ML-KEM-1024 and AES-256-GCM: pass -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM"
 #endif
 // The plaintext ServerHello record cfg.h's CH_KEX_MIN_RXBUF sizes, with the profile's share:
-// the 1568-byte ML-KEM-1024 ciphertext behind its 8 bytes of framing.
+// the 1568-byte ML-KEM-1024 ciphertext behind its 8 bytes of framing. A server reads the
+// ClientHello in its place: the largest one the profile's client writes, session.h's
+// CH_TX_HELLO for that client, 2174 bytes over TCP and 2698 over QUIC, behind a 5-byte record
+// header, which cfg.h's QUIC formula takes off again (docs/decisions.md 162).
+#ifndef CH_ROLE_SERVER
 #define CH_PROFILE_KEX_MIN_RXBUF (5 + 4 + 40 + 6 + 1576 + 6)
+#elif defined(CH_TRANSPORT_QUIC_NONBLOCKING)
+#define CH_PROFILE_KEX_MIN_RXBUF (5 + 2698)
+#else
+#define CH_PROFILE_KEX_MIN_RXBUF (5 + 2174)
+#endif
 #endif
 
 // TRUST=raw-mldsa and TRUST=ca-mldsa pin an ML-DSA-87 key, CNSA 2.0's signature, so they build

@@ -58,12 +58,31 @@
 // secrets side by side. An x25519 or secp256r1 key exchange uses the
 // first 32 bytes of the secret, and a secp256r1 share the first
 // P256_POINT_LEN bytes of the share.
+//
+// A PROFILE=cnsa2 server holds ML-KEM-1024 alone (docs/decisions.md 162).
+// Its key_exchange is the MLKEM_CT_LEN-byte ciphertext and its input
+// keying material the MLKEM_SS_LEN-byte shared secret, as the profile's
+// client reads them (draft-ietf-tls-mlkem). srv_kex_group answers
+// CH_GROUP_MLKEM1024 for a hello that lists it and 0 for every other, and
+// srv_kex_share and srv_kex_secret run that group alone.
+#ifdef CH_PROFILE_CNSA2
+#define SRV_KEX_SHARE_MAX MLKEM_CT_LEN
+#define SRV_KEX_SECRET_MAX MLKEM_SS_LEN
+#else
 #define SRV_KEX_SHARE_MAX CH_HYBRID_SERVER_SHARE
 #define SRV_KEX_SECRET_MAX (MLKEM_SS_LEN + X25519_LEN)
-#ifndef __cplusplus
+#endif
+#if !defined(__cplusplus) && !defined(CH_PROFILE_CNSA2)
 _Static_assert(P256_POINT_LEN <= SRV_KEX_SHARE_MAX && P256_SECRET_LEN <= SRV_KEX_SECRET_MAX,
                "a secp256r1 share and secret fit the hybrid's arrays");
 #endif
+
+// Draws this session's x25519 key pair, which srv_begin calls once: the
+// scalar into h->priv through rand_draw (INV-4) and its public value into
+// h->pub. CH_ASSERT holds the source to rand.h's contract, as srv_begin's
+// other draws are held. A PROFILE=cnsa2 server runs no x25519, so it draws
+// nothing and writes nothing.
+void srv_kex_begin(handshake_state *h);
 
 // The group this server selects, read from the client's supported_groups
 // alone: CH_GROUP_X25519MLKEM768 when the client listed it, else

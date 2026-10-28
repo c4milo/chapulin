@@ -12,6 +12,10 @@
 #include "buf.h"
 #include "ch_assert.h"
 #include "ct.h"
+#ifdef CH_PROFILE_CNSA2
+#include "aes_traffic_key.h"
+#include "gcm.h"
+#endif
 
 // RFC 9846 §4.7.1 forbids a ticket_lifetime above 604800 seconds
 // (rfc9846.txt:3257-3258), and a lifetime of 0 tells the client to discard
@@ -28,6 +32,52 @@ _Static_assert(SRV_TICKET_LIFETIME >= 1 && SRV_TICKET_LIFETIME <= 604800,
 // The associated data every ticket is sealed and opened with: its version
 // byte, which srv_ticket.h names as the one byte before the nonce.
 static const uint8_t ticket_version[1] = {SRV_TICKET_VERSION};
+
+#ifdef CH_PROFILE_CNSA2
+// A PROFILE=cnsa2 server seals under AES-256-GCM (srv_ticket.h). The key
+// is expanded on this frame for one call and wiped here. aes_traffic_key_init
+// runs the AES instructions, which the profile's sessions hold under the
+// caller's CH_CPU_CONSTANT_TIME_AES (srv.c), and records no description of
+// the CPU, so the ticket key runs the 128-bit loops. widemul picks nothing.
+_Static_assert(AES_IV == AEAD_NONCE && GCM_TAG == AEAD_TAG, "a ticket's nonce and tag lengths");
+
+static void ticket_seal_body(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
+                             const uint8_t nonce[AEAD_NONCE], const uint8_t *pt, size_t n,
+                             uint8_t *ct, uint8_t tag[AEAD_TAG]) {
+    (void)widemul;
+    aes_traffic_key k;
+    aes_traffic_key_init(&k, key, CH_SRV_TICKET_KEY_LEN);
+    gcm_traffic_seal(&k, nonce, ticket_version, sizeof ticket_version, pt, n, ct, tag);
+    ct_wipe(&k, sizeof k);
+}
+
+// gcm_traffic_open releases no plaintext byte on a tag mismatch (gcm.h).
+static int ticket_open_body(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
+                            const uint8_t nonce[AEAD_NONCE], const uint8_t *ct, size_t n,
+                            const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+    (void)widemul;
+    aes_traffic_key k;
+    aes_traffic_key_init(&k, key, CH_SRV_TICKET_KEY_LEN);
+    int opened = gcm_traffic_open(&k, nonce, ticket_version, sizeof ticket_version, ct, n, tag, pt);
+    ct_wipe(&k, sizeof k);
+    return opened;
+}
+#else
+// Every other server seals under ChaCha20-Poly1305 (RFC 8439 §2.8).
+static void ticket_seal_body(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
+                             const uint8_t nonce[AEAD_NONCE], const uint8_t *pt, size_t n,
+                             uint8_t *ct, uint8_t tag[AEAD_TAG]) {
+    aead_seal(widemul, key, nonce, ticket_version, sizeof ticket_version, pt, n, ct, tag);
+}
+
+// aead_open compares the tag in constant time and releases no byte of
+// body on a mismatch (aead.h).
+static int ticket_open_body(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
+                            const uint8_t nonce[AEAD_NONCE], const uint8_t *ct, size_t n,
+                            const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+    return aead_open(widemul, key, nonce, ticket_version, sizeof ticket_version, ct, n, tag, pt);
+}
+#endif
 
 // Writes auth_seconds as SRV_TICKET_INSTANT_LEN bytes, the most
 // significant first.
@@ -78,8 +128,7 @@ size_t srv_ticket_seal(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN]
     write_body(c, body);
     uint8_t ct[SRV_TICKET_BODY_LEN];
     uint8_t tag[AEAD_TAG];
-    aead_seal(widemul, key, nonce, ticket_version, sizeof ticket_version, body, sizeof body, ct,
-              tag);
+    ticket_seal_body(widemul, key, nonce, body, sizeof body, ct, tag);
     ct_wipe(body, sizeof body);
 
     wbuf w;
@@ -133,11 +182,8 @@ int srv_ticket_open(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
     if (r.err || rb_left(&r) != 0 || version != SRV_TICKET_VERSION) {
         return CH_EAUTH;
     }
-    // aead_open compares the tag in constant time and releases no byte of
-    // body on a mismatch (aead.h).
     uint8_t body[SRV_TICKET_BODY_LEN];
-    if (aead_open(widemul, key, nonce, ticket_version, sizeof ticket_version, ct, sizeof body, tag,
-                  body) == 0) {
+    if (ticket_open_body(widemul, key, nonce, ct, sizeof body, tag, body) == 0) {
         return CH_EAUTH;
     }
     int rc = read_body(body, c);

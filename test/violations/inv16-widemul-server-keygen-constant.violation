@@ -1,5 +1,5 @@
 invariant: INV-16
-file: srv_flight.c
+file: srv_kex.c
 catches: tcp_nonblocking_loop_host
 reason: the server derives its x25519 share under WIDEMUL_NOT_STATED whatever
   its ch_cfg.cpu states. The share is the same.

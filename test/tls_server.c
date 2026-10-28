@@ -10,9 +10,15 @@
 // Usage: tlsserver <cert.der> <priv-hex> <pub-hex>
 //
 // priv-hex is the 32-byte P-256 private scalar and pub-hex the 64-byte
-// X||Y point, both as hex. The ticket key and the cookie key are drawn
-// fresh at start, so tickets live as long as this process, and the clock
-// is time(), which is what ch_cfg.now_seconds asks for.
+// X||Y point, both as hex.
+//
+// Under PROFILE=cnsa2, bin/tlsserver_cnsa2 and its siblings, the usage is
+// tlsserver <cert.der> <key.pem>: an ML-DSA-87 certificate and the PKCS #8
+// key file OpenSSL writes, which ch_mldsa_key_from_pem expands into the
+// one identity the profile holds (docs/decisions.md 162). Those binaries
+// link the packaged object, so this file calls the public API alone. The ticket key and the cookie
+// key are drawn fresh at start, so tickets live as long as this process, and the clock is time(),
+// which is what ch_cfg.now_seconds asks for.
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -29,6 +35,9 @@
 #include "srv.h"
 #include "srv_ticket.h"
 #include "test_random.h"
+#ifdef CH_PROFILE_CNSA2
+#include "pem_files.h"
+#endif
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -51,6 +60,7 @@ static int io_recv(void *io, uint8_t *p, size_t n) {
     return r <= 0 ? -1 : (int)r;
 }
 
+#ifndef CH_PROFILE_CNSA2 // the profile reads its key from a PEM file
 static int nibble(char c) {
     if (c >= '0' && c <= '9') {
         return c - '0';
@@ -76,10 +86,20 @@ static int unhex_exact(const char *hex, uint8_t *out, size_t n) {
     }
     return 0;
 }
+#endif
 
+#ifdef CH_PROFILE_CNSA2
+// An ML-DSA-87 certificate is about 7.5 kB, and its key pair 4,896 and
+// 2,592 bytes.
+static uint8_t cert_der[8192];
+static uint8_t priv[4896];
+static uint8_t pub[2592];
+static uint8_t key_pem[16384];
+#else
 static uint8_t cert_der[4096];
 static uint8_t priv[32];
 static uint8_t pub[64];
+#endif
 static uint8_t ticket_key[CH_SRV_TICKET_KEY_LEN];
 static uint8_t cookie_key[32];
 static uint8_t rxbuf[16384 + 256];
@@ -96,10 +116,39 @@ static int load_identity(char **argv, ch_cert *cert) {
     }
     cert->der = cert_der;
     cert->len = n;
+#ifdef CH_PROFILE_CNSA2
+    f = fopen(argv[2], "rb");
+    if (f == NULL) {
+        return -1;
+    }
+    size_t pem_len = fread(key_pem, 1, sizeof key_pem, f);
+    (void)fclose(f);
+    int rc = ch_mldsa_key_from_pem(CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES, key_pem, pem_len,
+                                   cert_der, n, priv, pub);
+    memset(key_pem, 0, sizeof key_pem);
+    return rc == CH_OK ? 0 : -1;
+#else
     return unhex_exact(argv[2], priv, sizeof priv) != 0 ||
                    unhex_exact(argv[3], pub, sizeof pub) != 0
                ? -1
                : 0;
+#endif
+}
+
+// The one identity the configuration proves itself with: ECDSA P-256, or
+// ML-DSA-87 under PROFILE=cnsa2.
+static void set_identity(ch_cfg *cfg, const ch_cert *chain) {
+#ifdef CH_PROFILE_CNSA2
+    ch_identity *id = &cfg->srv.mldsa87;
+#else
+    ch_identity *id = &cfg->srv.ecdsa_p256;
+#endif
+    id->chain = chain;
+    id->chain_count = 1;
+    id->priv = priv;
+    id->priv_len = sizeof priv;
+    id->pub = pub;
+    id->pub_len = sizeof pub;
 }
 
 // Reads one line, answers it reversed with its newline kept last, and
@@ -143,8 +192,14 @@ static int listen_any(void) {
 
 int main(int argc, char **argv) {
     static ch_cert chain[1];
-    if (argc != 4 || load_identity(argv, &chain[0]) != 0) {
-        (void)fprintf(stderr, "usage: tlsserver <cert.der> <priv-hex> <pub-hex>\n");
+#ifdef CH_PROFILE_CNSA2
+    int args_want = 3;
+#else
+    int args_want = 4;
+#endif
+    if (argc != args_want || load_identity(argv, &chain[0]) != 0) {
+        (void)fprintf(stderr, "usage: tlsserver <cert.der> <priv-hex> <pub-hex>, or under "
+                              "PROFILE=cnsa2 <cert.der> <key.pem>\n");
         return 2;
     }
     ch_rand_bytes(ticket_key, sizeof ticket_key);
@@ -153,12 +208,7 @@ int main(int argc, char **argv) {
     // verifies under the public key beside it.
     ch_cfg boot;
     memset(&boot, 0, sizeof boot);
-    boot.srv.ecdsa_p256.chain = chain;
-    boot.srv.ecdsa_p256.chain_count = 1;
-    boot.srv.ecdsa_p256.priv = priv;
-    boot.srv.ecdsa_p256.priv_len = sizeof priv;
-    boot.srv.ecdsa_p256.pub = pub;
-    boot.srv.ecdsa_p256.pub_len = sizeof pub;
+    set_identity(&boot, chain);
     boot.srv.cookie_key = cookie_key;
     boot.srv.ticket_key = ticket_key;
 #ifdef CH_CPU_RUNTIME
@@ -189,12 +239,7 @@ int main(int argc, char **argv) {
         cfg.send = io_send;
         cfg.recv = io_recv;
         cfg.io = &fd;
-        cfg.srv.ecdsa_p256.chain = chain;
-        cfg.srv.ecdsa_p256.chain_count = 1;
-        cfg.srv.ecdsa_p256.priv = priv;
-        cfg.srv.ecdsa_p256.priv_len = sizeof priv;
-        cfg.srv.ecdsa_p256.pub = pub;
-        cfg.srv.ecdsa_p256.pub_len = sizeof pub;
+        set_identity(&cfg, chain);
         cfg.srv.cookie_key = cookie_key;
         cfg.srv.ticket_key = ticket_key;
         cfg.now_seconds = wall_clock;

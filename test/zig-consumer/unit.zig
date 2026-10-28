@@ -19,6 +19,9 @@ comptime {
 // header declares only where the object defines it.
 const has_client = @hasDecl(c, "ch_connect") or @hasDecl(c, "ch_record_init") or @hasDecl(c, "ch_quic_init");
 const has_server = @hasField(c.ch_cfg, "srv");
+// A PROFILE=cnsa2 server holds the ML-DSA-87 slot alone.
+const has_mldsa_server = has_server and @hasField(c.ch_srv_cfg, "mldsa87");
+const has_classic_server = has_server and !has_mldsa_server;
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
 const has_quic = @hasDecl(c, "CH_QUIC_DISCARD");
@@ -220,8 +223,27 @@ test "Client.toCfg under a raw or ca mode: both pins, and a ticket beside them" 
     try expectFields(c.ch_cfg, want, values.toCfg());
 }
 
+test "Server.toCfg under PROFILE=cnsa2: the one ML-DSA-87 identity and its chain's u8" {
+    if (!has_mldsa_server) return error.SkipZigTest;
+    const chain = [_]c.ch_cert{chapulin.cert("leaf")};
+    const public_key = [_]u8{0x31} ** 2592;
+    const private_key = [_]u8{0x32} ** 4896;
+    const cookie_key = [_]u8{0x34} ** c.CH_SRV_COOKIE_KEY_LEN;
+    var values: chapulin.Server = .{
+        .mldsa87 = .{ .chain = &chain, .public_key = &public_key, .private_key = &private_key },
+        .cookie_key = &cookie_key,
+    };
+    var want = std.mem.zeroes(c.ch_cfg);
+    want.srv.mldsa87 = .{ .chain = &chain, .chain_count = 1, .priv = &private_key, .priv_len = 4896, .@"pub" = &public_key, .pub_len = 2592 };
+    want.srv.cookie_key = &cookie_key;
+    try expectFields(c.ch_cfg, want, try values.toCfg());
+    const long = [_]c.ch_cert{chapulin.cert("x")} ** 256;
+    values.mldsa87.?.chain = &long;
+    try expectError(error.Invalid, values.toCfg());
+}
+
 test "Server.toCfg: both identities, the keys, the clock, ALPN, the SNI rule and the suite order" {
-    if (!has_server) return error.SkipZigTest;
+    if (!has_classic_server) return error.SkipZigTest;
     const chain = [_]c.ch_cert{ chapulin.cert("leaf"), chapulin.cert("intermediate") };
     const point = [_]u8{0x31} ** 64;
     const scalar = [_]u8{0x32} ** 32;
@@ -413,13 +435,23 @@ test "the PEM files: a refusal is error.Invalid, a room is the caller's, and a r
         try expectError(error.Invalid, chapulin.Chain.fromPem(one, der[0..26], &entries));
         try expectError(error.Invalid, chapulin.Chain.fromPem(one, &der, entries[0..0]));
         try expectEqual(@as(usize, 0), (chapulin.Chain{}).leaf().len);
-        var key: chapulin.EcdsaP256Key = .{};
-        @memset(&key.private_key, 0x5a);
-        try expectError(error.Invalid, key.fromPem(if (has_cpu) .{} else {}, not_pem, chain.leaf()));
-        try expect(std.mem.allEqual(u8, &key.private_key, 0) and std.mem.allEqual(u8, &key.public_key, 0));
-        @memset(&key.private_key, 0x5a);
-        key.wipe();
-        try expect(std.mem.allEqual(u8, &key.private_key, 0));
+        if (has_classic_server) {
+            var key: chapulin.EcdsaP256Key = .{};
+            @memset(&key.private_key, 0x5a);
+            try expectError(error.Invalid, key.fromPem(if (has_cpu) .{} else {}, not_pem, chain.leaf()));
+            try expect(std.mem.allEqual(u8, &key.private_key, 0) and std.mem.allEqual(u8, &key.public_key, 0));
+            @memset(&key.private_key, 0x5a);
+            key.wipe();
+            try expect(std.mem.allEqual(u8, &key.private_key, 0));
+        } else {
+            var key: chapulin.MlDsa87Key = .{};
+            @memset(&key.private_key, 0x5a);
+            try expectError(error.Invalid, key.fromPem(.{}, not_pem, chain.leaf()));
+            try expect(std.mem.allEqual(u8, &key.private_key, 0) and std.mem.allEqual(u8, &key.public_key, 0));
+            @memset(&key.private_key, 0x5a);
+            key.wipe();
+            try expect(std.mem.allEqual(u8, &key.private_key, 0));
+        }
     }
     if (has_webpki) {
         var entries: [1]c.ch_trust_anchor = undefined;
@@ -439,7 +471,8 @@ test "every declaration this object has compiles" {
     compile(chapulin, &.{ "fromCode", "buildMatches", "Group", "Suite", "State", "Hook", "RandomSource", "attachRandom" });
     try expect(chapulin.buildMatches());
     if (has_client) compile(chapulin, &.{ "Client", "Ticket", "Trust" });
-    if (has_server) compile(chapulin, &.{ "Server", "cert", "EcdsaP256Identity", "RsaPssIdentity", "Chain", "EcdsaP256Key" });
+    if (has_classic_server) compile(chapulin, &.{ "Server", "cert", "EcdsaP256Identity", "RsaPssIdentity", "Chain", "EcdsaP256Key" });
+    if (has_mldsa_server) compile(chapulin, &.{ "Server", "cert", "MlDsa87Identity", "Chain", "MlDsa87Key" });
     if (has_webpki) compile(chapulin, &.{ "trustAnchor", "CertType", "Anchors" });
     if (has_alpn) compile(chapulin, &.{"alpnProtocol"});
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hookContext"});

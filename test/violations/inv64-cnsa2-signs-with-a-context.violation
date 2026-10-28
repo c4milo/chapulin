@@ -1,0 +1,13 @@
+invariant: INV-64
+file: srv_mldsa.c
+catches: cnsa2_server_test
+reason: the server signs its CertificateVerify content under a one-byte
+  context, where draft-ietf-tls-mldsa fixes an empty one, so every client
+  refuses the signature. ch_srv_check verifies the boot signature with the
+  empty context, and test_identity_and_cpu requires it to pass.
+
+--- old
+        mldsa87_sign(sig, id->priv, id->priv_len, id->pub, id->pub_len, content, n, NULL, 0, rnd);
+--- new
+        mldsa87_sign(sig, id->priv, id->priv_len, id->pub, id->pub_len, content, n,
+                     (const uint8_t *)"x", 1, rnd);

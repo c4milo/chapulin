@@ -2009,6 +2009,13 @@ launch fast full poly1305 85 "blocks.0:8" ct.c proof/ct_wipe_stub.c
 # noise readable (docs/decisions.md 153), took it to 479 properties, 8 s
 # and 0.34 GB of resident memory, the same way on 2026-10-25.
 launch fast full srv_auth 385 "" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+# The PROFILE=cnsa2 server's authentication, srv_mldsa.c (docs/decisions.md
+# 162), over one unconstrained mldsa87 slot, every scheme and every
+# selection hash length, with the signer, the verifier, the transcript
+# snapshot and the two srv_frag calls as contract stubs. fill_nondet runs
+# to the 4,627-byte signature, ct_wipe to the 146-byte content and the
+# padding loop to 64. Measured below.
+launch fast full srv_mldsa 2 "fill_nondet.0:4628,ct_wipe.0:147,signed_content.0:65" buf.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The server's ticket selection and issue, srv_resume.c, over any
 # identities and binders lists up to the bounds the harness states, any
 # ticket key, clock, modes and ALPN selection, with srv_ticket.c, the key

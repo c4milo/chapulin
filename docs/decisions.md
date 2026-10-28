@@ -14429,3 +14429,115 @@ does nothing more.
         each statement has to name what it reads.
       - **One string longer than 4,095 characters.** ISO C does not
         require a compiler to take it, and -Wpedantic refuses it.
+162. **`PROFILE=cnsa2 ROLE=server` signs ML-DSA-87 alone, selects
+    ML-KEM-1024 and TLS_AES_256_GCM_SHA384 alone, and seals its tickets
+    under AES-256-GCM.** Stage 4 of the CNSA 2.0 profile
+    (https://github.com/c4milo/chapulin/issues/182), its second commit,
+    over the signer of entry 159. Camilo's rulings of 2026-10-26 and
+    2026-10-27 hold: one ML-DSA-87 identity, a host object alone, the
+    seed through `ch_mldsa_key_from_pem`, each signature verified before
+    it is sent, tickets under AES-256-GCM, the cookie under HMAC-SHA-384,
+    measured per-file ceilings, all three transports, and `ROLE=both`
+    refused.
+
+    - **The builds.** `PROFILE=cnsa2 ROLE=server TRUST=none` builds on
+      tcp-blocking, tcp-nonblocking and quic-nonblocking. The Makefile and
+      `build.zig` refuse it where the compiler fails the host test, and
+      `profile_cfg.h` refuses it without `CH_CPU_RUNTIME` or
+      `CH_SIGN_MLDSA`. The object holds `mldsa.c`, the five signer files,
+      `srv_mldsa.c` and ML-KEM-1024. It holds neither signer of the other
+      servers, no P-256 arithmetic, no RSA and no x25519. `LIB_DEF` takes
+      `CH_SIGN_MLDSA`, so the object exports `ch_mldsa_key_from_pem`. It
+      does not export `ch_p256_key_from_pem`: it holds no P-256 identity
+      and no P-256 arithmetic, so the call would name a key the server
+      cannot use.
+    - **The identity.** `ch_srv_cfg` holds one slot, `mldsa87`, in place
+      of `ecdsa_p256` and `rsa_pss`. Its `priv` is the 4,896-byte secret
+      key and its `pub` the 2,592-byte public key, which
+      `ch_mldsa_key_from_pem` writes. `srv_mldsa.c` defines `srv_auth.h`'s
+      calls for the profile, and `srv_auth.c` compiles to nothing there.
+      The CertificateVerify signs RFC 9846 §4.5.2's 146-byte content over
+      the SHA-384 transcript hash, whole and with an empty context, under
+      `rnd` drawn through `rand_draw`. `mldsa87_sign` verifies each
+      signature before it returns it. `ch_srv_check` signs the content of
+      a zero transcript hash and verifies the result once more.
+      `srv_identities_usable` checks the two key lengths and the chain at
+      every init call, and leaves the key's coefficients to the boot
+      check, because a signature at every init call would cost a ninth of
+      a millisecond for a fact the boot check settled.
+    - **The CPU.** Every init call and `ch_srv_check` refuse a `ch_cfg.cpu`
+      without `CH_CPU_CONSTANT_TIME_AES`. The profile's one suite and its
+      tickets run AES-256-GCM, so a session without the statement could
+      run nothing.
+    - **The selection.** The server holds one group, one suite and one
+      scheme: `SRV_GROUP_MLKEM1024`, `TLS_AES_256_GCM_SHA384` and
+      `SRV_SIGALG_MLDSA87`. A hello that lists ML-KEM-1024 with no share
+      gets a HelloRetryRequest that asks for it. A hello that does not
+      list it, or lists no other of the three, gets handshake_failure. The
+      share is the 1,568-byte encapsulation key, the ServerHello's the
+      1,568-byte ciphertext, and the 32-byte shared secret is the whole
+      input keying material, as the profile's client reads it.
+    - **The cookie.** HMAC-SHA-384 under `cookie_key`, a 256-bit key.
+      Each cookie is 133 bytes: the 5-byte head, the 48-byte
+      Hash(ClientHello1), the 32-byte frozen digest and the 48-byte MAC.
+      Outside the profile it stays HMAC-SHA-256, at 101 and 117 bytes. The
+      cookie passed the 128 bytes `HSP_COOKIE_MAX` held, so the constant
+      is 133 in both of the profile's roles. The profile's client then
+      echoes the server's cookie, its largest hello grows from 2,169 bytes
+      to 2,174 over TCP and from 2,693 to 2,698 over QUIC, and its
+      `ch_tls` grows by 8 bytes to 2,992.
+    - **The tickets.** AES-256-GCM under `ticket_key`, with the version
+      byte as the associated data, as the ChaCha20-Poly1305 tickets are.
+      The nonce and the tag keep their 12 and 16 bytes, so a ticket stays
+      124 bytes, and its PSK fills all 48 bytes at SHA-384.
+      `srv_ticket.c` expands the key on its frame for one call and wipes
+      it there. It calls `aes_traffic_key_init`, which records the AES
+      instructions and no description of the CPU, so the ticket key runs
+      the 128-bit loops and no kernel the session's bits pick. INV-26
+      admits the key beside the key schedule's traffic keys, and
+      `srv_ticket.c` joins the files that include `aes_traffic_key.h` and
+      that `inv-26-aes-traffic-keys-only` admits.
+    - **The sizes and the stack.** `bench/sram.sh` measures a `ch_tls` of
+      3,160 bytes, whose TX array holds the 1,664-byte ServerHello, and a
+      receive floor of 2,179 bytes, the profile client's largest hello
+      behind its record header, 2,698 over QUIC. The 7.5 kB Certificate
+      and the 4,627-byte CertificateVerify each stream through `srv_frag`
+      a record at a time, so the send side needs no floor beyond
+      `CH_TX_STAGE`. `ch_srv_accept` peaks at 27,968 bytes through the
+      signer's rejection loop, and at 12,640 through ML-KEM-1024's
+      encapsulation with the signer pruned.
+      `srv_mldsa_send_certificate_verify`'s frame is 5,280 bytes, the
+      signature, the content and the `srv_frag`, under
+      `STACK_BUDGET_SRV_MLDSA`, 6 kB. `ch_mldsa_key_from_pem`'s frame is
+      5,168 bytes under Apple clang 21 and 5,184 under gcc 13.3, under
+      `STACK_BUDGET_PEM_FILES_MLDSA`, 5.5 kB, in the profile's server
+      alone. Every other frame keeps the profile's 4 kB.
+    - **What holds it.** `bin/cnsa2_server_test` holds the identity's
+      lengths, the CPU rule, the selection, the cookie's HMAC-SHA-384 and
+      its length, the ticket's AES-256-GCM, and the receive floor, each at
+      its boundary. e2e runs OpenSSL's `s_client` against
+      `bin/tlsserver_cnsa2` under `-groups MLKEM1024 -sigalgs mldsa87
+      -ciphersuites TLS_AES_256_GCM_SHA384`: a full handshake, a resumed
+      one, a HelloRetryRequest and a hello without ML-KEM-1024 refused.
+      Then this tree's `TRUST=raw-mldsa` client makes a full handshake and
+      resumes its ticket. The `srv_mldsa` harness proves `srv_mldsa.c`'s
+      memory safety over contract stubs of the signer and the verifier.
+      `check-lib-cnsa2-server` and its two siblings package the three
+      objects, `lint-zig-build` holds `build.zig` and the Zig API to them,
+      and INV-64's seven mutants and INV-26's two new ones each fail a
+      check.
+
+    Rejected:
+
+    - **A truncated cookie MAC**, 32 bytes of HMAC-SHA-384, which would
+      keep `HSP_COOKIE_MAX` at 128. The ruling names HMAC-SHA-384, and a
+      truncation would be a second rule to state and to test.
+    - **The ECDSA key call kept in the profile's object.** It needs the
+      P-256 arithmetic the profile drops, for a key the server cannot
+      use.
+    - **The CertificateVerify staged whole on the frame.** The signature
+      and the message would be 9.3 kB on one frame. Streamed through
+      `srv_frag`, the frame holds the signature once.
+    - **A signature at every init call**, to test the key's
+      coefficients there. `ch_srv_check` makes that test once at boot,
+      and `mldsa87_sign` refuses an out-of-range key at every signature.

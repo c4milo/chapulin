@@ -1411,6 +1411,80 @@ if "$OPENSSL" list -tls-signature-algorithms 2>/dev/null | tr ':' '\n' | grep -q
     expect_fail cnsa2-mldsa-ecdsa-server -2 "$DIR/err_md_ecdsa" \
         ./bin/tlsclient_cnsa2_mldsa 127.0.0.1 "$SRV_PORT" "pin:$MDRAWPUB" -
     CNSA2_MLDSA_TESTS=" + cnsa2 mldsa x7"
+    # --- This tree's PROFILE=cnsa2 server (docs/decisions.md 162), with
+    # the raw mode's self-signed ML-DSA-87 certificate and its key file.
+    # s_client makes a full handshake and resumes the ticket, under
+    # MLKEM1024, mldsa87 and TLS_AES_256_GCM_SHA384 alone. A hello that
+    # shares X25519 first and lists MLKEM1024 after it gets a
+    # HelloRetryRequest with the 133-byte cookie, and one that lists no
+    # MLKEM1024 fails closed. Then this tree's raw-mldsa client makes a
+    # full handshake and resumes its ticket.
+    if [ -x ./bin/tlsserver_cnsa2 ]; then
+        "$OPENSSL" x509 -in "$DIR/mdraw.pem" -outform DER -out "$DIR/mdraw.der"
+        CHSRV_BIN=./bin/tlsserver_cnsa2 start_chserver "$DIR/mdraw.der" "$DIR/mdraw.key"
+        PORT_MDSRV=$SRV_PORT
+        MDSRV_LOG=$SRV_LOG
+        md_s_client() {
+            local label=$1 summary=$2 line=$3 reply=$4
+            shift 4
+            printf '%s\n' "$line" | "$OPENSSL" s_client -connect "127.0.0.1:$PORT_MDSRV" -tls1_3 \
+                -sigalgs mldsa87 -ciphersuites TLS_AES_256_GCM_SHA384 -ign_eof "$@" \
+                > "$DIR/$label.log" 2>&1 || {
+                echo "FAIL $label: s_client exited nonzero"
+                cat "$DIR/$label.log" "$MDSRV_LOG"
+                exit 1
+            }
+            if ! grep -q "^$summary, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384" "$DIR/$label.log" ||
+                ! grep -q "^$reply\$" "$DIR/$label.log"; then
+                echo "FAIL $label: want a $summary session answering '$reply'"
+                cat "$DIR/$label.log" "$MDSRV_LOG"
+                exit 1
+            fi
+            echo "ok   $label"
+        }
+        md_s_client cnsa2-chsrv-openssl New 'hola mundo' 'odnum aloh' -groups MLKEM1024 \
+            -sess_out "$DIR/sess_md.pem"
+        md_s_client cnsa2-chsrv-openssl-resume Reused 'otra vez' 'zev arto' -groups MLKEM1024 \
+            -sess_in "$DIR/sess_md.pem"
+        md_s_client cnsa2-chsrv-openssl-retry New 'reintento' 'otnetnier' -groups X25519:MLKEM1024 -msg
+        [ "$(grep -c '<<< TLS 1.3, Handshake \[length [0-9a-f]*\], ServerHello' \
+            "$DIR/cnsa2-chsrv-openssl-retry.log")" = 2 ] || {
+            echo "FAIL cnsa2-chsrv-openssl-retry: want a HelloRetryRequest before the ServerHello"
+            cat "$DIR/cnsa2-chsrv-openssl-retry.log"
+            exit 1
+        }
+        if printf 'x\n' | "$OPENSSL" s_client -connect "127.0.0.1:$PORT_MDSRV" -tls1_3 \
+            -groups X25519:X25519MLKEM768 -sigalgs mldsa87 -ciphersuites TLS_AES_256_GCM_SHA384 \
+            > "$DIR/cnsa2-chsrv-no-mlkem1024.log" 2>&1 &&
+            grep -q '^New, TLSv1.3' "$DIR/cnsa2-chsrv-no-mlkem1024.log"; then
+            echo "FAIL cnsa2-chsrv-no-mlkem1024: a hello without MLKEM1024 completed"
+            exit 1
+        fi
+        echo "ok   cnsa2-chsrv-no-mlkem1024"
+        MSG='firma propia'
+        expect cnsa2-chsrv-chapulin "aiporp amrif" "$DIR/err_mdsrv" \
+            ./bin/tlsclient_cnsa2_mldsa 127.0.0.1 "$PORT_MDSRV" "pin:$MDRAWPUB" - "$DIR/ticket_mdsrv"
+        MSG='otra firma'
+        expect cnsa2-chsrv-chapulin-resume "amrif arto" "$DIR/err_mdsrv_resume" \
+            ./bin/tlsclient_cnsa2_mldsa 127.0.0.1 "$PORT_MDSRV" "pin:$MDRAWPUB" "@$DIR/ticket_mdsrv"
+        # Six connections: five completed, full, resumed, full, full and
+        # resumed, and one refused.
+        [ "$(grep '^handshake: ' "$MDSRV_LOG" | tr '\n' ' ')" = \
+          "handshake: full handshake: resumed handshake: full handshake: full handshake: resumed " ] &&
+            [ "$(grep -c '^handshake failed: ' "$MDSRV_LOG")" = 1 ] || {
+            echo "FAIL cnsa2-chsrv: the server's log does not show the six connections"
+            cat "$MDSRV_LOG"
+            exit 1
+        }
+        [ "$(grep -c '^group: 0x0202$' "$MDSRV_LOG")" = 5 ] || {
+            echo "FAIL cnsa2-chsrv: want ML-KEM-1024 on every connection"
+            cat "$MDSRV_LOG"
+            exit 1
+        }
+        CNSA2_MLDSA_TESTS="$CNSA2_MLDSA_TESTS + cnsa2 server x6"
+    else
+        skip "cnsa2 server tests: bin/tlsserver_cnsa2 is not built ($CC fails the host test)"
+    fi
 else
     CNSA2_MLDSA_TESTS=""
     skip "cnsa2 mldsa test: $("$OPENSSL" version) lists no mldsa87 scheme or no MLKEM1024 (needs 3.5)"

@@ -2037,6 +2037,38 @@ last `ROLE=server` stub, as the entry said it would.
   fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
   `sha3_round` proof and one the `sha3_stream` proof.
 
+### INV-64 — a PROFILE=cnsa2 server runs CNSA 2.0's algorithms alone, its retry cookie and its tickets included
+
+- **Claim.** A `PROFILE=cnsa2 ROLE=server` object (docs/decisions.md
+  162) selects ML-KEM-1024, TLS_AES_256_GCM_SHA384 and mldsa87 alone,
+  and fails closed on a hello that lists none of one of the three. It
+  signs each CertificateVerify with its one ML-DSA-87 identity over the
+  whole 146-byte content with an empty context, and verifies the
+  signature before it sends it. It keys the HelloRetryRequest cookie
+  with HMAC-SHA-384, 133 bytes a cookie, and seals its tickets under
+  AES-256-GCM, 124 bytes a ticket. It runs no session whose
+  `ch_cfg.cpu` lacks `CH_CPU_CONSTANT_TIME_AES`, and it takes no key of
+  another length than 4,896 and 2,592 bytes. Its receive floor holds the
+  profile client's largest ClientHello.
+- **Mechanism.** `srv_parser.h`, `srv_kex.h`, `suite.h` and `srv_auth.h`
+  give the profile one bit each for its group, its suite, its scheme and
+  its identity, so no other code point selects anything. `srv_kex.c`'s
+  profile arm encapsulates alone. `srv_mldsa.c` holds the identity's
+  calls, `srv_cookie.c`'s `cookie_mac` and `srv_ticket.c`'s
+  `ticket_seal_body` and `ticket_open_body` pick their primitive under
+  the define, and `srv.c`'s `profile_cpu_ok` refuses the CPU value.
+- **Check.** `bin/cnsa2_server_test` holds each rule at its boundary,
+  `make check-lib-cnsa2-server` and its siblings package the three
+  objects, and e2e runs OpenSSL and this tree's `TRUST=raw-mldsa` client
+  against `bin/tlsserver_cnsa2`. The `srv_mldsa` harness proves
+  `srv_mldsa.c` memory safe.
+- **Violation.** A PR lets the profile's server run outside CNSA 2.0:
+  `inv64-cnsa2-server-without-aes-bit`, `inv64-cnsa2-cookie-mac-sha256`,
+  `inv64-cnsa2-ticket-under-chacha`, `inv64-cnsa2-group-without-mlkem1024`,
+  `inv64-cnsa2-secret-key-one-byte-short`, `inv64-cnsa2-signs-with-a-context`
+  and `inv64-cnsa2-floor-without-hello` each fail
+  `bin/cnsa2_server_test`.
+
 ### INV-63 — a server sends no extension response to an extension the ClientHello did not carry
 
 - **Claim.** Every extension in a server's ServerHello,
@@ -4920,7 +4952,7 @@ last `ROLE=server` stub, as the entry said it would.
   table for speed.
 - See [decisions: Engineering](decisions.md#engineering), entry 155.
 
-### INV-26 — AES sees three public keys, and traffic keys only under a suite build
+### INV-26 — AES sees three public keys, and traffic keys and the profile's ticket key only under a suite build
 
 - **Claim.** Under `TRANSPORT=quic-nonblocking` this tree carries an AES-128, and
   every key it is given is public. `aes.c` derives the keys and
@@ -5003,7 +5035,13 @@ last `ROLE=server` stub, as the entry said it would.
   `TRANSPORT=quic-nonblocking` `quic_packet.c`'s packet protection key and header
   protection key for the Handshake and 1-RTT levels (RFC 9001 §5.3,
   §5.4.3). The Initial level keeps AES-128-GCM under its public keys in
-  every build. Three things bound the traffic keys. `ct.h` refuses the
+  every build. A `PROFILE=cnsa2` server adds one more secret key, its
+  `ch_srv_cfg.ticket_key`: `srv_ticket.c` seals and opens each ticket
+  under AES-256-GCM with it (docs/decisions.md 162). That object is a
+  host object alone, and every init call refuses a session without
+  `CH_CPU_CONSTANT_TIME_AES`, so the key runs on the instructions under
+  the caller's statement, as the traffic keys do. `srv_ticket.c` expands
+  it on its own frame for one call and wipes it there. Three things bound the traffic keys. `ct.h` refuses the
   define unless the build is a host object, whose sessions run AES-GCM
   only under their caller's `CH_CPU_CONSTANT_TIME_AES`, the caller
   stating that this CPU's AES instructions and its carry-less multiply
@@ -5038,7 +5076,8 @@ last `ROLE=server` stub, as the entry said it would.
   headers give a key a body: `aes_public_key.h` for `aes_public_key`, which
   `aes.c`, `quic_initial.c`, `quic_retry.c` and `gcm.c`
   include, and `aes_traffic_key.h` for `aes_traffic_key`, which
-  `aes.c`, `gcm.c`, `record.c` and `quic_packet.c` include.
+  `aes.c`, `gcm.c`, `record.c`, `quic_packet.c` and `srv_ticket.c`
+  include.
   `tools/quic-footprint.py` holds each list, and `make
   lint-quic-surface` fails on any other reader. `gcm.c` reads the
   round keys out of either key type to run the AEAD. What holds is the
@@ -5048,7 +5087,11 @@ last `ROLE=server` stub, as the entry said it would.
   outside the public-key callers, and
   `inv-26-aes-traffic-keys-only` matches every call into the
   `aes_traffic_` and `gcm_traffic_` families outside `record.c`,
-  `quic_keys.c` and `quic_packet.c`.
+  `quic_keys.c`, `quic_packet.c` and `srv_ticket.c`.
+  `inv26-ticket-key-in-resume` names a traffic entry in `srv_resume.c`
+  and requires `test/lint-invariants.sh` to fail, and
+  `inv26-ticket-key-header-in-resume` includes `aes_traffic_key.h` there
+  and requires `test/lint-quic-surface.sh` to fail.
 
   A TLS cipher suite whose AEAD is AES-GCM encrypts application data
   under `hkdf_expand_label(hash_len, secret, "key", ...)` over a traffic

@@ -12,6 +12,10 @@ const c = chapulin.c;
 const has_server = @hasField(c.ch_cfg, "srv");
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_cpu = @hasField(c.ch_cfg, "cpu");
+// The key call each server role's object exports: the P-256 one, or the
+// ML-DSA-87 one in a PROFILE=cnsa2 server (docs/decisions.md 162).
+const has_p256_key = has_server and @hasDecl(c, "ch_p256_key_from_pem");
+const has_mldsa_key = has_server and @hasDecl(c, "ch_mldsa_key_from_pem");
 
 /// A server's certificate chain, decoded from a PEM file by ch_chain_from_pem into the caller's
 /// rooms. certs is the start of the caller's entries that the call filled. Each entry points into
@@ -42,7 +46,7 @@ pub const Chain = if (has_server) struct {
 /// which EcdsaP256Identity.private_key and public_key point at. The scalar is a secret: wipe zeroes
 /// it once no session uses it. The program wipes the key file's text after fromPem returns, on
 /// success and on error.
-pub const EcdsaP256Key = if (has_server) struct {
+pub const EcdsaP256Key = if (has_p256_key) struct {
     private_key: [32]u8 = undefined,
     public_key: [64]u8 = undefined,
 
@@ -61,7 +65,29 @@ pub const EcdsaP256Key = if (has_server) struct {
     pub fn wipe(self: *@This()) void {
         std.crypto.secureZero(u8, &self.private_key);
     }
-} else @compileError("EcdsaP256Key needs ROLE=server or ROLE=both");
+} else @compileError("EcdsaP256Key needs ROLE=server or ROLE=both outside PROFILE=cnsa2");
+
+/// An ML-DSA-87 key pair, expanded from a PEM file's 32-byte seed by ch_mldsa_key_from_pem:
+/// the secret and public keys MlDsa87Identity.private_key and public_key point at. The secret
+/// key is a secret: wipe zeroes it once no session uses it.
+pub const MlDsa87Key = if (has_mldsa_key) struct {
+    private_key: [4896]u8 = undefined,
+    public_key: [2592]u8 = undefined,
+
+    /// ch_mldsa_key_from_pem: one PRIVATE KEY block, a PKCS #8 OneAsymmetricKey of
+    /// id-ml-dsa-87 in the seed form or the both form. leaf, the end-entity certificate's DER,
+    /// carries the public key. cpu is the value a session's Server.cpu takes, where null is
+    /// refused. error.Invalid for a cpu, a file or a leaf that pem_files.h refuses, and both
+    /// fields are then zero.
+    pub fn fromPem(self: *@This(), cpu: ?chapulin.Cpu, pem: []const u8, leaf: []const u8) error{Invalid}!void {
+        return chapulin.fromCode(error{Invalid}, c.ch_mldsa_key_from_pem(chapulin.cpuBits(cpu), pem.ptr, pem.len, leaf.ptr, leaf.len, &self.private_key, &self.public_key));
+    }
+
+    /// Writes zero over the secret key, through a write the compiler keeps.
+    pub fn wipe(self: *@This()) void {
+        std.crypto.secureZero(u8, &self.private_key);
+    }
+} else @compileError("MlDsa87Key needs PROFILE=cnsa2 ROLE=server");
 
 /// A client's trust anchors, decoded from a CA bundle by ch_anchors_from_pem into the caller's
 /// rooms. anchors is the start of the caller's entries that the call filled. Each entry points into

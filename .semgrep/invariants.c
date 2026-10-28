@@ -174,7 +174,7 @@ int use_everything(void) {
 // reads no path list here, so it fires on every call below.
 
 // ok: inv-4-randomness-calls
-void srv_begin(uint8_t *priv) {
+void srv_kex_begin(uint8_t *priv) {
     // ruleid: inv-4-randomness-files
     rand_draw(0, priv, 32);
 }

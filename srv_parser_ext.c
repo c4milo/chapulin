@@ -87,12 +87,19 @@ static int read_signature_algorithms(rbuf *e, hello_parse *p) {
     }
     for (size_t i = 0; i < list_len; i += 2) {
         uint16_t scheme = rb_u16(e);
+#ifdef CH_PROFILE_CNSA2
+        // The profile's one scheme (srv_parser.h).
+        if (scheme == SIGALG_MLDSA87) {
+            p->ch->sigalgs |= SRV_SIGALG_MLDSA87;
+        }
+#else
         if (scheme == SIGALG_ECDSA_P256_SHA256) {
             p->ch->sigalgs |= SRV_SIGALG_ECDSA_P256;
         }
         if (scheme == SIGALG_RSA_PSS_RSAE_SHA256) {
             p->ch->sigalgs |= SRV_SIGALG_RSA_PSS;
         }
+#endif
     }
     return CH_OK;
 }
@@ -285,12 +292,19 @@ static int read_psk_modes(rbuf *e, hello_parse *p) {
 // The key_exchange length of the group whose bit is bit: X25519_LEN for
 // x25519, CH_HYBRID_CLIENT_SHARE for X25519MLKEM768, and P256_POINT_LEN
 // for secp256r1, the uncompressed point of RFC 9846 §4.3.8.2
-// (rfc9846.txt:2261-2275). bit is one srv_group_bit returned.
+// (rfc9846.txt:2261-2275). bit is one srv_group_bit returned. A
+// PROFILE=cnsa2 server holds ML-KEM-1024 alone, whose share is the
+// MLKEM_EK_LEN-byte encapsulation key.
 static size_t share_len_of(uint8_t bit) {
+#ifdef CH_PROFILE_CNSA2
+    (void)bit;
+    return MLKEM_EK_LEN;
+#else
     if (bit == SRV_GROUP_X25519MLKEM768) {
         return CH_HYBRID_CLIENT_SHARE;
     }
     return bit == SRV_GROUP_SECP256R1 ? P256_POINT_LEN : X25519_LEN;
+#endif
 }
 
 // One KeyShareEntry for a group this build holds, whose bit is bit. Its
@@ -311,6 +325,9 @@ static int take_share(hello_parse *p, uint8_t bit, const uint8_t *share, size_t 
         return CH_OK;
     }
     p->ch->shares |= bit;
+#ifdef CH_PROFILE_CNSA2
+    p->ch->mlkem_share = share;
+#else
     if (bit == SRV_GROUP_X25519MLKEM768) {
         p->ch->hybrid_share = share;
     } else if (bit == SRV_GROUP_SECP256R1) {
@@ -318,6 +335,7 @@ static int take_share(hello_parse *p, uint8_t bit, const uint8_t *share, size_t 
     } else {
         p->ch->x25519_share = share;
     }
+#endif
     return CH_OK;
 }
 

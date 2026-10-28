@@ -163,7 +163,7 @@ KEY_HOLDERS = ("aes.c", "quic_initial.c", "quic_retry.c", "gcm.c")
 # and not aes_public_key.h, so a traffic-key holder cannot build a public
 # key.
 TRAFFIC_KEY_HEADER = "aes_traffic_key.h"
-TRAFFIC_KEY_HOLDERS = ("aes.c", "gcm.c", "record.c", "quic_packet.c")
+TRAFFIC_KEY_HOLDERS = ("aes.c", "gcm.c", "record.c", "quic_packet.c", "srv_ticket.c")
 
 # The round keys both key types are built on. Two headers include it and
 # no root source does, so a file reaches a schedule's body only through a

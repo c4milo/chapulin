@@ -11,7 +11,7 @@ reason: the server init calls of a host object stop asking for the
 #ifdef CH_CPU_RUNTIME
     // The caller's description of its CPU, which picks what this session
     // runs (cpu_cfg.h), before any rule that reads it.
-    if (!cpu_bits_ok(cfg)) {
+    if (!cpu_bits_ok(cfg) || !profile_cpu_ok(cfg)) {
         return 0;
     }
 #endif

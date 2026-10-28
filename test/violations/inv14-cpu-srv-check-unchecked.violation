@@ -10,7 +10,7 @@ reason: ch_srv_check stops asking for the caller's description of its
 #ifdef CH_CPU_RUNTIME
     // Every init call refuses this description of the CPU, so the check
     // refuses it too, before either identity signs.
-    if (!cpu_bits_ok(cfg)) {
+    if (!cpu_bits_ok(cfg) || !profile_cpu_ok(cfg)) {
         return CH_EINVAL;
     }
 #endif

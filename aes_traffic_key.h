@@ -12,8 +12,8 @@
 // name says what it holds, and the compiler decides which call sites may
 // hold which key rather than a reviewer.
 //
-// Four sources include this header, and tools/quic-footprint.py fails on
-// a fifth:
+// Five sources include this header, and tools/quic-footprint.py fails on
+// a sixth:
 //
 //   aes.c          writes aes_traffic_key_init and the block entry, and in
 //                  a host object stores and loads a schedule's bytes
@@ -23,6 +23,8 @@
 //   quic_packet.c  builds one per QUIC packet from quic_keys' key bytes,
 //                  and one per header protection mask from quic_hp_key's,
 //                  or in a host object from their stored schedules
+//   srv_ticket.c   builds one per ticket from a PROFILE=cnsa2 server's
+//                  ticket_key (docs/decisions.md 162)
 //
 // A stored schedule is bytes, SUITE_AES_SCHEDULE_LEN of them (suite.h),
 // so this body stays out of the headers that hold one, and quic_keys.c

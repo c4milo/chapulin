@@ -11,8 +11,8 @@ reason: the server ignores the verdict of FIPS 203 section 7.2's modulus
 
 --- old
     int refused = mlkem_encaps_derand_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), share,
-                                          h->mlkem_ss, ch->hybrid_share, m);
+                                          h->mlkem_ss, key, m);
 --- new
     int refused = 0;
     (void)mlkem_encaps_derand_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), share,
-                                  h->mlkem_ss, ch->hybrid_share, m);
+                                  h->mlkem_ss, key, m);

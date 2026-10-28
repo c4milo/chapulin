@@ -18,8 +18,15 @@
 #include "x25519.h"
 
 // Longest HelloRetryRequest cookie we echo; anything larger is a
-// protocol error.
+// protocol error. Under PROFILE=cnsa2 it is 133, the cookie the profile's
+// server mints under HMAC-SHA-384 (srv_cookie.h), so the profile's client
+// echoes it and the server's handshake state holds it (docs/decisions.md
+// 162).
+#ifdef CH_PROFILE_CNSA2
+#define HSP_COOKIE_MAX 133
+#else
 #define HSP_COOKIE_MAX 128
+#endif
 
 // The ServerHello.random value that marks a HelloRetryRequest
 // (RFC 9846 §4.2.3).

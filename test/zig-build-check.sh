@@ -136,6 +136,7 @@ configs=(
     "quic-interop|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=raw-ecdsa SUITE=aesgcm KEYLOG=on|"
     "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
     "record-aes|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm|"
+    "cnsa2-server|RAND=extern PROFILE=cnsa2 ROLE=server TRUST=none|"
 )
 # The configuration of every other lib-check build in check, in its order,
 # so every value of every axis meets build.zig at least once. The server
@@ -165,6 +166,8 @@ roster=(
     "server-quic-keylog|RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on|"
     "server-aes|RAND=extern ROLE=server TRUST=none SUITE=aesgcm|"
     "server-aes-extern|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=|CH_AES_EXTERN_CONSTANT_TIME"
+    "cnsa2-server-tcp-nonblocking|RAND=extern PROFILE=cnsa2 ROLE=server TRUST=none TRANSPORT=tcp-nonblocking|"
+    "cnsa2-server-quic|RAND=extern PROFILE=cnsa2 ROLE=server TRUST=none TRANSPORT=quic-nonblocking|"
 )
 # Configurations build.zig builds for a target other than this machine's,
 # with the -D options after the second bar. make builds only for its own
@@ -267,6 +270,8 @@ buildable() {
     case " $1 " in
     *" AES=extern "*) true ;;
     *" SUITE=aesgcm "*) [ -n "$host" ] ;;
+    # The PROFILE=cnsa2 server is a host object alone (docs/decisions.md 162).
+    *" PROFILE=cnsa2 ROLE=server "*) [ -n "$host" ] ;;
     *) true ;;
     esac
 }

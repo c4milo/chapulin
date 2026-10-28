@@ -612,29 +612,10 @@ COPIES = {
 # Root sources that no build packages yet, each with the commit that will
 # package it. The check that every root source is shipped skips them, and
 # each must still be compiled by a harness under the `full` check set. An
-# entry is stale, and fails, once a build in BUILDS packages its file.
-NOT_YET_PACKAGED = {
-    "mldsa_signer.c": (
-        "ML-DSA-87 key generation and signing (docs/decisions.md 159). Test binaries alone "
-        "compile it until the PROFILE=cnsa2 server role packages it."
-    ),
-    "mldsa_sign_round.c": (
-        "One round of ML-DSA-87's rejection loop, which mldsa_signer.c calls. It is packaged "
-        "with mldsa_signer.c."
-    ),
-    "mldsa_sign_steps.c": (
-        "The steps of one round of ML-DSA-87's rejection loop, which mldsa_sign_round.c "
-        "calls. It is packaged with mldsa_signer.c."
-    ),
-    "mldsa_sign_poly.c": (
-        "ML-DSA-87 signing's constant-time ring arithmetic, which mldsa_signer.c calls. It is "
-        "packaged with mldsa_signer.c."
-    ),
-    "mldsa_sign_pack.c": (
-        "ML-DSA-87 signing's encodings and samplers, which mldsa_signer.c calls. It is packaged "
-        "with mldsa_signer.c."
-    ),
-}
+# entry is stale, and fails, once a build in BUILDS packages its file. The
+# PROFILE=cnsa2 server packages the five ML-DSA-87 signer files
+# (docs/decisions.md 162), so the map is empty.
+NOT_YET_PACKAGED = {}
 
 
 # The two forms a stub body's marker takes, and the same pattern the

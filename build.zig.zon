@@ -283,6 +283,8 @@
         "srv_kex.h",
         "srv_message.c",
         "srv_message.h",
+        "srv_mldsa.c",
+        "srv_mldsa.h",
         "srv_out.c",
         "srv_out.h",
         "srv_parser.c",

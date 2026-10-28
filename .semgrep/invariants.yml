@@ -348,49 +348,52 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-4: randomness is consumed at eleven audited sites, all in six
+      INV-4: randomness is consumed at twelve audited sites, all in seven
       files: handshake_flight.c, handshake_groups.c, srv_flight.c,
-      srv_kex.c, srv_resume.c and srv_auth.c. This rule refuses a
-      rand_draw call in any other file; inv-4-randomness-calls holds the
-      count inside those six. A new call site needs its own seeding
+      srv_kex.c, srv_resume.c, srv_auth.c and srv_mldsa.c. This rule
+      refuses a rand_draw call in any other file; inv-4-randomness-calls
+      holds the count inside those seven. A new call site needs its own seeding
       audit — amend docs/invariants.md in the same PR. rand_draw.h is
       excluded because it defines rand_draw, not because it may call it.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, rand_draw.h, handshake_flight.c,
-                handshake_groups.c, srv_auth.c, srv_flight.c, srv_kex.c, srv_resume.c]
+                handshake_groups.c, srv_auth.c, srv_flight.c, srv_kex.c, srv_resume.c,
+                srv_mldsa.c]
     pattern: rand_draw(...)
 
   - id: inv-4-randomness-calls
     languages: [c]
     severity: ERROR
     message: >-
-      INV-4: the eleven rand_draw calls in the six files
-      inv-4-randomness-files admits sit in nine functions. hsf_begin
+      INV-4: the twelve rand_draw calls in the seven files
+      inv-4-randomness-files admits sit in ten functions. hsf_begin
       (handshake_flight.c) holds three: the key-share scalar, the
-      ClientHello random and the ML-KEM seed. Each of the other eight
-      holds one: draw_p256_key (handshake_groups.c), srv_begin and
-      srv_send_server_hello (srv_flight.c), encapsulate and p256_share
-      (srv_kex.c), srv_send_new_session_ticket (srv_resume.c), and
-      sign_rsa_pss and sign_ecdsa (srv_auth.c). A call in any other
-      function, a second call in one of the eight or a fourth in
-      hsf_begin is a new site. It needs its own seeding audit — amend
+      ClientHello random and the ML-KEM seed. Each of the other nine
+      holds one: draw_p256_key (handshake_groups.c),
+      srv_send_server_hello (srv_flight.c), srv_kex_begin, encapsulate
+      and p256_share (srv_kex.c), srv_send_new_session_ticket
+      (srv_resume.c), sign_rsa_pss and sign_ecdsa (srv_auth.c), and
+      sign_content (srv_mldsa.c), the ML-DSA-87 hedge of the
+      PROFILE=cnsa2 server. A call in any other function, a second call
+      in one of the nine or a fourth in hsf_begin is a new site. It needs its own seeding audit — amend
       docs/invariants.md in the same PR.
     paths:
       include: [handshake_flight.c, handshake_groups.c, srv_auth.c, srv_flight.c, srv_kex.c,
-                srv_resume.c]
+                srv_resume.c, srv_mldsa.c]
     pattern-either:
       # A call outside the nine functions.
       - patterns:
           - pattern: rand_draw(...)
           - pattern-not-inside: '$T hsf_begin(...) { ... }'
           - pattern-not-inside: '$T draw_p256_key(...) { ... }'
-          - pattern-not-inside: '$T srv_begin(...) { ... }'
+          - pattern-not-inside: '$T srv_kex_begin(...) { ... }'
           - pattern-not-inside: '$T srv_send_server_hello(...) { ... }'
           - pattern-not-inside: '$T encapsulate(...) { ... }'
           - pattern-not-inside: '$T p256_share(...) { ... }'
           - pattern-not-inside: '$T srv_send_new_session_ticket(...) { ... }'
           - pattern-not-inside: '$T sign_rsa_pss(...) { ... }'
           - pattern-not-inside: '$T sign_ecdsa(...) { ... }'
+          - pattern-not-inside: '$T sign_content(...) { ... }'
       # A function other than hsf_begin that holds two calls. Inside a
       # function body, `...` also matches statements nested in a branch,
       # a loop or a block, so the two calls match wherever they sit.
@@ -550,10 +553,12 @@ rules:
       TLS key schedule derives and which are secret, and every entry that
       takes one begins aes_traffic_ or gcm_traffic_. record.c, which
       protects TLS records, quic_packet.c, which protects QUIC
-      Handshake and 1-RTT packets and their headers, and quic_keys.c,
+      Handshake and 1-RTT packets and their headers, quic_keys.c,
       which stores each QUIC key's schedule through
       aes_traffic_key_store in a host object (docs/decisions.md 160),
-      are the three library sources that may name them; aes.c and gcm.c are excluded
+      and srv_ticket.c, which seals a PROFILE=cnsa2 server's tickets
+      under AES-256-GCM with ch_srv_cfg.ticket_key (docs/decisions.md
+      162), are the four library sources that may name them; aes.c and gcm.c are excluded
       as the definition sites. ct.h refuses that build unless it is a
       host object, whose caller states the instructions' timing in
       ch_cfg.cpu, or takes AES=extern and asserts the peripheral's
@@ -565,7 +570,7 @@ rules:
       key on a path nobody reviewed for it. Tripwire grade, as above.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c,
-                quic_packet.c, quic_keys.c, aes.c, gcm.c]
+                quic_packet.c, quic_keys.c, srv_ticket.c, aes.c, gcm.c]
     pattern-either:
       - patterns:
           - pattern: $F(...)

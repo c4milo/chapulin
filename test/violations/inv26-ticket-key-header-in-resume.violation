@@ -1,0 +1,13 @@
+invariant: INV-26
+file: srv_resume.c
+catches: test/lint-quic-surface.sh
+reason: srv_resume.c includes aes_traffic_key.h, the one header that gives
+  the traffic key a body, so the file that selects a ticket could expand
+  ticket_key itself on a path nobody reviewed. srv_ticket.c is the fifth
+  file the header names, and tools/quic-footprint.py fails on a sixth.
+
+--- old
+#include "widemul.h"
+--- new
+#include "widemul.h"
+#include "aes_traffic_key.h"

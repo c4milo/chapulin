@@ -23,6 +23,10 @@ pub const quic = @import("chapulin_quic.zig");
 // Each header declares a call only in the objects that define it.
 const has_client = @hasDecl(c, "ch_connect") or @hasDecl(c, "ch_record_init") or @hasDecl(c, "ch_quic_init");
 const has_server = @hasField(c.ch_cfg, "srv");
+// A PROFILE=cnsa2 server holds one ML-DSA-87 identity in place of the ECDSA
+// and RSA slots (docs/decisions.md 162).
+const has_mldsa_server = has_server and @hasField(c.ch_srv_cfg, "mldsa87");
+const has_classic_server = has_server and !has_mldsa_server;
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
 const has_suite_order = has_server and @hasField(c.ch_srv_cfg, "cipher_suites");
@@ -251,20 +255,21 @@ pub const Ticket = @import("chapulin_ticket.zig").Ticket;
 /// places. A server's P-256 key, decoded into the value's own storage (chapulin_pem.zig).
 pub const Chain = @import("chapulin_pem.zig").Chain;
 pub const EcdsaP256Key = @import("chapulin_pem.zig").EcdsaP256Key;
+pub const MlDsa87Key = @import("chapulin_pem.zig").MlDsa87Key;
 pub const Anchors = @import("chapulin_pem.zig").Anchors;
 
 /// An ecdsa_secp256r1_sha256 identity: srv.ecdsa_p256.
-pub const EcdsaP256Identity = if (has_server) struct {
+pub const EcdsaP256Identity = if (has_classic_server) struct {
     /// DER certificates, leaf first: chain, chain_count.
     chain: []const c.ch_cert,
     /// The leaf's point X||Y: pub, pub_len.
     public_key: *const [64]u8,
     /// The private scalar, big-endian: priv, priv_len.
     private_key: *const [32]u8,
-} else @compileError("EcdsaP256Identity needs ROLE=server or ROLE=both");
+} else @compileError("EcdsaP256Identity needs ROLE=server or ROLE=both outside PROFILE=cnsa2");
 
 /// An rsa_pss_rsae_sha256 identity: srv.rsa_pss.
-pub const RsaPssIdentity = if (has_server) struct {
+pub const RsaPssIdentity = if (has_classic_server) struct {
     /// DER certificates, leaf first: chain, chain_count.
     chain: []const c.ch_cert,
     /// The modulus, big-endian: pub, pub_len.
@@ -272,15 +277,28 @@ pub const RsaPssIdentity = if (has_server) struct {
     /// The modulus and the private exponent, and in a host object the five
     /// integers of the CRT (rsa_sign.h): priv, priv_len = @sizeOf(c.ch_rsa_priv).
     private_key: *const c.ch_rsa_priv,
-} else @compileError("RsaPssIdentity needs ROLE=server or ROLE=both");
+} else @compileError("RsaPssIdentity needs ROLE=server or ROLE=both outside PROFILE=cnsa2");
+
+/// An mldsa87 identity, a PROFILE=cnsa2 server's one: srv.mldsa87. MlDsa87Key.fromPem
+/// writes both keys.
+pub const MlDsa87Identity = if (has_mldsa_server) struct {
+    /// DER certificates, leaf first: chain, chain_count.
+    chain: []const c.ch_cert,
+    /// The ML-DSA-87 public key: pub, pub_len.
+    public_key: *const [2592]u8,
+    /// The expanded ML-DSA-87 secret key: priv, priv_len.
+    private_key: *const [4896]u8,
+} else @compileError("MlDsa87Identity needs PROFILE=cnsa2 ROLE=server");
 
 /// What a server sets. Every slice and pointer is borrowed and must outlive the session.
 pub const Server = if (has_server) ServerValues else @compileError("Server needs ROLE=server or ROLE=both");
 const ServerValues = struct {
-    /// srv.ecdsa_p256; null leaves the slot unprovisioned.
-    ecdsa_p256: ?EcdsaP256Identity = null,
-    /// srv.rsa_pss; null leaves the slot unprovisioned.
-    rsa_pss: ?RsaPssIdentity = null,
+    /// srv.ecdsa_p256; null leaves the slot unprovisioned. void under PROFILE=cnsa2.
+    ecdsa_p256: if (has_classic_server) ?EcdsaP256Identity else void = if (has_classic_server) null else {},
+    /// srv.rsa_pss; null leaves the slot unprovisioned. void under PROFILE=cnsa2.
+    rsa_pss: if (has_classic_server) ?RsaPssIdentity else void = if (has_classic_server) null else {},
+    /// srv.mldsa87, under PROFILE=cnsa2 alone; null leaves the slot unprovisioned.
+    mldsa87: if (has_mldsa_server) ?MlDsa87Identity else void = if (has_mldsa_server) null else {},
     /// The HelloRetryRequest cookie key: srv.cookie_key.
     cookie_key: *const [c.CH_SRV_COOKIE_KEY_LEN]u8,
     /// The key tickets are sealed under, null for no tickets: srv.ticket_key.
@@ -306,11 +324,8 @@ const ServerValues = struct {
     /// What the caller states about its CPU, in a host object alone, as Client.cpu is.
     cpu: if (has_cpu) ?Cpu else void = if (has_cpu) null else {},
 
-    /// The ch_cfg these values set, which a session's init completes as it
-    /// completes Client.toCfg's. error.Invalid for a chain longer than
-    /// chain_count's u8 holds, the width of a C field.
-    pub fn toCfg(values: ServerValues) error{Invalid}!c.ch_cfg {
-        var cfg = std.mem.zeroes(c.ch_cfg);
+    /// The ECDSA and RSA slots of every server outside PROFILE=cnsa2.
+    fn setClassicIdentities(cfg: *c.ch_cfg, values: ServerValues) error{Invalid}!void {
         if (values.ecdsa_p256) |id| cfg.srv.ecdsa_p256 = .{
             .chain = id.chain.ptr,
             .chain_count = std.math.cast(u8, id.chain.len) orelse return error.Invalid,
@@ -327,6 +342,24 @@ const ServerValues = struct {
             .@"pub" = id.public_key.ptr,
             .pub_len = id.public_key.len,
         };
+    }
+
+    /// The ch_cfg these values set, which a session's init completes as it
+    /// completes Client.toCfg's. error.Invalid for a chain longer than
+    /// chain_count's u8 holds, the width of a C field.
+    pub fn toCfg(values: ServerValues) error{Invalid}!c.ch_cfg {
+        var cfg = std.mem.zeroes(c.ch_cfg);
+        if (has_mldsa_server) {
+            if (values.mldsa87) |id| cfg.srv.mldsa87 = .{
+                .chain = id.chain.ptr,
+                .chain_count = std.math.cast(u8, id.chain.len) orelse return error.Invalid,
+                .priv = id.private_key,
+                .priv_len = id.private_key.len,
+                .@"pub" = id.public_key,
+                .pub_len = id.public_key.len,
+            };
+        }
+        if (has_classic_server) try setClassicIdentities(&cfg, values);
         cfg.srv.cookie_key = values.cookie_key;
         cfg.srv.ticket_key = if (values.ticket_key) |key| key else null;
         if (values.clock) |clock| setClock(&cfg, clock);

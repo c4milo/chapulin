@@ -1,0 +1,12 @@
+invariant: INV-64
+file: srv_cookie.c
+catches: cnsa2_server_test
+reason: the profile's server keys its HelloRetryRequest cookie with
+  HMAC-SHA-256 and leaves the last 16 bytes of the 48-byte MAC as the
+  frame held them. test_cookie computes HMAC-SHA-384 over the body itself
+  and requires the cookie's last 48 bytes to be that MAC.
+
+--- old
+    hmac_sha384(key, CH_SRV_COOKIE_KEY_LEN, msg, n, mac);
+--- new
+    hmac_sha256(key, CH_SRV_COOKIE_KEY_LEN, msg, n, mac);

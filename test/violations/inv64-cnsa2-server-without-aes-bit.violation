@@ -1,0 +1,13 @@
+invariant: INV-64
+file: srv.c
+catches: cnsa2_server_test
+reason: the profile's server takes a ch_cfg.cpu that holds CH_CPU_PROBED
+  alone, so a session without the caller's AES statement would run
+  AES-256-GCM, the profile's one suite, and its tickets, on instructions
+  nobody stated the timing of. test_identity_and_cpu requires
+  srv_config_ok and ch_srv_check to refuse that value.
+
+--- old
+    return (cfg->cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
+--- new
+    return (cfg->cpu & CH_CPU_PROBED) != 0;

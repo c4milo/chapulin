@@ -96,8 +96,9 @@ const quic_srcs_after_aes = [_][]const u8{
 };
 const srv_srcs = [_][]const u8{
     "srv_ticket.c", "srv_parser.c", "srv_parser_ext.c", "srv_message.c",
-    "srv_cookie.c", "srv_auth.c",   "srv_out.c",        "srv_resume.c",
-    "srv_kex.c",    "srv_flight.c", "srv_handshake.c",  "srv.c",
+    "srv_cookie.c", "srv_auth.c",   "srv_mldsa.c",      "srv_out.c",
+    "srv_resume.c", "srv_kex.c",    "srv_flight.c",     "srv_handshake.c",
+    "srv.c",
 };
 const client_replaced = [_][]const u8{
     "handshake.c",           "handshake_auth.c",    "handshake_parser.c",
@@ -115,6 +116,11 @@ const kex_hybrid_srcs = [_][]const u8{ "sha3.c", "mlkem.c", "mlkem_poly.c" };
 /// MLDSA_SRCS: ML-DSA-87's verifier, which TRUST=raw-mldsa and
 /// TRUST=ca-mldsa add (docs/decisions.md 157).
 const mldsa_srcs = [_][]const u8{ "mldsa.c", "mldsa_poly.c" };
+/// MLDSA_SIGN_SRCS: ML-DSA-87's signer, which the PROFILE=cnsa2 server adds
+/// (docs/decisions.md 159 and 162).
+const mldsa_sign_srcs = [_][]const u8{
+    "mldsa_signer.c", "mldsa_sign_round.c", "mldsa_sign_steps.c", "mldsa_sign_poly.c", "mldsa_sign_pack.c",
+};
 /// WIDEMUL_COPIED: the files built on ct.h's widening multiply that a
 /// host object compiles a second time, as <file>_native.c. x25519.c,
 /// p256_field.c, p256_scalar.c and rsa_sign.c are not among them: their
@@ -191,6 +197,9 @@ const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_writable_len", 
 /// The PEM calls that a server role exports, and the one that a
 /// TRUST=webpki object exports (pem_files.h).
 const public_pem_server = [_][]const u8{ "ch_chain_from_pem", "ch_p256_key_from_pem" };
+/// A PROFILE=cnsa2 server exports the ML-DSA-87 key call in the P-256 one's
+/// place (docs/decisions.md 162).
+const public_pem_server_cnsa2 = [_][]const u8{ "ch_chain_from_pem", "ch_mldsa_key_from_pem" };
 const public_pem_webpki = [_][]const u8{"ch_anchors_from_pem"};
 
 /// One header and the names it declares.
@@ -213,7 +222,7 @@ const declarations = [_]Declaration{
     .{ .header = "srv_quic.h", .names = &.{ "ch_srv_quic_init", "ch_srv_quic_crypto_in", "ch_srv_quic_retry_tag" } },
     .{ .header = "quic_token.h", .names = &.{ "ch_srv_quic_token_mint", "ch_srv_quic_token_check" } },
     .{ .header = "x509_ca.h", .names = &.{"ch_pubkey_from_pem"} },
-    .{ .header = "pem_files.h", .names = &(public_pem_server ++ public_pem_webpki) },
+    .{ .header = "pem_files.h", .names = &(public_pem_server ++ [_][]const u8{"ch_mldsa_key_from_pem"} ++ public_pem_webpki) },
     .{ .header = "ticket.h", .names = &public_ticket },
     .{ .header = "alert.h", .names = &public_alert },
     .{ .header = "drbg.h", .names = &.{"ch_drbg_seed"} },
@@ -413,10 +422,10 @@ fn refuseUnbuildable(config: Config) void {
     if (config.suite == .aesgcm and config.role == .client and config.profile == .general and config.trust != .webpki) {
         fatal("SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server, ROLE=both or PROFILE=cnsa2", .{});
     }
-    if (config.profile == .cnsa2 and !deviceClient(config)) {
-        fatal("PROFILE=cnsa2 is a raw or ca client's profile: TRUST={t} ROLE={t} is not one (docs/decisions.md 151)", .{ config.trust, config.role });
+    if (config.profile == .cnsa2 and !deviceClient(config) and !cnsa2Server(config)) {
+        fatal("PROFILE=cnsa2 is a raw or ca client's profile or a server's: TRUST={t} ROLE={t} is neither (docs/decisions.md 151 and 162)", .{ config.trust, config.role });
     }
-    if (config.profile == .cnsa2 and config.aes != .@"extern") {
+    if (config.profile == .cnsa2 and deviceClient(config) and config.aes != .@"extern") {
         fatal("PROFILE=cnsa2 runs AES-256 on a device object: use AES=extern, with -DCH_AES_EXTERN_CONSTANT_TIME in CFLAGS", .{});
     }
     if (config.tx_record) |text| {
@@ -521,6 +530,11 @@ fn withEvex512(b: *std.Build, config: Config, target: std.Build.ResolvedTarget) 
     return b.resolveTargetQuery(query);
 }
 
+/// The PROFILE=cnsa2 server (docs/decisions.md 162), a host object alone.
+fn cnsa2Server(config: Config) bool {
+    return config.profile == .cnsa2 and config.role == .server;
+}
+
 /// A raw or ca client: the one build whose key exchange KEX chooses, and
 /// the one product that builds the portable object on a host target.
 fn deviceClient(config: Config) bool {
@@ -537,6 +551,9 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // ROLE=both on a target that passes the host test. A raw or ca client
     // builds the portable object on every target.
     const host = hostObject(config, target);
+    if (cnsa2Server(config) and !host) {
+        std.process.fatal("PROFILE=cnsa2 ROLE=server is a host object: build it where the compiler targets arm64 or x86-64 with HOST_TARGET set (docs/decisions.md 162)", .{});
+    }
     const aes = config.aes orelse .soft;
     // AES_ADD: a host object holds the AES instructions, and a QUIC one the
     // table beside them for the public keys of a session whose caller did
@@ -555,7 +572,8 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     var transport = transportAxis(b, config.transport, aes_quic_impl);
     const role = roleAxis(b, config, &transport);
     // ROLE=both keeps both verifiers, whatever the client half pins.
-    const pin_filter: Names = if (config.role == .both) &.{} else pinFilter(config.trust);
+    // A PROFILE=cnsa2 server holds neither the RSA nor the P-256 verifier.
+    const pin_filter: Names = if (cnsa2Server(config)) &.{ "rsa.c", "rsa_mont.c", "p256.c" } else if (config.role == .both) &.{} else pinFilter(config.trust);
 
     var defs = concat(b, &.{ pinDefs(config.trust), trust.defs, transport.defs, if (host) &.{} else aesDefs(aes), if (config.suite == .aesgcm) &.{"-DCH_SUITE_AES_GCM"} else &.{}, role.defs });
     // LIB_KEPT: SRCS after every axis's filter.
@@ -575,13 +593,13 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
         defs = concat(b, &.{ defs, &.{ "-DCH_PROFILE_CNSA2", "-DCH_MLKEM_1024" } });
         lib_srcs = concat(b, &.{ without(b, lib_srcs, &.{"x25519.c"}), &kex_hybrid_srcs });
     }
-    if (config.kex == .pq or config.trust == .webpki or config.role != .client) lib_srcs = concat(b, &.{ lib_srcs, &kex_hybrid_srcs });
+    if (config.profile != .cnsa2 and (config.kex == .pq or config.trust == .webpki or config.role != .client)) lib_srcs = concat(b, &.{ lib_srcs, &kex_hybrid_srcs });
     // CPU_RUNTIME_DEF: the host object, which each session's ch_cfg.cpu
     // describes the CPU to.
     if (host) defs = concat(b, &.{ defs, &.{"-DCH_CPU_RUNTIME"} });
     // The wide X25519 field, which a session's
     // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks (docs/decisions.md 52 and 89).
-    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{"x25519_wide.c"} });
+    if (host and config.profile != .cnsa2) lib_srcs = concat(b, &.{ lib_srcs, &.{"x25519_wide.c"} });
     // The wide P-256 files, which the same bit picks, in an object that
     // carries the curve (docs/decisions.md 94).
     if (host and contains(lib_srcs, "p256_point.c")) lib_srcs = concat(b, &.{ lib_srcs, &p256_wide_srcs });
@@ -666,7 +684,7 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // PUBLIC_PEM: the chain and the key in every server role, and the CA
     // bundle in every TRUST=webpki object.
     const public_pem = concat(b, &.{
-        if (config.role != .client) &public_pem_server else &.{},
+        if (cnsa2Server(config)) &public_pem_server_cnsa2 else if (config.role != .client) &public_pem_server else &.{},
         if (config.trust == .webpki) &public_pem_webpki else &.{},
     });
     const names = concat(b, &.{ role.public, public_rand, public_ca, public_pem, public_export, &.{"ch_build"} });
@@ -783,10 +801,19 @@ fn roleAxis(b: *std.Build, config: Config, transport: *Axis) Axis {
     if (config.role == .client) return .{ .public = transport.public };
     const server_only = config.role == .server;
     var role = Axis{
-        .defs = if (server_only) &.{"-DCH_ROLE_SERVER"} else &.{ "-DCH_ROLE_SERVER", "-DCH_ROLE_BOTH" },
+        // The profile's server takes CH_SIGN_MLDSA, the define of the object
+        // that signs ML-DSA-87 (pem_files.h), beside its role.
+        .defs = if (cnsa2Server(config)) &.{ "-DCH_ROLE_SERVER", "-DCH_SIGN_MLDSA" } else if (server_only) &.{"-DCH_ROLE_SERVER"} else &.{ "-DCH_ROLE_SERVER", "-DCH_ROLE_BOTH" },
         .filter = if (server_only) &client_replaced else &.{},
     };
-    const driver_swapped = without(b, &server_add, &.{"srv_handshake.c"});
+    // PROFILE=cnsa2's server signs ML-DSA-87 alone and selects ML-KEM-1024
+    // alone, so it holds neither signer nor the P-256 key exchange, and it
+    // holds ML-DSA-87's signer and verifier (docs/decisions.md 162).
+    const base_add: Names = if (cnsa2Server(config))
+        concat(b, &.{ without(b, &server_add, concat(b, &.{ &.{ "rsa_sign.c", "p256_sign.c" }, &p256_ecdh_srcs })), &mldsa_srcs, &mldsa_sign_srcs })
+    else
+        &server_add;
+    const driver_swapped = without(b, base_add, &.{"srv_handshake.c"});
     switch (config.transport) {
         .@"quic-nonblocking" => {
             role.add = concat(b, &.{ driver_swapped, &.{ "srv_quic.c", "quic_token.c" } });
@@ -805,7 +832,7 @@ fn roleAxis(b: *std.Build, config: Config, transport: *Axis) Axis {
                 concat(b, &.{ transport.public, &public_srv_tcp_nonblocking });
         },
         .@"tcp-blocking" => {
-            role.add = &server_add;
+            role.add = base_add;
             role.public = if (server_only)
                 concat(b, &.{ &public_srv_tcp_blocking, &public_session })
             else
@@ -828,7 +855,7 @@ fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
             symbol.* = b.fmt("ch_build_info_{s}", .{suffix});
         } else if (std.mem.eql(u8, name, "ch_srv_check") or std.mem.eql(u8, name, "ch_pubkey_from_pem") or
             std.mem.eql(u8, name, "ch_ticket_obfuscated_age") or contains(&public_alert, name) or
-            contains(&public_pem_server, name) or contains(&public_pem_webpki, name))
+            contains(&public_pem_server, name) or contains(&public_pem_server_cnsa2, name) or contains(&public_pem_webpki, name))
         {
             symbol.* = b.fmt("{s}_{s}", .{ name, suffix });
         } else {

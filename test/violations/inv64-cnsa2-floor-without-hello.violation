@@ -1,0 +1,12 @@
+invariant: INV-64
+file: profile_cfg.h
+catches: cnsa2_server_test
+reason: the profile's server floors its receive buffer at the client's
+  ServerHello, 1,637 bytes, so a buffer at the floor cannot hold the
+  2,174-byte ClientHello the profile's client writes. The test holds the
+  floor at the hello and refuses one byte less.
+
+--- old
+#define CH_PROFILE_KEX_MIN_RXBUF (5 + 2174)
+--- new
+#define CH_PROFILE_KEX_MIN_RXBUF (5 + 4 + 40 + 6 + 1576 + 6)

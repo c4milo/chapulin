@@ -27,6 +27,7 @@
 #include <stdint.h>
 
 #include "cfg.h"
+#include "hkdf.h"
 #include "sha256.h"
 
 // The cookie key: CH_SRV_COOKIE_KEY_LEN bytes of HMAC-SHA-256 key the
@@ -34,7 +35,8 @@
 // the length, because the caller sizes the key by it, and it is one
 // SHA-256 output. One key per deployment, so a second ClientHello that
 // lands on a different session, or on a different device behind a load
-// balancer, still verifies.
+// balancer, still verifies. A PROFILE=cnsa2 server keys HMAC-SHA-384
+// with the same 32 bytes, a 256-bit key.
 _Static_assert(CH_SRV_COOKIE_KEY_LEN == SHA256_LEN, "the cookie key is one SHA-256 output long");
 
 // The first byte of the cookie body: this format's own version number,
@@ -55,20 +57,32 @@ _Static_assert(CH_SRV_COOKIE_KEY_LEN == SHA256_LEN, "the cookie key is one SHA-2
 // The largest cookie this server mints, in bytes: 1 version byte, 2
 // suite bytes, 2 group bytes, SRV_COOKIE_HASH_MAX bytes of
 // Hash(ClientHello1), SHA256_LEN bytes of the frozen-fields digest and
-// SHA256_LEN bytes of MAC. That is 117. A SHA-256 suite mints 101 of
+// SRV_COOKIE_MAC_LEN bytes of MAC. That is 117. A SHA-256 suite mints 101 of
 // those bytes, because the Hash(ClientHello1) term is 16 bytes shorter.
 //
 // Both fit HSP_COOKIE_MAX (handshake_parser.h), which is 128, so the
 // cookie costs the session nothing new: handshake_state already carries
 // uint8_t cookie[HSP_COOKIE_MAX] (handshake_record.h). srv_flight.h
 // asserts the relation, where both constants are visible.
-#define SRV_COOKIE_MAX (1 + 2 + 2 + SRV_COOKIE_HASH_MAX + SHA256_LEN + SHA256_LEN)
+//
+// A PROFILE=cnsa2 server keys the MAC with HMAC-SHA-384, CNSA 2.0's hash,
+// so its MAC is SRV_COOKIE_MAC_LEN = SHA384_LEN bytes, and its one suite
+// hashes with SHA-384. Each cookie it mints is 1 + 2 + 2 + 48 + 32 + 48 =
+// 133 bytes, and handshake_parser.h's HSP_COOKIE_MAX is 133 in that
+// profile's builds (docs/decisions.md 162). Every other build keys it
+// with HMAC-SHA-256.
+#ifdef CH_PROFILE_CNSA2
+#define SRV_COOKIE_MAC_LEN SHA384_LEN
+#else
+#define SRV_COOKIE_MAC_LEN SHA256_LEN
+#endif
+#define SRV_COOKIE_MAX (1 + 2 + 2 + SRV_COOKIE_HASH_MAX + SHA256_LEN + SRV_COOKIE_MAC_LEN)
 
-// Mints one cookie: the body, then HMAC-SHA-256 over that body under
-// key. The body is the version byte, suite and group as two bytes each
-// in network byte order, hash_len bytes of Hash(ClientHello1), and
-// SHA256_LEN bytes of the digest over the fields RFC 9846 §4.2.2
-// freezes (client_hello.frozen, srv_parser.h).
+// Mints one cookie: the body, then SRV_COOKIE_MAC_LEN bytes of HMAC over
+// that body under key, HMAC-SHA-256 or the profile's HMAC-SHA-384. The body is the version byte,
+// suite and group as two bytes each in network byte order, hash_len bytes of Hash(ClientHello1),
+// and SHA256_LEN bytes of the digest over the fields RFC 9846 §4.2.2 freezes (client_hello.frozen,
+// srv_parser.h).
 //
 // Why each term is in the body. Hash(ClientHello1) is what §4.1's
 // synthetic transcript needs (rfc9846.txt:1084-1087). The suite is
@@ -89,7 +103,7 @@ _Static_assert(CH_SRV_COOKIE_KEY_LEN == SHA256_LEN, "the cookie key is one SHA-2
 // overlapping any input.
 //
 // Writes the whole cookie and returns its length in bytes, which is
-// 5 + hash_len + 2 * SHA256_LEN. Returns 0 and writes nothing when cap
+// 5 + hash_len + SHA256_LEN + SRV_COOKIE_MAC_LEN. Returns 0 and writes nothing when cap
 // is below that length or hash_len is outside its range. It draws no
 // randomness: two retries of one ClientHello mint the same bytes, which
 // costs nothing, because the cookie authenticates a message the client
@@ -106,7 +120,7 @@ size_t srv_cookie_mint(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], uint16_t suite,
 // cookie must have. A cookie whose length does not match the suite it
 // names is refused before the MAC runs, so no read goes past n. The MAC
 // is then computed over the body and compared with ct_memeq over all
-// SHA256_LEN bytes.
+// SRV_COOKIE_MAC_LEN bytes.
 //
 // Requires key pointing at CH_SRV_COOKIE_KEY_LEN readable bytes; cookie
 // pointing at n readable bytes, the bytes client_hello.cookie names;

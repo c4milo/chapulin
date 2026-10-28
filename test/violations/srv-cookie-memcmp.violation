@@ -11,6 +11,6 @@ reason: the HelloRetryRequest cookie's MAC is compared with memcmp instead
   catches it.
 
 --- old
-    uint32_t equal = ct_memeq(mac, want_mac, SHA256_LEN);
+    uint32_t equal = ct_memeq(mac, want_mac, SRV_COOKIE_MAC_LEN);
 --- new
-    uint32_t equal = (uint32_t)(memcmp(mac, want_mac, SHA256_LEN) == 0);
+    uint32_t equal = (uint32_t)(memcmp(mac, want_mac, SRV_COOKIE_MAC_LEN) == 0);

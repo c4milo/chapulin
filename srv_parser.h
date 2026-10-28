@@ -86,14 +86,25 @@
 // (rfc9846.txt:4548-4550), and it runs over p256_ecdh.[ch], whose
 // arithmetic is constant time, never over p256.c, which verifies public
 // inputs and branches on them.
+//
+// A PROFILE=cnsa2 server holds one group, ML-KEM-1024
+// (CH_GROUP_MLKEM1024, profile_cfg.h), as SRV_GROUP_MLKEM1024, and none
+// of the other three (docs/decisions.md 162).
+#ifdef CH_PROFILE_CNSA2
+#define SRV_GROUP_MLKEM1024 0x08
+#else
 #define SRV_GROUP_X25519 0x01
 #define SRV_GROUP_X25519MLKEM768 0x02
 #define SRV_GROUP_SECP256R1 0x04
+#endif
 
 // The SRV_GROUP_ bit of a NamedGroup code point, or 0 for a group this
 // build does not hold. It is a predicate over a public value and
 // changes nothing.
 static inline uint8_t srv_group_bit(uint16_t group) {
+#ifdef CH_PROFILE_CNSA2
+    return group == CH_GROUP_MLKEM1024 ? SRV_GROUP_MLKEM1024 : 0;
+#else
     if (group == CH_GROUP_X25519MLKEM768) {
         return SRV_GROUP_X25519MLKEM768;
     }
@@ -101,6 +112,7 @@ static inline uint8_t srv_group_bit(uint16_t group) {
         return SRV_GROUP_SECP256R1;
     }
     return group == CH_GROUP_X25519 ? SRV_GROUP_X25519 : 0;
+#endif
 }
 
 // The signature schemes this build can sign a CertificateVerify with,
@@ -116,8 +128,15 @@ static inline uint8_t srv_group_bit(uint16_t group) {
 // signatures which appear in certificates ... and are not defined for
 // use in signed TLS handshake messages" (rfc9846.txt:1882-1884), so no
 // bit exists for a scheme that can never sign this message.
+//
+// A PROFILE=cnsa2 server signs mldsa87 alone, with its one slot, mldsa87
+// (srv_cfg.h), and holds neither of the two schemes above.
+#ifdef CH_PROFILE_CNSA2
+#define SRV_SIGALG_MLDSA87 0x04
+#else
 #define SRV_SIGALG_ECDSA_P256 0x01
 #define SRV_SIGALG_RSA_PSS 0x02
+#endif
 
 // The recognized extensions, one bit each, in seen. The parser sets a
 // bit when it has read that extension's body, and reads the mask after
@@ -212,9 +231,17 @@ typedef struct {
     // §4.3.8.2). A pointer is set exactly when its bit in shares is. A
     // hello that carried no share for the group srv_select chose is the
     // input a HelloRetryRequest answers.
+    //
+    // A PROFILE=cnsa2 server holds ML-KEM-1024 alone, so it keeps one
+    // pointer, mlkem_share, at the MLKEM_EK_LEN bytes of the
+    // encapsulation key (draft-ietf-tls-mlkem).
+#ifdef CH_PROFILE_CNSA2
+    const uint8_t *mlkem_share;
+#else
     const uint8_t *x25519_share;
     const uint8_t *hybrid_share;
     const uint8_t *p256_share;
+#endif
 
     // The cookie extension the client echoed, which is present only in
     // a second ClientHello (rfc9846.txt:1444). srv_check_retry_hello

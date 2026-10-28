@@ -19,6 +19,17 @@
 // suite fixes.
 #define SRV_COOKIE_HEAD 5
 
+// The cookie's MAC, SRV_COOKIE_MAC_LEN bytes over n bytes at msg: HMAC-SHA-256,
+// and HMAC-SHA-384 in a PROFILE=cnsa2 server (srv_cookie.h).
+static void cookie_mac(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], const uint8_t *msg, size_t n,
+                       uint8_t mac[SRV_COOKIE_MAC_LEN]) {
+#ifdef CH_PROFILE_CNSA2
+    hmac_sha384(key, CH_SRV_COOKIE_KEY_LEN, msg, n, mac);
+#else
+    hmac_sha256(key, CH_SRV_COOKIE_KEY_LEN, msg, n, mac);
+#endif
+}
+
 // The transcript hash length one cipher suite fixes (RFC 9846 §7.1 binds the
 // hash to the suite), in bytes, or 0 for a suite this build does not hold.
 //
@@ -40,7 +51,7 @@ size_t srv_cookie_mint(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], uint16_t suite,
     // The whole cookie's length, checked before the first byte is written,
     // because the contract refuses a short cap having written nothing and the
     // writer would leave a partial body behind.
-    size_t total = SRV_COOKIE_HEAD + hash_len + SHA256_LEN + SHA256_LEN;
+    size_t total = SRV_COOKIE_HEAD + hash_len + SHA256_LEN + SRV_COOKIE_MAC_LEN;
     if (cap < total) {
         return 0;
     }
@@ -57,8 +68,8 @@ size_t srv_cookie_mint(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], uint16_t suite,
     // w.len bytes of out. The MAC goes out in the clear as the cookie's last
     // field, so nothing wipes it.
     const uint8_t *body = out;
-    uint8_t mac[SHA256_LEN];
-    hmac_sha256(key, CH_SRV_COOKIE_KEY_LEN, body, w.len, mac);
+    uint8_t mac[SRV_COOKIE_MAC_LEN];
+    cookie_mac(key, body, w.len, mac);
     wb_bytes(&w, mac, sizeof mac);
 
     // The cap check above is what keeps the writer inside the caller's
@@ -89,7 +100,7 @@ int srv_cookie_open(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], const uint8_t *coo
 
     const uint8_t *body_hash = rb_bytes(&r, body_hash_len);
     const uint8_t *body_frozen = rb_bytes(&r, SHA256_LEN);
-    const uint8_t *mac = rb_bytes(&r, SHA256_LEN);
+    const uint8_t *mac = rb_bytes(&r, SRV_COOKIE_MAC_LEN);
     // INV-25's exact-fill check, and the length check the header promises
     // before the MAC runs: r.err refuses a cookie shorter than the suite
     // fixes, and a byte left over refuses one longer. The reader is bounded
@@ -99,12 +110,13 @@ int srv_cookie_open(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], const uint8_t *coo
     }
 
     // The MAC covers the body, which is every byte before the MAC itself.
-    // ct_memeq compares all SHA256_LEN bytes, so a client cannot search for a
-    // valid MAC one byte per round trip. want_mac is the correct MAC over a
-    // body the client chose, so it is wiped rather than left on the stack.
-    uint8_t want_mac[SHA256_LEN];
-    hmac_sha256(key, CH_SRV_COOKIE_KEY_LEN, cookie, n - SHA256_LEN, want_mac);
-    uint32_t equal = ct_memeq(mac, want_mac, SHA256_LEN);
+    // ct_memeq compares all SRV_COOKIE_MAC_LEN bytes, so a client cannot
+    // search for a valid MAC one byte per round trip. want_mac is the correct
+    // MAC over a body the client chose, so it is wiped rather than left on
+    // the stack.
+    uint8_t want_mac[SRV_COOKIE_MAC_LEN];
+    cookie_mac(key, cookie, n - SRV_COOKIE_MAC_LEN, want_mac);
+    uint32_t equal = ct_memeq(mac, want_mac, SRV_COOKIE_MAC_LEN);
     ct_wipe(want_mac, sizeof want_mac);
     if (equal == 0) {
         return CH_EPROTO;

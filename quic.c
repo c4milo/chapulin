@@ -49,10 +49,9 @@
 // The hello is built whole into t.tx, so that array must hold the
 // largest one this build can emit. session.h repeats CH_HELLO_MAX's
 // QUIC values as the literal CH_TX_HELLO because handshake_message.h
-// sits above it; this is where both constants are visible, so a drift
-// fails the build here rather than shipping. A QUIC build's CH_TX_STAGE
-// is CH_TX_HELLO.
-#ifndef __cplusplus
+// sits above it, so a drift fails the build here. A PROFILE=cnsa2 server
+// builds no ClientHello, and its CH_TX_HELLO holds its ServerHello alone.
+#if !defined(__cplusplus) && !(defined(CH_PROFILE_CNSA2) && defined(CH_ROLE_SERVER))
 _Static_assert(CH_HELLO_MAX <= CH_TX_HELLO, "the largest ClientHello must fit TX staging");
 #endif
 

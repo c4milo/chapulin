@@ -1,0 +1,13 @@
+invariant: INV-64
+file: srv_kex.c
+catches: cnsa2_server_test
+reason: the profile's server selects ML-KEM-1024 for a hello that does not
+  list it, and asks for it with a HelloRetryRequest, where the profile
+  fails such a hello closed. test_selection requires handshake_failure
+  for a hello that lists X25519MLKEM768 or x25519 alone.
+
+--- old
+    return (ch->groups & SRV_GROUP_MLKEM1024) != 0 ? CH_GROUP_MLKEM1024 : 0;
+--- new
+    (void)ch;
+    return CH_GROUP_MLKEM1024;

@@ -20,7 +20,9 @@
 // and, in a host object, rsa_sign64.[ch], and nowhere else.
 #include "srv_auth.h"
 
-#ifdef CH_ROLE_SERVER
+// A PROFILE=cnsa2 server signs ML-DSA-87 alone, and srv_mldsa.c defines
+// srv_auth.h's calls for it (docs/decisions.md 162).
+#if defined(CH_ROLE_SERVER) && !defined(CH_PROFILE_CNSA2)
 
 #include <string.h>
 
@@ -338,4 +340,4 @@ int srv_identity_check(const ch_cfg *cfg, uint16_t sigalg) {
     return CH_OK;
 }
 
-#endif // CH_ROLE_SERVER
+#endif // CH_ROLE_SERVER && !CH_PROFILE_CNSA2

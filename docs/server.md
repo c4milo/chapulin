@@ -3052,6 +3052,35 @@ the P-256 scalar in the handshake state raised that peak to 10,336
 Every server object packages `mlkem.c`, `mlkem_poly.c` and `sha3.c`, and its
 frames are held to the hybrid's 6,656-byte budget (INV-19).
 
+## The PROFILE=cnsa2 server
+
+`PROFILE=cnsa2 ROLE=server TRUST=none` builds a server of CNSA 2.0's
+algorithms alone, on all three transports, as a host object alone
+([decisions.md](decisions.md) 162, INV-64). `ROLE=both` stays refused
+under the profile.
+
+- **Identity.** One slot, `cfg.srv.mldsa87`, in place of `ecdsa_p256`
+  and `rsa_pss`. `ch_mldsa_key_from_pem` expands the key file's 32-byte
+  seed into the 4,896-byte secret key and the 2,592-byte public key the
+  slot points at, and `ch_chain_from_pem` decodes the chain. The object
+  does not export `ch_p256_key_from_pem`.
+- **CertificateVerify.** mldsa87 (0x0906) over the whole 146-byte
+  content with an empty context, hedged with `rnd` from `rand_draw`.
+  The signer verifies each signature before it returns it, and
+  `ch_srv_check` signs and verifies once at boot.
+- **Selection.** ML-KEM-1024 (0x0202), TLS_AES_256_GCM_SHA384 and
+  mldsa87, each alone. A hello that lists ML-KEM-1024 without a share
+  gets a HelloRetryRequest, and one that does not list it fails with
+  handshake_failure.
+- **Cookie and tickets.** The cookie is HMAC-SHA-384 under `cookie_key`,
+  133 bytes. Tickets are sealed under AES-256-GCM with `ticket_key`, 124
+  bytes, at SHA-384.
+- **CPU.** Every init call and `ch_srv_check` refuse a `ch_cfg.cpu`
+  without `CH_CPU_CONSTANT_TIME_AES`.
+- **Memory.** A `ch_tls` of 3,160 bytes, a receive floor of 2,179 bytes
+  (2,698 over QUIC), and a `ch_srv_accept` peak of 27,968 bytes through
+  the signer, measured by `bench/sram.sh` ([performance.md](performance.md)).
+
 ## What is still open
 
 Fourteen questions are open. The first three block the first line of code.

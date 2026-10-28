@@ -35,6 +35,13 @@
 // data is the version byte, so a ticket whose first byte changed fails to
 // open rather than being read under another layout.
 //
+// A PROFILE=cnsa2 server seals the same body under AES-256-GCM (NIST SP
+// 800-38D) with gcm_traffic_seal, and the last 16 bytes are the GCM tag.
+// CNSA 2.0 names AES-256 and no other cipher, and the profile's one suite
+// hashes with SHA-384, so every PSK fills all 48 bytes of psk. The length
+// stays SRV_TICKET_LEN, 124 bytes. INV-26 admits the ticket key there
+// beside the key schedule's traffic keys (docs/decisions.md 162).
+//
 // Why a random nonce is safe here, and where it stops being safe. Every
 // ticket under one key takes its own 96-bit nonce from rand_draw, and
 // two tickets that drew one nonce would leak the XOR of their bodies and
@@ -61,7 +68,8 @@
 #include "hkdf.h"
 #include "sha256.h"
 
-// The ticket key: CH_SRV_TICKET_KEY_LEN bytes of ChaCha20-Poly1305 key the
+// The ticket key: CH_SRV_TICKET_KEY_LEN bytes of ChaCha20-Poly1305 key, or
+// of AES-256-GCM key under PROFILE=cnsa2, the
 // caller owns and holds in ch_cfg's srv.ticket_key. srv_cfg.h defines the
 // length, because the caller sizes the key by it, and it is one AEAD key
 // (aead.h). One key per deployment, so a ticket

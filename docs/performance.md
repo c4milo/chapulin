@@ -37,10 +37,12 @@ and `size_t` lengths, so that build needs 120 bytes less than the host figure on
 | **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15402** | — |
 | `ch_tls` under `ROLE=server`, host object | 1992 | — |
 | **total static working set, `ROLE=server`, host object** (2048 buffer) | **4040** | — |
-| `ch_tls` under `PROFILE=cnsa2 TRUST=raw-mldsa` | 2984 | — |
-| **total static working set, `PROFILE=cnsa2 TRUST=raw-mldsa`** (7843 buffer, its floor) | **10827** | — |
-| `ch_tls` under `PROFILE=cnsa2 TRUST=ca-mldsa` | 2984 | — |
-| **total static working set, `PROFILE=cnsa2 TRUST=ca-mldsa`** (15656 buffer, its floor) | **18640** | — |
+| `ch_tls` under `PROFILE=cnsa2 TRUST=raw-mldsa` | 2992 | — |
+| **total static working set, `PROFILE=cnsa2 TRUST=raw-mldsa`** (7843 buffer, its floor) | **10835** | — |
+| `ch_tls` under `PROFILE=cnsa2 TRUST=ca-mldsa` | 2992 | — |
+| **total static working set, `PROFILE=cnsa2 TRUST=ca-mldsa`** (15656 buffer, its floor) | **18648** | — |
+| `ch_tls` under `PROFILE=cnsa2 ROLE=server` (host object) | 3160 | — |
+| **total static working set, `PROFILE=cnsa2 ROLE=server`** (2179 buffer, its floor) | **5339** | — |
 
 ### Peak stack
 
@@ -98,6 +100,7 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12896 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 19456 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`) | 22096 |
+| peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`) | 27968 |
 
 ### What the larger builds pay for
 
@@ -192,7 +195,27 @@ state holds the leaf's 2,592-byte key, which is most of the difference.
 With ML-KEM's two calls pruned (`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`)
 the deepest chain is the ML-DSA-87 verify, at 13,376 bytes in the raw
 mode and 16,064 in the CA mode. A device that runs either mode gives
-`ch_connect` the larger peak.
+`ch_connect` the larger peak. The profile's 133-byte retry cookie
+(`HSP_COOKIE_MAX`, [`docs/decisions.md`](decisions.md) 162) adds 8
+bytes to each struct with the alignment after it.
+
+**`PROFILE=cnsa2 ROLE=server`.** The profile's server is a host object
+alone ([`docs/decisions.md`](decisions.md) 162), so its rows have no rv32
+column. `bench/sram.sh` measures:
+- a session struct of 3,160 bytes, whose TX array holds the 1,664-byte
+  ServerHello with the ML-KEM-1024 ciphertext;
+- a receive floor of 2,179 bytes, the 2,174-byte largest ClientHello of
+  the profile's client behind its record header, and 2,698 bytes over
+  QUIC;
+- a `ch_srv_accept` peak of 27,968 bytes, through the ML-DSA-87 signer's
+  rejection loop under the CertificateVerify. With the signer pruned
+  (`STACK_PRUNE=mldsa87_sign`) the peak is ML-KEM-1024's encapsulation,
+  at 12,640 bytes.
+
+The send side needs no floor of its own. The 7.5 kB Certificate and the
+4,627-byte CertificateVerify each stream through `srv_frag`, 512 bytes a
+record, and only the CertificateVerify's frame holds its whole
+signature, 5,280 bytes in `srv_mldsa_send_certificate_verify`.
 
 **A host object.** On arm64 and x86-64 the Makefile and `build.zig`
 build a `TRUST=webpki` client, `ROLE=server` and `ROLE=both` as a host

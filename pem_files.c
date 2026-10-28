@@ -72,7 +72,9 @@ int ch_chain_from_pem(const uint8_t *pem, size_t pem_len, uint8_t *der, size_t d
     *chain_count = (uint8_t)count;
     return CH_OK;
 }
+#endif
 
+#ifdef CH_PEM_P256_KEY_CALL
 // The answer the key's point is computed under (widemul.h). A device
 // object runs every operation under the one its build states. A host
 // object runs under the one that cpu gives, as a session runs under its

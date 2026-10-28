@@ -35,6 +35,7 @@
 #include <stdint.h>
 
 #include "cfg.h"
+#include "mldsa.h"
 #include "rsa.h"
 #include "sha256.h"
 #include "srv_cookie.h"
@@ -48,8 +49,16 @@
 // deployment that provisions one of them makes this server decline the
 // other, which costs a client that offers only the missing scheme a
 // handshake_failure.
+//
+// A PROFILE=cnsa2 server holds one slot, mldsa87, which signs
+// SIGALG_MLDSA87, and srv_mldsa.c defines this header's calls for it in
+// place of srv_auth.c (docs/decisions.md 162).
+#ifdef CH_PROFILE_CNSA2
+#define SRV_IDENTITY_MLDSA87 0x04
+#else
 #define SRV_IDENTITY_ECDSA_P256 0x01
 #define SRV_IDENTITY_RSA_PSS 0x02
+#endif
 
 // The largest CertificateVerify signature this build writes, in bytes.
 // An RSA-PSS signature is exactly as long as the modulus, so
@@ -57,7 +66,12 @@
 // ECDSA-Sig-Value over P-256 is at most 72. The staging buffer takes
 // the larger whichever identity signs, because sizing it per identity
 // would make one build's frame depend on a run-time choice.
+// A PROFILE=cnsa2 server's one signature is MLDSA87_SIG_LEN bytes, 4627.
+#ifdef CH_PROFILE_CNSA2
+#define SRV_SIG_MAX MLDSA87_SIG_LEN
+#else
 #define SRV_SIG_MAX CH_RSA_MODULUS_MAX
+#endif
 
 // Which identity slots the caller provisioned, as the SRV_IDENTITY_
 // bits above. A slot counts as provisioned when its chain holds at

@@ -1,0 +1,12 @@
+invariant: INV-64
+file: srv_ticket.c
+catches: cnsa2_server_test
+reason: the profile's server seals its tickets under ChaCha20-Poly1305,
+  the cipher CNSA 2.0 does not name. test_ticket opens the sealed body
+  with gcm_traffic_open on a key it expands itself, and requires it to
+  open.
+
+--- old
+    gcm_traffic_seal(&k, nonce, ticket_version, sizeof ticket_version, pt, n, ct, tag);
+--- new
+    aead_seal(widemul, key, nonce, ticket_version, sizeof ticket_version, pt, n, ct, tag);
