@@ -1075,6 +1075,11 @@ launch fast full writable_len_suite 2 "ch_write.1:5" -DCH_SUITE_AES_GCM -DCH_CPU
 # 2026-10-18 on an ubuntu-24.04 runner the same way: 78 properties, under
 # a second, 0.02 GB peak.
 launch fast full writable_len_suite_any 2 "" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
+# ch_fail: tls.h's contract for every session state and every description
+# byte, over a stub of tlsi_fail (docs/decisions.md 164). is_error_alert's
+# loop reads 26 entries, so 27 unwinds it. Measured on 2026-10-28
+# (PROVE_ONLY=ch_fail PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro): MEASURE.
+launch fast full ch_fail 2 "is_error_alert.0:27"
 # keysched: 13 s under this script's own flags. Extract and Expand-Label sequencing
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
 # arithmetic is length handling rather than compression.

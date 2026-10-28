@@ -325,6 +325,30 @@ fn serverAnswersHello() !void {
 /// Each side's handshake failure on each side of its write key. The alert
 /// goes in the clear before the key, REC_HDR + 2 bytes, and sealed after,
 /// alert_record_len bytes, and the other side reads it.
+/// fail on a connected client: a description outside RFC 9846 §6.2's
+/// error alerts is refused with nothing sent, record_overflow goes out as
+/// one sealed alert that the server reads as the client's fatal alert, and
+/// a second fail on the failed session is refused. Then an output too
+/// short for the alert fails the session with error.Io.
+fn callerFails() !void {
+    try handshake(serverValues(), clientValues());
+    to_server = .{};
+    for ([_]u8{ 0, 90, 1, 255 }) |description| {
+        try check(client.fail(description, to_server.free()) == error.Invalid, "fail took a description that is not an error alert");
+    }
+    try check(client.recordState() == .connected and client.alertSent() == null, "a refused fail changed the session");
+    const n = try client.fail(22, to_server.free());
+    to_server.push(n);
+    try check(n == record.alert_record_len and client.recordState() == .failed and client.alertSent() == 22, "fail did not send one sealed record_overflow");
+    try check(client.fail(22, to_server.free()) == error.Proto, "fail sent on a failed session");
+    try check(server.read(to_server.pending(), &received, &reply) == error.Proto, "the server read on after the client's fatal alert");
+    try check(server.alertReceived() == 22 and server.alertSent() == null and server.replyLen() == 0, "the server did not read the client's record_overflow, or answered it");
+
+    try handshake(serverValues(), clientValues());
+    var short: [record.alert_record_len - 1]u8 = undefined;
+    try check(client.fail(50, &short) == error.Io and client.recordState() == .failed and client.alertSent() == 50, "fail into a short output did not fail the session");
+}
+
 fn failureAlerts() !void {
     // The client, before its key: the ServerHello selects a suite the
     // client did not offer, TLS_AES_128_CCM_SHA256, which no build offers.
@@ -386,6 +410,7 @@ pub fn run() !void {
     try ticketsOff(&taken);
     try refusals();
     try failureAlerts();
+    try callerFails();
     try key_limit.run();
     try key_update_run.run();
     const across = if (key_limit.runs) ", each side's write across its AES-GCM write key's ceiling under both AES-GCM suites" else "";

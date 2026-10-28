@@ -687,7 +687,7 @@ Two pairs do not link, and the linker's duplicate-symbol error is the
 refusal:
 
 - **A `TRANSPORT=tcp-blocking` object beside a `TRANSPORT=tcp-nonblocking` one.** Both export
-  `ch_read`, `ch_write`, `ch_writable_len` and `ch_close`, and `ch_export`
+  `ch_read`, `ch_write`, `ch_writable_len`, `ch_close` and `ch_fail`, and `ch_export`
   under `EXPORTER=on`. A tcp-nonblocking object does everything a tcp-blocking one
   does, with your code driving the socket, so link the tcp-nonblocking
   object alone.

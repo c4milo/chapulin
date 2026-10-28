@@ -198,4 +198,27 @@ int CH_MUST_USE ch_export(const ch_tls *t, const char *label, const uint8_t *con
 // answer before application data alone, and none follows the close.
 void ch_close(ch_tls *t);
 
+// Fails a connected session with the fatal alert description names, for
+// an error the caller found itself: a record header it read before
+// ch_read, for example, which RFC 9846 §5.2 answers with record_overflow.
+// It sends the alert, protected under the write key, through cfg.send,
+// writes it to ch_tls.alert_sent, which ch_alert_sent reads, wipes every
+// key and leaves the session CH_ST_FAILED, as a failure of ch_read does.
+//
+// description is one of the error alerts of RFC 9846 §6.2
+// (rfc9846.txt:3796-3823): every AlertDescription but close_notify (0)
+// and user_canceled (90). Any other value returns CH_EINVAL and changes
+// nothing; ch_close sends close_notify. A session that is not connected
+// returns CH_EPROTO and changes nothing: one that failed, one ch_close
+// closed, and in a TRANSPORT=tcp-nonblocking build one whose handshake
+// still runs. A connected session whose peer sent close_notify is still
+// connected, and this call fails it.
+//
+// Otherwise the session fails whatever the send does, and the call
+// returns CH_OK when cfg.send took the whole record, CH_EIO when it did
+// not, and CH_ECAP when the write key can seal no more records (record.h).
+// It sends no KeyUpdate first, even when an answer is owed, as ch_close
+// sends none (docs/decisions.md 164).
+int CH_MUST_USE ch_fail(ch_tls *t, uint8_t description);
+
 #endif

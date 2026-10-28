@@ -210,6 +210,8 @@ static int run_case(const char *letters, size_t n, int psk) {
     return drain_tail();
 }
 
+#include "handshake_sequence_fail_tests.h"
+
 static long mismatches;
 
 static void check_one(const char *letters, size_t len, int psk) {
@@ -455,6 +457,7 @@ int main(int argc, char **argv) {
                           srv.last_alert, alert_cases[i].alert);
         }
     }
+    test_caller_failure();
 
     int depth = 5;
     const char *env = getenv("ENUM_DEPTH");

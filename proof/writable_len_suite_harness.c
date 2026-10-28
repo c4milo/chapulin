@@ -108,10 +108,11 @@ int hspost_send_key_update(ch_tls *session) {
     return CH_OK;
 }
 
-void tlsi_fail(ch_tls *t, uint8_t description) {
+int tlsi_fail(ch_tls *t, uint8_t description) {
     (void)t;
     (void)description;
     __CPROVER_assert(0, "tlsi_fail unreachable: every seal and send succeeds, below the cap");
+    return CH_EIO;
 }
 
 #include "tls_write.c"

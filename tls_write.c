@@ -214,3 +214,58 @@ size_t ch_writable_len(const ch_tls *t, size_t cap) {
 // build that includes tls.h would fail on the assertion.
 _Static_assert(CH_ALERT_RECORD_LEN == 24, "one sealed alert record is 24 bytes");
 _Static_assert(CH_KEY_UPDATE_RECORD_LEN == 27, "one sealed KeyUpdate record is 27 bytes");
+
+// The error alerts of RFC 9846 §6.2: the AlertDescription values of
+// rfc9846.txt:3796-3823 less close_notify and user_canceled, the two
+// closure alerts of §6.1. ch_fail sends these and no other.
+static const uint8_t error_alerts[] = {
+    10,  // unexpected_message
+    20,  // bad_record_mac
+    22,  // record_overflow
+    40,  // handshake_failure
+    42,  // bad_certificate
+    43,  // unsupported_certificate
+    44,  // certificate_revoked
+    45,  // certificate_expired
+    46,  // certificate_unknown
+    47,  // illegal_parameter
+    48,  // unknown_ca
+    49,  // access_denied
+    50,  // decode_error
+    51,  // decrypt_error
+    70,  // protocol_version
+    71,  // insufficient_security
+    80,  // internal_error
+    86,  // inappropriate_fallback
+    109, // missing_extension
+    110, // unsupported_extension
+    112, // unrecognized_name
+    113, // bad_certificate_status_response
+    115, // unknown_psk_identity
+    116, // certificate_required
+    117, // general_error
+    120, // no_application_protocol
+};
+
+static int is_error_alert(uint8_t description) {
+    for (size_t i = 0; i < sizeof error_alerts; i++) {
+        if (error_alerts[i] == description) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// tls.h states the contract. tlsi_fail is the failure funnel ch_read's
+// failures run through too, so this call writes alert_sent, wipes and
+// marks the session failed the same way.
+int ch_fail(ch_tls *t, uint8_t description) {
+    CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states (tls.c)
+    if (!is_error_alert(description)) {
+        return CH_EINVAL;
+    }
+    if (t->state != CH_ST_CONNECTED) {
+        return CH_EPROTO;
+    }
+    return tlsi_fail(t, description);
+}

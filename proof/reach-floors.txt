@@ -129,6 +129,12 @@ buf 90.2
 certparse 29.1
 certparse_webpki 26.3
 certverify_webpki 38.2
+# ch_fail (docs/decisions.md 164) took its floor from proof/coverage.py
+# --reach --only on an M1 Pro with cbmc 6.11.0 on 2026-10-28, a tenth of a
+# point below the 32.5 it read, until the nightly measures it. It compiles
+# all of tls_write.c and calls ch_fail alone, so the locations of ch_write
+# and ch_writable_len stay out of its reach.
+ch_fail 32.4
 chacha20 98.1
 ct 94.1
 ct_wipe 92.6

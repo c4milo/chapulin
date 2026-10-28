@@ -10,11 +10,11 @@ reason: a QUIC-only declaration lands in tls.h, a header both
   it.
 
 --- old
-void ch_close(ch_tls *t);
+int CH_MUST_USE ch_fail(ch_tls *t, uint8_t description);
 
 #endif
 --- new
-void ch_close(ch_tls *t);
+int CH_MUST_USE ch_fail(ch_tls *t, uint8_t description);
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // The transport parameters the peer sent, read from the session here

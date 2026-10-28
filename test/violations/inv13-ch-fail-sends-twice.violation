@@ -1,0 +1,19 @@
+invariant: INV-13
+file: tls_write.c
+catches: test/handshake_sequence_shards.sh ./bin/handshake_sequence_test
+builds: bin/handshake_sequence_test
+reason: ch_fail sends on a session that already failed. tlsi_send_alert
+  then sends nothing under the wiped keys, but the call reports CH_OK
+  for a session that cannot take it. The sequence test requires
+  CH_EPROTO from a second call.
+
+--- old
+    if (t->state != CH_ST_CONNECTED) {
+        return CH_EPROTO;
+    }
+    return tlsi_fail(t, description);
+--- new
+    if (t->state == CH_ST_CLOSED) {
+        return CH_EPROTO;
+    }
+    return tlsi_fail(t, description);

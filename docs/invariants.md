@@ -3249,7 +3249,8 @@ last `ROLE=server` stub, as the entry said it would.
     `CH_EPROTO` for bytes delivered to a session that failed or closed,
     and from `ch_read` and `ch_write` before the handshake completes,
     which in a `TRANSPORT=tcp-nonblocking` build leaves the handshake
-    running; `CH_EINVAL` where the call's header says so.
+    running, and from `ch_fail` on a session that is not connected;
+    `CH_EINVAL` where the call's header says so.
   - The non-blocking transports' results that leave the session live:
     `CH_ECAP` from a call whose own output buffer was short, a packet
     dropped (`CH_QUIC_DISCARD`, RFC 9001 §5.5), and no record yet
@@ -3277,7 +3278,9 @@ last `ROLE=server` stub, as the entry said it would.
   way it emits its others: the client stages it in `ch_tls.tx` for
   `ch_record_out`, and the server pushes it through
   `cfg.srv.on_record_out`. `tlsi_fail` and `tcp_nonblocking_fail` write
-  and send nothing once `ch_tls.alert_received` is set. Each send writes
+  and send nothing once `ch_tls.alert_received` is set. `ch_fail` runs
+  `tlsi_fail` for an alert the caller names and returns what its send
+  returned (docs/decisions.md 164). Each send writes
   internal_error where the transport refused it: `srv_out.c` for every
   server record and CRYPTO push, `send_staged` in `handshake.c` for the
   blocking client, `key_update_before_record` for the KeyUpdate
@@ -3303,7 +3306,14 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/srv_auth_test` and `bin/srv_flight_test` require `CH_EAUTH` from
   each refusal inside it, and `inv13-srv-signer-refusal-einval`, which
   returns `CH_EINVAL` from a signer's refusal again, requires
-  `bin/srv_auth_test` to fail. The entry refusals are INV-14's, each
+  `bin/srv_auth_test` to fail. `bin/handshake_sequence_test`
+  (`test/handshake_sequence_fail_tests.h`) and
+  `bin/tcp_nonblocking_loop_test` (`test/tcp_nonblocking_alert_tests.h`)
+  hold `ch_fail` to its terms: a closure alert gets `CH_EINVAL` and no
+  send, record_overflow goes out once and the peer reads it, and a second
+  call gets `CH_EPROTO` and no send. `inv13-ch-fail-takes-close-notify`
+  and `inv13-ch-fail-sends-twice` each break one term, and one of the
+  two binaries catches each. The entry refusals are INV-14's, each
   with its tests. The retired ticket has a boundary pair at each client
   entry: a ticket at the stored epoch is taken, and one a step below it
   gets `CH_EINVAL` with no byte sent or staged, no alert recorded and

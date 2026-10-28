@@ -1978,6 +1978,25 @@ The entries are grouped by area:
   `ch_writable_len` counts (tls.h); `test/key_limit_cases.h` checks that
   value at `SIZE_MAX`, and the write at the KeyUpdate count's cap.
 
+#### ch_fail
+
+- **Harness:** `ch_fail` (fast)
+- **Proves:** `ch_fail` keeps the contract `tls.h` states, for every
+  session state and every description byte. A description that is not
+  one of RFC 9846 §6.2's 26 error alerts returns `CH_EINVAL`, and a
+  session that is not connected returns `CH_EPROTO`. Neither calls
+  `tlsi_fail`, and neither changes the state. Every other call runs
+  `tlsi_fail` once, with the description, and returns what it returned.
+  The harness holds `tls_write.c`'s table to a second copy of the list,
+  written from the AlertDescription enum (rfc9846.txt:3796-3823).
+- **Bound:** none. `is_error_alert` reads 26 entries, and 27 unwinds
+  its loop.
+- **Not proved:** `tlsi_fail` itself, a stub here, which returns any of
+  `CH_OK`, `CH_EIO` and `CH_ECAP` and marks the session failed.
+  `bin/handshake_sequence_test` and `bin/tcp_nonblocking_loop_test`
+  hold the alert it sends and the record the peer reads
+  (docs/decisions.md 164).
+
 ### Client handshake
 
 #### handshake

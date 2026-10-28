@@ -297,10 +297,11 @@ int hsp_parse_certificate_verify(const uint8_t *body, size_t n, const uint8_t **
     return CH_OK;
 }
 
-void tlsi_fail(ch_tls *t, uint8_t description) {
+int tlsi_fail(ch_tls *t, uint8_t description) {
     (void)description;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "fail: session writable");
     t->state = CH_ST_FAILED;
+    return CH_OK;
 }
 
 int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description) {

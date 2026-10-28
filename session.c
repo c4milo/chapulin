@@ -49,12 +49,16 @@ void tlsi_wipe(ch_tls *t) {
 // fatal alert wrote alert_received before it failed the session, and RFC
 // 9846 §6.2 has both sides close the connection at once on that alert
 // (rfc9846.txt:3890-3893), so nothing goes out after it and no alert of
-// this side's is recorded.
-void tlsi_fail(ch_tls *t, uint8_t description) {
+// this side's is recorded. It returns what tlsi_send_alert returned, CH_OK
+// when nothing was sent, which ch_fail reports and every other caller
+// discards.
+int tlsi_fail(ch_tls *t, uint8_t description) {
+    int rc = CH_OK;
     if (t->alert_received == 0) {
         t->alert_sent = description;
-        (void)tlsi_send_alert(t, 2, description);
+        rc = tlsi_send_alert(t, 2, description);
     }
     tlsi_wipe(t);
     t->state = CH_ST_FAILED;
+    return rc;
 }

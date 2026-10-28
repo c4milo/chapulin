@@ -982,13 +982,13 @@ TRANSPORT_DEF := -DCH_TRANSPORT_TCP_NONBLOCKING
 TRANSPORT_FILTER := handshake.c
 TRANSPORT_ADD := tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
 PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_close \
-                    ch_record_whole_len ch_read ch_write ch_writable_len ch_close ch_ticket_obfuscated_age \
+                    ch_record_whole_len ch_read ch_write ch_writable_len ch_close ch_fail ch_ticket_obfuscated_age \
                     ch_alert_sent ch_alert_received
 else ifeq ($(TRANSPORT),tcp-blocking)
 TRANSPORT_DEF :=
 TRANSPORT_FILTER :=
 TRANSPORT_ADD :=
-PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_writable_len ch_close ch_ticket_obfuscated_age \
+PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_writable_len ch_close ch_fail ch_ticket_obfuscated_age \
                     ch_alert_sent ch_alert_received
 else
 $(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tcp-blocking, TRANSPORT=tcp-nonblocking or TRANSPORT=quic-nonblocking)
@@ -1107,9 +1107,9 @@ ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_tcp_nonblocking.c
 # not ch_srv_accept, which is the blocking one.
 PUBLIC_ROLE := ch_srv_record_init ch_srv_record_in ch_srv_check \
                ch_record_state ch_record_close ch_record_whole_len \
-               ch_read ch_write ch_writable_len ch_close ch_alert_sent ch_alert_received
+               ch_read ch_write ch_writable_len ch_close ch_fail ch_alert_sent ch_alert_received
 else
-PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_writable_len ch_close \
+PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_writable_len ch_close ch_fail \
                ch_alert_sent ch_alert_received
 endif
 # PIN_DEF and PIN_FILTER are already empty: the TRUST=none arm this
@@ -2493,7 +2493,7 @@ LIB_HOOKS = ch_assert_fail $(if $(filter extern,$(RAND)),ch_rand_bytes) \
 # object exports or imports, in the order of build.zig's declarations, so
 # both builds name the same headers (lint-zig-build). DECLARES_<header>
 # lists the names one header declares, under their declared names.
-DECLARES_tls.h := ch_connect ch_read ch_write ch_writable_len ch_close ch_export
+DECLARES_tls.h := ch_connect ch_read ch_write ch_writable_len ch_close ch_fail ch_export
 DECLARES_tcp_nonblocking.h := ch_record_init ch_record_in ch_record_out ch_record_state \
                               ch_record_close ch_record_whole_len
 DECLARES_quic.h := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_crypto_out \

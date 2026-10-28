@@ -185,6 +185,53 @@ static void server_reads_client_ticket(ch_record *client, ch_record *server, con
     CHECK(io_calls == 0);
 }
 
+// A send that takes nothing, so the alert ch_fail seals does not go out.
+static int refusing_send(void *io, const uint8_t *p, size_t n) {
+    (void)io;
+    (void)p;
+    (void)n;
+    return -1;
+}
+
+// ch_fail on one end after the handshake. A description that is not an
+// error alert of RFC 9846 §6.2 returns CH_EINVAL and sends nothing.
+// record_overflow goes out through cfg.send as one sealed alert, which
+// the other end's ch_read reads as the peer's fatal alert. A second call
+// on the failed session returns CH_EPROTO and sends nothing. A send that
+// takes nothing gives CH_EIO, and the session fails all the same.
+static void fail_after_handshake(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+                                 const ch_cfg *scfg, int server_fails) {
+    connect_pair_on_wires(client, server, ccfg, scfg);
+    ch_record *failer = server_fails ? server : client;
+    ch_record *reader = server_fails ? client : server;
+    const size_t *sends = server_fails ? &server_sends : &client_sends;
+    static const uint8_t refused[] = {ALERT_CLOSE_NOTIFY, ALERT_USER_CANCELED, 1, 255};
+    for (size_t i = 0; i < sizeof refused; i++) {
+        CHECK(ch_fail(&failer->t, refused[i]) == CH_EINVAL);
+    }
+    CHECK(ch_record_state(failer) == CH_ST_CONNECTED && ch_alert_sent(&failer->t) == 0);
+    CHECK(*sends == 0);
+    CHECK(ch_fail(&failer->t, ALERT_RECORD_OVERFLOW) == CH_OK);
+    CHECK(ch_record_state(failer) == CH_ST_FAILED && *sends == 1);
+    CHECK(ch_alert_sent(&failer->t) == ALERT_RECORD_OVERFLOW && ch_alert_received(&failer->t) == 0);
+    CHECK(ch_fail(&failer->t, ALERT_RECORD_OVERFLOW) == CH_EPROTO && *sends == 1);
+    uint8_t got[16];
+    CHECK(ch_read(&reader->t, got, sizeof got) == CH_EPROTO);
+    CHECK(ch_alert_received(&reader->t) == ALERT_RECORD_OVERFLOW);
+    CHECK(ch_alert_sent(&reader->t) == 0);
+    ch_record_close(client);
+    ch_record_close(server);
+
+    connect_pair_on_wires(client, server, ccfg, scfg);
+    failer->t.cfg.send = refusing_send;
+    CHECK(ch_fail(&failer->t, ALERT_DECODE_ERROR) == CH_EIO);
+    CHECK(ch_record_state(failer) == CH_ST_FAILED &&
+          ch_alert_sent(&failer->t) == ALERT_DECODE_ERROR);
+    ch_record_close(client);
+    ch_record_close(server);
+    CHECK(io_calls == 0);
+}
+
 static void test_alerts(ch_record *client, ch_record *server, const ch_cfg *ccfg,
                         const ch_cfg *scfg) {
     static const uint8_t alert[3] = {2, ALERT_BAD_CERTIFICATE, 0};
@@ -199,6 +246,8 @@ static void test_alerts(ch_record *client, ch_record *server, const ch_cfg *ccfg
         read_alert_after_handshake(client, server, ccfg, scfg, 1, alert, n);
     }
     server_reads_client_ticket(client, server, ccfg, scfg);
+    fail_after_handshake(client, server, ccfg, scfg, 0);
+    fail_after_handshake(client, server, ccfg, scfg, 1);
     expect_refusal = 0;
 }
 

@@ -504,6 +504,7 @@ after `init`: `cfg.io` points at its hook, and `cfg.rand_io` at its
 | `write(pt, output)` | `ch_writable_len`, then `ch_write` | Proto, Cap, Io |
 | `writableLen(cap)` | `ch_writable_len` | none |
 | `close(output)` | `ch_close` | Io |
+| `fail(description, output)` | `ch_fail` | Invalid, Proto, Cap, Io |
 | `recordClose()` | `ch_record_close`, then the ticket slot zeroed | none |
 | `exportKeyingMaterial(label, context, out)` | `ch_export` | Invalid |
 | `alpnSelected()` | the name `ch_alpn_selected` indexes; null for `CH_ALPN_NONE` | none |
@@ -630,6 +631,15 @@ and the session is closed either way. The peer's close_notify closes the
 peer's direction alone (RFC 9846 §6.1): `read` reports `peer_closed`,
 `readClosed()` is true, and `write` still sends until this side calls
 `close`. A side that called `close` reads nothing more.
+
+`fail(description, output)` fails a connected session with the fatal
+alert `description` names, for an error the caller found itself: that
+is `ch_fail`. It sends the sealed alert into `output`, at most
+`alert_record_len` bytes, and wipes the session's keys. A description
+that is not an error alert of RFC 9846 §6.2 answers `error.Invalid`, and
+a session that is not connected `error.Proto`; neither sends a byte or
+changes the session. `error.Io` says `output` could not take the alert,
+and the session failed all the same (docs/decisions.md 164).
 
 `recordClose()` calls `ch_record_close`, which wipes every secret and
 marks the session dead, and then zeroes the ticket slot. A connected

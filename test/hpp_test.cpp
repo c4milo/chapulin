@@ -650,6 +650,14 @@ int main() {
     test_quic();
 #else
     chapulin::Io io{fail_send, fail_recv, nullptr};
+    {
+        // ch_fail refuses a description that is not an error alert of
+        // RFC 9846 §6.2 before it reads the state, and a session that is
+        // not connected after; neither sends or records an alert.
+        chapulin::Session s;
+        CHECK(s.fail(0) == chapulin::Status::invalid && s.fail(90) == chapulin::Status::invalid);
+        CHECK(s.fail(22) == chapulin::Status::proto && s.alert_sent() == 0);
+    }
 #ifdef CH_TRUST_WEBPKI
     test_webpki_config(io);
 #else

@@ -14588,3 +14588,49 @@ does nothing more.
       `bin/diff_x25519_wide` holds it to spec/lean/Spec/X25519.lean. The
       `x25519_wide` harnesses prove the new form in CI's slow job and in
       the nightly.
+164. **`ch_fail` fails a connected TCP session with a fatal alert the
+    caller names.** cocuyo reads each TLS record header itself, before
+    `ch_read`, and refuses a length over 2^14 + 256. RFC 9846 §5.2 then
+    requires record_overflow before the close, and no public call could
+    send it (https://github.com/c4milo/chapulin/issues/208). Camilo
+    ruled on 2026-10-28: one call, `ch_fail`, in `tls.h`, on both TCP
+    transports and in both roles.
+
+    - **What it does.** It runs `tlsi_fail`, the failure function of
+      `ch_read` and `ch_write`, so it sends the alert through
+      `cfg.send` under the write key, writes `ch_tls.alert_sent`, wipes
+      every key and marks the session failed. `tlsi_fail` now returns
+      what `tlsi_send_alert` returned, and `ch_fail` returns it: CH_OK,
+      CH_EIO from the send, or CH_ECAP from the seal. The other callers
+      discard it, as before.
+    - **Which descriptions.** The error alerts of RFC 9846 §6.2: the
+      28 AlertDescription values less close_notify and user_canceled,
+      26 in all.
+      `tls_write.c` lists them as numbers, one name to a line. Any
+      other value is CH_EINVAL, read before the state, and changes
+      nothing. A closure alert is `ch_close`'s, and a description §6.2
+      does not define is no alert this side can name.
+    - **Which sessions.** A connected one alone, as `ch_write`. A
+      failed or closed session, or a tcp-nonblocking handshake that
+      still runs, returns CH_EPROTO and sends nothing. A session whose
+      peer sent close_notify is still connected, and it can fail.
+    - **What holds it.** `bin/handshake_sequence_test` fails a blocking
+      client, and the mock server opens the sealed alert.
+      `bin/tcp_nonblocking_loop_test` fails each end of a
+      tcp-nonblocking pair, and the other end reads the alert as the
+      peer's fatal alert. Both refuse the closure alerts and a call on
+      a failed session. The Zig `fail` and the C++ `Session::fail`
+      forward the call, and `test/zig-consumer/loop_record.zig` runs
+      the Zig call. `inv13-ch-fail-takes-close-notify` and
+      `inv13-ch-fail-sends-twice` require the tests to fail.
+    - **Rejected:**
+      - **A call in QUIC.** QUIC carries no alert record. A QUIC
+        caller closes the connection with CONNECTION_CLOSE, whose code
+        is its own (RFC 9001 §4.8).
+      - **Any byte as a description.** RFC 9846 §6 makes an unknown
+        alert fatal, so the peer would close. But the alert would say
+        nothing a log can read, and a caller that passes 0 sends a
+        close_notify it did not mean.
+      - **A failure during a tcp-nonblocking handshake.** The caller
+        holds every byte of that handshake, so a failure there is
+        `ch_record_close`'s. The cocuyo case comes after the handshake.

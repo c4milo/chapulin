@@ -335,6 +335,21 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             return self.io.written;
         }
 
+        /// ch_fail: sends the fatal alert description names into output, at
+        /// most alert_record_len bytes, wipes the session's keys and fails
+        /// the session, for an error the caller found itself (tls.h).
+        /// error.Invalid when description is not one of RFC 9846 §6.2's
+        /// error alerts and error.Proto when the session is not connected,
+        /// both with nothing sent and the session as it was. error.Io when
+        /// output could not take the alert and error.Cap when the write key
+        /// seals no more records; the session failed either way.
+        pub fn fail(self: *Self, description: u8, output: []u8) error{ Invalid, Proto, Cap, Io }!usize {
+            self.io.begin(&.{}, output);
+            defer self.io.end();
+            try chapulin.fromCode(error{ Invalid, Proto, Cap, Io }, c.ch_fail(&self.record.t, description));
+            return self.io.written;
+        }
+
         /// ch_record_close, then the ticket slot zeroed: every secret
         /// wiped and the session dead. A connected caller calls close first.
         pub fn recordClose(self: *Self) void {

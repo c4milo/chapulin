@@ -7,11 +7,12 @@ reason: tlsi_fail returns before tlsi_wipe when the alert cannot go out, so a
 
 --- old
         t->alert_sent = description;
-        (void)tlsi_send_alert(t, 2, description);
+        rc = tlsi_send_alert(t, 2, description);
 --- new
         t->alert_sent = description;
-        if (tlsi_send_alert(t, 2, description) != CH_OK) {
+        rc = tlsi_send_alert(t, 2, description);
+        if (rc != CH_OK) {
             // The transport is gone, so there is nothing more to do here.
             t->state = CH_ST_FAILED;
-            return;
+            return rc;
         }

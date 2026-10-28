@@ -1,0 +1,15 @@
+invariant: INV-13
+file: tls_write.c
+catches: tcp_nonblocking_loop_test
+reason: ch_fail takes close_notify as an error alert, so a caller that
+  passes 0 fails the session and sends a close_notify it did not mean.
+  RFC 9846 §6.1 makes it a closure alert, which ch_close sends.
+  bin/tcp_nonblocking_loop_test requires CH_EINVAL and no send for it.
+
+--- old
+static const uint8_t error_alerts[] = {
+    10,  // unexpected_message
+--- new
+static const uint8_t error_alerts[] = {
+    0,   // close_notify
+    10,  // unexpected_message

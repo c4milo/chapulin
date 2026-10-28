@@ -10,8 +10,8 @@ reason: tlsi_fail answers the peer's fatal alert with one of its own, which
 --- old
     if (t->alert_received == 0) {
         t->alert_sent = description;
-        (void)tlsi_send_alert(t, 2, description);
+        rc = tlsi_send_alert(t, 2, description);
     }
 --- new
     t->alert_sent = description;
-    (void)tlsi_send_alert(t, 2, description);
+    rc = tlsi_send_alert(t, 2, description);

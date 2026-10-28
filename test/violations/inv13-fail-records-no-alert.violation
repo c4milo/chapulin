@@ -8,6 +8,6 @@ reason: tlsi_fail sends the alert its failure chose and no longer records it,
 
 --- old
         t->alert_sent = description;
-        (void)tlsi_send_alert(t, 2, description);
+        rc = tlsi_send_alert(t, 2, description);
 --- new
-        (void)tlsi_send_alert(t, 2, description);
+        rc = tlsi_send_alert(t, 2, description);

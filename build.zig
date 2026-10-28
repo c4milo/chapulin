@@ -169,9 +169,9 @@ const public_alert = [_][]const u8{ "ch_alert_sent", "ch_alert_received" };
 const public_tcp_nonblocking = [_][]const u8{
     "ch_record_init",  "ch_record_in",        "ch_record_out", "ch_record_state",
     "ch_record_close", "ch_record_whole_len", "ch_read",       "ch_write",
-    "ch_writable_len", "ch_close",
+    "ch_writable_len", "ch_close",            "ch_fail",
 } ++ public_ticket ++ public_alert;
-const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close" } ++ public_ticket ++ public_alert;
+const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close", "ch_fail" } ++ public_ticket ++ public_alert;
 const public_srv_quic = [_][]const u8{
     "ch_srv_quic_init",       "ch_srv_quic_crypto_in",   "ch_srv_quic_retry_tag",
     "ch_srv_quic_token_mint", "ch_srv_quic_token_check", "ch_srv_check",
@@ -190,10 +190,10 @@ const public_quic_either_role = [_][]const u8{
 /// object exports without the client's driver.
 const public_record_either_role = [_][]const u8{
     "ch_record_state", "ch_record_close", "ch_record_whole_len", "ch_read",
-    "ch_write",        "ch_writable_len", "ch_close",
+    "ch_write",        "ch_writable_len", "ch_close",            "ch_fail",
 } ++ public_alert;
 /// The calls a connected tcp-blocking session makes.
-const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_writable_len", "ch_close" } ++ public_alert;
+const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_writable_len", "ch_close", "ch_fail" } ++ public_alert;
 /// The PEM calls that a server role exports, and the one that a
 /// TRUST=webpki object exports (pem_files.h).
 const public_pem_server = [_][]const u8{ "ch_chain_from_pem", "ch_p256_key_from_pem" };
@@ -211,7 +211,7 @@ const Declaration = struct { header: []const u8, names: Names };
 /// names one object exports and imports, in this order, and a name missing
 /// here stops the build (headersDeclaring).
 const declarations = [_]Declaration{
-    .{ .header = "tls.h", .names = &.{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close", "ch_export" } },
+    .{ .header = "tls.h", .names = &.{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close", "ch_fail", "ch_export" } },
     .{ .header = "tcp_nonblocking.h", .names = &.{
         "ch_record_init",  "ch_record_in",    "ch_record_out",
         "ch_record_state", "ch_record_close", "ch_record_whole_len",

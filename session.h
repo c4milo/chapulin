@@ -472,9 +472,9 @@ static inline size_t tls_hash_len(const ch_tls *t) {
 // keys exist, nothing at all once they are wiped.
 int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description);
 
-// Alert (best effort), wipe all key material, mark the session failed. It records the alert in
-// alert_sent; after the peer's fatal alert, alert_received, it sends and records none (§6.2).
-void tlsi_fail(ch_tls *t, uint8_t description);
+// Alert (best effort), wipe every key, mark the session failed, return the send's result. It
+// writes alert_sent; after the peer's fatal alert, alert_received, it sends and writes none (§6.2).
+int tlsi_fail(ch_tls *t, uint8_t description);
 
 // Whether a client configuration keeps every rule that does not depend on
 // which driver runs it. tls.c holds the predicates; ch_connect and

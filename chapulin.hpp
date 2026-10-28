@@ -702,6 +702,12 @@ class Session {
         ch_close(&tls_);
     }
 
+    // Forwards ch_fail: fails a connected session with the fatal alert
+    // description names, one of RFC 9846 §6.2's error alerts (tls.h).
+    Status fail(uint8_t description) {
+        return static_cast<Status>(ch_fail(&tls_, description));
+    }
+
   private:
     ch_tls tls_{};
 };
