@@ -99,13 +99,15 @@ CPU_LABEL = "ch_cfg.cpu "
 # bit, the AES and multiply bits, the two x86-64 kernel bits,
 # CH_CPU_AVX512_IFMA, which runs the ChaCha20-Poly1305 rows on the AVX-512
 # kernels (cpu_cfg.h, docs/decisions.md 121), and CH_CPU_AVX512, which runs
-# the AES-GCM rows on the 512-bit kernel (docs/decisions.md 130). A record's
-# protection hashes nothing, so that script states no hash bit, and the
-# widest value of its CSV is the primitives' widest value without the three
-# hash bits. A record CSV written before decision 121 states no
-# CH_CPU_AVX512_IFMA either, and machine_line reads such a CSV without that
-# bit (docs/decisions.md 93 and 119).
-RECORD_BITS = 0x31f
+# the AES-GCM rows on the 512-bit kernel (docs/decisions.md 130), and on
+# arm64 CH_CPU_CONSTANT_TIME_SHA3, which runs the AES-GCM rows on the passes
+# with EOR3 (docs/decisions.md 158). A record's protection hashes nothing,
+# so no other hash bit changes a row, and the values of a record CSV, ORed
+# together, are the primitives' widest value without those bits. A record
+# CSV written before decision 121 states no CH_CPU_AVX512_IFMA either, and
+# machine_line reads such a CSV without that bit (docs/decisions.md 93 and
+# 119).
+RECORD_BITS = 0x39f
 IFMA_BIT = 0x100
 FIRST_LINE = re.compile(r"^# bench/\S+ on (?P<cpu>.+?) \((?P<arch>\w+)\), (?:.+, )?"
                         r"(?P<os>\S+ \S+), (?P<date>\d{4}-\d\d-\d\d), tree (?P<tree>\S+)$")
@@ -230,11 +232,21 @@ def facts(comments, rows):
     load = next(m for m in map(LOAD_LINE.match, comments) if m)
     openssl = sorted(set(r["build"] for r in rows if r["build"].startswith("OpenSSL ")))
     values = [v for v in (cpu_value(r["build"]) for r in rows) if v is not None]
+    union = 0
+    for v in values:
+        union |= v
     return {
         "cpu": first.group("cpu"), "os": first.group("os"), "date": first.group("date"),
         "tree": first.group("tree"), "compiler": comments[1][2:].split(";")[0],
         "before": load.group(1), "after": load.group(2),
         "openssl": openssl[0] if openssl else "no OpenSSL", "value": max(values, default=None),
+        "union": union,
+        "aes": max((cpu_value(r["build"]) for r in rows
+                    if r["aead"].startswith("aes") and cpu_value(r["build"]) is not None),
+                   default=None) if rows and "aead" in rows[0] else None,
+        "chacha": max((cpu_value(r["build"]) for r in rows
+                       if r["aead"].startswith("chacha") and cpu_value(r["build"]) is not None),
+                      default=None) if rows and "aead" in rows[0] else None,
     }
 
 
@@ -257,10 +269,14 @@ def machine_line(name, primitives, record):
         return None
     before_ifma = ours["value"] & IFMA_BIT and not aead["value"] & IFMA_BIT
     record_bits = RECORD_BITS & ~IFMA_BIT if before_ifma else RECORD_BITS
-    if ours["value"] & record_bits != aead["value"]:
+    if ours["value"] & record_bits != aead["union"]:
         return None
     values = "`ch_cfg.cpu 0x%x`" % ours["value"]
-    if aead["value"] != ours["value"]:
+    if aead["union"] != aead["value"]:
+        values += (", and `0x%x` for the AES-GCM rows and `0x%x` for the ChaCha20-Poly1305 rows, "
+                   "as `CH_CPU_CONSTANT_TIME_SHA3` runs AES-GCM's passes with EOR3 (decision 158) "
+                   "and no other hash bit changes a record" % (aead["aes"], aead["chacha"]))
+    elif aead["value"] != ours["value"]:
         unread = ("no hash bit changes, recorded before `CH_CPU_AVX512_IFMA` picked the "
                   "AVX-512 ChaCha20-Poly1305 (decision 121)" if before_ifma
                   else "no hash bit changes")

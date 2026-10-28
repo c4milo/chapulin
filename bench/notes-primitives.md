@@ -16,6 +16,51 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of 0b1608d1
+
+The M1 Pro's CSV and the EPYC 7763's CSVs now hold runs of 2026-10-28
+on 0b1608d1, the tree after docs/decisions.md 161 (bench run
+40766184074 for the EPYC). In seven tries the bench job drew no Xeon
+Platinum 8573C, so the AVX-512 CSVs keep the run of 41878157. The M1
+Pro's run timed OpenSSL 3.6.4, the release tools/toolchain.env pins,
+built as CI builds it, because Homebrew's `openssl@3` is now 3.5.9. Its
+run of 67da657e timed Homebrew's 3.6.5. bench/results-primitives-calls.csv
+holds the counts of this run, which the M1 Pro and the EPYC counted
+alike.
+
+What moved by design:
+
+- **X25519 key generation takes 0.27 to 0.32 of its time, and a shared
+  secret 0.74 to 0.91.** A public key adds 64 entries of a 30 KiB table
+  of multiples of edwards25519's base point (decision 148), and the
+  ladder swaps the points once a step (decision 152). On the M1 Pro key
+  generation takes 10.7 µs and a shared secret 28.5 µs, where they took
+  33.1 and 33.2.
+- **The client sides of the handshakes take 0.64 to 0.87 of their time
+  under the widest value.** Each draws an X25519 key and computes a
+  shared secret. On the M1 Pro the client side of a pinned RSA-2048
+  handshake takes 69.8 µs where it took 96.2.
+- **The server sides of the ECDSA handshakes take 0.64 to 0.77 of their
+  time under the widest value.** Beside X25519, the server's nonce now
+  takes 32 drawn bytes of noise (decision 153): the calls file counts 22
+  HMACs and 3 draws on that side where it counted 38 and 2.
+
+What moved otherwise:
+
+- **On the M1 Pro, OpenSSL 3.6.4's rows differ from 3.6.5's.** ML-KEM-768
+  takes 0.51 to 0.62 of 3.6.5's time, P-384 verification 1.57 times, and
+  the other rows 0.88 to 1.03 times. The ratios beside OpenSSL of those
+  four rows moved with OpenSSL.
+- **Short rows took up to 1.14 times their time on the M1 Pro, and up to
+  1.11 times under clang on the EPYC.** The hashes, HMAC and Poly1305
+  over 64 bytes and HKDF's label expansion moved most. On the M1 Pro the
+  one-minute load average reached 9.3 in the run, and P-256's signature
+  took 1.06 times its time. The run does not show what moved these rows.
+- **On the EPYC under gcc RSA's signatures take 1.05 and 1.06 times their
+  time**, and the server sides of the RSA handshakes 0.93 to 1.00 times.
+  RSA on 64-bit words runs at one of two speeds on that CPU by where the
+  linker places it (docs/performance.md, the pitfalls table).
+
 ## The run of 41878157
 
 The x86-64 CSVs now hold runs of 2026-10-13 on the tree of
