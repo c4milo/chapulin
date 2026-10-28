@@ -240,9 +240,8 @@ static int read_alert(ch_tls *t, size_t pt_len) {
 // post-handshake messages are handled, and close_notify closes the read
 // side and returns CH_ECLOSED. A record of application data with one byte
 // or more ends the run of KeyUpdates CH_KEY_UPDATE_RUN_MAX bounds
-// (session.h). An empty one gives the caller nothing and ends no run, so
-// the caller receives a byte of data for each CH_KEY_UPDATE_RUN_MAX
-// KeyUpdates (docs/decisions.md 138).
+// (session.h). An empty one ends no run, so the caller receives a byte of
+// data for each CH_KEY_UPDATE_RUN_MAX KeyUpdates (docs/decisions.md 138).
 static int dispatch_one_record(ch_tls *t) {
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
     if (t->post_fill > 0) { // the next record continues a message (session.h)
@@ -253,12 +252,13 @@ static int dispatch_one_record(ch_tls *t) {
 #endif
     uint8_t outer = 0;
     size_t record_len = 0;
-    int rc = io_read_record(&t->cfg, t->cfg.buf, t->cfg.buf_len, &outer, &record_len);
+    uint8_t alert = ALERT_DECODE_ERROR;
+    int rc = io_read_record(&t->cfg, t->cfg.buf, t->cfg.buf_len, &outer, &record_len, &alert);
     if (rc == CH_RECORD_AGAIN) {
         return rc; // TRANSPORT=tcp-nonblocking alone returns it (tcp_nonblocking.h)
     }
     if (rc != CH_OK) {
-        tlsi_fail(t, ALERT_DECODE_ERROR);
+        tlsi_fail(t, alert);
         return rc;
     }
     if (outer != REC_APPDATA) {

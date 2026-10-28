@@ -414,7 +414,7 @@ static int drain_run(ch_tls *t, size_t pt_len, uint8_t *alert) {
         fill -= used;
         uint8_t outer = 0;
         size_t record_len = 0;
-        rc = io_read_record(&t->cfg, buf + fill, t->cfg.buf_len - fill, &outer, &record_len);
+        rc = io_read_record(&t->cfg, buf + fill, t->cfg.buf_len - fill, &outer, &record_len, alert);
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
         if (rc == CH_RECORD_AGAIN) {
             // The next fragment has not arrived. The fill bytes stay at

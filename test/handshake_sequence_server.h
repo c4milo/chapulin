@@ -27,6 +27,7 @@
 #define MUT_FIN_MAC 5    // Finished verify_data corrupted
 #define MUT_HS_TYPE 6    // unknown handshake message type in place of EE
 #define MUT_REC_OVER 7   // record body over the client's record_size_limit
+#define MUT_REC_HUGE 8   // record header over 2^14 + 256 bytes, RFC 9846 §5.2
 static int mut_mode;
 
 typedef struct {
@@ -364,6 +365,23 @@ static void render_new_session_ticket(mock_server *s) {
     push_record(s, REC_HANDSHAKE, msg, w.len);
 }
 
+// Letter A: four bytes of data, or the record mut_mode puts in their place.
+static void render_application_data(mock_server *s) {
+    // A header that names 2^14 + 257 bytes, which the client refuses before it reads a body.
+    static const uint8_t huge[REC_HDR] = {REC_APPDATA, 0x03, 0x03, 0x41, 0x01};
+    if (mut_mode == MUT_REC_OVER) {
+        static uint8_t big[HANDSHAKE_SEQUENCE_RXBUF + 476]; // over the client's record_size_limit
+        push_record(s, REC_APPDATA, big, sizeof big);
+    } else if (mut_mode != MUT_REC_HUGE) {
+        push_record(s, REC_APPDATA, (const uint8_t *)"hola", 4);
+    } else if (sizeof s->queue - s->queue_len >= sizeof huge) {
+        memcpy(s->queue + s->queue_len, huge, sizeof huge);
+        s->queue_len += sizeof huge;
+    } else {
+        die("mock record queue overflow");
+    }
+}
+
 static void render(mock_server *s, char letter) {
     static const uint8_t encrypted_exts[6] = {HS_ENCRYPTED_EXTENSIONS, 0, 0, 2, 0, 0};
     // Certificate: empty context, one 8-byte "certificate" (hashed, never
@@ -448,14 +466,7 @@ static void render(mock_server *s, char letter) {
         }
         break;
     case 'A':
-        if (mut_mode == MUT_REC_OVER) {
-            // Over the record_size_limit the client computed from its
-            // receive buffer, but under the absolute record cap.
-            static uint8_t big[HANDSHAKE_SEQUENCE_RXBUF + 476];
-            push_record(s, REC_APPDATA, big, sizeof big);
-            break;
-        }
-        push_record(s, REC_APPDATA, (const uint8_t *)"hola", 4);
+        render_application_data(s);
         break;
     case 'L':
         push_record(s, REC_ALERT, close, sizeof close);

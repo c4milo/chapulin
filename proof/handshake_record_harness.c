@@ -75,14 +75,18 @@ static void fill_buf_nondet(uint8_t *p, size_t n) {
 // REC_HDR <= record_len <= cap (io.c:23-35). handshake_record.c never
 // re-checks it, and the memmove at accept_record, the rec_open call and
 // the CCS payload byte all read within it.
-int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer,
-                   size_t *record_len) {
+int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
+                   uint8_t *alert) {
     __CPROVER_assert(cfg != NULL, "read: cfg valid");
     uint8_t choice = nondet_u8();
     if (choice == 0) {
         return CH_EIO;
     }
     if (choice == 1) {
+        return CH_EPROTO;
+    }
+    if (choice == 3) {
+        *alert = ALERT_RECORD_OVERFLOW; // a body over 2^14 + 256 bytes
         return CH_EPROTO;
     }
     if (choice == 2 || cap < REC_HDR + 1) {

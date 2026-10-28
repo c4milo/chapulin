@@ -364,6 +364,7 @@ static void test_record(void) {
 #include "session_tests.h"
 
 #include "handshake_flight.h"
+#include "io_read_tests.h"
 #include "io_send_tests.h"
 #include "psk_decline_tests.h"
 #include "session_report_tests.h"
@@ -426,6 +427,7 @@ int main(int argc, char **argv) {
     test_buf();
     test_record();
     test_io_send_all();
+    test_io_read_record_limit();
     test_rfc8448_1rtt();
     test_rfc8448_binder();
     test_rfc8448_hrr();

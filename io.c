@@ -1,5 +1,6 @@
 #include "io.h"
 
+#include "handshake_message.h"
 #include "record.h"
 
 // send returns the bytes it moved, 1 to n, so a socket that takes part of
@@ -30,8 +31,8 @@ static int read_exact(const ch_cfg *cfg, uint8_t *p, size_t n) {
     return CH_OK;
 }
 
-int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer,
-                   size_t *record_len) {
+int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
+                   uint8_t *alert) {
     if (cap < REC_HDR) {
         return CH_ECAP;
     }
@@ -56,7 +57,11 @@ int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer,
         return rc;
     }
     size_t body = ((size_t)buf[3] << 8) | buf[4];
-    if (body == 0 || body > 0x4000 + 256) {
+    if (body > 0x4000 + 256) {
+        *alert = ALERT_RECORD_OVERFLOW;
+        return CH_EPROTO;
+    }
+    if (body == 0) {
         return CH_EPROTO;
     }
     if (REC_HDR + body > cap) {

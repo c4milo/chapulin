@@ -41,8 +41,16 @@ int main(void) {
     __CPROVER_assume(cap <= sizeof g_buf);
     uint8_t outer = 0;
     size_t record_len = 0;
+    uint8_t alert = nondet_u8();
+    uint8_t alert_before = alert;
 
-    int rc = io_read_record(&cfg, g_buf, cap, &outer, &record_len);
+    int rc = io_read_record(&cfg, g_buf, cap, &outer, &record_len, &alert);
+
+    // The one alert io.c writes is record_overflow, on CH_EPROTO alone.
+    if (alert != alert_before) {
+        __CPROVER_assert(rc == CH_EPROTO && alert == ALERT_RECORD_OVERFLOW,
+                         "io: a changed alert is record_overflow on CH_EPROTO");
+    }
 
     // An accepted record is framed inside the buffer it was read into, or
     // every caller that trusts record_len walks off the end.

@@ -1,0 +1,20 @@
+invariant: INV-38
+file: tls.c
+catches: test/handshake_sequence_shards.sh ./bin/handshake_sequence_test
+builds: bin/handshake_sequence_test
+reason: ch_read fails every record that io_read_record refuses with
+  decode_error, so a peer that sends a header of 2^14 + 257 bytes after
+  the handshake gets decode_error and not the record_overflow RFC 9846
+  §5.2 requires. The sequence test's SEFA case under MUT_REC_HUGE reads
+  the alert on the wire.
+
+--- old
+        tlsi_fail(t, alert);
+        return rc;
+    }
+    if (outer != REC_APPDATA) {
+--- new
+        tlsi_fail(t, ALERT_DECODE_ERROR);
+        return rc;
+    }
+    if (outer != REC_APPDATA) {

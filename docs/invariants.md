@@ -1100,6 +1100,12 @@ last `ROLE=server` stub, as the entry said it would.
     sends none. A record the buffer cannot hold is refused:
     `io_read_record` returns `CH_ECAP`, and the tcp-nonblocking drivers
     send record_overflow.
+  - The absolute limit: a length field above 2^14 + 256 is refused with
+    record_overflow, as RFC 9846 §5.2 requires (rfc9846.txt:3644-3646).
+    `io_read_record` returns `CH_EPROTO` and writes the alert, and its
+    three callers send it: `hsr_fetch_record`, `drain_run` and
+    `ch_read`'s `dispatch_one_record`
+    ([207](https://github.com/c4milo/chapulin/issues/207)).
 - **Check.** Type system for the range and the staging array: a value
   outside it does not compile. Tests and mutants for the rest:
   - `test/tx-record-builds.sh` compiles the headers at 511, 512, 16384
@@ -1113,6 +1119,11 @@ last `ROLE=server` stub, as the entry said it would.
     `record_size_limit` allows 12,316 bytes of plaintext sends 12,316
     in one record and 12,317 in two. `inv19-srv-frag-sized-by-tx-record` requires it to
     fail.
+  - `bin/unit` reads a header of 2^14 + 256 bytes whole and refuses
+    one of 2^14 + 257 with record_overflow, and the sequence test's
+    `MUT_REC_HUGE` cases read record_overflow on the wire in the
+    handshake and after it. `inv38-record-overflow-decode-error` and
+    `inv38-record-overflow-ch-read-decode-error` require them to fail.
   - `bin/srv_test` holds the server's parser to the wire value less
     one and to the floor of 64. `srv-parser-record-size-limit-units`
     and `srv-parser-record-size-limit-floor` require it to fail.
