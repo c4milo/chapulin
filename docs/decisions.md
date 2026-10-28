@@ -14380,3 +14380,52 @@ does nothing more.
       expansion it saved, above.
     - **A pointer to the chosen set's schedule.** The set is secret, so
       the address would be too.
+
+161. **The arm64 AES-GCM passes take their pointers as operands and
+    write each count as 4 bytes, so the M1 Pro runs AES-GCM in no more
+    time than OpenSSL.** Decision 158 left the M1 Pro's 16 KiB cells
+    at 1.00 to 1.03 of OpenSSL 3.5.9's time under `ch_cfg.cpu 0x83`.
+    Camilo chose this item on 2026-10-27.
+
+    - **Where the time went.** OpenSSL 3.5.9 runs its `unroll8_eor3`
+      kernel on the M1, which has the same shape as `gcm_arm64.c`'s
+      passes: 8 blocks with EOR3. Its loop is about 282 instructions a
+      pass. Ours was 340, with the same AES and GHASH instructions. The
+      M1 has four vector pipes, against the N2's two, and it decodes
+      the passes slower than the pipes run them. A first change took 9
+      instructions out of a pass and a 16 KiB record 1.7% less time,
+      about one cycle for each 8 instructions.
+    - **Pointers as operands.** Each asm statement loaded the round
+      keys, and each GHASH statement the blocks to hash and two arrays
+      of powers, from `pass_args`. They are now four register
+      operands, copied into C locals once a call. `pass_args` holds only
+      what the asm reads once a pass. Without the zero and reduction
+      constant operands, a statement has 29 operands, under gcc's 30.
+      The reduction loads its constant into v28, and `mov d27` writes
+      the zeros the constant zero gave.
+    - **A count is 4 bytes.** A counter block's bytes 0 to 11 stay zero,
+      so a pass writes the count alone with REV and STR, 3 instructions
+      a block where 4 wrote the whole block. `passes_counters` writes
+      buffer 2 as zeros. `bin/aes_equiv_test` fails with 18 mismatches
+      when that write is removed.
+    - **Numbers.** The AES-128 paired loop is 634 instructions for two
+      passes, where it was 681. On the M1 Pro under `0x83` a 16 KiB
+      record takes 0.96 to 1.00 of OpenSSL 3.5.9's time, and under `0x3`
+      1.00 to 1.04. In runs that set the code of decision 158 and this
+      code in turn, a 16 KiB or 64 KiB record took 4.4% to 7.7% less
+      time under `0x83` and 2.6% to 4.5% less under `0x3`. On the N2 the
+      16 KiB cells took up to 2.6% less time under gcc 13 and clang 23,
+      and under `0x83` take 0.93 to 0.99 of OpenSSL 3.6.4's time.
+      docs/performance.md, "arm64 AES-GCM beside OpenSSL", has the
+      tables.
+    - **What holds it.** The checks of decision 158:
+      `bin/aes_equiv_test`, `bin/ghash_equiv_test`,
+      `bin/aes_runtime_test`, `bin/quic_test_hw`, the Wycheproof host
+      binary and `bin/diff_quic_hw`. No new check: the change moves no
+      output and no wipe.
+    - **Rejected:**
+      - **Pointers kept in fixed registers across statements.** C does
+        not keep a register from one asm statement to the next, so
+        each statement has to name what it reads.
+      - **One string longer than 4,095 characters.** ISO C does not
+        require a compiler to take it, and -Wpedantic refuses it.

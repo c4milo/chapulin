@@ -1097,10 +1097,12 @@ OrbStack amd64 container, runs translated code, so its times say nothing about t
 Decision 158 set the goal on 2026-10-25: on arm64, AES-GCM takes no more time than OpenSSL 3.6.4,
 for both key sizes, seal and open. This section holds the numbers on a Neoverse N2, the CPU of
 GitHub's `ubuntu-24.04-arm` runner. `make bench-record` ran on it under gcc 13 and the pinned
-clang 23, beside the pinned OpenSSL 3.6.4. The "after" CSVs are
+clang 23, beside the pinned OpenSSL 3.6.4. The "161" rows time the passes of decision 161, and
+their CSVs are
 [`bench/results-record-linux-arm64-n2-gcc.csv`](../bench/results-record-linux-arm64-n2-gcc.csv)
 and [`bench/results-record-linux-arm64-n2-clang.csv`](../bench/results-record-linux-arm64-n2-clang.csv).
-The "before" run timed the tree of 54a05fd1 on the same runner type. Its CSVs are not in the tree.
+The "before" run timed the tree of 54a05fd1, and the "after" run the tree of decision 158, on the
+same runner type. Their CSVs are not in the tree.
 
 Each cell is chapulin's time for one record over OpenSSL's in the same run: `seal_aes_gcm` or
 `open_aes_gcm`, which expand the key, run the AEAD with 5 bytes of associated data and wipe the
@@ -1114,15 +1116,23 @@ bold.
 | AES-128, clang, before | **1.68** / **1.29** | **1.44** / **1.29** | **1.18** / **1.15** |
 | AES-128, clang, after, `0x3` | 0.72 / 0.58 | 0.97 / 0.85 | **1.02** / 0.99 |
 | AES-128, clang, after, `0x83` | 0.75 / 0.59 | 0.94 / 0.82 | 0.98 / 0.94 |
+| AES-128, clang, 161, `0x3` | 0.72 / 0.57 | 0.96 / 0.85 | 1.00 / 0.97 |
+| AES-128, clang, 161, `0x83` | 0.74 / 0.59 | 0.94 / 0.82 | 0.97 / 0.94 |
 | AES-128, gcc, before | **2.74** / **2.15** | **1.97** / **1.76** | **1.27** / **1.25** |
 | AES-128, gcc, after, `0x3` | 0.73 / 0.60 | 0.97 / 0.87 | **1.02** / 0.99 |
 | AES-128, gcc, after, `0x83` | 0.74 / 0.60 | 0.94 / 0.85 | 0.99 / 0.96 |
+| AES-128, gcc, 161, `0x3` | 0.72 / 0.59 | 0.96 / 0.86 | 1.00 / 0.97 |
+| AES-128, gcc, 161, `0x83` | 0.73 / 0.61 | 0.94 / 0.84 | 0.97 / 0.93 |
 | AES-256, clang, before | **2.04** / **1.59** | **1.56** / **1.41** | **1.17** / **1.17** |
 | AES-256, clang, after, `0x3` | 0.72 / 0.59 | 0.97 / 0.88 | **1.01** / **1.02** |
 | AES-256, clang, after, `0x83` | 0.75 / 0.61 | 0.95 / 0.86 | 0.98 / 0.97 |
+| AES-256, clang, 161, `0x3` | 0.72 / 0.58 | 0.96 / 0.87 | 1.00 / **1.01** |
+| AES-256, clang, 161, `0x83` | 0.74 / 0.61 | 0.94 / 0.86 | 0.96 / 0.96 |
 | AES-256, gcc, before | **3.12** / **2.48** | **2.05** / **1.89** | **1.24** / **1.26** |
 | AES-256, gcc, after, `0x3` | 0.75 / 0.63 | 0.99 / 0.90 | **1.01** / **1.01** |
 | AES-256, gcc, after, `0x83` | 0.76 / 0.63 | 0.96 / 0.88 | 0.98 / 0.99 |
+| AES-256, gcc, 161, `0x3` | 0.74 / 0.61 | 0.97 / 0.90 | 0.99 / 1.00 |
+| AES-256, gcc, 161, `0x83` | 0.75 / 0.63 | 0.95 / 0.87 | 0.98 / 0.99 |
 
 The times behind the "after" rows, in ns, under clang and `0x83`: AES-128 seals 16 bytes in 137,
 1 KiB in 384 and 16 KiB in 3,635, where OpenSSL takes 184, 410 and 3,717. AES-256 seals them in
@@ -1140,21 +1150,32 @@ What the numbers show:
 - Two builds of the same tree differ by up to 3% in a 16 KiB cell, as the code's place in memory
   moves. The margins at 16 KiB under `0x83` are 1% to 6%.
 
-The M1 Pro ran `make bench-record BENCH_MACHINE=m1` at a load average of 4.6 to 5.2, into
-[`bench/results-record-darwin-arm64-m1-clang.csv`](../bench/results-record-darwin-arm64-m1-clang.csv).
-Homebrew holds OpenSSL 3.5.9 on this machine, not 3.6, so the OpenSSL figure is one operation of
-3.5.9's `speed -aead`. The record tables above keep the run of 2026-10-09 against OpenSSL 3.6.5,
-in which a 16 KiB record took 1.13 to 1.15 times OpenSSL's time.
+The M1 Pro ran `make bench-record BENCH_MACHINE=m1` at a load average of 3.6 to 4.3, into
+[`bench/results-record-darwin-arm64-m1-clang.csv`](../bench/results-record-darwin-arm64-m1-clang.csv),
+on the passes of decision 161. Homebrew holds OpenSSL 3.5.9 on this machine, not 3.6, so the
+OpenSSL figure is one operation of 3.5.9's `speed -aead`. The record tables above keep the run of
+2026-10-09 against OpenSSL 3.6.5, in which a 16 KiB record took 1.13 to 1.15 times OpenSSL's time.
 
 | M1 Pro, Apple clang 21, seal / open | 16 B | 1 KiB | 16 KiB |
 |---|---|---|---|
-| AES-128, `0x3` | 0.64 / 0.55 | 0.93 / 0.82 | **1.10** / **1.08** |
-| AES-128, `0x83` | 0.64 / 0.56 | 0.90 / 0.79 | **1.03** / **1.01** |
-| AES-256, `0x3` | 0.62 / 0.54 | 0.92 / 0.83 | **1.07** / **1.06** |
-| AES-256, `0x83` | 0.62 / 0.55 | 0.91 / 0.81 | **1.01** / **1.00** |
+| AES-128, `0x3` | 0.63 / 0.55 | 0.93 / 0.82 | **1.04** / **1.04** |
+| AES-128, `0x83` | 0.64 / 0.56 | 0.90 / 0.79 | 1.00 / 0.97 |
+| AES-256, `0x3` | 0.62 / 0.53 | 0.92 / 0.82 | **1.01** / 1.00 |
+| AES-256, `0x83` | 0.63 / 0.54 | 0.89 / 0.80 | 0.97 / 0.96 |
 
-On the M1 the 16 KiB records still take 1.00 to 1.03 of OpenSSL's time under `0x83`. The passes'
-order is the one the N2 measured best, and no change in this entry was timed for the M1's cores.
+What the numbers show:
+
+- Under `0x83` no cell takes more time than OpenSSL's. Before decision 161 the 16 KiB cells took
+  1.00 to 1.03 of it, and under `0x3` 1.06 to 1.10. The rows of this run spread by 6%. In runs
+  that set the code before and after decision 161 in turn, a 16 KiB record took 4.4% to 7.7% less
+  time under `0x83` and 2.6% to 4.5% less under `0x3`.
+- The M1 decodes the passes' instructions slower than its four vector pipes run them. Decision
+  161 took 23 instructions out of each AES-128 pass. A first step that took 9 out gained about one
+  cycle a pass.
+- OpenSSL 3.5.9 runs its `unroll8_eor3` kernel on this CPU, so the `0x83` row compares two
+  kernels that sum three values with EOR3.
+- On the N2 decision 161 took up to 2.6% off the 16 KiB cells under both compilers. The 16-byte
+  and 1 KiB cells took from 6.4% less to 1.1% more time. Its rows are the "161" rows of the N2 table.
 
 ### Where a server handshake's instructions go
 

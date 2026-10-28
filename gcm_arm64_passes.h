@@ -38,7 +38,8 @@
 // Registers. Each asm statement names the values it shares with the
 // statements after it as operands, and the compiler keeps them in vector
 // registers it picks: the 8 AES states, the accumulator and the three
-// sums. Every other register a statement writes is fixed and in its
+// sums, and the pointers to the round keys, the blocks to hash and the
+// powers. Every other register a statement writes is fixed and in its
 // clobber list:
 //
 //   v16, v17 round keys, in turn       v26, v27 the 2 powers of H
@@ -46,7 +47,7 @@
 //   v19      an input block, and the            added, then the reduction's
 //            pair's middle words                constant
 //   v24, v25 the 2 GHASH blocks        v29-v31  products and temporaries
-//   x9-x17   the pass_args members, below, and in step 1 a count
+//   x9, x11-x14 the pass_args members, below, and x15 a count
 //
 // Timing. No instruction here branches, and every address is a pointer
 // the caller passed plus a constant. The C branches read the round count
@@ -99,52 +100,42 @@ static inline size_t passes_secret_len(int paired) {
     return paired ? offsetof(gcm_arm64_passes, counters) : offsetof(gcm_arm64_passes, high);
 }
 
-// What every asm statement of a pass reads, in one object that one
-// operand points at, so a statement takes few operands: gcc refuses an
-// asm statement with more than 30, and counts each value a statement
-// both reads and writes twice. Each statement loads the members it needs
-// into fixed registers first. The offsets below are the asm's.
+// What the asm reads from memory once a pass, in one object that one
+// operand points at: gcc refuses an asm statement with more than 30
+// operands, and counts each value a statement both reads and writes
+// twice. A statement loads the members it needs into fixed registers
+// first. The offsets below are the asm's.
 typedef struct {
-    const uint8_t *round_keys;       // offset 0, into x10
-    uint8_t *cur;                    // offset 8, into x11: this pass's counter blocks
-    uint8_t *nxt;                    // offset 16, into x12: the counter blocks two passes on
-    const uint8_t *in;               // offset 24, into x13
-    uint8_t *out;                    // offset 32, into x14
-    const uint8_t *hash;             // offset 40, into x15: the 8 blocks to hash
-    const ghash_power *powers;       // offset 48, into x16
-    const ghash_vector *packed;      // offset 56, into x17
-    uint64_t next;                   // offset 64, into x9: the first count two passes on
-    uint64_t constant;               // offset 72: ghash_reduce's 0xc200000000000000
-    const uint8_t *first_key;        // offset 80, into x13 in the first statement
-    const ghash_power *high;         // offset 88, into x16 for the first kind of pass
-    const ghash_vector *packed_high; // offset 96, into x17 for the first kind of pass
+    uint8_t *cur;             // offset 0, into x11: this pass's counter blocks
+    uint8_t *nxt;             // offset 8, into x12: the counter blocks two passes on
+    const uint8_t *in;        // offset 16, into x13
+    uint8_t *out;             // offset 24, into x14
+    uint64_t next;            // offset 32, into x9: the first count two passes on
+    uint64_t constant;        // offset 40, into d28: ghash_reduce's 0xc200000000000000
+    const uint8_t *first_key; // offset 48, into x13 in the first statement
 } pass_args;
-_Static_assert(offsetof(pass_args, round_keys) == 0 && offsetof(pass_args, cur) == 8 &&
-                   offsetof(pass_args, nxt) == 16 && offsetof(pass_args, in) == 24 &&
-                   offsetof(pass_args, out) == 32 && offsetof(pass_args, hash) == 40 &&
-                   offsetof(pass_args, powers) == 48 && offsetof(pass_args, packed) == 56 &&
-                   offsetof(pass_args, next) == 64 && offsetof(pass_args, constant) == 72 &&
-                   offsetof(pass_args, first_key) == 80 && offsetof(pass_args, high) == 88 &&
-                   offsetof(pass_args, packed_high) == 96,
+_Static_assert(offsetof(pass_args, cur) == 0 && offsetof(pass_args, nxt) == 8 &&
+                   offsetof(pass_args, in) == 16 && offsetof(pass_args, out) == 24 &&
+                   offsetof(pass_args, next) == 32 && offsetof(pass_args, constant) == 40 &&
+                   offsetof(pass_args, first_key) == 48,
                "the asm reads pass_args at these offsets");
 _Static_assert(sizeof(ghash_power) == 32, "the asm reads power i at 32 * i");
 
 // ---- The asm text. Each macro is a string of instructions. ----
 
-// The operands every statement shares: the values in vector registers,
-// then zero and the reduction constant, and the pass_args, and the fixed
-// registers it writes.
+// The operands every statement shares: the values in vector registers, the
+// pass_args, the four pointers, and the fixed registers it writes.
 #define SHARED                                                                                     \
     : [s0] "+w"(s0), [s1] "+w"(s1), [s2] "+w"(s2), [s3] "+w"(s3), [s4] "+w"(s4), [s5] "+w"(s5),   \
       [s6] "+w"(s6), [s7] "+w"(s7), [acc] "+w"(acc), [lo] "+w"(lo), [hi] "+w"(hi),                \
       [mid] "+w"(mid)                                                                             \
-    : [zero] "w"(zero), [cst] "w"(cst), [a] "r"(args)                                             \
-    : "memory", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "v16", "v17",       \
+    : [a] "r"(args), [k] "r"(keys), [h] "r"(hash), [p] "r"(powers), [q] "r"(packed)     \
+    : "memory", "x9", "x11", "x12", "x13", "x14", "x15", "v16", "v17",                            \
       "v18", "v19", "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31"
 #define STEP(text) __asm__ volatile(text SHARED)
 
-// The values SHARED names, declared in each function that runs STEP.
-// zero and cst hold the reduction's two constants.
+// The values SHARED names, declared in each function that runs STEP:
+// hash points at the blocks a pass hashes, powers and packed at its powers.
 #define PASS_VALUES                                                                                \
     uint8x16_t s0 = vdupq_n_u8(0);                                                                 \
     uint8x16_t s1 = s0;                                                                            \
@@ -158,15 +149,14 @@ _Static_assert(sizeof(ghash_power) == 32, "the asm reads power i at 32 * i");
     ghash_vector lo = zero;                                                                        \
     ghash_vector hi = zero;                                                                        \
     ghash_vector mid = zero;                                                                       \
-    ghash_vector cst = ghash_vector_of(GHASH_REDUCTION_WORD, 0)
+    const uint8_t *const keys = at->round_keys;                                                    \
+    const uint8_t *hash = args->in;                                                                \
+    const ghash_power *powers = at->powers;                                                        \
+    const ghash_vector *packed = at->packed
 
-// The pass_args members a macro below reads, loaded at the start of each
-// statement that holds the macro.
-#define WITH_KEYS "ldr x10, [%[a]]\n"
-#define WITH_COUNTERS "ldp x11, x12, [%[a], 8]\n ldr x9, [%[a], 64]\n"
-#define WITH_BLOCKS "ldp x13, x14, [%[a], 24]\n"
-#define WITH_HASH "ldp x15, x16, [%[a], 40]\n ldr x17, [%[a], 56]\n"
-#define WITH_HASH_HIGH "ldr x15, [%[a], 40]\n ldp x16, x17, [%[a], 88]\n"
+// The pass_args members a macro below reads, which its statement loads first.
+#define WITH_COUNTERS "ldp x11, x12, [%[a]]\n ldr x9, [%[a], 32]\n"
+#define WITH_BLOCKS "ldp x13, x14, [%[a], 16]\n"
 
 // D = A ^ B ^ C on 16 bytes, D never C: one EOR3 in gcm_arm64_eor3.c's
 // copy, whose session's ch_cfg.cpu states FEAT_SHA3, and two EORs here.
@@ -181,40 +171,39 @@ _Static_assert(sizeof(ghash_power) == 32, "the asm reads power i at 32 * i");
 // round key in register K, then MixColumns. AESE and AESMC on one register
 // in turn let the core run them as one instruction.
 #define AES_STATE(S, K) "aese %[" S "].16b, v" K ".16b\n aesmc %[" S "].16b, %[" S "].16b\n"
-// Round R on the 8 states, with round key R loaded into register K first.
+// Round R on the 8 states, with round key R loaded into register K first
+// from the round keys at k.
 #define ROUND_8(K)                                                                                 \
     AES_STATE("s0", K)                                                                             \
     AES_STATE("s1", K)                                                                             \
     AES_STATE("s2", K)                                                                             \
     AES_STATE("s3", K) AES_STATE("s4", K) AES_STATE("s5", K) AES_STATE("s6", K) AES_STATE("s7", K)
-#define ROUND(R, K) "ldr q" K ", [x10, #(16 * " #R ")]\n" ROUND_8(K)
+#define ROUND(R, K) "ldr q" K ", [%[k], #(16 * " #R ")]\n" ROUND_8(K)
 // Round 0, whose AddRoundKey takes first_key, so it adds the IV as well.
-#define ROUND_0 "ldr x13, [%[a], 80]\n ldr q16, [x13]\n" ROUND_8("16")
+#define ROUND_0 "ldr x13, [%[a], 48]\n ldr q16, [x13]\n" ROUND_8("16")
 
-// Step 1: the 8 counter blocks of this pass, and the counter blocks of the
-// pass two after it, for counts next to next + 7, written whole into its
-// buffer: zeros in bytes 0 to 11 and the count big-endian in bytes 12 to
-// 15. REV reverses the four bytes of the count, LSL moves them to the
-// upper half of the 64-bit word, and STP writes zero and that word low
-// byte first, so on a little-endian core (cpu_cfg.h) the most significant
-// byte of the count lands at byte 12.
-#define NEXT_COUNT(B)                                                                              \
-    "add w15, w9, " #B "\n rev w15, w15\n lsl x15, x15, 32\n"                                      \
-    "stp xzr, x15, [x12, #(16 * " #B ")]\n"
+// Step 1: the 8 counter blocks of this pass, and the counts of the pass
+// two after it, next to next + 7, into its buffer. Bytes 0 to 11 of each
+// block stay zero from passes_counters, so a pass writes the count alone,
+// big-endian in bytes 12 to 15. REV reverses the four bytes of the count,
+// and STR writes them low byte first, so on a little-endian core
+// (cpu_cfg.h) the most significant byte of the count lands at byte 12.
+#define NEXT_COUNT(B) "add w15, w9, " #B "\n rev w15, w15\n str w15, [x12, #(16 * " #B " + 12)]\n"
 #define COUNTERS                                                                                   \
     "ldp %q[s0], %q[s1], [x11]\n ldp %q[s2], %q[s3], [x11, 32]\n"                                  \
-    "ldp %q[s4], %q[s5], [x11, 64]\n ldp %q[s6], %q[s7], [x11, 96]\n" NEXT_COUNT(0) NEXT_COUNT(1)  \
-        NEXT_COUNT(2) NEXT_COUNT(3) NEXT_COUNT(4) NEXT_COUNT(5) NEXT_COUNT(6) NEXT_COUNT(7)
+    "ldp %q[s4], %q[s5], [x11, 64]\n ldp %q[s6], %q[s7], [x11, 96]\n"                              \
+    "rev w15, w9\n str w15, [x12, 12]\n" NEXT_COUNT(1) NEXT_COUNT(2) NEXT_COUNT(3) NEXT_COUNT(4)   \
+        NEXT_COUNT(5) NEXT_COUNT(6) NEXT_COUNT(7)
 
-// Blocks J and K of the 8 at hash, as elements: ghash_load_block's byte
-// reversal in each half. Block J takes power index 7 - J at x16, H^(8 - J)
+// Blocks J and K of the 8 at h, as elements: ghash_load_block's byte
+// reversal in each half. Block J takes power index 7 - J at p, H^(8 - J)
 // in ghash_state's powers and H^(16 - J) in high, and so does K; packed[P]
-// at x17 holds both powers' halves added.
+// at q holds both powers' halves added.
 #define PAIR_LOAD(J, K, P)                                                                         \
-    "ldr q24, [x15, #(16 * " #J ")]\n ldr q25, [x15, #(16 * " #K ")]\n"                            \
+    "ldr q24, [%[h], #(16 * " #J ")]\n ldr q25, [%[h], #(16 * " #K ")]\n"                          \
     "rev64 v24.16b, v24.16b\n rev64 v25.16b, v25.16b\n"                                            \
-    "ldr q26, [x16, #(32 * (7 - " #J "))]\n ldr q27, [x16, #(32 * (7 - " #K "))]\n"                \
-    "ldr q28, [x17, #(16 * " #P ")]\n"
+    "ldr q26, [%[p], #(32 * (7 - " #J "))]\n ldr q27, [%[p], #(32 * (7 - " #K "))]\n"              \
+    "ldr q28, [%[q], #(16 * " #P ")]\n"
 
 // The pair's products: low = lane 1 times lane 1 (PMULL2), high = lane 0
 // times lane 0 (PMULL), as ghash_start_sums computes them, and the middle
@@ -244,9 +233,9 @@ _Static_assert(sizeof(ghash_power) == 32, "the asm reads power i at 32 * i");
     "].16b, v16.16b\n" XOR3("%[" S "]", "%[" S "]", "v18", "v19") "str %q[" S                      \
                                                                   "], [x14, #(16 * " #B ")]\n"
 #define LAST(R)                                                                                    \
-    "ldr q16, [x10, #(16 * (" #R " - 1))]\n ldr q18, [x10, #(16 * " #R ")]\n" LAST_BLOCK("s0", 0)  \
-        LAST_BLOCK("s1", 1) LAST_BLOCK("s2", 2) LAST_BLOCK("s3", 3) LAST_BLOCK("s4", 4)            \
-            LAST_BLOCK("s5", 5) LAST_BLOCK("s6", 6) LAST_BLOCK("s7", 7)
+    "ldr q16, [%[k], #(16 * (" #R " - 1))]\n ldr q18, [%[k], #(16 * " #R                           \
+    ")]\n" LAST_BLOCK("s0", 0) LAST_BLOCK("s1", 1) LAST_BLOCK("s2", 2) LAST_BLOCK("s3", 3)         \
+        LAST_BLOCK("s4", 4) LAST_BLOCK("s5", 5) LAST_BLOCK("s6", 6) LAST_BLOCK("s7", 7)
 
 // Step 4: ghash_reduce. The middle term takes the low and high sums. The
 // first fold adds low's lane 0 times the constant to low swapped and to
@@ -255,11 +244,11 @@ _Static_assert(sizeof(ghash_power) == 32, "the asm reads power i at 32 * i");
 // accumulator.
 #define REDUCE                                                                                     \
     XOR3("%[mid]", "%[mid]", "%[lo]", "%[hi]")                                                     \
-    "pmull v29.1q, %[lo].1d, %[cst].1d\n ext v30.16b, %[lo].16b, %[lo].16b, 8\n"                   \
-    "ext v27.16b, %[mid].16b, %[zero].16b, 8\n fmov d31, %d[mid]\n" XOR3(                          \
+    "ldr d28, [%[a], 40]\n pmull v29.1q, %[lo].1d, v28.1d\n"                                       \
+    "ext v30.16b, %[lo].16b, %[lo].16b, 8\n mov d27, %[mid].d[1]\n fmov d31, %d[mid]\n" XOR3(      \
         "v30", "v30", "v31",                                                                       \
         "v29") "eor %[hi].16b, %[hi].16b, v27.16b\n"                                               \
-               "pmull v29.1q, v30.1d, %[cst].1d\n ext v30.16b, v30.16b, v30.16b, 8\n" XOR3(        \
+               "pmull v29.1q, v30.1d, v28.1d\n ext v30.16b, v30.16b, v30.16b, 8\n" XOR3(           \
                    "%[acc]", "%[hi]", "v30", "v29") "ext %[acc].16b, %[acc].16b, %[acc].16b, 8\n"
 
 // The GHASH steps of a pass, which the AES rounds below run between. A
@@ -267,20 +256,20 @@ _Static_assert(sizeof(ghash_power) == 32, "the asm reads power i at 32 * i");
 // reduce 16 blocks once (FIRST_OF_TWO), with the powers from H^9 up and
 // no reduction, and the second of them (SECOND_OF_TWO), whose sums go on
 // from the first's and whose block 0 takes no accumulator. Each names the
-// pass_args members its pairs read, and its pairs in order.
-#define SINGLE_HASH WITH_HASH
+// powers its pairs take, and its pairs in order.
+#define SINGLE_POWERS powers = low_powers, packed = low_packed
 #define SINGLE_1 PAIR_FIRST(1, 2, 0)
 #define SINGLE_2 PAIR(3, 4, 1)
 #define SINGLE_3 PAIR(5, 6, 2)
 #define SINGLE_4 PAIR_LAST(7, 3)
 #define SINGLE_END REDUCE
-#define FIRST_OF_TWO_HASH WITH_HASH_HIGH
+#define FIRST_OF_TWO_POWERS powers = high_powers, packed = high_packed
 #define FIRST_OF_TWO_1 PAIR_FIRST(1, 2, 0)
 #define FIRST_OF_TWO_2 PAIR(3, 4, 1)
 #define FIRST_OF_TWO_3 PAIR(5, 6, 2)
 #define FIRST_OF_TWO_4 PAIR_LAST(7, 3)
 #define FIRST_OF_TWO_END ""
-#define SECOND_OF_TWO_HASH WITH_HASH
+#define SECOND_OF_TWO_POWERS powers = low_powers, packed = low_packed
 #define SECOND_OF_TWO_1 PAIR(1, 2, 0)
 #define SECOND_OF_TWO_2 PAIR(3, 4, 1)
 #define SECOND_OF_TWO_3 PAIR(5, 6, 2)
@@ -293,43 +282,46 @@ _Static_assert(sizeof(ghash_power) == 32, "the asm reads power i at 32 * i");
 // compiler to take, so a pass is several statements, and the shared
 // operands carry the values between them.
 #define PASS_128(KIND)                                                                             \
-    STEP(WITH_KEYS WITH_COUNTERS COUNTERS ROUND_0 ROUND(1, "17"));                                 \
-    STEP(WITH_KEYS KIND##_HASH KIND##_1 ROUND(2, "16") ROUND(3, "17"));                            \
-    STEP(WITH_KEYS KIND##_HASH KIND##_2 ROUND(4, "16") ROUND(5, "17"));                            \
-    STEP(WITH_KEYS KIND##_HASH KIND##_3 ROUND(6, "16") ROUND(7, "17"));                            \
-    STEP(WITH_KEYS KIND##_HASH KIND##_4 ROUND(8, "16"));                                           \
-    STEP(WITH_KEYS WITH_BLOCKS LAST(10) KIND##_END)
+    KIND##_POWERS;                                                                                 \
+    STEP(WITH_COUNTERS COUNTERS ROUND_0 ROUND(1, "17"));                                           \
+    STEP(KIND##_1 ROUND(2, "16") ROUND(3, "17"));                                                  \
+    STEP(KIND##_2 ROUND(4, "16") ROUND(5, "17"));                                                  \
+    STEP(KIND##_3 ROUND(6, "16") ROUND(7, "17"));                                                  \
+    STEP(KIND##_4 ROUND(8, "16"));                                                                 \
+    STEP(WITH_BLOCKS LAST(10) KIND##_END)
 
 // A pass of AES-256 with the GHASH steps of KIND: 13 rounds with
 // MixColumns, a GHASH pair after each third one, and the last round, in 8
 // statements.
 #define PASS_256(KIND)                                                                             \
-    STEP(WITH_KEYS WITH_COUNTERS COUNTERS ROUND_0 ROUND(1, "17"));                                 \
-    STEP(WITH_KEYS KIND##_HASH ROUND(2, "16") KIND##_1 ROUND(3, "17"));                            \
-    STEP(WITH_KEYS KIND##_HASH ROUND(4, "16") ROUND(5, "17") KIND##_2);                            \
-    STEP(WITH_KEYS ROUND(6, "16") ROUND(7, "17") ROUND(8, "16"));                                  \
-    STEP(WITH_KEYS KIND##_HASH KIND##_3 ROUND(9, "17") ROUND(10, "16"));                           \
-    STEP(WITH_KEYS KIND##_HASH ROUND(11, "17") KIND##_4);                                          \
-    STEP(WITH_KEYS ROUND(12, "16"));                                                               \
-    STEP(WITH_KEYS WITH_BLOCKS LAST(14) KIND##_END)
+    KIND##_POWERS;                                                                                 \
+    STEP(WITH_COUNTERS COUNTERS ROUND_0 ROUND(1, "17"));                                           \
+    STEP(ROUND(2, "16") KIND##_1 ROUND(3, "17"));                                                  \
+    STEP(ROUND(4, "16") ROUND(5, "17") KIND##_2);                                                  \
+    STEP(ROUND(6, "16") ROUND(7, "17") ROUND(8, "16"));                                            \
+    STEP(KIND##_3 ROUND(9, "17") ROUND(10, "16"));                                                 \
+    STEP(ROUND(11, "17") KIND##_4);                                                                \
+    STEP(ROUND(12, "16"));                                                                         \
+    STEP(WITH_BLOCKS LAST(14) KIND##_END)
 
 // The seal's first pass: counter mode alone, with no GHASH step.
 #define COUNTER_PASS_128                                                                           \
-    STEP(WITH_KEYS WITH_COUNTERS COUNTERS ROUND_0 ROUND(1, "17") ROUND(2, "16"));                  \
-    STEP(WITH_KEYS ROUND(3, "17") ROUND(4, "16") ROUND(5, "17") ROUND(6, "16"));                   \
-    STEP(WITH_KEYS ROUND(7, "17") ROUND(8, "16"));                                                 \
-    STEP(WITH_KEYS WITH_BLOCKS LAST(10))
+    STEP(WITH_COUNTERS COUNTERS ROUND_0 ROUND(1, "17") ROUND(2, "16"));                            \
+    STEP(ROUND(3, "17") ROUND(4, "16") ROUND(5, "17") ROUND(6, "16"));                             \
+    STEP(ROUND(7, "17") ROUND(8, "16"));                                                           \
+    STEP(WITH_BLOCKS LAST(10))
 #define COUNTER_PASS_256                                                                           \
-    STEP(WITH_KEYS WITH_COUNTERS COUNTERS ROUND_0 ROUND(1, "17") ROUND(2, "16"));                  \
-    STEP(WITH_KEYS ROUND(3, "17") ROUND(4, "16") ROUND(5, "17") ROUND(6, "16"));                   \
-    STEP(WITH_KEYS ROUND(7, "17") ROUND(8, "16") ROUND(9, "17") ROUND(10, "16"));                  \
-    STEP(WITH_KEYS ROUND(11, "17") ROUND(12, "16"));                                               \
-    STEP(WITH_KEYS WITH_BLOCKS LAST(14))
+    STEP(WITH_COUNTERS COUNTERS ROUND_0 ROUND(1, "17") ROUND(2, "16"));                            \
+    STEP(ROUND(3, "17") ROUND(4, "16") ROUND(5, "17") ROUND(6, "16"));                             \
+    STEP(ROUND(7, "17") ROUND(8, "16") ROUND(9, "17") ROUND(10, "16"));                            \
+    STEP(ROUND(11, "17") ROUND(12, "16"));                                                         \
+    STEP(WITH_BLOCKS LAST(14))
 
 // The seal's last GHASH, the GHASH steps of KIND with no AES step.
 #define HASH_PASS(KIND)                                                                            \
-    STEP(KIND##_HASH KIND##_1 KIND##_2);                                                           \
-    STEP(KIND##_HASH KIND##_3 KIND##_4 KIND##_END)
+    KIND##_POWERS;                                                                                 \
+    STEP(KIND##_1 KIND##_2);                                                                       \
+    STEP(KIND##_3 KIND##_4 KIND##_END)
 
 // The counter's count block b of pass p takes: first counts from 1, as
 // SP 800-38D's inc32 of the first counter block J0, whose count is 1.
@@ -340,7 +332,7 @@ static inline uint32_t passes_count(uint32_t first, size_t p, size_t b) {
 // ps's first_key: round key 0 with the twelve bytes of iv exclusive-ored
 // into bytes 0 to 11. Its counter buffers 0 and 1: the counter blocks of
 // passes 0 and 1, whose counts begin at first, as NEXT_COUNT writes them.
-// The asm writes buffer 2 before any pass reads it.
+// Its buffer 2: zeros, which the asm writes counts into.
 static inline void passes_counters(gcm_arm64_passes *ps, const uint8_t *round_keys,
                                    const uint8_t iv[AES_IV], uint32_t first) {
     uint64_t iv_low;
@@ -350,6 +342,7 @@ static inline void passes_counters(gcm_arm64_passes *ps, const uint8_t *round_ke
     uint8x16_t iv_block =
         vreinterpretq_u8_u64(vcombine_u64(vcreate_u64(iv_low), vcreate_u64(iv_high)));
     vst1q_u8(ps->first_key, veorq_u8(vld1q_u8(round_keys), iv_block));
+    memset(ps->counters[2], 0, sizeof ps->counters[2]);
     for (size_t p = 0; p < 2; p++) {
         for (size_t b = 0; b < GCM_ARM64_PASS_BLOCKS; b++) {
             uint64_t words[2] = {0, (uint64_t)__builtin_bswap32(passes_count(first, p, b)) << 32};
@@ -372,14 +365,19 @@ static inline void passes_pack_set(ghash_vector packed[GCM_ARM64_PASS_BLOCKS / 2
 
 // Where the passes stand between two passes, beside the pass_args: the
 // counter buffer after the one the next pass reads, where the pass just
-// run wrote its output, and the first count two passes on. They stay apart
-// from args: the asm statements read args through a pointer and may write
-// any memory, so the compilers keep args in memory and reload it after
-// each statement, and they keep these in registers.
+// run wrote its output, the first count two passes on, and the asm's
+// pointer operands. The asm reads args through a pointer and may write
+// any memory, so the compilers reload args after each statement and keep
+// these in registers.
 typedef struct {
     uint8_t *following;
     const uint8_t *written;
     uint32_t next;
+    const uint8_t *round_keys;
+    const ghash_power *powers;
+    const ghash_vector *packed;
+    const ghash_power *high;
+    const ghash_vector *packed_high;
 } pass_cursor;
 
 // args and at for pass 0 over in and out, with ps as passes_counters wrote
@@ -387,19 +385,18 @@ typedef struct {
 static inline void passes_begin(pass_args *args, pass_cursor *at, gcm_arm64_passes *ps,
                                 const ghash_state *g, const uint8_t *round_keys, uint32_t first,
                                 const uint8_t *in, uint8_t *out) {
-    args->round_keys = round_keys;
+    at->round_keys = round_keys;
     args->first_key = ps->first_key;
-    args->powers = g->powers;
-    args->packed = ps->packed;
-    args->high = ps->high;
-    args->packed_high = ps->packed_high;
+    at->powers = g->powers;
+    at->packed = ps->packed;
+    at->high = ps->high;
+    at->packed_high = ps->packed_high;
     args->constant = GHASH_REDUCTION_WORD;
     args->cur = ps->counters[0];
     at->following = ps->counters[1];
     args->nxt = ps->counters[2];
     args->in = in;
     args->out = out;
-    args->hash = in;
     at->written = NULL;
     at->next = passes_count(first, 2, 0);
     args->next = at->next;
@@ -451,30 +448,30 @@ static inline void passes_counter_pass(pass_args *args, pass_cursor *at, size_t 
     do {                                                                                           \
         size_t p = 0;                                                                              \
         for (; !paired && p < count; p++) {                                                        \
-            args->hash = seal ? at->written : args->in;                                            \
+            hash = seal ? at->written : args->in;                                                  \
             PASS(SINGLE);                                                                          \
             pass_advance(args, at);                                                                \
         }                                                                                          \
         for (; p + 2 <= count; p += 2) {                                                           \
-            args->hash = seal ? at->written : args->in;                                            \
+            hash = seal ? at->written : args->in;                                                  \
             PASS(FIRST_OF_TWO);                                                                    \
             pass_advance(args, at);                                                                \
-            args->hash = seal ? at->written : args->in;                                            \
+            hash = seal ? at->written : args->in;                                                  \
             PASS(SECOND_OF_TWO);                                                                   \
             pass_advance(args, at);                                                                \
         }                                                                                          \
         if (p < count && seal) {                                                                   \
-            args->hash = at->written;                                                              \
+            hash = at->written;                                                                    \
             PASS(FIRST_OF_TWO);                                                                    \
             pass_advance(args, at);                                                                \
-            args->hash = at->written;                                                              \
+            hash = at->written;                                                                    \
             HASH_PASS(SECOND_OF_TWO);                                                              \
         } else if (p < count) {                                                                    \
-            args->hash = args->in;                                                                 \
+            hash = args->in;                                                                       \
             PASS(SINGLE);                                                                          \
             pass_advance(args, at);                                                                \
         } else if (seal) {                                                                         \
-            args->hash = at->written;                                                              \
+            hash = at->written;                                                                    \
             HASH_PASS(SINGLE);                                                                     \
         }                                                                                          \
     } while (0)
@@ -483,6 +480,10 @@ static inline void passes_run(ghash_state *g, pass_args *args, pass_cursor *at, 
                               int seal, int paired, size_t count) {
     PASS_VALUES;
     ghash_vector acc = g->acc;
+    const ghash_power *const low_powers = at->powers;
+    const ghash_power *const high_powers = at->high;
+    const ghash_vector *const low_packed = at->packed;
+    const ghash_vector *const high_packed = at->packed_high;
 #ifdef CH_AES_256
     if (rounds == AES_256_ROUNDS) {
         PASSES_LOOP(PASS_256);
