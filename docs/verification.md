@@ -2434,11 +2434,33 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   `mldsa87_verify`, the transcript snapshot, the two `srv_frag` calls,
   the CertificateVerify head and the chain rule are contract stubs, and
   [mldsa_sign](#mldsa_sign), [srv_message](#srv_message) and the
-  handshake record harnesses prove the real ones. The selection, the
-  cookie and the ticket under the profile have no harness of their own:
-  `srv_cookie`, `srv_ticket` and `srv_select_suite` prove the arms
-  outside the profile, and `bin/cnsa2_server_test` tests the profile's
-  arms at their boundaries.
+  handshake record harnesses prove the real ones.
+
+#### The PROFILE=cnsa2 arms of srv_kex, srv_cookie, srv_ticket and srv_parser_ext
+
+- **Harnesses:** `srv_kex_cnsa2` (fast), `srv_cookie_cnsa2` (fast), `srv_ticket_cnsa2` (fast), `srv_parser_ext_cnsa2` (fast), `srv_parser_ext_cnsa2_share` (fast)
+- **Defines:** each runs under the profile server's defines
+  (docs/decisions.md 162).
+- **Proves:**
+  - `srv_kex_cnsa2`: `srv_kex_group` answers ML-KEM-1024 exactly when
+    the hello listed it, `srv_kex_shared` exactly when its share arrived,
+    `srv_kex_share` hands the encapsulation the client's whole share and
+    reports the ciphertext's length or refuses with no secret left, and
+    `srv_kex_secret` writes the encapsulation's secret as the whole input
+    keying material and wipes it.
+  - `srv_cookie_cnsa2`: `srv_cookie_harness.c`'s properties for the
+    133-byte cookie under its 48-byte HMAC-SHA-384.
+  - `srv_ticket_cnsa2`: `srv_ticket_harness.c`'s properties for the
+    AES-256-GCM ticket, version byte 3 included.
+  - `srv_parser_ext_cnsa2`: every reader's memory safety and verdicts under
+    the profile's group, scheme and share length, on a body up to 24 bytes.
+  - `srv_parser_ext_cnsa2_share`: a key_share entry for ML-KEM-1024 is
+    kept exactly at 1,568 bytes, `mlkem_share` points at its key_exchange
+    inside the body, and one byte short or long is illegal_parameter.
+- **Not proved:** the encapsulation, HMAC-SHA-384's hash and the three
+  AES calls, which are contract stubs, and the round trip of a cookie or
+  a ticket, which `bin/cnsa2_server_test` tests. `srv_parser.c` holds no
+  profile arm, so `srv_parser_walk` covers it as it stands.
 
 #### srv_cookie
 

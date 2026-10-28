@@ -37,6 +37,8 @@
 //
 // A PROFILE=cnsa2 server seals the same body under AES-256-GCM (NIST SP
 // 800-38D) with gcm_traffic_seal, and the last 16 bytes are the GCM tag.
+// Its first byte is SRV_TICKET_VERSION 3, where every other server writes
+// 2.
 // CNSA 2.0 names AES-256 and no other cipher, and the profile's one suite
 // hashes with SHA-384, so every PSK fills all 48 bytes of psk. The length
 // stays SRV_TICKET_LEN, 124 bytes. INV-26 admits the ticket key there
@@ -83,7 +85,15 @@ _Static_assert(CH_SRV_TICKET_KEY_LEN == AEAD_KEY, "the ticket key is one AEAD ke
 // TLS version and not a QUIC version. A deployment that changes the layout
 // moves it, and every ticket under the old layout then fails to open and
 // costs its client one full handshake. Version 2 added quic_version.
+// Version 3 is a PROFILE=cnsa2 server's AES-256-GCM ticket, so a
+// ChaCha20-Poly1305 ticket of version 2 fails on its first byte there, and
+// one ticket_key never opens tickets under two ciphers (docs/decisions.md
+// 162).
+#ifdef CH_PROFILE_CNSA2
+#define SRV_TICKET_VERSION 3
+#else
 #define SRV_TICKET_VERSION 2
+#endif
 
 // The longest time a ticket stays usable, in seconds, counted from
 // auth_seconds. RFC 9846 §4.7.1 caps ticket_lifetime at 604800

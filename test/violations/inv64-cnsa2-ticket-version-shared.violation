@@ -1,0 +1,13 @@
+invariant: INV-64
+file: srv_ticket.h
+catches: cnsa2_server_test
+reason: the profile's AES-256-GCM tickets take the version byte 2, the one
+  every other server's ChaCha20-Poly1305 tickets carry, so one ticket_key
+  shared across the two builds would read either cipher's ticket under the
+  other's layout until the AEAD refused it. test_ticket requires the
+  profile's first byte to be 3 and a version-2 ticket to be refused.
+
+--- old
+#define SRV_TICKET_VERSION 3
+--- new
+#define SRV_TICKET_VERSION 2

@@ -14488,8 +14488,11 @@ does nothing more.
       `ch_tls` grows by 8 bytes to 2,992.
     - **The tickets.** AES-256-GCM under `ticket_key`, with the version
       byte as the associated data, as the ChaCha20-Poly1305 tickets are.
-      The nonce and the tag keep their 12 and 16 bytes, so a ticket stays
-      124 bytes, and its PSK fills all 48 bytes at SHA-384.
+      The version byte is 3, where every other server writes 2: on
+      2026-10-28 Camilo ruled that a ChaCha20-Poly1305 ticket fails on its
+      first byte there, so one `ticket_key` never opens tickets under two
+      ciphers. The nonce and the tag keep their 12 and 16 bytes, so a
+      ticket stays 124 bytes, and its PSK fills all 48 bytes at SHA-384.
       `srv_ticket.c` expands the key on its frame for one call and wipes
       it there. It calls `aes_traffic_key_init`, which records the AES
       instructions and no description of the CPU, so the ticket key runs
@@ -14522,9 +14525,13 @@ does nothing more.
       Then this tree's `TRUST=raw-mldsa` client makes a full handshake and
       resumes its ticket. The `srv_mldsa` harness proves `srv_mldsa.c`'s
       memory safety over contract stubs of the signer and the verifier.
+      `srv_kex_cnsa2`, `srv_cookie_cnsa2`, `srv_ticket_cnsa2`,
+      `srv_parser_ext_cnsa2` and `srv_parser_ext_cnsa2_share` prove the
+      profile's arms of `srv_kex.c`, `srv_cookie.c`, `srv_ticket.c` and
+      `srv_parser_ext.c` under its defines.
       `check-lib-cnsa2-server` and its two siblings package the three
       objects, `lint-zig-build` holds `build.zig` and the Zig API to them,
-      and INV-64's seven mutants and INV-26's two new ones each fail a
+      and INV-64's eight mutants and INV-26's two new ones each fail a
       check.
 
     Rejected:

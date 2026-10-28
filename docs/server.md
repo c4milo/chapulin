@@ -3074,7 +3074,8 @@ under the profile.
   handshake_failure.
 - **Cookie and tickets.** The cookie is HMAC-SHA-384 under `cookie_key`,
   133 bytes. Tickets are sealed under AES-256-GCM with `ticket_key`, 124
-  bytes, at SHA-384.
+  bytes, at SHA-384, and carry version byte 3, so a version-2
+  ChaCha20-Poly1305 ticket is refused on its first byte.
 - **CPU.** Every init call and `ch_srv_check` refuse a `ch_cfg.cpu`
   without `CH_CPU_CONSTANT_TIME_AES`.
 - **Memory.** A `ch_tls` of 3,160 bytes, a receive floor of 2,179 bytes

@@ -296,6 +296,14 @@ static void test_ticket(void) {
     srv_ticket_contents got;
     CHECK(srv_ticket_open(0, ticket_key, ticket, sizeof ticket, &got) == CH_OK);
     CHECK(got.suite == SUITE_AES_256_GCM_SHA384 && memcmp(got.psk, c.psk, sizeof c.psk) == 0);
+    // The profile's tickets are version 3. A version-2 ticket, the
+    // ChaCha20-Poly1305 layout of every other server, is refused on its
+    // first byte, before the AEAD runs.
+    CHECK(SRV_TICKET_VERSION == 3 && ticket[0] == 3);
+    ticket[0] = 2;
+    CHECK(srv_ticket_open(0, ticket_key, ticket, sizeof ticket, &got) == CH_EAUTH);
+    ticket[0] = 3;
+    CHECK(srv_ticket_open(0, ticket_key, ticket, sizeof ticket, &got) == CH_OK);
     ticket[sizeof ticket - 1] ^= 1;
     CHECK(srv_ticket_open(0, ticket_key, ticket, sizeof ticket, &got) == CH_EAUTH);
 }

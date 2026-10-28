@@ -50,7 +50,7 @@ static void prove_mint(void) {
         srv_cookie_mint(key, nondet_u16(), nondet_u16(), ch1_hash, hash_len, frozen, minted, cap);
 
     __CPROVER_assert(n <= cap, "a minted cookie fits the buffer it was given");
-    __CPROVER_assert(n == 0 || n == 5 + hash_len + SHA256_LEN + SHA256_LEN,
+    __CPROVER_assert(n == 0 || n == 5 + hash_len + SHA256_LEN + SRV_COOKIE_MAC_LEN,
                      "a minted cookie is as long as the hash it carries makes it");
     // srv_flight.h asserts SRV_COOKIE_MAX against HSP_COOKIE_MAX, so the
     // constant has to be sufficient for every cookie this mint can write.
@@ -78,7 +78,7 @@ static void prove_open(void) {
     if (rc == CH_OK) {
         __CPROVER_assert(hash_len <= SRV_COOKIE_HASH_MAX,
                          "the reported hash length fits the buffer the caller supplies");
-        __CPROVER_assert(n == 5 + hash_len + SHA256_LEN + SHA256_LEN,
+        __CPROVER_assert(n == 5 + hash_len + SHA256_LEN + SRV_COOKIE_MAC_LEN,
                          "an opened cookie is as long as the suite it names makes it");
     }
 }

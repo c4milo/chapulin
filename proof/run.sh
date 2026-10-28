@@ -1204,6 +1204,11 @@ launch fast full kem_secret_cnsa2 65 "fill_nondet.0:3169,ct_wipe.0:3169" -DCH_PR
 # through proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load
 # average near 106: 603 properties, 18 s, 0.09 GB.
 launch fast full srv_kex 66 "fill_nondet.0:66,same.0:33,zero.0:65" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+# The PROFILE=cnsa2 arm of srv_kex.c (docs/decisions.md 162): the
+# selection, the share and the secret of ML-KEM-1024 alone, with the
+# encapsulation stubbed by its contract under each name a host object's
+# dispatch can call. fill_nondet covers the 1,568-byte encapsulation key.
+launch fast full srv_kex_cnsa2 34 "fill_nondet.0:1569" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The TRUST=webpki client's three-group rules (docs/decisions.md 63):
 # handshake_groups.c with ch_rand_bytes, the P-256 keygen and exchange, and
 # x25519 stubbed to their headers' contracts, the srv_kex shape on the
@@ -2087,6 +2092,11 @@ launch slow full srv_resume 120 "fill_nondet.0:122,find_ticket.0:24,binder_at.0:
 # one byte higher in the harness the assertion fails, so it is exact.
 launch fast full srv_message 130 "fill_nondet.0:118" buf.c -DCH_ROLE_SERVER
 launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c proof/ct_wipe_stub.c hkdf.c -DCH_ROLE_SERVER
+# The same harness for the PROFILE=cnsa2 cookie: HMAC-SHA-384, a 48-byte MAC
+# and a 133-byte cookie, with SHA-384 the contract stub beside SHA-256's.
+# fill_nondet and ct_wipe cover the 208-byte SHA-384 context, the
+# largest object it runs over.
+launch fast full srv_cookie_cnsa2 130 "fill_nondet.0:209,ct_wipe.0:209" buf.c ct.c proof/ct_wipe_stub.c hkdf.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # srv_select_suite: suite.h's srv_first_offered_suite, the walk
 # srv_select runs over the server's order, in the -DCH_SUITE_AES_GCM
 # build, over every offer of the three suites and every order of up to
@@ -2123,6 +2133,11 @@ launch fast full srv_select_runtime 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DC
 # 2 of the format (docs/decisions.md 79): 711 properties, 1 s, 0.03 GB,
 # measured the same way on 2026-09-29.
 launch fast full srv_ticket 110 "fill_nondet.0:110" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+# The same harness for the PROFILE=cnsa2 tickets: AES-256-GCM on a key
+# expanded on srv_ticket.c's frame, with version byte 3, and the three AES
+# calls stubbed by contract. fill_nondet and ct_wipe cover the expanded key,
+# the largest object either one runs over.
+launch fast full srv_ticket_cnsa2 130 "fill_nondet.0:260,ct_wipe.0:260" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The QUIC server's Retry token, the same shape as the cookie above: buf.c,
 # ct.c and hkdf.c real, SHA-256 the contract stub in harness.h, and both
 # calls over unconstrained inputs, the address length and the two connection
@@ -2155,6 +2170,12 @@ launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:
 # key_share reader's refusals and its walk; bin/srv_test holds each group's
 # exact length.
 launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+# The same readers under the PROFILE=cnsa2 server's defines, and the one
+# shape a 24-byte body cannot hold: a key_share entry for ML-KEM-1024 at its
+# 1,568-byte length or one byte either side, which srv_parser_ext_cnsa2_share
+# walks in at most two entries.
+launch fast:2 full srv_parser_ext_cnsa2 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
+launch fast full srv_parser_ext_cnsa2_share 3 "fill_nondet.0:1580" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The walk half, proof/srv_parser_walk_harness.c: srv_parser.c real with
 # srv_read_extension stubbed to its contract, over any message up to 64
 # bytes, which leaves room for five empty extensions after the head.

@@ -2046,7 +2046,8 @@ last `ROLE=server` stub, as the entry said it would.
   whole 146-byte content with an empty context, and verifies the
   signature before it sends it. It keys the HelloRetryRequest cookie
   with HMAC-SHA-384, 133 bytes a cookie, and seals its tickets under
-  AES-256-GCM, 124 bytes a ticket. It runs no session whose
+  AES-256-GCM, 124 bytes a ticket whose version byte is 3, so it refuses
+  a version-2 ChaCha20-Poly1305 ticket on its first byte. It runs no session whose
   `ch_cfg.cpu` lacks `CH_CPU_CONSTANT_TIME_AES`, and it takes no key of
   another length than 4,896 and 2,592 bytes. Its receive floor holds the
   profile client's largest ClientHello.
@@ -2060,14 +2061,15 @@ last `ROLE=server` stub, as the entry said it would.
 - **Check.** `bin/cnsa2_server_test` holds each rule at its boundary,
   `make check-lib-cnsa2-server` and its siblings package the three
   objects, and e2e runs OpenSSL and this tree's `TRUST=raw-mldsa` client
-  against `bin/tlsserver_cnsa2`. The `srv_mldsa` harness proves
-  `srv_mldsa.c` memory safe.
+  against `bin/tlsserver_cnsa2`. The `srv_mldsa` harness and the five
+  `*_cnsa2` harnesses of the server's other files prove
+  `srv_mldsa.c` and the profile's arms of those files memory safe.
 - **Violation.** A PR lets the profile's server run outside CNSA 2.0:
   `inv64-cnsa2-server-without-aes-bit`, `inv64-cnsa2-cookie-mac-sha256`,
   `inv64-cnsa2-ticket-under-chacha`, `inv64-cnsa2-group-without-mlkem1024`,
   `inv64-cnsa2-secret-key-one-byte-short`, `inv64-cnsa2-signs-with-a-context`
-  and `inv64-cnsa2-floor-without-hello` each fail
-  `bin/cnsa2_server_test`.
+  `inv64-cnsa2-floor-without-hello` and
+  `inv64-cnsa2-ticket-version-shared` each fail `bin/cnsa2_server_test`.
 
 ### INV-63 — a server sends no extension response to an extension the ClientHello did not carry
 
