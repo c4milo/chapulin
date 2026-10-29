@@ -55,10 +55,10 @@ int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     return CH_EIO;
 }
 
-int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
+int io_read_record(const ch_tls *t, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
                    uint8_t *alert) {
     (void)alert;
-    (void)cfg;
+    (void)t;
     (void)buf;
     (void)cap;
     (void)outer;

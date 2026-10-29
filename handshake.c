@@ -190,8 +190,10 @@ int ch_handshake(ch_tls *t) {
     memset(&h, 0, sizeof h);
     h.t = t;
     h.alert = ALERT_DECODE_ERROR;
+    // The ClientHello carries this limit ahead of every record read (io.h).
     size_t room = t->cfg.buf_len - REC_HDR - AEAD_TAG;
     h.record_size_limit = room > 0x4001 ? 0x4001 : (uint16_t)room;
+    t->limit_sent = 1;
     t->peer_limit = CH_TX_PT;
 #ifdef CH_TRUST_WEBPKI
     // ch_connect zeroed the session, and 0 is the first protocol in

@@ -253,7 +253,7 @@ static int dispatch_one_record(ch_tls *t) {
     uint8_t outer = 0;
     size_t record_len = 0;
     uint8_t alert = ALERT_DECODE_ERROR;
-    int rc = io_read_record(&t->cfg, t->cfg.buf, t->cfg.buf_len, &outer, &record_len, &alert);
+    int rc = io_read_record(t, t->cfg.buf, t->cfg.buf_len, &outer, &record_len, &alert);
     if (rc == CH_RECORD_AGAIN) {
         return rc; // TRANSPORT=tcp-nonblocking alone returns it (tcp_nonblocking.h)
     }

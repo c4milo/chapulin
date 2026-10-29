@@ -1,0 +1,13 @@
+invariant: INV-38
+file: srv_flight.c
+catches: srv_flight_test
+reason: the server sets ch_tls.limit_sent for an EncryptedExtensions that
+  carries no record_size_limit, so a legal client record its buffer cannot
+  hold gets record_overflow for a limit this server never sent. Camilo
+  ruled internal_error there (docs/decisions.md 166). bin/srv_flight_test
+  reads limit_sent after each EncryptedExtensions.
+
+--- old
+    t->limit_sent = h->record_size_limit != 0; // what io_read_record reads (io.h)
+--- new
+    t->limit_sent = 1; // what io_read_record reads (io.h)

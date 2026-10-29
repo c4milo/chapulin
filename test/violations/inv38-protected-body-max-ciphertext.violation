@@ -1,0 +1,14 @@
+invariant: INV-38
+file: record.h
+catches: unit
+reason: a protected record's body may run to the 2^14 + 256 bytes of RFC
+  9846 §5.2, so a record whose TLSInnerPlaintext is over §5.4's 2^14 + 1
+  bytes passes the header and fails in rec_open with bad_record_mac,
+  where §6.2 requires record_overflow
+  (https://github.com/c4milo/chapulin/issues/209). bin/unit requires
+  record_overflow for a protected body of 2^14 + 18 bytes.
+
+--- old
+#define REC_PROTECTED_BODY_MAX (0x4001 + AEAD_TAG)
+--- new
+#define REC_PROTECTED_BODY_MAX (0x4000 + 256)

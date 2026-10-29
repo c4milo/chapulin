@@ -301,9 +301,9 @@ int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
         }
         uint8_t *rec = p + off;
         size_t body_len = ((size_t)rec[3] << 8) | rec[4];
-        if (body_len > 0x4000 + 256) {
-            // RFC 9846 section 5.2 caps a record; anything larger names
-            // no record this endpoint will ever read.
+        if (body_len > rec_body_max(rec[0])) {
+            // RFC 9846 sections 5.1 and 5.4 cap a record (record.h);
+            // anything larger names no record this endpoint will read.
             r->hs.alert = ALERT_RECORD_OVERFLOW;
             return fail(r, CH_EPROTO);
         }

@@ -32,24 +32,36 @@ static int recv_hostile(void *io, uint8_t *p, size_t n) {
     return got;
 }
 
-int main(void) {
-    ch_cfg cfg;
-    memset(&cfg, 0, sizeof cfg);
-    cfg.recv = recv_hostile;
+static ch_tls session;
 
+int main(void) {
+    session.cfg.recv = recv_hostile;
+    session.cfg.buf = g_buf;
+    session.cfg.buf_len = nondet_size_t();
+    __CPROVER_assume(session.cfg.buf_len <= sizeof g_buf);
+    session.limit_sent = nondet_u8();
+    __CPROVER_assume(session.limit_sent <= 1);
+
+    // Every caller reads into the room behind the bytes it holds, so cap
+    // is at most cfg.buf_len.
     size_t cap = nondet_size_t();
-    __CPROVER_assume(cap <= sizeof g_buf);
+    __CPROVER_assume(cap <= session.cfg.buf_len);
     uint8_t outer = 0;
     size_t record_len = 0;
     uint8_t alert = nondet_u8();
     uint8_t alert_before = alert;
 
-    int rc = io_read_record(&cfg, g_buf, cap, &outer, &record_len, &alert);
+    int rc = io_read_record(&session, g_buf, cap, &outer, &record_len, &alert);
 
-    // The one alert io.c writes is record_overflow, on CH_EPROTO alone.
+    // io.h's two alerts: record_overflow with CH_EPROTO for a body over
+    // rec_body_max, and with CH_ECAP for a record over all of cfg.buf once
+    // this side sent its limit, and internal_error with CH_ECAP before.
     if (alert != alert_before) {
-        __CPROVER_assert(rc == CH_EPROTO && alert == ALERT_RECORD_OVERFLOW,
-                         "io: a changed alert is record_overflow on CH_EPROTO");
+        int body_rule = rc == CH_EPROTO && alert == ALERT_RECORD_OVERFLOW;
+        int over_limit = rc == CH_ECAP && alert == ALERT_RECORD_OVERFLOW && session.limit_sent;
+        int no_limit = rc == CH_ECAP && alert == ALERT_INTERNAL_ERROR && !session.limit_sent;
+        __CPROVER_assert(body_rule || over_limit || no_limit,
+                         "io: a changed alert is one io.h names, on its result");
     }
 
     // An accepted record is framed inside the buffer it was read into, or

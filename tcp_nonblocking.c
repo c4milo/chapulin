@@ -68,9 +68,11 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
     r->hs.t = &r->t;
     r->hs.alert = ALERT_DECODE_ERROR;
     // This client's own record_size_limit, sized to the caller's buffer,
-    // the same arithmetic ch_handshake does.
+    // the same arithmetic ch_handshake does. The ClientHello carries it,
+    // ahead of every record this side reads (io.h).
     size_t room = r->t.cfg.buf_len - REC_HDR - AEAD_TAG;
     r->hs.record_size_limit = room > 0x4001 ? 0x4001 : (uint16_t)room;
+    r->t.limit_sent = 1;
     r->t.peer_limit = CH_TX_PT;
 #if defined(CH_TRUST_WEBPKI) || defined(CH_ROLE_SERVER)
     // Only the builds cfg.h gives the ALPN fields have a selection to
@@ -150,9 +152,9 @@ int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
         }
         uint8_t *rec = p + off;
         size_t body_len = ((size_t)rec[3] << 8) | rec[4];
-        if (body_len > 0x4000 + 256) {
-            // RFC 9846 section 5.2 caps a record; anything larger names
-            // no record this endpoint will ever read.
+        if (body_len > rec_body_max(rec[0])) {
+            // RFC 9846 sections 5.1 and 5.4 cap a record (record.h);
+            // anything larger names no record this endpoint will read.
             r->hs.alert = ALERT_RECORD_OVERFLOW;
             return fail(r, CH_EPROTO);
         }

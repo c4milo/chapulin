@@ -139,11 +139,16 @@ static long sent_record_size_limit(uint16_t offered) {
 // aborts the handshake. So a hello without record_size_limit gets an
 // EncryptedExtensions without it, and the smallest limit the parser
 // stores, 63 for the wire's 64, gets this server's own 0x4001
-// (https://github.com/c4milo/chapulin/issues/206).
+// (https://github.com/c4milo/chapulin/issues/206). ch_tls.limit_sent
+// records which one went out, and io_read_record reads it: record_overflow
+// for a record over the limit this server sent, and internal_error for a
+// record its buffer cannot hold when it sent none
+// (https://github.com/c4milo/chapulin/issues/209).
 static void test_flight_record_size_limit_reply(void) {
-    CHECK(sent_record_size_limit(0) == -1);
-    CHECK(sent_record_size_limit(63) == 0x4001);
-    CHECK(sent_record_size_limit(0x3fff) == 0x4001);
+    CHECK(sent_record_size_limit(0) == -1 && hs.t->limit_sent == 0);
+    CHECK(sent_record_size_limit(63) == 0x4001 && hs.t->limit_sent == 1);
+    CHECK(sent_record_size_limit(0x3fff) == 0x4001 && hs.t->limit_sent == 1);
+    CHECK(sent_record_size_limit(0) == -1 && hs.t->limit_sent == 0);
 }
 
 // Builds the client Finished the server expects, sealed under the client

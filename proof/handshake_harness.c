@@ -66,9 +66,9 @@ int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
 
 // The hostile input source: any outer type, any body bytes, any length
 // the io contract admits (1..2^14+256 body, within cap), or any error.
-int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
+int io_read_record(const ch_tls *t, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
                    uint8_t *alert) {
-    __CPROVER_assert(cfg != NULL, "read: cfg valid");
+    __CPROVER_assert(t != NULL, "read: session valid");
     uint8_t choice = nondet_u8();
     if (choice == 0) {
         return CH_EIO;
@@ -76,9 +76,9 @@ int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, 
     if (choice == 1) {
         return CH_EPROTO;
     }
-    if (choice == 3) {
-        *alert = ALERT_RECORD_OVERFLOW; // a body over 2^14 + 256 bytes
-        return CH_EPROTO;
+    if (choice == 3 || choice == 4) { // io.h's two alerts: a long body, a record over cfg.buf
+        *alert = choice == 3 || t->limit_sent ? ALERT_RECORD_OVERFLOW : ALERT_INTERNAL_ERROR;
+        return choice == 3 ? CH_EPROTO : CH_ECAP;
     }
     if (choice == 2 || cap < REC_HDR + 1) {
         return CH_ECAP;

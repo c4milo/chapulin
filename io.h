@@ -8,16 +8,26 @@
 #include <stdint.h>
 
 #include "cfg.h"
+#include "session.h"
 
 int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n);
 
-// Reads one record (header + body) into buf. Returns CH_OK with the outer
-// type and total length, CH_EIO on transport failure, CH_EPROTO on a
-// malformed length, CH_ECAP if the record exceeds cap. A body longer than
-// 2^14 + 256 bytes also writes ALERT_RECORD_OVERFLOW to *alert, which
-// RFC 9846 §5.2 requires (rfc9846.txt:3644-3646). Every other result
-// leaves *alert as the caller set it.
-int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
+// Reads one record (header + body) through t->cfg.recv into buf, which
+// holds cap bytes. Returns CH_OK with the outer type and total length,
+// CH_EIO on transport failure, CH_EPROTO on a malformed length and CH_ECAP
+// when the record does not fit cap. Two results also write *alert:
+//
+// - A body longer than rec_body_max allows writes ALERT_RECORD_OVERFLOW
+//   and returns CH_EPROTO (record.h).
+// - A record longer than all of cfg.buf returns CH_ECAP and writes
+//   ALERT_RECORD_OVERFLOW once t->limit_sent is set, because this side's
+//   record_size_limit sized that buffer and the record is over it (RFC
+//   8449 §4). Before then the record is legal and this side cannot hold
+//   it, so it writes ALERT_INTERNAL_ERROR.
+//
+// Every other result leaves *alert as the caller set it. A record that
+// fits cfg.buf but not cap, behind a message in part, is one of those.
+int io_read_record(const ch_tls *t, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
                    uint8_t *alert);
 
 #endif

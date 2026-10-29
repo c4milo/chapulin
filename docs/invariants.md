@@ -1098,14 +1098,29 @@ last `ROLE=server` stub, as the entry said it would.
     record header and the tag, capped at 2^14 + 1, in `handshake.c`,
     `srv_handshake.c` and both tcp-nonblocking drivers; a QUIC build
     sends none. A record the buffer cannot hold is refused:
-    `io_read_record` returns `CH_ECAP`, and the tcp-nonblocking drivers
-    send record_overflow.
-  - The absolute limit: a length field above 2^14 + 256 is refused with
-    record_overflow, as RFC 9846 §5.2 requires (rfc9846.txt:3644-3646).
-    `io_read_record` returns `CH_EPROTO` and writes the alert, and its
-    three callers send it: `hsr_fetch_record`, `drain_run` and
-    `ch_read`'s `dispatch_one_record`
-    ([207](https://github.com/c4milo/chapulin/issues/207)).
+    `io_read_record` returns `CH_ECAP`, and the tcp-nonblocking
+    handshake drivers send record_overflow. `io_read_record` sends
+    record_overflow for a record longer than all of `cfg.buf` once
+    `ch_tls.limit_sent` is set, because that record is over this side's
+    limit (RFC 8449 §4). Before then it sends internal_error: a server
+    whose client offered no `record_size_limit` sent none, so the record
+    is legal and this side cannot hold it. A record that fits `cfg.buf`
+    but not the room behind a message in part keeps its caller's alert.
+    Both client drivers set `limit_sent` with the ClientHello, and
+    `srv_send_encrypted_extensions` sets it when the
+    EncryptedExtensions carries the limit
+    ([209](https://github.com/c4milo/chapulin/issues/209),
+    docs/decisions.md 166).
+  - The body limits: `rec_body_max` (`record.h`) allows a protected
+    record 2^14 + 1 bytes of TLSInnerPlaintext and the 16-byte tag
+    (RFC 9846 §5.4), and a record in the clear 2^14 bytes (§5.1). A
+    longer body is refused with record_overflow before the AEAD runs.
+    That also covers §5.2's 2^14 + 256. `io_read_record` returns
+    `CH_EPROTO` and writes the alert, and its three callers send it:
+    `hsr_fetch_record`, `drain_run` and `ch_read`'s
+    `dispatch_one_record`
+    ([207](https://github.com/c4milo/chapulin/issues/207)). The two
+    tcp-nonblocking handshake framers refuse the same lengths.
 - **Check.** Type system for the range and the staging array: a value
   outside it does not compile. Tests and mutants for the rest:
   - `test/tx-record-builds.sh` compiles the headers at 511, 512, 16384
@@ -1119,11 +1134,21 @@ last `ROLE=server` stub, as the entry said it would.
     `record_size_limit` allows 12,316 bytes of plaintext sends 12,316
     in one record and 12,317 in two. `inv19-srv-frag-sized-by-tx-record` requires it to
     fail.
-  - `bin/unit` reads a header of 2^14 + 256 bytes whole and refuses
-    one of 2^14 + 257 with record_overflow, and the sequence test's
-    `MUT_REC_HUGE` cases read record_overflow on the wire in the
-    handshake and after it. `inv38-record-overflow-decode-error` and
-    `inv38-record-overflow-ch-read-decode-error` require them to fail.
+  - `bin/unit` (`test/io_read_tests.h`) holds each limit to a boundary
+    pair: a protected body of 2^14 + 17 bytes is read and one of
+    2^14 + 18 refused, a body in the clear of 2^14 bytes is read and one
+    of 2^14 + 1 refused, each with record_overflow, and a record of all
+    of `cfg.buf` is read and one byte more refused, with record_overflow
+    under `limit_sent` and internal_error without it. The sequence
+    test's `MUT_REC_OVER` and `MUT_REC_HUGE` cases read record_overflow
+    on the wire, and `bin/srv_flight_test` reads `limit_sent` after the
+    EncryptedExtensions with the limit and without it.
+    `inv38-record-overflow-decode-error`,
+    `inv38-record-overflow-ch-read-decode-error`,
+    `inv38-protected-body-max-ciphertext`,
+    `inv38-buffer-overflow-ignores-limit-sent`,
+    `inv38-client-limit-unsent` and `inv38-server-limit-always-sent`
+    require them to fail.
   - `bin/srv_test` holds the server's parser to the wire value less
     one and to the floor of 64. `srv-parser-record-size-limit-units`
     and `srv-parser-record-size-limit-floor` require it to fail.

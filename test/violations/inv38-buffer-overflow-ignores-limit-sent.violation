@@ -1,0 +1,12 @@
+invariant: INV-38
+file: io.c
+catches: unit
+reason: a record longer than all of cfg.buf gets internal_error whether or
+  not this side sent its record_size_limit, so a peer over the limit this
+  side advertised gets no record_overflow, which RFC 8449 §4 requires.
+  bin/unit requires record_overflow under limit_sent.
+
+--- old
+        *alert = t->limit_sent ? ALERT_RECORD_OVERFLOW : ALERT_INTERNAL_ERROR;
+--- new
+        *alert = ALERT_INTERNAL_ERROR;

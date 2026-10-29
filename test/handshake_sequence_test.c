@@ -418,11 +418,10 @@ int main(int argc, char **argv) {
     // Malformation -> alert table
     // (https://github.com/c4milo/chapulin/issues/11): each mutation bends one
     // field; the table asserts the alert description byte the client puts on
-    // the wire. MUT_REC_OVER documents current behavior: a record over the
-    // record_size_limit fails io_read_record with CH_ECAP and dies as
-    // decode_error. MUT_REC_HUGE's header names 2^14 + 257 bytes, which RFC
-    // 9846 §5.2 answers with record_overflow, in the handshake (SA) and
-    // after it (SEFA).
+    // the wire. MUT_REC_OVER's record is over the record_size_limit the
+    // client advertised, which RFC 8449 §4 answers with record_overflow.
+    // MUT_REC_HUGE's header names 2^14 + 257 bytes, which RFC 9846 §5.2
+    // answers the same way, in the handshake (SA) and after it (SEFA).
     static const struct {
         int mut;
         const char *seq;
@@ -435,7 +434,7 @@ int main(int argc, char **argv) {
         {MUT_CV_ALG,     "SECVF", 0, ALERT_HANDSHAKE_FAILURE },
         {MUT_FIN_MAC,    "SEF",   1, ALERT_DECRYPT_ERROR     },
         {MUT_HS_TYPE,    "SEF",   1, ALERT_UNEXPECTED_MESSAGE},
-        {MUT_REC_OVER,   "SEFA",  1, ALERT_DECODE_ERROR      },
+        {MUT_REC_OVER,   "SEFA",  1, ALERT_RECORD_OVERFLOW   },
         {MUT_REC_HUGE,   "SA",    1, ALERT_RECORD_OVERFLOW   },
         {MUT_REC_HUGE,   "SEFA",  1, ALERT_RECORD_OVERFLOW   },
         {MUT_NONE,       "SECF",  0, ALERT_UNEXPECTED_MESSAGE}, // CV skipped

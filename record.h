@@ -21,6 +21,19 @@
 #define REC_HANDSHAKE 22
 #define REC_APPDATA 23
 
+// The longest record body this endpoint reads. A protected record, of the
+// outer type REC_APPDATA, holds at most 2^14 + 1 bytes of TLSInnerPlaintext
+// (RFC 9846 §5.4, rfc9846.txt:3721-3723) and the AEAD_TAG bytes each suite
+// here adds. A record in the clear holds at most 2^14 bytes (§5.1,
+// rfc9846.txt:3515-3518). A longer one gets record_overflow (§6.2,
+// rfc9846.txt:3923-3926), and the length alone shows it, before the AEAD
+// runs.
+#define REC_PROTECTED_BODY_MAX (0x4001 + AEAD_TAG)
+#define REC_PLAIN_BODY_MAX 0x4000
+static inline size_t rec_body_max(uint8_t outer) {
+    return outer == REC_APPDATA ? REC_PROTECTED_BODY_MAX : REC_PLAIN_BODY_MAX;
+}
+
 // The most records one AES-GCM write key seals. RFC 9846 §5.5 has a sender
 // close the connection or send a KeyUpdate while a key is still below its
 // AEAD's usage limit (rfc9846.txt:3743-3744), and gives AES-GCM's as up to

@@ -1811,9 +1811,13 @@ The entries are grouped by area:
 - **Harness:** `io` (slow)
 - **Proves:** `io_read_record` is memory-safe and UB-free against a
   transport that returns anything at all, and a record it accepts lies
-  wholly inside the caller's buffer. The recv stub honors no contract: it
-  returns an arbitrary int and writes only the bytes it claims, up to
-  what it was asked for.
+  wholly inside the caller's buffer. It writes no alert but the two
+  `io.h` names: record_overflow with `CH_EPROTO`, and record_overflow
+  or internal_error with `CH_ECAP`, by `ch_tls.limit_sent`. The recv
+  stub honors no contract: it returns an arbitrary int and writes only
+  the bytes it claims, up to what it was asked for. `cfg.buf_len`,
+  `cap` and `limit_sent` take every value the bound allows, with `cap`
+  at most `cfg.buf_len`.
 - **Bound:** buffers ≤ 16 B.
 
 #### io_send

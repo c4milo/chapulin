@@ -1,19 +1,19 @@
 invariant: INV-38
 file: io.c
 catches: unit
-reason: io_read_record refuses a length field over 2^14 + 256 bytes
+reason: io_read_record refuses a length field over rec_body_max
   with decode_error, the alert every caller sent before
   https://github.com/c4milo/chapulin/issues/207, where RFC 9846 §5.2
   requires record_overflow. bin/unit reads a header of 2^14 + 257 bytes and
   requires record_overflow.
 
 --- old
-    if (body > 0x4000 + 256) {
+    if (body > rec_body_max(buf[0])) {
         *alert = ALERT_RECORD_OVERFLOW;
         return CH_EPROTO;
     }
 --- new
-    if (body > 0x4000 + 256) {
+    if (body > rec_body_max(buf[0])) {
         *alert = ALERT_DECODE_ERROR;
         return CH_EPROTO;
     }

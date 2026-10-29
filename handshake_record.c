@@ -86,8 +86,8 @@ int hsr_fetch_record(handshake_state *h) {
         size_t part = t->pt_len;
         uint8_t outer = 0;
         size_t record_len = 0;
-        int rc = io_read_record(&t->cfg, t->cfg.buf + part, t->cfg.buf_len - part, &outer,
-                                &record_len, &h->alert);
+        int rc = io_read_record(t, t->cfg.buf + part, t->cfg.buf_len - part, &outer, &record_len,
+                                &h->alert);
         if (rc != CH_OK) {
             return rc;
         }

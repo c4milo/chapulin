@@ -25,16 +25,16 @@ and `size_t` lengths, so that build needs 120 bytes less than the host figure on
 | **total static working set** | **3200** | **3120** |
 | `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2336 | 2256 |
 | **total static working set, `KEX=pq`** (2048 buffer) | **4384** | **4304** |
-| `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3064 | 2944 |
-| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15402** | **15282** |
+| `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3072 | 2952 |
+| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15410** | **15290** |
 | `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1992 | 1824 |
 | **total static working set, `ROLE=server`** (2048 buffer) | **4040** | **3872** |
 | `ch_tls` under `ROLE=server SUITE=aesgcm` | 2760 | — |
 | **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4808** | — |
-| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3848 | — |
-| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **16186** | — |
-| `ch_tls` under `TRUST=webpki`, host object | 3064 | — |
-| **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15402** | — |
+| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3856 | — |
+| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **16194** | — |
+| `ch_tls` under `TRUST=webpki`, host object | 3072 | — |
+| **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15410** | — |
 | `ch_tls` under `ROLE=server`, host object | 1992 | — |
 | **total static working set, `ROLE=server`, host object** (2048 buffer) | **4040** | — |
 | `ch_tls` under `PROFILE=cnsa2 TRUST=raw-mldsa` | 2992 | — |
@@ -94,7 +94,7 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`TRUST=webpki`) | 16688 |
 | peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16816 |
 | peak stack, `ch_connect` (`KEX=pq`) | 16016 |
-| peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1872 |
+| peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1888 |
 | peak stack, `ch_write` / `ch_close` | 1520 / 896 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 12736 |
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12896 |

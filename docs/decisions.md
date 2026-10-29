@@ -14711,3 +14711,56 @@ does nothing more.
         EPYC 7763, and in the ladder the whole took longer.
       - **The C field reordered.** `x25519_wide.c`'s step already runs
         its operations in this order.
+166. **A record over this side's limit gets record_overflow, and a legal
+    record that a server cannot hold gets internal_error.**
+    https://github.com/c4milo/chapulin/issues/209 found two RFC rules
+    that the read path did not keep. Camilo ruled on 2026-10-28 on the
+    three questions below.
+
+    - **Over the advertised limit.** RFC 8449 §4 answers a record over
+      this side's `record_size_limit` with record_overflow. Each side
+      sizes that limit to `cfg.buf_len` less the header and the tag, so
+      a record longer than all of `cfg.buf` is over it. Before this
+      change `io_read_record` returned `CH_ECAP` with no alert, and
+      `ch_read` sent decode_error.
+    - **No limit sent.** A server sends its limit only when the
+      ClientHello offered the extension (INV-63). Without one, a client
+      record of up to 2^14 + 17 bytes of body is legal, and a smaller
+      buffer cannot hold it. RFC 9846 §6.2 defines internal_error as an
+      error that is not the peer's, so the server sends that. The
+      one-byte field `ch_tls.limit_sent` tells the two cases apart.
+      Both client drivers set it with the ClientHello, and
+      `srv_send_encrypted_extensions` sets it when the
+      EncryptedExtensions carries the limit. The field sits in the
+      padding after `key_update_run`, so `sizeof(ch_tls)` does not
+      change in the raw, ca and server builds. A TRUST=webpki build
+      has no free byte there and grows by 8 bytes, which
+      `bench/sram.sh` measured and docs/performance.md records.
+    - **A message in part.** In the handshake, and in a message split
+      across records after it, the room behind the bytes already held
+      can be smaller than the limit. A record that fits `cfg.buf` but
+      not that room is legal, and the message is too long for this
+      side. It keeps its caller's alert: decode_error in the handshake
+      and unexpected_message after it.
+    - **The plaintext limit.** RFC 9846 §5.4 caps TLSInnerPlaintext at
+      2^14 + 1 bytes, and §6.2 names record_overflow for a record over
+      it. `rec_open` refused such a record, and its callers sent
+      bad_record_mac. Each AEAD here adds exactly 16 bytes, so the
+      header shows the length. `rec_body_max` (`record.h`) allows a
+      protected body of 2^14 + 17 bytes and a body in the clear of 2^14
+      bytes (§5.1), and `io_read_record` and the two tcp-nonblocking
+      handshake framers refuse a longer one with record_overflow.
+      `rec_open` keeps its own check, and its Lean model in
+      `spec/lean/Spec/Record.lean` does not change.
+    - **What holds it.** `bin/unit` holds each limit to a boundary
+      pair, the sequence test reads the alerts on the wire, and
+      `bin/srv_flight_test` reads `limit_sent`. The CBMC `io` harness
+      proves which alert goes with which result for every `cfg.buf_len`,
+      `cap` and `limit_sent` within its bound. INV-38 lists the four new
+      mutants.
+    - **Rejected:**
+      - **record_overflow in every case.** It needs no field, but it
+        blames the peer for a limit this side never sent.
+      - **internal_error for a message in part.** The record is legal
+        there too, but the session already fails with an alert that
+        names the message, and Camilo kept it.

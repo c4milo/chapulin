@@ -1,0 +1,14 @@
+invariant: INV-38
+file: handshake.c
+catches: test/handshake_sequence_shards.sh ./bin/handshake_sequence_test
+builds: bin/handshake_sequence_test
+reason: the blocking client sends its record_size_limit in the ClientHello
+  but leaves ch_tls.limit_sent clear, so a server record over that limit
+  gets internal_error, not the record_overflow RFC 8449 §4 requires. The
+  sequence test's MUT_REC_OVER case reads the alert on the wire.
+
+--- old
+    t->limit_sent = 1;
+    t->peer_limit = CH_TX_PT;
+--- new
+    t->peer_limit = CH_TX_PT;
