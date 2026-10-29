@@ -129,12 +129,11 @@ buf 90.2
 certparse 29.1
 certparse_webpki 26.3
 certverify_webpki 38.2
-# ch_fail (docs/decisions.md 164) took its floor from proof/coverage.py
-# --reach --only on an M1 Pro with cbmc 6.11.0 on 2026-10-28, a tenth of a
-# point below the 32.5 it read, until the nightly measures it. It compiles
-# all of tls_write.c and calls ch_fail alone, so the locations of ch_write
-# and ch_writable_len stay out of its reach.
-ch_fail 32.4
+# ch_fail (docs/decisions.md 164): floor from GitHub run 40853232504 of
+# 2026-10-29 (nightly on 8834adf5). It compiles all of tls_write.c and
+# calls ch_fail alone, so the locations of ch_write and ch_writable_len
+# stay out of its reach.
+ch_fail 32.5
 chacha20 98.1
 ct 94.1
 ct_wipe 92.6
@@ -175,7 +174,12 @@ hello_build_webpki 84.3
 hkdf 52.3
 hkdf384 65.0
 hybrid_secret 16.6
-io_send 42.1
+# io_send fell from 42.1 (24/57) to 33.3 (24/72) in GitHub run 40853232504
+# of 2026-10-29. docs/decisions.md 166 put check_body and rec_body_max
+# into io.c. The harness compiles io.c and calls io_send alone, so their
+# 16 locations stay out of its reach, and io_read_record lost one. The
+# harness reaches the same 24 locations. The io harness proves io_read_record.
+io_send 33.3
 key_share 21.9
 key_share_webpki 37.5
 keysched 87.0
@@ -191,9 +195,8 @@ p256_point 61.0
 # docs/decisions.md 153 put p256_point_on_curve into p256_point.c, 15
 # locations that p256_point_ladder compiles and does not call, so its
 # share fell from 99 of 193 to 99 of 208 with no location less reached.
-# The floor is that count from proof/coverage.py --reach --only on an
-# arm64 macOS machine with the pinned cbmc; the next nightly records the
-# runner's.
+# GitHub run 40853232504 of 2026-10-29 (nightly on 8834adf5) read the same
+# 47.6 that proof/coverage.py --reach --only read on arm64 macOS.
 p256_point_ladder 47.6
 p256_scalar 93.0
 p256_sign 75.2
@@ -479,17 +482,17 @@ softmul 91.3
 srv_accept 95.5
 srv_auth 92.8
 srv_cookie 62.2
-# The PROFILE=cnsa2 server's six harnesses (docs/decisions.md 162) took
-# their floors from proof/coverage.py --reach --only on an M1 Pro with
-# cbmc 6.11.0 on 2026-10-28, each a tenth of a point below what it read,
-# because the nightly's runner had not measured them yet. Replace each with
-# the nightly's reading once its table prints one. srv_parser_ext_cnsa2_share
-# calls the key_share reader alone, so the other readers' locations stay out
-# of its reach, and srv_parser_ext_cnsa2 covers them.
-srv_cookie_cnsa2 53.9
+# The PROFILE=cnsa2 server's six harnesses (docs/decisions.md 162) are
+# srv_cookie_cnsa2, srv_kex_cnsa2, srv_mldsa, srv_parser_ext_cnsa2,
+# srv_parser_ext_cnsa2_share and srv_ticket_cnsa2. Each floor is from
+# GitHub run 40853232504 of 2026-10-29 (nightly on 8834adf5).
+# srv_parser_ext_cnsa2_share calls the key_share reader alone, so the other
+# readers' locations stay out of its reach, and srv_parser_ext_cnsa2 covers
+# them.
+srv_cookie_cnsa2 54.0
 srv_kex 94.7
-srv_kex_cnsa2 92.6
-srv_mldsa 70.9
+srv_kex_cnsa2 92.7
+srv_mldsa 71.0
 # srv_parser_count took its floor from nightly run 39109704185 on
 # 2026-10-18. Run 39117425286, on the same runner image, gave the same
 # count and listed each location as reached or not.
@@ -516,15 +519,15 @@ srv_mldsa 70.9
 # 371.
 srv_parser_count 17.0
 srv_parser_ext 72.4
-srv_parser_ext_cnsa2 72.8
-srv_parser_ext_cnsa2_share 23.8
+srv_parser_ext_cnsa2 72.9
+srv_parser_ext_cnsa2_share 23.9
 srv_parser_frozen 40.7
 srv_parser_walk 78.6
 srv_resume 84.3
 srv_select_runtime 95.2
 srv_select_suite 96.6
 srv_ticket 81.0
-srv_ticket_cnsa2 76.4
+srv_ticket_cnsa2 76.5
 transcript384 38.7
 # webpki_cert fell from 56.7 to 56.1 and webpki_pin from 56.5 to 54.1
 # when a configuration of SPKI pins alone started to accept a chain whose
@@ -552,9 +555,17 @@ webpki_spki 41.4
 webpki_ticket 57.1
 webpki_ticket_host 61.4
 webpki_time 33.3
-writable_len 83.0
-writable_len_suite 87.4
-writable_len_suite_any 47.7
+# The three writable_len harnesses fell in GitHub run 40853232504 of
+# 2026-10-29: writable_len from 83.0 (83/100) to 68.6 (83/121),
+# writable_len_suite from 87.4 (111/127) to 75.0 (111/148), and
+# writable_len_suite_any from 47.7 (42/88) to 38.5 (42/109).
+# docs/decisions.md 164 put ch_fail and is_error_alert into tls_write.c.
+# Each harness compiles that file and calls ch_writable_len alone, so their
+# 21 locations stay out of its reach. Each reaches the same count it did
+# before. The ch_fail harness reaches them.
+writable_len 68.6
+writable_len_suite 75.0
+writable_len_suite_any 38.5
 x25519 25.6
 x25519_mul_alias_a 27.0
 x25519_mul_alias_b 27.0
