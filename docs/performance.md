@@ -1225,6 +1225,21 @@ What the numbers show:
   cycle a pass.
 - OpenSSL 3.5.9 runs its `unroll8_eor3` kernel on this CPU, so the `0x83` row compares two
   kernels that sum three values with EOR3.
+- The `0x3` rows compare passes without EOR3 against OpenSSL's kernel with EOR3. On a CPU
+  without FEAT_SHA3, OpenSSL runs its kernel of four blocks a pass, which has no EOR3.
+  `OPENSSL_armcap=0x67d` clears OpenSSL's SHA-3 and EOR3 bits from this CPU's `0x987d`, and
+  OpenSSL then runs that kernel. On 2026-10-29, at a load average of 3.9 to 5.7, four rounds
+  timed the bench binary under `0x3` and `speed -aead` in turn, at 16 KiB. The medians:
+
+  | M1 Pro, 16 KiB, ns | `0x3` | OpenSSL, `0x67d` | OpenSSL, `0x987d` | `0x3` / `0x67d` |
+  |---|---|---|---|---|
+  | AES-128 seal | 2,209 | 2,648 | 2,110 | 0.83 |
+  | AES-128 open | 2,214 | 2,785 | 2,149 | 0.80 |
+  | AES-256 seal | 2,578 | 3,059 | 2,525 | 0.84 |
+  | AES-256 open | 2,544 | 2,996 | 2,514 | 0.85 |
+
+  So a session without the SHA-3 bit takes 0.80 to 0.85 of the time OpenSSL takes without
+  EOR3. Each M1 has FEAT_SHA3, so a caller on this CPU can state `0x83`.
 - On the N2 decision 161 took up to 2.6% off the 16 KiB cells under both compilers. The 16-byte
   and 1 KiB cells took from 6.4% less to 1.1% more time. Its rows are the "161" rows of the N2 table.
 
