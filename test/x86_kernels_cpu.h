@@ -101,6 +101,24 @@ static inline int x86_cpu_has_avx512(void) {
 #endif
 }
 
+// BMI2 and ADX, which CH_CPU_BMI2_ADX names (cpu_cfg.h) and x25519_adx.c
+// runs: MULX, ADCX and ADOX. CPUID leaf 7 reports them in bits 8 and 19 of
+// EBX; they need no state the operating system saves.
+static inline int x86_cpu_has_bmi2_adx(void) {
+#ifdef __x86_64__
+    unsigned int eax = 0;
+    unsigned int ebx = 0;
+    unsigned int ecx = 0;
+    unsigned int edx = 0;
+    if (!__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+        return 0;
+    }
+    return ((ebx >> 8) & 1U) != 0 && ((ebx >> 19) & 1U) != 0;
+#else
+    return 0;
+#endif
+}
+
 // Whether a binary whose CPU lacks a kernel's instructions must fail
 // rather than skip.
 static inline int x86_kernels_required(void) {
@@ -119,6 +137,13 @@ static inline int x86_ifma_required(void) {
 // rather than skip.
 static inline int x86_avx512_required(void) {
     const char *required = getenv("CH_REQUIRE_AVX512");
+    return required != NULL && strcmp(required, "1") == 0;
+}
+
+// Whether a binary whose CPU lacks BMI2 or ADX must fail rather than
+// skip.
+static inline int x86_bmi2_adx_required(void) {
+    const char *required = getenv("CH_REQUIRE_BMI2_ADX");
     return required != NULL && strcmp(required, "1") == 0;
 }
 

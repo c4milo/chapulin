@@ -113,6 +113,21 @@ AUDITED = {
         "under Intel SDE. Delete this entry if a harness can ever compile the "
         "file."
     ),
+    "x25519_adx.c": (
+        "the x86-64 X25519 field on four 64-bit words: the ladder, the "
+        "inversion and the final reduction in C over five operations in "
+        "inline assembly in x25519_adx_asm.h, which CBMC does not read. The "
+        "C reads the scalar's bits at public indices, swaps by a mask built "
+        "from a bit read back from a volatile object, and reduces by masks; "
+        "every array index is a loop counter under 4 or 8. It compiles to "
+        "nothing outside an x86-64 host object. bin/x25519_adx_model_test "
+        "runs the same C over test/x25519_adx_model.h, portable C that writes "
+        "the words each operation writes, against the 16-word field on every "
+        "host, and bin/x25519_adx_equiv_test holds the assembly to the model "
+        "word for word and the whole field to the 16-word one on a CPU with "
+        "BMI2 and ADX (docs/decisions.md 165). A harness over the model "
+        "replaces this entry."
+    ),
     "avx512_wipe.c": (
         "the wipe of the AVX-512 registers in an x86-64 host object: one "
         "function, avx512_wipe_registers, whose body is one block of inline "

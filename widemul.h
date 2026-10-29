@@ -46,6 +46,7 @@
 #include "rsa_sign.h"
 #include "rsa_sign64.h"
 #include "x25519.h"
+#include "x25519_adx.h"
 #include "x25519_wide.h"
 
 // The two answers an operation built on the multiply runs under. WIDEMUL_CONSTANT_TIME says the
@@ -146,6 +147,25 @@ static inline int widemul_x25519(uint8_t widemul, uint8_t out[X25519_LEN],
         return x25519_wide(out, scalar, point);
     }
     return x25519(out, scalar, point);
+}
+
+// widemul_x25519 with the session's ch_cfg.cpu first, for a shared secret. On x86-64, under
+// WIDEMUL_CONSTANT_TIME, whose statement covers MULX's 64x64->128 products, where cpu holds
+// CH_CPU_BMI2_ADX, which says the CPU has BMI2 and ADX, it runs x25519_adx.c's field of four
+// 64-bit words. The bit states no timing (docs/decisions.md 165). Every other call runs
+// widemul_x25519.
+static inline int widemul_x25519_cpu(uint32_t cpu, uint8_t widemul, uint8_t out[X25519_LEN],
+                                     const uint8_t scalar[X25519_LEN],
+                                     const uint8_t point[X25519_LEN]) {
+#ifdef __x86_64__
+    if (widemul_native(widemul) && (cpu & CH_CPU_BMI2_ADX) != 0) {
+        return x25519_adx(out, scalar, point);
+    }
+#else
+    // arm64 has no such field, so no bit picks here.
+    (void)cpu;
+#endif
+    return widemul_x25519(widemul, out, scalar, point);
 }
 
 static inline void widemul_x25519_base(uint8_t widemul, uint8_t out[X25519_LEN],
@@ -336,6 +356,14 @@ static inline void widemul_poly1305_update_cpu(uint32_t cpu, uint8_t widemul, po
 static inline int widemul_x25519(uint8_t widemul, uint8_t out[X25519_LEN],
                                  const uint8_t scalar[X25519_LEN],
                                  const uint8_t point[X25519_LEN]) {
+    (void)widemul;
+    return x25519(out, scalar, point);
+}
+
+static inline int widemul_x25519_cpu(uint32_t cpu, uint8_t widemul, uint8_t out[X25519_LEN],
+                                     const uint8_t scalar[X25519_LEN],
+                                     const uint8_t point[X25519_LEN]) {
+    (void)cpu;
     (void)widemul;
     return x25519(out, scalar, point);
 }

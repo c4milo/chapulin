@@ -130,7 +130,10 @@ and runs a Poly1305 update of 512 bytes or more on `poly1305_ifma.c` (decisions
 120 and 121). `CH_CPU_AVX512` says the CPU has AVX-512F, AVX-512BW and AVX-512VL,
 and VAES and VPCLMULQDQ on the 512-bit registers; beside `CH_CPU_VAES` and
 `CH_CPU_CONSTANT_TIME_AES` it runs each AES-GCM seal and open whole on
-`gcm_avx512_kernel.c`, and it picks nothing else (decision 130). Set each from
+`gcm_avx512_kernel.c`, and it picks nothing else (decision 130).
+`CH_CPU_BMI2_ADX` says the CPU has BMI2 and ADX; beside
+`CH_CPU_CONSTANT_TIME_MULTIPLY` an X25519 shared secret runs on `x25519_adx.c`'s
+four 64-bit words, on MULX, ADCX and ADOX (decision 165). Set each from
 your probe alone: a session whose bit names instructions its CPU lacks faults on
 the first one.
 

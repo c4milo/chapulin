@@ -103,7 +103,7 @@ static void run_x25519(void) {
         const uint8_t *pub = p + 32;
         const uint8_t *shared = p + 64;
         uint8_t out[32];
-        int ok = widemul_x25519(TEST_WIDEMUL, out, priv, pub);
+        int ok = widemul_x25519_cpu(TEST_SESSION_CPU, TEST_WIDEMUL, out, priv, pub);
         switch (wp_x25519[i].kind) {
         case 0: // valid: must accept and match
             if (!ok || memcmp(out, shared, 32) != 0) {

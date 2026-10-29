@@ -1,0 +1,14 @@
+invariant: INV-65
+file: widemul.h
+catches: test/docker-aes-runtime-qemu.sh x25519-adx
+reason: widemul_x25519_cpu runs x25519_adx.c under the multiply bit alone,
+  whatever CH_CPU_BMI2_ADX says, so a session on a CPU without BMI2 or ADX
+  dies of SIGILL at its first shared secret. On a CPU with them every byte
+  stays right, so no vector notices. bin/widemul_runtime_test counts the
+  call into x25519_adx.c under the multiply bit alone, and the qemu lane
+  runs it for x86-64, the one architecture whose widemul.h holds the test.
+
+--- old
+    if (widemul_native(widemul) && (cpu & CH_CPU_BMI2_ADX) != 0) {
+--- new
+    if (widemul_native(widemul)) {

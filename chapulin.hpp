@@ -205,6 +205,12 @@ struct Cpu {
     // leave it clear and keep avx512_ifma's kernels. An x86-64 bit, which
     // an arm64 object refuses.
     bool avx512 = false;
+    // The CPU has BMI2 and ADX: CH_CPU_BMI2_ADX. It states presence
+    // alone, as avx2 does. Beside constant_time_multiply the session runs
+    // an X25519 shared secret on x25519_adx.c's four 64-bit words, on MULX,
+    // ADCX and ADOX. A public key runs on the wide field's table whatever
+    // this says. An x86-64 bit, which an arm64 object refuses.
+    bool bmi2_adx = false;
 };
 #endif
 
@@ -419,7 +425,7 @@ class Config {
                    (found.constant_time_sha512 ? CH_CPU_CONSTANT_TIME_SHA512 : 0U) |
                    (found.constant_time_sha3 ? CH_CPU_CONSTANT_TIME_SHA3 : 0U) |
                    (found.avx512_ifma ? CH_CPU_AVX512_IFMA : 0U) |
-                   (found.avx512 ? CH_CPU_AVX512 : 0U);
+                   (found.avx512 ? CH_CPU_AVX512 : 0U) | (found.bmi2_adx ? CH_CPU_BMI2_ADX : 0U);
         return *this;
     }
 #endif

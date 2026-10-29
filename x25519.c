@@ -9,9 +9,14 @@
 // 89), and for x25519_base that file's table of multiples of the base point
 // (docs/decisions.md 148). The clamp and the all-zero check sit after both
 // fields, in clamp_and_ladder() and x25519(), so one line decides each
-// whichever field runs (INV-3).
+// whichever field runs (INV-3). An x86-64 host object compiles it a third
+// time inside x25519_adx.c, which defines CH_X25519_ADX and renames x25519:
+// that copy calls the radix-2^64 ladder, and holds no x25519_base
+// (docs/decisions.md 165).
 #ifdef CH_X25519_WIDE
 #include "x25519_wide.h"
+#elif defined(CH_X25519_ADX)
+#include "x25519_adx.h"
 #else
 
 // Field element: 16 words of 16 bits, little-endian, radix 2^16, values
@@ -215,7 +220,7 @@ static void ladder(uint8_t out[X25519_LEN], const uint8_t z[X25519_LEN],
     ct_wipe(e, sizeof(fe));
     ct_wipe(f, sizeof(fe));
 }
-#endif // CH_X25519_WIDE
+#endif // CH_X25519_WIDE or CH_X25519_ADX
 
 // RFC 7748 section 5: clamp a copy of the scalar, then run the ladder of the
 // field this build compiled. The clamp is here rather than in either ladder,
@@ -238,6 +243,8 @@ static void clamp_and_ladder(uint8_t out[X25519_LEN], const uint8_t scalar[X2551
     } else {
         x25519_wide_ladder(out, z, point);
     }
+#elif defined(CH_X25519_ADX)
+    x25519_adx_ladder(out, z, point);
 #else
     ladder(out, z, point);
 #endif
@@ -251,6 +258,7 @@ int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
     return !ct_memeq(out, zeros, X25519_LEN);
 }
 
+#ifndef CH_X25519_ADX
 void x25519_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
 #ifdef CH_X25519_WIDE
     clamp_and_ladder(out, scalar, NULL);
@@ -259,3 +267,4 @@ void x25519_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
     clamp_and_ladder(out, scalar, nine);
 #endif
 }
+#endif

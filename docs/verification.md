@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-115 of the 152 C sources in the tree root are compiled into a
+115 of the 153 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 37 sources are in no such harness:
+The other 38 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -64,6 +64,7 @@ The other 37 sources are in no such harness:
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector ChaCha20](#the-vector-chacha20)). |
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `chacha20_avx512.c` | It runs ChaCha20 on AVX-512F intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with AVX-512F, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it under a `ch_cfg.cpu` value with `CH_CPU_AVX512_IFMA`; the nightly's `rsa-ifma-sde` job runs the first under Intel SDE. |
+| `x25519_adx.c` | Its five field operations are inline assembly, in `x25519_adx_asm.h`, which CBMC does not read. Its C over them is the ladder, the inversion and the final reduction. It has a body on x86-64 alone. | `bin/x25519_adx_model_test` runs the same C over `test/x25519_adx_model.h`, portable C that writes the words each operation writes, against the 16-word field on every host. On a CPU with BMI2 and ADX, `bin/x25519_adx_equiv_test` holds each operation to its model word for word and the whole field to the 16-word one (docs/decisions.md 165). |
 | `avx512_wipe.c` | It is one block of inline assembly, which CBMC does not read, and holds no C a harness could drive. It has a body on x86-64 alone. | On a CPU with AVX-512F, `bin/avx512_wipe_test` sets every bit of zmm0 to zmm31 and k1 to k7, calls it, and requires each register to read back as zero; the nightly's `rsa-ifma-sde` job runs the binary under Intel SDE. |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |

@@ -304,6 +304,9 @@
 #                     intrinsic, their wipes and the define that picks them
 #   rsa-avx2          bin/rsa_avx2_equiv_test for x86-64, for the
 #                     violations of rsa_avx2_lanes.h's instructions
+#   x25519-adx        bin/x25519_adx_equiv_test and bin/widemul_runtime_test
+#                     for x86-64, for the violations of x25519_adx.c's
+#                     assembly and of the dispatch that picks it
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -326,9 +329,9 @@ only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
     mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
-    rsa-addcarry | rsa-avx2) ;;
+    rsa-addcarry | rsa-avx2 | x25519-adx) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx]" >&2
     exit 2
     ;;
 esac
@@ -358,7 +361,8 @@ fi
 if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ] &&
     [ "$only" != chacha20-avx2 ] &&
     [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
-    [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ] && [ "$only" != sha512-stack ]; then
+    [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ] && [ "$only" != sha512-stack ] &&
+    [ "$only" != x25519-adx ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -418,6 +422,8 @@ read -r -a sha512_test_host_srcs <<< "$(sed -n 21p <<< "$lists")"
 read -r -a hkdf384_test_host_srcs <<< "$(sed -n 22p <<< "$lists")"
 read -r -a chacha20_equiv_srcs <<< "$(sed -n 23p <<< "$lists")"
 read -r -a ghash_equiv_srcs <<< "$(sed -n 24p <<< "$lists")"
+read -r -a x25519_adx_equiv_srcs <<< "$(sed -n 25p <<< "$lists")"
+read -r -a widemul_runtime_srcs <<< "$(sed -n 26p <<< "$lists")"
 [ "${#ghash_equiv_srcs[@]}" -gt 0 ] ||
     { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-four lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
@@ -695,6 +701,24 @@ if [ -z "$only" ] || [ "$only" = rsa-avx2 ]; then
 fi
 if [ "$only" = rsa-avx2 ]; then
     echo "aes-runtime-qemu: bin/rsa_avx2_equiv_test held rsa_avx2.c on AVX2 to its lane model, and rsa_vp1_cpu under CH_CPU_AVX2 to rsa_vp1, for x86-64"
+    exit 0
+fi
+if [ -z "$only" ] || [ "$only" = x25519-adx ]; then
+    # x25519_adx.c, whose body compiles for x86-64 alone, and the dispatch in
+    # widemul.h that picks it (docs/decisions.md 165). qemu's max model has
+    # BMI2 and ADX, so both binaries run every row.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -o "$x86_out/x25519_adx_equiv_test" \
+        "${x25519_adx_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_BMI2_ADX=1 expect max 0 \
+        "x25519_adx.c's assembly and its model, or the field and the 16-word one, disagree" \
+        x25519_adx_equiv_test
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/widemul_runtime_test" "${widemul_runtime_srcs[@]}" ||
+        exit 1
+    CH_REQUIRE_BMI2_ADX=1 expect max 0 \
+        "widemul_x25519_cpu ran a field the session's ch_cfg.cpu does not name" widemul_runtime_test
+fi
+if [ "$only" = x25519-adx ]; then
+    echo "aes-runtime-qemu: for x86-64, bin/x25519_adx_equiv_test held x25519_adx.c's assembly to its model and the field to the 16-word one, and bin/widemul_runtime_test held widemul_x25519_cpu to the field each value names"
     exit 0
 fi
 

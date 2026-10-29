@@ -598,8 +598,11 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // describes the CPU to.
     if (host) defs = concat(b, &.{ defs, &.{"-DCH_CPU_RUNTIME"} });
     // The wide X25519 field, which a session's
-    // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks (docs/decisions.md 52 and 89).
-    if (host and config.profile != .cnsa2) lib_srcs = concat(b, &.{ lib_srcs, &.{"x25519_wide.c"} });
+    // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks (docs/decisions.md 52 and 89),
+    // and the field on MULX and ADX, which CH_CPU_BMI2_ADX beside it picks
+    // for a shared secret, whose body compiles on x86-64 alone
+    // (docs/decisions.md 165).
+    if (host and config.profile != .cnsa2) lib_srcs = concat(b, &.{ lib_srcs, &.{ "x25519_wide.c", "x25519_adx.c" } });
     // The wide P-256 files, which the same bit picks, in an object that
     // carries the curve (docs/decisions.md 94).
     if (host and contains(lib_srcs, "p256_point.c")) lib_srcs = concat(b, &.{ lib_srcs, &p256_wide_srcs });

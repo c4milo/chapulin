@@ -59,6 +59,11 @@ const CpuBits = struct {
     /// picks nothing else, so a caller can leave it clear and keep avx512_ifma's kernels. An
     /// x86-64 bit, which an arm64 object refuses.
     avx512: bool = false,
+    /// CH_CPU_BMI2_ADX: the CPU has BMI2 and ADX. It states presence alone, as avx2 does. Beside
+    /// constant_time_multiply the session runs an X25519 shared secret on x25519_adx.c's four 64-bit
+    /// words, on MULX, ADCX and ADOX. A public key runs on the wide field's table whatever this
+    /// says. An x86-64 bit, which an arm64 object refuses.
+    bmi2_adx: bool = false,
 };
 
 /// ch_cfg.cpu for what found states, and 0 for null, which every init refuses. EcdsaP256Key.fromPem
@@ -73,5 +78,6 @@ fn cpuBitsOf(found: ?CpuBits) u32 {
         (if (cpu.constant_time_sha512) c.CH_CPU_CONSTANT_TIME_SHA512 else 0) |
         (if (cpu.constant_time_sha3) c.CH_CPU_CONSTANT_TIME_SHA3 else 0) |
         (if (cpu.avx512_ifma) c.CH_CPU_AVX512_IFMA else 0) |
-        (if (cpu.avx512) c.CH_CPU_AVX512 else 0);
+        (if (cpu.avx512) c.CH_CPU_AVX512 else 0) |
+        (if (cpu.bmi2_adx) c.CH_CPU_BMI2_ADX else 0);
 }

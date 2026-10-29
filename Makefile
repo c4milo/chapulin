@@ -322,7 +322,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
         pem.c base64.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
-HDRS := p256_sign_der.h ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h x25519_wide_edwards.h x25519_wide_table.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h rsa_avx2.h rsa_avx2_lanes.h rsa_avx2_number.h ch_assert.h \
+HDRS := p256_sign_der.h ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h x25519_adx.h x25519_adx_asm.h x25519_wide_edwards.h x25519_wide_table.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h rsa_avx2.h rsa_avx2_lanes.h rsa_avx2_number.h ch_assert.h \
         pem.h base64.h pem_blocks.h x509_pem.h pem_files.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mldsa.h mldsa_poly.h mldsa_zetas.h mldsa_signer.h mldsa_sign_round.h mldsa_sign_steps.h mldsa_sign_poly.h mldsa_sign_pack.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
@@ -695,7 +695,8 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           chacha20_vector.c chacha20_avx2.c chacha20_avx512.c test/chacha20_equiv_test.c \
           test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c test/chacha20_equiv_avx512.c \
           avx512_wipe.c test/avx512_wipe_test.c x25519_wide.c \
-          test/x25519_equiv_test.c \
+          test/x25519_equiv_test.c x25519_adx.c test/x25519_adx_model.c test/x25519_adx_model_test.c \
+          test/x25519_adx_equiv_test.c \
           $(P256_WIDE_SRCS) test/p256_equiv_test.c test/diff_p256_wide_test.c \
           test/p256_verify_equiv_test.c test/p256_verify_portable.c \
           $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
@@ -745,7 +746,7 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h test/rsa_sign_key.h test/rsa_sign_equiv_residue.h \
          test/rsa_sign_equiv_pieces.h test/rsa_sign_equiv_differential.h \
-         test/rsa_ifma_model_lanes.h test/rsa_ifma_test.h test/rsa_ifma_entries.h test/rsa_ifma_inputs.h \
+         test/x25519_adx_model.h test/rsa_ifma_model_lanes.h test/rsa_ifma_test.h test/rsa_ifma_entries.h test/rsa_ifma_inputs.h \
          test/rsa_ifma_sign_test.h test/rsa_ifma_sign_count.h test/diff_rsa_ifma_sign.h \
          test/rsa_avx2_model_lanes.h test/rsa_avx2_test.h test/rsa_avx2_entries.h test/rsa_avx2_count.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
@@ -1275,8 +1276,11 @@ endif
 # ct.h can build from 16x16 pieces on any core. A host object also holds
 # x25519_wide.c, five words of 51 bits whose products are 64x64->128
 # multiplies, and widemul.h runs it for a session whose ch_cfg.cpu holds
-# CH_CPU_CONSTANT_TIME_MULTIPLY (docs/decisions.md 52 and 89). The host
-# test requires unsigned __int128, the type of those products, which no
+# CH_CPU_CONSTANT_TIME_MULTIPLY (docs/decisions.md 52 and 89), and
+# x25519_adx.c, four words of 64 bits on MULX, ADCX and ADOX, whose body
+# compiles on x86-64 alone and which widemul.h runs for a shared secret
+# where the session's ch_cfg.cpu holds CH_CPU_BMI2_ADX beside the multiply
+# bit (docs/decisions.md 165). The host test requires unsigned __int128, the type of those products, which no
 # 32-bit target here has.
 #
 # No variable chooses the field. X25519=wide chose it for a whole object
@@ -1287,7 +1291,7 @@ ifneq ($(origin X25519),undefined)
 $(error X25519=$(X25519) is gone: on arm64 and x86-64 a TRUST=webpki client, ROLE=server and ROLE=both hold the wide X25519 field and run it for a session whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY, and every other object runs the 16-word field (docs/decisions.md 89))
 endif
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter cnsa2,$(PROFILE)),,x25519_wide.c)
+LIB_SRCS += $(if $(filter cnsa2,$(PROFILE)),,x25519_wide.c x25519_adx.c)
 endif
 # P-256, which a TRUST=webpki client and every server role run. Every
 # object that carries it holds p256_field.c, p256_scalar.c and
@@ -1448,28 +1452,33 @@ endif
 # object holds the AVX2 and AVX-512 ChaCha20 kernels, the VAES AES-GCM
 # kernels (docs/decisions.md 90), the 512-bit AES-GCM kernel (130) and
 # RSA's public operation on AVX-512 IFMA and on AVX2 (decisions 119 and
-# 122). There the host binaries that
+# 122), and X25519's field on MULX and ADX (165). There the host binaries that
 # take a ch_cfg.cpu value also run under the values below, which name the
 # kernels, and bin/x86_kernels_test counts which calls the library sends
 # to a kernel under each value. A binary run under a value that names
 # instructions its CPU lacks skips, and fails instead under
 # CH_REQUIRE_X86_KERNELS=1, or for AVX-512 IFMA under
 # CH_REQUIRE_AVX512_IFMA=1 (test/test_cpu.h). The unit suite and the two
-# RSA verifiers' vector binaries run under the first two, and the
-# Wycheproof host binary under the last four. RSA verification runs on
+# RSA verifiers' vector binaries run under the first three, and the
+# Wycheproof host binary under the last five. RSA verification runs on
 # the AVX2 kernel under 0xd, 0xf and 0x1f, and on the IFMA kernel under
 # the values with CH_CPU_AVX512_IFMA. AES-GCM runs on the 512-bit kernel
 # under 0x31f alone, and on a CPU without what CH_CPU_AVX512 names a run
-# under it skips, and fails instead under CH_REQUIRE_AVX512=1.
+# under it skips, and fails instead under CH_REQUIRE_AVX512=1. An X25519
+# shared secret runs on x25519_adx.c under 0x40d and 0x41f alone, and a
+# run under them on a CPU without BMI2 or ADX skips, and fails instead
+# under CH_REQUIRE_BMI2_ADX=1.
 #   0xd    the probe's bit, the multiply bit and CH_CPU_AVX2
 #   0x10d  those and CH_CPU_AVX512_IFMA
+#   0x40d  0xd's bits and CH_CPU_BMI2_ADX
 #   0xf    0xd's bits and the AES bit
 #   0x1f   those and CH_CPU_VAES
 #   0x11f  those and CH_CPU_AVX512_IFMA
-#   0x31f  those and CH_CPU_AVX512: every bit that picks a kernel or a path beside one
+#   0x31f  those and CH_CPU_AVX512
+#   0x41f  0x1f's bits and CH_CPU_BMI2_ADX
 X86_KERNEL_BINS := $(if $(X86_KERNEL_PROBE),$(if $(HOST_TARGET),bin/x86_kernels_test))
-X86_UNIT_CPU := $(if $(X86_KERNEL_PROBE),0xd 0x10d)
-X86_WYCHEPROOF_CPU := $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f 0x31f)
+X86_UNIT_CPU := $(if $(X86_KERNEL_PROBE),0xd 0x10d 0x40d)
+X86_WYCHEPROOF_CPU := $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f 0x31f 0x41f)
 # The values under which the host binaries that take a ch_cfg.cpu value run
 # their hashes on the CPU's hash instructions (docs/decisions.md 93). The
 # unit suite runs FIPS 180-4's, RFC 4231's and RFC 5869's vectors and keys
@@ -1737,7 +1746,7 @@ print-unit-cflags:
 	@echo sha512_avx2.c $(call unit_cflags,sha512_avx2.c)
 hash_hw_of = $(call sha512_avx2_apart,$(call hash_hw_srcs_of,$(1)))
 host_srcs = $(call sha512_host_of,$(1)) $(call widemul_native_of,$(1)) \
-            $(if $(filter x25519.c,$(1)),x25519_wide.c) \
+            $(if $(filter x25519.c,$(1)),x25519_wide.c x25519_adx.c) \
             $(if $(filter p256_point.c p256.c,$(1)),$(P256_WIDE_SRCS)) \
             $(if $(filter p256.c,$(1)),$(filter-out $(1),p256_scalar.c ct_wipe.c)) \
             $(if $(filter p384.c,$(1)),$(P384_WIDE_SRCS)) \
@@ -1972,6 +1981,8 @@ print-aes-runtime-qemu-srcs:
 	@echo $(call sha512_avx2_named,$(call host_srcs,$(HKDF384_SRCS)))
 	@echo $(call sha512_avx2_named,$(CHACHA20_EQUIV_TEST_SRCS))
 	@echo $(call sha512_avx2_named,$(GHASH_EQUIV_TEST_SRCS))
+	@echo $(X25519_ADX_EQUIV_SRCS)
+	@echo $(call sha512_avx2_named,$(WIDEMUL_RUNTIME_TEST_SRCS))
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -2248,7 +2259,7 @@ lint-trust-separation-run:
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 ROLE=server TRUST=none AES=extern HOST_TARGET=yes" "the profile's server is a host object, which takes no AES value" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 ROLE=server TRUST=none AES=extern HOST_TARGET=" "the profile's server is a host object alone" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	cnsa2_srv_want="$(MLDSA_SRCS) $(MLDSA_SIGN_SRCS) srv_mldsa.c sha3.c mlkem.c mlkem_poly.c aes.c gcm.c $(AES_HW_SRCS) $$pem_readers $$pem_files"; \
-	cnsa2_srv_ban="rsa.c rsa_mont.c rsa_sign.c p256.c p256_sign.c p256_ecdh.c p256_point.c x25519.c x25519_wide.c quic_aes_soft.c aes_extern.c x509.c x509_ca.c"; \
+	cnsa2_srv_ban="rsa.c rsa_mont.c rsa_sign.c p256.c p256_sign.c p256_ecdh.c p256_point.c x25519.c x25519_wide.c x25519_adx.c quic_aes_soft.c aes_extern.c x509.c x509_ca.c"; \
 	cnsa2_srv_def="-DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_ROLE_SERVER -DCH_SIGN_MLDSA -DCH_CPU_RUNTIME"; \
 	check "PROFILE=cnsa2 ROLE=server TRUST=none HOST_TARGET=yes" "$$cnsa2_srv_want srv_handshake.c" "$$cnsa2_srv_ban" \
 	  "$$cnsa2_srv_def" "-DCH_ROLE_BOTH -DCH_AES_EXTERN -DCH_KEX_PQ -DCH_PIN_MLDSA"; \
@@ -2258,12 +2269,12 @@ lint-trust-separation-run:
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 TRUST=raw-rsa AES=extern KEX=pq" "the profile fixes the key exchange" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 TRUST=raw-rsa AES=extern SUITE=aesgcm" "the profile fixes the cipher suite" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=fips TRUST=raw-rsa AES=extern" "fips is not a profile" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
-	check "TRUST=raw-rsa" "x25519.c" "x25519_wide.c x25519_native.c" "" "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "x25519.c x25519_wide.c" "x25519_native.c" "-DCH_CPU_RUNTIME" \
+	check "TRUST=raw-rsa" "x25519.c" "x25519_wide.c x25519_adx.c x25519_native.c" "" "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "x25519.c x25519_wide.c x25519_adx.c" "x25519_native.c" "-DCH_CPU_RUNTIME" \
 	  "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "x25519.c x25519_wide.c" "x25519_native.c" "-DCH_CPU_RUNTIME" \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "x25519.c x25519_wide.c x25519_adx.c" "x25519_native.c" "-DCH_CPU_RUNTIME" \
 	  "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "x25519.c" "x25519_wide.c x25519_native.c" "" \
+	check "ROLE=server TRUST=none HOST_TARGET=" "x25519.c" "x25519_wide.c x25519_adx.c x25519_native.c" "" \
 	  "-DCH_X25519_WIDE -DCH_NATIVE_MUL128 -DCH_CPU_RUNTIME"; \
 	for value in portable wide; do \
 	  for axis in "TRUST=raw-rsa" "ROLE=client TRUST=webpki HOST_TARGET=yes" "ROLE=server TRUST=none HOST_TARGET="; do \
@@ -3077,10 +3088,28 @@ bin/aes_equiv_test: test/aes_equiv_test.c $(AES_EQUIV_TEST_SRCS) quic_aes_soft.c
 # object's, so HOST_BINS names it. bin/unit_host runs RFC 7748's vectors
 # and the unit suite's handshakes on the wide field, with the multiply bit,
 # and on the 16-word one, without it.
-X25519_EQUIV_TEST_SRCS := x25519.c x25519_wide.c ct.c ct_wipe.c
+X25519_EQUIV_TEST_SRCS := x25519.c x25519_wide.c x25519_adx.c ct.c ct_wipe.c
 bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o $@ test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS)
+# x25519_adx.c over its model, test/x25519_adx_model.h, against the 16-word
+# field on every host, and its assembly against the model on an x86-64 CPU
+# with BMI2 and ADX, where the second binary also runs the model test's
+# cases on the assembly (docs/decisions.md 165). Elsewhere the second
+# prints SKIP, and CH_REQUIRE_BMI2_ADX=1 makes a missing CPU fail it.
+# Each defines CH_X25519_ADX_TEST for the field's test entries, which no
+# library object holds.
+X25519_ADX_TEST_SRCS := test/x25519_adx_model.c x25519.c x25519_wide.c ct.c ct_wipe.c
+X25519_ADX_EQUIV_SRCS := test/x25519_adx_equiv_test.c x25519_adx.c $(X25519_ADX_TEST_SRCS)
+bin/x25519_adx_model_test: test/x25519_adx_model_test.c test/x25519_equiv_test.c x25519_adx.c \
+                           $(X25519_ADX_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -I. -Itest -o $@ \
+	  test/x25519_adx_model_test.c $(X25519_ADX_TEST_SRCS)
+bin/x25519_adx_equiv_test: test/x25519_adx_equiv_test.c test/x25519_equiv_test.c x25519_adx.c \
+                           $(X25519_ADX_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -I. -Itest -o $@ $(X25519_ADX_EQUIV_SRCS)
 # The wide P-256 files against p256_field.c, p256_scalar.c and
 # p256_point.c, all in one binary under the names the library gives them,
 # as a host object holds them: the files under their own names on ct.h's
@@ -4348,11 +4377,13 @@ ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/mlkem_test_1
 # vectors run through widemul.h's dispatchers on the native copies and
 # then on the decomposition. The host Wycheproof test below does the
 # same. bin/widemul_runtime_test counts which copy each operation ran. On
-# x86-64 the unit suite runs twice more, under X86_UNIT_CPU, which names
-# AVX2 and then AVX-512 IFMA beside it: RFC 8439's vectors and every
-# record the suite seals and opens then run ChaCha20 on the AVX2 kernel
-# (test/test_aead.h). The suite runs no RSA public operation, because its
-# RSA rows are refusals at the device bound, so the second value moves
+# x86-64 the unit suite runs three times more, under X86_UNIT_CPU, which
+# names AVX2, then AVX-512 IFMA beside it, then BMI2 and ADX beside it:
+# RFC 8439's vectors and every record the suite seals and opens then run
+# ChaCha20 on the AVX2 kernel (test/test_aead.h), and under the third
+# value RFC 7748's vectors and every handshake's shared secret run on
+# x25519_adx.c. The suite runs no RSA public operation, because its RSA
+# rows are refusals at the device bound, so the second value moves
 # nothing the first does not. The two RSA verifiers' vector binaries run
 # under X86_UNIT_CPU too, and under the second value their public
 # operation runs on rsa_ifma.c. On both architectures the unit suite runs
@@ -4404,7 +4435,7 @@ $(eval $(call HOST_VECTOR_BIN,hkdf384_test,test/hkdf384_test.c,$(HKDF384_SRCS),-
 WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomposed_point.c \
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
                        test/widemul_count_native_vector.c test/widemul_count_native_avx2.c \
-                       test/widemul_count_wide.c \
+                       test/widemul_count_wide.c test/widemul_count_adx.c \
                        test/widemul_count_wide_p256.c test/widemul_count_sign64.c \
                        test/rsa_ifma_sign_count.c test/aead_avx512_count.c
 WIDEMUL_COUNT_CHACHA := $(filter-out chacha20_avx512.c,$(CHACHA_VECTOR_SRCS))
@@ -4415,12 +4446,13 @@ WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(WIDEMUL_COUNT_CHACHA) hkdf.c sha256.c 
                       ct.c ct_wipe.c buf.c record.c mlkem.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
                       sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(RSA_MONT64_SRCS) \
                       $(WIDEMUL_COUNT_FIELDS)
+WIDEMUL_RUNTIME_TEST_SRCS := test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
+                             $(WIDEMUL_COUNT_SRCS)
 bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
                           $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COUNTED) x25519_wide.c poly1305_vector.c poly1305_avx2.c \
                           $(P256_WIDE_SRCS) $(RSA_SIGN64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/widemul_runtime_test.c test/widemul_runtime_count.c \
-	  $(WIDEMUL_COUNT_UNITS) $(WIDEMUL_COUNT_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ $(WIDEMUL_RUNTIME_TEST_SRCS)
 # The host object's loop and session binaries (docs/decisions.md 89), each
 # built as a host object builds its sources, on the same counting copies:
 # the sources a loop links, with the files built on the multiply replaced by the count
@@ -4500,6 +4532,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/webpki_session_host bin/webpki_auth_host bin/pem_files_host \
                                  bin/widemul_runtime_test \
                                  bin/x25519_equiv_test \
+                                 bin/x25519_adx_model_test bin/x25519_adx_equiv_test \
                                  bin/p256_equiv_test bin/p256_equiv_test_sum bin/p256_equiv_test_builtin \
                                  bin/p256_verify_equiv_test bin/p384_equiv_test bin/p384_test_host \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
@@ -6821,7 +6854,8 @@ else
 	  test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c \
 	  test/tcp_blocking_key_limit_test.c test/quic_loop_test.c test/ticket_epoch_test.c \
 	  test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c x25519_wide.c \
-	  test/x25519_equiv_test.c $(P256_WIDE_SRCS) test/p256_equiv_test.c test/hkdf384_test.c \
+	  test/x25519_equiv_test.c x25519_adx.c test/x25519_adx_model.c test/x25519_adx_model_test.c \
+	  test/x25519_adx_equiv_test.c $(P256_WIDE_SRCS) test/p256_equiv_test.c test/hkdf384_test.c \
 	  $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
 	  test/p384_portable.c \
 	  test/diff_x25519_test.c test/diff_p256_wide_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
@@ -6843,6 +6877,22 @@ else
 	# differential main, which refuses any other build.
 	@$(call TIDY_EACH,x25519_wide.c test/x25519_equiv_test.c test/diff_x25519_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
+	# x25519_adx.c over its model, the build bin/x25519_adx_model_test runs
+	# on every host, so this pass reads test/x25519_adx_model.h and the
+	# field's C, with the two test mains: on another architecture than
+	# x86-64 the equivalence test's main is its SKIP alone. The x86-64 pass
+	# after it reads the assembly, for an x86-64 target whatever the host,
+	# with portability-no-assembler off for that file alone: its five
+	# operations are inline assembly, because C names neither MULX's
+	# implicit operand nor the two carry flags ADCX and ADOX keep apart
+	# (docs/decisions.md 165). test/x25519_adx_model.c stays out of every
+	# pass, for test/rsa_ifma_model.c's reason.
+	@$(call TIDY_EACH,x25519_adx.c test/x25519_adx_model_test.c test/x25519_adx_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL \
+	  -DCH_X25519_ADX_TEST -I. -Itest)
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler x25519_adx.c, \
+	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -I.)
 	# The wide P-256 files, whose bodies sit behind -DCH_CPU_RUNTIME too,
 	# with the equivalence test, which calls them and the files under
 	# their own names, and the differential main, which refuses any other
@@ -8060,7 +8110,7 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # bin/gcm_avx512_equiv_test, bin/quic_test_hw and the host Wycheproof test
 # hold their bytes. None of these measures timing (docs/quic.md, "What the
 # AES axis proves").
-WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20_avx512.c:0 \
+WIDE64_CEILING := x25519_wide.c:0 x25519_adx.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20_avx512.c:0 \
                   poly1305_vector.c:0 \
                   poly1305_avx2.c:0 poly1305_native.c:0 mlkem_poly_native.c:0 \
                   poly1305_vector_native.c:0 poly1305_avx2_native.c:0 poly1305_ifma.c:0 \
@@ -8182,7 +8232,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    chacha20_avx512.c:-DCH_CPU_RUNTIME \
                    poly1305_vector.c:-DCH_CPU_RUNTIME poly1305_avx2.c:-DCH_CPU_RUNTIME \
                    poly1305_ifma.c:-DCH_CPU_RUNTIME \
-                   x25519_wide.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME rsa_mont64_blocks.c:-DCH_CPU_RUNTIME \
+                   x25519_wide.c:-DCH_CPU_RUNTIME x25519_adx.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME rsa_mont64_blocks.c:-DCH_CPU_RUNTIME \
                    rsa_mont64_addcarry.c:-DCH_CPU_RUNTIME$(COMMA)-DRSA_MONT64_ADDCARRY=1$(COMMA)-DRSA_MONT64_BLOCKS=0 \
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
                    rsa_sign64.c:-DCH_CPU_RUNTIME rsa_ifma.c:-DCH_CPU_RUNTIME avx512_wipe.c:-DCH_CPU_RUNTIME \
@@ -8469,6 +8519,12 @@ WIDEMUL_SPECS := \
 #   stay masks. Before equal_mask read its bit back from a volatile object,
 #   x86-64 held 15: a jump on each comparison of a digit's size with an
 #   entry's number, around the load of word 4 of the entry.
+# x25519_adx.c, 0 and 4: on x86-64 the ladder's loop over the 255 bits and
+#   the three loops of adx_invert's squares that clang keeps, on public
+#   counts; arm64 compiles no body. The swap reads its bit back from a
+#   volatile object: before it did, clang for x86-64 wrote each step's
+#   swap as eight jumps on the scalar's bit, and the count read 12
+#   (docs/decisions.md 125 and 165).
 # x25519.c@host, 8 and 12: the 255 ladder steps, the inverse's 254
 #   squarings and its two tests of a squaring's number against 2 and 4, and
 #   mul's two loops over its products and its loop over the 15 words it
@@ -8943,7 +8999,7 @@ DIVIDE_CEILING_SPEC := mips32r2-gcc-O2/tls_write.c:3
 # on those lines.
 BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
                mlkem_poly.c drbg.c softmul.c rsa_sign.c aes.c quic_aes_soft.c quic_packet.c \
-               aes_extern.c gcm.c p256_field.c x25519_wide.c chacha20_vector.c chacha20_avx2.c chacha20_avx512.c \
+               aes_extern.c gcm.c p256_field.c x25519_wide.c x25519_adx.c chacha20_vector.c chacha20_avx2.c chacha20_avx512.c \
                poly1305_vector.c \
                sha512.c \
                sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c \
@@ -9112,7 +9168,8 @@ BRANCH_CEILING := \
   rv32imac-gcc/sha512_compress.c:5 rv32ic-gcc/sha512.c:14 rv32ic-gcc/sha512_compress.c:5 \
   m3/base64.c:0 mips32r2/base64.c:0 rv32imac/base64.c:0 m3-gcc/base64.c:0 mips32r2-gcc/base64.c:0 \
   mips32r2-gcc-O2/base64.c:0 rv32imac-gcc/base64.c:0 rv32ic-gcc/base64.c:0 \
-  arm64/x25519_wide.c:8 x86-64/x25519_wide.c:9 arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:26 \
+  arm64/x25519_wide.c:8 x86-64/x25519_wide.c:9 arm64/x25519_adx.c:0 x86-64/x25519_adx.c:4 \
+  arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:26 \
   arm64/chacha20_avx2.c:0 x86-64/chacha20_avx2.c:31 \
   arm64/chacha20_avx512.c:0 x86-64/chacha20_avx512.c:77 \
   arm64/poly1305_vector.c:0 x86-64/poly1305_vector.c:0 \

@@ -42,6 +42,7 @@
 #include "sha256.h"
 #include "widemul.h"
 #include "widemul_runtime_count.h"
+#include "x86_kernels_cpu.h"
 
 static int failures = 0;
 
@@ -329,8 +330,63 @@ static void check_answer(void) {
     }
 }
 
+#ifdef __x86_64__
+// Zeroes every count check_x25519_cpu reads.
+static void zero_counts(void) {
+    widemul_decomposed_calls = 0;
+    widemul_native_calls = 0;
+    widemul_vector_calls = 0;
+    x25519_adx_calls = 0;
+}
+#endif
+
+// X25519's shared secret under a session's ch_cfg.cpu (widemul.h's
+// widemul_x25519_cpu), on x86-64, where three fields answer: x25519_adx.c
+// under the multiply bit with CH_CPU_BMI2_ADX beside it, x25519_wide.c
+// under the multiply bit alone, and the 16-word field without it, whatever
+// CH_CPU_BMI2_ADX says. The row that runs x25519_adx.c needs BMI2 and ADX,
+// and a CPU without them skips it, unless CH_REQUIRE_BMI2_ADX is 1.
+static void check_x25519_cpu(void) {
+#ifdef __x86_64__
+    static const uint32_t multiply = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY;
+    static const uint32_t adx_alone = CH_CPU_PROBED | CH_CPU_BMI2_ADX;
+    uint8_t k[X25519_LEN];
+    uint8_t u[X25519_LEN];
+    uint8_t out[X25519_LEN];
+    unhex("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4", k);
+    unhex("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c", u);
+    static const char want[] = "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552";
+    int failed = failures;
+    zero_counts();
+    CHECK(widemul_x25519_cpu(multiply, widemul_of_cpu(multiply), out, k, u) == 1);
+    CHECK(eq_hex(out, want));
+    CHECK(widemul_native_calls == 1 && x25519_adx_calls == 0 && widemul_decomposed_calls == 0);
+    zero_counts();
+    CHECK(widemul_x25519_cpu(adx_alone, widemul_of_cpu(adx_alone), out, k, u) == 1);
+    CHECK(eq_hex(out, want));
+    CHECK(widemul_native_calls == 0 && x25519_adx_calls == 0 && widemul_decomposed_calls == 1);
+    zero_counts();
+    const char *adx_row = "skipped: this CPU lacks BMI2 or ADX";
+    if (x86_cpu_has_bmi2_adx()) {
+        CHECK(widemul_x25519_cpu(multiply | CH_CPU_BMI2_ADX, WIDEMUL_CONSTANT_TIME, out, k, u) ==
+              1);
+        CHECK(eq_hex(out, want));
+        CHECK(widemul_native_calls == 1 && x25519_adx_calls == 1 && widemul_decomposed_calls == 0);
+        adx_row = "one call into x25519_adx.c under both bits";
+    } else if (x86_bmi2_adx_required()) {
+        failures++;
+        (void)fprintf(stderr, "this CPU lacks BMI2 or ADX, and CH_REQUIRE_BMI2_ADX is 1\n");
+    }
+    zero_counts();
+    (void)printf("widemul_runtime: x25519 by cpu      the wide field under the multiply bit alone, "
+                 "the 16-word field under CH_CPU_BMI2_ADX alone, %s%s\n",
+                 adx_row, failures == failed ? "" : " -- FAILED");
+#endif
+}
+
 int main(void) {
     check_answer();
+    check_x25519_cpu();
     check_operation("aead", aead_run, 1);
     check_operation("aead of a session", aead_cpu_run, 1);
     check_operation("x25519", x25519_run, 0);

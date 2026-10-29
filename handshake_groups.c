@@ -6,6 +6,7 @@
 #ifdef CH_KEX_TWO_GROUPS
 
 #include "ch_assert.h"
+#include "cpu.h"
 #include "ct.h"
 #include "rand_draw.h"
 #include "widemul.h"
@@ -64,7 +65,8 @@ int hsg_selected_group_ok(const handshake_state *h, uint16_t group) {
 static int x25519_secret(handshake_state *h, const server_hello_info *info,
                          uint8_t ikm[X25519_LEN]) {
     ct_wipe(h->dz, sizeof h->dz);
-    if (!widemul_x25519(widemul_answer(&h->t->cfg), ikm, h->priv, info->server_pub)) {
+    if (!widemul_x25519_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), ikm, h->priv,
+                            info->server_pub)) {
         ct_wipe(ikm, X25519_LEN);
         return CH_EPROTO;
     }

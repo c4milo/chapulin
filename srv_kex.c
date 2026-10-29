@@ -202,7 +202,8 @@ static int x25519_secret(handshake_state *h, const client_hello *ch, uint16_t gr
     }
     CH_ASSERT(peer != NULL);
     ct_wipe(h->mlkem_ss, sizeof h->mlkem_ss);
-    return widemul_x25519(widemul_answer(&h->t->cfg), ecdhe, h->priv, peer) != 0;
+    return widemul_x25519_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), ecdhe, h->priv,
+                              peer) != 0;
 }
 
 int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,

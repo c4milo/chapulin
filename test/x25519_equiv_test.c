@@ -35,6 +35,17 @@
 #include "x25519.h"
 #include "x25519_wide.h"
 
+// The field under test, the wide one by default. test/x25519_adx_model_test.c
+// and test/x25519_adx_equiv_test.c include this file with
+// X25519_EQUIV_FIELD naming x25519_adx.c's model build or its assembly
+// build, and X25519_EQUIV_LADDER_ONLY, because that field has no table of
+// multiples: its base point cases run its ladder on the point 9.
+#ifndef X25519_EQUIV_FIELD
+#define X25519_EQUIV_FIELD x25519_wide
+#define X25519_EQUIV_NAME "x25519_equiv"
+#define X25519_EQUIV_WHAT "the wide field"
+#endif
+
 // xorshift64, as test/aes_equiv_test.c writes it and for its reasons: a
 // fixed default seed, so a mismatch reproduces bit for bit, and an
 // environment variable the nightly sets to vary it. Never time().
@@ -102,7 +113,7 @@ static int compare(const char *case_name, const uint8_t scalar[X25519_LEN],
                    const uint8_t point[X25519_LEN], uint8_t out[X25519_LEN]) {
     uint8_t portable_out[X25519_LEN];
     int portable_ok = x25519(portable_out, scalar, point);
-    int wide_ok = x25519_wide(out, scalar, point);
+    int wide_ok = X25519_EQUIV_FIELD(out, scalar, point);
     if (portable_ok != wide_ok || memcmp(portable_out, out, X25519_LEN) != 0) {
         failures++;
         (void)fprintf(stderr, "FAIL %s: the fields differ (portable %d, wide %d)\n", case_name,
@@ -132,8 +143,13 @@ static void compare_base(const char *case_name, const uint8_t scalar[X25519_LEN]
     clamped[0] &= 248;
     clamped[31] = (uint8_t)((clamped[31] & 127) | 64);
     x25519_base(portable_out, scalar);
+#ifdef X25519_EQUIV_LADDER_ONLY
+    (void)X25519_EQUIV_FIELD(out, scalar, nine);
+    memcpy(ladder_out, out, X25519_LEN);
+#else
     x25519_wide_base(out, scalar);
     x25519_wide_ladder(ladder_out, clamped, nine);
+#endif
     if (memcmp(portable_out, out, X25519_LEN) != 0 || memcmp(ladder_out, out, X25519_LEN) != 0) {
         failures++;
         (void)fprintf(stderr, "FAIL %s: the fields differ on the base point\n", case_name);
@@ -365,6 +381,13 @@ static void run_random(void) {
 
 int main(void) {
     uint64_t seed = rng_seed_from_env();
+#ifdef X25519_EQUIV_BEFORE
+    // The including file's own checks, which may stop the run on a CPU
+    // without the instructions it tests.
+    if (!X25519_EQUIV_BEFORE()) {
+        return 0;
+    }
+#endif
     run_rfc_vectors();
     run_iterated();
     run_low_order();
@@ -373,11 +396,12 @@ int main(void) {
     run_base_entries();
     run_random();
     if (failures != 0) {
-        (void)printf("x25519_equiv: %d failures (seed 0x%016llx)\n", failures,
+        (void)printf(X25519_EQUIV_NAME ": %d failures (seed 0x%016llx)\n", failures,
                      (unsigned long long)seed);
         return 1;
     }
-    (void)printf("x25519_equiv: %lu inputs, the wide field == the 16-word field (seed 0x%016llx)\n",
+    (void)printf(X25519_EQUIV_NAME ": %lu inputs, " X25519_EQUIV_WHAT
+                                   " == the 16-word field (seed 0x%016llx)\n",
                  compared, (unsigned long long)seed);
     return 0;
 }

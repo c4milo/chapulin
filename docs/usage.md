@@ -125,8 +125,8 @@ key lives longer, so keep it on a machine where nobody untrusted can
 measure power.
 
 The other
-bits, `CH_CPU_AVX2`, `CH_CPU_VAES`, `CH_CPU_AVX512` and
-`CH_CPU_AVX512_IFMA`, state no timing. Set one only when your probe
+bits, `CH_CPU_AVX2`, `CH_CPU_VAES`, `CH_CPU_AVX512`,
+`CH_CPU_AVX512_IFMA` and `CH_CPU_BMI2_ADX`, state no timing. Set one only when your probe
 found it, because an instruction the CPU lacks stops the program.
 
 The hostname

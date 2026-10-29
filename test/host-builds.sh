@@ -94,7 +94,7 @@ defined() { # $1 = a clang target, $2 = the bits its object defines
         fail "cpu_cfg.h's CH_CPU_DEFINED for $1 is not $2"
 }
 defined aarch64-none-elf 0xe7U
-defined x86_64-none-elf 0x33fU
+defined x86_64-none-elf 0x73fU
 
 # The Makefile's defines for a TRUST=webpki object under a compiler.
 make_defs() {

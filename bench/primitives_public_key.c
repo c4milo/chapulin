@@ -112,7 +112,7 @@ static void expect(int ok, const char *what) {
 static void run_x25519(size_t n) {
     (void)n;
     uint8_t out[X25519_LEN];
-    expect(widemul_x25519(BENCH_WIDEMUL, out, X25519_SCALAR, X25519_POINT) == 1,
+    expect(widemul_x25519_cpu(bench_cpu, BENCH_WIDEMUL, out, X25519_SCALAR, X25519_POINT) == 1,
            "x25519 refused its vector");
     bench_consume(out, 1);
 }
@@ -120,7 +120,7 @@ static void run_x25519(size_t n) {
 static void prepare_x25519(size_t n) {
     (void)n;
     uint8_t out[X25519_LEN];
-    expect(widemul_x25519(BENCH_WIDEMUL, out, X25519_SCALAR, X25519_POINT) == 1,
+    expect(widemul_x25519_cpu(bench_cpu, BENCH_WIDEMUL, out, X25519_SCALAR, X25519_POINT) == 1,
            "x25519 refused its vector");
     expect(memcmp(out, X25519_WANT, sizeof out) == 0, "x25519 missed RFC 7748 §5.2");
 }

@@ -9,7 +9,7 @@ reason: every object carries x25519_wide.c, a device object among them. The
 
 --- old
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter cnsa2,$(PROFILE)),,x25519_wide.c)
+LIB_SRCS += $(if $(filter cnsa2,$(PROFILE)),,x25519_wide.c x25519_adx.c)
 endif
 --- new
-LIB_SRCS += x25519_wide.c
+LIB_SRCS += x25519_wide.c x25519_adx.c

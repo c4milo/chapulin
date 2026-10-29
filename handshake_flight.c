@@ -141,7 +141,8 @@ static int kem_secret(handshake_state *h, const server_hello_info *info, uint8_t
     mlkem_decaps_cpu(CH_CFG_CPU(h->t->cfg), widemul, ikm, info->server_ct, dk);
     ct_wipe(dk, sizeof dk);
 #ifndef CH_PROFILE_CNSA2
-    if (!widemul_x25519(widemul, ikm + MLKEM_SS_LEN, h->priv, info->server_pub)) {
+    if (!widemul_x25519_cpu(CH_CFG_CPU(h->t->cfg), widemul, ikm + MLKEM_SS_LEN, h->priv,
+                            info->server_pub)) {
         ct_wipe(ikm, MLKEM_SS_LEN + X25519_LEN);
         return CH_EPROTO;
     }
@@ -320,8 +321,8 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
 #else
     uint8_t ecdhe[X25519_LEN];
     size_t ecdhe_len = sizeof ecdhe;
-    int shared_ok =
-        widemul_x25519(widemul_answer(&h->t->cfg), ecdhe, h->priv, info->server_pub) != 0;
+    int shared_ok = widemul_x25519_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), ecdhe,
+                                       h->priv, info->server_pub) != 0;
 #endif
     // The six values the exchange consumed. The tcp-blocking driver would
     // wipe them with its frame; the tcp-nonblocking and QUIC drivers

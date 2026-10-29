@@ -1283,6 +1283,44 @@ last `ROLE=server` stub, as the entry said it would.
 - See [decisions: Engineering](decisions.md#engineering), entries 52 and
   152.
 
+### INV-65 — the x86-64 X25519 field gives the 16-word field's bytes, and runs only under its two bits
+
+- **Claim.** On x86-64, `x25519_adx` writes the 32 bytes and returns the
+  verdict that `x25519` writes and returns on the 16-word field, for every
+  scalar and u-coordinate. `widemul_x25519_cpu` runs it for a session whose
+  `ch_cfg.cpu` holds `CH_CPU_BMI2_ADX` beside `CH_CPU_CONSTANT_TIME_MULTIPLY`,
+  and for no other session: under the multiply bit alone a shared secret
+  runs on `x25519_wide.c`, and without it on the 16-word field, whatever
+  `CH_CPU_BMI2_ADX` says.
+- **Mechanism.** `x25519_adx.c` keeps each element as four words under
+  2^256 and folds what passes 2^256 back in at word 0 times 38. Its five
+  operations are assembly in `x25519_adx_asm.h`, and
+  `test/x25519_adx_model.h` writes the same four words in portable C. The
+  ladder, the inversion and the final reduction are C over them, and the
+  clamp and the all-zero check are `x25519.c`'s, which `x25519_adx.c`
+  compiles once more. `widemul_x25519_cpu` reads both bits before it calls
+  the field (decision 165).
+- **Check.** `bin/x25519_adx_model_test` runs the field's C over the model
+  against the 16-word field on every host: RFC 7748's vectors and its
+  iterated vector, the u-coordinates of small order, every u in [p, 2^255)
+  with and without bit 255, and random pairs. On a CPU with BMI2 and ADX,
+  `bin/x25519_adx_equiv_test` holds each assembly operation and the final
+  reduction to the model word for word, on edge words and random ones, and
+  then the whole field to the 16-word one on the same cases. On x86-64
+  `bin/widemul_runtime_test` counts which field `widemul_x25519_cpu` runs
+  under the multiply bit alone, under `CH_CPU_BMI2_ADX` alone and under
+  both. The qemu lane's `x25519-adx` part runs both binaries under
+  `qemu-x86_64`'s `max` model, which has the instructions, so a machine of
+  either architecture runs every row. CBMC reads no assembly, and no
+  harness compiles the field yet: `tools/proof-cover.py` records it.
+- **Violation.** A PR runs the field without one of its bits.
+  `inv65-x25519-adx-ignores-adx-bit` drops `CH_CPU_BMI2_ADX` from the test
+  in `widemul_x25519_cpu`, and `inv65-x25519-adx-ignores-multiply-bit` drops
+  the multiply bit; `bin/widemul_runtime_test` catches both through the
+  qemu lane's `x25519-adx` part. Every byte stays right in both, so no
+  vector notices; only the count does.
+- See [decisions: Engineering](decisions.md#engineering), entry 165.
+
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
 - **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit words

@@ -48,6 +48,10 @@ void poly1305_final_native_counted(poly1305 *p, uint8_t tag[POLY1305_TAG]);
 int x25519_wide_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
                         const uint8_t point[X25519_LEN]);
 void x25519_wide_base_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]);
+#ifdef __x86_64__
+int x25519_adx_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
+                       const uint8_t point[X25519_LEN]);
+#endif
 void mlk_polyvec_compress_native_counted(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v);
 void mlk_poly_compress_native_counted(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
 void mlk_poly_tomsg_native_counted(uint8_t msg[32], const mlk_poly *p);
@@ -173,6 +177,17 @@ void x25519_wide_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN])
     widemul_native_calls++;
     x25519_wide_base_counted(out, scalar);
 }
+
+unsigned long x25519_adx_calls;
+
+#ifdef __x86_64__
+int x25519_adx(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
+               const uint8_t point[X25519_LEN]) {
+    widemul_native_calls++;
+    x25519_adx_calls++;
+    return x25519_adx_counted(out, scalar, point);
+}
+#endif
 
 void mlk_polyvec_compress_native(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v) {
     widemul_native_calls++;

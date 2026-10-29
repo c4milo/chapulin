@@ -14634,3 +14634,80 @@ does nothing more.
       - **A failure during a tcp-nonblocking handshake.** The caller
         holds every byte of that handshake, so a failure there is
         `ch_record_close`'s. The cocuyo case comes after the handshake.
+
+165. **An x86-64 host object computes an X25519 shared secret on four
+    64-bit words, with MULX, ADCX and ADOX in inline assembly, for a
+    session whose `ch_cfg.cpu` holds the new `CH_CPU_BMI2_ADX` beside the
+    multiply bit.** After decision 163 a shared secret on an EPYC 7763 took
+    1.09 times OpenSSL 3.6.4's time under gcc and 1.13 times under clang.
+    OpenSSL runs X25519 there on four 64-bit words in assembly, and C on
+    `x25519_wide.c`'s five 51-bit words did not close the gap. Camilo chose
+    to prototype such a field, then ruled on its CPU bit and on how to
+    prove it.
+
+    - **The field.** `x25519_adx.c` keeps an element as four words under
+      2^256, not reduced mod p, and folds what passes 2^256 back in at
+      word 0 times 38, since 2^256 = 38 mod p. Five operations are inline
+      assembly in `x25519_adx_asm.h`: the product, the square, the sum,
+      the difference and the product by 121666. C names neither MULX, a
+      multiply that writes no flag, nor the two carry flags ADCX and ADOX
+      keep apart, so a product's two carry chains run side by side only
+      in assembly. The ladder, the inversion and the final reduction are
+      C. The clamp and the all-zero check are `x25519.c`'s, which the file
+      compiles once more, as `x25519_wide.c` does. A public key stays on
+      `x25519_wide.c`'s table, which already takes 0.42 to 0.44 of
+      OpenSSL's time there.
+    - **The order of a step.** In RFC 7748's order, where each operation
+      reads the one before, the prototype took 43.2 µs on an EPYC 7763.
+      In the order OpenSSL's `x25519_scalar_mulx` runs, with two
+      independent operations side by side wherever the formulas allow,
+      it took 33.9 µs. With OpenSSL's own five routines in the same
+      ladder it took 34.9 µs, so the routines here are as fast as
+      OpenSSL's.
+    - **The bit.** `CH_CPU_BMI2_ADX`, 0x400, says the CPU has BMI2 and
+      ADX, and states no timing, as `CH_CPU_AVX2` does. MULX's products
+      are widening multiplies, so `CH_CPU_CONSTANT_TIME_MULTIPLY` must
+      stand beside it. `CH_CPU_AVX2` could not stand in: Haswell has AVX2
+      and no ADX. `widemul_x25519_cpu` takes the session's value, and the
+      four call sites of a shared secret pass it.
+    - **The swap.** Inlined into the ladder, clang 23 for x86-64 wrote the
+      masked swap as eight jumps a step on the scalar's bit, and
+      `lint-wide-multiply` counted 12 branches. The swap now reads its
+      bit back from a volatile object before it builds the mask, as
+      decision 125 asks, and the count is 4: the ladder's loop and three
+      loops of squares. gcc 13 wrote no jump on a secret.
+    - **Numbers.** One shared secret, `bench/primitives.sh` on CI runners,
+      `ch_cfg.cpu` 0x5 against 0x405, beside OpenSSL 3.6.4:
+
+      | CPU | clang 0x5 | clang 0x405 | gcc 0x5 | gcc 0x405 | OpenSSL |
+      |---|---|---|---|---|---|
+      | EPYC 7763 | 41.0 µs | 34.75 µs | 40.2 µs | 38.4 µs | 36.5 µs |
+      | Xeon 8573C | 29.7 µs | 27.1 µs | 29.6 µs | 29.4 µs | 30.0 µs |
+
+      Under clang the field takes 0.95 of OpenSSL's time on the EPYC 7763
+      and 0.90 on the Xeon 8573C. Under gcc it takes 1.05 on the EPYC
+      7763. The volatile read in the swap costs gcc about 5% there: the
+      same field took 36.4 µs before it. A second run on the Xeon 8573C
+      gave 27.9 µs under clang against OpenSSL's 31.0 µs.
+    - **What holds it.** `bin/x25519_adx_model_test` runs the field's C
+      over `test/x25519_adx_model.h`, portable C that writes the words
+      each operation writes, against the 16-word field on every host. On
+      a CPU with BMI2 and ADX, `bin/x25519_adx_equiv_test` holds each
+      operation and the final reduction to the model word for word, then
+      the whole field to the 16-word one. `bin/widemul_runtime_test`
+      counts which field each value runs. The qemu lane's `x25519-adx`
+      part runs both binaries on `qemu-x86_64`'s `max` model, and the unit
+      suite and Wycheproof run under `ch_cfg.cpu` 0x40d and 0x41f on
+      x86-64. INV-65 states the rule, and five mutants hold the bit and
+      the model.
+    - **What none of it proves yet.** CBMC reads no assembly. Camilo ruled
+      that the field is proved as `rsa_ifma.c` is: a harness over the
+      model, and a Lean theorem for the bounds of the fold by 38. That
+      work is the next commit, and until then `tools/proof-cover.py`
+      records the file.
+    - **Rejected:**
+      - **The prototype's multiply rewritten as OpenSSL's,** with b's
+        words in registers. Its own chain ran 4 to 5 ns faster on the
+        EPYC 7763, and in the ladder the whole took longer.
+      - **The C field reordered.** `x25519_wide.c`'s step already runs
+        its operations in this order.

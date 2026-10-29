@@ -149,7 +149,7 @@ Other targets:
   `CH_CPU_CONSTANT_TIME_MULTIPLY` and `CH_CPU_CONSTANT_TIME_SHA256` where
   you state those instructions run in constant time on that CPU in the
   mode your thread runs in, on x86-64 `CH_CPU_AVX2`, `CH_CPU_VAES`,
-  `CH_CPU_AVX512_IFMA` and `CH_CPU_AVX512`, and on arm64
+  `CH_CPU_AVX512_IFMA`, `CH_CPU_AVX512` and `CH_CPU_BMI2_ADX`, and on arm64
   `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`. Every
   init call, `ch_srv_check` and `ch_p256_key_from_pem` refuse a value
   without `CH_CPU_PROBED`, and one with a bit this object does not
@@ -236,7 +236,11 @@ Other targets:
   runs each AES-GCM seal and open whole, four blocks to a 512-bit
   register, on `gcm_avx512_kernel.c` (decision 130). It picks nothing
   else, so you can leave it clear, on an Ice Lake server for instance,
-  and keep the IFMA kernels.
+  and keep the IFMA kernels. `CH_CPU_BMI2_ADX` says the CPU has BMI2 and
+  ADX: MULX, ADCX and ADOX. It states no timing, and beside
+  `CH_CPU_CONSTANT_TIME_MULTIPLY`, whose statement covers MULX's products,
+  the session computes an X25519 shared secret on `x25519_adx.c`'s four
+  64-bit words (decision 165).
   Set each bit from your probe alone: a session whose bit names
   instructions its CPU lacks faults on the first one. The three hash
   bits say the CPU has the SHA-256, the SHA-512 or the SHA-3

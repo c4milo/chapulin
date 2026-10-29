@@ -1,0 +1,13 @@
+invariant: INV-41
+file: Makefile
+catches: test/widemul-builds.sh
+reason: make writes CH_X25519_ADX_MODEL for every host object, so
+  x25519_adx.c would read test/x25519_adx_model.h, portable C in place of
+  its five assembly operations, and a session with CH_CPU_BMI2_ADX would run
+  test code that no library build may hold. test/widemul-builds.sh refuses a
+  host object's defines that name it.
+
+--- old
+             $(CPU_RUNTIME_DEF))
+--- new
+             $(CPU_RUNTIME_DEF) $(if $(CPU_RUNTIME_DEF),-DCH_X25519_ADX_MODEL))

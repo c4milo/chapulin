@@ -1,0 +1,13 @@
+invariant: INV-65
+file: widemul.h
+catches: test/docker-aes-runtime-qemu.sh x25519-adx
+reason: widemul_x25519_cpu runs x25519_adx.c under CH_CPU_BMI2_ADX alone,
+  so a session whose caller states nothing about the multiply runs MULX's
+  products, whose timing that caller has not stated. Every byte stays
+  right. bin/widemul_runtime_test counts the call into x25519_adx.c under
+  CH_CPU_BMI2_ADX alone, and the qemu lane runs it for x86-64.
+
+--- old
+    if (widemul_native(widemul) && (cpu & CH_CPU_BMI2_ADX) != 0) {
+--- new
+    if ((cpu & CH_CPU_BMI2_ADX) != 0) {

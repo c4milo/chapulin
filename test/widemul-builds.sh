@@ -410,13 +410,14 @@ fi
 # poly1305_ifma.c and test/poly1305_ifma_model_lanes.h, and
 # CH_RSA_AVX2_MODEL for rsa_avx2.c and test/rsa_avx2_model_lanes.h.
 # CH_GCM_AVX512_MODEL compiles gcm_avx512.c's entries on any target, for a
-# proof unit that stubs the kernel they call. No root source defines any of
-# the four, and the defines make and build.zig write for a library object,
-# checked below, never name one.
+# proof unit that stubs the kernel they call, and CH_X25519_ADX_MODEL makes
+# x25519_adx.c read test/x25519_adx_model.h in place of its assembly. No
+# root source defines any of the five, and the defines make and build.zig
+# write for a library object, checked below, never name one.
 model_defined=$(git ls-files -- '*.c' '*.h' | grep -v / |
-    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_((RSA|POLY1305)_IFMA|RSA_AVX2|GCM_AVX512)_MODEL' || true)
+    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_((RSA|POLY1305)_IFMA|RSA_AVX2|GCM_AVX512|X25519_ADX)_MODEL' || true)
 if [ -n "$model_defined" ]; then
-    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL, CH_RSA_AVX2_MODEL or CH_GCM_AVX512_MODEL, which only a test or proof unit may: under each a kernel runs a model" >&2
+    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL, CH_RSA_AVX2_MODEL, CH_GCM_AVX512_MODEL or CH_X25519_ADX_MODEL, which only a test or proof unit may: under each a kernel runs a model" >&2
     exit 1
 fi
 
@@ -471,7 +472,7 @@ has_words() { # $1 = a list of words, $2... = the words it must hold
         esac
     done
 }
-host_words=(-DCH_CPU_RUNTIME poly1305_native.c x25519_wide.c rsa_sign64.c chacha20_vector.c
+host_words=(-DCH_CPU_RUNTIME poly1305_native.c x25519_wide.c x25519_adx.c rsa_sign64.c chacha20_vector.c
             chacha20_avx2.c chacha20_avx512.c poly1305_vector_native.c poly1305_avx2_native.c
             poly1305_ifma_native.c rsa_mont64.c rsa_ifma.c rsa_ifma_sign.c rsa_avx2.c)
 p384_words=(p384.c p384_field.c p384_wide_field.c p384_wide_point.c p384_wide_verify.c)
@@ -489,10 +490,11 @@ if ! has_words "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" "${ho
     exit 1
 fi
 # Whether a list names CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL,
-# CH_RSA_AVX2_MODEL or CH_GCM_AVX512_MODEL, which no library object may.
+# CH_RSA_AVX2_MODEL, CH_GCM_AVX512_MODEL or CH_X25519_ADX_MODEL, which no
+# library object may.
 names_model() { # $1 = a list of words
     case " $1 " in
-    *CH_RSA_IFMA_MODEL* | *CH_POLY1305_IFMA_MODEL* | *CH_RSA_AVX2_MODEL* | *CH_GCM_AVX512_MODEL*) return 0 ;;
+    *CH_RSA_IFMA_MODEL* | *CH_POLY1305_IFMA_MODEL* | *CH_RSA_AVX2_MODEL* | *CH_GCM_AVX512_MODEL* | *CH_X25519_ADX_MODEL*) return 0 ;;
     *) return 1 ;;
     esac
 }
@@ -503,7 +505,7 @@ if names_model "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" ||
 fi
 device=$(lib_lists "${server[@]}" HOST_TARGET= WIDEMUL=native | tr '\n' ' ')
 case " $device " in
-*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *chacha20_avx512.c* | *poly1305_vector* | *poly1305_avx2* | *poly1305_ifma* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_ifma_sign.c* | *rsa_avx2.c* | *rsa_sign64.c*)
+*_native.c* | *x25519_wide.c* | *x25519_adx.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *chacha20_avx512.c* | *poly1305_vector* | *poly1305_avx2* | *poly1305_ifma* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_ifma_sign.c* | *rsa_avx2.c* | *rsa_sign64.c*)
     echo "widemul-builds: make writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation or signer or a vector path for a device object" >&2
     exit 1
     ;;
@@ -576,7 +578,7 @@ if names_model "$(zig_lists "${zig_server[@]}" -Dtarget=x86_64-linux-gnu)" ||
 fi
 device=$(zig_lists "${zig_server[@]}" "$device_target" -DWIDEMUL=native)
 case " $device " in
-*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *chacha20_avx512.c* | *poly1305_vector* | *poly1305_avx2* | *poly1305_ifma* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_ifma_sign.c* | *rsa_avx2.c* | *rsa_sign64.c*)
+*_native.c* | *x25519_wide.c* | *x25519_adx.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *chacha20_avx512.c* | *poly1305_vector* | *poly1305_avx2* | *poly1305_ifma* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_ifma_sign.c* | *rsa_avx2.c* | *rsa_sign64.c*)
     echo "widemul-builds: build.zig writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation or signer or a vector path for a device object" >&2
     exit 1
     ;;

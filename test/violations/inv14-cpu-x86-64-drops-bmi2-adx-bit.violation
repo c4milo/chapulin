@@ -1,0 +1,14 @@
+invariant: INV-14
+file: cpu_cfg.h
+catches: test/host-builds.sh
+reason: cpu_cfg.h's x86-64 set loses CH_CPU_BMI2_ADX, so every init refuses
+  the value a caller on a CPU with BMI2 and ADX states, and no session runs
+  x25519_adx.c (docs/decisions.md 164). test/host-builds.sh reads the header
+  for both architectures under the pinned clang and compares each set with
+  the bits it writes out.
+
+--- old
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_AVX512_IFMA | CH_CPU_AVX512 |              \
+     CH_CPU_BMI2_ADX)
+--- new
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_AVX512_IFMA | CH_CPU_AVX512)
