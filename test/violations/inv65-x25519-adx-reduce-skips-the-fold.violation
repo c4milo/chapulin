@@ -1,0 +1,15 @@
+invariant: INV-65
+file: test/x25519_adx_model.h
+catches: proof/prove-one.sh x25519_adx_ops
+reason: model_reduce adds 38 times the carry out of the product's sum to
+  word 0 alone, with no fold over the four words, so a carry of up to 38
+  times 38 wraps word 0 and drops 2^64 from the value. The assembly takes
+  its words from the model, so the same fold missing there would pass every
+  value the fold leaves under 2^64. x25519_adx_ops runs model_reduce on any
+  eight words under --unsigned-overflow-check and fails on the wrap.
+
+--- old
+    uint64_t carry = model_fold(r, (uint64_t)acc);
+    r[0] += carry * 38;
+--- new
+    r[0] += (uint64_t)acc * 38;

@@ -14700,11 +14700,16 @@ does nothing more.
       suite and Wycheproof run under `ch_cfg.cpu` 0x40d and 0x41f on
       x86-64. INV-65 states the rule, and five mutants hold the bit and
       the model.
-    - **What none of it proves yet.** CBMC reads no assembly. Camilo ruled
-      that the field is proved as `rsa_ifma.c` is: a harness over the
-      model, and a Lean theorem for the bounds of the fold by 38. That
-      work is the next commit, and until then `tools/proof-cover.py`
-      records the file.
+    - **The proofs.** CBMC reads no assembly. Camilo ruled that the
+      field is proved as `rsa_ifma.c` is: harnesses over the model, and a
+      Lean theorem for the bounds of the fold by 38. Four `x25519_adx`
+      harnesses prove that no word of the model wraps on any words and
+      that the entry stays inside its arrays.
+      `spec/lean/Spec/X25519Adx.lean` proves the fold's bounds, each
+      operation's value modulo p and the final reduction's value, and
+      `bin/diff_x25519_adx` holds the model to it. The model's
+      difference became a 128-bit sum, `2^64 + a - b - borrow`, so the
+      overflow check sees no wrap the C means.
     - **Rejected:**
       - **The prototype's multiply rewritten as OpenSSL's,** with b's
         words in registers. Its own chain ran 4 to 5 ns faster on the

@@ -1336,14 +1336,23 @@ last `ROLE=server` stub, as the entry said it would.
   under the multiply bit alone, under `CH_CPU_BMI2_ADX` alone and under
   both. The qemu lane's `x25519-adx` part runs both binaries under
   `qemu-x86_64`'s `max` model, which has the instructions, so a machine of
-  either architecture runs every row. CBMC reads no assembly, and no
-  harness compiles the field yet: `tools/proof-cover.py` records it.
+  either architecture runs every row. CBMC reads no assembly, so the
+  `x25519_adx` harnesses compile the field over the model: no word of
+  an operation or of the final reduction wraps on any words, and the
+  entry stays inside its arrays. `spec/lean/Spec/X25519Adx.lean` proves
+  the bounds of the fold by 38 and each operation's value modulo p on a
+  model of the C, and `bin/diff_x25519_adx` holds the model to it.
 - **Violation.** A PR runs the field without one of its bits.
   `inv65-x25519-adx-ignores-adx-bit` drops `CH_CPU_BMI2_ADX` from the test
   in `widemul_x25519_cpu`, and `inv65-x25519-adx-ignores-multiply-bit` drops
   the multiply bit; `bin/widemul_runtime_test` catches both through the
   qemu lane's `x25519-adx` part. Every byte stays right in both, so no
-  vector notices; only the count does.
+  vector notices; only the count does. A PR breaks the model the
+  assembly is held to: `inv65-x25519-adx-reduce-skips-the-fold` adds the
+  carry of a product's sum to word 0 with no fold, which the
+  `x25519_adx_ops` proof catches as a wrap, and
+  `inv65-x25519-adx-mul-a24-constant` multiplies by 121665, which
+  `bin/diff_x25519_adx` catches.
 - See [decisions: Engineering](decisions.md#engineering), entry 165.
 
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers

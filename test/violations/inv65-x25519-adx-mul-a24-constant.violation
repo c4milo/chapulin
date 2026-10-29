@@ -1,0 +1,14 @@
+invariant: INV-65
+file: test/x25519_adx_model.h
+catches: diff_x25519_adx
+reason: adx_mul_a24 multiplies by 121665, RFC 7748's a24, where the ladder
+  in its OpenSSL order adds the product to BB and so needs 121666. The
+  model is what the assembly is held to, word for word. bin/diff_x25519_adx
+  holds the model to spec/lean/Spec/X25519Adx.lean's mulA24, whose proofs
+  mulA24_lt and mulA24_mod are what make the Lean bounds a proof about this
+  file.
+
+--- old
+        t += ct_mul128(a[i], 121666);
+--- new
+        t += ct_mul128(a[i], 121665);

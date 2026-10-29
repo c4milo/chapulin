@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-115 of the 153 C sources in the tree root are compiled into a
+116 of the 153 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 38 sources are in no such harness:
+The other 37 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -64,7 +64,6 @@ The other 38 sources are in no such harness:
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector ChaCha20](#the-vector-chacha20)). |
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `chacha20_avx512.c` | It runs ChaCha20 on AVX-512F intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with AVX-512F, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it under a `ch_cfg.cpu` value with `CH_CPU_AVX512_IFMA`; the nightly's `rsa-ifma-sde` job runs the first under Intel SDE. |
-| `x25519_adx.c` | Its five field operations are inline assembly, in `x25519_adx_asm.h`, which CBMC does not read. Its C over them is the ladder, the inversion and the final reduction. It has a body on x86-64 alone. | `bin/x25519_adx_model_test` runs the same C over `test/x25519_adx_model.h`, portable C that writes the words each operation writes, against the 16-word field on every host. On a CPU with BMI2 and ADX, `bin/x25519_adx_equiv_test` holds each operation to its model word for word and the whole field to the 16-word one (docs/decisions.md 165). |
 | `avx512_wipe.c` | It is one block of inline assembly, which CBMC does not read, and holds no C a harness could drive. It has a body on x86-64 alone. | On a CPU with AVX-512F, `bin/avx512_wipe_test` sets every bit of zmm0 to zmm31 and k1 to k7, calls it, and requires each register to read back as zero; the nightly's `rsa-ifma-sde` job runs the binary under Intel SDE. |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
@@ -745,6 +744,41 @@ The entries are grouped by area:
   with bit 0 at 1 too.
 - **Bound:** operand words < 2^54; between the ladder's operations,
   word 1 < 2^51 + 2^20 and every other word < 2^51.
+
+#### x25519_adx
+
+- **Harnesses:** `x25519_adx_ops` (fast), `x25519_adx_mul` (fast), `x25519_adx_sqr` (fast), `x25519_adx_ladder` (fast)
+- **Build:** the x86-64 field on four 64-bit words (`x25519_adx.c`,
+  INV-65, decision 165), under `-DCH_CPU_RUNTIME` and
+  `-DCH_X25519_ADX_MODEL`, over `test/x25519_adx_model.h`, the five
+  operations in portable C that `bin/x25519_adx_model_test` runs. CBMC
+  reads no assembly, so no line reads `x25519_adx_asm.h`. Every line but
+  `x25519_adx_ladder` adds `--unsigned-overflow-check`.
+- **Proves:**
+  - `x25519_adx_ops`: the sum, the difference, the product by 121666 and
+    `model_reduce`, the reduction of a product's eight words, wrap no
+    word on any words. So the last add of 38 times a carry to word 0
+    carries out of no word, and the last subtraction of 38 times a
+    borrow borrows from none. `adx_reduce` writes a value below p from
+    any words, and `adx_cswap` swaps exactly when its bit is 1. The sum
+    and the difference also run with the output on either operand.
+  - `x25519_adx_mul` and `x25519_adx_sqr`: on the real 64x64->128
+    multiply, no column sum of the product or the square wraps on any
+    words, also with the output on the first operand.
+  - `x25519_adx_ladder`: `x25519_adx()`, with the clamp, the ladder, the
+    inversion, the final reduction and each wipe, reads and writes
+    inside its arrays on any scalar and point, with the five operations
+    replaced by stubs that read their operands and write any words. The
+    operations take any words, so the stubs cover every value they
+    write.
+- **Bound:** none. Every operation is total over four words, and each
+  line runs it on any words.
+- **Not proved:** that the assembly writes the model's words. CBMC cannot
+  read it, and `bin/x25519_adx_equiv_test` compares the two on a CPU with
+  BMI2 and ADX or under QEMU. Nor any value: `spec/lean/Spec/X25519Adx.lean`
+  proves the values on a model of the C, which `bin/diff_x25519_adx`
+  compares with the C on samples ([The radix-2^64 X25519
+  field](#the-radix-264-x25519-field)).
 
 #### mlkem
 
@@ -6891,6 +6925,45 @@ What none of this shows:
   bit states presence alone.
 - The CA client's CertificateVerify under `TRUST=ca-rsa`, as for the
   IFMA kernel.
+
+### The radix-2^64 X25519 field
+
+`x25519_adx.c` keeps an element as four 64-bit words, a value below
+2^256 that is not reduced modulo p, and adds what passes 2^256 back in at
+word 0 times 38 (decision 165). Its five operations are assembly, and
+`test/x25519_adx_model.h` writes the same words in portable C. The four
+CBMC lines in [x25519_adx](#x25519_adx) prove that the model and the C
+around it wrap no word and stay inside their arrays on any words. They
+prove no value.
+
+[`spec/lean/Spec/X25519Adx.lean`](../spec/lean/Spec/X25519Adx.lean)
+models each operation from the C, one element in a natural number, and
+proves that:
+
+- the fold by 38 of four words below 2^256 and a carry c with
+  38 (c + 1) ≤ 2^256 is below 2^256, and below 38 (c + 1) when the sum
+  passes 2^256, so the add of 38 to word 0 carries out of no word;
+- the fold keeps the value modulo p;
+- the product, the sum, the difference and the product by 121666 take
+  elements below 2^256 to an element below 2^256, with the right value
+  modulo p;
+- `adx_reduce` writes a mod p for every a below 2^256.
+
+`bin/diff_x25519_adx`, in `make diff`, holds the C over the model to the
+spec's operations in 101,721 comparisons: each operation and the final
+reduction on every pair of elements built from the edge words, then on
+20,000 random pairs, and 1,000 shared secrets against
+`spec/lean/Spec/X25519.lean`'s ladder.
+
+What none of this shows:
+
+- That the assembly writes the model's words for every input.
+  `bin/x25519_adx_equiv_test` compares the two on a CPU with BMI2 and
+  ADX, or under QEMU.
+- That the C over the model computes what the Lean model computes for
+  every input. `bin/diff_x25519_adx` compares them on samples.
+- Anything about time. INV-16's branch counts and the volatile read in
+  `adx_cswap` hold the ladder to no jump on a secret (decision 125).
 
 ### The host object's description of the CPU
 

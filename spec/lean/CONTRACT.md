@@ -265,6 +265,12 @@ Spec.RsaAvx2.publicOp : (k k0 m base digitR2 : Nat) → Nat              -- rsa_
                         -- `rsa_avx2_public <k> <m> <base>` → 8k bytes, under m's own k0 and
                         -- digitR2 = Spec.RsaIfma.powerOfTwoMod m k (2 D n), for an odd m of 8k
                         -- bytes, two words or more, whose top bit is set, and an 8k-byte base.
+Spec.X25519Adx.mul : (a b : Nat) → Nat                               -- adx_mul of x25519_adx.c,
+                        -- written from the C (below). Line op: `x25519_adx_mul <a> <b>` → 32
+                        -- big-endian bytes, from a and b of 32 big-endian bytes each, any
+                        -- values below 2 ^ 256. `x25519_adx_add`, `x25519_adx_sub`,
+                        -- `x25519_adx_mul_a24 <a>` and `x25519_adx_reduce <a>` answer
+                        -- Spec.X25519Adx.add, sub, mulA24 and reduce the same way.
 Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer) →
                         (pskOffered : Bool) → (msg : ByteArray) →
                         Except Alert ServerHelloKind                    -- RFC 9846 §4.2.3, §4.2.4.
@@ -1042,6 +1048,29 @@ model, with these definitions digit for digit at every word count from 32 to 64,
 the transcription fails a row. That the instructions write the lane model's values stays with
 `bin/rsa_avx2_equiv_test`.
 
+## X25519Adx models the C
+
+`Spec/X25519Adx.lean` breaks rule 1 for the same reason. `x25519_adx.c` keeps an element as four
+64-bit words below `2 ^ 256`, not reduced modulo `p`, and its operations add what passes `2 ^ 256`
+back in at word 0 times 38. No standard states that representation: RFC 7748 states only the
+values modulo `p`. The model holds the four words' value in a `Nat`, and each definition computes
+what the C's loops compute, on that value: `fold` is `model_fold` and the line after it, `mul` is
+`model_product` and `model_reduce`, `subtract` is one pass of the borrow loop, and `reduce` is
+`adx_reduce` with its two passes of `clearTop`.
+
+The model states nothing about the words: four words hold one value below `2 ^ 256`, and the C's
+loops carry from word to word. That no word of those loops wraps is
+`proof/x25519_adx_ops_harness.c`'s and `proof/x25519_adx_mul_harness.c`'s, under
+`--unsigned-overflow-check`. `fold_lt` and `fold_carried` are the bounds of the fold by 38, and
+`fold_carried` is what lets the C add `38` to word 0 alone. `mul_mod`, `add_mod`, `sub_mod` and
+`mulA24_mod` prove each operation's value modulo `p`, and `reduce_eq` that `adx_reduce` writes
+`a mod p`.
+
+`test/diff_x25519_adx_test.c`, in `bin/diff_x25519_adx`, compares the C over
+`test/x25519_adx_model.h` with these definitions on edge words and random ones, so an error in the
+transcription fails a row. That the assembly writes the model's words stays with
+`bin/x25519_adx_equiv_test`.
+
 ## Where the C and the model split a check
 
 Both sides must refuse the same messages, but they need not refuse them
@@ -1408,6 +1437,17 @@ Spec.RsaAvx2, the kernel of rsa_avx2.c (above, "RsaAvx2 models the C"); `value D
   publicOp_eq                  (k0 m + 1) % 2 ^ digitBits k = 0 → 2 ^ (64 k - 1) ≤ m <
                                -- 2 ^ (64 k) → 2 ≤ k → base < 2 ^ (64 k) → publicOp k k0 m
                                -- base (2 ^ (2 digitBits k digitCount k) % m) = base ^ 65537 % m
+Spec.X25519Adx, the field of x25519_adx.c (above, "X25519Adx models the C"):
+  fold_lt                      r < 2 ^ 256 → 38 (c + 1) ≤ 2 ^ 256 → fold r c < 2 ^ 256
+  fold_carried                 r < 2 ^ 256 → 2 ^ 256 ≤ r + 38 c → fold r c < 38 (c + 1): the add
+                               -- of 38 to word 0 carries out of no word
+  fold_mod                     fold r c % p = (r + 38 c) % p
+  mul_lt, mul_mod              a, b < 2 ^ 256 → mul a b < 2 ^ 256; mul a b % p = a b % p
+  add_lt, add_mod              a, b < 2 ^ 256 → add a b < 2 ^ 256; add a b % p = (a + b) % p
+  sub_lt, sub_mod              a, b < 2 ^ 256 → sub a b < 2 ^ 256 and (sub a b + b) % p = a % p
+  mulA24_lt, mulA24_mod        a < 2 ^ 256 → mulA24 a < 2 ^ 256; mulA24 a % p = 121666 a % p
+  clearTop_lt, clearTop_mod    a < 2 ^ 256 → clearTop a < 2 ^ 255 + 19; it keeps a % p
+  reduce_eq                    a < 2 ^ 256 → reduce a = a % p
 Spec.WebpkiTime.packSeconds_mono
                              a ≤ b → packSeconds a ≤ packSeconds b: the packed clock
                              -- keeps the order of clocks, which is what lets
@@ -1644,6 +1684,7 @@ means the module's selftest plus the differential oracle carry it;
 | X25519Edwards | 60 | the key generation `x25519_wide_edwards.h` runs, modeled from the C: its addition of an entry and its doubling compute the twisted Edwards addition law over every field in which 2 is not zero, which is complete when d is not a square and -1 is; the map u = (1 + y) / (1 - y) to the Montgomery curve, as a Weierstrass curve of Mathlib, takes every sum to the sum of the images; and the loop of 64 additions and four doublings writes the u of the sum of its digits times the image of B. The digits' sum is CBMC's, and the ladder's agreement with Mathlib's group stays with the equivalence binary and the differential |
 | P256WideInverse | 14 | the binary GCD `p256_wide_inverse.c` runs, modeled from the C: a round's 31 steps on 64-bit approximations take 31 bits off `a` and `b` between them while `a` is not zero, the steps whose comparison of the approximations differs from that of the exact values included; a round keeps `b` odd, `gcd a b`, and `a = u y` and `b = v y` modulo an odd `m`, and leaves a zero `a` zero; 17 rounds invert every `y` coprime to an odd `m` below `2 ^ 256` and send 0 to 0, at P-256's `p` and `n` with each prime as a hypothesis; and the rounds stopped at the first zero `a`, as the verifier's entry runs them, give the same answer for every `y`. That the C's combinations compute the model's sums stays with the C's tests and the differential |
 | RsaAvx2 | 11 | the AVX2 kernel of `rsa_avx2.c`, modeled from the C with a lane in a `Nat`: a square's rows put in each lane what the multiplication of `a` by itself puts there; no triangle's sum and no sum of the last pass passes `2 ^ 64` at the C's digit widths and counts; `RSA_AVX2_DIGIT_COUNT` leaves `4 m < 2 ^ (D n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-D n) mod m`; and the chain `rsa_avx2_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`. That the instructions compute the lane model's values stays with `bin/rsa_avx2_equiv_test`, and the order in which the C adds a lane's numbers with the C's tests and the differential |
+| X25519Adx | 14 | the x86-64 field of `x25519_adx.c`, modeled from the C with an element's four words in a `Nat`: the fold by 38 of four words and a carry stays below `2 ^ 256`, and below `38 (c + 1)` when it carries, so the add to word 0 carries out of no word; the fold keeps the value modulo `p`; the product, the sum, the difference and the product by 121666 take elements below `2 ^ 256` to one, with the right value modulo `p`; and `adx_reduce` writes `a mod p`. That the C's words hold the model's values rests on the CBMC harnesses and the differential, and that the assembly writes the model's words on `bin/x25519_adx_equiv_test` |
 | RsaIfma | 13 | the AVX-512 IFMA kernels of `rsa_ifma.c` and `rsa_ifma_sign.c` and `rsa_mont.c`'s `power_of_two_mod`, modeled from the C with a lane in a `Nat`: no lane, `digit_zero` or scalar sum passes its C type in 128 rounds or fewer; `RSA_IFMA_DIGIT_COUNT` leaves `4 m < 2 ^ (52 n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-52 n) mod m`; `normalize_digits` keeps its lanes' number modulo `2 ^ (52 count)` and writes digits below `2 ^ 52`, the mask arithmetic of its second loop included; `power_of_two_mod` starts below `m` and writes `2 ^ e mod m`; the chain `rsa_ifma_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`; and signing's 4-bit window, its table and its moves between `rsa_mont64.c`'s domain and the kernel's compute `b ^ e R mod m` for the base `b R mod m` and the exponent's bytes. That the instructions compute the lane model's values stays with `bin/rsa_ifma_equiv_test`, and `times_word_mod`'s division with the C's tests and the differential |
 | Poly1305Ifma | 17 | the AVX-512 IFMA Poly1305 of `poly1305_ifma.c`, modeled from the C with a lane in a `Nat`: from digits within the bounds every operand is below `2 ^ 52` and every sum below `2 ^ 56`, and a group step and a product leave the digits within them again; a group step computes `(h + first) x + second y` and a product `a b` modulo `2 ^ 130 - 5`; `compute_powers` gives lane `l` the power of `r` its blocks are owed; and the loads and both conversions keep their numbers. That the eight lanes' groups add up to the message's polynomial stays with `bin/poly1305_equiv_test`, and that the instructions compute the lane model's values with the same binary on a CPU with AVX-512 IFMA |
 | Pem | 11 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, which discharges the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar; a byte string's list is its data's, the form `PemBlocks` reads boundaries in |

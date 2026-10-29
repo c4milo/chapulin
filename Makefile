@@ -5448,11 +5448,14 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_poly1305_ifma
 	$(MAKE) bin/diff_rsa_avx2
 	./bin/diff_rsa_avx2
+	$(MAKE) bin/diff_x25519_adx
+	./bin/diff_x25519_adx
 else
 	@echo "SKIP diff's wide X25519 and P-256 binaries: $(CC) fails the host test"
 	@echo "SKIP diff's RSA signers' binary: $(CC) fails the host test"
 	@echo "SKIP diff's AVX-512 IFMA binaries: $(CC) fails the host test"
 	@echo "SKIP diff's AVX2 binary: $(CC) fails the host test"
+	@echo "SKIP diff's radix-2^64 X25519 binary: $(CC) fails the host test"
 endif
 endif
 
@@ -5565,6 +5568,15 @@ bin/diff_rsa_avx2: test/diff_rsa_avx2_test.c test/rsa_avx2_model.c rsa_mont.c rs
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o $@ \
 	  test/diff_rsa_avx2_test.c test/rsa_avx2_model.c $(RSA_AVX2_TEST_SRCS)
+# The radix-2^64 X25519 arm: x25519_adx.c's five operations, its final
+# reduction and its shared secret, compiled over its model as
+# bin/x25519_adx_model_test compiles them, against
+# spec/lean/Spec/X25519Adx.lean and spec/lean/Spec/X25519.lean. Its own
+# main for the same reason.
+bin/diff_x25519_adx: test/diff_x25519_adx_test.c x25519_adx.c $(X25519_ADX_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -I. -Itest -o $@ \
+	  test/diff_x25519_adx_test.c $(X25519_ADX_TEST_SRCS)
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and

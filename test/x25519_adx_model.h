@@ -86,20 +86,24 @@ static inline void adx_add(fe o, const fe a, const fe b) {
     }
 }
 
+// a - b, then 38 times the borrow taken from the result, then 38 times that
+// borrow taken from word 0. Each word's difference is 2^64 + a - b - borrow
+// in 128 bits, which is never negative: its low word is the difference word,
+// and bit 64 is clear exactly when the word borrowed. No step wraps, and
+// proof/x25519_adx_ops_harness.c proves it under --unsigned-overflow-check.
 static inline void adx_sub(fe o, const fe a, const fe b) {
     uint64_t r[4];
     uint64_t borrow = 0;
     for (int i = 0; i < 4; i++) {
-        uint64_t d = a[i] - b[i];
-        uint64_t out = (a[i] < b[i]) | (d < borrow);
-        r[i] = d - borrow;
-        borrow = out;
+        ct_u128 t = ((ct_u128)1 << 64) + a[i] - b[i] - borrow;
+        r[i] = (uint64_t)t;
+        borrow = 1 - (uint64_t)(t >> 64);
     }
     uint64_t c = borrow * 38;
     for (int i = 0; i < 4; i++) {
-        uint64_t d = r[i] - c;
-        c = r[i] < c;
-        r[i] = d;
+        ct_u128 t = ((ct_u128)1 << 64) + r[i] - c;
+        r[i] = (uint64_t)t;
+        c = 1 - (uint64_t)(t >> 64);
     }
     r[0] -= c * 38;
     for (int i = 0; i < 4; i++) {

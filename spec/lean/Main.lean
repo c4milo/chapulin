@@ -39,6 +39,16 @@ def edwardsElements? (args : List String) : Option (List (ZMod Spec.X25519Edward
 def emitEdwards (elements : List (ZMod Spec.X25519Edwards.p)) : String :=
   " ".intercalate (elements.map fun v => bytesToHex (natToBytesLE v.val 32))
 
+/-- An element of an `x25519_adx_` row: 32 big-endian bytes, any value below `2 ^ 256`. -/
+def adxElement? (s : String) : Option Nat := do
+  let b ← hexArg? s
+  guard (b.size == 32)
+  return bytesToNatBE b
+
+/-- An element as an `x25519_adx_` reply: 32 big-endian bytes. -/
+def adxEmit (x : Nat) : String :=
+  bytesToHex (natToBytesBE x 32)
+
 /-- The QUIC version a `quic_` row names by its Version field in decimal,
 and nothing for a field `Spec.Quic.Version.ofField?` does not read. -/
 def quicVersion? (field : String) : Option Spec.Quic.Version := do
@@ -134,6 +144,7 @@ def selftestAll (_ : Unit) : String :=
     ("tls_write", Spec.TlsWrite.selftest),
     ("x25519", Spec.X25519.selftest),
     ("x25519_edwards", Spec.X25519Edwards.selftest),
+    ("x25519_adx", Spec.X25519Adx.selftest),
     ("p256", Spec.P256.selftest),
     ("p256_nonce", Spec.P256Nonce.selftest),
     ("p256_wide_point", Spec.P256WidePoint.selftest),
@@ -452,6 +463,30 @@ def dispatch : List String → Option String
     let k ← hexArg? scalar
     guard (k.size == 32)
     return emit (Spec.X25519.base k)
+  | ["x25519_adx_mul", a, b] => do
+    -- adx_mul of x25519_adx.c (Spec/X25519Adx.lean). Each element, and the answer, is 32
+    -- big-endian bytes: a value below 2^256, not reduced mod p, as the C's four words hold it.
+    let x ← adxElement? a
+    let y ← adxElement? b
+    return adxEmit (Spec.X25519Adx.mul x y)
+  | ["x25519_adx_add", a, b] => do
+    -- adx_add, as x25519_adx_mul.
+    let x ← adxElement? a
+    let y ← adxElement? b
+    return adxEmit (Spec.X25519Adx.add x y)
+  | ["x25519_adx_sub", a, b] => do
+    -- adx_sub, as x25519_adx_mul.
+    let x ← adxElement? a
+    let y ← adxElement? b
+    return adxEmit (Spec.X25519Adx.sub x y)
+  | ["x25519_adx_mul_a24", a] => do
+    -- adx_mul_a24, as x25519_adx_mul.
+    let x ← adxElement? a
+    return adxEmit (Spec.X25519Adx.mulA24 x)
+  | ["x25519_adx_reduce", a] => do
+    -- adx_reduce, as x25519_adx_mul: the answer is the value below p.
+    let x ← adxElement? a
+    return adxEmit (Spec.X25519Adx.reduce x)
   | ["x25519_edwards_add", x, y, z, t, yPlusX, yMinusX, xy2d] => do
     -- add_entry, then to_extended, of x25519_wide_edwards.h (Spec/X25519Edwards.lean).
     let e ← edwardsElements? [x, y, z, t, yPlusX, yMinusX, xy2d]

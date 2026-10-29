@@ -2620,6 +2620,29 @@ launch fast:4 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 #   x25519_wide_edwards  1941 properties,  6 s, 203 MB
 launch fast full x25519_wide_select 65 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full x25519_wide_edwards 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+# The radix-2^64 field, x25519_adx.c (docs/decisions.md 165), over its
+# model, test/x25519_adx_model.h: CBMC reads no assembly, so each line
+# compiles the file with -DCH_X25519_ADX_MODEL, as bin/x25519_adx_model_test
+# does, and bin/x25519_adx_equiv_test holds the assembly to the model.
+# x25519_adx_ops, x25519_adx_mul and x25519_adx_sqr run the model's
+# operations on any words, the last two on the real 64x64->128 multiply,
+# under the wide field's flags. The product and the square run apart: in one
+# harness they took 460 s and 2.2 GB, and apart each took 30 s.
+# x25519_adx_ladder runs the whole entry over stubs of the five operations,
+# which are total. It takes no --unsigned-overflow-check, because
+# x25519.c's all-zero check calls ct.c's ct_memeq, whose subtraction wraps
+# by design. Measured one line at a time with PROVE_ONLY=<name>
+# PROVE_NO_CACHE=1 ./proof/run.sh fast in the docker-check image under
+# amd64 emulation on an M1 Pro (cbmc 6.11.0 with its own solver, since the
+# image holds no kissat), on 2026-10-29, peak memory from the cgroup:
+#   x25519_adx_ops     596 properties,  3 s, 125 MB
+#   x25519_adx_mul     519 properties, 30 s, 550 MB
+#   x25519_adx_sqr     519 properties, 32 s, 580 MB
+#   x25519_adx_ladder  263 properties, 28 s, 450 MB
+launch fast full x25519_adx_ops 33 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full x25519_adx_mul 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full x25519_adx_sqr 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full x25519_adx_ladder 321 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest
 # The wide P-256 arithmetic of a host object (docs/decisions.md 94): four
 # 64-bit words under p256_wide_field.c and p256_wide_scalar.c, the point
 # formulas in p256_wide_point.c, the two scalar multiplications in
