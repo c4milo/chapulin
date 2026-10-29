@@ -490,7 +490,11 @@ srv_cookie 62.2
 # readers' locations stay out of its reach, and srv_parser_ext_cnsa2 covers
 # them.
 srv_cookie_cnsa2 54.0
-srv_kex 94.7
+# srv_kex read 94.7% (322/340) at b8eb7bbb and 91.0% (322/354) from
+# 06f37bcc on, measured with proof/coverage.py --reach --only on the
+# nightly's runner image. Decision 162 added 14 locations that the
+# harness compiles and does not reach. It reaches the same 322.
+srv_kex 91.0
 srv_kex_cnsa2 92.7
 srv_mldsa 71.0
 # srv_parser_count took its floor from nightly run 39109704185 on
@@ -567,6 +571,15 @@ writable_len 68.6
 writable_len_suite 75.0
 writable_len_suite_any 38.5
 x25519 25.6
+# The four x25519_adx harnesses took their first floors from GitHub run
+# 40853232504 of 2026-10-29 (nightly on 8834adf5): x25519_adx_ladder 175
+# of 177, x25519_adx_mul 57 of 250, x25519_adx_ops 153 of 290 and
+# x25519_adx_sqr 55 of 248. The product and the square compile the whole
+# of x25519_adx.c and call one operation each.
+x25519_adx_ladder 98.9
+x25519_adx_mul 22.8
+x25519_adx_ops 52.8
+x25519_adx_sqr 22.2
 x25519_mul_alias_a 27.0
 x25519_mul_alias_b 27.0
 x25519_mul_inputs_alias 26.6
@@ -587,15 +600,25 @@ x25519_tail 52.2
 # of 449 then 196 of 478, x25519_wide_invert 154 of 417 then 163 of 446,
 # x25519_wide_ops 171 of 490 then 196 of 515, x25519_wide_mul 72 of 412
 # then 77 of 437, and x25519_wide_sqr 48 of 411 then 53 of 436.
-x25519_wide_edwards 57.6
-x25519_wide_invert 36.5
-x25519_wide_mul 17.6
+# Decision 163 (49f3ed2d) carries each column of mul and sqr before the
+# next one's products, and adds carry_top. Each harness that compiles the
+# file counts 13 more locations, and none reaches fewer. Measured the same
+# way before and after it: x25519_wide_edwards 291 of 505 then 294 of 518,
+# x25519_wide_invert 163 of 446 then 166 of 459, x25519_wide_mul 77 of 437
+# then 77 of 450, x25519_wide_ops 196 of 515 then 196 of 528,
+# x25519_wide_select 113 of 483 then 113 of 496, x25519_wide_sqr 53 of 436
+# then 53 of 449, x25519_wide_step 210 of 467 then 223 of 480, and
+# x25519_wide_tail 196 of 478 then 209 of 491. GitHub run 40853232504 of
+# 2026-10-29 read the same shares.
+x25519_wide_edwards 56.8
+x25519_wide_invert 36.2
+x25519_wide_mul 17.1
 x25519_wide_mul128 80.0
-x25519_wide_ops 38.1
-x25519_wide_select 23.4
-x25519_wide_sqr 12.2
-x25519_wide_step 45.0
-x25519_wide_tail 41.0
+x25519_wide_ops 37.1
+x25519_wide_select 22.8
+x25519_wide_sqr 11.8
+x25519_wide_step 46.5
+x25519_wide_tail 42.6
 x509_pem 55.5
 x509_pem_key 34.0
 x509ca 75.5
