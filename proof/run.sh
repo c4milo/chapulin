@@ -2477,33 +2477,22 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c proof/ct_wipe_stub.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
 # srv_accept's layering: srv_tcp_nonblocking.c and tcp_nonblocking_frame.c
-# real, the fifteen handlers contract stubs. It would cover the step table, the
+# real, the fifteen handlers contract stubs. It covers the step table, the
 # record loop and the wipe without resting on a handler, and the alert record a
 # failure pushes: rec_seal and srv_out_alert are stubs that assert the seal
 # runs under a key the wipe has not cleared and that a failure pushes at most
-# one record. cbmc --show-properties over the harness, tcp_nonblocking_frame.c,
-# ct.c and buf.c lists 1,399 properties; no solve was run.
+# one record.
 #
-# No launch line: this formula has never been seen to converge either.
-# Two loops nest here -- the record loop runs the message loop, which
-# runs the step table -- so CBMC unrolls the global unwind squared, and
-# step_client_hello's arm calls eight stubbed handlers in a row, each
-# answering one of six codes. Measured on an arm64 development machine
-# under this script's flags: no verdict in 11 minutes at 1.36 GB with
-# 12-byte buffers and --unwind 8, and none in 9 minutes 52 seconds at
-# 6.2 GB with 8-byte buffers and --unwind 4, where the second run was
-# still growing when it was stopped. A line here would hang the fast
-# tier the way the one committed in 657da14 did, which is the mistake
-# CLAUDE.md names: a launch line whose formula has not been seen to
-# converge proves nothing.
-#
-# The split it needs is srv_flight's, layered rather than smaller: one
-# formula for the step table entered through advance, where no record
-# loop wraps it, and one for ch_srv_record_in's framing with the step
-# held at a single cheap handler. Neither has been measured, so neither
-# is here. Until one lands, srv_tcp_nonblocking.c is covered by
-# bin/srv_tcp_nonblocking_test and bin/tcp_nonblocking_loop_test and
-# guarded by two .violation mutants, and docs/verification.md says so.
+# This harness had no launch line until 2026-10-30
+# (https://github.com/c4milo/chapulin/issues/211). Its formula was never
+# measured to a verdict, and four faults of the harness stood in the way:
+# CBMC's default 256 objects, no stub for hsr_refuse_alert, a saved state
+# with a peer_limit above CH_TX_PT, and the INV-17 check on a session that
+# was already dead. The byte wipe of the 1,221-byte ch_tls.tx then took the
+# formula to 11.8 GB, so the harness states ct_wipe's contract over one
+# memset. Measured on 2026-10-30 in the pinned amd64 container, the way the
+# runner runs it: 1656 properties, 97 s, 1.26 GB resident.
+launch fast:2 full srv_tcp_nonblocking 4 "fill_nondet.0:33,no_secret_left.0:33" --object-bits 10 -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING tcp_nonblocking_frame.c ct.c buf.c
 # The ROLE=server flight handlers, with srv_accept's layering turned
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the

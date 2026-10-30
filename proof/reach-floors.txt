@@ -539,6 +539,15 @@ srv_select_runtime 40
 srv_select_suite 56
 srv_ticket 217
 srv_ticket_cnsa2 228
+# srv_tcp_nonblocking took its floor on 2026-10-30, measured by
+# proof/coverage.py in the pinned amd64 container: 78.8% (512/650). The
+# 138 locations no path reaches are mostly the wbuf and rbuf helpers,
+# SHA-256, ct_memeq and ch_record_whole_len, which no stub calls and other
+# harnesses prove. The rest are single branches of the driver,
+# cfg_clock_read, the sink and ch_assert_fail. At 8 bytes of caller input it read
+# 76.0% (494/650): no record held a whole message, so drive never ran a
+# step.
+srv_tcp_nonblocking 512
 transcript384 84
 # webpki_cert fell from 56.7 to 56.1 and webpki_pin from 56.5 to 54.1
 # when a configuration of SPKI pins alone started to accept a chain whose

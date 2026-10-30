@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-116 of the 153 C sources in the tree root are compiled into a
+117 of the 153 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,12 +48,11 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 37 sources are in no such harness:
+The other 36 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
 | `srv_flight.c` | Its harness's formula returns no verdict ([srv_flight](#srv_flight)). | `bin/srv_flight_test` |
-| `srv_tcp_nonblocking.c` | Its harness's formula returns no verdict ([srv_tcp_nonblocking](#srv_tcp_nonblocking)). | `bin/srv_tcp_nonblocking_test` |
 | `srv_out.c`, `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_flight_test`, `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds its cipher and both architectures' key expansions to `quic_aes_soft.c`, and searches the stack each expansion leaves ([The host object's AES key expansions](#the-host-objects-aes-key-expansions)). |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
@@ -85,8 +84,9 @@ The other 37 sources are in no such harness:
 
 `aes_extern.c` is proved, but only up to the `ch_aes_block` the caller
 writes, which has no body here to prove ([aes_extern](#aes_extern)).
-`tcp_nonblocking_frame.c` is in a harness for one call, and the rest of
-the file is not proved ([record_whole_len](#record_whole_len)).
+`tcp_nonblocking_frame.c` is in two harnesses: `ch_record_whole_len` in
+[record_whole_len](#record_whole_len), and the rest of the file in
+[srv_tcp_nonblocking](#srv_tcp_nonblocking).
 `tls_write.c` holds `ch_write`, `ch_writable_len` and their helpers
 alone, and [writable_len](#writable_len) drives both calls in each build
 the file compiles differently in.
@@ -1901,9 +1901,8 @@ The entries are grouped by area:
   answer is 0 or a length from `REC_HDR` to `n`. `buf.c` is real.
 - **Bound:** `n` ≤ 2^20 B. The longest record the call frames is 16,645
   B, and the call has no loop.
-- **Not proved:** the rest of `tcp_nonblocking_frame.c`, which
-  `bin/tcp_nonblocking_loop_test` and `bin/srv_tcp_nonblocking_test`
-  test.
+- **Not proved here:** the rest of `tcp_nonblocking_frame.c`, which
+  [srv_tcp_nonblocking](#srv_tcp_nonblocking) proves.
 
 #### writable_len
 
@@ -2593,17 +2592,32 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 
 #### srv_tcp_nonblocking
 
-- **Harness:** `srv_tcp_nonblocking` (no launch line)
-- **Not proved.** `proof/srv_tcp_nonblocking_harness.c` exists, and its
-  formula returns no verdict with the record loop, the message loop and
-  the step table in one solve: none in 11 minutes at `--unwind 8` over
-  12-byte buffers, and none in 9 min 52 s at 6.2 GB at `--unwind 4` over
-  8-byte buffers. `proof/run.sh` records what was tried and the layered
-  split it needs.
-- **Tested instead:** `bin/srv_tcp_nonblocking_test`,
-  `bin/tcp_nonblocking_loop_test` and fifteen `.violation` mutants cover
-  `srv_tcp_nonblocking.c` and `tcp_nonblocking_frame.c`, among them the
-  alert record a failure seals before its wipe and pushes (INV-13).
+- **Harness:** `srv_tcp_nonblocking` (fast)
+- **Build:** `ROLE=server`, `TRANSPORT=tcp-nonblocking`.
+- **Proves:** `ch_srv_record_init`, `advance` and `ch_srv_record_in`
+  (`srv_tcp_nonblocking.c`), with the framing, the wipe and the death
+  path of `tcp_nonblocking_frame.c`, are memory safe and free of UB over
+  an unconstrained `ch_cfg`, saved state and caller bytes. Also:
+  - init answers `CH_OK` with a session at its first step, or
+    `CH_EINVAL` with a dead one;
+  - a step number that no step wrote kills the session with
+    unexpected_message, and a step that succeeds consumes its message;
+  - `ch_srv_record_in` never reports more bytes than it was handed;
+  - a call on a dead session sends nothing (INV-13);
+  - every other failure pushes at most one record, its alert, sealed
+    before the wipe and never after the peer's fatal alert (INV-13);
+  - such a failure leaves the session dead and holding no secret
+    (INV-17).
+- **Bound:** a receive buffer of 8 B and caller bytes of at most 13 B:
+  one record with two 4-byte messages, or two empty records and a
+  partial third.
+- **Not proved:** the fifteen handlers, `rec_open`, `rec_seal`,
+  `hsr_feed`, `hsr_peek_message`, `hsr_refuse_alert`, `srv_out_alert`
+  and `ct_wipe` are contract stubs. `ct_wipe` writes its zeros with one
+  `memset`, and [ct](#ct) proves the body. `ch_record_whole_len` is in
+  [record_whole_len](#record_whole_len). `bin/srv_tcp_nonblocking_test`,
+  `bin/tcp_nonblocking_loop_test` and the `.violation` mutants test the
+  rest.
 
 ### QUIC
 

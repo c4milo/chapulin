@@ -484,21 +484,6 @@ AUDITED = {
         "with no harness. Delete this entry when srv_quic.c gets a harness of "
         "its own."
     ),
-    "srv_tcp_nonblocking.c": (
-        "the ROLE=server tcp-nonblocking driver: the step table, the record "
-        "loop and the two entry points. Two bitwise operators in the file, "
-        "both in the expression with which ch_srv_record_in reads a record's "
-        "length, ((size_t)rec[3] << 8) | rec[4]: a size_t shifted left by the "
-        "constant 8, and a uint8_t, which widens to int and holds 0 to 255. "
-        "The rest is size_t arithmetic: the room for the record_size_limit, "
-        "buf_len less REC_HDR and AEAD_TAG under srv_config_ok's CH_MIN_RXBUF "
-        "floor, and the record loop's lengths under the 0x4000 + 256 cap and "
-        "n. proof/srv_tcp_nonblocking_harness.c covers this file and has no "
-        "launch line, because its formula has never been seen to converge, "
-        "which proof/run.sh records with the split it needs. "
-        "bin/srv_tcp_nonblocking_test and bin/tcp_nonblocking_loop_test run it "
-        "until then. Delete this entry when that split gives it a launch line."
-    ),
     "tcp_nonblocking.c": (
         "the client's tcp-nonblocking driver and the two calls either role "
         "exports. Two bitwise operators in the file, both in the expression "
