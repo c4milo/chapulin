@@ -314,11 +314,14 @@ NAMED = re.compile(r"^\((\d+)\)(?: (.*))?$")
 # The functions whose inclusive cost is a row in callgrind mode. callgrind
 # keeps no call stacks, so this mode prints the rows whose roots no other
 # root of the run calls, and leaves out the key schedule, the transcript
-# and the nonce, whose hashes the signature runs too.
+# and the nonce, whose hashes the signature runs too. callgrind charges a
+# function that a tail jump enters to the function that jumped, so a row
+# whose roots run only after a tail jump is left out too. srv_kex_begin
+# enters the X25519 key generation with one.
 INCLUSIVE_ROWS = {
     "x25519_keygen": ("x25519_wide_base", "x25519_base"),
     "x25519_shared": ("x25519_wide", "x25519"),
-    "sign": ("p256_sign_cpu", "p256_sign"),
+    "sign": ("p256_sign_hedged_cpu", "p256_sign_hedged", "p256_sign_cpu", "p256_sign"),
     "sign_base_mul": ("p256_wide_base_mul", "p256_point_base_mul"),
     "handshake": (HANDSHAKE_CALL,),
     "exchange": (EXCHANGE_CALL,),
