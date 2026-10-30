@@ -632,8 +632,8 @@ x509ca 274
 x509ca_ecdsa 274
 x509der 407
 x509der_ecdsa 383
-x509parse 422
-x509parse_ecdsa 418
+x509parse 419
+x509parse_ecdsa 415
 
 # No floor, because `cbmc --cover location` does not converge on them.
 # This is a limit of the measurement, not a gap someone forgot: the

@@ -1356,6 +1356,16 @@ launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,writ
 # parse rsa's list made 23.5 million clauses against the fixed array's
 # 29.5 million, with 5.0 million variables against 3.5 million, and it
 # shares its harness with parse_ecdsa, so it keeps the array too.
+# The nightly of 2026-10-29 failed x509parse at its memory cap: every
+# property passed, then kissat died as it grew one array from 4 to 8 GB
+# (https://github.com/c4milo/chapulin/issues/210). ct_memeq's body made 28
+# of the 29.5 million clauses, because it read each compared byte of the
+# list at a symbolic offset. The three walkers now stub ct_memeq to its
+# contract, as webpki_chain does, and link no ct.c. Measured on
+# 2026-10-30 in an amd64 container with the nightly's cbmc and kissat:
+# x509parse 968 properties, 1.35 million clauses, 494 s, 0.97 GB of
+# address space; x509parse_ecdsa 968, 352 s, 0.88 GB; x509parse_mldsa
+# 975, 279 s, 0.89 GB.
 # The provisioning path (https://github.com/c4milo/chapulin/issues/39),
 # proved in three pieces because the decoder is the shape bounded model
 # checking pays most for: a per-character state machine over symbolic
@@ -1753,9 +1763,9 @@ launch fast full webpki_leaf_pin 6 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33"
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
 launch fast:3 full x509der_mldsa 452 "fill_nondet.0:2625,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
-launch slow:8 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
-launch slow:8 full x509parse_mldsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
-launch slow:8 full x509parse 844 "fill_nondet.0:841,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
+launch slow:2 full x509parse_ecdsa 260 "fill_nondet.0:257" buf.c proof/ct_wipe_stub.c
+launch slow:2 full x509parse_mldsa 260 "fill_nondet.0:257" buf.c proof/ct_wipe_stub.c
+launch slow:2 full x509parse 844 "fill_nondet.0:841" buf.c proof/ct_wipe_stub.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 # The AES-128 forward cipher and the two aes_public_key constructors,
 # TRANSPORT=quic-nonblocking. HKDF is a contract stub (proof/aes_stubs.h), so

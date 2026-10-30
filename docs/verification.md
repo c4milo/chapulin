@@ -2934,7 +2934,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 
 - **Harnesses:** `x509parse` (slow), `x509parse_ecdsa` (slow), `x509parse_mldsa` (slow)
 - **Proves:** the certificate walker stays safe on any entry list, with
-  the primitives stubbed to their proven contracts. The ECDSA and
+  the primitives stubbed to their proven contracts. `ct_memeq` is one
+  of them: its body made 28 of the formula's 29.5 million clauses, and
+  `ct` proves it. The ECDSA and
   ML-DSA-87 builds prove the full two-entry flight. Under `CH_PIN_MLDSA`
   the signature covers the TBS span itself, and the stub of
   `mldsa87_verify` asserts that span readable in the caller's buffer and

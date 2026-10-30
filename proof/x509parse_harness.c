@@ -28,9 +28,10 @@
 // primitives are stubs asserting their x509_der.h contracts and havocing
 // outputs within exactly what x509der_harness proves — x509_der.c is
 // NOT linked, so the object under proof is the walker's own
-// arithmetic. sha256 and the build's signature verifier are contract
-// stubs too (proven in sha256_harness and rsa_harness/p256_harness);
-// the walker only routes pointers into them. buf.c is real.
+// arithmetic. sha256, ct_memeq and the build's signature verifier are
+// contract stubs too (proven in sha256_harness, ct_harness and
+// rsa_harness/p256_harness); the walker only routes pointers into them
+// and branches on their verdicts. buf.c is real.
 //
 // The CA-key domain is a superset of what ch_connect admits (the RSA
 // stub never needs the odd-modulus bit), so nothing here rests on
@@ -265,6 +266,18 @@ int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], c
     return nondet_u8() & 1;
 }
 #endif
+
+// ct_memeq's contract (ct.h): it reads n bytes of each operand and
+// answers whether they are equal. The ct harness proves the body. The
+// body here read each compared byte of the list at a symbolic offset,
+// and those reads were 28 of the formula's 29.5 million clauses, which
+// took kissat past the nightly's memory cap
+// (https://github.com/c4milo/chapulin/issues/210).
+uint32_t ct_memeq(const uint8_t *a, const uint8_t *b, size_t n) {
+    __CPROVER_assert(n == 0 || (__CPROVER_r_ok(a, n) && __CPROVER_r_ok(b, n)),
+                     "ct_memeq stub: both operands are readable");
+    return nondet_u8() & 1;
+}
 
 #include "x509.c"
 
