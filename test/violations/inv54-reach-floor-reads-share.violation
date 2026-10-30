@@ -1,0 +1,13 @@
+invariant: INV-54
+file: proof/coverage.py
+catches: test/lint-matrix.sh
+reason: the check compares the share of the goto model with the floor
+  again, so a harness fails when code it never enters adds locations to
+  its model (https://github.com/c4milo/chapulin/issues/197). lint-matrix
+  runs main over a stand-in that reaches 50 of 200 locations, 25%, under
+  a floor of 50 and requires exit 0.
+
+--- old
+            if reached < floor:
+--- new
+            if float(pct) < floor:

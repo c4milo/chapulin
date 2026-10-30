@@ -3080,9 +3080,12 @@ last `ROLE=server` stub, as the entry said it would.
   A proof-reach job reads the exit status of `main`, not the table. So
   the lint also runs `main` with `--reach --only epoch` over the same
   stand-in. It requires exit 1 for a floored harness that gives no
-  number or a number under its floor. It requires exit 0 for a number
-  over the floor and for a harness with no floor.
-  Four mutants in `test/violations/` each remove one part of the
+  number or reaches one location fewer than its floor. It requires
+  exit 0 for a count at or over the floor and for a harness with no
+  floor. A floor is a count of reached locations, not a share of the
+  goto model (https://github.com/c4milo/chapulin/issues/197). So the
+  case at the floor reaches 50 of 200 locations, a share of 25%.
+  Six mutants in `test/violations/` each remove one part of the
   mechanism, and `test/lint-matrix.sh` catches each one:
   - `inv54-reach-cut-memory-line-not-measured` removes "Out of memory"
     from the memory texts.
@@ -3092,6 +3095,10 @@ last `ROLE=server` stub, as the entry said it would.
     and no number pass.
   - `inv54-reach-floor-exit-passes` removes the failed floors from the
     exit status of `main`.
+  - `inv54-reach-floor-at-count-fails` fails a harness that reaches
+    exactly its floor.
+  - `inv54-reach-floor-reads-share` compares the share with the floor
+    again, as the check did before the issue.
 - **Violation.** A PR bumps cbmc, and the new cbmc writes another
   message. The stand-in holds the lines of cbmc 6.11.0, so the lint
   stays green while the nightly says "not measured" again. Review holds

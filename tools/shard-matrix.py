@@ -384,8 +384,8 @@ class Case:
     """One cover run that the stand-in for cbmc gives reach_table: what
     cbmc wrote and its exit status, and the cell the table must give it.
     returncode None stands for a run that its budget stops. floored gives
-    the harness a floor of 50%, and number says that the run gives a
-    number. flags are the launch line's flags, and floor_bits and budget
+    the harness a floor of 50 reached locations, and number says that the
+    run gives a number. flags are the launch line's flags, and floor_bits and budget
     are the fields of the harness's line in reach-floors.txt."""
 
     def __init__(self, name, stderr, cell, *, returncode=6, stdout="",
@@ -464,7 +464,7 @@ LABEL_CASES = [
     Case("timeout", [], "timed out at 60 s", returncode=None, budget=60),
     # With no floor, a run that gives no number fails nothing.
     Case("memory_no_floor", ["Out of memory"], MEMORY_CELL, floored=False),
-    Case("number", COVER_WARNINGS, "52.2% (121/232) (floor 50.0%)",
+    Case("number", COVER_WARNINGS, "52.2% (121/232) (floor 50)",
          returncode=0, stdout="** 121 of 232 covered (52.2%)\n", number=True),
 ]
 
@@ -505,7 +505,7 @@ def labelled_table(coverage):
     cases = {case.name: case for case in LABEL_CASES}
     runs = {case.name: ("fast", 1, set(), "", list(case.flags))
             for case in LABEL_CASES}
-    floors = [(case.name, 50.0, case.budget, None, case.floor_bits)
+    floors = [(case.name, 50, case.budget, None, case.floor_bits)
               for case in LABEL_CASES if case.floored]
     output = io.StringIO()
     with stand_ins(coverage, cases, floors), contextlib.redirect_stdout(output):
@@ -545,15 +545,21 @@ EXIT_HARNESS = "epoch"
 # The cover runs that exit_problems gives main for EXIT_HARNESS, and the
 # exit status that main must return for each. reach_table lists a failed
 # floor for a run that its budget stops, for a run that gives no number
-# and for a number under the floor. main must fail on each of the three.
+# and for a count under the floor. main must fail on each of the three.
+# A floor is a count of reached locations, so a run that reaches exactly
+# the floor passes at any share of a larger model, and one location fewer
+# fails (https://github.com/c4milo/chapulin/issues/197).
 EXIT_CASES = [
     (Case("exit_memory", ["Out of memory"], MEMORY_CELL), 1),
     (Case("exit_timeout", [], "timed out at 60 s", returncode=None,
           budget=60), 1),
     (Case("exit_below_floor", COVER_WARNINGS,
-          "40.0% (40/100) **below its 50.0% floor**", returncode=0,
-          stdout="** 40 of 100 covered (40.0%)\n", number=True), 1),
-    (Case("exit_number", COVER_WARNINGS, "52.2% (121/232) (floor 50.0%)",
+          "49.0% (49/100) **below its floor of 50**", returncode=0,
+          stdout="** 49 of 100 covered (49.0%)\n", number=True), 1),
+    (Case("exit_at_floor", COVER_WARNINGS, "25.0% (50/200) (floor 50)",
+          returncode=0, stdout="** 50 of 200 covered (25.0%)\n",
+          number=True), 0),
+    (Case("exit_number", COVER_WARNINGS, "52.2% (121/232) (floor 50)",
           returncode=0, stdout="** 121 of 232 covered (52.2%)\n",
           number=True), 0),
     (Case("exit_no_floor", ["Out of memory"], MEMORY_CELL, floored=False), 0),
@@ -566,7 +572,7 @@ def main_status(coverage, case):
     its report gives the harness, and its log. main returns None for a
     pass, and this gives 0 for it. The report goes to a temporary
     directory under bin/, so bin/proof-coverage.md stays as it is."""
-    floors = [(EXIT_HARNESS, 50.0, case.budget, None, None)] if case.floored else []
+    floors = [(EXIT_HARNESS, 50, case.budget, None, None)] if case.floored else []
     saved = sys.argv, coverage.shutil, coverage.REPORT
     output = io.StringIO()
     (ROOT / "bin").mkdir(exist_ok=True)

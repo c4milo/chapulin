@@ -390,17 +390,17 @@ def main():
         print(f"proof-coverage: {name} reaches no code at its bound; the "
               f"proof passes without entering what it names")
     for name, got, floor in reach_fell:
-        # got is a percentage, or the table's cell that says why there is
+        # got is a count of reached locations, or the table's cell that says why there is
         # none: a run that returned no number is a failed check too, and
         # saying "0.0%" for it sent a reader after the bound instead of
         # the runner.
         if isinstance(got, str):
             print(f"proof-coverage: {name} gave no number ({got}), so its "
-                  f"recorded {floor}% floor was not measured; the check fails "
-                  f"until it is")
+                  f"recorded floor of {floor} locations was not measured; the "
+                  f"check fails until it is")
             continue
-        print(f"proof-coverage: {name} reaches {got}% of its locations, under "
-              f"its recorded {floor}% floor; the bound no longer enters what "
+        print(f"proof-coverage: {name} reaches {got} locations, under its "
+              f"recorded floor of {floor}; the bound no longer enters what "
               f"the harness names")
     for name in reach_stale:
         print(f"proof-coverage: {name}'s launch line bounds a loop its goto "
@@ -473,7 +473,10 @@ REACH_OBJECT_LIMIT_TEXT = "too many addressed objects"
 
 def floor_lines():
     """(harness, floor, budget, solver, object_bits) for every line of
-    reach-floors.txt. budget is the cover run's own wall-clock limit in
+    reach-floors.txt. floor is the count of locations the harness must
+    reach, so code that the harness never enters can grow its goto model
+    and fail nothing (https://github.com/c4milo/chapulin/issues/197).
+    budget is the cover run's own wall-clock limit in
     seconds, from an optional budget=SECONDS field, or None when the line
     carries none and REACH_BUDGET_S applies. solver is the cover run's SAT
     solver, from an optional solver=NAME field that names one of
@@ -488,7 +491,7 @@ def floor_lines():
         line = line.split("#", 1)[0].strip()
         if not line:
             continue
-        name, pct, *extra = line.split()
+        name, reached, *extra = line.split()
         budget = None
         solver = None
         object_bits = None
@@ -503,17 +506,21 @@ def floor_lines():
                 object_bits = int(value)
             else:
                 sys.exit(f"proof-coverage: reach-floors.txt gives {name} the field "
-                         f"{field!r}; a line is name, percent and the optional fields "
-                         f"budget=SECONDS, solver={'|'.join(REACH_SOLVERS)} and "
+                         f"{field!r}; a line is name, reached count and the "
+                         f"optional fields budget=SECONDS, solver={'|'.join(REACH_SOLVERS)} and "
                          f"object_bits=N, with N above cbmc's default of "
                          f"{REACH_DEFAULT_OBJECT_BITS}")
-        entries.append((name, float(pct), budget, solver, object_bits))
+        if not reached.isdigit():
+            sys.exit(f"proof-coverage: reach-floors.txt gives {name} the floor "
+                     f"{reached!r}; a floor is the whole count of locations "
+                     f"the harness reaches")
+        entries.append((name, int(reached), budget, solver, object_bits))
     return entries
 
 
 def reach_floors():
-    """Harness -> the lowest reach share it is allowed to report."""
-    return {name: pct for name, pct, _, _, _ in floor_lines()}
+    """Harness -> the fewest locations it is allowed to reach."""
+    return {name: reached for name, reached, _, _, _ in floor_lines()}
 
 
 def reach_budgets():
@@ -878,10 +885,10 @@ def reach_table(runs, names, only=frozenset(), shard=None):
         floor = floors.get(name)
         mark = ""
         if floor is not None:
-            mark = f" (floor {floor}%)"
-            if float(pct) < floor:
-                mark = f" **below its {floor}% floor**"
-                fell.append((name, float(pct), floor))
+            mark = f" (floor {floor})"
+            if reached < floor:
+                mark = f" **below its floor of {floor}**"
+                fell.append((name, reached, floor))
         out.append(f"| `{name}` | {pct}% ({reached}/{total}){mark} |")
         # Reaching nothing is the failure this measurement exists to catch:
         # the bound stops before the harness enters the code it names, and

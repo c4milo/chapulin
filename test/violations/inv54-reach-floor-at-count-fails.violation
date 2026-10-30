@@ -1,0 +1,12 @@
+invariant: INV-54
+file: proof/coverage.py
+catches: test/lint-matrix.sh
+reason: a harness that reaches exactly its floor fails the check. The
+  floor is the fewest locations a harness may reach, so the count it
+  records must pass. lint-matrix runs main over a stand-in for cbmc that
+  reaches 50 locations under a floor of 50 and requires exit 0.
+
+--- old
+            if reached < floor:
+--- new
+            if reached <= floor:

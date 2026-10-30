@@ -1,11 +1,18 @@
-# Reachability floors: the share of program locations each harness reaches
+# Reachability floors: the count of program locations each harness reaches
 # at its configured bound, measured by `cbmc --cover location` under the
 # same --unwind, --unwindset and -D flags its launch line proves under.
+# A harness fails when it reaches fewer locations than its floor. Code
+# that the harness never enters adds locations to its goto model and
+# lowers its share, but leaves the count as it was, so it fails nothing.
+# Until https://github.com/c4milo/chapulin/issues/197 a floor was that
+# share, and each new location outside a harness's path made a floor
+# fail. The notes below that give a percentage date from then. The
+# counts came from nightly run 40853232504 on 8834adf5.
 # The numbers are the nightly runner's (ubuntu, the pinned cbmc): a
 # macOS build of the same harness carries a few more or fewer locations
-# in its goto model, so a floor measured there can sit a few tenths of
-# a percent off the runner's reading. Record what the nightly's own
-# table prints, not a local measurement.
+# in its goto model, so a count measured there can sit a few locations
+# off the runner's reading. Record what the nightly's own table prints,
+# not a local measurement.
 # proof/coverage.py builds that command from proof/run.sh: the launch
 # line's own sources and flags, then the -D flags launch() adds to that
 # harness. Those are -DCH_RAND_EXTERN, and -DCH_NATIVE_WIDEMUL for each
@@ -118,104 +125,104 @@
 # their floors from the same run. The comment above each of their lines
 # says why its reach is low.
 
-aead 97.4
-aead_forge 96.9
-aead_overlap 97.4
-aes_extern 95.6
-aes_runtime 94.3
-aes_traffic 69.1
-base64 94.1
-buf 90.2
-certparse 29.1
-certparse_webpki 26.3
-certverify_webpki 38.2
+aead 121
+aead_forge 133
+aead_overlap 121
+aes_extern 43
+aes_runtime 212
+aes_traffic 90
+base64 32
+buf 129
+certparse 89
+certparse_webpki 93
+certverify_webpki 176
 # ch_fail (docs/decisions.md 164): floor from GitHub run 40853232504 of
 # 2026-10-29 (nightly on 8834adf5). It compiles all of tls_write.c and
 # calls ch_fail alone, so the locations of ch_write and ch_writable_len
 # stay out of its reach.
-ch_fail 32.5
-chacha20 98.1
-ct 94.1
-ct_wipe 92.6
-ct_wipe_u32 92.6
-ctwidemul 92.9
-drbg 81.7
+ch_fail 38
+chacha20 106
+ct 39
+ct_wipe 25
+ct_wipe_u32 25
+ctwidemul 26
+drbg 67
 # eeparse_webpki fell from 29.5 to 29.4 when handshake_parser.c gained
 # parse_alpn: this harness drives the block with an empty ALPN offer, so
 # that function's locations are in its goto model and out of its reach.
 # eeparse_alpn is the harness that reaches them, and it carries its own
 # floor below.
-eeparse_webpki 57.9
-eeparse_alpn 33.3
+eeparse_webpki 128
+eeparse_alpn 76
 # epoch: handshake_auth.c now calls transcript.h's inline transcript
 # functions, whose locations join this harness's goto model and sit
 # outside the epoch arm it drives, so the share fell with the arm reached
 # whole. Local reading after that change, cbmc 6.11.0 on arm64 macOS.
-epoch 34.4
-gcm_avx512_wipe 97.2
-gcm_avx512_wipe_quic 96.8
-handshake_groups 92.5
+epoch 53
+gcm_avx512_wipe 70
+gcm_avx512_wipe_quic 60
+handshake_groups 198
 # handshake_post sat in the no-floor list below, from cover runs before
 # the cover command passed --slice-formula. On 2026-10-21 the runner
 # measured it in 515 s at 1.68 GB resident: 59.5% (238/400), every
 # location of the trust code of docs/decisions.md 142 among them. At
 # e1db679b, before that code, it read 51.0% (172/337) in 666 s.
-handshake_post 59.5
-handshake_record 85.5
-hello_build 76.9
+handshake_post 238
+handshake_record 203
+hello_build 150
 # hello_build_suite and hello_build_webpki took their floors on 2026-10-01
 # from an ubuntu 24.04 amd64 container with the pinned cbmc .deb, before
 # any nightly printed them: the runner died on the first one's cover run
 # on three nights, and the second one was skipped for its cost until the
 # command sliced its formula. The container builds the runner's goto
 # models: aead at 302eaa3 measured 111 of 114 there, the runner's 97.4%.
-hello_build_suite 85.9
-hello_build_webpki 84.3
-hkdf 52.3
-hkdf384 65.0
-hybrid_secret 16.6
+hello_build_suite 267
+hello_build_webpki 233
+hkdf 68
+hkdf384 115
+hybrid_secret 69
 # io_send fell from 42.1 (24/57) to 33.3 (24/72) in GitHub run 40853232504
 # of 2026-10-29. docs/decisions.md 166 put check_body and rec_body_max
 # into io.c. The harness compiles io.c and calls io_send alone, so their
 # 16 locations stay out of its reach, and io_read_record lost one. The
 # harness reaches the same 24 locations. The io harness proves io_read_record.
-io_send 33.3
-key_share 21.9
-key_share_webpki 37.5
-keysched 87.0
-keysched384 68.1
-mlkem_basemul 13.0
+io_send 24
+key_share 70
+key_share_webpki 121
+keysched 141
+keysched384 143
+mlkem_basemul 37
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-p256_ecdh 79.3
-p256_field 95.5
-p256_mul 86.7
-p256_point 61.0
+p256_ecdh 146
+p256_field 274
+p256_mul 13
+p256_point 174
 # docs/decisions.md 153 put p256_point_on_curve into p256_point.c, 15
 # locations that p256_point_ladder compiles and does not call, so its
 # share fell from 99 of 193 to 99 of 208 with no location less reached.
 # GitHub run 40853232504 of 2026-10-29 (nightly on 8834adf5) read the same
 # 47.6 that proof/coverage.py --reach --only read on arm64 macOS.
-p256_point_ladder 47.6
-p256_scalar 93.0
-p256_sign 75.2
-p256_wide_digit 65.6
-p256_wide_field 77.5
-p256_wide_field_mul 64.7
-p256_wide_inverse 53.4
-p256_wide_inverse_range 93.8
-p256_wide_inverse_round 83.3
-p256_wide_inverse_steps 48.3
+p256_point_ladder 99
+p256_scalar 252
+p256_sign 399
+p256_wide_digit 147
+p256_wide_field 303
+p256_wide_field_mul 134
+p256_wide_inverse 119
+p256_wide_inverse_range 30
+p256_wide_inverse_round 174
+p256_wide_inverse_steps 153
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-p256_wide_mul 76.9
-p256_wide_point 97.5
-p256_wide_row 96.2
-p256_wide_row_sum 95.7
-p256_wide_scalar 96.0
-p256_wide_sqr 95.1
+p256_wide_mul 216
+p256_wide_point 408
+p256_wide_row 51
+p256_wide_row_sum 45
+p256_wide_scalar 192
+p256_wide_sqr 39
 # p256_wide_verify fell from 77.2 to 71.3 when a86cca69 moved the
 # comparison of x with r out of p256_wide_verify.c. It reached 203 of 263
 # locations at 8598a4a5 and reaches 184 of 258 at 6f3bf952, on the runner
@@ -245,20 +252,20 @@ p256_wide_sqr 95.1
 # went from 71.3 to 72.7, because the model no longer holds ct_memeq's 5
 # locations. The harness reaches 184 of 253 locations on the runner (run
 # 39117500983).
-p256_wide_verify 72.7
-p256_wide_verify_digits 64.8
-p256_wide_verify_point 70.7
-p256_wide_wipe 61.1
-p384_mul 86.7
+p256_wide_verify 184
+p256_wide_verify_digits 190
+p256_wide_verify_point 215
+p256_wide_wipe 11
+p384_mul 13
 # The four p384_wide harnesses took their floors on 2026-10-05 from an
 # ubuntu 24.04 amd64 container with the pinned cbmc, before any nightly
 # printed them. Each compiles the whole of p384_wide_field.c, and the
 # three that run over contracts never call the routines a contract
 # replaces, which is most of what they leave out.
-p384_wide_digits 46.0
-p384_wide_field 89.4
-p384_wide_point 60.8
-p384_wide_verify 63.4
+p384_wide_digits 160
+p384_wide_field 210
+p384_wide_point 228
+p384_wide_verify 163
 # pem and pem_ecdsa carry their own budget, 2700 s, where every other
 # cover run gets 1800 s (https://github.com/c4milo/chapulin/issues/163).
 # Their nightly cover runs took 1664 s and 1505 s on 2026-09-21, 1113 s
@@ -269,21 +276,21 @@ p384_wide_verify 63.4
 # estimate of what pem needs on a slow runner. The proof-reach job runs
 # the roster in three parts, and .github/workflows/nightly.yml states the
 # time that each part takes and the limit that holds it.
-pem 74.6 budget=2700
-pem_ecdsa 74.6 budget=2700
-pem_blocks 74.1
-pem_files 83.2
-pem_files_host 83.3
-pem_one 71.8
-pem_step 51.4
-pem_step_ecdsa 51.4
-poly1305 94.3
-poly1305_ifma_blocks 99.2
-poly1305_ifma_lanes 96.3
-poly1305_ifma_product 51.6
-poly1305_ifma_sums 74.4
-quic_config_webpki 97.4
-quic_config_webpki_suite 96.8
+pem 206 budget=2700
+pem_ecdsa 206 budget=2700
+pem_blocks 197
+pem_files 396
+pem_files_host 398
+pem_one 191
+pem_step 151
+pem_step_ecdsa 151
+poly1305 153
+poly1305_ifma_blocks 383
+poly1305_ifma_lanes 52
+poly1305_ifma_product 210
+poly1305_ifma_sums 328
+quic_config_webpki 294
+quic_config_webpki_suite 396
 # quic_driver read 74.5% (687/922) in nightly run 39430743979 on
 # 2026-10-20, down from 75.0% (687/916). Its six new locations, all
 # unreached, were the trust check of a presented ticket in
@@ -297,27 +304,27 @@ quic_config_webpki_suite 96.8
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-quic_driver 89.8
+quic_driver 842
 # quic_initial carries a floor where five other TRANSPORT=quic-nonblocking
 # harnesses carry none: aes, aes256, gcm_refusal, gcm_safety and ghash,
 # listed below. Its cover command converges in seconds, because every
 # call it makes is a stub and the formula holds length checks alone.
-quic_initial 98.8
-quic_keys 75.6
-quic_keys_suite 87.1
+quic_initial 182
+quic_keys 59
+quic_keys_suite 149
 # quic_packet's cover command converges in 34 s and 0.75 GB against the
 # 1800 s budget, where the aes harness returned no number in 21 minutes.
 # Its proof is cheap for the same reason -- ChaCha20 and the AEAD are
 # stubs, so the formula holds framing rather than a keystream.
-quic_packet 75.8
-quic_packet_suite 68.8
-quic_retry 94.0
-quic_step 91.0
-quic_step_ca 91.1
-quic_token 71.7
-record 95.0
-record_suite 95.3
-record_whole_len 30.9
+quic_packet 316
+quic_packet_suite 365
+quic_retry 109
+quic_step 272
+quic_step_ca 275
+quic_token 292
+record 154
+record_suite 291
+record_whole_len 59
 # The three rsa_avx2_chain lines took their floors on 2026-10-17 from the
 # nightly runner, under the cover command with --object-bits 10 (run
 # 39057140598). Each took 68 s to 181 s there on MiniSat, and CaDiCaL
@@ -325,29 +332,29 @@ record_whole_len 30.9
 # addressed objects" in 58 s to 175 s (run 39056264441). rsa_avx2_chain
 # reaches 276 of 492 locations, and rsa_avx2_chain_32, the same harness
 # at 32 words, reaches 276 of 492 too.
-rsa_avx2_chain 56.1 object_bits=10
-rsa_avx2_chain_49_webpki 56.0 object_bits=10
-rsa_avx2_chain_webpki 56.0 object_bits=10
-rsa_avx2_chain_32 56.1
-rsa_avx2_lanes 95.7
-rsa_avx2_number 11.7
-rsa_avx2_number_webpki 11.4
-rsa_avx2_sums_multiply_2 32.0
-rsa_avx2_sums_multiply_2_webpki 31.3
-rsa_avx2_sums_multiply_3 32.0
-rsa_avx2_sums_multiply_3_webpki 31.3
-rsa_avx2_sums_square_2 39.8
-rsa_avx2_sums_square_2_webpki 38.9
-rsa_avx2_sums_square_3 40.0
-rsa_avx2_sums_square_3_webpki 39.1
-rsa_ifma_lanes 97.1
-rsa_ifma_product 35.5
-rsa_ifma_product_webpki 35.1
-rsa_ifma_public 48.7
-rsa_ifma_public_5 48.0
-rsa_ifma_public_webpki 48.0
-rsa_ifma_sign_pair 29.7
-rsa_ifma_sign_pair_webpki 28.2
+rsa_avx2_chain 276 object_bits=10
+rsa_avx2_chain_49_webpki 282 object_bits=10
+rsa_avx2_chain_webpki 282 object_bits=10
+rsa_avx2_chain_32 276
+rsa_avx2_lanes 44
+rsa_avx2_number 64
+rsa_avx2_number_webpki 64
+rsa_avx2_sums_multiply_2 173
+rsa_avx2_sums_multiply_2_webpki 173
+rsa_avx2_sums_multiply_3 173
+rsa_avx2_sums_multiply_3_webpki 173
+rsa_avx2_sums_square_2 215
+rsa_avx2_sums_square_2_webpki 215
+rsa_avx2_sums_square_3 216
+rsa_avx2_sums_square_3_webpki 216
+rsa_ifma_lanes 66
+rsa_ifma_product 149
+rsa_ifma_product_webpki 151
+rsa_ifma_public 202
+rsa_ifma_public_5 199
+rsa_ifma_public_webpki 204
+rsa_ifma_sign_pair 142
+rsa_ifma_sign_pair_webpki 136
 # rsa_ifma_sign_power carries its own budget, 3600 s, as pem does. Its
 # nightly cover runs took 994 s and 1505 s (runs 39014749963 and
 # 39059024456), and then passed 1800 s twice (runs 39075335784 and
@@ -364,11 +371,11 @@ rsa_ifma_sign_pair_webpki 28.2
 # With a floor, a run that passes its budget fails the nightly. So the
 # budget is 3600 s, 1.92 times the slowest run. At 1.86 times, 1874 s
 # becomes 3486 s, which is under it.
-rsa_ifma_sign_power 52.7 budget=3600
-rsa_ifma_sign_select 22.3
-rsa_ifma_sign_select_webpki 21.8
-rsa_ifma_sign_setup 24.7
-rsa_ifma_sign_setup_webpki 24.4
+rsa_ifma_sign_power 261 budget=3600
+rsa_ifma_sign_select 79
+rsa_ifma_sign_select_webpki 78
+rsa_ifma_sign_setup 125
+rsa_ifma_sign_setup_webpki 125
 # The two rsa_ifma_sign_wipe lines took their floors from nightly run
 # 39109704185 on 2026-10-18. Run 39117425286, on the same runner image,
 # gave the same counts and listed each location as reached or not.
@@ -388,66 +395,66 @@ rsa_ifma_sign_setup_webpki 24.4
 # their floors. With the bound of ct_wipe.0 one pass short, run
 # 39118123345 read 7 of 337 and 7 of 342. The cover run did not reach
 # the 4 locations after the loop.
-rsa_ifma_sign_wipe 3.3
-rsa_ifma_sign_wipe_webpki 3.2
-rsa_ifma_sums 42.4
-rsa_mont64_addcarry_sums 43.4
-rsa_mont64_blocks_sums 43.1
-rsa_mont64_mul128 66.7
-rsa_mont64_ops 45.7
-rsa_mont64_ops_webpki 45.7
-rsa_mont64_step 80.0
-rsa_mont64_step_sum 80.0
-rsa_mont64_sums 62.8
+rsa_ifma_sign_wipe 11
+rsa_ifma_sign_wipe_webpki 11
+rsa_ifma_sums 227
+rsa_mont64_addcarry_sums 148
+rsa_mont64_blocks_sums 162
+rsa_mont64_mul128 4
+rsa_mont64_ops 147
+rsa_mont64_ops_webpki 147
+rsa_mont64_step 8
+rsa_mont64_step_sum 8
+rsa_mont64_sums 172
 # The six rsa_mont lines took their floors on 2026-10-17 from the
 # nightly runner, under the cover command with --sat-solver cadical. Each
 # took 28 s to 118 s there, and on MiniSat each returned no number in
 # 3000 s. The webpki variants peak at 7.7 GB of the runner's 16 GB.
-rsa_mont_host 28.0 solver=cadical
-rsa_mont_host_webpki 28.0 solver=cadical
-rsa_mont_power 14.3 solver=cadical
-rsa_mont_power_avx2 14.3 solver=cadical
-rsa_mont_power_avx2_webpki 14.3 solver=cadical
-rsa_mont_power_webpki 14.3 solver=cadical
-rsa_mont_power_value 39.8
-rsa_mul 32.3
-rsa_mul_webpki 32.3
-rsa_pkcs1 90.3
-rsa_pkcs1_webpki 90.3
-rsa_sign 62.1
+rsa_mont_host 102 solver=cadical
+rsa_mont_host_webpki 102 solver=cadical
+rsa_mont_power 48 solver=cadical
+rsa_mont_power_avx2 48 solver=cadical
+rsa_mont_power_avx2_webpki 48 solver=cadical
+rsa_mont_power_webpki 48 solver=cadical
+rsa_mont_power_value 45
+rsa_mul 40
+rsa_mul_webpki 40
+rsa_pkcs1 71
+rsa_pkcs1_webpki 71
+rsa_sign 177
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-rsa_sign64_crt 62.3
+rsa_sign64_crt 243
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-rsa_sign64_crt_webpki 62.3
+rsa_sign64_crt_webpki 243
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-rsa_sign64_ifma 34.9
+rsa_sign64_ifma 138
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-rsa_sign64_ifma_webpki 34.9
+rsa_sign64_ifma_webpki 138
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-rsa_sign64_power 28.7
+rsa_sign64_power 93
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-rsa_sign64_power_webpki 28.7
+rsa_sign64_power_webpki 93
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-rsa_sign64_window 20.4
+rsa_sign64_window 51
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
-rsa_sign64_window_webpki 20.4
-rsa_webpki 91.7
+rsa_sign64_window_webpki 51
+rsa_webpki 127
 # sha3_round reaches the round, the 24 of them and the reference it holds
 # them to. What it leaves out is the rest of the files it compiles: the
 # sponge of sha3.c and of proof/sha3_reference.h, which the sha3 and
@@ -461,17 +468,17 @@ rsa_webpki 91.7
 # stores, which added 3. The nightly runner measured the harness at
 # 8598a4a5 and at 6f3bf952 under the cover command on 2026-10-17 (run
 # 39050336463).
-sha3_round 62.4
-sha512 90.9
-sha512_compress 97.1
-sha512_compress_blocks 99.0
+sha3_round 221
+sha512 100
+sha512_compress 67
+sha512_compress_blocks 191
 # sha512_compress_blocks_advancing took its floor on 2026-10-17 from the
 # nightly runner, on CaDiCaL in 1 s. On MiniSat its cover run returned no
 # number in 1800 s.
-sha512_compress_blocks_advancing 52.2 solver=cadical
-sha512_compress_blocks_steps 57.0
-sha512_host 98.6
-softmul 91.3
+sha512_compress_blocks_advancing 121 solver=cadical
+sha512_compress_blocks_steps 147
+sha512_host 146
+softmul 21
 # srv_accept read 27.6% in nightly run 39430743979 on 2026-10-20. The
 # harness put cookie_key in its scratch array, which holds zeros alone,
 # and keys_ok refuses a key of zero bytes (docs/decisions.md 139). So every
@@ -479,9 +486,9 @@ softmul 91.3
 # keys now take arrays of their own, which hold zeros and one byte of any
 # value. On 2026-10-21 the harness read 95.5% (423/443), every location of
 # keys_ok among them, and lost no location it reached at 95.1% (391/411).
-srv_accept 95.5
-srv_auth 92.8
-srv_cookie 62.2
+srv_accept 435
+srv_auth 288
+srv_cookie 181
 # The PROFILE=cnsa2 server's six harnesses (docs/decisions.md 162) are
 # srv_cookie_cnsa2, srv_kex_cnsa2, srv_mldsa, srv_parser_ext_cnsa2,
 # srv_parser_ext_cnsa2_share and srv_ticket_cnsa2. Each floor is from
@@ -489,14 +496,14 @@ srv_cookie 62.2
 # srv_parser_ext_cnsa2_share calls the key_share reader alone, so the other
 # readers' locations stay out of its reach, and srv_parser_ext_cnsa2 covers
 # them.
-srv_cookie_cnsa2 54.0
+srv_cookie_cnsa2 181
 # srv_kex read 94.7% (322/340) at b8eb7bbb and 91.0% (322/354) from
 # 06f37bcc on, measured with proof/coverage.py --reach --only on the
 # nightly's runner image. Decision 162 added 14 locations that the
 # harness compiles and does not reach. It reaches the same 322.
-srv_kex 91.0
-srv_kex_cnsa2 92.7
-srv_mldsa 71.0
+srv_kex 322
+srv_kex_cnsa2 127
+srv_mldsa 193
 # srv_parser_count took its floor from nightly run 39109704185 on
 # 2026-10-18. Run 39117425286, on the same runner image, gave the same
 # count and listed each location as reached or not.
@@ -521,18 +528,18 @@ srv_mldsa 71.0
 # joined srv_parser.c (docs/decisions.md 149). Their 4 locations are in
 # the walk, which no path from main reaches. Run 40158675820 read 63 of
 # 371.
-srv_parser_count 17.0
-srv_parser_ext 72.4
-srv_parser_ext_cnsa2 72.9
-srv_parser_ext_cnsa2_share 23.9
-srv_parser_frozen 40.7
-srv_parser_walk 78.6
-srv_resume 84.3
-srv_select_runtime 95.2
-srv_select_suite 96.6
-srv_ticket 81.0
-srv_ticket_cnsa2 76.5
-transcript384 38.7
+srv_parser_count 63
+srv_parser_ext 347
+srv_parser_ext_cnsa2 336
+srv_parser_ext_cnsa2_share 112
+srv_parser_frozen 183
+srv_parser_walk 342
+srv_resume 383
+srv_select_runtime 40
+srv_select_suite 56
+srv_ticket 217
+srv_ticket_cnsa2 228
+transcript384 84
 # webpki_cert fell from 56.7 to 56.1 and webpki_pin from 56.5 to 54.1
 # when a configuration of SPKI pins alone started to accept a chain whose
 # leaf key a pin names (docs/decisions.md 65). webpki_cert.c gained
@@ -544,21 +551,21 @@ transcript384 38.7
 # 259 of 463, each from its launch line's own --cover location command on
 # arm64 macOS with cbmc 6.11.0. webpki_pin read 55.9% there at the commit
 # before, already under the 56.5 recorded here.
-webpki_cert 56.1
-webpki_cert_key 46.9
-webpki_chain 80.5
-webpki_ext 40.0
-webpki_ext_one 51.4
-webpki_ext_walk 54.8
-webpki_leaf_pin 40.7
-webpki_name 24.2
-webpki_pin 54.7
-webpki_san 29.8
-webpki_sigalg 44.5
-webpki_spki 41.4
-webpki_ticket 57.1
-webpki_ticket_host 61.4
-webpki_time 33.3
+webpki_cert 388
+webpki_cert_key 322
+webpki_chain 301
+webpki_ext 281
+webpki_ext_one 353
+webpki_ext_walk 377
+webpki_leaf_pin 172
+webpki_name 133
+webpki_pin 274
+webpki_san 163
+webpki_sigalg 261
+webpki_spki 212
+webpki_ticket 189
+webpki_ticket_host 226
+webpki_time 166
 # The three writable_len harnesses fell in GitHub run 40853232504 of
 # 2026-10-29: writable_len from 83.0 (83/100) to 68.6 (83/121),
 # writable_len_suite from 87.4 (111/127) to 75.0 (111/148), and
@@ -567,25 +574,25 @@ webpki_time 33.3
 # Each harness compiles that file and calls ch_writable_len alone, so their
 # 21 locations stay out of its reach. Each reaches the same count it did
 # before. The ch_fail harness reaches them.
-writable_len 68.6
-writable_len_suite 75.0
-writable_len_suite_any 38.5
-x25519 25.6
+writable_len 83
+writable_len_suite 111
+writable_len_suite_any 42
+x25519 50
 # The four x25519_adx harnesses took their first floors from GitHub run
 # 40853232504 of 2026-10-29 (nightly on 8834adf5): x25519_adx_ladder 175
 # of 177, x25519_adx_mul 57 of 250, x25519_adx_ops 153 of 290 and
 # x25519_adx_sqr 55 of 248. The product and the square compile the whole
 # of x25519_adx.c and call one operation each.
-x25519_adx_ladder 98.9
-x25519_adx_mul 22.8
-x25519_adx_ops 52.8
-x25519_adx_sqr 22.2
-x25519_mul_alias_a 27.0
-x25519_mul_alias_b 27.0
-x25519_mul_inputs_alias 26.6
-x25519_ops 49.5
-x25519_sqr 26.6
-x25519_tail 52.2
+x25519_adx_ladder 175
+x25519_adx_mul 57
+x25519_adx_ops 153
+x25519_adx_sqr 55
+x25519_mul_alias_a 50
+x25519_mul_alias_b 50
+x25519_mul_inputs_alias 49
+x25519_ops 109
+x25519_sqr 49
+x25519_tail 108
 # x25519_wide_edwards and x25519_wide_select took their first floors from
 # GitHub run 40142481095 of 2026-10-24, measured with proof/coverage.py
 # --reach --only on the nightly's runner image. x25519_wide_select compiles
@@ -610,23 +617,23 @@ x25519_tail 52.2
 # then 53 of 449, x25519_wide_step 210 of 467 then 223 of 480, and
 # x25519_wide_tail 196 of 478 then 209 of 491. GitHub run 40853232504 of
 # 2026-10-29 read the same shares.
-x25519_wide_edwards 56.8
-x25519_wide_invert 36.2
-x25519_wide_mul 17.1
-x25519_wide_mul128 80.0
-x25519_wide_ops 37.1
-x25519_wide_select 22.8
-x25519_wide_sqr 11.8
-x25519_wide_step 46.5
-x25519_wide_tail 42.6
-x509_pem 55.5
-x509_pem_key 34.0
-x509ca 75.5
-x509ca_ecdsa 75.5
-x509der 83.4
-x509der_ecdsa 82.9
-x509parse 84.2
-x509parse_ecdsa 83.9
+x25519_wide_edwards 294
+x25519_wide_invert 166
+x25519_wide_mul 77
+x25519_wide_mul128 8
+x25519_wide_ops 196
+x25519_wide_select 113
+x25519_wide_sqr 53
+x25519_wide_step 223
+x25519_wide_tail 209
+x509_pem 226
+x509_pem_key 228
+x509ca 274
+x509ca_ecdsa 274
+x509der 407
+x509der_ecdsa 383
+x509parse 422
+x509parse_ecdsa 418
 
 # No floor, because `cbmc --cover location` does not converge on them.
 # This is a limit of the measurement, not a gap someone forgot: the
