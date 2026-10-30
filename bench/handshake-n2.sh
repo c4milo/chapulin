@@ -82,8 +82,9 @@ COLIBRI=(-DRAND=session -DTRANSPORT=tcp-nonblocking -DROLE=both -DTRUST=webpki -
     -DSUITE=aesgcm -DTX_RECORD=16384 -DKEYLOG=off)
 # The ch_cfg.cpu values (cpu_cfg.h): 0xe7 is CH_CPU_PROBED with the AES,
 # multiply, SHA-256, SHA-512 and SHA-3 bits, what a caller on a
-# Neoverse-N2 states; 0x07 the value colibri states today (its
-# src/tls/config.zig, cpu_of); 0x03 the AES bit alone.
+# Neoverse-N2 states; 0x07 the AES and multiply bits alone, the value
+# colibri stated before its src/tls/config.zig, cpu_of, took the SHA
+# bits; 0x03 the AES bit alone.
 VALUES=(0xe7 0x07 0x03)
 TARGET=aarch64-linux-gnu
 PORT=44388

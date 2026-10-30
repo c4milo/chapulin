@@ -1254,31 +1254,31 @@ and no ticket key. After the handshake the client sends one 100-byte request rec
 answers with one 256-byte record, and each side sends close_notify.
 
 The section holds two counts. [`bench/handshake-n2.sh`](../bench/handshake-n2.sh) made the first
-on 2026-10-25, over `ct_wipe`'s word stores (docs/decisions.md 144), the fixes of entries 145
-to 147 and 149, the key generation of entry 148 and the ladder of entry 152. `make lint-bench-numbers` holds its three tables to `bench/results-handshake-n2.csv`
-(`tools/bench_handshake.py`). The script counted the tree at d0731465 on 2026-10-21 too, and
-"What changed since 2026-10-21" below gives those figures, and "What decision 148 changed" the
-count of the same day before entry 148, and "What decision 152 changed" the count before entry
-152. The second count is the count of
+on 2026-10-30, over the tree of c6ceecc3. `make lint-bench-numbers` holds its three tables to
+`bench/results-handshake-n2.csv` (`tools/bench_handshake.py`). The script counted earlier trees
+too. "What changed since 2026-10-25" below gives the count of f96c5192 on 2026-10-25. "What
+changed since 2026-10-21" gives the count of d0731465, and "What decision 148 changed" and "What
+decision 152 changed" give the counts before those entries. The second count is the count of
 2026-10-01, at c798fb8. No script made it, and this section keeps it as the record of that date.
 
-#### The count of 2026-10-25
+#### The count of 2026-10-30
 
 The script counts this way:
 
 - The machine is GitHub's `ubuntu-24.04-arm` runner, a Neoverse-N2 (CPU part 0xd49 in
-  `/proc/cpuinfo`) with 4 cores, under Linux 6.17. A workflow on a scratch branch built the chapulin
+  `/proc/cpuinfo`) with 4 cores, under Linux 7.0. A workflow on a scratch branch built the chapulin
   servers on an x86-64 runner with the pinned Zig, and ran the script on the arm64 runner.
 - The object is the TCP object colibri builds: `RAND=session TRANSPORT=tcp-nonblocking
   ROLE=both TRUST=webpki EXPORTER=on SUITE=aesgcm TX_RECORD=16384 KEYLOG=off`, from colibri's
   `build/modules.zig`. `build.zig` builds it with Zig 0.16.0 for aarch64-linux-gnu, once for
-  `-Dcpu=neoverse_n2` and once for the base armv8-a. colibri pins chapulin at 50d7d17b, 21
-  commits before d0731465.
+  `-Dcpu=neoverse_n2` and once for the base armv8-a. colibri pins chapulin at bbfd316a, 20
+  commits before c6ceecc3.
 - `bench/handshake_server.c` calls the object as colibri's server does. It reads the chain and
   the key from PEM files, offers ALPN h2 and http/1.1, and holds a cookie key and no ticket key.
   Each session states one `ch_cfg.cpu` value. `0xe7` is what a caller on a Neoverse-N2 states:
-  the AES, multiply, SHA-256, SHA-512 and SHA-3 bits. `0x07` is what colibri states today, the
-  AES and multiply bits (its `src/tls/config.zig`, `cpu_of`). `0x03` is the AES bit alone.
+  the AES, multiply, SHA-256, SHA-512 and SHA-3 bits. `0x07` holds the AES and multiply bits
+  alone, the value colibri stated until its `cpu_of` (`src/tls/config.zig`) took the three SHA
+  bits as well. `0x03` is the AES bit alone.
 - `bench/handshake_openssl_server.c` serves the same connection over OpenSSL 3.6.4, the release
   `tools/toolchain.env` pins, linked statically, and over the runner's OpenSSL 3.0.13 (the libssl3
   package), shared and static. It holds the same chain and key, and no session tickets and no
@@ -1310,72 +1310,97 @@ The script counts this way:
 
 | server side of the second connection on the Neoverse-N2, M instructions | handshake, perf_events | request, response and close_notify, perf_events | whole connection, perf stat | handshake, callgrind | handshake against OpenSSL 3.6.4 |
 | --- | --- | --- | --- | --- | --- |
-| chapulin, Neoverse-N2 build, `0xe7` | 0.821 | 0.015 | 0.836 | — | 0.61 |
-| chapulin, Neoverse-N2 build, `0x07` | 1.233 | 0.015 | 1.248 | — | 0.92 |
-| chapulin, Neoverse-N2 build, `0x03` | 43.599 | 0.015 | 43.614 | — | 32.40 |
-| chapulin, base armv8-a build, `0xe7` | 0.968 | 0.015 | 0.983 | — | 0.72 |
-| chapulin, base armv8-a build, `0x07` | 1.388 | 0.015 | 1.402 | 1.402 | 1.03 |
-| chapulin, base armv8-a build, `0x03` | 37.779 | 0.015 | 37.793 | 37.793 | 28.08 |
-| OpenSSL 3.6.4, static | 1.346 | 0.038 | 1.385 | 1.605 | 1.00 |
-| OpenSSL 3.0.13, shared | 1.877 | 0.047 | 1.926 | 2.143 | 1.40 |
-| OpenSSL 3.0.13, static | 1.873 | 0.046 | 1.922 | — | 1.39 |
+| chapulin, Neoverse-N2 build, `0xe7` | 0.795 | 0.009 | 0.804 | — | 0.59 |
+| chapulin, Neoverse-N2 build, `0x07` | 1.219 | 0.009 | 1.228 | — | 0.91 |
+| chapulin, Neoverse-N2 build, `0x03` | 43.628 | 0.009 | 43.637 | — | 32.43 |
+| chapulin, base armv8-a build, `0xe7` | 0.966 | 0.009 | 0.976 | — | 0.72 |
+| chapulin, base armv8-a build, `0x07` | 1.398 | 0.010 | 1.408 | 1.408 | 1.04 |
+| chapulin, base armv8-a build, `0x03` | 37.809 | 0.010 | 37.819 | 37.819 | 28.11 |
+| OpenSSL 3.6.4, static | 1.345 | 0.038 | 1.385 | 1.606 | 1.00 |
+| OpenSSL 3.0.13, shared | 1.877 | 0.047 | 1.926 | 2.142 | 1.40 |
+| OpenSSL 3.0.13, static | 1.873 | 0.046 | 1.921 | — | 1.39 |
 
 | server side of the second connection, M instructions (QEMU's trace) | Neoverse-N2 build, `0xe7` | Neoverse-N2 build, `0x07` | Neoverse-N2 build, `0x03` | base armv8-a build, `0xe7` | OpenSSL 3.6.4, static | OpenSSL 3.0.13, static |
 | --- | --- | --- | --- | --- | --- | --- |
-| X25519 key generation | 0.119 | 0.119 | 13.404 | 0.135 | 0.227 | 0.423 |
-| X25519 shared secret | 0.345 | 0.345 | 13.404 | 0.447 | 0.380 | 0.469 |
-| CertificateVerify: the P-256 ECDSA signature | 0.165 | 0.325 | 16.345 | 0.172 | 0.197 | 0.249 |
+| X25519 key generation | 0.119 | 0.119 | 13.404 | 0.133 | 0.227 | 0.423 |
+| X25519 shared secret | 0.320 | 0.320 | 13.404 | 0.448 | 0.380 | 0.469 |
+| CertificateVerify: the P-256 ECDSA signature | 0.170 | 0.342 | 16.381 | 0.177 | 0.197 | 0.249 |
 | of which k·G | 0.103 | 0.103 | 14.447 | 0.104 | 0.069 | 0.070 |
-| of which the nonce | 0.023 | 0.182 | 0.182 | 0.028 | 0.011 | 0.021 |
-| of which the rest | 0.039 | 0.039 | 1.716 | 0.040 | 0.117 | 0.159 |
+| of which the nonce | 0.023 | 0.194 | 0.194 | 0.028 | 0.011 | 0.021 |
+| of which the rest | 0.044 | 0.044 | 1.740 | 0.046 | 0.117 | 0.159 |
 | HKDF and HMAC of the key schedule | 0.094 | 0.284 | 0.284 | 0.093 | 0.309 | 0.459 |
-| hashes of the transcript, the signed content and the ClientHello | 0.015 | 0.076 | 0.076 | 0.015 | 0.018 | 0.016 |
-| certificate, other messages and their records | 0.084 | 0.084 | 0.084 | 0.107 | 0.215 | 0.257 |
-| the handshake | 0.821 | 1.233 | 43.598 | 0.968 | 1.347 | 1.874 |
-| one request's records and the two close_notify | 0.015 | 0.015 | 0.015 | 0.015 | 0.038 | 0.046 |
-| of the handshake, the image's own memset | 0.042 | 0.040 | 0.040 | 0.070 | 0.000 | 0.000 |
+| hashes of the transcript, the signed content and the ClientHello | 0.015 | 0.077 | 0.077 | 0.015 | 0.018 | 0.016 |
+| certificate, other messages and their records | 0.077 | 0.077 | 0.077 | 0.101 | 0.215 | 0.257 |
+| the handshake | 0.795 | 1.219 | 43.628 | 0.966 | 1.347 | 1.874 |
+| one request's records and the two close_notify | 0.009 | 0.009 | 0.009 | 0.010 | 0.038 | 0.046 |
+| of the handshake, the image's own memset | 0.043 | 0.041 | 0.041 | 0.071 | 0.000 | 0.000 |
 | of the handshake, the C library | 0.000 | 0.000 | 0.000 | 0.000 | 0.162 | 0.233 |
 
 | base armv8-a build, M instructions | `0x07`, callgrind | `0x07`, QEMU's trace | `0x03`, callgrind | `0x03`, QEMU's trace |
 | --- | --- | --- | --- | --- |
-| X25519 key generation | 0.135 | 0.135 | 10.581 | 10.581 |
-| X25519 shared secret | 0.448 | 0.447 | 10.581 | 10.581 |
-| CertificateVerify: the P-256 ECDSA signature | 0.335 | 0.335 | 16.147 | 16.147 |
+| X25519 key generation | — | 0.133 | — | 10.581 |
+| X25519 shared secret | 0.448 | 0.448 | 10.581 | 10.581 |
+| CertificateVerify: the P-256 ECDSA signature | 0.353 | 0.353 | 16.183 | 16.183 |
 | of which k·G | 0.104 | 0.104 | 14.261 | 14.261 |
-| the handshake | 1.402 | 1.388 | 37.793 | 37.779 |
-| one request's records and the two close_notify | 0.015 | 0.015 | 0.015 | 0.015 |
-| of the handshake, the image's own memset | 0.068 | 0.067 | 0.068 | 0.067 |
+| the handshake | 1.408 | 1.398 | 37.819 | 37.809 |
+| one request's records and the two close_notify | 0.010 | 0.010 | 0.010 | 0.010 |
+| of the handshake, the image's own memset | 0.069 | 0.069 | 0.069 | 0.069 |
 
-What the count of 2026-10-25 shows:
+What the count of 2026-10-30 shows:
 
 - chapulin runs fewer instructions than OpenSSL 3.6.4 on this connection when the session states
-  every bit the Neoverse-N2 has. Under `0xe7` the Neoverse-N2 build's handshake takes 821,090
-  instructions, 0.61 of OpenSSL 3.6.4's 1,345,612 and 0.44 of OpenSSL 3.0.13's 1,877,140. The
-  whole connection takes 0.836 M against 1.385 M and 1.926 M.
-- Under `0x07`, the value colibri states today, chapulin runs 0.92 of OpenSSL 3.6.4's handshake
-  and 0.66 of OpenSSL 3.0.13's. The three SHA bits remove 411,735 instructions. The key schedule, the transcript hashes, the signed content's digest, the
-  ClientHello digest and the nonce's SHA-256 calls then run on the SHA instructions. Only the caller can state those bits, so
-  this change is colibri's.
+  every bit the Neoverse-N2 has. Under `0xe7` the Neoverse-N2 build's handshake takes 795,008
+  instructions, 0.59 of OpenSSL 3.6.4's 1,345,252 and 0.42 of OpenSSL 3.0.13's 1,876,936. The
+  whole connection takes 0.804 M against 1.385 M and 1.926 M.
+- Under `0x07` chapulin runs 0.91 of OpenSSL 3.6.4's handshake and 0.65 of OpenSSL 3.0.13's. The
+  three SHA bits remove 424,060 instructions. The key schedule, the transcript hashes, the
+  signed content's digest, the ClientHello digest and the nonce's SHA-256 calls then run on the
+  SHA instructions. Only the caller can state those bits, and colibri's `cpu_of` now states them
+  on arm64.
 - Under `0xe7` every stage costs fewer instructions than OpenSSL 3.6.4's. The X25519 shared
-  secret costs 0.345 M against 0.380 M, on the ladder of decision 152. X25519 key generation
-  costs 0.119 M against 0.227 M, since both compute the public key from a table of multiples of
-  the base point (decision 148).
-  The row of hashes now costs 0.015 M against 0.018 M, because the ClientHello digest runs on
-  the SHA-256 instructions (decision 149). The signature, the key schedule, the hashes, the
-  messages and the request cost less than OpenSSL's.
-- 42,214 of the 821,109 instructions of the trace, 5%, run in the image's own `memset`. Zig
+  secret costs 0.320 M against 0.380 M, and key generation 0.119 M against 0.227 M. The
+  signature costs 0.170 M against 0.197 M, and the messages 0.077 M against 0.215 M.
+- 42,713 of the 795,024 instructions of the trace, 5%, run in the image's own `memset`. Zig
   0.16 links `memset` from its compiler_rt into each image it links, and that `memset` writes one
   byte at a time. `ct_wipe` calls it no longer (decision 144), so these are the calls that clear
   a structure before its first use. The OpenSSL servers, which gcc links, call the C library's
   `memset`, and their row of the C library holds it.
 - The Neoverse-N2 build costs fewer instructions than the base build on the paths of a host
-  session: 0.821 M against 0.968 M under `0xe7`. Under `0x03` it costs more, 43.60 M against
-  37.78 M, because `x25519.c`'s `mul` holds SVE instructions, as on 2026-10-01.
-- callgrind agrees with the trace on the base build. Under `0x07` X25519 key generation and k·G
-  are the same to the instruction, the shared secret differs by 257 instructions and the signature
-  by 25. callgrind's handshake under `0x07` is 1.1% larger than the trace's, and 294 instructions
-  of that difference are in `memset`. Under valgrind OpenSSL finds no SHA-512 instructions and runs SHA-384 in scalar code,
-  so callgrind counts its handshakes 19% and 14% above perf_events.
+  session: 0.795 M against 0.966 M under `0xe7`. Under `0x03` it costs more, 43.63 M against
+  37.81 M, because `x25519.c`'s `mul` holds SVE instructions, as on 2026-10-01.
+- callgrind agrees with the trace on the base build. Under `0x07` k·G is the same to the
+  instruction, the shared secret differs by 139 instructions and the signature by 36.
+  callgrind's handshake under `0x07` is 0.7% larger than the trace's. Under valgrind OpenSSL
+  finds no SHA-512 instructions and runs SHA-384 in scalar code, so callgrind counts its
+  handshakes 19% and 14% above perf_events.
+- callgrind has no row for X25519 key generation. `srv_kex_begin` now enters it with a tail
+  jump, and callgrind charges the instructions after such a jump to the function that jumped.
+
+What changed since 2026-10-25. The script counted f96c5192 on 2026-10-25, on the same runner type
+under Linux 6.17:
+
+| M instructions, server side of the second connection | 2026-10-25 | 2026-10-30 | OpenSSL 3.6.4, 2026-10-30 |
+| --- | --- | --- | --- |
+| the handshake, Neoverse-N2 build, `0xe7`, perf_events | 0.821 | 0.795 | 1.345 |
+| the handshake, Neoverse-N2 build, `0x07`, perf_events | 1.233 | 1.219 | 1.345 |
+| the handshake, base armv8-a build, `0xe7`, perf_events | 0.968 | 0.966 | 1.345 |
+| X25519 shared secret, Neoverse-N2 build, `0xe7` | 0.345 | 0.320 | 0.380 |
+| X25519 shared secret, base armv8-a build, `0xe7` | 0.447 | 0.448 | 0.380 |
+| CertificateVerify, Neoverse-N2 build, `0xe7` | 0.165 | 0.170 | 0.197 |
+| CertificateVerify, Neoverse-N2 build, `0x07` | 0.325 | 0.342 | 0.197 |
+| certificate, other messages and their records, Neoverse-N2 build, `0xe7` | 0.084 | 0.077 | 0.215 |
+| one request's records and the two close_notify, Neoverse-N2 build, `0xe7` | 0.015 | 0.009 | 0.038 |
+
+- The wide X25519 field carries each column of `mul` and `sqr` at once (49f3ed2d). On the
+  Neoverse-N2 build the shared secret takes 320,275 instructions where it took 345,032. The base
+  build's moves by 552.
+- The signature checks k·G and s before it leaves, and its nonce is hedged (decision 153). Under
+  `0xe7` the signature takes 170,108 instructions where it took 165,082. Under `0x07` the
+  nonce's four added SHA-256 compressions run on the portable code, and the signature takes
+  341,661 where it took 324,506.
+- The records cost less. Each AES traffic key keeps its schedule (decision 160), and arm64
+  AES-GCM runs a record in one call (decisions 158 and 161). The request, the response and the
+  two close_notify take 9,133 instructions where they took 15,329.
 
 What changed since 2026-10-21. The script counted d0731465 that day, before docs/decisions.md 144
 to 147 and 149, on the same runner type under Linux 7.0:
@@ -1401,7 +1426,7 @@ to 147 and 149, on the same runner type under Linux 7.0:
   compare the signature row across the two dates and not its parts.
 
 What decision 148 changed. The script counted 5f2424a6 on 2026-10-25, before entry 148, on the
-same runner type under the same Linux, and the tables above count the tree with it:
+same runner type under Linux 6.17. The column with entry 148 counts the tree before entry 152:
 
 | M instructions, server side of the second connection | before entry 148 | with entry 148 | OpenSSL 3.6.4 |
 | --- | --- | --- | --- |
@@ -1418,8 +1443,8 @@ same runner type under the same Linux, and the tables above count the tree with 
   `0x03` nothing moves: that session runs the 16-word field's ladder for both.
 
 What decision 152 changed. The script counted f96c5192 on 2026-10-25, on the same runner type
-under the same Linux, and the tables above hold that count. The column before entry 152 is the
-count of the tree with entry 148:
+under Linux 6.17. That is the column with entry 152. The column before entry 152 is the count of
+the tree with entry 148:
 
 | M instructions, server side of the second connection | before entry 152 | with entry 152 | OpenSSL 3.6.4 |
 | --- | --- | --- | --- |
@@ -1459,8 +1484,8 @@ count of the tree with entry 148:
 
 What decision 153 adds. The server's ECDSA signature now takes a hedged nonce, and the signer
 checks that k·G is on the curve and that s·k = z + r·d before a signature leaves it. The tables
-above count the tree before that entry, and the next run of `bench/handshake-n2.sh` on the arm64
-runner records the N2 figures. On the M1 Pro, Apple clang 21 at `-O2`, `proc_pid_rusage` over
+above count the tree with that entry, and "What changed since 2026-10-25" gives its N2 cost. On
+the M1 Pro, Apple clang 21 at `-O2`, `proc_pid_rusage` over
 2,000 calls of a program that signs with the RFC 6979 key gives these counts of one signature:
 
 | M1 Pro, instructions of one P-256 signature | before entry 153 | RFC 6979 with both checks | hedged with both checks |
@@ -1478,9 +1503,8 @@ runner records the N2 figures. On the M1 Pro, Apple clang 21 at `-O2`, `proc_pid
 - The hedged nonce adds four SHA-256 compressions: steps d and f each hash 224 bytes where they
   hashed 97. That is about 800 instructions on the SHA-256 instructions and 13,000 on the
   portable code.
-- Under `0xe7` a signature costs 1.04 times what it cost before. On the Neoverse-N2 count above,
-  the handshake under `0xe7` takes 0.821 M with a 0.165 M signature, so the change adds about
-  0.007 M, under 1% of the handshake, if the N2 pays what the M1 pays.
+- Under `0xe7` a signature costs 1.04 times what it cost before. On the Neoverse-N2 the count
+  of 2026-10-30 gives 1.03 times: 0.170 M where the count of 2026-10-25 gave 0.165 M.
 - The bench's `p256_sign` row now times `p256_sign_hedged_cpu`, the server's path, over the first
   hedged vector's noise. Its CSVs keep the earlier entry's figures until the next run records
   them.
