@@ -338,7 +338,7 @@ void stack_residue_take(volatile uint8_t *below, size_t n, uint8_t *copy);
 const char *stack_residue_unsearched(void);
 
 // The bytes the search reads below the caller. Under
-// CH_CPU_CONSTANT_TIME_MULTIPLY the key call takes 3,760 bytes of stack on
+// CH_CPU_CONSTANT_TIME_MULTIPLY the key call takes 3,776 bytes of stack on
 // arm64, through p256_wide_wipe_below's frame (docs/performance.md).
 #define KEY_RESIDUE_BYTES 4096
 static uint8_t key_residue[KEY_RESIDUE_BYTES];

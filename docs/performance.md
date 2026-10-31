@@ -95,12 +95,24 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16816 |
 | peak stack, `ch_connect` (`KEX=pq`) | 16016 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1888 |
-| peak stack, `ch_write` / `ch_close` | 1520 / 896 |
+| peak stack, `ch_write` / `ch_close` | 1616 / 896 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 12736 |
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12896 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 19456 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`) | 22096 |
 | peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`) | 27968 |
+
+Two of these rows grew in October 2026, and `bench/stack.py` names the
+frame each time:
+
+- `ch_read`, 1,872 to 1,888 bytes. `io_read_record` names the alert its
+  caller sends through a pointer (docs/decisions.md 166). `ch_read`
+  inlines the call, so the alert is a byte in `ch_read`'s own frame, and
+  arm64 rounds the frame from 96 to 112 bytes. Every frame below it is
+  the same.
+- `ch_write`, 1,520 to 1,616 bytes. `ch_write` is `ch_write_parts` over
+  one part (docs/decisions.md 167), so the KeyUpdate path runs under one
+  more frame, 96 bytes.
 
 ### What the larger builds pay for
 
@@ -298,7 +310,7 @@ bytes of DER and 192 anchors, 6,144 bytes of entries. The QUIC Interop
 Runner's chain of nine certificates is 9,661 bytes of DER.
 
 On arm64 `bench/stack.py` measures 592 bytes of stack for the chain
-call, 3,760 for the key call and 560 for the bundle call. It reports
+call, 3,776 for the key call and 560 for the bundle call. It reports
 them for `ROLE=server TRUST=none`, `TRUST=webpki` and `ROLE=both
 TRUST=webpki`, the host objects this host builds. The chain call's peak
 is the read of each certificate's outer fields.
@@ -308,8 +320,11 @@ The key call's deepest chain ends in a stack wipe. Under
 P-256 field. After each wide operation, `p256_wide_wipe_below` writes
 zero over an array of 3,072 bytes (`P256_WIDE_BELOW_LEN`) in a frame of
 3,120. A device object holds no wide field, and its key call peaks at
-1,376 bytes (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`). So a
-host program gives the key call 3,760 bytes of stack.
+1,392 bytes (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`). So a
+host program gives the key call 3,776 bytes of stack. Both grew 16 bytes
+on 2026-10-31: the key call reads its blocks through `pem_blocks`, and
+the EC PARAMETERS room now sits in the call's own frame
+(docs/decisions.md 170).
 
 ### Compared with other libraries
 
