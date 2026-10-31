@@ -1,0 +1,12 @@
+invariant: INV-41
+file: rsa_mont64_exp.c
+catches: proof/prove-one.sh rsa_mont64_exp_schedule
+reason: rsa_mont64_public_exp multiplies at the exponent's clear bits and
+  not its set ones, so a DNSSEC signature is checked against the wrong
+  power. The rsa_mont64_exp_schedule proof asserts one product for each
+  set bit, and fails on this edit.
+
+--- old
+        if (((e >> i) & 1) != 0) {
+--- new
+        if (((e >> i) & 1) == 0) {

@@ -2998,6 +2998,17 @@ launch fast:3 full rsa_mont64_addcarry_webpki 66 "ct_wipe.0:1033" ct.c proof/ct_
 launch fast full rsa_mont64_init 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_init_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+# rsa_mont64_exp.c, the DNSSEC public operation with the key's own
+# exponent (https://github.com/c4milo/chapulin/issues/189), over contract
+# stubs of rsa_mont64.c's calls. rsa_mont64_exp proves the memory
+# accesses at every word count and every 64-bit exponent;
+# rsa_mont64_exp_schedule proves the count of squarings and products for
+# exponents below 2^32 at one word, because over 64 bits the count gave no
+# verdict in 20 minutes. Measured on 2026-10-31 in the pinned amd64
+# container: 91 properties, 5 s, 0.10 GB; and 97 properties, 37 s,
+# 0.10 GB.
+launch fast full rsa_mont64_exp 66 "ct_wipe.0:385,fill_nondet.0:385" ct.c proof/ct_wipe_stub.c rsa_mont64_exp.c -DCH_CPU_RUNTIME -DCH_DNSSEC
+launch fast full rsa_mont64_exp_schedule 66 "ct_wipe.0:385,fill_nondet.0:385" ct.c proof/ct_wipe_stub.c rsa_mont64_exp.c -DCH_CPU_RUNTIME -DCH_DNSSEC
 launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont_host runs rsa_mont.c's host arm, rsa_vp1 as a host object
 # compiles it, whole: the division that computes R^2 for a modulus with

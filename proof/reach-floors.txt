@@ -558,6 +558,12 @@ srv_ticket_cnsa2 228
 # cfg_clock_read, the sink and ch_assert_fail. At 8 bytes of caller input it read
 # 76.0% (494/650): no record held a whole message, so drive never ran a
 # step.
+# rsa_mont64_exp and rsa_mont64_exp_schedule took their floors on
+# 2026-10-31, measured by proof/coverage.py in the pinned amd64 container:
+# 84.3% (75/89) and 85.6% (83/97). Each leaves out the other's lines in
+# the harness and the stubs' CH_ASSERT arms.
+rsa_mont64_exp 75
+rsa_mont64_exp_schedule 83
 srv_tcp_nonblocking 512
 # srv_quic took its floor on 2026-10-31, measured by proof/coverage.py in
 # the pinned amd64 container: 85.8% (586/683). In srv_quic.c no path

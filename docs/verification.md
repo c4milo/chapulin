@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-122 of the 153 C sources in the tree root are compiled into a
+123 of the 154 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1458,6 +1458,26 @@ The entries are grouped by area:
   power rest on [tests](#the-host-objects-rsa-arithmetic). The file's
   timing claim is `make lint-wide-multiply`'s, which counts the
   conditional branches it compiles to.
+
+#### rsa_mont64_exp
+
+- **Harnesses:** `rsa_mont64_exp` (fast), `rsa_mont64_exp_schedule` (fast)
+- **Build:** a host object with `CH_DNSSEC`
+  ([issue 189](https://github.com/c4milo/chapulin/issues/189)).
+- **Proves:** `rsa_mont64_public_exp` (`rsa_mont64_exp.c`), over any
+  modulus word count, any length its contract admits and any odd
+  exponent of 3 to 64 bits, reads and writes inside its arrays and hands
+  each Montgomery call k words. `rsa_mont64_exp_schedule` proves the
+  exponent's schedule: one squaring for each bit below the top bit, and
+  one product for each set bit.
+- **Bound:** 384 bytes and 48 words. The schedule holds for exponents
+  below 2^32, at one word: over every 64-bit exponent the count gave no
+  verdict in 20 minutes.
+- **Not proved:** any value. `rsa_mont64.c`'s calls are contract stubs,
+  which the [rsa_mont64](#rsa_mont64) harnesses prove.
+  `bin/rsa_exp_test` holds the bytes against Python's `pow` at moduli
+  from 64 to 512 bytes and exponents from 3 to 2^64 - 1, and against
+  `rsa_mont64_public` at 65537.
 
 #### rsa_mont64_blocks
 
