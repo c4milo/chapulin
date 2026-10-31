@@ -574,7 +574,7 @@ srv_ticket_cnsa2 228
 # by proof/coverage.py in the pinned amd64 container: 63.7% (116/182) and
 # 63.2% (74/117). Most locations neither reaches are buf.c's and ct.c's
 # helpers, which no stub calls and other harnesses prove.
-dnssec 130
+dnssec 144
 rsa_pkcs1_exponent 74
 rsa_mont64_exp 75
 rsa_mont64_exp_schedule 83

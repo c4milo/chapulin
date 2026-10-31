@@ -14,11 +14,12 @@ pub const Algorithm = if (has_dnssec) enum(u8) {
     rsasha256 = c.CH_DNSSEC_ALG_RSASHA256,
     rsasha512 = c.CH_DNSSEC_ALG_RSASHA512,
     ecdsap256sha256 = c.CH_DNSSEC_ALG_ECDSAP256SHA256,
+    ecdsap384sha384 = c.CH_DNSSEC_ALG_ECDSAP384SHA384,
     ed25519 = c.CH_DNSSEC_ALG_ED25519,
 } else @compileError("chapulin.dnssec.Algorithm needs DNSSEC=on");
 
-/// The hash of an RRSIG's signed data: SHA-256 for rsasha256 and ecdsap256sha256, and SHA-512
-/// for rsasha512 and ed25519, which hashes R and the key first. init starts it, update adds
+/// The hash of an RRSIG's signed data: SHA-256 for rsasha256 and ecdsap256sha256, SHA-384 for
+/// ecdsap384sha384, and SHA-512 for rsasha512 and ed25519, which hashes R and the key first. init starts it, update adds
 /// bytes, and final writes the digest, which verify takes.
 pub const Hash = if (has_dnssec) struct {
     state: c.ch_dnssec_hash = undefined,

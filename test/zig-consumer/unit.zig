@@ -514,7 +514,7 @@ test "the PEM files: a refusal is error.Invalid, a room is the caller's, and a r
     }
 }
 
-test "DNSSEC=on: the hashes match std.crypto, and P-256 and Ed25519 signatures std.crypto makes verify" {
+test "DNSSEC=on: the hashes match std.crypto, and P-256, P-384 and Ed25519 signatures std.crypto makes verify" {
     if (!@hasDecl(c, "ch_dnssec_verify")) return error.SkipZigTest;
     const dnssec = chapulin.dnssec;
     const msg = "chapulin dnssec through the Zig API";
@@ -544,6 +544,16 @@ test "DNSSEC=on: the hashes match std.crypto, and P-256 and Ed25519 signatures s
     bad[63] ^= 1;
     try expectError(error.Auth, dnssec.verify(.ecdsap256sha256, key[1..], &want256, &bad));
     try expectError(error.Invalid, dnssec.verify(.ecdsap256sha256, key[1..], &want512, &sig));
+
+    // P-384: std.crypto signs over SHA-384.
+    const Ecdsa384 = std.crypto.sign.ecdsa.EcdsaP384Sha384;
+    const kp384 = try Ecdsa384.KeyPair.generateDeterministic([_]u8{0x33} ** Ecdsa384.KeyPair.seed_length);
+    const sig384 = (try kp384.sign(msg, null)).toBytes();
+    const key384 = kp384.public_key.toUncompressedSec1();
+    var h384 = try dnssec.Hash.init(.ecdsap384sha384, &.{}, &.{});
+    h384.update(msg);
+    var out384: [c.CH_DNSSEC_DIGEST_MAX]u8 = undefined;
+    try dnssec.verify(.ecdsap384sha384, key384[1..], h384.final(&out384), &sig384);
 
     // Ed25519: std.crypto signs, and the hash takes R and the key at init.
     const Ed25519 = std.crypto.sign.Ed25519;

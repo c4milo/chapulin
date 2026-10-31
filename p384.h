@@ -23,4 +23,12 @@
 int p384_ecdsa_verify(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P384_LEN],
                       const uint8_t *sig_der, size_t sig_len);
 
+#ifdef CH_DNSSEC
+// p384_ecdsa_verify over the signature a DNSSEC RRSIG carries for
+// algorithm 14: r then s, 48 big-endian bytes each, with no DER (RFC 6605
+// section 4). Returns 1 for a valid signature and 0 for anything else.
+int p384_ecdsa_verify_raw(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P384_LEN],
+                          const uint8_t sig[2 * P384_LEN]);
+#endif
+
 #endif

@@ -10,7 +10,8 @@ The examples the DNSSEC RFCs print, as ch_dnssec_verify takes them
   modulus the check takes (rfc5702.txt:289-325);
 - RFC 5702 section 6.2, RSA/SHA-512 with a 1024-bit key
   (rfc5702.txt:343-391);
-- RFC 6605 section 6.1, ECDSA P-256 (rfc6605.txt:201-220).
+- RFC 6605 section 6.1, ECDSA P-256 (rfc6605.txt:201-220);
+- RFC 6605 section 6.2, ECDSA P-384 (rfc6605.txt:231-252).
 
 Each RRSIG covers one A record. The script builds the data RFC 4034
 section 3.1.8.1 says is signed: the RRSIG RDATA without its signature,
@@ -47,6 +48,11 @@ EXAMPLES = [
     ("rfc6605_6_1", 13, 55648, "20100909100439", "20100812100439", [192, 0, 2, 1],
      "GojIhhXUN/u4v54ZQqGSnyhWJwaubCvTmeexv7bR6edbkrSqQpF64cYbcB7wNcP+e+MAnLr+Wi9xMWyQLc8NAA==",
      "qx6wLYqmh+l9oCKTN6qIc+bw6ya+KJ8oMz0YP107epXAyGmt+3SNruPFKG7tZoLBLlUzGGus7ZwmwWep666VCw=="),
+    ("rfc6605_6_2", 14, 10771, "20100909102025", "20100812102025", [192, 0, 2, 1],
+     "xKYaNhWdGOfJ+nPrL8/arkwf2EY3MDJ+SErKivBVSum1w/egsXvSADtNJhyem5RCOpgQ6K8X1DRSEkrbYQ+OB+v8"
+     "/uX45NBwY8rp65F6Glur8I/mlVNgF6W/qTI37m40",
+     "/L5hDKIvGDyI1fcARX3z65qrmPsVz73QD1Mr5CEqOiLP95hxQouuroGCeZOvzFaxsT8Glr74hbavRKayJNuydCuz"
+     "WTSSPdz7wnqXL5bdcJzusdnI0RSMROxxwGipWcJm"),
 ]
 
 
@@ -88,7 +94,7 @@ def main():
     rows = []
     for name, algorithm, key_tag, expiration, inception, address, key, sig in EXAMPLES:
         data = signed_data(algorithm, key_tag, expiration, inception, address)
-        digest = (hashlib.sha512 if algorithm == 10 else hashlib.sha256)(data).digest()
+        digest = {10: hashlib.sha512, 14: hashlib.sha384}.get(algorithm, hashlib.sha256)(data).digest()
         out += [c_array(name + "_key", base64.b64decode(key)),
                 c_array(name + "_digest", digest),
                 c_array(name + "_sig", base64.b64decode(sig))]

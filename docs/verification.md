@@ -1508,17 +1508,18 @@ The entries are grouped by area:
   over any algorithm byte and any key field, digest and signature up to
   the bound. Also:
   - it answers `CH_OK`, `CH_EAUTH` or `CH_EINVAL`, and `CH_OK` only for
-    algorithms 8, 10, 13 and 15 with their hash's digest length;
+    algorithms 8, 10, 13, 14 and 15 with their hash's digest length;
   - it reads RFC 3110 section 2's key field in both length forms: the
     exponent it hands on is the bytes the length names, and the modulus
     is the rest of the field;
   - the RSA check sees only an odd exponent of at least 3 and a modulus
     of 64 to `CH_RSA_MODULUS_MAX` bytes that is odd and begins with a
     nonzero byte, the P-256 check sees only a 64-byte key and
-    signature, and the Ed25519 check only a 32-byte key, a 64-byte hash
-    and a 64-byte signature.
-- **Bound:** a key field of up to 80 bytes, a digest of up to 64 and a
-  signature of up to 80.
+    signature, the P-384 check only a 96-byte key and signature and a
+    48-byte digest, and the Ed25519 check only a 32-byte key, a 64-byte
+    hash and a 64-byte signature.
+- **Bound:** a key field of up to 96 bytes, a digest of up to 64 and a
+  signature of up to 96.
 - **Not proved:** the verifiers, which are contract stubs here; the
   harnesses above and the `p256` harnesses prove them, and
   `bin/dnssec_test` runs the whole check against OpenSSL's keys and

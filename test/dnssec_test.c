@@ -116,7 +116,7 @@ static void refused_keys(void) {
 
 // RFC 8032 section 5.1.7 with libsodium's refusals, on vector 7's key.
 static void ed25519_edges(void) {
-    const dnssec_vector *v = &dnssec_vectors[7];
+    const dnssec_vector *v = &dnssec_vectors[9];
     uint8_t sig[64];
     memcpy(sig, v->sig, 64);
     sig[63] |= 0xf0; // S far above L
@@ -163,6 +163,13 @@ static void refused_shapes(void) {
            "a 63-byte signature fails");
     expect(ch_dnssec_verify(13, ec->key, 64, ec->digest, 48, ec->sig, 64), CH_EINVAL,
            "algorithm 13 takes a 32-byte digest alone");
+    const dnssec_vector *ec384 = &dnssec_vectors[7];
+    expect(ch_dnssec_verify(14, ec384->key, 95, ec384->digest, 48, ec384->sig, 96), CH_EINVAL,
+           "algorithm 14 takes a 96-byte key alone");
+    expect(ch_dnssec_verify(14, ec384->key, 96, ec384->digest, 32, ec384->sig, 96), CH_EINVAL,
+           "algorithm 14 takes a 48-byte digest alone");
+    expect(ch_dnssec_verify(14, ec384->key, 96, ec384->digest, 48, ec384->sig, 95), CH_EAUTH,
+           "a 95-byte signature fails");
 }
 
 // The hash calls against FIPS 180-4's examples for "abc", one call per
@@ -194,6 +201,17 @@ static void hashes(void) {
         expect(h.algorithm, 0, "final wipes the context");
     }
     ch_dnssec_hash h;
+    static const uint8_t sha384_abc[48] = {
+        0xcb, 0x00, 0x75, 0x3f, 0x45, 0xa3, 0x5e, 0x8b, 0xb5, 0xa0, 0x3d, 0x69,
+        0x9a, 0xc6, 0x50, 0x07, 0x27, 0x2c, 0x32, 0xab, 0x0e, 0xde, 0xd1, 0x63,
+        0x1a, 0x8b, 0x60, 0x5a, 0x43, 0xff, 0x5b, 0xed, 0x80, 0x86, 0x07, 0x2b,
+        0xa1, 0xe7, 0xcc, 0x23, 0x58, 0xba, 0xec, 0xa1, 0x34, 0xc8, 0x25, 0xa7};
+    uint8_t digest384[CH_DNSSEC_DIGEST_MAX];
+    expect(ch_dnssec_hash_init(&h, CH_DNSSEC_ALG_ECDSAP384SHA384, NULL, 0, NULL, 0), CH_OK,
+           "algorithm 14 starts SHA-384");
+    ch_dnssec_hash_update(&h, abc, 3);
+    expect((int)ch_dnssec_hash_final(&h, digest384), 48, "algorithm 14's digest is SHA-384's");
+    expect(memcmp(digest384, sha384_abc, 48) == 0, 1, "the SHA-384 of abc");
     expect(ch_dnssec_hash_init(&h, 5, NULL, 0, NULL, 0), CH_EINVAL, "algorithm 5 has no hash here");
     // Algorithm 15 hashes R and A first, so it takes them at init.
     static const uint8_t key32[32] = {0};

@@ -2,7 +2,7 @@
 // algorithm byte, any key field, digest and signature of up to the
 // harness's bounds. And that it keeps what dnssec.h states:
 // - it answers CH_OK, CH_EAUTH or CH_EINVAL, and CH_OK only for
-//   algorithms 8, 10, 13 and 15 with a digest of their hash's length;
+//   algorithms 8, 10, 13, 14 and 15 with a digest of their hash's length;
 // - it reads RFC 3110 section 2's key field: the exponent it hands the
 //   RSA check is the big-endian value of the bytes the length names, in
 //   the one-byte and the three-byte length forms, and the modulus is the
@@ -14,24 +14,25 @@
 //   64-byte signature, and algorithm 15 the Ed25519 check only with a
 //   32-byte key, a 64-byte hash and a 64-byte signature.
 //
-// rsa_pkcs1_verify_exponent, p256_ecdsa_verify_raw and ed25519_verify_hram
+// rsa_pkcs1_verify_exponent, p256_ecdsa_verify_raw, p384_ecdsa_verify_raw
+// and ed25519_verify_hram
 // are contract stubs
 // that record their arguments and answer either verdict; rsa_pkcs1 and
 // the p256 harnesses prove the verifiers, and bin/dnssec_test runs them
 // against OpenSSL's signatures. buf.c is real.
 //
-// Bounds. KEY_MAX is 80 bytes: the shortest modulus the RSA check takes
-// is 64 bytes, behind a length form of up to 3 bytes and an exponent of
-// up to 8.
+// Bounds. KEY_MAX is 96 bytes: a P-384 key, and room for the shortest
+// modulus the RSA check takes, 64 bytes, behind a length form of up to 3
+// bytes and an exponent of up to 8. SIG_MAX is 96, a P-384 signature.
 #include "harness.h"
 
 #include "dnssec.h"
 #include "rsa.h"
 #include "tls.h"
 
-#define KEY_MAX 80
+#define KEY_MAX 96
 #define DIGEST_MAX 64
-#define SIG_MAX 80
+#define SIG_MAX 96
 
 static const uint8_t *rsa_n;
 static size_t rsa_n_len;
@@ -52,6 +53,17 @@ int rsa_pkcs1_verify_exponent(const uint8_t *n, size_t n_len, uint64_t e, const 
     rsa_n_len = n_len;
     rsa_e = e;
     rsa_calls++;
+    return nondet_u8() & 1;
+}
+
+static int p384_calls;
+
+int p384_ecdsa_verify_raw(const uint8_t pub[96], const uint8_t msg_hash[48],
+                          const uint8_t sig[96]) {
+    __CPROVER_assert(__CPROVER_r_ok(pub, 96) && __CPROVER_r_ok(msg_hash, 48) &&
+                         __CPROVER_r_ok(sig, 96),
+                     "p384: key, digest and signature readable");
+    p384_calls++;
     return nondet_u8() & 1;
 }
 
@@ -93,6 +105,7 @@ int main(void) {
         __CPROVER_assert((algorithm == CH_DNSSEC_ALG_RSASHA256 && digest_len == 32) ||
                              (algorithm == CH_DNSSEC_ALG_RSASHA512 && digest_len == 64) ||
                              (algorithm == CH_DNSSEC_ALG_ECDSAP256SHA256 && digest_len == 32) ||
+                             (algorithm == CH_DNSSEC_ALG_ECDSAP384SHA384 && digest_len == 48) ||
                              (algorithm == CH_DNSSEC_ALG_ED25519 && digest_len == 64),
                          "CH_OK only for a checked algorithm and its digest length");
     }
@@ -100,6 +113,11 @@ int main(void) {
         __CPROVER_assert(algorithm == CH_DNSSEC_ALG_ECDSAP256SHA256 && key_len == 64 &&
                              sig_len == 64,
                          "the P-256 check sees a 64-byte key and signature");
+    }
+    if (p384_calls != 0) {
+        __CPROVER_assert(algorithm == CH_DNSSEC_ALG_ECDSAP384SHA384 && key_len == 96 &&
+                             sig_len == 96 && digest_len == 48,
+                         "the P-384 check sees a 96-byte key and signature and a 48-byte digest");
     }
     if (ed25519_calls != 0) {
         __CPROVER_assert(algorithm == CH_DNSSEC_ALG_ED25519 && key_len == 32 && sig_len == 64 &&

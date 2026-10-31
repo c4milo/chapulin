@@ -309,3 +309,12 @@ int p384_ecdsa_verify(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P3
     }
     return verify_rs(pub, msg_hash, r_be, s_be);
 }
+
+#ifdef CH_DNSSEC
+// The arm's check of r and s, with no reader in front: RFC 6605 puts the
+// two numbers side by side.
+int p384_ecdsa_verify_raw(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P384_LEN],
+                          const uint8_t sig[2 * P384_LEN]) {
+    return verify_rs(pub, msg_hash, sig, sig + P384_LEN);
+}
+#endif

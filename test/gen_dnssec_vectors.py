@@ -16,6 +16,8 @@ and signatures with OpenSSL and writes them in the forms DNSSEC carries:
 - ECDSA P-256, algorithm 13: the 64 bytes of X then Y, and r then s,
   32 bytes each (RFC 6605 section 4), which the script takes out of
   OpenSSL's DER.
+- ECDSA P-384, algorithm 14: the 96 bytes of X then Y, and r then s,
+  48 bytes each, with SHA-384 (RFC 6605 section 4).
 - Ed25519, algorithm 15: the 32-byte public key and the 64-byte
   signature R then S (RFC 8080 section 3). The digest is RFC 8032
   section 5.1.7's: SHA-512 of R, the key and the message, the bytes
@@ -54,6 +56,7 @@ RSA_KEYS = [
     (10, 2048, 3, b"chapulin dnssec rsasha512 2048 e=3"),
 ]
 EC_MESSAGES = [b"chapulin dnssec ecdsap256sha256 one", b"chapulin dnssec ecdsap256sha256 two"]
+EC384_MESSAGES = [b"chapulin dnssec ecdsap384sha384 one", b"chapulin dnssec ecdsap384sha384 two"]
 ED_MESSAGES = [b"chapulin dnssec ed25519 one", b"chapulin dnssec ed25519 two, a longer message"]
 
 
@@ -77,15 +80,15 @@ def minimal(value):
     return value.to_bytes((value.bit_length() + 7) // 8, "big")
 
 
-def der_integers(der):
-    """r and s out of an ECDSA-Sig-Value, each as 32 bytes."""
+def der_integers(der, size=32):
+    """r and s out of an ECDSA-Sig-Value, each as size bytes."""
     assert der[0] == 0x30
     i = 2
     out = []
     for _ in range(2):
         assert der[i] == 0x02
         n = der[i + 1]
-        out.append(der[i + 2:i + 2 + n].lstrip(b"\x00").rjust(32, b"\x00"))
+        out.append(der[i + 2:i + 2 + n].lstrip(b"\x00").rjust(size, b"\x00"))
         i += 2 + n
     return out[0] + out[1]
 
@@ -152,6 +155,19 @@ def main():
                     c_array("dnssec_digest_%d" % index, digest),
                     c_array("dnssec_sig_%d" % index, sig)]
             rows.append((13, index))
+            index += 1
+        for msg in EC384_MESSAGES:
+            run("openssl", "genpkey", "-algorithm", "EC", "-pkeyopt",
+                "ec_paramgen_curve:P-384", "-out", key)
+            pub_der = run("openssl", "pkey", "-in", key, "-pubout", "-outform", "DER")
+            assert pub_der[-97] == 0x04
+            field = pub_der[-96:]
+            digest = hashlib.sha384(msg).digest()
+            sig = der_integers(sign(tmp, key, "sha384", msg), 48)
+            out += [c_array("dnssec_key_%d" % index, field),
+                    c_array("dnssec_digest_%d" % index, digest),
+                    c_array("dnssec_sig_%d" % index, sig)]
+            rows.append((14, index))
             index += 1
         for msg in ED_MESSAGES:
             run("openssl", "genpkey", "-algorithm", "ED25519", "-out", key)

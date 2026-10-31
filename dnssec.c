@@ -11,6 +11,7 @@
 #include "ct.h"
 #include "ed25519_verify.h"
 #include "p256.h"
+#include "p384.h"
 #include "rsa.h"
 #include "rsa_pkcs1.h"
 #include "sha256.h"
@@ -63,9 +64,11 @@ static int verify_rsa(const uint8_t *key, size_t key_len, const uint8_t *digest,
                : CH_EAUTH;
 }
 
-// 1 for the algorithms whose hash is SHA-512.
+// 1 for the algorithms whose hash runs on a SHA-512 context: SHA-512 for
+// 10 and 15, and SHA-384 for 14.
 static int hashes_sha512(uint8_t algorithm) {
-    return algorithm == CH_DNSSEC_ALG_RSASHA512 || algorithm == CH_DNSSEC_ALG_ED25519;
+    return algorithm == CH_DNSSEC_ALG_RSASHA512 || algorithm == CH_DNSSEC_ALG_ED25519 ||
+           algorithm == CH_DNSSEC_ALG_ECDSAP384SHA384;
 }
 
 int ch_dnssec_hash_init(ch_dnssec_hash *h, uint8_t algorithm, const uint8_t *key, size_t key_len,
@@ -78,6 +81,9 @@ int ch_dnssec_hash_init(ch_dnssec_hash *h, uint8_t algorithm, const uint8_t *key
         return CH_OK;
     case CH_DNSSEC_ALG_RSASHA512:
         sha512_init(&h->state.sha512_state);
+        return CH_OK;
+    case CH_DNSSEC_ALG_ECDSAP384SHA384:
+        sha384_init(&h->state.sha512_state);
         return CH_OK;
     case CH_DNSSEC_ALG_ED25519:
         if (key_len != 32 || sig_len != 64) {
@@ -102,7 +108,10 @@ void ch_dnssec_hash_update(ch_dnssec_hash *h, const uint8_t *p, size_t n) {
 
 size_t ch_dnssec_hash_final(ch_dnssec_hash *h, uint8_t digest[CH_DNSSEC_DIGEST_MAX]) {
     size_t n = SHA256_LEN;
-    if (hashes_sha512(h->algorithm)) {
+    if (h->algorithm == CH_DNSSEC_ALG_ECDSAP384SHA384) {
+        sha384_final(&h->state.sha512_state, digest);
+        n = SHA384_LEN;
+    } else if (hashes_sha512(h->algorithm)) {
         sha512_final(&h->state.sha512_state, digest);
         n = SHA512_LEN;
     } else {
@@ -133,6 +142,14 @@ int ch_dnssec_verify(uint8_t algorithm, const uint8_t *key, size_t key_len, cons
             return CH_EAUTH;
         }
         return p256_ecdsa_verify_raw(key, digest, sig) ? CH_OK : CH_EAUTH;
+    case CH_DNSSEC_ALG_ECDSAP384SHA384:
+        if (digest_len != SHA384_LEN || key_len != 96) {
+            return CH_EINVAL;
+        }
+        if (sig_len != 96) {
+            return CH_EAUTH;
+        }
+        return p384_ecdsa_verify_raw(key, digest, sig) ? CH_OK : CH_EAUTH;
     case CH_DNSSEC_ALG_ED25519:
         if (digest_len != SHA512_LEN || key_len != 32) {
             return CH_EINVAL;

@@ -14900,8 +14900,9 @@ does nothing more.
       verifier runs on the wide field's Edwards points, in
       `x25519_wide_ed25519.h`, which `x25519_wide.c` includes, because
       every field operation there is static.
-    - **Next.** ECDSA P-384 (14), then SHA-1 for algorithms 5 and 7.
-      Ed448 (16) is out.
+    - **ECDSA P-384 (14).** `p384_ecdsa_verify_raw` takes r and s side
+      by side, as the P-256 entry does, over SHA-384.
+    - **Next.** SHA-1 for algorithms 5 and 7. Ed448 (16) is out.
     - **Rejected:**
       - **One call per algorithm.** Camilo chose one dispatcher.
       - **Split key values.** The key field is read here, with `rbuf`,
