@@ -1542,6 +1542,29 @@ PUBLIC_EXPORT :=
 else
 $(error EXPORTER=$(EXPORTER) is not a setting; use EXPORTER=on or EXPORTER=off)
 endif
+# The DNSSEC signature checks (dnssec.h,
+# https://github.com/c4milo/chapulin/issues/189), off by default.
+# DNSSEC=on adds four calls to the object: a hash of the signed data and a
+# check of an RRSIG's signature for algorithms 8, 10 and 13. The checks
+# run on rsa_pkcs1.c, rsa_mont64.c and p256.c, which a host TRUST=webpki
+# object alone packages, so the axis refuses every other build. Each call
+# carries the transport in its symbol name, so the record-mode and QUIC
+# objects of one image both take the axis.
+DNSSEC ?= off
+ifeq ($(DNSSEC),on)
+ifeq ($(CPU_RUNTIME_DEF),)
+$(error DNSSEC=on needs a host object: the RSA check runs on rsa_mont64.c, so build for arm64 or x86-64 with HOST_TARGET=yes)
+endif
+ifneq ($(TRUST),webpki)
+$(error DNSSEC=on needs TRUST=webpki, whose object packages the PKCS#1 v1.5 verifier the RSA check shares)
+endif
+LIB_DEF += -DCH_DNSSEC
+PUBLIC_DNSSEC := ch_dnssec_hash_init ch_dnssec_hash_update ch_dnssec_hash_final ch_dnssec_verify
+else ifeq ($(DNSSEC),off)
+PUBLIC_DNSSEC :=
+else
+$(error DNSSEC=$(DNSSEC) is not a setting; use DNSSEC=on or DNSSEC=off)
+endif
 # The key log (keylog.h), off by default. KEYLOG=on hands each traffic
 # secret to a hook the image defines, which is the one path by which a
 # secret leaves chapulin on purpose, so a device client refuses it: a
@@ -1892,7 +1915,7 @@ LOCALIZE_C := $(wildcard test/localize/*.c)
 # ch_cfg and every object that reads it, and a check can build a server's
 # device object beside its host object. It is added only for a host
 # object, for TX_RECORD's reason.
-LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)$(if $(TX_RECORD),-tx$(TX_RECORD))$(if $(CPU_RUNTIME_DEF),-host)
+LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)$(if $(TX_RECORD),-tx$(TX_RECORD))$(if $(CPU_RUNTIME_DEF),-host)$(if $(PUBLIC_DNSSEC),-dnssec)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -2489,13 +2512,14 @@ PUBLIC_PEM := $(if $(filter -DCH_ROLE_SERVER,$(ROLE_DEF)),ch_chain_from_pem \
 # PUBLIC holds symbol names, because those are what the link keeps and
 # what lib-check reads.
 TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_chain_from_pem ch_p256_key_from_pem ch_mldsa_key_from_pem \
-                   ch_anchors_from_pem ch_ticket_obfuscated_age ch_alert_sent ch_alert_received
+                   ch_anchors_from_pem ch_ticket_obfuscated_age ch_alert_sent ch_alert_received $(PUBLIC_DNSSEC)
 # A symbol name takes no hyphen, so the suffix is the TRANSPORT value
 # with underscores, and the build record's symbol is named for its type,
 # ch_build_info: ch_build_info_tcp_blocking, ch_srv_check_tcp_blocking.
 TRANSPORT_SUFFIX := $(subst -,_,$(TRANSPORT))
 transport_symbol = $(if $(filter ch_build,$(1)),ch_build_info,$(1))_$(TRANSPORT_SUFFIX)
-PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) $(PUBLIC_BUILD), \
+PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) $(PUBLIC_BUILD) \
+            $(PUBLIC_DNSSEC), \
             $(if $(filter $(s),$(TRANSPORT_NAMED)),$(call transport_symbol,$(s)),$(s)))
 
 # The hooks the object imports, which the image defines (docs/porting.md):
@@ -2524,6 +2548,7 @@ DECLARES_pem_files.h := ch_chain_from_pem ch_p256_key_from_pem ch_mldsa_key_from
                         ch_anchors_from_pem
 DECLARES_ticket.h := ch_ticket_obfuscated_age
 DECLARES_alert.h := ch_alert_sent ch_alert_received
+DECLARES_dnssec.h := ch_dnssec_hash_init ch_dnssec_hash_update ch_dnssec_hash_final ch_dnssec_verify
 DECLARES_drbg.h := ch_drbg_seed
 DECLARES_rand.h := ch_rand_bytes
 DECLARES_keylog.h := ch_keylog
@@ -2531,10 +2556,10 @@ DECLARES_aes_block.h := ch_aes_block
 DECLARES_ch_assert.h := ch_assert_fail
 DECLARES_build.h := ch_build
 LIB_HEADER_ORDER := tls.h tcp_nonblocking.h quic.h srv.h srv_tcp_nonblocking.h srv_quic.h \
-                    quic_token.h x509_ca.h pem_files.h ticket.h alert.h drbg.h rand.h keylog.h \
+                    quic_token.h x509_ca.h pem_files.h ticket.h alert.h dnssec.h drbg.h rand.h keylog.h \
                     aes_block.h ch_assert.h build.h
 LIB_DECLARED = $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) \
-               $(PUBLIC_BUILD) $(LIB_HOOKS)
+               $(PUBLIC_BUILD) $(PUBLIC_DNSSEC) $(LIB_HOOKS)
 LIB_HEADERS = $(foreach h,$(LIB_HEADER_ORDER),$(if $(filter $(DECLARES_$(h)),$(LIB_DECLARED)),$(h)))
 
 # LIB_VARIANT names the build variables that pick the sources and the
@@ -2672,7 +2697,7 @@ LIB_HEADER := bin/obj/$(LIB_VARIANT)/chapulin.h
 LIB_HEADER_AXES := CH_TRUST_CA CH_TRUST_WEBPKI CH_PIN_ECDSA CH_PIN_MLDSA CH_KEX_PQ CH_TRANSPORT_QUIC_NONBLOCKING \
                    CH_TRANSPORT_TCP_NONBLOCKING CH_SUITE_AES_GCM CH_ROLE_SERVER CH_ROLE_BOTH \
                    CH_EXPORTER CH_KEYLOG CH_RAND_EXTERN CH_RAND_DRBG CH_RAND_SESSION CH_CPU_RUNTIME \
-                   CH_PROFILE_CNSA2 CH_MLKEM_1024
+                   CH_PROFILE_CNSA2 CH_MLKEM_1024 CH_DNSSEC
 $(LIB_HEADER): FORCE
 	@mkdir -p $(@D)
 	@{ printf '%s\n' '// Written by make: the defines of the chapulin object beside this file, and' \
@@ -3182,7 +3207,8 @@ bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TES
 # dnssec.c's check against OpenSSL's keys and signatures
 # (test/gen_dnssec_vectors.py) and at every refusal dnssec.h states.
 DNSSEC_TEST_SRCS := dnssec.c rsa_pkcs1.c rsa.c $(RSA_EQUIV_TEST_SRCS) p256.c $(P256_WIDE_SRCS) \
-                    p256_scalar.c p256_field.c p256_point.c buf.c sha256.c
+                    p256_scalar.c p256_field.c p256_point.c buf.c sha256.c sha512.c \
+                    sha512_compress_blocks.c
 bin/dnssec_test: test/dnssec_test.c test/dnssec_vectors.h $(DNSSEC_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -I. -Itest -o $@ \
@@ -4797,7 +4823,8 @@ CHECK_LIBRARY_BUILDS := check-lib-drbg check-lib-session check-lib-session-cxx c
               check-lib-cnsa2-quic check-lib-cnsa2-mldsa check-lib-cnsa2-ca-mldsa \
               check-lib-cnsa2-ca-mldsa-quic check-cnsa2-server check-lib-cnsa2-server \
               check-lib-cnsa2-server-tcp-nonblocking \
-              check-lib-cnsa2-server-quic check-lib-exporter check-lib-server-quic-keylog \
+              check-lib-cnsa2-server-quic check-lib-exporter check-lib-dnssec check-lib-dnssec-quic \
+              check-lib-server-quic-keylog \
               check-lib-server-aes check-lib-server-aes-extern check-lib-quic-aes \
               check-lib-pair \
               check-stack-webpki check-stack-exporter check-stack-quic check-stack-server check-stack-suite \
@@ -5138,6 +5165,24 @@ endif
 # chapulin.hpp forwards ch_export; cxx-check joins it on that commit.
 check-lib-exporter:
 	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern EXPORTER=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The DNSSEC axis (https://github.com/c4milo/chapulin/issues/189), on
+# both objects cocuyo reaches through colibri: the record-mode client and
+# the QUIC one. Each proves the object exports the four DNSSEC calls under
+# its transport's names. A host object alone takes the axis.
+check-lib-dnssec:
+ifeq ($(HOST_TARGET),)
+	@echo "SKIP lib-check DNSSEC=on TRANSPORT=tcp-nonblocking: $(CC) fails the host test"
+else
+	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=tcp-nonblocking TRUST=webpki \
+	  DNSSEC=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
+check-lib-dnssec-quic:
+ifeq ($(HOST_TARGET),)
+	@echo "SKIP lib-check DNSSEC=on TRANSPORT=quic-nonblocking: $(CC) fails the host test"
+else
+	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki \
+	  EXPORTER=off DNSSEC=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
 # The key log axis, on the build colibri's interop endpoint links: a
 # QUIC server. It proves the object still exports its nineteen calls
 # and imports ch_keylog as a hook. EXPORTER=off is named because that

@@ -215,6 +215,8 @@ pub const Chain = @import("chapulin_pem.zig").Chain;
 pub const EcdsaP256Key = @import("chapulin_pem.zig").EcdsaP256Key;
 pub const MlDsa87Key = @import("chapulin_pem.zig").MlDsa87Key;
 pub const Anchors = @import("chapulin_pem.zig").Anchors;
+/// The DNSSEC calls of an object built with DNSSEC=on (chapulin_dnssec.zig).
+pub const dnssec = @import("chapulin_dnssec.zig");
 
 /// An ecdsa_secp256r1_sha256 identity: srv.ecdsa_p256.
 pub const EcdsaP256Identity = if (has_classic_server) struct {

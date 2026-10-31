@@ -45,7 +45,12 @@ Other targets:
   (decision 43). `KEYLOG=on` hands each traffic secret to a
   `ch_keylog` hook the image defines, for an NSS key log; it adds no
   export, it imports the hook, and it is refused for a client in a raw
-  or ca trust mode (decision 44, INV-29). `WIDEMUL` is a device object's
+  or ca trust mode (decision 44, INV-29). `DNSSEC=on` adds four calls
+  that check DNSSEC signatures of algorithms 8, 10 and 13
+  (`dnssec.h`, decision 169): a hash of the signed data in three calls,
+  and `ch_dnssec_verify`. It takes a host `TRUST=webpki` object alone,
+  on either transport, and each call carries the transport in its
+  symbol name. `WIDEMUL` is a device object's
   variable alone. `WIDEMUL=native` defines `CH_NATIVE_WIDEMUL` in the
   object: the builder states that this part's widening multiply runs in
   constant time, and every widening product then uses the CPU's multiply

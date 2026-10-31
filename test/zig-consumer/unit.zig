@@ -514,6 +514,38 @@ test "the PEM files: a refusal is error.Invalid, a room is the caller's, and a r
     }
 }
 
+test "DNSSEC=on: the hashes match std.crypto, and a P-256 signature std.crypto makes verifies" {
+    if (!@hasDecl(c, "ch_dnssec_verify")) return error.SkipZigTest;
+    const dnssec = chapulin.dnssec;
+    const msg = "chapulin dnssec through the Zig API";
+    var out: [c.CH_DNSSEC_DIGEST_MAX]u8 = undefined;
+
+    var h256 = dnssec.Hash.init(.ecdsap256sha256);
+    h256.update(msg[0..5]);
+    h256.update(msg[5..]);
+    var want256: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(msg, &want256, .{});
+    const digest = h256.final(&out);
+    try std.testing.expectEqualSlices(u8, &want256, digest);
+
+    var h512 = dnssec.Hash.init(.rsasha512);
+    h512.update(msg);
+    var want512: [64]u8 = undefined;
+    std.crypto.hash.sha2.Sha512.hash(msg, &want512, .{});
+    var out512: [c.CH_DNSSEC_DIGEST_MAX]u8 = undefined;
+    try std.testing.expectEqualSlices(u8, &want512, h512.final(&out512));
+
+    const Ecdsa = std.crypto.sign.ecdsa.EcdsaP256Sha256;
+    const kp = try Ecdsa.KeyPair.generateDeterministic([_]u8{0x42} ** Ecdsa.KeyPair.seed_length);
+    const sig = (try kp.sign(msg, null)).toBytes();
+    const key = kp.public_key.toUncompressedSec1();
+    try dnssec.verify(.ecdsap256sha256, key[1..], &want256, &sig);
+    var bad = sig;
+    bad[63] ^= 1;
+    try expectError(error.Auth, dnssec.verify(.ecdsap256sha256, key[1..], &want256, &bad));
+    try expectError(error.Invalid, dnssec.verify(.ecdsap256sha256, key[1..], &want512, &sig));
+}
+
 /// Refers to each named declaration of T, so it compiles.
 fn compile(comptime T: type, comptime names: []const []const u8) void {
     inline for (names) |name| _ = &@field(T, name);
@@ -527,6 +559,7 @@ test "every declaration this object has compiles" {
     if (has_mldsa_server) compile(chapulin, &.{ "Server", "MlDsa87Identity", "Chain", "MlDsa87Key" });
     if (has_webpki) compile(chapulin, &.{ "TrustAnchor", "CertType", "Anchors" });
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hookContext"});
+    if (@hasDecl(c, "ch_dnssec_verify")) compile(chapulin.dnssec, &.{ "Algorithm", "Hash", "verify" });
     const record = [_][]const u8{ "init", "recordIn", "recordState", "alertSent", "alertReceived", "read", "write", "writableLen", "close", "recordClose", "group", "pskSelected", "peerLimit", "readClosed", "replyLen" };
     const quic = [_][]const u8{ "init", "cryptoIn", "initialKeys", "keysReady", "peerTransportParams", "seal", "sealClose", "open", "retryOk", "negotiatedVersion", "keyUpdate", "keyPhase", "dropPreviousKeys", "discard", "state", "alert", "alertSent", "alertReceived", "errorCode", "close", "alpnSelected", "group", "pskSelected" };
     if (@hasDecl(c, "ch_record_init")) compileSession(chapulin.record.Client(c.CH_MIN_RXBUF, .{}), &(record ++ .{ "recordOut", "takeTicket" }));

@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "ct.h"
+#include "dnssec.h"
 #include "rsa.h"
 #include "rsa_mont64.h"
 #include "sha256.h"
@@ -175,7 +176,7 @@ int rsa_pkcs1_verify_exponent(const uint8_t *n, size_t n_len, uint64_t e, const 
     const uint8_t *digest_info = digest_len == SHA256_LEN   ? digest_info_sha256
                                  : digest_len == SHA512_LEN ? digest_info_sha512
                                                             : NULL;
-    if (digest_info == NULL || n_len < DNSSEC_RSA_MODULUS_MIN ||
+    if (digest_info == NULL || n_len < CH_DNSSEC_RSA_MODULUS_MIN ||
         n_len < EM_OVERHEAD + PS_MIN + DIGEST_INFO_LEN + digest_len || n_len > CH_RSA_MODULUS_MAX ||
         sig_len != n_len || n[0] == 0 || (n[n_len - 1] & 1) == 0 || e < 3 || (e & 1) == 0 ||
         greater_or_equal(sig, n, n_len)) {

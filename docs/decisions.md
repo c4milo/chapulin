@@ -14863,3 +14863,40 @@ does nothing more.
         case: 255 chain entries are about 4 KiB per identity.
       - **A room from the caller at init.** Its element type is a C
         struct, which this decision removes from the API.
+
+169. **DNSSEC=on checks DNSSEC signatures of algorithms 8, 10 and 13.**
+    cocuyo validates DNSSEC in its Stage B and reaches chapulin through
+    colibri's `tls` (https://github.com/c4milo/chapulin/issues/189).
+    Camilo ruled on 2026-10-31.
+
+    - **The axis.** `DNSSEC=on` defines `CH_DNSSEC`, off by default. A
+      host `TRUST=webpki` object alone takes it, because the checks run
+      on `rsa_pkcs1.c`, `rsa_mont64.c` and `p256.c`. Both transports
+      take it, because cocuyo runs DoT on the record mode and DoQ on
+      QUIC, and each call carries the transport in its symbol name
+      (decision 61). It takes no build record bit: it changes no
+      existing struct, and `ch_dnssec_hash` is declared only when both
+      the object and the consumer define `CH_DNSSEC`, which
+      `chapulin.h` holds.
+    - **The calls.** One dispatcher, `ch_dnssec_verify`, takes the
+      algorithm number, the DNSKEY's key field as it arrived, the digest
+      and the RRSIG's signature. `ch_dnssec_hash_init`, `_update` and
+      `_final` hash the signed data under the algorithm's hash. The
+      dispatcher answers `CH_OK`, `CH_EAUTH` or `CH_EINVAL`.
+    - **RSA.** `rsa_pkcs1_verify_exponent` takes the key's own
+      exponent, odd and 3 to 8 bytes, through `rsa_mont64_public_exp`'s
+      square-and-multiply, and moduli from 64 bytes, so RFC 5702's
+      vectors run; cocuyo refuses keys under 1024 bits itself. A modulus
+      of any byte length runs, padded to whole words. TLS keeps
+      `rsa_vp1`, 65537 and the 256-byte floor. INV-6 names `dnssec.c`
+      as PKCS#1 v1.5's second caller.
+    - **P-256.** `p256_ecdsa_verify_raw` takes r and s side by side
+      (RFC 6605) and runs the same check as the DER entry.
+    - **Next.** Ed25519 (15) and ECDSA P-384 (14), then SHA-1 for
+      algorithms 5 and 7. Ed448 (16) is out.
+    - **Rejected:**
+      - **One call per algorithm.** Camilo chose one dispatcher.
+      - **Split key values.** The key field is read here, with `rbuf`,
+        under the `dnssec` harness.
+      - **A record-mode object alone.** DoQ needs the QUIC object.
+

@@ -3,7 +3,7 @@
 // free of UB over any modulus length up to N_MAX, any exponent, digest
 // length, signature length and bytes. And that it
 // answers 1 only past every check rsa_pkcs1.h states: a 32-byte or
-// 64-byte digest, a modulus from DNSSEC_RSA_MODULUS_MIN bytes that leaves
+// 64-byte digest, a modulus from CH_DNSSEC_RSA_MODULUS_MIN bytes that leaves
 // PS its 8 bytes, begins with a nonzero byte and is odd, an odd exponent
 // of at least 3, and a signature of the modulus's length below it. It
 // hands the public operation that exponent and the signature as its base.
@@ -74,7 +74,7 @@ int main(void) {
     if (ok) {
         __CPROVER_assert(digest_len == SHA256_LEN || digest_len == SHA512_LEN,
                          "a digest of SHA-256's or SHA-512's length");
-        __CPROVER_assert(n_len >= DNSSEC_RSA_MODULUS_MIN &&
+        __CPROVER_assert(n_len >= CH_DNSSEC_RSA_MODULUS_MIN &&
                              n_len >= EM_OVERHEAD + PS_MIN + DIGEST_INFO_LEN + digest_len,
                          "a modulus that holds the encoding");
         __CPROVER_assert(n[0] != 0 && (n[n_len - 1] & 1) == 1, "an odd modulus, no leading zero");

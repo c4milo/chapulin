@@ -163,6 +163,8 @@ roster=(
     "cnsa2-ca-mldsa|RAND=extern PROFILE=cnsa2 AES=extern TRUST=ca-mldsa|CH_AES_EXTERN_CONSTANT_TIME"
     "cnsa2-ca-mldsa-quic|RAND=extern PROFILE=cnsa2 AES=extern TRUST=ca-mldsa TRANSPORT=quic-nonblocking|CH_AES_EXTERN_CONSTANT_TIME"
     "exporter|RAND=extern EXPORTER=on|"
+    "dnssec-record|RAND=extern TRANSPORT=tcp-nonblocking TRUST=webpki DNSSEC=on|"
+    "dnssec-quic|RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki EXPORTER=off DNSSEC=on|"
     "server-quic-keylog|RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on|"
     "server-aes|RAND=extern ROLE=server TRUST=none SUITE=aesgcm|"
     "server-aes-extern|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=|CH_AES_EXTERN_CONSTANT_TIME"

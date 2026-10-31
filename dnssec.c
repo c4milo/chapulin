@@ -1,15 +1,14 @@
-// The DNSSEC signature check. dnssec.h states the contract. This file
-// reads the DNSKEY's key field and picks the verifier; the verifiers are
-// rsa_pkcs1.c's and p256.c's.
+// The DNSSEC hash and signature check. dnssec.h states the contract.
+// This file reads the DNSKEY's key field and picks the hash and the
+// verifier; the verifiers are rsa_pkcs1.c's and p256.c's. Outside a
+// DNSSEC build it holds nothing, and dnssec.h's hash headers keep the
+// unit from being empty.
 #include "dnssec.h"
-
-// Outside a DNSSEC build this file holds nothing, and the header below
-// declares what every build declares, so the unit is not empty.
-#include "tls.h"
 
 #ifdef CH_DNSSEC
 
 #include "buf.h"
+#include "ct.h"
 #include "p256.h"
 #include "rsa.h"
 #include "rsa_pkcs1.h"
@@ -26,7 +25,7 @@ typedef struct {
 } rsa_key;
 
 // Reads key into k. Returns 0 for a field it refuses: an exponent of 0
-// bytes, or longer than DNSSEC_RSA_EXPONENT_MAX, or that begins with a
+// bytes, or longer than CH_DNSSEC_RSA_EXPONENT_MAX, or that begins with a
 // zero byte; a modulus of 0 bytes or that begins with a zero byte.
 static int read_rsa_key(const uint8_t *key, size_t key_len, rsa_key *k) {
     rbuf rb;
@@ -36,7 +35,7 @@ static int read_rsa_key(const uint8_t *key, size_t key_len, rsa_key *k) {
         e_len = rb_u16(&rb);
     }
     const uint8_t *e = rb_bytes(&rb, e_len);
-    if (rb.err || e_len == 0 || e_len > DNSSEC_RSA_EXPONENT_MAX || e[0] == 0) {
+    if (rb.err || e_len == 0 || e_len > CH_DNSSEC_RSA_EXPONENT_MAX || e[0] == 0) {
         return 0;
     }
     k->e = 0;
@@ -54,7 +53,7 @@ static int verify_rsa(const uint8_t *key, size_t key_len, const uint8_t *digest,
                       const uint8_t *sig, size_t sig_len) {
     rsa_key k;
     if (!read_rsa_key(key, key_len, &k) || k.e < 3 || (k.e & 1) == 0 ||
-        k.n_len < DNSSEC_RSA_MODULUS_MIN || k.n_len > CH_RSA_MODULUS_MAX ||
+        k.n_len < CH_DNSSEC_RSA_MODULUS_MIN || k.n_len > CH_RSA_MODULUS_MAX ||
         (k.n[k.n_len - 1] & 1) == 0) {
         return CH_EINVAL;
     }
@@ -63,20 +62,55 @@ static int verify_rsa(const uint8_t *key, size_t key_len, const uint8_t *digest,
                : CH_EAUTH;
 }
 
-int dnssec_verify(uint8_t algorithm, const uint8_t *key, size_t key_len, const uint8_t *digest,
-                  size_t digest_len, const uint8_t *sig, size_t sig_len) {
+int ch_dnssec_hash_init(ch_dnssec_hash *h, uint8_t algorithm) {
+    h->algorithm = algorithm;
     switch (algorithm) {
-    case DNSSEC_ALG_RSASHA256:
+    case CH_DNSSEC_ALG_RSASHA256:
+    case CH_DNSSEC_ALG_ECDSAP256SHA256:
+        sha256_init(&h->state.sha256_state);
+        return CH_OK;
+    case CH_DNSSEC_ALG_RSASHA512:
+        sha512_init(&h->state.sha512_state);
+        return CH_OK;
+    default:
+        return CH_EINVAL;
+    }
+}
+
+void ch_dnssec_hash_update(ch_dnssec_hash *h, const uint8_t *p, size_t n) {
+    if (h->algorithm == CH_DNSSEC_ALG_RSASHA512) {
+        sha512_update(&h->state.sha512_state, p, n);
+    } else {
+        sha256_update(&h->state.sha256_state, p, n);
+    }
+}
+
+size_t ch_dnssec_hash_final(ch_dnssec_hash *h, uint8_t digest[CH_DNSSEC_DIGEST_MAX]) {
+    size_t n = SHA256_LEN;
+    if (h->algorithm == CH_DNSSEC_ALG_RSASHA512) {
+        sha512_final(&h->state.sha512_state, digest);
+        n = SHA512_LEN;
+    } else {
+        sha256_final(&h->state.sha256_state, digest);
+    }
+    ct_wipe(h, sizeof *h);
+    return n;
+}
+
+int ch_dnssec_verify(uint8_t algorithm, const uint8_t *key, size_t key_len, const uint8_t *digest,
+                     size_t digest_len, const uint8_t *sig, size_t sig_len) {
+    switch (algorithm) {
+    case CH_DNSSEC_ALG_RSASHA256:
         if (digest_len != SHA256_LEN) {
             return CH_EINVAL;
         }
         return verify_rsa(key, key_len, digest, digest_len, sig, sig_len);
-    case DNSSEC_ALG_RSASHA512:
+    case CH_DNSSEC_ALG_RSASHA512:
         if (digest_len != SHA512_LEN) {
             return CH_EINVAL;
         }
         return verify_rsa(key, key_len, digest, digest_len, sig, sig_len);
-    case DNSSEC_ALG_ECDSAP256SHA256:
+    case CH_DNSSEC_ALG_ECDSAP256SHA256:
         if (digest_len != SHA256_LEN || key_len != 64) {
             return CH_EINVAL;
         }

@@ -1488,7 +1488,7 @@ The entries are grouped by area:
   RSA check, is memory safe and free of UB over any modulus length up to
   the bound, any exponent, digest length, signature length and bytes. It
   answers 1 only past every check `rsa_pkcs1.h` states: a 32-byte or
-  64-byte digest, a modulus of at least `DNSSEC_RSA_MODULUS_MIN` bytes
+  64-byte digest, a modulus of at least `CH_DNSSEC_RSA_MODULUS_MIN` bytes
   that holds the encoding, begins with a nonzero byte and is odd, an odd
   exponent of at least 3, and a signature of the modulus's length below
   it. It raises the signature to the key's exponent.
@@ -1504,7 +1504,7 @@ The entries are grouped by area:
 
 - **Harness:** `dnssec` (fast)
 - **Build:** a host object with `CH_DNSSEC`.
-- **Proves:** `dnssec_verify` (`dnssec.c`) is memory safe and free of UB
+- **Proves:** `ch_dnssec_verify` (`dnssec.c`) is memory safe and free of UB
   over any algorithm byte and any key field, digest and signature up to
   the bound. Also:
   - it answers `CH_OK`, `CH_EAUTH` or `CH_EINVAL`, and `CH_OK` only for

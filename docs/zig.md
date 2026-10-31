@@ -126,6 +126,7 @@ for a `@compileError` declaration too.
 | `suite` | `ch_tls.suite` |
 | `exportKeyingMaterial` | `ch_export` (EXPORTER=on) |
 | `hookContext` | `ch_keylog` (KEYLOG=on) |
+| `dnssec.Algorithm`, `dnssec.Hash`, `dnssec.verify` | `dnssec.h`'s four calls (DNSSEC=on) |
 | `Error.Discard`, `Error.AeadLimit` | `CH_QUIC_DISCARD` (a QUIC object) |
 | `Error.KeyUpdateLimit` | `CH_KEY_UPDATE_LIMIT` (a TCP object) |
 | a record session's `keyUpdate` | never: the name is reserved |

@@ -3,7 +3,7 @@
 
 Usage: python3 test/gen_dnssec_vectors.py
 
-dnssec_verify checks an RRSIG signature against a DNSKEY's key field
+ch_dnssec_verify checks an RRSIG signature against a DNSKEY's key field
 (https://github.com/c4milo/chapulin/issues/189). This script mints keys
 and signatures with OpenSSL and writes them in the forms DNSSEC carries:
 
