@@ -2,7 +2,7 @@
 //  - the caller's entries, and the 255 certificates a chain holds;
 //  - the caller's DER room, which the blocks share;
 //  - the outer fields each block must read as;
-//  - a text past any cap, and the strict text rule.
+//  - a text past any cap, and the text rule RFC 7468 section 2 asks for.
 // Included by test/pem_files_test.c alone, which declares CHECK, the
 // rooms, the file buffer, the chain helpers and the fixtures this file
 // uses.
@@ -116,27 +116,33 @@ static size_t r2_with(const char *head, const char *sep, const char *tail) {
     return n + strlen(tail);
 }
 
-// A chain is strict: CR and LF alone outside its blocks, an LF before
-// each next BEGIN line, and no text.
+// A chain skips text, as RFC 7468 section 2 asks and a bundle does
+// (pem_blocks.h): text lines before, between and after its blocks read,
+// and section 5.2's Subject: and Issuer: lines among them. Each END line
+// ends its line, a BEGIN line starts one, and a BEGIN line of another
+// label refuses the file.
 static void test_chain_grammar(void) {
     uint8_t count = 0;
     const struct {
         const char *head, *sep, *tail;
         int ok;
     } rows[] = {
-        {"",       "\n",       "\n",     1},
-        {"",       "\r\n",     "\r\n",   1},
-        {"",       "\n\r\n",   "",       1},
-        {"",       "\r\n\n",   "\n\n\r", 1},
-        {"",       "\n\n\n",   "\r",     1},
-        {"\n",     "\n",       "\n",     0}, // a terminator before the first block
-        {"note\n", "\n",       "\n",     0}, // text before the first block
-        {"",       "",         "\n",     0}, // END and BEGIN on one line
-        {"",       "\r",       "\n",     0}, // a lone CR ends no line
-        {"",       "\n\r",     "\n",     0}, // the byte before BEGIN is CR
-        {"",       "\nnote\n", "\n",     0}, // text between the blocks
-        {"",       "\n",       "\nx",    0}, // text after the last block
-        {"",       "\n",       " ",      0}, // a space after the last END line
+        {"",                                  "\n",                                   "\n",     1},
+        {"",                                  "\r\n",                                 "\r\n",   1},
+        {"",                                  "\n\r\n",                               "",       1},
+        {"",                                  "\r\n\n",                               "\n\n\r", 1},
+        {"",                                  "\n\n\n",                               "\r",     0}, // a lone CR after the last END line
+        {"\n",                                "\n",                                   "\n",     1}, // a blank line before the first block
+        {"note\n",                            "\n",                                   "\n",     1}, // text before the first block
+        {"Subject: CN=r2\nIssuer: CN=root\n", "\n",                                   "\n",     1}, // RFC 7468 section 5.2
+        {"note",                              "\n",                                   "\n",     0}, // text and BEGIN on one line
+        {"",                                  "",                                     "\n",     0}, // END and BEGIN on one line
+        {"",                                  "\r",                                   "\n",     0}, // a lone CR ends no line
+        {"",                                  "\n\r",                                 "\n",     0}, // the byte before BEGIN is CR
+        {"",                                  "\nnote\n",                             "\n",     1}, // text between the blocks
+        {"",                                  "\n",                                   "\nx",    1}, // text after the last block
+        {"",                                  "\n",                                   " ",      0}, // a space after the last END line
+        {"",                                  "\n-----BEGIN X509 CERTIFICATE-----\n", "\n",     0}, // another label
     };
     for (size_t i = 0; i < sizeof rows / sizeof *rows; i++) {
         size_t n = r2_with(rows[i].head, rows[i].sep, rows[i].tail);

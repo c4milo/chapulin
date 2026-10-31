@@ -1,6 +1,6 @@
 // Proves: pem_blocks_init and pem_blocks_next (pem_blocks.c) are
-// memory-safe and UB-free under both text rules, for every room and
-// every text up to CH_PROOF_BLOCKS_LEN bytes. The driver makes the calls
+// memory-safe and UB-free under the text rule, for every room, every
+// label and every text up to CH_PROOF_BLOCKS_LEN bytes. The driver makes the calls
 // a caller makes, until the text ends or a rule breaks. They honour their
 // contract:
 //
@@ -8,9 +8,10 @@
 //     The DER runs from the writer's length before the call to its length
 //     after, inside its room, with its sticky error clear;
 //   - PEM_BLOCKS_END appends nothing and leaves the reader empty;
-//   - every call returns one of the three values.
+//   - every call returns one of the three values, and hands pem_read_block
+//     the label its caller named.
 //
-// Under the bundle's rule the calls also keep the rule of 2026-10-13
+// The calls also keep the rule of 2026-10-13 and 2026-10-31
 // (pem_blocks.h). The text scan asks pem_begins_boundary about each byte
 // in turn and skips none unasked:
 //
@@ -25,12 +26,7 @@
 // runs only there, and only at the start of a line. A call that met
 // "-----BEGIN " never returns PEM_BLOCKS_END. So no BEGIN line of any
 // label is skipped as text. By pem.h's contract, pem_read_block then
-// refuses a boundary that is not CERTIFICATE's.
-//
-// The chain's rule and pem_files.c's key reader call
-// pem_skip_line_breaks. The harness proves it over any reader too. It
-// returns 0, CR or LF, and leaves the reader at its end or at a byte that
-// is neither.
+// refuses a boundary that is not the named label's.
 //
 // Layered: pem.c's two calls are stubs. They assert their pem.h contracts
 // and havoc within what proof/pem_harness.c and pem_step_harness.c prove.
@@ -42,11 +38,11 @@
 // name of each block's DER, with real rbuf and wbuf (buf.c). The rules'
 // CR, LF and line tests read the text's bytes unconstrained.
 //
-// Bounded at CH_PROOF_BLOCKS_LEN. The text rules read one byte at a time,
+// Bounded at CH_PROOF_BLOCKS_LEN. The text rule reads one byte at a time,
 // the shape whose cost grows fastest with the length. The bound reaches
-// every state the rules hold, with the stub's blocks of 27 bytes or more.
-// The states are a line start, a gap of CR and LF, and a block read or
-// none. 64 bytes hold
+// every state the rule holds, with the stub's blocks of 27 bytes or more.
+// The states are a line start, a line's end after a block, and a block
+// read or none. 64 bytes hold
 // two such blocks and the gaps around them. So a caller makes three calls
 // at most, two that read a block and one that ends the run, and the
 // driver makes three.
@@ -67,10 +63,10 @@ int nondet_int(void);
 // The stub's smallest block: a BEGIN CERTIFICATE line alone.
 #define STUB_BEGIN_LEN 27
 
-// The text rule under proof, and what pem_begins_boundary saw in the
+// The label the driver names, and what pem_begins_boundary saw in the
 // pem_blocks_next call under way: how many bytes it was asked about, the
 // offset of the last one, and whether it answered 1.
-static uint8_t proof_rule;
+static uint8_t proof_label;
 static size_t boundary_checks;
 static size_t boundary_last_off;
 static int boundary_found;
@@ -84,13 +80,11 @@ static size_t scan_start;
 int pem_read_block(rbuf *r, uint8_t label, wbuf *der) {
     __CPROVER_assert(__CPROVER_w_ok(r, sizeof *r) && __CPROVER_w_ok(der, sizeof *der),
                      "pem_read_block: reader and writer writable");
-    __CPROVER_assert(label == PEM_LABEL_CERTIFICATE, "pem_read_block: a certificate block");
-    if (proof_rule == PEM_TEXT_SKIPPED) {
-        __CPROVER_assert(boundary_found && r->off == boundary_last_off,
-                         "bundle: a block opens only where \"-----BEGIN \" begins");
-        __CPROVER_assert(r->off == 0 || r->p[r->off - 1] == '\n',
-                         "bundle: a block opens only at the start of a line");
-    }
+    __CPROVER_assert(label == proof_label, "pem_read_block: the label the caller named");
+    __CPROVER_assert(boundary_found && r->off == boundary_last_off,
+                     "text: a block opens only where \"-----BEGIN \" begins");
+    __CPROVER_assert(r->off == 0 || r->p[r->off - 1] == '\n',
+                     "text: a block opens only at the start of a line");
     if (!nondet_int()) {
         // A refusal leaves both where it stopped; the caller reads neither.
         r->err = nondet_int();
@@ -113,13 +107,12 @@ int pem_read_block(rbuf *r, uint8_t label, wbuf *der) {
 
 int pem_begins_boundary(const rbuf *r) {
     __CPROVER_assert(__CPROVER_r_ok(r, sizeof *r), "pem_begins_boundary: reader readable");
-    __CPROVER_assert(proof_rule == PEM_TEXT_SKIPPED, "pem_begins_boundary: the bundle's rule");
-    __CPROVER_assert(!boundary_found, "bundle: the scan stops at the first \"-----BEGIN \"");
-    __CPROVER_assert(rb_left(r) != 0, "bundle: the scan asks about a byte");
+    __CPROVER_assert(!boundary_found, "text: the scan stops at the first \"-----BEGIN \"");
+    __CPROVER_assert(rb_left(r) != 0, "text: the scan asks about a byte");
     __CPROVER_assert(boundary_checks != 0 || r->off == scan_start,
-                     "bundle: the scan asks first about the text's first byte");
+                     "text: the scan asks first about the text's first byte");
     __CPROVER_assert(boundary_checks == 0 || r->off == boundary_last_off + 1,
-                     "bundle: the scan skips no byte unasked");
+                     "text: the scan skips no byte unasked");
     boundary_checks++;
     boundary_last_off = r->off;
     boundary_found = nondet_int() != 0;
@@ -128,30 +121,13 @@ int pem_begins_boundary(const rbuf *r) {
 
 #include "pem_blocks.c"
 
-static void prove_skip_line_breaks(void) {
-    uint8_t bytes[4];
-    fill_nondet(bytes, sizeof bytes);
-    size_t n = nondet_size_t();
-    __CPROVER_assume(n <= sizeof bytes);
-    rbuf r;
-    rb_init(&r, bytes, n);
-    uint8_t last = pem_skip_line_breaks(&r);
-    __CPROVER_assert(last == 0 || last == '\r' || last == '\n', "skip: 0, CR or LF");
-    __CPROVER_assert(!r.err, "skip: the reader stays clear");
-    if (rb_left(&r) != 0) {
-        uint8_t next = bytes[r.off];
-        __CPROVER_assert(next != '\r' && next != '\n', "skip: stops at another byte");
-    }
-}
-
 int main(void) {
     uint8_t pem[CH_PROOF_BLOCKS_LEN];
     fill_nondet(pem, sizeof pem);
     size_t pem_len = nondet_size_t();
     __CPROVER_assume(pem_len <= sizeof pem);
-    uint8_t rule = nondet_u8();
-    __CPROVER_assume(rule == PEM_TEXT_REFUSED || rule == PEM_TEXT_SKIPPED);
-    proof_rule = rule;
+    proof_label = nondet_u8();
+    __CPROVER_assume(proof_label < PEM_LABEL_COUNT);
 
     uint8_t room[PROOF_ROOM];
     size_t cap = nondet_size_t();
@@ -159,7 +135,7 @@ int main(void) {
     wbuf der;
     wb_init(&der, room, cap);
     pem_blocks blocks;
-    pem_blocks_init(&blocks, pem, pem_len, rule);
+    pem_blocks_init(&blocks, pem, pem_len);
 
     for (size_t call = 0; call < 3; call++) {
         size_t before = der.len;
@@ -179,16 +155,16 @@ int main(void) {
                 scan_start++;
             }
         }
-        int next = pem_blocks_next(&blocks, &der, &block, &block_len);
+        int next = pem_blocks_next(&blocks, proof_label, &der, &block, &block_len);
         __CPROVER_assert(next == PEM_BLOCKS_READ || next == PEM_BLOCKS_END ||
                              next == PEM_BLOCKS_REFUSED,
                          "next: one of three values");
-        if (rule == PEM_TEXT_SKIPPED && next == PEM_BLOCKS_END) {
-            __CPROVER_assert(!boundary_found, "bundle: the run ends at no \"-----BEGIN \"");
+        if (next == PEM_BLOCKS_END) {
+            __CPROVER_assert(!boundary_found, "text: the run ends at no \"-----BEGIN \"");
             __CPROVER_assert(boundary_checks == 0 || boundary_last_off + 1 == pem_len,
-                             "bundle: the scan asked about each byte to the end");
+                             "text: the scan asked about each byte to the end");
             __CPROVER_assert(boundary_checks != 0 || scan_start == pem_len,
-                             "bundle: a scan that asked about no byte had no text");
+                             "text: a scan that asked about no byte had no text");
         }
         if (next == PEM_BLOCKS_READ) {
             __CPROVER_assert(block == room + before && block_len >= 1 &&
@@ -202,6 +178,5 @@ int main(void) {
         }
         break;
     }
-    prove_skip_line_breaks();
     return 0;
 }

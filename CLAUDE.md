@@ -311,9 +311,10 @@ Home: github.com/c4milo.
   gives each byte its RFC 4648 class in constant time: its value, or a
   class above 63. The body loop branches on the class, never on the
   byte) +
-  `pem_blocks.[ch]` (a run of CERTIFICATE blocks, one block a call, under
-  a chain file's strict text rule or a CA bundle's rule. The bundle's rule
-  skips text lines and refuses a BEGIN line of any other label) +
+  `pem_blocks.[ch]` (a run of blocks, one block a call, each of a label
+  the caller names, in a chain, a key file or a CA bundle. Every file skips
+  text lines around its blocks, as RFC 7468 §2 permits, and refuses a
+  BEGIN line of any other label) +
   `x509_der.[ch]` (canonical DER, read by both certificate verifiers) +
   `x509_pem.[ch]` (the DER of the PEM files: a certificate's outer fields
   as far as its subject and key, a P-256 private key in PKCS #8 or SEC 1

@@ -289,7 +289,7 @@ the DER of any file.
 | file | text, at most | DER room | entries |
 |---|---|---|---|
 | chain, `ch_chain_from_pem` | the caller's | the caller's | 16 bytes a `ch_cert`, 255 at most |
-| P-256 key, `ch_p256_key_from_pem` | 452 (`CH_PEM_KEY_TEXT_MAX`) | none: 32 for the scalar and 64 for the point | none |
+| P-256 key, `ch_p256_key_from_pem` | the caller's | none: 32 for the scalar and 64 for the point | none |
 | CA bundle, `ch_anchors_from_pem` | the caller's | the caller's | 32 bytes a `ch_trust_anchor` |
 
 The sizes of an entry are the arm64 compiler's. Homebrew's

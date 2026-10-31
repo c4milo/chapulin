@@ -9,8 +9,26 @@ reason: the chain call gives its writer one byte more than der_len, so a
 --- old
     wb_init(&w, der, der_len);
     pem_blocks blocks;
-    pem_blocks_init(&blocks, pem, pem_len, PEM_TEXT_REFUSED);
+    pem_blocks_init(&blocks, pem, pem_len);
+    size_t count = 0;
+    for (;;) {
+        const uint8_t *cert = NULL;
+        size_t cert_len = 0;
+        int next = pem_blocks_next(&blocks, PEM_LABEL_CERTIFICATE, &w, &cert, &cert_len);
+        if (next == PEM_BLOCKS_END) {
+            break;
+        }
+        // The blocks share der's room, so one block may fill it.
 --- new
     wb_init(&w, der, der_len + 1);
     pem_blocks blocks;
-    pem_blocks_init(&blocks, pem, pem_len, PEM_TEXT_REFUSED);
+    pem_blocks_init(&blocks, pem, pem_len);
+    size_t count = 0;
+    for (;;) {
+        const uint8_t *cert = NULL;
+        size_t cert_len = 0;
+        int next = pem_blocks_next(&blocks, PEM_LABEL_CERTIFICATE, &w, &cert, &cert_len);
+        if (next == PEM_BLOCKS_END) {
+            break;
+        }
+        // The blocks share der's room, so one block may fill it.

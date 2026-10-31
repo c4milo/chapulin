@@ -109,12 +109,6 @@ def pemLabel? : String → Option (List UInt8)
   | "ec_parameters" => some Spec.PemBlocks.labelEcParameters
   | _ => none
 
-/-- A text rule by the name a `pemcerts` request gives it. -/
-def pemRule? : String → Option Spec.PemBlocks.TextRule
-  | "refused" => some .refused
-  | "skipped" => some .skipped
-  | _ => none
-
 /-- Byte strings as hex joined by commas, `-` for an empty list. -/
 def emitList (bs : List ByteArray) : String :=
   if bs.isEmpty then "-" else ",".intercalate (bs.map emit)
@@ -941,11 +935,10 @@ def dispatch : List String → Option String
     return match Spec.PemBlocks.decodeOne? l t d p with
       | some der => s!"ok {emit der}"
       | none => "ERR pemone reject"
-  | ["pemcerts", rule, roomMax, pem] => do
-    let r ← pemRule? rule
+  | ["pemcerts", roomMax, pem] => do
     let room ← roomMax.toNat?
     let p ← hexArg? pem
-    return match Spec.PemBlocks.readCertificates? r room p with
+    return match Spec.PemBlocks.readCertificates? room p with
       | some ders => s!"ok {emitList ders}"
       | none => "ERR pemcerts reject"
   | ["pemsubjectkey", cert] => do

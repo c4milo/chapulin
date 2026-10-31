@@ -224,19 +224,19 @@ static const char *const gaps[] = {
 // One pemcerts row over the text at p. It calls pem_blocks_next until the
 // text ends or a rule breaks, into a room of room_max bytes. It refuses a
 // run of no block, as both of its callers refuse it.
-static void row_certs(uint8_t rule, size_t room_max, const uint8_t *p, size_t n) {
+static void row_certs(size_t room_max, const uint8_t *p, size_t n) {
     static const uint8_t *parts[TEXT_MAX / 32];
     static size_t lens[TEXT_MAX / 32];
     wbuf w;
     wb_init(&w, room, room_max);
     pem_blocks blocks;
-    pem_blocks_init(&blocks, p, n, rule);
+    pem_blocks_init(&blocks, p, n);
     size_t count = 0;
     int next = PEM_BLOCKS_READ;
     while (next == PEM_BLOCKS_READ) {
         const uint8_t *block = NULL;
         size_t block_len = 0;
-        next = pem_blocks_next(&blocks, &w, &block, &block_len);
+        next = pem_blocks_next(&blocks, PEM_LABEL_CERTIFICATE, &w, &block, &block_len);
         if (next == PEM_BLOCKS_READ) {
             if (count == sizeof parts / sizeof *parts) {
                 die("a run outgrew the parts array");
@@ -252,8 +252,7 @@ static void row_certs(uint8_t rule, size_t room_max, const uint8_t *p, size_t n)
         (void)snprintf(want, sizeof want, "ERR pemcerts reject");
     }
     char head[96];
-    (void)snprintf(head, sizeof head, "pemcerts %s %zu",
-                   rule == PEM_TEXT_SKIPPED ? "skipped" : "refused", room_max);
+    (void)snprintf(head, sizeof head, "pemcerts %zu", room_max);
     request(head, p, n);
     compare();
 }
@@ -306,13 +305,10 @@ static void diff_certs(void) {
     for (int i = 0; i < 400; i++) {
         size_t count = rng_below(14);
         size_t n = blocks_text(count, 200);
-        uint8_t rule = rng_below(2) ? PEM_TEXT_SKIPPED : PEM_TEXT_REFUSED;
         size_t room_max = draw_room();
-        row_certs(rule, room_max, text, n);
-        row_certs(rule == PEM_TEXT_SKIPPED ? PEM_TEXT_REFUSED : PEM_TEXT_SKIPPED, room_max, text,
-                  n);
+        row_certs(room_max, text, n);
         n = mutate(text, n, sizeof text);
-        row_certs(rule, room_max, text, n);
+        row_certs(room_max, text, n);
     }
     // A block of 4,096 bytes of DER in a room of that size and in one byte
     // less. Two blocks that fill a room of 600 bytes, and one byte less.
@@ -320,12 +316,10 @@ static void diff_certs(void) {
     rng_fill(der, sizeof der);
     for (size_t short_by = 0; short_by < 2; short_by++) {
         size_t n = pem_armor(der, BLOCK_DER_MOST, 64, "\n", text);
-        row_certs(PEM_TEXT_REFUSED, BLOCK_DER_MOST - short_by, text, n);
-        row_certs(PEM_TEXT_SKIPPED, BLOCK_DER_MOST - short_by, text, n);
+        row_certs(BLOCK_DER_MOST - short_by, text, n);
         n = pem_armor(der, 400, 64, "\n", text);
         n += pem_armor(der, 200, 64, "\n", text + n);
-        row_certs(PEM_TEXT_REFUSED, 600 - short_by, text, n);
-        row_certs(PEM_TEXT_SKIPPED, 600 - short_by, text, n);
+        row_certs(600 - short_by, text, n);
     }
 }
 

@@ -8,8 +8,8 @@ reason: the key call reads an EC PARAMETERS block and does not ask which
   changed OID and requires CH_EINVAL.
 
 --- old
-    return pem_read_block(r, PEM_LABEL_EC_PARAMETERS, &w) &&
-           x509_pem_parameters_are_p256(parameters, w.len) && pem_skip_line_breaks(r) == '\n';
+    return read_blocks(pem, pem_len, PEM_LABEL_EC_PARAMETERS, &p, PEM_LABEL_EC_PRIVATE_KEY, &w) &&
+           x509_pem_parameters_are_p256(parameters, p.len) &&
 --- new
     (void)x509_pem_parameters_are_p256;
-    return pem_read_block(r, PEM_LABEL_EC_PARAMETERS, &w) && pem_skip_line_breaks(r) == '\n';
+    return read_blocks(pem, pem_len, PEM_LABEL_EC_PARAMETERS, &p, PEM_LABEL_EC_PRIVATE_KEY, &w) &&

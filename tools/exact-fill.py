@@ -67,12 +67,6 @@ ALLOWED = {
         "read_tail(&r) requires every byte after the END line to be a line "
         "terminator, so it consumes the rest or refuses it"
     ),
-    ("pem_files.c", "read_key", "r"): (
-        "it reads the EC PARAMETERS block and the line breaks after it, "
-        "then takes the rest whole, rb_left(&r) bytes, and hands it to "
-        "pem_decode_one, whose read_tail requires the key's block and line "
-        "breaks to fill it"
-    ),
     ("pem_blocks.c", "pem_blocks_next", "written"): (
         "the reader runs over the DER the writer holds, and it skips the "
         "bytes before the block and takes the rest, rb_left(&written) "

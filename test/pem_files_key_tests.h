@@ -2,7 +2,7 @@
 //  - the r2 leaf's key from the files openssl wrote;
 //  - every optional field of both forms;
 //  - the keys and leaves the call refuses;
-//  - the scalar's range at both ends, and the text cap;
+//  - the scalar's range at both ends, and no cap on the text;
 //  - what the call leaves on the stack.
 // Included by test/pem_files_test.c alone,
 // which declares CHECK, the corpus helpers and the fixtures this file
@@ -13,7 +13,7 @@
 
 static uint8_t key_priv[32];
 static uint8_t key_pub[64];
-static uint8_t key_file[2 * CH_PEM_KEY_TEXT_MAX];
+static uint8_t key_file[4096];
 // The cpu value the key cases pass. It is 0 in a device object, which
 // defines no bit. In a host object it is the value main sets before each
 // pass.
@@ -125,7 +125,8 @@ static void test_key_refusals(void) {
 
 // The key grammar. The cases are the PKCS #8 fields the readers refuse,
 // a scalar of another length, and a form under the other form's label.
-// They include text outside the block, and a second block.
+// They include text outside the block, a second block and a block of
+// another label.
 static void test_key_grammar(void) {
     corpus_entries r2 = r2_chain_entries();
     uint8_t der[CH_PEM_KEY_DER_MAX + 8];
@@ -150,19 +151,31 @@ static void test_key_grammar(void) {
     len = key_armor("PRIVATE KEY", der, n);
     CHECK(key_of(key_file, len, r2.cert[0], r2.len[0]) == CH_EINVAL);
 
-    // A key file is strict, as a chain is.
+    // A key file skips text, as a chain does (RFC 7468 section 2).
     const uint8_t *sec1 = pem_fixture_key_sec1;
     size_t sec1_len = sizeof pem_fixture_key_sec1;
     key_file[0] = '\n';
     memcpy(key_file + 1, sec1, sec1_len);
-    CHECK(key_of(key_file, sec1_len + 1, r2.cert[0], r2.len[0]) == CH_EINVAL);
+    CHECK(key_of(key_file, sec1_len + 1, r2.cert[0], r2.len[0]) == CH_OK && key_is_r2());
+    memcpy(key_file, "the server's key\n", 17);
+    memcpy(key_file + 17, sec1, sec1_len);
+    CHECK(key_of(key_file, 17 + sec1_len, r2.cert[0], r2.len[0]) == CH_OK && key_is_r2());
     memcpy(key_file, sec1, sec1_len);
     memcpy(key_file + sec1_len, "\r\n\n", 3);
     CHECK(key_of(key_file, sec1_len + 3, r2.cert[0], r2.len[0]) == CH_OK && key_is_r2());
     key_file[sec1_len] = 'x';
-    CHECK(key_of(key_file, sec1_len + 1, r2.cert[0], r2.len[0]) == CH_EINVAL);
+    CHECK(key_of(key_file, sec1_len + 1, r2.cert[0], r2.len[0]) == CH_OK && key_is_r2());
+    // A further block refuses the file: a second key, and a certificate.
     memcpy(key_file + sec1_len, sec1, sec1_len);
     CHECK(key_of(key_file, 2 * sec1_len, r2.cert[0], r2.len[0]) == CH_EINVAL && key_zeroed());
+    memcpy(key_file + sec1_len, pem_fixture_r2_chain, sizeof pem_fixture_r2_chain);
+    CHECK(key_of(key_file, sec1_len + sizeof pem_fixture_r2_chain, r2.cert[0], r2.len[0]) ==
+              CH_EINVAL &&
+          key_zeroed());
+    // "-----BEGIN " behind other bytes of a line refuses it.
+    memcpy(key_file, "# -----BEGIN EC PRIVATE KEY-----\n", 33);
+    memcpy(key_file + 33, sec1, sec1_len);
+    CHECK(key_of(key_file, 33 + sec1_len, r2.cert[0], r2.len[0]) == CH_EINVAL && key_zeroed());
 }
 
 // A SEC 1 ECPrivateKey of the corpus leaf's scalar whose fields after
@@ -299,20 +312,24 @@ static void test_scalar_range(void) {
     }
 }
 
-// The key file's text cap. CH_PEM_KEY_TEXT_MAX bytes read, and one more
-// is refused. The cases are a PKCS #8 file and a SEC 1 file under its EC
-// PARAMETERS block, each padded with LF.
-static void test_key_text_cap(void) {
+// No cap bounds a key file's text, as none bounds a chain's: the rooms
+// bound each write and rbuf each read. The cases are a PKCS #8 file and a
+// SEC 1 file under its EC PARAMETERS block, each between 32 KiB of text
+// lines.
+static void test_key_long_text(void) {
     corpus_entries r2 = r2_chain_entries();
     const uint8_t *files[] = {pem_fixture_key_pkcs8, pem_fixture_key_sec1_params};
     const size_t lens[] = {sizeof pem_fixture_key_pkcs8, sizeof pem_fixture_key_sec1_params};
-    CHECK(CH_PEM_KEY_TEXT_MAX == 452);
+    static uint8_t long_file[2 * 32768 + 1024];
     for (size_t i = 0; i < 2; i++) {
-        memcpy(key_file, files[i], lens[i]);
-        memset(key_file + lens[i], '\n', CH_PEM_KEY_TEXT_MAX + 1 - lens[i]);
-        CHECK(key_of(key_file, CH_PEM_KEY_TEXT_MAX, r2.cert[0], r2.len[0]) == CH_OK && key_is_r2());
-        CHECK(key_of(key_file, CH_PEM_KEY_TEXT_MAX + 1, r2.cert[0], r2.len[0]) == CH_EINVAL &&
-              key_zeroed());
+        memset(long_file, 'x', 32768);
+        for (size_t at = 63; at < 32768; at += 64) {
+            long_file[at] = '\n';
+        }
+        memcpy(long_file + 32768, files[i], lens[i]);
+        memcpy(long_file + 32768 + lens[i], long_file, 32768);
+        CHECK(key_of(long_file, 2 * 32768 + lens[i], r2.cert[0], r2.len[0]) == CH_OK &&
+              key_is_r2());
     }
 }
 

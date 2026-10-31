@@ -3204,15 +3204,16 @@ harness proves.
 
 - **Harness:** `pem_blocks` (fast)
 - **Proves:** `pem_blocks_init` and `pem_blocks_next` stay safe on any
-  text under both text rules and into a room of any size. The driver
-  makes the calls a caller makes, until the text ends or a rule breaks.
-  The two calls honor their contract:
+  text, under any of the four labels and into a room of any size. The
+  driver makes the calls a caller makes, until the text ends or a rule
+  breaks. The two calls honor their contract:
   - a read names the DER this call appended, 1 byte or more, inside the
     room, with the writer's sticky error clear;
   - an end appends nothing and leaves the reader empty;
-  - every call returns one of the three values.
+  - every call returns one of the three values, and hands `pem_read_block`
+    the label its caller named.
 
-  Under the bundle's rule (decision 131) the scan asks
+  Under the text rule (decisions 131 and 170) the scan asks
   `pem_begins_boundary` about each byte in turn and skips none unasked:
   - its first question is about the text's first byte. That is the
     input's first byte, or after a block the byte after the LF that ends
@@ -3224,17 +3225,15 @@ harness proves.
   The scan stops at the first byte where the answer is 1. A block opens
   only there, and only at the start of a line. A call that met
   `-----BEGIN ` never returns an end. [pem_step](#pem_step) proves the
-  answer exact, so the text a bundle skips holds no `-----BEGIN `.
+  answer exact, so the text a file skips holds no `-----BEGIN `.
 
-  `pem_skip_line_breaks` returns 0, CR or LF over any reader, and stops
-  at the end or at another byte. `pem.c`'s two calls are stubbed to what
-  [pem](#pem) and [pem_step](#pem_step) prove.
+  `pem.c`'s two calls are stubbed to what [pem](#pem) and
+  [pem_step](#pem_step) prove.
 - **Bound:** text ≤ 64 B, which holds two blocks of the stub's 27 bytes
   and the gaps around them. The driver makes three calls, and a room
   holds up to 8 bytes. An assertion that no call after the first reads a
-  block fails under each rule. Under the bundle's rule, assertions that
-  `-----BEGIN ` inside a line never refuses, and that the scan after a
-  block never ends the run, fail too. Two mutants of `pem_blocks.c` fail
+  block fails. Assertions that `-----BEGIN ` inside a line never refuses,
+  and that the scan after a block never ends the run, fail too. Two mutants of `pem_blocks.c` fail
   two assertions and no other. One assertion holds the first question,
   and the other holds a call that asked about no byte. One mutant skips
   the text's first byte unasked, and the other skips its first line.
@@ -3242,10 +3241,10 @@ harness proves.
 - **Not proved:** that `pem_read_block` refuses a BEGIN line of another
   label, since the stub answers either way. `Spec/PemBlocks.lean`'s
   `readBlock?_begins` proves it of the model's block reader.
-  `readCertificates?_begins` proves the rule over a whole bundle of the
-  model: `-----BEGIN ` starts only at the start of a line, and
-  CERTIFICATE's BEGIN line starts there. `bin/diff_pem_files` and
-  `bin/pem_files_test` hold the C to them.
+  `readCertificates?_begins` proves the rule over a whole run of the
+  model, a chain's or a bundle's: `-----BEGIN ` starts only at the start
+  of a line, and CERTIFICATE's BEGIN line starts there. `bin/diff_pem_files`
+  and `bin/pem_files_test` hold the C to them.
 
 #### x509_pem
 
@@ -3282,14 +3281,17 @@ harness proves.
     1 to `chain_max` of them, and each one's outer fields were read.
   - A bundle's Names and keys lie inside the caller's DER room, 1 to
     `anchor_max` of them.
-  - A key is accepted only under a `cpu` value the object takes and
-    under the text cap. Its point is the one `p256_ecdh_keygen` wrote,
+  - A key is accepted only under a `cpu` value the object takes. Its
+    point is the one `p256_ecdh_keygen` wrote,
     under the multiply answer that `cpu` gives, and the leaf was asked
     about that point and answered yes.
-  - An EC PARAMETERS block is read only at the first byte, and only the
-    EC PRIVATE KEY label and the SEC 1 reader follow it. The check of
-    the block reads the DER that the block wrote, and no other byte of
-    its room.
+  - Each call names the labels it reads: CERTIFICATE for a chain and a
+    bundle, and the three key labels for a key. Each key reader runs only
+    on the DER of its shape's key block, in a run of blocks that ended:
+    the PKCS #8 reader after a PRIVATE KEY block alone, and the SEC 1
+    reader after an EC PRIVATE KEY block alone, or after an EC PARAMETERS
+    block whose check answered yes. The check reads the DER that the block
+    wrote, and no other byte of its room.
   - Every refusal zeroes the key's two outputs and counts 0.
 
   `pem_files` runs in a device object, where a `cpu` value of 0 alone is
@@ -3317,8 +3319,7 @@ harness proves.
     `inv05-pem-bundle-inner-begin-skipped` and
     `inv05-pem-bundle-other-label-skipped`;
   - the EC PARAMETERS block: `inv05-pem-key-parameters-any-curve`,
-    `inv05-pem-key-parameters-trailing-byte`,
-    `inv05-pem-key-parameters-gap-unchecked` and
+    `inv05-pem-key-parameters-trailing-byte` and
     `inv05-pem-key-parameters-before-pkcs8`;
   - the caller's rooms and the bound of 255:
     `inv05-pem-chain-entries-unchecked`,
@@ -3329,7 +3330,7 @@ harness proves.
   - the composition: `inv05-pem-key-leaf-unchecked`,
     `inv05-pem-key-file-point-unchecked`, `inv05-pem-chain-unframed`,
     `inv05-pem-anchors-skip-non-certificate`,
-    `inv05-pem-chain-skips-text` and `inv14-pem-key-cpu-unchecked`;
+    `inv05-pem-key-other-label-after-key` and `inv14-pem-key-cpu-unchecked`;
   - the anchor index past one byte: `inv33-webpki-anchor-index-one-byte`;
   - the wipes: `inv17-pem-key-der-not-wiped` and
     `inv17-pem-key-scalar-not-wiped`.
@@ -3747,7 +3748,8 @@ past it:
 - a chain whose one certificate fills a room of 12,288 bytes;
 - thirteen blocks in thirteen entries, and in twelve;
 - a chain of 255 certificates, and one of 256;
-- a key file at `CH_PEM_KEY_TEXT_MAX`, with its EC PARAMETERS block.
+- a key file under its EC PARAMETERS block, with text before, between
+  and after the blocks, and 4 KiB of text after them.
 
 No fuzz target covers this parser, on purpose. The differential drives
 the same domain against an oracle that checks the verdict and the bytes,

@@ -1,34 +1,31 @@
 import Spec.Pem
 
 /-!
-# PEM blocks of four labels, and runs of CERTIFICATE blocks
+# PEM blocks of four labels, and runs of blocks
 
 Written from RFC 7468 §2 (the encapsulation boundaries, which name a
-label), §5 and §10 (the CERTIFICATE and PRIVATE KEY labels), RFC 5915 §4
-(the EC PRIVATE KEY label), the EC PARAMETERS label OpenSSL writes above
-an EC PRIVATE KEY block, and the two text rules `pem_blocks.h` states for
-a certificate chain and a CA bundle, which the owner ruled on 2026-10-13
-(docs/decisions.md 131). The base64 body is `Spec.Pem`'s.
+label, and the data before them, which parsers MUST NOT malfunction on),
+§5 and §10 (the CERTIFICATE and PRIVATE KEY labels), RFC 5915 §4 (the EC
+PRIVATE KEY label), the EC PARAMETERS label OpenSSL writes above an EC
+PRIVATE KEY block, and the text rule `pem_blocks.h` states, which the
+owner ruled for a CA bundle on 2026-10-13 and for a chain and a key file
+on 2026-10-31 (docs/decisions.md 131 and 170). The base64 body is
+`Spec.Pem`'s.
 
 `Spec.Pem.decode?` reads the CERTIFICATE label alone. `decodeOne?` here
 takes any label, and `decode?_eq_decodeOne?` proves the two the same
 function on that label, so every theorem `Spec.Pem` proves of `decode?`
 holds of `decodeOne?`'s certificate arm.
 
-`readCertificates?` reads a run of CERTIFICATE blocks under one of two
-text rules:
-
-* `TextRule.refused`, a chain: the first block at the first byte, CR and
-  LF alone outside the blocks, and the last of them before each next
-  BEGIN line an LF;
-* `TextRule.skipped`, a bundle. A BEGIN line is a line that starts with
-  "-----BEGIN ", the first 11 bytes of RFC 7468 §3's pre-encapsulation
-  boundary. Each BEGIN line opens a block, whatever follows the 11 bytes.
-  The run reads a CERTIFICATE block there or refuses the text.
-  "-----BEGIN " at any other byte of a line refuses the text. The run
-  skips every other line as text, before, between and after the blocks.
-  Each END line ends its line. Camilo ruled on 2026-10-13 that a BEGIN
-  line of any other label refuses a bundle.
+`readCertificates?` reads a run of CERTIFICATE blocks, a chain or a
+bundle, and `readLabels?` the blocks of a key file, each of a label its
+caller names, under one text rule. A BEGIN line is a line that starts
+with "-----BEGIN ", the first 11 bytes of RFC 7468 §3's pre-encapsulation
+boundary. Each BEGIN line opens a block, whatever follows the 11 bytes.
+The run reads a block of the label it expects there or refuses the text.
+"-----BEGIN " at any other byte of a line refuses the text. The run skips
+every other line as text, before, between and after the blocks. Each END
+line ends its line.
 
 The blocks' DER together is at most `roomMax` bytes, the room the
 caller's writer has. The count of blocks is the caller's rule
@@ -86,14 +83,6 @@ def decodeOne? (label : List UInt8) (textMax derMax : Nat) (input : ByteArray) :
   guard (der.size ≤ derMax)
   some der
 
-/-- `pem_blocks.h`'s two text rules: what may lie outside the blocks. -/
-inductive TextRule where
-  /-- CR and LF alone: a certificate chain. -/
-  | refused
-  /-- Every line that holds no "-----BEGIN ": a CA bundle. -/
-  | skipped
-  deriving DecidableEq
-
 /-- What the text before a block leaves. -/
 inductive Next where
   /-- The input ended where the rule lets it. -/
@@ -102,15 +91,6 @@ inductive Next where
   | block (rest : List UInt8)
   /-- The text broke the rule. -/
   | refused
-
-/-- A chain's text after a block: CR and LF bytes; before a next block
-the last of them is LF, so the BEGIN line starts a line. -/
-def strictGap (cs : List UInt8) : Next :=
-  let gap := cs.takeWhile (fun c => c == 13 || c == 10)
-  let rest := cs.drop gap.length
-  if rest.isEmpty then .ended
-  else if gap.getLast? == some 10 then .block rest
-  else .refused
 
 /-- The end of an END line's line: the input ends there, or LF or CR LF
 follows. -/
@@ -124,8 +104,8 @@ def beginInsideLine (cs : List UInt8) : Bool :=
   (List.range (cs.takeWhile (· ≠ 10)).length).any
     (fun k => k != 0 && beginPrefix.isPrefixOf (cs.drop k))
 
-/-- A bundle's text from a line start. A line that starts with
-"-----BEGIN " opens a block, which the run reads as a CERTIFICATE block or
+/-- The text from a line start. A line that starts with "-----BEGIN "
+opens a block, which the run reads as a block of the label it expects or
 refuses. A line that holds "-----BEGIN " at another byte refuses the text.
 Every other line is skipped through its LF. `fuel` bounds the lines, and
 `cs.length + 1` is always enough, since a line skipped is a byte or
@@ -138,16 +118,13 @@ def skipText : Nat → List UInt8 → Next
     else if beginInsideLine cs then .refused
     else skipText fuel ((cs.dropWhile (· ≠ 10)).drop 1)
 
-/-- The text before a block under `rule`. `first` says no block has been
-read: a chain's first block opens at the first byte, and a bundle's first
-line starts at the first byte. -/
-def nextBlock (rule : TextRule) (first : Bool) (cs : List UInt8) : Next :=
-  match rule with
-  | .refused => if first then .block cs else strictGap cs
-  | .skipped =>
-    match (if first then some cs else lineEnds? cs) with
-    | none => .refused
-    | some rest => skipText (rest.length + 1) rest
+/-- The text before a block. `first` says no block has been read: the
+first line starts at the first byte, and after a block the END line ends
+its line. -/
+def nextBlock (first : Bool) (cs : List UInt8) : Next :=
+  match (if first then some cs else lineEnds? cs) with
+  | none => .refused
+  | some rest => skipText (rest.length + 1) rest
 
 /-- The bytes of DER the blocks in `done` hold together. -/
 def derTotal (done : List ByteArray) : Nat := (done.map ByteArray.size).sum
@@ -155,24 +132,45 @@ def derTotal (done : List ByteArray) : Nat := (done.map ByteArray.size).sum
 /-- The loop over blocks: `done` holds the DER of the blocks read, the
 last first. `fuel` bounds the blocks, and `cs.length + 1` is always
 enough, since a block is a byte or more. -/
-def certificatesLoop (rule : TextRule) (roomMax : Nat) :
+def certificatesLoop (roomMax : Nat) :
     Nat → List UInt8 → List ByteArray → Option (List ByteArray)
   | 0, _, _ => none
   | fuel + 1, cs, done =>
-    match nextBlock rule done.isEmpty cs with
+    match nextBlock done.isEmpty cs with
     | .refused => none
     | .ended => if done.isEmpty then none else some done.reverse
     | .block rest => do
       let (der, after) ← readBlock? labelCertificate rest
       guard (derTotal done + der.size ≤ roomMax)
-      certificatesLoop rule roomMax fuel after (der :: done)
+      certificatesLoop roomMax fuel after (der :: done)
 
 /-- `pem_blocks_next` called until the text ends. A run of no block is
-refused, as its callers refuse it: one or more CERTIFICATE blocks under
-`rule`, all of their DER together at most `roomMax` bytes. -/
-def readCertificates? (rule : TextRule) (roomMax : Nat) (input : ByteArray) :
-    Option (List ByteArray) :=
-  certificatesLoop rule roomMax (input.size + 1) input.toList []
+refused, as its callers refuse it: one or more CERTIFICATE blocks, all of
+their DER together at most `roomMax` bytes. -/
+def readCertificates? (roomMax : Nat) (input : ByteArray) : Option (List ByteArray) :=
+  certificatesLoop roomMax (input.size + 1) input.toList []
+
+/-- The loop of `pem_files.c`'s `read_blocks`: one block of each label of
+`blocks`, in order, each block's DER at most its room, and then the text
+to its end. -/
+def labelsLoop : List (List UInt8 × Nat) → Bool → List UInt8 → Option (List ByteArray)
+  | [], first, cs =>
+    match nextBlock first cs with
+    | .ended => some []
+    | _ => none
+  | (label, room) :: rest, first, cs =>
+    match nextBlock first cs with
+    | .block bs => do
+      let (der, after) ← readBlock? label bs
+      guard (der.size ≤ room)
+      let ders ← labelsLoop rest false after
+      some (der :: ders)
+    | _ => none
+
+/-- `read_blocks`: a key file's blocks, one of each label of `blocks` in
+order with its room, and no block after them. -/
+def readLabels? (blocks : List (List UInt8 × Nat)) (input : ByteArray) : Option (List ByteArray) :=
+  labelsLoop blocks true input.toList
 
 /-! ## Proofs
 
@@ -396,9 +394,9 @@ theorem readBlock?_begins (label cs : List UInt8) (block : ByteArray × List UIn
 
 /-- What the loop keeps: the blocks read so far hold at most `roomMax`
 bytes of DER together. -/
-private theorem certificatesLoop_bounds (rule : TextRule) (roomMax : Nat) :
+private theorem certificatesLoop_bounds (roomMax : Nat) :
     ∀ (fuel : Nat) (cs : List UInt8) (done ders : List ByteArray),
-      derTotal done ≤ roomMax → certificatesLoop rule roomMax fuel cs done = some ders →
+      derTotal done ≤ roomMax → certificatesLoop roomMax fuel cs done = some ders →
       1 ≤ ders.length ∧ derTotal ders ≤ roomMax
   | 0, _, _, _, _, h => by simp [certificatesLoop] at h
   | fuel + 1, cs, done, ders, h_total, h => by
@@ -419,16 +417,16 @@ private theorem certificatesLoop_bounds (rule : TextRule) (roomMax : Nat) :
     · simp only [Option.bind_eq_bind, Option.bind_eq_some_iff] at h
       obtain ⟨⟨der, after⟩, -, _, h_fits, h_rest⟩ := h
       have h_fits' := of_guard_eq_some h_fits
-      refine certificatesLoop_bounds rule roomMax fuel after (der :: done) ders ?_ h_rest
+      refine certificatesLoop_bounds roomMax fuel after (der :: done) ders ?_ h_rest
       simp only [derTotal, List.map_cons, List.sum_cons] at h_fits' ⊢
       omega
 
 /-- A text `readCertificates?` accepts holds one or more blocks, all of
 their DER together at most `roomMax` bytes. -/
-theorem readCertificates?_bounds (rule : TextRule) (roomMax : Nat) (input : ByteArray)
-    (ders : List ByteArray) (h : readCertificates? rule roomMax input = some ders) :
+theorem readCertificates?_bounds (roomMax : Nat) (input : ByteArray)
+    (ders : List ByteArray) (h : readCertificates? roomMax input = some ders) :
     1 ≤ ders.length ∧ derTotal ders ≤ roomMax :=
-  certificatesLoop_bounds rule roomMax _ _ [] ders (by simp [derTotal]) h
+  certificatesLoop_bounds roomMax _ _ [] ders (by simp [derTotal]) h
 
 /-! ## The bundle's BEGIN lines over a whole run
 
@@ -604,7 +602,7 @@ private theorem skipped_start (first : Bool) (cs rest : List UInt8)
 END line's line. -/
 private theorem loop_lineEnds (roomMax fuel : Nat) (cs : List UInt8) (der : ByteArray)
     (done ders : List ByteArray)
-    (h : certificatesLoop .skipped roomMax fuel cs (der :: done) = some ders) :
+    (h : certificatesLoop roomMax fuel cs (der :: done) = some ders) :
     ∃ rest, lineEnds? cs = some rest := by
   cases fuel with
   | zero => simp [certificatesLoop] at h
@@ -618,7 +616,7 @@ private theorem loop_lineEnds (roomMax fuel : Nat) (cs : List UInt8) (der : Byte
 starts in the text it accepts, it starts a line, and CERTIFICATE's BEGIN
 line starts there. Only the first block may open at the first byte. -/
 private theorem loop_begins (roomMax : Nat) : ∀ (fuel : Nat) (cs : List UInt8)
-    (done ders : List ByteArray), certificatesLoop .skipped roomMax fuel cs done = some ders →
+    (done ders : List ByteArray), certificatesLoop roomMax fuel cs done = some ders →
       ∀ k, beginPrefix.isPrefixOf (cs.drop k) = true →
         ((k = 0 ∧ done = []) ∨ cs[k - 1]? = some 10) ∧ beginLine.isPrefixOf (cs.drop k) = true
   | 0, _, _, _, h, _, _ => by simp [certificatesLoop] at h
@@ -713,7 +711,7 @@ the start of a line, and there CERTIFICATE's BEGIN line starts. So a
 BEGIN line of any other label refuses the bundle, and so does
 "-----BEGIN " inside a line. -/
 theorem readCertificates?_begins (roomMax : Nat) (input : ByteArray) (ders : List ByteArray)
-    (h : readCertificates? .skipped roomMax input = some ders) (k : Nat)
+    (h : readCertificates? roomMax input = some ders) (k : Nat)
     (h_k : beginPrefix.isPrefixOf (input.toList.drop k) = true) :
     (k = 0 ∨ input.toList[k - 1]? = some 10) ∧
       beginLine.isPrefixOf (input.toList.drop k) = true := by

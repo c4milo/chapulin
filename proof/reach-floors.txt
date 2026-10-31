@@ -278,9 +278,17 @@ p384_wide_verify 163
 # time that each part takes and the limit that holds it.
 pem 206 budget=2700
 pem_ecdsa 206 budget=2700
-pem_blocks 197
-pem_files 396
-pem_files_host 398
+# pem_blocks fell from 197 of 266 to 152 of 219, pem_files from 396 of
+# 476 to 371 of 454, and pem_files_host from 398 to 373, on 2026-10-31,
+# measured on an ubuntu-24.04 runner. docs/decisions.md 170 removed the
+# strict text rule, pem_skip_line_breaks, the key's text cap and its
+# parameters reader, and the stubs of pem_decode_one and pem_read_block,
+# all of which the harnesses reached. pem_blocks leaves 67 locations
+# unreached where it left 69. pem_files leaves 3 more: rb_bytes and
+# rb_skip in buf.c, which only the parameters reader called.
+pem_blocks 152
+pem_files 371
+pem_files_host 373
 pem_one 191
 pem_step 151
 pem_step_ecdsa 151

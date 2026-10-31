@@ -37,11 +37,12 @@ static key_piece without_last_lf(const uint8_t *bytes, size_t len) {
 
 // The EC PARAMETERS block above an EC PRIVATE KEY block, as `openssl
 // ecparam -genkey` writes it. The block names prime256v1 and comes once,
-// before a SEC 1 key. Line breaks that end in LF lie between the blocks.
-// The call refuses every other shape:
+// before a SEC 1 key. Text lines lie around and between the blocks, as
+// RFC 7468 section 2 lets them (pem_blocks.h). The call refuses every
+// other shape:
 //  - another curve, an explicit curve, other DER, a second block;
 //  - the block before a PKCS #8 key or after the key, the block alone;
-//  - any text or a lone CR between the blocks.
+//  - an END and a BEGIN line on one line, and a lone CR between them.
 static void test_key_parameters(void) {
     corpus_entries r2 = r2_chain_entries();
     const key_piece params = {pem_fixture_params_prime256v1, sizeof pem_fixture_params_prime256v1};
@@ -69,11 +70,12 @@ static void test_key_parameters(void) {
         {{params, pkcs8},             2, 0}, // a PKCS #8 key under the block
         {{sec1, params},              2, 0}, // the block after the key
         {{params},                    1, 0}, // the block alone
-        {{params, note, sec1},        3, 0}, // text between the blocks
+        {{params, note, sec1},        3, 1}, // text between the blocks
         {{params_end, sec1},          2, 0}, // END and BEGIN on one line
         {{params_end, cr, sec1},      3, 0}, // a lone CR ends no line
-        {{lf, params, sec1},          3, 0}, // a line break before the first block
-        {{params, sec1, note},        3, 0}, // text after the key
+        {{lf, params, sec1},          3, 1}, // a line break before the first block
+        {{note, params, sec1},        3, 1}, // text before the first block
+        {{params, sec1, note},        3, 1}, // text after the key
     };
     for (size_t i = 0; i < sizeof rows / sizeof *rows; i++) {
         size_t n = key_join(rows[i].pieces, rows[i].count);

@@ -9,7 +9,6 @@ reason: the key call checks the whole room of 10 bytes in place of the
   read the DER that pem_read_block wrote, and no other byte.
 
 --- old
-           x509_pem_parameters_are_p256(parameters, w.len) && pem_skip_line_breaks(r) == '\n';
+           x509_pem_parameters_are_p256(parameters, p.len) &&
 --- new
            x509_pem_parameters_are_p256(parameters, sizeof parameters) &&
-           pem_skip_line_breaks(r) == '\n';

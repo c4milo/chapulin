@@ -416,21 +416,27 @@ Spec.PemBlocks.decodeOne? : (label : List UInt8) → (textMax derMax : Nat) →
                         -- it decode? on the CERTIFICATE label. Line op:
                         -- `pemone <label> <textMax> <derMax> <hex>` → `ok
                         -- <der>` / `ERR pemone reject`.
-Spec.PemBlocks.readCertificates? : TextRule → (roomMax : Nat) →
-                        ByteArray → Option (List ByteArray)
+Spec.PemBlocks.readCertificates? : (roomMax : Nat) → ByteArray →
+                        Option (List ByteArray)
                         -- `pem_blocks_next` called until the text ends: one
                         -- CERTIFICATE block or more, roomMax bytes of DER
-                        -- together, the writer's room. A chain's rule
-                        -- (`refused`) admits CR and LF alone outside the
-                        -- blocks and an LF before each next BEGIN line. A
-                        -- bundle's rule (`skipped`) reads a CERTIFICATE block
-                        -- at each line that starts with "-----BEGIN " and
-                        -- refuses any other BEGIN line, refuses
+                        -- together, the writer's room. The text rule, for a
+                        -- chain and a bundle alike (decision 170), reads a
+                        -- block at each line that starts with "-----BEGIN "
+                        -- and refuses any other BEGIN line, refuses
                         -- "-----BEGIN " at any other byte, and skips every
                         -- other line; each END line ends its line. The caller
                         -- counts the blocks. Line op:
-                        -- `pemcerts <rule> <roomMax> <hex>` → `ok
+                        -- `pemcerts <roomMax> <hex>` → `ok
                         -- <der>,<der>...` / `ERR pemcerts reject`.
+Spec.PemBlocks.readLabels? : List (List UInt8 × Nat) → ByteArray →
+                        Option (List ByteArray)
+                        -- pem_files.c's `read_blocks`: one block of each
+                        -- label in order, each DER within its room, under
+                        -- the same text rule, and no block after them. The
+                        -- key file's three shapes read through it
+                        -- (`Spec.PemFiles.readKeyFile?`), which the
+                        -- `pemkey` line op drives.
 Spec.PemFiles.readSubjectKey : ByteArray → Option (ByteArray × ByteArray)
                         -- x509_pem_read_subject_key: a certificate's RFC 5280
                         -- §4.1 outer fields as far as its key, the subject
@@ -1209,7 +1215,7 @@ Spec.PemBlocks.decode?_eq_decodeOne?
                              -- holds of the four-label reader's certificate arm
 Spec.PemBlocks.readCertificates?_bounds
                              an accepted run holds one block or more, at most
-                             -- roomMax bytes of DER together, under either rule
+                             -- roomMax bytes of DER together
 Spec.PemBlocks.skipText_ended_clear
                              the text a bundle skips to its end holds
                              -- "-----BEGIN " at no byte
@@ -1240,6 +1246,8 @@ Spec.PemFiles.anchorsFromPem?_begins
                              -- accepted bundle, "-----BEGIN " starts only at the
                              -- start of a line, and CERTIFICATE's BEGIN line
                              -- starts there
+Spec.PemFiles.chainFromPem?_begins
+                             the same for the chain call (decision 170)
 Spec.X509Ca.readCertificate_frames
                              an accepted certificate is exactly SEQUENCE(TBS,
                              -- sigAlg, BIT STRING) with the unused-bits octet

@@ -1513,6 +1513,11 @@ launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,writ
 # Two probes accept a chain and a bundle of two or more blocks that fill
 # the caller's entries. Two accept a key under its EC PARAMETERS block and
 # a key alone. So the formulas reach every arm.
+# With each key file's run through pem_blocks under the bundle's rule and
+# the stubs recording each run's labels (docs/decisions.md 170), measured
+# on 2026-10-31 on an ubuntu-24.04 runner (PROVE_ONLY=<name>
+# PROVE_NO_CACHE=1 /usr/bin/time -v): pem_files 900 properties, 341 s,
+# 3.7 GB peak; pem_files_host 900 properties, 339 s, 3.6 GB peak.
 #
 # x509ca proves the provisioning walk over any input, with the DER
 # primitives stubbed to the contracts x509der proves. Measured 7 s /
@@ -1526,6 +1531,10 @@ launch fast full pem_step_ecdsa 66 "" base64.c buf.c ct.c proof/ct_wipe_stub.c
 launch fast:3 full pem 66 "" -DCH_PROOF_PEM_LEN=64 base64.c buf.c ct.c proof/ct_wipe_stub.c
 launch fast:3 full pem_ecdsa 66 "" -DCH_PROOF_PEM_LEN=64 base64.c buf.c ct.c proof/ct_wipe_stub.c
 launch fast:3 full pem_one 66 "" -DCH_PROOF_PEM_LEN=64 base64.c buf.c ct.c proof/ct_wipe_stub.c
+# One rule for a chain, a key file and a bundle, and a label the caller
+# names (docs/decisions.md 170), measured on 2026-10-31 on an ubuntu-24.04
+# runner (PROVE_ONLY=pem_blocks PROVE_NO_CACHE=1 /usr/bin/time -v, cbmc
+# 6.11.0, kissat): 544 properties, 144 s, 0.76 GB peak.
 launch fast:5 full pem_blocks 66 "" -DCH_PROOF_BLOCKS_LEN=64 buf.c
 launch fast full x509_pem 66 "" buf.c
 launch fast full x509_pem_key 33 "ct_memeq.0:22" x509_der.c buf.c ct.c proof/ct_wipe_stub.c

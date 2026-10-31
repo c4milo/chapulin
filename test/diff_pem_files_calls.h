@@ -267,8 +267,9 @@ static void diff_key_files(void) {
         n = mutate(text, n, sizeof text);
         row_key(text, n, leaf, leaf_len);
     }
-    // The key file's text cap, at it and one past it, for a key under its
-    // EC PARAMETERS block.
+    // A key under its EC PARAMETERS block, with text lines before, between
+    // and after the blocks, and 4 KiB of text after them: no cap bounds a
+    // key file's text (docs/decisions.md 170).
     uint8_t scalar[32] = {0};
     scalar[31] = 7;
     uint8_t priv[32];
@@ -279,11 +280,19 @@ static void diff_key_files(void) {
     size_t d = pfd_ec_private_key(der, sizeof der, scalar, point65 + 1, pfd_key_full);
     static const uint8_t prime256v1[] = {0x06, 0x08, 0x2a, 0x86, 0x48,
                                          0xce, 0x3d, 0x03, 0x01, 0x07};
-    size_t n = pem_armor_label("EC PARAMETERS", prime256v1, sizeof prime256v1, 64, "\n", text);
+    size_t n = 0;
+    memcpy(text, "a key\n", 6);
+    n += 6;
+    n += pem_armor_label("EC PARAMETERS", prime256v1, sizeof prime256v1, 64, "\n", text + n);
+    memcpy(text + n, "between\n", 8);
+    n += 8;
     n += pem_armor_label("EC PRIVATE KEY", der, d, 64, "\n", text + n);
-    memset(text + n, '\n', CH_PEM_KEY_TEXT_MAX + 1 - n);
-    row_key(text, CH_PEM_KEY_TEXT_MAX, leaf, leaf_len);
-    row_key(text, CH_PEM_KEY_TEXT_MAX + 1, leaf, leaf_len);
+    row_key(text, n, leaf, leaf_len);
+    memset(text + n, 'x', 4096);
+    for (size_t at = n + 63; at < n + 4096; at += 64) {
+        text[at] = '\n';
+    }
+    row_key(text, n + 4096, leaf, leaf_len);
 }
 
 // A chain of one certificate of exactly der_len bytes, into text.

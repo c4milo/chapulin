@@ -9,6 +9,6 @@ reason: ch_p256_key_from_pem stops checking its cpu value, so a device
   requires CH_EINVAL.
 
 --- old
-    int ok = cpu_value_ok(cpu) && pem_len <= CH_PEM_KEY_TEXT_MAX &&
+    int ok = cpu_value_ok(cpu) && read_key(pem, pem_len, der, scalar, &file_point) &&
 --- new
-    int ok = pem_len <= CH_PEM_KEY_TEXT_MAX &&
+    int ok = read_key(pem, pem_len, der, scalar, &file_point) &&

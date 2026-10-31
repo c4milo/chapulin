@@ -242,7 +242,7 @@ static void key_cases(void) {
     test_key_grammar();
     test_key_fields();
     test_scalar_range();
-    test_key_text_cap();
+    test_key_long_text();
     test_key_parameters();
     test_genkey_file();
     test_key_wipes();

@@ -14900,3 +14900,55 @@ does nothing more.
         under the `dnssec` harness.
       - **A record-mode object alone.** DoQ needs the QUIC object.
 
+170. **A chain file and a key file skip text outside their blocks, as a
+    CA bundle does.** RFC 7468 §2 permits data before the encapsulation
+    boundaries, and says parsers MUST NOT malfunction on it. Its §5.2
+    shows Subject: and Issuer: lines above a CERTIFICATE block. Decision
+    131 kept a chain file and a key file strict, CR and LF alone outside
+    the blocks, so such a file was refused. colibri asked for the change
+    for https://github.com/c4milo/colibri/issues/97
+    (https://github.com/c4milo/chapulin/issues/214). Camilo ruled on
+    2026-10-31: the chain call and both key calls read under the
+    bundle's rule. This supersedes decision 131's strict sentence.
+
+    - **One rule.** `pem_blocks.c` holds one text rule, the bundle's,
+      and the strict one is gone, with `PEM_TEXT_REFUSED`,
+      `pem_skip_line_breaks`, `Spec.PemBlocks.TextRule` and `strictGap`.
+      Text lines before, between and after the blocks are skipped. A
+      BEGIN line starts a line, each END line ends its line, and
+      "-----BEGIN " inside a line refuses the file.
+    - **Labels.** `pem_blocks_next` takes the label it reads. A BEGIN
+      line of any other label refuses the file: TRUSTED CERTIFICATE in a
+      chain, or a certificate after a key.
+    - **Key files.** `pem_files.c`'s `read_blocks` reads one shape:
+      PRIVATE KEY alone, EC PRIVATE KEY alone, or EC PARAMETERS then EC
+      PRIVATE KEY, and an ML-DSA-87 file's one PRIVATE KEY block. A
+      further block refuses the file. Each label is public. The text
+      outside the blocks is public, and the reader branches on it.
+      `pem.c` decodes each body in constant time, as before.
+    - **No text cap.** `CH_PEM_KEY_TEXT_MAX` and
+      `CH_PEM_MLDSA_KEY_TEXT_MAX` counted the blocks alone, so they
+      would refuse a file with text. They are gone, as the chain's and
+      the bundle's caps went in decision 131: the DER rooms bound each
+      write and `rbuf` bounds each read.
+    - **What holds it.** `bin/pem_files_test` and
+      `bin/pem_files_mldsa_test` read text before, between and after the
+      blocks, RFC 7468 §5.2's lines, and 64 KiB of text around a key,
+      and refuse a BEGIN line inside a line, a lone CR after an END line,
+      a second key and a certificate after a key. `Spec.PemFiles` models
+      the key shapes through `Spec.PemBlocks.readLabels?`, and
+      `chainFromPem?_begins` states the label rule for a chain.
+      `bin/diff_pem_files` holds the C to both. The `pem_files` harness
+      proves that each key reader runs only on its shape's key block, in
+      a run that ended. `inv05-pem-key-other-label-after-key` requires
+      the tests to fail. `inv05-pem-chain-skips-text` and
+      `inv05-pem-key-parameters-gap-unchecked` guarded the strict rule
+      and are gone.
+    - **Rejected:**
+      - **Text before the first block alone.** RFC 7468 §2 names data
+        before the boundaries, but a bundle already skips text between
+        and after its blocks, and one rule for every file is one rule to
+        audit.
+      - **Chain files alone.** A key file is one an operator writes for
+        this server, but `openssl` and other tools write explanatory
+        text above a key too, and the text is public.

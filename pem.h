@@ -61,17 +61,6 @@ _Static_assert(CH_X509_MAX <= 0x3fe0, "a certificate must fit one handshake mess
 // its EC PRIVATE KEY block. It is the namedCurve OBJECT IDENTIFIER of
 // prime256v1, 10 bytes (RFC 5480 section 2.1.1).
 #define CH_PEM_PARAMETERS_DER_MAX 10
-// The text cap of a key file, derived as CH_PEM_MAX is. It holds the
-// key's block and an EC PARAMETERS block above it. For each block it
-// counts the base64 body, two terminator bytes per four characters, and
-// 64 bytes for the boundary lines and their terminators. The EC PRIVATE
-// KEY boundary lines, 30 and 28 bytes, take 62 bytes with a CRLF after
-// each. They are the longest of the four labels and fit the 64 bytes.
-#define CH_PEM_KEY_BODY_MAX (4 * ((CH_PEM_KEY_DER_MAX + 2) / 3))
-#define CH_PEM_PARAMETERS_BODY_MAX (4 * ((CH_PEM_PARAMETERS_DER_MAX + 2) / 3))
-#define CH_PEM_KEY_TEXT_MAX                                                                        \
-    (CH_PEM_KEY_BODY_MAX + (CH_PEM_KEY_BODY_MAX / 4) * 2 + 64 + CH_PEM_PARAMETERS_BODY_MAX +       \
-     (CH_PEM_PARAMETERS_BODY_MAX / 4) * 2 + 64)
 
 // The labels pem_read_block takes, as indexes into pem.c's table.
 #define PEM_LABEL_CERTIFICATE 0    // CERTIFICATE, RFC 7468 section 5

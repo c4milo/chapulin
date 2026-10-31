@@ -57,7 +57,7 @@ static uint8_t sk[MLDSA87_SK_LEN];
 static uint8_t pk[MLDSA87_PK_LEN];
 static uint8_t first_sk[MLDSA87_SK_LEN];
 static uint8_t first_pk[MLDSA87_PK_LEN];
-static uint8_t file[CH_PEM_MLDSA_KEY_TEXT_MAX + 1];
+static uint8_t file[2 * sizeof pem_fixture_mldsa_both + 64];
 
 static int key_zeroed(void) {
     uint8_t any = 0;
@@ -119,15 +119,18 @@ static void test_forms(void) {
           key_zeroed());
 }
 
-// CH_PEM_MLDSA_KEY_TEXT_MAX bytes read, and one more is refused.
-static void test_text_cap(void) {
-    CHECK(CH_PEM_MLDSA_KEY_TEXT_MAX == 9988);
-    memcpy(file, pem_fixture_mldsa_both, sizeof pem_fixture_mldsa_both);
-    memset(file + sizeof pem_fixture_mldsa_both, '\n', sizeof file - sizeof pem_fixture_mldsa_both);
-    CHECK(key_of(0, file, CH_PEM_MLDSA_KEY_TEXT_MAX, pem_fixture_mldsa_leaf,
-                 sizeof pem_fixture_mldsa_leaf) == CH_OK);
-    CHECK(key_of(0, file, CH_PEM_MLDSA_KEY_TEXT_MAX + 1, pem_fixture_mldsa_leaf,
-                 sizeof pem_fixture_mldsa_leaf) == CH_EINVAL &&
+// Text around the block reads, as RFC 7468 section 2 lets it, and no cap
+// bounds it (pem_blocks.h). A second block refuses the file.
+static void test_text(void) {
+    const size_t n = sizeof pem_fixture_mldsa_both;
+    memcpy(file, "an ML-DSA-87 key\n", 17);
+    memcpy(file + 17, pem_fixture_mldsa_both, n);
+    memset(file + 17 + n, '\n', sizeof file - 17 - n);
+    CHECK(key_of(0, file, sizeof file, pem_fixture_mldsa_leaf, sizeof pem_fixture_mldsa_leaf) ==
+          CH_OK);
+    memcpy(file + 17 + n, pem_fixture_mldsa_both, n);
+    CHECK(key_of(0, file, 17 + 2 * n, pem_fixture_mldsa_leaf, sizeof pem_fixture_mldsa_leaf) ==
+              CH_EINVAL &&
           key_zeroed());
 }
 
@@ -217,7 +220,7 @@ static void test_wipes(void) {
 
 int main(void) {
     test_forms();
-    test_text_cap();
+    test_text();
     test_signs();
     test_wipes();
     if (failures != 0) {

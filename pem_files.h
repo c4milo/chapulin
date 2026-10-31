@@ -72,10 +72,11 @@
 #endif
 
 // Decodes a certificate chain: one or more CERTIFICATE blocks,
-// end-entity first, in the file's order. The file is strict, as
-// pem_decode_certificate's is. The first BEGIN line starts at the first
-// byte. Outside the blocks lie CR and LF alone, and an LF comes before
-// each next BEGIN line (pem_blocks.h).
+// end-entity first, in the file's order. The text around the blocks
+// follows ch_anchors_from_pem's rule below (pem_blocks.h): text lines,
+// such as RFC 7468 section 5.2's Subject: and Issuer: lines, are skipped,
+// and a BEGIN line of any other label refuses the file
+// (docs/decisions.md 170).
 //
 // Writes each certificate's DER into der, der_len bytes, one certificate
 // after another, and points chain[i] at it. chain holds chain_max
@@ -111,9 +112,10 @@ int CH_MUST_USE ch_chain_from_pem(const uint8_t *pem, size_t pem_len, uint8_t *d
 // PKCS #8 PrivateKeyInfo (RFC 5958), or one EC PRIVATE KEY block, a SEC 1
 // ECPrivateKey (RFC 5915). One EC PARAMETERS block may come before an EC
 // PRIVATE KEY block, as `openssl ecparam -genkey` writes it. That block
-// must name prime256v1 (x509_pem_parameters_are_p256). Outside the
-// blocks lie CR and LF alone, and an LF comes before the key's BEGIN
-// line. pem_len is at most CH_PEM_KEY_TEXT_MAX (pem.h). x509_pem.h
+// must name prime256v1 (x509_pem_parameters_are_p256). The text around
+// the blocks follows ch_anchors_from_pem's rule below: text lines are
+// skipped, and a BEGIN line of any other label, or a further block,
+// refuses the file (pem_blocks.h, docs/decisions.md 170). x509_pem.h
 // states each form's fields.
 //
 // cpu describes the CPU, as ch_cfg.cpu does in a host object (cpu_cfg.h).
@@ -182,16 +184,11 @@ int CH_MUST_USE ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pe
 // ML-DSA-87-PrivateKey 4,938. That is its own 4-byte header, the seed 34
 // and the expanded key 4,900.
 #define CH_PEM_MLDSA_KEY_DER_MAX 4962
-// The text cap of an ML-DSA-87 key file, derived as CH_PEM_KEY_TEXT_MAX
-// is, for the one PRIVATE KEY block.
-#define CH_PEM_MLDSA_KEY_BODY_MAX (4 * ((CH_PEM_MLDSA_KEY_DER_MAX + 2) / 3))
-#define CH_PEM_MLDSA_KEY_TEXT_MAX                                                                  \
-    (CH_PEM_MLDSA_KEY_BODY_MAX + (CH_PEM_MLDSA_KEY_BODY_MAX / 4) * 2 + 64)
-
 // Decodes an ML-DSA-87 private key and expands it. The file holds one
 // PRIVATE KEY block, a PKCS #8 OneAsymmetricKey (RFC 5958) in the seed
-// form or the both form (x509_pem_read_mldsa87_pkcs8). Outside the block
-// lie CR and LF alone. pem_len is at most CH_PEM_MLDSA_KEY_TEXT_MAX.
+// form or the both form (x509_pem_read_mldsa87_pkcs8). The text around
+// the block follows ch_anchors_from_pem's rule, as for
+// ch_p256_key_from_pem.
 //
 // cpu describes the CPU, as for ch_p256_key_from_pem, and the call
 // refuses the same values. The expansion runs on ct.h's 16x16

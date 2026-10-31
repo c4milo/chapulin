@@ -18,7 +18,8 @@ Three files, three functions:
   most, that share `derLen` bytes, each read for its outer fields and
   nothing else;
 * `keyFromPem?`: a P-256 private key in either form, under one EC
-  PARAMETERS block that names prime256v1 for SEC 1, its point computed
+  PARAMETERS block that names prime256v1 for SEC 1, with text around the
+  blocks as RFC 7468 §2 lets it, its point computed
   from the scalar and checked against any point the file carries and
   against the end-entity certificate's key;
 * `anchorsFromPem?`: a CA bundle of one to `anchorMax` roots that share
@@ -47,9 +48,6 @@ def keyDerMax : Nat := 150
 /-- `CH_PEM_PARAMETERS_DER_MAX`: the DER of the one EC PARAMETERS block a
 key file may hold, prime256v1's OBJECT IDENTIFIER. -/
 def parametersDerMax : Nat := 10
-/-- `CH_PEM_KEY_TEXT_MAX`: the longest key file, the key's block and an
-EC PARAMETERS block above it, each derived as `pemMax` is. -/
-def keyTextMax : Nat := pemMax keyDerMax + pemMax parametersDerMax
 
 /-- id-ecPublicKey with the namedCurve prime256v1 (RFC 5480 §2.1.1), the
 whole AlgorithmIdentifier SEQUENCE. -/
@@ -142,11 +140,11 @@ def readSec1 (der : ByteArray) : Option (ByteArray × Option ByteArray) :=
   readEcPrivateKey true der
 
 /-- `ch_chain_from_pem`: one to `chainMax` certificates, and
-`chainCountMax` at most, end-entity first, under the chain's strict text
-rule. Their DER shares `derLen` bytes, and each reads as a certificate's
+`chainCountMax` at most, end-entity first, under the text rule a bundle
+reads under (docs/decisions.md 170). Their DER shares `derLen` bytes, and each reads as a certificate's
 outer fields. -/
 def chainFromPem? (derLen chainMax : Nat) (input : ByteArray) : Option (List ByteArray) := do
-  let certs ← readCertificates? .refused derLen input
+  let certs ← readCertificates? derLen input
   guard (certs.length ≤ chainMax ∧ certs.length ≤ chainCountMax)
   guard (certs.all fun c => (readSubjectKey c).isSome)
   some certs
@@ -156,7 +154,7 @@ text rule. Their DER shares `derLen` bytes, and each is read for its
 subject Name and SubjectPublicKeyInfo. -/
 def anchorsFromPem? (derLen anchorMax : Nat) (input : ByteArray) :
     Option (List (ByteArray × ByteArray)) := do
-  let certs ← readCertificates? .skipped derLen input
+  let certs ← readCertificates? derLen input
   guard (certs.length ≤ anchorMax)
   certs.mapM readSubjectKey
 
@@ -166,35 +164,30 @@ def anchorsFromPem? (derLen anchorMax : Nat) (input : ByteArray) :
 as `Spec.HandshakeParser.bytesEq` says. -/
 def sameBytes (a b : ByteArray) : Bool := bytesToHex a == bytesToHex b
 
-/-- An EC PARAMETERS block that names prime256v1 at the head of `cs`,
-then line breaks that end in LF, then the rest: the EC PRIVATE KEY block
-alone, which `decodeOne?` reads. -/
-def readSec1AfterParameters? (cs : List UInt8) : Option ByteArray := do
-  let (parameters, rest) ← readBlock? labelEcParameters cs
-  guard (sameBytes parameters p256Parameters)
-  match strictGap rest with
-  | .block key => decodeOne? labelEcPrivateKey key.length keyDerMax ⟨key.toArray⟩
-  | _ => none
-
 /-- The key file's blocks, read by the reader of the form the key's label
 names: a PRIVATE KEY block alone is PKCS #8, an EC PRIVATE KEY block alone
 is SEC 1, and so is an EC PRIVATE KEY block under one EC PARAMETERS block
-that names prime256v1. -/
+that names prime256v1. Text lies around and between the blocks
+(`readLabels?`). As in `pem_files.c`'s `read_key`, a file whose blocks
+match a shape is read by that shape's form alone. -/
 def readKeyFile? (input : ByteArray) : Option (ByteArray × Option ByteArray) :=
-  match decodeOne? labelPrivateKey input.size keyDerMax input with
-  | some der => readPkcs8 der
-  | none =>
-    match decodeOne? labelEcPrivateKey input.size keyDerMax input with
-    | some der => readSec1 der
-    | none => (readSec1AfterParameters? input.toList).bind readSec1
+  match readLabels? [(labelPrivateKey, keyDerMax)] input with
+  | some [der] => readPkcs8 der
+  | _ =>
+    match readLabels? [(labelEcPrivateKey, keyDerMax)] input with
+    | some [der] => readSec1 der
+    | _ =>
+      match readLabels? [(labelEcParameters, parametersDerMax), (labelEcPrivateKey, keyDerMax)]
+          input with
+      | some [parameters, der] => if sameBytes parameters p256Parameters then readSec1 der else none
+      | _ => none
 
 /-- `ch_p256_key_from_pem`: the scalar and its point, X‖Y, when the file
-is at most `keyTextMax` bytes, the scalar is 1 to n - 1, any point the
+holds a key, the scalar is 1 to n - 1, any point the
 file carries is that point, and the leaf's key is P-256's with that point.
 The C call's cpu argument picks how the point is computed and not which
 point, so the spec takes none. -/
 def keyFromPem? (input leaf : ByteArray) : Option (ByteArray × ByteArray) := do
-  guard (input.size ≤ keyTextMax)
   let (scalar, filePoint) ← readKeyFile? input
   let pub ← Spec.P256.pubKey? (bytesToNatBE scalar)
   guard (filePoint.all (sameBytes · pub))
@@ -230,8 +223,7 @@ def selftest (_ : Unit) : Bool :=
     (readPkcs8 sec1).isNone &&
     (readSec1 pkcs8).isNone &&
     (p256Spki point).size == 91 &&
-    p256Parameters.size == parametersDerMax &&
-    keyTextMax == 452
+    p256Parameters.size == parametersDerMax
 
 /-! ## Proofs
 
@@ -240,7 +232,8 @@ carries weight: an accepted file's point is its scalar's, the scalar is
 in range, and the leaf's key is that point. `chainFromPem?_bounds` and
 `anchorsFromPem?_bounds` are the two runs' counts and sizes.
 `anchorsFromPem?_begins` is Camilo's rule of 2026-10-13 for a bundle: a
-BEGIN line of any label but CERTIFICATE refuses it. -/
+BEGIN line of any label but CERTIFICATE refuses it. `chainFromPem?_begins`
+is the same rule for a chain, ruled on 2026-10-31. -/
 
 /-- An accepted key's point is its scalar's under `Spec.P256.pubKey?`,
 which holds the scalar to 1 to n - 1, and the leaf certificate's
@@ -250,7 +243,7 @@ theorem keyFromPem?_sound (input leaf scalar pub : ByteArray)
     Spec.P256.pubKey? (bytesToNatBE scalar) = some pub ∧
       ∃ name, readSubjectKey leaf = some (name, p256Spki pub) := by
   simp only [keyFromPem?, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
-  obtain ⟨_, -, ⟨scalar', filePoint⟩, -, pub', h_pub, _, -, ⟨name, spki⟩, h_leaf, _, h_spki,
+  obtain ⟨⟨scalar', filePoint⟩, -, pub', h_pub, _, -, ⟨name, spki⟩, h_leaf, _, h_spki,
     h_out⟩ := h
   simp only [Option.some.injEq, Prod.mk.injEq] at h_out
   obtain ⟨rfl, rfl⟩ := h_out
@@ -273,7 +266,7 @@ theorem chainFromPem?_bounds (derLen chainMax : Nat) (input : ByteArray)
   simp only [chainFromPem?, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
   obtain ⟨read, h_read, _, h_count, _, h_framed, h_out⟩ := h
   obtain rfl : read = certs := by simpa using h_out
-  obtain ⟨h_one, h_total⟩ := readCertificates?_bounds .refused derLen input read h_read
+  obtain ⟨h_one, h_total⟩ := readCertificates?_bounds derLen input read h_read
   have h_count' : read.length ≤ chainMax ∧ read.length ≤ chainCountMax := by
     unfold guard at h_count
     split at h_count
@@ -307,7 +300,7 @@ theorem anchorsFromPem?_bounds (derLen anchorMax : Nat) (input : ByteArray)
     1 ≤ anchors.length ∧ anchors.length ≤ anchorMax := by
   simp only [anchorsFromPem?, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
   obtain ⟨certs, h_certs, _, h_count, h_map⟩ := h
-  obtain ⟨h_one, -⟩ := readCertificates?_bounds .skipped derLen input certs h_certs
+  obtain ⟨h_one, -⟩ := readCertificates?_bounds derLen input certs h_certs
   have h_count' : certs.length ≤ anchorMax := by
     unfold guard at h_count
     split at h_count
@@ -328,5 +321,17 @@ theorem anchorsFromPem?_begins (derLen anchorMax : Nat) (input : ByteArray)
   simp only [anchorsFromPem?, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
   obtain ⟨certs, h_certs, -⟩ := h
   exact readCertificates?_begins derLen input certs h_certs k h_k
+
+/-- A chain that the call accepts holds "-----BEGIN " only at the start of
+a line, and there CERTIFICATE's BEGIN line starts. So a BEGIN line of any
+other label refuses the chain (docs/decisions.md 170). -/
+theorem chainFromPem?_begins (derLen chainMax : Nat) (input : ByteArray)
+    (certs : List ByteArray) (h : chainFromPem? derLen chainMax input = some certs) (k : Nat)
+    (h_k : beginPrefix.isPrefixOf (input.toList.drop k) = true) :
+    (k = 0 ∨ input.toList[k - 1]? = some 10) ∧
+      beginLine.isPrefixOf (input.toList.drop k) = true := by
+  simp only [chainFromPem?, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
+  obtain ⟨read, h_read, -⟩ := h
+  exact readCertificates?_begins derLen input read h_read k h_k
 
 end Spec.PemFiles

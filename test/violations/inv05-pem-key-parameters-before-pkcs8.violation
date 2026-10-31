@@ -8,8 +8,10 @@ reason: the key call reads a PKCS #8 PRIVATE KEY block under an EC
   for the block above a PKCS #8 key and CH_OK above a SEC 1 key.
 
 --- old
-    return pem_decode_one(rest, rest_len, PEM_LABEL_EC_PRIVATE_KEY, &w) &&
+    return read_blocks(pem, pem_len, PEM_LABEL_EC_PARAMETERS, &p, PEM_LABEL_EC_PRIVATE_KEY, &w) &&
+           x509_pem_parameters_are_p256(parameters, p.len) &&
            x509_pem_read_sec1(der, w.len, scalar, point);
 --- new
-    return pem_decode_one(rest, rest_len, PEM_LABEL_PRIVATE_KEY, &w) &&
+    return read_blocks(pem, pem_len, PEM_LABEL_EC_PARAMETERS, &p, PEM_LABEL_PRIVATE_KEY, &w) &&
+           x509_pem_parameters_are_p256(parameters, p.len) &&
            x509_pem_read_pkcs8(der, w.len, scalar, point);
