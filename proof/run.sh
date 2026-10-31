@@ -2497,27 +2497,29 @@ launch fast:2 full srv_tcp_nonblocking 4 "fill_nondet.0:33,no_secret_left.0:33" 
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the
 # handlers without either resting on the other's code. ct.c is real,
-# because the wipes and the two constant-time comparisons are the
-# handlers' own steps. The harness states which three bounds are the
-# harness's and not the build's.
+# because the two constant-time comparisons are the handlers' own steps.
+# srv_out.h's five calls are stubs (proof/srv_out_stubs.h), so no record
+# loop of srv_out.c is in the formula. The harness states which three
+# bounds are the harness's and not the build's.
 #
 # The unwindset entries are the loops a global bound would unroll to no
-# purpose: ct_wipe and ct_memeq run over 32-byte secrets, fill_nondet's
-# longest call is the 117-byte cookie the mint stub writes, and the two
-# fragment loops are bounded by the harness's record limit against the
-# longest message its builder stubs report.
-# No launch line: this formula has never been seen to converge. All
-# fifteen handlers are real in one formula, and it returned no verdict
-# in 55 minutes at --unwind 40 (1.7 GB), nor in 4 minutes at 20 or 18,
-# with the bounds above. The harness is kept because the split it needs
-# is layered rather than smaller, the way proof/srv_parser_ext_harness.c
-# and proof/p256_ecdh_harness.c divide theirs: one formula per handler,
-# or per flight, over the callees stubbed to their contracts. The line
-# that stood here was committed in 657da14 without a measurement, which
-# is the mistake CLAUDE.md names -- a launch line whose formula has not
-# been seen to converge proves nothing -- and it hung the proof tier.
-# Until the split lands the handlers are tested by bin/srv_flight_test
-# and guarded by four .violation mutants, and docs/verification.md says so.
+# purpose: ct_wipe runs over the 64-byte key exchange secret, ct_memeq
+# over a 32-byte verify_data, and fill_nondet's longest call is the
+# 117-byte cookie the mint stub writes. The chain loop runs CHAIN_MAX
+# times, inside the global bound of 4.
+#
+# This harness had no launch line until 2026-10-30
+# (https://github.com/c4milo/chapulin/issues/211). It returned no verdict
+# in 55 minutes at --unwind 40 while srv_flight.c held the record writer.
+# That writer moved to srv_out.c, and the harness then lacked stubs for
+# srv_out.h's calls, srv_kex_begin and hsr_restart_transcript. Its parser
+# stub also wrote a truncated_len past the body, which srv_parser.h
+# forbids. proof/coverage.py --reach then showed two parts no path ran:
+# the client Finished, longer than the 16 bytes the reader stub yielded,
+# and the ALPN arms, with no list in the configuration. Measured on
+# 2026-10-30 in the pinned amd64 container, the way the runner runs it:
+# 1686 properties, 34 s, 1.25 GB resident.
+launch fast:2 full srv_flight 4 "ct_wipe.0:65,ct_memeq.0:33,fill_nondet.0:118" -DCH_ROLE_SERVER ct.c proof/ct_wipe_stub.c
 # ct proves ct_memeq and the contract of proof/ct_wipe_stub.c, the
 # ct_wipe every other line links. ct_wipe proves ct_wipe.c, the body that
 # ships, to the same contract with its 16-byte word, and ct_wipe_u32 with

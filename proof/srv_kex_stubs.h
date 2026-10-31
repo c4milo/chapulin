@@ -1,9 +1,12 @@
-// Contract stubs for srv_kex.h's four entries, which srv_select,
-// srv_check_retry_hello, srv_send_server_hello and
+// Contract stubs for srv_kex.h's five entries, which srv_begin,
+// srv_select, srv_check_retry_hello, srv_send_server_hello and
 // srv_derive_handshake_secrets call. proof/srv_flight_harness.c includes
 // this after its own helpers, whose nondet_int and fill_nondet it reads.
 // It is a header of its own because that harness sits at the 500-line
-// cap, and proof/srv_kex_harness.c proves the real four.
+// cap. proof/srv_kex_harness.c proves the real srv_kex_group,
+// srv_kex_shared, srv_kex_share and srv_kex_secret. No harness calls this
+// build's srv_kex_begin, and proof/srv_kex_cnsa2_harness.c calls the
+// PROFILE=cnsa2 one.
 //
 // Each stub asserts what srv_kex.h requires of a caller and answers with
 // every value srv_kex.h allows: a group this build holds or 0, either
@@ -15,6 +18,12 @@
 #include <string.h>
 
 #include "srv_kex.h"
+
+void srv_kex_begin(handshake_state *h) {
+    __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "kex_begin: state writable");
+    fill_nondet(h->priv, sizeof h->priv);
+    fill_nondet(h->pub, sizeof h->pub);
+}
 
 uint16_t srv_kex_group(const client_hello *ch) {
     __CPROVER_assert(__CPROVER_r_ok(ch, sizeof *ch), "kex_group: hello readable");

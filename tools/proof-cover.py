@@ -453,21 +453,9 @@ AUDITED = {
         "carried this same shift before the split. The refused-send paths "
         "compare int results and assign an alert constant, with no "
         "arithmetic. No harness runs this file: "
-        "proof/srv_flight_harness.c covers the handlers that call it and "
-        "returns no verdict, which proof/run.sh records. Delete this entry "
+        "proof/srv_flight_harness.c proves the handlers that call it over "
+        "proof/srv_out_stubs.h, its contract stubs. Delete this entry "
         "when srv_out.c gets a harness of its own."
-    ),
-    "srv_flight.c": (
-        "the fifteen flight handlers. Every bitwise operator takes unsigned "
-        "operands: `ch->suites`, `ch->groups` and `ch->shares` are uint8_t "
-        "bitmasks (srv_parser.h:220-222) tested against uint8_t constants. "
-        "The file now holds no shift at all: the one it had went to "
-        "srv_out.c with the record writer. No operand is signed. "
-        "proof/srv_flight_harness.c covers this file and returns no verdict "
-        "with all fifteen handlers in one formula -- no answer in 55 minutes "
-        "at --unwind 40, none at 20 or 18 -- which proof/run.sh records along "
-        "with the layered split it needs. Delete this entry when that split "
-        "gives it a launch line."
     ),
     "srv_quic.c": (
         "the QUIC server driver: the step table, the input loop and the three "

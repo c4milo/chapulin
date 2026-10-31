@@ -1,28 +1,29 @@
 // Proves: the fifteen srv_flight.h handlers are memory safe and free of
 // UB over an unconstrained ClientHello, selection and session, and that
-// every refusal but CH_EIO leaves h->alert holding a description somebody
-// wrote.
+// every refusal leaves h->alert holding a description somebody wrote.
 //
 // The layering is proof/srv_accept_harness.c's, turned around. There the
 // driver was real and these fifteen were contract stubs; here they are
 // real and everything they call is one: the parser, the nine builders,
 // the cookie, srv_auth.h's, srv_resume.h's and srv_kex.h's entries, the
-// record reader, the key schedule, the record layer and the I/O shim. Each stub asserts
+// record reader, the key schedule, the record keys and srv_out.h's five
+// calls, which seal and send (proof/srv_out_stubs.h). Each stub asserts
 // what its header requires of a caller and havocs what its header says
 // it writes. ct.c is real, because the wipes and the two constant-time
 // comparisons are this file's own steps.
 //
 // What the alert assertion means. The chain that holds srv_flight.h's failure
-// rule runs through four callees whose headers promise the same thing:
-// hsr_next_msg, srv_parse_client_hello, srv_select_auth and
-// srv_sign_certificate_verify each write the description they chose. So the
+// rule runs through the callees whose headers promise the same thing:
+// hsr_next_msg, srv_parse_client_hello, srv_select_auth,
+// srv_sign_certificate_verify and srv_out.h's calls each write the
+// description they chose. So the
 // stubs write one on every refusal, and the assertion below reads a byte no
 // handler and no stub writes.
 //
 // Three bounds are the harness's, not the build's: CHAIN_MAX entries in a
 // chain, DER_MAX bytes in a certificate and LIMIT_MAX for the peer's record
-// limit. The first two bound a walk over the caller's flash; the third bounds
-// the fragment loop, and a larger limit runs it fewer times, not more.
+// limit. The first two bound a walk over the caller's flash; the third
+// bounds what fresh() writes into peer_limit, which only srv_out.c reads.
 #define CH_PROOF_STUB_SHA256
 #include "harness.h"
 
@@ -40,7 +41,7 @@ uint16_t nondet_u16(void);
 // The alert byte no handler and no stub writes.
 #define ALERT_UNWRITTEN 0xff
 
-#define MSG_MAX 16   // the longest message the record reader yields
+#define MSG_MAX 36   // the longest message read here, a Finished
 #define NAME_MAX 8   // the longest server_name a hello carries here
 #define DER_MAX 8    // the longest certificate in the chain below
 #define CHAIN_MAX 2  // the longest chain an identity holds here
@@ -58,6 +59,7 @@ static uint8_t der_bytes[CHAIN_MAX][DER_MAX];
 static ch_cert chain[CHAIN_MAX];
 static ch_identity identity;
 static uint8_t rxbuf[MSG_MAX];
+static ch_alpn_protocol alpn[2]; // the caller's list, two entries here
 
 // One return code out of the set a callee's header names.
 static int nondet_rc(int allow_eio, int allow_eauth) {
@@ -135,26 +137,6 @@ void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]) {
     fill_nondet((uint8_t *)d, sizeof *d);
 }
 
-int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out, size_t cap,
-             size_t *out_len) {
-    (void)type;
-    __CPROVER_assert(__CPROVER_w_ok(d, sizeof *d), "seal: direction writable");
-    __CPROVER_assert(n == 0 || __CPROVER_r_ok(pt, n), "seal: plaintext readable");
-    size_t total = REC_HDR + n + 1 + AEAD_TAG;
-    if (total > cap) {
-        return -1;
-    }
-    __CPROVER_assert(__CPROVER_w_ok(out, total), "seal: output writable");
-    *out_len = total;
-    return 0;
-}
-
-int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
-    __CPROVER_assert(cfg != NULL, "send: cfg valid");
-    __CPROVER_assert(n == 0 || __CPROVER_r_ok(p, n), "send: bytes readable");
-    return (nondet_u8() & 1) ? CH_OK : CH_EIO;
-}
-
 int hsr_next_msg(handshake_state *s, uint8_t *type, const uint8_t **raw, size_t *raw_len) {
     __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "next_msg: state writable");
     int rc = nondet_rc(1, 1);
@@ -183,6 +165,13 @@ int hsr_transcript_hash(handshake_state *s, size_t hash_len, uint8_t *out) {
     __CPROVER_assert(__CPROVER_w_ok(out, hash_len), "transcript hash: output writable");
     fill_nondet(out, hash_len);
     return CH_OK;
+}
+
+void hsr_restart_transcript(handshake_state *s, size_t hash_len, const uint8_t *retry, size_t n) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "restart: state writable");
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "restart: hash_len names a hash this build holds");
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(retry, n), "restart: retry readable");
 }
 
 // Everything srv_parse_client_hello writes, each member by its own type.
@@ -226,6 +215,8 @@ int srv_parse_client_hello(uint32_t cpu, const uint8_t *body, size_t n, client_h
         return rc;
     }
     fill_hello(ch);
+    // srv_parser.h: the binder list starts inside the body.
+    __CPROVER_assume(ch->truncated_len <= n);
     return CH_OK;
 }
 
@@ -354,6 +345,7 @@ uint8_t srv_identity_live(const ch_cfg *cfg) {
 }
 
 #include "srv_kex_stubs.h"
+#include "srv_out_stubs.h"
 #include "srv_select_stubs.h"
 const ch_identity *srv_identity_for(const ch_cfg *cfg, uint16_t sigalg) {
     __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "identity_for: cfg readable");
@@ -399,7 +391,12 @@ static void fresh(void) {
     t.cfg.srv.sni_cap = nondet_size_t();
     __CPROVER_assume(t.cfg.srv.sni_cap <= sizeof sni_area);
     t.cfg.srv.require_server_name = nondet_u8();
-    t.alpn_selected = CH_ALPN_NONE;
+    t.cfg.alpn_protocols = alpn;
+    t.cfg.alpn_count = nondet_size_t();
+    __CPROVER_assume(t.cfg.alpn_count <= 2);
+    // srv_handshake.c copies the parser's index, which names an entry.
+    t.alpn_selected = nondet_u8();
+    __CPROVER_assume(t.alpn_selected == CH_ALPN_NONE || t.alpn_selected < t.cfg.alpn_count);
     t.hash_len = SHA256_LEN;
     // srv_store_selection writes peer_limit only from a nonzero
     // record_size_limit, so the fragment loops below never see 0.
@@ -420,12 +417,10 @@ static void fresh(void) {
 }
 
 // srv_flight.h's failure rule, read off the byte nothing else writes.
-// CH_EIO stays outside the assertion. srv_out.c names internal_error for
-// a send the transport refused (srv_out.h), but this harness has no
-// launch line, so no run has checked that every CH_EIO path writes a
-// description.
+// CH_EIO is inside it: srv_out.h names internal_error for a send the
+// transport refused, and the stubs write it.
 static void refusal_wrote_alert(int rc) {
-    if (rc != CH_OK && rc != CH_EIO) {
+    if (rc != CH_OK) {
         __CPROVER_assert(h.alert != ALERT_UNWRITTEN,
                          "a handler that refuses writes the alert it chose");
     }

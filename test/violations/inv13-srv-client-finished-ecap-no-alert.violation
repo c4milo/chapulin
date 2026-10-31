@@ -1,0 +1,24 @@
+invariant: INV-13
+file: srv_flight.c
+catches: proof/prove-one.sh srv_flight
+reason: srv_read_client_finished returns the record reader's CH_ECAP and
+  writes no alert, so the session sends whatever h->alert held. The
+  reader leaves the description to its caller for that code alone
+  (handshake_record.h). The srv_flight proof asserts that every refusal
+  writes the alert it chose, and fails on this edit.
+
+--- old
+    int rc = hsr_next_msg(h, &type, &raw, &raw_len);
+    if (rc != CH_OK) {
+        if (rc == CH_ECAP) {
+            h->alert = ALERT_INTERNAL_ERROR;
+        }
+        return rc;
+    }
+    if (type != HS_FINISHED || raw_len != 4 + hash_len) {
+--- new
+    int rc = hsr_next_msg(h, &type, &raw, &raw_len);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    if (type != HS_FINISHED || raw_len != 4 + hash_len) {

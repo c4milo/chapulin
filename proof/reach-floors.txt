@@ -501,6 +501,12 @@ srv_cookie_cnsa2 181
 # 06f37bcc on, measured with proof/coverage.py --reach --only on the
 # nightly's runner image. Decision 162 added 14 locations that the
 # harness compiles and does not reach. It reaches the same 322.
+# srv_flight took its floor on 2026-10-30, measured by proof/coverage.py
+# in the pinned amd64 container: 96.8% (704/727). In srv_flight.c no path
+# reaches the CH_ASSERT arms or a certificate past the three-byte
+# cert_data field, which the harness's 8-byte certificates exclude. The
+# rest are stub and helper branches.
+srv_flight 704
 srv_kex 322
 srv_kex_cnsa2 127
 srv_mldsa 193

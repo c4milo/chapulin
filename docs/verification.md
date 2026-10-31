@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-117 of the 153 C sources in the tree root are compiled into a
+118 of the 153 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,11 +48,10 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 36 sources are in no such harness:
+The other 35 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
-| `srv_flight.c` | Its harness's formula returns no verdict ([srv_flight](#srv_flight)). | `bin/srv_flight_test` |
 | `srv_out.c`, `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_flight_test`, `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds its cipher and both architectures' key expansions to `quic_aes_soft.c`, and searches the stack each expansion leaves ([The host object's AES key expansions](#the-host-objects-aes-key-expansions)). |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
@@ -2582,13 +2581,26 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 
 #### srv_flight
 
-- **Harness:** `srv_flight` (no launch line)
-- **Not proved.** `proof/srv_flight_harness.c` exists, and its formula
-  returns no verdict with all fifteen handlers real: no answer in 55
-  minutes at `--unwind 40`, and none at 20 or 18. `proof/run.sh` records
-  what was tried and the layered split it needs.
-- **Tested instead:** `bin/srv_flight_test` and four `.violation`
-  mutants cover the handlers.
+- **Harness:** `srv_flight` (fast)
+- **Build:** `ROLE=server`.
+- **Proves:** the fifteen `srv_flight.h` handlers (`srv_flight.c`) are
+  memory safe and free of UB over an unconstrained ClientHello,
+  selection and session. Also:
+  - every refusal, `CH_EIO` included, leaves `h->alert` holding a
+    description somebody wrote (INV-13);
+  - a checked retry hello asks for no second retry;
+  - `srv_derive_handshake_secrets` leaves the x25519 scalar and its
+    public value wiped on both exits;
+  - `srv_complete` leaves the session connected.
+- **Bound:** messages of at most 36 B, a client Finished; a chain of at
+  most 2 certificates of at most 8 B; at most 2 ALPN protocols.
+- **Not proved:** a certificate past the three-byte `cert_data` field,
+  which the 8-byte bound excludes, and the `CH_ASSERT` arms. The parser,
+  the builders, the cookie, the key schedule, the record keys, the
+  transcript's SHA-256, `srv_kex.h`, `srv_auth.h`, `srv_resume.h` and
+  `srv_out.h`'s five calls are contract stubs. No harness proves
+  `srv_out.c` or this build's `srv_kex_begin`; `bin/srv_flight_test`
+  tests them.
 
 #### srv_tcp_nonblocking
 
