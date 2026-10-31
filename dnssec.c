@@ -14,6 +14,7 @@
 #include "p384.h"
 #include "rsa.h"
 #include "rsa_pkcs1.h"
+#include "sha1.h"
 #include "sha256.h"
 #include "sha512.h"
 
@@ -64,6 +65,16 @@ static int verify_rsa(const uint8_t *key, size_t key_len, const uint8_t *digest,
                : CH_EAUTH;
 }
 
+// What ch_dnssec_digest_init stores for digest type 1: a value no DNSSEC
+// algorithm number takes, because no signature this file checks runs on
+// SHA-1.
+#define HASH_SHA1 0xf1
+
+// 1 for a hash that ch_dnssec_digest_init started as SHA-1.
+static int hashes_sha1(uint8_t algorithm) {
+    return algorithm == HASH_SHA1;
+}
+
 // 1 for the algorithms whose hash runs on a SHA-512 context: SHA-512 for
 // 10 and 15, and SHA-384 for 14.
 static int hashes_sha512(uint8_t algorithm) {
@@ -98,8 +109,28 @@ int ch_dnssec_hash_init(ch_dnssec_hash *h, uint8_t algorithm, const uint8_t *key
     }
 }
 
+// Type 1 is SHA-1 under HASH_SHA1. Types 2 and 4 are the hashes of
+// algorithms 8 and 14, whose init reads no key and no signature.
+int ch_dnssec_digest_init(ch_dnssec_hash *h, uint8_t digest_type) {
+    switch (digest_type) {
+    case CH_DNSSEC_DIGEST_SHA1:
+        h->algorithm = HASH_SHA1;
+        sha1_init(&h->state.sha1_state);
+        return CH_OK;
+    case CH_DNSSEC_DIGEST_SHA256:
+        return ch_dnssec_hash_init(h, CH_DNSSEC_ALG_RSASHA256, NULL, 0, NULL, 0);
+    case CH_DNSSEC_DIGEST_SHA384:
+        return ch_dnssec_hash_init(h, CH_DNSSEC_ALG_ECDSAP384SHA384, NULL, 0, NULL, 0);
+    default:
+        h->algorithm = 0;
+        return CH_EINVAL;
+    }
+}
+
 void ch_dnssec_hash_update(ch_dnssec_hash *h, const uint8_t *p, size_t n) {
-    if (hashes_sha512(h->algorithm)) {
+    if (hashes_sha1(h->algorithm)) {
+        sha1_update(&h->state.sha1_state, p, n);
+    } else if (hashes_sha512(h->algorithm)) {
         sha512_update(&h->state.sha512_state, p, n);
     } else {
         sha256_update(&h->state.sha256_state, p, n);
@@ -108,7 +139,10 @@ void ch_dnssec_hash_update(ch_dnssec_hash *h, const uint8_t *p, size_t n) {
 
 size_t ch_dnssec_hash_final(ch_dnssec_hash *h, uint8_t digest[CH_DNSSEC_DIGEST_MAX]) {
     size_t n = SHA256_LEN;
-    if (h->algorithm == CH_DNSSEC_ALG_ECDSAP384SHA384) {
+    if (hashes_sha1(h->algorithm)) {
+        sha1_final(&h->state.sha1_state, digest);
+        n = SHA1_LEN;
+    } else if (h->algorithm == CH_DNSSEC_ALG_ECDSAP384SHA384) {
         sha384_final(&h->state.sha512_state, digest);
         n = SHA384_LEN;
     } else if (hashes_sha512(h->algorithm)) {

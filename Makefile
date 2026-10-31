@@ -833,7 +833,7 @@ WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_
 # not, because the device objects never package them. dnssec.c, the
 # DNSSEC check, rides with them and compiles to nothing outside a
 # CH_DNSSEC build (https://github.com/c4milo/chapulin/issues/189).
-WEBPKI_CHAIN_SRCS := sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c dnssec.c
+WEBPKI_CHAIN_SRCS := sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c dnssec.c sha1.c
 # The constant-time P-256 key exchange: p256_ecdh.c over the arithmetic
 # p256_sign.c computes with too. p256.c is the variable-time verifier and
 # is not among them. Every server role and every TRUST=webpki client
@@ -1544,8 +1544,9 @@ $(error EXPORTER=$(EXPORTER) is not a setting; use EXPORTER=on or EXPORTER=off)
 endif
 # The DNSSEC signature checks (dnssec.h,
 # https://github.com/c4milo/chapulin/issues/189), off by default.
-# DNSSEC=on adds four calls to the object: a hash of the signed data and a
-# check of an RRSIG's signature for algorithms 8, 10 and 13. The checks
+# DNSSEC=on adds five calls to the object: a hash of the signed data, a
+# plain SHA-1, SHA-256 or SHA-384 for NSEC3 and DS digests, and a check of
+# an RRSIG's signature for algorithms 8, 10, 13, 14 and 15. The checks
 # run on rsa_pkcs1.c, rsa_mont64.c and p256.c, which a host TRUST=webpki
 # object alone packages, so the axis refuses every other build. Each call
 # carries the transport in its symbol name, so the record-mode and QUIC
@@ -1559,7 +1560,8 @@ ifneq ($(TRUST),webpki)
 $(error DNSSEC=on needs TRUST=webpki, whose object packages the PKCS#1 v1.5 verifier the RSA check shares)
 endif
 LIB_DEF += -DCH_DNSSEC
-PUBLIC_DNSSEC := ch_dnssec_hash_init ch_dnssec_hash_update ch_dnssec_hash_final ch_dnssec_verify
+PUBLIC_DNSSEC := ch_dnssec_hash_init ch_dnssec_digest_init ch_dnssec_hash_update ch_dnssec_hash_final \
+                 ch_dnssec_verify
 else ifeq ($(DNSSEC),off)
 PUBLIC_DNSSEC :=
 else
@@ -2548,7 +2550,8 @@ DECLARES_pem_files.h := ch_chain_from_pem ch_p256_key_from_pem ch_mldsa_key_from
                         ch_anchors_from_pem
 DECLARES_ticket.h := ch_ticket_obfuscated_age
 DECLARES_alert.h := ch_alert_sent ch_alert_received
-DECLARES_dnssec.h := ch_dnssec_hash_init ch_dnssec_hash_update ch_dnssec_hash_final ch_dnssec_verify
+DECLARES_dnssec.h := ch_dnssec_hash_init ch_dnssec_digest_init ch_dnssec_hash_update ch_dnssec_hash_final \
+                     ch_dnssec_verify
 DECLARES_drbg.h := ch_drbg_seed
 DECLARES_rand.h := ch_rand_bytes
 DECLARES_keylog.h := ch_keylog
@@ -3208,7 +3211,7 @@ bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TES
 # (test/gen_dnssec_vectors.py) and at every refusal dnssec.h states.
 DNSSEC_TEST_SRCS := dnssec.c rsa_pkcs1.c rsa.c $(RSA_EQUIV_TEST_SRCS) p256.c $(P256_WIDE_SRCS) \
                     p256_scalar.c p256_field.c p256_point.c buf.c sha256.c sha512.c \
-                    sha512_compress_blocks.c x25519_wide.c p384.c p384_field.c $(P384_WIDE_SRCS)
+                    sha512_compress_blocks.c x25519_wide.c p384.c p384_field.c $(P384_WIDE_SRCS) sha1.c
 bin/dnssec_test: test/dnssec_test.c test/dnssec_vectors.h test/dnssec_rfc_vectors.h $(DNSSEC_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -I. -Itest -o $@ \
@@ -5167,7 +5170,7 @@ check-lib-exporter:
 	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern EXPORTER=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # The DNSSEC axis (https://github.com/c4milo/chapulin/issues/189), on
 # both objects cocuyo reaches through colibri: the record-mode client and
-# the QUIC one. Each proves the object exports the four DNSSEC calls under
+# the QUIC one. Each proves the object exports the five DNSSEC calls under
 # its transport's names. A host object alone takes the axis.
 check-lib-dnssec:
 ifeq ($(HOST_TARGET),)
@@ -8000,7 +8003,7 @@ lint-impact:
 #     signatures a public chain carries under TRUST=webpki — a CA's key,
 #     a certificate's digest and its signature, every byte from the wire
 #     or from the caller's anchor table, and the client never signs.
-#   dnssec.c, rsa_mont64_exp.c: a DNSSEC check, over the
+#   dnssec.c, rsa_mont64_exp.c, sha1.c: a DNSSEC check, over the
 #     key's modulus and exponent and a signature from a zone, all public
 #     (https://github.com/c4milo/chapulin/issues/189).
 #   mldsa.c, mldsa_poly.c: ML-DSA-87 verify. Every product is over the
@@ -8339,7 +8342,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    pem_files.c:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    $(addsuffix :$(WIDE64_HOST_AES_DEFINES),$(AES_HW_SRCS))
-WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c rsa_mont64_exp.c dnssec.c pem_blocks.c x509.c x509_der.c x509_ca.c \
+WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c rsa_mont64_exp.c dnssec.c sha1.c pem_blocks.c x509.c x509_der.c x509_ca.c \
                   p384.c p384_field.c $(P384_WIDE_SRCS) rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c \
                   webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \

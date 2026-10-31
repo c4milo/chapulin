@@ -575,6 +575,9 @@ srv_ticket_cnsa2 228
 # 63.2% (74/117). Most locations neither reaches are buf.c's and ct.c's
 # helpers, which no stub calls and other harnesses prove.
 dnssec 144
+# sha1 took its floor on 2026-10-31 in the pinned amd64 container: 88.6%
+# (93/105).
+sha1 93
 rsa_pkcs1_exponent 74
 rsa_mont64_exp 75
 rsa_mont64_exp_schedule 83

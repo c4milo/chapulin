@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-124 of the 155 C sources in the tree root are compiled into a
+125 of the 156 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1524,6 +1524,20 @@ The entries are grouped by area:
   harnesses above and the `p256` harnesses prove them, and
   `bin/dnssec_test` runs the whole check against OpenSSL's keys and
   signatures.
+
+#### sha1
+
+- **Harness:** `sha1` (fast)
+- **Build:** a host object with `CH_DNSSEC`.
+- **Proves:** `sha1.c` is memory safe and free of UB: init, one update
+  of up to a block, and the final padding, which writes into the block
+  directly.
+- **Bound:** one update of up to 64 bytes. With two updates of up to two
+  blocks, and the padding fed one byte at a time, cbmc gave no verdict
+  in 15 minutes.
+- **Not proved:** the value. `bin/dnssec_test` holds it to FIPS 180-4's
+  one-block and two-block examples, and the Zig API's test to
+  `std.crypto`'s SHA-1.
 
 #### x25519_wide_ed25519 and x25519_wide_ed25519_mod_l
 

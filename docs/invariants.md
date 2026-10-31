@@ -891,9 +891,14 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-8 — no legacy protocol
 
 - **Claim.** No TLS 1.2, no renegotiation, no compression, no 0-RTT.
+  SHA-1 serves no TLS path: a `DNSSEC=on` object holds it for NSEC3
+  owner-name hashes and DS digests of type 1 alone, and `dnssec.c` is its
+  one caller (docs/decisions.md 169).
 - **Mechanism.** Absence; the supported_versions extension pins 1.3
   and the parser rejects everything else.
 - **Check.** Convention plus handshake_strict negative cases.
+  Semgrep-structural for SHA-1 (`inv-8-sha1-dnssec-only`): a `sha1_`
+  call outside `sha1.c` and `dnssec.c` fails `make lint-invariants`.
 - **Violation.** A PR handles a 1.2 alert "gracefully" instead of
   failing closed.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).

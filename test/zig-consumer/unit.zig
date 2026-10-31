@@ -545,6 +545,14 @@ test "DNSSEC=on: the hashes match std.crypto, and P-256, P-384 and Ed25519 signa
     try expectError(error.Auth, dnssec.verify(.ecdsap256sha256, key[1..], &want256, &bad));
     try expectError(error.Invalid, dnssec.verify(.ecdsap256sha256, key[1..], &want512, &sig));
 
+    // The digest types, for DS records and NSEC3 owner names.
+    var h1 = dnssec.Hash.digest(.sha1);
+    h1.update(msg);
+    var want1: [20]u8 = undefined;
+    std.crypto.hash.Sha1.hash(msg, &want1, .{});
+    var out1: [c.CH_DNSSEC_DIGEST_MAX]u8 = undefined;
+    try std.testing.expectEqualSlices(u8, &want1, h1.final(&out1));
+
     // P-384: std.crypto signs over SHA-384.
     const Ecdsa384 = std.crypto.sign.ecdsa.EcdsaP384Sha384;
     const kp384 = try Ecdsa384.KeyPair.generateDeterministic([_]u8{0x33} ** Ecdsa384.KeyPair.seed_length);
@@ -584,7 +592,7 @@ test "every declaration this object has compiles" {
     if (has_mldsa_server) compile(chapulin, &.{ "Server", "MlDsa87Identity", "Chain", "MlDsa87Key" });
     if (has_webpki) compile(chapulin, &.{ "TrustAnchor", "CertType", "Anchors" });
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hookContext"});
-    if (@hasDecl(c, "ch_dnssec_verify")) compile(chapulin.dnssec, &.{ "Algorithm", "Hash", "verify" });
+    if (@hasDecl(c, "ch_dnssec_verify")) compile(chapulin.dnssec, &.{ "Algorithm", "DigestType", "Hash", "verify" });
     const record = [_][]const u8{ "init", "recordIn", "recordState", "alertSent", "alertReceived", "read", "write", "writableLen", "close", "recordClose", "group", "pskSelected", "peerLimit", "readClosed", "replyLen" };
     const quic = [_][]const u8{ "init", "cryptoIn", "initialKeys", "keysReady", "peerTransportParams", "seal", "sealClose", "open", "retryOk", "negotiatedVersion", "keyUpdate", "keyPhase", "dropPreviousKeys", "discard", "state", "alert", "alertSent", "alertReceived", "errorCode", "close", "alpnSelected", "group", "pskSelected" };
     if (@hasDecl(c, "ch_record_init")) compileSession(chapulin.record.Client(c.CH_MIN_RXBUF, .{}), &(record ++ .{ "recordOut", "takeTicket" }));

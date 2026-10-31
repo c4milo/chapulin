@@ -14902,11 +14902,16 @@ does nothing more.
       every field operation there is static.
     - **ECDSA P-384 (14).** `p384_ecdsa_verify_raw` takes r and s side
       by side, as the P-256 entry does, over SHA-384.
-    - **Out.** RSA/SHA-1, algorithms 5 and 7: RFC 9905 deprecates SHA-1
-      in DNSSEC, and cocuyo keeps them off by default, so a zone signed
-      with them alone reads as insecure. Camilo ruled on 2026-10-31 to
-      leave SHA-1 out of chapulin; `ch_dnssec_verify` answers `CH_EINVAL`
-      for both. Ed448 (16) is out too.
+    - **SHA-1, as a hash alone.** Cocuyo's Stage B validates NSEC3,
+      whose one hash is SHA-1 (RFC 5155), in about 97% of the root's
+      zones by its count, and DS digests of type 1. Camilo ruled on
+      2026-10-31: `ch_dnssec_digest_init` starts a plain SHA-1, SHA-256
+      or SHA-384 by RFC 9904's DS digest number, and `sha1.[ch]` holds
+      SHA-1 under `CH_DNSSEC`, with `dnssec.c` its one caller
+      (`inv-8-sha1-dnssec-only`). The RSA/SHA-1 signatures of
+      algorithms 5 and 7 stay out: RFC 9905 deprecates them, and
+      `ch_dnssec_verify` answers `CH_EINVAL` for both. Ed448 (16) is out
+      too.
     - **Rejected:**
       - **One call per algorithm.** Camilo chose one dispatcher.
       - **Split key values.** The key field is read here, with `rbuf`,

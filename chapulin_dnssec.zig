@@ -18,6 +18,14 @@ pub const Algorithm = if (has_dnssec) enum(u8) {
     ed25519 = c.CH_DNSSEC_ALG_ED25519,
 } else @compileError("chapulin.dnssec.Algorithm needs DNSSEC=on");
 
+/// The digest types Hash.digest takes, RFC 9904's DS numbers. sha1 serves an NSEC3 owner-name
+/// hash too, whose hash algorithm 1 is SHA-1.
+pub const DigestType = if (has_dnssec) enum(u8) {
+    sha1 = c.CH_DNSSEC_DIGEST_SHA1,
+    sha256 = c.CH_DNSSEC_DIGEST_SHA256,
+    sha384 = c.CH_DNSSEC_DIGEST_SHA384,
+} else @compileError("chapulin.dnssec.DigestType needs DNSSEC=on");
+
 /// The hash of an RRSIG's signed data: SHA-256 for rsasha256 and ecdsap256sha256, SHA-384 for
 /// ecdsap384sha384, and SHA-512 for rsasha512 and ed25519, which hashes R and the key first. init starts it, update adds
 /// bytes, and final writes the digest, which verify takes.
@@ -30,6 +38,14 @@ pub const Hash = if (has_dnssec) struct {
     pub fn init(algorithm: Algorithm, key: []const u8, sig: []const u8) error{Invalid}!@This() {
         var self: @This() = .{};
         try chapulin.fromCode(error{Invalid}, c.ch_dnssec_hash_init(&self.state, @intFromEnum(algorithm), key.ptr, key.len, sig.ptr, sig.len));
+        return self;
+    }
+
+    /// ch_dnssec_digest_init: a plain hash, for a DS digest or an NSEC3 owner-name hash. Every
+    /// DigestType has a hash, so the C call's refusal does not arise.
+    pub fn digest(digest_type: DigestType) @This() {
+        var self: @This() = .{};
+        chapulin.fromCode(error{Invalid}, c.ch_dnssec_digest_init(&self.state, @intFromEnum(digest_type))) catch unreachable;
         return self;
     }
 

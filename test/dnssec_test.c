@@ -155,8 +155,13 @@ static void refused_shapes(void) {
     uint8_t digest64[64] = {0};
     expect(ch_dnssec_verify(10, rsa->key, rsa->key_len, digest64, 64, rsa->sig, rsa->sig_len),
            CH_EAUTH, "a 64-byte modulus cannot hold a SHA-512 encoding");
-    expect(ch_dnssec_verify(5, rsa->key, rsa->key_len, rsa->digest, 32, rsa->sig, rsa->sig_len),
-           CH_EINVAL, "algorithm 5 is not checked here");
+    expect(ch_dnssec_verify(6, rsa->key, rsa->key_len, rsa->digest, 32, rsa->sig, rsa->sig_len),
+           CH_EINVAL, "algorithm 6 is not checked here");
+    uint8_t digest20[20] = {0};
+    expect(ch_dnssec_verify(5, rsa->key, rsa->key_len, digest20, 20, rsa->sig, rsa->sig_len),
+           CH_EINVAL, "algorithm 5, RSA/SHA-1, is refused");
+    expect(ch_dnssec_verify(7, rsa->key, rsa->key_len, digest20, 20, rsa->sig, rsa->sig_len),
+           CH_EINVAL, "algorithm 7, RSA/SHA-1 with NSEC3, is refused");
     expect(ch_dnssec_verify(13, ec->key, 63, ec->digest, 32, ec->sig, 64), CH_EINVAL,
            "algorithm 13 takes a 64-byte key alone");
     expect(ch_dnssec_verify(13, ec->key, 64, ec->digest, 32, ec->sig, 63), CH_EAUTH,
@@ -213,6 +218,34 @@ static void hashes(void) {
     expect((int)ch_dnssec_hash_final(&h, digest384), 48, "algorithm 14's digest is SHA-384's");
     expect(memcmp(digest384, sha384_abc, 48) == 0, 1, "the SHA-384 of abc");
     expect(ch_dnssec_hash_init(&h, 5, NULL, 0, NULL, 0), CH_EINVAL, "algorithm 5 has no hash here");
+
+    // The digest types: FIPS 180-4's examples for SHA-1, and type 2 and 4
+    // as SHA-256 and SHA-384 again.
+    static const uint8_t sha1_abc[20] = {0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81,
+                                         0x6a, 0xba, 0x3e, 0x25, 0x71, 0x78, 0x50,
+                                         0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d};
+    static const uint8_t sha1_two_blocks[20] = {0x84, 0x98, 0x3e, 0x44, 0x1c, 0x3b, 0xd2,
+                                                0x6e, 0xba, 0xae, 0x4a, 0xa1, 0xf9, 0x51,
+                                                0x29, 0xe5, 0xe5, 0x46, 0x70, 0xf1};
+    static const char two_blocks[] = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+    uint8_t d[CH_DNSSEC_DIGEST_MAX];
+    expect(ch_dnssec_digest_init(&h, CH_DNSSEC_DIGEST_SHA1), CH_OK, "digest type 1 starts");
+    ch_dnssec_hash_update(&h, abc, 3);
+    expect((int)ch_dnssec_hash_final(&h, d), 20, "type 1 is SHA-1's length");
+    expect(memcmp(d, sha1_abc, 20) == 0, 1, "the SHA-1 of abc");
+    expect(ch_dnssec_digest_init(&h, CH_DNSSEC_DIGEST_SHA1), CH_OK, "digest type 1 starts");
+    ch_dnssec_hash_update(&h, (const uint8_t *)two_blocks, sizeof two_blocks - 1);
+    ch_dnssec_hash_final(&h, d);
+    expect(memcmp(d, sha1_two_blocks, 20) == 0, 1, "the SHA-1 of FIPS 180-4's two-block message");
+    expect(ch_dnssec_digest_init(&h, CH_DNSSEC_DIGEST_SHA256), CH_OK, "digest type 2 starts");
+    ch_dnssec_hash_update(&h, abc, 3);
+    expect((int)ch_dnssec_hash_final(&h, d), 32, "type 2 is SHA-256's length");
+    expect(memcmp(d, sha256_abc, 32) == 0, 1, "type 2 is SHA-256");
+    expect(ch_dnssec_digest_init(&h, CH_DNSSEC_DIGEST_SHA384), CH_OK, "digest type 4 starts");
+    ch_dnssec_hash_update(&h, abc, 3);
+    expect((int)ch_dnssec_hash_final(&h, d), 48, "type 4 is SHA-384's length");
+    expect(memcmp(d, sha384_abc, 48) == 0, 1, "type 4 is SHA-384");
+    expect(ch_dnssec_digest_init(&h, 3), CH_EINVAL, "digest type 3 (GOST) is not taken");
     // Algorithm 15 hashes R and A first, so it takes them at init.
     static const uint8_t key32[32] = {0};
     static const uint8_t sig64[64] = {0};

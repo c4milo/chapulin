@@ -109,7 +109,7 @@ const webpki_srcs = [_][]const u8{
     "webpki_time.c", "webpki_name.c", "webpki_spki.c",   "webpki_sigalg.c", "webpki_ext.c",
     "webpki_cert.c", "webpki.c",      "webpki_ticket.c", "webpki_pin.c",    "webpki_cfg.c",
 };
-const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c", "dnssec.c" };
+const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c", "dnssec.c", "sha1.c" };
 const p256_ecdh_srcs = [_][]const u8{ "p256_ecdh.c", "p256_point.c", "p256_scalar.c", "p256_field.c" };
 const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
 const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_write.c" };
@@ -168,7 +168,7 @@ const public_ticket = [_][]const u8{"ch_ticket_obfuscated_age"};
 /// its transport and role.
 const public_alert = [_][]const u8{ "ch_alert_sent", "ch_alert_received" };
 // PUBLIC_DNSSEC: DNSSEC=on's four calls, each named for the transport.
-const public_dnssec = [_][]const u8{ "ch_dnssec_hash_init", "ch_dnssec_hash_update", "ch_dnssec_hash_final", "ch_dnssec_verify" };
+const public_dnssec = [_][]const u8{ "ch_dnssec_hash_init", "ch_dnssec_digest_init", "ch_dnssec_hash_update", "ch_dnssec_hash_final", "ch_dnssec_verify" };
 const public_tcp_nonblocking = [_][]const u8{
     "ch_record_init",  "ch_record_in",        "ch_record_out", "ch_record_state",
     "ch_record_close", "ch_record_whole_len", "ch_read",       "ch_write",

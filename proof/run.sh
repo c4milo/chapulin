@@ -3042,6 +3042,12 @@ launch fast full rsa_mont64_exp_schedule 66 "ct_wipe.0:385,fill_nondet.0:385" ct
 # stubs of the RSA and P-256 checks. Measured on 2026-10-31 in the pinned
 # amd64 container: 583 properties, 5 s, 0.06 GB.
 launch fast full dnssec 10 "fill_nondet.0:97" -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI dnssec.c buf.c
+# sha1.c, the SHA-1 a DNSSEC=on object holds for NSEC3 and DS digests of
+# type 1 (docs/decisions.md 169): init, one update of up to a block and
+# the final padding, which writes into the block directly, so a final runs
+# at most two compressions. Measured on 2026-10-31 in the pinned amd64
+# container: 463 properties, 24 s, 98 MB.
+launch fast full sha1 3 "fill_nondet.0:65,sha1_update.0:65,sha1_update.1:4,sha1_update.2:65,sha1_final.0:9,sha1_final.1:6,compress.0:17,compress.1:65,compress.2:81" -DCH_DNSSEC sha1.c
 launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont_host runs rsa_mont.c's host arm, rsa_vp1 as a host object
 # compiles it, whole: the division that computes R^2 for a modulus with

@@ -583,6 +583,21 @@ rules:
               metavariable: $F
               regex: ^(aes|gcm)_traffic_
 
+  - id: inv-8-sha1-dnssec-only
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-8: SHA-1 is a DNSSEC hash alone. dnssec.c calls it for NSEC3 owner
+      names and DS digests of type 1 (RFC 5155, RFC 4034), under CH_DNSSEC.
+      No TLS path may call it: SHA-1 is broken for collisions, and TLS 1.3
+      uses none of it. sha1.c defines the calls and is excluded.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, sha1.c, dnssec.c]
+    pattern-either:
+      - pattern: sha1_init(...)
+      - pattern: sha1_update(...)
+      - pattern: sha1_final(...)
+
   - id: inv-6-no-pkcs1
     languages: [c]
     severity: ERROR

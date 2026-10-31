@@ -257,6 +257,8 @@
         "session.c",
         "session.h",
         "session_report.h",
+        "sha1.c",
+        "sha1.h",
         "sha256.c",
         "sha256.h",
         "sha256_hw.c",
