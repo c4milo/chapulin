@@ -452,3 +452,12 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
     }
     return verify_rs(pub, msg_hash, r_be, s_be);
 }
+
+#ifdef CH_DNSSEC
+// The arm's check of r and s, with no reader in front: RFC 6605 puts the
+// two numbers side by side.
+int p256_ecdsa_verify_raw(const uint8_t pub[64], const uint8_t msg_hash[32],
+                          const uint8_t sig[64]) {
+    return verify_rs(pub, msg_hash, sig, sig + 32);
+}
+#endif

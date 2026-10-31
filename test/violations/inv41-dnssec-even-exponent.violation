@@ -1,0 +1,12 @@
+invariant: INV-41
+file: dnssec.c
+catches: proof/prove-one.sh dnssec
+reason: verify_rsa hands the RSA check an even exponent, which the RSA
+  check's contract forbids and rsa_mont64_public_exp's CH_ASSERT faults
+  on. The dnssec proof asserts that the check sees only an odd exponent
+  of at least 3, and fails on this edit.
+
+--- old
+    if (!read_rsa_key(key, key_len, &k) || k.e < 3 || (k.e & 1) == 0 ||
+--- new
+    if (!read_rsa_key(key, key_len, &k) || k.e < 3 ||

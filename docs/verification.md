@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-123 of the 154 C sources in the tree root are compiled into a
+124 of the 155 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1478,6 +1478,50 @@ The entries are grouped by area:
   `bin/rsa_exp_test` holds the bytes against Python's `pow` at moduli
   from 64 to 512 bytes and exponents from 3 to 2^64 - 1, and against
   `rsa_mont64_public` at 65537.
+
+#### rsa_pkcs1_exponent
+
+- **Harness:** `rsa_pkcs1_exponent` (fast)
+- **Build:** a host object with `CH_DNSSEC`
+  ([issue 189](https://github.com/c4milo/chapulin/issues/189)).
+- **Proves:** `rsa_pkcs1_verify_exponent` (`rsa_pkcs1.c`), the DNSSEC
+  RSA check, is memory safe and free of UB over any modulus length up to
+  the bound, any exponent, digest length, signature length and bytes. It
+  answers 1 only past every check `rsa_pkcs1.h` states: a 32-byte or
+  64-byte digest, a modulus of at least `DNSSEC_RSA_MODULUS_MIN` bytes
+  that holds the encoding, begins with a nonzero byte and is odd, an odd
+  exponent of at least 3, and a signature of the modulus's length below
+  it. It raises the signature to the key's exponent.
+- **Bound:** a modulus of up to 129 bytes, with `CH_RSA_MODULUS_MAX` set
+  to 136. At 384 bytes with the length free, kissat ran out of memory.
+  [rsa_pkcs1](#rsa_pkcs1) runs the encoder and the compare at 384.
+- **Not proved:** the power. The two `rsa_mont64` calls are contract
+  stubs, which [rsa_mont64](#rsa_mont64) and
+  [rsa_mont64_exp](#rsa_mont64_exp) prove, and `bin/dnssec_test` runs the
+  check against OpenSSL's signatures.
+
+#### dnssec
+
+- **Harness:** `dnssec` (fast)
+- **Build:** a host object with `CH_DNSSEC`.
+- **Proves:** `dnssec_verify` (`dnssec.c`) is memory safe and free of UB
+  over any algorithm byte and any key field, digest and signature up to
+  the bound. Also:
+  - it answers `CH_OK`, `CH_EAUTH` or `CH_EINVAL`, and `CH_OK` only for
+    algorithms 8, 10 and 13 with their hash's digest length;
+  - it reads RFC 3110 section 2's key field in both length forms: the
+    exponent it hands on is the bytes the length names, and the modulus
+    is the rest of the field;
+  - the RSA check sees only an odd exponent of at least 3 and a modulus
+    of 64 to `CH_RSA_MODULUS_MAX` bytes that is odd and begins with a
+    nonzero byte, and the P-256 check sees only a 64-byte key and
+    signature.
+- **Bound:** a key field of up to 80 bytes, a digest of up to 64 and a
+  signature of up to 80.
+- **Not proved:** the verifiers, which are contract stubs here; the
+  harnesses above and the `p256` harnesses prove them, and
+  `bin/dnssec_test` runs the whole check against OpenSSL's keys and
+  signatures.
 
 #### rsa_mont64_blocks
 

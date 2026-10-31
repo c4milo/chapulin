@@ -54,6 +54,8 @@
         "ct.c",
         "ct.h",
         "ct_wipe.c",
+        "dnssec.c",
+        "dnssec.h",
         "drbg.c",
         "drbg.h",
         "gcm.c",

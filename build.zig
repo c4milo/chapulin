@@ -108,7 +108,7 @@ const webpki_srcs = [_][]const u8{
     "webpki_time.c", "webpki_name.c", "webpki_spki.c",   "webpki_sigalg.c", "webpki_ext.c",
     "webpki_cert.c", "webpki.c",      "webpki_ticket.c", "webpki_pin.c",    "webpki_cfg.c",
 };
-const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c" };
+const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c", "dnssec.c" };
 const p256_ecdh_srcs = [_][]const u8{ "p256_ecdh.c", "p256_point.c", "p256_scalar.c", "p256_field.c" };
 const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
 const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_write.c" };

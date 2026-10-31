@@ -830,8 +830,10 @@ WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_
                 webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c
 # The verifiers and the SHA-384 core a public chain needs. SRCS lists
 # x509_der.c, rsa.c, rsa_mont.c and p256.c already; these five it does
-# not, because the device objects never package them.
-WEBPKI_CHAIN_SRCS := sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c
+# not, because the device objects never package them. dnssec.c, the
+# DNSSEC check, rides with them and compiles to nothing outside a
+# CH_DNSSEC build (https://github.com/c4milo/chapulin/issues/189).
+WEBPKI_CHAIN_SRCS := sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c dnssec.c
 # The constant-time P-256 key exchange: p256_ecdh.c over the arithmetic
 # p256_sign.c computes with too. p256.c is the variable-time verifier and
 # is not among them. Every server role and every TRUST=webpki client
@@ -3177,6 +3179,14 @@ bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TES
 # exponent (https://github.com/c4milo/chapulin/issues/189), against
 # Python's pow (test/gen_rsa_exp_vectors.py) and against rsa_mont64_public
 # at 65537. It builds as a host object with CH_DNSSEC at the 512-byte bound.
+# dnssec.c's check against OpenSSL's keys and signatures
+# (test/gen_dnssec_vectors.py) and at every refusal dnssec.h states.
+DNSSEC_TEST_SRCS := dnssec.c rsa_pkcs1.c rsa.c $(RSA_EQUIV_TEST_SRCS) p256.c $(P256_WIDE_SRCS) \
+                    p256_scalar.c p256_field.c p256_point.c buf.c sha256.c
+bin/dnssec_test: test/dnssec_test.c test/dnssec_vectors.h $(DNSSEC_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -I. -Itest -o $@ \
+	  test/dnssec_test.c $(sort $(DNSSEC_TEST_SRCS))
 bin/rsa_exp_test: test/rsa_exp_test.c test/rsa_exp_vectors.h $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC $(RSA_WIDE_DEF) -I. -Itest -o $@ \
@@ -4550,7 +4560,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/mlkem_hw_equiv_test_1024 bin/mlkem_avx2_equiv_test_1024 \
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
-                                 bin/rsa_exp_test \
+                                 bin/rsa_exp_test bin/dnssec_test \
                                  bin/rsa_blocks_equiv_test bin/rsa_addcarry_equiv_test \
                                  bin/rsa_ifma_model_test bin/rsa_ifma_model_test_384 \
                                  bin/rsa_ifma_equiv_test bin/avx512_wipe_test bin/rsa_avx2_model_test \
@@ -7945,7 +7955,7 @@ lint-impact:
 #     signatures a public chain carries under TRUST=webpki — a CA's key,
 #     a certificate's digest and its signature, every byte from the wire
 #     or from the caller's anchor table, and the client never signs.
-#   rsa_mont64_exp.c: the public operation of a DNSSEC check, over the
+#   dnssec.c, rsa_mont64_exp.c: a DNSSEC check, over the
 #     key's modulus and exponent and a signature from a zone, all public
 #     (https://github.com/c4milo/chapulin/issues/189).
 #   mldsa.c, mldsa_poly.c: ML-DSA-87 verify. Every product is over the
@@ -8284,7 +8294,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    pem_files.c:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    $(addsuffix :$(WIDE64_HOST_AES_DEFINES),$(AES_HW_SRCS))
-WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c rsa_mont64_exp.c pem_blocks.c x509.c x509_der.c x509_ca.c \
+WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c rsa_mont64_exp.c dnssec.c pem_blocks.c x509.c x509_der.c x509_ca.c \
                   p384.c p384_field.c $(P384_WIDE_SRCS) rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c \
                   webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \

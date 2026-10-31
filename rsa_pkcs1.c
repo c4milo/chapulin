@@ -12,6 +12,7 @@
 
 #include "ct.h"
 #include "rsa.h"
+#include "rsa_mont64.h"
 #include "sha256.h"
 #include "sha512.h"
 
@@ -149,5 +150,43 @@ int rsa_pkcs1_verify_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uin
     uint8_t em[CH_RSA_MODULUS_MAX];
     rsa_vp1_cpu(cpu, n, n_len, sig, em);
     return encoded_message_matches(n_len, digest, digest_len, em);
+}
+#endif
+
+#if defined(CH_DNSSEC) && defined(CH_CPU_RUNTIME)
+// DigestInfo for SHA-512 (RFC 8017 section 9.2 note 1), which algorithm
+// 10 signs with (RFC 5702 section 3); only a DNSSEC check reads it, so no
+// TLS path admits a 64-byte digest.
+static const uint8_t digest_info_sha512[DIGEST_INFO_LEN] = {
+    0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01,
+    0x65, 0x03, 0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40};
+
+// The bit length of the n_len-byte n, whose first byte is not zero.
+static size_t bit_length_of(const uint8_t *n, size_t n_len) {
+    size_t bits = 8 * n_len;
+    for (uint8_t top = n[0]; (top & 0x80) == 0; top = (uint8_t)(top << 1)) {
+        bits--;
+    }
+    return bits;
+}
+
+int rsa_pkcs1_verify_exponent(const uint8_t *n, size_t n_len, uint64_t e, const uint8_t *digest,
+                              size_t digest_len, const uint8_t *sig, size_t sig_len) {
+    const uint8_t *digest_info = digest_len == SHA256_LEN   ? digest_info_sha256
+                                 : digest_len == SHA512_LEN ? digest_info_sha512
+                                                            : NULL;
+    if (digest_info == NULL || n_len < DNSSEC_RSA_MODULUS_MIN ||
+        n_len < EM_OVERHEAD + PS_MIN + DIGEST_INFO_LEN + digest_len || n_len > CH_RSA_MODULUS_MAX ||
+        sig_len != n_len || n[0] == 0 || (n[n_len - 1] & 1) == 0 || e < 3 || (e & 1) == 0 ||
+        greater_or_equal(sig, n, n_len)) {
+        return 0;
+    }
+    rsa_mont64_modulus mod;
+    rsa_mont64_modulus_init(&mod, n, n_len, bit_length_of(n, n_len));
+    uint8_t em[CH_RSA_MODULUS_MAX];
+    rsa_mont64_public_exp(em, sig, n_len, &mod, e);
+    uint8_t expected[CH_RSA_MODULUS_MAX];
+    emsa_pkcs1_v1_5_encode(expected, n_len, digest_info, digest, digest_len);
+    return (int)ct_memeq(em, expected, n_len);
 }
 #endif

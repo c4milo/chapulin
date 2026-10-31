@@ -875,6 +875,13 @@ launch fast full rsa_pkcs1 385 "fill_nondet.0:385,ct_memeq.0:385,ct_wipe.0:385,g
 # is to rsa. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l): 321
 # properties, 17 s, 154 MB for cbmc and 84 MB for kissat.
 launch fast full rsa_pkcs1_webpki 513 "fill_nondet.0:513,ct_memeq.0:513,ct_wipe.0:513,greater_or_equal.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 ct.c proof/ct_wipe_stub.c
+# rsa_pkcs1_verify_exponent, the DNSSEC RSA check
+# (https://github.com/c4milo/chapulin/issues/189), over contract stubs of
+# the two rsa_mont64 calls. The harness bounds the modulus at 129 bytes and
+# the line sets CH_RSA_MODULUS_MAX to 136, so the verifier's buffers match:
+# with the length free at 384 bytes kissat ran out of memory. Measured on
+# 2026-10-31 in the pinned amd64 container: 397 properties, 32 s, 0.45 GB.
+launch fast full rsa_pkcs1_exponent 130 "fill_nondet.0:130,ct_memeq.0:130,greater_or_equal.0:130" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_RSA_MODULUS_MAX=136
 launch fast full p256 85 "" buf.c
 # p256_field is the constant-time twin, and it proves more than p256 does
 # because the arithmetic is written as masks: every masked choice against
@@ -3009,6 +3016,10 @@ launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub
 # 0.10 GB.
 launch fast full rsa_mont64_exp 66 "ct_wipe.0:385,fill_nondet.0:385" ct.c proof/ct_wipe_stub.c rsa_mont64_exp.c -DCH_CPU_RUNTIME -DCH_DNSSEC
 launch fast full rsa_mont64_exp_schedule 66 "ct_wipe.0:385,fill_nondet.0:385" ct.c proof/ct_wipe_stub.c rsa_mont64_exp.c -DCH_CPU_RUNTIME -DCH_DNSSEC
+# dnssec.c, the DNSSEC check's key reader and dispatcher, over contract
+# stubs of the RSA and P-256 checks. Measured on 2026-10-31 in the pinned
+# amd64 container: 529 properties, 3 s, 0.06 GB.
+launch fast full dnssec 10 "fill_nondet.0:81" -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI dnssec.c buf.c
 launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont_host runs rsa_mont.c's host arm, rsa_vp1 as a host object
 # compiles it, whole: the division that computes R^2 for a modulus with
