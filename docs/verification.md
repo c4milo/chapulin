@@ -7391,6 +7391,14 @@ refuses each. The binary runs again over ct.h's 16x16 decomposition in
 `ct-widemul-check` (decision 159). These cases are not in the 6,364
 either.
 
+`bin/wycheproof_ed25519_test` holds the DNSSEC Ed25519 check,
+algorithm 15, to every case of `ed25519_test.json`, 151 in all: 88 valid
+and 63 invalid. Each case runs through the public calls a validator
+makes, `ch_dnssec_hash_init` with the key and the signature, an update
+with the message, `ch_dnssec_hash_final` and `ch_dnssec_verify`, in a
+host object with `CH_DNSSEC`. Every valid case verifies and no invalid
+one does (decision 169). These cases are not in the 6,364 either.
+
 ML-KEM-1024's three suites, 511 cases, run in a binary of their own,
 `bin/wycheproof_mlkem1024_test`, built under `-DCH_MLKEM_1024` with the
 same runners, because one object holds one ML-KEM parameter set

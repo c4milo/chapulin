@@ -5930,8 +5930,9 @@ wycheproof:
 	@$(call wycheproof_fetch,wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h \
 	  bin/wycheproof_mldsa_sign_vectors.h && \
+	python3 test/gen_wycheproof_ed25519.py $(WYCHEPROOF_DIR) bin/wycheproof_ed25519_vectors.h && \
 	$(MAKE) --no-print-directory -j4 wycheproof-default wycheproof-host wycheproof-aes-extern wycheproof-mldsa-library \
-	  wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-mldsa-sign
+	  wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-mldsa-sign wycheproof-ed25519
 # The three tests build and run at once, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
@@ -6016,6 +6017,23 @@ wycheproof-mlkem1024:
 	  --output '$(WYCHEPROOF_MLKEM1024_DEFAULT) -E' -- $(MAKE) --no-print-directory wycheproof-run-mlkem1024
 wycheproof-run-mlkem1024:
 	@$(WYCHEPROOF_MLKEM1024_DEFAULT) -o bin/wycheproof_mlkem1024_test && ./bin/wycheproof_mlkem1024_test
+# The DNSSEC Ed25519 check, algorithm 15, held to every case of
+# Wycheproof's ed25519_test.json through the public calls
+# (https://github.com/c4milo/chapulin/issues/189). It builds as a host
+# object with CH_DNSSEC, as bin/dnssec_test does, so a compiler that fails
+# the host test skips it.
+WYCHEPROOF_ED25519 = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -I. -Itest \
+  -Ibin test/wycheproof_ed25519_test.c $(sort $(DNSSEC_TEST_SRCS))
+wycheproof-ed25519:
+ifeq ($(HOST_TARGET),)
+	$(call REQUIRE_ON_CI,wycheproof-ed25519)
+	@echo "SKIP the Wycheproof Ed25519 test: $(CC) fails the host test"
+else
+	@python3 tools/stamp.py wycheproof-ed25519 $(WYCHEPROOF_STAMP_INPUTS) \
+	  --output '$(WYCHEPROOF_ED25519) -E' -- $(MAKE) --no-print-directory wycheproof-run-ed25519
+endif
+wycheproof-run-ed25519:
+	@$(WYCHEPROOF_ED25519) -o bin/wycheproof_ed25519_test && ./bin/wycheproof_ed25519_test
 wycheproof-mlkem1024-host:
 ifeq ($(HOST_TARGET),)
 	$(call REQUIRE_ON_CI,wycheproof-mlkem1024-host)
