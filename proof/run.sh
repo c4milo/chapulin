@@ -2495,6 +2495,18 @@ launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:5
 # memset. Measured on 2026-10-30 in the pinned amd64 container, the way the
 # runner runs it: 1656 properties, 97 s, 1.26 GB resident.
 launch fast:2 full srv_tcp_nonblocking 4 "fill_nondet.0:33,no_secret_left.0:33" --object-bits 10 -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING tcp_nonblocking_frame.c ct.c buf.c
+# The client's tcp-nonblocking driver, in two formulas with the
+# quic_step and quic_driver layering. tcp_nonblocking runs init, the
+# real step table, ch_record_out and ch_record_close, with the
+# handshake_flight.h and handshake_auth.h handlers as contract stubs.
+# tcp_nonblocking_in runs ch_record_in over a stub of
+# tcp_nonblocking_advance that states the contract the first proves. In
+# one formula the record loop around the real table took 292 s, near the
+# fast tier's five minutes. Measured on 2026-10-31 in the pinned amd64
+# container: tcp_nonblocking 1755 properties, 7 s to 11 s, 80 MB resident;
+# tcp_nonblocking_in 1628, 72 s, 1.32 GB.
+launch fast full tcp_nonblocking 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING tcp_nonblocking.c tcp_nonblocking_step.c tcp_nonblocking_frame.c ct.c buf.c
+launch fast:2 full tcp_nonblocking_in 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING tcp_nonblocking.c tcp_nonblocking_frame.c ct.c buf.c
 # The ROLE=server flight handlers, with srv_accept's layering turned
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the

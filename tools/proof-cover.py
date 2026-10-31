@@ -458,29 +458,6 @@ AUDITED = {
         "with no harness. Delete this entry when srv_quic.c gets a harness of "
         "its own."
     ),
-    "tcp_nonblocking.c": (
-        "the client's tcp-nonblocking driver and the two calls either role "
-        "exports. Two bitwise operators in the file, both in the expression "
-        "with which ch_record_in reads a record's length, ((size_t)rec[3] << "
-        "8) | rec[4]: a size_t shifted left by the constant 8, and a uint8_t, "
-        "which widens to int and holds 0 to 255. The rest is size_t "
-        "arithmetic: the room for the record_size_limit under tlsi_config_ok's "
-        "CH_MIN_RXBUF floor, the record loop's lengths under the 0x4000 + 256 "
-        "cap and n, and ch_record_out's offsets under tx_len. No harness runs "
-        "this file: bin/tcp_nonblocking_loop_test runs every call in it, and "
-        "docs/verification.md lists it with no harness. Delete this entry when "
-        "tcp_nonblocking.c gets a harness of its own."
-    ),
-    "tcp_nonblocking_step.c": (
-        "the client's tcp-nonblocking step table. One bitwise operator in the "
-        "file: tcp_nonblocking_stage_plain writes a record length's high byte "
-        "as (uint8_t)(n >> 8), a size_t shifted right by the constant 8. The "
-        "rest assigns step numbers and return codes and adds REC_HDR to a "
-        "size_t length. No harness runs this file: "
-        "bin/tcp_nonblocking_loop_test runs every step, and "
-        "docs/verification.md lists it with no harness. Delete this entry when "
-        "tcp_nonblocking_step.c gets a harness of its own."
-    ),
 }
 
 

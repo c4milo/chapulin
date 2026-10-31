@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-119 of the 153 C sources in the tree root are compiled into a
+121 of the 153 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,11 +48,11 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 34 sources are in no such harness:
+The other 32 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
-| `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
+| `srv_quic.c` | No harness. | `bin/srv_quic_test` |
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds its cipher and both architectures' key expansions to `quic_aes_soft.c`, and searches the stack each expansion leaves ([The host object's AES key expansions](#the-host-objects-aes-key-expansions)). |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
 | `gcm_hw.c` | It runs counter mode on the AES intrinsics, and on x86-64 the one-pass seal and open on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal and open to `gcm.c`'s proven one-block loop and portable GHASH. |
@@ -2657,6 +2657,42 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   [record_whole_len](#record_whole_len). `bin/srv_tcp_nonblocking_test`,
   `bin/tcp_nonblocking_loop_test` and the `.violation` mutants test the
   rest.
+
+#### tcp_nonblocking and tcp_nonblocking_in
+
+- **Harnesses:** `tcp_nonblocking` (fast), `tcp_nonblocking_in` (fast)
+- **Build:** the client, `TRANSPORT=tcp-nonblocking`.
+- **Proves:** `ch_record_init`, `ch_record_in`, `ch_record_out` and
+  `ch_record_close` (`tcp_nonblocking.c`), the step table
+  (`tcp_nonblocking_step.c`) and the framing of
+  `tcp_nonblocking_frame.c` are memory safe and free of UB over an
+  unconstrained `ch_cfg`, saved state and caller bytes. Also:
+  - init answers `CH_OK` with the ClientHello staged as one plaintext
+    record whose `record_size_limit` fits the caller's buffer, or
+    `CH_EINVAL` with a dead session and nothing staged (INV-13);
+  - a step number that no step wrote, a step after the handshake, and a
+    second HelloRetryRequest fail the session;
+  - a step that succeeds consumes its message, and the Finished step
+    stages the client Finished and wipes the handshake state (INV-17);
+  - `ch_record_in` never reports more bytes than it was handed, refuses
+    input while a record is staged, and leaves a failed session dead,
+    with no secret and at most its alert record staged (INV-13,
+    INV-17);
+  - `ch_record_out` hands over the next staged bytes, at most `cap`,
+    and the session is connected only after the last Finished byte;
+  - `ch_record_close` leaves a closed session with no secret.
+- **Layers:** `tcp_nonblocking` runs the real step table, and
+  `tcp_nonblocking_in` runs `ch_record_in` over a stub of
+  `tcp_nonblocking_advance` that states the contract the first one
+  proves, the way [quic_step](#quic_step) and
+  [quic_driver](#quic_driver) divide the QUIC driver.
+- **Bound:** a receive buffer of 8 B and caller bytes of at most 13 B.
+- **Not proved:** the handlers of `handshake_flight.h` and
+  `handshake_auth.h`, `rec_open`, `rec_seal`, `rec_dir_init`, the
+  `handshake_record.h` calls, `tlsi_config_ok`, `tlsi_epoch_init` and
+  `hspost_trust_holds` are contract stubs, and `ct_wipe` writes its
+  zeros with one `memset`. `bin/tcp_nonblocking_loop_test` and the
+  `.violation` mutants test the rest.
 
 ### QUIC
 

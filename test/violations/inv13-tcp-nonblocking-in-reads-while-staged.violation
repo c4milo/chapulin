@@ -1,0 +1,15 @@
+invariant: INV-13
+file: tcp_nonblocking.c
+catches: proof/prove-one.sh tcp_nonblocking_in
+reason: ch_record_in reads the peer's bytes while a record it staged is
+  still uncollected, so a step can stage a second record over the first
+  one in t.tx. The tcp_nonblocking_in proof asserts that a staged record
+  refuses input with CH_EINVAL, and fails on this edit.
+
+--- old
+    if (r->tx_len != 0) {
+        return CH_EINVAL;
+    }
+    size_t off = 0;
+--- new
+    size_t off = 0;

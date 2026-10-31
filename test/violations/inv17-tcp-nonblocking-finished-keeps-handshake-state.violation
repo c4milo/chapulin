@@ -1,0 +1,13 @@
+invariant: INV-17
+file: tcp_nonblocking_step.c
+catches: proof/prove-one.sh tcp_nonblocking
+reason: step_finished stages the client Finished and switches to the
+  application keys without wiping r->hs, so the handshake secrets
+  outlive the handshake. The tcp_nonblocking proof asserts that the
+  Finished step leaves the handshake state wiped, and fails on this edit.
+
+--- old
+    ct_wipe(&r->hs, sizeof r->hs);
+    r->hs.t = t;
+--- new
+    r->hs.t = t;
