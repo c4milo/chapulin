@@ -507,7 +507,9 @@ srv_cookie_cnsa2 181
 # cert_data field, which the harness's 8-byte certificates exclude. The
 # rest are stub and helper branches.
 srv_flight 704
-srv_kex 322
+# srv_kex rose to 94.5% (343/363) on 2026-10-31, when its harness
+# began to call srv_kex_begin.
+srv_kex 343
 srv_kex_cnsa2 127
 srv_mldsa 193
 # srv_parser_count took its floor from nightly run 39109704185 on

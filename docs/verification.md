@@ -2318,6 +2318,8 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   - on both exits, a wiped ML-KEM secret, P-256 scalar and x25519 key
     pair, with the whole 64-byte secret wiped on a refusal (INV-3,
     INV-17).
+  - a key pair whose scalar `srv_kex_begin` draws into `h->priv` and
+    whose public value `x25519_base` computes from it into `h->pub`.
 
   ML-KEM, x25519, the P-256 exchange and `ch_rand_bytes` are stubbed to
   their contracts, as in [hybrid_secret](#hybrid_secret).
@@ -2599,8 +2601,7 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   the builders, the cookie, the key schedule, the record keys, the
   transcript's SHA-256, `srv_kex.h`, `srv_auth.h`, `srv_resume.h` and
   `srv_out.h`'s five calls are contract stubs; [srv_out](#srv_out-srv_out_nonblocking-and-srv_out_quic)
-  proves those five. No harness proves this build's `srv_kex_begin`;
-  `bin/srv_flight_test` tests it.
+  proves those five, and [srv_kex](#srv_kex) proves `srv_kex.h`'s.
 
 #### srv_out, srv_out_nonblocking and srv_out_quic
 

@@ -3,10 +3,8 @@
 // srv_derive_handshake_secrets call. proof/srv_flight_harness.c includes
 // this after its own helpers, whose nondet_int and fill_nondet it reads.
 // It is a header of its own because that harness sits at the 500-line
-// cap. proof/srv_kex_harness.c proves the real srv_kex_group,
-// srv_kex_shared, srv_kex_share and srv_kex_secret. No harness calls this
-// build's srv_kex_begin, and proof/srv_kex_cnsa2_harness.c calls the
-// PROFILE=cnsa2 one.
+// cap. proof/srv_kex_harness.c proves the real five, and
+// proof/srv_kex_cnsa2_harness.c the PROFILE=cnsa2 ones.
 //
 // Each stub asserts what srv_kex.h requires of a caller and answers with
 // every value srv_kex.h allows: a group this build holds or 0, either

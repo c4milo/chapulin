@@ -1207,7 +1207,9 @@ launch fast full kem_secret_cnsa2 65 "fill_nondet.0:3169,ct_wipe.0:3169" -DCH_PR
 # same way on 2026-09-27: 573 properties, 2.8 s, 0.14 GB. With rand_draw
 # writing zero to the bytes before the source runs (docs/decisions.md 141),
 # through proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load
-# average near 106: 603 properties, 18 s, 0.09 GB.
+# average near 106: 603 properties, 18 s, 0.09 GB. With srv_kex_begin
+# called over an x25519_base stub, in the pinned amd64 container on
+# 2026-10-31: 628 properties, 12 s, 0.09 GB.
 launch fast full srv_kex 66 "fill_nondet.0:66,same.0:33,zero.0:65" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The PROFILE=cnsa2 arm of srv_kex.c (docs/decisions.md 162): the
 # selection, the share and the secret of ML-KEM-1024 alone, with the

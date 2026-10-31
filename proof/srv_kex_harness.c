@@ -1,7 +1,7 @@
 // Proves: srv_kex.c, the server's key exchange, is memory safe and free of
 // UB over any supported_groups and key_share a parsed ClientHello can
 // report, any server scalar and public value, and every verdict its
-// primitives can return; and six facts about what it computes.
+// primitives can return; and seven facts about what it computes.
 //
 //   1. The preference: X25519MLKEM768 whenever the client listed it,
 //      x25519 when it listed x25519 and not the hybrid, secp256r1 when it
@@ -28,9 +28,11 @@
 //      h->priv, h->pub, h->mlkem_ss and h->p256_priv are zero, and a
 //      refused exchange leaves all SRV_KEX_SECRET_MAX bytes of ikm zero
 //      (INV-3, INV-17).
+//   7. srv_kex_begin draws the scalar into h->priv and computes h->pub
+//      from it with x25519_base.
 //
 // Layered, the proof/hybrid_secret_harness.c pattern: mlkem_encaps_derand,
-// x25519, the three p256_ecdh entries and ch_rand_bytes are stubs
+// x25519, x25519_base, the three p256_ecdh entries and ch_rand_bytes are stubs
 // asserting their headers' contracts and havocing their outputs, so
 // mlkem.c, mlkem_poly.c, sha3.c, x25519.c and the P-256 sources are not
 // linked. What is under proof is srv_kex.c's own choice,
@@ -71,8 +73,15 @@ static const uint8_t *ecdh_out;
 
 // Every draw arrives here through rand_draw (rand_draw.h), which calls
 // ch_rand_bytes under the RAND=extern pattern every harness declares.
+static const uint8_t *drawn;
+static size_t drawn_len;
+static const uint8_t *base_out;
+static const uint8_t *base_scalar;
+
 void ch_rand_bytes(uint8_t *p, size_t n) {
     __CPROVER_assert(n == 0 || __CPROVER_w_ok(p, n), "rand: output writable");
+    drawn = p;
+    drawn_len = n;
     fill_nondet(p, n);
     // rand.h's contract: a draw writes every byte, so it is never the
     // all-zero value a hook that wrote nothing leaves.
@@ -97,6 +106,14 @@ int mlkem_encaps_derand(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[ML
     fill_nondet(ss, MLKEM_SS_LEN);
     memcpy(encaps_ss, ss, MLKEM_SS_LEN);
     return 0;
+}
+
+void x25519_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
+    __CPROVER_assert(__CPROVER_w_ok(out, X25519_LEN), "x25519_base: out writable");
+    __CPROVER_assert(__CPROVER_r_ok(scalar, X25519_LEN), "x25519_base: scalar readable");
+    base_out = out;
+    base_scalar = scalar;
+    fill_nondet(out, X25519_LEN);
 }
 
 int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN], const uint8_t point[32]) {
@@ -241,6 +258,16 @@ int main(void) {
     memset(&t, 0, sizeof t);
     memset(&h, 0, sizeof h);
     h.t = &t;
+
+    // Fact 7.
+    srv_kex_begin(&h);
+    __CPROVER_assert(drawn == h.priv && drawn_len == X25519_LEN,
+                     "the scalar is drawn into h->priv");
+    __CPROVER_assert(base_scalar == h.priv && base_out == h.pub,
+                     "x25519_base computes h->pub from h->priv");
+    memset(&h, 0, sizeof h);
+    h.t = &t;
+
     client_hello ch;
     memset(&ch, 0, sizeof ch);
     uint16_t group = prove_choice(&ch);
