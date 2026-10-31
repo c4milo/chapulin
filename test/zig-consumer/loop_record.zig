@@ -23,8 +23,8 @@ const record = chapulin.record;
 
 /// colibri's receive length (docs/zig.md).
 const receive_len = 20_480;
-pub var client: record.Client(receive_len) = undefined;
-pub var server: record.Server(receive_len) = undefined;
+pub var client: record.Client(receive_len, .{}) = undefined;
+pub var server: record.Server(receive_len, .{}) = undefined;
 var sni_buf: [255]u8 = undefined;
 
 /// Bytes one side wrote and the other has not read.
@@ -57,8 +57,8 @@ pub var to_server: Pipe = .{};
 pub var to_client: Pipe = .{};
 
 const http11 = "http/1.1";
-const client_alpn = [_]c.ch_alpn_protocol{ chapulin.alpnProtocol("h2"), chapulin.alpnProtocol(http11) };
-const server_alpn = [_]c.ch_alpn_protocol{chapulin.alpnProtocol(http11)};
+const client_alpn = [_][]const u8{ "h2", http11 };
+const server_alpn = [_][]const u8{http11};
 /// The server's clock, which it writes into tickets and judges them by.
 const server_now = 1_700_000_000;
 

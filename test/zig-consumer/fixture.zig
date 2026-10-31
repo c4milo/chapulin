@@ -80,7 +80,7 @@ pub fn hostname() []const u8 {
 
 /// The anchor that carries the root's Name over another key.
 const anchors = if (has_webpki) struct {
-    const impostor = [_]c.ch_trust_anchor{chapulin.trustAnchor(&corpus.webpki_corpus_name_root_p384, &corpus.webpki_corpus_spki_impostor_p384)};
+    const impostor = [_]chapulin.TrustAnchor{.{ .name = &corpus.webpki_corpus_name_root_p384, .spki = &corpus.webpki_corpus_spki_impostor_p384 }};
 } else struct {};
 
 /// The values decoded from the PEM files, once, and the rooms they point
@@ -89,11 +89,11 @@ const anchors = if (has_webpki) struct {
 /// of the text, and the entries take one per block.
 var decoded = false;
 var chain_der: [pem.pem_fixture_r2_chain.len / 4 * 3]u8 = undefined;
-var chain_entries: [2]c.ch_cert = undefined;
+var chain_slices: [2][]const u8 = undefined;
 var pem_chain: chapulin.Chain = .{};
 var pem_key: chapulin.EcdsaP256Key = .{};
 var bundle_der: [pem.pem_fixture_bundle.len / 4 * 3]u8 = undefined;
-var bundle_entries: [6]c.ch_trust_anchor = undefined;
+var bundle_entries: [6]chapulin.TrustAnchor = undefined;
 var pem_anchors: if (has_webpki) chapulin.Anchors else void = if (has_webpki) .{} else {};
 
 /// Decodes the r2 chain file and its key file, under the EC PARAMETERS
@@ -102,20 +102,20 @@ var pem_anchors: if (has_webpki) chapulin.Anchors else void = if (has_webpki) .{
 /// holds each value to webpki_corpus.h's.
 fn decodeFiles() void {
     if (decoded) return;
-    pem_chain = chapulin.Chain.fromPem(&pem.pem_fixture_r2_chain, &chain_der, &chain_entries) catch @panic("the r2 chain file does not decode");
+    pem_chain = chapulin.Chain.fromPem(&pem.pem_fixture_r2_chain, &chain_der, &chain_slices) catch @panic("the r2 chain file does not decode");
     splitChain();
     if (pem_chain.certs.len != chain.len) @panic("the r2 chain file does not hold two certificates");
     for (pem_chain.certs, &chain) |got, want| {
-        if (!std.mem.eql(u8, got.der[0..got.len], want.der[0..want.len])) @panic("a certificate of the r2 chain file is not the corpus's");
+        if (!std.mem.eql(u8, got, want)) @panic("a certificate of the r2 chain file is not the corpus's");
     }
     pem_key.fromPem(cpuAnswer(), &pem.pem_fixture_key_sec1_params, pem_chain.leaf()) catch @panic("the r2 key file does not decode");
     if (!std.mem.eql(u8, &pem_key.private_key, &corpus.webpki_corpus_server_priv) or
         !std.mem.eql(u8, &pem_key.public_key, &corpus.webpki_corpus_server_pub)) @panic("the r2 key file's key is not the corpus's");
     if (has_webpki) {
-        pem_anchors = chapulin.Anchors.fromPem(&pem.pem_fixture_bundle, &bundle_der, &bundle_entries) catch @panic("the bundle does not decode");
+        pem_anchors = chapulin.Anchors.fromPem(.{}, &pem.pem_fixture_bundle, &bundle_der, &bundle_entries) catch @panic("the bundle does not decode");
         const root = pem_anchors.anchors[pem_anchors.anchors.len - 1];
-        if (!std.mem.eql(u8, root.name[0..root.name_len], &corpus.webpki_corpus_name_root_p384) or
-            !std.mem.eql(u8, root.spki[0..root.spki_len], &corpus.webpki_corpus_spki_root_p384)) @panic("the bundle's last root is not root_p384");
+        if (!std.mem.eql(u8, root.name, &corpus.webpki_corpus_name_root_p384) or
+            !std.mem.eql(u8, root.spki, &corpus.webpki_corpus_spki_root_p384)) @panic("the bundle's last root is not root_p384");
     }
     decoded = true;
 }
@@ -161,14 +161,14 @@ pub fn trust(anchor: Anchor, now_seconds: ?u64) chapulin.Trust {
 /// the 4-byte handshake header, the empty certificate_request_context, the
 /// 3-byte list length, then per entry a 3-byte length, the certificate and
 /// an empty extensions vector (RFC 9846 section 4.5.1).
-var chain: [2]c.ch_cert = undefined;
+var chain: [2][]const u8 = undefined;
 
 fn splitChain() void {
     const message: []const u8 = &corpus.webpki_corpus_message_r2;
     var off: usize = 4 + 1 + 3;
     for (&chain) |*entry| {
         const len = std.mem.readInt(u24, message[off..][0..3], .big);
-        entry.* = chapulin.cert(message[off + 3 ..][0..len]);
+        entry.* = message[off + 3 ..][0..len];
         off += 3 + len;
         off += 2 + std.mem.readInt(u16, message[off..][0..2], .big);
     }
@@ -180,7 +180,7 @@ pub const ticket_key = [_]u8{0x61} ** c.CH_SRV_TICKET_KEY_LEN;
 
 /// This tree's server with the r2 identity, sealing tickets under
 /// ticket_key at clock now_seconds and selecting from alpn.
-pub fn server(alpn: []const c.ch_alpn_protocol, now_seconds: u64) chapulin.Server {
+pub fn server(alpn: []const []const u8, now_seconds: u64) chapulin.Server {
     decodeFiles();
     return .{
         .ecdsa_p256 = .{

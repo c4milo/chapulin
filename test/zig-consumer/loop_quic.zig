@@ -21,16 +21,16 @@ const quic = chapulin.quic;
 
 /// colibri's receive length, peer_params length and sni_buf (docs/zig.md).
 const receive_len = 20_480;
-var client: quic.Client(receive_len) = undefined;
-var server: quic.Server(receive_len) = undefined;
+var client: quic.Client(receive_len, .{}) = undefined;
+var server: quic.Server(receive_len, .{}) = undefined;
 var sni_buf: [255]u8 = undefined;
 var client_peer: [1024]u8 = undefined;
 var server_peer: [1024]u8 = undefined;
 
 const client_params = [_]u8{ 0x01, 0x02, 0x03, 0x04 };
 const server_params = [_]u8{ 0x05, 0x06, 0x07 };
-const client_alpn = [_]c.ch_alpn_protocol{chapulin.alpnProtocol("h3")};
-const server_alpn = [_]c.ch_alpn_protocol{ chapulin.alpnProtocol("hq-interop"), chapulin.alpnProtocol("h3") };
+const client_alpn = [_][]const u8{"h3"};
+const server_alpn = [_][]const u8{ "hq-interop", "h3" };
 const server_now = 1_700_000_000;
 /// RFC 9001 appendix A's Destination Connection ID.
 const dcid = [_]u8{ 0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08 };

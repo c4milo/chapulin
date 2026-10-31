@@ -2764,7 +2764,7 @@ last `ROLE=server` stub, as the entry said it would.
   `matches.zig` compiles only when `chapulin.c` declares every export
   and declares no `ch_` function the object neither exports nor imports,
   the imports those `nm -u` lists, and runs `ch_build_matches` over its
-  types; `unit.zig` checks each value's `toCfg` against the `ch_cfg`
+  types; `unit.zig` checks each value's `ch_cfg` against the `ch_cfg`
   written out field by field, the Ticket constructors' bounds, the
   error of every code, and compiles every declaration the object has;
   `loop.zig` runs a client and a server
@@ -2810,7 +2810,7 @@ last `ROLE=server` stub, as the entry said it would.
   catches each:
   `inv36-zig-module-drops-object` takes the object off the module, so
   every consumer program fails to link; `inv36-zig-api-drops-ticket-age`
-  leaves `ch_cfg.ticket_age_ms` at 0 in `Client.toCfg`, so a stale ticket
+  leaves `ch_cfg.ticket_age_ms` at 0 in `clientCfg` (`chapulin_cfg.zig`), so a stale ticket
   resumes; `inv36-zig-api-write-seals-part` seals the part of `pt` that
   fits where `write` must refuse it whole;
   `inv36-zig-api-write-sizes-without-key-update` sizes `write`'s output

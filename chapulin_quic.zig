@@ -3,6 +3,7 @@
 //! quic.h, srv_quic.h or quic_token.h (docs/zig.md).
 const std = @import("std");
 const chapulin = @import("chapulin.zig");
+const cfg_of = @import("chapulin_cfg.zig");
 const c = chapulin.c;
 
 const has_quic = @hasDecl(c, "ch_quic_initial_keys");
@@ -79,16 +80,18 @@ pub const TokenCheck = if (has_server) union(enum) {
     invalid,
 } else @compileError("quic.TokenCheck needs a QUIC server role");
 
-/// A client. Do not move it after init: cfg.io points at its hook.
+/// A client whose lists hold the anchors and ALPN names limits allows
+/// (chapulin.Limits; pass .{} for the defaults). Do not move it after init:
+/// cfg.io points at its hook, and cfg's lists at its own arrays.
 pub const Client = if (has_client) clientOf else @compileError("quic.Client needs TRANSPORT=quic-nonblocking with ROLE=client or ROLE=both");
-fn clientOf(comptime receive_len: usize) type {
-    return Session(.client, receive_len);
+fn clientOf(comptime receive_len: usize, comptime limits: chapulin.Limits) type {
+    return Session(.client, receive_len, limits);
 }
 
 /// A server. Its flight goes into the Outgoing given to each cryptoIn.
 pub const Server = if (has_server) serverOf else @compileError("quic.Server needs TRANSPORT=quic-nonblocking with ROLE=server or ROLE=both");
-fn serverOf(comptime receive_len: usize) type {
-    return Session(.server, receive_len);
+fn serverOf(comptime receive_len: usize, comptime limits: chapulin.Limits) type {
+    return Session(.server, receive_len, limits);
 }
 
 /// ch_srv_quic_retry_tag: the Retry integrity tag over pseudo (RFC 9001 §5.8)
@@ -123,7 +126,7 @@ fn tokenCheckOf(key: *const [c.CH_QUIC_TOKEN_KEY_LEN]u8, version: Version, token
 
 const Side = enum { client, server };
 
-fn Session(comptime side: Side, comptime receive_len: usize) type {
+fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: chapulin.Limits) type {
     return struct {
         const Self = @This();
 
@@ -131,6 +134,8 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         quic: c.ch_quic,
         /// The receive buffer, cfg.buf.
         receive: [receive_len]u8,
+        /// The C arrays init builds from the values' lists, which cfg points at.
+        lists: cfg_of.Lists(limits),
         /// What cfg.io points at.
         hook: chapulin.Hook,
         /// What cfg.rand_io points at under RAND=session: the std.Random
@@ -148,10 +153,10 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// The values' choose_version, which onChooseVersion calls. A client has none.
         choose: if (side == .server) ?ChooseVersion else void,
 
-        /// Client: Client.toCfg, then ch_quic_init with the API's
+        /// Client: the ch_cfg the values build, then ch_quic_init with the API's
         /// on_level_ready, on_transport_params and, when the values'
-        /// takes_tickets is true, on_ticket. Server:
-        /// Server.toCfg, then ch_srv_quic_init with the API's
+        /// takes_tickets is true, on_ticket. Server: the ch_cfg the values
+        /// build, then ch_srv_quic_init with the API's
         /// on_level_ready, on_transport_params, srv.on_crypto_out and,
         /// when the values carry one, srv.choose_version; sni_buf is
         /// srv.sni_buf and srv.sni_cap. transport_params is
@@ -180,7 +185,10 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
 
         fn initClient(self: *Self, values: chapulin.Client, transport_params: []const u8, peer_params: []u8) error{Invalid}!void {
             self.prepare(peer_params);
-            var cfg = values.toCfg();
+            var cfg = cfg_of.clientCfg(values, limits, &self.lists) catch |err| {
+                self.failInit();
+                return err;
+            };
             self.setCallbacks(&cfg, transport_params);
             if (values.takes_tickets) cfg.on_ticket = onTicket;
             chapulin.attachRandom(&cfg, &self.random, values.random);
@@ -189,10 +197,8 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
 
         fn initServer(self: *Self, values: chapulin.Server, transport_params: []const u8, peer_params: []u8, sni_buf: []u8) error{Invalid}!void {
             self.prepare(peer_params);
-            var cfg = values.toCfg() catch |err| {
-                // What ch_srv_quic_init leaves after a refusal.
-                self.quic = std.mem.zeroes(c.ch_quic);
-                self.quic.t.state = c.CH_ST_FAILED;
+            var cfg = cfg_of.serverCfg(values, limits, &self.lists) catch |err| {
+                self.failInit();
                 return err;
             };
             self.setCallbacks(&cfg, transport_params);
@@ -203,6 +209,12 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             cfg.srv.sni_cap = sni_buf.len;
             chapulin.attachRandom(&cfg, &self.random, values.random);
             return chapulin.fromCode(error{Invalid}, c.ch_srv_quic_init(&self.quic, &cfg));
+        }
+
+        /// What an init call leaves after a refusal, for a list longer than its Limits cap.
+        fn failInit(self: *Self) void {
+            self.quic = std.mem.zeroes(c.ch_quic);
+            self.quic.t.state = c.CH_ST_FAILED;
         }
 
         fn prepare(self: *Self, peer_params: []u8) void {

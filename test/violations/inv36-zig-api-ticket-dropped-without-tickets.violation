@@ -1,11 +1,11 @@
 invariant: INV-36
-file: chapulin.zig
+file: chapulin_cfg.zig
 catches: test/zig-build-check.sh
-reason: Client.toCfg drops the values' ticket when takes_tickets is
+reason: clientCfg (chapulin_cfg.zig) drops the values' ticket when takes_tickets is
   false. A client that keeps no new tickets then cannot resume the ticket
   it offers, and runs a full handshake in its place. Both loops resume a
   ticket with takes_tickets false, and object.
 --- old
-        if (values.ticket) |ticket| cfg.ticket = ticket.saved();
+    if (values.ticket) |ticket| cfg.ticket = ticket.saved();
 --- new
-        if (if (values.takes_tickets) values.ticket else null) |ticket| cfg.ticket = ticket.saved();
+    if (if (values.takes_tickets) values.ticket else null) |ticket| cfg.ticket = ticket.saved();

@@ -11,6 +11,16 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 
+/// The C arrays the ch_cfg builder fills at the default Limits, which every cfg below points
+/// into. chapulin.testing is that builder, which a test build alone reaches.
+var lists: chapulin.testing.Lists(.{}) = undefined;
+
+/// The ch_cfg values build, into the shared lists.
+fn cfgOf(values: anytype) error{Invalid}!c.ch_cfg {
+    if (comptime has_server and @TypeOf(values) == chapulin.Server) return chapulin.testing.serverCfg(values, .{}, &lists);
+    return chapulin.testing.clientCfg(values, .{}, &lists);
+}
+
 comptime {
     hooks.define(&.{c});
 }
@@ -97,23 +107,23 @@ fn wantTicket(want: *c.ch_cfg, ticket: *const chapulin.Ticket, age_ms: u64) void
     want.ticket_age_ms = age_ms;
 }
 
-test "Client.toCfg under TRUST=webpki: anchors, hostname, clock, pins, ALPN, a ticket and require_pq" {
+test "the Client values\' ch_cfg under TRUST=webpki: anchors, hostname, clock, pins, ALPN, a ticket and require_pq" {
     if (!has_client or !has_webpki) return error.SkipZigTest;
-    const anchors = [_]c.ch_trust_anchor{chapulin.trustAnchor(&anchor_name, &anchor_spki)};
-    const alpn = [_]c.ch_alpn_protocol{ chapulin.alpnProtocol(alpn_names[0]), chapulin.alpnProtocol(alpn_names[1]) };
+    const anchors = [_]chapulin.TrustAnchor{.{ .name = &anchor_name, .spki = &anchor_spki }};
+    const alpn = [_][]const u8{ alpn_names[0], alpn_names[1] };
     const ticket = try sampleTicket();
     const age_ms: u64 = (1 << 32) + 1234;
     const seconds: u64 = 1782864000;
     const clock = clockAt(&seconds);
-    const got = (chapulin.Client{
+    const got = (try cfgOf(chapulin.Client{
         .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "s3.example.test", .clock = clock, .pins = &pins } },
         .alpn = &alpn,
         .ticket = &ticket,
         .ticket_age_ms = age_ms,
         .require_pq = true,
-    }).toCfg();
+    }));
     var want = std.mem.zeroes(c.ch_cfg);
-    want.anchors = &anchors;
+    want.anchors = &lists.anchors;
     want.anchor_count = 1;
     want.hostname = "s3.example.test";
     want.hostname_len = "s3.example.test".len;
@@ -121,7 +131,7 @@ test "Client.toCfg under TRUST=webpki: anchors, hostname, clock, pins, ALPN, a t
     want.clock_io = clock.clock_io;
     want.spki_pins = @ptrCast(&pins);
     want.spki_pin_count = 2;
-    want.alpn_protocols = &alpn;
+    want.alpn_protocols = &lists.alpn;
     want.alpn_count = 2;
     want.require_pq = 1;
     wantTicket(&want, &ticket, age_ms);
@@ -130,34 +140,61 @@ test "Client.toCfg under TRUST=webpki: anchors, hostname, clock, pins, ALPN, a t
     try expectEqual(age_ms, got.ticket_age_ms);
     try expectEqual(@as(u32, 7200), got.ticket.*.ticket.lifetime_s);
     try expectEqual(@as(u32, 9), got.ticket.*.ticket.epoch);
+    // The lists hold each value's C form, pointing at the caller's bytes.
+    try expectEqual(@as([*c]const u8, &anchor_name), lists.anchors[0].name);
+    try expectEqual(anchor_name.len, lists.anchors[0].name_len);
+    try expectEqual(@as([*c]const u8, &anchor_spki), lists.anchors[0].spki);
+    try expectEqual(anchor_spki.len, lists.anchors[0].spki_len);
+    for (alpn_names, lists.alpn[0..2]) |name, entry| {
+        try expectEqual(@as([*c]const u8, name.ptr), entry.name);
+        try expectEqual(name.len, entry.name_len);
+    }
 }
 
-test "Client.toCfg under TRUST=webpki: pins alone, with and without a server name" {
+test "the Client values\' ch_cfg under TRUST=webpki: a list over its cap is refused" {
+    if (!has_client or !has_webpki) return error.SkipZigTest;
+    const one: chapulin.TrustAnchor = .{ .name = &anchor_name, .spki = &anchor_spki };
+    const many = [_]chapulin.TrustAnchor{one} ** (chapulin.Limits{}).anchors_max ++ [_]chapulin.TrustAnchor{one};
+    const web = struct {
+        fn values(anchors: []const chapulin.TrustAnchor, alpn: []const []const u8) chapulin.Client {
+            return .{ .trust = .{ .web_pki = .{ .anchors = anchors, .server_name = "s3.example.test", .clock = clockAt(&no_seconds) } }, .alpn = alpn };
+        }
+        const no_seconds: u64 = 0;
+    };
+    // The last list each cap takes, and the first it refuses.
+    _ = try cfgOf(web.values(many[1..], &.{}));
+    try expectError(error.Invalid, cfgOf(web.values(&many, &.{})));
+    const names = [_][]const u8{"h2"} ** (c.CH_ALPN_MAX + 1);
+    _ = try cfgOf(web.values(many[0..1], names[1..]));
+    try expectError(error.Invalid, cfgOf(web.values(many[0..1], &names)));
+}
+
+test "the Client values\' ch_cfg under TRUST=webpki: pins alone, with and without a server name" {
     if (!has_client or !has_webpki) return error.SkipZigTest;
     var want = std.mem.zeroes(c.ch_cfg);
     want.spki_pins = @ptrCast(&pins);
     want.spki_pin_count = 2;
-    try expectFields(c.ch_cfg, want, (chapulin.Client{ .trust = .{ .pins = .{ .pins = &pins } } }).toCfg());
+    try expectFields(c.ch_cfg, want, (try cfgOf(chapulin.Client{ .trust = .{ .pins = .{ .pins = &pins } } })));
     want.hostname = "dns.example";
     want.hostname_len = "dns.example".len;
-    try expectFields(c.ch_cfg, want, (chapulin.Client{ .trust = .{ .pins = .{ .pins = &pins, .server_name = "dns.example" } } }).toCfg());
+    try expectFields(c.ch_cfg, want, (try cfgOf(chapulin.Client{ .trust = .{ .pins = .{ .pins = &pins, .server_name = "dns.example" } } })));
 }
 
-test "Client.toCfg under SUITE=aesgcm TRUST=webpki: the suite order, empty for the build's own" {
+test "the Client values\' ch_cfg under SUITE=aesgcm TRUST=webpki: the suite order, empty for the build's own" {
     if (!has_client or !@hasField(c.ch_cfg, "cipher_suites")) return error.SkipZigTest;
     const suites = [_]chapulin.Suite{ .aes_128_gcm_sha256, .chacha20_poly1305_sha256 };
     var values: chapulin.Client = .{ .trust = .{ .pins = .{ .pins = &pins } } };
     var want = std.mem.zeroes(c.ch_cfg);
     want.spki_pins = @ptrCast(&pins);
     want.spki_pin_count = 2;
-    try expectFields(c.ch_cfg, want, values.toCfg());
+    try expectFields(c.ch_cfg, want, (try cfgOf(values)));
     values.cipher_suites = &suites;
     want.cipher_suites = @ptrCast(&suites);
     want.cipher_suite_count = 2;
-    try expectFields(c.ch_cfg, want, values.toCfg());
+    try expectFields(c.ch_cfg, want, (try cfgOf(values)));
 }
 
-test "Client.toCfg and Server.toCfg in a host object: CH_CPU_PROBED and each bit the values state, and 0 for none" {
+test "the Client values\' ch_cfg and Server.toCfg in a host object: CH_CPU_PROBED and each bit the values state, and 0 for none" {
     if (!has_cpu) return error.SkipZigTest;
     const descriptions = [_]?chapulin.Cpu{
         null,
@@ -193,17 +230,17 @@ test "Client.toCfg and Server.toCfg in a host object: CH_CPU_PROBED and each bit
             const key = [_]u8{0x11} ** 64;
             const trust: chapulin.Trust = if (has_webpki) .{ .pins = .{ .pins = &pins } } else .{ .pinned = .{ .server_pubkey = &key } };
             const values: chapulin.Client = .{ .trust = trust, .cpu = description };
-            try expectEqual(code, values.toCfg().cpu);
+            try expectEqual(code, (try cfgOf(values)).cpu);
         }
         if (has_server) {
             const key = [_]u8{7} ** c.CH_SRV_COOKIE_KEY_LEN;
             const values: chapulin.Server = .{ .cookie_key = &key, .cpu = description };
-            try expectEqual(code, (try values.toCfg()).cpu);
+            try expectEqual(code, (try cfgOf(values)).cpu);
         }
     }
 }
 
-test "Client.toCfg under a raw or ca mode: both pins, and a ticket beside them" {
+test "the Client values\' ch_cfg under a raw or ca mode: both pins, and a ticket beside them" {
     if (!has_client or has_webpki) return error.SkipZigTest;
     const key = [_]u8{0x11} ** 64;
     const next = [_]u8{0x22} ** 64;
@@ -212,7 +249,7 @@ test "Client.toCfg under a raw or ca mode: both pins, and a ticket beside them" 
     want.server_pubkey_len = key.len;
     want.server_pubkey2 = &next;
     want.server_pubkey2_len = next.len;
-    try expectFields(c.ch_cfg, want, (chapulin.Client{ .trust = .{ .pinned = .{ .server_pubkey = &key, .server_pubkey2 = &next } } }).toCfg());
+    try expectFields(c.ch_cfg, want, (try cfgOf(chapulin.Client{ .trust = .{ .pinned = .{ .server_pubkey = &key, .server_pubkey2 = &next } } })));
     // The pin stays set: the C entries offer the ticket in its place.
     const ticket = try sampleTicket();
     want = std.mem.zeroes(c.ch_cfg);
@@ -220,12 +257,12 @@ test "Client.toCfg under a raw or ca mode: both pins, and a ticket beside them" 
     want.server_pubkey_len = key.len;
     wantTicket(&want, &ticket, 250);
     const values: chapulin.Client = .{ .trust = .{ .pinned = .{ .server_pubkey = &key } }, .ticket = &ticket, .ticket_age_ms = 250 };
-    try expectFields(c.ch_cfg, want, values.toCfg());
+    try expectFields(c.ch_cfg, want, (try cfgOf(values)));
 }
 
-test "Server.toCfg under PROFILE=cnsa2: the one ML-DSA-87 identity and its chain's u8" {
+test "the Server values\' ch_cfg under PROFILE=cnsa2: the one ML-DSA-87 identity and its chain's u8" {
     if (!has_mldsa_server) return error.SkipZigTest;
-    const chain = [_]c.ch_cert{chapulin.cert("leaf")};
+    const chain = [_][]const u8{"leaf"};
     const public_key = [_]u8{0x31} ** 2592;
     const private_key = [_]u8{0x32} ** 4896;
     const cookie_key = [_]u8{0x34} ** c.CH_SRV_COOKIE_KEY_LEN;
@@ -234,24 +271,28 @@ test "Server.toCfg under PROFILE=cnsa2: the one ML-DSA-87 identity and its chain
         .cookie_key = &cookie_key,
     };
     var want = std.mem.zeroes(c.ch_cfg);
-    want.srv.mldsa87 = .{ .chain = &chain, .chain_count = 1, .priv = &private_key, .priv_len = 4896, .@"pub" = &public_key, .pub_len = 2592 };
+    want.srv.mldsa87 = .{ .chain = &lists.mldsa_chain, .chain_count = 1, .priv = &private_key, .priv_len = 4896, .@"pub" = &public_key, .pub_len = 2592 };
     want.srv.cookie_key = &cookie_key;
-    try expectFields(c.ch_cfg, want, try values.toCfg());
-    const long = [_]c.ch_cert{chapulin.cert("x")} ** 256;
+    try expectFields(c.ch_cfg, want, try cfgOf(values));
+    try expectEqual(@as([*c]const u8, chain[0].ptr), lists.mldsa_chain[0].der);
+    // Limits.chain_max certificates fit, and one more does not.
+    const long = [_][]const u8{"x"} ** ((chapulin.Limits{}).chain_max + 1);
+    values.mldsa87.?.chain = long[1..];
+    _ = try cfgOf(values);
     values.mldsa87.?.chain = &long;
-    try expectError(error.Invalid, values.toCfg());
+    try expectError(error.Invalid, cfgOf(values));
 }
 
-test "Server.toCfg: both identities, the keys, the clock, ALPN, the SNI rule and the suite order" {
+test "the Server values\' ch_cfg: both identities, the keys, the clock, ALPN, the SNI rule and the suite order" {
     if (!has_classic_server) return error.SkipZigTest;
-    const chain = [_]c.ch_cert{ chapulin.cert("leaf"), chapulin.cert("intermediate") };
+    const chain = [_][]const u8{ "leaf", "intermediate" };
     const point = [_]u8{0x31} ** 64;
     const scalar = [_]u8{0x32} ** 32;
     const modulus = [_]u8{0x33} ** 256;
     const rsa_key = std.mem.zeroes(c.ch_rsa_priv);
     const cookie_key = [_]u8{0x34} ** c.CH_SRV_COOKIE_KEY_LEN;
     const ticket_key = [_]u8{0x35} ** c.CH_SRV_TICKET_KEY_LEN;
-    const alpn = [_]c.ch_alpn_protocol{chapulin.alpnProtocol(alpn_names[1])};
+    const alpn = [_][]const u8{alpn_names[1]};
     const seconds: u64 = 1700000000;
     const clock = clockAt(&seconds);
     var values: chapulin.Server = .{
@@ -266,47 +307,55 @@ test "Server.toCfg: both identities, the keys, the clock, ALPN, the SNI rule and
     const suites = [_]chapulin.Suite{ .aes_128_gcm_sha256, .chacha20_poly1305_sha256 };
     if (@hasField(c.ch_srv_cfg, "cipher_suites")) values.cipher_suites = &suites;
     var want = std.mem.zeroes(c.ch_cfg);
-    want.srv.ecdsa_p256 = .{ .chain = &chain, .chain_count = 2, .priv = &scalar, .priv_len = 32, .@"pub" = &point, .pub_len = 64 };
-    want.srv.rsa_pss = .{ .chain = chain[1..].ptr, .chain_count = 1, .priv = &rsa_key, .priv_len = @sizeOf(c.ch_rsa_priv), .@"pub" = &modulus, .pub_len = 256 };
+    want.srv.ecdsa_p256 = .{ .chain = &lists.ecdsa_chain, .chain_count = 2, .priv = &scalar, .priv_len = 32, .@"pub" = &point, .pub_len = 64 };
+    want.srv.rsa_pss = .{ .chain = &lists.rsa_chain, .chain_count = 1, .priv = &rsa_key, .priv_len = @sizeOf(c.ch_rsa_priv), .@"pub" = &modulus, .pub_len = 256 };
     want.srv.cookie_key = &cookie_key;
     want.srv.ticket_key = &ticket_key;
     want.now_seconds = clock.now_seconds;
     want.clock_io = clock.clock_io;
-    want.alpn_protocols = &alpn;
+    want.alpn_protocols = &lists.alpn;
     want.alpn_count = 1;
     want.srv.require_server_name = 1;
     if (@hasField(c.ch_srv_cfg, "cipher_suites")) {
         want.srv.cipher_suites = @ptrCast(&suites);
         want.srv.cipher_suite_count = 2;
     }
-    try expectFields(c.ch_cfg, want, try values.toCfg());
+    try expectFields(c.ch_cfg, want, try cfgOf(values));
+    for (chain, lists.ecdsa_chain[0..2]) |der, entry| {
+        try expectEqual(@as([*c]const u8, der.ptr), entry.der);
+        try expectEqual(der.len, entry.len);
+    }
+    try expectEqual(@as([*c]const u8, chain[1].ptr), lists.rsa_chain[0].der);
 
-    // chain_count is a u8: 255 certificates fit it and 256 do not.
-    const long = [_]c.ch_cert{chapulin.cert("x")} ** 256;
-    values.ecdsa_p256.?.chain = long[0..255];
-    try expectEqual(@as(u8, 255), (try values.toCfg()).srv.ecdsa_p256.chain_count);
+    // Limits.chain_max certificates fit the default lists, and one more does not.
+    const long = [_][]const u8{"x"} ** 256;
+    const chain_max = (chapulin.Limits{}).chain_max;
+    values.ecdsa_p256.?.chain = long[0..chain_max];
+    try expectEqual(@as(u8, chain_max), (try cfgOf(values)).srv.ecdsa_p256.chain_count);
+    values.ecdsa_p256.?.chain = long[0 .. chain_max + 1];
+    try expectError(error.Invalid, cfgOf(values));
+    // check holds its lists at the C cap: chain_count is a u8, so 256 do not fit.
     values.ecdsa_p256.?.chain = &long;
-    try expectError(error.Invalid, values.toCfg());
     try expectError(error.Invalid, values.check());
 }
 
-test "Client.toCfg and Server.toCfg under TRANSPORT=quic-nonblocking: the original version, and 0 for none" {
+test "the Client values\' ch_cfg and Server.toCfg under TRANSPORT=quic-nonblocking: the original version, and 0 for none" {
     if (!has_quic) return error.SkipZigTest;
     const key = [_]u8{0x11} ** 64;
     if (has_client) {
         var values: chapulin.Client = .{ .trust = if (has_webpki) .{ .pins = .{ .pins = &pins } } else .{ .pinned = .{ .server_pubkey = &key } } };
-        try expectEqual(@as(u32, 0), values.toCfg().quic_original_version);
+        try expectEqual(@as(u32, 0), (try cfgOf(values)).quic_original_version);
         values.quic_version = .v1;
-        try expectEqual(@as(u32, c.CH_QUIC_VERSION_1), values.toCfg().quic_original_version);
+        try expectEqual(@as(u32, c.CH_QUIC_VERSION_1), (try cfgOf(values)).quic_original_version);
         values.quic_version = .v2;
-        try expectEqual(@as(u32, c.CH_QUIC_VERSION_2), values.toCfg().quic_original_version);
+        try expectEqual(@as(u32, c.CH_QUIC_VERSION_2), (try cfgOf(values)).quic_original_version);
     }
     if (has_server) {
         const cookie_key = [_]u8{0x34} ** c.CH_SRV_COOKIE_KEY_LEN;
         var values: chapulin.Server = .{ .cookie_key = &cookie_key };
-        try expectEqual(@as(u32, 0), (try values.toCfg()).quic_original_version);
+        try expectEqual(@as(u32, 0), (try cfgOf(values)).quic_original_version);
         values.quic_version = .v1;
-        try expectEqual(@as(u32, c.CH_QUIC_VERSION_1), (try values.toCfg()).quic_original_version);
+        try expectEqual(@as(u32, c.CH_QUIC_VERSION_1), (try cfgOf(values)).quic_original_version);
     }
 }
 
@@ -395,13 +444,13 @@ test "RAND=session: init refuses a value with no random, and a session draws fro
     // Placeholders: init checks that each field is set, and no
     // certificate arrives here.
     const placeholder = [_]u8{ 0x30, 0x00 };
-    const anchors = [_]c.ch_trust_anchor{chapulin.trustAnchor(&placeholder, &placeholder)};
+    const anchors = [_]chapulin.TrustAnchor{.{ .name = &placeholder, .spki = &placeholder }};
     const seconds: u64 = 1789000000;
     var values: chapulin.Client = .{ .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "dns.example", .clock = clockAt(&seconds) } } };
     // A host object's init refuses a value without CH_CPU_PROBED, so the
     // value states the probe's bit, and the first refusal is the random's.
     if (comptime has_cpu) values.cpu = .{};
-    var session: chapulin.record.Client(c.CH_MIN_RXBUF) = undefined;
+    var session: chapulin.record.Client(c.CH_MIN_RXBUF, .{}) = undefined;
     try expectError(error.Invalid, session.init(values));
     try expect(session.recordState() == .failed);
 
@@ -427,9 +476,10 @@ test "the PEM files: a refusal is error.Invalid, a room is the caller's, and a r
     const one = "-----BEGIN CERTIFICATE-----\nMBkwEgIBATAAMAAwADADDAFhMAIFADAAAwEA\n-----END CERTIFICATE-----\n";
     var der: [27]u8 = undefined;
     if (has_server) {
-        var entries: [1]c.ch_cert = undefined;
+        var entries: [1][]const u8 = undefined;
         try expectError(error.Invalid, chapulin.Chain.fromPem(not_pem, &der, &entries));
         const chain = try chapulin.Chain.fromPem(one, &der, &entries);
+        try expectEqual(@as([*]const u8, &der), chain.certs[0].ptr);
         try expectEqual(@as(usize, 1), chain.certs.len);
         try expectEqual(@as(usize, 27), chain.leaf().len);
         try expectError(error.Invalid, chapulin.Chain.fromPem(one, der[0..26], &entries));
@@ -454,11 +504,13 @@ test "the PEM files: a refusal is error.Invalid, a room is the caller's, and a r
         }
     }
     if (has_webpki) {
-        var entries: [1]c.ch_trust_anchor = undefined;
-        try expectError(error.Invalid, chapulin.Anchors.fromPem("# a comment, and no block\n", &der, &entries));
-        const anchors = try chapulin.Anchors.fromPem(one, &der, &entries);
+        var entries: [1]chapulin.TrustAnchor = undefined;
+        try expectError(error.Invalid, chapulin.Anchors.fromPem(.{}, "# a comment, and no block\n", &der, &entries));
+        const anchors = try chapulin.Anchors.fromPem(.{}, one, &der, &entries);
         try expectEqual(@as(usize, 1), anchors.anchors.len);
-        try expectError(error.Invalid, chapulin.Anchors.fromPem(one, der[0..26], &entries));
+        try expectError(error.Invalid, chapulin.Anchors.fromPem(.{}, one, der[0..26], &entries));
+        // A bundle over the session type's anchors_max is refused, as a session would refuse it.
+        try expectError(error.Invalid, chapulin.Anchors.fromPem(.{ .anchors_max = 0 }, one, &der, &entries));
     }
 }
 
@@ -468,22 +520,21 @@ fn compile(comptime T: type, comptime names: []const []const u8) void {
 }
 
 test "every declaration this object has compiles" {
-    compile(chapulin, &.{ "fromCode", "buildMatches", "Group", "Suite", "State", "Hook", "RandomSource", "attachRandom" });
+    compile(chapulin, &.{ "fromCode", "buildMatches", "Limits", "Group", "Suite", "State", "Hook", "RandomSource", "attachRandom" });
     try expect(chapulin.buildMatches());
     if (has_client) compile(chapulin, &.{ "Client", "Ticket", "Trust" });
-    if (has_classic_server) compile(chapulin, &.{ "Server", "cert", "EcdsaP256Identity", "RsaPssIdentity", "Chain", "EcdsaP256Key" });
-    if (has_mldsa_server) compile(chapulin, &.{ "Server", "cert", "MlDsa87Identity", "Chain", "MlDsa87Key" });
-    if (has_webpki) compile(chapulin, &.{ "trustAnchor", "CertType", "Anchors" });
-    if (has_alpn) compile(chapulin, &.{"alpnProtocol"});
+    if (has_classic_server) compile(chapulin, &.{ "Server", "EcdsaP256Identity", "RsaPssIdentity", "Chain", "EcdsaP256Key" });
+    if (has_mldsa_server) compile(chapulin, &.{ "Server", "MlDsa87Identity", "Chain", "MlDsa87Key" });
+    if (has_webpki) compile(chapulin, &.{ "TrustAnchor", "CertType", "Anchors" });
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hookContext"});
     const record = [_][]const u8{ "init", "recordIn", "recordState", "alertSent", "alertReceived", "read", "write", "writableLen", "close", "recordClose", "group", "pskSelected", "peerLimit", "readClosed", "replyLen" };
     const quic = [_][]const u8{ "init", "cryptoIn", "initialKeys", "keysReady", "peerTransportParams", "seal", "sealClose", "open", "retryOk", "negotiatedVersion", "keyUpdate", "keyPhase", "dropPreviousKeys", "discard", "state", "alert", "alertSent", "alertReceived", "errorCode", "close", "alpnSelected", "group", "pskSelected" };
-    if (@hasDecl(c, "ch_record_init")) compileSession(chapulin.record.Client(c.CH_MIN_RXBUF), &(record ++ .{ "recordOut", "takeTicket" }));
-    if (@hasDecl(c, "ch_srv_record_init")) compileSession(chapulin.record.Server(c.CH_MIN_RXBUF), &(record ++ .{ "sni", "outputLen" }));
+    if (@hasDecl(c, "ch_record_init")) compileSession(chapulin.record.Client(c.CH_MIN_RXBUF, .{}), &(record ++ .{ "recordOut", "takeTicket" }));
+    if (@hasDecl(c, "ch_srv_record_init")) compileSession(chapulin.record.Server(c.CH_MIN_RXBUF, .{}), &(record ++ .{ "sni", "outputLen" }));
     if (has_quic) compile(chapulin.quic, &.{"Version"});
-    if (@hasDecl(c, "ch_quic_init")) compileSession(chapulin.quic.Client(c.CH_MIN_RXBUF), &(quic ++ .{ "cryptoOut", "takeTicket", "switchVersion" }));
+    if (@hasDecl(c, "ch_quic_init")) compileSession(chapulin.quic.Client(c.CH_MIN_RXBUF, .{}), &(quic ++ .{ "cryptoOut", "takeTicket", "switchVersion" }));
     if (@hasDecl(c, "ch_srv_quic_init")) {
-        compileSession(chapulin.quic.Server(c.CH_MIN_RXBUF), &(quic ++ .{"sni"}));
+        compileSession(chapulin.quic.Server(c.CH_MIN_RXBUF, .{}), &(quic ++ .{"sni"}));
         compile(chapulin.quic, &.{ "retryTag", "tokenMint", "tokenCheck", "ChooseVersion" });
     }
 }

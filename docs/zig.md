@@ -115,9 +115,9 @@ for a `@compileError` declaration too.
 | `quic.Client` | `ch_quic_init` |
 | `quic.Server`, `quic.retryTag`, `quic.tokenMint`, `quic.tokenCheck`, `quic.TokenCheck`, `quic.ChooseVersion` | `ch_srv_quic_init` |
 | `quic.Level`, `quic.Direction`, `quic.KeySet`, `quic.level_count` | `ch_quic_initial_keys` |
-| `Trust.web_pki`, `Trust.pins`, `trustAnchor`, `CertType`, `serverCertType` | `ch_cfg.anchors` (TRUST=webpki) |
+| `Trust.web_pki`, `Trust.pins`, `TrustAnchor`, `CertType`, `serverCertType` | `ch_cfg.anchors` (TRUST=webpki) |
 | `Trust.pinned` | no `ch_cfg.anchors` |
-| `Client.alpn`, `alpnProtocol`, `alpnSelected` | `ch_cfg.alpn_protocols` |
+| `Client.alpn`, `alpnSelected` | `ch_cfg.alpn_protocols` |
 | `Client.random` and `Server.random` other than `void`, and `RandomSource` other than `void` | `ch_cfg.rand_bytes` (RAND=session) |
 | `Cpu`, `cpuBits`, and `Client.cpu`, `Server.cpu` and `EcdsaP256Key.fromPem`'s `cpu` other than `void` | `ch_cfg.cpu` (a host object, `-DCH_CPU_RUNTIME`) |
 | `Server.cipher_suites` | `ch_srv_cfg.cipher_suites` (SUITE=aesgcm) |
@@ -145,13 +145,25 @@ a literal that sets it does not compile.
 
 Every slice and pointer in a value is borrowed and must outlive the
 session, as `ch_cfg`'s pointers must (`cfg.h`, `srv_cfg.h`). The session
-keeps a copy of the `ch_cfg`, not of what it points at. List elements
-are the C types, built by three helpers, so the API copies no list:
+keeps a copy of the `ch_cfg`, not of what it points at. Lists are Zig
+types (docs/decisions.md 168):
 
-- `trustAnchor(subject, spki)`: a `c.ch_trust_anchor` from a root's
-  subject Name and SubjectPublicKeyInfo, each the whole DER TLV;
-- `alpnProtocol(name)`: a `c.ch_alpn_protocol`;
-- `cert(der)`: a `c.ch_cert`, one certificate of a server's chain.
+- a server identity's `chain` is `[]const []const u8`, DER, end-entity
+  first;
+- `Trust.web_pki.anchors` is `[]const TrustAnchor`, each `.{ .name,
+  .spki }`, a root's subject Name and SubjectPublicKeyInfo, each the
+  whole DER TLV;
+- `alpn` is `[]const []const u8`, the protocol names.
+
+A session type takes `Limits` at compile time, as it takes its receive
+length: `chain_max`, 8 by default and 255 at most, the certificates of
+each identity's chain, and `anchors_max`, 256 by default, the roots a
+client takes. Pass `.{}` for the defaults. The session holds storage for
+that many entries and builds the C lists there in `init`, which answers
+`error.Invalid` for a longer list. An ALPN list holds `CH_ALPN_MAX`
+names at most in every session. The builder is `chapulin_cfg.zig`,
+which the module does not export, so no program names the C list types.
+A test build reaches it as `chapulin.testing`.
 
 `SpkiPin` is `[CH_SPKI_PIN_LEN]u8`, the SHA-256 of a DER SubjectPublicKeyInfo;
 a slice of them is `ch_cfg.spki_pins` as it is.
@@ -188,16 +200,16 @@ The client's trust, whose variants are the object's trust mode's:
 | `alpn`, empty by default | `alpn_protocols`, `alpn_count` |
 | `ticket`, null by default | `ticket`, the `Ticket`'s own bytes, whose layout is `c.ch_saved_ticket`'s |
 | `ticket_age_ms`, 0 by default | `ticket_age_ms` |
-| `takes_tickets`, true by default | none in `toCfg`: a session's `init` sets `on_ticket` to the API's callback when it is true, and leaves `on_ticket` NULL when it is false |
+| `takes_tickets`, true by default | none in the values' `ch_cfg`: a session's `init` sets `on_ticket` to the API's callback when it is true, and leaves `on_ticket` NULL when it is false |
 | `require_pq`, false by default | `require_pq` |
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, the version's code, or 0 for null, which `init` refuses |
 | `cipher_suites`, empty for the build's order, SUITE=aesgcm TRUST=webpki alone | `cipher_suites`, `cipher_suite_count` |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, through the session's own copy |
 | `cpu`, null by default, a host object alone | `cpu`: `CH_CPU_PROBED`, and the bit of each field of the `Cpu` value that is true, or 0 for null, which `init` refuses. `constant_time_multiply` is the caller's statement about the widening multiply on its CPU and in its thread's mode, and runs the native multiply, and X25519 on the 51-bit-word field |
 
-`toCfg()` returns that `ch_cfg`, and a session's `init` adds its buffer,
-callbacks and `io` to it, and under `RAND=session` its source. With a
-ticket, a raw or ca mode's `toCfg` leaves the two `server_pubkey` slots
+A session's `init` builds that `ch_cfg`, adds its buffer, callbacks and
+`io` to it, and under `RAND=session` its source. With a ticket, a raw or
+ca mode's `ch_cfg` leaves the two `server_pubkey` slots
 unset, because `ch_cfg` takes one auth mode. The age is the time since `on_ticket` handed the ticket over,
 in milliseconds. C refuses a ticket older than its lifetime or older than
 seven days (`ticket.h`, RFC 9846 §4.3.11.1 and §4.7.1), so `init`
@@ -211,7 +223,7 @@ A NewSessionTicket (RFC 9846 §4.7.1) that outlives its session: the
 identity bytes it pointed at, as `identity`. `ticket.identity` is null,
 because the bytes it named are valid during `on_ticket` alone. It is an
 extern struct with the layout of `c.ch_saved_ticket` (`ticket.h`), which
-a comptime check holds, so `Client.toCfg` points `ch_cfg.ticket` at it
+a comptime check holds, so `init` points `ch_cfg.ticket` at it
 as it is, and `saved()` names it as that type.
 
 - `takeTicket()` on a client session moves the latest ticket out.
@@ -272,7 +284,7 @@ over.
 | `require_server_name` | `srv.require_server_name` |
 | `cipher_suites`, empty for the default order | `srv.cipher_suites`, `srv.cipher_suite_count` |
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, as for a client: the Version field of the client's first Initial packet |
-| `choose_version`, null by default, `TRANSPORT=quic-nonblocking` alone | none in `toCfg`: the session's `init` points `srv.choose_version` at its own adapter, which calls this `quic.ChooseVersion` with the session's `hook.context`. null keeps the original version |
+| `choose_version`, null by default, `TRANSPORT=quic-nonblocking` alone | none in the values' `ch_cfg`: the session's `init` points `srv.choose_version` at its own adapter, which calls this `quic.ChooseVersion` with the session's `hook.context`. null keeps the original version |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, as for a client |
 | `cpu`, null by default, a host object alone | `cpu`, as for a client |
 
@@ -281,8 +293,10 @@ over.
 `RsaPssIdentity` takes the chain, the modulus and a
 `*const c.ch_rsa_priv`. In a host object that struct holds the key's five
 CRT integers after its modulus and private exponent (`rsa_sign.h`), and a
-session that states its multiply signs with them. `toCfg()` answers `error.Invalid` for a chain
-longer than `chain_count`'s `u8` holds, and `check()` runs
+session that states its multiply signs with them. A session's `init`
+answers `error.Invalid` for a chain longer than its `Limits.chain_max`.
+`check()` holds its chains at 255, the most `chain_count`'s `u8` holds,
+and runs
 `ch_srv_check`: each provisioned key signs, and the signature verifies.
 It also refuses a `cookie_key` or `ticket_key` that a server init call
 refuses. It takes no session.
@@ -296,17 +310,21 @@ answers `error.Invalid` for a file that the C call refuses.
 
 | Value | C call | What it holds |
 |---|---|---|
-| `Chain` | `ch_chain_from_pem` | `certs`, the entries the call filled, which `EcdsaP256Identity.chain` and `RsaPssIdentity.chain` take; `leaf()` is the end-entity certificate's DER |
+| `Chain` | `ch_chain_from_pem` | `certs`, the DER slices the call filled, which the identities' `chain` takes; `leaf()` is the end-entity certificate's DER |
 | `EcdsaP256Key` | `ch_p256_key_from_pem` | `private_key` and `public_key`, what `EcdsaP256Identity` points at; `fromPem` takes the `cpu` value and the leaf the key must match |
-| `Anchors` | `ch_anchors_from_pem` | `anchors`, the entries the call filled, which `Trust.web_pki.anchors` takes |
+| `Anchors` | `ch_anchors_from_pem` | `anchors`, the `TrustAnchor` values the call filled, which `Trust.web_pki.anchors` takes |
 
 `Chain.fromPem` and `Anchors.fromPem` take two rooms that the program
-places and sizes: a DER room and a slice of entries. The call fills
-them, and refuses a file that does not fit them. A DER room of
-`pem.len / 4 * 3` bytes holds the DER of any file, and a slice of one
-entry for each block holds its entries. A chain holds 255 certificates
-at most. The value's entries point into the DER room, so both rooms
-stay where `fromPem` filled them for as long as a session uses them.
+places and sizes: a DER room, and a slice of `[]const u8` or of
+`TrustAnchor` with one entry for each block. The call fills them, and
+refuses a file that does not fit them. A DER room of `pem.len / 4 * 3`
+bytes holds the DER of any file. A chain holds 255 certificates at most.
+`Anchors.fromPem` takes the session type's `Limits` first and refuses a
+bundle of more than `anchors_max` roots, which that session could not
+take. Each call has the C call write its entries into an array on its
+own stack, because a bundle has no C cap and the API allocates nothing.
+The value's slices point into the DER room, so both rooms stay where
+`fromPem` filled them for as long as a session uses them.
 
 `EcdsaP256Key.fromPem` takes `cpu` first, the `?Cpu` that `Server.cpu`
 takes, in a host object alone, and `void` in every other object. A host
@@ -318,7 +336,7 @@ session uses it. The program wipes the key file's text itself after
 
 ```zig
 var chain_der: [16384]u8 = undefined;
-var chain_entries: [12]chapulin.c.ch_cert = undefined;
+var chain_entries: [12][]const u8 = undefined;
 const chain = try chapulin.Chain.fromPem(chain_file, &chain_der, &chain_entries);
 var key: chapulin.EcdsaP256Key = .{};
 defer std.crypto.secureZero(u8, key_file);
@@ -378,7 +396,7 @@ and in `avx512_wipe.c`'s block of assembly, as make's does
 - **A value states what the caller found.** `Cpu` holds ten bools,
   false by default: `constant_time_aes`, `constant_time_multiply`, `avx2`,
   `vaes`, `constant_time_sha256`, `constant_time_sha512`,
-  `constant_time_sha3`, `avx512_ifma`, `avx512` and `bmi2_adx`. `toCfg` writes
+  `constant_time_sha3`, `avx512_ifma`, `avx512` and `bmi2_adx`. `init` writes
   `CH_CPU_PROBED` and the bit of each one that is true. `Cpu{}` says the
   caller looked and states nothing more. The five named `constant_time_`
   state a timing, and `cpu_cfg.h` says what each claims. `avx2`, `vaes`,
@@ -482,23 +500,24 @@ result with `fromCode(chapulin.Error, code)`.
 
 ## Record-mode sessions
 
-`TRANSPORT=tcp-nonblocking`. `record.Client(receive_len)` and
-`record.Server(receive_len)` are types whose size is known at compile
+`TRANSPORT=tcp-nonblocking`. `record.Client(receive_len, limits)` and
+`record.Server(receive_len, limits)` are types whose size is known at compile
 time, so a program places a session in a static, in a connection struct
 or on the stack, with no allocation. Each holds the C session, `record`,
 the receive buffer `cfg.buf`, `receive`, the `hook`, the source `random`
 under `RAND=session`, the slices the callbacks copy between during one
-call, `io`, and, on the client, the latest ticket. Do not move a session
-after `init`: `cfg.io` points at its hook, and `cfg.rand_io` at its
-`random`. colibri sizes both at 20,480 bytes.
+call, `io`, the storage of its lists under `limits`, `lists`, and, on the
+client, the latest ticket. Do not move a session after `init`: `cfg.io`
+points at its hook, `cfg.rand_io` at its `random`, and `cfg`'s lists at
+its `lists`. colibri sizes both at 20,480 bytes.
 
 | Zig call | C call | Errors |
 |---|---|---|
-| `Client.init(values)` | `Client.toCfg`, then `ch_record_init` with the API's `send` and `recv`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the values' `random` | Invalid |
+| `Client.init(values)` | the values' `ch_cfg`, built into `lists`, then `ch_record_init` with the API's `send` and `recv`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the values' `random` | Invalid |
 | `Client.recordOut(output)` | `ch_record_out`; after a failed `recordIn`, the failure's alert record, then `error.Invalid` | Invalid, Cap |
 | `Client.recordIn(input)` | `ch_record_in`; returns the bytes consumed | Invalid, Proto, Auth, Cap |
 | `Client.takeTicket()` | none: moves the slot out and zeroes it | none |
-| `Server.init(values, sni_buf)` | `Server.toCfg`, then `ch_srv_record_init` with the API's `send`, `recv` and `on_record_out`, and under `RAND=session` the values' `random`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
+| `Server.init(values, sni_buf)` | the values' `ch_cfg`, built into `lists`, then `ch_srv_record_init` with the API's `send`, `recv` and `on_record_out`, and under `RAND=session` the values' `random`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
 | `Server.recordIn(input, output)` | `ch_srv_record_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Proto, Auth, Cap, Io |
 | `Server.outputLen()` | the bytes the last `recordIn` wrote into `output`, which a failed `recordIn` also sets: `Progress.written` on success | none |
 | `Server.sni()` | `sni_buf[0..ch_sni_len]`, null when 0 | none |
@@ -535,9 +554,9 @@ the last record an AES-GCM write key seals, so no such call is planned
 ### A handshake
 
 ```zig
-var client: chapulin.record.Client(20_480) = undefined;
-const anchors = [_]chapulin.c.ch_trust_anchor{chapulin.trustAnchor(root_name, root_spki)};
-const alpn = [_]chapulin.c.ch_alpn_protocol{chapulin.alpnProtocol("http/1.1")};
+var client: chapulin.record.Client(20_480, .{}) = undefined;
+const anchors = [_]chapulin.TrustAnchor{.{ .name = root_name, .spki = root_spki }};
+const alpn = [_][]const u8{"http/1.1"};
 
 try client.init(.{
     .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "s3.example.test", .clock = .{ .now_seconds = wallClock } } },
@@ -689,8 +708,9 @@ each init zeroes it before the C init call.
 - `TokenCheck`: `.retry` with the connection IDs the token carried,
   `.not_retry` or `.invalid`.
 
-`quic.Client(receive_len)` and `quic.Server(receive_len)` hold the C
-session, `quic`, the receive buffer, the hook, under `RAND=session` the
+`quic.Client(receive_len, limits)` and `quic.Server(receive_len, limits)`
+hold the C session, `quic`, the receive buffer, the storage of its lists,
+the hook, under `RAND=session` the
 source `random`, the caller's `peer_params` slice, the length of what
 arrived there, the client's ticket slot and the server's current
 `Outgoing`. colibri passes a
@@ -698,8 +718,8 @@ arrived there, the client's ticket slot and the server's current
 
 | Zig call | C call | Errors |
 |---|---|---|
-| `Client.init(values, transport_params, peer_params)` | `Client.toCfg`, then `ch_quic_init` with the API's `on_level_ready` and `on_transport_params`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the values' `random` | Invalid |
-| `Server.init(values, transport_params, peer_params, sni_buf)` | `Server.toCfg`, then `ch_srv_quic_init` with the API's `on_level_ready`, `on_transport_params`, `srv.on_crypto_out` and, when the values carry a `choose_version`, `srv.choose_version`, and under `RAND=session` the values' `random` | Invalid |
+| `Client.init(values, transport_params, peer_params)` | the values' `ch_cfg`, built into `lists`, then `ch_quic_init` with the API's `on_level_ready` and `on_transport_params`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the values' `random` | Invalid |
+| `Server.init(values, transport_params, peer_params, sni_buf)` | the values' `ch_cfg`, built into `lists`, then `ch_srv_quic_init` with the API's `on_level_ready`, `on_transport_params`, `srv.on_crypto_out` and, when the values carry a `choose_version`, `srv.choose_version`, and under `RAND=session` the values' `random` | Invalid |
 | `initialKeys(dcid)` | `ch_quic_initial_keys` | Invalid |
 | `Client.cryptoIn(level, bytes)` | `ch_quic_crypto_in` | Invalid (live), Proto, Auth, Cap |
 | `Client.cryptoOut(level, out)` | `ch_quic_crypto_out` | Invalid, Cap (live) |
@@ -816,8 +836,9 @@ each through the module alone (INV-36):
   program of any object can include each one. So where `chapulin.c`
   leaves one out, the script translates it with `zig translate-c` under
   the same defines and holds the result to the second rule.
-- `unit.zig`, the API's unit tests: each value's `toCfg` against the
-  `ch_cfg` written out field by field, the Ticket constructors and their
+- `unit.zig`, the API's unit tests: each value's `ch_cfg`, through
+  `chapulin.testing`, against the `ch_cfg` written out field by field,
+  each list's C entries and the first list over each cap, the Ticket constructors and their
   bounds, the error of every code, and every declaration the object has,
   compiled. Under `RAND=session`, a client refused at init without a
   `random`, and one whose ClientHello random is the second fill of the
@@ -904,8 +925,7 @@ each through the module alone (INV-36):
     version 1 connection and resumed in a version 2 one;
   - under `KEYLOG=on`, `hookContext` finding the client's context.
 - `pair.zig` starts a client on each of colibri's two objects in one
-  image, and computes a ticket's age through each object's call, directly
-  and through `Client.toCfg`.
+  image, and computes a ticket's age through each object's call.
 
 check-slow runs the script over every lib-check build's configuration as
 well, among them `RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking

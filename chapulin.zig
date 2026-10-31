@@ -18,6 +18,11 @@ pub const c = @import("chapulin_c");
 pub const record = @import("chapulin_record.zig");
 /// QUIC sessions (TRANSPORT=quic-nonblocking).
 pub const quic = @import("chapulin_quic.zig");
+/// The ch_cfg builder, which no program names (chapulin_cfg.zig).
+const cfg_of = @import("chapulin_cfg.zig");
+/// The ch_cfg builder, for the API's unit tests to hold each value to its field, in a test build
+/// alone. A program built for release cannot name it.
+pub const testing = if (@import("builtin").is_test) cfg_of else @compileError("chapulin.testing exists in a test build alone");
 
 // A client role: the object's client entry point, whichever its transport.
 // Each header declares a call only in the objects that define it.
@@ -104,28 +109,27 @@ pub fn fromCode(comptime E: type, code: c_int) E!void {
 }
 
 /// A root's subject Name and SubjectPublicKeyInfo, each the whole DER TLV (webpki_cfg.h).
-pub const trustAnchor = if (has_webpki) trustAnchorOf else @compileError("trustAnchor needs TRUST=webpki");
-fn trustAnchorOf(subject: []const u8, spki: []const u8) c.ch_trust_anchor {
-    return .{ .name = subject.ptr, .name_len = subject.len, .spki = spki.ptr, .spki_len = spki.len };
-}
+pub const TrustAnchor = if (has_webpki) struct {
+    name: []const u8,
+    spki: []const u8,
+} else @compileError("TrustAnchor needs TRUST=webpki");
+
+/// The caps on the lists a session's values hold. A session type takes them at compile time, as
+/// it takes its receive length, and holds storage for that many entries. init answers
+/// error.Invalid for a longer list. An ALPN list holds CH_ALPN_MAX names at most in every session,
+/// and needs no field here (docs/decisions.md 168).
+pub const Limits = struct {
+    /// Certificates in each server identity's chain: 1 to 255, the range of chain_count.
+    chain_max: usize = 8,
+    /// Roots a TRUST=webpki client takes, and the most Anchors.fromPem decodes.
+    anchors_max: usize = 256,
+};
 
 /// One part of the plaintext Session.writeParts sends: the bytes of pt,
 /// which the caller owns until the call returns (tls.h, ch_part).
 pub const part = if (has_write_parts) partOf else @compileError("part needs TRANSPORT=tcp-nonblocking");
 fn partOf(pt: []const u8) c.ch_part {
     return .{ .pt = pt.ptr, .pt_len = pt.len };
-}
-
-/// One protocol name to offer or select through ALPN (RFC 7301).
-pub const alpnProtocol = if (has_alpn) alpnProtocolOf else @compileError("alpnProtocol needs TRUST=webpki, TRANSPORT=quic-nonblocking or a server role");
-fn alpnProtocolOf(name: []const u8) c.ch_alpn_protocol {
-    return .{ .name = name.ptr, .name_len = name.len };
-}
-
-/// One DER certificate of a server's chain.
-pub const cert = if (has_server) certOf else @compileError("cert needs ROLE=server or ROLE=both");
-fn certOf(der: []const u8) c.ch_cert {
-    return .{ .der = der.ptr, .len = der.len };
 }
 
 /// The SHA-256 of a DER SubjectPublicKeyInfo. A slice of them is ch_cfg.spki_pins as it is.
@@ -135,8 +139,8 @@ pub const SpkiPin = [c.CH_SPKI_PIN_LEN]u8;
 /// mode's. Every slice is borrowed and must outlive the session.
 pub const Trust = if (has_webpki) union(enum) {
     web_pki: struct {
-        /// Roots the chain may end at: anchors, anchor_count.
-        anchors: []const c.ch_trust_anchor,
+        /// Roots the chain may end at: anchors, anchor_count, at most Limits.anchors_max.
+        anchors: []const TrustAnchor,
         /// The name the leaf must carry, also sent as server_name: hostname, hostname_len.
         server_name: []const u8,
         /// The caller's clock, which each init calls once: now_seconds, clock_io.
@@ -165,8 +169,9 @@ pub const Client = if (has_client) ClientValues else @compileError("Client needs
 const ClientValues = struct {
     /// How the server is judged: the fields Trust names.
     trust: Trust,
-    /// Protocols to offer, most preferred first: alpn_protocols, alpn_count.
-    alpn: if (has_alpn) []const c.ch_alpn_protocol else void = if (has_alpn) &.{} else {},
+    /// Protocol names to offer, most preferred first, CH_ALPN_MAX at most: alpn_protocols,
+    /// alpn_count.
+    alpn: if (has_alpn) []const []const u8 else void = if (has_alpn) &.{} else {},
     /// A ticket to resume with: ticket. The session's init offers it in place of the
     /// pinned keys under a raw or ca mode, and beside the certificate path under TRUST=webpki.
     ticket: ?*const Ticket = null,
@@ -192,51 +197,6 @@ const ClientValues = struct {
     /// What the caller states about its CPU, in a host object alone: cpu. null leaves it 0, which
     /// init refuses with error.Invalid. void in every other build.
     cpu: if (has_cpu) ?Cpu else void = if (has_cpu) null else {},
-
-    /// The ch_cfg these values set. A session's init adds its own buffer,
-    /// callbacks and io to it, and under RAND=session its source.
-    pub fn toCfg(values: ClientValues) c.ch_cfg {
-        var cfg = std.mem.zeroes(c.ch_cfg);
-        if (has_webpki) switch (values.trust) {
-            .web_pki => |web| {
-                cfg.anchors = if (web.anchors.len == 0) null else web.anchors.ptr;
-                cfg.anchor_count = web.anchors.len;
-                cfg.hostname = web.server_name.ptr;
-                cfg.hostname_len = web.server_name.len;
-                setClock(&cfg, web.clock);
-                setPins(&cfg, web.pins);
-            },
-            .pins => |pinned| {
-                setPins(&cfg, pinned.pins);
-                if (pinned.server_name) |name| {
-                    cfg.hostname = name.ptr;
-                    cfg.hostname_len = name.len;
-                }
-            },
-        } else {
-            const pinned = values.trust.pinned;
-            cfg.server_pubkey = pinned.server_pubkey.ptr;
-            cfg.server_pubkey_len = pinned.server_pubkey.len;
-            if (pinned.server_pubkey2) |next| {
-                cfg.server_pubkey2 = next.ptr;
-                cfg.server_pubkey2_len = next.len;
-            }
-        }
-        if (has_alpn) {
-            cfg.alpn_protocols = if (values.alpn.len == 0) null else values.alpn.ptr;
-            cfg.alpn_count = values.alpn.len;
-        }
-        if (values.ticket) |ticket| cfg.ticket = ticket.saved();
-        cfg.ticket_age_ms = values.ticket_age_ms;
-        cfg.require_pq = @intFromBool(values.require_pq);
-        if (has_quic) cfg.quic_original_version = quic.versionCode(values.quic_version);
-        if (has_client_suite_order) {
-            cfg.cipher_suites = if (values.cipher_suites.len == 0) null else @ptrCast(values.cipher_suites.ptr);
-            cfg.cipher_suite_count = values.cipher_suites.len;
-        }
-        if (has_cpu) cfg.cpu = cpuBits(values.cpu);
-        return cfg;
-    }
 };
 
 /// ch_cfg.now_seconds and clock_io (cfg.h): a function that answers the seconds since
@@ -245,16 +205,6 @@ pub const Clock = if (has_clock) struct {
     now_seconds: *const fn (clock_io: ?*anyopaque) callconv(.c) u64,
     clock_io: ?*anyopaque = null,
 } else @compileError("Clock needs TRUST=webpki or a server role");
-
-fn setClock(cfg: *c.ch_cfg, clock: Clock) void {
-    cfg.now_seconds = clock.now_seconds;
-    cfg.clock_io = clock.clock_io;
-}
-
-fn setPins(cfg: *c.ch_cfg, pins: []const SpkiPin) void {
-    cfg.spki_pins = if (pins.len == 0) null else @ptrCast(pins.ptr);
-    cfg.spki_pin_count = pins.len;
-}
 
 /// A NewSessionTicket that outlives the session, by value (chapulin_ticket.zig).
 pub const Ticket = @import("chapulin_ticket.zig").Ticket;
@@ -268,8 +218,8 @@ pub const Anchors = @import("chapulin_pem.zig").Anchors;
 
 /// An ecdsa_secp256r1_sha256 identity: srv.ecdsa_p256.
 pub const EcdsaP256Identity = if (has_classic_server) struct {
-    /// DER certificates, leaf first: chain, chain_count.
-    chain: []const c.ch_cert,
+    /// DER certificates, leaf first, at most Limits.chain_max: chain, chain_count.
+    chain: []const []const u8,
     /// The leaf's point X||Y: pub, pub_len.
     public_key: *const [64]u8,
     /// The private scalar, big-endian: priv, priv_len.
@@ -278,8 +228,8 @@ pub const EcdsaP256Identity = if (has_classic_server) struct {
 
 /// An rsa_pss_rsae_sha256 identity: srv.rsa_pss.
 pub const RsaPssIdentity = if (has_classic_server) struct {
-    /// DER certificates, leaf first: chain, chain_count.
-    chain: []const c.ch_cert,
+    /// DER certificates, leaf first, at most Limits.chain_max: chain, chain_count.
+    chain: []const []const u8,
     /// The modulus, big-endian: pub, pub_len.
     public_key: []const u8,
     /// The modulus and the private exponent, and in a host object the five
@@ -290,8 +240,8 @@ pub const RsaPssIdentity = if (has_classic_server) struct {
 /// An mldsa87 identity, a PROFILE=cnsa2 server's one: srv.mldsa87. MlDsa87Key.fromPem
 /// writes both keys.
 pub const MlDsa87Identity = if (has_mldsa_server) struct {
-    /// DER certificates, leaf first: chain, chain_count.
-    chain: []const c.ch_cert,
+    /// DER certificates, leaf first, at most Limits.chain_max: chain, chain_count.
+    chain: []const []const u8,
     /// The ML-DSA-87 public key: pub, pub_len.
     public_key: *const [2592]u8,
     /// The expanded ML-DSA-87 secret key: priv, priv_len.
@@ -313,8 +263,9 @@ const ServerValues = struct {
     ticket_key: ?*const [c.CH_SRV_TICKET_KEY_LEN]u8 = null,
     /// The caller's clock, which each init calls once, null for no tickets: now_seconds.
     clock: ?Clock = null,
-    /// Protocols to select from, in this server's order: alpn_protocols, alpn_count.
-    alpn: []const c.ch_alpn_protocol = &.{},
+    /// Protocol names to select from, in this server's order, CH_ALPN_MAX at most:
+    /// alpn_protocols, alpn_count.
+    alpn: []const []const u8 = &.{},
     /// Refuse a ClientHello with no server_name: srv.require_server_name.
     require_server_name: bool = false,
     /// Suites in this server's order, empty for the default: srv.cipher_suites, cipher_suite_count.
@@ -332,63 +283,15 @@ const ServerValues = struct {
     /// What the caller states about its CPU, in a host object alone, as Client.cpu is.
     cpu: if (has_cpu) ?Cpu else void = if (has_cpu) null else {},
 
-    /// The ECDSA and RSA slots of every server outside PROFILE=cnsa2.
-    fn setClassicIdentities(cfg: *c.ch_cfg, values: ServerValues) error{Invalid}!void {
-        if (values.ecdsa_p256) |id| cfg.srv.ecdsa_p256 = .{
-            .chain = id.chain.ptr,
-            .chain_count = std.math.cast(u8, id.chain.len) orelse return error.Invalid,
-            .priv = id.private_key,
-            .priv_len = id.private_key.len,
-            .@"pub" = id.public_key,
-            .pub_len = id.public_key.len,
-        };
-        if (values.rsa_pss) |id| cfg.srv.rsa_pss = .{
-            .chain = id.chain.ptr,
-            .chain_count = std.math.cast(u8, id.chain.len) orelse return error.Invalid,
-            .priv = id.private_key,
-            .priv_len = @sizeOf(c.ch_rsa_priv),
-            .@"pub" = id.public_key.ptr,
-            .pub_len = id.public_key.len,
-        };
-    }
-
-    /// The ch_cfg these values set, which a session's init completes as it
-    /// completes Client.toCfg's. error.Invalid for a chain longer than
-    /// chain_count's u8 holds, the width of a C field.
-    pub fn toCfg(values: ServerValues) error{Invalid}!c.ch_cfg {
-        var cfg = std.mem.zeroes(c.ch_cfg);
-        if (has_mldsa_server) {
-            if (values.mldsa87) |id| cfg.srv.mldsa87 = .{
-                .chain = id.chain.ptr,
-                .chain_count = std.math.cast(u8, id.chain.len) orelse return error.Invalid,
-                .priv = id.private_key,
-                .priv_len = id.private_key.len,
-                .@"pub" = id.public_key,
-                .pub_len = id.public_key.len,
-            };
-        }
-        if (has_classic_server) try setClassicIdentities(&cfg, values);
-        cfg.srv.cookie_key = values.cookie_key;
-        cfg.srv.ticket_key = if (values.ticket_key) |key| key else null;
-        if (values.clock) |clock| setClock(&cfg, clock);
-        cfg.alpn_protocols = if (values.alpn.len == 0) null else values.alpn.ptr;
-        cfg.alpn_count = values.alpn.len;
-        cfg.srv.require_server_name = @intFromBool(values.require_server_name);
-        if (has_suite_order) {
-            cfg.srv.cipher_suites = if (values.cipher_suites.len == 0) null else @ptrCast(values.cipher_suites.ptr);
-            cfg.srv.cipher_suite_count = values.cipher_suites.len;
-        }
-        if (has_quic) cfg.quic_original_version = quic.versionCode(values.quic_version);
-        if (has_cpu) cfg.cpu = cpuBits(values.cpu);
-        return cfg;
-    }
-
     /// ch_srv_check: each provisioned key signs, the signature verifies, and the two keys meet the
     /// rules a server init call applies (srv_cfg.h). It takes no session
     /// and runs no I/O. Under RAND=session the RSA-PSS signature draws its salt from random, which
     /// C holds for the call alone.
     pub fn check(values: ServerValues) error{Invalid}!void {
-        var cfg = try values.toCfg();
+        // Its lists live for this call alone, on its stack, at the C cap of 255 certificates.
+        const limits: Limits = .{ .chain_max = 255, .anchors_max = 0 };
+        var lists: cfg_of.Lists(limits) = undefined;
+        var cfg = try cfg_of.serverCfg(values, limits, &lists);
         var source: RandomSource = undefined;
         attachRandom(&cfg, &source, values.random);
         return fromCode(error{Invalid}, c.ch_srv_check(&cfg));

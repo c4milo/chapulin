@@ -1,0 +1,12 @@
+invariant: INV-36
+file: chapulin_cfg.zig
+catches: test/zig-build-check.sh
+reason: The ch_cfg builder copies a list longer than its Limits cap
+  into a session's storage, where a release build writes past the
+  array and a test build panics. unit.zig requires error.Invalid for
+  the first anchor list, ALPN list and chain over each cap.
+
+--- old
+    if (items.len > room.len) return error.Invalid;
+--- new
+    if (items.len > room.len + 1) return error.Invalid;

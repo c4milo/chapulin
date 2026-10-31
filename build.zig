@@ -363,6 +363,7 @@ pub fn build(b: *std.Build) void {
     _ = api_files.addCopyFile(b.path("chapulin_ticket.zig"), "chapulin_ticket.zig");
     _ = api_files.addCopyFile(b.path("chapulin_pem.zig"), "chapulin_pem.zig");
     _ = api_files.addCopyFile(b.path("chapulin_cpu.zig"), "chapulin_cpu.zig");
+    _ = api_files.addCopyFile(b.path("chapulin_cfg.zig"), "chapulin_cfg.zig");
     _ = api_files.add("defines.txt", lines(b, plan.defs));
     const api = b.addModule("chapulin", .{
         .root_source_file = root,

@@ -9,6 +9,7 @@
 //! in the session between calls.
 const std = @import("std");
 const chapulin = @import("chapulin.zig");
+const cfg_of = @import("chapulin_cfg.zig");
 const c = chapulin.c;
 
 // tcp_nonblocking.h declares ch_record_init only in an object with a client,
@@ -17,17 +18,19 @@ const has_client = @hasDecl(c, "ch_record_init");
 const has_server = @hasDecl(c, "ch_srv_record_init");
 const has_record = @hasDecl(c, "ch_record_whole_len");
 
-/// A client whose receive buffer, cfg.buf, holds receive_len bytes. Do not
-/// move it after init: cfg.io points at its hook.
+/// A client whose receive buffer, cfg.buf, holds receive_len bytes, and whose
+/// lists hold the anchors and ALPN names limits allows (chapulin.Limits; pass
+/// .{} for the defaults). Do not move it after init: cfg.io points at its
+/// hook, and cfg's lists at its own arrays.
 pub const Client = if (has_client) clientOf else @compileError("record.Client needs TRANSPORT=tcp-nonblocking with ROLE=client or ROLE=both");
-fn clientOf(comptime receive_len: usize) type {
-    return Session(.client, receive_len);
+fn clientOf(comptime receive_len: usize, comptime limits: chapulin.Limits) type {
+    return Session(.client, receive_len, limits);
 }
 
 /// A server with the same storage, less the ticket slot.
 pub const Server = if (has_server) serverOf else @compileError("record.Server needs TRANSPORT=tcp-nonblocking with ROLE=server or ROLE=both");
-fn serverOf(comptime receive_len: usize) type {
-    return Session(.server, receive_len);
+fn serverOf(comptime receive_len: usize, comptime limits: chapulin.Limits) type {
+    return Session(.server, receive_len, limits);
 }
 
 /// What a server's recordIn did: input bytes it took, and bytes of its
@@ -103,7 +106,7 @@ const Io = struct {
     }
 };
 
-fn Session(comptime side: Side, comptime receive_len: usize) type {
+fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: chapulin.Limits) type {
     return struct {
         const Self = @This();
 
@@ -111,6 +114,8 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         record: c.ch_record,
         /// The receive buffer, cfg.buf.
         receive: [receive_len]u8,
+        /// The C arrays init builds from the values' lists, which cfg points at.
+        lists: cfg_of.Lists(limits),
         /// What cfg.io points at.
         hook: chapulin.Hook,
         /// What cfg.rand_io points at under RAND=session: the std.Random
@@ -121,9 +126,9 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// The latest ticket on_ticket copied. A server has none.
         ticket: if (side == .client) ?chapulin.Ticket else void,
 
-        /// Client: Client.toCfg, then ch_record_init with the API's send,
+        /// Client: the ch_cfg the values build, then ch_record_init with the API's send,
         /// recv and, when the values' takes_tickets is true, on_ticket.
-        /// Server: Server.toCfg, then
+        /// Server: the ch_cfg the values build, then
         /// ch_srv_record_init with the API's send, recv and on_record_out;
         /// sni_buf is where this connection's server_name is copied
         /// (srv.sni_buf, srv.sni_cap). Under RAND=session each also stores
@@ -163,7 +168,10 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
 
         fn initClient(self: *Self, values: chapulin.Client) error{Invalid}!void {
             self.prepare();
-            var cfg = values.toCfg();
+            var cfg = cfg_of.clientCfg(values, limits, &self.lists) catch |err| {
+                self.failInit();
+                return err;
+            };
             self.setCallbacks(&cfg);
             if (values.takes_tickets) cfg.on_ticket = onTicket;
             chapulin.attachRandom(&cfg, &self.random, values.random);
@@ -172,10 +180,8 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
 
         fn initServer(self: *Self, values: chapulin.Server, sni_buf: []u8) error{Invalid}!void {
             self.prepare();
-            var cfg = values.toCfg() catch |err| {
-                // What ch_srv_record_init leaves after a refusal.
-                self.record = std.mem.zeroes(c.ch_record);
-                self.record.t.state = c.CH_ST_FAILED;
+            var cfg = cfg_of.serverCfg(values, limits, &self.lists) catch |err| {
+                self.failInit();
                 return err;
             };
             self.setCallbacks(&cfg);
@@ -184,6 +190,12 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             cfg.srv.sni_cap = sni_buf.len;
             chapulin.attachRandom(&cfg, &self.random, values.random);
             return chapulin.fromCode(error{Invalid}, c.ch_srv_record_init(&self.record, &cfg));
+        }
+
+        /// What an init call leaves after a refusal, for a list longer than its Limits cap.
+        fn failInit(self: *Self) void {
+            self.record = std.mem.zeroes(c.ch_record);
+            self.record.t.state = c.CH_ST_FAILED;
         }
 
         fn prepare(self: *Self) void {

@@ -14819,3 +14819,47 @@ does nothing more.
       - **Other names.** `ch_write_chunks`, because HTTP/1.1's chunked
         coding calls its pieces chunks, and `ch_write_records`, because
         a part does not map to a record.
+
+168. **The Zig API takes and returns Zig types for chains, anchors and
+    ALPN names, and builds their C lists itself.** colibri's `tls.pem`
+    forwarded chapulin's PEM decoders and converted their C structs, and
+    its `config.zig` converted its own values back into them
+    (https://github.com/c4milo/chapulin/issues/213). Camilo ruled on
+    2026-10-31: Zig types everywhere, with caps set at compile time.
+
+    - **The types.** An identity's `chain` is `[]const []const u8`.
+      `Trust.web_pki.anchors` is `[]const TrustAnchor`, `.{ .name,
+      .spki }`. Each `alpn` is `[]const []const u8`. `Chain.fromPem` and
+      `Anchors.fromPem` return the same types. `cert`, `trustAnchor`
+      and `alpnProtocol`, which built the C structs, are gone.
+    - **The caps.** A session type takes `Limits` beside its receive
+      length: `chain_max`, 8 by default and 255 at most, the range of
+      `chain_count`, and `anchors_max`, 256 by default. The session
+      holds storage for that many entries and builds the C lists there
+      in `init`, which answers `error.Invalid` for a longer list. An
+      ALPN list keeps the C cap, `CH_ALPN_MAX`, in every session.
+      `Anchors.fromPem` takes the same `Limits`, because a CA bundle has
+      no C cap and the API allocates nothing: the C call writes into an
+      array of `anchors_max` entries on the call's stack.
+      `Server.check` holds its chains at 255 on its stack.
+    - **What no program names.** The builder, the C list storage and
+      the two functions that build a `ch_cfg` sit in
+      `chapulin_cfg.zig`, which `chapulin.zig` does not export. A test
+      build alone reaches it, as `chapulin.testing`, so `unit.zig`
+      holds each value to its `ch_cfg` field. `chapulin.c` and the
+      session's own fields stay as decisions 70 and 73 set them.
+    - **What holds it.** `unit.zig` checks each list's C entries and
+      the first list over each cap, `make lint-zig-build` runs every
+      configuration's loops on the new types, and
+      `inv36-zig-api-list-past-its-cap` requires the cap tests to fail.
+      `inv36-zig-api-drops-ticket-age` and
+      `inv36-zig-api-ticket-dropped-without-tickets` moved to
+      `chapulin_cfg.zig` with the code they edit.
+    - **Rejected:**
+      - **Zig types in the PEM calls alone.** colibri's conversion
+        would only have moved into its `config.zig`, and the API would
+        have held two shapes for one list.
+      - **One fixed cap.** Every session would pay for the largest
+        case: 255 chain entries are about 4 KiB per identity.
+      - **A room from the caller at init.** Its element type is a C
+        struct, which this decision removes from the API.

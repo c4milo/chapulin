@@ -47,7 +47,7 @@ fn readSeconds(clock_io: ?*anyopaque) callconv(.c) u64 {
 
 fn clientValues(comptime api: type) api.Client {
     const anchors = struct {
-        const list = [_]api.c.ch_trust_anchor{api.trustAnchor(&anchor_name, &anchor_spki)};
+        const list = [_]api.TrustAnchor{.{ .name = &anchor_name, .spki = &anchor_spki }};
     };
     var values: api.Client = .{ .trust = .{ .web_pki = .{
         .anchors = &anchors.list,
@@ -61,35 +61,21 @@ fn clientValues(comptime api: type) api.Client {
 }
 
 /// Whether module api's ch_ticket_obfuscated_age adds a ticket's age_add
-/// to its age modulo 2^32 (RFC 9846 section 4.3.11.1), and whether
-/// Client.toCfg passes the ticket and its age. Each module's name maps to
-/// its own object's symbol, so each half calls its own object.
+/// to its age modulo 2^32 (RFC 9846 section 4.3.11.1). Each module's name
+/// maps to its own object's symbol, so each half calls its own object.
+/// unit.zig holds the ch_cfg a ticket and its age build in each object.
 fn ticketAgeAdds(comptime api: type) bool {
     const age_ms: u64 = (1 << 32) + 0x20;
-    var direct = std.mem.zeroes(api.c.ch_ticket);
-    direct.age_add = 0xffff_fff0;
-    const binding = [_]u8{0} ** api.c.SHA256_LEN;
-    const psk = [_]u8{1} ** api.c.SHA256_LEN;
-    const ticket = api.Ticket.fromFields(.{
-        .identity = "id",
-        .psk = &psk,
-        .age_add = 0xffff_fff0,
-        .lifetime_s = 1,
-        .binding = &binding,
-    }) catch return false;
-    var values = clientValues(api);
-    values.ticket = &ticket;
-    values.ticket_age_ms = age_ms;
-    const cfg = values.toCfg();
-    return api.c.ch_ticket_obfuscated_age(&direct, age_ms) == 0x10 and
-        cfg.ticket == ticket.saved() and cfg.ticket_age_ms == age_ms;
+    var ticket = std.mem.zeroes(api.c.ch_ticket);
+    ticket.age_add = 0xffff_fff0;
+    return api.c.ch_ticket_obfuscated_age(&ticket, age_ms) == 0x10;
 }
 
 // The HTTP/2 half. The first record the client hands out is a handshake
 // record, content type 22 (RFC 9846 section 5.1).
 const handshake_record = 22;
 var h2_flight: [h2.c.CH_TX_STAGE]u8 = undefined;
-var h2_client: h2.record.Client(h2.c.CH_MIN_RXBUF) = undefined;
+var h2_client: h2.record.Client(h2.c.CH_MIN_RXBUF, .{}) = undefined;
 
 fn startH2() u8 {
     if (h2.c.ch_build_matches(hooks.record(h2.c)) != 1 or !h2.buildMatches()) {
@@ -111,10 +97,10 @@ fn startH2() u8 {
 // message type 1 (RFC 9846 section 4).
 const client_hello = 1;
 const params = [_]u8{ 0x01, 0x02, 0x03, 0x04 };
-const alpn = [_]quic.c.ch_alpn_protocol{quic.alpnProtocol("h3")};
+const alpn = [_][]const u8{"h3"};
 var quic_flight: [quic.c.CH_TX_STAGE]u8 = undefined;
 var quic_peer_params: [64]u8 = undefined;
-var quic_client: quic.quic.Client(quic.c.CH_MIN_RXBUF) = undefined;
+var quic_client: quic.quic.Client(quic.c.CH_MIN_RXBUF, .{}) = undefined;
 
 fn startQuic() u8 {
     if (quic.c.ch_build_matches(hooks.record(quic.c)) != 1 or !quic.buildMatches()) {
