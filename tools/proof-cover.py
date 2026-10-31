@@ -443,20 +443,6 @@ AUDITED = {
         "bin/quic_test_hw and the host Wycheproof binary run the published "
         "vectors on it. Delete this entry if a harness can ever compile the file."
     ),
-    "srv_out.c": (
-        "the server's handshake output, one arm per transport. One bitwise "
-        "operator in the file: the shift `(uint8_t)(n >> 8)` in "
-        "srv_out_plain, which splits a record length into two header bytes "
-        "by shifting a size_t right. Its left operand is unsigned, so the "
-        "shift is defined and bugprone-signed-bitwise has nothing to say "
-        "about it. These lines moved out of srv_flight.c, whose entry "
-        "carried this same shift before the split. The refused-send paths "
-        "compare int results and assign an alert constant, with no "
-        "arithmetic. No harness runs this file: "
-        "proof/srv_flight_harness.c proves the handlers that call it over "
-        "proof/srv_out_stubs.h, its contract stubs. Delete this entry "
-        "when srv_out.c gets a harness of its own."
-    ),
     "srv_quic.c": (
         "the QUIC server driver: the step table, the input loop and the three "
         "entry points. One bitwise operator in the file, the |= in announce. "

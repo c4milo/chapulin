@@ -1,0 +1,13 @@
+invariant: INV-38
+file: srv_out.c
+catches: proof/prove-one.sh srv_out
+reason: srv_frag_bytes fills SRV_FRAG_MAX bytes before it flushes and
+  ignores srv_out_limit, so a Certificate record carries more plaintext
+  than the client's record_size_limit allows. The srv_out proof asserts
+  that every sealed piece is at most srv_out_limit bytes, and fails on
+  this edit.
+
+--- old
+    size_t limit = srv_out_limit(f->h->t);
+--- new
+    size_t limit = sizeof f->buf;

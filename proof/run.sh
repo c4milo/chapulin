@@ -2520,6 +2520,21 @@ launch fast:2 full srv_tcp_nonblocking 4 "fill_nondet.0:33,no_secret_left.0:33" 
 # 2026-10-30 in the pinned amd64 container, the way the runner runs it:
 # 1686 properties, 34 s, 1.25 GB resident.
 launch fast:2 full srv_flight 4 "ct_wipe.0:65,ct_memeq.0:33,fill_nondet.0:118" -DCH_ROLE_SERVER ct.c proof/ct_wipe_stub.c
+# srv_out.c, the server's handshake output, under each transport: the
+# record split, the plaintext header, the writer that streams the
+# Certificate, and the alert on each refusal. rec_seal, the transport, the
+# transcript's SHA-256 and memcpy are contract stubs; the harness says why
+# memcpy is one. Each loop has its own bound: the record loop runs at most
+# 4 times and the writer's at most 5 over a peer limit of 64 or more.
+# Measured on 2026-10-31 in the pinned amd64 container, in two runs:
+# srv_out 301 properties, 79 s to 128 s, 169 MB resident;
+# srv_out_nonblocking 320, 79 s to 165 s, 172 MB; srv_out_quic 240, 9 s
+# to 16 s, 81 MB. Over QUIC the message bound is
+# 260 bytes, so the writer fills to CH_TX_PT; at 260 the TCP formulas took
+# 215 s and reached no more lines.
+launch fast full srv_out 2 "fill_nondet.0:129,srv_frag_bytes.0:6,srv_out_sealed.0:5" -DCH_ROLE_SERVER srv_out.c
+launch fast full srv_out_nonblocking 2 "fill_nondet.0:129,srv_frag_bytes.0:6,srv_out_sealed.0:5" -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING srv_out.c
+launch fast full srv_out_quic 2 "fill_nondet.0:129,srv_frag_bytes.0:7" -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING srv_out.c
 # ct proves ct_memeq and the contract of proof/ct_wipe_stub.c, the
 # ct_wipe every other line links. ct_wipe proves ct_wipe.c, the body that
 # ships, to the same contract with its 16-byte word, and ct_wipe_u32 with

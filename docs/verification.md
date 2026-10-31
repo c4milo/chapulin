@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-118 of the 153 C sources in the tree root are compiled into a
+119 of the 153 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,11 +48,11 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 35 sources are in no such harness:
+The other 34 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
-| `srv_out.c`, `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_flight_test`, `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
+| `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds its cipher and both architectures' key expansions to `quic_aes_soft.c`, and searches the stack each expansion leaves ([The host object's AES key expansions](#the-host-objects-aes-key-expansions)). |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
 | `gcm_hw.c` | It runs counter mode on the AES intrinsics, and on x86-64 the one-pass seal and open on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal and open to `gcm.c`'s proven one-block loop and portable GHASH. |
@@ -2598,9 +2598,35 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   which the 8-byte bound excludes, and the `CH_ASSERT` arms. The parser,
   the builders, the cookie, the key schedule, the record keys, the
   transcript's SHA-256, `srv_kex.h`, `srv_auth.h`, `srv_resume.h` and
-  `srv_out.h`'s five calls are contract stubs. No harness proves
-  `srv_out.c` or this build's `srv_kex_begin`; `bin/srv_flight_test`
-  tests them.
+  `srv_out.h`'s five calls are contract stubs; [srv_out](#srv_out-srv_out_nonblocking-and-srv_out_quic)
+  proves those five. No harness proves this build's `srv_kex_begin`;
+  `bin/srv_flight_test` tests it.
+
+#### srv_out, srv_out_nonblocking and srv_out_quic
+
+- **Harnesses:** `srv_out` (fast), `srv_out_nonblocking` (fast), `srv_out_quic` (fast)
+- **Build:** `ROLE=server`, under each `TRANSPORT`.
+- **Proves:** `srv_out.c` is memory safe and free of UB over an
+  unconstrained peer limit, message and transport answer. Also:
+  - `srv_out_limit` is the smaller of `CH_TX_PT` and, over TLS, the
+    peer's limit (INV-38);
+  - `srv_out_plain` sends one handshake record whose header names its n
+    bytes, or over QUIC the n bytes alone;
+  - `srv_out_sealed` seals the message in order, in pieces of at most
+    `srv_out_limit` bytes, and sends each sealed record whole; on
+    `CH_OK` every byte went out;
+  - `srv_frag_bytes` and `srv_frag_flush` send every byte they take
+    once, in pieces of at most `srv_out_limit` and `SRV_FRAG_MAX` bytes;
+  - every refusal is `CH_EIO`, or `CH_ECAP` from a seal, with
+    internal_error in `h->alert`, and a success writes no alert
+    (INV-13).
+- **Bound:** messages of at most 200 B over TLS and 260 B over QUIC,
+  and a peer limit of 64 B or more, the least `srv_parser.h` accepts.
+- **Not proved:** the bytes of a record. `rec_seal`, the transport, the
+  transcript's SHA-256 and `memcpy` are contract stubs, and the `memcpy`
+  stub copies nothing. The clamp to `SRV_FRAG_MAX` runs only in a build
+  that raises `CH_TX_PT`. `bin/srv_flight_test` and the `.violation`
+  mutants test the rest.
 
 #### srv_tcp_nonblocking
 

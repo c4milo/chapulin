@@ -554,6 +554,16 @@ srv_ticket_cnsa2 228
 # 76.0% (494/650): no record held a whole message, so drive never ran a
 # step.
 srv_tcp_nonblocking 512
+# The three srv_out floors were taken on 2026-10-31, measured by
+# proof/coverage.py in the pinned amd64 container: srv_out 90.7%
+# (165/182), srv_out_nonblocking 90.2% (174/193) and srv_out_quic 85.5%
+# (118/138). In srv_out.c no path reaches the clamp to SRV_FRAG_MAX,
+# which runs only above the default CH_TX_PT, or the branch CBMC adds when
+# it removes the transport's function pointer. The rest are stub and
+# helper branches.
+srv_out 165
+srv_out_nonblocking 174
+srv_out_quic 118
 transcript384 84
 # webpki_cert fell from 56.7 to 56.1 and webpki_pin from 56.5 to 54.1
 # when a configuration of SPKI pins alone started to accept a chain whose

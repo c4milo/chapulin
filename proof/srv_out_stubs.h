@@ -7,7 +7,8 @@
 // Each stub asserts the bytes srv_out.h reads are readable and answers
 // with every result srv_out.h allows: CH_OK, or a refusal with
 // internal_error in h->alert. The record loops, the seal and the send are
-// srv_out.c's, and this formula holds none of them.
+// srv_out.c's, and this formula holds none of them: proof/srv_out_harness.c
+// proves them.
 #ifndef CH_SRV_OUT_STUBS_H
 #define CH_SRV_OUT_STUBS_H
 
