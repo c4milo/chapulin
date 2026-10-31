@@ -303,7 +303,8 @@ Home: github.com/c4milo.
   `p384_field.[ch]` with the `p384_wide_*` files (the same verification
   on six 64-bit words, every session of a host object) +
   `rsa_pkcs1.[ch]` (the chain signatures a public
-  CA writes, TRUST=webpki) ←
+  CA writes, TRUST=webpki, and under DNSSEC=on the RSA signatures of a
+  DNSSEC key, raised to the key's own exponent by `rsa_mont64_exp.c`) ←
   `pem.[ch]` with `base64.[ch]` (RFC 7468 armour of four labels,
   CERTIFICATE, PRIVATE KEY, EC PRIVATE KEY and EC PARAMETERS, decode
   only. The base64 text of a key file spells its scalar. So base64.c
@@ -402,7 +403,13 @@ Home: github.com/c4milo.
   `ch_pubkey_from_pem` and the three PEM calls carry the transport in
   their symbol names the same way. So one image links one object of
   each transport
-  (docs/decisions.md 56 and 61). The Makefile TRANSPORT variable names
+  (docs/decisions.md 56 and 61). A fourth pair sits off the chain the
+  same way: `dnssec.[ch]` (DNSSEC=on, a host TRUST=webpki object of
+  either transport, docs/decisions.md 169). `ch_dnssec_verify` checks an
+  RRSIG signature of algorithm 8, 10 or 13 against a DNSKEY's key field,
+  and three `ch_dnssec_hash_` calls hash the signed data. No session
+  calls them, and each carries the transport in its symbol name. The
+  Makefile TRANSPORT variable names
   what TLS runs over and who does the I/O: `tcp-blocking` (default),
   `tcp-nonblocking` or `quic-nonblocking` (docs/decisions.md 62). Each
   public header declares a call only under the defines of the objects
