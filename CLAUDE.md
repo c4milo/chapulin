@@ -407,8 +407,10 @@ Home: github.com/c4milo.
   (docs/decisions.md 56 and 61). A fourth pair sits off the chain the
   same way: `dnssec.[ch]` (DNSSEC=on, a host TRUST=webpki object of
   either transport, docs/decisions.md 169). `ch_dnssec_verify` checks an
-  RRSIG signature of algorithm 8, 10 or 13 against a DNSKEY's key field,
-  and three `ch_dnssec_hash_` calls hash the signed data. No session
+  RRSIG signature of algorithm 8, 10, 13 or 15 against a DNSKEY's key
+  field, and three `ch_dnssec_hash_` calls hash the signed data. The
+  Ed25519 check of algorithm 15 runs on the wide field's Edwards points,
+  in `x25519_wide_ed25519.h`, which `x25519_wide.c` includes. No session
   calls them, and each carries the transport in its symbol name. The
   Makefile TRANSPORT variable names
   what TLS runs over and who does the I/O: `tcp-blocking` (default),
