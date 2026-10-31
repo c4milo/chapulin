@@ -574,7 +574,7 @@ srv_ticket_cnsa2 228
 # by proof/coverage.py in the pinned amd64 container: 63.7% (116/182) and
 # 63.2% (74/117). Most locations neither reaches are buf.c's and ct.c's
 # helpers, which no stub calls and other harnesses prove.
-dnssec 116
+dnssec 130
 rsa_pkcs1_exponent 74
 rsa_mont64_exp 75
 rsa_mont64_exp_schedule 83
@@ -690,6 +690,13 @@ x25519_tail 108
 # x25519_wide_tail 196 of 478 then 209 of 491. GitHub run 40853232504 of
 # 2026-10-29 read the same shares.
 x25519_wide_edwards 294
+# x25519_wide_ed25519 and x25519_wide_ed25519_mod_l took their floors on
+# 2026-10-31 in the pinned amd64 container: 25.8% (169/654) and 4.9%
+# (32/651). Each compiles all of x25519_wide.c and runs one step of the
+# Ed25519 verifier, so the ladder and the key generation, which other
+# harnesses prove, are most of what neither reaches.
+x25519_wide_ed25519 169
+x25519_wide_ed25519_mod_l 32
 x25519_wide_invert 166
 x25519_wide_mul 77
 x25519_wide_mul128 8

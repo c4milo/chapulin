@@ -13,6 +13,7 @@
 #include "dnssec.h"
 #include "dnssec_rfc_vectors.h"
 #include "dnssec_vectors.h"
+#include "sha512.h"
 #include "tls.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -113,6 +114,37 @@ static void refused_keys(void) {
            "a field that ends inside the exponent is refused");
 }
 
+// RFC 8032 section 5.1.7 with libsodium's refusals, on vector 7's key.
+static void ed25519_edges(void) {
+    const dnssec_vector *v = &dnssec_vectors[7];
+    uint8_t sig[64];
+    memcpy(sig, v->sig, 64);
+    sig[63] |= 0xf0; // S far above L
+    expect(ch_dnssec_verify(15, v->key, 32, v->digest, 64, sig, 64), CH_EAUTH,
+           "an S at or above L is refused");
+    // With A the identity, R = B and S = 1 meet [S]B = R + [h]A for every
+    // message: only the small-order refusal stops this signature.
+    static const uint8_t identity[32] = {1};
+    uint8_t forged[64] = {0};
+    memset(forged, 0x66, 32);
+    forged[0] = 0x58; // B's encoding: y = 4/5
+    forged[32] = 1;   // S = 1
+    expect(ch_dnssec_verify(15, identity, 32, v->digest, 64, forged, 64), CH_EAUTH,
+           "a small-order key is refused");
+    uint8_t p_encoding[32];
+    memset(p_encoding, 0xff, sizeof p_encoding);
+    p_encoding[0] = 0xed;
+    p_encoding[31] = 0x7f;
+    expect(ch_dnssec_verify(15, p_encoding, 32, v->digest, 64, v->sig, 64), CH_EAUTH,
+           "a key whose y is p is refused");
+    expect(ch_dnssec_verify(15, v->key, 31, v->digest, 64, v->sig, 64), CH_EINVAL,
+           "algorithm 15 takes a 32-byte key alone");
+    expect(ch_dnssec_verify(15, v->key, 32, v->digest, 32, v->sig, 64), CH_EINVAL,
+           "algorithm 15 takes a 64-byte digest alone");
+    expect(ch_dnssec_verify(15, v->key, 32, v->digest, 64, v->sig, 63), CH_EAUTH,
+           "a 63-byte signature fails");
+}
+
 static void refused_shapes(void) {
     const dnssec_vector *rsa = &dnssec_vectors[0];
     const dnssec_vector *ec = &dnssec_vectors[5];
@@ -152,7 +184,7 @@ static void hashes(void) {
     for (size_t i = 0; i < 3; i++) {
         ch_dnssec_hash h;
         uint8_t digest[CH_DNSSEC_DIGEST_MAX];
-        expect(ch_dnssec_hash_init(&h, algorithms[i]), CH_OK, "the hash starts");
+        expect(ch_dnssec_hash_init(&h, algorithms[i], NULL, 0, NULL, 0), CH_OK, "the hash starts");
         ch_dnssec_hash_update(&h, abc, 1);
         ch_dnssec_hash_update(&h, abc + 1, 2);
         size_t n = ch_dnssec_hash_final(&h, digest);
@@ -162,7 +194,29 @@ static void hashes(void) {
         expect(h.algorithm, 0, "final wipes the context");
     }
     ch_dnssec_hash h;
-    expect(ch_dnssec_hash_init(&h, 5), CH_EINVAL, "algorithm 5 has no hash here");
+    expect(ch_dnssec_hash_init(&h, 5, NULL, 0, NULL, 0), CH_EINVAL, "algorithm 5 has no hash here");
+    // Algorithm 15 hashes R and A first, so it takes them at init.
+    static const uint8_t key32[32] = {0};
+    static const uint8_t sig64[64] = {0};
+    expect(ch_dnssec_hash_init(&h, CH_DNSSEC_ALG_ED25519, key32, 31, sig64, 64), CH_EINVAL,
+           "algorithm 15 takes a 32-byte key alone");
+    expect(ch_dnssec_hash_init(&h, CH_DNSSEC_ALG_ED25519, key32, 32, sig64, 63), CH_EINVAL,
+           "algorithm 15 takes a 64-byte signature alone");
+    uint8_t digest[CH_DNSSEC_DIGEST_MAX];
+    uint8_t want[64];
+    uint8_t prefix[64 + 3];
+    memcpy(prefix, sig64, 32);
+    memcpy(prefix + 32, key32, 32);
+    memcpy(prefix + 64, abc, 3);
+    expect(ch_dnssec_hash_init(&h, CH_DNSSEC_ALG_ED25519, key32, 32, sig64, 64), CH_OK,
+           "algorithm 15 starts with R and A");
+    ch_dnssec_hash_update(&h, abc, 3);
+    expect((int)ch_dnssec_hash_final(&h, digest), 64, "algorithm 15's digest is SHA-512's");
+    sha512 ref;
+    sha512_init(&ref);
+    sha512_update(&ref, prefix, sizeof prefix);
+    sha512_final(&ref, want);
+    expect(memcmp(digest, want, 64) == 0, 1, "SHA-512 of R, A and the data");
 }
 
 // The examples RFC 5702 section 6 and RFC 6605 section 6.1 print, over
@@ -181,6 +235,7 @@ static void rfc_examples(void) {
 int main(void) {
     hashes();
     rfc_examples();
+    ed25519_edges();
     published();
     refused_keys();
     refused_shapes();

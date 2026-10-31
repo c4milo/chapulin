@@ -2697,6 +2697,19 @@ launch fast:4 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 #   x25519_wide_edwards  1941 properties,  6 s, 203 MB
 launch fast full x25519_wide_select 65 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full x25519_wide_edwards 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+# Ed25519 verification on the same field, x25519_wide_ed25519.h, for
+# DNSSEC algorithm 15 (https://github.com/c4milo/chapulin/issues/189).
+# x25519_wide_ed25519 proves to_entry() writes canonical words, the entry
+# form x25519_wide_edwards's step takes, so the verifier's loop stays in
+# INV-34's bounds by induction. x25519_wide_ed25519_mod_l proves one step
+# of h mod L keeps the remainder below L. It runs without
+# --unsigned-overflow-check: its borrow chain and its loop exit wrap on
+# purpose, multi-word integer arithmetic and not the field's words. Over
+# 512 steps in one formula cbmc gave no verdict in 15 minutes. Measured on
+# 2026-10-31 in the pinned amd64 container: 2630 properties, 4 s, 98 MB;
+# and 2474 properties, 2 s.
+launch fast full x25519_wide_ed25519 9 "ct_wipe.0:41" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI --unsigned-overflow-check
+launch fast full x25519_wide_ed25519_mod_l 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI
 # The radix-2^64 field, x25519_adx.c (docs/decisions.md 165), over its
 # model, test/x25519_adx_model.h: CBMC reads no assembly, so each line
 # compiles the file with -DCH_X25519_ADX_MODEL, as bin/x25519_adx_model_test
@@ -3027,7 +3040,7 @@ launch fast full rsa_mont64_exp 66 "ct_wipe.0:385,fill_nondet.0:385" ct.c proof/
 launch fast full rsa_mont64_exp_schedule 66 "ct_wipe.0:385,fill_nondet.0:385" ct.c proof/ct_wipe_stub.c rsa_mont64_exp.c -DCH_CPU_RUNTIME -DCH_DNSSEC
 # dnssec.c, the DNSSEC check's key reader and dispatcher, over contract
 # stubs of the RSA and P-256 checks. Measured on 2026-10-31 in the pinned
-# amd64 container: 547 properties, 2 s, 0.06 GB.
+# amd64 container: 562 properties, 2 s, 0.06 GB.
 launch fast full dnssec 10 "fill_nondet.0:81" -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI dnssec.c buf.c
 launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont_host runs rsa_mont.c's host arm, rsa_vp1 as a host object

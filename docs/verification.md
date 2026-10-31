@@ -1508,20 +1508,41 @@ The entries are grouped by area:
   over any algorithm byte and any key field, digest and signature up to
   the bound. Also:
   - it answers `CH_OK`, `CH_EAUTH` or `CH_EINVAL`, and `CH_OK` only for
-    algorithms 8, 10 and 13 with their hash's digest length;
+    algorithms 8, 10, 13 and 15 with their hash's digest length;
   - it reads RFC 3110 section 2's key field in both length forms: the
     exponent it hands on is the bytes the length names, and the modulus
     is the rest of the field;
   - the RSA check sees only an odd exponent of at least 3 and a modulus
     of 64 to `CH_RSA_MODULUS_MAX` bytes that is odd and begins with a
-    nonzero byte, and the P-256 check sees only a 64-byte key and
-    signature.
+    nonzero byte, the P-256 check sees only a 64-byte key and
+    signature, and the Ed25519 check only a 32-byte key, a 64-byte hash
+    and a 64-byte signature.
 - **Bound:** a key field of up to 80 bytes, a digest of up to 64 and a
   signature of up to 80.
 - **Not proved:** the verifiers, which are contract stubs here; the
   harnesses above and the `p256` harnesses prove them, and
   `bin/dnssec_test` runs the whole check against OpenSSL's keys and
   signatures.
+
+#### x25519_wide_ed25519 and x25519_wide_ed25519_mod_l
+
+- **Harnesses:** `x25519_wide_ed25519` (fast), `x25519_wide_ed25519_mod_l` (fast)
+- **Build:** a host object with `CH_DNSSEC`.
+- **Proves:** of the Ed25519 verifier in `x25519_wide_ed25519.h`, which
+  `x25519_wide.c` includes: `to_entry()` from a point with canonical
+  words writes an entry with canonical words, and wraps nothing, so the
+  verifier's loop of doublings and additions stays inside INV-34's
+  bounds by [x25519_wide_edwards](#x25519_wide)'s inductive step; and one
+  step of `reduce_mod_l()` keeps the remainder below L, so h mod L is
+  below L by induction from 0.
+- **Not proved:** `decode_point()` by a line of its own. Its power chain
+  is `mul()` and `sqr()` alone, whose bounds the `x25519_wide` harnesses
+  prove, and in one formula with the rest it gave no verdict in 25
+  minutes. The mod-L step runs without `--unsigned-overflow-check`,
+  because its borrow chain wraps on purpose. No value is proved:
+  `bin/dnssec_test` runs OpenSSL's Ed25519 signatures, a forgery under a
+  small-order key, a key whose y is p and an S above L, and the Zig
+  API's test verifies `std.crypto`'s signatures.
 
 #### rsa_mont64_blocks
 

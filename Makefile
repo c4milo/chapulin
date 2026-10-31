@@ -3208,7 +3208,7 @@ bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TES
 # (test/gen_dnssec_vectors.py) and at every refusal dnssec.h states.
 DNSSEC_TEST_SRCS := dnssec.c rsa_pkcs1.c rsa.c $(RSA_EQUIV_TEST_SRCS) p256.c $(P256_WIDE_SRCS) \
                     p256_scalar.c p256_field.c p256_point.c buf.c sha256.c sha512.c \
-                    sha512_compress_blocks.c
+                    sha512_compress_blocks.c x25519_wide.c
 bin/dnssec_test: test/dnssec_test.c test/dnssec_vectors.h test/dnssec_rfc_vectors.h $(DNSSEC_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -I. -Itest -o $@ \

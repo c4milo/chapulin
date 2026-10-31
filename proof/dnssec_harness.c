@@ -2,7 +2,7 @@
 // algorithm byte, any key field, digest and signature of up to the
 // harness's bounds. And that it keeps what dnssec.h states:
 // - it answers CH_OK, CH_EAUTH or CH_EINVAL, and CH_OK only for
-//   algorithms 8, 10 and 13 with a digest of their hash's length;
+//   algorithms 8, 10, 13 and 15 with a digest of their hash's length;
 // - it reads RFC 3110 section 2's key field: the exponent it hands the
 //   RSA check is the big-endian value of the bytes the length names, in
 //   the one-byte and the three-byte length forms, and the modulus is the
@@ -11,9 +11,11 @@
 //   and a modulus that is odd, begins with a nonzero byte, and has from
 //   CH_DNSSEC_RSA_MODULUS_MIN to CH_RSA_MODULUS_MAX bytes;
 // - algorithm 13 reaches the P-256 check only with a 64-byte key and a
-//   64-byte signature.
+//   64-byte signature, and algorithm 15 the Ed25519 check only with a
+//   32-byte key, a 64-byte hash and a 64-byte signature.
 //
-// rsa_pkcs1_verify_exponent and p256_ecdsa_verify_raw are contract stubs
+// rsa_pkcs1_verify_exponent, p256_ecdsa_verify_raw and ed25519_verify_hram
+// are contract stubs
 // that record their arguments and answer either verdict; rsa_pkcs1 and
 // the p256 harnesses prove the verifiers, and bin/dnssec_test runs them
 // against OpenSSL's signatures. buf.c is real.
@@ -53,6 +55,15 @@ int rsa_pkcs1_verify_exponent(const uint8_t *n, size_t n_len, uint64_t e, const 
     return nondet_u8() & 1;
 }
 
+static int ed25519_calls;
+
+int ed25519_verify_hram(const uint8_t key[32], const uint8_t hram[64], const uint8_t sig[64]) {
+    __CPROVER_assert(__CPROVER_r_ok(key, 32) && __CPROVER_r_ok(hram, 64) && __CPROVER_r_ok(sig, 64),
+                     "ed25519: key, hash and signature readable");
+    ed25519_calls++;
+    return nondet_u8() & 1;
+}
+
 int p256_ecdsa_verify_raw(const uint8_t pub[64], const uint8_t msg_hash[32],
                           const uint8_t sig[64]) {
     __CPROVER_assert(__CPROVER_r_ok(pub, 64) && __CPROVER_r_ok(msg_hash, 32) &&
@@ -81,13 +92,19 @@ int main(void) {
     if (rc == CH_OK) {
         __CPROVER_assert((algorithm == CH_DNSSEC_ALG_RSASHA256 && digest_len == 32) ||
                              (algorithm == CH_DNSSEC_ALG_RSASHA512 && digest_len == 64) ||
-                             (algorithm == CH_DNSSEC_ALG_ECDSAP256SHA256 && digest_len == 32),
+                             (algorithm == CH_DNSSEC_ALG_ECDSAP256SHA256 && digest_len == 32) ||
+                             (algorithm == CH_DNSSEC_ALG_ED25519 && digest_len == 64),
                          "CH_OK only for a checked algorithm and its digest length");
     }
     if (p256_calls != 0) {
         __CPROVER_assert(algorithm == CH_DNSSEC_ALG_ECDSAP256SHA256 && key_len == 64 &&
                              sig_len == 64,
                          "the P-256 check sees a 64-byte key and signature");
+    }
+    if (ed25519_calls != 0) {
+        __CPROVER_assert(algorithm == CH_DNSSEC_ALG_ED25519 && key_len == 32 && sig_len == 64 &&
+                             digest_len == 64,
+                         "the Ed25519 check sees a 32-byte key, a 64-byte hash and signature");
     }
     if (rsa_calls != 0) {
         // RFC 3110 section 2, decoded here apart from dnssec.c's reader.

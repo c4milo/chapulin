@@ -32,6 +32,7 @@
 #define CH_DNSSEC_ALG_RSASHA256 8        // RFC 5702
 #define CH_DNSSEC_ALG_RSASHA512 10       // RFC 5702
 #define CH_DNSSEC_ALG_ECDSAP256SHA256 13 // RFC 6605
+#define CH_DNSSEC_ALG_ED25519 15         // RFC 8080
 
 // The longest digest ch_dnssec_hash_final writes: SHA-512's.
 #define CH_DNSSEC_DIGEST_MAX 64
@@ -65,8 +66,9 @@
 
 // The hash of an RRSIG's signed data (RFC 4034 section 3.1.8.1), under
 // the algorithm the RRSIG names: SHA-256 for algorithms 8 and 13, and
-// SHA-512 for 10. The caller owns it and writes it through the calls
-// below alone.
+// SHA-512 for 10 and 15. For 15 it is RFC 8032's hash: SHA-512 of R, the
+// key A, and then the signed data. The caller owns it and writes it
+// through the calls below alone.
 typedef struct {
     uint8_t algorithm;
     union {
@@ -75,25 +77,33 @@ typedef struct {
     } state;
 } ch_dnssec_hash;
 
-// Starts h for algorithm. Returns CH_OK, or CH_EINVAL for an algorithm
-// the calls do not take, and then h stays unusable.
-int CH_MUST_USE ch_dnssec_hash_init(ch_dnssec_hash *h, uint8_t algorithm);
+// Starts h for algorithm, with the DNSKEY's key field and the RRSIG's
+// signature field, which ch_dnssec_verify takes too. Algorithm 15 hashes
+// the signature's first 32 bytes, R, and then the key, A, before the
+// signed data (RFC 8032 section 5.1.7); every other algorithm reads
+// neither. Returns CH_OK, or CH_EINVAL for an algorithm the calls do not
+// take, or for algorithm 15 a key that is not 32 bytes or a signature
+// that is not 64, and then h stays unusable.
+int CH_MUST_USE ch_dnssec_hash_init(ch_dnssec_hash *h, uint8_t algorithm, const uint8_t *key,
+                                    size_t key_len, const uint8_t *sig, size_t sig_len);
 
 // Adds the n bytes at p. Requires an h that ch_dnssec_hash_init started.
 void ch_dnssec_hash_update(ch_dnssec_hash *h, const uint8_t *p, size_t n);
 
 // Writes the digest to digest and returns its length: 32 bytes for
-// algorithms 8 and 13, and 64 for 10. Requires an h that
+// algorithms 8 and 13, and 64 for 10 and 15. Requires an h that
 // ch_dnssec_hash_init started; h is wiped afterwards.
 size_t ch_dnssec_hash_final(ch_dnssec_hash *h, uint8_t digest[CH_DNSSEC_DIGEST_MAX]);
 
 // Checks sig against key under algorithm. key is the DNSKEY RDATA's
 // public key field: RFC 3110 section 2's exponent length, exponent and
 // modulus for algorithms 8 and 10, and the 64 bytes of X then Y for
-// algorithm 13 (RFC 6605 section 4). digest is the hash of the signed
-// data, which ch_dnssec_hash_final writes: 32 bytes for 8 and 13, and 64
-// for 10. sig is the RRSIG's signature field: the modulus's length for
-// RSA, and r then s, 64 bytes, for algorithm 13.
+// algorithm 13 (RFC 6605 section 4), and the 32-byte A for algorithm 15
+// (RFC 8080 section 3). digest is the hash ch_dnssec_hash_final writes: 32
+// bytes for 8 and 13, and 64 for 10 and 15. sig is the RRSIG's signature
+// field: the modulus's length for RSA, r then s, 64 bytes, for algorithm
+// 13, and R then S, 64 bytes, for 15. Algorithm 15 follows RFC 8032's
+// cofactorless rule and refuses what libsodium refuses (ed25519_verify.h).
 //
 // Returns CH_OK for a valid signature. Returns CH_EAUTH for a signature
 // the key does not verify, and CH_EINVAL for an algorithm the call does

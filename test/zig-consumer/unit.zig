@@ -514,13 +514,13 @@ test "the PEM files: a refusal is error.Invalid, a room is the caller's, and a r
     }
 }
 
-test "DNSSEC=on: the hashes match std.crypto, and a P-256 signature std.crypto makes verifies" {
+test "DNSSEC=on: the hashes match std.crypto, and P-256 and Ed25519 signatures std.crypto makes verify" {
     if (!@hasDecl(c, "ch_dnssec_verify")) return error.SkipZigTest;
     const dnssec = chapulin.dnssec;
     const msg = "chapulin dnssec through the Zig API";
     var out: [c.CH_DNSSEC_DIGEST_MAX]u8 = undefined;
 
-    var h256 = dnssec.Hash.init(.ecdsap256sha256);
+    var h256 = try dnssec.Hash.init(.ecdsap256sha256, &.{}, &.{});
     h256.update(msg[0..5]);
     h256.update(msg[5..]);
     var want256: [32]u8 = undefined;
@@ -528,7 +528,7 @@ test "DNSSEC=on: the hashes match std.crypto, and a P-256 signature std.crypto m
     const digest = h256.final(&out);
     try std.testing.expectEqualSlices(u8, &want256, digest);
 
-    var h512 = dnssec.Hash.init(.rsasha512);
+    var h512 = try dnssec.Hash.init(.rsasha512, &.{}, &.{});
     h512.update(msg);
     var want512: [64]u8 = undefined;
     std.crypto.hash.sha2.Sha512.hash(msg, &want512, .{});
@@ -544,6 +544,21 @@ test "DNSSEC=on: the hashes match std.crypto, and a P-256 signature std.crypto m
     bad[63] ^= 1;
     try expectError(error.Auth, dnssec.verify(.ecdsap256sha256, key[1..], &want256, &bad));
     try expectError(error.Invalid, dnssec.verify(.ecdsap256sha256, key[1..], &want512, &sig));
+
+    // Ed25519: std.crypto signs, and the hash takes R and the key at init.
+    const Ed25519 = std.crypto.sign.Ed25519;
+    const ed = try Ed25519.KeyPair.generateDeterministic([_]u8{0x24} ** Ed25519.KeyPair.seed_length);
+    const ed_sig = (try ed.sign(msg, null)).toBytes();
+    const ed_key = ed.public_key.toBytes();
+    var hed = try dnssec.Hash.init(.ed25519, &ed_key, &ed_sig);
+    hed.update(msg);
+    var outed: [c.CH_DNSSEC_DIGEST_MAX]u8 = undefined;
+    const hram = hed.final(&outed);
+    try dnssec.verify(.ed25519, &ed_key, hram, &ed_sig);
+    var ed_bad = ed_sig;
+    ed_bad[0] ^= 1;
+    try expectError(error.Auth, dnssec.verify(.ed25519, &ed_key, hram, &ed_bad));
+    try expectError(error.Invalid, dnssec.Hash.init(.ed25519, ed_key[0..31], &ed_sig));
 }
 
 /// Refers to each named declaration of T, so it compiles.

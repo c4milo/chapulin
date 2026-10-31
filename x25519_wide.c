@@ -468,6 +468,10 @@ void x25519_wide_ladder(uint8_t out[X25519_LEN], const uint8_t clamped[X25519_LE
 // this field.
 #include "x25519_wide_edwards.h"
 
+// Ed25519 verification on the same points, for DNSSEC algorithm 15
+// (ed25519_verify.h), under CH_DNSSEC alone.
+#include "x25519_wide_ed25519.h"
+
 // The two entries, x25519_wide and x25519_wide_base. x25519.c holds the
 // clamp and the all-zero check of both fields, so the two cannot differ:
 // under CH_X25519_WIDE it compiles those alone, around x25519_wide_ladder,

@@ -14892,8 +14892,16 @@ does nothing more.
       as PKCS#1 v1.5's second caller.
     - **P-256.** `p256_ecdsa_verify_raw` takes r and s side by side
       (RFC 6605) and runs the same check as the DER entry.
-    - **Next.** Ed25519 (15) and ECDSA P-384 (14), then SHA-1 for
-      algorithms 5 and 7. Ed448 (16) is out.
+    - **Ed25519 (15).** Camilo ruled on 2026-10-31: RFC 8032's
+      cofactorless rule, refusing S at or above L, an encoding of A or R
+      whose y is not below p, and an A of small order, as libsodium
+      does. `ch_dnssec_hash_init` takes the key and the signature for
+      every algorithm, so for 15 it hashes R and A ahead of the data. The
+      verifier runs on the wide field's Edwards points, in
+      `x25519_wide_ed25519.h`, which `x25519_wide.c` includes, because
+      every field operation there is static.
+    - **Next.** ECDSA P-384 (14), then SHA-1 for algorithms 5 and 7.
+      Ed448 (16) is out.
     - **Rejected:**
       - **One call per algorithm.** Camilo chose one dispatcher.
       - **Split key values.** The key field is read here, with `rbuf`,

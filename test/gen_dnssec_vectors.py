@@ -16,12 +16,19 @@ and signatures with OpenSSL and writes them in the forms DNSSEC carries:
 - ECDSA P-256, algorithm 13: the 64 bytes of X then Y, and r then s,
   32 bytes each (RFC 6605 section 4), which the script takes out of
   OpenSSL's DER.
+- Ed25519, algorithm 15: the 32-byte public key and the 64-byte
+  signature R then S (RFC 8080 section 3). The digest is RFC 8032
+  section 5.1.7's: SHA-512 of R, the key and the message, the bytes
+  ch_dnssec_hash_final writes for algorithm 15.
 
 The commands, per key:
 
   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:<bits>
     -pkeyopt rsa_keygen_pubexp:<e> -out key.pem
   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out key.pem
+  openssl genpkey -algorithm ED25519 -out key.pem
+  openssl pkeyutl -sign -rawin -inkey key.pem -in msg -out sig
+  openssl pkeyutl -verify -rawin -pubin -inkey pub.pem -in msg -sigfile sig
   openssl dgst -<sha256|sha512> -sign key.pem -out sig msg
   openssl dgst -<sha256|sha512> -verify pub.pem -signature sig msg
 
@@ -47,6 +54,7 @@ RSA_KEYS = [
     (10, 2048, 3, b"chapulin dnssec rsasha512 2048 e=3"),
 ]
 EC_MESSAGES = [b"chapulin dnssec ecdsap256sha256 one", b"chapulin dnssec ecdsap256sha256 two"]
+ED_MESSAGES = [b"chapulin dnssec ed25519 one", b"chapulin dnssec ed25519 two, a longer message"]
 
 
 def run(*args, data=None):
@@ -144,6 +152,26 @@ def main():
                     c_array("dnssec_digest_%d" % index, digest),
                     c_array("dnssec_sig_%d" % index, sig)]
             rows.append((13, index))
+            index += 1
+        for msg in ED_MESSAGES:
+            run("openssl", "genpkey", "-algorithm", "ED25519", "-out", key)
+            msg_path = tmp / "msg"
+            msg_path.write_bytes(msg)
+            pub_path = tmp / "pub.pem"
+            sig_path = tmp / "sig"
+            run("openssl", "pkey", "-in", key, "-pubout", "-out", str(pub_path))
+            run("openssl", "pkeyutl", "-sign", "-rawin", "-inkey", key, "-in", str(msg_path),
+                "-out", str(sig_path))
+            run("openssl", "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(pub_path),
+                "-in", str(msg_path), "-sigfile", str(sig_path))
+            field = run("openssl", "pkey", "-in", key, "-pubout", "-outform", "DER")[-32:]
+            sig = sig_path.read_bytes()
+            assert len(sig) == 64
+            digest = hashlib.sha512(sig[:32] + field + msg).digest()
+            out += [c_array("dnssec_key_%d" % index, field),
+                    c_array("dnssec_digest_%d" % index, digest),
+                    c_array("dnssec_sig_%d" % index, sig)]
+            rows.append((15, index))
             index += 1
     out += [
         "typedef struct {",

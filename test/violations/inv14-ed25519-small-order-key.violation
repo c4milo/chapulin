@@ -1,0 +1,14 @@
+invariant: INV-14
+file: x25519_wide_ed25519.h
+catches: dnssec_test
+reason: ed25519_verify_hram accepts a key of small order, so a DNSKEY whose
+  A is the identity makes R = B, S = 1 a valid signature of every message.
+  RFC 8032 permits it and libsodium refuses it, and ed25519_verify.h
+  states the refusal. bin/dnssec_test presents that forgery, and fails on
+  this edit.
+
+--- old
+    if (fe_equal(a.x, FE_ZERO)) {
+        return 0;
+    }
+--- new
