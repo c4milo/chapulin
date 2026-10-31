@@ -11,6 +11,7 @@
 
 #include "ch_assert.h"
 #include "dnssec.h"
+#include "dnssec_rfc_vectors.h"
 #include "dnssec_vectors.h"
 #include "tls.h"
 
@@ -164,15 +165,30 @@ static void hashes(void) {
     expect(ch_dnssec_hash_init(&h, 5), CH_EINVAL, "algorithm 5 has no hash here");
 }
 
+// The examples RFC 5702 section 6 and RFC 6605 section 6.1 print, over
+// the data RFC 4034 section 3.1.8.1 signs (test/gen_dnssec_rfc_vectors.py).
+// RFC 5702's RSA/SHA-256 key is 512 bits, the floor the check takes.
+static void rfc_examples(void) {
+    for (size_t i = 0; i < sizeof dnssec_rfc_vectors / sizeof dnssec_rfc_vectors[0]; i++) {
+        expect(ch_dnssec_verify(dnssec_rfc_vectors[i].algorithm, dnssec_rfc_vectors[i].key,
+                                dnssec_rfc_vectors[i].key_len, dnssec_rfc_vectors[i].digest,
+                                dnssec_rfc_vectors[i].digest_len, dnssec_rfc_vectors[i].sig,
+                                dnssec_rfc_vectors[i].sig_len),
+               CH_OK, "an RFC example verifies");
+    }
+}
+
 int main(void) {
     hashes();
+    rfc_examples();
     published();
     refused_keys();
     refused_shapes();
     if (failures != 0) {
         return 1;
     }
-    printf("dnssec: %zu vectors and every refusal dnssec.h states\n",
+    printf("dnssec: %zu OpenSSL vectors, the RFC 5702 and RFC 6605 examples, and every refusal "
+           "dnssec.h states\n",
            sizeof dnssec_vectors / sizeof dnssec_vectors[0]);
     return 0;
 }
