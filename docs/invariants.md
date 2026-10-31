@@ -131,8 +131,8 @@ last `ROLE=server` stub, as the entry said it would.
   (`rand_draw.h`), which calls the one source the build's entropy
   pattern names: `ch_rand_bytes` under `RAND=extern` and `RAND=drbg`,
   and under `RAND=session` the `rand_bytes` of the session's own
-  `ch_cfg`, handed that session's `rand_io`. It draws at exactly eleven
-  sites in six files. A client draws at four of them:
+  `ch_cfg`, handed that session's `rand_io`. It draws at exactly twelve
+  sites in seven files. A client draws at four of them:
   - `hsf_begin` in `handshake_flight.c` draws the x25519 key-share
     scalar and the ClientHello random, and in the `KEX=pq` and
     `TRUST=webpki` builds the ML-KEM (d, z) seed: three calls.
@@ -141,10 +141,11 @@ last `ROLE=server` stub, as the entry said it would.
     client's P-256 scalar, only when a HelloRetryRequest names
     secp256r1 (decisions.md 63).
 
-  A server draws at the other seven:
-  - `srv_begin` in `srv_flight.c` draws the x25519 key-share scalar.
-    `ch_srv_accept`, `ch_srv_record_init` and `ch_srv_quic_init` call
-    it.
+  A server draws at the other eight:
+  - `srv_kex_begin` in `srv_kex.c` draws the x25519 key-share scalar,
+    in every server build but `PROFILE=cnsa2`, which runs no x25519.
+    `srv_begin` in `srv_flight.c` calls it, and `ch_srv_accept`,
+    `ch_srv_record_init` and `ch_srv_quic_init` call `srv_begin`.
   - `srv_send_server_hello` in `srv_flight.c` draws the ServerHello
     random. These two sites draw the values `hsf_begin` draws for a
     client, for the same reasons, so they take the same audit.
@@ -175,11 +176,15 @@ last `ROLE=server` stub, as the entry said it would.
     CertificateVerify uses ecdsa_secp256r1_sha256. A weak draw here
     costs no more than RFC 6979: with the same noise twice, the nonce is
     a function of the key, the message and that noise.
+  - `sign_content` in `srv_mldsa.c` draws the 32-byte `rnd` hedge of
+    each ML-DSA-87 signature of the `PROFILE=cnsa2` server, hands it to
+    `mldsa87_sign`, which draws nothing itself, and wipes it
+    (decisions.md 159 and 162).
 
   Every site checks for a source that returns without writing:
-  CH_ASSERT fires when the drawn bytes are all zero, and for the salt
-  and the noise `rsa_pss_sign` and `p256_sign_hedged` check the bytes
-  they are handed. `rand_draw` writes zero
+  CH_ASSERT fires when the drawn bytes are all zero, and for the salt,
+  the noise and the hedge `rsa_pss_sign`, `p256_sign_hedged` and
+  `mldsa87_sign` check the bytes they are handed. `rand_draw` writes zero
   to the bytes before the source runs, so such a source leaves zeros at
   every site, a stack buffer's included, and not the bytes the buffer
   held before (docs/decisions.md 141). The two P-256 sites
@@ -203,22 +208,23 @@ last `ROLE=server` stub, as the entry said it would.
   `RAND=session` puts the source in each session's `ch_cfg`, and
   `rand.h` then declares no `ch_rand_bytes`, so a library call to it
   does not compile. No build carries a fallback that quietly produces
-  bytes. The `ROLE` and `TRUST` axes choose which of the six files a
+  bytes. The `ROLE` and `TRUST` axes choose which of the seven files a
   packaged object compiles:
   - `ROLE=client` compiles `handshake_flight.c`, and `TRUST=webpki`
     adds `handshake_groups.c`.
-  - `ROLE=server` compiles `srv_flight.c`, `srv_kex.c`, `srv_resume.c`
-    and `srv_auth.c` on every transport.
+  - `ROLE=server` compiles `srv_flight.c`, `srv_kex.c`, `srv_resume.c`,
+    `srv_auth.c` and `srv_mldsa.c` on every transport. `srv_mldsa.c`
+    holds code under `PROFILE=cnsa2` alone.
   - `ROLE=both` compiles both sets.
 - **Check.** Semgrep-structural, in three rules.
   `inv-4-one-draw-path` refuses a `ch_rand_bytes` call anywhere but
   `rand_draw`'s body in `rand_draw.h`; it excludes `drbg.c`, which
   defines the hook. `inv-4-randomness-files` refuses a `rand_draw` call
   in any file other than `handshake_flight.c`, `handshake_groups.c`,
-  `srv_flight.c`, `srv_kex.c`, `srv_resume.c` and `srv_auth.c`.
-  `inv-4-randomness-calls` reads only those six files and refuses a call
-  outside the nine functions the claim names, a fourth call in
-  `hsf_begin`, and a second call in any of the other eight. It counts a
+  `srv_flight.c`, `srv_kex.c`, `srv_resume.c`, `srv_auth.c` and
+  `srv_mldsa.c`. `inv-4-randomness-calls` reads only those seven files
+  and refuses a call outside the ten functions the claim names, a fourth
+  call in `hsf_begin`, and a second call in any of the other nine. It counts a
   call in a branch, a loop or a block the same as one at the top of the
   function. `test/lint-invariants.sh` fails on each of five violations:
   - `inv04-draw-in-handshake-post` adds a call to `handshake_post.c`.
@@ -236,7 +242,7 @@ last `ROLE=server` stub, as the entry said it would.
   against the `RAND=drbg` object, and `test/build_test.c`, which defines
   no hook under `CH_RAND_SESSION`, against the `RAND=session` one.
   `test/lib-check-rand-session.sh` fails on
-  `inv04-session-object-imports-hook`, where `srv_begin` calls
+  `inv04-session-object-imports-hook`, where `srv_kex_begin` calls
   `ch_rand_bytes` itself. The `RAND=session` builds of the three loop
   tests, `bin/tcp_blocking_loop_session`,
   `bin/tcp_nonblocking_loop_session` and `bin/quic_loop_session`, hand
