@@ -657,6 +657,15 @@ int main() {
         chapulin::Session s;
         CHECK(s.fail(0) == chapulin::Status::invalid && s.fail(90) == chapulin::Status::invalid);
         CHECK(s.fail(22) == chapulin::Status::proto && s.alert_sent() == 0);
+        // ch_write_parts refuses a session that is not connected, as
+        // write() does, and sends nothing.
+        const uint8_t header[9] = {0};
+        const ch_part parts[2] = {
+            {header,  sizeof header},
+            {nullptr, 0            }
+        };
+        CHECK(s.write_parts(parts) == chapulin::Status::proto &&
+              s.write_parts(nullptr, 0) == chapulin::Status::proto);
     }
 #ifdef CH_TRUST_WEBPKI
     test_webpki_config(io);

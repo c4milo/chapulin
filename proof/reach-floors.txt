@@ -322,7 +322,10 @@ quic_retry 109
 quic_step 272
 quic_step_ca 275
 quic_token 292
-record 154
+# record rose from 154 to 159 of 167 on 2026-10-31, on an ubuntu-24.04
+# runner with the pinned cbmc: the harness seals in place too, the shape
+# ch_write_parts uses (docs/decisions.md 167).
+record 159
 record_suite 291
 record_whole_len 59
 # The three rsa_avx2_chain lines took their floors on 2026-10-17 from the
@@ -616,9 +619,16 @@ webpki_time 166
 # Each harness compiles that file and calls ch_writable_len alone, so their
 # 21 locations stay out of its reach. Each reaches the same count it did
 # before. The ch_fail harness reaches them.
-writable_len 83
-writable_len_suite 111
+# writable_len rose to 119 of 160 and writable_len_suite to 147 of 187 on
+# 2026-10-31, on an ubuntu-24.04 runner with the pinned cbmc: ch_write is
+# ch_write_parts over one part (docs/decisions.md 167), and both harnesses
+# now run its cursor and the length stub of wb_bytes. write_parts took its
+# first floor the same day, 122 of 186; it calls ch_write_parts alone, so
+# ch_writable_len and ch_fail stay out of its reach.
+writable_len 119
+writable_len_suite 147
 writable_len_suite_any 42
+write_parts 122
 x25519 50
 # The four x25519_adx harnesses took their first floors from GitHub run
 # 40853232504 of 2026-10-29 (nightly on 8834adf5): x25519_adx_ladder 175

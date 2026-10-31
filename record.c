@@ -151,9 +151,12 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     out[4] = (uint8_t)body;
 
     // Build TLSInnerPlaintext in place: content || type, no padding.
-    // memmove, because pt may be inner itself (record.h).
+    // memmove, because pt may overlap inner (record.h). ch_write_parts
+    // copies the content to inner itself, and then there is nothing to move.
     uint8_t *inner = out + REC_HDR;
-    memmove(inner, pt, n);
+    if (pt != inner) {
+        memmove(inner, pt, n);
+    }
     inner[n] = type;
 
     uint8_t nonce[AEAD_NONCE];

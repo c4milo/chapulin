@@ -318,6 +318,22 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             return self.io.written;
         }
 
+        /// Seals the parts as one run of plaintext, in the records write
+        /// seals for that run in one buffer, and returns the bytes written:
+        /// ch_write_parts, under write's rules. It returns error.Cap with
+        /// nothing sealed and the session as it was when the parts' lengths
+        /// together pass writableLen(output.len). Build each part with
+        /// chapulin.part.
+        pub fn writeParts(self: *Self, parts: []const c.ch_part, output: []u8) error{ Proto, Cap, Io }!usize {
+            var total: usize = 0;
+            for (parts) |one| total = std.math.add(usize, total, one.pt_len) catch return error.Cap;
+            if (total > self.writableLen(output.len)) return error.Cap;
+            self.io.begin(&.{}, output);
+            defer self.io.end();
+            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write_parts(&self.record.t, parts.ptr, parts.len));
+            return self.io.written;
+        }
+
         /// The most plaintext one write seals into cap bytes: ch_writable_len.
         pub fn writableLen(self: *const Self, cap: usize) usize {
             return c.ch_writable_len(&self.record.t, cap);

@@ -375,8 +375,13 @@ how to cut and size its bytes:
   that many bytes to `ch_read`. A header whose length field is above
   2^14 + 256, which no peer may send, answers 5, the header alone, and
   `ch_read` refuses it.
+- `ch_write_parts(&tls, parts, part_count)` seals several `ch_part`
+  buffers as one run of plaintext, in the records `ch_write` seals for
+  them joined, so a frame header and its payload need no copy into one
+  buffer first. Its results are `ch_write`'s (docs/decisions.md 167).
 - `ch_writable_len(&tls, cap)` is the most plaintext one `ch_write` seals
-  into `cap` bytes of records, at the smaller of the peer's
+  into `cap` bytes of records, or one `ch_write_parts` seals in all its
+  parts, at the smaller of the peer's
   `record_size_limit` and `CH_TX_PT` per record. Pass at most that much
   when your send buffer holds `cap` bytes. Both TCP transports export it.
   It also counts the KeyUpdate record below when the write sends one, so

@@ -14769,3 +14769,53 @@ does nothing more.
       - **internal_error for a message in part.** The record is legal
         there too, but the session already fails with an alert that
         names the message, and Camilo kept it.
+
+167. **`ch_write_parts` seals a list of parts as one run of plaintext.**
+    colibri's h2 client sends a request body in DATA frames: a 9-byte
+    frame header (RFC 9113 §4.1) and a payload, which sit apart in its
+    memory. `ch_write` takes one buffer, so colibri copied the two into
+    one before each seal
+    (https://github.com/c4milo/chapulin/issues/212). Camilo ruled on
+    2026-10-30: one call, `ch_write_parts(t, parts, part_count)`, over
+    `ch_part {pt, pt_len}`, in `tls.h` on both TCP transports and in
+    both roles.
+
+    - **What it seals.** The parts joined, in the records `ch_write`
+      seals for that run in one buffer. A record holds bytes of every
+      part it crosses, and a part of any length may cross records. Its
+      results, its KeyUpdate records and its failures are `ch_write`'s,
+      and `ch_writable_len` counts the parts' lengths together.
+      `ch_write` is this call over one part.
+    - **What it costs.** `rec_seal` copied each record's plaintext once
+      into `ch_tls.tx` before it sealed it there. `ch_write_parts`
+      copies each record's plaintext from the parts into `ch_tls.tx`
+      through `wb_bytes`, and `rec_seal` then moves nothing, because
+      the plaintext is already in place. So each byte is still copied
+      once, and the caller's own copy goes away.
+    - **The Zig and C++ calls.** A Zig slice of slices does not have the
+      layout of `ch_part`, and the API allocates nothing. So
+      `writeParts` takes `[]const c.ch_part`, which `chapulin.part`
+      builds from a slice, as `chapulin.alpnProtocol` builds a name.
+      It seals all the parts or none, as `write` does. C++ gets
+      `write_parts`, over a pointer and a count or over an array.
+    - **What holds it.** `bin/unit` sends six splits of one message
+      and requires the wire bytes of `ch_write` over the whole message,
+      with and without an owed KeyUpdate. The CBMC `write_parts`
+      harness proves, at its bound, that the records hold the parts
+      joined and that every record but the last is full.
+      `test/zig-consumer/loop_record.zig` runs `writeParts`,
+      and `inv38-write-parts-record-over-limit` and
+      `inv09-write-parts-offset-kept` require the tests to fail.
+    - **Rejected:**
+      - **A C variadic call.** `...` carries no types, so the compiler
+        cannot check that each pointer has its length beside it, and
+        MISRA C bans `<stdarg.h>`.
+      - **A call for exactly two slices.** It is what colibri needs
+        today, but a third part, such as h2 padding, would need another
+        call.
+      - **A record for each part.** colibri rejected it for issue 212:
+        each frame header would cost one more seal and 22 more bytes on
+        the wire.
+      - **Other names.** `ch_write_chunks`, because HTTP/1.1's chunked
+        coding calls its pieces chunks, and `ch_write_records`, because
+        a part does not map to a record.

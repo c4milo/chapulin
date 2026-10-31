@@ -1,0 +1,13 @@
+invariant: INV-38
+file: tls_write.c
+catches: unit
+reason: ch_write_parts fills a record with up to the limit from each part
+  it crosses, not up to the limit in all, so a record that crosses a part
+  carries more plaintext than the peer's record_size_limit allows.
+  test_write_parts requires the wire bytes of ch_write over the joined
+  parts, whose records keep the limit.
+
+--- old
+        size_t room = limit - w->len;
+--- new
+        size_t room = limit;

@@ -506,6 +506,7 @@ after `init`: `cfg.io` points at its hook, and `cfg.rand_io` at its
 | `alertSent()`, `alertReceived()` | `ch_alert_sent`, `ch_alert_received` on `record.t` (alert.h); each null when 0 | none |
 | `read(input, pt, reply)` | `ch_record_whole_len`, then `ch_read` | Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit |
 | `write(pt, output)` | `ch_writable_len`, then `ch_write` | Proto, Cap, Io |
+| `writeParts(parts, output)` | `ch_writable_len` over the parts' lengths together, then `ch_write_parts`; `chapulin.part(bytes)` builds each `c.ch_part` | Proto, Cap, Io |
 | `writableLen(cap)` | `ch_writable_len` | none |
 | `close(output)` | `ch_close` | Io |
 | `fail(description, output)` | `ch_fail` | Invalid, Proto, Cap, Io |
@@ -627,6 +628,14 @@ when it takes an AES-GCM write key to its ceiling; one record serves
 both, and `writableLen` counts it. A caller that sizes `output` for its
 largest message adds `key_update_record_len` bytes there, or such a
 write returns `error.Cap` with nothing sealed.
+
+`writeParts(parts, output)` seals several buffers as one run of
+plaintext, in the records `write` seals for them joined, under the same
+rules: when the parts' lengths together pass `writableLen(output.len)`
+it seals nothing and returns `error.Cap`. Each part is a `c.ch_part`,
+which `chapulin.part(bytes)` builds, so an h2 DATA frame goes out as
+`writeParts(&.{ chapulin.part(header), chapulin.part(payload) }, output)`
+with no copy into one buffer (docs/decisions.md 167).
 
 `close(output)` sends this side's close_notify into `output`, at most
 `alert_record_len` bytes, and wipes the session's keys: that is
@@ -828,6 +837,10 @@ each through the module alone (INV-36):
     reports the server name;
   - a write of three `CH_TX_PT` records and 100 bytes each way;
   - a write one byte past `writableLen` refused whole;
+  - two h2 DATA frames, each a 9-byte header and a payload one byte
+    longer than a record, through `writeParts`: four records that the
+    server reads as the parts joined, and a call one byte short refused
+    whole;
   - the exporter on both sides;
   - the ticket taken, rebuilt through `Ticket.fromFields` and resumed;
   - a ticket at exactly its lifetime offered and one millisecond past it

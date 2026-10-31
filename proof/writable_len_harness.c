@@ -7,7 +7,10 @@
 // cfg.send at most cap bytes for the answer, and more than cap bytes for
 // one byte more. On the way it proves that ch_write sends the KeyUpdate
 // that key_update_owed records before its first data record, and that the
-// write leaves key_update_owed clear.
+// write leaves key_update_owed clear. ch_write runs ch_write_parts over one
+// part. A formula that cut the plaintext into three parts of any lengths
+// returned no verdict in 120 minutes on an ubuntu-24.04 runner, so the
+// loop over parts is write_parts_harness.c's, at its own bound.
 //
 // ch_write is the code tls.h's contract names, so the second half runs it
 // rather than a formula of its own. rec_seal is replaced by its contract

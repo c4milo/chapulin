@@ -78,15 +78,15 @@ The other 31 sources are in no such harness:
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
 | `poly1305_avx2_native.c` | It is `poly1305_avx2.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop on a CPU with AVX2. |
 | `poly1305_ifma_native.c` | It is `poly1305_ifma.c` under the names `widemul_native.h` gives, on the AVX-512 IFMA intrinsics in `poly1305_ifma_lanes.h`, which CBMC cannot read. | The `poly1305_ifma` harnesses prove the same text over a model of each instruction ([poly1305_ifma](#poly1305_ifma)), and on a CPU with AVX-512 IFMA `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop and searches the stack below a call for every power of r it computes; the nightly's `rsa-ifma-sde` job runs it under Intel SDE. |
-| `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
+| `tls.c` | No harness. Its send path, `ch_write`, `ch_write_parts` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) and [write_parts](#write_parts) prove. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
 `aes_extern.c` is proved, but only up to the `ch_aes_block` the caller
 writes, which has no body here to prove ([aes_extern](#aes_extern)).
 `tcp_nonblocking_frame.c` is in two harnesses: `ch_record_whole_len` in
 [record_whole_len](#record_whole_len), and the rest of the file in
 [srv_tcp_nonblocking](#srv_tcp_nonblocking).
-`tls_write.c` holds `ch_write`, `ch_writable_len` and their helpers
-alone, and [writable_len](#writable_len) drives both calls in each build
+`tls_write.c` holds `ch_write`, `ch_write_parts`, `ch_writable_len` and
+their helpers alone, and [writable_len](#writable_len) drives the calls in each build
 the file compiles differently in.
 
 `make check` runs `make proof-coverage`, which counts them and
@@ -1867,7 +1867,10 @@ The entries are grouped by area:
 - **Proves:**
   - seal works across its contract and returns, rather than traps, over
     the whole direction state: any key, IV and sequence number, the
-    saturation refusal included, and any claimed buffer size;
+    saturation refusal included, and any claimed buffer size, from a
+    separate buffer and in place at `out + REC_HDR`, where
+    `ch_write_parts` copies a record's plaintext and `rec_seal` moves
+    nothing;
   - `rec_open` stays safe on fully hostile bytes, into a separate buffer
     and in place, the shape both shipped callers use.
 - **Bound:** records ≤ 160 B.
@@ -1911,7 +1914,9 @@ The entries are grouped by area:
   - the value it returns is the most plaintext `ch_write` sends in `cap`
     bytes, with an answer to the peer's KeyUpdate owed and with none: the
     real `ch_write` hands `cfg.send` at most `cap` bytes for that much
-    plaintext, and more than `cap` bytes for one byte more;
+    plaintext, and more than `cap` bytes for one byte more. `ch_write` is
+    `ch_write_parts` over one part, and [write_parts](#write_parts)
+    proves the loop over parts;
   - on the way, that `ch_write` seals no data record while an answer is
     owed, sends a KeyUpdate only then, and leaves none owed after a write
     of a byte or more (INV-55).
@@ -1920,7 +1925,10 @@ The entries are grouped by area:
   their contracts: a sealed record is `REC_OVERHEAD` bytes longer than
   its plaintext, which [record](#record) proves, a KeyUpdate is one
   record of `CH_KEY_UPDATE_RECORD_LEN` bytes that leaves no answer owed,
-  and the stub send counts what it is handed.
+  and the stub send counts what it is handed. `wb_init` and `wb_bytes`
+  are `proof/wbuf_length_stub.c`: `buf.c`'s lengths and checks, with no
+  byte copied. The bytes are no property here, and [write_parts](#write_parts)
+  proves the copy.
 - **Bound:** the second claim at `cap` ≤ 1,630 B, three whole records
   of `CH_TX_PT` bytes, a KeyUpdate record and one byte, and
   `peer_limit` ≥ 63, the least a connected session holds, at the default
@@ -1936,6 +1944,38 @@ The entries are grouped by area:
   That no unsigned sum or product in `records_fill` and
   `fill_across_key_update` wraps is Lean's `recordsFill_fits` and
   `fillAcrossKeyUpdate_fits`, which that entry states.
+
+#### write_parts
+
+- **Harness:** `write_parts` (fast)
+- **Proves:** for any three parts of 0 to 9 bytes in all, an empty one
+  with or without a pointer, any record limit from 1 to 4 and any
+  `key_update_owed`, `ch_write_parts` returns `CH_OK`, and:
+  - the plaintexts of the records it seals, joined, are the parts
+    joined, byte for byte;
+  - every record holds 1 to limit bytes, and every record but the last
+    holds limit, so the records are the ones `ch_write` cuts for the
+    joined bytes;
+  - an owed KeyUpdate goes out before the first data record, a write of
+    a byte or more leaves none owed, and a write of none leaves
+    `key_update_owed` as it was.
+
+  `wb_bytes` is `proof/wbuf_byte_stub.c`, `buf.c`'s contract with one
+  store per byte, so each copy from a part into `ch_tls.tx` is a
+  bounds-checked read and write. CBMC's model of `buf.c`'s `memcpy` at a
+  symbolic length into `ch_tls` took the formula past 6 GB, and the
+  [buf](#buf) harness proves that `memcpy`. `rec_seal` is a stub that keeps each
+  record's plaintext, and `hspost_send_key_update` and `io_send_all`
+  are their contracts, as in [writable_len](#writable_len).
+- **Bound:** 9 bytes in three parts, at limits of 1 to 4. No claim
+  depends on a record's size, and those limits give a record of one byte,
+  a part that ends inside a record, a part longer than a record and a
+  record that holds all three parts. [writable_len](#writable_len)
+  proves the lengths at the real limits, and `bin/unit` compares the wire
+  bytes with `ch_write`'s at a limit of 63.
+- **Not proved:** a list of more than three parts. The loop over parts
+  holds no state but the part it reads and the bytes of it already
+  copied, so a fourth part takes the paths a third one takes.
 
 #### writable_len_suite
 

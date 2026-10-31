@@ -898,7 +898,10 @@ last `ROLE=server` stub, as the entry said it would.
   move on any added byte. `rec_seal` copies the plaintext with one
   `memmove`, and `rec-seal-copy-short` copies a byte less and requires
   `bin/aes_suite_test`, which seals the published records through it, to
-  fail.
+  fail. `ch_write_parts` copies a data record's plaintext into place
+  itself, and `rec_seal` then moves nothing. `inv09-write-parts-offset-kept`
+  skips the start of a part, and `bin/unit`, which compares the wire
+  bytes with `ch_write`'s, fails.
 - **Violation.** A PR pads for traffic-analysis resistance and the
   SRAM and replay-vector numbers quietly change.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
@@ -1077,9 +1080,11 @@ last `ROLE=server` stub, as the entry said it would.
     `read_record_size_limit` (`srv_parser_ext.c`) lower it to the
     peer's value less the content-type byte, never raise it, and refuse
     a value under 64 (RFC 8449 §4).
-  - The writers: `ch_write` (`tls_write.c`) and the server's
-    `srv_out_limit` (`srv_out.c`) cut every write at the smaller of
-    `peer_limit` and `CH_TX_PT`. The server's Certificate writer,
+  - The writers: `ch_write_parts` (`tls_write.c`), which `ch_write`
+    calls over one part, and the server's `srv_out_limit` (`srv_out.c`)
+    cut every write at the smaller of `peer_limit` and `CH_TX_PT`.
+    `ch_write_parts` fills each record to that limit across the parts it
+    crosses (docs/decisions.md 167). The server's Certificate writer,
     `srv_frag`, holds `SRV_FRAG_MAX` (512) bytes whatever `CH_TX_PT` is,
     so a raised `CH_TX_PT` adds nothing to the handshake's stack (INV-19).
   - The framing calls: `ch_write` and `ch_writable_len` read the send
@@ -1186,6 +1191,12 @@ last `ROLE=server` stub, as the entry said it would.
     a record one byte short, a whole one, the largest the RFC allows and
     the first length past it. `inv38-writable-len-ignores-peer-limit` and
     `inv38-whole-len-oversize-waits` require them to fail.
+  - `bin/unit` sends six splits of one message through `ch_write_parts`
+    at a limit of 63 and requires the wire bytes of `ch_write` over the
+    whole message. `inv38-write-parts-record-over-limit` fills a record
+    to the limit from each part it crosses, and `bin/unit` fails. The
+    CBMC `write_parts` harness proves that every record but the last
+    holds the limit, at its bound.
   - `test/key_limit_cases.h` sweeps every `cap` up to three records, a
     KeyUpdate record and one byte at the ceiling and one and two records
     before it, and checks the exact rows: at the ceiling a record of one

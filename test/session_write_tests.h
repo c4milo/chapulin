@@ -174,4 +174,90 @@ static void test_writable_len(void) {
     CHECK(ch_writable_len(&t, 4096) == 0);
 }
 
+// The wire bytes one write sends from a copy of start: ch_write over all
+// of msg when part_count is 0, ch_write_parts over the parts otherwise.
+// Each run starts from the same keys and sequence numbers, so two runs
+// that seal the same records send the same bytes.
+static size_t wire_of_write(const ch_tls *start, mock_io *m, const uint8_t *msg, size_t n,
+                            const ch_part *parts, size_t part_count, uint8_t *wire, size_t cap) {
+    static ch_tls t;
+    t = *start;
+    memset(m, 0, sizeof *m);
+    t.cfg.io = m;
+    if (part_count == 0) {
+        CHECK(ch_write(&t, msg, n) == CH_OK);
+    } else {
+        CHECK(ch_write_parts(&t, parts, part_count) == CH_OK);
+    }
+    CHECK(m->tx_len <= cap);
+    memcpy(wire, m->tx, m->tx_len);
+    return m->tx_len;
+}
+
+// ch_write_parts sends the records ch_write sends for the parts joined in
+// one buffer (tls.h). At a record limit of 63, each split below seals the
+// same bytes as ch_write over the whole message: a 9-byte header and a
+// payload, as an h2 DATA frame is; a part that ends on the record limit
+// and one that ends a byte before it; a part longer than a record; parts
+// of 0 bytes, one with no pointer, before, between and after; and one
+// part. Every byte of the message differs from its neighbours, so a byte
+// copied from the wrong place changes the wire. Each runs with no answer
+// owed and with one owed, which puts a KeyUpdate record first.
+static void test_write_parts(void) {
+    uint8_t secret[SHA256_LEN];
+    ch_rand_bytes(secret, sizeof secret);
+    static uint8_t rxbuf[1024];
+    static uint8_t msg[200];
+    for (size_t i = 0; i < sizeof msg; i++) {
+        msg[i] = (uint8_t)(i * 7 + 3);
+    }
+    static const size_t splits[][5] = {
+        {9,   191, 0,  0,   0},
+        {63,  137, 0,  0,   0},
+        {62,  1,   64, 73,  0},
+        {100, 100, 0,  0,   0},
+        {0,   9,   0,  191, 0},
+        {200, 0,   0,  0,   0},
+    };
+    static mock_io m;
+    static ch_tls start;
+    static uint8_t want[2048];
+    static uint8_t got[2048];
+    for (int owed = 0; owed <= 1; owed++) {
+        mock_session(&start, &m, rxbuf, sizeof rxbuf, secret, NULL);
+        start.peer_limit = 63;
+        start.key_update_owed = (uint8_t)owed;
+        size_t want_len = wire_of_write(&start, &m, msg, sizeof msg, NULL, 0, want, sizeof want);
+        // Three records of 63 bytes and one of 11.
+        CHECK(want_len == 3 * (63 + REC_OVERHEAD) + 11 + REC_OVERHEAD +
+                              (size_t)owed * CH_KEY_UPDATE_RECORD_LEN);
+        for (size_t s = 0; s < sizeof splits / sizeof splits[0]; s++) {
+            ch_part parts[5];
+            size_t at = 0;
+            for (size_t i = 0; i < 5; i++) {
+                parts[i].pt = splits[s][i] == 0 && i % 2 == 0 ? NULL : msg + at;
+                parts[i].pt_len = splits[s][i];
+                at += splits[s][i];
+            }
+            CHECK(at == sizeof msg);
+            size_t got_len = wire_of_write(&start, &m, NULL, 0, parts, 5, got, sizeof got);
+            CHECK(got_len == want_len && memcmp(got, want, want_len) == 0);
+        }
+        // Parts that hold no byte send nothing, not even an owed answer.
+        const ch_part empty[2] = {
+            {NULL, 0},
+            {msg,  0}
+        };
+        CHECK(wire_of_write(&start, &m, NULL, 0, empty, 2, got, sizeof got) == 0);
+        CHECK(m.sends == 0);
+    }
+    // No parts at all, and a session that is not connected, which sends
+    // nothing and returns CH_EPROTO as ch_write does.
+    mock_session(&start, &m, rxbuf, sizeof rxbuf, secret, NULL);
+    CHECK(ch_write_parts(&start, NULL, 0) == CH_OK && m.sends == 0);
+    start.state = CH_ST_FAILED;
+    const ch_part one = {msg, 1};
+    CHECK(ch_write_parts(&start, &one, 1) == CH_EPROTO && m.sends == 0);
+}
+
 #endif

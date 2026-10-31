@@ -1,0 +1,13 @@
+invariant: INV-9
+file: tls_write.c
+catches: unit
+reason: ch_write_parts keeps the byte count of the part it finished when it
+  moves to the next part, so it skips the start of that part and seals
+  bytes the caller did not pass. test_write_parts requires the wire bytes
+  of ch_write over the joined parts.
+
+--- old
+        c->index++;
+        c->offset = 0;
+--- new
+        c->index++;

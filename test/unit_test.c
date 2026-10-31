@@ -454,6 +454,7 @@ int main(int argc, char **argv) {
     test_ticket_obfuscated_age();
     test_ch_write();
     test_writable_len();
+    test_write_parts();
     test_key_update_one_answer();
     test_key_update_owed_at_close();
     test_key_update_at_epoch_cap();

@@ -67,6 +67,25 @@ int CH_MUST_USE ch_connect(ch_tls *t, const ch_cfg *cfg);
 // old key.
 int CH_MUST_USE ch_write(ch_tls *t, const uint8_t *p, size_t n);
 
+// One part of the plaintext ch_write_parts sends: pt_len bytes at pt. The
+// caller owns the bytes. pt may be NULL when pt_len is 0.
+typedef struct {
+    const uint8_t *pt;
+    size_t pt_len;
+} ch_part;
+
+// Sends the part_count parts as one run of plaintext, each part after the
+// one before it, in the records ch_write sends for that run in one buffer:
+// a record holds bytes of every part it crosses, and a part may cross
+// records. Its results, its KeyUpdate records and its failures are
+// ch_write's, and ch_write is this call over one part. ch_writable_len
+// counts the parts' lengths together. So the caller seals a header and a
+// payload that sit apart in its memory without a copy of its own:
+// ch_write copies each record's plaintext once into ch_tls.tx anyway, and
+// this call copies it there from the parts. parts may be NULL when
+// part_count is 0. A part of 0 bytes adds nothing (docs/decisions.md 167).
+int CH_MUST_USE ch_write_parts(ch_tls *t, const ch_part *parts, size_t part_count);
+
 // The most plaintext one ch_write seals into cap bytes of records, so a
 // caller whose send takes at most cap bytes per call knows how much to
 // pass. ch_write cuts its input into records of at most the smaller of

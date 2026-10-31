@@ -11,11 +11,11 @@ reason: ch_write refuses a session whose peer sent close_notify, so this
     if (t->state != CH_ST_CONNECTED) {
         return CH_EPROTO;
     }
-    size_t limit
+    parts_cursor cursor
 --- new
     CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states (tls.c)
 
     if (t->state != CH_ST_CONNECTED || t->read_closed) {
         return CH_EPROTO;
     }
-    size_t limit
+    parts_cursor cursor

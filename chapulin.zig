@@ -29,6 +29,7 @@ const has_mldsa_server = has_server and @hasField(c.ch_srv_cfg, "mldsa87");
 const has_classic_server = has_server and !has_mldsa_server;
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
+const has_write_parts = @hasDecl(c, "ch_write_parts");
 const has_suite_order = has_server and @hasField(c.ch_srv_cfg, "cipher_suites");
 // TRANSPORT=quic-nonblocking: every session names its original version in
 // ch_cfg (cfg.h), and quic.Version is the type that names one.
@@ -106,6 +107,13 @@ pub fn fromCode(comptime E: type, code: c_int) E!void {
 pub const trustAnchor = if (has_webpki) trustAnchorOf else @compileError("trustAnchor needs TRUST=webpki");
 fn trustAnchorOf(subject: []const u8, spki: []const u8) c.ch_trust_anchor {
     return .{ .name = subject.ptr, .name_len = subject.len, .spki = spki.ptr, .spki_len = spki.len };
+}
+
+/// One part of the plaintext Session.writeParts sends: the bytes of pt,
+/// which the caller owns until the call returns (tls.h, ch_part).
+pub const part = if (has_write_parts) partOf else @compileError("part needs TRANSPORT=tcp-nonblocking");
+fn partOf(pt: []const u8) c.ch_part {
+    return .{ .pt = pt.ptr, .pt_len = pt.len };
 }
 
 /// One protocol name to offer or select through ALPN (RFC 7301).

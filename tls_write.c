@@ -1,10 +1,11 @@
 // The connected session's send path, in both roles and on both TCP
-// transports: ch_write and ch_writable_len, whose contracts tls.h states,
+// transports: ch_write, ch_write_parts and ch_writable_len, whose contracts tls.h states,
 // and the KeyUpdate ch_write sends before a data record, as the answer the
 // peer's request owes or as the last record an AES-GCM write key seals
 // (record.h). tls.c holds the other public calls tls.h declares.
 #include "tls.h"
 
+#include "buf.h"
 #include "ch_assert.h"
 #include "handshake_message.h"
 #include "handshake_post.h"
@@ -106,21 +107,65 @@ static int key_update_before_record(ch_tls *t) {
     return rc;
 }
 
-int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
+// Where ch_write_parts has read to: parts[index] is the part it reads
+// next, and offset counts the bytes of that part it has already copied.
+// After parts_skip_empty, index is part_count or names a part with a byte
+// left at offset.
+typedef struct {
+    const ch_part *parts;
+    size_t part_count;
+    size_t index;
+    size_t offset;
+} parts_cursor;
+
+static void parts_skip_empty(parts_cursor *c) {
+    while (c->index < c->part_count && c->offset == c->parts[c->index].pt_len) {
+        c->index++;
+        c->offset = 0;
+    }
+}
+
+// Copies the next record's plaintext into w: bytes from the parts at the
+// cursor until w holds limit bytes or the parts end. It moves the cursor
+// past the bytes it copied. Each pass copies one byte or more, because the
+// cursor names a part with a byte left, so the loop ends.
+static void parts_copy_record(parts_cursor *c, wbuf *w, size_t limit) {
+    while (w->len < limit && c->index < c->part_count) {
+        const ch_part *part = &c->parts[c->index];
+        size_t left = part->pt_len - c->offset;
+        size_t room = limit - w->len;
+        size_t take = left < room ? left : room;
+        wb_bytes(w, part->pt + c->offset, take);
+        c->offset += take;
+        parts_skip_empty(c);
+    }
+}
+
+// tls.h states the contract. The plaintext of each record is copied into
+// ch_tls.tx at REC_HDR, where rec_seal builds the record, after the
+// KeyUpdate that may go first, because that KeyUpdate is sealed in
+// ch_tls.tx too. So each byte is copied once, as rec_seal copied the one
+// buffer ch_write took before this call existed.
+int ch_write_parts(ch_tls *t, const ch_part *parts, size_t part_count) {
     CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states (tls.c)
 
     if (t->state != CH_ST_CONNECTED) {
         return CH_EPROTO;
     }
+    parts_cursor cursor = {parts, part_count, 0, 0};
+    parts_skip_empty(&cursor);
     size_t limit = record_plaintext_max(t);
-    while (n > 0) {
-        size_t take = n < limit ? n : limit;
+    while (cursor.index < cursor.part_count) {
         int rc = key_update_before_record(t);
         if (rc != CH_OK) {
             return rc; // it failed the session
         }
+        wbuf inner;
+        wb_init(&inner, t->tx + REC_HDR, sizeof t->tx - REC_HDR);
+        parts_copy_record(&cursor, &inner, limit);
         size_t out_len = 0;
-        if (rec_seal(&t->wr, REC_APPDATA, p, take, t->tx, sizeof t->tx, &out_len) != 0) {
+        if (inner.err ||
+            rec_seal(&t->wr, REC_APPDATA, inner.p, inner.len, t->tx, sizeof t->tx, &out_len) != 0) {
             tlsi_fail(t, ALERT_INTERNAL_ERROR);
             return CH_ECAP;
         }
@@ -129,10 +174,13 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
             tlsi_fail(t, ALERT_INTERNAL_ERROR);
             return rc;
         }
-        p += take;
-        n -= take;
     }
     return CH_OK;
+}
+
+int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
+    const ch_part part = {p, n};
+    return ch_write_parts(t, &part, 1);
 }
 
 // What cap bytes of records carry at limit bytes of plaintext per record:

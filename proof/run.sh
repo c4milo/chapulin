@@ -804,6 +804,10 @@ launch fast full mldsa_sign_coefficient_ct 2 ""
 # the seal and the open called through aead.h's AEAD_SEAL_CPU and
 # AEAD_OPEN_CPU, which are aead_seal and aead_open in this device build
 # (docs/decisions.md 89): 412 properties, 561 s, 4.45 GB on 2026-10-03.
+# With a seal in place at out + REC_HDR, where ch_write_parts copies a
+# record's plaintext (docs/decisions.md 167), measured on 2026-10-31 on an
+# ubuntu-24.04 runner (PROVE_ONLY=record PROVE_NO_CACHE=1 /usr/bin/time -v,
+# cbmc 6.11.0, kissat): 415 properties, 753 s, 2.9 GB peak.
 launch slow:4 full record 165 "" ct.c proof/ct_wipe_stub.c
 # record_suite: rec_dir_init_suite, rec_dir_update and one seal and one
 # open in the -DCH_SUITE_AES_GCM build, over each of the three suites,
@@ -1032,12 +1036,24 @@ launch fast full io_send 17 ""
 # record of a failure, code the harness includes and never calls
 # (docs/decisions.md 76).
 launch fast full record_whole_len 2 "" -DCH_TRANSPORT_TCP_NONBLOCKING buf.c
+# write_parts: ch_write_parts over three parts of up to nine bytes in all,
+# at record limits of 1 to 4, with wb_bytes as a byte loop: the
+# records hold the parts joined, every record but the last is full, and
+# the owed KeyUpdate goes first (the harness states why those bounds).
+# ch_write_parts.1 turns once a record, nine times at most, and
+# parts_copy_record.0 and parts_skip_empty.0 three times at most, and
+# wb_bytes.0 four. ch_write_parts.0 is CH_ASSERT's do-while.
+# Measured on 2026-10-31 on an ubuntu-24.04 runner (PROVE_ONLY=write_parts
+# PROVE_NO_CACHE=1 /usr/bin/time -v, cbmc 6.11.0, kissat): 386
+# properties, 125 s, 1.8 GB peak. With buf.c's memcpy in place of
+# proof/wbuf_byte_stub.c the formula passed 6 GB in 19 s.
+launch fast full write_parts 2 "ch_write_parts.1:10,parts_copy_record.0:4,parts_skip_empty.0:4,rec_seal.0:5,main.0:10,fill_nondet.0:10,wb_bytes.0:5" proof/wbuf_byte_stub.c
 # writable_len: ch_writable_len over any peer_limit and any cap, then its
 # answer written through the real ch_write at caps up to 1,630 bytes and a
 # peer_limit from 63, with and without an owed KeyUpdate answer, with
 # rec_seal, hspost_send_key_update and io_send_all stubbed to their
-# contracts. ch_write.1 is its record loop, which turns at most 20 times
-# there. Measured the same way (PROVE_ONLY=writable_len PROVE_NO_CACHE=1):
+# contracts. Its record loop, ch_write.1 then and ch_write_parts.1 now,
+# turns at most 20 times there. Measured the same way (PROVE_ONLY=writable_len PROVE_NO_CACHE=1):
 # 420 properties, 58 s, 185 MB. The harness records the forms that took
 # longer. With the send path in tls_write.c, which the harness includes in
 # place of tls.c: 71 properties, 77 s, 200 MB at a load average near 25.
@@ -1045,8 +1061,12 @@ launch fast full record_whole_len 2 "" -DCH_TRANSPORT_TCP_NONBLOCKING buf.c
 # the owed answer (docs/decisions.md 138), measured on 2026-10-18 on an
 # ubuntu-24.04 runner (PROVE_ONLY=writable_len PROVE_NO_CACHE=1
 # /usr/bin/time -v, cbmc 6.11.0, kissat): 118 properties, 210 s, 0.11 GB
-# peak.
-launch fast full writable_len 2 "ch_write.1:21"
+# peak. With ch_write as ch_write_parts over one part and wb_bytes as
+# proof/wbuf_length_stub.c (docs/decisions.md 167), measured on 2026-10-31
+# the same way: 342 properties, 271 s, 0.28 GB peak. The same formula over
+# three parts of any lengths returned no verdict in 120 minutes;
+# write_parts proves the loop over parts at its own bound.
+launch fast full writable_len 2 "ch_write_parts.1:21" proof/wbuf_length_stub.c
 # writable_len_suite: the answer through the real ch_write in the
 # -DCH_SUITE_AES_GCM build, where ch_write sends a KeyUpdate at an AES-GCM
 # write key's ceiling and ch_writable_len counts it, over each of the three
@@ -1066,8 +1086,10 @@ launch fast full writable_len 2 "ch_write.1:21"
 # 143 properties, 44 s, 0.07 GB peak. With the owed answer
 # (docs/decisions.md 138), measured on 2026-10-18 on an ubuntu-24.04 runner
 # (PROVE_ONLY=writable_len_suite PROVE_NO_CACHE=1 /usr/bin/time -v):
-# 169 properties, 45 s, 0.04 GB peak.
-launch fast full writable_len_suite 2 "ch_write.1:5" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
+# 169 properties, 45 s, 0.04 GB peak. With ch_write as ch_write_parts and
+# wb_bytes as proof/wbuf_length_stub.c (docs/decisions.md 167), measured
+# on 2026-10-31 the same way: 393 properties, 62 s, 0.11 GB peak.
+launch fast full writable_len_suite 2 "ch_write_parts.1:5" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME proof/wbuf_length_stub.c
 # In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=writable_len_suite_any PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):

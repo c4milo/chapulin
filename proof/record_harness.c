@@ -2,7 +2,8 @@
 // UB-free — rec_open on FULLY HOSTILE bytes (any string up to 160 bytes
 // presented as a record), both into a separate buffer and in place
 // (pt == rec, the shape both shipped callers use), and rec_seal across
-// its size contract and over the whole rec_dir domain: any key, IV, and
+// its size contract, from a separate buffer and in place (pt == out +
+// REC_HDR, the shape ch_write_parts uses), and over the whole rec_dir domain: any key, IV, and
 // sequence number — the seq == UINT64_MAX arm both seal and open refuse
 // included — into an output buffer of any claimed size. The padding
 // strip and type extraction run over havoc'd plaintext, which covers
@@ -129,6 +130,15 @@ int main(void) {
     size_t record_len = 0;
     __CPROVER_assert(rec_seal(&tx, nondet_u8(), pt, n, rec, sizeof rec, &record_len) == 0,
                      "seal fits");
+
+    // ch_write_parts copies the content to rec + REC_HDR itself and seals it
+    // there (pt == out + REC_HDR), the shape in which rec_seal moves nothing.
+    fill_nondet(rec + REC_HDR, sizeof pt);
+    n = nondet_size_t();
+    __CPROVER_assume(n <= sizeof pt);
+    __CPROVER_assert(rec_seal(&tx, nondet_u8(), rec + REC_HDR, n, rec, sizeof rec, &record_len) ==
+                         0,
+                     "seal in place fits");
 
     // Hostile input: any bytes, any claimed length; must return, not trap.
     uint8_t evil[160];

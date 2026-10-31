@@ -626,6 +626,15 @@ class Session {
         return static_cast<Status>(ch_write(&tls_, data.data, data.size));
     }
 
+    // Forwards ch_write_parts: sends the parts as one run of plaintext, in
+    // the records write() sends for that run in one buffer (tls.h).
+    Status write_parts(const ch_part *parts, size_t part_count) {
+        return static_cast<Status>(ch_write_parts(&tls_, parts, part_count));
+    }
+    template <size_t N> Status write_parts(const ch_part (&parts)[N]) {
+        return write_parts(parts, N);
+    }
+
     // Forwards ch_writable_len: the most plaintext one write() seals into
     // cap bytes of records (tls.h).
     size_t writable_len(size_t cap) const {

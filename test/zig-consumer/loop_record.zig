@@ -150,6 +150,31 @@ fn exchange() !void {
     to_server.push(try client.write(message, to_server.free()[0..sealed]));
     const got, _ = try drain(&server, &to_server);
     try check(std.mem.eql(u8, got, message ++ message), "a refused write sealed part of its plaintext");
+    try writeParts();
+}
+
+/// A 9-byte header and a payload one byte longer than a record, as an h2
+/// DATA frame holds them, through writeParts: the server reads them joined,
+/// in two records, and a call one byte short of what the parts need seals
+/// nothing. The second call's records follow the first's on the wire.
+fn writeParts() !void {
+    const header = [_]u8{ 0, 0x40, 0, 0, 1, 0, 0, 0, 1 };
+    const body = payload[0 .. c.CH_TX_PT + 1];
+    const parts = [_]c.ch_part{ chapulin.part(&header), chapulin.part(body) };
+    const sealed = try client.writeParts(&parts, to_server.free());
+    to_server.push(sealed);
+    try check(client.writableLen(sealed) == header.len + body.len, "writableLen does not match what writeParts sealed");
+    const refused = client.writeParts(&parts, to_server.free()[0 .. sealed - 1]);
+    try check(refused == error.Cap and client.recordState() == .connected, "writeParts that did not fit was not refused whole");
+    to_server.push(try client.writeParts(&parts, to_server.free()[0..sealed]));
+    const got, const records = try drain(&server, &to_server);
+    try check(records == 4, "two frames of a header and a record and a byte of payload went out in other than four records");
+    const frame = header.len + body.len;
+    for (0..2) |i| {
+        const one = got[i * frame .. (i + 1) * frame];
+        try check(std.mem.eql(u8, one[0..header.len], &header) and std.mem.eql(u8, one[header.len..], body), "the server read other bytes than the parts joined");
+    }
+    try check(got.len == 2 * frame, "the server read more than the two frames");
 }
 
 fn exporter() !void {
@@ -414,5 +439,5 @@ pub fn run() !void {
     try key_limit.run();
     try key_update_run.run();
     const across = if (key_limit.runs) ", each side's write across its AES-GCM write key's ceiling under both AES-GCM suites" else "";
-    std.debug.print("a record-mode client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, a resumed ticket, a stale one refused, a client that takes no tickets, first with no ticket and then with one it resumes, both closes, four refusals, each side's failure alert on each side of its write key{s}, and error.KeyUpdateLimit for one KeyUpdate past a run of {d}\n", .{ c.CH_TX_PT, payload.len, across, c.CH_KEY_UPDATE_RUN_MAX });
+    std.debug.print("a record-mode client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, two frames of a header and a payload through writeParts, a resumed ticket, a stale one refused, a client that takes no tickets, first with no ticket and then with one it resumes, both closes, four refusals, each side's failure alert on each side of its write key{s}, and error.KeyUpdateLimit for one KeyUpdate past a run of {d}\n", .{ c.CH_TX_PT, payload.len, across, c.CH_KEY_UPDATE_RUN_MAX });
 }
