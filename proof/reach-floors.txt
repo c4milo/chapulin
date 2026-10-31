@@ -556,6 +556,12 @@ srv_ticket_cnsa2 228
 # 76.0% (494/650): no record held a whole message, so drive never ran a
 # step.
 srv_tcp_nonblocking 512
+# srv_quic took its floor on 2026-10-31, measured by proof/coverage.py in
+# the pinned amd64 container: 85.8% (586/683). In srv_quic.c no path
+# reaches the CH_ASSERT arm, two closing braces, or the branch CBMC adds
+# for each callback it calls through a pointer; quic_fail.c's quic_wipe
+# runs only from quic.c. The rest are stub and helper branches.
+srv_quic 586
 # tcp_nonblocking and tcp_nonblocking_in took their floors on 2026-10-31,
 # measured by proof/coverage.py in the pinned amd64 container: 57.8%
 # (395/683) and 45.4% (253/557). Each formula leaves out the calls the

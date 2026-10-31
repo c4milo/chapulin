@@ -1,8 +1,8 @@
-// Contract stubs for the calls proof/srv_tcp_nonblocking_harness.c makes
+// Contract stubs for the calls the two non-blocking server drivers make
 // into srv.h, srv_flight.h and srv_resume.h: the configuration check, the
-// key share draw and the fifteen handlers. That harness includes this
-// after its own nondet declarations. It is a header of its own because
-// the harness sits at the 500-line cap.
+// key share draw and the fifteen handlers. proof/srv_tcp_nonblocking_harness.c
+// and proof/srv_quic_harness.c include this after their own nondet
+// declarations.
 //
 // Each stub asserts what its header requires of a caller and havocs what
 // that header says it writes, so the driver's proof rests on no one
@@ -53,9 +53,9 @@ static int take_message(handshake_state *h) {
 
 // srv.c's configuration rules. The answer is free, but a 1 carries what
 // srv.h promises a caller that got one: the receive buffer is live and at
-// this build's floor, and the tcp-nonblocking transport's own arm has checked that
-// a sink is set. ch_srv_record_init reads all three on the strength of
-// that answer, so a stub that answered 1 for any cfg at all would prove
+// this build's floor, and the transport's own arm has checked that its
+// callbacks are set. The init calls read them on the strength of that
+// answer, so a stub that answered 1 for any cfg at all would prove
 // arithmetic the real predicate never admits.
 int srv_config_ok(const ch_cfg *cfg) {
     __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "config: cfg readable");
@@ -63,7 +63,11 @@ int srv_config_ok(const ch_cfg *cfg) {
         return 0;
     }
     __CPROVER_assume(cfg->buf != NULL && cfg->buf_len >= CH_MIN_RXBUF);
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    __CPROVER_assume(cfg->srv.on_crypto_out != NULL && cfg->on_level_ready != NULL);
+#else
     __CPROVER_assume(cfg->srv.on_record_out != NULL);
+#endif
     return 1;
 }
 
@@ -74,6 +78,12 @@ void srv_begin(handshake_state *h) {
     fill_nondet(h->priv, sizeof h->priv);
     fill_nondet(h->pub, sizeof h->pub);
 }
+
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+// 1 or 0 for whether the last hello read carried transport parameters,
+// and -1 before a hello is read.
+static int hello_params = -1;
+#endif
 
 int srv_read_client_hello(handshake_state *h, client_hello *ch) {
     __CPROVER_assert(__CPROVER_w_ok(ch, sizeof *ch), "hello: parse target writable");
@@ -88,6 +98,19 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch) {
     // larger one leaves it standing.
     ch->record_size_limit = nondet_u16();
     ch->alpn_selected = nondet_u8();
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    // srv_parser.h: the body of quic_transport_parameters inside the
+    // message in cfg.buf, or NULL when the hello carried none.
+    // hello_params records which, for proof/srv_quic_harness.c.
+    hello_params = 0;
+    if (nondet_u8() & 1) {
+        hello_params = 1;
+        size_t len = nondet_size_t();
+        __CPROVER_assume(len <= h->t->cfg.buf_len);
+        ch->transport_params = h->t->cfg.buf;
+        ch->transport_params_len = len;
+    }
+#endif
     return CH_OK;
 }
 
@@ -152,8 +175,10 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
     if (rc == CH_OK) {
         fill_nondet(h->c_hs, sizeof h->c_hs);
         fill_nondet(h->s_hs, sizeof h->s_hs);
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
         h->encrypted = 1;
         h->t->keys = 1;
+#endif
     }
     return rc;
 }

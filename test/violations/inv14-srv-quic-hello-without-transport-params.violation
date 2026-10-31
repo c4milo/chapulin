@@ -1,0 +1,16 @@
+invariant: INV-14
+file: srv_quic.c
+catches: proof/prove-one.sh srv_quic
+reason: take_transport_params accepts a ClientHello that carries no
+  quic_transport_parameters, which RFC 9001 section 8.2 makes a fatal
+  missing_extension alert. The srv_quic proof asserts that such a first
+  hello is refused with that alert, and fails on this edit.
+
+--- old
+    if (ch->transport_params == NULL) {
+        q->hs.alert = ALERT_MISSING_EXTENSION;
+        return CH_EPROTO;
+    }
+    if (q->t.cfg.on_transport_params != NULL) {
+--- new
+    if (q->t.cfg.on_transport_params != NULL && ch->transport_params != NULL) {

@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-121 of the 153 C sources in the tree root are compiled into a
+122 of the 153 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,11 +48,10 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 32 sources are in no such harness:
+The other 31 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
-| `srv_quic.c` | No harness. | `bin/srv_quic_test` |
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds its cipher and both architectures' key expansions to `quic_aes_soft.c`, and searches the stack each expansion leaves ([The host object's AES key expansions](#the-host-objects-aes-key-expansions)). |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
 | `gcm_hw.c` | It runs counter mode on the AES intrinsics, and on x86-64 the one-pass seal and open on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal and open to `gcm.c`'s proven one-block loop and portable GHASH. |
@@ -2657,6 +2656,40 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   [record_whole_len](#record_whole_len). `bin/srv_tcp_nonblocking_test`,
   `bin/tcp_nonblocking_loop_test` and the `.violation` mutants test the
   rest.
+
+#### srv_quic
+
+- **Harness:** `srv_quic` (fast)
+- **Build:** `ROLE=server`, `TRANSPORT=quic-nonblocking`.
+- **Proves:** `ch_srv_quic_init`, `ch_srv_quic_crypto_in`,
+  `ch_srv_quic_retry_tag` and the step table (`srv_quic.c`), with the
+  failure path of `quic_fail.c` and the QUIC arm of
+  `handshake_record.c`, are memory safe and free of UB over an
+  unconstrained `ch_cfg`, saved state, level and caller bytes. Also:
+  - init answers `CH_OK` with the session at its first step and the
+    Initial level, in the client's version, or `CH_EINVAL` with a dead
+    session (INV-13);
+  - a first ClientHello with no quic_transport_parameters is refused
+    with missing_extension (INV-14);
+  - a version that `cfg.srv.choose_version` answers and
+    `quic_version_derived` refuses is `CH_EIO` with internal_error, and
+    the negotiated version stays;
+  - a step after the handshake fails with unexpected_message, and a
+    retry hello never asks for a second retry;
+  - the client Finished step leaves the session connected at the 1-RTT
+    level, with the handshake secrets wiped (INV-17);
+  - a level reaches `cfg.on_level_ready` only after its bit is set, and
+    1-RTT read only once the session is connected;
+  - every failure of `ch_srv_quic_crypto_in` but `CH_EINVAL` leaves the
+    session dead, with nothing unread and no read key or traffic secret
+    (INV-13, INV-17).
+- **Bound:** a receive buffer of 12 B, the bound of
+  [handshake_record](#handshake_record).
+- **Not proved:** the fifteen handlers are the contract stubs
+  `proof/srv_flight_stubs.h` states, which [srv_flight](#srv_flight)
+  proves. `quic_keys.c`'s derivations and `quic_retry_tag` are stubs,
+  and `ct_wipe` writes its zeros with one `memset`. `bin/srv_quic_test`
+  and the `.violation` mutants test the rest.
 
 #### tcp_nonblocking and tcp_nonblocking_in
 

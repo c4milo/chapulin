@@ -2495,6 +2495,15 @@ launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:5
 # memset. Measured on 2026-10-30 in the pinned amd64 container, the way the
 # runner runs it: 1656 properties, 97 s, 1.26 GB resident.
 launch fast:2 full srv_tcp_nonblocking 4 "fill_nondet.0:33,no_secret_left.0:33" --object-bits 10 -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING tcp_nonblocking_frame.c ct.c buf.c
+# The ROLE=server QUIC driver, srv_quic.c, with srv_tcp_nonblocking's
+# layering: the driver, quic_fail.c and the QUIC arm of
+# handshake_record.c real, the fifteen handlers the contract stubs of
+# proof/srv_flight_stubs.h, and quic_keys.c and quic_retry_tag stubs.
+# ct_wipe writes its zeros with one memset; at a loop bound of 440 the
+# server's handshake state ran past it. Measured on 2026-10-31 in the
+# pinned amd64 container: 1557 properties, 55 s to 61 s, 0.66 GB
+# resident.
+launch fast:2 full srv_quic 5 "fill_nondet.0:257,drive.0:5,zero_bytes.0:133" -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 handshake_record.c ct.c
 # The client's tcp-nonblocking driver, in two formulas with the
 # quic_step and quic_driver layering. tcp_nonblocking runs init, the
 # real step table, ch_record_out and ch_record_close, with the

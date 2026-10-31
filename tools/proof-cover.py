@@ -443,21 +443,6 @@ AUDITED = {
         "bin/quic_test_hw and the host Wycheproof binary run the published "
         "vectors on it. Delete this entry if a harness can ever compile the file."
     ),
-    "srv_quic.c": (
-        "the QUIC server driver: the step table, the input loop and the three "
-        "entry points. One bitwise operator in the file, the |= in announce. "
-        "Both its operands are uint8_t values, which widen to int and hold 0 "
-        "to 255: q->levels_ready, and CH_QUIC_LEVEL_BIT(level, direction), "
-        "which shifts 1U by level * 2 + direction. That count is an int, and "
-        "each call computes it from constants, CH_LEVEL_HANDSHAKE or "
-        "CH_LEVEL_APPLICATION and CH_KEY_READ or CH_KEY_WRITE, so it is 2 to "
-        "5. The rest compares and assigns step numbers, levels and return "
-        "codes, and adds size_t offsets that n bounds. No harness runs this "
-        "file: bin/srv_quic_test, bin/srv_quic_both_test and "
-        "bin/quic_loop_test run its steps, and docs/verification.md lists it "
-        "with no harness. Delete this entry when srv_quic.c gets a harness of "
-        "its own."
-    ),
 }
 
 
