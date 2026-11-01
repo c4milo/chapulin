@@ -15027,6 +15027,15 @@ does nothing more.
       | ECDSA verify | 1.06 | 0.93 | 1.38 | 1.09 | 1.35 | 1.14 |
       | ECDSA sign | 0.94 | 0.88 | 1.28 | 1.13 | 1.29 | 1.16 |
 
+      The bench run of 2026-11-01 on main, under each CPU's whole
+      `ch_cfg.cpu` value, recorded the landed field: on an EPYC 7763 the
+      shared secret takes 1.21 times OpenSSL's time under clang and 1.44
+      under gcc, where the wide field took 1.36 and 1.81, and the
+      verification 0.93 and 1.06, where it took 1.06 and 1.42. On a Xeon
+      8573C under gcc the key generation, shared secret, signature and
+      verification took 1.18, 1.22, 1.02 and 0.98, where they took 1.37,
+      1.45, 1.12 and 1.15. Under clang that CPU's rows
+      moved by 1% or less (docs/performance.md).
     - **What is left.** `perf record` of 20,000 shared secrets on an EPYC
       7763 under clang put one at 63.5 µs against OpenSSL's 51.8 µs. The
       products took 29.4 µs against OpenSSL's 19.2 µs, and the squares
