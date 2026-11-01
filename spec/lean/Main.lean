@@ -904,6 +904,29 @@ def dispatch : List String → Option String
     match Spec.Ed25519Decode.decode (bytesToNatLE kb) with
     | none => return "FAIL"
     | some (x, y) => return bytesToHex (natToBytesLE x.val 32 ++ natToBytesLE y.val 32)
+  | ["ed25519_verify_r", key, hram, sigS] => do
+    -- ed25519_verify_hram in x25519_wide_ed25519.h: a 32-byte key, the 64-byte hash
+    -- SHA-512(R ‖ A ‖ M) and the 32 bytes of S, all little-endian. The answer is the model's
+    -- verifyR (Spec/Ed25519Verify.lean), the R the check accepts in 32 little-endian bytes, or
+    -- FAIL for a refusal.
+    let kb ← hexArg? key
+    let hb ← hexArg? hram
+    let sb ← hexArg? sigS
+    guard (kb.size == 32 && hb.size == 64 && sb.size == 32)
+    match Spec.Ed25519Verify.verifyR (bytesToNatLE kb) (bytesToNatLE hb) (bytesToNatLE sb) with
+    | none => return "FAIL"
+    | some r => return bytesToHex (natToBytesLE r 32)
+  | ["ed25519_point_r", key, hram, sigS] => do
+    -- The R of ed25519_verify_hram's point with none of its refusals but the key's decode:
+    -- the model's pointR (Spec/Ed25519Verify.lean), in 32 little-endian bytes, or FAIL for a key
+    -- decode refuses. The arguments are ed25519_verify_r's.
+    let kb ← hexArg? key
+    let hb ← hexArg? hram
+    let sb ← hexArg? sigS
+    guard (kb.size == 32 && hb.size == 64 && sb.size == 32)
+    match Spec.Ed25519Verify.pointR (bytesToNatLE kb) (bytesToNatLE hb) (bytesToNatLE sb) with
+    | none => return "FAIL"
+    | some r => return bytesToHex (natToBytesLE r 32)
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

@@ -1570,14 +1570,24 @@ The entries are grouped by area:
   prove that a point it returns is on the curve, has the key's 255 low
   bits as its y, below p, and has the key's bit 255 as the low bit of its
   x. So it is the point RFC 8032 section 5.1.3 names.
-  `bin/diff_ed25519`, in `make diff`, holds the C to the three models in
-  1,432 comparisons: each bit from fixed and random remainders up to
-  L - 1; the hashes 0, 2^512 - 1, L - 1, L, L + 1 and random ones; and,
-  with each sign bit, the y values 0, 1, p - 1, p, 2^255 - 1 and B's, and
-  random keys.
-- **Not proved:** that `decode_point()` accepts every key that encodes
-  a point, which needs p to be prime, and `decode_point()` by a harness
-  line of its own. Its power chain
+  `spec/lean/Spec/Ed25519Verify.lean` models the check's loop from the
+  C, over points and in extended coordinates. `verify_point` proves that
+  from the identity over 253 bits, for S and h below 2^253, the C's affine
+  x and y are those of a point whose image under `toMont` is S B - h A.
+  That holds in every field in which 2 is not zero, d is not a square
+  and -1 is.
+  `bin/diff_ed25519`, in `make diff`, holds the C to the models in 1,847
+  comparisons: each bit from fixed and random remainders up to L - 1; the
+  hashes 0, 2^512 - 1, L - 1, L, L + 1 and random ones; with each sign
+  bit, the y values 0, 1, p - 1, p, 2^255 - 1 and B's, and random keys;
+  and the whole check over 62 of those keys and an S of 0, L - 1, L and a
+  random one. Where the spec's `verifyR` names an R, the C accepts it and
+  refuses it with its low bit or its sign bit flipped. Where the spec
+  refuses, the C refuses too, the R of the loop's point included.
+- **Not proved:** that p is prime, so neither that `decode_point()`
+  accepts every key that encodes a point, nor that `ZMod p` is a field
+  that `verify_point` covers. Also not proved: `decode_point()` by a
+  harness line of its own. Its power chain
   is `mul()` and `sqr()` alone, whose bounds the `x25519_wide` harnesses
   prove, and in one formula with the rest it gave no verdict in 25
   minutes. The mod-L step runs without `--unsigned-overflow-check`,

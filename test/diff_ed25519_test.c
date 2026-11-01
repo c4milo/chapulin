@@ -1,10 +1,13 @@
 // The DNSSEC Ed25519 check's arm of the differential oracle: reduce_step,
-// reduce_mod_l and decode_point in x25519_wide_ed25519.h, against the same
-// Lean spec process test/diff_test.c drives.
+// reduce_mod_l, decode_point and ed25519_verify_hram in
+// x25519_wide_ed25519.h, against the same Lean spec process
+// test/diff_test.c drives.
 // spec/lean/Spec/Ed25519ModL.lean models the first two from the C and
 // proves that a step from a remainder below L stays below L and that the
 // reduction writes h mod L. spec/lean/Spec/Ed25519Decode.lean models the
 // third and proves that each point it returns is the one the key encodes.
+// spec/lean/Spec/Ed25519Verify.lean models the check's loop and proves
+// that it computes [S]B - [h]A; its verifyR is the whole check.
 // These rows are what make those proofs about the C: an error in the
 // transcription on either side fails a row.
 //
@@ -17,7 +20,12 @@
 // from random ones just below L. reduce_mod_l takes the hashes 0,
 // 2^512 - 1, L - 1, L, L + 1 and random ones. decode_point takes, with
 // each sign bit, the y values 0, 1, p - 1, p, 2^255 - 1 and B's, and
-// random keys, about half of which encode a point.
+// random keys, about half of which encode a point. ed25519_verify_hram
+// takes those keys with random hashes and an S of 0, L - 1, L or a random
+// one below L: where the spec names the R the check accepts, the C must
+// accept that R and refuse it with its low bit or its sign bit flipped,
+// and where the spec refuses, the C must refuse each R it is given,
+// the R of the point its loop computes among them.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -43,6 +51,10 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 #define RANDOM_ROWS 200
 
 #define COMMAND_SIZE (64 + 2 * 64)
+
+// The random keys the check takes, of the RANDOM_ROWS keys the decode
+// takes.
+#define VERIFY_KEYS 50
 
 // words[0..4) as 32 little-endian bytes.
 static void words_to_bytes(uint8_t b[32], const uint64_t w[4]) {
@@ -85,6 +97,8 @@ static void diff_decode(const uint8_t key[32]) {
     expect(cmd, want);
 }
 
+static void diff_verifies(const uint8_t key[32]);
+
 static void diff_decodes(void) {
     // p - 1 in 32 little-endian bytes; the rows below write the others
     // from it.
@@ -103,16 +117,107 @@ static void diff_decodes(void) {
     keys[5][0] = 0x58; // B's y, 4/5
     for (size_t i = 0; i < 6; i++) {
         diff_decode(keys[i]);
+        diff_verifies(keys[i]);
         keys[i][31] ^= 0x80;
         diff_decode(keys[i]);
+        diff_verifies(keys[i]);
     }
     uint8_t key[32];
     for (int r = 0; r < RANDOM_ROWS; r++) {
         rng_fill(key, sizeof key);
         diff_decode(key);
+        if (r < VERIFY_KEYS) {
+            diff_verifies(key);
+        }
         key[31] ^= 0x80;
         diff_decode(key);
     }
+}
+
+// One request whose reply may be FAIL: query() in test/diff_driver.h
+// exits on FAIL. It returns 1 and the reply's bytes in r for an R, and 0
+// for FAIL.
+static int ask_r(const char *cmd, uint8_t r[32]) {
+    char got[80];
+    (void)fputs(cmd, to_spec);
+    (void)fputc('\n', to_spec);
+    (void)fflush(to_spec);
+    if (fgets(got, (int)sizeof got, from_spec) == NULL) {
+        die("spec process closed the pipe (did spec/lean/.lake/build/bin/diffspec build?)");
+    }
+    comparisons++;
+    char *nl = strchr(got, '\n');
+    if (nl != NULL) {
+        *nl = '\0';
+    }
+    if (strcmp(got, "FAIL") == 0) {
+        return 0;
+    }
+    if (strlen(got) != 64 || !hex_decode(r, got, 32)) {
+        (void)fprintf(stderr, "diff spec reply:\n  cmd:  %s\n  spec: %s\n", cmd, got);
+        exit(1);
+    }
+    return 1;
+}
+
+static void verdict(int want, const uint8_t key[32], const uint8_t hram[64], const uint8_t r[32],
+                    const uint8_t s[32], const char *cmd) {
+    uint8_t sig[64];
+    memcpy(sig, r, 32);
+    memcpy(sig + 32, s, 32);
+    if ((ed25519_verify_hram(key, hram, sig) != 0) != want) {
+        (void)fprintf(stderr, "diff mismatch:\n  cmd:  %s\n  C %s an R the spec %s\n", cmd,
+                      want ? "refused" : "accepted", want ? "accepts" : "refuses");
+        exit(1);
+    }
+}
+
+static void diff_verify(const uint8_t key[32], const uint8_t s[32]) {
+    uint8_t hram[64];
+    rng_fill(hram, sizeof hram);
+    // The key, the hash and S in hex, which both requests take.
+    char args[2 * (32 + 64 + 32) + 3];
+    size_t at = hex_encode(args, key, 32);
+    args[at++] = ' ';
+    at += hex_encode(args + at, hram, 64);
+    args[at++] = ' ';
+    (void)hex_encode(args + at, s, 32);
+    char cmd[sizeof args + 32];
+    (void)snprintf(cmd, sizeof cmd, "ed25519_verify_r %s", args);
+    uint8_t r[32];
+    if (ask_r(cmd, r)) {
+        verdict(1, key, hram, r, s, cmd);
+        r[0] ^= 1;
+        verdict(0, key, hram, r, s, cmd);
+        r[0] ^= 1;
+        r[31] ^= 0x80;
+        verdict(0, key, hram, r, s, cmd);
+    } else {
+        memset(r, 0, sizeof r);
+        verdict(0, key, hram, r, s, cmd);
+        rng_fill(r, sizeof r);
+        verdict(0, key, hram, r, s, cmd);
+        // The R the loop computes, which the check must refuse too: it
+        // shows a refusal the C does not make.
+        (void)snprintf(cmd, sizeof cmd, "ed25519_point_r %s", args);
+        if (ask_r(cmd, r)) {
+            verdict(0, key, hram, r, s, cmd);
+        }
+    }
+}
+
+// Each key with an S of 0, L - 1, L and a random one below 2^252.
+static void diff_verifies(const uint8_t key[32]) {
+    uint8_t s[32] = {0};
+    diff_verify(key, s);
+    words_to_bytes(s, ED25519_L);
+    s[0]--;
+    diff_verify(key, s);
+    s[0]++;
+    diff_verify(key, s);
+    rng_fill(s, sizeof s);
+    s[31] &= 0x0f;
+    diff_verify(key, s);
 }
 
 static void diff_mod_l(const uint8_t h[64]) {

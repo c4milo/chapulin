@@ -131,7 +131,8 @@ theorem root?_spec {y x : ZMod p} (h_root : root? y = some x) :
 /-- What `decode` accepts, unfolded: y below p, a root x, and the x it returns. -/
 theorem decode_some {s : ℕ} {x y : ZMod p} (h_decode : decode s = some (x, y)) :
     s % 2 ^ 255 < p ∧ y = ((s % 2 ^ 255 : ℕ) : ZMod p) ∧ ∃ r, root? y = some r ∧
-      ¬(r = 0 ∧ s / 2 ^ 255 % 2 = 1) ∧ x = (if r.val % 2 = s / 2 ^ 255 % 2 then r else -r) := by
+      ¬(r = 0 ∧ s / 2 ^ 255 % 2 = 1) ∧
+      x = (if r.val % 2 = s / 2 ^ 255 % 2 then r else -r) := by
   unfold decode at h_decode
   by_cases h_range : p ≤ s % 2 ^ 255
   · rw [if_pos h_range] at h_decode
@@ -175,7 +176,8 @@ theorem decode_sign {s : ℕ} {x y : ZMod p} (h_decode : decode s = some (x, y))
       omega
     have : NeZero r := ⟨h_r⟩
     have h_lt := ZMod.val_lt r
-    have h_p : p = 57896044618658097711785492504343953926634992332820282019728792003956564819949 := by
+    have h_p : p =
+        57896044618658097711785492504343953926634992332820282019728792003956564819949 := by
       norm_num [p]
     rw [h_x, ZMod.val_neg_of_ne_zero]
     omega
