@@ -144,9 +144,10 @@ Home: github.com/c4milo.
   compiler cannot remove) and `avx512_wipe.[ch]` (a block of assembly,
   32 VPXORD and 7 KXORW, which zeros zmm0 to zmm31 and k1 to k7 for a
   kernel that held secrets in them, an x86-64 host object alone);
-  `gcm_arm64_passes.h` and `x25519_adx_asm.h` hold the tree's other
-  assembly, the arm64 AES-GCM passes and the x86-64 X25519 field's five
-  operations (docs/decisions.md 158 and 165)
+  `gcm_arm64_passes.h`, `x25519_adx_asm.h` and `p256_adx_asm.h` hold the
+  tree's other assembly, the arm64 AES-GCM passes, the x86-64 X25519
+  field's five operations and the x86-64 P-256 field's product and square
+  (docs/decisions.md 158, 165 and 171)
   ← `sha256.[ch]` with `sha256_hw.c` (SHA-256 on
   FEAT_SHA256 or the x86-64 SHA extensions, a host session whose caller
   sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` with
@@ -277,6 +278,15 @@ Home: github.com/c4milo.
   `p256_wide_verify_point.c` run `p256.[ch]`'s verification on the wide
   field, with variable-time Jacobian routines of their own and an inverse
   of s that stops at the first zero a, in every session of a host object) +
+  `p256_adx.h` with `p256_adx_names.h`, `p256_adx_asm.h` and the
+  `p256_adx_*` files (the wide files compiled once more under renames,
+  whose product and square are MULX, ADCX and ADOX in inline assembly that
+  reduces in the same statement, x86-64; a session whose caller sets
+  CH_CPU_BMI2_ADX beside that bit runs its point arithmetic there, and its
+  ECDSA verification under CH_CPU_BMI2_ADX alone; `widemul_p256.h` holds
+  the P-256 dispatchers and `widemul_answer.h` the answers both widemul
+  headers read; `test/p256_adx_model.h` writes the same words in portable
+  C, docs/decisions.md 171) +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify; a host object's arm
   computes R^2 by a long division that branches on the public modulus)
   with `rsa_mont64.[ch]` (the same public operation on 64-bit words,
@@ -519,7 +529,8 @@ Home: github.com/c4milo.
   `poly1305_ifma.c` on IFMA's products, or with CH_CPU_AVX2
   `poly1305_avx2.c` on VPMULUDQ, X25519 runs the wide field's five 51-bit
   words, or for a shared secret on x86-64 with CH_CPU_BMI2_ADX
-  `x25519_adx.c`'s four 64-bit words, P-256 runs the wide files' four 64-bit words, and RSA signs with
+  `x25519_adx.c`'s four 64-bit words, P-256 runs the wide files' four 64-bit words,
+  or on x86-64 with CH_CPU_BMI2_ADX `p256_adx.h`'s copy of them, and RSA signs with
   `rsa_sign64.c`, which on x86-64 with CH_CPU_AVX512_IFMA runs both CRT
   exponentiations on `rsa_ifma_sign.c` and its check on `rsa_ifma.c`
   through `rsa_vp1_cpu`, and wipes the stack below each call and the
@@ -548,8 +559,10 @@ Home: github.com/c4milo.
   AES-GCM seal and open whole on `gcm_avx512_kernel.c`, and picks
   nothing else, so a caller can leave it clear and keep the IFMA kernels
   (docs/decisions.md 130). `CH_CPU_BMI2_ADX` beside the multiply bit runs
-  a shared secret's X25519 on `x25519_adx.c`, whose products are MULX's
-  widening multiplies, and picks nothing else (docs/decisions.md 165).
+  a shared secret's X25519 on `x25519_adx.c` and P-256's point arithmetic
+  on `p256_adx.h`'s copy, whose products are MULX's widening multiplies,
+  and by itself an ECDSA P-256 verification on that copy, whose inputs are
+  public (docs/decisions.md 165 and 171).
   Each entry of `gcm_avx512.c` wipes
   `GCM_AVX512_BELOW_LEN` bytes of the stack below its frame after the
   kernel. The kernel calls no function, since every other function in
@@ -862,7 +875,12 @@ Home: github.com/c4milo.
   `tools/proof-cover.py` records what the block does. `x25519_adx.c`'s
   harnesses compile it over `test/x25519_adx_model.h`, portable C that
   writes the words its assembly writes, and `bin/x25519_adx_equiv_test`
-  holds the assembly to the model (docs/decisions.md 165). Portable C that
+  holds the assembly to the model (docs/decisions.md 165).
+  `p256_adx_field.c`'s harnesses compile it over `test/p256_adx_model.h`
+  and prove no word wraps; `spec/lean/Spec/P256Adx.lean` proves the
+  reduction's value, which `bin/diff_p256_adx` holds the C to, and
+  `bin/p256_adx_equiv_test` holds the assembly to the model
+  (docs/decisions.md 171). Portable C that
   a host object alone compiles carries harnesses as every module does:
   `sha512_compress_blocks`, `sha512_compress_blocks_steps` and
   `sha512_compress_blocks_advancing` prove `sha512_compress_blocks.c`'s
