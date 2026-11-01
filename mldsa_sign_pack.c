@@ -82,14 +82,14 @@ static void keep_half_byte(mld_poly *p, uint32_t *count, uint32_t z) {
     *count += keep & 1U;
 }
 
-uint32_t mlds_sample_eta(mld_poly *p, const uint8_t rho_prime[64], uint16_t nonce) {
+uint32_t mlds_sample_eta(uint32_t cpu, mld_poly *p, const uint8_t rho_prime[64], uint16_t nonce) {
     const uint8_t index[2] = {(uint8_t)nonce, (uint8_t)(nonce >> 8)};
     uint8_t stream[MLDS_ETA_STREAM_BYTES];
     shake h;
     shake256_init(&h);
-    shake_absorb(&h, rho_prime, 64);
-    shake_absorb(&h, index, sizeof index);
-    shake_squeeze(&h, stream, sizeof stream);
+    mld_absorb(cpu, &h, rho_prime, 64);
+    mld_absorb(cpu, &h, index, sizeof index);
+    mld_squeeze(cpu, &h, stream, sizeof stream);
     ct_wipe(&h, sizeof h);
     for (unsigned n = 0; n < MLD_N; n++) {
         p->coeffs[n] = 0;
@@ -103,14 +103,14 @@ uint32_t mlds_sample_eta(mld_poly *p, const uint8_t rho_prime[64], uint16_t nonc
     return mlds_mask_eq(count, MLD_N) & 1U;
 }
 
-void mlds_expand_mask(mld_poly *p, const uint8_t rho2[64], uint16_t nonce) {
+void mlds_expand_mask(uint32_t cpu, mld_poly *p, const uint8_t rho2[64], uint16_t nonce) {
     const uint8_t index[2] = {(uint8_t)nonce, (uint8_t)(nonce >> 8)};
     uint8_t stream[MLDS_MASK_BYTES];
     shake h;
     shake256_init(&h);
-    shake_absorb(&h, rho2, 64);
-    shake_absorb(&h, index, sizeof index);
-    shake_squeeze(&h, stream, sizeof stream);
+    mld_absorb(cpu, &h, rho2, 64);
+    mld_absorb(cpu, &h, index, sizeof index);
+    mld_squeeze(cpu, &h, stream, sizeof stream);
     ct_wipe(&h, sizeof h);
     mlds_unpack(p, stream, 20, MLD_GAMMA1);
     ct_wipe(stream, sizeof stream);
@@ -139,12 +139,12 @@ static void ball_step(mld_poly *c, uint32_t *i, uint32_t j, sign_bits *signs) {
     *i += active & 1U;
 }
 
-uint32_t mlds_sample_in_ball(mld_poly *c, const uint8_t c_tilde[64]) {
+uint32_t mlds_sample_in_ball(uint32_t cpu, mld_poly *c, const uint8_t c_tilde[64]) {
     uint8_t stream[MLD_BALL_BYTES];
     shake h;
     shake256_init(&h);
-    shake_absorb(&h, c_tilde, 64);
-    shake_squeeze(&h, stream, sizeof stream);
+    mld_absorb(cpu, &h, c_tilde, 64);
+    mld_squeeze(cpu, &h, stream, sizeof stream);
     ct_wipe(&h, sizeof h);
     sign_bits signs = {0, 0};
     for (unsigned b = 0; b < 4; b++) {

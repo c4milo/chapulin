@@ -3567,9 +3567,11 @@ bin/mldsa_vector_equiv_test: test/mldsa_vector_equiv_test.c $(MLDSA_VECTOR_EQUIV
 # The calls into mldsa_vector.c that the signer and the verifier make
 # under each ch_cfg.cpu value (test/mldsa_runtime_test.c). The binary links
 # test/mldsa_vector_count.c in mldsa_vector.c's place, which counts each
-# call and runs the loops, so it gives the same verdict on every host.
-MLDSA_RUNTIME_TEST_SRCS := $(MLDSA_SIGN_SRCS) mldsa.c mldsa_poly.c $(call host_srcs,sha3.c) ct.c ct_wipe.c \
-                           test/mldsa_vector_count.c
+# call and runs the loops, and test/mldsa_sha3_count.c in sha3.c's and
+# sha3_hw.c's, which counts each SHAKE call on each path and runs sha3.c,
+# so it gives the same verdict on every host.
+MLDSA_RUNTIME_TEST_SRCS := $(MLDSA_SIGN_SRCS) mldsa.c mldsa_poly.c ct.c ct_wipe.c \
+                           test/mldsa_vector_count.c test/mldsa_sha3_count.c
 bin/mldsa_runtime_test: test/mldsa_runtime_test.c $(MLDSA_RUNTIME_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -I. -Itest -o $@ \
@@ -8866,6 +8868,14 @@ WIDEMUL_SPECS := \
 #   more for key generation's NTT of s1 beside its loop.
 #   mldsa_sign_poly.c@host's 25 hold the loops of mlds_poly_center and
 #   mlds_poly_freeze. cpu is the caller's description, not a secret.
+# The ML-DSA-87 hashes on the session's value (docs/decisions.md 173):
+#   on arm64, mldsa_signer.c@host's 27, mldsa_sign_steps.c@host's 46 and
+#   mldsa_sign_pack.c@host's 30 hold 4, 3 and 3 more TBNZ and TBZ on bit 7
+#   of cpu, CH_CPU_CONSTANT_TIME_SHA3, in mld_absorb and mld_squeeze. On
+#   x86-64, where the bit picks nothing, mldsa_sign_steps.c@host's 36 hold
+#   13 more JE: clang now inlines mlds_matrix_row into mlds_commit and
+#   mlds_keygen_row and unrolls its seven samples, and each JE is the test
+#   of a sampler's verdict, which FIPS 204 Appendix C treats as public.
 # keccak_avx2.c, 0 and 1: the permutation's 24 rounds.
 # sha256_hw.c, 6 and 10; sha512_hw.c, 17 and 13; sha256.c@host, 28 and 35:
 #   an update's tests of n and of the count of buffered bytes, the loop
@@ -9177,10 +9187,10 @@ MLDSA_SIGN_BRANCH_CEILING := \
   rv32imac-gcc/mldsa_sign_pack.c:18 \
   rv32ic-gcc/mldsa_signer.c:29 rv32ic-gcc/mldsa_sign_round.c:6 rv32ic-gcc/mldsa_sign_steps.c:24 \
   rv32ic-gcc/mldsa_sign_poly.c:12 rv32ic-gcc/mldsa_sign_pack.c:18 \
-  arm64/mldsa_signer.c@host:23 arm64/mldsa_sign_round.c@host:2 arm64/mldsa_sign_steps.c@host:43 \
-  arm64/mldsa_sign_poly.c@host:25 arm64/mldsa_sign_pack.c@host:27 \
+  arm64/mldsa_signer.c@host:27 arm64/mldsa_sign_round.c@host:2 arm64/mldsa_sign_steps.c@host:46 \
+  arm64/mldsa_sign_poly.c@host:25 arm64/mldsa_sign_pack.c@host:30 \
   x86-64/mldsa_signer.c@host:16 x86-64/mldsa_sign_round.c@host:2 \
-  x86-64/mldsa_sign_steps.c@host:23 x86-64/mldsa_sign_poly.c@host:24 \
+  x86-64/mldsa_sign_steps.c@host:36 x86-64/mldsa_sign_poly.c@host:24 \
   x86-64/mldsa_sign_pack.c@host:22
 QUIC_PACKET_BRANCH_CEILING := \
   m3/quic_packet.c:59 mips32r2/quic_packet.c:42 rv32imac/quic_packet.c:46 m3-gcc/quic_packet.c:46 \

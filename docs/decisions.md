@@ -15171,3 +15171,64 @@ does nothing more.
       - **New signatures for the `mlds_poly_` functions.** The step
         harnesses and `proof/mldsa_sign_step_stubs.h` name them, and the
         dispatchers leave them as the proven reference.
+
+173. **ML-DSA-87's hashes take the session's `ch_cfg.cpu`, so
+    `CH_CPU_CONSTANT_TIME_SHA3` runs them on `sha3_hw.c`.** After entry
+    172 an ML-DSA-87 signature on an M1 took 829 µs under the multiply
+    bit, where OpenSSL 3.6.4's took 713 µs. Keccak was about a third of a
+    signature, and every SHAKE call of the signer and the verifier ran
+    `sha3.c`, whatever the session's value held.
+
+    - **What changes.** `mldsa_poly.h`'s `mld_absorb` and `mld_squeeze`
+      call `sha3.h`'s `shake_absorb_cpu` and `shake_squeeze_cpu` in a
+      host object and `sha3.c`'s calls in every other object. Every
+      absorb and squeeze of the signer, the verifier and the samplers
+      goes through them. The verifier's `mld_sample_ntt_cpu` and
+      `mld_sample_in_ball_cpu` and the signer's three samplers take the
+      value first. `mld_sample_ntt` and `mld_sample_in_ball` keep their
+      contracts and pass 0, so `proof/mldsa_poly_harness.c` keeps
+      proving the same bodies. `mldsa87_verify_cpu` and
+      `mldsa87_challenge_cpu` take the value in a host object, as
+      `mldsa87_sign_cpu` does, and the calls without the suffix pass 0.
+      The signer checks its signature under its own value, and
+      `srv_mldsa.c`'s boot check verifies under the session's.
+    - **Why the bit and not every session.** The bit is the caller's
+      statement that the CPU has FEAT_SHA3 and that its timing does not
+      depend on the data (entry 99). The signer hashes K, rho' and the
+      secret key's tr with mu, so its hashes need the timing half of the
+      statement. The verifier hashes public values, but a CPU without
+      FEAT_SHA3 faults on the instructions, so it needs the first half.
+      So both read the bit, as ML-KEM's hashes do.
+    - **Numbers.** The scratch loop of entry 172 on the M1, at a load
+      average of 4: one key, 300 signatures with 300 values of rnd, and
+      1,000 verifications, under Apple clang 21 at `-O2`.
+
+      | value | sign, mean | sign, median | verify |
+      |---|---|---|---|
+      | 0x1, neither bit | 1,256 µs | 924 µs | 105 µs |
+      | 0x5, multiply bit | 829–831 µs | 624–626 µs | 105–106 µs |
+      | 0x85, both bits | 661–672 µs | 497–511 µs | 77–79 µs |
+
+      OpenSSL 3.6.4 signs in 713 µs and verifies in 180 µs on the same
+      machine (`openssl speed ML-DSA-87`, a mean).
+    - **What holds it.** Both paths write the same bytes, so no vector
+      can tell which ran. `bin/mldsa_runtime_test` links
+      `test/mldsa_sha3_count.c` in place of `sha3.c` and `sha3_hw.c`. It
+      counts each SHAKE call on each path under every `ch_cfg.cpu` value
+      and runs them all on `sha3.c`. Each row's calls under
+      `CH_CPU_PROBED` alone are its reference. Under the SHA-3 bit every
+      one of them must take the instructions' path, and without the bit
+      none may. Only an arm64 object that clang compiled has that path,
+      so the qemu lane's `keccak` part builds the binary with clang for
+      arm64 and runs it under qemu-aarch64. Two INV-16 violations, a
+      squeeze of ExpandMask and the verifier's ExpandA under 0, are caught
+      there.
+    - **A harness fixed on the way.** Since entry 172, `srv_mldsa.c`
+      called `mldsa87_sign_cpu`, and `proof/srv_mldsa_harness.c` still
+      stubbed `mldsa87_sign`. The harness compiles with `CH_CPU_RUNTIME`,
+      so the call had no body and CBMC gave it a nondeterministic result
+      with no assertion. The stubs now carry the `_cpu` names, for the
+      sign and for the boot check's verify.
+    - **Rejected:** **a `cpu` field in `sha3.h`'s `shake`.** It would
+      reach every SHAKE caller of the tree for one ML-DSA change, and a
+      context's value could differ from the session's.

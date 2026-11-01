@@ -17,6 +17,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "sha3.h"
+
 #define MLD_N 256
 #define MLD_Q 8380417
 #define MLD_QINV 58728449U                 // q^-1 mod 2^32
@@ -136,10 +138,36 @@ int mld_poly_unpack_z(mld_poly *p, const uint8_t in[MLD_Z_BYTES]);
 void mld_poly_use_hint(uint8_t out[MLD_W1_BYTES], const mld_poly *w, const uint8_t *hints,
                        size_t hint_count);
 
+// shake_absorb and shake_squeeze for a session whose ch_cfg.cpu is cpu. In
+// a host object they take the session's value, so that
+// CH_CPU_CONSTANT_TIME_SHA3 runs the permutation on sha3_hw.c (sha3.h).
+// Every other object holds sha3.c alone, and cpu picks nothing. A call
+// that holds no cpu passes 0, which names no instruction.
+static inline void mld_absorb(uint32_t cpu, shake *s, const uint8_t *in, size_t n) {
+#ifdef CH_CPU_RUNTIME
+    shake_absorb_cpu(cpu, s, in, n);
+#else
+    (void)cpu;
+    shake_absorb(s, in, n);
+#endif
+}
+
+static inline void mld_squeeze(uint32_t cpu, shake *s, uint8_t *out, size_t n) {
+#ifdef CH_CPU_RUNTIME
+    shake_squeeze_cpu(cpu, s, out, n);
+#else
+    (void)cpu;
+    shake_squeeze(s, out, n);
+#endif
+}
+
 // FIPS 204 Algorithm 30, RejNTTPoly, for entry A[r][s]: SHAKE128(rho || s ||
 // r). Returns 1 when MLD_SAMPLE_BLOCKS blocks give all 256 coefficients,
-// and 0 otherwise.
+// and 0 otherwise. mld_sample_ntt_cpu is the same, with the hash on the
+// session's cpu value; mld_sample_ntt passes 0.
 int mld_sample_ntt(mld_poly *p, const uint8_t rho[MLD_RHO_BYTES], uint8_t s, uint8_t r);
+int mld_sample_ntt_cpu(uint32_t cpu, mld_poly *p, const uint8_t rho[MLD_RHO_BYTES], uint8_t s,
+                       uint8_t r);
 
 // RejNTTPoly's step over groups three-byte groups at buf (FIPS 204
 // Algorithm 14, CoeffFromThreeBytes): each group whose 23-bit value is
@@ -149,7 +177,9 @@ unsigned mld_sample_groups(mld_poly *p, unsigned j, const uint8_t *buf, size_t g
 
 // FIPS 204 Algorithm 29, SampleInBall: tau coefficients of +1 or -1 from
 // SHAKE256(c_tilde). Returns 1 when MLD_BALL_BYTES bytes place all 60, and
-// 0 otherwise.
+// 0 otherwise. mld_sample_in_ball_cpu is the same, with the hash on the
+// session's cpu value; mld_sample_in_ball passes 0.
 int mld_sample_in_ball(mld_poly *c, const uint8_t c_tilde[64]);
+int mld_sample_in_ball_cpu(uint32_t cpu, mld_poly *c, const uint8_t c_tilde[64]);
 
 #endif

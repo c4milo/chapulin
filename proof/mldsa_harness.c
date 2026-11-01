@@ -88,14 +88,17 @@ void mld_poly_use_hint(uint8_t out[MLD_W1_BYTES], const mld_poly *w, const uint8
     fill_nondet(out, MLD_W1_BYTES);
 }
 
-int mld_sample_ntt(mld_poly *p, const uint8_t rho[MLD_RHO_BYTES], uint8_t s, uint8_t r) {
+int mld_sample_ntt_cpu(uint32_t cpu, mld_poly *p, const uint8_t rho[MLD_RHO_BYTES], uint8_t s,
+                       uint8_t r) {
+    (void)cpu;
     __CPROVER_assert(__CPROVER_r_ok(rho, MLD_RHO_BYTES), "rho readable");
     __CPROVER_assert(s < MLD_L && r < MLD_K, "A's entry is inside the matrix");
     havoc_poly(p);
     return nondet_verdict();
 }
 
-int mld_sample_in_ball(mld_poly *c, const uint8_t c_tilde[64]) {
+int mld_sample_in_ball_cpu(uint32_t cpu, mld_poly *c, const uint8_t c_tilde[64]) {
+    (void)cpu;
     __CPROVER_assert(__CPROVER_r_ok(c_tilde, 64), "c_tilde readable");
     havoc_poly(c);
     return nondet_verdict();

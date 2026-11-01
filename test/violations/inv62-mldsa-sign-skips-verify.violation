@@ -7,8 +7,8 @@ reason: mldsa87_sign returns its signature without the check under the
   key's sk and requires 0 with sig zeroed.
 
 --- old
-    if (rounds == 0 ||
-        !mldsa87_verify(pk, pk_len, msg, msg_len, ctx, ctx_len, sig, MLDSA87_SIG_LEN)) {
+    if (rounds == 0 || !verify_with(cpu, pk, pk_len, msg, msg_len, ctx, ctx_len, sig)) {
 --- new
     (void)pk;
+    (void)verify_with;
     if (rounds == 0) {

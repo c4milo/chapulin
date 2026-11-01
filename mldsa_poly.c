@@ -151,15 +151,20 @@ unsigned mld_sample_groups(mld_poly *p, unsigned j, const uint8_t *buf, size_t g
 }
 
 int mld_sample_ntt(mld_poly *p, const uint8_t rho[MLD_RHO_BYTES], uint8_t s, uint8_t r) {
+    return mld_sample_ntt_cpu(0, p, rho, s, r);
+}
+
+int mld_sample_ntt_cpu(uint32_t cpu, mld_poly *p, const uint8_t rho[MLD_RHO_BYTES], uint8_t s,
+                       uint8_t r) {
     const uint8_t index[2] = {s, r};
     uint8_t block[SHAKE128_RATE];
     shake xof;
     shake128_init(&xof);
-    shake_absorb(&xof, rho, MLD_RHO_BYTES);
-    shake_absorb(&xof, index, sizeof index);
+    mld_absorb(cpu, &xof, rho, MLD_RHO_BYTES);
+    mld_absorb(cpu, &xof, index, sizeof index);
     unsigned j = 0;
     for (unsigned n = 0; n < MLD_SAMPLE_BLOCKS && j < MLD_N; n++) {
-        shake_squeeze(&xof, block, sizeof block);
+        mld_squeeze(cpu, &xof, block, sizeof block);
         j = mld_sample_groups(p, j, block, MLD_SAMPLE_BLOCK_GROUPS);
     }
     return j == MLD_N;
@@ -169,11 +174,15 @@ int mld_sample_ntt(mld_poly *p, const uint8_t rho[MLD_RHO_BYTES], uint8_t s, uin
 // uses the first tau. Each later byte is a position j, kept when j <= i.
 // Then c[i] takes c[j], and c[j] takes the next sign.
 int mld_sample_in_ball(mld_poly *c, const uint8_t c_tilde[64]) {
+    return mld_sample_in_ball_cpu(0, c, c_tilde);
+}
+
+int mld_sample_in_ball_cpu(uint32_t cpu, mld_poly *c, const uint8_t c_tilde[64]) {
     uint8_t stream[MLD_BALL_BYTES];
     shake xof;
     shake256_init(&xof);
-    shake_absorb(&xof, c_tilde, 64);
-    shake_squeeze(&xof, stream, sizeof stream);
+    mld_absorb(cpu, &xof, c_tilde, 64);
+    mld_squeeze(cpu, &xof, stream, sizeof stream);
     uint64_t signs = 0;
     for (unsigned b = 0; b < 8; b++) {
         signs |= (uint64_t)stream[b] << (8 * b);

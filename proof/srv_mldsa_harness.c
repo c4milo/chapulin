@@ -11,11 +11,13 @@
 // objects: one of the length ch_mldsa_key_from_pem writes, an object too
 // short for either key, or NULL, and the length is the size of the object
 // it names, the caller's contract. Under that contract key_lengths_match
-// is the line that keeps srv_mldsa.c from handing mldsa87_sign a buffer
+// is the line that keeps srv_mldsa.c from handing mldsa87_sign_cpu a buffer
 // shorter than it reads, and the stub's readability assertions are what
 // fail if it stops.
 //
-// What is a stub. mldsa87_sign and mldsa87_verify have their own
+// What is a stub. mldsa87_sign_cpu and mldsa87_verify_cpu, the calls a
+// host object's srv_mldsa.c makes, are mldsa87_sign's and mldsa87_verify's
+// bodies under the session's cpu value, and those have their own
 // harnesses (mldsa_signer_harness.c and the mldsa harnesses), so each is a
 // contract stub that asserts what the real function reads and writes and
 // returns an unconstrained verdict. So are the transcript snapshot, the
@@ -29,27 +31,30 @@
 
 #include "srv_mldsa.c"
 
-int mldsa87_sign(uint8_t sig[MLDSA87_SIG_LEN], const uint8_t *sk, size_t sk_len, const uint8_t *pk,
-                 size_t pk_len, const uint8_t *msg, size_t msg_len, const uint8_t *ctx,
-                 size_t ctx_len, const uint8_t rnd[MLDSA87_RND_LEN]) {
+int mldsa87_sign_cpu(uint32_t cpu, uint8_t sig[MLDSA87_SIG_LEN], const uint8_t *sk, size_t sk_len,
+                     const uint8_t *pk, size_t pk_len, const uint8_t *msg, size_t msg_len,
+                     const uint8_t *ctx, size_t ctx_len, const uint8_t rnd[MLDSA87_RND_LEN]) {
+    (void)cpu;
     __CPROVER_assert(sk_len == MLDSA87_SK_LEN && __CPROVER_r_ok(sk, sk_len),
-                     "mldsa87_sign: secret key readable at its length");
+                     "mldsa87_sign_cpu: secret key readable at its length");
     __CPROVER_assert(pk_len == MLDSA87_PK_LEN && __CPROVER_r_ok(pk, pk_len),
-                     "mldsa87_sign: public key readable at its length");
-    __CPROVER_assert(__CPROVER_r_ok(msg, msg_len), "mldsa87_sign: content readable");
-    __CPROVER_assert(ctx == NULL && ctx_len == 0, "mldsa87_sign: the context is empty");
-    __CPROVER_assert(__CPROVER_r_ok(rnd, MLDSA87_RND_LEN), "mldsa87_sign: rnd readable");
-    __CPROVER_assert(__CPROVER_w_ok(sig, MLDSA87_SIG_LEN), "mldsa87_sign: signature writable");
+                     "mldsa87_sign_cpu: public key readable at its length");
+    __CPROVER_assert(__CPROVER_r_ok(msg, msg_len), "mldsa87_sign_cpu: content readable");
+    __CPROVER_assert(ctx == NULL && ctx_len == 0, "mldsa87_sign_cpu: the context is empty");
+    __CPROVER_assert(__CPROVER_r_ok(rnd, MLDSA87_RND_LEN), "mldsa87_sign_cpu: rnd readable");
+    __CPROVER_assert(__CPROVER_w_ok(sig, MLDSA87_SIG_LEN), "mldsa87_sign_cpu: signature writable");
     fill_nondet(sig, MLDSA87_SIG_LEN);
     return nondet_u8() ? 1 : 0;
 }
 
-int mldsa87_verify(const uint8_t *pk, size_t pk_len, const uint8_t *msg, size_t msg_len,
-                   const uint8_t *ctx, size_t ctx_len, const uint8_t *sig, size_t sig_len) {
-    __CPROVER_assert(__CPROVER_r_ok(pk, pk_len), "mldsa87_verify: key readable");
-    __CPROVER_assert(__CPROVER_r_ok(msg, msg_len), "mldsa87_verify: content readable");
-    __CPROVER_assert(ctx == NULL && ctx_len == 0, "mldsa87_verify: the context is empty");
-    __CPROVER_assert(__CPROVER_r_ok(sig, sig_len), "mldsa87_verify: signature readable");
+int mldsa87_verify_cpu(uint32_t cpu, const uint8_t *pk, size_t pk_len, const uint8_t *msg,
+                       size_t msg_len, const uint8_t *ctx, size_t ctx_len, const uint8_t *sig,
+                       size_t sig_len) {
+    (void)cpu;
+    __CPROVER_assert(__CPROVER_r_ok(pk, pk_len), "mldsa87_verify_cpu: key readable");
+    __CPROVER_assert(__CPROVER_r_ok(msg, msg_len), "mldsa87_verify_cpu: content readable");
+    __CPROVER_assert(ctx == NULL && ctx_len == 0, "mldsa87_verify_cpu: the context is empty");
+    __CPROVER_assert(__CPROVER_r_ok(sig, sig_len), "mldsa87_verify_cpu: signature readable");
     return nondet_u8() ? 1 : 0;
 }
 

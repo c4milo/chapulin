@@ -175,7 +175,7 @@ static void test_sample_in_ball(void) {
         mld_poly want;
         mld_poly got;
         int placed_want = mld_sample_in_ball(&want, c_tilde);
-        uint32_t placed = mlds_sample_in_ball(&got, c_tilde);
+        uint32_t placed = mlds_sample_in_ball(0, &got, c_tilde);
         bad += placed != (uint32_t)placed_want || memcmp(&want, &got, sizeof want) != 0;
     }
     CHECK(bad == 0);

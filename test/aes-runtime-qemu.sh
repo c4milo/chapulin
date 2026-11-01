@@ -281,9 +281,11 @@
 #   p256-equiv        bin/p256_equiv_test for x86-64 and for arm64, for the
 #                     violations of the intrinsics in p256_wide_word.h's
 #                     carry steps
-#   keccak            bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test
-#                     for arm64, built with clang, for the violations of
-#                     what sha3_hw.c computes and leaves on the stack
+#   keccak            bin/sha3_hw_equiv_test, bin/mlkem_hw_equiv_test and
+#                     bin/mldsa_runtime_test for arm64, built with clang,
+#                     for the violations of what sha3_hw.c computes and
+#                     leaves on the stack and of the path ML-DSA-87's
+#                     hashes take
 #   mlkem-vector      bin/mlkem_vector_equiv_test for x86-64 and for arm64,
 #                     for the violations of mlkem_vector.c's SSE2 and NEON
 #                     arms
@@ -808,9 +810,16 @@ if [ -z "$only" ] || [ "$only" = keccak ]; then
     CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 \
         "ML-KEM's copies and mlkem.c disagree, the object holds no Keccak on the instructions, or this qemu's max model lacks FEAT_SHA3" \
         mlkem_hw_equiv_test
+    # ML-DSA-87's SHAKE calls under each ch_cfg.cpu value, as clang
+    # compiles them for arm64: only there does the SHA-3 bit name a path,
+    # so only this build counts them on both (test/mldsa_sha3_count.h).
+    "$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST \
+        -o "$arm64_out/mldsa_runtime_keccak_test" test/mldsa_runtime_test.c "${mldsa_runtime_srcs[@]}" || exit 1
+    expect_arm64 max 0 "an ML-DSA-87 SHAKE call ran on a path its ch_cfg.cpu value does not name" \
+        mldsa_runtime_keccak_test
 fi
 if [ "$only" = keccak ]; then
-    echo "aes-runtime-qemu: as clang compiles them for arm64, bin/sha3_hw_equiv_test held sha3_hw.c to sha3.c and found no lane on the stack, and bin/mlkem_hw_equiv_test held ML-KEM's copies to mlkem.c"
+    echo "aes-runtime-qemu: as clang compiles them for arm64, bin/sha3_hw_equiv_test held sha3_hw.c to sha3.c and found no lane on the stack, bin/mlkem_hw_equiv_test held ML-KEM's copies to mlkem.c, and bin/mldsa_runtime_test counted ML-DSA-87's SHAKE calls on each path"
     exit 0
 fi
 

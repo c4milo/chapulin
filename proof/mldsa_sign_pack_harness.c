@@ -75,7 +75,7 @@ int main(void) {
 
     uint8_t rho2[64];
     fill_nondet(rho2, sizeof rho2);
-    mlds_expand_mask(&p, rho2, (uint16_t)nondet_u32());
+    mlds_expand_mask(0, &p, rho2, (uint16_t)nondet_u32());
     __CPROVER_assert(p.coeffs[n] <= MLD_GAMMA1 && p.coeffs[n] > -MLD_GAMMA1,
                      "mlds_expand_mask: y in (-gamma1, gamma1]");
     return 0;

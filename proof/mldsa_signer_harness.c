@@ -75,7 +75,8 @@ void mlds_poly_ntt(mld_poly *p) {
     havoc_range(p, INT32_MIN, INT32_MAX);
 }
 
-uint32_t mlds_sample_eta(mld_poly *p, const uint8_t rho_prime[64], uint16_t nonce) {
+uint32_t mlds_sample_eta(uint32_t cpu, mld_poly *p, const uint8_t rho_prime[64], uint16_t nonce) {
+    (void)cpu;
     __CPROVER_assert(__CPROVER_r_ok(rho_prime, 64), "mlds_sample_eta: rho' readable");
     __CPROVER_assert(nonce < MLD_L + MLD_K, "mlds_sample_eta: the nonce of s1 or s2");
     havoc_range(p, -MLDS_ETA, MLDS_ETA);

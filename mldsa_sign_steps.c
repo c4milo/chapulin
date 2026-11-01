@@ -16,7 +16,7 @@
 int mlds_matrix_row(uint32_t cpu, mld_poly *row, mld_poly *entry, const uint8_t rho[MLD_RHO_BYTES],
                     unsigned i, const mld_poly v_hat[MLD_L]) {
     for (unsigned j = 0; j < MLD_L; j++) {
-        if (!mld_sample_ntt(entry, rho, (uint8_t)j, (uint8_t)i)) {
+        if (!mld_sample_ntt_cpu(cpu, entry, rho, (uint8_t)j, (uint8_t)i)) {
             // Defined values for the caller. Its ct_wipe of its state
             // writes zero to row afterwards as well.
             for (unsigned n = 0; n < MLD_N; n++) {
@@ -45,12 +45,12 @@ uint32_t mlds_key_in_range(mlds_round *st, const uint8_t sk[MLDSA87_SK_LEN]) {
 int mlds_commit(mlds_round *st, const uint8_t *sk, const uint8_t mu[MLDSA_MU_LEN],
                 const uint8_t rho2[64], unsigned kappa) {
     for (unsigned j = 0; j < MLD_L; j++) {
-        mlds_expand_mask(&st->yz[j], rho2, (uint16_t)(kappa + j));
+        mlds_expand_mask(st->cpu, &st->yz[j], rho2, (uint16_t)(kappa + j));
         mlds_ntt(st->cpu, &st->yz[j]);
     }
     shake h;
     shake256_init(&h);
-    shake_absorb(&h, mu, MLDSA_MU_LEN);
+    mld_absorb(st->cpu, &h, mu, MLDSA_MU_LEN);
     uint8_t w1[MLD_W1_BYTES];
     int32_t r0 = 0; // the low bits, which w1 does not read
     for (unsigned i = 0; i < MLD_K; i++) {
@@ -61,12 +61,12 @@ int mlds_commit(mlds_round *st, const uint8_t *sk, const uint8_t mu[MLDSA_MU_LEN
             st->product.coeffs[n] = mlds_decompose(st->w[i].coeffs[n], &r0);
         }
         mlds_pack(w1, &st->product, 4, 0);
-        shake_absorb(&h, w1, sizeof w1);
+        mld_absorb(st->cpu, &h, w1, sizeof w1);
     }
-    shake_squeeze(&h, st->c_tilde, sizeof st->c_tilde);
+    mld_squeeze(st->cpu, &h, st->c_tilde, sizeof st->c_tilde);
     ct_wipe(&h, sizeof h);
     ct_wipe(w1, sizeof w1);
-    uint32_t placed = mlds_sample_in_ball(&st->c_hat, st->c_tilde);
+    uint32_t placed = mlds_sample_in_ball(st->cpu, &st->c_hat, st->c_tilde);
     mlds_ntt(st->cpu, &st->c_hat);
     // SampleInBall at its bound, which ends the call (FIPS 204 Appendix C).
     CT_DECLASSIFY(&placed, sizeof placed);
@@ -79,7 +79,7 @@ uint32_t mlds_response(mlds_round *st, const uint8_t *sk, const uint8_t rho2[64]
         (void)mlds_unpack_eta(&st->s_hat, sk + MLDS_SK_S1_AT + (size_t)j * MLDS_ETA_BYTES);
         mlds_ntt(st->cpu, &st->s_hat);
         mlds_product(st->cpu, &st->product, &st->c_hat, &st->s_hat);
-        mlds_expand_mask(&st->yz[j], rho2, (uint16_t)(kappa + j));
+        mlds_expand_mask(st->cpu, &st->yz[j], rho2, (uint16_t)(kappa + j));
         for (unsigned n = 0; n < MLD_N; n++) {
             int32_t z = st->yz[j].coeffs[n] + st->product.coeffs[n];
             st->yz[j].coeffs[n] = z;
@@ -151,7 +151,7 @@ void mlds_encode(uint8_t sig[MLDSA87_SIG_LEN], const mlds_round *st) {
 uint32_t mlds_keygen_row(mlds_keygen_state *st, uint8_t *sk, uint8_t *pk, unsigned i) {
     uint32_t ok =
         (uint32_t)mlds_matrix_row(st->cpu, &st->row, &st->entry, st->seeds, i, st->s1_hat);
-    ok &= mlds_sample_eta(&st->s2, st->seeds + 32, (uint16_t)(MLD_L + i));
+    ok &= mlds_sample_eta(st->cpu, &st->s2, st->seeds + 32, (uint16_t)(MLD_L + i));
     mlds_pack(sk + MLDS_SK_S2_AT + (size_t)i * MLDS_ETA_BYTES, &st->s2, 3, MLDS_ETA);
     // t1 takes row's place and t0 takes s2's, each coefficient once read.
     for (unsigned n = 0; n < MLD_N; n++) {

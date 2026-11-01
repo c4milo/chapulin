@@ -128,26 +128,31 @@ uint32_t mlds_unpack_eta(mld_poly *p, const uint8_t in[MLDS_ETA_BYTES]) {
     return nondet_bit();
 }
 
-uint32_t mlds_sample_eta(mld_poly *p, const uint8_t rho_prime[64], uint16_t nonce) {
+uint32_t mlds_sample_eta(uint32_t cpu, mld_poly *p, const uint8_t rho_prime[64], uint16_t nonce) {
+    (void)cpu;
     __CPROVER_assert(__CPROVER_r_ok(rho_prime, 64), "mlds_sample_eta: rho' readable");
     __CPROVER_assert(nonce < MLD_L + MLD_K, "mlds_sample_eta: the nonce of s1 or s2");
     havoc_range(p, -MLDS_ETA, MLDS_ETA);
     return nondet_bit();
 }
 
-void mlds_expand_mask(mld_poly *p, const uint8_t rho2[64], uint16_t nonce) {
+void mlds_expand_mask(uint32_t cpu, mld_poly *p, const uint8_t rho2[64], uint16_t nonce) {
+    (void)cpu;
     (void)nonce;
     __CPROVER_assert(__CPROVER_r_ok(rho2, 64), "mlds_expand_mask: rho'' readable");
     havoc_range(p, -MLD_GAMMA1 + 1, MLD_GAMMA1);
 }
 
-uint32_t mlds_sample_in_ball(mld_poly *c, const uint8_t c_tilde[64]) {
+uint32_t mlds_sample_in_ball(uint32_t cpu, mld_poly *c, const uint8_t c_tilde[64]) {
+    (void)cpu;
     __CPROVER_assert(__CPROVER_r_ok(c_tilde, 64), "mlds_sample_in_ball: c-tilde readable");
     havoc_range(c, -1, 1);
     return nondet_bit();
 }
 
-int mld_sample_ntt(mld_poly *p, const uint8_t rho[MLD_RHO_BYTES], uint8_t s, uint8_t r) {
+int mld_sample_ntt_cpu(uint32_t cpu, mld_poly *p, const uint8_t rho[MLD_RHO_BYTES], uint8_t s,
+                       uint8_t r) {
+    (void)cpu;
     __CPROVER_assert(__CPROVER_r_ok(rho, MLD_RHO_BYTES), "rho readable");
     __CPROVER_assert(s < MLD_L && r < MLD_K, "A's entry is inside the matrix");
     havoc_poly(p);

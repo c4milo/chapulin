@@ -162,7 +162,7 @@ int srv_identity_check(const ch_cfg *cfg, uint16_t sigalg) {
     uint8_t content[SRV_MLDSA_CONTENT_LEN];
     size_t n = signed_content(transcript, content);
     if (n != SRV_MLDSA_CONTENT_LEN ||
-        !mldsa87_verify(id->pub, id->pub_len, content, n, NULL, 0, sig, sizeof sig)) {
+        !mldsa87_verify_cpu(cfg->cpu, id->pub, id->pub_len, content, n, NULL, 0, sig, sizeof sig)) {
         return CH_EINVAL;
     }
     return CH_OK;

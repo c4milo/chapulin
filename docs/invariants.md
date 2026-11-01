@@ -5100,7 +5100,11 @@ last `ROLE=server` stub, as the entry said it would.
   instructions run only for a session whose caller set
   `CH_CPU_CONSTANT_TIME_SHA3`. `sha3.h`'s `sha3_on_instructions` reads
   that bit, and the entries that end `sha3.h` and `mlkem.h` take the
-  session's `ch_cfg.cpu` first and branch once on it. `sha3_hw.c` reads
+  session's `ch_cfg.cpu` first and branch once on it. ML-DSA-87's
+  hashes take it through `mldsa_poly.h`'s `mld_absorb` and
+  `mld_squeeze`, and `bin/mldsa_runtime_test`, built with clang for
+  arm64 in the qemu lane's `keccak` part, counts each SHAKE call on each
+  path under every value (decision 173). `sha3_hw.c` reads
   no table with a secret index and branches on lengths, positions in a
   block and the rate alone: the arm64 spec holds its conditional branches
   at 72, and the two copies' at 5 and 56, the counts of the files they

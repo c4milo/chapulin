@@ -84,16 +84,18 @@ uint32_t mlds_unpack_eta(mld_poly *p, const uint8_t in[MLDS_ETA_BYTES]);
 // FIPS 204 Algorithm 31, RejBoundedPoly, at eta = 2, for the polynomial
 // SHAKE256(rho' || nonce) gives (Algorithm 33, ExpandS). Returns 1 when
 // MLDS_ETA_STREAM_BYTES bytes give all 256 coefficients, and 0 otherwise.
-uint32_t mlds_sample_eta(mld_poly *p, const uint8_t rho_prime[64], uint16_t nonce);
+// cpu, here and in the two samplers below, is the session's ch_cfg.cpu, or
+// 0, for the hash (mld_absorb in mldsa_poly.h).
+uint32_t mlds_sample_eta(uint32_t cpu, mld_poly *p, const uint8_t rho_prime[64], uint16_t nonce);
 
 // FIPS 204 Algorithm 34, ExpandMask, for one polynomial: SHAKE256(rho'' ||
 // nonce) at 20 bits a coefficient, as gamma1 minus each value.
-void mlds_expand_mask(mld_poly *p, const uint8_t rho2[64], uint16_t nonce);
+void mlds_expand_mask(uint32_t cpu, mld_poly *p, const uint8_t rho2[64], uint16_t nonce);
 
 // FIPS 204 Algorithm 29, SampleInBall, over the same MLD_BALL_BYTES bytes
 // that mld_sample_in_ball reads. Returns 1 when they place all 60
 // coefficients, and 0 otherwise. c is the same polynomial that
 // mld_sample_in_ball writes.
-uint32_t mlds_sample_in_ball(mld_poly *c, const uint8_t c_tilde[64]);
+uint32_t mlds_sample_in_ball(uint32_t cpu, mld_poly *c, const uint8_t c_tilde[64]);
 
 #endif

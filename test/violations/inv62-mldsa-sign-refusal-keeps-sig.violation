@@ -7,9 +7,9 @@ reason: a signature that fails the check under pk stays in the caller's
   that refusal.
 
 --- old
-        !mldsa87_verify(pk, pk_len, msg, msg_len, ctx, ctx_len, sig, MLDSA87_SIG_LEN)) {
+    if (rounds == 0 || !verify_with(cpu, pk, pk_len, msg, msg_len, ctx, ctx_len, sig)) {
         ct_wipe(sig, MLDSA87_SIG_LEN);
         return 0;
 --- new
-        !mldsa87_verify(pk, pk_len, msg, msg_len, ctx, ctx_len, sig, MLDSA87_SIG_LEN)) {
+    if (rounds == 0 || !verify_with(cpu, pk, pk_len, msg, msg_len, ctx, ctx_len, sig)) {
         return 0;

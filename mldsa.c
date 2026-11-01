@@ -94,13 +94,13 @@ static int mld_hints_well_formed(const uint8_t y[MLD_HINT_BYTES]) {
 
 // w1Encode of row i of w'_Approx (FIPS 204 Algorithm 8, steps 9 and 10).
 // Returns 0 when an entry of A stops at its sampling bound.
-static int mld_row_w1(uint8_t w1[MLD_W1_BYTES], unsigned i, const uint8_t pk[MLDSA87_PK_LEN],
-                      const uint8_t sig[MLDSA87_SIG_LEN], const mld_poly z_hat[MLD_L],
-                      const mld_poly *c_hat) {
+static int mld_row_w1(uint32_t cpu, uint8_t w1[MLD_W1_BYTES], unsigned i,
+                      const uint8_t pk[MLDSA87_PK_LEN], const uint8_t sig[MLDSA87_SIG_LEN],
+                      const mld_poly z_hat[MLD_L], const mld_poly *c_hat) {
     mld_poly entry;
     mld_poly sum;
     for (unsigned j = 0; j < MLD_L; j++) {
-        if (!mld_sample_ntt(&entry, pk, (uint8_t)j, (uint8_t)i)) {
+        if (!mld_sample_ntt_cpu(cpu, &entry, pk, (uint8_t)j, (uint8_t)i)) {
             return 0;
         }
         if (j == 0) {
@@ -121,8 +121,11 @@ static int mld_row_w1(uint8_t w1[MLD_W1_BYTES], unsigned i, const uint8_t pk[MLD
     return 1;
 }
 
-int mldsa87_challenge(uint8_t c_tilde[MLDSA87_CTILDE_LEN], const uint8_t pk[MLDSA87_PK_LEN],
-                      const uint8_t mu[MLDSA_MU_LEN], const uint8_t sig[MLDSA87_SIG_LEN]) {
+// mldsa87_challenge with every hash on cpu, the session's ch_cfg.cpu, or 0
+// for a call that holds none (mld_absorb).
+static int challenge(uint32_t cpu, uint8_t c_tilde[MLDSA87_CTILDE_LEN],
+                     const uint8_t pk[MLDSA87_PK_LEN], const uint8_t mu[MLDSA_MU_LEN],
+                     const uint8_t sig[MLDSA87_SIG_LEN]) {
     if (!mld_hints_well_formed(sig + MLD_SIG_HINT_AT)) {
         return 0;
     }
@@ -134,26 +137,33 @@ int mldsa87_challenge(uint8_t c_tilde[MLDSA87_CTILDE_LEN], const uint8_t pk[MLDS
         mld_ntt(&z_hat[j]);
     }
     mld_poly c_hat;
-    if (!mld_sample_in_ball(&c_hat, sig)) {
+    if (!mld_sample_in_ball_cpu(cpu, &c_hat, sig)) {
         return 0;
     }
     mld_ntt(&c_hat);
     shake h;
     shake256_init(&h);
-    shake_absorb(&h, mu, MLDSA_MU_LEN);
+    mld_absorb(cpu, &h, mu, MLDSA_MU_LEN);
     for (unsigned i = 0; i < MLD_K; i++) {
         uint8_t w1[MLD_W1_BYTES];
-        if (!mld_row_w1(w1, i, pk, sig, z_hat, &c_hat)) {
+        if (!mld_row_w1(cpu, w1, i, pk, sig, z_hat, &c_hat)) {
             return 0;
         }
-        shake_absorb(&h, w1, sizeof w1);
+        mld_absorb(cpu, &h, w1, sizeof w1);
     }
-    shake_squeeze(&h, c_tilde, MLDSA87_CTILDE_LEN);
+    mld_squeeze(cpu, &h, c_tilde, MLDSA87_CTILDE_LEN);
     return 1;
 }
 
-int mldsa87_verify(const uint8_t *pk, size_t pk_len, const uint8_t *msg, size_t msg_len,
-                   const uint8_t *ctx, size_t ctx_len, const uint8_t *sig, size_t sig_len) {
+int mldsa87_challenge(uint8_t c_tilde[MLDSA87_CTILDE_LEN], const uint8_t pk[MLDSA87_PK_LEN],
+                      const uint8_t mu[MLDSA_MU_LEN], const uint8_t sig[MLDSA87_SIG_LEN]) {
+    return challenge(0, c_tilde, pk, mu, sig);
+}
+
+// mldsa87_verify with every hash on cpu, as challenge.
+static int verify(uint32_t cpu, const uint8_t *pk, size_t pk_len, const uint8_t *msg,
+                  size_t msg_len, const uint8_t *ctx, size_t ctx_len, const uint8_t *sig,
+                  size_t sig_len) {
     if (pk_len != MLDSA87_PK_LEN || sig_len != MLDSA87_SIG_LEN || ctx_len > MLDSA_CONTEXT_MAX) {
         return 0;
     }
@@ -163,19 +173,38 @@ int mldsa87_verify(const uint8_t *pk, size_t pk_len, const uint8_t *msg, size_t 
     uint8_t tr[64];
     shake h;
     shake256_init(&h);
-    shake_absorb(&h, pk, MLDSA87_PK_LEN);
-    shake_squeeze(&h, tr, sizeof tr);
+    mld_absorb(cpu, &h, pk, MLDSA87_PK_LEN);
+    mld_squeeze(cpu, &h, tr, sizeof tr);
     const uint8_t prefix[2] = {0, (uint8_t)ctx_len};
     uint8_t mu[MLDSA_MU_LEN];
     shake256_init(&h);
-    shake_absorb(&h, tr, sizeof tr);
-    shake_absorb(&h, prefix, sizeof prefix);
-    shake_absorb(&h, ctx, ctx_len);
-    shake_absorb(&h, msg, msg_len);
-    shake_squeeze(&h, mu, sizeof mu);
+    mld_absorb(cpu, &h, tr, sizeof tr);
+    mld_absorb(cpu, &h, prefix, sizeof prefix);
+    mld_absorb(cpu, &h, ctx, ctx_len);
+    mld_absorb(cpu, &h, msg, msg_len);
+    mld_squeeze(cpu, &h, mu, sizeof mu);
     uint8_t c_tilde[MLDSA87_CTILDE_LEN];
-    if (!mldsa87_challenge(c_tilde, pk, mu, sig)) {
+    if (!challenge(cpu, c_tilde, pk, mu, sig)) {
         return 0;
     }
     return ct_memeq(c_tilde, sig, MLDSA87_CTILDE_LEN) == 1;
 }
+
+int mldsa87_verify(const uint8_t *pk, size_t pk_len, const uint8_t *msg, size_t msg_len,
+                   const uint8_t *ctx, size_t ctx_len, const uint8_t *sig, size_t sig_len) {
+    return verify(0, pk, pk_len, msg, msg_len, ctx, ctx_len, sig, sig_len);
+}
+
+#ifdef CH_CPU_RUNTIME
+int mldsa87_verify_cpu(uint32_t cpu, const uint8_t *pk, size_t pk_len, const uint8_t *msg,
+                       size_t msg_len, const uint8_t *ctx, size_t ctx_len, const uint8_t *sig,
+                       size_t sig_len) {
+    return verify(cpu, pk, pk_len, msg, msg_len, ctx, ctx_len, sig, sig_len);
+}
+
+int mldsa87_challenge_cpu(uint32_t cpu, uint8_t c_tilde[MLDSA87_CTILDE_LEN],
+                          const uint8_t pk[MLDSA87_PK_LEN], const uint8_t mu[MLDSA_MU_LEN],
+                          const uint8_t sig[MLDSA87_SIG_LEN]) {
+    return challenge(cpu, c_tilde, pk, mu, sig);
+}
+#endif

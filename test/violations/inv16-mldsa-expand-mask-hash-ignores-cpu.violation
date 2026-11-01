@@ -1,0 +1,20 @@
+invariant: INV-16
+file: mldsa_sign_pack.c
+catches: test/docker-aes-runtime-qemu.sh keccak
+reason: ExpandMask squeezes y's stream under 0 in place of the session's
+  value, so a signer whose caller stated CH_CPU_CONSTANT_TIME_SHA3 hashes
+  that part of each round on sha3.c. Every byte stays right, so no vector
+  notices, and the signature only loses speed. bin/mldsa_runtime_test
+  counts each SHAKE call on each path under every ch_cfg.cpu value and
+  requires all of them on the instructions' path under the bit. Only an
+  arm64 object that clang compiled has that path, so the script builds the
+  binary with clang for arm64 and runs it under qemu-aarch64.
+
+--- old
+    mld_absorb(cpu, &h, rho2, 64);
+    mld_absorb(cpu, &h, index, sizeof index);
+    mld_squeeze(cpu, &h, stream, sizeof stream);
+--- new
+    mld_absorb(cpu, &h, rho2, 64);
+    mld_absorb(cpu, &h, index, sizeof index);
+    mld_squeeze(0, &h, stream, sizeof stream);

@@ -43,4 +43,16 @@ int mldsa87_verify(const uint8_t *pk, size_t pk_len, const uint8_t *msg, size_t 
 int mldsa87_challenge(uint8_t c_tilde[MLDSA87_CTILDE_LEN], const uint8_t pk[MLDSA87_PK_LEN],
                       const uint8_t mu[MLDSA_MU_LEN], const uint8_t sig[MLDSA87_SIG_LEN]);
 
+#ifdef CH_CPU_RUNTIME
+// The two calls above in a host object, with the session's ch_cfg.cpu
+// first (cpu_cfg.h): CH_CPU_CONSTANT_TIME_SHA3 runs their hashes on
+// sha3_hw.c. The calls without the suffix pass 0, which runs sha3.c.
+int mldsa87_verify_cpu(uint32_t cpu, const uint8_t *pk, size_t pk_len, const uint8_t *msg,
+                       size_t msg_len, const uint8_t *ctx, size_t ctx_len, const uint8_t *sig,
+                       size_t sig_len);
+int mldsa87_challenge_cpu(uint32_t cpu, uint8_t c_tilde[MLDSA87_CTILDE_LEN],
+                          const uint8_t pk[MLDSA87_PK_LEN], const uint8_t mu[MLDSA_MU_LEN],
+                          const uint8_t sig[MLDSA87_SIG_LEN]);
+#endif
+
 #endif

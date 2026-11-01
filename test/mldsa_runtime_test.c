@@ -25,6 +25,16 @@
 // one bit and not the other, a step left on the loops fails its count, and
 // a signer that runs the lanes without the bit fails under the values
 // without it.
+//
+// The same rows count the SHAKE calls (test/mldsa_sha3_count.h). Under
+// CH_CPU_PROBED alone each row makes its calls on sha3.c, and their counts
+// are the row's reference. In an arm64 host object that clang compiled, a
+// value that holds CH_CPU_CONSTANT_TIME_SHA3 must make every one of them
+// on the path of sha3_hw.c and none on sha3.c, and a value without it must
+// make them all on sha3.c. In every other object, and for mldsa87_verify,
+// which takes no value, every call runs on sha3.c. So a hash left on
+// sha3.c under the bit fails its count, and so does a hash that reads
+// another bit (docs/decisions.md 173).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +42,7 @@
 #include "ch_assert.h"
 #include "mldsa.h"
 #include "mldsa_poly.h"
+#include "mldsa_sha3_count.h"
 #include "mldsa_signer.h"
 #include "mldsa_vector.h"
 #include "mldsa_vector_count.h"
@@ -110,6 +121,44 @@ static void check_counts(const char *row, uint32_t cpu, mldsa_vector_calls want)
     }
 }
 
+// The rows whose SHAKE counts are recorded under CH_CPU_PROBED alone.
+enum { ROW_KEYGEN, ROW_SIGN_MU, ROW_SIGN, ROW_VERIFY_CPU, ROW_VERIFY, ROW_COUNT };
+static mldsa_sha3_calls sha3_reference[ROW_COUNT];
+
+static void reset_counts(void) {
+    memset(&mldsa_vector_counted, 0, sizeof mldsa_vector_counted);
+    memset(&mldsa_sha3_counted, 0, sizeof mldsa_sha3_counted);
+}
+
+// The reference under CH_CPU_PROBED; under every other value, the
+// reference's calls on the path takes_value names for this cpu.
+static void check_sha3(const char *row, unsigned at, uint32_t cpu, int takes_value) {
+    const mldsa_sha3_calls *got = &mldsa_sha3_counted;
+    if (cpu == CH_CPU_PROBED) {
+        sha3_reference[at] = *got;
+    }
+    const mldsa_sha3_calls *ref = &sha3_reference[at];
+    mldsa_sha3_calls want = {ref->absorb, ref->squeeze, 0, 0};
+#ifdef CH_KECCAK_INSTRUCTIONS
+    if (takes_value && (cpu & CH_CPU_CONSTANT_TIME_SHA3) != 0) {
+        want = (mldsa_sha3_calls){0, 0, ref->absorb, ref->squeeze};
+    }
+#else
+    (void)takes_value;
+#endif
+    if (ref->absorb == 0 || ref->squeeze == 0 || ref->absorb_hw != 0 || ref->squeeze_hw != 0 ||
+        got->absorb != want.absorb || got->squeeze != want.squeeze ||
+        got->absorb_hw != want.absorb_hw || got->squeeze_hw != want.squeeze_hw) {
+        failures++;
+        (void)fprintf(stderr,
+                      "mldsa runtime: %s under 0x%x made %lu and %lu SHAKE calls on sha3.c and "
+                      "%lu and %lu on the instructions' path (absorb, squeeze), not %lu, %lu, %lu "
+                      "and %lu\n",
+                      row, (unsigned)cpu, got->absorb, got->squeeze, got->absorb_hw,
+                      got->squeeze_hw, want.absorb, want.squeeze, want.absorb_hw, want.squeeze_hw);
+    }
+}
+
 static void check_bytes(const char *row, uint32_t cpu, int same) {
     if (!same) {
         failures++;
@@ -150,30 +199,41 @@ static void message_mu(uint8_t mu[MLDSA_MU_LEN], const uint8_t key[MLDSA87_SK_LE
 // over MU and over MSG take.
 static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds, int lanes) {
     unsigned long signer = lanes ? 1 : 0;
-    memset(&mldsa_vector_counted, 0, sizeof mldsa_vector_counted);
+    reset_counts();
     int keygen_ok = mldsa87_keygen_cpu(cpu, sk, pk, SEED);
     check_counts("mldsa87_keygen_cpu", cpu, expected(KEYGEN_CALLS, signer, NO_CALLS));
+    check_sha3("mldsa87_keygen_cpu", ROW_KEYGEN, cpu, 1);
     check_bytes("mldsa87_keygen_cpu", cpu,
                 keygen_ok == 1 && memcmp(sk, want_sk, sizeof sk) == 0 &&
                     memcmp(pk, want_pk, sizeof pk) == 0);
 
-    memset(&mldsa_vector_counted, 0, sizeof mldsa_vector_counted);
+    reset_counts();
     unsigned rounds = mldsa87_sign_mu_cpu(cpu, sig, sk, pk, MU, RND);
     check_counts("mldsa87_sign_mu_cpu", cpu,
                  expected(ROUND_CALLS, signer * rounds, CHALLENGE_CALLS));
+    check_sha3("mldsa87_sign_mu_cpu", ROW_SIGN_MU, cpu, 1);
     check_bytes("mldsa87_sign_mu_cpu", cpu,
                 rounds == mu_rounds && memcmp(sig, want_mu_sig, sizeof sig) == 0);
 
-    memset(&mldsa_vector_counted, 0, sizeof mldsa_vector_counted);
+    reset_counts();
     int sign_ok =
         mldsa87_sign_cpu(cpu, sig, sk, sizeof sk, pk, sizeof pk, MSG, sizeof MSG, NULL, 0, RND);
     check_counts("mldsa87_sign_cpu", cpu,
                  expected(ROUND_CALLS, signer * msg_rounds, CHALLENGE_CALLS));
+    check_sha3("mldsa87_sign_cpu", ROW_SIGN, cpu, 1);
     check_bytes("mldsa87_sign_cpu", cpu, sign_ok == 1 && memcmp(sig, want_sig, sizeof sig) == 0);
 
-    memset(&mldsa_vector_counted, 0, sizeof mldsa_vector_counted);
+    reset_counts();
+    int verified_cpu =
+        mldsa87_verify_cpu(cpu, pk, sizeof pk, MSG, sizeof MSG, NULL, 0, sig, sizeof sig);
+    check_counts("mldsa87_verify_cpu", cpu, expected(NO_CALLS, 0, CHALLENGE_CALLS));
+    check_sha3("mldsa87_verify_cpu", ROW_VERIFY_CPU, cpu, 1);
+    check_bytes("mldsa87_verify_cpu", cpu, verified_cpu == 1);
+
+    reset_counts();
     int verified = mldsa87_verify(pk, sizeof pk, MSG, sizeof MSG, NULL, 0, sig, sizeof sig);
     check_counts("mldsa87_verify", cpu, expected(NO_CALLS, 0, CHALLENGE_CALLS));
+    check_sha3("mldsa87_verify", ROW_VERIFY, cpu, 0);
     check_bytes("mldsa87_verify", cpu, verified == 1);
 }
 
@@ -207,7 +267,7 @@ int main(void) {
         return 1;
     }
     (void)printf("mldsa runtime: keygen, sign by mu, sign and verify under %u ch_cfg.cpu values, "
-                 "%s\n",
+                 "each SHAKE call on the path the SHA-3 bit names, and %s\n",
                  values,
                  MLD_VECTOR ? "the signer on the lanes under the multiply bit alone and the "
                               "verifier on them under every value"

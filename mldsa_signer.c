@@ -26,9 +26,9 @@ static int keygen(uint32_t cpu, uint8_t sk[MLDSA87_SK_LEN], uint8_t pk[MLDSA87_P
     const uint8_t dims[2] = {MLD_K, MLD_L};
     shake h;
     shake256_init(&h);
-    shake_absorb(&h, seed, MLDSA87_SEED_LEN);
-    shake_absorb(&h, dims, sizeof dims);
-    shake_squeeze(&h, st.seeds, sizeof st.seeds);
+    mld_absorb(cpu, &h, seed, MLDSA87_SEED_LEN);
+    mld_absorb(cpu, &h, dims, sizeof dims);
+    mld_squeeze(cpu, &h, st.seeds, sizeof st.seeds);
     for (unsigned b = 0; b < MLD_RHO_BYTES; b++) {
         sk[b] = st.seeds[b];
         pk[b] = st.seeds[b];
@@ -36,7 +36,7 @@ static int keygen(uint32_t cpu, uint8_t sk[MLDSA87_SK_LEN], uint8_t pk[MLDSA87_P
     }
     uint32_t ok = 1;
     for (unsigned r = 0; r < MLD_L; r++) {
-        ok &= mlds_sample_eta(&st.s1_hat[r], st.seeds + 32, (uint16_t)r);
+        ok &= mlds_sample_eta(cpu, &st.s1_hat[r], st.seeds + 32, (uint16_t)r);
         mlds_pack(sk + MLDS_SK_S1_AT + (size_t)r * MLDS_ETA_BYTES, &st.s1_hat[r], 3, MLDS_ETA);
         mlds_ntt(st.cpu, &st.s1_hat[r]);
     }
@@ -44,8 +44,8 @@ static int keygen(uint32_t cpu, uint8_t sk[MLDSA87_SK_LEN], uint8_t pk[MLDSA87_P
         ok &= mlds_keygen_row(&st, sk, pk, i);
     }
     shake256_init(&h);
-    shake_absorb(&h, pk, MLDSA87_PK_LEN);
-    shake_squeeze(&h, sk + MLDS_SK_TR_AT, 64);
+    mld_absorb(cpu, &h, pk, MLDSA87_PK_LEN);
+    mld_squeeze(cpu, &h, sk + MLDS_SK_TR_AT, 64);
     ct_wipe(&h, sizeof h);
     ct_wipe(&st, sizeof st);
     // A sampler at its bound, a verdict that FIPS 204 Appendix C treats as
@@ -89,10 +89,10 @@ static __attribute__((noinline)) unsigned sign_rounds(uint32_t cpu, uint8_t sig[
     uint8_t rho2[64];
     shake h;
     shake256_init(&h);
-    shake_absorb(&h, sk + MLDS_SK_KEY_AT, 32);
-    shake_absorb(&h, rnd, MLDSA87_RND_LEN);
-    shake_absorb(&h, mu, MLDSA_MU_LEN);
-    shake_squeeze(&h, rho2, sizeof rho2);
+    mld_absorb(cpu, &h, sk + MLDS_SK_KEY_AT, 32);
+    mld_absorb(cpu, &h, rnd, MLDSA87_RND_LEN);
+    mld_absorb(cpu, &h, mu, MLDSA_MU_LEN);
+    mld_squeeze(cpu, &h, rho2, sizeof rho2);
     ct_wipe(&h, sizeof h);
     uint32_t in_range = mlds_key_in_range(&st, sk);
     CT_DECLASSIFY(&in_range, sizeof in_range);
@@ -107,6 +107,19 @@ static __attribute__((noinline)) unsigned sign_rounds(uint32_t cpu, uint8_t sig[
     ct_wipe(&st, sizeof st);
     ct_wipe(rho2, sizeof rho2);
     return rounds;
+}
+
+// mldsa87_verify of a signature just made, with the hashes on cpu in a host
+// object (mldsa.h).
+static int verify_with(uint32_t cpu, const uint8_t *pk, size_t pk_len, const uint8_t *msg,
+                       size_t msg_len, const uint8_t *ctx, size_t ctx_len,
+                       const uint8_t sig[MLDSA87_SIG_LEN]) {
+#ifdef CH_CPU_RUNTIME
+    return mldsa87_verify_cpu(cpu, pk, pk_len, msg, msg_len, ctx, ctx_len, sig, MLDSA87_SIG_LEN);
+#else
+    (void)cpu;
+    return mldsa87_verify(pk, pk_len, msg, msg_len, ctx, ctx_len, sig, MLDSA87_SIG_LEN);
+#endif
 }
 
 // Whether rnd holds a byte other than 0. The answer is the draw's, which
@@ -135,14 +148,13 @@ static unsigned sign_checked(uint32_t cpu, uint8_t sig[MLDSA87_SIG_LEN], const u
     uint8_t mu[MLDSA_MU_LEN];
     shake h;
     shake256_init(&h);
-    shake_absorb(&h, sk + MLDS_SK_TR_AT, 64);
-    shake_absorb(&h, prefix, sizeof prefix);
-    shake_absorb(&h, ctx, ctx_len);
-    shake_absorb(&h, msg, msg_len);
-    shake_squeeze(&h, mu, sizeof mu);
+    mld_absorb(cpu, &h, sk + MLDS_SK_TR_AT, 64);
+    mld_absorb(cpu, &h, prefix, sizeof prefix);
+    mld_absorb(cpu, &h, ctx, ctx_len);
+    mld_absorb(cpu, &h, msg, msg_len);
+    mld_squeeze(cpu, &h, mu, sizeof mu);
     unsigned rounds = sign_rounds(cpu, sig, sk, mu, rnd);
-    if (rounds == 0 ||
-        !mldsa87_verify(pk, pk_len, msg, msg_len, ctx, ctx_len, sig, MLDSA87_SIG_LEN)) {
+    if (rounds == 0 || !verify_with(cpu, pk, pk_len, msg, msg_len, ctx, ctx_len, sig)) {
         ct_wipe(sig, MLDSA87_SIG_LEN);
         return 0;
     }
@@ -182,13 +194,25 @@ int mldsa87_sign_any_rnd(uint8_t sig[MLDSA87_SIG_LEN], const uint8_t *sk, size_t
     return sign_checked(0, sig, sk, sk_len, pk, pk_len, msg, msg_len, ctx, ctx_len, rnd) != 0;
 }
 
+// mldsa87_challenge with the hashes on cpu in a host object (mldsa.h).
+static int challenge_with(uint32_t cpu, uint8_t c_tilde[MLDSA87_CTILDE_LEN],
+                          const uint8_t pk[MLDSA87_PK_LEN], const uint8_t mu[MLDSA_MU_LEN],
+                          const uint8_t sig[MLDSA87_SIG_LEN]) {
+#ifdef CH_CPU_RUNTIME
+    return mldsa87_challenge_cpu(cpu, c_tilde, pk, mu, sig);
+#else
+    (void)cpu;
+    return mldsa87_challenge(c_tilde, pk, mu, sig);
+#endif
+}
+
 // mldsa87_sign_mu under cpu.
 static unsigned sign_mu(uint32_t cpu, uint8_t sig[MLDSA87_SIG_LEN],
                         const uint8_t sk[MLDSA87_SK_LEN], const uint8_t pk[MLDSA87_PK_LEN],
                         const uint8_t mu[MLDSA_MU_LEN], const uint8_t rnd[MLDSA87_RND_LEN]) {
     unsigned rounds = sign_rounds(cpu, sig, sk, mu, rnd);
     uint8_t c_tilde[MLDSA87_CTILDE_LEN];
-    if (rounds == 0 || !mldsa87_challenge(c_tilde, pk, mu, sig) ||
+    if (rounds == 0 || !challenge_with(cpu, c_tilde, pk, mu, sig) ||
         ct_memeq(c_tilde, sig, MLDSA87_CTILDE_LEN) != 1) {
         ct_wipe(sig, MLDSA87_SIG_LEN);
         return 0;
