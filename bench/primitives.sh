@@ -132,7 +132,8 @@ FLAGS=(-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DC
 PRIMITIVE_SRCS=(bench/primitives.c bench/primitives_symmetric.c bench/primitives_public_key.c
     drbg.c ct.c ct_wipe.c buf.c sha256.c sha512.c sha512_compress.c sha3.c hkdf.c chacha20.c poly1305.c
     aead.c x25519.c mlkem.c mlkem_poly.c p256.c p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c
-    rsa_sign.c p256_ecdh.c p256_sign.c p256_scalar.c p256_point.c p256_field.c)
+    rsa_sign.c p256_ecdh.c p256_sign.c p256_scalar.c p256_point.c p256_field.c mldsa.c mldsa_poly.c
+    mldsa_signer.c mldsa_sign_round.c mldsa_sign_steps.c mldsa_sign_poly.c mldsa_sign_pack.c)
 # The handshake program links what bin/tcp_nonblocking_loop_test links, under
 # the defines of the ROLE=both TRANSPORT=tcp-nonblocking object, at the device
 # RSA bound.
@@ -411,7 +412,8 @@ openssl_rows() {
 
 # One run of every OpenSSL row: one second of each algorithm. The KEM
 # lines hold key generations, encapsulations and decapsulations a second,
-# and the X25519 and ECP-256 key generations are the first of theirs.
+# the ML-DSA line key generations, signatures and verifications, and the
+# X25519 and ECP-256 key generations are the first of theirs.
 openssl_run() {
     local bytes
     for bytes in 64 16384; do
@@ -428,6 +430,7 @@ openssl_run() {
     openssl_rows +F2 "rsa_pkcs1_sign_2048=4 rsa_pkcs1_verify_2048=5" op 0 rsa2048
     openssl_rows +F2 "rsa_pkcs1_sign_3072=4 rsa_pkcs1_verify_3072=5" op 0 rsa3072
     openssl_rows +F9 "mlkem768_keygen=3 mlkem768_encaps=4 mlkem768_decaps=5" op 0 ML-KEM-768
+    openssl_rows +F10 "mldsa87_keygen=3 mldsa87_sign=4 mldsa87_verify=5" op 0 ML-DSA-87
 }
 
 # Each row's figures over the runs: the median of its ns, the rate that

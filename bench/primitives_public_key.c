@@ -34,6 +34,8 @@
 // 3072 rows time the work a host object does at the device bound.
 #include <string.h>
 
+#include "mldsa.h"
+#include "mldsa_signer.h"
 #include "mlkem.h"
 #include "p256.h"
 #include "p256_ecdh.h"
@@ -92,6 +94,11 @@ static ch_rsa_priv rsa_3072_key;
 static uint8_t mlkem_ek[MLKEM_EK_LEN];
 static uint8_t mlkem_dk[MLKEM_DK_LEN];
 static uint8_t mlkem_ct[MLKEM_CT_LEN];
+static uint8_t mldsa_sk[MLDSA87_SK_LEN];
+static uint8_t mldsa_pk[MLDSA87_PK_LEN];
+static uint8_t mldsa_sig[MLDSA87_SIG_LEN];
+static const uint8_t MLDSA_SEED[MLDSA87_SEED_LEN] = {0x4d, 0x4c, 0x44, 0x53, 0x41};
+static const uint8_t MLDSA_MESSAGE[32] = {0x43, 0x56}; // the length of a CertificateVerify hash
 
 static uint8_t nibble(char c) {
     return (uint8_t)(c <= '9' ? c - '0' : c - 'a' + 10);
@@ -176,6 +183,47 @@ static void run_mlkem_decaps(size_t n) {
     uint8_t ss[MLKEM_SS_LEN];
     mlkem_decaps_cpu(bench_cpu, BENCH_WIDEMUL, ss, mlkem_ct, mlkem_dk);
     bench_consume(ss, 1);
+}
+
+// ML-DSA-87 key generation from a fixed seed, on the paths the session's
+// value picks (mldsa_signer.h).
+static void run_mldsa_keygen(size_t n) {
+    (void)n;
+    expect(mldsa87_keygen_cpu(bench_cpu, mldsa_sk, mldsa_pk, MLDSA_SEED) == 1,
+           "mldsa87_keygen_cpu refused the seed");
+    bench_consume(mldsa_pk, 1);
+}
+
+static void run_mldsa_sign(size_t n);
+
+// The key, and one signature the verifier then checks.
+static void prepare_mldsa(size_t n) {
+    run_mldsa_keygen(n);
+    run_mldsa_sign(n);
+    expect(mldsa87_verify(mldsa_pk, sizeof mldsa_pk, MLDSA_MESSAGE, sizeof MLDSA_MESSAGE, NULL, 0,
+                          mldsa_sig, sizeof mldsa_sig) == 1,
+           "mldsa87_verify refused mldsa87_sign_cpu's signature");
+}
+
+// One hedged signature as a server makes it, with rnd drawn for it. A
+// signature takes one round or more, a different count for each rnd, so
+// this row's median is below the mean OpenSSL's rows give.
+static void run_mldsa_sign(size_t n) {
+    (void)n;
+    uint8_t rnd[MLDSA87_RND_LEN];
+    ch_rand_bytes(rnd, sizeof rnd);
+    expect(mldsa87_sign_cpu(bench_cpu, mldsa_sig, mldsa_sk, sizeof mldsa_sk, mldsa_pk,
+                            sizeof mldsa_pk, MLDSA_MESSAGE, sizeof MLDSA_MESSAGE, NULL, 0,
+                            rnd) == 1,
+           "mldsa87_sign_cpu failed");
+    bench_consume(mldsa_sig, 1);
+}
+
+static void run_mldsa_verify(size_t n) {
+    (void)n;
+    expect(mldsa87_verify_cpu(bench_cpu, mldsa_pk, sizeof mldsa_pk, MLDSA_MESSAGE,
+                              sizeof MLDSA_MESSAGE, NULL, 0, mldsa_sig, sizeof mldsa_sig) == 1,
+           "mldsa87_verify_cpu refused the signature");
 }
 
 static void run_p256_verify(size_t n) {
@@ -372,6 +420,7 @@ static void run_rsa_pss_sign_3072(size_t n) {
 static const bench_row VERIFY_ROWS[] = {
     OP_ROW("p256_ecdsa_verify", prepare_nothing, run_p256_verify),
     OP_ROW("p384_ecdsa_verify", prepare_p384, run_p384_verify),
+    OP_ROW("mldsa87_verify", prepare_mldsa, run_mldsa_verify),
     OP_ROW("rsa_pss_verify_2048", prepare_rsa_message_hash, run_rsa_pss_verify_2048),
     OP_ROW("rsa_pss_verify_3072", prepare_nothing, run_rsa_pss_verify_3072),
     OP_ROW("rsa_pss_verify_4096", prepare_nothing, run_rsa_pss_verify_4096),
@@ -386,6 +435,8 @@ static const bench_row SECRET_KEY_ROWS[] = {
     OP_ROW("mlkem768_keygen", prepare_mlkem, run_mlkem_keygen),
     OP_ROW("mlkem768_encaps", prepare_mlkem, run_mlkem_encaps),
     OP_ROW("mlkem768_decaps", prepare_mlkem, run_mlkem_decaps),
+    OP_ROW("mldsa87_keygen", prepare_nothing, run_mldsa_keygen),
+    OP_ROW("mldsa87_sign", prepare_mldsa, run_mldsa_sign),
     OP_ROW("p256_ecdh_keygen", prepare_p256_ecdh_keygen, run_p256_ecdh_keygen),
     OP_ROW("p256_ecdh", prepare_p256_ecdh, run_p256_ecdh),
     OP_ROW("p256_sign", prepare_p256_sign, run_p256_sign),
