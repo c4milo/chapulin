@@ -6142,7 +6142,9 @@ wycheproof-run-mldsa-library:
 # The same suites as a host object signs, once for each value of
 # HOST_VECTOR_CPU: on arm64 the value with the multiply bit runs the
 # signer's NTT and products on mldsa_vector.c's lanes, and every value runs
-# the check of each signature on them (docs/decisions.md 172).
+# the check of each signature on them (docs/decisions.md 172). On an x86-64
+# machine with AVX2, X86_UNIT_CPU's values add the AVX2 lanes, which both
+# need CH_CPU_AVX2 there (docs/decisions.md 174).
 WYCHEPROOF_MLDSA_LIBRARY_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -DCH_SIGN_MLDSA \
   -I. -Itest -Ibin test/wycheproof_mldsa_library_test.c $(call host_srcs,$(WYCHEPROOF_MLDSA_LIBRARY_SRCS))
 .PHONY: wycheproof-mldsa-library-host wycheproof-run-mldsa-library-host
@@ -6157,7 +6159,7 @@ else
 endif
 wycheproof-run-mldsa-library-host:
 	@set -e; $(WYCHEPROOF_MLDSA_LIBRARY_HOST) -o bin/wycheproof_mldsa_library_test_host; \
-	for bits in $(HOST_VECTOR_CPU); do \
+	for bits in $(HOST_VECTOR_CPU) $(X86_UNIT_CPU); do \
 	  echo "== bin/wycheproof_mldsa_library_test_host $$bits (host object):"; \
 	  ./bin/wycheproof_mldsa_library_test_host $$bits; \
 	done
