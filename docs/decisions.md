@@ -15285,10 +15285,29 @@ does nothing more.
       register to the stack. A frame holds the return address and at
       most the saved frame pointer. So no wipe of the stack below follows
       a call.
-    - **Numbers.** None yet. This entry was written on an M1, where
-      Rosetta 2 runs the AVX2 code but shows nothing of its timing. The
-      x86 runners' throwaway-branch matrix of `docs/performance.md` is
-      where the scratch loop of entry 172 runs under 0x5, 0xd and 0x8d.
+    - **Numbers.** GitHub's ubuntu-24.04 runners, run 41344978004 on a
+      throwaway branch: four samples drew an AMD EPYC 7763 and two an
+      EPYC 9V74. Entry 172's scratch loop ran one key, 300 signatures
+      with 300 values of rnd and 2,000 verifications, twice in each
+      process, under the runner's gcc 13 and the pinned clang 23 at
+      `-O2`. Sign is the mean over the signatures, whose count of rounds
+      varies. OpenSSL 3.6.4 is `openssl speed ML-DSA-87` on the same
+      runner. The samples of one CPU agree within 2%, so the table gives
+      one figure for each.
+
+      | CPU, compiler | sign 0x1 | sign 0xd | verify 0x1 | verify 0x9 |
+      |---|---|---|---|---|
+      | EPYC 7763, gcc | 3,340 µs | 1,330 µs | 264 µs | 176 µs |
+      | EPYC 7763, clang | 2,540 µs | 1,288 µs | 252 µs | 164 µs |
+      | EPYC 7763, OpenSSL | 1,210 µs | | 300 µs | |
+      | EPYC 9V74, gcc | 2,825 µs | 1,110 µs | 223 µs | 146 µs |
+      | EPYC 9V74, clang | 2,172 µs | 1,078 µs | 214 µs | 138 µs |
+      | EPYC 9V74, OpenSSL | 1,060 µs | | 257 µs | |
+
+      0x5 signs as 0x1 does, since the signer needs both bits on x86-64,
+      and 0x9 verifies as 0xd does. So a signature takes 1.02 to 1.10
+      times OpenSSL's, and a verification 0.54 to 0.59 times. x86-64 has
+      no SHA-3 instructions, and Keccak on sha3.c is most of what is left.
     - **What holds it.** `bin/mldsa_vector_equiv_test` holds the AVX2
       arm to both loops over entry 172's inputs on a CPU with AVX2. It
       also reads ymm0 to ymm15 back as zero after each entry
