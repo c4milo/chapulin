@@ -203,7 +203,12 @@ Home: github.com/c4milo.
   identity, its CertificateVerify, which it writes through `srv_frag`
   from a frame under `STACK_BUDGET_SRV_MLDSA`, and its boot check, and
   `srv_auth.c` compiles to nothing under the profile, docs/decisions.md
-  162)
+  162) + `mldsa_vector.[ch]` (ML-DSA-87's NTT, inverse NTT and two
+  NTT-domain products on four 32-bit NEON lanes, an arm64 host object
+  alone: `mldsa.c` runs them in every session, and the signer through
+  `mldsa_sign_poly.h`'s dispatchers for a session whose caller sets
+  CH_CPU_CONSTANT_TIME_MULTIPLY; `MLD_VECTOR` is 0 in every other
+  object, docs/decisions.md 172)
   ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) with `hash_hw.h`, `hkdf_hw.c` and `keysched_hw.c` (`hkdf.c`
@@ -550,6 +555,14 @@ Home: github.com/c4milo.
   their multiplies are 16x16, the size of `ct.h`'s pieces, so no bit
   picks them, and `mlkem_poly.c`'s loops stay the reference and a device
   object's path (docs/decisions.md 101).
+  ML-DSA-87's transforms and products run on `mldsa_vector.c`'s four
+  32-bit lanes in an arm64 host object: a verification in every session,
+  because its inputs are public, and a signature or a key generation
+  only under CH_CPU_CONSTANT_TIME_MULTIPLY, because the lanes multiply 32
+  bits by 32 on s1, s2, t0, y and c. `mldsa87_sign_cpu` and
+  `mldsa87_keygen_cpu` take the session's value, and the calls without
+  the suffix pass 0. An x86-64 host object runs the loops
+  (docs/decisions.md 172).
   On x86-64 five more bits each pick a kernel beside a path every
   CPU runs, and none states a timing: `CH_CPU_AVX2` runs the keystream
   on `chacha20_avx2.c` and ML-KEM's matrix on `keccak_avx2.c`, whose
@@ -688,6 +701,10 @@ Home: github.com/c4milo.
   ML-KEM's copies to `mlkem.c` and `mlkem_poly.c`.
   `bin/mlkem_vector_equiv_test` holds `mlkem_vector.c` to
   `mlkem_poly.c`'s loops, coefficient for coefficient.
+  `bin/mldsa_vector_equiv_test` holds `mldsa_vector.c` to
+  `mldsa_poly.c`'s and `mldsa_sign_poly.c`'s loops, and
+  `bin/mldsa_runtime_test` counts the calls into it under each
+  `ch_cfg.cpu` value.
   `bin/mlkem_avx2_equiv_test` holds `keccak_avx2.c` to `sha3.c` and
   `mlkem_avx2.c` to `mlkem.c`.
   `bin/p256_equiv_test` and `bin/rsa_sign_equiv_test` hold the wide P-256
