@@ -863,6 +863,22 @@ def dispatch : List String → Option String
     let digitR2 := Spec.RsaIfma.powerOfTwoMod m k (2 * D * Spec.RsaAvx2.digitCount k)
     return bytesToHex
       (natToBytesBE (Spec.RsaAvx2.publicOp k inverse m (bytesToNatBE bb) digitR2) (8 * k))
+  | ["rsa_exp", modulus, base, exponent] => do
+    -- rsa_mont64_public_exp: base^e mod m for an odd m > 1 and a base below m, both in the
+    -- same big-endian bytes, and a decimal e, odd and at least 3. The answer is the model's
+    -- publicExp over ZMod m under R = 2^(64 words), words = (len + 7) / 8 (Spec/RsaExp.lean),
+    -- in len bytes. The guard is publicExp_eq's hypotheses.
+    let mb ← hexArg? modulus
+    let bb ← hexArg? base
+    let e ← exponent.toNat?
+    guard (0 < mb.size && bb.size == mb.size)
+    let m := bytesToNatBE mb
+    let x := bytesToNatBE bb
+    guard (m % 2 == 1 && 1 < m && x < m && e % 2 == 1 && 3 ≤ e)
+    let r : ZMod m := ((2 ^ (64 * ((mb.size + 7) / 8)) : ℕ) : ZMod m)
+    let rInv := r⁻¹
+    guard (r * rInv == 1)
+    return bytesToHex (natToBytesBE (Spec.RsaExp.publicExp r rInv (x : ZMod m) e).val mb.size)
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)
