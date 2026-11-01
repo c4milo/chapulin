@@ -1441,43 +1441,55 @@ last `ROLE=server` stub, as the entry said it would.
   the `p256_adx_reduce` proof catches.
 - See [decisions: Engineering](decisions.md#engineering), entry 171.
 
-### INV-67 — a host object's ML-DSA-87 NTT arithmetic gives the loops' coefficients, and the signer runs it only under the multiply bit
+### INV-67 — a host object's ML-DSA-87 NTT arithmetic gives the loops' coefficients, and each call runs it only under its bits
 
-- **Claim.** `mldsa_vector.c`, which an arm64 host object holds, writes
-  for every input of int32 coefficients the coefficients
-  `mldsa_poly.c`'s and `mldsa_sign_poly.c`'s loops write for its four
-  functions: the forward and inverse transforms and the two products in
-  the NTT domain. The verifier runs it in every session. The signer runs
-  it for a session whose `ch_cfg.cpu` holds
-  `CH_CPU_CONSTANT_TIME_MULTIPLY`, and for no other session.
+- **Claim.** `mldsa_vector.c`, which a host object holds, writes for
+  every input of int32 coefficients the coefficients `mldsa_poly.c`'s
+  and `mldsa_sign_poly.c`'s loops write for its four functions: the
+  forward and inverse transforms and the two products in the NTT domain.
+  An arm64 object runs it on NEON and an x86-64 object on AVX2. On arm64
+  the verifier runs it in every session. On x86-64 the verifier runs it
+  for a session whose `ch_cfg.cpu` holds `CH_CPU_AVX2`. The signer runs
+  it for a session whose value holds `CH_CPU_CONSTANT_TIME_MULTIPLY`, and
+  on x86-64 `CH_CPU_AVX2` beside it, and for no other session.
 - **Mechanism.** `mldsa_vector.h` sets `MLD_VECTOR` for a host object
-  with NEON alone. `mldsa.c` calls the four through static functions that
-  test `MLD_VECTOR`. The signer's steps call `mldsa_sign_poly.h`'s
-  dispatchers with the session's value, which `mlds_round` and
-  `mlds_keygen_state` hold, and `mlds_lanes_run` reads the multiply bit.
-  Each lane computes the scalar Montgomery product and reduction exactly,
-  by the identities decision 172 states, and each step reads the twiddle
-  factors the loops read from the one table in `mldsa_zetas.h`. The path
-  runs no branch and computes no address from a coefficient.
+  with NEON or for x86-64, and its `mld_vector_runs` is the one test of
+  the bits. `mldsa.c` calls the four through static functions that take
+  the session's value and call `mld_vector_runs` for public operands.
+  The signer's steps call `mldsa_sign_poly.h`'s dispatchers with the
+  session's value, which `mlds_round` and `mlds_keygen_state` hold, and
+  `mlds_lanes_run` calls `mld_vector_runs` for secret operands. Each lane
+  computes the scalar Montgomery product and reduction exactly, by the
+  identities decisions 172 and 174 state, and each step reads the
+  twiddle factors the loops read from the one table in `mldsa_zetas.h`.
+  The path runs no branch and computes no address from a coefficient.
+  Each AVX2 entry ends with VZEROALL (INV-17).
 - **Check.** `bin/mldsa_vector_equiv_test` compares each function on the
   lanes with both loops over edge, single-coefficient and random inputs
-  from all of int32, and `bin/mldsa_runtime_test` counts the calls into
-  the lanes under every value the defined bits make. `make check` runs
-  both on the host's instruction set and `make san-check` under the
-  sanitizers. `test/aes-runtime-qemu.sh mldsa-vector` runs both for arm64
-  under qemu. `make lint-trust-separation` holds `mldsa_vector.c` to the
-  PROFILE=cnsa2 server object.
-- **Violation.** A PR drops the halving of the lanes' Montgomery product
-  (`inv67-mldsa-vector-montgomery-not-halved`) or the rounding bit of
-  their reduction (`inv67-mldsa-vector-reduce-drops-rounding-bit`), which
-  `bin/mldsa_vector_equiv_test` catches. A PR runs the signer's lanes
-  without the multiply bit (`inv67-mldsa-signer-lanes-without-multiply-bit`),
-  or sends the verifier's forward transform to the loop
+  from all of int32, and on x86-64 reads ymm0 to ymm15 back as zero
+  after each entry. `bin/mldsa_runtime_test` counts the calls into the
+  lanes under every value the defined bits make, against bits it states
+  itself. `make check` runs both on the host's instruction set and `make
+  san-check` under the sanitizers. `test/aes-runtime-qemu.sh
+  mldsa-vector` runs both for arm64 and for x86-64 under qemu. `make
+  lint-trust-separation` holds `mldsa_vector.c` to the PROFILE=cnsa2
+  server object.
+- **Violation.** A PR drops the halving of the NEON lanes' Montgomery
+  product (`inv67-mldsa-vector-montgomery-not-halved`) or the rounding
+  bit of a reduction (`inv67-mldsa-vector-reduce-drops-rounding-bit`,
+  `inv67-mldsa-avx2-reduce-drops-rounding-bit`), or gives the AVX2
+  inverse's layer of span 2 its twiddles in the wrong order
+  (`inv67-mldsa-avx2-inverse-twiddle-order`). `bin/mldsa_vector_equiv_test`
+  catches each. A PR runs the signer's lanes without the multiply bit
+  (`inv67-mldsa-signer-lanes-without-multiply-bit`), runs the lanes on
+  x86-64 without `CH_CPU_AVX2` (`inv67-mldsa-lanes-without-avx2-bit`), or
+  sends the verifier's forward transform to the loop
   (`inv67-mldsa-verifier-ntt-falls-back-to-loops`). Every byte stays
-  right in both, so no vector notices, and `bin/mldsa_runtime_test`
-  catches both by its counts. The four run through the qemu lane's
-  `mldsa-vector` part, because only an arm64 compiler reads the lanes.
-- See [decisions: Engineering](decisions.md#engineering), entry 172.
+  right in these, so no vector notices, and `bin/mldsa_runtime_test`
+  catches each by its counts. All seven run through the qemu lane's
+  `mldsa-vector` part, because a machine's own compiler reads one arm.
+- See [decisions: Engineering](decisions.md#engineering), entries 172
+  and 174.
 
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
@@ -6098,7 +6110,13 @@ last `ROLE=server` stub, as the entry said it would.
   `inv17-chacha20-avx2-registers-not-cleared` and
   `inv17-poly1305-avx2-registers-not-cleared` put VZEROUPPER in
   VZEROALL's place, and `test/docker-aes-runtime-qemu.sh chacha20-avx2`
-  and `poly1305-avx2` catch them. By the same decision the 128-bit paths
+  and `poly1305-avx2` catch them. The AVX2 arm of `mldsa_vector.c` holds
+  the signer's s1, s2, t0, y and c in 256-bit registers, and each of its
+  four entries ends with VZEROALL (decision 174).
+  `bin/mldsa_vector_equiv_test` reads the sixteen registers back as zero
+  after each entry, and `inv17-mldsa-avx2-registers-not-cleared`, which
+  puts VZEROUPPER in one entry's VZEROALL's place, is caught by the
+  script's `mldsa-vector` part. By the same decision the 128-bit paths
   of both primitives, `mlkem_vector.c`, `aes_hw.c`, `ghash_hw.c`,
   `gcm_hw.c`, `gcm_vaes.c`, `sha256_hw.c`, `sha512_hw.c`'s arm64 arm,
   `sha3_hw.c` and plain C clear no vector register. The wipe clears no

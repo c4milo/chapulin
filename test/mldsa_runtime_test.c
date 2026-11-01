@@ -1,30 +1,39 @@
 // bin/mldsa_runtime_test: which ML-DSA-87 calls of a host object run on
 // mldsa_vector.c's lanes under each ch_cfg.cpu value (docs/decisions.md
-// 172). On arm64 the verifier runs its transforms and products on the
-// lanes in every session, and the signer runs them there for a value that
-// holds CH_CPU_CONSTANT_TIME_MULTIPLY alone. On x86-64 the object holds no
-// lanes, and no call runs them. The two paths compute the same values, so
-// no output can tell which ran: test/mldsa_vector_count.c counts the calls
-// into the lanes instead, and runs each on mldsa_poly.c's loop.
+// 172 and 174). On arm64 the verifier runs its transforms and products on
+// the lanes in every session, and the signer runs them there for a value
+// that holds CH_CPU_CONSTANT_TIME_MULTIPLY. On x86-64 both need
+// CH_CPU_AVX2 beside that: the verifier runs the lanes for a value that
+// holds CH_CPU_AVX2, and the signer for a value that holds both bits. The
+// two paths compute the same values, so no output can tell which ran:
+// test/mldsa_vector_count.c counts the calls into the lanes instead, and
+// runs each on mldsa_poly.c's loop. So the binary runs no AVX2
+// instruction, and it gives the same verdict on every CPU.
 //
 // Every row runs under each value the bits of TEST_CPU_ALL make beside
 // CH_CPU_PROBED. Each row must make the count of calls below, entry for
-// entry, and write the bytes the call that takes no value writes:
+// entry, and write the bytes the call that takes no value writes. "The
+// signer's bits" and "the verifier's bits" are the bits named above, and
+// lanes_expected states them apart from mldsa_vector.h's mld_vector_runs:
 //
-//   - mldsa87_keygen_cpu: KEYGEN_CALLS under the bit, and none without it;
+//   - mldsa87_keygen_cpu: KEYGEN_CALLS under the signer's bits, and none
+//     without them;
 //   - mldsa87_sign_mu_cpu: ROUND_CALLS for each round the signature took
-//     under the bit, and none without it, then CHALLENGE_CALLS for the
-//     check of the signature under every value;
+//     under the signer's bits, and none without them, then
+//     CHALLENGE_CALLS for the check of the signature under the verifier's
+//     bits;
 //   - mldsa87_sign_cpu: as mldsa87_sign_mu_cpu, with the whole
 //     verification's calls, which are CHALLENGE_CALLS, after the rounds.
 //     Its rounds are the rounds mldsa87_sign_mu takes for the message's
 //     mu, which the test computes as FIPS 204 Algorithm 7, step 6 does;
-//   - mldsa87_verify, which takes no value: CHALLENGE_CALLS.
+//   - mldsa87_verify_cpu: CHALLENGE_CALLS under the verifier's bits;
+//   - mldsa87_verify, which takes no value and so passes 0:
+//     CHALLENGE_CALLS on arm64, and none on x86-64.
 //
 // So a dispatcher that reads another bit fails under the values that hold
 // one bit and not the other, a step left on the loops fails its count, and
-// a signer that runs the lanes without the bit fails under the values
-// without it.
+// a call that runs the lanes without its bits fails under the values
+// without them.
 //
 // The same rows count the SHAKE calls (test/mldsa_sha3_count.h). Under
 // CH_CPU_PROBED alone each row makes its calls on sha3.c, and their counts
@@ -90,21 +99,33 @@ static const mldsa_vector_calls NO_CALLS = {0, 0, 0, 0};
 
 static int failures;
 
-// rounds times each count of round, plus each count of after. In an object
-// without the lanes every count is 0.
-static mldsa_vector_calls expected(mldsa_vector_calls round, unsigned long rounds,
-                                   mldsa_vector_calls after) {
-    mldsa_vector_calls want = {0, 0, 0, 0};
-#if MLD_VECTOR
-    want.ntt = rounds * round.ntt + after.ntt;
-    want.invntt = rounds * round.invntt + after.invntt;
-    want.pointwise = rounds * round.pointwise + after.pointwise;
-    want.pointwise_acc = rounds * round.pointwise_acc + after.pointwise_acc;
+// Whether a call runs the lanes for cpu: this test's own statement of the
+// bits each needs, written apart from mld_vector_runs so that a wrong test
+// there fails a row. secret is 1 for the signer and 0 for the verifier.
+static int lanes_expected(uint32_t cpu, int secret) {
+#if !MLD_VECTOR
+    (void)cpu;
+    (void)secret;
+    return 0;
 #else
-    (void)round;
-    (void)rounds;
-    (void)after;
+#ifdef __x86_64__
+    if ((cpu & CH_CPU_AVX2) == 0) {
+        return 0;
+    }
 #endif
+    return !secret || (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0;
+#endif
+}
+
+// rounds times each count of round, plus afters times each count of
+// after.
+static mldsa_vector_calls expected(mldsa_vector_calls round, unsigned long rounds,
+                                   mldsa_vector_calls after, unsigned long afters) {
+    mldsa_vector_calls want;
+    want.ntt = rounds * round.ntt + afters * after.ntt;
+    want.invntt = rounds * round.invntt + afters * after.invntt;
+    want.pointwise = rounds * round.pointwise + afters * after.pointwise;
+    want.pointwise_acc = rounds * round.pointwise_acc + afters * after.pointwise_acc;
     return want;
 }
 
@@ -194,14 +215,15 @@ static void message_mu(uint8_t mu[MLDSA_MU_LEN], const uint8_t key[MLDSA87_SK_LE
     shake_squeeze(&h, mu, MLDSA_MU_LEN);
 }
 
-// The rows under one value. lanes says whether the signer runs on the
-// lanes under it. mu_rounds and msg_rounds are the rounds the signatures
-// over MU and over MSG take.
-static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds, int lanes) {
-    unsigned long signer = lanes ? 1 : 0;
+// The rows under one value. mu_rounds and msg_rounds are the rounds the
+// signatures over MU and over MSG take.
+static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
+    unsigned long signer = (unsigned long)lanes_expected(cpu, 1);
+    unsigned long verifier = (unsigned long)lanes_expected(cpu, 0);
+    unsigned long no_value = (unsigned long)lanes_expected(0, 0);
     reset_counts();
     int keygen_ok = mldsa87_keygen_cpu(cpu, sk, pk, SEED);
-    check_counts("mldsa87_keygen_cpu", cpu, expected(KEYGEN_CALLS, signer, NO_CALLS));
+    check_counts("mldsa87_keygen_cpu", cpu, expected(KEYGEN_CALLS, signer, NO_CALLS, 0));
     check_sha3("mldsa87_keygen_cpu", ROW_KEYGEN, cpu, 1);
     check_bytes("mldsa87_keygen_cpu", cpu,
                 keygen_ok == 1 && memcmp(sk, want_sk, sizeof sk) == 0 &&
@@ -210,7 +232,7 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds, int lane
     reset_counts();
     unsigned rounds = mldsa87_sign_mu_cpu(cpu, sig, sk, pk, MU, RND);
     check_counts("mldsa87_sign_mu_cpu", cpu,
-                 expected(ROUND_CALLS, signer * rounds, CHALLENGE_CALLS));
+                 expected(ROUND_CALLS, signer * rounds, CHALLENGE_CALLS, verifier));
     check_sha3("mldsa87_sign_mu_cpu", ROW_SIGN_MU, cpu, 1);
     check_bytes("mldsa87_sign_mu_cpu", cpu,
                 rounds == mu_rounds && memcmp(sig, want_mu_sig, sizeof sig) == 0);
@@ -219,23 +241,36 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds, int lane
     int sign_ok =
         mldsa87_sign_cpu(cpu, sig, sk, sizeof sk, pk, sizeof pk, MSG, sizeof MSG, NULL, 0, RND);
     check_counts("mldsa87_sign_cpu", cpu,
-                 expected(ROUND_CALLS, signer * msg_rounds, CHALLENGE_CALLS));
+                 expected(ROUND_CALLS, signer * msg_rounds, CHALLENGE_CALLS, verifier));
     check_sha3("mldsa87_sign_cpu", ROW_SIGN, cpu, 1);
     check_bytes("mldsa87_sign_cpu", cpu, sign_ok == 1 && memcmp(sig, want_sig, sizeof sig) == 0);
 
     reset_counts();
     int verified_cpu =
         mldsa87_verify_cpu(cpu, pk, sizeof pk, MSG, sizeof MSG, NULL, 0, sig, sizeof sig);
-    check_counts("mldsa87_verify_cpu", cpu, expected(NO_CALLS, 0, CHALLENGE_CALLS));
+    check_counts("mldsa87_verify_cpu", cpu, expected(NO_CALLS, 0, CHALLENGE_CALLS, verifier));
     check_sha3("mldsa87_verify_cpu", ROW_VERIFY_CPU, cpu, 1);
     check_bytes("mldsa87_verify_cpu", cpu, verified_cpu == 1);
 
     reset_counts();
     int verified = mldsa87_verify(pk, sizeof pk, MSG, sizeof MSG, NULL, 0, sig, sizeof sig);
-    check_counts("mldsa87_verify", cpu, expected(NO_CALLS, 0, CHALLENGE_CALLS));
+    check_counts("mldsa87_verify", cpu, expected(NO_CALLS, 0, CHALLENGE_CALLS, no_value));
     check_sha3("mldsa87_verify", ROW_VERIFY, cpu, 0);
     check_bytes("mldsa87_verify", cpu, verified == 1);
 }
+
+// What a passing run says about the lanes.
+#if !MLD_VECTOR
+#define LANES_SUMMARY "no call on the lanes, which this object does not hold"
+#elif defined(__x86_64__)
+#define LANES_SUMMARY                                                                              \
+    "the signer on the lanes under CH_CPU_AVX2 and the multiply bit alone, and the verifier on "   \
+    "them under CH_CPU_AVX2 alone"
+#else
+#define LANES_SUMMARY                                                                              \
+    "the signer on the lanes under the multiply bit alone and the verifier on them under every "   \
+    "value"
+#endif
 
 int main(void) {
     if (mldsa87_keygen(want_sk, want_pk, SEED) != 1) {
@@ -258,7 +293,7 @@ int main(void) {
     uint32_t subset = 0;
     do {
         uint32_t cpu = CH_CPU_PROBED | subset;
-        rows(cpu, mu_rounds, msg_rounds, MLD_VECTOR && (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0);
+        rows(cpu, mu_rounds, msg_rounds);
         values++;
         subset = (subset - bits) & bits;
     } while (subset != 0);
@@ -268,9 +303,6 @@ int main(void) {
     }
     (void)printf("mldsa runtime: keygen, sign by mu, sign and verify under %u ch_cfg.cpu values, "
                  "each SHAKE call on the path the SHA-3 bit names, and %s\n",
-                 values,
-                 MLD_VECTOR ? "the signer on the lanes under the multiply bit alone and the "
-                              "verifier on them under every value"
-                            : "no call on the lanes, which this object does not hold");
+                 values, LANES_SUMMARY);
     return 0;
 }

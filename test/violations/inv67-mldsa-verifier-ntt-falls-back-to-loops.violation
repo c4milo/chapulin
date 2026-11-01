@@ -1,16 +1,17 @@
 invariant: INV-67
 file: mldsa.c
 catches: test/docker-aes-runtime-qemu.sh mldsa-vector
-reason: mldsa.c's forward transform calls mldsa_poly.c's loop in an
-  arm64 host object, so every verification runs that transform at the
-  loop's speed. Every verdict stays right, because the loop computes the
-  same coefficients; only the time is wrong. bin/mldsa_runtime_test
-  counts the calls into the lanes that a verification makes under each
-  ch_cfg.cpu value, and the script runs it for arm64 under qemu-aarch64.
+reason: mldsa.c's forward transform calls mldsa_poly.c's loop in a
+  host object, so every verification runs that transform at the loop's
+  speed. Every verdict stays right, because the loop computes the same
+  coefficients; only the time is wrong. bin/mldsa_runtime_test counts
+  the calls into the lanes that a verification makes under each
+  ch_cfg.cpu value, and the script runs it for arm64 under qemu-aarch64
+  and for x86-64 under qemu-x86_64.
 
 --- old
-static void mld_ntt(mld_poly *p) {
+static void mld_ntt(uint32_t cpu, mld_poly *p) {
 #if MLD_VECTOR
 --- new
-static void mld_ntt(mld_poly *p) {
+static void mld_ntt(uint32_t cpu, mld_poly *p) {
 #if MLD_VECTOR && 0

@@ -21,41 +21,59 @@
 _Static_assert(MLDSA87_PK_LEN == MLD_RHO_BYTES + MLD_K * MLD_T1_BYTES, "FIPS 204 Table 2 pk size");
 _Static_assert(MLDSA87_SIG_LEN == MLD_SIG_HINT_AT + MLD_HINT_BYTES, "FIPS 204 Table 2 sig size");
 
-// The transforms and the products this object runs. An arm64 host object
-// runs them on four lanes at a time (mldsa_vector.h) in every session:
-// every input of verification is public, so no bit of ch_cfg.cpu picks
-// the lanes. Every other object runs mldsa_poly.c's loops, which CBMC
-// proves and which bin/mldsa_vector_equiv_test holds the lanes to.
-static void mld_ntt(mld_poly *p) {
+// The transforms and the products this object runs, for a session whose
+// ch_cfg.cpu is cpu. A host object runs them on mldsa_vector.c's lanes
+// where mld_vector_runs takes cpu for public operands: on arm64 in every
+// session, and on x86-64 in a session whose cpu holds CH_CPU_AVX2. Every
+// input of verification is public, so no other bit picks the lanes. Every
+// other call runs mldsa_poly.c's loops, which CBMC proves and which
+// bin/mldsa_vector_equiv_test holds the lanes to.
+static void mld_ntt(uint32_t cpu, mld_poly *p) {
 #if MLD_VECTOR
-    mld_vector_ntt(p);
+    if (mld_vector_runs(cpu, 0)) {
+        mld_vector_ntt(p);
+        return;
+    }
 #else
+    (void)cpu;
+#endif
     mld_poly_ntt(p);
-#endif
 }
 
-static void mld_invntt_tomont(mld_poly *p) {
+static void mld_invntt_tomont(uint32_t cpu, mld_poly *p) {
 #if MLD_VECTOR
-    mld_vector_invntt_tomont(p);
+    if (mld_vector_runs(cpu, 0)) {
+        mld_vector_invntt_tomont(p);
+        return;
+    }
 #else
+    (void)cpu;
+#endif
     mld_poly_invntt_tomont(p);
-#endif
 }
 
-static void mld_pointwise(mld_poly *r, const mld_poly *a, const mld_poly *b) {
+static void mld_pointwise(uint32_t cpu, mld_poly *r, const mld_poly *a, const mld_poly *b) {
 #if MLD_VECTOR
-    mld_vector_pointwise(r, a, b);
+    if (mld_vector_runs(cpu, 0)) {
+        mld_vector_pointwise(r, a, b);
+        return;
+    }
 #else
+    (void)cpu;
+#endif
     mld_poly_pointwise(r, a, b);
-#endif
 }
 
-static void mld_pointwise_acc(mld_poly *acc, const mld_poly *a, const mld_poly *b) {
+static void mld_pointwise_acc(uint32_t cpu, mld_poly *acc, const mld_poly *a, const mld_poly *b) {
 #if MLD_VECTOR
-    mld_vector_pointwise_acc(acc, a, b);
+    if (mld_vector_runs(cpu, 0)) {
+        mld_vector_pointwise_acc(acc, a, b);
+        return;
+    }
 #else
-    mld_poly_pointwise_acc(acc, a, b);
+    (void)cpu;
 #endif
+    mld_poly_pointwise_acc(acc, a, b);
 }
 
 // The checks of FIPS 204 Algorithm 21, HintBitUnpack, on the hint
@@ -104,16 +122,16 @@ static int mld_row_w1(uint32_t cpu, uint8_t w1[MLD_W1_BYTES], unsigned i,
             return 0;
         }
         if (j == 0) {
-            mld_pointwise(&sum, &entry, &z_hat[0]);
+            mld_pointwise(cpu, &sum, &entry, &z_hat[0]);
         } else {
-            mld_pointwise_acc(&sum, &entry, &z_hat[j]);
+            mld_pointwise_acc(cpu, &sum, &entry, &z_hat[j]);
         }
     }
     mld_poly_unpack_t1_shifted(&entry, pk + MLD_RHO_BYTES + (size_t)i * MLD_T1_BYTES);
-    mld_ntt(&entry);
-    mld_pointwise(&entry, c_hat, &entry);
+    mld_ntt(cpu, &entry);
+    mld_pointwise(cpu, &entry, c_hat, &entry);
     mld_poly_sub(&sum, &sum, &entry);
-    mld_invntt_tomont(&sum);
+    mld_invntt_tomont(cpu, &sum);
     const uint8_t *y = sig + MLD_SIG_HINT_AT;
     unsigned first = i == 0 ? 0 : y[MLD_OMEGA + i - 1];
     unsigned end = y[MLD_OMEGA + i];
@@ -121,8 +139,9 @@ static int mld_row_w1(uint32_t cpu, uint8_t w1[MLD_W1_BYTES], unsigned i,
     return 1;
 }
 
-// mldsa87_challenge with every hash on cpu, the session's ch_cfg.cpu, or 0
-// for a call that holds none (mld_absorb).
+// mldsa87_challenge with every hash and every transform on cpu, the
+// session's ch_cfg.cpu, or 0 for a call that holds none (mld_absorb,
+// mld_ntt).
 static int challenge(uint32_t cpu, uint8_t c_tilde[MLDSA87_CTILDE_LEN],
                      const uint8_t pk[MLDSA87_PK_LEN], const uint8_t mu[MLDSA_MU_LEN],
                      const uint8_t sig[MLDSA87_SIG_LEN]) {
@@ -134,13 +153,13 @@ static int challenge(uint32_t cpu, uint8_t c_tilde[MLDSA87_CTILDE_LEN],
         if (!mld_poly_unpack_z(&z_hat[j], sig + MLD_SIG_Z_AT + (size_t)j * MLD_Z_BYTES)) {
             return 0;
         }
-        mld_ntt(&z_hat[j]);
+        mld_ntt(cpu, &z_hat[j]);
     }
     mld_poly c_hat;
     if (!mld_sample_in_ball_cpu(cpu, &c_hat, sig)) {
         return 0;
     }
-    mld_ntt(&c_hat);
+    mld_ntt(cpu, &c_hat);
     shake h;
     shake256_init(&h);
     mld_absorb(cpu, &h, mu, MLDSA_MU_LEN);

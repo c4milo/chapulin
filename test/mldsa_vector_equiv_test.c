@@ -1,8 +1,9 @@
-// bin/mldsa_vector_equiv_test: holds mldsa_vector.c, an arm64 host
-// object's ML-DSA-87 NTT arithmetic on four 32-bit lanes, to the loops
-// CBMC proves: the verifier's in mldsa_poly.c and the signer's in
-// mldsa_sign_poly.c (docs/decisions.md 172). CBMC cannot read an
-// intrinsic, so this binary is what holds the vector path.
+// bin/mldsa_vector_equiv_test: holds mldsa_vector.c, a host object's
+// ML-DSA-87 NTT arithmetic on 32-bit lanes, NEON's four on arm64 and
+// AVX2's eight on x86-64, to the loops CBMC proves: the verifier's in
+// mldsa_poly.c and the signer's in mldsa_sign_poly.c (docs/decisions.md
+// 172 and 174). CBMC cannot read an intrinsic, so this binary is what
+// holds the vector path.
 //
 // Each case runs a function on the lanes, on the verifier's loop and on
 // the signer's loop over the same coefficients, and compares the three
@@ -27,8 +28,11 @@
 // [-2^27, 2^27]; and each output written over an operand, the aliases
 // mldsa.c and the signer pass.
 //
-// The binary has no #if on the architecture: a host object without the
-// lanes (MLD_VECTOR 0) compares the two loops alone.
+// On x86-64 the lanes run only on a CPU with AVX2. Without AVX2 the binary
+// compares the two loops alone and says so, unless CH_REQUIRE_X86_KERNELS
+// is 1 in its environment, which makes it fail (test/x86_kernels_cpu.h).
+// With AVX2 it also reads ymm0 to ymm15 back as zero after each entry,
+// because the signer's lanes hold secrets there (test/avx2_registers.h).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +40,7 @@
 #include "mldsa_poly.h"
 #include "mldsa_sign_poly.h"
 #include "mldsa_vector.h"
+#include "x86_kernels_cpu.h"
 
 #ifndef CH_CPU_RUNTIME
 #error "bin/mldsa_vector_equiv_test links a host object's ML-DSA sources: -DCH_CPU_RUNTIME"
@@ -106,7 +111,9 @@ static void run(int path, enum operation op, mld_poly *out, const mld_poly *a, c
     }
 }
 
-#define PATHS (MLD_VECTOR ? 3 : 2)
+// The paths this run compares: 3 where the object holds the lanes and
+// this CPU runs them, and 2 elsewhere. main sets it.
+static int paths = 2;
 static const char *const PATH_NAMES[] = {"the verifier's loop", "the signer's loop", "the lanes"};
 
 // Runs op on every path from the same inputs and compares each result with
@@ -117,7 +124,7 @@ static void compare(const char *what, enum operation op, const mld_poly *a, cons
     mld_poly want;
     want = *acc;
     run(0, op, &want, a, b);
-    for (int path = 1; path < PATHS; path++) {
+    for (int path = 1; path < paths; path++) {
         mld_poly got = *acc;
         run(path, op, &got, a, b);
         compared++;
@@ -152,7 +159,7 @@ static void compare_aliases(const mld_poly *a, const mld_poly *b) {
     mld_poly want_acc = *b;
     mld_poly_pointwise(&want_r, a, b);
     mld_poly_pointwise_acc(&want_acc, a, b);
-    for (int path = 0; path < PATHS; path++) {
+    for (int path = 0; path < paths; path++) {
         mld_poly over_a = *a;
         mld_poly over_b = *b;
         mld_poly acc_b = *b;
@@ -287,7 +294,99 @@ static void product_random_cases(void) {
     }
 }
 
+#if MLD_VECTOR && defined(__x86_64__)
+#include "avx2_registers.h"
+
+// What each entry leaves in ymm0 to ymm15. The signer's lanes hold s1, s2,
+// t0, y and c there, so each entry ends with VZEROALL (docs/decisions.md
+// 174). The block of assembly runs first with no call, and its stores
+// must hold every bit set, so a zero after a call is the call's.
+static void avx2_registers_cases(void) {
+    static mld_poly r;
+    static mld_poly a;
+    static mld_poly b;
+    for (size_t i = 0; i < MLD_N; i++) {
+        uint64_t draw = rng_next();
+        r.coeffs[i] = (int32_t)(uint32_t)draw;
+        a.coeffs[i] = (int32_t)(uint32_t)(draw >> 32);
+        b.coeffs[i] = (int32_t)(uint32_t)rng_next();
+    }
+    static const struct {
+        const char *name;
+        avx2_function call;
+    } entries[] = {
+        {"mld_vector_ntt",           (avx2_function)mld_vector_ntt          },
+        {"mld_vector_invntt_tomont", (avx2_function)mld_vector_invntt_tomont},
+        {"mld_vector_pointwise",     (avx2_function)mld_vector_pointwise    },
+        {"mld_vector_pointwise_acc", (avx2_function)mld_vector_pointwise_acc},
+    };
+    size_t at = 0;
+    avx2_call c = {
+        NULL, {(uintptr_t)&r, (uintptr_t)&a, (uintptr_t)&b, 0, 0, 0}
+    };
+    avx2_set_call_store(&c, 0);
+    compared++;
+    if (!avx2_registers_hold(UINT64_MAX, &at)) {
+        failures++;
+        (void)fprintf(stderr,
+                      "mldsa vector equivalence: registers: the block of assembly left ymm%zu "
+                      "word %zu unset, so it tests nothing\n",
+                      at / AVX2_REGISTER_WORDS, at % AVX2_REGISTER_WORDS);
+        return;
+    }
+#ifdef TEST_ADDRESS_SANITIZER
+    printf("mldsa vector equivalence: SKIP the registers after the AVX2 entries: this binary "
+           "runs under AddressSanitizer, whose code at an entry's return writes a vector "
+           "register after VZEROALL\n");
+    return;
+#endif
+    for (size_t e = 0; e < sizeof entries / sizeof entries[0]; e++) {
+        c.call = entries[e].call;
+        avx2_set_call_store(&c, 0);
+        compared++;
+        if (!avx2_registers_hold(0, &at)) {
+            failures++;
+            (void)fprintf(stderr,
+                          "mldsa vector equivalence: registers: ymm%zu word %zu holds "
+                          "0x%016llx after %s\n",
+                          at / AVX2_REGISTER_WORDS, at % AVX2_REGISTER_WORDS,
+                          (unsigned long long)avx2_register_word(at), entries[e].name);
+        }
+    }
+}
+#endif
+
+// Whether this run compares the lanes: where the object holds them, and on
+// x86-64 where this CPU has AVX2. Returns -1 where the environment
+// requires the lanes and this CPU lacks AVX2.
+static int lanes_run(void) {
+#if MLD_VECTOR && defined(__x86_64__)
+    if (x86_cpu_has_avx2()) {
+        return 1;
+    }
+    if (x86_kernels_required()) {
+        (void)fprintf(stderr, "mldsa vector equivalence: this CPU lacks AVX2, and "
+                              "CH_REQUIRE_X86_KERNELS is 1\n");
+        return -1;
+    }
+    printf("mldsa vector equivalence: SKIP the AVX2 lanes: this CPU lacks AVX2\n");
+    return 0;
+#else
+    return MLD_VECTOR;
+#endif
+}
+
 int main(void) {
+    int lanes = lanes_run();
+    if (lanes < 0) {
+        return 1;
+    }
+    paths = lanes ? 3 : 2;
+#if MLD_VECTOR && defined(__x86_64__)
+    if (lanes) {
+        avx2_registers_cases();
+    }
+#endif
     constant_cases();
     single_coefficient_cases();
     random_cases();
@@ -302,7 +401,6 @@ int main(void) {
     (void)printf("mldsa vector equivalence: %lu transforms and products, the same coefficients on "
                  "%s\n",
                  compared,
-                 MLD_VECTOR ? "the lanes and both loops"
-                            : "both loops (this object holds no lanes)");
+                 lanes ? "the lanes and both loops" : "both loops (this run has no lanes)");
     return 0;
 }

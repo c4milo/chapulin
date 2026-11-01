@@ -92,20 +92,16 @@ void mlds_poly_freeze(mld_poly *p);
 #endif
 
 // The dispatchers the signer's steps call, with the session's ch_cfg.cpu
-// first (docs/decisions.md 172). Each computes what the mlds_poly_
-// function of its name computes. In an arm64 host object, for a cpu that
-// holds CH_CPU_CONSTANT_TIME_MULTIPLY, it runs mldsa_vector.c's lanes,
-// whose 32x32 products the bit covers. For every other cpu, and in every
-// other object, it runs the loops above on ct.h's 16x16 pieces. That is
-// one branch per call, on cpu, which the caller chose and which is not
-// secret. A call that holds no cpu passes 0, which names no lanes.
+// first (docs/decisions.md 172 and 174). Each computes what the mlds_poly_
+// function of its name computes. In a host object, for a cpu that holds
+// CH_CPU_CONSTANT_TIME_MULTIPLY, and on x86-64 CH_CPU_AVX2 beside it, it
+// runs mldsa_vector.c's lanes, whose 32x32 products the multiply bit
+// covers. For every other cpu, and in every other object, it runs the
+// loops above on ct.h's 16x16 pieces. That is one branch per call, on cpu,
+// which the caller chose and which is not secret. A call that holds no cpu
+// passes 0, which names no lanes.
 static inline int mlds_lanes_run(uint32_t cpu) {
-#if MLD_VECTOR
-    return (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0;
-#else
-    (void)cpu;
-    return 0;
-#endif
+    return mld_vector_runs(cpu, 1);
 }
 
 static inline void mlds_ntt(uint32_t cpu, mld_poly *p) {

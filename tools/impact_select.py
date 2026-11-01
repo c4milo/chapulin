@@ -123,8 +123,8 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # alone and the lane builds it with clang for arm64. A violation of
 # mlkem_vector.c's SSE2 or NEON arm names mlkem-vector, because a machine's
 # own compiler reads one arm, a violation of mldsa_vector.c or of the
-# signer's dispatch to it names mldsa-vector, because the file has a body
-# on arm64 alone and the nightly runs its violations on x86-64, a
+# dispatch to it names mldsa-vector, because a machine's own compiler
+# reads one of its two arms, a
 # violation of keccak_avx2.c or
 # mlkem_avx2.c names mlkem-avx2, because the two have a body on x86-64
 # alone, a violation of poly1305_avx2.c names poly1305-avx2, and one of

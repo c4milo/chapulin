@@ -1,0 +1,21 @@
+invariant: INV-17
+file: mldsa_vector.c
+catches: test/docker-aes-runtime-qemu.sh mldsa-vector
+reason: mld_vector_pointwise_acc ends with VZEROUPPER where it had
+  VZEROALL. VZEROUPPER clears bits 128 to 255 alone, so the low halves
+  of the vector registers still hold the last group's products when the
+  call returns. In the signer those are products with s1, s2 or t0.
+  Every coefficient stays right. bin/mldsa_vector_equiv_test sets every
+  bit of ymm0 to ymm15, calls each entry and stores the sixteen
+  registers in one block of assembly, and requires every stored word
+  zero. Only an x86-64 compiler reads the line, so the script builds the
+  binary for x86-64 and runs it under qemu-x86_64.
+
+--- old
+        store(acc->coeffs + i, _mm256_add_epi32(sum, montgomery_multiply(x, y)));
+    }
+    _mm256_zeroall();
+--- new
+        store(acc->coeffs + i, _mm256_add_epi32(sum, montgomery_multiply(x, y)));
+    }
+    _mm256_zeroupper();

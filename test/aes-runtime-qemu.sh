@@ -119,10 +119,14 @@
 #     own compiler reads one of the file's two arms, so this is the run
 #     that holds the other.
 #   - bin/mldsa_vector_equiv_test and bin/mldsa_runtime_test must pass for
-#     arm64: ML-DSA-87's lanes on NEON against the verifier's and the
-#     signer's loops, and the count of the calls into the lanes under each
-#     ch_cfg.cpu value (docs/decisions.md 172). mldsa_vector.c has a body
-#     on arm64 alone, so an x86-64 machine's compiler reads none of it.
+#     arm64 and for x86-64: ML-DSA-87's lanes on NEON and on AVX2 against
+#     the verifier's and the signer's loops, and the count of the calls
+#     into the lanes under each ch_cfg.cpu value (docs/decisions.md 172
+#     and 174). A machine's own compiler reads one of mldsa_vector.c's two
+#     arms, so this is the run that holds the other. The x86-64
+#     equivalence runs on the max model with CH_REQUIRE_X86_KERNELS=1, so
+#     a qemu without AVX2 fails the row and does not skip it. It also
+#     reads ymm0 to ymm15 back as zero after each AVX2 entry.
 #
 # On the model with every instruction qemu has, which has the AES
 # instructions on both architectures:
@@ -290,8 +294,8 @@
 #                     for the violations of mlkem_vector.c's SSE2 and NEON
 #                     arms
 #   mldsa-vector      bin/mldsa_vector_equiv_test and bin/mldsa_runtime_test
-#                     for arm64, for the violations of mldsa_vector.c and
-#                     of the signer's dispatch to it
+#                     for arm64 and for x86-64, for the violations of
+#                     mldsa_vector.c's two arms and of the dispatch to it
 #   poly1305-avx2     bin/poly1305_equiv_test for x86-64, for the
 #                     violations of poly1305_avx2.c
 #   chacha20-avx2     bin/chacha20_equiv_test for x86-64, for the
@@ -368,8 +372,7 @@ x86_cc=""
 arm64_cc=""
 x86_qemu=${QEMU_X86_64:-qemu-x86_64}
 arm64_qemu=${QEMU_AARCH64:-qemu-aarch64}
-if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ] && [ "$only" != ghash-equiv ] &&
-    [ "$only" != mldsa-vector ]; then
+if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ] && [ "$only" != ghash-equiv ]; then
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
@@ -573,9 +576,20 @@ fi
 
 if [ -z "$only" ] || [ "$only" = mldsa-vector ]; then
     # ML-DSA-87's lanes against the verifier's and the signer's loops, and
-    # the calls into them under each ch_cfg.cpu value, on NEON for arm64.
-    # The rules in the Makefile pass CH_CPU_RUNTIME, and the counting one
-    # CH_MLDSA_SIGN_TEST, so these lines do too.
+    # the calls into them under each ch_cfg.cpu value, on NEON for arm64
+    # and on AVX2 for x86-64. The rules in the Makefile pass
+    # CH_CPU_RUNTIME, and the counting one CH_MLDSA_SIGN_TEST, so these
+    # lines do too. The counting binary runs no lane instruction, so it
+    # runs on any model.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/mldsa_vector_equiv_test" \
+        test/mldsa_vector_equiv_test.c "${mldsa_vector_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_X86_KERNELS=1 expect max 0 \
+        "ML-DSA-87's lanes on AVX2 and the loops disagree, or an AVX2 entry left a register written" \
+        mldsa_vector_equiv_test
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -o "$x86_out/mldsa_runtime_test" \
+        test/mldsa_runtime_test.c "${mldsa_runtime_srcs[@]}" || exit 1
+    expect max 0 "an ML-DSA-87 call ran on the AVX2 lanes where its ch_cfg.cpu value does not pick them, or off them where it does" \
+        mldsa_runtime_test
     "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$arm64_out/mldsa_vector_equiv_test" \
         test/mldsa_vector_equiv_test.c "${mldsa_vector_equiv_srcs[@]}" || exit 1
     expect_arm64 max 0 "ML-DSA-87's lanes on NEON and the loops disagree" mldsa_vector_equiv_test
@@ -585,7 +599,7 @@ if [ -z "$only" ] || [ "$only" = mldsa-vector ]; then
         mldsa_runtime_test
 fi
 if [ "$only" = mldsa-vector ]; then
-    echo "aes-runtime-qemu: bin/mldsa_vector_equiv_test held ML-DSA-87's lanes to the loops on NEON for arm64, and bin/mldsa_runtime_test counted the calls into them under each ch_cfg.cpu value"
+    echo "aes-runtime-qemu: bin/mldsa_vector_equiv_test held ML-DSA-87's lanes to the loops on NEON for arm64 and on AVX2 for x86-64, and bin/mldsa_runtime_test counted the calls into them under each ch_cfg.cpu value on both"
     exit 0
 fi
 

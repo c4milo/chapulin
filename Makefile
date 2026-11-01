@@ -1394,9 +1394,11 @@ LIB_SRCS += $(if $(filter mlkem.c,$(LIB_SRCS)),mlkem_vector.c)
 endif
 # ML-DSA-87's NTT. A device object runs mldsa_poly.c's and
 # mldsa_sign_poly.c's loops. A host object also holds mldsa_vector.c, the
-# same transforms and products on four 32-bit lanes, which holds code on
-# arm64 alone: mldsa.c runs it in every session, and the signer for a
-# session whose ch_cfg.cpu holds the multiply bit (docs/decisions.md 172).
+# same transforms and products on 32-bit lanes, NEON's four on arm64 and
+# AVX2's eight on x86-64. On arm64 mldsa.c runs it in every session, and
+# on x86-64 in a session whose ch_cfg.cpu holds CH_CPU_AVX2. The signer
+# runs it for a session whose value holds the multiply bit, and on x86-64
+# CH_CPU_AVX2 beside it (docs/decisions.md 172 and 174).
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter mldsa.c,$(LIB_SRCS)),mldsa_vector.c)
 endif
@@ -3556,8 +3558,9 @@ bin/mlkem_vector_equiv_test: test/mlkem_vector_equiv_test.c $(MLKEM_VECTOR_EQUIV
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mlkem_vector_equiv_test.c \
 	  $(MLKEM_VECTOR_EQUIV_TEST_SRCS)
 # ML-DSA-87's lanes against the verifier's and the signer's loops, the code
-# CBMC proves (docs/decisions.md 172). On x86-64 the object holds no lanes,
-# and the binary compares the two loops alone.
+# CBMC proves (docs/decisions.md 172 and 174). On x86-64 the lanes are
+# AVX2's, and on a CPU without AVX2 the binary compares the two loops
+# alone, unless CH_REQUIRE_X86_KERNELS is 1.
 MLDSA_VECTOR_EQUIV_TEST_SRCS := mldsa_poly.c mldsa_sign_poly.c mldsa_vector.c $(call host_srcs,sha3.c) \
                                 ct.c ct_wipe.c
 bin/mldsa_vector_equiv_test: test/mldsa_vector_equiv_test.c $(MLDSA_VECTOR_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
@@ -4538,7 +4541,9 @@ $(eval $(call HOST_VECTOR_BIN,p256_sign_fault_test,test/p256_sign_fault_test.c,$
 $(eval $(call HOST_VECTOR_BIN,rsa_sign_test,test/rsa_sign_test.c,$(RSA_SIGN_TEST_SRCS),$(RSA_WIDE_DEF)))
 # The library's ML-DSA-87 signer against the test-only signer, as a host
 # object signs: on arm64 the value with the multiply bit runs the signer's
-# NTT and products on mldsa_vector.c's lanes (docs/decisions.md 172).
+# NTT and products on mldsa_vector.c's lanes (docs/decisions.md 172), and
+# on x86-64 the values of X86_UNIT_CPU, which hold CH_CPU_AVX2 beside it,
+# run them on the AVX2 lanes (docs/decisions.md 174).
 $(eval $(call HOST_VECTOR_BIN,mldsa_signer_test,test/mldsa_signer_test.c,$(MLDSA_SIGNER_TEST_SRCS),-DCH_MLDSA_SIGN_TEST))
 # FIPS 180-4's SHA-384 and SHA-512 vectors, RFC 4231's HMAC-SHA-384 and
 # the TLS_AES_256_GCM_SHA384 key schedule, as a host object's session runs
@@ -4960,7 +4965,8 @@ $(foreach b,$(CHECK_RUN_BINS),$(eval $(call CHECK_RUN,$(b))))
 # HOST_VECTOR_CPU, which it takes as its argument (test/test_cpu.h), and
 # its target fails when any run does. $(2) names the values a binary runs
 # under beside those: X86_UNIT_CPU on x86-64 for the unit suite, the
-# two RSA verifiers' binaries and the P-256 key exchange's and signer's,
+# two RSA verifiers' binaries, the P-256 key exchange's and signer's and
+# the ML-DSA-87 signer's,
 # HASH_UNIT_CPU for the unit suite, and
 # HASH512_UNIT_CPU for the two SHA-512 vector binaries.
 define CHECK_RUN_HOST_VECTOR_BIN
@@ -4970,7 +4976,8 @@ check-run-$(1): bin/$(1)
 	(exit $$$$rc); $$(CHECK_REPORT)
 endef
 HASH_VECTOR_HOST := sha512_test_host hkdf384_test_host
-X86_VECTOR_HOST := unit_host rsa_test_host rsa_pkcs1_test_host p256_ecdh_test_host p256_sign_test_host
+X86_VECTOR_HOST := unit_host rsa_test_host rsa_pkcs1_test_host p256_ecdh_test_host p256_sign_test_host \
+                   mldsa_signer_test_host
 $(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST_VECTOR_BIN,$(b),$(if $(filter $(X86_VECTOR_HOST),$(b)),$(X86_UNIT_CPU)) $(if $(filter unit_host,$(b)),$(HASH_UNIT_CPU)) $(if $(filter $(HASH_VECTOR_HOST),$(b)),$(HASH512_UNIT_CPU)))))
 
 # The host object's AES runs: the published vectors on the instructions
@@ -8304,9 +8311,9 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # chacha20_vector.c and the two kernels multiply nothing.
 # mlkem_vector.c multiplies 16-bit lanes alone, which these specs do not
 # count, and divides nothing (docs/decisions.md 101). mldsa_vector.c
-# compiles to nothing on x86-64, and on arm64 multiplies 32-bit lanes
-# alone, which these specs do not count either, and divides nothing
-# (docs/decisions.md 172). keccak_avx2.c and
+# multiplies 32-bit lanes alone, on NEON for arm64 and on AVX2 for x86-64,
+# which these specs do not count either, and divides nothing
+# (docs/decisions.md 172 and 174). keccak_avx2.c and
 # mlkem_avx2.c, the four-way Keccak and ML-KEM's copy over it, compile to
 # nothing on arm64, and on x86-64 the first multiplies nothing and the
 # second holds mlkem.c's text, whose products these specs count no more
@@ -8858,9 +8865,14 @@ WIDEMUL_SPECS := \
 #   coefficients and of each candidate against q.
 # mlkem_vector.c, 7 and 7: the loops over the layers and blocks of the two
 #   transforms and the base multiplication's 16 blocks, all constants.
-# mldsa_vector.c, 13 and 0: on arm64 the loops over the layers, the
-#   blocks and the coefficients of the two transforms and the two
-#   products, all over constants; on x86-64 it holds no body.
+# mldsa_vector.c, 13 and 13: the loops over the layers, the blocks and
+#   the coefficients of the two transforms and the two products, all over
+#   constants. On arm64 they are the NEON arm's, and on x86-64 the AVX2
+#   arm's: in mld_vector_ntt the reduction, the three loops of the layers
+#   of span 128 to 8 and the 16 blocks of the last three layers; in
+#   mld_vector_invntt_tomont the reduction, the 16 blocks, the three loops
+#   of the layers of span 8 to 128 and the multiply by 41978; and one loop
+#   in each product (docs/decisions.md 174).
 # The ML-DSA-87 signer's arm64 host arms (docs/decisions.md 172):
 #   mldsa_sign_steps.c@host's 43 hold 19 TBNZ and one TBZ on bit 2 of the
 #   session's ch_cfg.cpu, mldsa_sign_poly.h's dispatchers, which pick the
@@ -8872,10 +8884,21 @@ WIDEMUL_SPECS := \
 #   on arm64, mldsa_signer.c@host's 27, mldsa_sign_steps.c@host's 46 and
 #   mldsa_sign_pack.c@host's 30 hold 4, 3 and 3 more TBNZ and TBZ on bit 7
 #   of cpu, CH_CPU_CONSTANT_TIME_SHA3, in mld_absorb and mld_squeeze. On
-#   x86-64, where the bit picks nothing, mldsa_sign_steps.c@host's 36 hold
+#   x86-64, where the bit picks nothing, mldsa_sign_steps.c@host's 36 held
 #   13 more JE: clang now inlines mlds_matrix_row into mlds_commit and
 #   mlds_keygen_row and unrolls its seven samples, and each JE is the test
 #   of a sampler's verdict, which FIPS 204 Appendix C treats as public.
+# The ML-DSA-87 signer's x86-64 host arms (docs/decisions.md 174), where
+#   the dispatchers pick the AVX2 lanes under CH_CPU_AVX2 and the multiply
+#   bit: each new branch is a TESTB or a CMPL of cpu with 12, those two
+#   bits. mldsa_signer.c@host's 18 hold two more than before: the test in
+#   key generation's NTT of s1, and the loop over the seven polynomials of
+#   s1, which clang no longer unrolls. mldsa_sign_steps.c@host is down to
+#   35: clang no longer inlines mlds_matrix_row into mlds_keygen_row, which
+#   drops seven sampler tests, and the dispatchers in mlds_commit,
+#   mlds_response and times_c add six. mldsa_sign_poly.c@host's 26 hold the
+#   loops of mlds_poly_center and mlds_poly_freeze, which MLD_VECTOR now
+#   compiles on x86-64 too.
 # keccak_avx2.c, 0 and 1: the permutation's 24 rounds.
 # sha256_hw.c, 6 and 10; sha512_hw.c, 17 and 13; sha256.c@host, 28 and 35:
 #   an update's tests of n and of the count of buffered bytes, the loop
@@ -9189,8 +9212,8 @@ MLDSA_SIGN_BRANCH_CEILING := \
   rv32ic-gcc/mldsa_sign_poly.c:12 rv32ic-gcc/mldsa_sign_pack.c:18 \
   arm64/mldsa_signer.c@host:27 arm64/mldsa_sign_round.c@host:2 arm64/mldsa_sign_steps.c@host:46 \
   arm64/mldsa_sign_poly.c@host:25 arm64/mldsa_sign_pack.c@host:30 \
-  x86-64/mldsa_signer.c@host:16 x86-64/mldsa_sign_round.c@host:2 \
-  x86-64/mldsa_sign_steps.c@host:36 x86-64/mldsa_sign_poly.c@host:24 \
+  x86-64/mldsa_signer.c@host:18 x86-64/mldsa_sign_round.c@host:2 \
+  x86-64/mldsa_sign_steps.c@host:35 x86-64/mldsa_sign_poly.c@host:26 \
   x86-64/mldsa_sign_pack.c@host:22
 QUIC_PACKET_BRANCH_CEILING := \
   m3/quic_packet.c:59 mips32r2/quic_packet.c:42 rv32imac/quic_packet.c:46 m3-gcc/quic_packet.c:46 \
@@ -9493,7 +9516,7 @@ BRANCH_CEILING := \
   arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:41 arm64/rsa_ifma.c@512:0 x86-64/rsa_ifma.c@512:45 \
   arm64/rsa_avx2.c:0 x86-64/rsa_avx2.c:49 arm64/rsa_avx2.c@512:0 x86-64/rsa_avx2.c@512:86 \
   arm64/mlkem_vector.c:7 x86-64/mlkem_vector.c:7 \
-  arm64/mldsa_vector.c:13 x86-64/mldsa_vector.c:0 \
+  arm64/mldsa_vector.c:13 x86-64/mldsa_vector.c:13 \
   arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:1 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:28 \
   arm64/avx512_wipe.c:0 x86-64/avx512_wipe.c:0 \
   arm64/rsa_ifma_sign.c:0 x86-64/rsa_ifma_sign.c:62 arm64/rsa_ifma_sign.c@512:0 \

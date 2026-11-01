@@ -1,0 +1,15 @@
+invariant: INV-67
+file: mldsa_vector.c
+catches: test/docker-aes-runtime-qemu.sh mldsa-vector
+reason: the AVX2 lanes' reduction adds no rounding bit, so it rounds
+  down where mld_reduce32 rounds to the nearest multiple of 2^23. Every
+  value stays congruent mod q, so a signature still verifies, but a
+  coefficient whose bit 22 is set leaves the reduction q above the loops'
+  value. bin/mldsa_vector_equiv_test compares coefficients exactly. Only
+  an x86-64 compiler reads the line, so the script builds the binary for
+  x86-64 and runs it under qemu-x86_64, whose max model has AVX2.
+
+--- old
+    lanes t = _mm256_add_epi32(_mm256_srai_epi32(a, 23), bit22);
+--- new
+    lanes t = _mm256_add_epi32(_mm256_srai_epi32(a, 23), _mm256_andnot_si256(bit22, bit22));

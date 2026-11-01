@@ -1,0 +1,16 @@
+invariant: INV-67
+file: mldsa_vector.h
+catches: test/docker-aes-runtime-qemu.sh mldsa-vector
+reason: the dispatch to the lanes drops its test of CH_CPU_AVX2 on
+  x86-64. So the verifier runs the AVX2 lanes in every session, and the
+  signer in every session with the multiply bit. A CPU without AVX2 then
+  dies of SIGILL at its first transform. On a CPU with AVX2 every byte
+  stays right, so no vector notices. bin/mldsa_runtime_test counts the
+  calls into the lanes under each ch_cfg.cpu value and runs no AVX2
+  instruction. Only an x86-64 compiler reads the line, so the script
+  builds the binary for x86-64 and runs it under qemu-x86_64.
+
+--- old
+    need |= CH_CPU_AVX2;
+--- new
+    need |= 0;

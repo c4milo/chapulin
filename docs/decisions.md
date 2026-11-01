@@ -15232,3 +15232,82 @@ does nothing more.
     - **Rejected:** **a `cpu` field in `sha3.h`'s `shake`.** It would
       reach every SHAKE caller of the tree for one ML-DSA change, and a
       context's value could differ from the session's.
+
+174. **An x86-64 host object runs ML-DSA-87's NTT and its NTT-domain
+    products on eight 32-bit AVX2 lanes: the verifier under
+    `CH_CPU_AVX2`, the signer under that bit and the multiply bit.** This
+    is the second of the three steps entry 172 names. After entries 172
+    and 173 an x86-64 host object ran `mldsa_poly.c`'s and
+    `mldsa_sign_poly.c`'s loops in every session.
+
+    - **What runs.** `mldsa_vector.c` holds a second arm under the same
+      four names, which an x86-64 host object compiles in place of the
+      NEON arm. `MLD_VECTOR` is 1 in a host object for x86-64 too. Every
+      function of the arm carries the target attribute that turns AVX2
+      on, as in `keccak_avx2.c`, so the rest of the object runs on any
+      x86-64 CPU. The transforms run the layers of span 128 down to 8 on
+      eight consecutive coefficients at a time, with one twiddle factor
+      in every lane. The last three layers, and the first three of the
+      inverse, pair coefficients 4, 2 and 1 apart, inside one register.
+      So those passes take 16 coefficients in two registers and move
+      them with three exchanges: VPERM2I128 on 128-bit halves,
+      VPUNPCKLQDQ and VPUNPCKHQDQ on 64-bit pairs, and shifts by 32 with
+      VPBLENDD on 32-bit words. After each exchange, lane i of one
+      register and lane i of the other are the two coefficients of one
+      butterfly. Each exchange done twice gives back its input, so the
+      same three in the other order put the coefficients back. VPERMD
+      spreads each layer's twiddle factors over the lanes from eight
+      consecutive entries of the one table in `mldsa_zetas.h`.
+    - **Each lane computes the scalar value.** VPMULDQ multiplies the
+      low 32 bits of each 64-bit lane as signed values, so two VPMULDQ
+      give the exact products ab of the even and the odd lanes. VPMULLD
+      gives t, the low 32 bits of ab times q^-1. A third and fourth
+      VPMULDQ give tq exactly, and ab − tq fits in 64 bits, because |ab|
+      is at most 2^62 and |tq| is under 2^54. Its low 32 bits are zero,
+      so its high 32 bits are (ab − tq) / 2^32, the scalar's value, for
+      every pair of int32 operands. VPBLENDD puts the even and the odd
+      results back in their lanes. The reduction is the NEON arm's: a
+      shift by 23 plus bit 22, then a − tq with VPMULLD. So every output
+      equals the loops' for every int32 input, and the test compares
+      coefficients exactly.
+    - **The bits.** `mldsa_vector.h`'s `mld_vector_runs(cpu, secret)` is
+      the one test. On x86-64 it needs `CH_CPU_AVX2`, because AVX2 is not
+      on every x86-64 CPU, and the signer also needs
+      `CH_CPU_CONSTANT_TIME_MULTIPLY`, by entry 172's reason. On arm64
+      it is entry 172's rule unchanged. `mldsa.c`'s four static wrappers
+      take the session's value, which `challenge` and `verify` already
+      held for the hashes (entry 173). The calls without a value pass 0,
+      so on x86-64 they run the loops, and on arm64 the lanes, as before.
+    - **The registers.** The signer's lanes hold s1, s2, t0, y and c in
+      ymm registers. So each of the four entries ends with VZEROALL, by
+      entry 129's rule, and the verifier's calls run it too. Under Apple
+      clang 21 and gcc 13.3 for x86-64 at `-O2` no entry writes a vector
+      register to the stack. A frame holds the return address and at
+      most the saved frame pointer. So no wipe of the stack below follows
+      a call.
+    - **Numbers.** None yet. This entry was written on an M1, where
+      Rosetta 2 runs the AVX2 code but shows nothing of its timing. The
+      x86 runners' throwaway-branch matrix of `docs/performance.md` is
+      where the scratch loop of entry 172 runs under 0x5, 0xd and 0x8d.
+    - **What holds it.** `bin/mldsa_vector_equiv_test` holds the AVX2
+      arm to both loops over entry 172's inputs on a CPU with AVX2. It
+      also reads ymm0 to ymm15 back as zero after each entry
+      (`test/avx2_registers.h`), and without AVX2 it skips the lanes
+      unless `CH_REQUIRE_X86_KERNELS` is 1. `bin/mldsa_runtime_test`
+      states the bits of each call apart from `mld_vector_runs` and
+      counts the calls into the lanes under every value. The qemu lane's
+      `mldsa-vector` part now builds both binaries for x86-64 too and
+      runs them under qemu-x86_64's max model. Six violations run there:
+      a reduction without its rounding bit, the inverse twiddles of span
+      2 in the wrong order, a VZEROUPPER in place of a VZEROALL, a
+      dispatch without the AVX2 test, and the two INV-67 edits of entry
+      172 to the dispatch, which now show on both architectures.
+    - **Rejected:**
+      - **An 8x8 transpose for the last three layers.** It holds eight
+        registers of coefficients at once, beside the constants and the
+        temporaries of the Montgomery product, in AVX2's sixteen. The
+        exchanges hold two, and the compilers write no lane to the stack.
+      - **VPGATHERDD for the twiddle factors.** A gather is slower than
+        the one load and one VPERMD that read the same eight entries.
+      - **The verifier in every x86-64 session.** A CPU without AVX2
+        faults on the first instruction.
