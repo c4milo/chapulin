@@ -35,7 +35,10 @@
 // at infinity for every P, which p256_point_affine already reports, so
 // dropping the term changes no answer a caller can see and no test can
 // catch it. It stays because this file states the contract and must not
-// rest on the arithmetic being right.
+// rest on the arithmetic being right. The p256_ecdh harness holds it: its
+// point stubs answer any mask, and it requires each call that answers 1
+// to have found the scalar not zero
+// (test/violations/inv03-p256-ecdh-scalar-zero.violation).
 static uint32_t scalar_in_range_mask(const p256_scalar *k) {
     return p256_scalar_reduced_mask(k) & ~p256_scalar_zero_mask(k);
 }

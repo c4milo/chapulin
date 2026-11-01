@@ -812,7 +812,12 @@ The entries are grouped by area:
   - memory safety over any 65 peer bytes and any 32 scalar bytes;
   - each entry answers 0 or 1;
   - a refusal leaves no private key, no public key and no shared secret
-    behind, for every verdict the stubbed arithmetic can give.
+    behind, for every verdict the stubbed arithmetic can give;
+  - keygen and the key exchange answer 1 only for a scalar that the range
+    check found below n and not zero. The zero half refuses nothing a
+    caller can see, because 0·P is the point at infinity, which the point
+    check refuses too. So no test sees it, and this assertion holds it
+    (`inv03-p256-ecdh-scalar-zero`).
 
   The ladder and the point decode are [p256_point](#p256_point)'s.
 - **Bound:** any 65-byte point, any 32-byte scalar, full-range points,

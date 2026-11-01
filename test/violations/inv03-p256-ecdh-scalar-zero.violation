@@ -1,0 +1,16 @@
+invariant: INV-3
+file: p256_ecdh.c
+catches: proof/prove-one.sh p256_ecdh
+reason: an all-zero draw is the scalar 0, whose public key is the point at
+  infinity and whose shared secret is that point whatever the peer sends.
+  Dropping the lower end of the range check changes no answer, because
+  the point check refuses the point at infinity too, so no test sees it.
+  The p256_ecdh harness requires each call that answers 1 to have found
+  the scalar not zero.
+
+--- old
+    return p256_scalar_reduced_mask(k) & ~p256_scalar_zero_mask(k);
+--- new
+    // A draw is 32 random bytes, so the all-zero one has probability
+    // 2^-256 and the upper bound alone decides.
+    return p256_scalar_reduced_mask(k);

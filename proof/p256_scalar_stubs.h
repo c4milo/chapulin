@@ -41,14 +41,23 @@ void p256_scalar_to_bytes(uint8_t out[P256_SCALAR_LEN], const p256_scalar *a) {
     fill_nondet(out, P256_SCALAR_LEN);
 }
 
+// The answers the last reduced_mask and zero_mask calls gave. A harness
+// sets each to a value neither stub returns before a call, so after the
+// call it reads both what the call asked and what the stubs answered.
+// Each stub answers 0 or all ones.
+static uint32_t stub_reduced_answer;
+static uint32_t stub_zero_answer;
+
 uint32_t p256_scalar_reduced_mask(const p256_scalar *a) {
     __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "reduced_mask: input readable");
-    return nondet_mask();
+    stub_reduced_answer = nondet_mask();
+    return stub_reduced_answer;
 }
 
 uint32_t p256_scalar_zero_mask(const p256_scalar *a) {
     __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "zero_mask: input readable");
-    return nondet_mask();
+    stub_zero_answer = nondet_mask();
+    return stub_zero_answer;
 }
 
 void p256_scalar_cmov(p256_scalar *o, const p256_scalar *a, uint32_t mask) {

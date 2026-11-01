@@ -973,7 +973,9 @@ launch fast:3 full p256_sign 100 "ct_wipe.0:289" --object-bits 10 buf.c proof/ct
 # ladder and the point decode are p256_point's, so nothing here unrolls
 # them; a harness that did returned no verdict in 854 s. Measured (cbmc
 # 6.11.0, kissat, /usr/bin/time -l): 284 properties, 1.4 s, and 27 MB of
-# cbmc.
+# cbmc. With each call that answers 1 required to have found the scalar
+# below n and not zero, measured on 2026-10-31 the same way on the M1 Pro
+# at a load average near 37: 286 properties, 5 s, 28 MB.
 launch fast full p256_ecdh 100 "" ct.c proof/ct_wipe_stub.c
 # webpki_spki: webpki_read_spki over any bytes up to CH_WEBPKI_CERT_MAX,
 # with the real DER primitives, rbuf and ct_memeq, at the webpki

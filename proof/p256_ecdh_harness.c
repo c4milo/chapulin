@@ -10,7 +10,15 @@
 //   0 both outputs are zeroed", "on 0 out is zeroed" -- and it is the
 //   contract a caller that ignores the return code rests on. The stubs
 //   answer an unconstrained mask, so this holds for every verdict the
-//   arithmetic could give, not for the one it usually gives.
+//   arithmetic could give, not for the one it usually gives;
+//
+//   that keygen and the key exchange answer 1 only for a scalar the range
+//   check found below n and not zero, both halves of p256_ecdh.c's
+//   scalar_in_range_mask. The zero half refuses nothing a caller can see,
+//   because 0*P is the point at infinity, which the point check refuses
+//   too, so no test can tell it is there. Here the point stubs answer any
+//   mask, so this assertion is what holds it
+//   (test/violations/inv03-p256-ecdh-scalar-zero.violation).
 //
 // Layered proof, in the shape hkdf_harness.c uses. The scalar
 // arithmetic and the point arithmetic are the stub contracts in
@@ -56,12 +64,17 @@ int main(void) {
     __CPROVER_assert(valid == 0 || valid == 1, "p256_ecdh_point_valid returns 0 or 1");
 
     // Any draw, in range or not. Both outputs are freshly havocked, the
-    // way a caller's uninitialized buffers arrive.
+    // way a caller's uninitialized buffers arrive. The two answers start
+    // at values neither mask stub returns.
     fill_nondet(draw, sizeof draw);
     fill_nondet(priv, sizeof priv);
     fill_nondet(pub, sizeof pub);
+    stub_reduced_answer = 1;
+    stub_zero_answer = 1;
     int rc = p256_ecdh_keygen(nondet_u8(), draw, priv, pub);
     __CPROVER_assert(rc == 0 || rc == 1, "p256_ecdh_keygen returns 0 or 1");
+    __CPROVER_assert(rc == 0 || (stub_reduced_answer == UINT32_MAX && stub_zero_answer == 0),
+                     "p256_ecdh_keygen: accepts only a scalar below n and not zero");
     __CPROVER_assert(rc == 1 || all_zero(priv, sizeof priv),
                      "p256_ecdh_keygen: a refusal leaves no private key");
     __CPROVER_assert(rc == 1 || all_zero(pub, sizeof pub),
@@ -73,8 +86,12 @@ int main(void) {
     fill_nondet(priv, sizeof priv);
     fill_nondet(peer, sizeof peer);
     fill_nondet(out, sizeof out);
+    stub_reduced_answer = 1;
+    stub_zero_answer = 1;
     rc = p256_ecdh(nondet_u8(), priv, peer, out);
     __CPROVER_assert(rc == 0 || rc == 1, "p256_ecdh returns 0 or 1");
+    __CPROVER_assert(rc == 0 || (stub_reduced_answer == UINT32_MAX && stub_zero_answer == 0),
+                     "p256_ecdh: accepts only a scalar below n and not zero");
     __CPROVER_assert(rc == 1 || all_zero(out, sizeof out),
                      "p256_ecdh: a refusal leaves no shared secret");
     return 0;
