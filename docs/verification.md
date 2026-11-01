@@ -1560,11 +1560,18 @@ The entries are grouped by area:
   bounds by [x25519_wide_edwards](#x25519_wide)'s inductive step; and one
   step of `reduce_mod_l()` keeps the remainder below L, so h mod L is
   below L by induction from 0.
+- **Lean:** `spec/lean/Spec/Ed25519ModL.lean` models `reduce_step()`
+  and `reduce_mod_l()` from the C. `step_eq` proves that a step from a
+  remainder below L is (2 o + bit) mod L, and `reduceModL_eq` proves
+  that the reduction is h mod L for every 512-bit h. `bin/diff_ed25519`,
+  in `make diff`, holds the C to both in 1,020 comparisons: each bit
+  from fixed and random remainders up to L - 1, and the hashes 0,
+  2^512 - 1, L - 1, L, L + 1 and random ones.
 - **Not proved:** `decode_point()` by a line of its own. Its power chain
   is `mul()` and `sqr()` alone, whose bounds the `x25519_wide` harnesses
   prove, and in one formula with the rest it gave no verdict in 25
   minutes. The mod-L step runs without `--unsigned-overflow-check`,
-  because its borrow chain wraps on purpose. No value is proved:
+  because its borrow chain wraps on purpose. No point value is proved:
   `bin/dnssec_test` runs OpenSSL's Ed25519 signatures, a forgery under a
   small-order key, a key whose y is p and an S above L, and the Zig
   API's test verifies `std.crypto`'s signatures.

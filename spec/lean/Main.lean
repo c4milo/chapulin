@@ -879,6 +879,22 @@ def dispatch : List String → Option String
     let rInv := r⁻¹
     guard (r * rInv == 1)
     return bytesToHex (natToBytesBE (Spec.RsaExp.publicExp r rInv (x : ZMod m) e).val mb.size)
+  | ["ed25519_reduce_step", remainder, bit] => do
+    -- reduce_step in x25519_wide_ed25519.h: a remainder below L in 32 little-endian bytes and a
+    -- bit, 0 or 1. The answer is the model's step (Spec/Ed25519ModL.lean) in 32 little-endian
+    -- bytes. The guard is step_eq's hypotheses.
+    let ob ← hexArg? remainder
+    let b ← bit.toNat?
+    guard (ob.size == 32 && b < 2)
+    let o := bytesToNatLE ob
+    guard (o < Spec.Ed25519ModL.L)
+    return bytesToHex (natToBytesLE (Spec.Ed25519ModL.step o b) 32)
+  | ["ed25519_mod_l", hash] => do
+    -- reduce_mod_l: a 64-byte little-endian hash. The answer is the model's reduceModL
+    -- (Spec/Ed25519ModL.lean) in 32 little-endian bytes.
+    let hb ← hexArg? hash
+    guard (hb.size == 64)
+    return bytesToHex (natToBytesLE (Spec.Ed25519ModL.reduceModL (bytesToNatLE hb)) 32)
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

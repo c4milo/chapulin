@@ -5518,6 +5518,8 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_rsa_avx2
 	$(MAKE) bin/diff_rsa_exp
 	./bin/diff_rsa_exp
+	$(MAKE) bin/diff_ed25519
+	./bin/diff_ed25519
 	$(MAKE) bin/diff_x25519_adx
 	./bin/diff_x25519_adx
 else
@@ -5526,6 +5528,7 @@ else
 	@echo "SKIP diff's AVX-512 IFMA binaries: $(CC) fails the host test"
 	@echo "SKIP diff's AVX2 binary: $(CC) fails the host test"
 	@echo "SKIP diff's DNSSEC exponent binary: $(CC) fails the host test"
+	@echo "SKIP diff's DNSSEC Ed25519 binary: $(CC) fails the host test"
 	@echo "SKIP diff's radix-2^64 X25519 binary: $(CC) fails the host test"
 endif
 endif
@@ -5646,6 +5649,13 @@ bin/diff_rsa_exp: test/diff_rsa_exp_test.c $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TEST
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC $(RSA_WIDE_DEF) -I. -Itest -o $@ \
 	  test/diff_rsa_exp_test.c $(RSA_EQUIV_TEST_SRCS)
+# The DNSSEC Ed25519 arm: reduce_step and reduce_mod_l against
+# spec/lean/Spec/Ed25519ModL.lean. The unit includes x25519_wide.c, as
+# bin/diff_x25519_wide's does, for its static functions.
+bin/diff_ed25519: test/diff_ed25519_test.c x25519.c x25519_wide.c ct.c ct_wipe.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -I. -Itest -o $@ test/diff_ed25519_test.c \
+	  ct.c ct_wipe.c
 # The radix-2^64 X25519 arm: x25519_adx.c's five operations, its final
 # reduction and its shared secret, compiled over its model as
 # bin/x25519_adx_model_test compiles them, against
