@@ -408,7 +408,11 @@ Home: github.com/c4milo.
   same way: `dnssec.[ch]` (DNSSEC=on, a host TRUST=webpki object of
   either transport, docs/decisions.md 169). `ch_dnssec_verify` checks an
   RRSIG signature of algorithm 8, 10, 13, 14 or 15 against a DNSKEY's key
-  field, and three `ch_dnssec_hash_` calls hash the signed data. The
+  field, three `ch_dnssec_hash_` calls hash the signed data, and
+  `ch_dnssec_digest_init` starts a plain SHA-1, SHA-256 or SHA-384 for
+  NSEC3 and DS digests. `sha1.[ch]` holds SHA-1 for those hashes alone,
+  with `dnssec.c` its one caller, and the RSA/SHA-1 algorithms 5 and 7
+  stay refused. The
   Ed25519 check of algorithm 15 runs on the wide field's Edwards points,
   in `x25519_wide_ed25519.h`, which `x25519_wide.c` includes. No session
   calls them, and each carries the transport in its symbol name. The
