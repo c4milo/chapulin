@@ -13,6 +13,7 @@ import Spec.X25519
 import Spec.X25519Edwards
 import Spec.X25519Adx
 import Spec.Ed25519ModL
+import Spec.Ed25519Decode
 import Spec.Weierstrass
 import Spec.P256
 import Spec.P256Nonce

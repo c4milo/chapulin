@@ -895,6 +895,15 @@ def dispatch : List String → Option String
     let hb ← hexArg? hash
     guard (hb.size == 64)
     return bytesToHex (natToBytesLE (Spec.Ed25519ModL.reduceModL (bytesToNatLE hb)) 32)
+  | ["ed25519_decode", key] => do
+    -- decode_point in x25519_wide_ed25519.h: a 32-byte public key. The answer is the model's
+    -- decode (Spec/Ed25519Decode.lean), x then y in 32 little-endian bytes each, or FAIL for a
+    -- key it refuses.
+    let kb ← hexArg? key
+    guard (kb.size == 32)
+    match Spec.Ed25519Decode.decode (bytesToNatLE kb) with
+    | none => return "FAIL"
+    | some (x, y) => return bytesToHex (natToBytesLE x.val 32 ++ natToBytesLE y.val 32)
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

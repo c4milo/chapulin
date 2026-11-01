@@ -1,10 +1,12 @@
-// The DNSSEC Ed25519 check's arm of the differential oracle: reduce_step
-// and reduce_mod_l in x25519_wide_ed25519.h, against the same Lean spec
-// process test/diff_test.c drives. spec/lean/Spec/Ed25519ModL.lean models
-// both from the C and proves that a step from a remainder below L stays
-// below L and that the reduction writes h mod L. These rows are what make
-// those proofs about the C: an error in the transcription on either side
-// fails a row.
+// The DNSSEC Ed25519 check's arm of the differential oracle: reduce_step,
+// reduce_mod_l and decode_point in x25519_wide_ed25519.h, against the same
+// Lean spec process test/diff_test.c drives.
+// spec/lean/Spec/Ed25519ModL.lean models the first two from the C and
+// proves that a step from a remainder below L stays below L and that the
+// reduction writes h mod L. spec/lean/Spec/Ed25519Decode.lean models the
+// third and proves that each point it returns is the one the key encodes.
+// These rows are what make those proofs about the C: an error in the
+// transcription on either side fails a row.
 //
 // Its own main, as test/diff_x25519_test.c is: the two functions are
 // static in a header that x25519_wide.c includes under CH_DNSSEC alone, so
@@ -13,7 +15,9 @@
 // reduce_step takes each bit from the remainders 0, 1, 2^252 - 1, 2^252,
 // (L - 1) / 2, (L + 1) / 2 and L - 1, from random ones below 2^252 and
 // from random ones just below L. reduce_mod_l takes the hashes 0,
-// 2^512 - 1, L - 1, L, L + 1 and random ones.
+// 2^512 - 1, L - 1, L, L + 1 and random ones. decode_point takes, with
+// each sign bit, the y values 0, 1, p - 1, p, 2^255 - 1 and B's, and
+// random keys, about half of which encode a point.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -61,6 +65,54 @@ static void diff_step(const uint64_t o[4], uint64_t bit) {
     words_to_bytes(bytes, out);
     (void)hex_encode(want, bytes, 32);
     expect(cmd, want);
+}
+
+static void diff_decode(const uint8_t key[32]) {
+    char cmd[COMMAND_SIZE];
+    char want[129];
+    size_t at = (size_t)snprintf(cmd, sizeof cmd, "ed25519_decode ");
+    (void)hex_encode(cmd + at, key, 32);
+    fe x;
+    fe y;
+    if (decode_point(x, y, key)) {
+        uint8_t bytes[64];
+        pack(bytes, x);
+        pack(bytes + 32, y);
+        (void)hex_encode(want, bytes, 64);
+    } else {
+        (void)snprintf(want, sizeof want, "FAIL");
+    }
+    expect(cmd, want);
+}
+
+static void diff_decodes(void) {
+    // p - 1 in 32 little-endian bytes; the rows below write the others
+    // from it.
+    uint8_t minus_one[32];
+    memset(minus_one, 0xff, sizeof minus_one);
+    minus_one[0] = 0xec;
+    minus_one[31] = 0x7f;
+    uint8_t keys[6][32] = {{0}};
+    keys[1][0] = 1;
+    memcpy(keys[2], minus_one, 32);
+    memcpy(keys[3], minus_one, 32);
+    keys[3][0] = 0xed; // p
+    memset(keys[4], 0xff, 32);
+    keys[4][31] = 0x7f; // 2^255 - 1
+    memset(keys[5], 0x66, 32);
+    keys[5][0] = 0x58; // B's y, 4/5
+    for (size_t i = 0; i < 6; i++) {
+        diff_decode(keys[i]);
+        keys[i][31] ^= 0x80;
+        diff_decode(keys[i]);
+    }
+    uint8_t key[32];
+    for (int r = 0; r < RANDOM_ROWS; r++) {
+        rng_fill(key, sizeof key);
+        diff_decode(key);
+        key[31] ^= 0x80;
+        diff_decode(key);
+    }
 }
 
 static void diff_mod_l(const uint8_t h[64]) {
@@ -143,6 +195,7 @@ int main(int argc, char **argv) {
     expect("selftest", "ok");
     diff_steps();
     diff_reductions();
+    diff_decodes();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }
