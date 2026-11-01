@@ -1,5 +1,6 @@
-// The twiddle factors of ML-DSA's NTT, which mldsa_poly.c's forward and
-// inverse transforms read (FIPS 204 Appendix B).
+// The twiddle factors of ML-DSA's NTT, which the forward and inverse
+// transforms of mldsa_poly.c, mldsa_sign_poly.c and mldsa_vector.c read
+// (FIPS 204 Appendix B).
 //
 // zetas[k] = zeta^bitreverse8(k) * 2^32 mod q, reduced to (-q/2, q/2].
 // zeta = 1753 is the primitive 512th root of unity FIPS 204 fixes, and

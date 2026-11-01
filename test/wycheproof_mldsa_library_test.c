@@ -16,6 +16,12 @@
 // mldsa87_sign_any_rnd, because mldsa87_sign refuses zero rnd. A case that
 // gives mu alone signs through mldsa87_sign_mu. CH_MLDSA_SIGN_TEST
 // declares both test entries, and no library object is built with it.
+//
+// The host binary, bin/wycheproof_mldsa_library_test_host, signs under the
+// ch_cfg.cpu value its argument names (test/test_cpu.h), through the
+// entries that take it: on arm64 a value with
+// CH_CPU_CONSTANT_TIME_MULTIPLY runs the signer's NTT and products on
+// mldsa_vector.c's lanes (docs/decisions.md 172).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,8 +30,21 @@
 
 #include "mldsa.h"
 #include "mldsa_signer.h"
+#include "test_cpu.h"
 #include "wycheproof_mldsa_sign_vectors.h"
 #include "x509_pem.h"
+
+#ifdef CH_CPU_RUNTIME
+#define KEYGEN(...) mldsa87_keygen_cpu(test_cpu, __VA_ARGS__)
+#define SIGN(...) mldsa87_sign_cpu(test_cpu, __VA_ARGS__)
+#define SIGN_ANY_RND(...) mldsa87_sign_any_rnd_cpu(test_cpu, __VA_ARGS__)
+#define SIGN_MU(...) mldsa87_sign_mu_cpu(test_cpu, __VA_ARGS__)
+#else
+#define KEYGEN mldsa87_keygen
+#define SIGN mldsa87_sign
+#define SIGN_ANY_RND mldsa87_sign_any_rnd
+#define SIGN_MU mldsa87_sign_mu
+#endif
 
 #define COUNT(a) (sizeof(a) / sizeof((a)[0]))
 
@@ -78,7 +97,7 @@ static int case_key(size_t i, const uint8_t *key, const uint8_t *pk, uint8_t roo
         size_t der_len = seed_pkcs8(der, key, wp_mldsa_library[i].key_len);
         return x509_pem_read_mldsa87_pkcs8(der, der_len, seed, &expanded) == 1;
     }
-    if (!mldsa87_keygen(room, pk_room, key)) {
+    if (!KEYGEN(room, pk_room, key)) {
         return 0;
     }
     *sk = room;
@@ -94,15 +113,16 @@ static int sign_case(size_t i, uint8_t sig[MLDSA87_SIG_LEN], const uint8_t *sk, 
     size_t ctx_len = wp_mldsa_library[i].ctx_len;
     if (wp_mldsa_library[i].by_mu) {
         return sk_len == MLDSA87_SK_LEN && pk_len == MLDSA87_PK_LEN &&
-               mldsa87_sign_mu(sig, sk, pk, msg, rnd) != 0;
+               SIGN_MU(sig, sk, pk, msg, rnd) != 0;
     }
     if (all_zero(rnd, MLDSA87_RND_LEN)) {
-        return mldsa87_sign_any_rnd(sig, sk, sk_len, pk, pk_len, msg, msg_len, ctx, ctx_len, rnd);
+        return SIGN_ANY_RND(sig, sk, sk_len, pk, pk_len, msg, msg_len, ctx, ctx_len, rnd);
     }
-    return mldsa87_sign(sig, sk, sk_len, pk, pk_len, msg, msg_len, ctx, ctx_len, rnd);
+    return SIGN(sig, sk, sk_len, pk, pk_len, msg, msg_len, ctx, ctx_len, rnd);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    test_take_cpu(argc, argv);
     static uint8_t room[MLDSA87_SK_LEN];
     static uint8_t pk_room[MLDSA87_PK_LEN];
     int failures = 0;

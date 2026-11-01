@@ -124,6 +124,8 @@
         "mldsa_sign_steps.h",
         "mldsa_signer.c",
         "mldsa_signer.h",
+        "mldsa_vector.c",
+        "mldsa_vector.h",
         "mldsa_zetas.h",
         "mlkem.c",
         "mlkem.h",

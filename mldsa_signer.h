@@ -72,6 +72,24 @@ int mldsa87_sign(uint8_t sig[MLDSA87_SIG_LEN], const uint8_t *sk, size_t sk_len,
                  size_t pk_len, const uint8_t *msg, size_t msg_len, const uint8_t *ctx,
                  size_t ctx_len, const uint8_t rnd[MLDSA87_RND_LEN]);
 
+#ifdef CH_CPU_RUNTIME
+// mldsa87_keygen and mldsa87_sign for one session of a host object, with
+// the session's ch_cfg.cpu first (cpu_cfg.h), as p256_sign_cpu is
+// p256_sign's. On arm64, for a cpu that holds
+// CH_CPU_CONSTANT_TIME_MULTIPLY, the transforms and the products on s1,
+// s2, t0, y and c run on mldsa_vector.c's lanes, and on ct.h's 16x16
+// pieces for every other cpu (mldsa_sign_poly.h, docs/decisions.md 172).
+// Both paths compute the same values, so each call writes the bytes the
+// call without cpu writes. mldsa87_keygen and mldsa87_sign take no value
+// and run the pieces.
+int mldsa87_keygen_cpu(uint32_t cpu, uint8_t sk[MLDSA87_SK_LEN], uint8_t pk[MLDSA87_PK_LEN],
+                       const uint8_t seed[MLDSA87_SEED_LEN]);
+
+int mldsa87_sign_cpu(uint32_t cpu, uint8_t sig[MLDSA87_SIG_LEN], const uint8_t *sk, size_t sk_len,
+                     const uint8_t *pk, size_t pk_len, const uint8_t *msg, size_t msg_len,
+                     const uint8_t *ctx, size_t ctx_len, const uint8_t rnd[MLDSA87_RND_LEN]);
+#endif
+
 #ifdef CH_MLDSA_SIGN_TEST
 // Test binaries alone. The Makefile passes CH_MLDSA_SIGN_TEST to no
 // library object, so no packaged object holds these symbols.
@@ -90,6 +108,18 @@ int mldsa87_sign_any_rnd(uint8_t sig[MLDSA87_SIG_LEN], const uint8_t *sk, size_t
 unsigned mldsa87_sign_mu(uint8_t sig[MLDSA87_SIG_LEN], const uint8_t sk[MLDSA87_SK_LEN],
                          const uint8_t pk[MLDSA87_PK_LEN], const uint8_t mu[MLDSA_MU_LEN],
                          const uint8_t rnd[MLDSA87_RND_LEN]);
+
+#ifdef CH_CPU_RUNTIME
+// The two entries above under cpu, as mldsa87_sign_cpu is mldsa87_sign's.
+int mldsa87_sign_any_rnd_cpu(uint32_t cpu, uint8_t sig[MLDSA87_SIG_LEN], const uint8_t *sk,
+                             size_t sk_len, const uint8_t *pk, size_t pk_len, const uint8_t *msg,
+                             size_t msg_len, const uint8_t *ctx, size_t ctx_len,
+                             const uint8_t rnd[MLDSA87_RND_LEN]);
+
+unsigned mldsa87_sign_mu_cpu(uint32_t cpu, uint8_t sig[MLDSA87_SIG_LEN],
+                             const uint8_t sk[MLDSA87_SK_LEN], const uint8_t pk[MLDSA87_PK_LEN],
+                             const uint8_t mu[MLDSA_MU_LEN], const uint8_t rnd[MLDSA87_RND_LEN]);
+#endif
 #endif
 
 #endif

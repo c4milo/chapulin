@@ -203,7 +203,10 @@ Other targets:
   With the multiply bit the session's
   Poly1305 runs `poly1305_vector.c`'s four blocks at a time on the vector
   widening multiply, which the bit states beside the scalar one (decision
-  83). On x86-64, `CH_CPU_AVX2` says the CPU has AVX2 and its operating
+  83). In a PROFILE=cnsa2 server on arm64, the bit also runs the ML-DSA-87
+  signer's NTT and its products on `mldsa_vector.c`'s four 32-bit lanes,
+  and every session verifies on those lanes, because a verification reads
+  no secret (decision 172). On x86-64, `CH_CPU_AVX2` says the CPU has AVX2 and its operating
   system saves the 256-bit registers, and the session's ChaCha20 then
   runs `chacha20_avx2.c`'s kernel. In a `SUITE=aesgcm` object its
   SHA-384, the hash of TLS_AES_256_GCM_SHA384, then compresses on

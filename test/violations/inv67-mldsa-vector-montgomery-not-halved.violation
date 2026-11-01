@@ -1,0 +1,16 @@
+invariant: INV-67
+file: mldsa_vector.c
+catches: test/docker-aes-runtime-qemu.sh mldsa-vector
+reason: the lanes' Montgomery multiply subtracts the two doubled high
+  halves and does not halve the difference, so every product of the
+  NTT, its inverse and the two pointwise products leaves at twice its
+  value. Only an arm64 compiler reads the line, and the nightly runs its
+  violations on x86-64, so the script builds bin/mldsa_vector_equiv_test
+  for arm64 and runs it under qemu-aarch64, where it holds every
+  coefficient to both loops. The lane skips without docker, and this
+  then reports unguarded rather than caught.
+
+--- old
+    return vhsubq_s32(high, low);
+--- new
+    return vsubq_s32(high, low);

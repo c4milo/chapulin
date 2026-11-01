@@ -36,6 +36,7 @@ typedef struct {
     mld_poly product;   // c times that polynomial, or w1
     uint8_t c_tilde[MLDSA87_CTILDE_LEN];
     uint8_t hints[MLD_K][MLD_N / 8]; // the hint of each coefficient, one bit each
+    uint32_t cpu; // the session's ch_cfg.cpu, which mldsa_sign_poly.h's dispatchers read
 } mlds_round;
 
 // The working state of key generation: NTT(s1), one row of t, one entry
@@ -46,15 +47,17 @@ typedef struct {
     mld_poly entry;
     mld_poly s2;
     uint8_t seeds[128]; // rho, rho' and K (FIPS 204 Algorithm 6, step 1)
+    uint32_t cpu;       // the session's ch_cfg.cpu, as in mlds_round
 } mlds_keygen_state;
 
 // row = NTT^-1(sum over j of A[i][j] o v_hat[j]), each coefficient in
 // [0, q), with entry as the room for one entry of A. A is public and v_hat
 // is not, so each product is mldsa_sign_poly.c's. Returns 1, or 0 with row
 // zeroed when an entry of A stops at its sampling bound, so that key
-// generation reads defined values on that path too.
-int mlds_matrix_row(mld_poly *row, mld_poly *entry, const uint8_t rho[MLD_RHO_BYTES], unsigned i,
-                    const mld_poly v_hat[MLD_L]);
+// generation reads defined values on that path too. cpu is the session's
+// ch_cfg.cpu, which picks the products' path (mldsa_sign_poly.h).
+int mlds_matrix_row(uint32_t cpu, mld_poly *row, mld_poly *entry, const uint8_t rho[MLD_RHO_BYTES],
+                    unsigned i, const mld_poly v_hat[MLD_L]);
 
 // Returns 1 when every coefficient of s1 and s2 in sk is in [-2, 2], and 0
 // otherwise. It writes st->s_hat. A key that fails gives the same answer

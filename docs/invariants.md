@@ -1441,6 +1441,44 @@ last `ROLE=server` stub, as the entry said it would.
   the `p256_adx_reduce` proof catches.
 - See [decisions: Engineering](decisions.md#engineering), entry 171.
 
+### INV-67 — a host object's ML-DSA-87 NTT arithmetic gives the loops' coefficients, and the signer runs it only under the multiply bit
+
+- **Claim.** `mldsa_vector.c`, which an arm64 host object holds, writes
+  for every input of int32 coefficients the coefficients
+  `mldsa_poly.c`'s and `mldsa_sign_poly.c`'s loops write for its four
+  functions: the forward and inverse transforms and the two products in
+  the NTT domain. The verifier runs it in every session. The signer runs
+  it for a session whose `ch_cfg.cpu` holds
+  `CH_CPU_CONSTANT_TIME_MULTIPLY`, and for no other session.
+- **Mechanism.** `mldsa_vector.h` sets `MLD_VECTOR` for a host object
+  with NEON alone. `mldsa.c` calls the four through static functions that
+  test `MLD_VECTOR`. The signer's steps call `mldsa_sign_poly.h`'s
+  dispatchers with the session's value, which `mlds_round` and
+  `mlds_keygen_state` hold, and `mlds_lanes_run` reads the multiply bit.
+  Each lane computes the scalar Montgomery product and reduction exactly,
+  by the identities decision 172 states, and each step reads the twiddle
+  factors the loops read from the one table in `mldsa_zetas.h`. The path
+  runs no branch and computes no address from a coefficient.
+- **Check.** `bin/mldsa_vector_equiv_test` compares each function on the
+  lanes with both loops over edge, single-coefficient and random inputs
+  from all of int32, and `bin/mldsa_runtime_test` counts the calls into
+  the lanes under every value the defined bits make. `make check` runs
+  both on the host's instruction set and `make san-check` under the
+  sanitizers. `test/aes-runtime-qemu.sh mldsa-vector` runs both for arm64
+  under qemu. `make lint-trust-separation` holds `mldsa_vector.c` to the
+  PROFILE=cnsa2 server object.
+- **Violation.** A PR drops the halving of the lanes' Montgomery product
+  (`inv67-mldsa-vector-montgomery-not-halved`) or the rounding bit of
+  their reduction (`inv67-mldsa-vector-reduce-drops-rounding-bit`), which
+  `bin/mldsa_vector_equiv_test` catches. A PR runs the signer's lanes
+  without the multiply bit (`inv67-mldsa-signer-lanes-without-multiply-bit`),
+  or sends the verifier's forward transform to the loop
+  (`inv67-mldsa-verifier-ntt-falls-back-to-loops`). Every byte stays
+  right in both, so no vector notices, and `bin/mldsa_runtime_test`
+  catches both by its counts. The four run through the qemu lane's
+  `mldsa-vector` part, because only an arm64 compiler reads the lanes.
+- See [decisions: Engineering](decisions.md#engineering), entry 172.
+
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
 - **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit words

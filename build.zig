@@ -646,6 +646,11 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // mlkem_poly.c's loops, in an object that carries ML-KEM
     // (docs/decisions.md 101).
     if (host and contains(lib_srcs, "mlkem.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{"mlkem_vector.c"} });
+    // ML-DSA-87's NTT on four 32-bit lanes, which mldsa.c runs in every
+    // session and the signer under a session's CH_CPU_CONSTANT_TIME_MULTIPLY
+    // bit, in an object that carries ML-DSA-87. On x86-64 it holds nothing
+    // (docs/decisions.md 172).
+    if (host and contains(lib_srcs, "mldsa.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{"mldsa_vector.c"} });
     // The four-way Keccak and ML-KEM's copy over it, which a session's
     // CH_CPU_AVX2 bit picks on x86-64, in an object that carries ML-KEM. On
     // arm64 both hold nothing (docs/decisions.md 107).

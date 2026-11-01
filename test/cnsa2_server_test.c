@@ -123,6 +123,14 @@ static void test_identity_and_cpu(void) {
     other_pk[100] ^= 1;
     cfg.srv.mldsa87.pub = other_pk;
     CHECK(ch_srv_check(&cfg) == CH_EINVAL);
+    // The same two checks with the multiply bit, under which an arm64
+    // object signs on mldsa_vector.c's lanes (docs/decisions.md 172): the
+    // boot check signs and verifies, and a foreign public key still fails.
+    base_cfg(&cfg);
+    cfg.cpu = CPU_WITH_AES | CH_CPU_CONSTANT_TIME_MULTIPLY;
+    CHECK(ch_srv_check(&cfg) == CH_OK);
+    cfg.srv.mldsa87.pub = other_pk;
+    CHECK(ch_srv_check(&cfg) == CH_EINVAL);
     // The receive floor: the profile client's largest ClientHello, 2174
     // bytes, behind its record header. The floor passes and one byte less
     // is refused.

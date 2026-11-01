@@ -15072,3 +15072,93 @@ does nothing more.
         the record directions keep, and every `widemul_native` test
         reads it. The CPU value beside it is how decision 165 picked
         X25519's field.
+
+172. **An arm64 host object runs ML-DSA-87's NTT and its NTT-domain
+    products on four 32-bit NEON lanes: the verifier in every session,
+    the signer under the multiply bit alone.** On an M1, against OpenSSL
+    3.6.4, an ML-DSA-87 signature took 1,375 µs where OpenSSL's took 713
+    µs, and a verification 132 µs where OpenSSL's took 180. The forward
+    and inverse transforms and their products were about 40% of a
+    signature. This entry is the first of three steps, and an AVX2 copy
+    for x86-64 is the second.
+
+    - **What runs.** `mldsa_vector.c` holds four entries, one for each of
+      `mldsa_poly.c`'s `mld_poly_ntt`, `mld_poly_invntt_tomont`,
+      `mld_poly_pointwise` and `mld_poly_pointwise_acc`. The transforms
+      run the layers of span 128 down to 4 on four consecutive
+      coefficients at a time, with one twiddle factor in each lane. The
+      last two layers, and the first two of the inverse, hold a
+      butterfly's two coefficients in one vector. So those passes take
+      four blocks of four coefficients, transpose them with TRN1, TRN2
+      and moves of 64-bit halves, and run each block in its own lane.
+      Each step reads the twiddle factors the loop reads for it, from the
+      one table in `mldsa_zetas.h`.
+    - **Each lane computes the scalar value.** `mld_montgomery_reduce`
+      computes (ab − tq) / 2^32, where t is the low 32 bits of ab·q^-1.
+      Two MULs give t. ab − tq is a multiple of 2^32, so 2ab and 2tq
+      agree in their low 33 bits, and the difference of SQDMULH's high
+      halves of the doubled products is exactly (ab − tq) / 2^31. SHSUB
+      halves it in a wider intermediate. SQDMULH saturates only when
+      both operands are INT32_MIN, and one operand is always q, a
+      twiddle factor, 41978 or a reduced coefficient. `mld_reduce32`
+      computes t = (a + 2^22) >> 23 in 64 bits. That is a >> 23 plus bit
+      22 of a, which no 32-bit sum overflows, and a − tq fits in 32 bits,
+      so MLS gives it exactly. So every output equals the loops' for every
+      int32 input, and the test compares coefficients exactly. The
+      reduction does not use SRSHR, because Arm's list of
+      data-independent-time instructions names SRSHR in its scalar form
+      alone (entry 101). clang joins the shift and the add into SSRA, as
+      `poly1305_vector.c`'s carry is USRA.
+    - **Why the verifier needs no bit and the signer does.** Every input
+      of a verification is public: the key, the message and the
+      signature. So `mldsa.c` runs the lanes in every session, as ML-KEM's
+      lanes run (entry 101) and as `rsa_ifma.c`'s public operation needs
+      its instruction bit alone (entry 119). The signer multiplies s1,
+      s2, t0, y and c, and the lanes multiply 32 bits by 32, wider than
+      `ct.h`'s 16x16 pieces. `CH_CPU_CONSTANT_TIME_MULTIPLY` is the
+      caller's statement about every widening multiply a session runs,
+      the vector multiplies included (entry 83). So the signer runs the
+      lanes for a session that holds the bit, and `mldsa_sign_poly.c`'s
+      loops on the pieces for every other session.
+    - **The dispatch.** `mlds_round` and `mlds_keygen_state` hold the
+      session's `ch_cfg.cpu`, and `mlds_matrix_row` takes it. The steps
+      call five static inline dispatchers in `mldsa_sign_poly.h`, which
+      read the bit once per call. The `mlds_poly_` functions keep their
+      signatures, so the step harnesses and their stubs stay as they are.
+      `mldsa87_keygen_cpu` and `mldsa87_sign_cpu` take the value first,
+      as `p256_sign_cpu` does, and the two calls without the suffix pass
+      0. `srv_mldsa.c` signs under the session's value, and
+      `ch_mldsa_key_from_pem` expands a seed under the value it takes.
+    - **x86-64.** `MLD_VECTOR` is 0 there, and a host object runs the
+      loops. AVX2 is not on every x86-64 CPU, so an AVX2 copy will need
+      `CH_CPU_AVX2` beside the multiply bit for the signer, and the bit
+      alone for the verifier.
+    - **Numbers.** A scratch timing loop on the M1, at a load average of
+      8: one key, 200 signatures with 200 values of rnd, and 1,000
+      verifications, as a host object builds the files under Apple clang
+      21 at `-O2`. Mean over the signatures, whose count of rounds
+      varies, and median over the verifications:
+
+      | operation | before | multiply bit | no bit |
+      |---|---|---|---|
+      | sign, mean | 1,310 µs | 856 µs | 1,282 µs |
+      | sign, median | 1,003 µs | 662 µs | 980 µs |
+      | verify, median | 130 µs | 109 µs | 109 µs |
+
+      The NTT alone takes 238 ns on the lanes and 815 ns on the loop, and
+      the inverse 291 ns and 992 ns.
+    - **What holds it.** CBMC cannot read an intrinsic, so no harness
+      compiles the file. The harnesses compile without `CH_CPU_RUNTIME`
+      and keep proving the loops. `bin/mldsa_vector_equiv_test` holds
+      each entry to both loops over edge and random inputs from all of
+      int32. `bin/mldsa_runtime_test` counts every call into the lanes
+      under each `ch_cfg.cpu` value. The signer's test, the host library
+      signer's Wycheproof test and `bin/cnsa2_server_test` sign with the
+      bit and without it, and the qemu lane's `mldsa-vector` part runs the
+      first two binaries for arm64. INV-67 states the rule.
+    - **Rejected:**
+      - **SRSHR for the reduction.** One instruction where the form above
+        takes three, but not on Arm's list in its vector form.
+      - **New signatures for the `mlds_poly_` functions.** The step
+        harnesses and `proof/mldsa_sign_step_stubs.h` name them, and the
+        dispatchers leave them as the proven reference.

@@ -26,6 +26,23 @@
 #include "mldsa_sign_poly.h"
 #include "mldsa_signer.h"
 #include "sha3.h"
+#include "test_cpu.h"
+
+// The calls under test. The host binary, bin/mldsa_signer_test_host, signs
+// under the ch_cfg.cpu value its argument names (test/test_cpu.h), and the
+// Makefile runs it with the multiply bit and without it (HOST_VECTOR_CPU).
+// On arm64 the first runs the signer's NTT and products on mldsa_vector.c's
+// lanes and the second on ct.h's pieces (docs/decisions.md 172). Every
+// other build runs the calls that take no value.
+#ifdef CH_CPU_RUNTIME
+#define KEYGEN(...) mldsa87_keygen_cpu(test_cpu, __VA_ARGS__)
+#define SIGN(...) mldsa87_sign_cpu(test_cpu, __VA_ARGS__)
+#define SIGN_ANY_RND(...) mldsa87_sign_any_rnd_cpu(test_cpu, __VA_ARGS__)
+#else
+#define KEYGEN mldsa87_keygen
+#define SIGN mldsa87_sign
+#define SIGN_ANY_RND mldsa87_sign_any_rnd
+#endif
 
 static int failures;
 #define CHECK(c)                                                                                   \
@@ -185,13 +202,13 @@ static void test_against_test_signer(void) {
             memset(rnd, 0, sizeof rnd);
         }
         mldsa_test_keygen(&key, seed);
-        CHECK(mldsa87_keygen(sk, pk, seed) == 1);
+        CHECK(KEYGEN(sk, pk, seed) == 1);
         bad += memcmp(pk, key.pk, sizeof pk) != 0;
         uint8_t want[MLDSA87_SIG_LEN];
         uint8_t got[MLDSA87_SIG_LEN];
         int want_ok = mldsa_test_sign(&key, msg, msg_len, ctx, ctx_len, rnd, want);
-        int got_ok = mldsa87_sign_any_rnd(got, sk, sizeof sk, pk, sizeof pk, msg, msg_len, ctx,
-                                          ctx_len, rnd);
+        int got_ok =
+            SIGN_ANY_RND(got, sk, sizeof sk, pk, sizeof pk, msg, msg_len, ctx, ctx_len, rnd);
         bad += want_ok != 1 || got_ok != 1 || memcmp(want, got, sizeof want) != 0;
         bad += !mldsa87_verify(pk, sizeof pk, msg, msg_len, ctx, ctx_len, got, sizeof got);
     }
@@ -204,7 +221,7 @@ static int sign_zero_rnd_asserts(uint8_t *sig, const uint8_t *sk, const uint8_t 
         return 1;
     }
     expect_assert = 1;
-    (void)mldsa87_sign(sig, sk, MLDSA87_SK_LEN, pk, MLDSA87_PK_LEN, NULL, 0, NULL, 0, zero);
+    (void)SIGN(sig, sk, MLDSA87_SK_LEN, pk, MLDSA87_PK_LEN, NULL, 0, NULL, 0, zero);
     expect_assert = 0;
     return 0;
 }
@@ -221,37 +238,37 @@ static void test_refusals(void) {
     fill(seed, sizeof seed, 7, 0);
     fill(rnd, sizeof rnd, 7, 1);
     fill(ctx, sizeof ctx, 7, 2);
-    CHECK(mldsa87_keygen(sk, pk, seed) == 1);
+    CHECK(KEYGEN(sk, pk, seed) == 1);
     seed[0] ^= 1;
-    CHECK(mldsa87_keygen(other_sk, other_pk, seed) == 1);
+    CHECK(KEYGEN(other_sk, other_pk, seed) == 1);
     static uint8_t sig[MLDSA87_SIG_LEN];
-    CHECK(mldsa87_sign(sig, sk, sizeof sk, pk, sizeof pk, NULL, 0, ctx, 255, rnd) == 1);
+    CHECK(SIGN(sig, sk, sizeof sk, pk, sizeof pk, NULL, 0, ctx, 255, rnd) == 1);
     CHECK(mldsa87_verify(pk, sizeof pk, NULL, 0, ctx, 255, sig, sizeof sig) == 1);
     memset(sig, 0xa5, sizeof sig);
-    CHECK(mldsa87_sign(sig, sk, sizeof sk, pk, sizeof pk, NULL, 0, ctx, 256, rnd) == 0);
+    CHECK(SIGN(sig, sk, sizeof sk, pk, sizeof pk, NULL, 0, ctx, 256, rnd) == 0);
     CHECK(all_zero(sig, sizeof sig));
     memset(sig, 0xa5, sizeof sig);
-    CHECK(mldsa87_sign(sig, sk, sizeof sk - 1, pk, sizeof pk, NULL, 0, NULL, 0, rnd) == 0);
+    CHECK(SIGN(sig, sk, sizeof sk - 1, pk, sizeof pk, NULL, 0, NULL, 0, rnd) == 0);
     CHECK(all_zero(sig, sizeof sig));
     memset(sig, 0xa5, sizeof sig);
-    CHECK(mldsa87_sign(sig, sk, sizeof sk, pk, sizeof pk + 1, NULL, 0, NULL, 0, rnd) == 0);
+    CHECK(SIGN(sig, sk, sizeof sk, pk, sizeof pk + 1, NULL, 0, NULL, 0, rnd) == 0);
     CHECK(all_zero(sig, sizeof sig));
     // The check under pk: a key that is not pk's signs, and the signature
     // fails mldsa87_verify, so the call returns 0 with sig zeroed.
     memset(sig, 0xa5, sizeof sig);
-    CHECK(mldsa87_sign(sig, other_sk, sizeof other_sk, pk, sizeof pk, NULL, 0, NULL, 0, rnd) == 0);
+    CHECK(SIGN(sig, other_sk, sizeof other_sk, pk, sizeof pk, NULL, 0, NULL, 0, rnd) == 0);
     CHECK(all_zero(sig, sizeof sig));
     // s1's first 3-bit value at 5, then s2's last at 7: each out of range.
     static uint8_t bad_key[MLDSA87_SK_LEN];
     memcpy(bad_key, sk, sizeof bad_key);
     bad_key[128] = (uint8_t)((bad_key[128] & 0xf8U) | 5U);
     memset(sig, 0xa5, sizeof sig);
-    CHECK(mldsa87_sign(sig, bad_key, sizeof bad_key, pk, sizeof pk, NULL, 0, NULL, 0, rnd) == 0);
+    CHECK(SIGN(sig, bad_key, sizeof bad_key, pk, sizeof pk, NULL, 0, NULL, 0, rnd) == 0);
     CHECK(all_zero(sig, sizeof sig));
     memcpy(bad_key, sk, sizeof bad_key);
     bad_key[128 + 15 * 96 - 1] |= 0xe0U;
     memset(sig, 0xa5, sizeof sig);
-    CHECK(mldsa87_sign(sig, bad_key, sizeof bad_key, pk, sizeof pk, NULL, 0, NULL, 0, rnd) == 0);
+    CHECK(SIGN(sig, bad_key, sizeof bad_key, pk, sizeof pk, NULL, 0, NULL, 0, rnd) == 0);
     CHECK(all_zero(sig, sizeof sig));
     // The range check at its edge: every 3-bit value 4, the last in range,
     // reads, and one 5 among them does not.
@@ -277,18 +294,19 @@ static void test_hedge(void) {
     uint8_t seed[32];
     uint8_t rnd[32];
     fill(seed, sizeof seed, 8, 0);
-    CHECK(mldsa87_keygen(sk, pk, seed) == 1);
+    CHECK(KEYGEN(sk, pk, seed) == 1);
     const uint8_t msg[] = "CertificateVerify";
     fill(rnd, sizeof rnd, 8, 1);
-    CHECK(mldsa87_sign(first, sk, sizeof sk, pk, sizeof pk, msg, sizeof msg, NULL, 0, rnd) == 1);
+    CHECK(SIGN(first, sk, sizeof sk, pk, sizeof pk, msg, sizeof msg, NULL, 0, rnd) == 1);
     fill(rnd, sizeof rnd, 8, 2);
-    CHECK(mldsa87_sign(second, sk, sizeof sk, pk, sizeof pk, msg, sizeof msg, NULL, 0, rnd) == 1);
+    CHECK(SIGN(second, sk, sizeof sk, pk, sizeof pk, msg, sizeof msg, NULL, 0, rnd) == 1);
     CHECK(memcmp(first, second, sizeof first) != 0);
     CHECK(mldsa87_verify(pk, sizeof pk, msg, sizeof msg, NULL, 0, first, sizeof first) == 1);
     CHECK(mldsa87_verify(pk, sizeof pk, msg, sizeof msg, NULL, 0, second, sizeof second) == 1);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    test_take_cpu(argc, argv);
     test_rounding();
     test_coefficients();
     test_sample_in_ball();

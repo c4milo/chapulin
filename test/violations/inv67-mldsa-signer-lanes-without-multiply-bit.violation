@@ -1,0 +1,16 @@
+invariant: INV-67
+file: mldsa_sign_poly.h
+catches: test/docker-aes-runtime-qemu.sh mldsa-vector
+reason: the signer's dispatch drops its test of the multiply bit, so a
+  session whose caller states nothing about the multiply runs the lanes'
+  32x32 products on s1, s2, t0, y and c, whose timing that caller has not
+  stated. Every byte stays right, so no vector notices.
+  bin/mldsa_runtime_test counts the calls into the lanes under each
+  ch_cfg.cpu value and requires none from the signer without the bit.
+  Only an arm64 object holds the lanes, so the script runs the binary
+  for arm64 under qemu-aarch64.
+
+--- old
+    return (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0;
+--- new
+    return (cpu | CH_CPU_CONSTANT_TIME_MULTIPLY) != 0;

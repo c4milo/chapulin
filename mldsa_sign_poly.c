@@ -77,3 +77,20 @@ void mlds_poly_invntt_freeze(mld_poly *p) {
         p->coeffs[i] = mlds_freeze(p->coeffs[i]);
     }
 }
+
+#if MLD_VECTOR
+// The last loops of mlds_poly_product and mlds_poly_invntt_freeze, which
+// the dispatchers run after the lanes. An object without the lanes holds
+// neither, so its code stays as the device specs and the harnesses read it.
+void mlds_poly_center(mld_poly *p) {
+    for (unsigned i = 0; i < MLD_N; i++) {
+        p->coeffs[i] = mlds_center(p->coeffs[i]);
+    }
+}
+
+void mlds_poly_freeze(mld_poly *p) {
+    for (unsigned i = 0; i < MLD_N; i++) {
+        p->coeffs[i] = mlds_freeze(p->coeffs[i]);
+    }
+}
+#endif

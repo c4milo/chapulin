@@ -16,8 +16,10 @@
 
 #include <stdint.h>
 
+#include "cpu_cfg.h"
 #include "ct.h"
 #include "mldsa_poly.h"
+#include "mldsa_vector.h"
 
 // A value congruent to a mod q, with |result| <= 6291200, for every int32_t
 // a: a minus round(a / 2^23) times q. t is at most 256 in absolute value,
@@ -80,5 +82,95 @@ void mlds_poly_product(mld_poly *r, const mld_poly *a_hat, const mld_poly *b_hat
 
 // p = NTT^-1(p), each coefficient in [0, q): the row of A * v after its sum.
 void mlds_poly_invntt_freeze(mld_poly *p);
+
+#if MLD_VECTOR
+// mlds_center on each coefficient of p: each in [-(q - 1) / 2, (q - 1) / 2].
+void mlds_poly_center(mld_poly *p);
+
+// mlds_freeze on each coefficient of p: each in [0, q).
+void mlds_poly_freeze(mld_poly *p);
+#endif
+
+// The dispatchers the signer's steps call, with the session's ch_cfg.cpu
+// first (docs/decisions.md 172). Each computes what the mlds_poly_
+// function of its name computes. In an arm64 host object, for a cpu that
+// holds CH_CPU_CONSTANT_TIME_MULTIPLY, it runs mldsa_vector.c's lanes,
+// whose 32x32 products the bit covers. For every other cpu, and in every
+// other object, it runs the loops above on ct.h's 16x16 pieces. That is
+// one branch per call, on cpu, which the caller chose and which is not
+// secret. A call that holds no cpu passes 0, which names no lanes.
+static inline int mlds_lanes_run(uint32_t cpu) {
+#if MLD_VECTOR
+    return (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0;
+#else
+    (void)cpu;
+    return 0;
+#endif
+}
+
+static inline void mlds_ntt(uint32_t cpu, mld_poly *p) {
+#if MLD_VECTOR
+    if (mlds_lanes_run(cpu)) {
+        mld_vector_ntt(p);
+        return;
+    }
+#else
+    (void)cpu;
+#endif
+    mlds_poly_ntt(p);
+}
+
+static inline void mlds_pointwise(uint32_t cpu, mld_poly *r, const mld_poly *a, const mld_poly *b) {
+#if MLD_VECTOR
+    if (mlds_lanes_run(cpu)) {
+        mld_vector_pointwise(r, a, b);
+        return;
+    }
+#else
+    (void)cpu;
+#endif
+    mlds_poly_pointwise(r, a, b);
+}
+
+static inline void mlds_pointwise_acc(uint32_t cpu, mld_poly *acc, const mld_poly *a,
+                                      const mld_poly *b) {
+#if MLD_VECTOR
+    if (mlds_lanes_run(cpu)) {
+        mld_vector_pointwise_acc(acc, a, b);
+        return;
+    }
+#else
+    (void)cpu;
+#endif
+    mlds_poly_pointwise_acc(acc, a, b);
+}
+
+static inline void mlds_product(uint32_t cpu, mld_poly *r, const mld_poly *a_hat,
+                                const mld_poly *b_hat) {
+#if MLD_VECTOR
+    if (mlds_lanes_run(cpu)) {
+        mld_vector_pointwise(r, a_hat, b_hat);
+        mld_vector_invntt_tomont(r);
+        mlds_poly_center(r);
+        return;
+    }
+#else
+    (void)cpu;
+#endif
+    mlds_poly_product(r, a_hat, b_hat);
+}
+
+static inline void mlds_invntt_freeze(uint32_t cpu, mld_poly *p) {
+#if MLD_VECTOR
+    if (mlds_lanes_run(cpu)) {
+        mld_vector_invntt_tomont(p);
+        mlds_poly_freeze(p);
+        return;
+    }
+#else
+    (void)cpu;
+#endif
+    mlds_poly_invntt_freeze(p);
+}
 
 #endif

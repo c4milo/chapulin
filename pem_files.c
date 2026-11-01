@@ -200,6 +200,20 @@ int ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len, const
 #if defined(CH_ROLE_SERVER) && defined(CH_SIGN_MLDSA)
 _Static_assert(MLDSA87_SK_LEN == 4896 && MLDSA87_PK_LEN == 2592, "pem_files.h's ML-DSA-87 rooms");
 
+// The expansion of seed. A host object runs it under cpu, as a session
+// signs under its ch_cfg.cpu: on arm64, CH_CPU_CONSTANT_TIME_MULTIPLY
+// gives mldsa_vector.c's lanes (mldsa87_keygen_cpu). Every other object
+// runs ct.h's 16x16 decomposition and reads no cpu.
+static int expand_seed(uint32_t cpu, uint8_t sk[4896], uint8_t pk[2592],
+                       const uint8_t seed[MLDSA87_SEED_LEN]) {
+#ifdef CH_CPU_RUNTIME
+    return mldsa87_keygen_cpu(cpu, sk, pk, seed);
+#else
+    (void)cpu;
+    return mldsa87_keygen(sk, pk, seed);
+#endif
+}
+
 // Whether leaf is a certificate whose key is ML-DSA-87's key pk.
 static int leaf_holds_mldsa(const uint8_t *leaf, size_t leaf_len, const uint8_t pk[2592]) {
     const uint8_t *name = NULL;
@@ -224,7 +238,7 @@ int ch_mldsa_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len, cons
     // der. sk is written only by the expansion.
     int ok = cpu_value_ok(cpu) && read_blocks(pem, pem_len, PEM_LABEL_PRIVATE_KEY, &w, 0, NULL) &&
              x509_pem_read_mldsa87_pkcs8(der, w.len, seed, &expanded) &&
-             mldsa87_keygen(sk, pk, seed) &&
+             expand_seed(cpu, sk, pk, seed) &&
              (expanded == NULL || ct_memeq(expanded, sk, MLDSA87_SK_LEN) == 1) &&
              leaf_holds_mldsa(leaf, leaf_len, pk);
     ct_wipe(der, sizeof der);

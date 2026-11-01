@@ -191,8 +191,11 @@ int CH_MUST_USE ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pe
 // ch_p256_key_from_pem.
 //
 // cpu describes the CPU, as for ch_p256_key_from_pem, and the call
-// refuses the same values. The expansion runs on ct.h's 16x16
-// decomposition whatever the value (docs/decisions.md 159).
+// refuses the same values. The expansion runs as mldsa87_keygen_cpu runs
+// it under cpu: on arm64, with CH_CPU_CONSTANT_TIME_MULTIPLY, the NTT and
+// its products run on mldsa_vector.c's lanes, and without the bit on
+// ct.h's 16x16 decomposition (docs/decisions.md 159 and 172). Both paths
+// write the same bytes.
 //
 // Expands the 32-byte seed once, by FIPS 204 Algorithm 6, into sk, the
 // 4,896-byte secret key, and pk, the 2,592-byte public key. These are

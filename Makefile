@@ -324,7 +324,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
 
 HDRS := p256_sign_der.h ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h x25519_adx.h x25519_adx_asm.h x25519_wide_edwards.h x25519_wide_ed25519.h ed25519_verify.h x25519_wide_table.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h rsa_avx2.h rsa_avx2_lanes.h rsa_avx2_number.h ch_assert.h \
         pem.h base64.h pem_blocks.h x509_pem.h pem_files.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
-        tls.h rand.h rand_draw.h drbg.h sha3.h keccak_hw.h sha1.h dnssec.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mldsa.h mldsa_poly.h mldsa_zetas.h mldsa_signer.h mldsa_sign_round.h mldsa_sign_steps.h mldsa_sign_poly.h mldsa_sign_pack.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
+        tls.h rand.h rand_draw.h drbg.h sha3.h keccak_hw.h sha1.h dnssec.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mldsa_vector.h mlkem_lanes.h mlkem_zetas.h mldsa.h mldsa_poly.h mldsa_zetas.h mldsa_signer.h mldsa_sign_round.h mldsa_sign_steps.h mldsa_sign_poly.h mldsa_sign_pack.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
         p256_wide_mul.h p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
         p256_adx.h p256_adx_names.h p256_adx_asm.h \
@@ -715,6 +715,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           poly1305_avx2.c test/poly1305_equiv_avx2.c poly1305_ifma.c test/poly1305_equiv_ifma.c \
           test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c \
           mlkem_vector.c test/mlkem_vector_equiv_test.c \
+          mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
           keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
           test/entropy_recipe.c test/ticket_epoch_test.c test/webpki_ticket_count.c \
@@ -728,6 +729,7 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/diff_pem_files_calls.h test/timing_pem.h test/timing_mldsa.h test/pem_fixtures_mldsa.h \
          test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
+         test/mldsa_vector_count.h \
          test/hash_instructions_cpu.h test/hash_runtime_count.h test/hash_runtime_quic.h \
          test/hash_runtime_srv.h test/hash_runtime_webpki.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
@@ -1390,6 +1392,14 @@ endif
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter mlkem.c,$(LIB_SRCS)),mlkem_vector.c)
 endif
+# ML-DSA-87's NTT. A device object runs mldsa_poly.c's and
+# mldsa_sign_poly.c's loops. A host object also holds mldsa_vector.c, the
+# same transforms and products on four 32-bit lanes, which holds code on
+# arm64 alone: mldsa.c runs it in every session, and the signer for a
+# session whose ch_cfg.cpu holds the multiply bit (docs/decisions.md 172).
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(if $(filter mldsa.c,$(LIB_SRCS)),mldsa_vector.c)
+endif
 # ML-KEM's matrix. An x86-64 host object also holds keccak_avx2.c, Keccak
 # on four states at once in AVX2, and mlkem_avx2.c, mlkem.c compiled once
 # more with each row's three entries sampled side by side on it, which a
@@ -1797,6 +1807,7 @@ host_srcs = $(call sha512_host_of,$(1)) $(call widemul_native_of,$(1)) \
             $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
             $(if $(filter rsa_sign.c,$(1)),$(RSA_SIGN64_SRCS)) \
             $(if $(filter mlkem.c,$(1)),mlkem_vector.c keccak_avx2.c mlkem_avx2.c) \
+            $(if $(filter mldsa.c,$(1)),mldsa_vector.c) \
             $(call hash_hw_of,$(1))
 WIDEMUL ?= decomposed
 ifneq ($(CPU_RUNTIME_DEF),)
@@ -1992,8 +2003,9 @@ print-host-srcs:
 # units and sources, bin/sha512_test_host and bin/hkdf384_test_host
 # beside their one each, bin/chacha20_equiv_test and
 # bin/ghash_equiv_test beside their one each, bin/x25519_adx_equiv_test's
-# units and sources, bin/widemul_runtime_test's, and the sources
-# bin/p256_adx_verify_equiv_test links beside its one.
+# units and sources, bin/widemul_runtime_test's, the sources
+# bin/p256_adx_verify_equiv_test links beside its one, and
+# bin/mldsa_vector_equiv_test's and bin/mldsa_runtime_test's.
 # Each list names sha512_avx2.c where its rule here links the file's
 # object (sha512_avx2_named): the script compiles for two architectures
 # under compilers of its own, and asks for each one's object with make
@@ -2027,6 +2039,8 @@ print-aes-runtime-qemu-srcs:
 	@echo $(X25519_ADX_EQUIV_SRCS)
 	@echo $(call sha512_avx2_named,$(WIDEMUL_RUNTIME_TEST_SRCS))
 	@echo $(call sha512_avx2_named,test/p256_verify_portable.c $(P256_VERIFY_EQUIV_TEST_SRCS))
+	@echo $(MLDSA_VECTOR_EQUIV_TEST_SRCS)
+	@echo $(MLDSA_RUNTIME_TEST_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -2288,7 +2302,7 @@ lint-trust-separation-run:
 	check "PROFILE=cnsa2 TRUST=raw-rsa AES=extern TRANSPORT=quic-nonblocking" "$$cnsa2_want quic.c" \
 	  "x25519.c quic_aes_soft.c" "$$cnsa2_def -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_KEX_PQ"; \
 	check "PROFILE=cnsa2 TRUST=raw-mldsa AES=extern" "$$cnsa2_want $(MLDSA_SRCS)" \
-	  "rsa.c rsa_mont.c p256.c x509.c x509_ca.c $$pem_readers $$pem_files x25519.c quic_aes_soft.c" \
+	  "rsa.c rsa_mont.c p256.c x509.c x509_ca.c $$pem_readers $$pem_files x25519.c quic_aes_soft.c mldsa_vector.c" \
 	  "$$cnsa2_def -DCH_PIN_MLDSA" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	check "PROFILE=cnsa2 TRUST=ca-mldsa AES=extern" "$$cnsa2_want $(MLDSA_SRCS) x509.c x509_ca.c $$pem_readers" \
 	  "rsa.c rsa_mont.c p256.c $$pem_files x25519.c quic_aes_soft.c" "$$cnsa2_def -DCH_TRUST_CA -DCH_PIN_MLDSA" \
@@ -2302,7 +2316,7 @@ lint-trust-separation-run:
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 TRUST=webpki AES=extern" "the profile is a raw or ca client's" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 ROLE=server TRUST=none AES=extern HOST_TARGET=yes" "the profile's server is a host object, which takes no AES value" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 ROLE=server TRUST=none AES=extern HOST_TARGET=" "the profile's server is a host object alone" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
-	cnsa2_srv_want="$(MLDSA_SRCS) $(MLDSA_SIGN_SRCS) srv_mldsa.c sha3.c mlkem.c mlkem_poly.c aes.c gcm.c $(AES_HW_SRCS) $$pem_readers $$pem_files"; \
+	cnsa2_srv_want="$(MLDSA_SRCS) $(MLDSA_SIGN_SRCS) mldsa_vector.c srv_mldsa.c sha3.c mlkem.c mlkem_poly.c aes.c gcm.c $(AES_HW_SRCS) $$pem_readers $$pem_files"; \
 	cnsa2_srv_ban="rsa.c rsa_mont.c rsa_sign.c p256.c p256_sign.c p256_ecdh.c p256_point.c x25519.c x25519_wide.c x25519_adx.c quic_aes_soft.c aes_extern.c x509.c x509_ca.c"; \
 	cnsa2_srv_def="-DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_ROLE_SERVER -DCH_SIGN_MLDSA -DCH_CPU_RUNTIME"; \
 	check "PROFILE=cnsa2 ROLE=server TRUST=none HOST_TARGET=yes" "$$cnsa2_srv_want srv_handshake.c" "$$cnsa2_srv_ban" \
@@ -3541,6 +3555,25 @@ bin/mlkem_vector_equiv_test: test/mlkem_vector_equiv_test.c $(MLKEM_VECTOR_EQUIV
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mlkem_vector_equiv_test.c \
 	  $(MLKEM_VECTOR_EQUIV_TEST_SRCS)
+# ML-DSA-87's lanes against the verifier's and the signer's loops, the code
+# CBMC proves (docs/decisions.md 172). On x86-64 the object holds no lanes,
+# and the binary compares the two loops alone.
+MLDSA_VECTOR_EQUIV_TEST_SRCS := mldsa_poly.c mldsa_sign_poly.c mldsa_vector.c $(call host_srcs,sha3.c) \
+                                ct.c ct_wipe.c
+bin/mldsa_vector_equiv_test: test/mldsa_vector_equiv_test.c $(MLDSA_VECTOR_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mldsa_vector_equiv_test.c \
+	  $(MLDSA_VECTOR_EQUIV_TEST_SRCS)
+# The calls into mldsa_vector.c that the signer and the verifier make
+# under each ch_cfg.cpu value (test/mldsa_runtime_test.c). The binary links
+# test/mldsa_vector_count.c in mldsa_vector.c's place, which counts each
+# call and runs the loops, so it gives the same verdict on every host.
+MLDSA_RUNTIME_TEST_SRCS := $(MLDSA_SIGN_SRCS) mldsa.c mldsa_poly.c $(call host_srcs,sha3.c) ct.c ct_wipe.c \
+                           test/mldsa_vector_count.c
+bin/mldsa_runtime_test: test/mldsa_runtime_test.c $(MLDSA_RUNTIME_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -I. -Itest -o $@ \
+	  test/mldsa_runtime_test.c $(MLDSA_RUNTIME_TEST_SRCS)
 # The four-way Keccak against sha3.c, and ML-KEM's copy over it against
 # mlkem.c (docs/decisions.md 107). Both have a body on x86-64 alone; on
 # another target the binary says so and passes.
@@ -4493,7 +4526,7 @@ bin/$(1)_host: $(2) $(3) $$(call host_srcs,$(3)) $$(HDRS) $$(TESTH)
 	$$(CC) $$(HOST_CFLAGS) -DCH_CPU_RUNTIME $(4) -I. -Itest -o $$@ $(2) $$(call host_srcs,$(3))
 endef
 HOST_VECTOR_TESTS := unit mlkem_test mlkem_test_1024 p256_ecdh_test p256_sign_test p256_sign_fault_test rsa_sign_test sha512_test hkdf384_test \
-                     rsa_test rsa_pkcs1_test
+                     rsa_test rsa_pkcs1_test mldsa_signer_test
 $(eval $(call HOST_VECTOR_BIN,unit,test/unit_test.c,$(SRCS),))
 $(eval $(call HOST_VECTOR_BIN,mlkem_test,test/mlkem_test.c,$(MLKEM_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,mlkem_test_1024,test/mlkem_test.c,$(MLKEM_TEST_SRCS),-DCH_MLKEM_1024))
@@ -4501,6 +4534,10 @@ $(eval $(call HOST_VECTOR_BIN,p256_ecdh_test,test/p256_ecdh_test.c,$(P256_ECDH_T
 $(eval $(call HOST_VECTOR_BIN,p256_sign_test,test/p256_sign_test.c,$(P256_SIGN_SRC),))
 $(eval $(call HOST_VECTOR_BIN,p256_sign_fault_test,test/p256_sign_fault_test.c,$(P256_SIGN_SRC),$(P256_SIGN_FAULT_DEF)))
 $(eval $(call HOST_VECTOR_BIN,rsa_sign_test,test/rsa_sign_test.c,$(RSA_SIGN_TEST_SRCS),$(RSA_WIDE_DEF)))
+# The library's ML-DSA-87 signer against the test-only signer, as a host
+# object signs: on arm64 the value with the multiply bit runs the signer's
+# NTT and products on mldsa_vector.c's lanes (docs/decisions.md 172).
+$(eval $(call HOST_VECTOR_BIN,mldsa_signer_test,test/mldsa_signer_test.c,$(MLDSA_SIGNER_TEST_SRCS),-DCH_MLDSA_SIGN_TEST))
 # FIPS 180-4's SHA-384 and SHA-512 vectors, RFC 4231's HMAC-SHA-384 and
 # the TLS_AES_256_GCM_SHA384 key schedule, as a host object's session runs
 # them: under HASH512_UNIT_CPU beside the two values every vector binary
@@ -4636,6 +4673,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
                                  bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/mlkem_hw_equiv_test \
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
+                                 bin/mldsa_vector_equiv_test bin/mldsa_runtime_test \
                                  bin/mlkem_hw_equiv_test_1024 bin/mlkem_avx2_equiv_test_1024 \
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
@@ -6013,7 +6051,8 @@ wycheproof:
 	  bin/wycheproof_mldsa_sign_vectors.h && \
 	python3 test/gen_wycheproof_ed25519.py $(WYCHEPROOF_DIR) bin/wycheproof_ed25519_vectors.h && \
 	$(MAKE) --no-print-directory -j4 wycheproof-default wycheproof-host wycheproof-aes-extern wycheproof-mldsa-library \
-	  wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-mldsa-sign wycheproof-ed25519
+	  wycheproof-mldsa-library-host wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-mldsa-sign \
+	  wycheproof-ed25519
 # The three tests build and run at once, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
@@ -6091,6 +6130,28 @@ wycheproof-mldsa-library:
 	  --output '$(WYCHEPROOF_MLDSA_LIBRARY) -E' -- $(MAKE) --no-print-directory wycheproof-run-mldsa-library
 wycheproof-run-mldsa-library:
 	@$(WYCHEPROOF_MLDSA_LIBRARY) -o bin/wycheproof_mldsa_library_test && ./bin/wycheproof_mldsa_library_test
+# The same suites as a host object signs, once for each value of
+# HOST_VECTOR_CPU: on arm64 the value with the multiply bit runs the
+# signer's NTT and products on mldsa_vector.c's lanes, and every value runs
+# the check of each signature on them (docs/decisions.md 172).
+WYCHEPROOF_MLDSA_LIBRARY_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -DCH_SIGN_MLDSA \
+  -I. -Itest -Ibin test/wycheproof_mldsa_library_test.c $(call host_srcs,$(WYCHEPROOF_MLDSA_LIBRARY_SRCS))
+.PHONY: wycheproof-mldsa-library-host wycheproof-run-mldsa-library-host
+wycheproof-mldsa-library-host:
+ifeq ($(HOST_TARGET),)
+	$(call REQUIRE_ON_CI,wycheproof-mldsa-library-host)
+	@echo "SKIP the host ML-DSA-87 library signer's Wycheproof test: $(CC) fails the host test"
+else
+	@python3 tools/stamp.py wycheproof-mldsa-library-host $(WYCHEPROOF_STAMP_INPUTS) \
+	  --output '$(WYCHEPROOF_MLDSA_LIBRARY_HOST) -E' -- $(MAKE) --no-print-directory \
+	  wycheproof-run-mldsa-library-host
+endif
+wycheproof-run-mldsa-library-host:
+	@set -e; $(WYCHEPROOF_MLDSA_LIBRARY_HOST) -o bin/wycheproof_mldsa_library_test_host; \
+	for bits in $(HOST_VECTOR_CPU); do \
+	  echo "== bin/wycheproof_mldsa_library_test_host $$bits (host object):"; \
+	  ./bin/wycheproof_mldsa_library_test_host $$bits; \
+	done
 .PHONY: wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-run-mlkem1024 \
         wycheproof-run-mlkem1024-host
 wycheproof-mlkem1024:
@@ -6380,6 +6441,12 @@ san-check:
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/mlkem_vector_equiv_test \
 	    test/mlkem_vector_equiv_test.c $(MLKEM_VECTOR_EQUIV_TEST_SRCS); \
 	  echo "== mlkem_vector_equiv_test (SAN -O$(O))"; ./bin/san/mlkem_vector_equiv_test; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/mldsa_vector_equiv_test \
+	    test/mldsa_vector_equiv_test.c $(MLDSA_VECTOR_EQUIV_TEST_SRCS); \
+	  echo "== mldsa_vector_equiv_test (SAN -O$(O))"; ./bin/san/mldsa_vector_equiv_test; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -I. -Itest -o bin/san/mldsa_runtime_test \
+	    test/mldsa_runtime_test.c $(MLDSA_RUNTIME_TEST_SRCS); \
+	  echo "== mldsa_runtime_test (SAN -O$(O))"; ./bin/san/mldsa_runtime_test; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/mlkem_avx2_equiv_test \
 	    test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_TEST_SRCS); \
 	  echo "== mlkem_avx2_equiv_test (SAN -O$(O))"; ./bin/san/mlkem_avx2_equiv_test; \
@@ -7046,6 +7113,7 @@ else
 	  poly1305_avx2.c test/poly1305_equiv_avx2.c poly1305_ifma.c test/poly1305_equiv_ifma.c \
 	  test/poly1305_equiv_test.c test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c \
 	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
+	  mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
 	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c test/aead_avx512_count.c \
 	  test/gcm_avx512_equiv_test.c test/webpki_ticket_count.c test/ct_taint_test.c test/ct_taint_keys.c \
@@ -7260,6 +7328,13 @@ else
 	@$(call TIDY_EACH,mlkem_vector.c mlkem.c, \
 	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
+	# A host object's ML-DSA-87 NTT (docs/decisions.md 172). mldsa_vector.c
+	# has a body on arm64 alone, so one pass reads it for that target
+	# whatever the host, with mldsa.c and the signer's dispatchers, whose
+	# arm64 host arms call it.
+	@$(call TIDY_EACH,mldsa_vector.c mldsa.c mldsa_sign_steps.c mldsa_signer.c, \
+	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
 	# The four-way Keccak and ML-KEM's copy over it (docs/decisions.md
 	# 107), which have a body on x86-64 alone, read for an x86-64 target
 	# whatever the host, as the kernels' passes above are. mlkem_avx2.c
@@ -7335,8 +7410,11 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/sha3_hw_equiv_test.c test/mlkem_hw_equiv_test.c test/mlkem_vector_equiv_test.c \
-	    test/mlkem_avx2_equiv_test.c, \
+	    test/mlkem_avx2_equiv_test.c test/mldsa_vector_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,test/mldsa_runtime_test.c test/mldsa_vector_count.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/hash_runtime_test.c record.c quic_keys.c webpki_ticket.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI \
@@ -8223,7 +8301,10 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # 90), and chacha20_avx512.c the same way to the AVX-512 kernel.
 # chacha20_vector.c and the two kernels multiply nothing.
 # mlkem_vector.c multiplies 16-bit lanes alone, which these specs do not
-# count, and divides nothing (docs/decisions.md 101). keccak_avx2.c and
+# count, and divides nothing (docs/decisions.md 101). mldsa_vector.c
+# compiles to nothing on x86-64, and on arm64 multiplies 32-bit lanes
+# alone, which these specs do not count either, and divides nothing
+# (docs/decisions.md 172). keccak_avx2.c and
 # mlkem_avx2.c, the four-way Keccak and ML-KEM's copy over it, compile to
 # nothing on arm64, and on x86-64 the first multiplies nothing and the
 # second holds mlkem.c's text, whose products these specs count no more
@@ -8316,7 +8397,7 @@ WIDE64_CEILING := x25519_wide.c:0 x25519_adx.c:0 chacha20_vector.c:0 chacha20_av
                   poly1305_ifma_native.c:0 sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 \
                   rsa_mont64_blocks.c:0 rsa_mont64_addcarry.c:0 rsa_sign64.c:0 rsa_ifma.c:0 rsa_ifma_sign.c:0 \
                   rsa_avx2.c:0 \
-                  sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 \
+                  sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 mldsa_vector.c:0 \
                   keccak_avx2.c:0 mlkem_avx2.c:0 avx512_wipe.c:0 sha512_compress_blocks.c:0 \
                   sha512_avx2.c:0 $(addsuffix :0,$(AES_HW_SRCS)) \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
@@ -8453,7 +8534,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    sha512_compress_blocks.c:-DCH_CPU_RUNTIME \
                    sha3_hw.c:-DCH_CPU_RUNTIME mlkem_hw.c:-DCH_CPU_RUNTIME mlkem_poly_hw.c:-DCH_CPU_RUNTIME \
                    keccak_avx2.c:-DCH_CPU_RUNTIME mlkem_avx2.c:-DCH_CPU_RUNTIME \
-                   mlkem_vector.c:-DCH_CPU_RUNTIME \
+                   mlkem_vector.c:-DCH_CPU_RUNTIME mldsa_vector.c:-DCH_CPU_RUNTIME \
                    hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    pem_files.c:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
@@ -8775,6 +8856,16 @@ WIDEMUL_SPECS := \
 #   coefficients and of each candidate against q.
 # mlkem_vector.c, 7 and 7: the loops over the layers and blocks of the two
 #   transforms and the base multiplication's 16 blocks, all constants.
+# mldsa_vector.c, 13 and 0: on arm64 the loops over the layers, the
+#   blocks and the coefficients of the two transforms and the two
+#   products, all over constants; on x86-64 it holds no body.
+# The ML-DSA-87 signer's arm64 host arms (docs/decisions.md 172):
+#   mldsa_sign_steps.c@host's 43 hold 19 TBNZ and one TBZ on bit 2 of the
+#   session's ch_cfg.cpu, mldsa_sign_poly.h's dispatchers, which pick the
+#   lanes under the multiply bit, and mldsa_signer.c@host's 23 hold one
+#   more for key generation's NTT of s1 beside its loop.
+#   mldsa_sign_poly.c@host's 25 hold the loops of mlds_poly_center and
+#   mlds_poly_freeze. cpu is the caller's description, not a secret.
 # keccak_avx2.c, 0 and 1: the permutation's 24 rounds.
 # sha256_hw.c, 6 and 10; sha512_hw.c, 17 and 13; sha256.c@host, 28 and 35:
 #   an update's tests of n and of the count of buffered bytes, the loop
@@ -9086,8 +9177,8 @@ MLDSA_SIGN_BRANCH_CEILING := \
   rv32imac-gcc/mldsa_sign_pack.c:18 \
   rv32ic-gcc/mldsa_signer.c:29 rv32ic-gcc/mldsa_sign_round.c:6 rv32ic-gcc/mldsa_sign_steps.c:24 \
   rv32ic-gcc/mldsa_sign_poly.c:12 rv32ic-gcc/mldsa_sign_pack.c:18 \
-  arm64/mldsa_signer.c@host:21 arm64/mldsa_sign_round.c@host:2 arm64/mldsa_sign_steps.c@host:23 \
-  arm64/mldsa_sign_poly.c@host:23 arm64/mldsa_sign_pack.c@host:27 \
+  arm64/mldsa_signer.c@host:23 arm64/mldsa_sign_round.c@host:2 arm64/mldsa_sign_steps.c@host:43 \
+  arm64/mldsa_sign_poly.c@host:25 arm64/mldsa_sign_pack.c@host:27 \
   x86-64/mldsa_signer.c@host:16 x86-64/mldsa_sign_round.c@host:2 \
   x86-64/mldsa_sign_steps.c@host:23 x86-64/mldsa_sign_poly.c@host:24 \
   x86-64/mldsa_sign_pack.c@host:22
@@ -9218,7 +9309,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                sha512_compress_blocks.c sha512_avx2.c \
                rsa_mont64_addcarry.c rsa_sign64.c rsa_ifma.c rsa_ifma.c@512 rsa_avx2.c rsa_avx2.c@512 \
                $(P256_WIDE_SRCS) \
-               sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
+               sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c mldsa_vector.c keccak_avx2.c mlkem_avx2.c \
                avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512 rsa_sign64.c@512 base64.c \
                $(MLDSA_SIGN_SRCS) $(addsuffix @host,$(WIDE64_HOST_COPIES))
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
@@ -9392,6 +9483,7 @@ BRANCH_CEILING := \
   arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:41 arm64/rsa_ifma.c@512:0 x86-64/rsa_ifma.c@512:45 \
   arm64/rsa_avx2.c:0 x86-64/rsa_avx2.c:49 arm64/rsa_avx2.c@512:0 x86-64/rsa_avx2.c@512:86 \
   arm64/mlkem_vector.c:7 x86-64/mlkem_vector.c:7 \
+  arm64/mldsa_vector.c:13 x86-64/mldsa_vector.c:0 \
   arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:1 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:28 \
   arm64/avx512_wipe.c:0 x86-64/avx512_wipe.c:0 \
   arm64/rsa_ifma_sign.c:0 x86-64/rsa_ifma_sign.c:62 arm64/rsa_ifma_sign.c@512:0 \

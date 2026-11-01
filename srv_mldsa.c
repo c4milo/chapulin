@@ -3,7 +3,7 @@
 // contract of each call this file defines in place of srv_auth.c.
 //
 // No line here reads a byte behind ch_identity.priv. This file tests
-// priv_len and hands the pointer to mldsa87_sign, so the secret key is
+// priv_len and hands the pointer to mldsa87_sign_cpu, so the secret key is
 // read inside the signer's five files and nowhere else.
 #include "srv_mldsa.h"
 
@@ -90,18 +90,20 @@ static size_t signed_content(const uint8_t transcript_hash[SHA384_LEN],
 }
 
 // Signs the content over transcript_hash with the identity under rnd drawn
-// for this signature alone. Returns mldsa87_sign's verdict, 1 or 0, with
+// for this signature alone, on the path the session's ch_cfg.cpu picks
+// (mldsa87_sign_cpu). Returns mldsa87_sign_cpu's verdict, 1 or 0, with
 // sig zeroed on 0. The content holds the transcript hash, which is derived
-// from secrets, and rnd is the hedge, so both are wiped.
+// from secrets, and rnd is the hedge, so both are wiped. A PROFILE=cnsa2
+// server is a host object (profile_cfg.h), so the call exists.
 static int sign_content(const ch_cfg *cfg, const ch_identity *id,
                         const uint8_t transcript_hash[SHA384_LEN], uint8_t sig[MLDSA87_SIG_LEN]) {
     uint8_t content[SRV_MLDSA_CONTENT_LEN];
     size_t n = signed_content(transcript_hash, content);
     uint8_t rnd[MLDSA87_RND_LEN];
     rand_draw(cfg, rnd, sizeof rnd);
-    int signed_ok =
-        n == SRV_MLDSA_CONTENT_LEN &&
-        mldsa87_sign(sig, id->priv, id->priv_len, id->pub, id->pub_len, content, n, NULL, 0, rnd);
+    int signed_ok = n == SRV_MLDSA_CONTENT_LEN &&
+                    mldsa87_sign_cpu(cfg->cpu, sig, id->priv, id->priv_len, id->pub, id->pub_len,
+                                     content, n, NULL, 0, rnd);
     ct_wipe(rnd, sizeof rnd);
     ct_wipe(content, sizeof content);
     return signed_ok;

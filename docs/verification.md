@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-126 of the 161 C sources in the tree root are compiled into a
+126 of the 162 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 35 sources are in no such harness:
+The other 36 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -65,6 +65,7 @@ The other 35 sources are in no such harness:
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
+| `mldsa_vector.c` | It runs ML-DSA-87's NTT, inverse NTT and two NTT-domain products on NEON intrinsics, and has a body in an arm64 host object alone. | `bin/mldsa_vector_equiv_test` holds it to `mldsa_poly.c`'s and `mldsa_sign_poly.c`'s proven loops, `bin/mldsa_runtime_test` counts which calls run it, and the signer's, Wycheproof's and the CNSA 2.0 server's tests sign and verify on it ([The ML-DSA-87 lanes](#the-ml-dsa-87-lanes)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
@@ -5266,6 +5267,55 @@ intrinsic, so no harness compiles the file, and these hold it (INV-46):
 What none of this shows: the timing of the vector multiplies. Decision
 101 states what Arm's and Intel's lists say about them, and no test here
 measures it.
+
+### The ML-DSA-87 lanes
+
+`mldsa_vector.c` computes ML-DSA-87's forward and inverse NTT and its two
+products in the NTT domain on four 32-bit NEON lanes (decision 172). An
+arm64 host object holds it. `mldsa.c` calls it in place of
+`mldsa_poly.c`'s loops in every session. The signer calls it through
+`mldsa_sign_poly.h`'s dispatchers for a session whose `ch_cfg.cpu` holds
+`CH_CPU_CONSTANT_TIME_MULTIPLY`, and calls `mldsa_sign_poly.c`'s loops
+for every other session. A device object and an x86-64 host object run
+the loops, which the `mldsa_ntt`, `mldsa_poly`, `mldsa_sign_ntt` and
+`mldsa_sign_poly` proofs cover. CBMC cannot unwind an intrinsic, so no
+harness compiles the file, and these hold it (INV-67):
+
+- `bin/mldsa_vector_equiv_test`, in `make check` on a host target and in
+  `make san-check`, runs each function on the lanes, on the verifier's
+  loop and on the signer's loop, and compares every coefficient. The
+  inputs are every coefficient at 0 or at one of ten edge values, among
+  them the ends of int32, q, -q and the values around 2^22 where the
+  reduction's rounding changes; one coefficient at an edge value at each
+  of the 256 positions; and 2,000 random polynomials from each of all of
+  int32, [0, q), (-q/2, q/2] and [-2^27, 2^27]. The products run on
+  every pair of the edge values, on one coefficient at an edge value at
+  each position, on 2,000 random triples from all of int32 and 2,000
+  from a matrix entry's range and an NTT's output range, and with the
+  output written over an operand. Each lane formula is exact for every
+  int32 input, so the test requires the same coefficients.
+- `bin/mldsa_runtime_test` links a counting copy of the four entries,
+  which runs the loops. Under every `ch_cfg.cpu` value the defined bits
+  make, it requires the exact count of calls each key generation,
+  signature and verification makes into the lanes: none from the signer
+  without the multiply bit, and all of them with it.
+- `test/aes-runtime-qemu.sh mldsa-vector` builds both binaries for arm64
+  and runs them under qemu, so an x86-64 machine runs the lanes too.
+- `bin/mldsa_signer_test_host`, the host library signer's Wycheproof
+  test and `bin/cnsa2_server_test` sign under a value with the multiply
+  bit and one without it, and the host Wycheproof test runs the
+  ML-DSA-87 verification suites on the lanes.
+- `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
+  the pinned clang and holds its divisions at zero and its conditional
+  branches at their ceilings: every branch closes a loop whose count is a
+  constant.
+- `make lint-trust-separation` requires `mldsa_vector.c` in the
+  PROFILE=cnsa2 server object and bans it from the device objects that
+  verify ML-DSA-87.
+
+What none of this shows: the timing of the 32-bit lane multiplies. The
+signer runs them only under the caller's statement, the multiply bit, and
+no test here measures it.
 
 ### The four-way Keccak
 
