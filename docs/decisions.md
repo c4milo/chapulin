@@ -14970,3 +14970,95 @@ does nothing more.
       - **Chain files alone.** A key file is one an operator writes for
         this server, but `openssl` and other tools write explanatory
         text above a key too, and the text is public.
+171. **An x86-64 host object runs P-256 on a copy of the wide files whose
+    product and square are MULX, ADCX and ADOX in inline assembly, under
+    `CH_CPU_BMI2_ADX`.** After decision 165 a P-256 shared secret took
+    1.36 times OpenSSL 3.6.4's time on an EPYC 7763 under clang, and 1.70
+    to 1.81 times on three x86-64 runners under gcc. Camilo chose to look for that gap, then to prototype
+    the field on MULX and ADX, then to profile a shared secret, then to
+    land the field alone and the proofs with it.
+
+    - **The field.** `p256_adx_asm.h` holds two statements,
+      `p256_adx_mul_mont` and `p256_adx_sqr_mont`. Each computes the
+      eight words of the product in r8 to r15, its two carry chains side
+      by side on ADCX and ADOX, then runs the four rounds of
+      `p256_wide_field.c`'s `reduce()` and its final subtraction of p in
+      the same registers. A round needs one MULX, by p's top word, because
+      p's low word is 2^64 - 1. The final subtraction chooses by CMOVC on
+      the borrow. No instruction branches, and every address is a pointer
+      the caller passed plus a constant.
+    - **The copy.** `p256_adx_field.c` defines `p256_adx_fe_mul` and
+      `p256_adx_fe_sqr` over the two statements.
+      `p256_adx_point.c`, `p256_adx_mul.c`, `p256_adx_verify_point.c` and
+      `p256_adx_verify.c` include `p256_adx_names.h` and then the wide file
+      of the same stem, as `widemul_native.h`'s copies do. So the point
+      arithmetic is one source text, and each product and square of the
+      copy is the assembly. The other field routines, the scalar
+      arithmetic, the binary GCD and the table stay the wide files' own.
+      They run a few products of the wide field per operation, in
+      `p256_wide_fe_to_mont` and `p256_wide_fe_inv`.
+    - **The bits.** The scalar multiplications, the point decode, the
+      affine conversion and the curve check run on the copy where the
+      session's `ch_cfg.cpu` holds `CH_CPU_BMI2_ADX` beside the multiply
+      bit, as an X25519 shared secret does (decision 165). An ECDSA
+      verification runs on it under `CH_CPU_BMI2_ADX` alone, because
+      every input of a verification is public, as `rsa_ifma.c`'s public
+      operation needs its instruction bit alone (decision 119). The
+      six `widemul_p256_point_*` dispatchers take `cpu` beside the
+      answer. `p256_ecdh_keygen_cpu`, `p256_ecdh_point_valid_cpu` and
+      `p256_ecdh_cpu` take it first, and the three calls without the
+      suffix pass 0. `p256_ecdsa_verify_cpu` takes it, and
+      `P256_ECDSA_VERIFY_CPU` calls it in a host object, as
+      `RSA_PSS_VERIFY_CPU` does. A device object holds neither.
+    - **Why the reduction is in the statement.** A first prototype ran
+      the product in assembly and `reduce()` in C. Under gcc a shared
+      secret then took 1.53 times OpenSSL's time on an EPYC 7763. With
+      the reduction in the statement, the eight words never pass through
+      memory, and it took 1.46 on an EPYC 9V74 and 1.42 on a Xeon 8370C.
+      Under clang both forms took 1.23.
+    - **Numbers.** The prototype, with the copy in place of the wide
+      field for every session, against the wide field, beside OpenSSL
+      3.6.4, as chapulin's time over OpenSSL's:
+
+      | operation | clang, EPYC 7763: C | ADX | gcc, EPYC 9V74: C | ADX | gcc, Xeon 8370C: C | ADX |
+      |---|---|---|---|---|---|---|
+      | shared secret | 1.36 | 1.23 | 1.76 | 1.46 | 1.70 | 1.42 |
+      | key pair | 1.11 | 1.01 | 1.60 | 1.32 | 1.60 | 1.36 |
+      | ECDSA verify | 1.06 | 0.93 | 1.38 | 1.09 | 1.35 | 1.14 |
+      | ECDSA sign | 0.94 | 0.88 | 1.28 | 1.13 | 1.29 | 1.16 |
+
+    - **What is left.** `perf record` of 20,000 shared secrets on an EPYC
+      7763 under clang put one at 63.5 µs against OpenSSL's 51.8 µs. The
+      products took 29.4 µs against OpenSSL's 19.2 µs, and the squares
+      12.2 µs against 17.3 µs. The doubling and the addition's own code
+      took 15.9 µs against about 12.6 µs, and the table scans 2.6 µs
+      against 0.7 µs. So what is left is the call and the memory around
+      each product and the C additions and subtractions of the point
+      formulas, not the field. OpenSSL writes the point formulas in
+      assembly with the field inline.
+    - **What holds it.** `bin/p256_adx_model_test` and
+      `bin/p256_adx_verify_model_test` run `bin/p256_equiv_test`'s and
+      `bin/p256_verify_equiv_test`'s cases on the copy over
+      `test/p256_adx_model.h`, portable C that writes the words each
+      statement writes, on every host, the dispatch included. On a CPU
+      with BMI2 and ADX, `bin/p256_adx_equiv_test` holds each statement
+      to the model word for word, on edge elements and on 200,000 random
+      pairs, then runs the same cases on the assembly, the stack checks
+      included. `bin/p256_adx_verify_equiv_test` does the same for the
+      verifier. `bin/widemul_runtime_test` counts which field each value
+      runs. The qemu lane's `p256-adx` part runs all three on
+      `qemu-x86_64`'s `max` model. INV-66 states the rule, and mutants
+      hold the bits, the model and the assembly.
+    - **Rejected:**
+      - **The product alone in assembly.** It is less assembly, but
+        under gcc a shared secret took about 5% longer.
+      - **Both bits for a verification.** A verification reads public
+        inputs alone, so no caller has a timing to state for it.
+      - **The point formulas in assembly.** OpenSSL's design, and about
+        20% on a shared secret by the profile, but the largest assembly
+        in the tree and a new proof surface. Camilo chose the field
+        alone.
+      - **A third widemul answer for the copy.** The answer is one byte
+        the record directions keep, and every `widemul_native` test
+        reads it. The CPU value beside it is how decision 165 picked
+        X25519's field.

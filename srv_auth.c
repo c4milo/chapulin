@@ -298,14 +298,15 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
 // Verifies one signature under the public key in the slot, with the
 // verifier the scheme names. Returns 1 when it verified and 0
 // otherwise, the convention both verifiers use. cpu is the
-// configuration's ch_cfg.cpu, which the RSA arm hands to rsa.h's
-// rsa_pss_verify_cpu in a host object, so a value that names
-// instructions the CPU lacks faults here, before any session starts.
+// configuration's ch_cfg.cpu, which each arm hands to its verifier's cpu
+// entry in a host object, rsa.h's rsa_pss_verify_cpu and p256.h's
+// p256_ecdsa_verify_cpu, so a value that names instructions the CPU lacks
+// faults here, before any session starts.
 static int verify_digest(uint32_t cpu, const ch_identity *id, uint16_t sigalg,
                          const uint8_t digest[SHA256_LEN], const uint8_t *sig, size_t sig_len) {
-    (void)cpu; // a device object's RSA verifier takes no description of the CPU (rsa.h)
+    (void)cpu; // a device object's verifiers take no description of the CPU (rsa.h, p256.h)
     if (sigalg == SIGALG_ECDSA_P256_SHA256) {
-        return p256_ecdsa_verify(id->pub, digest, sig, sig_len);
+        return P256_ECDSA_VERIFY_CPU(cpu, id->pub, digest, sig, sig_len);
     }
     return RSA_PSS_VERIFY_CPU(cpu, id->pub, id->pub_len, digest, sig, sig_len);
 }

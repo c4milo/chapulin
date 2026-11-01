@@ -35,11 +35,11 @@ static void run_ecdh_p256(void) {
             }
             continue;
         }
-        int ok = p256_ecdh(TEST_WIDEMUL, priv, pub, out);
+        int ok = p256_ecdh_cpu(TEST_SESSION_CPU, TEST_WIDEMUL, priv, pub, out);
         // The two entries agree by construction: p256_ecdh refuses
         // exactly the points p256_ecdh_point_valid refuses, because it
         // calls the same check, and every private key here is in range.
-        if (ok != p256_ecdh_point_valid(TEST_WIDEMUL, pub)) {
+        if (ok != p256_ecdh_point_valid_cpu(TEST_SESSION_CPU, TEST_WIDEMUL, pub)) {
             fail("ecdh-p256", wp_ecdh_p256[i].tc, "p256_ecdh and point_valid disagree");
         }
         switch (wp_ecdh_p256[i].kind) {
@@ -77,8 +77,9 @@ static void run_ecdsa_p256_sha256(void) {
         const uint8_t *p = wp_ecdsa_p256_sha256_data + wp_ecdsa_p256_sha256[i].off;
         uint8_t hash[SHA256_LEN];
         sha256_of(p, wp_ecdsa_p256_sha256[i].msg_len, hash);
-        int ok = p256_ecdsa_verify(pub, hash, p + wp_ecdsa_p256_sha256[i].msg_len,
-                                   wp_ecdsa_p256_sha256[i].sig_len);
+        int ok =
+            P256_ECDSA_VERIFY_CPU(TEST_SESSION_CPU, pub, hash, p + wp_ecdsa_p256_sha256[i].msg_len,
+                                  wp_ecdsa_p256_sha256[i].sig_len);
         check_verdict("ecdsa-p256-sha256", wp_ecdsa_p256_sha256[i].tc, ok,
                       wp_ecdsa_p256_sha256[i].valid);
     }
@@ -120,16 +121,16 @@ static void run_ecdsa_p256_sign(void) {
         size_t again_len = 0;
 
         sha256_of(msg, wp_ecdsa_p256_sha256[i].msg_len, hash);
-        if (!p256_sign(TEST_WIDEMUL, SIGN_PRIV, hash, sig, sizeof sig, &sig_len)) {
+        if (!TEST_P256_SIGN(SIGN_PRIV, hash, sig, sizeof sig, &sig_len)) {
             fail("ecdsa-p256-sign", tc, "signing refused a message");
             continue;
         }
-        if (p256_ecdsa_verify(SIGN_PUB, hash, sig, sig_len) != 1) {
+        if (P256_ECDSA_VERIFY_CPU(TEST_SESSION_CPU, SIGN_PUB, hash, sig, sig_len) != 1) {
             fail("ecdsa-p256-sign", tc, "the verifier rejected our own signature");
         }
         // The nonce is deterministic, so one hash signs the same way
         // every time.
-        if (!p256_sign(TEST_WIDEMUL, SIGN_PRIV, hash, again, sizeof again, &again_len) ||
+        if (!TEST_P256_SIGN(SIGN_PRIV, hash, again, sizeof again, &again_len) ||
             again_len != sig_len || memcmp(again, sig, sig_len) != 0) {
             fail("ecdsa-p256-sign", tc, "two signatures over one message differ");
         }
@@ -147,8 +148,9 @@ static void run_ecdsa_p256_sha512(void) {
         const uint8_t *p = wp_ecdsa_p256_sha512_data + wp_ecdsa_p256_sha512[i].off;
         uint8_t hash[SHA512_LEN];
         sha512_of(p, wp_ecdsa_p256_sha512[i].msg_len, hash);
-        int ok = p256_ecdsa_verify(pub, hash, p + wp_ecdsa_p256_sha512[i].msg_len,
-                                   wp_ecdsa_p256_sha512[i].sig_len);
+        int ok =
+            P256_ECDSA_VERIFY_CPU(TEST_SESSION_CPU, pub, hash, p + wp_ecdsa_p256_sha512[i].msg_len,
+                                  wp_ecdsa_p256_sha512[i].sig_len);
         check_verdict("ecdsa-p256-sha512", wp_ecdsa_p256_sha512[i].tc, ok,
                       wp_ecdsa_p256_sha512[i].valid);
     }

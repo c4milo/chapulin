@@ -1,7 +1,7 @@
 invariant: INV-3
 file: handshake_groups.c
 catches: webpki_session_test
-reason: the client drops p256_ecdh's verdict on the server's secp256r1
+reason: the client drops p256_ecdh_cpu's verdict on the server's secp256r1
   point, so a point off the curve, which lies on a curve whose order the
   server chose, is multiplied into the client's scalar and the handshake
   goes on. RFC 9846 section 4.3.8.2 makes the check a MUST, and the
@@ -10,7 +10,9 @@ reason: the client drops p256_ecdh's verdict on the server's secp256r1
   refuses.
 
 --- old
-    int shared_ok = p256_ecdh(widemul_answer(&h->t->cfg), h->p256_priv, info->server_p256, ikm);
+    int shared_ok = p256_ecdh_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), h->p256_priv,
+                                  info->server_p256, ikm);
 --- new
-    (void)p256_ecdh(widemul_answer(&h->t->cfg), h->p256_priv, info->server_p256, ikm);
+    (void)p256_ecdh_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), h->p256_priv,
+                        info->server_p256, ikm);
     int shared_ok = 1;

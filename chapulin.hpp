@@ -208,8 +208,11 @@ struct Cpu {
     // The CPU has BMI2 and ADX: CH_CPU_BMI2_ADX. It states presence
     // alone, as avx2 does. Beside constant_time_multiply the session runs
     // an X25519 shared secret on x25519_adx.c's four 64-bit words, on MULX,
-    // ADCX and ADOX. A public key runs on the wide field's table whatever
-    // this says. An x86-64 bit, which an arm64 object refuses.
+    // ADCX and ADOX, and its P-256 point arithmetic on p256_adx.h's copy of
+    // the wide files, whose products are MULX's. A public key runs on the
+    // wide X25519 field's table whatever this says. By itself it runs an
+    // ECDSA P-256 verification on that copy, because a verification's
+    // inputs are public. An x86-64 bit, which an arm64 object refuses.
     bool bmi2_adx = false;
 };
 #endif

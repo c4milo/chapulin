@@ -35,6 +35,12 @@
 //
 // The random values come from the seeded generator below, so an ordinary
 // run replays exactly and the nightly can vary CH_P256_VERIFY_EQUIV_SEED.
+//
+// Under P256_VERIFY_EQUIV_ADX the host arm is p256_ecdsa_verify_cpu with
+// CH_CPU_BMI2_ADX, which runs the check on the x86-64 field's copy of the
+// wide files (p256_adx.h). bin/p256_adx_verify_model_test builds it so over
+// the model, on every host, and bin/p256_adx_verify_equiv_test over the
+// assembly (test/p256_adx_verify_equiv_test.c).
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -46,6 +52,17 @@
 #include "p256_scalar.h"
 #include "p256_sign.h"
 #include "widemul.h"
+
+#ifdef P256_VERIFY_EQUIV_ADX
+#define HOST_VERIFY(...) p256_ecdsa_verify_cpu(CH_CPU_BMI2_ADX, __VA_ARGS__)
+#define HOST_VERIFIER "the x86-64 field's verifier"
+#else
+#define HOST_VERIFY(...) p256_ecdsa_verify(__VA_ARGS__)
+#define HOST_VERIFIER "the wide verifier"
+#endif
+#ifndef P256_VERIFY_EQUIV_NAME
+#define P256_VERIFY_EQUIV_NAME "p256_verify_equiv"
+#endif
 
 // The device arm of p256.c (test/p256_verify_portable.c).
 int p256_ecdsa_verify_portable(const uint8_t pub[64], const uint8_t msg_hash[32],
@@ -105,14 +122,15 @@ static int failures = 0;
 // the verdict the case wants.
 static void both(const char *what, const uint8_t pub[64], const uint8_t hash[32],
                  const uint8_t *sig, size_t sig_len, int want) {
-    int wide = p256_ecdsa_verify(pub, hash, sig, sig_len);
+    int wide = HOST_VERIFY(pub, hash, sig, sig_len);
     int portable = p256_ecdsa_verify_portable(pub, hash, sig, sig_len);
     comparisons++;
     if (wide != want || portable != want) {
         failures++;
         (void)fprintf(stderr,
-                      "p256_verify_equiv: %s: the wide verifier says %d and the 32-bit one %d, "
-                      "and the case wants %d\n",
+                      P256_VERIFY_EQUIV_NAME ": %s: " HOST_VERIFIER
+                                             " says %d and the 32-bit one %d, "
+                                             "and the case wants %d\n",
                       what, wide, portable, want);
     }
 }
@@ -432,6 +450,11 @@ static void refusal_case(const fixture *f) {
 
 int main(void) {
     uint64_t seed = rng_seed_from_env();
+#ifdef P256_VERIFY_EQUIV_BEFORE
+    if (!P256_VERIFY_EQUIV_BEFORE()) {
+        return 0;
+    }
+#endif
     for (int round = 0; round < 24; round++) {
         fixture f;
         signer_case();
@@ -443,12 +466,12 @@ int main(void) {
         refusal_case(&f);
     }
     if (failures != 0) {
-        (void)fprintf(stderr, "p256_verify_equiv: %d failures (seed 0x%llx)\n", failures,
+        (void)fprintf(stderr, P256_VERIFY_EQUIV_NAME ": %d failures (seed 0x%llx)\n", failures,
                       (unsigned long long)seed);
         return 1;
     }
-    printf("p256_verify_equiv: %lu verdicts, the wide verifier == the 32-bit verifier (seed "
-           "0x%llx)\n",
+    printf(P256_VERIFY_EQUIV_NAME ": %lu verdicts, " HOST_VERIFIER " == the 32-bit verifier (seed "
+                                  "0x%llx)\n",
            comparisons, (unsigned long long)seed);
     return 0;
 }

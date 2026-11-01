@@ -29,6 +29,12 @@ extern unsigned long widemul_native_calls;
 // widemul_native_calls, because that field multiplies on the native
 // multiply too; this count tells it apart from x25519_wide.c's.
 extern unsigned long x25519_adx_calls;
+// Calls into p256_adx.h's five entries widemul.h dispatches to, on x86-64
+// alone. Each also counts in widemul_native_calls, as x25519_adx_calls do.
+extern unsigned long p256_adx_calls;
+// Calls into p256_adx.h's verifier, which p256.c runs under
+// CH_CPU_BMI2_ADX alone and which counts for neither answer.
+extern unsigned long p256_adx_verify_calls;
 // Calls into poly1305_vector_native.c's entry, and on x86-64 into
 // poly1305_avx2_native.c's and poly1305_ifma_native.c's, which only
 // poly1305_native.c's block loop makes.

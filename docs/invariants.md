@@ -1381,6 +1381,57 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/diff_x25519_adx` catches.
 - See [decisions: Engineering](decisions.md#engineering), entry 165.
 
+### INV-66 — the x86-64 P-256 field gives the wide files' bytes, and runs only under the bits its use names
+
+- **Claim.** On x86-64, `p256_adx_fe_mul` and `p256_adx_fe_sqr` write the
+  four words that `p256_wide_fe_mul` and `p256_wide_fe_sqr` write, for
+  every pair of elements below p: the one element below p that is
+  a b / 2^256 mod p. So the copy of the wide files over them
+  (`p256_adx.h`) writes the wide files' bytes and verdicts. widemul.h runs
+  the copy's scalar multiplications, point decode, affine conversion and
+  curve check for a session whose `ch_cfg.cpu` holds `CH_CPU_BMI2_ADX`
+  beside `CH_CPU_CONSTANT_TIME_MULTIPLY`, and for no other session.
+  `p256.c` runs the copy's verifier where the value holds
+  `CH_CPU_BMI2_ADX`, and the wide verifier where it does not. No library
+  object defines `CH_P256_ADX_MODEL`.
+- **Mechanism.** `p256_adx_asm.h`'s two statements compute the eight
+  words of a product and reduce them in the same registers, with the
+  rounds and the final subtraction of `p256_wide_field.c`'s `reduce()`.
+  `test/p256_adx_model.h` writes the same words in portable C. The copy
+  is the wide files' own text under `p256_adx_names.h`'s renames.
+  `widemul_p256_adx` reads both bits before a dispatcher calls the copy,
+  and `verify_rs` reads `CH_CPU_BMI2_ADX` (decision 171).
+- **Check.** `bin/p256_adx_model_test` and `bin/p256_adx_verify_model_test`
+  run the cases of `bin/p256_equiv_test` and `bin/p256_verify_equiv_test`
+  on the copy over the model, on every host, the dispatch and the stack
+  checks included. On a CPU with BMI2 and ADX, `bin/p256_adx_equiv_test`
+  holds each statement to the model word for word, on edge elements and
+  random ones, with the output apart from the inputs and over the first,
+  and then runs the same cases on the assembly.
+  `bin/p256_adx_verify_equiv_test` holds the copy's verifier to the
+  32-bit one on the assembly. On x86-64 `bin/widemul_runtime_test` counts
+  which field each value runs: the wide files under the multiply bit
+  alone, the 32-bit files under `CH_CPU_BMI2_ADX` alone, the copy under
+  both, and the copy's verifier under `CH_CPU_BMI2_ADX` alone. The qemu
+  lane's `p256-adx` part runs the three on `qemu-x86_64`'s `max` model,
+  which has the instructions, so a machine of either architecture runs
+  every row. `test/widemul-builds.sh` refuses a host object's defines
+  that name `CH_P256_ADX_MODEL`.
+- **Violation.** A PR runs the copy without one of its bits.
+  `inv66-p256-adx-ignores-adx-bit` drops `CH_CPU_BMI2_ADX` from
+  `widemul_p256_adx`, `inv66-p256-adx-ignores-multiply-bit` drops the
+  multiply bit, and `inv66-p256-adx-verify-ignores-adx-bit` runs the
+  copy's verifier for any value but 0. `bin/widemul_runtime_test`
+  catches all three through the qemu lane's `p256-adx` part. Every byte
+  stays right in each, so no vector notices; only the count does. A PR
+  breaks the assembly: `inv66-p256-adx-round-drops-its-carry` drops the
+  carry a product's first round leaves, and
+  `inv66-p256-adx-square-keeps-the-larger` inverts the square's final
+  choice. `bin/p256_adx_equiv_test` catches both through the same part.
+  `inv66-p256-adx-model-in-library` has make write `CH_P256_ADX_MODEL`
+  for a host object, which `test/widemul-builds.sh` catches.
+- See [decisions: Engineering](decisions.md#engineering), entry 171.
+
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
 - **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit words

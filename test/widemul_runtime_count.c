@@ -2,8 +2,8 @@
 // defined as a count and a call to the entry test/widemul_count_names.h
 // renamed (test/widemul_runtime_count.h). An entry under its own name
 // counts into widemul_decomposed_calls, and one ending in _native, one of
-// the wide X25519 field's two, one of the wide P-256 files' six, or one of
-// the 64-bit RSA signer's three, into
+// the wide X25519 field's two, one of the wide P-256 files' six, one of the
+// x86-64 P-256 field's five, or one of the 64-bit RSA signer's three, into
 // widemul_native_calls.
 #include "widemul_runtime_count.h"
 
@@ -51,6 +51,15 @@ void x25519_wide_base_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X255
 #ifdef __x86_64__
 int x25519_adx_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
                        const uint8_t point[X25519_LEN]);
+void p256_adx_mul_counted(p256_point *o, const p256_scalar *k, const p256_point *p);
+void p256_adx_base_mul_counted(p256_point *o, const p256_scalar *k);
+uint32_t p256_adx_point_from_bytes_counted(p256_point *o, const uint8_t in[P256_POINT_LEN]);
+uint32_t p256_adx_point_affine_counted(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
+                                       const p256_point *a);
+uint32_t p256_adx_point_on_curve_counted(const uint8_t x[P256_FE_LEN],
+                                         const uint8_t y[P256_FE_LEN]);
+int p256_adx_verify_rs_counted(const uint8_t pub[64], const uint8_t msg_hash[32],
+                               const uint8_t r_be[32], const uint8_t s_be[32]);
 #endif
 void mlk_polyvec_compress_native_counted(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v);
 void mlk_poly_compress_native_counted(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
@@ -179,6 +188,8 @@ void x25519_wide_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN])
 }
 
 unsigned long x25519_adx_calls;
+unsigned long p256_adx_calls;
+unsigned long p256_adx_verify_calls;
 
 #ifdef __x86_64__
 int x25519_adx(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
@@ -186,6 +197,45 @@ int x25519_adx(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
     widemul_native_calls++;
     x25519_adx_calls++;
     return x25519_adx_counted(out, scalar, point);
+}
+
+void p256_adx_mul(p256_point *o, const p256_scalar *k, const p256_point *p) {
+    widemul_native_calls++;
+    p256_adx_calls++;
+    p256_adx_mul_counted(o, k, p);
+}
+
+void p256_adx_base_mul(p256_point *o, const p256_scalar *k) {
+    widemul_native_calls++;
+    p256_adx_calls++;
+    p256_adx_base_mul_counted(o, k);
+}
+
+uint32_t p256_adx_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {
+    widemul_native_calls++;
+    p256_adx_calls++;
+    return p256_adx_point_from_bytes_counted(o, in);
+}
+
+uint32_t p256_adx_point_affine(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
+                               const p256_point *a) {
+    widemul_native_calls++;
+    p256_adx_calls++;
+    return p256_adx_point_affine_counted(x, y, a);
+}
+
+uint32_t p256_adx_point_on_curve(const uint8_t x[P256_FE_LEN], const uint8_t y[P256_FE_LEN]) {
+    widemul_native_calls++;
+    p256_adx_calls++;
+    return p256_adx_point_on_curve_counted(x, y);
+}
+
+// The verifier's check counts for neither answer, as the wide one does: its
+// inputs are public, and CH_CPU_BMI2_ADX alone picks it (p256.c).
+int p256_adx_verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t r_be[32],
+                       const uint8_t s_be[32]) {
+    p256_adx_verify_calls++;
+    return p256_adx_verify_rs_counted(pub, msg_hash, r_be, s_be);
 }
 #endif
 

@@ -5,10 +5,12 @@
 // p256_field.c, p256_scalar.c and rsa_sign.c. Each entry of theirs that runs the multiply,
 // called from outside them, has a dispatcher below, named for it with the widemul_ prefix. For
 // P-256 the entries are p256_scalar.c's two and the five of p256_point.c, the one file that
-// calls p256_field.c. The dispatcher's first argument is the answer the operation runs under, a
-// WIDEMUL_ value below. Every caller outside those files calls the dispatcher and passes on the
-// answer it was handed; a session passes its own, widemul_answer. An entry that multiplies
-// nothing, such as poly1305_init or p256_scalar_add, is called under its own name.
+// calls p256_field.c, and their dispatchers sit in widemul_p256.h, which this file includes at
+// its end. A dispatcher's first argument is the answer the operation runs under, a WIDEMUL_
+// value below, or a P-256 point dispatcher's second, after the session's ch_cfg.cpu. Every caller
+// outside those files calls the dispatcher and passes on the answer it was handed; a session passes
+// its own, widemul_answer. An entry that multiplies nothing, such as poly1305_init or
+// p256_scalar_add, is called under its own name.
 //
 // A device object holds one multiply and compiles each file once, so each dispatcher calls that
 // copy and reads no answer. A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds each operation
@@ -26,7 +28,8 @@
 // chose and which is not secret: never one per product, and through no function pointer.
 // Poly1305 takes one per update and one per final, P-256 one per scalar multiplication, point
 // decode, affine conversion and product modulo the group order, and RSA one per signature and
-// one per key test.
+// one per key test. On x86-64 an X25519 shared secret and a P-256 point operation take one more,
+// on cpu, for x25519_adx.c and p256_adx.h's field (docs/decisions.md 165 and 171).
 #ifndef CH_WIDEMUL_H
 #define CH_WIDEMUL_H
 
@@ -36,50 +39,15 @@
 #include "cfg.h"
 #include "ct.h"
 #include "mlkem_poly.h"
-#include "p256_point.h"
-#include "p256_scalar.h"
-#include "p256_wide_mul.h"
-#include "p256_wide_point.h"
-#include "p256_wide_scalar.h"
-#include "p256_wide_wipe.h"
 #include "poly1305.h"
 #include "rsa_sign.h"
 #include "rsa_sign64.h"
+#include "widemul_answer.h"
 #include "x25519.h"
 #include "x25519_adx.h"
 #include "x25519_wide.h"
 
-// The two answers an operation built on the multiply runs under. WIDEMUL_CONSTANT_TIME says the
-// multiply runs in constant time on this CPU, in the mode the session's thread runs in, and takes
-// the native multiply, 32x32->64 and 64x64->128 alike. WIDEMUL_NOT_STATED says nothing states
-// that, and takes ct.h's 16x16
-// decomposition. A host object's session runs under the first when its caller set
-// CH_CPU_CONSTANT_TIME_MULTIPLY in ch_cfg.cpu, and under the second when it did not
-// (widemul_answer). A device object runs every operation under the one its build states,
-// WIDEMUL_BUILD_ANSWER.
-#define WIDEMUL_CONSTANT_TIME 1
-#define WIDEMUL_NOT_STATED 2
-
 #ifdef CH_CPU_RUNTIME
-
-// The answer a description of the CPU gives: WIDEMUL_CONSTANT_TIME when cpu, a session's
-// ch_cfg.cpu, holds CH_CPU_CONSTANT_TIME_MULTIPLY, and WIDEMUL_NOT_STATED when it does not. A
-// wiped record direction's 0 gives the second.
-static inline uint8_t widemul_of_cpu(uint32_t cpu) {
-    return (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? WIDEMUL_CONSTANT_TIME : WIDEMUL_NOT_STATED;
-}
-
-// The answer the operations of a session configured by cfg run under: the one its ch_cfg.cpu
-// gives. Every init call and ch_srv_check have accepted the value by then (cpu_bits_ok, cpu.h).
-static inline uint8_t widemul_answer(const ch_cfg *cfg) {
-    return widemul_of_cpu(cfg->cpu);
-}
-
-// Whether an operation under the answer widemul runs the native copy: for
-// WIDEMUL_CONSTANT_TIME alone, so every other byte takes the decomposition.
-static inline int widemul_native(uint8_t widemul) {
-    return widemul == WIDEMUL_CONSTANT_TIME;
-}
 
 static inline void widemul_poly1305_update(uint8_t widemul, poly1305 *p, const uint8_t *in,
                                            size_t n) {
@@ -204,84 +172,6 @@ static inline void widemul_mlk_poly_tomsg(uint8_t widemul, uint8_t msg[32], cons
     mlk_poly_tomsg(msg, p);
 }
 
-static inline void widemul_p256_point_mul(uint8_t widemul, p256_point *o, const p256_scalar *k,
-                                          const p256_point *p) {
-    if (widemul_native(widemul)) {
-        p256_wide_mul(o, k, p);
-        p256_wide_wipe_below();
-        return;
-    }
-    p256_point_mul(o, k, p);
-}
-
-static inline void widemul_p256_point_base_mul(uint8_t widemul, p256_point *o,
-                                               const p256_scalar *k) {
-    if (widemul_native(widemul)) {
-        p256_wide_base_mul(o, k);
-        p256_wide_wipe_below();
-        return;
-    }
-    p256_point_base_mul(o, k);
-}
-
-static inline uint32_t widemul_p256_point_from_bytes(uint8_t widemul, p256_point *o,
-                                                     const uint8_t in[P256_POINT_LEN]) {
-    if (widemul_native(widemul)) {
-        return p256_wide_point_from_bytes(o, in);
-    }
-    return p256_point_from_bytes(o, in);
-}
-
-static inline uint32_t widemul_p256_point_affine(uint8_t widemul, uint8_t x[P256_FE_LEN],
-                                                 uint8_t y[P256_FE_LEN], const p256_point *a) {
-    if (widemul_native(widemul)) {
-        uint32_t finite = p256_wide_point_affine(x, y, a);
-        p256_wide_wipe_below();
-        return finite;
-    }
-    return p256_point_affine(x, y, a);
-}
-
-static inline uint32_t widemul_p256_point_on_curve(uint8_t widemul, const uint8_t x[P256_FE_LEN],
-                                                   const uint8_t y[P256_FE_LEN]) {
-    if (widemul_native(widemul)) {
-        uint32_t on_curve = p256_wide_point_on_curve(x, y);
-        p256_wide_wipe_below();
-        return on_curve;
-    }
-    return p256_point_on_curve(x, y);
-}
-
-static inline uint32_t widemul_p256_point_affine_x(uint8_t widemul, uint8_t out[P256_FE_LEN],
-                                                   const p256_point *a) {
-    if (widemul_native(widemul)) {
-        uint32_t finite = p256_wide_point_affine(out, NULL, a);
-        p256_wide_wipe_below();
-        return finite;
-    }
-    return p256_point_affine_x(out, a);
-}
-
-static inline void widemul_p256_scalar_mul(uint8_t widemul, p256_scalar *o, const p256_scalar *a,
-                                           const p256_scalar *b) {
-    if (widemul_native(widemul)) {
-        p256_wide_scalar_mul(o, a, b);
-        p256_wide_wipe_below();
-        return;
-    }
-    p256_scalar_mul(o, a, b);
-}
-
-static inline void widemul_p256_scalar_inverse(uint8_t widemul, p256_scalar *o,
-                                               const p256_scalar *a) {
-    if (widemul_native(widemul)) {
-        p256_wide_scalar_inverse(o, a);
-        p256_wide_wipe_below();
-        return;
-    }
-    p256_scalar_inverse(o, a);
-}
-
 // An RSA-PSS signature under the answer widemul, in a session whose
 // ch_cfg.cpu is cpu, which the 64-bit signer reads: on x86-64 a value
 // with CH_CPU_AVX512_IFMA runs its exponentiations on AVX-512 IFMA, whose
@@ -319,20 +209,6 @@ static inline int widemul_rsa_pss_sign_key_ok(uint8_t widemul, const ch_rsa_priv
 }
 
 #else // !CH_CPU_RUNTIME
-
-// The answer every operation of a device object runs under: the one its build states, which
-// ct.h reads from CH_NATIVE_WIDEMUL and CH_CT_WIDEMUL.
-#ifdef CH_WIDEMUL_NATIVE
-#define WIDEMUL_BUILD_ANSWER WIDEMUL_CONSTANT_TIME
-#else
-#define WIDEMUL_BUILD_ANSWER WIDEMUL_NOT_STATED
-#endif
-
-// The answer the operations of a session configured by cfg run under: the build's.
-static inline uint8_t widemul_answer(const ch_cfg *cfg) {
-    (void)cfg;
-    return WIDEMUL_BUILD_ANSWER;
-}
 
 static inline void widemul_poly1305_update(uint8_t widemul, poly1305 *p, const uint8_t *in,
                                            size_t n) {
@@ -392,54 +268,6 @@ static inline void widemul_mlk_poly_tomsg(uint8_t widemul, uint8_t msg[32], cons
     mlk_poly_tomsg(msg, p);
 }
 
-static inline void widemul_p256_point_mul(uint8_t widemul, p256_point *o, const p256_scalar *k,
-                                          const p256_point *p) {
-    (void)widemul;
-    p256_point_mul(o, k, p);
-}
-
-static inline void widemul_p256_point_base_mul(uint8_t widemul, p256_point *o,
-                                               const p256_scalar *k) {
-    (void)widemul;
-    p256_point_base_mul(o, k);
-}
-
-static inline uint32_t widemul_p256_point_from_bytes(uint8_t widemul, p256_point *o,
-                                                     const uint8_t in[P256_POINT_LEN]) {
-    (void)widemul;
-    return p256_point_from_bytes(o, in);
-}
-
-static inline uint32_t widemul_p256_point_affine(uint8_t widemul, uint8_t x[P256_FE_LEN],
-                                                 uint8_t y[P256_FE_LEN], const p256_point *a) {
-    (void)widemul;
-    return p256_point_affine(x, y, a);
-}
-
-static inline uint32_t widemul_p256_point_on_curve(uint8_t widemul, const uint8_t x[P256_FE_LEN],
-                                                   const uint8_t y[P256_FE_LEN]) {
-    (void)widemul;
-    return p256_point_on_curve(x, y);
-}
-
-static inline uint32_t widemul_p256_point_affine_x(uint8_t widemul, uint8_t out[P256_FE_LEN],
-                                                   const p256_point *a) {
-    (void)widemul;
-    return p256_point_affine_x(out, a);
-}
-
-static inline void widemul_p256_scalar_mul(uint8_t widemul, p256_scalar *o, const p256_scalar *a,
-                                           const p256_scalar *b) {
-    (void)widemul;
-    p256_scalar_mul(o, a, b);
-}
-
-static inline void widemul_p256_scalar_inverse(uint8_t widemul, p256_scalar *o,
-                                               const p256_scalar *a) {
-    (void)widemul;
-    p256_scalar_inverse(o, a);
-}
-
 static inline int widemul_rsa_pss_sign_cpu(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *k,
                                            const uint8_t msg_hash[32],
                                            const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig,
@@ -463,5 +291,8 @@ static inline int widemul_rsa_pss_sign_key_ok(uint8_t widemul, const ch_rsa_priv
 }
 
 #endif // CH_CPU_RUNTIME
+
+// The P-256 dispatchers (widemul_p256.h).
+#include "widemul_p256.h"
 
 #endif

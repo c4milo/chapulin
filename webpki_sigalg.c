@@ -126,7 +126,7 @@ static void p384_message_hash(const uint8_t *digest, size_t digest_len,
 }
 
 int webpki_verify(uint32_t cpu, const webpki_cert *cert, const webpki_spki *signer) {
-    (void)cpu; // a device object's RSA verifier takes no description of the CPU (rsa_pkcs1.h)
+    (void)cpu; // a device object's verifiers take no description of the CPU (rsa_pkcs1.h, p256.h)
     // x509_emit_header writes at most two length octets, and no parsed
     // certificate's TBS exceeds the certificate cap.
     if (!signer_matches_sigalg(cert->sigalg, signer) || cert->tbs_len > CH_WEBPKI_CERT_MAX) {
@@ -144,7 +144,7 @@ int webpki_verify(uint32_t cpu, const webpki_cert *cert, const webpki_spki *sign
         // FIPS 186-4 §6.4 for P-256: the leftmost 256 bits, which are the
         // first 32 bytes of either digest. p256_ecdsa_verify reads exactly
         // those, so a SHA-384 digest is cut by passing it whole.
-        return p256_ecdsa_verify(signer->key, digest, cert->sig, cert->sig_len);
+        return P256_ECDSA_VERIFY_CPU(cpu, signer->key, digest, cert->sig, cert->sig_len);
     }
     uint8_t msg_hash[P384_LEN];
     p384_message_hash(digest, digest_len, msg_hash);

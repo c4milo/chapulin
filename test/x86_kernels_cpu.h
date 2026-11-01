@@ -102,7 +102,7 @@ static inline int x86_cpu_has_avx512(void) {
 }
 
 // BMI2 and ADX, which CH_CPU_BMI2_ADX names (cpu_cfg.h) and x25519_adx.c
-// runs: MULX, ADCX and ADOX. CPUID leaf 7 reports them in bits 8 and 19 of
+// and p256_adx_field.c run: MULX, ADCX and ADOX. CPUID leaf 7 reports them in bits 8 and 19 of
 // EBX; they need no state the operating system saves.
 static inline int x86_cpu_has_bmi2_adx(void) {
 #ifdef __x86_64__

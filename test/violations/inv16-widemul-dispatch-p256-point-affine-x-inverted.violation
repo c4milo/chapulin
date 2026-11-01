@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: widemul_p256.h
 catches: widemul_runtime_test
 reason: widemul_p256_point_affine_x inverts its branch, so the operation runs
   p256_wide_point_affine, on the native 64x64->128 multiply, for every answer but

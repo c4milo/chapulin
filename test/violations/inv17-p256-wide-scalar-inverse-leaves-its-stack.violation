@@ -1,5 +1,5 @@
 invariant: INV-17
-file: widemul.h
+file: widemul_p256.h
 catches: p256_equiv_test
 reason: widemul_p256_scalar_inverse no longer calls p256_wide_wipe_below
   after the wide call. Every object that call names is still wiped, so

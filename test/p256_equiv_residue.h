@@ -65,6 +65,15 @@
 #include "p256_wide_wipe.h"
 
 #define RESIDUE_BYTES 3072
+
+// The value run_stack signs under: 0, the signature through p256_sign,
+// and under P256_EQUIV_ADX the value that names the copy, through
+// p256_sign_cpu, because p256_sign names no CPU.
+#ifdef P256_EQUIV_ADX
+#define P256_EQUIV_SIGN_CPU P256_EQUIV_CPU
+#else
+#define P256_EQUIV_SIGN_CPU 0U
+#endif
 #define RESIDUE_PAINT 0xa5
 
 static uint8_t residue_copy[RESIDUE_BYTES];
@@ -135,8 +144,8 @@ static void run_depth(void) {
                 break;
             }
         }
-        (void)printf("p256_equiv: %s writes %zu bytes below its caller\n", WIDE_ENTRY_NAME[entry],
-                     depth);
+        (void)printf(P256_EQUIV_NAME ": %s writes %zu bytes below its caller\n",
+                     WIDE_ENTRY_NAME[entry], depth);
         report("depth", WIDE_ENTRY_NAME[entry], depth > 0 && depth <= P256_WIDE_BELOW_LEN);
     }
 }
@@ -159,14 +168,15 @@ static const char *const DISPATCH_NAME[DISPATCHERS] = {
 
 static __attribute__((noinline)) void residue_dispatched_call(int entry) {
     const uint8_t widemul = WIDEMUL_CONSTANT_TIME;
+    const uint32_t cpu = P256_EQUIV_CPU;
     if (entry == DISPATCH_MUL) {
-        widemul_p256_point_mul(widemul, &residue_point_out, &residue_scalar, &residue_point);
+        widemul_p256_point_mul(cpu, widemul, &residue_point_out, &residue_scalar, &residue_point);
     } else if (entry == DISPATCH_BASE_MUL) {
-        widemul_p256_point_base_mul(widemul, &residue_point_out, &residue_scalar);
+        widemul_p256_point_base_mul(cpu, widemul, &residue_point_out, &residue_scalar);
     } else if (entry == DISPATCH_AFFINE) {
-        (void)widemul_p256_point_affine(widemul, residue_shared, residue_hash, &residue_point);
+        (void)widemul_p256_point_affine(cpu, widemul, residue_shared, residue_hash, &residue_point);
     } else if (entry == DISPATCH_AFFINE_X) {
-        (void)widemul_p256_point_affine_x(widemul, residue_shared, &residue_point);
+        (void)widemul_p256_point_affine_x(cpu, widemul, residue_shared, &residue_point);
     } else if (entry == DISPATCH_SCALAR_MUL) {
         widemul_p256_scalar_mul(widemul, &residue_scalar_out, &residue_scalar, &residue_scalar);
     } else {
@@ -208,7 +218,8 @@ static __attribute__((noinline)) int residue_sign(uint32_t cpu) {
 }
 
 static __attribute__((noinline)) int residue_ecdh(void) {
-    return p256_ecdh(WIDEMUL_CONSTANT_TIME, residue_priv, residue_peer, residue_shared);
+    return p256_ecdh_cpu(P256_EQUIV_CPU, WIDEMUL_CONSTANT_TIME, residue_priv, residue_peer,
+                         residue_shared);
 }
 
 // Whether the copy holds any of the four 64-bit words of the eight 32-bit
@@ -323,11 +334,11 @@ static void run_residue_sign_on_instructions(void) {
         report("residue, the nonce on the SHA-256 instructions",
                "the CPU has the SHA-256 instructions the environment requires",
                !hash_instructions_required());
-        (void)printf("p256_equiv: SKIP the signature with the nonce on the SHA-256 "
-                     "instructions: this CPU lacks them\n");
+        (void)printf(P256_EQUIV_NAME ": SKIP the signature with the nonce on the SHA-256 "
+                                     "instructions: this CPU lacks them\n");
         return;
     }
-    run_residue_sign(CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY | CH_CPU_CONSTANT_TIME_SHA256,
+    run_residue_sign(P256_EQUIV_CPU | CH_CPU_CONSTANT_TIME_SHA256,
                      "residue, the nonce on the SHA-256 instructions");
 }
 
@@ -366,12 +377,12 @@ static void run_residue_ecdh(void) {
 // sanitizer finds in the comparisons before these.
 static void run_stack(void) {
     if (getenv("CH_P256_EQUIV_NO_STACK") != NULL) {
-        (void)printf("p256_equiv: SKIP the stack checks: CH_P256_EQUIV_NO_STACK is set\n");
+        (void)printf(P256_EQUIV_NAME ": SKIP the stack checks: CH_P256_EQUIV_NO_STACK is set\n");
         return;
     }
     run_depth();
     run_wiped();
-    run_residue_sign(0, "residue");
+    run_residue_sign(P256_EQUIV_SIGN_CPU, "residue");
     run_residue_sign_on_instructions();
     run_residue_ecdh();
 }

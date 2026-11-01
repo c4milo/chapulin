@@ -246,7 +246,10 @@ Other targets:
   ADX: MULX, ADCX and ADOX. It states no timing, and beside
   `CH_CPU_CONSTANT_TIME_MULTIPLY`, whose statement covers MULX's products,
   the session computes an X25519 shared secret on `x25519_adx.c`'s four
-  64-bit words (decision 165).
+  64-bit words (decision 165), and its P-256 point arithmetic on
+  `p256_adx.h`'s copy of the wide files, whose products and squares are
+  MULX's. By itself it runs an ECDSA P-256 verification on that copy,
+  because a verification reads public inputs alone (decision 171).
   Set each bit from your probe alone: a session whose bit names
   instructions its CPU lacks faults on the first one. The three hash
   bits say the CPU has the SHA-256, the SHA-512 or the SHA-3

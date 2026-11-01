@@ -106,13 +106,13 @@ static uint16_t leaf_scheme(uint8_t alg) {
 // The signature against the verified leaf key. The scheme matched the
 // key family above, so each arm reads the digest length its verifier
 // takes: 32 bytes for RSA-PSS and P-256, 48 for P-384. cpu is the
-// session's ch_cfg.cpu, which the RSA arm hands to rsa.h's
-// rsa_pss_verify_cpu in a host object.
+// session's ch_cfg.cpu, which the RSA and P-256 arms hand to rsa.h's
+// rsa_pss_verify_cpu and p256.h's p256_ecdsa_verify_cpu in a host object.
 static int verify_leaf_signature(uint32_t cpu, const webpki_leaf_info *leaf,
                                  const uint8_t *signed_hash, const uint8_t *sig, size_t sig_len) {
-    (void)cpu; // a device object's RSA verifier takes no description of the CPU (rsa.h)
+    (void)cpu; // a device object's verifiers take no description of the CPU (rsa.h, p256.h)
     if (leaf->alg == WEBPKI_KEY_P256) {
-        return p256_ecdsa_verify(leaf->key, signed_hash, sig, sig_len);
+        return P256_ECDSA_VERIFY_CPU(cpu, leaf->key, signed_hash, sig, sig_len);
     }
     if (leaf->alg == WEBPKI_KEY_P384) {
         return p384_ecdsa_verify(leaf->key, signed_hash, sig, sig_len);

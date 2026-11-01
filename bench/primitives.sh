@@ -39,7 +39,8 @@
 #            512-bit kernel under it (docs/decisions.md 130). On a CPU with
 #            BMI2 and ADX the value holds CH_CPU_BMI2_ADX, under which the
 #            X25519 shared secret and the handshakes' shared secrets run on
-#            x25519_adx.c (docs/decisions.md 165). The RSA
+#            x25519_adx.c (docs/decisions.md 165), and the P-256 rows run on
+#            p256_adx.h's copy of the wide files (docs/decisions.md 171). The RSA
 #            handshake rows take CH_CPU_AVX512_IFMA through rsa_vp1_cpu,
 #            because their ROLE=both programs set client_cfg.cpu to the
 #            value, and the primitive RSA verify rows through
@@ -340,7 +341,8 @@ cpu_value() {
     if [ "$ARCH" = x86_64 ] && reports "$features" avx512f avx512bw avx512vl vaes vpclmulqdq; then
         value=$((value | CPU_AVX512))
     fi
-    # x25519_adx.c's: x86-64 Linux names BMI2 bmi2 and ADX adx.
+    # x25519_adx.c's and p256_adx_field.c's: x86-64 Linux names BMI2 bmi2
+    # and ADX adx.
     if [ "$ARCH" = x86_64 ] && reports "$features" bmi2 adx; then
         value=$((value | CPU_BMI2_ADX))
     fi

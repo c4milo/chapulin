@@ -296,9 +296,12 @@ static uint32_t scalar_check(uint8_t widemul, const p256_scalar *s, const p256_s
 // on the curve, s*k = z + r*d mod n, and neither r nor s is zero (the one
 // narrowing of RFC 6979, p256_sign.h); zero otherwise. Every step runs
 // whatever the answers are, and masks combine them, so no branch reads
-// k*G, k or d. The caller writes r and s only on all ones.
-static uint32_t compute_signature(uint8_t widemul, const p256_scalar *k, const p256_scalar *d,
-                                  const p256_scalar *z, uint8_t r_bytes[P256_SCALAR_LEN],
+// k*G, k or d. The caller writes r and s only on all ones. The point
+// arithmetic runs on the field widemul.h picks for widemul and cpu, and
+// the scalar arithmetic on the one widemul picks.
+static uint32_t compute_signature(uint8_t widemul, uint32_t cpu, const p256_scalar *k,
+                                  const p256_scalar *d, const p256_scalar *z,
+                                  uint8_t r_bytes[P256_SCALAR_LEN],
                                   uint8_t s_bytes[P256_SCALAR_LEN]) {
     p256_point point;
     p256_scalar r;
@@ -306,14 +309,14 @@ static uint32_t compute_signature(uint8_t widemul, const p256_scalar *k, const p
     uint8_t x_bytes[P256_FE_LEN];
     uint8_t y_bytes[P256_FE_LEN];
 
-    widemul_p256_point_base_mul(widemul, &point, k);
+    widemul_p256_point_base_mul(cpu, widemul, &point, k);
     FAULT_POINT(&point);
     // k is in [1, n-1], so k*G is never the point at infinity. The mask is
     // read anyway, so a faulted multiplication that reached infinity gives
     // no signature.
-    uint32_t finite = widemul_p256_point_affine(widemul, x_bytes, y_bytes, &point);
+    uint32_t finite = widemul_p256_point_affine(cpu, widemul, x_bytes, y_bytes, &point);
     // The on-curve check, before r is taken from x.
-    uint32_t on_curve = widemul_p256_point_on_curve(widemul, x_bytes, y_bytes);
+    uint32_t on_curve = widemul_p256_point_on_curve(cpu, widemul, x_bytes, y_bytes);
     p256_scalar_from_bytes(&r, x_bytes);
     p256_scalar_reduce(&r, &r);
     signature_scalar(widemul, &s, k, d, z, &r);
@@ -404,7 +407,7 @@ static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PR
     p256_scalar_to_bytes(z_octets, &z);
 
     if (derive_nonce(cpu, &k, priv, z_octets, noise)) {
-        uint32_t checked = compute_signature(widemul, &k, &d, &z, r_bytes, s_bytes);
+        uint32_t checked = compute_signature(widemul, cpu, &k, &d, &z, r_bytes, s_bytes);
         rc = write_if_checked(checked, r_bytes, s_bytes, sig, cap, sig_len);
     }
 

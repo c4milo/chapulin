@@ -307,6 +307,10 @@
 #   x25519-adx        bin/x25519_adx_equiv_test and bin/widemul_runtime_test
 #                     for x86-64, for the violations of x25519_adx.c's
 #                     assembly and of the dispatch that picks it
+#   p256-adx          bin/p256_adx_equiv_test, bin/p256_adx_verify_equiv_test
+#                     and bin/widemul_runtime_test for x86-64, for the
+#                     violations of p256_adx_asm.h's assembly and of the
+#                     dispatch that picks it
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -329,9 +333,9 @@ only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
     mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
-    rsa-addcarry | rsa-avx2 | x25519-adx) ;;
+    rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx]" >&2
     exit 2
     ;;
 esac
@@ -362,7 +366,7 @@ if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1
     [ "$only" != chacha20-avx2 ] &&
     [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
     [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ] && [ "$only" != sha512-stack ] &&
-    [ "$only" != x25519-adx ]; then
+    [ "$only" != x25519-adx ] && [ "$only" != p256-adx ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -424,6 +428,7 @@ read -r -a chacha20_equiv_srcs <<< "$(sed -n 23p <<< "$lists")"
 read -r -a ghash_equiv_srcs <<< "$(sed -n 24p <<< "$lists")"
 read -r -a x25519_adx_equiv_srcs <<< "$(sed -n 25p <<< "$lists")"
 read -r -a widemul_runtime_srcs <<< "$(sed -n 26p <<< "$lists")"
+read -r -a p256_verify_equiv_srcs <<< "$(sed -n 27p <<< "$lists")"
 [ "${#ghash_equiv_srcs[@]}" -gt 0 ] ||
     { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-four lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
@@ -719,6 +724,29 @@ if [ -z "$only" ] || [ "$only" = x25519-adx ]; then
 fi
 if [ "$only" = x25519-adx ]; then
     echo "aes-runtime-qemu: for x86-64, bin/x25519_adx_equiv_test held x25519_adx.c's assembly to its model and the field to the 16-word one, and bin/widemul_runtime_test held widemul_x25519_cpu to the field each value names"
+    exit 0
+fi
+if [ -z "$only" ] || [ "$only" = p256-adx ]; then
+    # The x86-64 P-256 field's copy of the wide files, whose product and
+    # square compile for x86-64 alone, and the dispatch in widemul.h and
+    # p256.c that picks it (docs/decisions.md 171). qemu's max model has
+    # BMI2 and ADX, so every binary runs every row.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/p256_adx_equiv_test" \
+        test/p256_adx_equiv_test.c "${p256_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_BMI2_ADX=1 expect max 0 \
+        "p256_adx_asm.h's assembly and its model, or the copy and the files under their own names, disagree, or a call left a word on the stack" \
+        p256_adx_equiv_test
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/p256_adx_verify_equiv_test" \
+        test/p256_adx_verify_equiv_test.c "${p256_verify_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_BMI2_ADX=1 expect max 0 \
+        "the copy's verifier and the 32-bit verifier disagree" p256_adx_verify_equiv_test
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/widemul_runtime_test" "${widemul_runtime_srcs[@]}" ||
+        exit 1
+    CH_REQUIRE_BMI2_ADX=1 expect max 0 \
+        "a P-256 dispatch ran a field the session's ch_cfg.cpu does not name" widemul_runtime_test
+fi
+if [ "$only" = p256-adx ]; then
+    echo "aes-runtime-qemu: for x86-64, bin/p256_adx_equiv_test held p256_adx_asm.h's assembly to its model and the copy to the files under their own names, bin/p256_adx_verify_equiv_test held its verifier to the 32-bit one, and bin/widemul_runtime_test held the dispatch to the field each value names"
     exit 0
 fi
 

@@ -327,11 +327,12 @@ HDRS := p256_sign_der.h ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mldsa.h mldsa_poly.h mldsa_zetas.h mldsa_signer.h mldsa_sign_round.h mldsa_sign_steps.h mldsa_sign_poly.h mldsa_sign_pack.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
         p256_wide_mul.h p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
+        p256_adx.h p256_adx_names.h p256_adx_asm.h \
         p384_wide_field.h p384_wide_point.h p384_wide_verify.h \
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h gcm_ghash.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_arm64.h gcm_arm64_passes.h gcm_vaes.h gcm_avx512.h gcm_avx512_kernel.h gcm_avx512_ghash.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_mldsa.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
-        alert.h result.h session_report.h widemul.h widemul_native.h cpu_cfg.h cpu.h hash_hw.h profile_cfg.h
+        alert.h result.h session_report.h widemul.h widemul_answer.h widemul_p256.h widemul_native.h cpu_cfg.h cpu.h hash_hw.h profile_cfg.h
 
 # The wide P-256 files and the table of multiples of G the base
 # multiplication reads, which a host object holds beside p256_field.c,
@@ -339,12 +340,18 @@ HDRS := p256_sign_der.h ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha
 # scalar arithmetic on four 64-bit words and the inverse both run
 # (docs/decisions.md 115), the points and the two scalar multiplications
 # over them, and the wipe of the stack their calls used; and the verifier
-# with its own variable-time points (docs/decisions.md 96 and 104). They
-# are named once, here, for the object, for the test binaries that link a
-# host object's P-256 and for the lints.
+# with its own variable-time points (docs/decisions.md 96 and 104). The
+# P256_ADX_SRCS are the copy of the field, the points, both scalar
+# multiplications and the verifier whose products and squares are MULX,
+# ADCX and ADOX, which compiles on x86-64 alone and which widemul.h and
+# p256.c run where the session's ch_cfg.cpu holds CH_CPU_BMI2_ADX
+# (docs/decisions.md 171). They are named once, here, for the object, for
+# the test binaries that link a host object's P-256 and for the lints.
+P256_ADX_SRCS := p256_adx_field.c p256_adx_point.c p256_adx_mul.c p256_adx_verify_point.c \
+                 p256_adx_verify.c
 P256_WIDE_SRCS := p256_wide_field.c p256_wide_scalar.c p256_wide_inverse.c p256_wide_point.c \
                   p256_wide_mul.c p256_wide_table.c p256_wide_wipe.c p256_wide_verify.c \
-                  p256_wide_verify_point.c
+                  p256_wide_verify_point.c $(P256_ADX_SRCS)
 
 # P-384 on six 64-bit words: the field, the points and the verifier over
 # them, which a host object holds in place of p384_field.c and of p384.c's
@@ -699,6 +706,8 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/x25519_adx_equiv_test.c \
           $(P256_WIDE_SRCS) test/p256_equiv_test.c test/diff_p256_wide_test.c \
           test/p256_verify_equiv_test.c test/p256_verify_portable.c \
+          test/p256_adx_model_test.c test/p256_adx_equiv_test.c test/p256_adx_verify_model_test.c \
+          test/p256_adx_verify_equiv_test.c \
           $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
           test/p384_portable.c \
           $(RSA_HOST_LINT_C) \
@@ -746,7 +755,7 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h test/rsa_sign_key.h test/rsa_sign_equiv_residue.h \
          test/rsa_sign_equiv_pieces.h test/rsa_sign_equiv_differential.h \
-         test/x25519_adx_model.h test/rsa_ifma_model_lanes.h test/rsa_ifma_test.h test/rsa_ifma_entries.h test/rsa_ifma_inputs.h \
+         test/x25519_adx_model.h test/p256_adx_model.h test/rsa_ifma_model_lanes.h test/rsa_ifma_test.h test/rsa_ifma_entries.h test/rsa_ifma_inputs.h \
          test/rsa_ifma_sign_test.h test/rsa_ifma_sign_count.h test/diff_rsa_ifma_sign.h \
          test/rsa_avx2_model_lanes.h test/rsa_avx2_test.h test/rsa_avx2_entries.h test/rsa_avx2_count.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
@@ -1455,22 +1464,25 @@ endif
 # object holds the AVX2 and AVX-512 ChaCha20 kernels, the VAES AES-GCM
 # kernels (docs/decisions.md 90), the 512-bit AES-GCM kernel (130) and
 # RSA's public operation on AVX-512 IFMA and on AVX2 (decisions 119 and
-# 122), and X25519's field on MULX and ADX (165). There the host binaries that
+# 122), X25519's field on MULX and ADX (165) and P-256's copy on them
+# (171). There the host binaries that
 # take a ch_cfg.cpu value also run under the values below, which name the
 # kernels, and bin/x86_kernels_test counts which calls the library sends
 # to a kernel under each value. A binary run under a value that names
 # instructions its CPU lacks skips, and fails instead under
 # CH_REQUIRE_X86_KERNELS=1, or for AVX-512 IFMA under
-# CH_REQUIRE_AVX512_IFMA=1 (test/test_cpu.h). The unit suite and the two
-# RSA verifiers' vector binaries run under the first three, and the
-# Wycheproof host binary under the last five. RSA verification runs on
+# CH_REQUIRE_AVX512_IFMA=1 (test/test_cpu.h). The unit suite, the two
+# RSA verifiers' vector binaries and the P-256 key exchange's and
+# signer's run under the first three, and the Wycheproof host binary
+# under the last five. RSA verification runs on
 # the AVX2 kernel under 0xd, 0xf and 0x1f, and on the IFMA kernel under
 # the values with CH_CPU_AVX512_IFMA. AES-GCM runs on the 512-bit kernel
 # under 0x31f alone, and on a CPU without what CH_CPU_AVX512 names a run
 # under it skips, and fails instead under CH_REQUIRE_AVX512=1. An X25519
-# shared secret runs on x25519_adx.c under 0x40d and 0x41f alone, and a
-# run under them on a CPU without BMI2 or ADX skips, and fails instead
-# under CH_REQUIRE_BMI2_ADX=1.
+# shared secret runs on x25519_adx.c under 0x40d and 0x41f alone, and so
+# does P-256 on p256_adx.h's copy, its verification included. A run
+# under them on a CPU without BMI2 or ADX skips, and fails instead under
+# CH_REQUIRE_BMI2_ADX=1.
 #   0xd    the probe's bit, the multiply bit and CH_CPU_AVX2
 #   0x10d  those and CH_CPU_AVX512_IFMA
 #   0x40d  0xd's bits and CH_CPU_BMI2_ADX
@@ -1978,7 +1990,10 @@ print-host-srcs:
 # one, bin/rsa_addcarry_equiv_test's units and sources,
 # bin/rsa_sign_equiv_test beside its one, bin/rsa_avx2_equiv_test's
 # units and sources, bin/sha512_test_host and bin/hkdf384_test_host
-# beside their one each, and bin/chacha20_equiv_test beside its one.
+# beside their one each, bin/chacha20_equiv_test and
+# bin/ghash_equiv_test beside their one each, bin/x25519_adx_equiv_test's
+# units and sources, bin/widemul_runtime_test's, and the sources
+# bin/p256_adx_verify_equiv_test links beside its one.
 # Each list names sha512_avx2.c where its rule here links the file's
 # object (sha512_avx2_named): the script compiles for two architectures
 # under compilers of its own, and asks for each one's object with make
@@ -2011,6 +2026,7 @@ print-aes-runtime-qemu-srcs:
 	@echo $(call sha512_avx2_named,$(GHASH_EQUIV_TEST_SRCS))
 	@echo $(X25519_ADX_EQUIV_SRCS)
 	@echo $(call sha512_avx2_named,$(WIDEMUL_RUNTIME_TEST_SRCS))
+	@echo $(call sha512_avx2_named,test/p256_verify_portable.c $(P256_VERIFY_EQUIV_TEST_SRCS))
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -3146,8 +3162,9 @@ bin/x25519_adx_equiv_test: test/x25519_adx_equiv_test.c test/x25519_equiv_test.c
 # as a host object holds them: the files under their own names on ct.h's
 # 16x16 decomposition, and the wide files on the 64x64->128 multiply.
 # The signer and the key exchange link so that a signature, a key pair and
-# a shared secret run under both answers, and p256.c so that the
-# independent verifier reads each signature. test/stack_residue.c copies
+# a shared secret run under both answers, p256.c's 32-bit arm so that the
+# independent verifier reads each signature, and p256.c's host arm so that
+# the host verifier reads it too. test/stack_residue.c copies
 # the stack a call left, for the check that a scalar's words are gone
 # (test/p256_equiv_residue.h), and the copies on the SHA-256 instructions
 # link so that one signature's nonce runs on them, as a server's does under
@@ -3155,12 +3172,31 @@ bin/x25519_adx_equiv_test: test/x25519_adx_equiv_test.c test/x25519_equiv_test.c
 # HOST_BINS names it. bin/p256_sign_test_host and bin/p256_ecdh_test_host
 # run RFC 6979's vectors and Python's on the wide files, with the multiply
 # bit, and on the files under their own names, without it.
-P256_EQUIV_TEST_SRCS := p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c $(P256_WIDE_SRCS) \
-                        test/p256_verify_portable.c sha256.c hkdf.c $(call hash_hw_of,sha256.c hkdf.c) \
+P256_EQUIV_TEST_SRCS := p256.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c \
+                        $(P256_WIDE_SRCS) test/p256_verify_portable.c sha256.c hkdf.c $(call hash_hw_of,sha256.c hkdf.c) \
                         buf.c ct.c ct_wipe.c test/stack_residue.c
 bin/p256_equiv_test: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
+# The x86-64 field's copy of the wide files (P256_ADX_SRCS) under the
+# same cases. bin/p256_adx_model_test and bin/p256_adx_verify_model_test
+# compile every unit under CH_P256_ADX_MODEL, so the copy's product and
+# square are test/p256_adx_model.h's portable C and widemul.h and p256.c
+# dispatch to the copy on every host. bin/p256_adx_equiv_test and
+# bin/p256_adx_verify_equiv_test compile the copy as the object does, on
+# the assembly, and run on an x86-64 CPU with BMI2 and ADX: the first
+# compares the assembly with the model word for word before the cases
+# (docs/decisions.md 171).
+bin/p256_adx_model_test: test/p256_adx_model_test.c test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) \
+                         $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -I. -Itest -o $@ \
+	  test/p256_adx_model_test.c $(P256_EQUIV_TEST_SRCS)
+bin/p256_adx_equiv_test: test/p256_adx_equiv_test.c test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) \
+                         $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/p256_adx_equiv_test.c \
+	  $(P256_EQUIV_TEST_SRCS)
 # The same binary on the 128-bit sums, the form of p256_wide_word.h's two
 # carry steps that gcc compiles for a machine other than x86-64. The
 # binary above runs the form its compiler picks: the builtins under clang
@@ -3184,6 +3220,16 @@ bin/p256_verify_equiv_test: $(P256_VERIFY_EQUIV_TEST_UNITS) $(P256_VERIFY_EQUIV_
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ $(P256_VERIFY_EQUIV_TEST_UNITS) \
 	  $(P256_VERIFY_EQUIV_TEST_SRCS)
+bin/p256_adx_verify_model_test: test/p256_adx_verify_model_test.c $(P256_VERIFY_EQUIV_TEST_UNITS) \
+                                $(P256_VERIFY_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -I. -Itest -o $@ \
+	  test/p256_adx_verify_model_test.c test/p256_verify_portable.c $(P256_VERIFY_EQUIV_TEST_SRCS)
+bin/p256_adx_verify_equiv_test: test/p256_adx_verify_equiv_test.c $(P256_VERIFY_EQUIV_TEST_UNITS) \
+                                $(P256_VERIFY_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/p256_adx_verify_equiv_test.c \
+	  test/p256_verify_portable.c $(P256_VERIFY_EQUIV_TEST_SRCS)
 # The same binary on the overflow builtins, the form clang compiles. CI's
 # check job and test/docker-check.sh compile with gcc for x86-64, which
 # picks the intrinsics, so this rule names the builtins and a machine
@@ -4466,12 +4512,12 @@ $(eval $(call HOST_VECTOR_BIN,hkdf384_test,test/hkdf384_test.c,$(HKDF384_SRCS),-
 # The counting test: the files whose entries widemul.h dispatches to again
 # under the second names of test/widemul_count_names.h, in the
 # test/widemul_count_*.c units, in place of the files, their native copies,
-# the wide X25519 field and the three wide P-256 files that hold a
-# dispatched entry, and the stubs that count each call
+# the wide X25519 field, the three wide P-256 files that hold a
+# dispatched entry and their x86-64 copies, and the stubs that count each call
 # (test/widemul_runtime_count.h). WIDEMUL_COUNTED names what the units
-# replace on a link line. p256_field.c, p256_wide_field.c, the inverse both
-# wide moduli call, the table of multiples of G and the verifier's points
-# hold no dispatched entry, so a counting binary links them as they are
+# replace on a link line. p256_field.c, p256_wide_field.c and its x86-64
+# copy, the inverse both wide moduli call, the table of multiples of G and
+# the verifier's points and their copy hold no dispatched entry, so a counting binary links them as they are
 # (WIDEMUL_COUNT_FIELDS). test/rsa_ifma_sign_count.c, one of the units,
 # stands in for avx512_wipe.c as well, so no counting binary links
 # avx512_wipe.c. test/aead_avx512_count.c, another, stands in for
@@ -4484,12 +4530,14 @@ WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomp
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
                        test/widemul_count_native_vector.c test/widemul_count_native_avx2.c \
                        test/widemul_count_wide.c test/widemul_count_adx.c \
-                       test/widemul_count_wide_p256.c test/widemul_count_sign64.c \
+                       test/widemul_count_wide_p256.c test/widemul_count_adx_p256.c \
+                       test/widemul_count_sign64.c \
                        test/rsa_ifma_sign_count.c test/aead_avx512_count.c
 WIDEMUL_COUNT_CHACHA := $(filter-out chacha20_avx512.c,$(CHACHA_VECTOR_SRCS))
 WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c rsa_sign.c
 WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_inverse.c p256_wide_table.c \
-                        p256_wide_wipe.c p256_wide_verify_point.c
+                        p256_wide_wipe.c p256_wide_verify_point.c p256_adx_field.c \
+                        p256_adx_verify_point.c
 WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(WIDEMUL_COUNT_CHACHA) hkdf.c sha256.c $(call hash_hw_of,hkdf.c sha256.c) \
                       ct.c ct_wipe.c buf.c record.c mlkem.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
                       sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(RSA_MONT64_SRCS) \
@@ -4583,6 +4631,8 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/x25519_adx_model_test bin/x25519_adx_equiv_test \
                                  bin/p256_equiv_test bin/p256_equiv_test_sum bin/p256_equiv_test_builtin \
                                  bin/p256_verify_equiv_test bin/p384_equiv_test bin/p384_test_host \
+                                 bin/p256_adx_model_test bin/p256_adx_equiv_test \
+                                 bin/p256_adx_verify_model_test bin/p256_adx_verify_equiv_test \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
                                  bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/mlkem_hw_equiv_test \
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
@@ -4869,8 +4919,9 @@ $(foreach b,$(CHECK_RUN_BINS),$(eval $(call CHECK_RUN,$(b))))
 # A host vector binary runs once for each ch_cfg.cpu value of
 # HOST_VECTOR_CPU, which it takes as its argument (test/test_cpu.h), and
 # its target fails when any run does. $(2) names the values a binary runs
-# under beside those: X86_UNIT_CPU on x86-64 for the unit suite and the
-# two RSA verifiers' binaries, HASH_UNIT_CPU for the unit suite, and
+# under beside those: X86_UNIT_CPU on x86-64 for the unit suite, the
+# two RSA verifiers' binaries and the P-256 key exchange's and signer's,
+# HASH_UNIT_CPU for the unit suite, and
 # HASH512_UNIT_CPU for the two SHA-512 vector binaries.
 define CHECK_RUN_HOST_VECTOR_BIN
 check-run-$(1): bin/$(1)
@@ -4879,7 +4930,7 @@ check-run-$(1): bin/$(1)
 	(exit $$$$rc); $$(CHECK_REPORT)
 endef
 HASH_VECTOR_HOST := sha512_test_host hkdf384_test_host
-X86_VECTOR_HOST := unit_host rsa_test_host rsa_pkcs1_test_host
+X86_VECTOR_HOST := unit_host rsa_test_host rsa_pkcs1_test_host p256_ecdh_test_host p256_sign_test_host
 $(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST_VECTOR_BIN,$(b),$(if $(filter $(X86_VECTOR_HOST),$(b)),$(X86_UNIT_CPU)) $(if $(filter unit_host,$(b)),$(HASH_UNIT_CPU)) $(if $(filter $(HASH_VECTOR_HOST),$(b)),$(HASH512_UNIT_CPU)))))
 
 # The host object's AES runs: the published vectors on the instructions
@@ -6962,6 +7013,8 @@ else
 	  test/webpki_resume_test.c test/webpki_session_test.c test/cnsa2_test.c test/cnsa2_quic_test.c \
 	  test/x509_mldsa_test.c test/diff_x509_mldsa_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
 	  test/mldsa_signer_test.c test/diff_mldsa_test.c \
+	  test/p256_adx_model_test.c test/p256_adx_equiv_test.c test/p256_adx_verify_model_test.c \
+	  test/p256_adx_verify_equiv_test.c \
 	  test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) \
 	  $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c \
 	  test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c \
@@ -7019,9 +7072,24 @@ else
 	# this one reads the host arm, with the verifiers' equivalence test.
 	# test/p256_verify_portable.c stays out of every pass, for the reason
 	# test/aes_equiv_soft.c does below.
-	@$(call TIDY_EACH,$(P256_WIDE_SRCS) p256.c test/p256_equiv_test.c test/diff_p256_wide_test.c \
-	  test/p256_verify_equiv_test.c, \
+	# p256_adx_field.c is out of this pass: on an x86-64 host its body is
+	# the assembly, which the two passes after this one read.
+	@$(call TIDY_EACH,$(filter-out p256_adx_field.c,$(P256_WIDE_SRCS)) p256.c test/p256_equiv_test.c \
+	  test/diff_p256_wide_test.c test/p256_verify_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	# The x86-64 P-256 field's copy over its model, the build
+	# bin/p256_adx_model_test runs on every host, so this pass reads
+	# test/p256_adx_model.h and the copy, with the four test mains: on
+	# another architecture than x86-64 each equivalence test's main is its
+	# SKIP alone. The x86-64 pass after it reads the assembly, for an
+	# x86-64 target whatever the host, with portability-no-assembler off for
+	# that file alone, for x25519_adx.c's reason (docs/decisions.md 171).
+	@$(call TIDY_EACH,$(P256_ADX_SRCS) p256.c test/p256_adx_model_test.c test/p256_adx_equiv_test.c \
+	  test/p256_adx_verify_model_test.c test/p256_adx_verify_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -I. -Itest)
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler p256_adx_field.c, \
+	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -I.)
 	# P-384's 64-bit field, points and verifier (docs/decisions.md
 	# 97), whose bodies sit behind -DCH_CPU_RUNTIME, with p384.c, which
 	# compiles the arm that calls them under the define, and the three
@@ -8797,6 +8865,12 @@ WIDEMUL_SPECS := \
 #   verifier's range checks, digits, point tests and comparisons. Every one
 #   reads a signature, a key or a hash, which are public
 #   (docs/decisions.md 96 and 104).
+# p256_adx_field.c, 0 and 0; p256_adx_point.c, 0 and 3; p256_adx_mul.c, 0
+#   and 14; p256_adx_verify_point.c, 0 and 30; p256_adx_verify.c, 0 and 6:
+#   the x86-64 copy of the wide files (docs/decisions.md 171), which
+#   compiles to nothing on arm64. On x86-64 each copy holds the branches of
+#   the wide file it copies, read above, and the product and square of
+#   p256_adx_asm.h hold none.
 # rsa_mont64.c, 71 and 109: every one reads the word count k, a byte length
 #   or the bits argument of rsa_mont64_modulus_init, all public. They are
 #   the tests of k for zero, the loops over words and rows, the tests a
@@ -8974,7 +9048,11 @@ P256_WIDE_BRANCH_CEILING := \
   arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
   arm64/p256_wide_wipe.c:0 x86-64/p256_wide_wipe.c:0 \
   arm64/p256_wide_verify.c:6 x86-64/p256_wide_verify.c:6 \
-  arm64/p256_wide_verify_point.c:30 x86-64/p256_wide_verify_point.c:30
+  arm64/p256_wide_verify_point.c:30 x86-64/p256_wide_verify_point.c:30 \
+  arm64/p256_adx_field.c:0 x86-64/p256_adx_field.c:0 arm64/p256_adx_point.c:0 \
+  x86-64/p256_adx_point.c:3 arm64/p256_adx_mul.c:0 x86-64/p256_adx_mul.c:14 \
+  arm64/p256_adx_verify_point.c:0 x86-64/p256_adx_verify_point.c:30 arm64/p256_adx_verify.c:0 \
+  x86-64/p256_adx_verify.c:6
 P256_SCALAR_BRANCH_CEILING := \
   m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
   mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18

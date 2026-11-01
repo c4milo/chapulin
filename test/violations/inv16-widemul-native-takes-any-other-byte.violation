@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: widemul_answer.h
 catches: widemul_runtime_test
 reason: widemul_native runs the native copies for every byte but
   WIDEMUL_NOT_STATED, so a direction whose answer was never written, 0,

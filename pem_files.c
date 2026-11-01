@@ -141,12 +141,12 @@ static int read_key(const uint8_t *pem, size_t pem_len, uint8_t der[CH_PEM_KEY_D
            x509_pem_read_sec1(der, w.len, scalar, point);
 }
 
-// The key pair. p256_ecdh_keygen holds scalar to 1 to n - 1, copies it
+// The key pair. p256_ecdh_keygen_cpu holds scalar to 1 to n - 1, copies it
 // to priv, and writes its point in SEC 1's uncompressed form. This copies
 // the point's X||Y to pub. The point is public.
 static int key_pair(uint32_t cpu, const uint8_t scalar[32], uint8_t priv[32], uint8_t pub[64]) {
     uint8_t point[P256_POINT_LEN];
-    if (!p256_ecdh_keygen(KEY_WIDEMUL(cpu), scalar, priv, point)) {
+    if (!p256_ecdh_keygen_cpu(cpu, KEY_WIDEMUL(cpu), scalar, priv, point)) {
         return 0;
     }
     rbuf r;

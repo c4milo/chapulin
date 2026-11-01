@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: widemul_answer.h
 catches: tcp_nonblocking_loop_host
 reason: widemul_of_cpu gives every value the constant-time answer, so a host
   session whose caller never stated the multiply's timing runs the native

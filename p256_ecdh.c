@@ -43,8 +43,8 @@ static uint32_t scalar_in_range_mask(const p256_scalar *k) {
     return p256_scalar_reduced_mask(k) & ~p256_scalar_zero_mask(k);
 }
 
-int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
-                     uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
+int p256_ecdh_keygen_cpu(uint32_t cpu, uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
+                         uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
     p256_scalar k;
     p256_point product;
 
@@ -60,14 +60,14 @@ int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
         return 0;
     }
 
-    widemul_p256_point_base_mul(widemul, &product, &k);
+    widemul_p256_point_base_mul(cpu, widemul, &product, &k);
     pub[0] = 0x04; // SEC 1 section 2.3.3, uncompressed
     // ok is all ones here: a scalar in [1, n-1] times a generator of a
     // prime-order group is never the point at infinity. Both outputs
     // pass through the mask anyway, so the one contract this file states
     // -- a zero return leaves zero bytes behind -- holds on every path
     // rather than on the arithmetic being right.
-    uint32_t ok = widemul_p256_point_affine(widemul, pub + 1, pub + 1 + P256_FE_LEN, &product);
+    uint32_t ok = widemul_p256_point_affine(cpu, widemul, pub + 1, pub + 1 + P256_FE_LEN, &product);
     for (size_t i = 0; i < P256_SCALAR_LEN; i++) {
         priv[i] = draw[i] & (uint8_t)ok;
     }
@@ -80,13 +80,13 @@ int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
     return (int)(ok & 1U);
 }
 
-int p256_ecdh_point_valid(uint8_t widemul, const uint8_t point[P256_POINT_LEN]) {
+int p256_ecdh_point_valid_cpu(uint32_t cpu, uint8_t widemul, const uint8_t point[P256_POINT_LEN]) {
     p256_point peer;
-    return (int)(widemul_p256_point_from_bytes(widemul, &peer, point) & 1U);
+    return (int)(widemul_p256_point_from_bytes(cpu, widemul, &peer, point) & 1U);
 }
 
-int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
-              const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]) {
+int p256_ecdh_cpu(uint32_t cpu, uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
+                  const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]) {
     p256_scalar k;
     p256_point peer;
     p256_point product;
@@ -97,14 +97,14 @@ int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
     // which the return code reports.
     uint32_t in_range = scalar_in_range_mask(&k);
     CT_DECLASSIFY(&in_range, sizeof in_range);
-    if (widemul_p256_point_from_bytes(widemul, &peer, point) == 0 || in_range == 0) {
+    if (widemul_p256_point_from_bytes(cpu, widemul, &peer, point) == 0 || in_range == 0) {
         ct_wipe(&k, sizeof k);
         ct_wipe(out, P256_SECRET_LEN);
         return 0;
     }
 
-    widemul_p256_point_mul(widemul, &product, &k, &peer);
-    uint32_t ok = widemul_p256_point_affine_x(widemul, out, &product);
+    widemul_p256_point_mul(cpu, widemul, &product, &k, &peer);
+    uint32_t ok = widemul_p256_point_affine_x(cpu, widemul, out, &product);
     // The product is the point at infinity only when the scalar is a
     // multiple of n, which the range check above refused. The mask takes
     // the bytes anyway: failing closed costs one and per byte.
@@ -115,4 +115,20 @@ int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
     ct_wipe(&k, sizeof k);
     ct_wipe(&product, sizeof product);
     return (int)(ok & 1U);
+}
+
+// The three entries with no description of the CPU, which run under the
+// answer widemul alone: cpu 0 names no field of p256_adx.h's.
+int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
+                     uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
+    return p256_ecdh_keygen_cpu(0, widemul, draw, priv, pub);
+}
+
+int p256_ecdh_point_valid(uint8_t widemul, const uint8_t point[P256_POINT_LEN]) {
+    return p256_ecdh_point_valid_cpu(0, widemul, point);
+}
+
+int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
+              const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]) {
+    return p256_ecdh_cpu(0, widemul, priv, point, out);
 }

@@ -49,6 +49,16 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
     srv_stub_called("p256_ecdsa_verify");
 }
 
+int p256_ecdsa_verify_cpu(uint32_t cpu, const uint8_t pub[64], const uint8_t msg_hash[32],
+                          const uint8_t *sig_der, size_t sig_len) {
+    (void)cpu;
+    (void)pub;
+    (void)msg_hash;
+    (void)sig_der;
+    (void)sig_len;
+    srv_stub_called("p256_ecdsa_verify_cpu");
+}
+
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
                  const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len) {
     (void)k;

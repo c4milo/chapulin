@@ -90,4 +90,18 @@ int p256_ecdh_point_valid(uint8_t widemul, const uint8_t point[P256_POINT_LEN]);
 int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
               const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]);
 
+// The three calls above with a description of the CPU first: cpu is a
+// session's ch_cfg.cpu, which widemul.h's dispatchers read beside widemul.
+// In an x86-64 host object, under WIDEMUL_CONSTANT_TIME, a value that holds
+// CH_CPU_BMI2_ADX runs the point arithmetic on p256_adx.h's field, whose
+// products are MULX's (docs/decisions.md 171). Every other value, and every
+// value in a device object, gives the call above under the same answer. A
+// session passes CH_CFG_CPU (cpu.h), which is 0 in a device object, and the
+// calls above pass 0.
+int p256_ecdh_keygen_cpu(uint32_t cpu, uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
+                         uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]);
+int p256_ecdh_point_valid_cpu(uint32_t cpu, uint8_t widemul, const uint8_t point[P256_POINT_LEN]);
+int p256_ecdh_cpu(uint32_t cpu, uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
+                  const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]);
+
 #endif

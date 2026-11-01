@@ -11,6 +11,6 @@ reason: the scalar multiplication of the key exchange runs under
   answer.
 
 --- old
-    widemul_p256_point_mul(widemul, &product, &k, &peer);
+    widemul_p256_point_mul(cpu, widemul, &product, &k, &peer);
 --- new
-    widemul_p256_point_mul(WIDEMUL_NOT_STATED, &product, &k, &peer);
+    widemul_p256_point_mul(cpu, WIDEMUL_NOT_STATED, &product, &k, &peer);

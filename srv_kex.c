@@ -138,7 +138,8 @@ int srv_kex_shared(const client_hello *ch, uint16_t group) {
 static int p256_share(handshake_state *h, const client_hello *ch,
                       uint8_t share[SRV_KEX_SHARE_MAX]) {
     CH_ASSERT(ch->p256_share != NULL);
-    if (!p256_ecdh_point_valid(widemul_answer(&h->t->cfg), ch->p256_share)) {
+    if (!p256_ecdh_point_valid_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg),
+                                   ch->p256_share)) {
         return CH_EPROTO;
     }
     uint8_t draw[P256_SCALAR_LEN];
@@ -146,7 +147,8 @@ static int p256_share(handshake_state *h, const client_hello *ch,
     for (int i = 0; i < P256_ECDH_DRAWS && !drawn; i++) {
         ct_wipe(draw, sizeof draw);
         rand_draw(&h->t->cfg, draw, sizeof draw);
-        drawn = p256_ecdh_keygen(widemul_answer(&h->t->cfg), draw, h->p256_priv, share);
+        drawn = p256_ecdh_keygen_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), draw,
+                                     h->p256_priv, share);
     }
     ct_wipe(draw, sizeof draw);
     // rand.h's contract: a working generator refuses P256_ECDH_DRAWS
@@ -210,11 +212,12 @@ int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,
                    uint8_t ikm[SRV_KEX_SECRET_MAX], size_t *ikm_len) {
     int shared_ok;
     if (group == CH_GROUP_SECP256R1) {
-        // p256_ecdh checks the point again, which srv_kex_share already
+        // p256_ecdh_cpu checks the point again, which srv_kex_share already
         // did, and zeroes its 32 bytes of ikm when it refuses.
         CH_ASSERT(ch->p256_share != NULL);
         *ikm_len = P256_SECRET_LEN;
-        shared_ok = p256_ecdh(widemul_answer(&h->t->cfg), h->p256_priv, ch->p256_share, ikm);
+        shared_ok = p256_ecdh_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), h->p256_priv,
+                                  ch->p256_share, ikm);
     } else {
         shared_ok = x25519_secret(h, ch, group, ikm, ikm_len);
     }

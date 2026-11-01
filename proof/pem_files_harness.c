@@ -8,7 +8,7 @@
 //   - ch_p256_key_from_pem: CH_OK only for a cpu value the object takes.
 //     CH_OK only when the call asked the leaf about the point it returns,
 //     and the leaf answered yes. CH_OK only with the point that
-//     p256_ecdh_keygen wrote for the scalar, under the multiply answer
+//     p256_ecdh_keygen_cpu wrote for the scalar, under the multiply answer
 //     that cpu gives. CH_EINVAL with priv and pub zero, on every path.
 //     Each key reader runs only on the DER of its shape's key block, in a
 //     run of blocks that ended: PKCS #8 after a PRIVATE KEY block alone,
@@ -23,7 +23,7 @@
 //  - pem_blocks_init and pem_blocks_next (proof/pem_blocks_harness.c);
 //  - the five x509_pem readers (proof/x509_pem_harness.c and
 //    x509_pem_key_harness.c);
-//  - p256_ecdh_keygen (proof/p256_ecdh_harness.c).
+//  - p256_ecdh_keygen_cpu (proof/p256_ecdh_harness.c).
 // So the object under proof is the order of the calls' own steps:
 //  - the cpu check;
 //  - the label of each block and the count against the caller's entries;
@@ -249,9 +249,10 @@ static uint8_t expected_widemul;
 
 // p256_ecdh.h: 1 with priv the draw and pub its point, or 0 with both
 // zeroed.
-int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
-                     uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
+int p256_ecdh_keygen_cpu(uint32_t cpu, uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
+                         uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
     __CPROVER_assert(cpu_taken(call_cpu), "keygen: only under a cpu value the object takes");
+    __CPROVER_assert(cpu == call_cpu, "keygen: the cpu value the key call took");
     __CPROVER_assert(widemul == expected_widemul, "keygen: the answer cpu gives");
     __CPROVER_assert(__CPROVER_r_ok(draw, P256_SCALAR_LEN), "keygen: draw readable");
     __CPROVER_assert(__CPROVER_w_ok(priv, P256_SCALAR_LEN) && __CPROVER_w_ok(pub, P256_POINT_LEN),

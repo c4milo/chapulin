@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-125 of the 156 C sources in the tree root are compiled into a
+125 of the 161 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 31 sources are in no such harness:
+The other 36 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -75,6 +75,8 @@ The other 31 sources are in no such harness:
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decisions 93 and 128). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
 | `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names, but for the arms of `poly1305.c`'s `whole_blocks` that hand whole groups of blocks to the vector paths, and on x86-64 `poly1305_update_avx2` and `poly1305_update_ifma`, which only `poly1305_native.c` compiles ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
+| `p256_adx_field.c` | Its product and square are inline assembly, in `p256_adx_asm.h`, which CBMC does not read. It has a body on x86-64 alone. | `bin/p256_adx_model_test` runs the copy of the wide files over `test/p256_adx_model.h`, portable C that writes the words each statement writes, against the files under their own names on every host. On a CPU with BMI2 and ADX, `bin/p256_adx_equiv_test` holds each statement to the model word for word (decision 171). |
+| `p256_adx_point.c`, `p256_adx_mul.c`, `p256_adx_verify_point.c`, `p256_adx_verify.c` | Each is a wide P-256 file compiled once more under the names `p256_adx_names.h` gives, whose products and squares are `p256_adx_field.c`'s (decision 171). It has a body on x86-64 alone. | The wide file's own harnesses prove the same text over the stubs of the field or of the points, and `bin/p256_adx_equiv_test` and `bin/p256_adx_verify_equiv_test` hold the copy to the files under their own names on a CPU with BMI2 and ADX. |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
 | `poly1305_avx2_native.c` | It is `poly1305_avx2.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop on a CPU with AVX2. |
 | `poly1305_ifma_native.c` | It is `poly1305_ifma.c` under the names `widemul_native.h` gives, on the AVX-512 IFMA intrinsics in `poly1305_ifma_lanes.h`, which CBMC cannot read. | The `poly1305_ifma` harnesses prove the same text over a model of each instruction ([poly1305_ifma](#poly1305_ifma)), and on a CPU with AVX-512 IFMA `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop and searches the stack below a call for every power of r it computes; the nightly's `rsa-ifma-sde` job runs it under Intel SDE. |

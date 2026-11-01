@@ -1,0 +1,39 @@
+invariant: INV-66
+file: p256_adx_asm.h
+catches: test/docker-aes-runtime-qemu.sh p256-adx
+reason: p256_adx_mul_mont's second round of the reduction drops the carry
+  the first round left past its fifth word, so a product whose first round
+  carries comes out short by 2^256 / 2^128 times that bit, a value no
+  longer congruent to the product. The square keeps the carry, so only
+  products go wrong, in about one product in four.
+  bin/p256_adx_equiv_test compares each product with the model word for
+  word, and the qemu lane runs it for x86-64.
+
+--- old
+        "mov %%r9, %%rdx\n mulx %%rbx, %%rsi, %%rdi\n"
+        "mov %%rdx, %%rax\n shl $32, %%rax\n shr $32, %%rdx\n add %%rcx, %%rdi\n"
+        "add %%rax, %%r10\n adc %%rdx, %%r11\n adc %%rsi, %%r12\n adc %%rdi, %%r13\n"
+        "mov $0, %%ecx\n adc $0, %%rcx\n"
+        "mov %%r10, %%rdx\n mulx %%rbx, %%rsi, %%rdi\n"
+        "mov %%rdx, %%rax\n shl $32, %%rax\n shr $32, %%rdx\n add %%rcx, %%rdi\n"
+        "add %%rax, %%r11\n adc %%rdx, %%r12\n adc %%rsi, %%r13\n adc %%rdi, %%r14\n"
+        "mov $0, %%ecx\n adc $0, %%rcx\n"
+        "mov %%r11, %%rdx\n mulx %%rbx, %%rsi, %%rdi\n"
+        "mov %%rdx, %%rax\n shl $32, %%rax\n shr $32, %%rdx\n add %%rcx, %%rdi\n"
+        "add %%rax, %%r12\n adc %%rdx, %%r13\n adc %%rsi, %%r14\n adc %%rdi, %%r15\n"
+        "mov $0, %%ecx\n adc $0, %%rcx\n"
+        // The final subtraction of p: p0 is 2^64 - 1, so its subtraction
+--- new
+        "mov %%r9, %%rdx\n mulx %%rbx, %%rsi, %%rdi\n"
+        "mov %%rdx, %%rax\n shl $32, %%rax\n shr $32, %%rdx\n"
+        "add %%rax, %%r10\n adc %%rdx, %%r11\n adc %%rsi, %%r12\n adc %%rdi, %%r13\n"
+        "mov $0, %%ecx\n adc $0, %%rcx\n"
+        "mov %%r10, %%rdx\n mulx %%rbx, %%rsi, %%rdi\n"
+        "mov %%rdx, %%rax\n shl $32, %%rax\n shr $32, %%rdx\n add %%rcx, %%rdi\n"
+        "add %%rax, %%r11\n adc %%rdx, %%r12\n adc %%rsi, %%r13\n adc %%rdi, %%r14\n"
+        "mov $0, %%ecx\n adc $0, %%rcx\n"
+        "mov %%r11, %%rdx\n mulx %%rbx, %%rsi, %%rdi\n"
+        "mov %%rdx, %%rax\n shl $32, %%rax\n shr $32, %%rdx\n add %%rcx, %%rdi\n"
+        "add %%rax, %%r12\n adc %%rdx, %%r13\n adc %%rsi, %%r14\n adc %%rdi, %%r15\n"
+        "mov $0, %%ecx\n adc $0, %%rcx\n"
+        // The final subtraction of p: p0 is 2^64 - 1, so its subtraction

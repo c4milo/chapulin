@@ -34,6 +34,25 @@
 //
 // The random inputs come from the seeded generator below, so an ordinary
 // run replays exactly and the nightly can vary CH_P256_EQUIV_SEED.
+//
+// Under P256_EQUIV_ADX the same cases run on the x86-64 field's copy of the
+// wide files (p256_adx.h): p256_adx_names.h comes first, so every wide name
+// below that the copy renames calls the copy, and P256_EQUIV_CPU names
+// CH_CPU_BMI2_ADX, so every entry and dispatcher runs the copy too.
+// bin/p256_adx_model_test builds it so over the model, on every host, and
+// bin/p256_adx_equiv_test over the assembly (test/p256_adx_equiv_test.c).
+#ifdef P256_EQUIV_ADX
+#include "p256_adx_names.h"
+#define P256_EQUIV_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY | CH_CPU_BMI2_ADX)
+#define P256_EQUIV_FILES "the x86-64 field's copy"
+#else
+#define P256_EQUIV_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY)
+#define P256_EQUIV_FILES "the wide files"
+#endif
+#ifndef P256_EQUIV_NAME
+#define P256_EQUIV_NAME "p256_equiv"
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -319,7 +338,7 @@ static void run_decode(void) {
     for (int i = 0; i < 20; i++) {
         do {
             rng_fill(draw, sizeof draw);
-        } while (!p256_ecdh_keygen(WIDEMUL_CONSTANT_TIME, draw, priv, point));
+        } while (!p256_ecdh_keygen_cpu(P256_EQUIV_CPU, WIDEMUL_CONSTANT_TIME, draw, priv, point));
         decode_case("a point on the curve", point);
         memcpy(bad, point, sizeof bad);
         bad[0] = (uint8_t)(i & 1 ? 0x02 : 0x00);
@@ -346,8 +365,8 @@ static int keypair_case(const uint8_t draw[P256_SCALAR_LEN], uint8_t priv[P256_S
                         uint8_t pub[P256_POINT_LEN]) {
     uint8_t other_priv[P256_SCALAR_LEN];
     uint8_t other_pub[P256_POINT_LEN];
-    int made = p256_ecdh_keygen(ANSWERS[0], draw, priv, pub);
-    int other_made = p256_ecdh_keygen(ANSWERS[1], draw, other_priv, other_pub);
+    int made = p256_ecdh_keygen_cpu(P256_EQUIV_CPU, ANSWERS[0], draw, priv, pub);
+    int other_made = p256_ecdh_keygen_cpu(P256_EQUIV_CPU, ANSWERS[1], draw, other_priv, other_pub);
     int ok = made == other_made;
     ok &= memcmp(priv, other_priv, sizeof other_priv) == 0;
     ok &= memcmp(pub, other_pub, sizeof other_pub) == 0;
@@ -355,18 +374,21 @@ static int keypair_case(const uint8_t draw[P256_SCALAR_LEN], uint8_t priv[P256_S
     return made;
 }
 
-// A signature under both answers, which the independent verifier reads.
+// A signature under both answers, which the independent verifier reads,
+// and the host verifier under P256_EQUIV_CPU. The second signs through
+// p256_sign_cpu, whose nonce's HMACs run on the portable code under a
+// value with no SHA-256 bit, so both write the same bytes.
 static void signature_case(const uint8_t priv[P256_SCALAR_LEN], const uint8_t pub[P256_POINT_LEN],
                            const uint8_t hash[32]) {
     uint8_t sig[2][P256_SIG_MAX];
     size_t sig_len[2] = {0, 0};
     int ok = 1;
-    for (size_t j = 0; j < 2; j++) {
-        ok &= p256_sign(ANSWERS[j], priv, hash, sig[j], sizeof sig[j], &sig_len[j]) == 1;
-    }
+    ok &= p256_sign(ANSWERS[0], priv, hash, sig[0], sizeof sig[0], &sig_len[0]) == 1;
+    ok &= p256_sign_cpu(P256_EQUIV_CPU, priv, hash, sig[1], sizeof sig[1], &sig_len[1]) == 1;
     ok &= sig_len[0] == sig_len[1];
     ok &= memcmp(sig[0], sig[1], sig_len[0]) == 0;
     ok &= p256_ecdsa_verify_portable(pub + 1, hash, sig[1], sig_len[1]) == 1;
+    ok &= p256_ecdsa_verify_cpu(P256_EQUIV_CPU, pub + 1, hash, sig[1], sig_len[1]) == 1;
     report("entries", "a signature under both answers", ok);
 }
 
@@ -375,10 +397,11 @@ static void secret_case(const uint8_t priv[P256_SCALAR_LEN], const uint8_t peer[
     uint8_t shared[2][P256_SECRET_LEN];
     int ok = 1;
     for (size_t j = 0; j < 2; j++) {
-        ok &= p256_ecdh(ANSWERS[j], priv, peer, shared[j]) == 1;
+        ok &= p256_ecdh_cpu(P256_EQUIV_CPU, ANSWERS[j], priv, peer, shared[j]) == 1;
     }
     ok &= memcmp(shared[0], shared[1], sizeof shared[0]) == 0;
-    ok &= p256_ecdh_point_valid(ANSWERS[0], peer) == p256_ecdh_point_valid(ANSWERS[1], peer);
+    ok &= p256_ecdh_point_valid_cpu(P256_EQUIV_CPU, ANSWERS[0], peer) ==
+          p256_ecdh_point_valid_cpu(P256_EQUIV_CPU, ANSWERS[1], peer);
     report("entries", "a shared secret under both answers", ok);
 }
 
@@ -401,7 +424,8 @@ static void run_entries(void) {
         }
         do {
             rng_fill(draw, sizeof draw);
-        } while (!p256_ecdh_keygen(WIDEMUL_CONSTANT_TIME, draw, peer_priv, peer));
+        } while (
+            !p256_ecdh_keygen_cpu(P256_EQUIV_CPU, WIDEMUL_CONSTANT_TIME, draw, peer_priv, peer));
         signature_case(priv, pub, hash);
         secret_case(priv, peer);
     }
@@ -412,6 +436,11 @@ static void run_entries(void) {
 
 int main(void) {
     uint64_t seed = rng_seed_from_env();
+#ifdef P256_EQUIV_BEFORE
+    if (!P256_EQUIV_BEFORE()) {
+        return 0;
+    }
+#endif
     run_field();
     run_field_vectors();
     run_scalar();
@@ -422,12 +451,13 @@ int main(void) {
     run_entries();
     run_stack();
     if (failures != 0) {
-        (void)printf("p256_equiv: %d failures (seed 0x%016llx)\n", failures,
+        (void)printf(P256_EQUIV_NAME ": %d failures (seed 0x%016llx)\n", failures,
                      (unsigned long long)seed);
         return 1;
     }
-    (void)printf("p256_equiv: %lu comparisons, the wide files == the files under their own names "
-                 "(seed 0x%016llx)\n",
+    (void)printf(P256_EQUIV_NAME ": %lu comparisons, " P256_EQUIV_FILES
+                                 " == the files under their own names "
+                                 "(seed 0x%016llx)\n",
                  compared, (unsigned long long)seed);
     return 0;
 }

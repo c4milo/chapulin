@@ -6,18 +6,23 @@
 //
 // Two groups. verify runs p256.c, p384.c, rsa.c and rsa_pkcs1.c, whose
 // inputs are all public. Their products use the compiler's own multiply,
-// but for the RSA rows under CH_CPU_AVX512_IFMA, below. No bit of
-// ch_cfg.cpu changes the two ECDSA verifiers. The RSA
-// rows hand the value to rsa_pss_verify_cpu and rsa_pkcs1_verify_cpu, as a
-// session does, and on x86-64 CH_CPU_AVX512_IFMA runs their public
-// operation on rsa_ifma.c (docs/decisions.md 119). secret_key runs
+// but for the RSA rows under CH_CPU_AVX512_IFMA and the P-256 row under
+// CH_CPU_BMI2_ADX, below. No bit of ch_cfg.cpu changes the P-384
+// verifier. The RSA rows hand the value to rsa_pss_verify_cpu and
+// rsa_pkcs1_verify_cpu, and the P-256 row to p256_ecdsa_verify_cpu, as a
+// session does. On x86-64 CH_CPU_AVX512_IFMA runs RSA's public operation
+// on rsa_ifma.c (docs/decisions.md 119), and CH_CPU_BMI2_ADX runs the
+// P-256 verification on p256_adx.h's copy (docs/decisions.md 171).
+// secret_key runs
 // x25519.c, mlkem_poly.c, p256_field.c, p256_scalar.c and rsa_sign.c,
 // whose products go through ct.h's widening multiply. Without
 // CH_CPU_CONSTANT_TIME_MULTIPLY its rows run those files on the 16x16
 // decomposition. With the bit they run the native copy of mlkem_poly.c,
 // for X25519 the wide field, x25519_wide.c, for P-256 the wide files and
 // their table of multiples of G, and for RSA signing rsa_sign64.c's words
-// (widemul.h, docs/decisions.md 94 and 95).
+// (widemul.h, docs/decisions.md 94 and 95). With CH_CPU_BMI2_ADX beside
+// the bit, on x86-64, an X25519 shared secret runs on x25519_adx.c and
+// P-256 on p256_adx.h's copy (docs/decisions.md 165 and 171).
 //
 // The key generation and encapsulation rows take their random bytes as
 // arguments, as the library's calls do, so they time no draw.
@@ -175,8 +180,8 @@ static void run_mlkem_decaps(size_t n) {
 
 static void run_p256_verify(size_t n) {
     (void)n;
-    expect(p256_ecdsa_verify(P256_PUB, P256_HASH, P256_SIG, sizeof P256_SIG) == 1,
-           "p256_ecdsa_verify refused RFC 6979 A.2.5");
+    expect(p256_ecdsa_verify_cpu(bench_cpu, P256_PUB, P256_HASH, P256_SIG, sizeof P256_SIG) == 1,
+           "p256_ecdsa_verify_cpu refused RFC 6979 A.2.5");
 }
 
 // The signature through p256_sign_hedged_cpu, the entry a server signs
@@ -215,8 +220,8 @@ static void run_p256_ecdh_keygen(size_t n) {
     (void)n;
     uint8_t priv[P256_SCALAR_LEN];
     uint8_t pub[P256_POINT_LEN];
-    expect(p256_ecdh_keygen(BENCH_WIDEMUL, P256_ECDH_KEYGEN[ECDH_KEYGEN_CASE].scalar, priv, pub) ==
-               1,
+    expect(p256_ecdh_keygen_cpu(bench_cpu, BENCH_WIDEMUL, P256_ECDH_KEYGEN[ECDH_KEYGEN_CASE].scalar,
+                                priv, pub) == 1,
            "p256_ecdh_keygen refused its draw");
     bench_consume(pub, 1);
 }
@@ -226,7 +231,7 @@ static void prepare_p256_ecdh_keygen(size_t n) {
     uint8_t priv[P256_SCALAR_LEN];
     uint8_t pub[P256_POINT_LEN];
     const p256_ecdh_keygen_case *c = &P256_ECDH_KEYGEN[ECDH_KEYGEN_CASE];
-    expect(p256_ecdh_keygen(BENCH_WIDEMUL, c->scalar, priv, pub) == 1,
+    expect(p256_ecdh_keygen_cpu(bench_cpu, BENCH_WIDEMUL, c->scalar, priv, pub) == 1,
            "p256_ecdh_keygen refused its draw");
     expect(memcmp(pub, c->pub, sizeof pub) == 0, "p256_ecdh_keygen missed its vector");
 }
@@ -235,7 +240,8 @@ static void run_p256_ecdh(size_t n) {
     (void)n;
     uint8_t shared[P256_SECRET_LEN];
     const p256_ecdh_shared_case *c = &P256_ECDH_SHARED[ECDH_SHARED_CASE];
-    expect(p256_ecdh(BENCH_WIDEMUL, c->priv, c->peer, shared) == 1, "p256_ecdh refused its vector");
+    expect(p256_ecdh_cpu(bench_cpu, BENCH_WIDEMUL, c->priv, c->peer, shared) == 1,
+           "p256_ecdh refused its vector");
     bench_consume(shared, 1);
 }
 
@@ -243,7 +249,8 @@ static void prepare_p256_ecdh(size_t n) {
     (void)n;
     uint8_t shared[P256_SECRET_LEN];
     const p256_ecdh_shared_case *c = &P256_ECDH_SHARED[ECDH_SHARED_CASE];
-    expect(p256_ecdh(BENCH_WIDEMUL, c->priv, c->peer, shared) == 1, "p256_ecdh refused its vector");
+    expect(p256_ecdh_cpu(bench_cpu, BENCH_WIDEMUL, c->priv, c->peer, shared) == 1,
+           "p256_ecdh refused its vector");
     expect(memcmp(shared, c->shared, sizeof shared) == 0, "p256_ecdh missed its vector");
 }
 

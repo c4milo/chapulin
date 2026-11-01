@@ -182,7 +182,11 @@
 // alone and no timing. With CH_CPU_CONSTANT_TIME_MULTIPLY beside it, whose statement covers
 // MULX's products, an X25519 shared secret runs on x25519_adx.c's field of four 64-bit words, in
 // place of x25519_wide.c's five 51-bit words (widemul.h's widemul_x25519_cpu). A public key
-// still runs on x25519_wide.c's table (docs/decisions.md 165).
+// still runs on x25519_wide.c's table (docs/decisions.md 165). With the multiply bit beside it,
+// P-256's scalar multiplications, point decode, affine conversion and curve check run on
+// p256_adx.h's copy of the wide files, whose products and squares are MULX's (widemul_p256.h's
+// widemul_p256_adx). An ECDSA P-256 verification reads public inputs alone, so the bit by itself
+// runs it on that copy (p256.h's p256_ecdsa_verify_cpu, docs/decisions.md 171).
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2, CH_CPU_VAES, CH_CPU_AVX512_IFMA,

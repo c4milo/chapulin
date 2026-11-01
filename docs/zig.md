@@ -430,7 +430,9 @@ and in `avx512_wipe.c`'s block of assembly, as make's does
   kernels (docs/decisions.md 130). `bmi2_adx` says the CPU has BMI2 and
   ADX, and beside `constant_time_multiply` the session computes an X25519
   shared secret on `x25519_adx.c`'s four 64-bit words (docs/decisions.md
-  165).
+  165) and its P-256 point arithmetic on `p256_adx.h`'s copy of the wide
+  files. By itself it runs an ECDSA P-256 verification on that copy
+  (docs/decisions.md 171).
   The three hash fields say the CPU has the SHA-256, the SHA-512 or the
   SHA-3 instructions. With `constant_time_sha256` the session hashes its
   transcript and derives its keys over SHA-256 on them, and with

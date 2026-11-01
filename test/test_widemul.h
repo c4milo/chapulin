@@ -23,4 +23,13 @@ static inline uint8_t test_widemul_answer(void) {
 #define TEST_WIDEMUL WIDEMUL_BUILD_ANSWER
 #endif
 
+// A P-256 signature as a session makes one: in a host binary through p256_sign_cpu under
+// test_cpu, so a value with CH_CPU_BMI2_ADX runs the point arithmetic on p256_adx.h's copy where
+// the copy exists, and in every other binary through p256_sign under TEST_WIDEMUL.
+#ifdef CH_CPU_RUNTIME
+#define TEST_P256_SIGN(...) p256_sign_cpu(test_cpu, __VA_ARGS__)
+#else
+#define TEST_P256_SIGN(...) p256_sign(TEST_WIDEMUL, __VA_ARGS__)
+#endif
+
 #endif

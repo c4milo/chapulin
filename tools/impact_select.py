@@ -141,8 +141,9 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # a gcc build for x86-64 runs the rows and the lane builds it with that gcc.
 # A violation of rsa_avx2_lanes.h's instructions names rsa-avx2, because
 # the AVX2 kernel has a body on x86-64 alone. A violation of x25519_adx.c
-# or of the dispatch to it in widemul.h names x25519-adx, for the same
-# reason. A violation of
+# or of the dispatch to it in widemul.h names x25519-adx, and one of
+# p256_adx_asm.h or of the dispatch to it in widemul.h and p256.c names
+# p256-adx, for the same reason. A violation of
 # sha512_avx2.c's kernel, of the wipe after it or of where its sums lie
 # names sha512-avx2, for the same reason, and because the lane builds it
 # with gcc, the compiler under which the declared alignment of the sums
@@ -170,7 +171,8 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh rsa-ifma",
                           "test/docker-aes-runtime-qemu.sh rsa-addcarry",
                           "test/docker-aes-runtime-qemu.sh rsa-avx2",
-                          "test/docker-aes-runtime-qemu.sh x25519-adx"]
+                          "test/docker-aes-runtime-qemu.sh x25519-adx",
+                          "test/docker-aes-runtime-qemu.sh p256-adx"]
 
 # What "everything" means, in the order to run it: the two tiers, then
 # the targets only the nightly runs. Each entry is (tier, command, reason).
@@ -398,7 +400,7 @@ def select_pairs(out, changed, lib):
 # bin/qemu-arm64/ and runs them under qemu-x86_64 and qemu-aarch64
 # (docs/decisions.md 81, 89, 90, 93 and 94). No make rule builds the
 # copies. The script asks make for each binary's source list and names its
-# test files itself, and the sources of these 23 rules hold every
+# test files itself, and the sources of these 25 rules hold every
 # file it compiles.
 AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/webpki_loop_aes", "bin/quic_test_hw",
@@ -411,7 +413,8 @@ AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/aes_equiv_test", "bin/rsa_addcarry_equiv_test",
                              "bin/rsa_sign_equiv_test", "bin/rsa_avx2_equiv_test",
                              "bin/ghash_equiv_test", "bin/x25519_adx_equiv_test",
-                             "bin/widemul_runtime_test")
+                             "bin/widemul_runtime_test", "bin/p256_adx_equiv_test",
+                             "bin/p256_adx_verify_equiv_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 

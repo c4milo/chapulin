@@ -131,15 +131,17 @@ int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN], const uint
 // refuses a candidate at any draw and accepts one within P256_ECDH_DRAWS,
 // the bound rand.h's contract gives a working generator, and a refusal
 // zeroes both outputs. The exchange's refusal zeroes its 32 bytes.
-int p256_ecdh_point_valid(uint8_t widemul, const uint8_t point[P256_POINT_LEN]) {
+int p256_ecdh_point_valid_cpu(uint32_t cpu, uint8_t widemul, const uint8_t point[P256_POINT_LEN]) {
+    (void)cpu;
     (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(point, P256_POINT_LEN), "point check: point readable");
     point_checked = point;
     return nondet_u8() & 1;
 }
 
-int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
-                     uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
+int p256_ecdh_keygen_cpu(uint32_t cpu, uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
+                         uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
+    (void)cpu;
     (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(draw, P256_SCALAR_LEN), "keygen: draw readable");
     __CPROVER_assert(__CPROVER_w_ok(priv, P256_SCALAR_LEN), "keygen: priv writable");
@@ -158,8 +160,9 @@ int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
     return 1;
 }
 
-int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
-              const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]) {
+int p256_ecdh_cpu(uint32_t cpu, uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
+                  const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]) {
+    (void)cpu;
     (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(priv, P256_SCALAR_LEN), "p256_ecdh: priv readable");
     __CPROVER_assert(__CPROVER_r_ok(point, P256_POINT_LEN), "p256_ecdh: point readable");

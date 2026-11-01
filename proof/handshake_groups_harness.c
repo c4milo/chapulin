@@ -13,14 +13,14 @@
 //      P-256 share alone (INV-17).
 //   3. A ServerHello may select secp256r1 exactly when a retry named it,
 //      and the hybrid or x25519 exactly when none did.
-//   4. The secp256r1 secret runs p256_ecdh over h->p256_priv and the
+//   4. The secp256r1 secret runs p256_ecdh_cpu over h->p256_priv and the
 //      server's point into ikm, and h->p256_priv is zero on both exits
 //      (INV-17); a refused point leaves all 32 bytes of ikm zero.
 //   5. The x25519 secret runs over h->priv and the server's value, wipes
 //      the ML-KEM seed h->dz first, and a refusal leaves ikm zero (INV-3).
 //
 // Layered, the proof/srv_kex_harness.c pattern: ch_rand_bytes,
-// p256_ecdh_keygen, p256_ecdh and x25519 are stubs that assert their
+// p256_ecdh_keygen_cpu, p256_ecdh_cpu and x25519 are stubs that assert their
 // headers' contracts and havoc their outputs, so the P-256 and x25519
 // arithmetic is not linked. p256_ecdh's own harness and x25519's prove
 // that arithmetic; what is under proof here is this file's choices,
@@ -52,8 +52,9 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
     fill_nondet(p, n);
 }
 
-int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
-                     uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
+int p256_ecdh_keygen_cpu(uint32_t cpu, uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
+                         uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
+    (void)cpu;
     (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(draw, P256_SCALAR_LEN), "keygen: draw readable");
     __CPROVER_assert(__CPROVER_w_ok(priv, P256_SCALAR_LEN), "keygen: priv writable");
@@ -70,8 +71,9 @@ int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
     return 1;
 }
 
-int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
-              const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]) {
+int p256_ecdh_cpu(uint32_t cpu, uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
+                  const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]) {
+    (void)cpu;
     (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(priv, P256_SCALAR_LEN), "p256_ecdh: priv readable");
     __CPROVER_assert(__CPROVER_r_ok(point, P256_POINT_LEN), "p256_ecdh: point readable");

@@ -1,0 +1,22 @@
+invariant: INV-66
+file: widemul_p256.h
+catches: test/docker-aes-runtime-qemu.sh p256-adx
+reason: widemul_p256_adx answers yes under the multiply bit alone, whatever
+  CH_CPU_BMI2_ADX says, so a session on a CPU without BMI2 or ADX dies of
+  SIGILL at its first P-256 operation. On a CPU with them every byte stays
+  right, so no vector notices. bin/widemul_runtime_test counts the calls
+  into the copy under the multiply bit alone, and the qemu lane runs it for
+  x86-64, the one architecture whose widemul.h holds the dispatch.
+
+--- old
+    return widemul_native(widemul) && (cpu & CH_CPU_BMI2_ADX) != 0;
+}
+#endif
+
+static inline void widemul_p256_point_mul(
+--- new
+    return widemul_native(widemul) && cpu != 0;
+}
+#endif
+
+static inline void widemul_p256_point_mul(

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: widemul_p256.h
 catches: widemul_runtime_test
 reason: widemul_p256_point_on_curve inverts its branch, so the signer's
   on-curve check runs p256_wide_point_on_curve, on the native 64x64->128

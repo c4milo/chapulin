@@ -25,7 +25,8 @@ static void draw_p256_key(handshake_state *h) {
     for (int i = 0; i < P256_ECDH_DRAWS && !drawn; i++) {
         ct_wipe(draw, sizeof draw);
         rand_draw(&h->t->cfg, draw, sizeof draw);
-        drawn = p256_ecdh_keygen(widemul_answer(&h->t->cfg), draw, h->p256_priv, h->p256_pub);
+        drawn = p256_ecdh_keygen_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), draw,
+                                     h->p256_priv, h->p256_pub);
     }
     ct_wipe(draw, sizeof draw);
     // rand.h's contract: a working generator refuses P256_ECDH_DRAWS
@@ -73,13 +74,14 @@ static int x25519_secret(handshake_state *h, const server_hello_info *info,
     return CH_OK;
 }
 
-// The secp256r1 arm. p256_ecdh zeroes ikm when it refuses the point, so a
+// The secp256r1 arm. p256_ecdh_cpu zeroes ikm when it refuses the point, so a
 // refusal leaves no part of a secret behind, and the scalar dies on both
 // exits.
 static int p256_secret(handshake_state *h, const server_hello_info *info,
                        uint8_t ikm[P256_SECRET_LEN]) {
     CH_ASSERT(h->retry_group == CH_GROUP_SECP256R1 && info->server_p256 != NULL);
-    int shared_ok = p256_ecdh(widemul_answer(&h->t->cfg), h->p256_priv, info->server_p256, ikm);
+    int shared_ok = p256_ecdh_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), h->p256_priv,
+                                  info->server_p256, ikm);
     ct_wipe(h->p256_priv, sizeof h->p256_priv);
     return shared_ok ? CH_OK : CH_EPROTO;
 }

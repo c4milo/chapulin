@@ -133,7 +133,9 @@ and VAES and VPCLMULQDQ on the 512-bit registers; beside `CH_CPU_VAES` and
 `gcm_avx512_kernel.c`, and it picks nothing else (decision 130).
 `CH_CPU_BMI2_ADX` says the CPU has BMI2 and ADX; beside
 `CH_CPU_CONSTANT_TIME_MULTIPLY` an X25519 shared secret runs on `x25519_adx.c`'s
-four 64-bit words, on MULX, ADCX and ADOX (decision 165). Set each from
+four 64-bit words, on MULX, ADCX and ADOX (decision 165), and the P-256 point
+arithmetic runs on `p256_adx.h`'s copy of the wide files. By itself the bit runs
+an ECDSA P-256 verification on that copy (decision 171). Set each from
 your probe alone: a session whose bit names instructions its CPU lacks faults on
 the first one.
 

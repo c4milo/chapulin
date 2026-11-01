@@ -14,8 +14,8 @@ reason: p256.c chooses its arm on a define no build passes, so a host
 --- old
 #ifdef CH_CPU_RUNTIME
 
-#include "p256_wide_verify.h"
+#include "cpu_cfg.h"
 --- new
 #ifdef CH_CPU_HOST
 
-#include "p256_wide_verify.h"
+#include "cpu_cfg.h"

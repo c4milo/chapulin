@@ -22,13 +22,27 @@
 
 #ifdef CH_CPU_RUNTIME
 
+#include "cpu_cfg.h"
+#include "p256_adx.h"
 #include "p256_wide_verify.h"
 
-// The host arm's check of r and s: p256_wide_verify.c's. This is the one
-// place the file picks an arm, so an object compiles one check and the
-// entry below calls it under one name.
-static int verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t r_be[32],
-                     const uint8_t s_be[32]) {
+// The host arm's check of r and s: p256_wide_verify.c's, or on x86-64
+// p256_adx.h's copy of it where cpu, a session's ch_cfg.cpu, holds
+// CH_CPU_BMI2_ADX. Every input is public, so the bit alone picks the copy
+// and no caller states the multiply's timing for it, as for rsa_ifma.c's
+// public operation (docs/decisions.md 119 and 171). This is the one place
+// the file picks an arm, so an object compiles one check and the entries
+// below call it under one name.
+static int verify_rs(uint32_t cpu, const uint8_t pub[64], const uint8_t msg_hash[32],
+                     const uint8_t r_be[32], const uint8_t s_be[32]) {
+#if defined(__x86_64__) || defined(CH_P256_ADX_MODEL)
+    if ((cpu & CH_CPU_BMI2_ADX) != 0) {
+        return p256_adx_verify_rs(pub, msg_hash, r_be, s_be);
+    }
+#else
+    // arm64 has no such field, so no bit picks here.
+    (void)cpu;
+#endif
     return p256_wide_verify_rs(pub, msg_hash, r_be, s_be);
 }
 
@@ -330,9 +344,11 @@ static int on_curve(const uint32_t x[WORDS], const uint32_t y[WORDS]) {
 }
 
 // Whether (r, s) is a signature of msg_hash under pub, for r and s as 32
-// big-endian bytes each: FIPS 186-4's verification on the words above.
-static int verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t r_be[32],
-                     const uint8_t s_be[32]) {
+// big-endian bytes each: FIPS 186-4's verification on the words above. A
+// device object holds one field, so cpu, always 0 here, picks nothing.
+static int verify_rs(uint32_t cpu, const uint8_t pub[64], const uint8_t msg_hash[32],
+                     const uint8_t r_be[32], const uint8_t s_be[32]) {
+    (void)cpu;
     uint32_t r[WORDS];
     uint32_t s[WORDS];
     fe_from_bytes(r, r_be);
@@ -441,23 +457,35 @@ static int der_parse(const uint8_t *sig, size_t sig_len, uint8_t r_be[32], uint8
     return rb_left(&rb) == 0 && !rb.err;
 }
 
-// The entry of both arms: one DER reader, then the arm's check of r and
-// s.
-int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t *sig_der,
-                      size_t sig_len) {
+// The check of both arms: one DER reader, then the arm's check of r and
+// s, which reads cpu in a host object.
+static int verify_der(uint32_t cpu, const uint8_t pub[64], const uint8_t msg_hash[32],
+                      const uint8_t *sig_der, size_t sig_len) {
     uint8_t r_be[32];
     uint8_t s_be[32];
     if (!der_parse(sig_der, sig_len, r_be, s_be)) {
         return 0;
     }
-    return verify_rs(pub, msg_hash, r_be, s_be);
+    return verify_rs(cpu, pub, msg_hash, r_be, s_be);
 }
+
+int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t *sig_der,
+                      size_t sig_len) {
+    return verify_der(0, pub, msg_hash, sig_der, sig_len);
+}
+
+#ifdef CH_CPU_RUNTIME
+int p256_ecdsa_verify_cpu(uint32_t cpu, const uint8_t pub[64], const uint8_t msg_hash[32],
+                          const uint8_t *sig_der, size_t sig_len) {
+    return verify_der(cpu, pub, msg_hash, sig_der, sig_len);
+}
+#endif
 
 #ifdef CH_DNSSEC
 // The arm's check of r and s, with no reader in front: RFC 6605 puts the
 // two numbers side by side.
 int p256_ecdsa_verify_raw(const uint8_t pub[64], const uint8_t msg_hash[32],
                           const uint8_t sig[64]) {
-    return verify_rs(pub, msg_hash, sig, sig + 32);
+    return verify_rs(0, pub, msg_hash, sig, sig + 32);
 }
 #endif
