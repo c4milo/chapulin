@@ -1,5 +1,6 @@
-import Mathlib.Data.ZMod.Basic
+import Mathlib.NumberTheory.LegendreSymbol.Basic
 import Mathlib.Tactic
+import Spec.Prime25519
 
 /-!
 # The DNSSEC Ed25519 check's point decoding
@@ -25,10 +26,12 @@ The theorems give soundness, the direction that carries weight: a key
 the 255 low bits of the key, which are below p (`decode_y`), and the low
 bit of its x is the key's bit 255 (`decode_sign`). The curve equation and
 y fix x up to its sign, and the sign bit fixes the sign, so the point is
-the one the key encodes. They do not prove the converse, that `decode`
-accepts every key that encodes a point: that needs p to be prime, which no
-module here proves. `bin/dnssec_test` and the Wycheproof suite hold that
-side on valid keys, and `bin/diff_ed25519` holds the C to `decode`.
+the one the key encodes. `decode_complete` proves the converse: `decode`
+accepts every key whose y is below p and names a point with x's low bit
+as the key's bit 255. It rests on p being prime (`Spec.Prime25519`):
+v^(p - 1) = 1, and x^((p - 1) / 2) is 1 or -1. `d_not_square` proves by
+Euler's criterion that d is not a square, so v is never zero.
+`bin/diff_ed25519` holds the C to `decode`.
 
 This module is written from the C, not from a standard, and CONTRACT.md
 says why.
@@ -39,7 +42,7 @@ namespace Spec.Ed25519Decode
 /-- The field prime, `2 ^ 255 - 19` (RFC 8032 §5.1). -/
 def p : ℕ := 2 ^ 255 - 19
 
-instance : NeZero p := ⟨by norm_num [p]⟩
+instance : Fact (Nat.Prime p) := ⟨Spec.Prime25519.prime_p⟩
 
 /-- d = -121665 / 121666 mod p (RFC 8032 §5.1), `ED25519_D`. -/
 def d : ZMod p :=
@@ -164,6 +167,16 @@ theorem decode_y {s : ℕ} {x y : ZMod p} (h_decode : decode s = some (x, y)) :
   rw [h_y, ZMod.val_natCast, Nat.mod_eq_of_lt h_range]
   exact ⟨h_range, rfl⟩
 
+/-- For an x not zero, the low bit of -x is not that of x: -x is p - x, and p is odd. -/
+theorem neg_parity {x : ZMod p} (h_x : x ≠ 0) : (-x).val % 2 ≠ x.val % 2 := by
+  have : NeZero x := ⟨h_x⟩
+  have h_lt := ZMod.val_lt x
+  have h_p : p =
+      57896044618658097711785492504343953926634992332820282019728792003956564819949 := by
+    norm_num [p]
+  rw [ZMod.val_neg_of_ne_zero]
+  omega
+
 /-- The low bit of the x `decode` returns is the key's bit 255, RFC 8032's sign of x. -/
 theorem decode_sign {s : ℕ} {x y : ZMod p} (h_decode : decode s = some (x, y)) :
     x.val % 2 = s / 2 ^ 255 % 2 := by
@@ -174,12 +187,130 @@ theorem decode_sign {s : ℕ} {x y : ZMod p} (h_decode : decode s = some (x, y))
       rintro rfl
       simp only [ZMod.val_zero, Nat.zero_mod, true_and] at h_parity h_refused
       omega
-    have : NeZero r := ⟨h_r⟩
-    have h_lt := ZMod.val_lt r
-    have h_p : p =
-        57896044618658097711785492504343953926634992332820282019728792003956564819949 := by
-      norm_num [p]
-    rw [h_x, ZMod.val_neg_of_ne_zero]
+    have h_bit := Nat.mod_two_eq_zero_or_one (s / 2 ^ 255)
+    have h_r_bit := Nat.mod_two_eq_zero_or_one r.val
+    have h_neg_bit := Nat.mod_two_eq_zero_or_one (-r).val
+    have := neg_parity h_r
+    rw [h_x]
     omega
+
+/-! ## The converse, over the field -/
+
+/-- A natural number's power in `ZMod p`, by `Spec.Prime25519.powMod`, which the kernel
+evaluates. -/
+theorem natCast_pow (b k : ℕ) :
+    ((b : ZMod p)) ^ k = ((Spec.Prime25519.powMod p b k : ℕ) : ZMod p) := by
+  rw [Spec.Prime25519.powMod_eq, ZMod.natCast_mod, Nat.cast_pow]
+
+/-- d is not a square: by Euler's criterion, since d^((p - 1) / 2) is -1. -/
+theorem d_not_square : ¬IsSquare d := by
+  have h_d : d ≠ 0 := by
+    rw [d, Ne, ZMod.natCast_eq_zero_iff]
+    intro h_dvd
+    have := Nat.le_of_dvd (by norm_num) h_dvd
+    norm_num [p] at this
+  rw [ZMod.euler_criterion p h_d, d, natCast_pow]
+  have h_power : Spec.Prime25519.powMod p
+      37095705934669439343138083508754565189542113879843219016388785533085940283555 (p / 2) =
+      p - 1 := by decide +kernel
+  rw [h_power, Nat.cast_sub (by norm_num [p]), ZMod.natCast_self, Nat.cast_one, zero_sub]
+  have : Fact (2 < p) := ⟨by norm_num [p]⟩
+  exact ZMod.neg_one_ne_one
+
+/-- v = d y² + 1 is never zero, or d would be the square of `sqrtM1 / y`. -/
+theorem v_ne_zero (y : ZMod p) : d * y ^ 2 + 1 ≠ 0 := by
+  intro h_zero
+  have h_y : y ≠ 0 := by rintro rfl; simp at h_zero
+  refine d_not_square ⟨sqrtM1 / y, ?_⟩
+  rw [div_mul_div_comm, eq_div_iff (mul_ne_zero h_y h_y)]
+  linear_combination h_zero - sqrtM1_sq
+
+/-- 2 is not zero, since p is odd. -/
+theorem two_ne_zero_mod_p : (2 : ZMod p) ≠ 0 := by
+  intro h_zero
+  have h_cast : ((2 : ℕ) : ZMod p) = 0 := by exact_mod_cast h_zero
+  rw [ZMod.natCast_eq_zero_iff] at h_cast
+  have := Nat.le_of_dvd (by norm_num) h_cast
+  norm_num [p] at this
+
+/-- Step 3 finds a root for every y with a point: an r with r² = x², so r is x or -x. -/
+theorem root?_complete {x y : ZMod p} (h_curve : (d * y ^ 2 + 1) * x ^ 2 = y ^ 2 - 1) :
+    ∃ r, root? y = some r ∧ r ^ 2 = x ^ 2 := by
+  have h_v := v_ne_zero y
+  have h_k : 8 * ((p - 5) / 8) + 4 = p - 1 := by norm_num [p]
+  have h_candidate : candidate y = x ^ (2 * ((p - 5) / 8) + 2) := by
+    simp only [candidate, powP58_eq]
+    rw [← h_curve]
+    calc (((d * y ^ 2 + 1) ^ 2 * (d * y ^ 2 + 1)) ^ 2 * (d * y ^ 2 + 1) *
+          ((d * y ^ 2 + 1) * x ^ 2)) ^ ((p - 5) / 8) * ((d * y ^ 2 + 1) ^ 2 * (d * y ^ 2 + 1)) *
+          ((d * y ^ 2 + 1) * x ^ 2)
+        = (d * y ^ 2 + 1) ^ (8 * ((p - 5) / 8) + 4) * x ^ (2 * ((p - 5) / 8) + 2) := by
+          generalize d * y ^ 2 + 1 = w
+          generalize (p - 5) / 8 = k
+          ring
+      _ = x ^ (2 * ((p - 5) / 8) + 2) := by
+        rw [h_k, ZMod.pow_card_sub_one_eq_one h_v, one_mul]
+  have h_square : candidate y ^ 2 = x ^ 2 * x ^ (4 * ((p - 5) / 8) + 2) := by
+    rw [h_candidate, ← pow_mul, ← pow_add]
+    congr 1
+  simp only [root?]
+  by_cases h_x : x = 0
+  · subst h_x
+    have h_zero : candidate y = 0 := by rw [h_candidate]; exact zero_pow (by omega)
+    rw [if_pos (by rw [h_zero, ← h_curve])]
+    exact ⟨_, rfl, by rw [h_zero]⟩
+  have h_euler : (x ^ (4 * ((p - 5) / 8) + 2)) ^ 2 = 1 := by
+    rw [← pow_mul, show (4 * ((p - 5) / 8) + 2) * 2 = p - 1 by omega,
+      ZMod.pow_card_sub_one_eq_one h_x]
+  have h_cases : x ^ (4 * ((p - 5) / 8) + 2) = 1 ∨ x ^ (4 * ((p - 5) / 8) + 2) = -1 := by
+    rw [sq] at h_euler
+    exact mul_self_eq_one_iff.mp h_euler
+  have h_u : y ^ 2 - 1 ≠ 0 := by
+    rw [← h_curve]
+    exact mul_ne_zero h_v (pow_ne_zero 2 h_x)
+  rcases h_cases with h_e | h_e
+  · rw [if_pos (by rw [h_square, h_e, ← h_curve]; ring)]
+    exact ⟨_, rfl, by rw [h_square, h_e, mul_one]⟩
+  · have h_minus : (d * y ^ 2 + 1) * candidate y ^ 2 = -(y ^ 2 - 1) := by
+      rw [h_square, h_e, ← h_curve]
+      ring
+    have h_not_plus : ¬(d * y ^ 2 + 1) * candidate y ^ 2 = y ^ 2 - 1 := by
+      intro h_plus
+      have h_twice : (2 : ZMod p) * (y ^ 2 - 1) = 0 := by linear_combination h_minus - h_plus
+      exact h_u ((mul_eq_zero.mp h_twice).resolve_left two_ne_zero_mod_p)
+    rw [if_neg h_not_plus, if_pos h_minus]
+    refine ⟨_, rfl, ?_⟩
+    rw [mul_pow, sqrtM1_sq, h_square, h_e]
+    ring
+
+/-- `decode` accepts every key whose 255 low bits are a y below p of a point (x, y) of the
+curve, with the low bit of x as the key's bit 255, and returns that point (RFC 8032 §5.1.3). -/
+theorem decode_complete {s : ℕ} {x : ZMod p} (h_range : s % 2 ^ 255 < p)
+    (h_curve : -x ^ 2 + ((s % 2 ^ 255 : ℕ) : ZMod p) ^ 2 =
+      1 + d * x ^ 2 * ((s % 2 ^ 255 : ℕ) : ZMod p) ^ 2)
+    (h_sign : x.val % 2 = s / 2 ^ 255 % 2) :
+    decode s = some (x, ((s % 2 ^ 255 : ℕ) : ZMod p)) := by
+  obtain ⟨r, h_root, h_sq⟩ := root?_complete (x := x) (y := ((s % 2 ^ 255 : ℕ) : ZMod p))
+    (by linear_combination -h_curve)
+  have h_zero_bit : x = 0 → s / 2 ^ 255 % 2 ≠ 1 := by
+    rintro rfl
+    rw [ZMod.val_zero] at h_sign
+    omega
+  unfold decode
+  simp only [show ¬p ≤ s % 2 ^ 255 by omega, if_false, h_root, Option.bind_some]
+  rcases sq_eq_sq_iff_eq_or_eq_neg.mp h_sq with rfl | rfl
+  · have h_kept : ¬(r = 0 ∧ s / 2 ^ 255 % 2 = 1) := fun h => h_zero_bit h.1 h.2
+    rw [signed, if_neg h_kept, if_pos h_sign]
+    rfl
+  · by_cases h_x : x = 0
+    · subst h_x
+      rw [neg_zero, signed, if_neg (fun h => h_zero_bit rfl h.2), if_pos h_sign]
+      rfl
+    · have h_kept : ¬(-x = 0 ∧ s / 2 ^ 255 % 2 = 1) := fun h => h_x (neg_eq_zero.mp h.1)
+      have h_flip : ¬(-x).val % 2 = s / 2 ^ 255 % 2 := by
+        rw [← h_sign]
+        exact neg_parity h_x
+      rw [signed, if_neg h_kept, if_neg h_flip, neg_neg]
+      rfl
 
 end Spec.Ed25519Decode

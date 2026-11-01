@@ -34,10 +34,13 @@ puts the two together: from the identity, over the 253 bits below L's top,
 the C's affine x and y are those of a point whose image is S B - h A. Both
 hold in every field in which 2 is not zero, d is not a square and -1 is.
 
-What no theorem here states: that `ZMod p`, with p = 2^255 - 19, is such
-a field, which needs p to be prime, and that `verifyR` is the composition
-of the theorems' parts over it. `bin/diff_ed25519` holds the C to `verifyR`, and the Wycheproof
-suite holds both to RFC 8032's verdicts.
+`ZMod p`, with p = 2^255 - 19, is such a field, since p is prime
+(`Spec.Prime25519`), and `edwards25519` is its `Params`. `verifyR_spec`
+puts the parts together over it: an R that `verifyR` accepts comes with
+an S below L, a key that `decode` reads as a point A, and a point P whose
+image is S B - h A and whose encoding is R. `bin/diff_ed25519` holds the
+C to `verifyR`, and the Wycheproof suite holds both to RFC 8032's
+verdicts.
 
 This module is written from the C, not from a standard, and CONTRACT.md
 says why.
@@ -184,6 +187,58 @@ def verifyR (key hram sigS : ℕ) : Option ℕ :=
     match Ed25519Decode.decode key with
     | none => none
     | some (ax, ay) => if smallOrder ax ay then none else pointR key hram sigS
+
+/-! ## Over edwards25519's field -/
+
+/-- edwards25519 over `ZMod p`, which is a field because p is prime (`Spec.Prime25519`): 2 is
+not zero, d is not a square and -1 is the square of `sqrtM1`. -/
+def edwards25519 : Params (ZMod Ed25519Decode.p) where
+  d := Ed25519Decode.d
+  two_ne_zero := Ed25519Decode.two_ne_zero_mod_p
+  d_not_square := Ed25519Decode.d_not_square
+  neg_one_square := ⟨Ed25519Decode.sqrtM1, by rw [← sq, Ed25519Decode.sqrtM1_sq]⟩
+
+/-- The base point B, which the kernel checks is on the curve. -/
+def base : EdPoint edwards25519 :=
+  ⟨baseX, baseY, by unfold OnCurve; exact (by decide +kernel :
+    -baseX ^ 2 + baseY ^ 2 = 1 + Ed25519Decode.d * baseX ^ 2 * baseY ^ 2)⟩
+
+/-- What `verifyR` accepts, over edwards25519's field: an S below L, a key `decode` reads as a
+point A, and R the encoding of a point P whose image is S B - h A, h the hash reduced modulo L.
+The C's check is this check by `bin/diff_ed25519`. -/
+theorem verifyR_spec {key hram sigS r : ℕ} (h_hram : hram < 2 ^ 512)
+    (h_verify : verifyR key hram sigS = some r) :
+    sigS < Spec.Ed25519ModL.L ∧ ∃ A P : EdPoint edwards25519,
+      Ed25519Decode.decode key = some (A.x, A.y) ∧
+      toMont P = (sigS : ℤ) • toMont base -
+        (Spec.Ed25519ModL.reduceModL hram : ℤ) • toMont A ∧
+      r = P.y.val + 2 ^ 255 * (P.x.val % 2) := by
+  unfold verifyR at h_verify
+  by_cases h_s : Spec.Ed25519ModL.L ≤ sigS
+  · rw [if_pos h_s] at h_verify
+    cases h_verify
+  rw [if_neg h_s] at h_verify
+  obtain ⟨⟨ax, ay⟩, h_decode⟩ : ∃ point, Ed25519Decode.decode key = some point := by
+    cases h : Ed25519Decode.decode key with
+    | none => rw [h] at h_verify; cases h_verify
+    | some point => exact ⟨point, rfl⟩
+  rw [h_decode] at h_verify
+  simp only at h_verify
+  by_cases h_small : smallOrder ax ay
+  · rw [if_pos h_small] at h_verify
+    cases h_verify
+  rw [if_neg h_small] at h_verify
+  unfold pointR at h_verify
+  rw [h_decode] at h_verify
+  let A : EdPoint edwards25519 := ⟨ax, ay, Ed25519Decode.decode_onCurve h_decode⟩
+  have h_L : Spec.Ed25519ModL.L < 2 ^ 253 := by norm_num [Spec.Ed25519ModL.L]
+  have h_h : Spec.Ed25519ModL.reduceModL hram < 2 ^ 253 := by
+    rw [Spec.Ed25519ModL.reduceModL_eq h_hram]
+    exact (Nat.mod_lt _ (by norm_num [Spec.Ed25519ModL.L])).trans h_L
+  obtain ⟨P, h_x, h_y, h_mont⟩ := verify_point (s := sigS) base A (by omega) h_h
+  refine ⟨by omega, A, P, h_decode, h_mont, ?_⟩
+  rw [← Option.some_inj.mp h_verify]
+  exact congrArg₂ (fun y x => ZMod.val y + 2 ^ 255 * (ZMod.val x % 2)) h_y h_x
 
 end Check
 

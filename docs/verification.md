@@ -1574,13 +1574,21 @@ The entries are grouped by area:
   z^((p - 5) / 8), and `decode_onCurve`, `decode_y` and `decode_sign`
   prove that a point it returns is on the curve, has the key's 255 low
   bits as its y, below p, and has the key's bit 255 as the low bit of its
-  x. So it is the point RFC 8032 section 5.1.3 names.
+  x. So it is the point RFC 8032 section 5.1.3 names. `decode_complete`
+  proves the converse: it accepts every such key.
+  `spec/lean/Spec/Prime25519.lean` proves that 2^255 - 19 is prime, by a
+  Pratt certificate of 12 nodes whose powers Lean's kernel evaluates, so
+  `ZMod p` is a field. `d_not_square` proves by Euler's criterion that d
+  is not a square there.
   `spec/lean/Spec/Ed25519Verify.lean` models the check's loop from the
   C, over points and in extended coordinates. `verify_point` proves that
   from the identity over 253 bits, for S and h below 2^253, the C's affine
   x and y are those of a point whose image under `toMont` is S B - h A.
   That holds in every field in which 2 is not zero, d is not a square
-  and -1 is.
+  and -1 is, and `edwards25519` is `ZMod p` with those facts.
+  `verifyR_spec` puts the parts together over it: an R that the model's
+  check accepts comes with an S below L, a key that decodes to a point A,
+  and a point P whose image is S B - h A and whose encoding is R.
   `bin/diff_ed25519`, in `make diff`, holds the C to the models in 1,847
   comparisons: each bit from fixed and random remainders up to L - 1; the
   hashes 0, 2^512 - 1, L - 1, L, L + 1 and random ones; with each sign
@@ -1589,10 +1597,9 @@ The entries are grouped by area:
   random one. Where the spec's `verifyR` names an R, the C accepts it and
   refuses it with its low bit or its sign bit flipped. Where the spec
   refuses, the C refuses too, the R of the loop's point included.
-- **Not proved:** that p is prime, so neither that `decode_point()`
-  accepts every key that encodes a point, nor that `ZMod p` is a field
-  that `verify_point` covers. Also not proved: `decode_point()` by a
-  harness line of its own. Its power chain
+- **Not proved:** that the C is the model on every input, which
+  `bin/diff_ed25519` samples, and `decode_point()` by a harness line of
+  its own. Its power chain
   is `mul()` and `sqr()` alone, whose bounds the `x25519_wide` harnesses
   prove, and in one formula with the rest it gave no verdict in 25
   minutes. The mod-L step runs without `--unsigned-overflow-check`,
