@@ -7421,7 +7421,17 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/sha3_hw_equiv_test.c test/mlkem_hw_equiv_test.c test/mlkem_vector_equiv_test.c \
-	    test/mlkem_avx2_equiv_test.c test/mldsa_vector_equiv_test.c, \
+	    test/mlkem_avx2_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	# The ML-DSA-87 lanes' equivalence test, in a pass of its own with
+	# portability-no-assembler off for that file alone: on x86-64 it reads
+	# ymm0 to ymm15 back after each AVX2 entry through
+	# test/avx2_registers.h's block of assembly, as the ChaCha20 and
+	# Poly1305 tests do (docs/decisions.md 174). Every other check reads
+	# it, and a host for arm64 compiles none of that block.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
+	  test/mldsa_vector_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/mldsa_runtime_test.c test/mldsa_vector_count.c, \
