@@ -54,50 +54,67 @@ little-endian. -/
 def encodeUCoordinate (u : Nat) : ByteArray :=
   natToBytesLE (u % p) 32
 
-/-- The Montgomery ladder of RFC 7748 §5 on decoded scalar `k` and
-u-coordinate `u`: 255 iterations (`t = 254` down to `0`), conditional
-swap on `swap ^= k_t`, then the §5 formulas
-`A, AA, B, BB, E, C, D, DA, CB` and the updates
-`x_3 = (DA + CB)^2`, `z_3 = x_1 * (DA - CB)^2`,
-`x_2 = AA * BB`, `z_2 = E * (AA + a24 * E)`.
-Returns the affine result `x_2 * z_2^(p-2) mod p`. Subtraction in GF(p)
-is `(x + p - y) % p`; both operands are already reduced, so the `Nat`
+/-- The ladder's working variables `x_2, z_2, x_3, z_3` and `swap` (RFC 7748 §5). -/
+structure LadderState where
+  /-- `x_2`. -/
+  x2 : Nat
+  /-- `z_2`. -/
+  z2 : Nat
+  /-- `x_3`. -/
+  x3 : Nat
+  /-- `z_3`. -/
+  z3 : Nat
+  /-- `swap`. -/
+  swap : Nat
+
+/-- One iteration of the RFC 7748 §5 ladder, for the scalar bit `kt`: `swap ^= k_t`, the
+conditional swap, `swap = k_t`, then the formulas `A, AA, B, BB, E, C, D, DA, CB` and the updates
+`x_3 = (DA + CB)^2`, `z_3 = x_1 * (DA - CB)^2`, `x_2 = AA * BB`, `z_2 = E * (AA + a24 * E)`.
+Subtraction in GF(p) is `(x + p - y) % p`; both operands are already reduced, so the `Nat`
 difference never underflows. -/
-def ladder (k u : Nat) : Nat := Id.run do
-  let x1 := u % p
-  let mut x2 : Nat := 1
-  let mut z2 : Nat := 0
-  let mut x3 := x1
-  let mut z3 : Nat := 1
-  let mut swap : Nat := 0
-  for i in [0:255] do
-    let t := 254 - i
-    let kt := (k >>> t) &&& 1
-    swap := swap ^^^ kt
-    if swap = 1 then
-      let tx := x2; x2 := x3; x3 := tx
-      let tz := z2; z2 := z3; z3 := tz
-    swap := kt
-    let a  := (x2 + z2) % p
-    let aa := a * a % p
-    let bs := (x2 + p - z2) % p
-    let bb := bs * bs % p
-    let e  := (aa + p - bb) % p
-    let c  := (x3 + z3) % p
-    let d  := (x3 + p - z3) % p
-    let da := d * a % p
-    let cb := c * bs % p
-    let s  := (da + cb) % p
-    x3 := s * s % p
-    let t2 := (da + p - cb) % p
-    z3 := x1 * (t2 * t2 % p) % p
-    x2 := aa * bb % p
+def ladderStep (x1 kt : Nat) (st : LadderState) : LadderState :=
+  let swap := st.swap ^^^ kt
+  let x2 := if swap = 1 then st.x3 else st.x2
+  let z2 := if swap = 1 then st.z3 else st.z2
+  let x3 := if swap = 1 then st.x2 else st.x3
+  let z3 := if swap = 1 then st.z2 else st.z3
+  let a  := (x2 + z2) % p
+  let aa := a * a % p
+  let bs := (x2 + p - z2) % p
+  let bb := bs * bs % p
+  let e  := (aa + p - bb) % p
+  let c  := (x3 + z3) % p
+  let d  := (x3 + p - z3) % p
+  let da := d * a % p
+  let cb := c * bs % p
+  let s  := (da + cb) % p
+  let t2 := (da + p - cb) % p
+  { x2 := aa * bb % p
     z2 := e * ((aa + a24 * e % p) % p) % p
+    x3 := s * s % p
+    z3 := x1 * (t2 * t2 % p) % p
+    swap := kt }
+
+/-- `step (t - 1)`, then `step (t - 2)`, and so on down to `step 0`. -/
+def downFrom {α : Type _} (step : Nat → α → α) : Nat → α → α
+  | 0, a => a
+  | t + 1, a => downFrom step t (step t a)
+
+/-- The ladder's iterations over bits `t - 1` down to 0 of `k`, `k_t = (k >>> t) & 1`. -/
+def ladderLoop (k x1 t : Nat) (st : LadderState) : LadderState :=
+  downFrom (fun t st => ladderStep x1 ((k >>> t) &&& 1) st) t st
+
+/-- The Montgomery ladder of RFC 7748 §5 on decoded scalar `k` and
+u-coordinate `u`: 255 iterations (`t = 254` down to `0`) of `ladderStep`
+from `x_2 = 1, z_2 = 0, x_3 = x_1, z_3 = 1, swap = 0`, the final
+conditional swap, and the affine result `x_2 * z_2^(p-2) mod p`. -/
+def ladder (k u : Nat) : Nat :=
+  let x1 := u % p
+  let st := ladderLoop k x1 255 ⟨1, 0, x1, 1, 0⟩
   -- Final conditional swap (§5, after the loop body).
-  if swap = 1 then
-    let tx := x2; x2 := x3; x3 := tx
-    let tz := z2; z2 := z3; z3 := tz
-  return x2 * finv z2 % p
+  let x2 := if st.swap = 1 then st.x3 else st.x2
+  let z2 := if st.swap = 1 then st.z3 else st.z2
+  x2 * finv z2 % p
 
 /-- X25519 (RFC 7748 §5): decode scalar and u-coordinate, run the
 Montgomery ladder, encode the result. -/

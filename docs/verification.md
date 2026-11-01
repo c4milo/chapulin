@@ -732,8 +732,11 @@ The entries are grouped by area:
   that the image has order L, since L is prime by a second Pratt
   certificate. `toU_keygen` then proves that for every clamped scalar s
   the loop writes the u of s times the point with u 9.
-  `bin/diff_x25519_wide` holds the formulas to the model. What no proof
-  states is that the ladder computes that u for s and 9. `tools/x25519_wide.py` and
+  `spec/lean/Spec/X25519Ladder.lean` proves that the ladder of
+  `spec/lean/Spec/X25519.lean` on u = 9 returns the u of k times that
+  point, for every k below 2^255, so the key generation and that ladder
+  write the same u (`toU_keygen_eq_ladder`).
+  `bin/diff_x25519_wide` holds the formulas to the model. `tools/x25519_wide.py` and
   `make lint-x25519-wide` hold the table to RFC 7748's curve, and
   `bin/x25519_equiv_test` holds the key generation to the 16-word
   field's ladder and to this field's ladder on 9: RFC 7748 section
@@ -3854,7 +3857,10 @@ Each rests on published vectors
 and OpenSSL-produced PSS at 2048 and 3072 bits), plus fresh signatures
 the Lean spec mints and the C must accept. CBMC proves the pieces; it
 does not run a scalar multiplication or a 3072-bit exponentiation
-whole.
+whole. For x25519 the Lean spec's ladder is proved:
+`spec/lean/Spec/X25519Ladder.lean` proves that on u = 9 it returns the u
+of k times the base point in Mathlib's group, for every k below 2^255.
+The C is held to that ladder by tests, not by a proof.
 
 The wide X25519 field rests on the same vectors, which `bin/unit_host`
 and the host Wycheproof test run on it under the multiply bit, on its own

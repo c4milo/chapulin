@@ -21,7 +21,8 @@ RFC 7748 section 4.1, and removes the hypothesis for every clamped scalar.
 
 `toU_keygen` puts them together: for digits whose sum is a clamped scalar s, the u that
 `x25519_wide_base_mul`'s model writes is the u of s times the point with u 9.
-proof/x25519_wide_select_harness.c proves that `recode`'s digits add up to the clamped scalar.
+proof/x25519_wide_select_harness.c proves that `recode`'s digits add up to the clamped scalar,
+and `Spec.X25519Ladder` proves that the RFC 7748 ladder writes the same u.
 
 This module is written from the C, not from a standard, and CONTRACT.md says why.
 -/

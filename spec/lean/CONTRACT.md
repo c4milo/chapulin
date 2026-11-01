@@ -935,9 +935,11 @@ of Mathlib, by u = (1 + y) / (1 - y) (RFC 7748 section 4.1), and
 two points. `toMont_baseMul` and `toU_baseMulExtended` carry that through
 `x25519_wide_base_mul`'s loop: the u it writes is the u of the sum of the
 digits times the image of B. That the digits add up to the clamped scalar is
-`proof/x25519_wide_select_harness.c`'s. That the ladder computes the u of a
-multiple in Mathlib's group is stated nowhere: bin/x25519_equiv_test and the
-differential's base rows hold the two to the same bytes.
+`proof/x25519_wide_select_harness.c`'s. `Spec/X25519Ladder.lean` proves that
+the ladder of `Spec/X25519.lean` computes the u of k times the image of B for
+every k below 2^255, and `toU_keygen_eq_ladder` that the two write the same u
+for every clamped scalar. bin/x25519_equiv_test and the differential's base
+rows hold the C's two paths to the same bytes.
 
 The C computes in radix 2^51 with redundant words, so each element is packed
 to its canonical bytes on the C side. The three rows of
@@ -1629,8 +1631,7 @@ the differential carry that), cryptographic security notions, and the
 primality of the NIST constants — the P-256 and P-384 theorems take `p`
 prime, `n` prime and `n • G = 0` as hypotheses, because no tactic in
 Mathlib certifies a 256- or 384-bit prime and a primality certificate
-is out of scope. Not proved yet: the x25519 ladder's group law and the
-RSA arithmetic. Mathlib carries the number theory they need, so they
+is out of scope. Not proved yet: the RSA arithmetic. Mathlib carries the number theory they need, so they
 are open work rather than out of scope.
 
 Spec.Epoch, over the monotonic revocation epoch (docs/ca.md, INV-21). `bound` is

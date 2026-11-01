@@ -34,10 +34,10 @@ extended coordinates, as the C runs it, `baseMulExtended_represents` proves that
 the sum of the digits times the image of B. `Spec.X25519Base` states that over `ZMod p` for
 RFC 7748's B, whose image has u 9, and removes the hypothesis on x for every clamped scalar.
 
-What no theorem here states: that the ladder of spec/lean/Spec/X25519.lean computes the u of s
+`Spec.X25519Ladder` proves that the ladder of spec/lean/Spec/X25519.lean computes the u of s
 times the point u = 9 of Mathlib's group. bin/x25519_equiv_test and bin/diff_x25519_wide hold the
-two to the same bytes, and test/diff_x25519_edwards_test.c holds the C's formulas to the ones
-here.
+C's two paths to the same bytes, and test/diff_x25519_edwards_test.c holds the C's formulas to
+the ones here.
 
 This module is written from the C, not from a standard, and CONTRACT.md says why.
 -/
