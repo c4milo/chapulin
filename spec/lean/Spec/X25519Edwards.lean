@@ -31,7 +31,8 @@ image of B, so it is s times the image of B for digits that add up to s, which
 proof/x25519_wide_select_harness.c proves of `recode`. `baseMulExtended` is the same loop in
 extended coordinates, as the C runs it, `baseMulExtended_represents` proves that it holds
 `baseMul`'s point at every step, and `toU_baseMulExtended` that the u it ends with is the u of
-the sum of the digits times the image of B.
+the sum of the digits times the image of B. `Spec.X25519Base` states that over `ZMod p` for
+RFC 7748's B, whose image has u 9, and removes the hypothesis on x for every clamped scalar.
 
 What no theorem here states: that the ladder of spec/lean/Spec/X25519.lean computes the u of s
 times the point u = 9 of Mathlib's group. bin/x25519_equiv_test and bin/diff_x25519_wide hold the

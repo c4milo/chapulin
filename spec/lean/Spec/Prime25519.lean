@@ -2,13 +2,15 @@ import Mathlib.NumberTheory.LucasPrimality
 import Mathlib.Tactic
 
 /-!
-# 2^255 - 19 is prime
+# 2^255 - 19 and L are prime
 
 The field of X25519 and Ed25519 is `ZMod p` for p = 2^255 - 19, and it is
 a field only because p is prime. This module proves that, by a Pratt
 certificate: Lucas's test, Mathlib's `lucas_primality`, at p and at each
 prime of p - 1 above 100,000, down to primes `norm_num` proves by trial
-division.
+division. `prime_L` proves the same of L, the order of edwards25519's base
+point, by a second certificate of 17 nodes, whose leaves are the primes
+below 10^8.
 
 `powMod` computes `b ^ e % m` by squarings, so that Lean's kernel can
 evaluate the test's powers, and `powMod_eq` proves that it does.
@@ -168,6 +170,132 @@ theorem prime_p : Nat.Prime (2 ^ 255 - 19) :=
       rcases h_q with rfl | rfl | rfl | rfl | rfl
       all_goals first |
         exact prime_74058212732561358302231226437062788676166966415465897661863160754340907 |
+        norm_num)
+    (by decide +kernel) (by decide +kernel)
+
+theorem prime_132667 : Nat.Prime 132667 := by norm_num
+
+theorem prime_137849 : Nat.Prime 137849 := by norm_num
+
+theorem prime_409477 : Nat.Prime 409477 := by norm_num
+
+theorem prime_531581 : Nat.Prime 531581 := by norm_num
+
+theorem prime_1224481 : Nat.Prime 1224481 := by norm_num
+
+theorem prime_14741173 : Nat.Prime 14741173 := by norm_num
+
+theorem prime_58964693 : Nat.Prime 58964693 := by norm_num
+
+theorem prime_292386187 : Nat.Prime 292386187 :=
+  lucas_list 292386187 2
+    [2, 3, 3, 3, 3, 307, 5879] (by norm_num) (by norm_num)
+    (by
+      intro q h_q
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h_q
+      rcases h_q with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+      all_goals norm_num)
+    (by decide +kernel) (by decide +kernel)
+
+theorem prime_213441916511 : Nat.Prime 213441916511 :=
+  lucas_list 213441916511 13
+    [2, 5, 73, 292386187] (by norm_num) (by norm_num)
+    (by
+      intro q h_q
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h_q
+      rcases h_q with rfl | rfl | rfl | rfl
+      all_goals first | exact prime_292386187 | norm_num)
+    (by decide +kernel) (by decide +kernel)
+
+theorem prime_1257559732178653 : Nat.Prime 1257559732178653 :=
+  lucas_list 1257559732178653 2
+    [2, 2, 3, 7, 23, 531581, 1224481] (by norm_num) (by norm_num)
+    (by
+      intro q h_q
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h_q
+      rcases h_q with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+      all_goals first | exact prime_531581 | exact prime_1224481 | norm_num)
+    (by decide +kernel) (by decide +kernel)
+
+theorem prime_4434155615661930479 : Nat.Prime 4434155615661930479 :=
+  lucas_list 4434155615661930479 17
+    [2, 41, 43, 1257559732178653] (by norm_num) (by norm_num)
+    (by
+      intro q h_q
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h_q
+      rcases h_q with rfl | rfl | rfl | rfl
+      all_goals first | exact prime_1257559732178653 | norm_num)
+    (by decide +kernel) (by decide +kernel)
+
+theorem prime_3044861653679985063343 : Nat.Prime 3044861653679985063343 :=
+  lucas_list 3044861653679985063343 5
+    [2, 3, 11, 30703, 82163, 132667, 137849] (by norm_num) (by norm_num)
+    (by
+      intro q h_q
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h_q
+      rcases h_q with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+      all_goals first | exact prime_132667 | exact prime_137849 | norm_num)
+    (by decide +kernel) (by decide +kernel)
+
+theorem prime_172054593956031949258510691 : Nat.Prime 172054593956031949258510691 :=
+  lucas_list 172054593956031949258510691 2
+    [2, 5, 1361, 2851, 4434155615661930479] (by norm_num) (by norm_num)
+    (by
+      intro q h_q
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h_q
+      rcases h_q with rfl | rfl | rfl | rfl | rfl
+      all_goals first | exact prime_4434155615661930479 | norm_num)
+    (by decide +kernel) (by decide +kernel)
+
+theorem prime_198211423230930754013084525763697 : Nat.Prime 198211423230930754013084525763697 :=
+  lucas_list 198211423230930754013084525763697 5
+    [2, 2, 2, 2, 3, 23, 58964693, 3044861653679985063343] (by norm_num) (by norm_num)
+    (by
+      intro q h_q
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h_q
+      rcases h_q with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+      all_goals first | exact prime_58964693 | exact prime_3044861653679985063343 | norm_num)
+    (by decide +kernel) (by decide +kernel)
+
+theorem prime_19757330305831588566944191468367130476339 :
+    Nat.Prime 19757330305831588566944191468367130476339 :=
+  lucas_list 19757330305831588566944191468367130476339 2
+    [2, 269, 213441916511, 172054593956031949258510691] (by norm_num) (by norm_num)
+    (by
+      intro q h_q
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h_q
+      rcases h_q with rfl | rfl | rfl | rfl
+      all_goals first |
+        exact prime_213441916511 |
+        exact prime_172054593956031949258510691 |
+        norm_num)
+    (by decide +kernel) (by decide +kernel)
+
+theorem prime_276602624281642239937218680557139826668747 :
+    Nat.Prime 276602624281642239937218680557139826668747 :=
+  lucas_list 276602624281642239937218680557139826668747 2
+    [2, 7, 19757330305831588566944191468367130476339] (by norm_num) (by norm_num)
+    (by
+      intro q h_q
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h_q
+      rcases h_q with rfl | rfl | rfl
+      all_goals first | exact prime_19757330305831588566944191468367130476339 | norm_num)
+    (by decide +kernel) (by decide +kernel)
+
+/-- L = 2^252 + 27742317777372353535851937790883648493, the order of the base point B, is
+prime. -/
+theorem prime_L :
+    Nat.Prime 7237005577332262213973186563042994240857116359379907606001950938285454250989 :=
+  lucas_list 7237005577332262213973186563042994240857116359379907606001950938285454250989 2
+    [2, 2, 3, 11, 198211423230930754013084525763697, 276602624281642239937218680557139826668747]
+    (by norm_num) (by norm_num)
+    (by
+      intro q h_q
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at h_q
+      rcases h_q with rfl | rfl | rfl | rfl | rfl | rfl
+      all_goals first |
+        exact prime_198211423230930754013084525763697 |
+        exact prime_276602624281642239937218680557139826668747 |
         norm_num)
     (by decide +kernel) (by decide +kernel)
 

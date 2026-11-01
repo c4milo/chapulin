@@ -726,9 +726,14 @@ The entries are grouped by area:
   arithmetic: its formulas compute the Edwards addition law, which is
   complete on this curve, and u = (1 + y) / (1 - y) takes every sum to
   the sum on the Montgomery curve, so the loop writes the u of s times
-  the image of B. `bin/diff_x25519_wide` holds the formulas to the
-  model. What no proof states is that the ladder computes that u for s
-  and 9. `tools/x25519_wide.py` and
+  the image of B. `spec/lean/Spec/X25519Base.lean` states that over
+  `ZMod p` for RFC 7748's B. `montU_toMont_base` proves that the image
+  of B has u 9. The kernel computes L B, and `addOrderOf_base` proves
+  that the image has order L, since L is prime by a second Pratt
+  certificate. `toU_keygen` then proves that for every clamped scalar s
+  the loop writes the u of s times the point with u 9.
+  `bin/diff_x25519_wide` holds the formulas to the model. What no proof
+  states is that the ladder computes that u for s and 9. `tools/x25519_wide.py` and
   `make lint-x25519-wide` hold the table to RFC 7748's curve, and
   `bin/x25519_equiv_test` holds the key generation to the 16-word
   field's ladder and to this field's ladder on 9: RFC 7748 section
