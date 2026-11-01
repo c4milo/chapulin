@@ -2871,6 +2871,27 @@ launch fast full p256_wide_verify 65 "" p256_scalar.c proof/ct_wipe_stub.c -DCH_
 # 4 s, 83 MB.
 launch fast full p256_wide_verify_point 9 "" --object-bits 10 p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_verify_digits 9 "signed_digits.0:257" --object-bits 10 p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+# The x86-64 P-256 field, p256_adx_field.c (docs/decisions.md 171), over its
+# model, test/p256_adx_model.h: CBMC reads no assembly, so each line compiles
+# the file with -DCH_P256_ADX_MODEL, as bin/p256_adx_model_test does, and
+# bin/p256_adx_equiv_test holds the assembly to the model. p256_adx_reduce
+# runs the model's reduction on any eight words, and p256_adx_mul and
+# p256_adx_sqr run its product and square on the real multiply. Every line
+# checks that no word wraps. The point files the copy compiles
+# once more are the wide files' text, which the lines above prove.
+# p256_adx_reduce holds the model's final subtraction to
+# p256_wide_fe_reduce_once, and no more of the reduction: a formula that
+# held one model round to reduce_round, a multiply by p's top word against
+# shifted copies of u, ran 20 minutes under kissat with no verdict. Measured
+# one line at a time with PROVE_ONLY=<name> PROVE_NO_CACHE=1 ./proof/run.sh
+# fast on an M1 Pro (cbmc 6.11.0, kissat) on 2026-11-01, peak memory the
+# summed resident size of the run's processes:
+#   p256_adx_reduce  768 properties,  3 s,  117 MB
+#   p256_adx_mul     210 properties, 37 s, 2826 MB
+#   p256_adx_sqr     210 properties, 35 s, 1529 MB
+launch fast full p256_adx_reduce 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full p256_adx_mul 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full p256_adx_sqr 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
 # P-384 on six 64-bit words, which a host object verifies with
 # (docs/decisions.md 97): three layers, each over a contract of the one
 # below it. p384_wide_field runs every routine of p384_wide_field.c but

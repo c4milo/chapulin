@@ -15049,6 +15049,16 @@ does nothing more.
       runs. The qemu lane's `p256-adx` part runs all three on
       `qemu-x86_64`'s `max` model. INV-66 states the rule, and mutants
       hold the bits, the model and the assembly.
+    - **The proofs.** CBMC reads no assembly, so three `p256_adx`
+      harnesses compile the field over the model, as decision 165's do.
+      They prove that no word of the model wraps on any words, that each
+      round's carry is 0 or 1, and that the final subtraction is
+      `p256_wide_fe_reduce_once`'s. A formula that held a model round,
+      a multiply by p's top word, to `reduce_round`'s shifted copies ran
+      20 minutes under kissat with no verdict, so the values are Lean's:
+      `spec/lean/Spec/P256Adx.lean` proves that the four rounds and the
+      subtraction land below p and compute T 2^(-256) modulo p for every
+      T below p 2^256, and `bin/diff_p256_adx` holds the C to it.
     - **Rejected:**
       - **The product alone in assembly.** It is less assembly, but
         under gcc a shared secret took about 5% longer.

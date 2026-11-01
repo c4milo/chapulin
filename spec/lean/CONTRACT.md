@@ -271,6 +271,11 @@ Spec.X25519Adx.mul : (a b : Nat) → Nat                               -- adx_mu
                         -- values below 2 ^ 256. `x25519_adx_add`, `x25519_adx_sub`,
                         -- `x25519_adx_mul_a24 <a>` and `x25519_adx_reduce <a>` answer
                         -- Spec.X25519Adx.add, sub, mulA24 and reduce the same way.
+Spec.P256Adx.mulMont : (a b : Nat) → Nat                              -- p256_adx_mul_mont of
+                        -- p256_adx_asm.h, written from test/p256_adx_model.h (below). Line op:
+                        -- `p256_adx_mul <a> <b>` → 32 big-endian bytes, from a and b of 32
+                        -- big-endian bytes each, below p. `p256_adx_reduce <t>` answers
+                        -- Spec.P256Adx.reduce of 64 big-endian bytes the same way.
 Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer) →
                         (pskOffered : Bool) → (msg : ByteArray) →
                         Except Alert ServerHelloKind                    -- RFC 9846 §4.2.3, §4.2.4.
@@ -1079,6 +1084,28 @@ loops carry from word to word. That no word of those loops wraps is
 transcription fails a row. That the assembly writes the model's words stays with
 `bin/x25519_adx_equiv_test`.
 
+## P256Adx models the C
+
+`Spec/P256Adx.lean` breaks rule 1 for the same reason. The Montgomery reduction of
+`p256_adx_asm.h` and `test/p256_adx_model.h` is no standard's text: SEC 1 and FIPS 186 state the
+field, not how four rounds add multiples of `p` word by word. The model holds the eight words'
+value in a `Nat`. `round` is `model_round`: it reads word `k` and adds `u 2 ^ 32` at word `k + 1`
+and `u p3` at word `k + 3`, and leaves word `k`, as the C leaves `t[k]`. `reduce` is
+`model_reduce`, the four rounds and the one subtraction of `p`.
+
+The model states nothing about the words: that no word of the C wraps, and that each round's carry
+is 0 or 1, is the CBMC harnesses' (`proof/p256_adx_reduce_harness.c`,
+`proof/p256_adx_mul_harness.c` and `proof/p256_adx_sqr_harness.c`). `reduce_low` and
+`reduce_shift` prove that the four rounds leave the value above word 3 at `(T + p L) / 2 ^ 256`,
+where `L` is the four values of `u`. `reduce_lt` and `reduce_mod` prove that for `T` below
+`p 2 ^ 256` the result is below `p` and is `T / 2 ^ 256` modulo `p`, and `mulMont_lt` and
+`mulMont_mod` state it for a product of two elements below `p`.
+
+`test/diff_p256_adx_test.c`, in `bin/diff_p256_adx`, compares the C over `test/p256_adx_model.h`
+with these definitions on edge elements and random ones, and the reduction alone on random eight
+words below `p 2 ^ 256`, so an error in the transcription fails a row. That the assembly writes the
+model's words stays with `bin/p256_adx_equiv_test`.
+
 ## Where the C and the model split a check
 
 Both sides must refuse the same messages, but they need not refuse them
@@ -1458,6 +1485,14 @@ Spec.X25519Adx, the field of x25519_adx.c (above, "X25519Adx models the C"):
   mulA24_lt, mulA24_mod        a < 2 ^ 256 → mulA24 a < 2 ^ 256; mulA24 a % p = 121666 a % p
   clearTop_lt, clearTop_mod    a < 2 ^ 256 → clearTop a < 2 ^ 255 + 19; it keeps a % p
   reduce_eq                    a < 2 ^ 256 → reduce a = a % p
+Spec.P256Adx, the reduction of p256_adx_asm.h (above, "P256Adx models the C"):
+  round_add, round_mod         round k t = t + u (p + 1) 2 ^ (64 k), and it changes no word up to k
+  reduce_low, reduce_value     after the four rounds the low four words spell low t, and the value
+                               -- is t + (p + 1) low t
+  reduce_shift                 the value above the low four words times 2 ^ 256 is t + p low t
+  reduce_lt                    t < p 2 ^ 256 → reduce t < p
+  reduce_mod                   reduce t 2 ^ 256 % p = t % p
+  mulMont_lt, mulMont_mod      a, b < p → mulMont a b < p; mulMont a b 2 ^ 256 % p = a b % p
 Spec.WebpkiTime.packSeconds_mono
                              a ≤ b → packSeconds a ≤ packSeconds b: the packed clock
                              -- keeps the order of clocks, which is what lets
@@ -1694,6 +1729,7 @@ means the module's selftest plus the differential oracle carry it;
 | P256WideInverse | 14 | the binary GCD `p256_wide_inverse.c` runs, modeled from the C: a round's 31 steps on 64-bit approximations take 31 bits off `a` and `b` between them while `a` is not zero, the steps whose comparison of the approximations differs from that of the exact values included; a round keeps `b` odd, `gcd a b`, and `a = u y` and `b = v y` modulo an odd `m`, and leaves a zero `a` zero; 17 rounds invert every `y` coprime to an odd `m` below `2 ^ 256` and send 0 to 0, at P-256's `p` and `n` with each prime as a hypothesis; and the rounds stopped at the first zero `a`, as the verifier's entry runs them, give the same answer for every `y`. That the C's combinations compute the model's sums stays with the C's tests and the differential |
 | RsaAvx2 | 11 | the AVX2 kernel of `rsa_avx2.c`, modeled from the C with a lane in a `Nat`: a square's rows put in each lane what the multiplication of `a` by itself puts there; no triangle's sum and no sum of the last pass passes `2 ^ 64` at the C's digit widths and counts; `RSA_AVX2_DIGIT_COUNT` leaves `4 m < 2 ^ (D n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-D n) mod m`; and the chain `rsa_avx2_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`. That the instructions compute the lane model's values stays with `bin/rsa_avx2_equiv_test`, and the order in which the C adds a lane's numbers with the C's tests and the differential |
 | X25519Adx | 14 | the x86-64 field of `x25519_adx.c`, modeled from the C with an element's four words in a `Nat`: the fold by 38 of four words and a carry stays below `2 ^ 256`, and below `38 (c + 1)` when it carries, so the add to word 0 carries out of no word; the fold keeps the value modulo `p`; the product, the sum, the difference and the product by 121666 take elements below `2 ^ 256` to one, with the right value modulo `p`; and `adx_reduce` writes `a mod p`. That the C's words hold the model's values rests on the CBMC harnesses and the differential, and that the assembly writes the model's words on `bin/x25519_adx_equiv_test` |
+| P256Adx | 13 | the reduction of `p256_adx_asm.h`'s product and square, modeled from `test/p256_adx_model.h` with the eight words in a `Nat`: a round adds `u (p + 1)` at its word and changes no word up to it; the four rounds leave the value above word 3 at `(T + p L) / 2 ^ 256`; and for `T` below `p 2 ^ 256`, every product of two elements below `p`, the result is below `p` and is `T 2 ^ (-256)` modulo `p`. That the C's words hold the model's values rests on the CBMC harnesses and the differential, and that the assembly writes the model's words on `bin/p256_adx_equiv_test` |
 | RsaIfma | 13 | the AVX-512 IFMA kernels of `rsa_ifma.c` and `rsa_ifma_sign.c` and `rsa_mont.c`'s `power_of_two_mod`, modeled from the C with a lane in a `Nat`: no lane, `digit_zero` or scalar sum passes its C type in 128 rounds or fewer; `RSA_IFMA_DIGIT_COUNT` leaves `4 m < 2 ^ (52 n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-52 n) mod m`; `normalize_digits` keeps its lanes' number modulo `2 ^ (52 count)` and writes digits below `2 ^ 52`, the mask arithmetic of its second loop included; `power_of_two_mod` starts below `m` and writes `2 ^ e mod m`; the chain `rsa_ifma_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`; and signing's 4-bit window, its table and its moves between `rsa_mont64.c`'s domain and the kernel's compute `b ^ e R mod m` for the base `b R mod m` and the exponent's bytes. That the instructions compute the lane model's values stays with `bin/rsa_ifma_equiv_test`, and `times_word_mod`'s division with the C's tests and the differential |
 | Poly1305Ifma | 17 | the AVX-512 IFMA Poly1305 of `poly1305_ifma.c`, modeled from the C with a lane in a `Nat`: from digits within the bounds every operand is below `2 ^ 52` and every sum below `2 ^ 56`, and a group step and a product leave the digits within them again; a group step computes `(h + first) x + second y` and a product `a b` modulo `2 ^ 130 - 5`; `compute_powers` gives lane `l` the power of `r` its blocks are owed; and the loads and both conversions keep their numbers. That the eight lanes' groups add up to the message's polynomial stays with `bin/poly1305_equiv_test`, and that the instructions compute the lane model's values with the same binary on a CPU with AVX-512 IFMA |
 | Pem | 11 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, which discharges the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar; a byte string's list is its data's, the form `PemBlocks` reads boundaries in |

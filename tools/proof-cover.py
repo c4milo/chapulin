@@ -113,17 +113,6 @@ AUDITED = {
         "under Intel SDE. Delete this entry if a harness can ever compile the "
         "file."
     ),
-    "p256_adx_field.c": (
-        "the x86-64 P-256 field's product and square: two calls, each one "
-        "statement of inline assembly in p256_adx_asm.h, which CBMC does not "
-        "read, over the words of its operands. It compiles to nothing outside "
-        "an x86-64 host object. bin/p256_adx_model_test runs the copy of the "
-        "wide files over test/p256_adx_model.h, portable C that writes the "
-        "words each statement writes, against the files under their own "
-        "names on every host, and bin/p256_adx_equiv_test holds the assembly "
-        "to the model word for word on a CPU with BMI2 and ADX "
-        "(docs/decisions.md 171). A harness over the model replaces this entry."
-    ),
     "avx512_wipe.c": (
         "the wipe of the AVX-512 registers in an x86-64 host object: one "
         "function, avx512_wipe_registers, whose body is one block of inline "

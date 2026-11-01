@@ -23,6 +23,7 @@ import Spec.P256
 import Spec.P256Nonce
 import Spec.P256WidePoint
 import Spec.P256WideInverse
+import Spec.P256Adx
 import Spec.Rsa
 import Spec.RsaExp
 import Spec.RsaIfma

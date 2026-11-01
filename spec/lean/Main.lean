@@ -39,13 +39,14 @@ def edwardsElements? (args : List String) : Option (List (ZMod Spec.X25519Edward
 def emitEdwards (elements : List (ZMod Spec.X25519Edwards.p)) : String :=
   " ".intercalate (elements.map fun v => bytesToHex (natToBytesLE v.val 32))
 
-/-- An element of an `x25519_adx_` row: 32 big-endian bytes, any value below `2 ^ 256`. -/
+/-- An element of an `x25519_adx_` or `p256_adx_` row: 32 big-endian bytes, any value below
+`2 ^ 256`. -/
 def adxElement? (s : String) : Option Nat := do
   let b ← hexArg? s
   guard (b.size == 32)
   return bytesToNatBE b
 
-/-- An element as an `x25519_adx_` reply: 32 big-endian bytes. -/
+/-- An element as an `x25519_adx_` or `p256_adx_` reply: 32 big-endian bytes. -/
 def adxEmit (x : Nat) : String :=
   bytesToHex (natToBytesBE x 32)
 
@@ -143,6 +144,7 @@ def selftestAll (_ : Unit) : String :=
     ("p256_nonce", Spec.P256Nonce.selftest),
     ("p256_wide_point", Spec.P256WidePoint.selftest),
     ("p256_wide_inverse", Spec.P256WideInverse.selftest),
+    ("p256_adx", Spec.P256Adx.selftest),
     ("rsa", Spec.Rsa.selftest),
     ("rsa_ifma", Spec.RsaIfma.selftest),
     ("poly1305_ifma", Spec.Poly1305Ifma.selftest),
@@ -481,6 +483,19 @@ def dispatch : List String → Option String
     -- adx_reduce, as x25519_adx_mul: the answer is the value below p.
     let x ← adxElement? a
     return adxEmit (Spec.X25519Adx.reduce x)
+  | ["p256_adx_mul", a, b] => do
+    -- p256_adx_mul_mont of p256_adx_asm.h, as test/p256_adx_model.h writes it
+    -- (Spec/P256Adx.lean). Each element, and the answer, is 32 big-endian bytes; the C's
+    -- square is this row of a and a.
+    let x ← adxElement? a
+    let y ← adxElement? b
+    return adxEmit (Spec.P256Adx.mulMont x y)
+  | ["p256_adx_reduce", t] => do
+    -- model_reduce of test/p256_adx_model.h: eight words as 64 big-endian bytes, the answer as
+    -- 32.
+    let w ← hexArg? t
+    guard (w.size == 64)
+    return adxEmit (Spec.P256Adx.reduce (bytesToNatBE w))
   | ["x25519_edwards_add", x, y, z, t, yPlusX, yMinusX, xy2d] => do
     -- add_entry, then to_extended, of x25519_wide_edwards.h (Spec/X25519Edwards.lean).
     let e ← edwardsElements? [x, y, z, t, yPlusX, yMinusX, xy2d]

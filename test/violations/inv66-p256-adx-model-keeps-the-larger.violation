@@ -1,0 +1,13 @@
+invariant: INV-66
+file: test/p256_adx_model.h
+catches: proof/prove-one.sh p256_adx_reduce
+reason: model_reduce_once keeps the value less p where the subtraction
+  borrowed and the value where it did not, the choice inverted. The model
+  is what the assembly is held to, word for word, and the
+  p256_adx_reduce harness holds its final subtraction to
+  p256_wide_fe_reduce_once on every four words and carry.
+
+--- old
+    uint64_t keep = UINT64_MAX * (borrow & (top ^ 1U) & 1U);
+--- new
+    uint64_t keep = UINT64_MAX * ((borrow & (top ^ 1U) & 1U) ^ 1U);

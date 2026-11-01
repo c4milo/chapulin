@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-125 of the 161 C sources in the tree root are compiled into a
+126 of the 161 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 36 sources are in no such harness:
+The other 35 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -75,7 +75,6 @@ The other 36 sources are in no such harness:
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decisions 93 and 128). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
 | `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names, but for the arms of `poly1305.c`'s `whole_blocks` that hand whole groups of blocks to the vector paths, and on x86-64 `poly1305_update_avx2` and `poly1305_update_ifma`, which only `poly1305_native.c` compiles ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
-| `p256_adx_field.c` | Its product and square are inline assembly, in `p256_adx_asm.h`, which CBMC does not read. It has a body on x86-64 alone. | `bin/p256_adx_model_test` runs the copy of the wide files over `test/p256_adx_model.h`, portable C that writes the words each statement writes, against the files under their own names on every host. On a CPU with BMI2 and ADX, `bin/p256_adx_equiv_test` holds each statement to the model word for word (decision 171). |
 | `p256_adx_point.c`, `p256_adx_mul.c`, `p256_adx_verify_point.c`, `p256_adx_verify.c` | Each is a wide P-256 file compiled once more under the names `p256_adx_names.h` gives, whose products and squares are `p256_adx_field.c`'s (decision 171). It has a body on x86-64 alone. | The wide file's own harnesses prove the same text over the stubs of the field or of the points, and `bin/p256_adx_equiv_test` and `bin/p256_adx_verify_equiv_test` hold the copy to the files under their own names on a CPU with BMI2 and ADX. |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
 | `poly1305_avx2_native.c` | It is `poly1305_avx2.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop on a CPU with AVX2. |
@@ -787,6 +786,34 @@ The entries are grouped by area:
   proves the values on a model of the C, which `bin/diff_x25519_adx`
   compares with the C on samples ([The radix-2^64 X25519
   field](#the-radix-264-x25519-field)).
+
+#### p256_adx
+
+- **Harnesses:** `p256_adx_reduce` (fast), `p256_adx_mul` (fast), `p256_adx_sqr` (fast)
+- **Build:** the x86-64 P-256 field's product and square
+  (`p256_adx_field.c`, INV-66, decision 171), under `-DCH_CPU_RUNTIME`
+  and `-DCH_P256_ADX_MODEL`, over `test/p256_adx_model.h`, the two
+  statements in portable C that `bin/p256_adx_model_test` runs. CBMC
+  reads no assembly, so no line reads `p256_adx_asm.h`. Every line adds
+  `--unsigned-overflow-check`.
+- **Proves:**
+  - `p256_adx_reduce`: the model's four rounds and its final subtraction
+    wrap no word on any eight words, each round's carry out is 0 or 1,
+    and the final subtraction writes the words
+    `p256_wide_fe_reduce_once` writes on any four words and any carry of
+    0 or 1.
+  - `p256_adx_mul` and `p256_adx_sqr`: on the real 64x64->128 multiply,
+    no column sum of the product wraps on any words, with the output
+    apart from the operands and over each of them.
+- **Bound:** none. Each routine is total over four words, and each line
+  runs it on any words.
+- **Not proved:** that a round writes the words `reduce_round` writes. A
+  formula that held one model round, a multiply by p's top word, against
+  `reduce_round`'s shifted copies ran 20 minutes with no verdict. Nor
+  that the assembly writes the model's words: `bin/p256_adx_equiv_test`
+  compares the two on a CPU with BMI2 and ADX or under QEMU. The values
+  are `spec/lean/Spec/P256Adx.lean`'s, which `bin/diff_p256_adx` compares
+  with the C on samples ([The x86-64 P-256 field](#the-x86-64-p-256-field)).
 
 #### mlkem
 
@@ -7292,6 +7319,42 @@ What none of this shows:
   every input. `bin/diff_x25519_adx` compares them on samples.
 - Anything about time. INV-16's branch counts and the volatile read in
   `adx_cswap` hold the ladder to no jump on a secret (decision 125).
+
+### The x86-64 P-256 field
+
+`p256_adx_asm.h` computes the eight words of a product or a square and
+reduces them in the same statement: four rounds, each of which adds a
+multiple of p that clears one word, then one subtraction of p (decision
+171). `test/p256_adx_model.h` writes the same words in portable C. The
+three CBMC lines in [p256_adx](#p256_adx) prove that the model wraps no
+word and stays inside its arrays on any words, and that its final
+subtraction is `p256_wide_fe_reduce_once`'s.
+
+[`spec/lean/Spec/P256Adx.lean`](../spec/lean/Spec/P256Adx.lean) models
+the reduction from the C, the eight words in a natural number, and
+proves that:
+
+- a round adds u (p + 1) at its word and changes no word up to it;
+- after the four rounds the value above word 3, times 2^256, is
+  T + p L, where L is the number the four values of u spell;
+- for T below p 2^256, which every product of two elements below p is,
+  the result is below p and is T 2^(-256) modulo p.
+
+`bin/diff_p256_adx`, in `make diff`, holds the C over the model to the
+spec in 60,339 comparisons: the product and the square on every pair of
+edge elements and on 20,000 random pairs below p, and the reduction
+alone on 20,000 random eight-word values below p 2^256.
+
+What none of this shows:
+
+- That the assembly writes the model's words for every input.
+  `bin/p256_adx_equiv_test` compares the two on a CPU with BMI2 and ADX,
+  or under QEMU.
+- That the C over the model computes what the Lean model computes for
+  every input. `bin/diff_p256_adx` compares them on samples.
+- Anything about time. No instruction of the assembly branches, its
+  final choice is CMOVC on a borrow, and INV-16's branch counts hold the
+  copy of the point files to the wide files' counts.
 
 ### The host object's description of the CPU
 

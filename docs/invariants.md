@@ -1416,7 +1416,12 @@ last `ROLE=server` stub, as the entry said it would.
   lane's `p256-adx` part runs the three on `qemu-x86_64`'s `max` model,
   which has the instructions, so a machine of either architecture runs
   every row. `test/widemul-builds.sh` refuses a host object's defines
-  that name `CH_P256_ADX_MODEL`.
+  that name `CH_P256_ADX_MODEL`. CBMC reads no assembly, so the
+  `p256_adx` harnesses compile the field over the model: no word wraps on
+  any words, each round's carry is 0 or 1, and the final subtraction is
+  `p256_wide_fe_reduce_once`'s. `spec/lean/Spec/P256Adx.lean` proves that
+  the reduction lands below p and is the Montgomery reduction, and
+  `bin/diff_p256_adx` holds the model to it.
 - **Violation.** A PR runs the copy without one of its bits.
   `inv66-p256-adx-ignores-adx-bit` drops `CH_CPU_BMI2_ADX` from
   `widemul_p256_adx`, `inv66-p256-adx-ignores-multiply-bit` drops the
@@ -1429,7 +1434,11 @@ last `ROLE=server` stub, as the entry said it would.
   `inv66-p256-adx-square-keeps-the-larger` inverts the square's final
   choice. `bin/p256_adx_equiv_test` catches both through the same part.
   `inv66-p256-adx-model-in-library` has make write `CH_P256_ADX_MODEL`
-  for a host object, which `test/widemul-builds.sh` catches.
+  for a host object, which `test/widemul-builds.sh` catches. A PR breaks
+  the model the assembly is held to: `inv66-p256-adx-model-round-drops-its-carry`
+  drops a round's carry, which `bin/diff_p256_adx` catches, and
+  `inv66-p256-adx-model-keeps-the-larger` inverts the final choice, which
+  the `p256_adx_reduce` proof catches.
 - See [decisions: Engineering](decisions.md#engineering), entry 171.
 
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers

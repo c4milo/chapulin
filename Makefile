@@ -5573,6 +5573,8 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_ed25519
 	$(MAKE) bin/diff_x25519_adx
 	./bin/diff_x25519_adx
+	$(MAKE) bin/diff_p256_adx
+	./bin/diff_p256_adx
 else
 	@echo "SKIP diff's wide X25519 and P-256 binaries: $(CC) fails the host test"
 	@echo "SKIP diff's RSA signers' binary: $(CC) fails the host test"
@@ -5716,6 +5718,14 @@ bin/diff_x25519_adx: test/diff_x25519_adx_test.c x25519_adx.c $(X25519_ADX_TEST_
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -I. -Itest -o $@ \
 	  test/diff_x25519_adx_test.c $(X25519_ADX_TEST_SRCS)
+# The x86-64 P-256 field's arm: p256_adx_field.c's product and square and
+# its model's reduction, compiled over test/p256_adx_model.h as
+# bin/p256_adx_model_test compiles them, against
+# spec/lean/Spec/P256Adx.lean. Its own main for the same reason.
+bin/diff_p256_adx: test/diff_p256_adx_test.c p256_adx_field.c ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -I. -Itest -o $@ \
+	  test/diff_p256_adx_test.c p256_adx_field.c ct.c
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and

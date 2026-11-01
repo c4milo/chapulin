@@ -1,0 +1,14 @@
+invariant: INV-66
+file: test/p256_adx_model.h
+catches: diff_p256_adx
+reason: model_round adds the high word of u times p's top word at word
+  k + 4 without the carry the round before left, so the model is short by
+  that bit in about one round in four. The model is what the assembly is
+  held to, word for word. bin/diff_p256_adx holds the model to
+  spec/lean/Spec/P256Adx.lean's reduce, whose proofs reduce_lt and
+  reduce_mod are what make the Lean bounds a proof about this C.
+
+--- old
+                                (uint64_t)(multiple >> 64) + top};
+--- new
+                                (uint64_t)(multiple >> 64) + (top & 0U)};
