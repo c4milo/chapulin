@@ -161,7 +161,7 @@ void shake_squeeze(shake *s, uint8_t *out, size_t n) {
     fill_nondet(out, n);
 }
 
-static void keygen(void) {
+static void prove_keygen(void) {
     uint8_t seed[MLDSA87_SEED_LEN];
     fill_nondet(seed, sizeof seed);
     int ok = mldsa87_keygen(key_room, pk_room, seed);
@@ -214,7 +214,7 @@ static void sign(void) {
 // harness defines SIGNER_KEYGEN and includes this file.
 int main(void) {
 #ifdef SIGNER_KEYGEN
-    keygen();
+    prove_keygen();
 #else
     sign();
 #endif
