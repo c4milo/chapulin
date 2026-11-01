@@ -562,7 +562,12 @@ Home: github.com/c4milo.
   bits by 32 on s1, s2, t0, y and c. `mldsa87_sign_cpu` and
   `mldsa87_keygen_cpu` take the session's value, and the calls without
   the suffix pass 0. An x86-64 host object runs the loops
-  (docs/decisions.md 172).
+  (docs/decisions.md 172). Its SHAKE calls take the same value through
+  `mldsa_poly.h`'s `mld_absorb` and `mld_squeeze`, so
+  CH_CPU_CONSTANT_TIME_SHA3 runs them on `sha3_hw.c`, and
+  `mldsa87_verify_cpu` and `mldsa87_challenge_cpu` take the value in a
+  host object; `bin/mldsa_runtime_test` counts each SHAKE call on each
+  path (docs/decisions.md 173).
   On x86-64 five more bits each pick a kernel beside a path every
   CPU runs, and none states a timing: `CH_CPU_AVX2` runs the keystream
   on `chacha20_avx2.c` and ML-KEM's matrix on `keccak_avx2.c`, whose
