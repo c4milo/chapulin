@@ -204,11 +204,13 @@ Home: github.com/c4milo.
   from a frame under `STACK_BUDGET_SRV_MLDSA`, and its boot check, and
   `srv_auth.c` compiles to nothing under the profile, docs/decisions.md
   162) + `mldsa_vector.[ch]` (ML-DSA-87's NTT, inverse NTT and two
-  NTT-domain products on four 32-bit NEON lanes, an arm64 host object
-  alone: `mldsa.c` runs them in every session, and the signer through
-  `mldsa_sign_poly.h`'s dispatchers for a session whose caller sets
-  CH_CPU_CONSTANT_TIME_MULTIPLY; `MLD_VECTOR` is 0 in every other
-  object, docs/decisions.md 172)
+  NTT-domain products on 32-bit lanes, four on NEON in an arm64 host
+  object and eight on AVX2 in an x86-64 one (`target("avx2")` on its own
+  functions alone); `mld_vector_runs(cpu, secret)` in `mldsa_vector.h`
+  is the one test: on arm64 the verifier in every session and the signer
+  under `CH_CPU_CONSTANT_TIME_MULTIPLY`, on x86-64 the verifier under
+  `CH_CPU_AVX2` and the signer under both bits; each AVX2 entry ends
+  with VZEROALL (docs/decisions.md 172 and 174))
   ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) with `hash_hw.h`, `hkdf_hw.c` and `keysched_hw.c` (`hkdf.c`
@@ -454,7 +456,8 @@ Home: github.com/c4milo.
   before it returns, because C
   names no register and VZEROUPPER and VZEROALL leave zmm16 to zmm31
   (docs/decisions.md 120 and 121), and `chacha20_avx2.c`,
-  `poly1305_avx2.c` and `sha512_avx2.c`, which hold them in 256-bit
+  `poly1305_avx2.c` and `sha512_avx2.c`, and `mldsa_vector.c`'s AVX2
+  arm, which hold them in 256-bit
   registers, end with VZEROALL, which writes zero to ymm0 to ymm15
   (docs/decisions.md 128 and 129); constant-time selects,
   where needed, are branchless mask arithmetic inline (x25519's `cswap`,
@@ -561,8 +564,9 @@ Home: github.com/c4milo.
   only under CH_CPU_CONSTANT_TIME_MULTIPLY, because the lanes multiply 32
   bits by 32 on s1, s2, t0, y and c. `mldsa87_sign_cpu` and
   `mldsa87_keygen_cpu` take the session's value, and the calls without
-  the suffix pass 0. An x86-64 host object runs the loops
-  (docs/decisions.md 172). Its SHAKE calls take the same value through
+  the suffix pass 0. An x86-64 host object runs eight AVX2 lanes: a
+  verification under CH_CPU_AVX2, and a signature or a key generation
+  under that bit and the multiply bit (docs/decisions.md 172 and 174). Its SHAKE calls take the same value through
   `mldsa_poly.h`'s `mld_absorb` and `mld_squeeze`, so
   CH_CPU_CONSTANT_TIME_SHA3 runs them on `sha3_hw.c`, and
   `mldsa87_verify_cpu` and `mldsa87_challenge_cpu` take the value in a
