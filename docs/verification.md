@@ -1473,8 +1473,13 @@ The entries are grouped by area:
 - **Bound:** 384 bytes and 48 words. The schedule holds for exponents
   below 2^32, at one word: over every 64-bit exponent the count gave no
   verdict in 20 minutes.
-- **Not proved:** any value. `rsa_mont64.c`'s calls are contract stubs,
-  which the [rsa_mont64](#rsa_mont64) harnesses prove.
+- **Lean:** `spec/lean/Spec/RsaExp.lean`'s `publicExp_eq` proves the
+  schedule computes x^e for every odd e of at least 3, over `ZMod m` with
+  a Montgomery product a·b·R⁻¹: the loop holds x^(e >>> i)·R after the
+  bits above i, and the last product by x leaves the domain.
+- **Not proved:** that the C is that model, and any value of the words.
+  `rsa_mont64.c`'s calls are contract stubs, which the
+  [rsa_mont64](#rsa_mont64) harnesses prove.
   `bin/rsa_exp_test` holds the bytes against Python's `pow` at moduli
   from 64 to 512 bytes and exponents from 3 to 2^64 - 1, and against
   `rsa_mont64_public` at 65537.

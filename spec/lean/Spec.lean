@@ -18,6 +18,7 @@ import Spec.P256Nonce
 import Spec.P256WidePoint
 import Spec.P256WideInverse
 import Spec.Rsa
+import Spec.RsaExp
 import Spec.RsaIfma
 import Spec.Poly1305Ifma
 import Spec.RsaAvx2
