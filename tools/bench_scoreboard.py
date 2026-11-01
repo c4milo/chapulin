@@ -73,6 +73,9 @@ PRIMITIVES = [
     ("ML-KEM-768 key generation", "mlkem768_keygen", "mlkem768_keygen", 0),
     ("ML-KEM-768 encapsulation", "mlkem768_encaps", "mlkem768_encaps", 0),
     ("ML-KEM-768 decapsulation", "mlkem768_decaps", "mlkem768_decaps", 0),
+    ("ML-DSA-87 key generation", "mldsa87_keygen", "mldsa87_keygen", 0),
+    ("ML-DSA-87 sign", "mldsa87_sign", "mldsa87_sign", 0),
+    ("ML-DSA-87 verify", "mldsa87_verify", "mldsa87_verify", 0),
 ]
 
 # Each AEAD row: its label, the aead column of the record CSV and

@@ -460,31 +460,35 @@ and runs Poly1305 on `poly1305_ifma.c` (decision 121). One whose caller sets `CH
 the VAES and AES bits runs each AES-GCM seal and open on a 512-bit kernel (decision 130). Each CPU
 has two groups of cells: gcc, which CI compiles with, and the pinned clang 23, a newer clang than
 Zig 0.16's clang 21, which `build.zig` compiles the object with for a Zig project such as colibri.
+The M1 CSV holds no ML-DSA-87 rows yet, so those three rows show a dash in the M1 cells.
 
 | one operation | M1 Pro, chapulin | M1 Pro, OpenSSL | ratio | x86-64 gcc, chapulin | x86-64 gcc, OpenSSL | ratio | x86-64 clang, chapulin | x86-64 clang, OpenSSL | ratio | x86-64 AVX-512 gcc, chapulin | x86-64 AVX-512 gcc, OpenSSL | ratio | x86-64 AVX-512 clang, chapulin | x86-64 AVX-512 clang, OpenSSL | ratio |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| SHA-256, 16 KiB | 6.86 µs | 6.97 µs | 0.98 | 10.4 µs | 10.4 µs | 0.99 | 10.4 µs | 10.4 µs | 0.99 | 11.3 µs | 11.4 µs | 0.99 | 11.4 µs | 11.4 µs | 1.00 |
-| SHA-256, 64 bytes | 72.8 ns | 148 ns | 0.49 | 114 ns | 191 ns | 0.60 | 127 ns | 192 ns | 0.66 | 128 ns | 190 ns | 0.67 | 128 ns | 188 ns | 0.68 |
-| SHA-384, 16 KiB | 11.7 µs | 11.8 µs | 0.99 | 23.1 µs | 21.9 µs | **1.05** | 22.9 µs | 22.0 µs | **1.04** | 27.8 µs | 25.9 µs | **1.07** | 27.0 µs | 25.9 µs | **1.04** |
-| SHA-384, 64 bytes | 127 ns | 185 ns | 0.68 | 239 ns | 334 ns | 0.72 | 220 ns | 335 ns | 0.66 | 270 ns | 355 ns | 0.76 | 246 ns | 353 ns | 0.70 |
-| SHA3-256, 16 KiB | 19.3 µs | 18.6 µs | **1.04** | 51.1 µs | 38.5 µs | **1.33** | 47.6 µs | 38.5 µs | **1.24** | 50.1 µs | 38.2 µs | **1.31** | 46.8 µs | 38.1 µs | **1.23** |
-| SHA3-256, 64 bytes | 171 ns | 341 ns | 0.50 | 458 ns | 489 ns | 0.94 | 413 ns | 489 ns | 0.84 | 428 ns | 471 ns | 0.91 | 402 ns | 472 ns | 0.85 |
-| X25519 key generation | 10.7 µs | 27.3 µs | 0.39 | 15.0 µs | 33.9 µs | 0.44 | 14.1 µs | 33.9 µs | 0.42 | 13.8 µs | 32.5 µs | 0.42 | 13.0 µs | 32.4 µs | 0.40 |
-| X25519 shared secret | 28.5 µs | 28.7 µs | 0.99 | 37.5 µs | 36.6 µs | **1.03** | 34.8 µs | 36.5 µs | 0.95 | 35.2 µs | 36.0 µs | 0.98 | 32.5 µs | 35.9 µs | 0.91 |
-| P-256 key generation | 10.1 µs | 9.68 µs | **1.04** | 15.6 µs | 12.4 µs | **1.26** | 12.5 µs | 12.4 µs | **1.00** | 15.1 µs | 12.8 µs | **1.18** | 12.8 µs | 12.7 µs | **1.01** |
-| P-256 shared secret | 53.5 µs | 41.5 µs | **1.29** | 74.6 µs | 51.7 µs | **1.44** | 62.5 µs | 51.7 µs | **1.21** | 72.3 µs | 59.4 µs | **1.22** | 64.5 µs | 59.4 µs | **1.08** |
-| ECDSA P-256 sign | 14.7 µs | 18.3 µs | 0.81 | 24.3 µs | 22.3 µs | **1.09** | 19.5 µs | 22.2 µs | 0.88 | 24.3 µs | 23.8 µs | **1.02** | 20.1 µs | 23.8 µs | 0.84 |
-| ECDSA P-256 verify | 55.0 µs | 55.0 µs | **1.00** | 72.0 µs | 67.8 µs | **1.06** | 63.3 µs | 67.8 µs | 0.93 | 75.8 µs | 77.0 µs | 0.98 | 66.8 µs | 76.9 µs | 0.87 |
-| ECDSA P-384 verify | 275 µs | 488 µs | 0.56 | 700 µs | 728 µs | 0.96 | 366 µs | 729 µs | 0.50 | 593 µs | 623 µs | 0.95 | 324 µs | 622 µs | 0.52 |
-| RSA-2048 PSS sign | 673 µs | 558 µs, PKCS#1 v1.5 sign | — | 1.28 ms | 660 µs, PKCS#1 v1.5 sign | — | 1.38 ms | 660 µs, PKCS#1 v1.5 sign | — | 325 µs | 350 µs, PKCS#1 v1.5 sign | — | 308 µs | 348 µs, PKCS#1 v1.5 sign | — |
-| RSA-2048 PSS verify | 22.1 µs | 14.6 µs, PKCS#1 v1.5 verify | — | 23.9 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 21.9 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 13.1 µs | 19.3 µs, PKCS#1 v1.5 verify | — | 12.3 µs | 19.3 µs, PKCS#1 v1.5 verify | — |
-| RSA-2048 PKCS#1 v1.5 verify | 18.5 µs | 14.6 µs | **1.27** | 20.5 µs | 18.9 µs | **1.09** | 18.4 µs | 18.9 µs | 0.97 | 9.48 µs | 19.3 µs | 0.49 | 9.07 µs | 19.3 µs | 0.47 |
-| RSA-3072 PSS sign | 2.02 ms | 1.62 ms, PKCS#1 v1.5 sign | — | 3.68 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 4.30 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 774 µs | 937 µs, PKCS#1 v1.5 sign | — | 751 µs | 936 µs, PKCS#1 v1.5 sign | — |
-| RSA-3072 PSS verify | 42.4 µs | 30.9 µs, PKCS#1 v1.5 verify | — | 42.8 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 39.5 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 21.4 µs | 41.5 µs, PKCS#1 v1.5 verify | — | 20.7 µs | 41.5 µs, PKCS#1 v1.5 verify | — |
-| RSA-3072 PKCS#1 v1.5 verify | 38.0 µs | 30.9 µs | **1.23** | 38.5 µs | 40.1 µs | 0.96 | 35.2 µs | 40.1 µs | 0.88 | 16.9 µs | 41.5 µs | 0.41 | 17.1 µs | 41.5 µs | 0.41 |
-| ML-KEM-768 key generation | 12.2 µs | 22.0 µs | 0.55 | 20.4 µs | 36.3 µs | 0.56 | 17.0 µs | 36.3 µs | 0.47 | 22.3 µs | 37.9 µs | 0.59 | 18.7 µs | 37.6 µs | 0.50 |
-| ML-KEM-768 encapsulation | 14.2 µs | 13.1 µs | **1.08** | 23.1 µs | 21.8 µs | **1.06** | 19.2 µs | 21.7 µs | 0.89 | 24.8 µs | 21.1 µs | **1.17** | 20.9 µs | 21.3 µs | 0.98 |
-| ML-KEM-768 decapsulation | 15.3 µs | 18.7 µs | 0.82 | 26.4 µs | 33.4 µs | 0.79 | 21.1 µs | 33.3 µs | 0.63 | 27.8 µs | 33.3 µs | 0.83 | 23.1 µs | 33.3 µs | 0.69 |
+| SHA-256, 16 KiB | 6.86 µs | 6.97 µs | 0.98 | 10.4 µs | 10.4 µs | 0.99 | 10.4 µs | 10.4 µs | 0.99 | 9.73 µs | 9.81 µs | 0.99 | 9.74 µs | 9.80 µs | 0.99 |
+| SHA-256, 64 bytes | 72.8 ns | 148 ns | 0.49 | 114 ns | 192 ns | 0.59 | 126 ns | 192 ns | 0.65 | 110 ns | 160 ns | 0.69 | 111 ns | 161 ns | 0.69 |
+| SHA-384, 16 KiB | 11.7 µs | 11.8 µs | 0.99 | 23.2 µs | 21.9 µs | **1.06** | 22.9 µs | 21.9 µs | **1.04** | 23.8 µs | 22.3 µs | **1.07** | 23.2 µs | 22.3 µs | **1.04** |
+| SHA-384, 64 bytes | 127 ns | 185 ns | 0.68 | 234 ns | 333 ns | 0.70 | 217 ns | 333 ns | 0.65 | 231 ns | 303 ns | 0.76 | 211 ns | 303 ns | 0.70 |
+| SHA3-256, 16 KiB | 19.3 µs | 18.6 µs | **1.04** | 51.2 µs | 38.5 µs | **1.33** | 47.7 µs | 38.6 µs | **1.24** | 42.9 µs | 32.7 µs | **1.31** | 39.8 µs | 32.8 µs | **1.22** |
+| SHA3-256, 64 bytes | 171 ns | 341 ns | 0.50 | 451 ns | 488 ns | 0.92 | 417 ns | 489 ns | 0.85 | 367 ns | 403 ns | 0.91 | 343 ns | 404 ns | 0.85 |
+| X25519 key generation | 10.7 µs | 27.3 µs | 0.39 | 15.1 µs | 33.8 µs | 0.45 | 14.1 µs | 33.8 µs | 0.42 | 11.9 µs | 28.0 µs | 0.42 | 11.2 µs | 27.9 µs | 0.40 |
+| X25519 shared secret | 28.5 µs | 28.7 µs | 0.99 | 37.5 µs | 36.6 µs | **1.02** | 34.1 µs | 36.5 µs | 0.93 | 30.2 µs | 30.9 µs | 0.98 | 27.9 µs | 30.9 µs | 0.90 |
+| P-256 key generation | 10.1 µs | 9.68 µs | **1.04** | 15.5 µs | 12.6 µs | **1.24** | 12.3 µs | 12.4 µs | 0.99 | 13.0 µs | 10.8 µs | **1.20** | 11.0 µs | 10.8 µs | **1.01** |
+| P-256 shared secret | 53.5 µs | 41.5 µs | **1.29** | 74.5 µs | 51.7 µs | **1.44** | 63.3 µs | 51.7 µs | **1.22** | 62.0 µs | 51.1 µs | **1.21** | 55.3 µs | 51.1 µs | **1.08** |
+| ECDSA P-256 sign | 14.7 µs | 18.3 µs | 0.81 | 24.3 µs | 22.2 µs | **1.09** | 19.4 µs | 22.2 µs | 0.87 | 20.8 µs | 20.3 µs | **1.02** | 17.2 µs | 20.3 µs | 0.85 |
+| ECDSA P-256 verify | 55.0 µs | 55.0 µs | **1.00** | 72.1 µs | 67.7 µs | **1.06** | 63.4 µs | 67.8 µs | 0.93 | 64.9 µs | 66.0 µs | 0.98 | 57.8 µs | 66.0 µs | 0.88 |
+| ECDSA P-384 verify | 275 µs | 488 µs | 0.56 | 699 µs | 732 µs | 0.96 | 367 µs | 725 µs | 0.51 | 509 µs | 539 µs | 0.94 | 279 µs | 534 µs | 0.52 |
+| RSA-2048 PSS sign | 673 µs | 558 µs, PKCS#1 v1.5 sign | — | 1.28 ms | 660 µs, PKCS#1 v1.5 sign | — | 1.44 ms | 661 µs, PKCS#1 v1.5 sign | — | 279 µs | 290 µs, PKCS#1 v1.5 sign | — | 257 µs | 290 µs, PKCS#1 v1.5 sign | — |
+| RSA-2048 PSS verify | 22.1 µs | 14.6 µs, PKCS#1 v1.5 verify | — | 23.9 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 21.9 µs | 19.0 µs, PKCS#1 v1.5 verify | — | 11.3 µs | 16.6 µs, PKCS#1 v1.5 verify | — | 10.5 µs | 16.6 µs, PKCS#1 v1.5 verify | — |
+| RSA-2048 PKCS#1 v1.5 verify | 18.5 µs | 14.6 µs | **1.27** | 20.6 µs | 18.9 µs | **1.09** | 18.4 µs | 19.0 µs | 0.97 | 8.17 µs | 16.6 µs | 0.49 | 7.85 µs | 16.6 µs | 0.47 |
+| RSA-3072 PSS sign | 2.02 ms | 1.62 ms, PKCS#1 v1.5 sign | — | 3.68 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 4.54 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 651 µs | 781 µs, PKCS#1 v1.5 sign | — | 621 µs | 781 µs, PKCS#1 v1.5 sign | — |
+| RSA-3072 PSS verify | 42.4 µs | 30.9 µs, PKCS#1 v1.5 verify | — | 42.7 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 39.4 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 18.4 µs | 35.7 µs, PKCS#1 v1.5 verify | — | 17.8 µs | 35.7 µs, PKCS#1 v1.5 verify | — |
+| RSA-3072 PKCS#1 v1.5 verify | 38.0 µs | 30.9 µs | **1.23** | 38.6 µs | 40.1 µs | 0.96 | 35.1 µs | 40.1 µs | 0.88 | 14.5 µs | 35.7 µs | 0.41 | 14.7 µs | 35.7 µs | 0.41 |
+| ML-KEM-768 key generation | 12.2 µs | 22.0 µs | 0.55 | 20.7 µs | 36.3 µs | 0.57 | 17.0 µs | 36.3 µs | 0.47 | 18.7 µs | 32.4 µs | 0.58 | 15.3 µs | 32.6 µs | 0.47 |
+| ML-KEM-768 encapsulation | 14.2 µs | 13.1 µs | **1.08** | 23.2 µs | 21.7 µs | **1.07** | 19.1 µs | 21.7 µs | 0.88 | 20.9 µs | 18.3 µs | **1.14** | 17.4 µs | 18.3 µs | 0.95 |
+| ML-KEM-768 decapsulation | 15.3 µs | 18.7 µs | 0.82 | 26.4 µs | 33.4 µs | 0.79 | 21.0 µs | 33.3 µs | 0.63 | 23.4 µs | 28.7 µs | 0.81 | 19.4 µs | 28.7 µs | 0.68 |
+| ML-DSA-87 key generation | — | — | — | 1.08 ms | 278 µs | **3.89** | 1.17 ms | 277 µs | **4.21** | 1.10 ms | 220 µs | **4.97** | 1.28 ms | 221 µs | **5.78** |
+| ML-DSA-87 sign | — | — | — | 1.32 ms | 1.20 ms | **1.10** | 1.21 ms | 1.23 ms | 0.98 | 1.17 ms | 890 µs | **1.32** | 1.10 ms | 888 µs | **1.24** |
+| ML-DSA-87 verify | — | — | — | 178 µs | 300 µs | 0.59 | 166 µs | 301 µs | 0.55 | 147 µs | 231 µs | 0.64 | 141 µs | 232 µs | 0.61 |
 | AES-128-GCM, the key set and one 16 KiB record sealed | 2.01 µs | 2.02 µs | 0.99 | 2.76 µs | 4.05 µs | 0.68 | 2.48 µs | 4.05 µs | 0.61 | 1.21 µs | 1.27 µs | 0.95 | 1.23 µs | 1.24 µs | 0.99 |
 | AES-128-GCM, the key set and one 16 KiB record opened | 1.99 µs | 2.04 µs | 0.97 | 2.76 µs | 4.11 µs | 0.67 | 2.58 µs | 4.12 µs | 0.63 | 1.26 µs | 1.32 µs | 0.95 | 1.22 µs | 1.29 µs | 0.95 |
 | AES-256-GCM, the key set and one 16 KiB record sealed | 2.35 µs | 2.41 µs | 0.97 | 3.12 µs | 4.36 µs | 0.72 | 2.81 µs | 4.36 µs | 0.64 | 1.49 µs | 1.52 µs | 0.98 | 1.51 µs | 1.49 µs | **1.01** |
@@ -501,20 +505,20 @@ The machines, as the CSV headers state them:
   it, and 4.13 and 4.04 around the AEAD rows' run
 - **x86-64 gcc**: AMD EPYC 7763 64-Core Processor, Linux 7.0.0-1017-azure, gcc (Ubuntu
   13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.4, `ch_cfg.cpu 0x43f`, and `0x1f` for the AEAD rows,
-  which no hash bit changes; one-minute load average 1.12 before the primitives' run and 1.10 after
+  which no hash bit changes; one-minute load average 1.17 before the primitives' run and 1.11 after
   it, and 0.89 and 1.13 around the AEAD rows' run
 - **x86-64 clang**: AMD EPYC 7763 64-Core Processor, Linux 7.0.0-1017-azure, Ubuntu clang version
   23.1.5 (++20261028083854+a738f2737189-1~exp1~20261028203912.92), OpenSSL 3.6.4, `ch_cfg.cpu
-  0x43f`, and `0x1f` for the AEAD rows, which no hash bit changes; one-minute load average 1.08
-  before the primitives' run and 1.09 after it, and 1.05 and 1.05 around the AEAD rows' run
+  0x43f`, and `0x1f` for the AEAD rows, which no hash bit changes; one-minute load average 1.14
+  before the primitives' run and 1.08 after it, and 1.05 and 1.05 around the AEAD rows' run
 - **x86-64 AVX-512 gcc**: INTEL(R) XEON(R) PLATINUM 8573C, Linux 7.0.0-1017-azure, gcc (Ubuntu
   13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.4, `ch_cfg.cpu 0x73f`, and `0x31f` for the AEAD rows,
-  which no hash bit changes; one-minute load average 1.06 before the primitives' run and 1.05 after
+  which no hash bit changes; one-minute load average 1.18 before the primitives' run and 1.08 after
   it, and 0.76 and 1.15 around the AEAD rows' run
 - **x86-64 AVX-512 clang**: INTEL(R) XEON(R) PLATINUM 8573C, Linux 7.0.0-1017-azure, Ubuntu clang
   version 23.1.5 (++20261028083854+a738f2737189-1~exp1~20261028203912.92), OpenSSL 3.6.4,
   `ch_cfg.cpu 0x73f`, and `0x31f` for the AEAD rows, which no hash bit changes; one-minute load
-  average 1.03 before the primitives' run and 1.05 after it, and 1.14 and 1.09 around the AEAD rows'
+  average 1.17 before the primitives' run and 1.07 after it, and 1.14 and 1.09 around the AEAD rows'
   run
 
 [`bench/primitives.sh`](../bench/primitives.sh) (`make bench-primitives`) writes the rows above the
