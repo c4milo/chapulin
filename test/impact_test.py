@@ -16,7 +16,7 @@ mapping in tools/impact.py, never in this file: the fix is to teach the
 mapping where that gate reads its sources, never to drop the violation
 from the comparison.
 
-Nine more assertions come free from the same data:
+Ten more assertions come free from the same data:
 
   every command the plan emits parses as `make <target>` naming a target
   the Makefile has, or as a script the tree holds — a plan that names a
@@ -42,6 +42,11 @@ Nine more assertions come free from the same data:
 
   the plan for every root .c file git tracks runs lint-proof-cover and
   lint-codegen-partition, the two lints that read git's list of them
+
+  every root .h file git tracks is in $(HDRS), which the mapping takes
+  as a prerequisite of every test binary: a header outside it leaves a
+  binary make thinks is current after an edit, so a violation of that
+  header runs the old binary and reports a test that passed
 
   every library build make check runs, each target in the Makefile's
   CHECK_LIBRARY_BUILDS whose recipe runs make, is run by the plan for a
@@ -234,6 +239,29 @@ def check_root_sources(mapping):
                 bad += 1
     print(f"impact-test: {len(sources)} root sources, {len(sources) - len(short)} "
           f"whose plan runs {' and '.join(ROOT_SOURCE_LINTS)}")
+    return bad
+
+
+def check_root_headers(mapping):
+    """Every root .h file git tracks is in $(HDRS).
+
+    is_wide treats a root header as a prerequisite of every test binary,
+    and test/violations.py rebuilds a binary through make. x25519_wide_ed25519.h
+    was outside $(HDRS), so the nightly of 2026-11-01 ran bin/dnssec_test
+    built before the edit and reported inv14-ed25519-small-order-key as
+    unguarded (https://github.com/c4milo/chapulin/issues/215)."""
+    listed = subprocess.run(["git", "ls-files", "-z", "--", "*.h"], cwd=ROOT,
+                            check=True, capture_output=True).stdout
+    headers = sorted({os.fsdecode(p) for p in listed.split(b"\0")
+                      if p and b"/" not in p})
+    hdrs = set(impact_read.expand("$(HDRS)", mapping.variables).split())
+    bad = 0
+    for path in headers:
+        if path not in hdrs:
+            print(f"impact-test: {path} is a root header outside $(HDRS), so "
+                  f"no test binary rebuilds when it changes")
+            bad += 1
+    print(f"impact-test: {len(headers)} root headers, {len(headers) - bad} in $(HDRS)")
     return bad
 
 
@@ -546,7 +574,7 @@ def main():
            + check_run_targets(mapping) + check_rand_named(mapping)
            + check_script_commands(mapping) + check_full_covers(mapping)
            + check_fail_closed(mapping) + check_root_sources(mapping)
-           + check_library_builds(mapping)
+           + check_root_headers(mapping) + check_library_builds(mapping)
            + check_dirty_tree() + check_empty_plan())
     if bad:
         print(f"impact-test: {bad} problem(s); fix the mapping in "
