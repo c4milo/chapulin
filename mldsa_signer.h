@@ -27,8 +27,9 @@
 // caller's public key before it returns. On a failure it writes zero to
 // sig and returns 0, so a fault in signing gives no signature.
 //
-// mldsa_signer.c and its four files compile into test binaries alone until
-// the PROFILE=cnsa2 server role packages them.
+// The PROFILE=cnsa2 server object packages mldsa_signer.c and its four
+// files (docs/decisions.md 162). No other library object holds them, and
+// test binaries compile them as well.
 #ifndef CH_MLDSA_SIGNER_H
 #define CH_MLDSA_SIGNER_H
 
