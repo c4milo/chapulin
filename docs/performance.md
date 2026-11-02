@@ -100,7 +100,7 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12896 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 19456 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`) | 22096 |
-| peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`) | 27968 |
+| peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`) | 28032 |
 
 Two of these rows grew in October 2026, and `bench/stack.py` names the
 frame each time:
@@ -219,9 +219,9 @@ column. `bench/sram.sh` measures:
 - a receive floor of 2,179 bytes, the 2,174-byte largest ClientHello of
   the profile's client behind its record header, and 2,698 bytes over
   QUIC;
-- a `ch_srv_accept` peak of 27,968 bytes, through the ML-DSA-87 signer's
+- a `ch_srv_accept` peak of 28,032 bytes, through the ML-DSA-87 signer's
   rejection loop under the CertificateVerify. With the signer pruned
-  (`STACK_PRUNE=mldsa87_sign`) the peak is ML-KEM-1024's encapsulation,
+  (`STACK_PRUNE=mldsa87_sign_cpu`) the peak is ML-KEM-1024's encapsulation,
   at 12,640 bytes.
 
 The send side needs no floor of its own. The 7.5 kB Certificate and the

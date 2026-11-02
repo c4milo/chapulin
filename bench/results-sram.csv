@@ -65,5 +65,5 @@ stack_pubkey_from_pem_ca_mldsa,640
 session_struct_cnsa2_server_arm64,3160
 receive_buffer_cnsa2_server,2179
 static_working_set_cnsa2_server_arm64,5339
-stack_accept_cnsa2_server,27968
+stack_accept_cnsa2_server,28032
 stack_accept_cnsa2_server_without_signer,12640

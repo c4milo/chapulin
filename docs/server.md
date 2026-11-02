@@ -3079,7 +3079,7 @@ under the profile.
 - **CPU.** Every init call and `ch_srv_check` refuse a `ch_cfg.cpu`
   without `CH_CPU_CONSTANT_TIME_AES`.
 - **Memory.** A `ch_tls` of 3,160 bytes, a receive floor of 2,179 bytes
-  (2,698 over QUIC), and a `ch_srv_accept` peak of 27,968 bytes through
+  (2,698 over QUIC), and a `ch_srv_accept` peak of 28,032 bytes through
   the signer, measured by `bench/sram.sh` ([performance.md](performance.md)).
 
 ## What is still open

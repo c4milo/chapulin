@@ -295,7 +295,7 @@ stack_report cnsa2_server "STACK_MAKE=PROFILE=cnsa2 ROLE=server TRUST=none"
 head -1 "$TMP/cnsa2_server.stack"
 echo "-- the same without the signer; peak = ML-KEM-1024's encapsulation --"
 stack_report cnsa2_server_without_signer "STACK_MAKE=PROFILE=cnsa2 ROLE=server TRUST=none" \
-    STACK_PRUNE=mldsa87_sign
+    STACK_PRUNE=mldsa87_sign_cpu
 head -1 "$TMP/cnsa2_server_without_signer.stack"
 
 # The CSV carries every column or nothing: without the rv32 toolchain the
