@@ -15369,7 +15369,13 @@ does nothing more.
       159,100, and under clang 154,900 became 144,300. The doubling took
       384 and 346 cycles, and the addition 615 and 580. On a Xeon 8573C
       the shared secret took 0.90 of its time under gcc and 0.93 under
-      clang, and on a Xeon 8370C 0.94 and 0.95.
+      clang, and on a Xeon 8370C 0.94 and 0.95. The bench run of 2026-11-02
+      on 531fa3da recorded the landed change on an EPYC 7763: the shared
+      secret takes 1.26 times OpenSSL's time under gcc and 1.15 under
+      clang, where it took 1.44 and 1.22 in the run of 2026-11-01, and the
+      verification 1.03 and 0.89, where it took 1.06 and 0.93. The
+      AVX-512 column waits for a run that draws a Xeon 8573C
+      (docs/performance.md).
     - **What holds it.** The assembly and the model are the same text as
       before. `bin/p256_adx_model_test`, `bin/p256_adx_verify_model_test`
       and the qemu lane's `p256-adx` part hold the inline copy as they
