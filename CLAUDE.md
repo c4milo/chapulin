@@ -43,13 +43,16 @@ Home: github.com/c4milo.
   -DCH_KEX_PQ, `mlkem.[ch]`) — never both in one raw or ca ClientHello,
   so a pq device and a classic-only server fail closed against each
   other. KEX chooses nothing else: TRUST=webpki offers three groups in
-  every build (below), a server role outside PROFILE=cnsa2 holds the same
-  three in every build,
+  every build (below), a server role outside PROFILE=cnsa2 holds those
+  three and ML-KEM-1024 in every build,
   and the Makefile refuses a KEX value for either. A server selects
-  X25519MLKEM768 whenever the client lists it, then x25519, and secp256r1
-  only when the client lists neither; a hello that lists a preferred group
-  and does not share it gets a HelloRetryRequest that asks for it
-  (`srv_kex.[ch]`, docs/decisions.md 54 and 63). secp256r1 runs over the
+  ML-KEM-1024 whenever the client lists it, then X25519MLKEM768, then
+  x25519, and secp256r1 only when the client lists none of the others; a
+  hello that lists a preferred group and does not share it gets a
+  HelloRetryRequest that asks for it (`srv_kex.[ch]`, docs/decisions.md
+  54, 63 and 179). mlkem.h sets CH_MLKEM_TWO_RANKS in those servers, so
+  one mlkem.c runs ML-KEM-1024 at rank 4 and the hybrid at rank 3
+  (docs/decisions.md 177). secp256r1 runs over the
   constant-time `p256_ecdh.[ch]`, never over `p256.[ch]`, which verifies
   public inputs and branches on them. ch_tls.group reports the group on
   both sides. PROFILE=cnsa2 (`profile_cfg.h`, docs/decisions.md 151)
