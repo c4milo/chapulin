@@ -778,11 +778,13 @@ launch fast full mldsa_coefficient 2 ""
 # 2.0 GB; mldsa_sign_pack 265, 26 s, 1.6 GB; mldsa_sign_coefficient 61,
 # 21 s, 0.2 GB; mldsa_sign_coefficient_ct 60, 44 s, 0.1 GB. Each weight is
 # its peak. mldsa_sign_samplers, since RejBoundedPoly's passes joined it
-# (docs/decisions.md 176): 312 properties, 289 s, 2.0 GB resident, in an
-# Ubuntu 24.04 amd64 container under Rosetta with the pinned cbmc and
-# kissat. Rosetta shows no native address space, and at weight 2, a 6 GB
-# address-space cap, CI's prove job stopped it at the cap, so its weight is
-# 6, a cap of 10 GB.
+# (docs/decisions.md 176), holds 962 entries, past cbmc's default of 64
+# for an array it splits into one symbol per element. As one array each of
+# the ten passes' 9,620 stores rewrote it whole, and CI's prove job stopped
+# the harness at the address-space cap at weights 2 and 6.
+# --max-field-sensitivity-array-size 962 splits it: 312 properties, 412 s,
+# 0.65 GB resident, in an Ubuntu 24.04 amd64 container under Rosetta with
+# the pinned cbmc and kissat, against 2.0 GB without the flag.
 launch fast:6 full mldsa_signer 816 "ct_wipe.0:4628" ct.c
 launch fast:5 full mldsa_signer_keygen 258 "ct_wipe.0:4897" ct.c
 launch fast full mldsa_sign_round 258 ""
@@ -796,7 +798,7 @@ launch fast full mldsa_sign_encode 258 "fill_nondet.0:641" ct.c proof/ct_wipe_st
 launch fast:3 full mldsa_sign_poly 258 "mlds_poly_ntt.2:9,mlds_poly_invntt_tomont.2:9"
 launch fast full mldsa_sign_ntt 258 "mlds_poly_ntt.2:9,mlds_poly_invntt_tomont.2:9"
 launch fast full mldsa_sign_pack 642 "" ct.c proof/ct_wipe_stub.c
-launch fast:6 full mldsa_sign_samplers 963 "" ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_samplers 963 "" --max-field-sensitivity-array-size 962 ct.c proof/ct_wipe_stub.c
 launch fast full mldsa_sign_coefficient 2 ""
 launch fast full mldsa_sign_coefficient_ct 2 ""
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain
