@@ -1,0 +1,17 @@
+invariant: INV-56
+file: mlkem_poly.c
+catches: mlkem_test_two_ranks
+reason: in an object that runs both ranks, mlk_poly_compress_du packs u
+  in 11 bits at rank 3 and in 10 bits at rank 4. An object of one rank
+  compiles one width and runs it whatever the test reads, so only the
+  two-rank binaries see it: the ML-KEM-768 known answers at rank 3 get
+  a ciphertext of the wrong width and fail.
+
+--- old
+void mlk_poly_compress_du(uint8_t *out, const mlk_poly *p, unsigned rank) {
+#if MLK_HOLDS_1024 && MLK_HOLDS_768
+    if (rank == MLKEM_RANK_1024) {
+--- new
+void mlk_poly_compress_du(uint8_t *out, const mlk_poly *p, unsigned rank) {
+#if MLK_HOLDS_1024 && MLK_HOLDS_768
+    if (rank != MLKEM_RANK_1024) {

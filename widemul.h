@@ -145,23 +145,22 @@ static inline void widemul_x25519_base(uint8_t widemul, uint8_t out[X25519_LEN],
     x25519_base(out, scalar);
 }
 
-static inline void widemul_mlk_polyvec_compress(uint8_t widemul,
-                                                uint8_t out[MLK_POLYVEC_COMP_BYTES],
-                                                const mlk_polyvec *v) {
+static inline void widemul_mlk_poly_compress_du(uint8_t widemul, uint8_t *out, const mlk_poly *p,
+                                                unsigned rank) {
     if (widemul_native(widemul)) {
-        mlk_polyvec_compress_native(out, v);
+        mlk_poly_compress_du_native(out, p, rank);
         return;
     }
-    mlk_polyvec_compress(out, v);
+    mlk_poly_compress_du(out, p, rank);
 }
 
-static inline void widemul_mlk_poly_compress(uint8_t widemul, uint8_t out[MLK_POLY_COMP_BYTES],
-                                             const mlk_poly *p) {
+static inline void widemul_mlk_poly_compress(uint8_t widemul, uint8_t *out, const mlk_poly *p,
+                                             unsigned rank) {
     if (widemul_native(widemul)) {
-        mlk_poly_compress_native(out, p);
+        mlk_poly_compress_native(out, p, rank);
         return;
     }
-    mlk_poly_compress(out, p);
+    mlk_poly_compress(out, p, rank);
 }
 
 static inline void widemul_mlk_poly_tomsg(uint8_t widemul, uint8_t msg[32], const mlk_poly *p) {
@@ -250,17 +249,16 @@ static inline void widemul_x25519_base(uint8_t widemul, uint8_t out[X25519_LEN],
     x25519_base(out, scalar);
 }
 
-static inline void widemul_mlk_polyvec_compress(uint8_t widemul,
-                                                uint8_t out[MLK_POLYVEC_COMP_BYTES],
-                                                const mlk_polyvec *v) {
+static inline void widemul_mlk_poly_compress_du(uint8_t widemul, uint8_t *out, const mlk_poly *p,
+                                                unsigned rank) {
     (void)widemul;
-    mlk_polyvec_compress(out, v);
+    mlk_poly_compress_du(out, p, rank);
 }
 
-static inline void widemul_mlk_poly_compress(uint8_t widemul, uint8_t out[MLK_POLY_COMP_BYTES],
-                                             const mlk_poly *p) {
+static inline void widemul_mlk_poly_compress(uint8_t widemul, uint8_t *out, const mlk_poly *p,
+                                             unsigned rank) {
     (void)widemul;
-    mlk_poly_compress(out, p);
+    mlk_poly_compress(out, p, rank);
 }
 
 static inline void widemul_mlk_poly_tomsg(uint8_t widemul, uint8_t msg[32], const mlk_poly *p) {

@@ -8,6 +8,6 @@ reason: ByteEncode_11 writes the last coefficient of each group of eight
   round trip in bin/mlkem_test_1024 fails.
 
 --- old
-            out[o + 10] = (uint8_t)(t[7] >> 3);
+        out[11 * j + 10] = (uint8_t)(t[7] >> 3);
 --- new
-            out[o + 10] = (uint8_t)((t[7] >> 3) & 0x7f);
+        out[11 * j + 10] = (uint8_t)((t[7] >> 3) & 0x7f);

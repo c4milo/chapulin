@@ -10,6 +10,6 @@ reason: the row sampler stops after three blocks, so an entry whose stream
   unguarded rather than caught.
 
 --- old
-    for (size_t read = 0; read < MLK_SAMPLE_GROUPS && !mlk_row_sampled(count);
+    for (size_t read = 0; read < MLK_SAMPLE_GROUPS && !mlk_row_sampled(count, rank);
 --- new
-    for (size_t read = 0; read < 3 * MLK_BLOCK_GROUPS && !mlk_row_sampled(count);
+    for (size_t read = 0; read < 3 * MLK_BLOCK_GROUPS && !mlk_row_sampled(count, rank);

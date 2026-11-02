@@ -139,10 +139,11 @@ STACK_PROSE = [
     ("The whole chain peaks at {} bytes", [["stack_connect_pq"]]),
     ("Its `ch_connect` peaks at {} bytes, through ML-KEM's decapsulation",
      [["stack_connect_webpki"]]),
-    ("(`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk,mlkem_decaps_hw,mlkem_keygen_dk_hw`) "
+    ("(`STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank,mlkem_decaps_rank_hw,"
+     "mlkem_keygen_dk_rank_hw`) "
      "the deepest chain is the chain walk into a P-384 verify, at {} bytes",
      [["stack_connect_webpki_without_mlkem"]]),
-    ("(`STACK_MAKE='TRUST=webpki HOST_TARGET=' STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`) "
+    ("(`STACK_MAKE='TRUST=webpki HOST_TARGET=' STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank`) "
      "its deepest chain is the chain walk into an RSA-4096 verify on 32-bit words, at {} bytes",
      [["stack_connect_webpki_device_without_mlkem"]]),
     ("`ch_srv_accept` peaks at {} bytes in the host object this host builds",

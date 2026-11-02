@@ -33,29 +33,26 @@ ifeq ($(PROFILE),cnsa2)
 STACK_BUDGET := 4096
 endif
 # ML-KEM's own sources get their own ceiling, set by ML-KEM's working
-# memory rather than chapulin's plumbing: K-PKE encrypt holds three
-# polynomial vectors and two polynomials, 5,632 bytes of coefficients
-# before locals (measured 5,744 with gcc 13.3 -O2, and 6,224 with Apple
-# clang 21 and clang 23.1.1 -O2 on arm64). 6.5 kB leaves room for
-# compiler variation; 6 kB did not hold clang. The ceiling applies to
-# KEX_HYBRID_SRCS alone, so every other file in an object that carries
-# ML-KEM (KEX=pq, every TRUST=webpki object since docs/decisions.md 53,
-# and every server role since docs/decisions.md 54) keeps the ceiling
-# above and a new buffer there still fails. See
-# docs/invariants.md INV-19 and docs/performance.md's memory table.
-STACK_BUDGET_KEX_HYBRID := 6656
-# At ML-KEM-1024, which PROFILE=cnsa2 alone builds, each polynomial vector
-# holds four polynomials, not three: K-PKE encrypt measured 7,760 bytes
-# and the key expansion 6,320 (Apple clang 21 -O2, arm64). 8 kB keeps the
-# margin the 6.5 kB ceiling keeps at ML-KEM-768 (docs/decisions.md 150).
-ifeq ($(PROFILE),cnsa2)
-STACK_BUDGET_KEX_HYBRID := 8192
-endif
+# memory rather than chapulin's plumbing: K-PKE encrypt holds the vector r
+# and four polynomials, and K-PKE decrypt and the key expansion code one
+# polynomial of each other vector at a time (docs/decisions.md 177).
+# Measured with Apple clang 23 -O2 on arm64: mlk_pke_encrypt at 3,664
+# bytes at ML-KEM-768, 4,176 at ML-KEM-1024 and 4,192 in an object that
+# runs both ranks, whose vectors hold four polynomials. gcc 13.3 -O2 on
+# x86-64 gives 3,712, 4,224 and 4,256.
+# 4.5 kB covers every object. The ceiling applies to KEX_HYBRID_SRCS
+# alone, so every other file in an object that carries ML-KEM (KEX=pq,
+# every TRUST=webpki object since docs/decisions.md 53, and every server
+# role since docs/decisions.md 54) keeps the ceiling above and a new
+# buffer there still fails. See docs/invariants.md INV-19 and
+# docs/performance.md's memory table.
+STACK_BUDGET_KEX_HYBRID := 4608
 # mlkem_avx2.c compiles mlkem.c's text once more, so it takes the same
 # ceiling: gcc 13.3 -O2 on x86-64 gives its K-PKE encrypt and
-# decapsulation the frames mlkem.c's take, 5,760 and 5,504 bytes. Its row
-# sampler holds the row's three entries, so mlk_matvec_row's frame is
-# 2,656 bytes where mlkem.c's is 1,120 (docs/decisions.md 107).
+# decapsulation the frames mlkem.c's take, 3,712 and 3,472 bytes at
+# ML-KEM-768 (docs/decisions.md 177). Its row sampler holds the row's
+# three entries, so mlk_matvec_row's frame is 2,656 bytes where mlkem.c's
+# is 1,120 (docs/decisions.md 107).
 STACK_KEX_HYBRID_COPIES = $(if $(filter mlkem.c,$(KEX_HYBRID_SRCS)),mlkem_avx2.c)
 # rsa_sign64.c, the RSA signer a host object runs on 64-bit words, gets
 # its own ceiling too, set by what a CRT signature holds at once.
@@ -3025,6 +3022,16 @@ bin/mlkem_test: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 bin/mlkem_test_1024: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+# The same file twice more under -DCH_MLKEM_TWO_RANKS, an object that runs
+# both ranks (docs/decisions.md 177): its own rank 3 and then its own rank
+# 4, so each set's tests above run on the code that takes the rank at run
+# time, and each binary adds the tests of the other rank.
+bin/mlkem_test_two_ranks: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+bin/mlkem_test_two_ranks_1024: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 # ML-DSA-87 verification against answers the test computes from FIPS 204:
 # the arithmetic, every Decompose and UseHint input, and whole signatures
 # under a key whose t1 is 0 (docs/decisions.md 154). Its own binary, out
@@ -4569,11 +4576,13 @@ bin/$(1)_host: $(2) $(3) $$(call host_srcs,$(3)) $$(HDRS) $$(TESTH)
 	@mkdir -p bin
 	$$(CC) $$(HOST_CFLAGS) -DCH_CPU_RUNTIME $(4) -I. -Itest -o $$@ $(2) $$(call host_srcs,$(3))
 endef
-HOST_VECTOR_TESTS := unit mlkem_test mlkem_test_1024 p256_ecdh_test p256_sign_test p256_sign_fault_test rsa_sign_test sha512_test hkdf384_test \
+HOST_VECTOR_TESTS := unit mlkem_test mlkem_test_1024 mlkem_test_two_ranks mlkem_test_two_ranks_1024 p256_ecdh_test p256_sign_test p256_sign_fault_test rsa_sign_test sha512_test hkdf384_test \
                      rsa_test rsa_pkcs1_test mldsa_signer_test
 $(eval $(call HOST_VECTOR_BIN,unit,test/unit_test.c,$(SRCS),))
 $(eval $(call HOST_VECTOR_BIN,mlkem_test,test/mlkem_test.c,$(MLKEM_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,mlkem_test_1024,test/mlkem_test.c,$(MLKEM_TEST_SRCS),-DCH_MLKEM_1024))
+$(eval $(call HOST_VECTOR_BIN,mlkem_test_two_ranks,test/mlkem_test.c,$(MLKEM_TEST_SRCS),-DCH_MLKEM_TWO_RANKS))
+$(eval $(call HOST_VECTOR_BIN,mlkem_test_two_ranks_1024,test/mlkem_test.c,$(MLKEM_TEST_SRCS),-DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024))
 $(eval $(call HOST_VECTOR_BIN,p256_ecdh_test,test/p256_ecdh_test.c,$(P256_ECDH_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,p256_sign_test,test/p256_sign_test.c,$(P256_SIGN_SRC),))
 $(eval $(call HOST_VECTOR_BIN,p256_sign_fault_test,test/p256_sign_fault_test.c,$(P256_SIGN_SRC),$(P256_SIGN_FAULT_DEF)))
@@ -4942,6 +4951,7 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   rsa_pkcs1_test \
                   webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test \
                   webpki_chain_test pem_files_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 \
+                  mlkem_test_two_ranks mlkem_test_two_ranks_1024 \
                   mldsa_test mldsa_signer_test mldsa_signer_test_ct_widemul pem_files_mldsa_test \
                   quic_driver_test \
                   quic_test $(patsubst bin/%,%,$(AES_EXTERN_BINS)) \
@@ -5637,6 +5647,8 @@ endif
 	./bin/diff_pem_files
 	$(MAKE) bin/diff_mlkem1024
 	./bin/diff_mlkem1024
+	$(MAKE) bin/diff_mlkem_two_ranks
+	./bin/diff_mlkem_two_ranks
 	$(MAKE) bin/diff_mldsa
 	./bin/diff_mldsa
 	$(MAKE) bin/diff_x509_mldsa
@@ -5675,12 +5687,18 @@ endif
 
 # ML-KEM-1024's arm: test/diff_mlkem.h's rows against the oracle's
 # mlkem1024_ commands, over mlkem.c under -DCH_MLKEM_1024
-# (docs/decisions.md 150). Its own main, because one object holds one
-# ML-KEM parameter set; test/diff_mlkem1024_test.c says so.
+# (docs/decisions.md 150). Its own main, because the parameter set changes
+# no other row; test/diff_mlkem1024_test.c says so.
 DIFF_MLKEM1024_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c ct_wipe.c
 bin/diff_mlkem1024: test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -Itest -o $@ test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS)
+# The same main over an object that runs both ranks, which compares each
+# round's rows at rank 4 and then at rank 3 (docs/decisions.md 177).
+bin/diff_mlkem_two_ranks: test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. -Itest -o $@ test/diff_mlkem1024_test.c \
+	  $(DIFF_MLKEM1024_SRCS)
 
 # ML-DSA-87's arm: the challenge Verify_internal recomputes and the
 # verdict, against the oracle's mldsa87_ commands (docs/decisions.md 154),
@@ -6100,8 +6118,8 @@ wycheproof:
 	  bin/wycheproof_mldsa_sign_vectors.h && \
 	python3 test/gen_wycheproof_ed25519.py $(WYCHEPROOF_DIR) bin/wycheproof_ed25519_vectors.h && \
 	$(MAKE) --no-print-directory -j4 wycheproof-default wycheproof-host wycheproof-aes-extern wycheproof-mldsa-library \
-	  wycheproof-mldsa-library-host wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-mldsa-sign \
-	  wycheproof-ed25519
+	  wycheproof-mldsa-library-host wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-mlkem1024-two-ranks \
+	  wycheproof-mlkem1024-two-ranks-host wycheproof-mldsa-sign wycheproof-ed25519
 # The three tests build and run at once, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
@@ -6152,6 +6170,12 @@ WYCHEPROOF_MLKEM1024_DEFAULT = $(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -Itest -Ibin 
   test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS)
 WYCHEPROOF_MLKEM1024_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -I. -Itest -Ibin \
   test/wycheproof_mlkem1024_test.c $(call host_srcs,$(WYCHEPROOF_MLKEM1024_SRCS))
+# The same suites on an object that runs both ranks (docs/decisions.md
+# 177), whose own rank is 4: each call takes the rank at run time.
+WYCHEPROOF_MLKEM1024_TWO_RANKS = $(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. -Itest -Ibin \
+  test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS)
+WYCHEPROOF_MLKEM1024_TWO_RANKS_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. \
+  -Itest -Ibin test/wycheproof_mlkem1024_test.c $(call host_srcs,$(WYCHEPROOF_MLKEM1024_SRCS))
 # The test-only ML-DSA-87 signer the PROFILE=cnsa2 mocks sign with,
 # held to the seeded signing suite over bin/wycheproof_mldsa_sign_vectors.h
 # (docs/decisions.md 157). It is test code alone, so it runs on the
@@ -6210,6 +6234,30 @@ wycheproof-mlkem1024:
 	  --output '$(WYCHEPROOF_MLKEM1024_DEFAULT) -E' -- $(MAKE) --no-print-directory wycheproof-run-mlkem1024
 wycheproof-run-mlkem1024:
 	@$(WYCHEPROOF_MLKEM1024_DEFAULT) -o bin/wycheproof_mlkem1024_test && ./bin/wycheproof_mlkem1024_test
+.PHONY: wycheproof-mlkem1024-two-ranks wycheproof-mlkem1024-two-ranks-host \
+        wycheproof-run-mlkem1024-two-ranks wycheproof-run-mlkem1024-two-ranks-host
+wycheproof-mlkem1024-two-ranks:
+	@python3 tools/stamp.py wycheproof-mlkem1024-two-ranks $(WYCHEPROOF_STAMP_INPUTS) \
+	  --output '$(WYCHEPROOF_MLKEM1024_TWO_RANKS) -E' -- $(MAKE) --no-print-directory \
+	  wycheproof-run-mlkem1024-two-ranks
+wycheproof-run-mlkem1024-two-ranks:
+	@$(WYCHEPROOF_MLKEM1024_TWO_RANKS) -o bin/wycheproof_mlkem1024_two_ranks_test && \
+	./bin/wycheproof_mlkem1024_two_ranks_test
+wycheproof-mlkem1024-two-ranks-host:
+ifeq ($(HOST_TARGET),)
+	$(call REQUIRE_ON_CI,wycheproof-mlkem1024-two-ranks-host)
+	@echo "SKIP the host two-rank ML-KEM-1024 Wycheproof test: $(CC) fails the host test"
+else
+	@python3 tools/stamp.py wycheproof-mlkem1024-two-ranks-host $(WYCHEPROOF_STAMP_INPUTS) \
+	  --output '$(WYCHEPROOF_MLKEM1024_TWO_RANKS_HOST) -E' -- $(MAKE) --no-print-directory \
+	  wycheproof-run-mlkem1024-two-ranks-host
+endif
+wycheproof-run-mlkem1024-two-ranks-host:
+	@set -e; $(WYCHEPROOF_MLKEM1024_TWO_RANKS_HOST) -o bin/wycheproof_mlkem1024_two_ranks_test_host; \
+	for bits in $(HOST_VECTOR_CPU); do \
+	  echo "== bin/wycheproof_mlkem1024_two_ranks_test_host $$bits (host object):"; \
+	  ./bin/wycheproof_mlkem1024_two_ranks_test_host $$bits; \
+	done
 # The DNSSEC Ed25519 check, algorithm 15, held to every case of
 # Wycheproof's ed25519_test.json through the public calls
 # (https://github.com/c4milo/chapulin/issues/189). It builds as a host
@@ -6419,6 +6467,9 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_encrypted_exts_test test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_1024 -I. -o bin/san/mlkem_test_1024 test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_TWO_RANKS -I. -o bin/san/mlkem_test_two_ranks test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. -o bin/san/mlkem_test_two_ranks_1024 \
+	  test/mlkem_test.c $(MLKEM_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mldsa_test test/mldsa_test.c $(MLDSA_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_MLDSA_SIGN_TEST -I. -Itest -o bin/san/mldsa_signer_test test/mldsa_signer_test.c \
 	  $(MLDSA_SIGNER_TEST_SRCS)
@@ -6427,7 +6478,7 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(HANDSHAKE_SEQUENCE_SRCS)
-	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 mlkem_test_two_ranks mlkem_test_two_ranks_1024 mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h && \
@@ -6674,6 +6725,10 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_1024 -I. -o bin/cross/mlkem_test_1024 test/mlkem_test.c \
 	  $(MLKEM_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_TWO_RANKS -I. -o bin/cross/mlkem_test_two_ranks \
+	  test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. \
+	  -o bin/cross/mlkem_test_two_ranks_1024 test/mlkem_test.c $(MLKEM_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mldsa_test test/mldsa_test.c $(MLDSA_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLDSA_SIGN_TEST -I. -Itest -o bin/cross/mldsa_signer_test \
 	  test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS)
@@ -6693,7 +6748,7 @@ cross-check:
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mlkem_test_1024 mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mlkem_test_1024 mlkem_test_two_ranks mlkem_test_two_ranks_1024 mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi; \
 	if [ -x wycheproof_mlkem1024_test ]; then echo "== wycheproof_mlkem1024_test ($(RUNNER))"; \
@@ -8966,6 +9021,14 @@ WIDEMUL_SPECS := \
 #   MOVZ on mips picks a trip count from SLTU on 963, and on rv32 one BEQ
 #   is the stack protector's check, which the 1924-byte array of entries
 #   adds. The m3 gcc code holds no IT.
+# ML-KEM's rank at run time (docs/decisions.md 177): mlkem.c's loops run
+#   to the rank a call passes, not to a constant, and K-PKE codes u one
+#   poly at a time. m3's 16 hold a BEQ in mlk_matvec_row on the term
+#   index and a CBZ in mlk_dot_term on it. arm64's and x86-64's 11 in
+#   mlkem.c@host and arm64's 11 in mlkem_hw.c hold mlk_matvec_row's tests
+#   of the rank and its loop, and in mlk_pke_encrypt one test of the
+#   widemul answer for each u poly that clang unrolls. The rank, the term
+#   index and the answer are public. Every other count went down.
 # The ML-DSA-87 signer's x86-64 host arms (docs/decisions.md 174), where
 #   the dispatchers pick the AVX2 lanes under CH_CPU_AVX2 and the multiply
 #   bit: each new branch is a TESTB or a CMPL of cpu with 12, those two
@@ -9229,9 +9292,9 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # p256_scalar_inverse, whose exponent n-2 is a build constant, the same
 # shape as p256_field.c's.
 WIDEMUL_NATIVE_BRANCH_CEILING := \
-  arm64/poly1305_native.c:22 arm64/mlkem_poly_native.c:76 \
+  arm64/poly1305_native.c:22 arm64/mlkem_poly_native.c:53 \
   x86-64/poly1305_native.c:22 \
-  x86-64/mlkem_poly_native.c:61 \
+  x86-64/mlkem_poly_native.c:54 \
   arm64/poly1305_vector_native.c:4 x86-64/poly1305_vector_native.c:4 \
   arm64/poly1305_avx2_native.c:0 x86-64/poly1305_avx2_native.c:4 \
   arm64/poly1305_ifma_native.c:0 x86-64/poly1305_ifma_native.c:4
@@ -9248,8 +9311,8 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
 HASH_HW_BRANCH_CEILING := \
   arm64/sha256_hw.c:6 x86-64/sha256_hw.c:10 arm64/hkdf_hw.c:19 x86-64/hkdf_hw.c:19 \
   arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:17 x86-64/sha512_hw.c:13 \
-  arm64/sha3_hw.c:72 x86-64/sha3_hw.c:0 arm64/mlkem_hw.c:5 x86-64/mlkem_hw.c:0 \
-  arm64/mlkem_poly_hw.c:56 x86-64/mlkem_poly_hw.c:0 \
+  arm64/sha3_hw.c:72 x86-64/sha3_hw.c:0 arm64/mlkem_hw.c:11 x86-64/mlkem_hw.c:0 \
+  arm64/mlkem_poly_hw.c:49 x86-64/mlkem_poly_hw.c:0 \
   arm64/sha512_compress_blocks.c:3 x86-64/sha512_compress_blocks.c:3 \
   arm64/sha512_avx2.c:0 x86-64/sha512_avx2.c:3
 # The wide P-256 files, under the two 64-bit specs alone, for the reason
@@ -9539,42 +9602,42 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # compiled with.
 BRANCH_CEILING := \
   m3/ct.c:2 m3/ct_wipe.c:7 m3/sha256.c:17 m3/sha3.c:38 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
-  m3/aead.c:4 m3/x25519.c:33 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:45 m3/drbg.c:9 \
+  m3/aead.c:4 m3/x25519.c:33 m3/p256_field.c:24 m3/mlkem.c:16 m3/mlkem_poly.c:43 m3/drbg.c:9 \
   m3/softmul.c:0 m3/aes.c:3 m3/quic_aes_soft.c:12 m3/aes_extern.c:0 \
   m3/gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:2 mips32r2/ct_wipe.c:6 mips32r2/sha256.c:16 mips32r2/sha3.c:25 \
   mips32r2/hkdf.c:16 mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 \
-  mips32r2/x25519.c:31 mips32r2/p256_field.c:21 mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:38 \
+  mips32r2/x25519.c:31 mips32r2/p256_field.c:21 mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:36 \
   mips32r2/drbg.c:8 mips32r2/softmul.c:0 mips32r2/aes.c:2 mips32r2/quic_aes_soft.c:12 \
   mips32r2/aes_extern.c:0 mips32r2/gcm.c:16 mips32r2/rsa_sign.c:27 rv32imac/ct.c:2 rv32imac/ct_wipe.c:7 \
   rv32imac/sha256.c:17 rv32imac/sha3.c:32 rv32imac/hkdf.c:18 rv32imac/chacha20.c:8 \
   rv32imac/poly1305.c:18 rv32imac/aead.c:2 rv32imac/x25519.c:31 rv32imac/p256_field.c:21 \
-  rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:38 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
+  rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:36 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
   rv32imac/aes.c:3 rv32imac/quic_aes_soft.c:12 rv32imac/aes_extern.c:0 \
   rv32imac/gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:1 m3-gcc/ct_wipe.c:4 m3-gcc/sha256.c:12 \
   m3-gcc/sha3.c:21 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
-  m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:14 m3-gcc/mlkem_poly.c:39 \
+  m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:13 m3-gcc/mlkem_poly.c:37 \
   m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 m3-gcc/aes.c:3 m3-gcc/quic_aes_soft.c:9 \
   m3-gcc/aes_extern.c:0 m3-gcc/gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:1 mips32r2-gcc/ct_wipe.c:3 \
   mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:17 mips32r2-gcc/hkdf.c:18 \
   mips32r2-gcc/chacha20.c:6 mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 \
-  mips32r2-gcc/x25519.c:20 mips32r2-gcc/p256_field.c:13 mips32r2-gcc/mlkem.c:14 \
-  mips32r2-gcc/mlkem_poly.c:43 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
+  mips32r2-gcc/x25519.c:20 mips32r2-gcc/p256_field.c:13 mips32r2-gcc/mlkem.c:13 \
+  mips32r2-gcc/mlkem_poly.c:41 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
   mips32r2-gcc/aes.c:3 mips32r2-gcc/quic_aes_soft.c:9 mips32r2-gcc/aes_extern.c:0 \
   mips32r2-gcc/gcm.c:13 mips32r2-gcc/rsa_sign.c:23 \
   mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:6 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:32 \
   mips32r2-gcc-O2/hkdf.c:23 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
   mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/p256_field.c:24 \
-  mips32r2-gcc-O2/mlkem.c:18 \
-  mips32r2-gcc-O2/mlkem_poly.c:41 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
+  mips32r2-gcc-O2/mlkem.c:17 \
+  mips32r2-gcc-O2/mlkem_poly.c:39 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
   rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:4 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:22 rv32imac-gcc/hkdf.c:23 \
   rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
-  rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
-  rv32imac-gcc/mlkem_poly.c:41 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
+  rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:19 \
+  rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/aes_extern.c:0 \
   rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:1 rv32ic-gcc/ct_wipe.c:4 \
   rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:22 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
   rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
-  rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:41 \
+  rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:19 rv32ic-gcc/mlkem_poly.c:39 \
   rv32ic-gcc/drbg.c:10 rv32ic-gcc/softmul.c:2 rv32ic-gcc/aes.c:4 \
   rv32ic-gcc/quic_aes_soft.c:12 rv32ic-gcc/aes_extern.c:0 rv32ic-gcc/gcm.c:23 \
   rv32ic-gcc/rsa_sign.c:27 mips32r2-gcc-O2/aes.c:3 mips32r2-gcc-O2/quic_aes_soft.c:12 \
@@ -9603,19 +9666,19 @@ BRANCH_CEILING := \
   arm64/rsa_avx2.c:0 x86-64/rsa_avx2.c:49 arm64/rsa_avx2.c@512:0 x86-64/rsa_avx2.c@512:86 \
   arm64/mlkem_vector.c:7 x86-64/mlkem_vector.c:7 \
   arm64/mldsa_vector.c:13 x86-64/mldsa_vector.c:13 \
-  arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:1 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:28 \
+  arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:1 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:24 \
   arm64/mldsa_avx2.c:0 x86-64/mldsa_avx2.c:8 \
   arm64/avx512_wipe.c:0 x86-64/avx512_wipe.c:0 \
   arm64/rsa_ifma_sign.c:0 x86-64/rsa_ifma_sign.c:62 arm64/rsa_ifma_sign.c@512:0 \
   x86-64/rsa_ifma_sign.c@512:65 \
   arm64/x25519.c@host:8 x86-64/x25519.c@host:12 \
-  arm64/mlkem_poly.c@host:56 x86-64/mlkem_poly.c@host:59 \
+  arm64/mlkem_poly.c@host:49 x86-64/mlkem_poly.c@host:50 \
   arm64/ct.c@host:9 x86-64/ct.c@host:4 arm64/ct_wipe.c@host:5 x86-64/ct_wipe.c@host:11 \
   arm64/base64.c@host:0 x86-64/base64.c@host:0 \
   arm64/sha256.c@host:28 x86-64/sha256.c@host:35 arm64/sha3.c@host:75 x86-64/sha3.c@host:84 \
   arm64/hkdf.c@host:19 x86-64/hkdf.c@host:19 arm64/chacha20.c@host:1 x86-64/chacha20.c@host:3 \
   arm64/poly1305.c@host:21 x86-64/poly1305.c@host:19 arm64/aead.c@host:4 x86-64/aead.c@host:6 \
-  arm64/mlkem.c@host:5 x86-64/mlkem.c@host:5 arm64/rsa_sign.c@host:55 x86-64/rsa_sign.c@host:47 \
+  arm64/mlkem.c@host:11 x86-64/mlkem.c@host:11 arm64/rsa_sign.c@host:55 x86-64/rsa_sign.c@host:47 \
   arm64/drbg.c@host:5 x86-64/drbg.c@host:5 \
   arm64/aes.c@host:20 x86-64/aes.c@host:19 arm64/gcm.c@host:22 x86-64/gcm.c@host:32 \
   arm64/p256_field.c@host:4 x86-64/p256_field.c@host:4 \

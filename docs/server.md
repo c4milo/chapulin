@@ -1515,7 +1515,7 @@ clang 21 at -O2 on arm64 they are 1,152, 4,368, 3,408, 912 and 896, so 10,736,
 at the bound of RSA-3072, and 1,408, 5,776, 4,496, 1,168 and 1,152, so 14,000,
 at the bound of RSA-4096. That chain is the deepest of a host server object:
 `bench/sram.sh` measures `ch_srv_accept`'s peak at 12,736 bytes through it,
-where the encapsulation's chain takes 10,464 (`docs/performance.md`, "What the
+where the encapsulation's chain takes 7,888 (`docs/performance.md`, "What the
 larger builds pay for").
 
 Two of those three peaks are above `STACK_BUDGET`, which is 2,560 bytes for a

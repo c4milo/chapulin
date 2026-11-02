@@ -819,7 +819,7 @@ The entries are grouped by area:
 
 #### mlkem
 
-- **Harnesses:** `mlkem` (fast), `mlkem_poly` (fast), `mlkem_1024` (fast), `mlkem_poly_1024` (fast), `mlkem_ntt` (slow), `mlkem_invntt_low` (slow), `mlkem_invntt_high` (slow), `mlkem_basemul` (slow)
+- **Harnesses:** `mlkem` (fast), `mlkem_poly` (fast), `mlkem_1024` (fast), `mlkem_poly_1024` (fast), `mlkem_two_ranks_768` (fast), `mlkem_two_ranks_1024` (fast), `mlkem_poly_two_ranks` (fast), `mlkem_ntt` (slow), `mlkem_invntt_low` (slow), `mlkem_invntt_high` (slow), `mlkem_basemul` (slow)
 - **Proves:**
   - keygen, encaps and decaps are safe for every seed, message, and
     hostile key or ciphertext, with the polynomial layer stubbed to its
@@ -835,10 +835,16 @@ The entries are grouped by area:
 
   `mlkem_1024` and `mlkem_poly_1024` prove the first two claims at
   ML-KEM-1024, under `-DCH_MLKEM_1024`: K = 4, and compression at
-  du = 11 and dv = 5 (decision 150). One object holds one parameter set,
-  so each set takes a formula of its own. The NTT, its inverse and the
-  base multiplication read one polynomial, so their four harnesses cover
-  both sets.
+  du = 11 and dv = 5 (decision 150). Three more prove them under
+  `-DCH_MLKEM_TWO_RANKS`, an object that takes the rank at run time
+  (decision 177). The KEM layer proves in `mlkem_two_ranks_768` and
+  `mlkem_two_ranks_1024`, one rank each. `mlkem_poly_two_ranks` proves
+  the polynomial layer from a free rank value, which reaches K = 3 and
+  K = 4 in one formula. The one-rank KEM harnesses pass a free rank
+  value, which `mlk_rank` maps to the object's rank. The stubs of the
+  compression also check that the rank they receive is one the object
+  holds. The NTT, its inverse and the base multiplication read one
+  polynomial, so their four harnesses cover both sets.
 - **Bound:** the full domain: every input is a fixed-size array, and the
   sampling read stops at its 1536-byte cap.
 
@@ -7597,8 +7603,9 @@ one does (decision 169). These cases are not in the 6,364 either.
 
 ML-KEM-1024's three suites, 511 cases, run in a binary of their own,
 `bin/wycheproof_mlkem1024_test`, built under `-DCH_MLKEM_1024` with the
-same runners, because one object holds one ML-KEM parameter set
-(decision 150). The 6,364 do not count them. They run in each lane that
+same runners (decision 150), and once more on an object that runs both
+ranks, `bin/wycheproof_mlkem1024_two_ranks_test` (decision 177). The
+6,364 do not count them. They run in each lane that
 builds `test/wycheproof_test.c`: the device object, the host object under
 both values of the multiply bit, the decomposed multiply, the sanitizers
 on both objects, and the cross-compiled lane.

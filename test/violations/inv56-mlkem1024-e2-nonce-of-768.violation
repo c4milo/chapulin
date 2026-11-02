@@ -8,6 +8,6 @@ reason: encryption draws e2 under nonce 6, ML-KEM-768's, where FIPS 203
   fail, while the ML-KEM-768 ones, where 2k is 6, pass.
 
 --- old
-    mlk_sample_cbd(&noise, coins, (uint8_t)(2 * MLKEM_K)); // e2
+    mlk_sample_cbd(&noise, coins, (uint8_t)(2 * rank)); // e2
 --- new
     mlk_sample_cbd(&noise, coins, (uint8_t)6); // e2

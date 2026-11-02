@@ -45,8 +45,8 @@
 #define mlk_poly_basemul mlk_poly_basemul_hw
 #define mlk_poly_tobytes mlk_poly_tobytes_hw
 #define mlk_poly_frombytes mlk_poly_frombytes_hw
-#define mlk_polyvec_compress mlk_polyvec_compress_hw
-#define mlk_polyvec_decompress mlk_polyvec_decompress_hw
+#define mlk_poly_compress_du mlk_poly_compress_du_hw
+#define mlk_poly_decompress_du mlk_poly_decompress_du_hw
 #define mlk_poly_compress mlk_poly_compress_hw
 #define mlk_poly_decompress mlk_poly_decompress_hw
 #define mlk_poly_frommsg mlk_poly_frommsg_hw
@@ -59,5 +59,9 @@
 #define mlkem_keygen_derand mlkem_keygen_derand_hw
 #define mlkem_encaps_derand mlkem_encaps_derand_hw
 #define mlkem_decaps mlkem_decaps_hw
+#define mlkem_keygen_dk_rank mlkem_keygen_dk_rank_hw
+#define mlkem_keygen_derand_rank mlkem_keygen_derand_rank_hw
+#define mlkem_encaps_derand_rank mlkem_encaps_derand_rank_hw
+#define mlkem_decaps_rank mlkem_decaps_rank_hw
 
 #endif

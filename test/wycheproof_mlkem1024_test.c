@@ -1,9 +1,11 @@
 // The three Wycheproof ML-KEM-1024 suites against mlkem.c built under
 // -DCH_MLKEM_1024, over the vectors test/gen_wycheproof.py writes to
 // bin/wycheproof_mlkem1024_vectors.h from the pinned checkout
-// (docs/decisions.md 150). One object holds one ML-KEM parameter set, so
+// (docs/decisions.md 150). The runners take the object's own rank, so
 // this binary runs apart from wycheproof_test.c, and the runners are the
-// ones that binary runs at ML-KEM-768 (test/wycheproof_mlkem.h).
+// ones that binary runs at ML-KEM-768 (test/wycheproof_mlkem.h). Under
+// -DCH_MLKEM_TWO_RANKS it runs the suites on an object that holds both
+// ranks (docs/decisions.md 177).
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>

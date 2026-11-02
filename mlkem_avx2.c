@@ -19,7 +19,7 @@
 
 #define CH_MLKEM_AVX2_COPY
 static void mlk_matvec_row(mlk_poly *out, const uint8_t seed[32], unsigned i, int transposed,
-                           const mlk_polyvec *s);
+                           const mlk_polyvec *s, unsigned rank);
 
 // After the renames, so they apply to every declaration the source includes. mlkem.h declares
 // each _avx2 name this copy defines for the callers that read it, so a definition here that
@@ -32,24 +32,24 @@ static void mlk_matvec_row(mlk_poly *out, const uint8_t seed[32], unsigned i, in
 #define MLK_BLOCK_GROUPS 56
 _Static_assert(3 * MLK_BLOCK_GROUPS == SHAKE128_RATE, "a SHAKE128 block holds whole groups");
 
-_Static_assert(MLKEM_K <= 4, "a row's entries fit the four Keccak states");
+_Static_assert(MLKEM_K_MAX <= 4, "a row's entries fit the four Keccak states");
 
-// Whether each of the row's MLKEM_K entries holds its 256 coefficients.
-static int mlk_row_sampled(const unsigned count[MLKEM_K]) {
+// Whether each of the row's rank entries holds its 256 coefficients.
+static int mlk_row_sampled(const unsigned count[MLKEM_K_MAX], unsigned rank) {
     int sampled = 1;
-    for (unsigned j = 0; j < MLKEM_K; j++) {
+    for (unsigned j = 0; j < rank; j++) {
         sampled = sampled && count[j] == 256;
     }
     return sampled;
 }
 
-// The first groups groups of the block each of the first MLKEM_K states
+// The first groups groups of the block each of the first rank states
 // holds, run through mlk_sample_groups into the entry whose stream the
 // state runs, for each entry that does not yet hold 256 coefficients.
-static void mlk_sample_block(mlk_polyvec *a, unsigned count[MLKEM_K], const keccak_x4 *state,
-                             size_t groups) {
+static void mlk_sample_block(mlk_polyvec *a, unsigned count[MLKEM_K_MAX], const keccak_x4 *state,
+                             size_t groups, unsigned rank) {
     uint8_t block[SHAKE128_RATE];
-    for (unsigned j = 0; j < MLKEM_K; j++) {
+    for (unsigned j = 0; j < rank; j++) {
         if (count[j] < 256) {
             keccak_avx2_block(block, state, j);
             count[j] = mlk_sample_groups(&a->vec[j], count[j], block, groups);
@@ -57,7 +57,7 @@ static void mlk_sample_block(mlk_polyvec *a, unsigned count[MLKEM_K], const kecc
     }
 }
 
-// The MLKEM_K entries of row i of A, or of A^T where transposed is 1, into
+// The rank entries of row i of A, or of A^T where transposed is 1, into
 // a->vec. Each entry's SHAKE128 stream runs on one of four Keccak states
 // side by side. Under ML-KEM-768 the fourth state runs the third entry's
 // stream again, and nothing reads it. Each block of each stream goes through
@@ -67,18 +67,19 @@ static void mlk_sample_block(mlk_polyvec *a, unsigned count[MLKEM_K], const kecc
 // entry is the one mlk_sample_ntt samples. The streams come from the public
 // seed, so the loop's branches read nothing secret, and nothing here is
 // wiped.
-static void mlk_sample_row(mlk_polyvec *a, const uint8_t seed[32], unsigned i, int transposed) {
+static void mlk_sample_row(mlk_polyvec *a, const uint8_t seed[32], unsigned i, int transposed,
+                           unsigned rank) {
     keccak_x4 state;
     uint8_t x0[4];
     uint8_t x1[4];
-    unsigned count[MLKEM_K] = {0};
+    unsigned count[MLKEM_K_MAX] = {0};
     for (unsigned j = 0; j < 4; j++) {
-        unsigned entry = j < MLKEM_K ? j : MLKEM_K - 1;
+        unsigned entry = j < rank ? j : rank - 1;
         x0[j] = transposed ? (uint8_t)i : (uint8_t)entry;
         x1[j] = transposed ? (uint8_t)entry : (uint8_t)i;
     }
     keccak_avx2_shake128_start(&state, seed, x0, x1);
-    for (size_t read = 0; read < MLK_SAMPLE_GROUPS && !mlk_row_sampled(count);
+    for (size_t read = 0; read < MLK_SAMPLE_GROUPS && !mlk_row_sampled(count, rank);
          read += MLK_BLOCK_GROUPS) {
         if (read > 0) {
             keccak_avx2_permute(&state);
@@ -87,20 +88,20 @@ static void mlk_sample_row(mlk_polyvec *a, const uint8_t seed[32], unsigned i, i
         if (groups > MLK_BLOCK_GROUPS) {
             groups = MLK_BLOCK_GROUPS;
         }
-        mlk_sample_block(a, count, &state, groups);
+        mlk_sample_block(a, count, &state, groups, rank);
     }
 }
 
-// mlkem.c's mlk_matvec_row with the row's MLKEM_K entries sampled first,
+// mlkem.c's mlk_matvec_row with the row's rank entries sampled first,
 // side by side: out = row i of A o s, or of A^T o s where transposed is 1. The
 // entries are public. prod holds products of a public matrix entry with
 // the secret vector, so it is wiped.
 static void mlk_matvec_row(mlk_poly *out, const uint8_t seed[32], unsigned i, int transposed,
-                           const mlk_polyvec *s) {
+                           const mlk_polyvec *s, unsigned rank) {
     mlk_polyvec a;
     mlk_poly prod;
-    mlk_sample_row(&a, seed, i, transposed);
-    for (unsigned j = 0; j < MLKEM_K; j++) {
+    mlk_sample_row(&a, seed, i, transposed, rank);
+    for (unsigned j = 0; j < rank; j++) {
         mlk_multiply_ntts(&prod, &a.vec[j], &s->vec[j]);
         if (j == 0) {
             *out = prod;

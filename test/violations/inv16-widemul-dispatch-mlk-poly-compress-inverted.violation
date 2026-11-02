@@ -10,7 +10,7 @@ reason: widemul_mlk_poly_compress inverts its branch, so mlk_poly_compress runs 
 
 --- old
     if (widemul_native(widemul)) {
-        mlk_poly_compress_native(out, p);
+        mlk_poly_compress_native(out, p, rank);
 --- new
     if (!widemul_native(widemul)) {
-        mlk_poly_compress_native(out, p);
+        mlk_poly_compress_native(out, p, rank);

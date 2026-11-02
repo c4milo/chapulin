@@ -43,8 +43,8 @@
 #define mlk_poly_basemul mlk_poly_basemul_native
 #define mlk_poly_tobytes mlk_poly_tobytes_native
 #define mlk_poly_frombytes mlk_poly_frombytes_native
-#define mlk_polyvec_compress mlk_polyvec_compress_native
-#define mlk_polyvec_decompress mlk_polyvec_decompress_native
+#define mlk_poly_compress_du mlk_poly_compress_du_native
+#define mlk_poly_decompress_du mlk_poly_decompress_du_native
 #define mlk_poly_compress mlk_poly_compress_native
 #define mlk_poly_decompress mlk_poly_decompress_native
 #define mlk_poly_frommsg mlk_poly_frommsg_native

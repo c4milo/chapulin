@@ -715,7 +715,7 @@ launch fast full sha3_round 26 "keccak_f1600.0:25,reference_f1600.0:25,reference
 # mode. Measured peaks (kissat): mlkem 1.4 GB / 45 s, mlkem_poly
 # 4.3 GB / 86 s, ntt 3.3 GB / 195 s, invntt halves 2.7 GB / 349 s
 # and 2.8 GB / 186 s, basemul 3.6 GB / 254 s.
-launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089" ct.c proof/ct_wipe_stub.c
+launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" ct.c proof/ct_wipe_stub.c
 launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c
 # The same two formulas at ML-KEM-1024 (docs/decisions.md 150), whose
 # object holds K = 4, du = 11 and dv = 5. The NTT, its inverse and the
@@ -730,8 +730,23 @@ launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fil
 # 310 s, 3.9 GB; mlkem_poly_1024 1269 properties, 263 s, 4.3 GB. The
 # macOS peaks read above the runner's, so mlkem_1024 takes the weight of
 # 3 that mlkem_poly takes.
-launch fast:3 full mlkem_1024 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
+launch fast:3 full mlkem_1024 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
 launch fast:3 full mlkem_poly_1024 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
+# The same two formulas on an object that runs both ranks (docs/decisions.md
+# 177), whose calls take the rank at run time. mlkem_poly_two_ranks
+# reaches K = 3 and K = 4 from one free rank value. The KEM layer takes a
+# formula for each rank, mlkem_two_ranks_768 and mlkem_two_ranks_1024,
+# with mlkem_1024's bounds, the sizes of the larger rank: a free rank made
+# every offset into dk and the ciphertext symbolic, and cbmc passed its
+# 40-minute limit. The six loops over the rank run 4 times at most, and
+# each KEM formula bounds them at 5: left to the default of 385, cbmc held
+# 8 GB after 33 minutes. Measured on 2026-11-02 in an amd64 container on
+# the M1 (proof/prove-one.sh, kissat): mlkem_two_ranks_768 566 properties,
+# 258 s, 2.4 GB; mlkem_two_ranks_1024 566, 625 s, 3.0 GB;
+# mlkem_poly_two_ranks 1567, 214 s, 2.0 GB.
+launch fast:3 full mlkem_two_ranks_768 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_TWO_RANKS
+launch fast:3 full mlkem_two_ranks_1024 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_TWO_RANKS
+launch fast:3 full mlkem_poly_two_ranks 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_TWO_RANKS
 # ML-DSA-87 verification (docs/decisions.md 154), four formulas: the layer
 # in mldsa.c over stubs of the polynomial layer, the polynomial layer and
 # the two transforms over the contracts of the coefficient functions

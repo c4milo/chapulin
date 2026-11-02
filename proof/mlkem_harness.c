@@ -3,8 +3,9 @@
 // branchless implicit-reject select — is memory-safe and UB-free over
 // its whole fixed-size input domains: every seed pair, every hostile
 // encapsulation key and message, every hostile decapsulation key and
-// ciphertext. ML-KEM's inputs are fixed-size arrays, so the bound IS
-// the domain and nothing sits outside it.
+// ciphertext, and every rank value. ML-KEM's inputs are fixed-size arrays
+// at each rank, so the bound IS the domain and nothing sits outside it.
+// Under -DCH_MLKEM_TWO_RANKS one run covers both ranks.
 //
 // The polynomial layer is stubbed to its pointer contracts with every
 // output havocked to full-range int16 coefficients — a superset of
@@ -21,6 +22,7 @@
 #include "mlkem.c"
 
 int16_t nondet_i16(void);
+unsigned nondet_unsigned(void);
 
 // Typed, fixed-index stores: filling through a byte pointer would make
 // every store a whole-object update in the SSA (see mlkem_poly_harness.c).
@@ -80,28 +82,31 @@ void mlk_poly_frombytes(mlk_poly *p, const uint8_t in[MLK_POLY_BYTES]) {
     havoc_poly(p);
 }
 
-void mlk_polyvec_compress(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v) {
-    __CPROVER_assert(__CPROVER_r_ok(v, sizeof *v), "compress input readable");
-    __CPROVER_assert(__CPROVER_w_ok(out, MLK_POLYVEC_COMP_BYTES), "compress output writable");
-    fill_nondet(out, MLK_POLYVEC_COMP_BYTES);
-}
-
-void mlk_polyvec_decompress(mlk_polyvec *v, const uint8_t in[MLK_POLYVEC_COMP_BYTES]) {
-    __CPROVER_assert(__CPROVER_r_ok(in, MLK_POLYVEC_COMP_BYTES), "decompress input readable");
-    __CPROVER_assert(__CPROVER_w_ok(v, sizeof *v), "decompress output writable");
-    for (unsigned k = 0; k < MLKEM_K; k++) {
-        havoc_poly(&v->vec[k]);
-    }
-}
-
-void mlk_poly_compress(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p) {
+// The four stubs below also check that every rank mlkem.c passes is one
+// the object holds, so mlk_rank is what reaches them.
+void mlk_poly_compress_du(uint8_t *out, const mlk_poly *p, unsigned rank) {
+    __CPROVER_assert(mlkem_rank_held(rank), "compress rank held");
     assert_poly_readable(p);
-    __CPROVER_assert(__CPROVER_w_ok(out, MLK_POLY_COMP_BYTES), "compress output writable");
-    fill_nondet(out, MLK_POLY_COMP_BYTES);
+    __CPROVER_assert(__CPROVER_w_ok(out, mlk_poly_comp_du_bytes(rank)), "compress output writable");
+    fill_nondet(out, mlk_poly_comp_du_bytes(rank));
 }
 
-void mlk_poly_decompress(mlk_poly *p, const uint8_t in[MLK_POLY_COMP_BYTES]) {
-    __CPROVER_assert(__CPROVER_r_ok(in, MLK_POLY_COMP_BYTES), "decompress input readable");
+void mlk_poly_decompress_du(mlk_poly *p, const uint8_t *in, unsigned rank) {
+    __CPROVER_assert(mlkem_rank_held(rank), "decompress rank held");
+    __CPROVER_assert(__CPROVER_r_ok(in, mlk_poly_comp_du_bytes(rank)), "decompress input readable");
+    havoc_poly(p);
+}
+
+void mlk_poly_compress(uint8_t *out, const mlk_poly *p, unsigned rank) {
+    __CPROVER_assert(mlkem_rank_held(rank), "compress rank held");
+    assert_poly_readable(p);
+    __CPROVER_assert(__CPROVER_w_ok(out, mlk_poly_comp_bytes(rank)), "compress output writable");
+    fill_nondet(out, mlk_poly_comp_bytes(rank));
+}
+
+void mlk_poly_decompress(mlk_poly *p, const uint8_t *in, unsigned rank) {
+    __CPROVER_assert(mlkem_rank_held(rank), "decompress rank held");
+    __CPROVER_assert(__CPROVER_r_ok(in, mlk_poly_comp_bytes(rank)), "decompress input readable");
     havoc_poly(p);
 }
 
@@ -157,25 +162,33 @@ void shake_squeeze(shake *s, uint8_t *out, size_t n) {
     fill_nondet(out, n);
 }
 
+#ifdef MLKEM_HARNESS_RANK
+#define HARNESS_RANK() ((unsigned)MLKEM_HARNESS_RANK)
+#else
+#define HARNESS_RANK() nondet_unsigned()
+#endif
+
 int main(void) {
     uint8_t d[32];
     uint8_t z[32];
     uint8_t m[32];
-    uint8_t ek[MLKEM_EK_LEN];
-    uint8_t dk[MLKEM_DK_LEN];
-    uint8_t ct[MLKEM_CT_LEN];
+    uint8_t ek[MLKEM_EK_LEN_MAX];
+    uint8_t dk[MLKEM_DK_LEN_MAX];
+    uint8_t ct[MLKEM_CT_LEN_MAX];
     uint8_t ss[MLKEM_SS_LEN];
 
+    // Every rank value: mlk_rank maps each to one the object holds. A
+    // harness that defines MLKEM_HARNESS_RANK runs that rank alone.
     fill_nondet(d, sizeof d);
     fill_nondet(z, sizeof z);
-    mlkem_keygen_derand(ek, dk, d, z);
+    mlkem_keygen_derand_rank(HARNESS_RANK(), ek, dk, d, z);
 
     fill_nondet(ek, sizeof ek);
     fill_nondet(m, sizeof m);
-    (void)mlkem_encaps_derand(nondet_u8(), ct, ss, ek, m);
+    (void)mlkem_encaps_derand_rank(nondet_u8(), HARNESS_RANK(), ct, ss, ek, m);
 
     fill_nondet(dk, sizeof dk);
     fill_nondet(ct, sizeof ct);
-    mlkem_decaps(nondet_u8(), ss, ct, dk);
+    mlkem_decaps_rank(nondet_u8(), HARNESS_RANK(), ss, ct, dk);
     return 0;
 }

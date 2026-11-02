@@ -184,99 +184,81 @@ void mlk_poly_frombytes(mlk_poly *p, const uint8_t in[MLK_POLY_BYTES]) {
     }
 }
 
-#if MLK_DU == 10
+#if MLK_HOLDS_768
 // ByteEncode_10 of Compress_10: four coefficients in five bytes.
-void mlk_polyvec_compress(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v) {
-    unsigned o = 0;
-    for (unsigned n = 0; n < MLKEM_K; n++) {
-        const mlk_poly *p = &v->vec[n];
-        for (size_t j = 0; j < 64; j++) {
-            uint16_t t0 = mlk_compress(mlk_freeze(p->coeffs[4 * j]), 10);
-            uint16_t t1 = mlk_compress(mlk_freeze(p->coeffs[4 * j + 1]), 10);
-            uint16_t t2 = mlk_compress(mlk_freeze(p->coeffs[4 * j + 2]), 10);
-            uint16_t t3 = mlk_compress(mlk_freeze(p->coeffs[4 * j + 3]), 10);
-            out[o + 0] = (uint8_t)t0;
-            out[o + 1] = (uint8_t)((t0 >> 8) | (t1 << 2));
-            out[o + 2] = (uint8_t)((t1 >> 6) | (t2 << 4));
-            out[o + 3] = (uint8_t)((t2 >> 4) | (t3 << 6));
-            out[o + 4] = (uint8_t)(t3 >> 2);
-            o += 5;
-        }
+static void mlk_poly_compress_10(uint8_t *out, const mlk_poly *p) {
+    for (size_t j = 0; j < 64; j++) {
+        uint16_t t0 = mlk_compress(mlk_freeze(p->coeffs[4 * j]), 10);
+        uint16_t t1 = mlk_compress(mlk_freeze(p->coeffs[4 * j + 1]), 10);
+        uint16_t t2 = mlk_compress(mlk_freeze(p->coeffs[4 * j + 2]), 10);
+        uint16_t t3 = mlk_compress(mlk_freeze(p->coeffs[4 * j + 3]), 10);
+        out[5 * j + 0] = (uint8_t)t0;
+        out[5 * j + 1] = (uint8_t)((t0 >> 8) | (t1 << 2));
+        out[5 * j + 2] = (uint8_t)((t1 >> 6) | (t2 << 4));
+        out[5 * j + 3] = (uint8_t)((t2 >> 4) | (t3 << 6));
+        out[5 * j + 4] = (uint8_t)(t3 >> 2);
     }
 }
 
-void mlk_polyvec_decompress(mlk_polyvec *v, const uint8_t in[MLK_POLYVEC_COMP_BYTES]) {
-    unsigned o = 0;
-    for (unsigned n = 0; n < MLKEM_K; n++) {
-        mlk_poly *p = &v->vec[n];
-        for (size_t j = 0; j < 64; j++) {
-            const uint8_t *a = &in[o];
-            uint16_t t0 = (uint16_t)(a[0] | ((uint16_t)a[1] << 8));
-            uint16_t t1 = (uint16_t)((a[1] >> 2) | ((uint16_t)a[2] << 6));
-            uint16_t t2 = (uint16_t)((a[2] >> 4) | ((uint16_t)a[3] << 4));
-            uint16_t t3 = (uint16_t)((a[3] >> 6) | ((uint16_t)a[4] << 2));
-            p->coeffs[4 * j + 0] = mlk_decompress((uint16_t)(t0 & 0x3ff), 10);
-            p->coeffs[4 * j + 1] = mlk_decompress((uint16_t)(t1 & 0x3ff), 10);
-            p->coeffs[4 * j + 2] = mlk_decompress((uint16_t)(t2 & 0x3ff), 10);
-            p->coeffs[4 * j + 3] = mlk_decompress((uint16_t)(t3 & 0x3ff), 10);
-            o += 5;
-        }
+static void mlk_poly_decompress_10(mlk_poly *p, const uint8_t *in) {
+    for (size_t j = 0; j < 64; j++) {
+        const uint8_t *a = &in[5 * j];
+        uint16_t t0 = (uint16_t)(a[0] | ((uint16_t)a[1] << 8));
+        uint16_t t1 = (uint16_t)((a[1] >> 2) | ((uint16_t)a[2] << 6));
+        uint16_t t2 = (uint16_t)((a[2] >> 4) | ((uint16_t)a[3] << 4));
+        uint16_t t3 = (uint16_t)((a[3] >> 6) | ((uint16_t)a[4] << 2));
+        p->coeffs[4 * j + 0] = mlk_decompress((uint16_t)(t0 & 0x3ff), 10);
+        p->coeffs[4 * j + 1] = mlk_decompress((uint16_t)(t1 & 0x3ff), 10);
+        p->coeffs[4 * j + 2] = mlk_decompress((uint16_t)(t2 & 0x3ff), 10);
+        p->coeffs[4 * j + 3] = mlk_decompress((uint16_t)(t3 & 0x3ff), 10);
     }
 }
-#else
+#endif
+
+#if MLK_HOLDS_1024
 // ByteEncode_11 of Compress_11: eight coefficients in eleven bytes.
-void mlk_polyvec_compress(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v) {
-    unsigned o = 0;
-    for (unsigned n = 0; n < MLKEM_K; n++) {
-        const mlk_poly *p = &v->vec[n];
-        for (size_t j = 0; j < 32; j++) {
-            uint16_t t[8];
-            for (size_t k = 0; k < 8; k++) {
-                t[k] = mlk_compress(mlk_freeze(p->coeffs[8 * j + k]), 11);
-            }
-            out[o + 0] = (uint8_t)t[0];
-            out[o + 1] = (uint8_t)((t[0] >> 8) | (t[1] << 3));
-            out[o + 2] = (uint8_t)((t[1] >> 5) | (t[2] << 6));
-            out[o + 3] = (uint8_t)(t[2] >> 2);
-            out[o + 4] = (uint8_t)((t[2] >> 10) | (t[3] << 1));
-            out[o + 5] = (uint8_t)((t[3] >> 7) | (t[4] << 4));
-            out[o + 6] = (uint8_t)((t[4] >> 4) | (t[5] << 7));
-            out[o + 7] = (uint8_t)(t[5] >> 1);
-            out[o + 8] = (uint8_t)((t[5] >> 9) | (t[6] << 2));
-            out[o + 9] = (uint8_t)((t[6] >> 6) | (t[7] << 5));
-            out[o + 10] = (uint8_t)(t[7] >> 3);
-            o += 11;
+static void mlk_poly_compress_11(uint8_t *out, const mlk_poly *p) {
+    for (size_t j = 0; j < 32; j++) {
+        uint16_t t[8];
+        for (size_t k = 0; k < 8; k++) {
+            t[k] = mlk_compress(mlk_freeze(p->coeffs[8 * j + k]), 11);
         }
+        out[11 * j + 0] = (uint8_t)t[0];
+        out[11 * j + 1] = (uint8_t)((t[0] >> 8) | (t[1] << 3));
+        out[11 * j + 2] = (uint8_t)((t[1] >> 5) | (t[2] << 6));
+        out[11 * j + 3] = (uint8_t)(t[2] >> 2);
+        out[11 * j + 4] = (uint8_t)((t[2] >> 10) | (t[3] << 1));
+        out[11 * j + 5] = (uint8_t)((t[3] >> 7) | (t[4] << 4));
+        out[11 * j + 6] = (uint8_t)((t[4] >> 4) | (t[5] << 7));
+        out[11 * j + 7] = (uint8_t)(t[5] >> 1);
+        out[11 * j + 8] = (uint8_t)((t[5] >> 9) | (t[6] << 2));
+        out[11 * j + 9] = (uint8_t)((t[6] >> 6) | (t[7] << 5));
+        out[11 * j + 10] = (uint8_t)(t[7] >> 3);
     }
 }
 
-void mlk_polyvec_decompress(mlk_polyvec *v, const uint8_t in[MLK_POLYVEC_COMP_BYTES]) {
-    unsigned o = 0;
-    for (unsigned n = 0; n < MLKEM_K; n++) {
-        mlk_poly *p = &v->vec[n];
-        for (size_t j = 0; j < 32; j++) {
-            const uint8_t *a = &in[o];
-            uint16_t t[8];
-            t[0] = (uint16_t)(a[0] | ((uint16_t)a[1] << 8));
-            t[1] = (uint16_t)((a[1] >> 3) | ((uint16_t)a[2] << 5));
-            t[2] = (uint16_t)((a[2] >> 6) | ((uint16_t)a[3] << 2) | ((uint16_t)a[4] << 10));
-            t[3] = (uint16_t)((a[4] >> 1) | ((uint16_t)a[5] << 7));
-            t[4] = (uint16_t)((a[5] >> 4) | ((uint16_t)a[6] << 4));
-            t[5] = (uint16_t)((a[6] >> 7) | ((uint16_t)a[7] << 1) | ((uint16_t)a[8] << 9));
-            t[6] = (uint16_t)((a[8] >> 2) | ((uint16_t)a[9] << 6));
-            t[7] = (uint16_t)((a[9] >> 5) | ((uint16_t)a[10] << 3));
-            for (size_t k = 0; k < 8; k++) {
-                p->coeffs[8 * j + k] = mlk_decompress((uint16_t)(t[k] & 0x7ff), 11);
-            }
-            o += 11;
+static void mlk_poly_decompress_11(mlk_poly *p, const uint8_t *in) {
+    for (size_t j = 0; j < 32; j++) {
+        const uint8_t *a = &in[11 * j];
+        uint16_t t[8];
+        t[0] = (uint16_t)(a[0] | ((uint16_t)a[1] << 8));
+        t[1] = (uint16_t)((a[1] >> 3) | ((uint16_t)a[2] << 5));
+        t[2] = (uint16_t)((a[2] >> 6) | ((uint16_t)a[3] << 2) | ((uint16_t)a[4] << 10));
+        t[3] = (uint16_t)((a[4] >> 1) | ((uint16_t)a[5] << 7));
+        t[4] = (uint16_t)((a[5] >> 4) | ((uint16_t)a[6] << 4));
+        t[5] = (uint16_t)((a[6] >> 7) | ((uint16_t)a[7] << 1) | ((uint16_t)a[8] << 9));
+        t[6] = (uint16_t)((a[8] >> 2) | ((uint16_t)a[9] << 6));
+        t[7] = (uint16_t)((a[9] >> 5) | ((uint16_t)a[10] << 3));
+        for (size_t k = 0; k < 8; k++) {
+            p->coeffs[8 * j + k] = mlk_decompress((uint16_t)(t[k] & 0x7ff), 11);
         }
     }
 }
 #endif
 
-#if MLK_DV == 4
+#if MLK_HOLDS_768
 // ByteEncode_4 of Compress_4: two coefficients in a byte.
-void mlk_poly_compress(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p) {
+static void mlk_poly_compress_4(uint8_t *out, const mlk_poly *p) {
     for (size_t i = 0; i < 32; i++) {
         uint16_t t[8];
         for (size_t j = 0; j < 8; j++) {
@@ -289,15 +271,17 @@ void mlk_poly_compress(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p) {
     }
 }
 
-void mlk_poly_decompress(mlk_poly *p, const uint8_t in[MLK_POLY_COMP_BYTES]) {
+static void mlk_poly_decompress_4(mlk_poly *p, const uint8_t *in) {
     for (size_t i = 0; i < 128; i++) {
         p->coeffs[2 * i] = mlk_decompress((uint16_t)(in[i] & 0x0f), 4);
         p->coeffs[2 * i + 1] = mlk_decompress((uint16_t)(in[i] >> 4), 4);
     }
 }
-#else
+#endif
+
+#if MLK_HOLDS_1024
 // ByteEncode_5 of Compress_5: eight coefficients in five bytes.
-void mlk_poly_compress(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p) {
+static void mlk_poly_compress_5(uint8_t *out, const mlk_poly *p) {
     for (size_t i = 0; i < 32; i++) {
         uint16_t t[8];
         for (size_t j = 0; j < 8; j++) {
@@ -311,7 +295,7 @@ void mlk_poly_compress(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p) {
     }
 }
 
-void mlk_poly_decompress(mlk_poly *p, const uint8_t in[MLK_POLY_COMP_BYTES]) {
+static void mlk_poly_decompress_5(mlk_poly *p, const uint8_t *in) {
     for (size_t i = 0; i < 32; i++) {
         const uint8_t *a = &in[5 * i];
         uint16_t t[8];
@@ -329,6 +313,73 @@ void mlk_poly_decompress(mlk_poly *p, const uint8_t in[MLK_POLY_COMP_BYTES]) {
     }
 }
 #endif
+
+// The rank is public: it names the group the peer chose, so each choice
+// below reads nothing secret. An object that holds one width calls it
+// whatever rank holds.
+void mlk_poly_compress_du(uint8_t *out, const mlk_poly *p, unsigned rank) {
+#if MLK_HOLDS_1024 && MLK_HOLDS_768
+    if (rank == MLKEM_RANK_1024) {
+        mlk_poly_compress_11(out, p);
+        return;
+    }
+    mlk_poly_compress_10(out, p);
+#elif MLK_HOLDS_1024
+    (void)rank;
+    mlk_poly_compress_11(out, p);
+#else
+    (void)rank;
+    mlk_poly_compress_10(out, p);
+#endif
+}
+
+void mlk_poly_decompress_du(mlk_poly *p, const uint8_t *in, unsigned rank) {
+#if MLK_HOLDS_1024 && MLK_HOLDS_768
+    if (rank == MLKEM_RANK_1024) {
+        mlk_poly_decompress_11(p, in);
+        return;
+    }
+    mlk_poly_decompress_10(p, in);
+#elif MLK_HOLDS_1024
+    (void)rank;
+    mlk_poly_decompress_11(p, in);
+#else
+    (void)rank;
+    mlk_poly_decompress_10(p, in);
+#endif
+}
+
+void mlk_poly_compress(uint8_t *out, const mlk_poly *p, unsigned rank) {
+#if MLK_HOLDS_1024 && MLK_HOLDS_768
+    if (rank == MLKEM_RANK_1024) {
+        mlk_poly_compress_5(out, p);
+        return;
+    }
+    mlk_poly_compress_4(out, p);
+#elif MLK_HOLDS_1024
+    (void)rank;
+    mlk_poly_compress_5(out, p);
+#else
+    (void)rank;
+    mlk_poly_compress_4(out, p);
+#endif
+}
+
+void mlk_poly_decompress(mlk_poly *p, const uint8_t *in, unsigned rank) {
+#if MLK_HOLDS_1024 && MLK_HOLDS_768
+    if (rank == MLKEM_RANK_1024) {
+        mlk_poly_decompress_5(p, in);
+        return;
+    }
+    mlk_poly_decompress_4(p, in);
+#elif MLK_HOLDS_1024
+    (void)rank;
+    mlk_poly_decompress_5(p, in);
+#else
+    (void)rank;
+    mlk_poly_decompress_4(p, in);
+#endif
+}
 
 // Constant time: the message is secret, so each coefficient is a mask of
 // its bit and (q+1)/2, never a choice between two values. The bit is read

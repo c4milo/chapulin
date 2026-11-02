@@ -9,10 +9,12 @@ reason: the copy's row sampler runs mlk_sample_ntt for each entry and
   mlk_sample_ntt.
 
 --- old
-static void mlk_sample_row(mlk_polyvec *a, const uint8_t seed[32], unsigned i, int transposed) {
+static void mlk_sample_row(mlk_polyvec *a, const uint8_t seed[32], unsigned i, int transposed,
+                           unsigned rank) {
     keccak_x4 state;
 --- new
-static void mlk_sample_row(mlk_polyvec *a, const uint8_t seed[32], unsigned i, int transposed) {
+static void mlk_sample_row(mlk_polyvec *a, const uint8_t seed[32], unsigned i, int transposed,
+                           unsigned rank) {
     for (unsigned e = 0; e < 3; e++) {
         mlk_sample_ntt(&a->vec[e], seed, transposed ? (uint8_t)i : (uint8_t)e,
                        transposed ? (uint8_t)e : (uint8_t)i);

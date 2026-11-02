@@ -24,9 +24,8 @@ void poly1305_final_decomposed_counted(poly1305 *p, uint8_t tag[POLY1305_TAG]);
 int x25519_decomposed_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
                               const uint8_t point[X25519_LEN]);
 void x25519_base_decomposed_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]);
-void mlk_polyvec_compress_decomposed_counted(uint8_t out[MLK_POLYVEC_COMP_BYTES],
-                                             const mlk_polyvec *v);
-void mlk_poly_compress_decomposed_counted(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
+void mlk_poly_compress_du_decomposed_counted(uint8_t *out, const mlk_poly *p, unsigned rank);
+void mlk_poly_compress_decomposed_counted(uint8_t *out, const mlk_poly *p, unsigned rank);
 void mlk_poly_tomsg_decomposed_counted(uint8_t msg[32], const mlk_poly *p);
 void p256_point_mul_decomposed_counted(p256_point *o, const p256_scalar *k, const p256_point *p);
 void p256_point_base_mul_decomposed_counted(p256_point *o, const p256_scalar *k);
@@ -61,8 +60,8 @@ uint32_t p256_adx_point_on_curve_counted(const uint8_t x[P256_FE_LEN],
 int p256_adx_verify_rs_counted(const uint8_t pub[64], const uint8_t msg_hash[32],
                                const uint8_t r_be[32], const uint8_t s_be[32]);
 #endif
-void mlk_polyvec_compress_native_counted(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v);
-void mlk_poly_compress_native_counted(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
+void mlk_poly_compress_du_native_counted(uint8_t *out, const mlk_poly *p, unsigned rank);
+void mlk_poly_compress_native_counted(uint8_t *out, const mlk_poly *p, unsigned rank);
 void mlk_poly_tomsg_native_counted(uint8_t msg[32], const mlk_poly *p);
 void p256_wide_mul_counted(p256_point *o, const p256_scalar *k, const p256_point *p);
 void p256_wide_base_mul_counted(p256_point *o, const p256_scalar *k);
@@ -100,14 +99,14 @@ void x25519_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
     x25519_base_decomposed_counted(out, scalar);
 }
 
-void mlk_polyvec_compress(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v) {
+void mlk_poly_compress_du(uint8_t *out, const mlk_poly *p, unsigned rank) {
     widemul_decomposed_calls++;
-    mlk_polyvec_compress_decomposed_counted(out, v);
+    mlk_poly_compress_du_decomposed_counted(out, p, rank);
 }
 
-void mlk_poly_compress(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p) {
+void mlk_poly_compress(uint8_t *out, const mlk_poly *p, unsigned rank) {
     widemul_decomposed_calls++;
-    mlk_poly_compress_decomposed_counted(out, p);
+    mlk_poly_compress_decomposed_counted(out, p, rank);
 }
 
 void mlk_poly_tomsg(uint8_t msg[32], const mlk_poly *p) {
@@ -239,14 +238,14 @@ int p256_adx_verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const 
 }
 #endif
 
-void mlk_polyvec_compress_native(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v) {
+void mlk_poly_compress_du_native(uint8_t *out, const mlk_poly *p, unsigned rank) {
     widemul_native_calls++;
-    mlk_polyvec_compress_native_counted(out, v);
+    mlk_poly_compress_du_native_counted(out, p, rank);
 }
 
-void mlk_poly_compress_native(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p) {
+void mlk_poly_compress_native(uint8_t *out, const mlk_poly *p, unsigned rank) {
     widemul_native_calls++;
-    mlk_poly_compress_native_counted(out, p);
+    mlk_poly_compress_native_counted(out, p, rank);
 }
 
 void mlk_poly_tomsg_native(uint8_t msg[32], const mlk_poly *p) {

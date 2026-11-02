@@ -3,7 +3,7 @@
 // this header and then mlkem.c, so the copy is mlkem.c's own text compiled
 // once more, as keccak_hw.h's copies are for the SHA-3 instructions.
 //
-// The renames give the four functions mlkem.c defines outside its
+// The renames give the eight functions mlkem.c defines outside its
 // translation unit a second name, the first with _avx2 after it, so the two
 // copies define no name twice. They rename mlkem.h's declarations as well
 // as the definitions. Every other call keeps its name: the copy runs
@@ -22,5 +22,9 @@
 #define mlkem_keygen_derand mlkem_keygen_derand_avx2
 #define mlkem_encaps_derand mlkem_encaps_derand_avx2
 #define mlkem_decaps mlkem_decaps_avx2
+#define mlkem_keygen_dk_rank mlkem_keygen_dk_rank_avx2
+#define mlkem_keygen_derand_rank mlkem_keygen_derand_rank_avx2
+#define mlkem_encaps_derand_rank mlkem_encaps_derand_rank_avx2
+#define mlkem_decaps_rank mlkem_decaps_rank_avx2
 
 #endif

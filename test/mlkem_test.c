@@ -11,12 +11,17 @@
 // a tampered ciphertext gives SHAKE256(z || c), and the modulus check
 // refuses a bad ek. bin/wycheproof_mlkem1024_test holds the known
 // answers, from the Wycheproof pin (docs/decisions.md 150).
+//
+// Under -DCH_MLKEM_TWO_RANKS the object runs both ranks, and the binary
+// adds three tests of the _rank calls: the ML-KEM-768 known answers at
+// rank 3, the lengths each rank takes, and round trips that alternate the
+// two ranks (docs/decisions.md 177).
 #include <stdio.h>
 #include <string.h>
 
 #include "mlkem.h"
 #include "test_widemul.h"
-#ifndef CH_MLKEM_1024
+#if !defined(CH_MLKEM_1024) || defined(CH_MLKEM_TWO_RANKS)
 #include "mlkem_vectors.h"
 #endif
 
@@ -32,6 +37,15 @@ static int failures = 0;
             (void)fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                  \
         }                                                                                          \
     } while (0)
+
+#if defined(CH_MLKEM_1024) || defined(CH_MLKEM_TWO_RANKS)
+// Each seed's bytes: byte j of seed s is s * 31 + j + tag.
+static void fill_seed(uint8_t out[32], int s, uint8_t tag) {
+    for (int j = 0; j < 32; j++) {
+        out[j] = (uint8_t)(s * 31 + j + tag);
+    }
+}
+#endif
 
 #ifndef CH_MLKEM_1024
 // Every seed KAT: keygen produces the reference ek and dk, encaps
@@ -131,12 +145,6 @@ static void test_encaps_rejects_bad_key(void) {
 }
 
 #else
-// Each seed's bytes: byte j of seed s is s * 31 + j + tag.
-static void fill_seed(uint8_t out[32], int s, uint8_t tag) {
-    for (int j = 0; j < 32; j++) {
-        out[j] = (uint8_t)(s * 31 + j + tag);
-    }
-}
 
 // Under eight seeds the three calls agree: decaps recovers the secret
 // encaps chose, and mlkem_keygen_dk writes mlkem_keygen_derand's dk with
@@ -228,6 +236,72 @@ static void test_encaps_rejects_bad_key(void) {
 }
 #endif
 
+#ifdef CH_MLKEM_TWO_RANKS
+// The ML-KEM-768 known answers through the _rank calls at rank 3, in an
+// object whose own rank may be 4.
+static void test_kats_at_rank_768(void) {
+    for (int i = 0; i < MLKEM_KAT_COUNT; i++) {
+        static uint8_t ek[MLKEM_EK_LEN_768];
+        static uint8_t dk[MLKEM_DK_LEN_768];
+        mlkem_keygen_derand_rank(MLKEM_RANK_768, ek, dk, mlk_kat_d[i], mlk_kat_z[i]);
+        CHECK(memcmp(ek, mlk_kat_ek[i], MLKEM_EK_LEN_768) == 0);
+        CHECK(memcmp(dk, mlk_kat_dk[i], MLKEM_DK_LEN_768) == 0);
+        uint8_t ct[MLKEM_CT_LEN_768];
+        uint8_t ss[MLKEM_SS_LEN];
+        CHECK(mlkem_encaps_derand_rank(TEST_WIDEMUL, MLKEM_RANK_768, ct, ss, ek, mlk_kat_m[i]) ==
+              0);
+        CHECK(memcmp(ct, mlk_kat_ct[i], MLKEM_CT_LEN_768) == 0);
+        CHECK(memcmp(ss, mlk_kat_K[i], MLKEM_SS_LEN) == 0);
+        uint8_t ss2[MLKEM_SS_LEN];
+        mlkem_decaps_rank(TEST_WIDEMUL, MLKEM_RANK_768, ss2, ct, dk);
+        CHECK(memcmp(ss2, mlk_kat_K[i], MLKEM_SS_LEN) == 0);
+    }
+}
+
+// The lengths FIPS 203 Table 3 gives each rank, and the ranks the object
+// holds: 3 and 4, and no other.
+static void test_rank_lengths(void) {
+    CHECK(mlkem_ek_len(MLKEM_RANK_768) == 1184 && mlkem_ek_len(MLKEM_RANK_1024) == 1568);
+    CHECK(mlkem_dk_len(MLKEM_RANK_768) == 2400 && mlkem_dk_len(MLKEM_RANK_1024) == 3168);
+    CHECK(mlkem_ct_len(MLKEM_RANK_768) == 1088 && mlkem_ct_len(MLKEM_RANK_1024) == 1568);
+    CHECK(mlkem_rank_held(MLKEM_RANK_768) && mlkem_rank_held(MLKEM_RANK_1024));
+    CHECK(!mlkem_rank_held(2) && !mlkem_rank_held(5) && !mlkem_rank_held(0));
+}
+
+// Under eight seeds that alternate the two ranks, the three _rank calls
+// agree as test_round_trips requires of one rank, the ek sits at FIPS
+// 203's dk + 384 * rank slice, and a tampered last byte of v gives
+// another secret. A call at one rank finds nothing the other left.
+static void test_ranks_alternate(void) {
+    for (int s = 0; s < 8; s++) {
+        unsigned rank = (s & 1) != 0 ? MLKEM_RANK_1024 : MLKEM_RANK_768;
+        uint8_t d[32];
+        uint8_t z[32];
+        uint8_t m[32];
+        fill_seed(d, s, 0x40);
+        fill_seed(z, s, 0x50);
+        fill_seed(m, s, 0x60);
+        static uint8_t ek[MLKEM_EK_LEN_MAX];
+        static uint8_t dk[MLKEM_DK_LEN_MAX];
+        static uint8_t dk2[MLKEM_DK_LEN_MAX];
+        mlkem_keygen_derand_rank(rank, ek, dk, d, z);
+        mlkem_keygen_dk_rank(rank, dk2, d, z);
+        CHECK(memcmp(dk, dk2, mlkem_dk_len(rank)) == 0);
+        CHECK(memcmp(dk + (size_t)384 * rank, ek, mlkem_ek_len(rank)) == 0);
+        CHECK(memcmp(dk + mlkem_dk_len(rank) - 32, z, 32) == 0);
+        uint8_t ct[MLKEM_CT_LEN_MAX];
+        uint8_t ss[MLKEM_SS_LEN];
+        uint8_t ss2[MLKEM_SS_LEN];
+        CHECK(mlkem_encaps_derand_rank(TEST_WIDEMUL, rank, ct, ss, ek, m) == 0);
+        mlkem_decaps_rank(TEST_WIDEMUL, rank, ss2, ct, dk);
+        CHECK(memcmp(ss, ss2, MLKEM_SS_LEN) == 0);
+        ct[mlkem_ct_len(rank) - 1] ^= 1;
+        mlkem_decaps_rank(TEST_WIDEMUL, rank, ss2, ct, dk);
+        CHECK(memcmp(ss, ss2, MLKEM_SS_LEN) != 0);
+    }
+}
+#endif
+
 // A host binary takes the ch_cfg.cpu value it runs under as its one
 // argument (test/test_cpu.h); every other binary takes none.
 int main(int argc, char **argv) {
@@ -244,6 +318,11 @@ int main(int argc, char **argv) {
     test_cctv_unlucky();
     test_implicit_reject();
     test_encaps_rejects_bad_key();
+#endif
+#ifdef CH_MLKEM_TWO_RANKS
+    test_kats_at_rank_768();
+    test_rank_lengths();
+    test_ranks_alternate();
 #endif
     if (failures == 0) {
 #ifdef CH_MLKEM_1024

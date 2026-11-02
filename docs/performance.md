@@ -91,15 +91,15 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3120 |
 | peak stack, `ch_connect` (PSK) | 2784 |
 | peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5472 / 3264 |
-| peak stack, `ch_connect` (`TRUST=webpki`) | 16688 |
-| peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16816 |
-| peak stack, `ch_connect` (`KEX=pq`) | 16016 |
+| peak stack, `ch_connect` (`TRUST=webpki`) | 12624 |
+| peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 12752 |
+| peak stack, `ch_connect` (`KEX=pq`) | 11952 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1888 |
 | peak stack, `ch_write` / `ch_close` | 1616 / 896 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 12736 |
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12896 |
-| peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 19456 |
-| peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`) | 22096 |
+| peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 13808 |
+| peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`) | 16448 |
 | peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`) | 28032 |
 
 Two of these rows grew in October 2026, and `bench/stack.py` names the
@@ -120,13 +120,14 @@ frame each time:
 
 - The session struct grows because the ClientHello carries a 1,216-byte
   key share and is built whole into one staging array.
-- The stack grows because ML-KEM's K-PKE encrypt holds three polynomial
-  vectors and two polynomials: 5,744 bytes in that one frame, against a
-  2,560-byte budget for every other build (INV-19 carries the per-build
-  numbers). The whole chain peaks at 16,016 bytes, through
-  `mlkem_decaps` into K-PKE encrypt, the matrix sampler and Keccak, so
-  the hybrid build needs about three times the stack of the classic one
-  rather than the single frame's 5,744.
+- The stack grows because ML-KEM's K-PKE encrypt holds the vector r and
+  four polynomials: 3,664 bytes in that one frame, against a 2,560-byte
+  budget for every other build (INV-19 carries the per-build numbers,
+  and [`docs/decisions.md`](decisions.md) 177 the code that holds one
+  polynomial of each other vector). The whole chain peaks at 11,952
+  bytes, through `mlkem_decaps_rank` into K-PKE encrypt, the matrix
+  sampler and Keccak, so the hybrid build needs more than twice the
+  stack of the classic one rather than the single frame's 3,664.
 
 A device that cannot spare it builds the classic key exchange.
 
@@ -137,16 +138,16 @@ P-256 scalar and point a retry to secp256r1 draws
 larger TX staging array for the `server_name` and ALPN extensions and
 for both key shares, the 1,216-byte hybrid one and a 32-byte x25519 one
 ([`docs/decisions.md`](decisions.md) 51), and for the third group it
-lists, secp256r1 (63). Its `ch_connect` peaks at 16,688 bytes, through
+lists, secp256r1 (63). Its `ch_connect` peaks at 12,624 bytes, through
 ML-KEM's decapsulation. With ML-KEM and its copies over the SHA-3
 instructions pruned from the call graph
-(`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk,mlkem_decaps_hw,mlkem_keygen_dk_hw`)
+(`STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank,mlkem_decaps_rank_hw,mlkem_keygen_dk_rank_hw`)
 the deepest chain is the chain walk into a P-384 verify, at 8,304 bytes:
 this host builds the host object, whose P-384 verifier runs on six
 64-bit words ([`docs/decisions.md`](decisions.md) 97). A device object
 holds no copies over the SHA-3 instructions, and with ML-KEM pruned
 (`STACK_MAKE='TRUST=webpki HOST_TARGET='
-STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`) its deepest chain is the chain
+STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank`) its deepest chain is the chain
 walk into an RSA-4096 verify on 32-bit words, at 7,344 bytes. RSA-4096
 is the widest modulus a public root carries.
 
@@ -163,12 +164,12 @@ signature it checks and a table of sixteen powers
 blocks of four words under clang for arm64 (118). With that signer
 pruned from the call graph (`STACK_PRUNE=rsa_sign64_pss`) the deepest
 chain is the encapsulation to the client's key into K-PKE encrypt and
-Keccak, at 10,464 bytes. With the encapsulation pruned as well
+Keccak, at 7,888 bytes. With the encapsulation pruned as well
 (`STACK_PRUNE=rsa_sign64_pss,srv_kex_share`) it is the ECDSA signer on
 the wide P-256 field, at 6,176 bytes. After each wide operation,
 `p256_wide_wipe_below` writes zero over the stack below it, in a frame
 of 3,120 bytes. A device object holds neither the 64-bit signer nor the
-wide field: its `ch_srv_accept` peaks at 10,432 bytes, through the
+wide field: its `ch_srv_accept` peaks at 7,856 bytes, through the
 encapsulation (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`).
 There the signer's deepest chain is `rsa_sign.c`'s ladder, at 5,360
 bytes (`STACK_PRUNE=srv_kex_share`).
@@ -201,12 +202,13 @@ The session struct is the same in both, because the blocking driver
 holds the handshake state on its stack. The receive floor holds one
 certificate of `CH_X509_MAX`, 7,808 bytes, in the raw mode and two in
 the CA mode, and the static working set adds that floor. Each
-`ch_connect` peaks through ML-KEM-1024's decapsulation, at 19,456 bytes
-in the raw mode and 22,096 in the CA mode. The CA mode's handshake
+`ch_connect` peaks through ML-KEM-1024's decapsulation, at 13,808 bytes
+in the raw mode and 16,448 in the CA mode. The CA mode's handshake
 state holds the leaf's 2,592-byte key, which is most of the difference.
-With ML-KEM's two calls pruned (`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`)
-the deepest chain is the ML-DSA-87 verify, at 13,376 bytes in the raw
-mode and 16,064 in the CA mode. A device that runs either mode gives
+With ML-KEM's two calls pruned
+(`STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank`) the deepest chain
+is the ML-DSA-87 verify, at 13,376 bytes in the raw mode and 16,064 in
+the CA mode, less than 0.5 kB under the peak. A device that runs either mode gives
 `ch_connect` the larger peak. The profile's 133-byte retry cookie
 (`HSP_COOKIE_MAX`, [`docs/decisions.md`](decisions.md) 162) adds 8
 bytes to each struct with the alignment after it.
@@ -222,7 +224,7 @@ column. `bench/sram.sh` measures:
 - a `ch_srv_accept` peak of 28,032 bytes, through the ML-DSA-87 signer's
   rejection loop under the CertificateVerify. With the signer pruned
   (`STACK_PRUNE=mldsa87_sign_cpu`) the peak is ML-KEM-1024's encapsulation,
-  at 12,640 bytes.
+  at 9,024 bytes.
 
 The send side needs no floor of its own. The 7.5 kB Certificate and the
 4,627-byte CertificateVerify each stream through `srv_frag`, 512 bytes a

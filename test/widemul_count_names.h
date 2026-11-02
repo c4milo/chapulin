@@ -26,14 +26,14 @@
 #undef poly1305_update_avx2
 #undef poly1305_update_ifma
 #undef poly1305_final
-#undef mlk_polyvec_compress
+#undef mlk_poly_compress_du
 #undef mlk_poly_compress
 #undef mlk_poly_tomsg
 #define poly1305_update poly1305_update_native_counted
 #define poly1305_update_avx2 poly1305_update_avx2_native_counted
 #define poly1305_update_ifma poly1305_update_ifma_native_counted
 #define poly1305_final poly1305_final_native_counted
-#define mlk_polyvec_compress mlk_polyvec_compress_native_counted
+#define mlk_poly_compress_du mlk_poly_compress_du_native_counted
 #define mlk_poly_compress mlk_poly_compress_native_counted
 #define mlk_poly_tomsg mlk_poly_tomsg_native_counted
 #else
@@ -41,7 +41,7 @@
 #define poly1305_final poly1305_final_decomposed_counted
 #define x25519 x25519_decomposed_counted
 #define x25519_base x25519_base_decomposed_counted
-#define mlk_polyvec_compress mlk_polyvec_compress_decomposed_counted
+#define mlk_poly_compress_du mlk_poly_compress_du_decomposed_counted
 #define mlk_poly_compress mlk_poly_compress_decomposed_counted
 #define mlk_poly_tomsg mlk_poly_tomsg_decomposed_counted
 #define p256_point_mul p256_point_mul_decomposed_counted

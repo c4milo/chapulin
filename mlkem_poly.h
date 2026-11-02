@@ -1,5 +1,5 @@
 // Z_q arithmetic and the Ring R_q = Z_q[X]/(X^256+1) for ML-KEM, at the
-// parameter set mlkem.h's MLKEM_K names.
+// ranks mlkem.h's mlkem_rank_held names.
 // Private to the mlkem_*.c files; nothing below tls.h includes it.
 //
 // A polynomial is 256 signed coefficients. Coefficients stay in the
@@ -17,16 +17,56 @@
 
 // eta1 and eta2 are 2 in both parameter sets (FIPS 203 Table 2).
 #define MLK_ETA 2 // CBD parameter: noise is centered binomial with eta=2
-#ifdef CH_MLKEM_1024
-#define MLK_DU 11 // ciphertext u compression bits
-#define MLK_DV 5  // ciphertext v compression bits
+
+// Which compression widths the object compiles: du=10 and dv=4 for
+// ML-KEM-768, du=11 and dv=5 for ML-KEM-1024 (FIPS 203 Table 2).
+#if !defined(CH_MLKEM_1024) || defined(CH_MLKEM_TWO_RANKS)
+#define MLK_HOLDS_768 1
 #else
-#define MLK_DU 10 // ciphertext u compression bits
-#define MLK_DV 4  // ciphertext v compression bits
+#define MLK_HOLDS_768 0
 #endif
-#define MLK_POLY_BYTES 384                                   // 256 coefficients at 12 bits each
-#define MLK_POLYVEC_BYTES ((size_t)MLK_POLY_BYTES * MLKEM_K) // the K polys of t-hat or s-hat
-#define MLK_POLY_COMP_BYTES ((size_t)32 * MLK_DV)            // one poly at dv bits: 256*dv/8
+#if defined(CH_MLKEM_1024) || defined(CH_MLKEM_TWO_RANKS)
+#define MLK_HOLDS_1024 1
+#else
+#define MLK_HOLDS_1024 0
+#endif
+
+// The rank a call runs: MLKEM_K in an object that holds one rank, and
+// under CH_MLKEM_TWO_RANKS 4 for 4 and 3 for any other value. Every loop
+// and length below takes its rank from here, so no rank value reads or
+// writes past a vector of MLKEM_K_MAX polys.
+static inline unsigned mlk_rank(unsigned rank) {
+#ifdef CH_MLKEM_TWO_RANKS
+    return rank == MLKEM_RANK_1024 ? MLKEM_RANK_1024 : MLKEM_RANK_768;
+#else
+    (void)rank;
+    return MLKEM_K;
+#endif
+}
+
+// du and dv at a rank mlk_rank returned.
+static inline unsigned mlk_du(unsigned rank) {
+    return rank == MLKEM_RANK_1024 ? 11U : 10U;
+}
+
+static inline unsigned mlk_dv(unsigned rank) {
+    return rank == MLKEM_RANK_1024 ? 5U : 4U;
+}
+
+#define MLK_POLY_BYTES 384 // 256 coefficients at 12 bits each
+// One poly at dv bits, 256*dv/8 bytes; one poly of u at du bits; and the
+// rank polys of u, which a ciphertext holds ahead of v.
+static inline size_t mlk_poly_comp_bytes(unsigned rank) {
+    return (size_t)32 * mlk_dv(rank);
+}
+
+static inline size_t mlk_poly_comp_du_bytes(unsigned rank) {
+    return (size_t)32 * mlk_du(rank);
+}
+
+static inline size_t mlk_polyvec_comp_bytes(unsigned rank) {
+    return mlk_poly_comp_du_bytes(rank) * rank;
+}
 // Rejection-sampling read cap, in three-byte groups: 1536 XOF bytes.
 // 704 already put the probability of needing more below 2^-128, and
 // the cap is what makes the sampling loop CBMC-unwindable.
@@ -36,15 +76,14 @@
 // spans two blocks.
 #define MLK_SAMPLE_CHUNK_GROUPS 8
 #define MLK_SAMPLE_CHUNKS 64
-#define MLK_POLYVEC_COMP_BYTES ((size_t)32 * MLK_DU * MLKEM_K) // K polys at du bits: K*256*du/8
-#define MLK_CBD_BYTES 128                                      // PRF output feeding CBD: 64*eta
+#define MLK_CBD_BYTES 128 // PRF output feeding CBD: 64*eta
 
 typedef struct {
     int16_t coeffs[MLKEM_N];
 } mlk_poly;
 
 typedef struct {
-    mlk_poly vec[MLKEM_K];
+    mlk_poly vec[MLKEM_K_MAX];
 } mlk_polyvec;
 
 // Number-theoretic transform and its inverse, matched to the coefficient
@@ -67,13 +106,17 @@ void mlk_poly_tomont(mlk_poly *p); // multiply every coefficient by R mod q
 void mlk_poly_tobytes(uint8_t out[MLK_POLY_BYTES], const mlk_poly *p);
 void mlk_poly_frombytes(mlk_poly *p, const uint8_t in[MLK_POLY_BYTES]);
 
-// Compress_du / Decompress_du over the u vector (du=10 or 11 bits).
-void mlk_polyvec_compress(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v);
-void mlk_polyvec_decompress(mlk_polyvec *v, const uint8_t in[MLK_POLYVEC_COMP_BYTES]);
+// Compress_du / Decompress_du over one poly of the u vector, at du=10
+// bits for rank 3 or 11 for rank 4, over mlk_poly_comp_du_bytes bytes.
+// rank is a value mlk_rank returned. A ciphertext's u is the rank polys
+// side by side, so K-PKE codes one poly at a time and keeps no u vector.
+void mlk_poly_compress_du(uint8_t *out, const mlk_poly *p, unsigned rank);
+void mlk_poly_decompress_du(mlk_poly *p, const uint8_t *in, unsigned rank);
 
-// Compress_dv / Decompress_dv over the v poly (dv=4 or 5 bits).
-void mlk_poly_compress(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
-void mlk_poly_decompress(mlk_poly *p, const uint8_t in[MLK_POLY_COMP_BYTES]);
+// Compress_dv / Decompress_dv over the v poly, at dv=4 bits for rank 3 or
+// 5 for rank 4, over mlk_poly_comp_bytes bytes.
+void mlk_poly_compress(uint8_t *out, const mlk_poly *p, unsigned rank);
+void mlk_poly_decompress(mlk_poly *p, const uint8_t *in, unsigned rank);
 
 // One message bit per coefficient: Decompress_1 on encode, Compress_1 on
 // decode (FIPS 203 ByteDecode_1 / ByteEncode_1 with compression).
@@ -118,8 +161,8 @@ void mlk_sample_cbd(mlk_poly *p, const uint8_t seed[32], uint8_t nonce);
 // The native copies of the entries above that are built on the widening multiply,
 // which a host object holds beside them (mlkem_poly_native.c, widemul_native.h) and
 // widemul.h's dispatchers call for WIDEMUL_CONSTANT_TIME.
-void mlk_polyvec_compress_native(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v);
-void mlk_poly_compress_native(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
+void mlk_poly_compress_du_native(uint8_t *out, const mlk_poly *p, unsigned rank);
+void mlk_poly_compress_native(uint8_t *out, const mlk_poly *p, unsigned rank);
 void mlk_poly_tomsg_native(uint8_t msg[32], const mlk_poly *p);
 #endif
 

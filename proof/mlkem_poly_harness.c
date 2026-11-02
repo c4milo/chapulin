@@ -30,6 +30,7 @@
 #include "mlkem_poly.c"
 
 int16_t nondet_i16(void);
+unsigned nondet_unsigned(void);
 
 // Typed, fixed-index stores: filling through a byte pointer would make
 // every store a whole-object update in the SSA, and 2,500 of those are
@@ -65,10 +66,12 @@ int main(void) {
     mlk_poly a;
     mlk_poly b;
     mlk_poly r;
-    mlk_polyvec v;
     uint8_t seed[32];
     uint8_t msg[32];
-    uint8_t packed[MLK_POLYVEC_COMP_BYTES]; // largest byte form: 960, or 1408 at ML-KEM-1024
+    uint8_t packed[MLK_POLY_BYTES]; // the largest byte form, ByteEncode_12
+    // The rank mlkem.c passes, from every rank value: under
+    // -DCH_MLKEM_TWO_RANKS the codings of both ranks.
+    unsigned rank = mlk_rank(nondet_unsigned());
 
     fill_nondet(seed, sizeof seed);
     mlk_sample_ntt(&r, seed, nondet_u8(), nondet_u8());
@@ -100,16 +103,14 @@ int main(void) {
     mlk_poly_tobytes(packed, &a);
     fill_nondet(packed, sizeof packed);
     mlk_poly_frombytes(&r, packed);
-    for (unsigned k = 0; k < MLKEM_K; k++) {
-        fill_poly_nondet(&v.vec[k]);
-    }
-    mlk_polyvec_compress(packed, &v);
-    fill_nondet(packed, sizeof packed);
-    mlk_polyvec_decompress(&v, packed);
     fill_poly_nondet(&a);
-    mlk_poly_compress(packed, &a);
+    mlk_poly_compress_du(packed, &a, rank);
     fill_nondet(packed, sizeof packed);
-    mlk_poly_decompress(&r, packed);
+    mlk_poly_decompress_du(&r, packed, rank);
+    fill_poly_nondet(&a);
+    mlk_poly_compress(packed, &a, rank);
+    fill_nondet(packed, sizeof packed);
+    mlk_poly_decompress(&r, packed, rank);
     fill_nondet(msg, sizeof msg);
     mlk_poly_frommsg(&r, msg);
     fill_poly_nondet(&b);

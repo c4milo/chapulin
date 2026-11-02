@@ -1,7 +1,7 @@
 invariant: INV-16
 file: widemul.h
 catches: widemul_runtime_test
-reason: widemul_mlk_polyvec_compress inverts its branch, so mlk_polyvec_compress runs the native
+reason: widemul_mlk_poly_compress_du inverts its branch, so mlk_poly_compress_du runs the native
   multiply for every answer but WIDEMUL_CONSTANT_TIME, a wiped direction's 0
   and WIDEMUL_NOT_STATED among them, and the decomposition for the one
   answer that states the multiply's timing. Every byte still comes out
@@ -10,7 +10,7 @@ reason: widemul_mlk_polyvec_compress inverts its branch, so mlk_polyvec_compress
 
 --- old
     if (widemul_native(widemul)) {
-        mlk_polyvec_compress_native(out, v);
+        mlk_poly_compress_du_native(out, p, rank);
 --- new
     if (!widemul_native(widemul)) {
-        mlk_polyvec_compress_native(out, v);
+        mlk_poly_compress_du_native(out, p, rank);

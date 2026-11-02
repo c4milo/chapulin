@@ -2524,29 +2524,42 @@ last `ROLE=server` stub, as the entry said it would.
   flight's `hs_suite_offered`, so no edit to one of them alone can take
   a second suite.
 
-### INV-56 — mlkem.c computes FIPS 203 at the parameter set its object holds
+### INV-56 — mlkem.c computes FIPS 203 at each rank its object holds
 
 - **Claim.** An object built with `-DCH_MLKEM_1024` computes ML-KEM-1024,
-  and every other object ML-KEM-768, each as FIPS 203 states it: K, du
-  and dv from Table 2, the lengths from Table 3, the dk layout, the noise
-  nonces and the compression of each set (decision 150).
-- **Mechanism.** `mlkem.h` and `mlkem_poly.h` set K, du and dv from the
-  one define, and `mlkem.c` derives each length, each offset inside dk
-  and each noise nonce from `MLKEM_K`. `mlkem_poly.c` packs u in 10 or
-  11 bits and v in 4 or 5, under `MLK_DU` and `MLK_DV`. One object holds
-  one set, and nothing picks between them at run time.
+  every other object ML-KEM-768, and an object built with
+  `-DCH_MLKEM_TWO_RANKS` both, at the rank each `_rank` call names, each
+  as FIPS 203 states it: K, du and dv from Table 2, the lengths from
+  Table 3, the dk layout, the noise nonces and the compression of each
+  set (decisions 150 and 177).
+- **Mechanism.** `mlkem.h` sets `MLKEM_K`, the object's rank, from
+  `CH_MLKEM_1024`, and `MLKEM_K_MAX` from it and `CH_MLKEM_TWO_RANKS`.
+  Each `_rank` call takes its rank through `mlk_rank`, which returns
+  `MLKEM_K` in an object of one rank, so no call runs a rank the object
+  does not hold. `mlkem.c` derives each length, each offset inside dk and
+  each noise nonce from that rank, and `mlkem_poly.c` packs u in 10 or 11
+  bits and v in 4 or 5 by `mlk_du` and `mlk_dv`, with each width compiled
+  where `MLK_HOLDS_768` or `MLK_HOLDS_1024` names it.
 - **Check.** At ML-KEM-1024, `bin/mlkem_test_1024` checks the round trip,
   the implicit-reject secret SHAKE256(z || c) and the modulus check, and
   `bin/wycheproof_mlkem1024_test` runs Wycheproof's 511 known answers.
   At ML-KEM-768, `bin/mlkem_test` and the Wycheproof binary do the same
-  with the kyber-py, CCTV and Wycheproof vectors. `bin/diff` and
-  `bin/diff_mlkem1024` hold each set to `Spec/MlKem.lean`.
-- **Violation.** A PR drops a bit from the 11-bit packing; or keeps
-  ML-KEM-768's e2 nonce, 6, at K = 4. `inv56-mlkem1024-u-pack-drops-a-bit`
+  with the kyber-py, CCTV and Wycheproof vectors. `bin/mlkem_test_two_ranks`
+  and `bin/mlkem_test_two_ranks_1024` run those tests on a two-rank
+  object and add the ML-KEM-768 known answers at rank 3 and round trips
+  that alternate the ranks, and `wycheproof-mlkem1024-two-ranks` runs the
+  511 there. `bin/diff`, `bin/diff_mlkem1024` and `bin/diff_mlkem_two_ranks`
+  hold each set to `Spec/MlKem.lean`.
+- **Violation.** A PR drops a bit from the 11-bit packing; keeps
+  ML-KEM-768's e2 nonce, 6, at K = 4; or packs u at a rank's width in a
+  two-rank object by the other rank's test. `inv56-mlkem1024-u-pack-drops-a-bit`
   fails `bin/mlkem_test_1024`, because the decapsulation then rejects
   every honest ciphertext. `inv56-mlkem1024-e2-nonce-of-768` keeps the
   round trip whole, because both sides draw the same wrong noise, and
   Wycheproof's known answers fail it (`test/wycheproof.sh`).
+  `inv56-mlkem-two-ranks-u-width-inverted` fails
+  `bin/mlkem_test_two_ranks`, whose known answers at rank 3 then get a
+  ciphertext of the wrong width.
 
 ### INV-46 — a host object's ML-KEM NTT arithmetic gives the portable code's coefficients
 
@@ -6510,14 +6523,14 @@ last `ROLE=server` stub, as the entry said it would.
   `SUITE=aesgcm` alone holds, gets the same 384 for the same reason
   (measured 192 with gcc 13.3 and 248 with clang 18 and clang 23;
   decision 128).
-  ML-KEM's own sources, `KEX_HYBRID_SRCS`, get 6,656
+  ML-KEM's own sources, `KEX_HYBRID_SRCS`, get 4,608
   in every build that carries them, `KEX=pq`, every `TRUST=webpki`
-  object (decisions.md 53) and every server role (decisions.md 54):
-  K-PKE encrypt holds three polynomial vectors
-  and two polynomials (measured worst: `mlk_pke_encrypt` at 5,744 with
-  gcc 13.3 and 6,224 with clang 21 and 23 on arm64). Under
-  `PROFILE=cnsa2` they get 8,192, because ML-KEM-1024's vectors hold four
-  polynomials (measured 7,760 with Apple clang 21 on arm64). That ceiling is
+  object (decisions.md 53), every server role (decisions.md 54) and
+  `PROFILE=cnsa2`: K-PKE encrypt holds the vector r and four
+  polynomials (measured worst with clang 23 on arm64: `mlk_pke_encrypt`
+  at 3,664 at ML-KEM-768, 4,176 at ML-KEM-1024 and 4,192 in an object
+  that runs both ranks, decisions.md 177; 3,712, 4,224 and 4,256 with
+  gcc 13.3 on x86-64). That ceiling is
   per file, so a new buffer in any other file of those objects still
   fails at its build's budget. A server's own sources keep the 2,560-byte
   device budget: the largest, `srv_send_server_hello`, holds the

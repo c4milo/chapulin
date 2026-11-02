@@ -233,11 +233,11 @@ grep '^ch_anchors_from_pem' "$TMP/webpki.stack"
 # device object, which holds no copies over the SHA-3 instructions.
 echo "-- TRUST=webpki without ML-KEM; ch_connect peak = chain walk into a P-384 verify --"
 stack_report webpki_without_mlkem STACK_MAKE=TRUST=webpki \
-    STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk,mlkem_decaps_hw,mlkem_keygen_dk_hw
+    STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank,mlkem_decaps_rank_hw,mlkem_keygen_dk_rank_hw
 head -1 "$TMP/webpki_without_mlkem.stack"
 echo "-- TRUST=webpki device object without ML-KEM; peak = chain walk into an RSA-4096 verify --"
 stack_report webpki_device_without_mlkem "STACK_MAKE=TRUST=webpki HOST_TARGET=" \
-    STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk
+    STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank
 head -1 "$TMP/webpki_device_without_mlkem.stack"
 echo "-- KEX=pq; ch_connect peak includes ML-KEM's K-PKE frames --"
 stack_report pq STACK_MAKE=KEX=pq
@@ -270,7 +270,7 @@ stack_report webpki_aes "STACK_MAKE=TRUST=webpki SUITE=aesgcm"
 head -1 "$TMP/webpki_aes.stack"
 # The two ML-DSA-87 builds, each walked whole and then without ML-KEM's
 # two calls, which shows the deepest chain through the verifier.
-CNSA2_PRUNE=STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk
+CNSA2_PRUNE=STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank
 echo "-- PROFILE=cnsa2 TRUST=raw-mldsa; ch_connect peak = ML-KEM-1024's decapsulation --"
 stack_report cnsa2_mldsa "STACK_MAKE=PROFILE=cnsa2 AES=extern TRUST=raw-mldsa" \
     STACK_CFLAGS=-DCH_AES_EXTERN_CONSTANT_TIME

@@ -15460,6 +15460,75 @@ does nothing more.
       reason. **Passes from the high bit down**, which let two values
       meet.
 
+177. **ML-KEM takes its rank at run time, and K-PKE holds one polynomial
+    of each vector it does not read whole.** colibri's server
+    (https://github.com/c4milo/colibri/issues/115) has to answer
+    ML-KEM-1024 and the X25519MLKEM768 hybrid from one object. Before
+    this, `CH_MLKEM_1024` chose one rank for the whole object, and the
+    other rank needed a second copy of `mlkem.c`.
+
+    - **What changes.** `mlkem.h` adds four `_rank` calls, which take the
+      rank, 3 or 4, as their argument, and the four calls before run them
+      at `MLKEM_K`. Under `CH_MLKEM_TWO_RANKS` an object holds both ranks:
+      vectors take `MLKEM_K_MAX`, 4, polynomials, and `mlkem_poly.c`
+      holds both widths of each compression. In an object that holds one
+      rank, `mlk_rank` returns `MLKEM_K` whatever rank the call holds.
+      Under `CH_MLKEM_TWO_RANKS` it returns 4 for 4 and 3 for any other
+      value. So no rank value makes a call read or write past the lengths
+      of rank 4, and the call needs no assertion. The rank names a group
+      the peer can see, so each branch on it reads nothing secret.
+    - **The vectors.** K-PKE encrypt held t, r and u, and decrypt held u
+      and s, and each read entry i of t, u and s in step i alone. Each
+      product of the dot product now adds into its sum in the loop that
+      makes its operands, and each entry of u goes into the ciphertext
+      when it is computed, since a ciphertext's u is its entries side by
+      side. Key generation codes e and t one entry at a time too. So
+      encrypt holds r alone, decrypt no vector, and key generation s
+      alone. `mlk_polyvec_compress` gives way to `mlk_poly_compress_du`,
+      which codes one polynomial. cppcheck read the old loops at a run
+      time rank as possibly empty, and these loops leave nothing for it
+      to read uninitialized.
+    - **Numbers.** Frames on the M1 Pro, Apple clang 23 at `-O2`:
+
+      | frame | 768, before | 768, after | 1024, before | 1024, after | both |
+      |---|---|---|---|---|---|
+      | K-PKE encrypt | 6,240 | 3,664 | 7,776 | 4,176 | 4,192 |
+      | key generation | 4,784 | 2,736 | 6,320 | 3,248 | 3,296 |
+      | decapsulation | 4,736 | 3,248 | 5,760 | 3,728 | 3,760 |
+
+      `bench/sram.sh` peaks drop by 2.6 to 5.6 kB: `ch_connect` under
+      `KEX=pq` from 16,016 to 11,952 bytes, under `TRUST=webpki` from
+      16,688 to 12,624, and `ch_srv_accept` without the RSA signer from
+      10,464 to 7,888. Instructions retired over 2,000 calls, per call:
+
+      | object | encaps 768 | decaps 768 | encaps 1024 |
+      |---|---|---|---|
+      | portable, before | 331,757 | 371,215 | 512,952 |
+      | portable, after | 325,636 | 365,007 | 509,697 |
+      | host, before | 298,067 | 314,688 | 465,666 |
+      | host, after | 291,225 | 308,648 | 462,456 |
+      | host, both ranks | 291,387 | 309,000 | 462,011 |
+
+      The rank at run time costs nothing measurable. The branch counts of
+      `lint-wide-multiply` move by the rank's loops and tests, and the
+      Makefile records each one.
+    - **What holds it.** `bin/mlkem_test_two_ranks` and its `_1024` twin
+      run each set's tests over the code at run time rank, add the
+      ML-KEM-768 known answers at rank 3 and round trips that alternate
+      the ranks, in the device object, the host object, the sanitizers
+      and the cross lane. `wycheproof-mlkem1024-two-ranks` runs the
+      ML-KEM-1024 suites on a two-rank object, and
+      `bin/diff_mlkem_two_ranks` holds both ranks to the Lean spec, whose
+      model needs no change. The `mlkem_two_ranks_768`,
+      `mlkem_two_ranks_1024` and `mlkem_poly_two_ranks` harnesses prove
+      each claim of the one-rank harnesses on a two-rank object.
+    - **Rejected:** **a second copy of `mlkem.c` under renamed symbols**,
+      about 56 kB more text in a host object, with every frame sized as
+      before. Camilo ruled for the rank at run time on 2026-11-02.
+      **Assertions on the rank**, because a total `mlk_rank` makes no
+      rank value unsafe, and the tests and the CBMC harnesses link no
+      `ch_assert_fail`.
+
 178. **An x86-64 host object samples ML-DSA-87's matrix A four entries
     at a time on the four-way Keccak, under `CH_CPU_AVX2`.** After entry
     174 a signature on x86-64 took 1.02 to 1.10 times OpenSSL's, and
