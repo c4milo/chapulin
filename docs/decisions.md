@@ -15386,8 +15386,18 @@ does nothing more.
         stopped the compiler from moving loads and stores across it: with
         both changes the shared secret took 167,300 cycles under gcc and
         156,300 under clang, slower than the inline product alone.
-      - **The point formulas in assembly.** That is still OpenSSL's
-        design and the next step, if Camilo chooses it.
+      - **The point formulas in assembly.** A prototype wrote the
+        doubling as one statement: the same products and squares, with
+        each value stored to a frame and read back. It agreed with the C
+        formula on 20,000 doublings. On an EPYC 7763 it took 446 cycles,
+        against 384 under gcc and 344 under clang, and a shared secret
+        took 172,900 cycles, against 159,100 and 144,300. Zen 3 waits on
+        each load of a value just stored. On an EPYC 9V45 it took 206
+        cycles, against 241 under gcc and 200 under clang. OpenSSL's
+        doubling takes 301 cycles on the 7763, because it keeps values in
+        registers between operations. A doubling scheduled that way
+        could save at most about 13% of a shared secret under gcc and 8%
+        under clang. Camilo chose to stop at the inline product.
 
 176. **RejBoundedPoly moves each kept value to its position by ten masked
     passes, in place of a masked write to all 256 positions for each
