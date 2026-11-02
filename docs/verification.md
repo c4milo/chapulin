@@ -2542,20 +2542,23 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 - **Proves:** the server's key exchange, `srv_kex.c`, stays safe over
   any groups and shares a parsed ClientHello reports and every verdict
   its two primitives return, and computes what `srv_kex.h` states:
-  - X25519MLKEM768 whenever the client listed it, x25519 when it listed
-    x25519 and not the hybrid, and secp256r1 only when it listed
-    neither;
+  - ML-KEM-1024 whenever the client listed it, X25519MLKEM768 when it
+    listed the hybrid and not ML-KEM-1024, x25519 when it listed x25519
+    and neither ML-KEM group, and secp256r1 only when it listed none of
+    the others (`docs/decisions.md` 179);
   - an x25519 share that is `h->pub`;
   - a hybrid share that is the ciphertext and then `h->pub`,
-    encapsulated to the key the hello carried;
+    encapsulated at rank 3 to the key the hello carried;
+  - an ML-KEM-1024 share that is the 1,568-byte ciphertext,
+    encapsulated at rank 4 to the key the hello carried;
   - a secp256r1 share that is the point the key generation wrote, drawn
     only after the client's point passed its check;
   - a refused encapsulation key that keeps no ML-KEM secret, and a
     refused client point that draws no key;
   - input keying material that is the ML-KEM secret and then the x25519
     one, computed against the x25519 value that ends the client's share,
-    which is RFC 10024's order, or the P-256 secret of the scalar and
-    the client's point;
+    which is RFC 10024's order, the ML-KEM-1024 secret alone with no
+    x25519, or the P-256 secret of the scalar and the client's point;
   - on both exits, a wiped ML-KEM secret, P-256 scalar and x25519 key
     pair, with the whole 64-byte secret wiped on a refusal (INV-3,
     INV-17).
@@ -2737,7 +2740,7 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 
 #### The PROFILE=cnsa2 arms of srv_kex, srv_cookie, srv_ticket and srv_parser_ext
 
-- **Harnesses:** `srv_kex_cnsa2` (fast), `srv_cookie_cnsa2` (fast), `srv_ticket_cnsa2` (fast), `srv_parser_ext_cnsa2` (fast), `srv_parser_ext_cnsa2_share` (fast)
+- **Harnesses:** `srv_kex_cnsa2` (fast), `srv_cookie_cnsa2` (fast), `srv_ticket_cnsa2` (fast), `srv_parser_ext_cnsa2` (fast), `srv_parser_ext_cnsa2_share` (fast), `srv_parser_ext_mlkem1024_share` (fast)
 - **Defines:** each runs under the profile server's defines
   (docs/decisions.md 162).
 - **Proves:**
@@ -2756,6 +2759,9 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   - `srv_parser_ext_cnsa2_share`: a key_share entry for ML-KEM-1024 is
     kept exactly at 1,568 bytes, `mlkem_share` points at its key_exchange
     inside the body, and one byte short or long is illegal_parameter.
+    `srv_parser_ext_mlkem1024_share` proves the same of a server outside
+    the profile, which holds ML-KEM-1024 beside its other groups
+    (`docs/decisions.md` 179).
 - **Not proved:** the encapsulation, HMAC-SHA-384's hash and the three
   AES calls, which are contract stubs, and the round trip of a cookie or
   a ticket, which `bin/cnsa2_server_test` tests. `srv_parser.c` holds no

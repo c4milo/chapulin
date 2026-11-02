@@ -94,7 +94,8 @@ Other targets:
   there (decisions 53 and 63); set `ch_cfg.require_pq` for the hybrid
   alone. `KEX` chooses the group of a raw or ca client only, and
   `ROLE=server` and `ROLE=both` refuse it too, because a server role
-  holds all three groups in every build (decisions 54 and 63).
+  holds all four of its groups in every build (decisions 54, 63 and
+  179).
   `SUITE=aesgcm` adds `TLS_AES_128_GCM_SHA256` and
   `TLS_AES_256_GCM_SHA384` to a `TRUST=webpki` client or a server role.
   On an arm64 or x86-64 host that object is a host object, below, whose

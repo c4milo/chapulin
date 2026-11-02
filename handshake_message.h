@@ -53,8 +53,8 @@
 // holds the hybrid in every build (srv_kex.h).
 #if defined(CH_KEX_HYBRID) || defined(CH_ROLE_SERVER)
 #include "mlkem.h"
-#define CH_HYBRID_CLIENT_SHARE (MLKEM_EK_LEN + 32)
-#define CH_HYBRID_SERVER_SHARE (MLKEM_CT_LEN + 32)
+#define CH_HYBRID_CLIENT_SHARE (MLKEM_EK_LEN_768 + 32)
+#define CH_HYBRID_SERVER_SHARE (MLKEM_CT_LEN_768 + 32)
 #endif
 // A secp256r1 share is P256_POINT_LEN bytes on both sides, the
 // uncompressed point of RFC 9846 §4.3.8.2. A TRUST=webpki client writes

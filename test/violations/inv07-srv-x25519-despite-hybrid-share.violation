@@ -10,10 +10,10 @@ reason: the server takes x25519 whenever the client shared it, so a client
 
 --- old
 uint16_t srv_kex_group(const client_hello *ch) {
-    if ((ch->groups & SRV_GROUP_X25519MLKEM768) != 0) {
+    if ((ch->groups & SRV_GROUP_MLKEM1024) != 0) {
 --- new
 uint16_t srv_kex_group(const client_hello *ch) {
     if ((ch->shares & SRV_GROUP_X25519) != 0) {
         return CH_GROUP_X25519;
     }
-    if ((ch->groups & SRV_GROUP_X25519MLKEM768) != 0) {
+    if ((ch->groups & SRV_GROUP_MLKEM1024) != 0) {

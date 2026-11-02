@@ -1262,7 +1262,10 @@ launch fast full kem_secret_cnsa2 65 "fill_nondet.0:3169,ct_wipe.0:3169" -DCH_PR
 # through proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load
 # average near 106: 603 properties, 18 s, 0.09 GB. With srv_kex_begin
 # called over an x25519_base stub, in the pinned amd64 container on
-# 2026-10-31: 628 properties, 12 s, 0.09 GB.
+# 2026-10-31: 628 properties, 12 s, 0.09 GB. With ML-KEM-1024 as a fourth
+# group, ahead of the others, and the encapsulation stub taking the rank
+# (docs/decisions.md 179), the same way on 2026-11-02: 710 properties,
+# 7 s, 0.17 GB.
 launch fast full srv_kex 66 "fill_nondet.0:66,same.0:33,zero.0:65" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The PROFILE=cnsa2 arm of srv_kex.c (docs/decisions.md 162): the
 # selection, the share and the secret of ML-KEM-1024 alone, with the
@@ -2255,6 +2258,10 @@ launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.
 # walks in at most two entries.
 launch fast:2 full srv_parser_ext_cnsa2 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 launch fast full srv_parser_ext_cnsa2_share 3 "fill_nondet.0:1580" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
+# The same shape in a server outside the profile, which holds ML-KEM-1024
+# beside its other three groups (docs/decisions.md 179). Measured in the
+# pinned amd64 container on 2026-11-02: 1026 properties, 5 s, 0.40 GB.
+launch fast full srv_parser_ext_mlkem1024_share 3 "fill_nondet.0:1580" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The walk half, proof/srv_parser_walk_harness.c: srv_parser.c real with
 # srv_read_extension stubbed to its contract, over any message up to 64
 # bytes, which leaves room for five empty extensions after the head.

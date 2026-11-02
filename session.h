@@ -71,14 +71,10 @@
 #define CH_TX_AES_SUITES 0
 #endif
 // A server role stages its ServerHello in the same array, in the clear, so the array holds
-// the largest one (SRV_SERVER_HELLO_MAX, which srv_flight.h asserts equal): 1216 bytes with
-// the 1120-byte X25519MLKEM768 share, 1664 with PROFILE=cnsa2's 1568-byte ML-KEM-1024
-// ciphertext (docs/decisions.md 162). It raises the classic raw and ca values below.
-#ifdef CH_PROFILE_CNSA2
+// the largest one (SRV_SERVER_HELLO_MAX, which srv_flight.h asserts equal): 1664 bytes with
+// the 1568-byte ML-KEM-1024 ciphertext, which every server can select (docs/decisions.md 162
+// and 179). It raises the classic raw and ca values below.
 #define CH_TX_SERVER_HELLO 1664
-#else
-#define CH_TX_SERVER_HELLO 1216
-#endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // A QUIC hello differs from the TCP one by three extensions. It drops
 // the 6-byte record_size_limit, because RFC 9001 §4.1.3 removes the
@@ -258,9 +254,10 @@ typedef struct {
     // may also be CH_GROUP_SECP256R1 after a retry that named it — and 0
     // before any ServerHello or when it carried no key_share. A server
     // role writes the group its own ServerHello selected, once the hello
-    // it answers is settled: CH_GROUP_X25519MLKEM768 whenever the client
-    // listed it, CH_GROUP_X25519 when the client listed that and not the
-    // hybrid, and CH_GROUP_SECP256R1 when it listed neither (srv_kex.h).
+    // it answers is settled: CH_GROUP_MLKEM1024 whenever the client listed
+    // it, CH_GROUP_X25519MLKEM768 when the client listed that and not
+    // ML-KEM-1024, CH_GROUP_X25519 when it listed neither, and
+    // CH_GROUP_SECP256R1 when it listed none of the three (srv_kex.h).
     // Public information, like pin_slot: a caller reads it to see which
     // exchange protected the session, and a client's cfg.require_pq fails
     // the handshake when it is not the hybrid.

@@ -3,8 +3,8 @@
 // what the header does not.
 //
 // Three lines below compute an offset into a fixed layout, where the
-// hybrid's second half starts: share + MLKEM_CT_LEN, ikm + MLKEM_SS_LEN
-// and ch->hybrid_share + MLKEM_EK_LEN. They are the concatenations RFC
+// hybrid's second half starts: share + MLKEM_CT_LEN_768, ikm + MLKEM_SS_LEN
+// and ch->hybrid_share + MLKEM_EK_LEN_768. They are the concatenations RFC
 // 10024 defines, over arrays that hold both halves, and
 // handshake_flight.c's kem_secret writes ikm + MLKEM_SS_LEN the same
 // way. The third reads peer bytes, and the parser held the client's
@@ -29,12 +29,13 @@
 // FIPS 203's encapsulation takes 32 bytes of randomness, m (mlkem.h).
 #define SRV_KEX_ENCAPS_RANDOM 32
 
-// Encapsulates to the client's encapsulation key: the ciphertext into
-// share, the ML-KEM shared secret into h->mlkem_ss. The randomness is
+// Encapsulates at rank to the client's encapsulation key: the ciphertext
+// into share, the ML-KEM shared secret into h->mlkem_ss. The randomness is
 // drawn here and nowhere earlier, so a server that selects x25519 draws
 // none, and it dies on both exits. key is the encapsulation key: the
-// first MLKEM_EK_LEN bytes of the client's share.
-static int encapsulate(handshake_state *h, const uint8_t *key, uint8_t share[SRV_KEX_SHARE_MAX]) {
+// first mlkem_ek_len(rank) bytes of the client's share.
+static int encapsulate(handshake_state *h, unsigned rank, const uint8_t *key,
+                       uint8_t share[SRV_KEX_SHARE_MAX]) {
     static const uint8_t unwritten[SRV_KEX_ENCAPS_RANDOM] = {0};
     uint8_t m[SRV_KEX_ENCAPS_RANDOM];
     rand_draw(&h->t->cfg, m, sizeof m);
@@ -45,8 +46,8 @@ static int encapsulate(handshake_state *h, const uint8_t *key, uint8_t share[SRV
     // encapsulation key before it writes anything, and answers nonzero
     // when a coefficient is at or above the modulus. The key is public,
     // so the branch on that verdict leaks nothing.
-    int refused = mlkem_encaps_derand_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), share,
-                                          h->mlkem_ss, key, m);
+    int refused = mlkem_encaps_derand_rank_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg),
+                                               rank, share, h->mlkem_ss, key, m);
     ct_wipe(m, sizeof m);
     if (refused != 0) {
         ct_wipe(h->mlkem_ss, sizeof h->mlkem_ss);
@@ -75,11 +76,11 @@ int srv_kex_shared(const client_hello *ch, uint16_t group) {
 int srv_kex_share(handshake_state *h, const client_hello *ch, uint16_t group,
                   uint8_t share[SRV_KEX_SHARE_MAX], size_t *share_len) {
     CH_ASSERT(group == CH_GROUP_MLKEM1024 && ch->mlkem_share != NULL);
-    int rc = encapsulate(h, ch->mlkem_share, share);
+    int rc = encapsulate(h, MLKEM_RANK_1024, ch->mlkem_share, share);
     if (rc != CH_OK) {
         return rc;
     }
-    *share_len = MLKEM_CT_LEN;
+    *share_len = MLKEM_CT_LEN_1024;
     return CH_OK;
 }
 
@@ -109,6 +110,9 @@ void srv_kex_begin(handshake_state *h) {
 }
 
 uint16_t srv_kex_group(const client_hello *ch) {
+    if ((ch->groups & SRV_GROUP_MLKEM1024) != 0) {
+        return CH_GROUP_MLKEM1024;
+    }
     if ((ch->groups & SRV_GROUP_X25519MLKEM768) != 0) {
         return CH_GROUP_X25519MLKEM768;
     }
@@ -174,12 +178,21 @@ int srv_kex_share(handshake_state *h, const client_hello *ch, uint16_t group,
         *share_len = P256_POINT_LEN;
         return CH_OK;
     }
+    if (group == CH_GROUP_MLKEM1024) {
+        CH_ASSERT(ch->mlkem_share != NULL);
+        int rc = encapsulate(h, MLKEM_RANK_1024, ch->mlkem_share, share);
+        if (rc != CH_OK) {
+            return rc;
+        }
+        *share_len = MLKEM_CT_LEN_1024;
+        return CH_OK;
+    }
     CH_ASSERT(group == CH_GROUP_X25519MLKEM768 && ch->hybrid_share != NULL);
-    int rc = encapsulate(h, ch->hybrid_share, share);
+    int rc = encapsulate(h, MLKEM_RANK_768, ch->hybrid_share, share);
     if (rc != CH_OK) {
         return rc;
     }
-    memcpy(share + MLKEM_CT_LEN, h->pub, X25519_LEN);
+    memcpy(share + MLKEM_CT_LEN_768, h->pub, X25519_LEN);
     *share_len = CH_HYBRID_SERVER_SHARE;
     return CH_OK;
 }
@@ -199,7 +212,7 @@ static int x25519_secret(handshake_state *h, const client_hello *ch, uint16_t gr
         // RFC 10024's order: the ML-KEM shared secret, then the x25519 one.
         memcpy(ikm, h->mlkem_ss, MLKEM_SS_LEN);
         ecdhe = ikm + MLKEM_SS_LEN;
-        peer = ch->hybrid_share + MLKEM_EK_LEN;
+        peer = ch->hybrid_share + MLKEM_EK_LEN_768;
         *ikm_len = SRV_KEX_SECRET_MAX;
     }
     CH_ASSERT(peer != NULL);
@@ -210,8 +223,15 @@ static int x25519_secret(handshake_state *h, const client_hello *ch, uint16_t gr
 
 int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,
                    uint8_t ikm[SRV_KEX_SECRET_MAX], size_t *ikm_len) {
-    int shared_ok;
-    if (group == CH_GROUP_SECP256R1) {
+    int shared_ok = 1;
+    if (group == CH_GROUP_MLKEM1024) {
+        // The ML-KEM-1024 shared secret is the whole input keying
+        // material, and nothing here can refuse it: decapsulation is the
+        // client's, and srv_kex_share ran the one check the server owes.
+        memcpy(ikm, h->mlkem_ss, MLKEM_SS_LEN);
+        *ikm_len = MLKEM_SS_LEN;
+        ct_wipe(h->mlkem_ss, sizeof h->mlkem_ss);
+    } else if (group == CH_GROUP_SECP256R1) {
         // p256_ecdh_cpu checks the point again, which srv_kex_share already
         // did, and zeroes its 32 bytes of ikm when it refuses.
         CH_ASSERT(ch->p256_share != NULL);
@@ -222,9 +242,9 @@ int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,
         shared_ok = x25519_secret(h, ch, group, ikm, ikm_len);
     }
     // Both exits, and every group: the x25519 pair srv_begin drew is
-    // unused after a secp256r1 exchange, and the P-256 scalar stays zero
-    // when its group was not selected. x25519_secret wipes the ML-KEM
-    // secret, which only the hybrid writes.
+    // unused after a secp256r1 or an ML-KEM-1024 exchange, and the P-256
+    // scalar stays zero when its group was not selected. The ML-KEM-1024
+    // arm and x25519_secret wipe the ML-KEM secret.
     ct_wipe(h->p256_priv, sizeof h->p256_priv);
     ct_wipe(h->priv, sizeof h->priv);
     ct_wipe(h->pub, sizeof h->pub);

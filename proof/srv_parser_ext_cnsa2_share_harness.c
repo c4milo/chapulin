@@ -1,12 +1,14 @@
-// Proves: srv_parser_ext.c's PROFILE=cnsa2 key_share reader
-// (docs/decisions.md 162) over a body that carries one KeyShareEntry for
-// ML-KEM-1024 at the encapsulation key's length, MLKEM_EK_LEN, or one byte
+// Proves: srv_parser_ext.c's key_share reader, under PROFILE=cnsa2
+// (docs/decisions.md 162) and through
+// proof/srv_parser_ext_mlkem1024_share_harness.c in every other server
+// (docs/decisions.md 179), over a body that carries one KeyShareEntry for
+// ML-KEM-1024 at the encapsulation key's length, MLKEM_EK_LEN_1024, or one byte
 // either side of it, with any list length and up to four bytes after the
 // entry. It reads and writes only inside the body, commits no undefined
 // behavior, and:
 //  - sets mlkem_share, and its bit in shares, exactly when the entry's
-//    length is MLKEM_EK_LEN and the list fills the body;
-//  - points mlkem_share at the entry's key_exchange, MLKEM_EK_LEN readable
+//    length is MLKEM_EK_LEN_1024 and the list fills the body;
+//  - points mlkem_share at the entry's key_exchange, MLKEM_EK_LEN_1024 readable
 //    bytes inside the body;
 //  - refuses an entry one byte short or one byte long with
 //    illegal_parameter.
@@ -27,13 +29,13 @@ uint16_t nondet_u16(void);
 
 // The list length, the entry's group and length words, the longest share
 // held, and up to four bytes after it.
-#define SHARE_BODY_MAX (2 + 4 + MLKEM_EK_LEN + 1 + 4)
+#define SHARE_BODY_MAX (2 + 4 + MLKEM_EK_LEN_1024 + 1 + 4)
 
 int main(void) {
     static uint8_t body[SHARE_BODY_MAX];
     fill_nondet(body, sizeof body);
     size_t share_len = nondet_size_t();
-    __CPROVER_assume(share_len >= MLKEM_EK_LEN - 1 && share_len <= MLKEM_EK_LEN + 1);
+    __CPROVER_assume(share_len >= MLKEM_EK_LEN_1024 - 1 && share_len <= MLKEM_EK_LEN_1024 + 1);
     size_t tail = nondet_size_t();
     __CPROVER_assume(tail <= 4);
     size_t n = 2 + 4 + share_len + tail;
@@ -59,12 +61,12 @@ int main(void) {
     __CPROVER_assert((ch.mlkem_share != NULL) == ((ch.shares & SRV_GROUP_MLKEM1024) != 0),
                      "the pointer is set exactly when its bit is");
     if (ch.mlkem_share != NULL) {
-        __CPROVER_assert(share_len == MLKEM_EK_LEN, "only a full-length key is kept");
+        __CPROVER_assert(share_len == MLKEM_EK_LEN_1024, "only a full-length key is kept");
         __CPROVER_assert(ch.mlkem_share == body + 6, "the pointer is the entry's key_exchange");
-        __CPROVER_assert(__CPROVER_r_ok(ch.mlkem_share, MLKEM_EK_LEN),
+        __CPROVER_assert(__CPROVER_r_ok(ch.mlkem_share, MLKEM_EK_LEN_1024),
                          "the key is readable at its length");
     }
-    if (share_len != MLKEM_EK_LEN && list_len == 4 + share_len && tail == 0) {
+    if (share_len != MLKEM_EK_LEN_1024 && list_len == 4 + share_len && tail == 0) {
         __CPROVER_assert(rc == CH_EPROTO && alert == ALERT_ILLEGAL_PARAMETER,
                          "a key one byte short or long is illegal_parameter");
     }

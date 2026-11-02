@@ -4,7 +4,10 @@
 // An object holds one parameter set or both. CH_MLKEM_1024 makes
 // ML-KEM-1024 the object's rank, and its absence ML-KEM-768.
 // CH_MLKEM_TWO_RANKS adds the other set beside it: the _rank calls then
-// take the rank, 3 or 4, at run time (docs/decisions.md 177).
+// take the rank, 3 or 4, at run time (docs/decisions.md 177). Every
+// server role outside PROFILE=cnsa2 selects either rank (srv_kex.h,
+// docs/decisions.md 179), so CH_ROLE_SERVER sets the define below, and
+// no build line has to.
 //
 // The entry points are derandomized: the caller supplies every random
 // byte (d, z, m), because chapulin draws only at the sites INV-4 lists,
@@ -16,6 +19,10 @@
 // them into test binaries only.
 #ifndef CH_MLKEM_H
 #define CH_MLKEM_H
+
+#if defined(CH_ROLE_SERVER) && !defined(CH_PROFILE_CNSA2) && !defined(CH_MLKEM_TWO_RANKS)
+#define CH_MLKEM_TWO_RANKS
+#endif
 
 #include <stddef.h>
 #include <stdint.h>

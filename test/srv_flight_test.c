@@ -47,9 +47,10 @@ static int failures = 0;
         }                                                                                          \
     } while (0)
 
-// The x25519 cases drive the group whose 32-byte share they spell out, and
-// test/srv_flight_kex_tests.h drives X25519MLKEM768. Every server build
-// holds both, so no build define changes which bytes these compare.
+// The x25519 cases drive the group whose 32-byte share they spell out,
+// test/srv_flight_kex_tests.h drives X25519MLKEM768, and
+// test/srv_flight_mlkem1024_tests.h drives ML-KEM-1024. Every server build
+// holds all three, so no build define changes which bytes these compare.
 
 // The ch_cfg.cpu a host build's flight_reset writes into every case: the
 // probe's bit and the AES instructions, unless a case of
@@ -66,6 +67,7 @@ static uint32_t flight_cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
 #include "session_report_tests.h"
 #include "srv_flight_kex_tests.h"
 #include "srv_flight_keys_tests.h"
+#include "srv_flight_mlkem1024_tests.h"
 #include "srv_flight_p256_tests.h"
 #include "srv_flight_suite_tests.h"
 #include "srv_flight_tests.h"
@@ -95,6 +97,10 @@ int main(void) {
     test_flight_hybrid_secret();
     test_flight_hybrid_refusals();
     test_flight_hybrid_retry();
+    test_flight_select_mlkem1024();
+    test_flight_mlkem1024_secret();
+    test_flight_mlkem1024_refusals();
+    test_flight_mlkem1024_retry();
     test_flight_select_p256();
     test_flight_p256_secret();
     test_flight_p256_refusals();

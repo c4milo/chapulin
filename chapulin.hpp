@@ -79,13 +79,15 @@ inline const char *status_text(Status status) {
 // The key-exchange group ch_tls.group reports: none until the
 // handshake accepts the ServerHello's key_share, then the group the
 // ServerHello selected (cfg.h's CH_GROUP_* code points): the one group a
-// raw or ca build offers, or any of the three a TRUST=webpki client lists
-// or a server holds, secp256r1 among them.
+// raw or ca build offers, any of the three a TRUST=webpki client lists,
+// or any of the four a server holds, ML-KEM-1024 and secp256r1 among
+// them.
 enum class Group : uint16_t {
     none = 0,
     x25519 = CH_GROUP_X25519,
     x25519mlkem768 = CH_GROUP_X25519MLKEM768,
     secp256r1 = CH_GROUP_SECP256R1,
+    mlkem1024 = CH_GROUP_MLKEM1024,
 };
 
 #ifdef CH_TRUST_WEBPKI

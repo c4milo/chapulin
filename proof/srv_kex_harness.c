@@ -3,22 +3,26 @@
 // report, any server scalar and public value, and every verdict its
 // primitives can return; and seven facts about what it computes.
 //
-//   1. The preference: X25519MLKEM768 whenever the client listed it,
-//      x25519 when it listed x25519 and not the hybrid, secp256r1 when it
-//      listed secp256r1 and neither of the others, and 0 when it listed
-//      none of the three.
+//   1. The preference: ML-KEM-1024 whenever the client listed it,
+//      X25519MLKEM768 when it listed that and not ML-KEM-1024, x25519
+//      when it listed x25519 and neither ML-KEM group, secp256r1 when it
+//      listed secp256r1 and none of the others, and 0 when it listed
+//      none of the four.
 //   2. srv_kex_shared reports exactly the shares the parser recorded.
 //   3. An x25519 share is h->pub. A hybrid share is the ciphertext the
-//      encapsulation wrote, then h->pub, and the encapsulation read the
-//      client's encapsulation key where the hello carried it. A secp256r1
+//      encapsulation wrote at rank 3, then h->pub, and the encapsulation
+//      read the client's encapsulation key where the hello carried it. An
+//      ML-KEM-1024 share is the ciphertext the encapsulation wrote at
+//      rank 4, MLKEM_CT_LEN_1024 bytes, over the client's key. A secp256r1
 //      share is the point p256_ecdh_keygen wrote, P256_POINT_LEN bytes,
 //      and keygen runs only after the client's point passed its check.
 //   4. A refused encapsulation, FIPS 203 §7.2's modulus check, leaves the
 //      ML-KEM secret zero and writes no share length; a refused client
 //      point draws no P-256 key, leaves h->p256_priv zero and writes no
 //      share length.
-//   5. The input keying material is the ML-KEM secret the encapsulation
-//      produced, then the x25519 secret, which x25519 computed into the
+//   5. For ML-KEM-1024 the input keying material is the ML-KEM secret
+//      the encapsulation produced, alone, and x25519 does not run. For the
+//      hybrid it is the ML-KEM secret, then the x25519 secret, which x25519 computed into the
 //      second half against the x25519 value that ends the client's
 //      hybrid share: RFC 10024's order. For x25519 it is the x25519
 //      secret alone, against the client's x25519 share. For secp256r1 it
@@ -31,7 +35,7 @@
 //   7. srv_kex_begin draws the scalar into h->priv and computes h->pub
 //      from it with x25519_base.
 //
-// Layered, the proof/hybrid_secret_harness.c pattern: mlkem_encaps_derand,
+// Layered, the proof/hybrid_secret_harness.c pattern: mlkem_encaps_derand_rank,
 // x25519, x25519_base, the three p256_ecdh entries and ch_rand_bytes are stubs
 // asserting their headers' contracts and havocing their outputs, so
 // mlkem.c, mlkem_poly.c, sha3.c, x25519.c and the P-256 sources are not
@@ -52,14 +56,16 @@
 
 uint16_t nondet_u16(void);
 
-// The client's three shares as the parser leaves them: inside the
+// The client's four shares as the parser leaves them: inside the
 // message, at the length each group fixes.
+static uint8_t mlkem1024_bytes[MLKEM_EK_LEN_1024];
 static uint8_t hybrid_bytes[CH_HYBRID_CLIENT_SHARE];
 static uint8_t x25519_bytes[X25519_LEN];
 static uint8_t p256_bytes[P256_POINT_LEN];
 
 // What the stubs saw and wrote, for the assertions after each call.
 static const uint8_t *encaps_ek;
+static unsigned encaps_rank;
 static uint8_t encaps_ss[MLKEM_SS_LEN];
 static const uint8_t *x25519_point;
 static const uint8_t *x25519_out;
@@ -95,12 +101,13 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 int mlkem_encaps_derand_rank(uint8_t widemul, unsigned rank, uint8_t *ct, uint8_t ss[MLKEM_SS_LEN],
                              const uint8_t *ek, const uint8_t m[32]) {
     (void)widemul;
-    __CPROVER_assert(rank == MLKEM_K, "encaps: the object's rank");
-    __CPROVER_assert(__CPROVER_w_ok(ct, MLKEM_CT_LEN), "encaps: ciphertext writable");
+    __CPROVER_assert(mlkem_rank_held(rank), "encaps: a rank the object holds");
+    __CPROVER_assert(__CPROVER_w_ok(ct, mlkem_ct_len(rank)), "encaps: ciphertext writable");
     __CPROVER_assert(__CPROVER_w_ok(ss, MLKEM_SS_LEN), "encaps: secret writable");
-    __CPROVER_assert(__CPROVER_r_ok(ek, MLKEM_EK_LEN), "encaps: key readable");
+    __CPROVER_assert(__CPROVER_r_ok(ek, mlkem_ek_len(rank)), "encaps: key readable");
     __CPROVER_assert(__CPROVER_r_ok(m, 32), "encaps: randomness readable");
     encaps_ek = ek;
+    encaps_rank = rank;
     if ((nondet_u8() & 1) != 0) {
         return 1;
     }
@@ -207,22 +214,30 @@ static uint16_t prove_choice(client_hello *ch) {
     ch->groups = nondet_u8();
     ch->shares = nondet_u8();
     __CPROVER_assume((ch->shares & (uint8_t)~ch->groups) == 0);
+    ch->mlkem_share = (ch->shares & SRV_GROUP_MLKEM1024) != 0 ? mlkem1024_bytes : NULL;
     ch->x25519_share = (ch->shares & SRV_GROUP_X25519) != 0 ? x25519_bytes : NULL;
     ch->hybrid_share = (ch->shares & SRV_GROUP_X25519MLKEM768) != 0 ? hybrid_bytes : NULL;
     ch->p256_share = (ch->shares & SRV_GROUP_SECP256R1) != 0 ? p256_bytes : NULL;
 
+    int listed_m = (ch->groups & SRV_GROUP_MLKEM1024) != 0;
     int listed_pq = (ch->groups & SRV_GROUP_X25519MLKEM768) != 0;
     int listed_x = (ch->groups & SRV_GROUP_X25519) != 0;
     int listed_p = (ch->groups & SRV_GROUP_SECP256R1) != 0;
     uint16_t group = srv_kex_group(ch);
-    __CPROVER_assert((group == CH_GROUP_X25519MLKEM768) == listed_pq,
-                     "the hybrid is chosen exactly when the client listed it");
-    __CPROVER_assert((group == CH_GROUP_X25519) == (listed_x && !listed_pq),
-                     "x25519 is chosen exactly when the client listed it and not the hybrid");
-    __CPROVER_assert((group == CH_GROUP_SECP256R1) == (listed_p && !listed_x && !listed_pq),
-                     "secp256r1 is chosen exactly when the client listed it and neither other");
-    __CPROVER_assert(group != 0 || (!listed_x && !listed_pq && !listed_p),
-                     "no group only when the client listed none of the three");
+    __CPROVER_assert((group == CH_GROUP_MLKEM1024) == listed_m,
+                     "ML-KEM-1024 is chosen exactly when the client listed it");
+    __CPROVER_assert((group == CH_GROUP_X25519MLKEM768) == (listed_pq && !listed_m),
+                     "the hybrid is chosen exactly when the client listed it and not ML-KEM-1024");
+    __CPROVER_assert((group == CH_GROUP_X25519) == (listed_x && !listed_pq && !listed_m),
+                     "x25519 is chosen exactly when the client listed it and neither ML-KEM group");
+    __CPROVER_assert((group == CH_GROUP_SECP256R1) ==
+                         (listed_p && !listed_x && !listed_pq && !listed_m),
+                     "secp256r1 is chosen exactly when the client listed it and no other");
+    __CPROVER_assert(group != 0 || (!listed_m && !listed_x && !listed_pq && !listed_p),
+                     "no group only when the client listed none of the four");
+
+    __CPROVER_assert(srv_kex_shared(ch, CH_GROUP_MLKEM1024) == (ch->mlkem_share != NULL),
+                     "shared reports the ML-KEM-1024 share");
 
     __CPROVER_assert(srv_kex_shared(ch, CH_GROUP_X25519MLKEM768) == (ch->hybrid_share != NULL),
                      "shared reports the hybrid share");
@@ -232,7 +247,7 @@ static uint16_t prove_choice(client_hello *ch) {
                      "shared reports the secp256r1 share");
     uint16_t other = nondet_u16();
     __CPROVER_assume(other != CH_GROUP_X25519 && other != CH_GROUP_X25519MLKEM768 &&
-                     other != CH_GROUP_SECP256R1);
+                     other != CH_GROUP_SECP256R1 && other != CH_GROUP_MLKEM1024);
     __CPROVER_assert(srv_kex_shared(ch, other) == 0,
                      "a group this build does not hold is unshared");
     return group;
@@ -309,11 +324,18 @@ int main(void) {
     if (group == CH_GROUP_X25519) {
         __CPROVER_assert(rc == CH_OK && share_len == X25519_LEN && same(share, pub, X25519_LEN),
                          "an x25519 share is h->pub");
+    } else if (rc == CH_OK && group == CH_GROUP_MLKEM1024) {
+        __CPROVER_assert(share_len == MLKEM_CT_LEN_1024, "an ML-KEM-1024 share is 1568 bytes");
+        __CPROVER_assert(encaps_ek == mlkem1024_bytes && encaps_rank == MLKEM_RANK_1024,
+                         "the encapsulation read the client's key at rank 4");
+        __CPROVER_assert(same(h.mlkem_ss, encaps_ss, MLKEM_SS_LEN),
+                         "the ML-KEM secret is kept for the key schedule");
     } else if (rc == CH_OK) {
         __CPROVER_assert(share_len == CH_HYBRID_SERVER_SHARE, "a hybrid share is 1120 bytes");
-        __CPROVER_assert(same(share + MLKEM_CT_LEN, pub, X25519_LEN),
+        __CPROVER_assert(same(share + MLKEM_CT_LEN_768, pub, X25519_LEN),
                          "a hybrid share ends with h->pub, after the ciphertext");
-        __CPROVER_assert(encaps_ek == hybrid_bytes, "the encapsulation read the client's key");
+        __CPROVER_assert(encaps_ek == hybrid_bytes && encaps_rank == MLKEM_RANK_768,
+                         "the encapsulation read the client's key at rank 3");
         __CPROVER_assert(same(h.mlkem_ss, encaps_ss, MLKEM_SS_LEN),
                          "the ML-KEM secret is kept for the key schedule");
     } else {
@@ -332,11 +354,15 @@ int main(void) {
                      "both exits wipe the x25519 key pair");
     if (rc != CH_OK) {
         __CPROVER_assert(zero(ikm, SRV_KEX_SECRET_MAX), "a refusal leaves no half of the secret");
+    } else if (group == CH_GROUP_MLKEM1024) {
+        __CPROVER_assert(ikm_len == MLKEM_SS_LEN && same(ikm, encaps_ss, MLKEM_SS_LEN),
+                         "the ML-KEM-1024 secret is the whole input");
+        __CPROVER_assert(x25519_out == NULL, "no x25519 runs for ML-KEM-1024");
     } else if (group == CH_GROUP_X25519MLKEM768) {
         __CPROVER_assert(ikm_len == SRV_KEX_SECRET_MAX, "the hybrid secret is 64 bytes");
         __CPROVER_assert(same(ikm, encaps_ss, MLKEM_SS_LEN), "the ML-KEM secret comes first");
         __CPROVER_assert(x25519_out == ikm + MLKEM_SS_LEN, "the x25519 secret comes second");
-        __CPROVER_assert(x25519_point == hybrid_bytes + MLKEM_EK_LEN,
+        __CPROVER_assert(x25519_point == hybrid_bytes + MLKEM_EK_LEN_768,
                          "x25519 runs against the value that ends the client's hybrid share");
     } else {
         __CPROVER_assert(ikm_len == X25519_LEN && x25519_out == ikm,

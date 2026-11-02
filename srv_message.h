@@ -95,18 +95,14 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 // handshake header, legacy_version (2), random (SRV_RANDOM), the
 // legacy_session_id_echo at its longest (1 + SRV_SESSION_ID_MAX),
 // cipher_suite (2), legacy_compression_method (1), the extensions length
-// (2), supported_versions (6), key_share over the hybrid share (8 +
-// CH_HYBRID_SERVER_SHARE) and pre_shared_key (6). That is 1216 bytes, and
+// (2), supported_versions (6), key_share over the longest share (8 +
+// SRV_SERVER_HELLO_SHARE) and pre_shared_key (6). The longest share is
+// the ML-KEM-1024 ciphertext, MLKEM_CT_LEN_1024 bytes, which every server
+// can select (docs/decisions.md 162 and 179). That is 1664 bytes, and
 // session.h's CH_TX_SERVER_HELLO holds the same number, which
-// srv_flight.h asserts. An x25519 ServerHello is 1088 bytes shorter.
-// A PROFILE=cnsa2 server's key_share carries the ML-KEM-1024 ciphertext,
-// 4 + MLKEM_CT_LEN bytes behind the type and length words, so its longest
-// ServerHello is 1664 bytes (docs/decisions.md 162).
-#ifdef CH_PROFILE_CNSA2
-#define SRV_SERVER_HELLO_SHARE MLKEM_CT_LEN
-#else
-#define SRV_SERVER_HELLO_SHARE CH_HYBRID_SERVER_SHARE
-#endif
+// srv_flight.h asserts. A hybrid ServerHello is 448 bytes shorter, and
+// an x25519 one 1536 bytes shorter.
+#define SRV_SERVER_HELLO_SHARE MLKEM_CT_LEN_1024
 #define SRV_SERVER_HELLO_MAX                                                                       \
     (4 + 2 + SRV_RANDOM + 1 + SRV_SESSION_ID_MAX + 2 + 1 + 2 + 6 + 8 + SRV_SERVER_HELLO_SHARE + 6)
 

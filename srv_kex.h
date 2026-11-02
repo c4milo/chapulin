@@ -6,22 +6,31 @@
 // writes no message and sends nothing. Only a ROLE=server build
 // compiles it.
 //
-// Every server build holds three groups, X25519MLKEM768, x25519 and
-// secp256r1, and the Makefile KEX variable selects nothing here: KEX
-// chooses a raw or ca client's one group, and a server has no such choice
-// (docs/decisions.md 54). The server prefers the hybrid, because it is
-// the group whose recorded traffic stays confidential against a later
-// quantum computer, then x25519, and takes secp256r1 last, only from a
-// client that lists neither of the others: RFC 9846 §9.1 makes secp256r1
+// Every server build holds four groups, ML-KEM-1024, X25519MLKEM768,
+// x25519 and secp256r1, and the Makefile KEX variable selects nothing
+// here: KEX chooses a raw or ca client's one group, and a server has no
+// such choice (docs/decisions.md 54). The server prefers ML-KEM-1024,
+// the one key exchange CNSA 2.0 names (docs/decisions.md 179). Then it
+// prefers the hybrid, because its recorded traffic stays confidential
+// against a later quantum computer, then x25519. It takes secp256r1 last,
+// only from a client that lists none of the others: RFC 9846 §9.1 makes secp256r1
 // a MUST and X25519 a SHOULD (rfc9846.txt:4548-4550), and one P-256
 // scalar multiplication here takes 1,228 microseconds against x25519's
 // 953, measured on an M1 Pro (bench/notes-primitives.md,
 // docs/decisions.md 63).
 //
+// ML-KEM-1024 follows draft-ietf-tls-mlkem. The client's key_exchange is
+// the encapsulation key, MLKEM_EK_LEN_1024 bytes, the server's is the
+// ciphertext, MLKEM_CT_LEN_1024 bytes, and the shared secret is the
+// MLKEM_SS_LEN-byte ML-KEM shared secret. The object holds both ML-KEM
+// ranks, because mlkem.h sets CH_MLKEM_TWO_RANKS in every server role
+// outside the profile (docs/decisions.md 177), and each call names its
+// rank.
+//
 // The hybrid follows RFC 10024. The client's key_exchange is the
-// ML-KEM-768 encapsulation key, MLKEM_EK_LEN bytes, then its x25519
-// public value. The server's is the ML-KEM-768 ciphertext, MLKEM_CT_LEN
-// bytes, then its own x25519 public value. The shared secret is the
+// ML-KEM-768 encapsulation key, MLKEM_EK_LEN_768 bytes, then its x25519
+// public value. The server's is the ML-KEM-768 ciphertext,
+// MLKEM_CT_LEN_768 bytes, then its own x25519 public value. The shared secret is the
 // ML-KEM shared secret, then the x25519 one. The ML-KEM bytes come first
 // in all three despite the group's name, and handshake_flight.c's
 // kem_secret reads them in the same order on the client.
@@ -53,28 +62,26 @@
 #include "srv_parser.h"
 #include "x25519.h"
 
-// The longest key_exchange this server writes, the hybrid one, and the
-// longest input keying material it derives, the hybrid's two shared
-// secrets side by side. An x25519 or secp256r1 key exchange uses the
-// first 32 bytes of the secret, and a secp256r1 share the first
-// P256_POINT_LEN bytes of the share.
+// The longest key_exchange this server writes, the ML-KEM-1024
+// ciphertext, and the longest input keying material it derives, the
+// hybrid's two shared secrets side by side. Every other group uses the
+// first bytes of each array.
 //
 // A PROFILE=cnsa2 server holds ML-KEM-1024 alone (docs/decisions.md 162).
-// Its key_exchange is the MLKEM_CT_LEN-byte ciphertext and its input
-// keying material the MLKEM_SS_LEN-byte shared secret, as the profile's
-// client reads them (draft-ietf-tls-mlkem). srv_kex_group answers
+// Its input keying material is the MLKEM_SS_LEN-byte shared secret, as
+// the profile's client reads it. srv_kex_group answers
 // CH_GROUP_MLKEM1024 for a hello that lists it and 0 for every other, and
 // srv_kex_share and srv_kex_secret run that group alone.
+#define SRV_KEX_SHARE_MAX MLKEM_CT_LEN_1024
 #ifdef CH_PROFILE_CNSA2
-#define SRV_KEX_SHARE_MAX MLKEM_CT_LEN
 #define SRV_KEX_SECRET_MAX MLKEM_SS_LEN
 #else
-#define SRV_KEX_SHARE_MAX CH_HYBRID_SERVER_SHARE
 #define SRV_KEX_SECRET_MAX (MLKEM_SS_LEN + X25519_LEN)
 #endif
 #if !defined(__cplusplus) && !defined(CH_PROFILE_CNSA2)
-_Static_assert(P256_POINT_LEN <= SRV_KEX_SHARE_MAX && P256_SECRET_LEN <= SRV_KEX_SECRET_MAX,
-               "a secp256r1 share and secret fit the hybrid's arrays");
+_Static_assert(CH_HYBRID_SERVER_SHARE <= SRV_KEX_SHARE_MAX && P256_POINT_LEN <= SRV_KEX_SHARE_MAX &&
+                   P256_SECRET_LEN <= SRV_KEX_SECRET_MAX,
+               "every group's share and secret fit the arrays");
 #endif
 
 // Draws this session's x25519 key pair, which srv_begin calls once: the
@@ -85,7 +92,8 @@ _Static_assert(P256_POINT_LEN <= SRV_KEX_SHARE_MAX && P256_SECRET_LEN <= SRV_KEX
 void srv_kex_begin(handshake_state *h);
 
 // The group this server selects, read from the client's supported_groups
-// alone: CH_GROUP_X25519MLKEM768 when the client listed it, else
+// alone: CH_GROUP_MLKEM1024 when the client listed it, else
+// CH_GROUP_X25519MLKEM768 when the client listed that, else
 // CH_GROUP_X25519 when the client listed that, else CH_GROUP_SECP256R1
 // when the client listed that, else 0, which srv_select answers with
 // handshake_failure (rfc9846.txt:1145-1148).
@@ -97,7 +105,9 @@ void srv_kex_begin(handshake_state *h);
 // preference the same way, so a client that lists the hybrid and shares
 // only x25519 gets a HelloRetryRequest naming the hybrid, one that shares
 // both gets the hybrid in one round trip, and one that lists x25519 and
-// shares only secp256r1 gets a HelloRetryRequest naming x25519.
+// shares only secp256r1 gets a HelloRetryRequest naming x25519. A client
+// that lists ML-KEM-1024 and shares only the hybrid gets a
+// HelloRetryRequest naming ML-KEM-1024.
 //
 // It is a predicate over public values and changes nothing.
 uint16_t srv_kex_group(const client_hello *ch);
@@ -113,10 +123,12 @@ int srv_kex_shared(const client_hello *ch, uint16_t group);
 //
 // For x25519 it copies h->pub, X25519_LEN bytes. For X25519MLKEM768 it
 // draws the 32-byte ML-KEM encapsulation randomness through rand_draw
-// (INV-4), encapsulates to the encapsulation key that begins
+// (INV-4), encapsulates at rank 3 to the encapsulation key that begins
 // ch->hybrid_share, writes the ciphertext and then h->pub, and keeps the
-// ML-KEM shared secret in h->mlkem_ss for srv_kex_secret. The randomness
-// is wiped before this returns, on both exits. For secp256r1 it first
+// ML-KEM shared secret in h->mlkem_ss for srv_kex_secret. For ML-KEM-1024
+// it does the same at rank 4 to ch->mlkem_share, and writes the
+// ciphertext alone. The randomness is wiped before this returns, on both
+// exits. For secp256r1 it first
 // checks the client's point, ch->p256_share, as RFC 9846 §4.3.8.2
 // requires (rfc9846.txt:2277-2286), then draws the P-256 key pair through
 // rand_draw (INV-4), the scalar into h->p256_priv and the uncompressed
@@ -132,7 +144,7 @@ int srv_kex_shared(const client_hello *ch, uint16_t group);
 //
 // Returns CH_OK with share and *share_len written. Returns CH_EPROTO, with
 // h->mlkem_ss and h->p256_priv zero and nothing written to *share_len,
-// when the client's share fails its check: for the hybrid, a coefficient
+// when the client's share fails its check: for either ML-KEM group, a coefficient
 // of the encapsulation key at or above the modulus, the check FIPS 203
 // §7.2 requires before encapsulation, which RFC 10024 has the server
 // abort on; for secp256r1, a point that is not on the curve or not in
@@ -143,7 +155,8 @@ int srv_kex_share(handshake_state *h, const client_hello *ch, uint16_t group,
 
 // Writes the input keying material for group into ikm and its length into
 // *ikm_len: for x25519, the x25519 shared secret of h->priv and
-// ch->x25519_share; for X25519MLKEM768, h->mlkem_ss, then the x25519
+// ch->x25519_share; for ML-KEM-1024, h->mlkem_ss, MLKEM_SS_LEN bytes;
+// for X25519MLKEM768, h->mlkem_ss, then the x25519
 // shared secret of h->priv and the x25519 public value that ends
 // ch->hybrid_share, the order RFC 10024 fixes and handshake_flight.c's
 // kem_secret computes on the client; for secp256r1, the P-256 shared

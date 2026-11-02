@@ -129,6 +129,8 @@ int main(void) {
                          "shares reports the x25519 share");
         __CPROVER_assert(((ch.shares & SRV_GROUP_X25519MLKEM768) == 0) == (ch.hybrid_share == NULL),
                          "shares reports the hybrid share");
+        __CPROVER_assert(((ch.shares & SRV_GROUP_MLKEM1024) == 0) == (ch.mlkem_share == NULL),
+                         "shares reports the ML-KEM-1024 share");
         __CPROVER_assert((ch.shares & (uint8_t)~ch.groups) == 0,
                          "every share's group was listed in supported_groups");
         __CPROVER_assert(ch.cookie == NULL || inside(msg, n, ch.cookie, ch.cookie_len),

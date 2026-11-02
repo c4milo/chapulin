@@ -720,12 +720,14 @@ last `ROLE=server` stub, as the entry said it would.
   a retry that names secp256r1 the ServerHello must select it. It carries
   a suite the hello listed, and the same one as a retry before it. A
   server role selects rather than offers, and its group order is fixed
-  (decisions.md 54, 63): X25519MLKEM768 whenever the client lists it,
-  x25519 when the client lists x25519 and not the hybrid, secp256r1 only
-  when the client lists neither, and a HelloRetryRequest that names the
-  group when the hello carried no share for it, so a hello that lists the
-  hybrid and shares x25519 alone is asked for the hybrid rather than
-  answered over x25519. Its suite order is the one its build's client
+  (decisions.md 54, 63, 179): ML-KEM-1024 whenever the client lists it,
+  X25519MLKEM768 when the client lists the hybrid and not ML-KEM-1024,
+  x25519 when the client lists x25519 and neither ML-KEM group, secp256r1
+  only when the client lists none of the others, and a HelloRetryRequest
+  that names the group when the hello carried no share for it, so a hello
+  that lists the hybrid and shares x25519 alone is asked for the hybrid
+  rather than answered over x25519. A `PROFILE=cnsa2` server holds
+  ML-KEM-1024 alone. Its suite order is the one its build's client
   offers in, and it selects the first of them the client listed, or the
   first of `ch_srv_cfg.cipher_suites` when the caller names an order
   (decisions.md 58, 80). It never selects a suite the client did not

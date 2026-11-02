@@ -77,7 +77,8 @@
 
 // The key exchange groups this build can select, one bit each, read
 // from the client's supported_groups and from its key_share. Every
-// server build holds all three: SRV_GROUP_X25519 stands for
+// server build holds all four: SRV_GROUP_MLKEM1024 stands for
+// CH_GROUP_MLKEM1024 (profile_cfg.h), SRV_GROUP_X25519 for
 // CH_GROUP_X25519, SRV_GROUP_X25519MLKEM768 for CH_GROUP_X25519MLKEM768
 // and SRV_GROUP_SECP256R1 for CH_GROUP_SECP256R1 (cfg.h). The Makefile
 // KEX variable chooses a client's group and selects nothing here;
@@ -87,12 +88,11 @@
 // arithmetic is constant time, never over p256.c, which verifies public
 // inputs and branches on them.
 //
-// A PROFILE=cnsa2 server holds one group, ML-KEM-1024
-// (CH_GROUP_MLKEM1024, profile_cfg.h), as SRV_GROUP_MLKEM1024, and none
-// of the other three (docs/decisions.md 162).
-#ifdef CH_PROFILE_CNSA2
+// A PROFILE=cnsa2 server holds one group, ML-KEM-1024, and none of the
+// other three (docs/decisions.md 162). Every other server holds
+// ML-KEM-1024 beside them (docs/decisions.md 179).
 #define SRV_GROUP_MLKEM1024 0x08
-#else
+#ifndef CH_PROFILE_CNSA2
 #define SRV_GROUP_X25519 0x01
 #define SRV_GROUP_X25519MLKEM768 0x02
 #define SRV_GROUP_SECP256R1 0x04
@@ -105,6 +105,9 @@ static inline uint8_t srv_group_bit(uint16_t group) {
 #ifdef CH_PROFILE_CNSA2
     return group == CH_GROUP_MLKEM1024 ? SRV_GROUP_MLKEM1024 : 0;
 #else
+    if (group == CH_GROUP_MLKEM1024) {
+        return SRV_GROUP_MLKEM1024;
+    }
     if (group == CH_GROUP_X25519MLKEM768) {
         return SRV_GROUP_X25519MLKEM768;
     }
@@ -232,12 +235,11 @@ typedef struct {
     // hello that carried no share for the group srv_select chose is the
     // input a HelloRetryRequest answers.
     //
-    // A PROFILE=cnsa2 server holds ML-KEM-1024 alone, so it keeps one
-    // pointer, mlkem_share, at the MLKEM_EK_LEN bytes of the
-    // encapsulation key (draft-ietf-tls-mlkem).
-#ifdef CH_PROFILE_CNSA2
+    // mlkem_share points at the MLKEM_EK_LEN_1024 bytes of an ML-KEM-1024
+    // encapsulation key (draft-ietf-tls-mlkem). A PROFILE=cnsa2 server
+    // holds that group alone, so it keeps that pointer alone.
     const uint8_t *mlkem_share;
-#else
+#ifndef CH_PROFILE_CNSA2
     const uint8_t *x25519_share;
     const uint8_t *hybrid_share;
     const uint8_t *p256_share;

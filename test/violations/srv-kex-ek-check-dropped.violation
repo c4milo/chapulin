@@ -7,12 +7,13 @@ reason: the server ignores the verdict of FIPS 203 section 7.2's modulus
   server sends a ServerHello around whatever the stack held and keys the
   handshake from a shared secret nobody encapsulated. RFC 10024 has the
   server abort with illegal_parameter, and test_flight_hybrid_refusals
-  requires it at 0xfff and at 3329 and requires 3328 to pass.
+  requires it at 0xfff and at 3329 and requires 3328 to pass, as
+  test_flight_mlkem1024_refusals does at rank 4.
 
 --- old
-    int refused = mlkem_encaps_derand_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), share,
-                                          h->mlkem_ss, key, m);
+    int refused = mlkem_encaps_derand_rank_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg),
+                                               rank, share, h->mlkem_ss, key, m);
 --- new
     int refused = 0;
-    (void)mlkem_encaps_derand_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), share,
-                                  h->mlkem_ss, key, m);
+    (void)mlkem_encaps_derand_rank_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), rank,
+                                       share, h->mlkem_ss, key, m);

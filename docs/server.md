@@ -2989,15 +2989,17 @@ terms, and its first such record fails with `bad_record_mac`.
 
 ## Key exchange
 
-Every server build holds three groups, X25519MLKEM768, x25519 and secp256r1,
-and `srv_kex.[ch]` holds what the server does with them. Camilo answered open
-question ten on 2026-09-24, and `docs/decisions.md` entry 54 records the trade;
-entry 63 added secp256r1.
+Every server build holds four groups, ML-KEM-1024, X25519MLKEM768, x25519 and
+secp256r1, and `srv_kex.[ch]` holds what the server does with them. Camilo
+answered open question ten on 2026-09-24, and `docs/decisions.md` entry 54
+records the trade; entry 63 added secp256r1, and entry 179 added ML-KEM-1024.
+A `PROFILE=cnsa2` server holds ML-KEM-1024 alone (below).
 
-**Which group.** The server reads `supported_groups` and prefers the hybrid:
-X25519MLKEM768 whenever the client lists it, x25519 when it lists x25519 and
-not the hybrid, secp256r1 when it lists secp256r1 and neither of the others,
-and handshake_failure when it lists none of the three
+**Which group.** The server reads `supported_groups` and prefers ML-KEM-1024,
+the one key exchange CNSA 2.0 names: ML-KEM-1024 whenever the client lists it,
+X25519MLKEM768 when it lists the hybrid and not ML-KEM-1024, x25519 when it
+lists x25519 and neither ML-KEM group, secp256r1 when it lists secp256r1 and
+none of the others, and handshake_failure when it lists none of the four
 (`rfc9846.txt:1145-1148`). The
 key_share then decides between a ServerHello and a HelloRetryRequest, the shape
 RFC 9846 §4.3.8 gives a server that selects from `supported_groups` first
@@ -3008,7 +3010,8 @@ names X25519MLKEM768, and its second hello must carry that share
 (`rfc9846.txt:2212-2215`); a hello that lists x25519 without the hybrid gets
 x25519, in one round trip or after a retry as before, whatever else it shares;
 and a hello that lists secp256r1 alone gets secp256r1, in one round trip when
-it shared it and after a retry when it did not. The retry is the cookie path
+it shared it and after a retry when it did not. A hello that lists ML-KEM-1024
+and shares the hybrid alone gets a HelloRetryRequest that names ML-KEM-1024. The retry is the cookie path
 this server already had, and the cookie carries the group.
 
 **The hybrid's bytes.** RFC 10024 fixes them, and `srv_kex.h` states them. The
@@ -3020,19 +3023,28 @@ order is the one `handshake_flight.c`'s `kem_secret` reads, so a chapulin
 client and a chapulin server agree on it, and OpenSSL 3.6's `s_client` agrees
 with both in `test/e2e.sh`.
 
-**What it refuses.** A hybrid share of any length but 1,216 bytes, an x25519
+**ML-KEM-1024's bytes.** draft-ietf-tls-mlkem fixes them. The client's share
+is the 1,568-byte encapsulation key, the server answers with the 1,568-byte
+ciphertext, and the input keying material is the 32-byte ML-KEM shared secret
+alone. The server encapsulates at rank 4 through the same `mlkem.c` that runs
+the hybrid at rank 3: `mlkem.h` sets `CH_MLKEM_TWO_RANKS` in every server role
+outside the profile (`docs/decisions.md` entry 177). OpenSSL 3.6's `s_client`
+agrees with it in `test/e2e.sh`.
+
+**What it refuses.** An ML-KEM-1024 share of any length but 1,568 bytes, a
+hybrid share of any length but 1,216 bytes, an x25519
 share of any length but 32, and a secp256r1 share of any length but 65, with
 illegal_parameter, at the parser. A secp256r1 point whose form byte is not
 0x04, whose coordinates are not below p, or which is not on the curve, with
 illegal_parameter, before the ServerHello and before the server draws its own
 P-256 key (`rfc9846.txt:2277-2286`). An
 encapsulation key that fails FIPS 203 §7.2's modulus check, with
-illegal_parameter, which RFC 10024 asks of a server; `mlkem_encaps_derand`
-runs the check before it writes anything. An x25519 half that yields the
+illegal_parameter, which RFC 10024 asks of a server, at either rank;
+`mlkem_encaps_derand_rank` runs the check before it writes anything. An x25519 half that yields the
 all-zero secret, with illegal_parameter (`rfc9846.txt:4293-4295`, INV-3).
 
 **What it draws and wipes.** The 32 bytes of encapsulation randomness come from
-`ch_rand_bytes` when the server selects the hybrid, and not otherwise, and the
+`ch_rand_bytes` when the server selects either ML-KEM group, and not otherwise, and the
 32-byte P-256 scalar comes from it when the server selects secp256r1, and not
 otherwise (INV-4). The ML-KEM shared secret lives in `handshake_state.mlkem_ss`
 from the ServerHello, where the encapsulation runs, to
@@ -3042,15 +3054,20 @@ the same span and dies in the same call (INV-17). The P-256 shared secret is
 the 32-byte X coordinate (`rfc9846.txt:4266-4276`).
 
 **What it costs.** The ServerHello, staged in the clear in `ch_tls.tx`, is up
-to 1,216 bytes (`SRV_SERVER_HELLO_MAX`, proved sufficient by the
-`srv_message` harness), so a server's TX array holds that many bytes behind
-the record header. `bench/sram.sh` measures the server's `ch_tls` at 1,968
+to 1,664 bytes with the ML-KEM-1024 ciphertext (`SRV_SERVER_HELLO_MAX`, proved
+sufficient by the `srv_message` harness), so a server's TX array holds that
+many bytes behind the record header. It was 1,216 bytes before entry 179,
+when entries 54 and 63 measured the figures that follow. `bench/sram.sh` measures the server's `ch_tls` at 1,968
 bytes on arm64, against 1,368 before, and `ch_srv_accept`'s stack peak at
 10,304 bytes, against 5,248, through the encapsulation into K-PKE encrypt;
 the P-256 scalar in the handshake state raised that peak to 10,336
 (`docs/decisions.md` entry 63).
-Every server object packages `mlkem.c`, `mlkem_poly.c` and `sha3.c`, and its
-frames are held to the hybrid's 6,656-byte budget (INV-19).
+Every server object packages `mlkem.c`, `mlkem_poly.c` and `sha3.c` at both
+ranks, and their frames are held to the 4,608-byte `STACK_BUDGET_KEX_HYBRID`
+(INV-19, `docs/decisions.md` entry 177). Entry 179 raised the server's
+`ch_tls` by 448 bytes, to 2,440 on arm64, and the peak of `ch_srv_accept` in a
+device object from 7,856 to 8,944 bytes; colibri's `ROLE=both TRUST=webpki`
+object moved by neither.
 
 ## The PROFILE=cnsa2 server
 

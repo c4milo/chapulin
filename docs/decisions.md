@@ -15623,3 +15623,57 @@ does nothing more.
         The products run on whole polynomials in `mldsa_vector.c`, and
         a sum in another order gives other representatives of each
         coefficient.
+
+179. **Every server outside PROFILE=cnsa2 holds ML-KEM-1024 and selects
+    it first.** colibri's `ROLE=both TRUST=webpki` server
+    (https://github.com/c4milo/colibri/issues/115) has to prefer CNSA
+    2.0's algorithms and still serve every other client, with no build
+    option. Camilo ruled that on 2026-11-01. ML-KEM-1024 (0x0202) is
+    the one key exchange CNSA 2.0 names.
+
+    - **What changes.** A server holds four groups: ML-KEM-1024,
+      X25519MLKEM768, x25519 and secp256r1. `srv_kex_group` returns
+      ML-KEM-1024 whenever the client lists it, then the order of
+      entries 54 and 63. A hello that lists ML-KEM-1024 and carries no
+      share for it gets a HelloRetryRequest that names it, as for the
+      other groups. The share is the 1,568-byte encapsulation key, the
+      answer the 1,568-byte ciphertext, and the input keying material
+      the 32-byte shared secret alone (draft-ietf-tls-mlkem), as the
+      profile's server does since entry 162.
+    - **One ML-KEM.** `mlkem.h` sets `CH_MLKEM_TWO_RANKS` in every
+      server role outside the profile, so `srv_kex.c` encapsulates at
+      rank 4 for ML-KEM-1024 and at rank 3 for the hybrid through the
+      same `mlkem.c` (entry 177). No build line names the define.
+    - **Numbers.** `bench/sram.sh` on the M1 Pro:
+
+      | quantity | before | after |
+      |---|---|---|
+      | server `ch_tls`, arm64 and rv32 | 1,992 and 1,824 | 2,440 and 2,272 |
+      | `ch_srv_accept`, host object | 12,736 | 12,752 |
+      | `ch_srv_accept`, device object | 7,856 | 8,944 |
+
+      The ServerHello staging array grows from 1,216 to 1,664 bytes,
+      and the device peak rises through the rank 4 encapsulation and the
+      larger share on `srv_send_server_hello`'s frame. The host peak is
+      RSA signing's, so it barely moves. colibri's object moves by
+      neither, because its client hello already sets the staging array
+      and its peak. On a Cortex-M3 at `-Os`, `mlkem.c`, `mlkem_poly.c`,
+      `srv_kex.c` and `srv_parser_ext.c` grow from 5,560 to 6,558 bytes
+      of code.
+    - **What holds it.** `bin/srv_flight_test` runs the selection, the
+      exchange to the handshake secrets against a rank 4 client half, the
+      modulus check at 3328 and 3329, and the retry. `bin/srv_test` holds
+      the share to 1,568 bytes, one byte short and long refused.
+      `test/e2e.sh` runs OpenSSL's `s_client` against the server with
+      ML-KEM-1024 alone, a resumption, a share beside the hybrid's, and
+      a retry from the hybrid. The `srv_kex` harness proves the order,
+      the rank of each encapsulation and the secret, and
+      `srv_parser_ext_mlkem1024_share` the share's length. Two
+      `.violation` files swap the order and run the rank 3 encapsulation.
+    - **Rejected:** **ML-KEM-1024 in host objects alone.** A device
+      server would then hold one group fewer than a host one, and each
+      group test would need a define for the role. The device object
+      pays 448 bytes of `ch_tls`, about 1 kB of stack and about 1 kB of
+      code. **The hybrid first, then ML-KEM-1024,** because a client that
+      lists both asks for CNSA 2.0, and the hybrid is not a CNSA 2.0
+      key exchange.

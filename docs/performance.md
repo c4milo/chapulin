@@ -27,16 +27,16 @@ and `size_t` lengths, so that build needs 120 bytes less than the host figure on
 | **total static working set, `KEX=pq`** (2048 buffer) | **4384** | **4304** |
 | `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3072 | 2952 |
 | **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15410** | **15290** |
-| `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1992 | 1824 |
-| **total static working set, `ROLE=server`** (2048 buffer) | **4040** | **3872** |
-| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2760 | — |
-| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4808** | — |
+| `ch_tls` under `ROLE=server` (includes 1669 B TX staging) | 2440 | 2272 |
+| **total static working set, `ROLE=server`** (2048 buffer) | **4488** | **4320** |
+| `ch_tls` under `ROLE=server SUITE=aesgcm` | 3208 | — |
+| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **5256** | — |
 | `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3856 | — |
 | **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **16194** | — |
 | `ch_tls` under `TRUST=webpki`, host object | 3072 | — |
 | **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15410** | — |
-| `ch_tls` under `ROLE=server`, host object | 1992 | — |
-| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4040** | — |
+| `ch_tls` under `ROLE=server`, host object | 2440 | — |
+| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4488** | — |
 | `ch_tls` under `PROFILE=cnsa2 TRUST=raw-mldsa` | 2992 | — |
 | **total static working set, `PROFILE=cnsa2 TRUST=raw-mldsa`** (7843 buffer, its floor) | **10835** | — |
 | `ch_tls` under `PROFILE=cnsa2 TRUST=ca-mldsa` | 2992 | — |
@@ -96,8 +96,8 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`KEX=pq`) | 11952 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1888 |
 | peak stack, `ch_write` / `ch_close` | 1616 / 896 |
-| peak stack, `ch_srv_accept` (`ROLE=server`) | 12736 |
-| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12896 |
+| peak stack, `ch_srv_accept` (`ROLE=server`) | 12752 |
+| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12912 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 13808 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`) | 16448 |
 | peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`) | 28032 |
@@ -152,10 +152,11 @@ walk into an RSA-4096 verify on 32-bit words, at 7,344 bytes. RSA-4096
 is the widest modulus a public root carries.
 
 **`ROLE=server`.** A server build pays them as well, because every
-server holds the hybrid ([`docs/decisions.md`](decisions.md) 54). Its
-ServerHello is built in the clear in the same staging array, and the
-hybrid one carries a 1,120-byte share, so the array holds 1,216 bytes of
-message behind the record header. `ch_srv_accept` peaks at 12,736
+server holds the hybrid ([`docs/decisions.md`](decisions.md) 54) and
+ML-KEM-1024 (179). Its ServerHello is built in the clear in the same
+staging array, and the ML-KEM-1024 one carries a 1,568-byte share, so
+the array holds 1,664 bytes of message behind the record header.
+`ch_srv_accept` peaks at 12,752
 bytes in the host object this host builds, through `rsa_sign64.c`'s
 RSA-PSS signer, which holds a modulus record for each prime, the
 signature it checks and a table of sixteen powers
@@ -164,14 +165,14 @@ signature it checks and a table of sixteen powers
 blocks of four words under clang for arm64 (118). With that signer
 pruned from the call graph (`STACK_PRUNE=rsa_sign64_pss`) the deepest
 chain is the encapsulation to the client's key into K-PKE encrypt and
-Keccak, at 7,888 bytes. With the encapsulation pruned as well
+Keccak, at 8,992 bytes. With the encapsulation pruned as well
 (`STACK_PRUNE=rsa_sign64_pss,srv_kex_share`) it is the ECDSA signer on
-the wide P-256 field, at 6,176 bytes. After each wide operation,
+the wide P-256 field, at 6,192 bytes. After each wide operation,
 `p256_wide_wipe_below` writes zero over the stack below it, in a frame
 of 3,120 bytes. A device object holds neither the 64-bit signer nor the
-wide field: its `ch_srv_accept` peaks at 7,856 bytes, through the
+wide field: its `ch_srv_accept` peaks at 8,944 bytes, through the
 encapsulation (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`).
-There the signer's deepest chain is `rsa_sign.c`'s ladder, at 5,360
+There the signer's deepest chain is `rsa_sign.c`'s ladder, at 5,376
 bytes (`STACK_PRUNE=srv_kex_share`).
 
 **`SUITE=aesgcm`.** `bench/sram.sh` measures a `SUITE=aesgcm` build as the

@@ -72,6 +72,7 @@ static int built(size_t n, const uint8_t *want, size_t want_len) {
 #include "srv_cookie_tests.h"
 #include "srv_message_tests.h"
 #include "srv_parser_hello.h"
+#include "srv_parser_mlkem1024_tests.h"
 #include "srv_parser_tests.h"
 #include "srv_ticket_tests.h"
 
@@ -95,6 +96,7 @@ int main(void) {
     test_required_extensions();
     test_key_share();
     test_hybrid_key_share();
+    test_mlkem1024_key_share();
     test_pre_shared_key();
     test_alpn();
     test_readers();

@@ -1,0 +1,28 @@
+invariant: INV-56
+file: srv_kex.c
+catches: srv_flight_test
+reason: the server encapsulates an ML-KEM-1024 key at rank 3. It reads
+  the first 1184 bytes of the 1568-byte key as an ML-KEM-768 key and
+  writes a 1088-byte ciphertext into a ServerHello that announces 1568
+  bytes, so the client decapsulates stack bytes and the two sides derive
+  different secrets. test_flight_mlkem1024_secret requires the client's
+  rank 4 decapsulation to give the server's handshake secrets.
+
+--- old
+        int rc = encapsulate(h, MLKEM_RANK_1024, ch->mlkem_share, share);
+        if (rc != CH_OK) {
+            return rc;
+        }
+        *share_len = MLKEM_CT_LEN_1024;
+        return CH_OK;
+    }
+    CH_ASSERT(group == CH_GROUP_X25519MLKEM768 && ch->hybrid_share != NULL);
+--- new
+        int rc = encapsulate(h, MLKEM_RANK_768, ch->mlkem_share, share);
+        if (rc != CH_OK) {
+            return rc;
+        }
+        *share_len = MLKEM_CT_LEN_1024;
+        return CH_OK;
+    }
+    CH_ASSERT(group == CH_GROUP_X25519MLKEM768 && ch->hybrid_share != NULL);

@@ -292,14 +292,17 @@ static int read_psk_modes(rbuf *e, hello_parse *p) {
 // The key_exchange length of the group whose bit is bit: X25519_LEN for
 // x25519, CH_HYBRID_CLIENT_SHARE for X25519MLKEM768, and P256_POINT_LEN
 // for secp256r1, the uncompressed point of RFC 9846 §4.3.8.2
-// (rfc9846.txt:2261-2275). bit is one srv_group_bit returned. A
-// PROFILE=cnsa2 server holds ML-KEM-1024 alone, whose share is the
-// MLKEM_EK_LEN-byte encapsulation key.
+// (rfc9846.txt:2261-2275), and MLKEM_EK_LEN_1024 for ML-KEM-1024, the
+// encapsulation key. bit is one srv_group_bit returned. A PROFILE=cnsa2
+// server holds ML-KEM-1024 alone.
 static size_t share_len_of(uint8_t bit) {
 #ifdef CH_PROFILE_CNSA2
     (void)bit;
-    return MLKEM_EK_LEN;
+    return MLKEM_EK_LEN_1024;
 #else
+    if (bit == SRV_GROUP_MLKEM1024) {
+        return MLKEM_EK_LEN_1024;
+    }
     if (bit == SRV_GROUP_X25519MLKEM768) {
         return CH_HYBRID_CLIENT_SHARE;
     }
@@ -328,7 +331,9 @@ static int take_share(hello_parse *p, uint8_t bit, const uint8_t *share, size_t 
 #ifdef CH_PROFILE_CNSA2
     p->ch->mlkem_share = share;
 #else
-    if (bit == SRV_GROUP_X25519MLKEM768) {
+    if (bit == SRV_GROUP_MLKEM1024) {
+        p->ch->mlkem_share = share;
+    } else if (bit == SRV_GROUP_X25519MLKEM768) {
         p->ch->hybrid_share = share;
     } else if (bit == SRV_GROUP_SECP256R1) {
         p->ch->p256_share = share;

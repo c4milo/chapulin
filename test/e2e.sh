@@ -363,8 +363,9 @@ else
     skip "rustls client tests: cargo is not installed"
 fi
 
-# --- The same server's key exchange. It holds X25519MLKEM768 and x25519
-# and prefers the hybrid (docs/decisions.md 54), so each s_client group
+# --- The same server's key exchange. It holds ML-KEM-1024,
+# X25519MLKEM768, x25519 and secp256r1 and prefers them in that order
+# (docs/decisions.md 54, 63 and 179), so each s_client group
 # list below names the group the server must select, and the server's
 # own "group:" line, the last one in its log, says which one ran.
 # Args: label, the group code the server must report, the summary, then
@@ -417,6 +418,30 @@ if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
 else
     CHSRV_PQ_TESTS=" (chapulin server pq tests skipped)"
     skip "chapulin server pq tests: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
+fi
+if "$OPENSSL" list -tls-groups 2>/dev/null | tr ':' '\n' | grep -qix mlkem1024; then
+    CHSRV_PQ_TESTS="$CHSRV_PQ_TESTS + chapulin server mlkem1024 x4"
+    # ML-KEM-1024 alone: selected in one round trip, and a ticket from
+    # that connection resumes over ML-KEM-1024 again.
+    chsrv_group chsrv-openssl-mlkem1024 0x0202 New -groups MLKEM1024 \
+        -sess_out "$DIR/sess_mlkem1024.pem"
+    chsrv_group chsrv-openssl-mlkem1024-resume 0x0202 Reused -groups MLKEM1024 \
+        -sess_in "$DIR/sess_mlkem1024.pem"
+    # A share for ML-KEM-1024 and one for the hybrid: ML-KEM-1024.
+    chsrv_group chsrv-openssl-mlkem1024-both 0x0202 New -groups '*X25519MLKEM768:*MLKEM1024'
+    # The hybrid first, so s_client shares the hybrid alone and lists
+    # ML-KEM-1024 after it: the server asks for ML-KEM-1024 with a
+    # HelloRetryRequest, a second ServerHello in the -msg trace.
+    chsrv_group chsrv-openssl-mlkem1024-retry 0x0202 New -groups X25519MLKEM768:MLKEM1024 -msg
+    [ "$(grep -c '<<< TLS 1.3, Handshake \[length [0-9a-f]*\], ServerHello' \
+        "$DIR/chsrv-openssl-mlkem1024-retry.log")" = 2 ] || {
+        echo "FAIL chsrv-openssl-mlkem1024-retry: want a HelloRetryRequest before the ServerHello"
+        cat "$DIR/chsrv-openssl-mlkem1024-retry.log"
+        exit 1
+    }
+else
+    CHSRV_PQ_TESTS="$CHSRV_PQ_TESTS (chapulin server mlkem1024 tests skipped)"
+    skip "chapulin server mlkem1024 tests: $("$OPENSSL" version) does not list MLKEM1024 (needs 3.5)"
 fi
 
 # --- Pinned key, default build: a self-signed RSA-3072 server, the pin is
