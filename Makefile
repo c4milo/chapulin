@@ -349,6 +349,9 @@ HDRS := p256_sign_der.h ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha
 # the test binaries that link a host object's P-256 and for the lints.
 P256_ADX_SRCS := p256_adx_field.c p256_adx_point.c p256_adx_mul.c p256_adx_verify_point.c \
                  p256_adx_verify.c
+# The three that include p256_adx_asm.h, through p256_adx_field_inline.h
+# (docs/decisions.md 175).
+P256_ADX_INLINE_SRCS := p256_adx_field.c p256_adx_point.c p256_adx_verify_point.c
 P256_WIDE_SRCS := p256_wide_field.c p256_wide_scalar.c p256_wide_inverse.c p256_wide_point.c \
                   p256_wide_mul.c p256_wide_table.c p256_wide_wipe.c p256_wide_verify.c \
                   p256_wide_verify_point.c $(P256_ADX_SRCS)
@@ -7161,9 +7164,9 @@ else
 	# this one reads the host arm, with the verifiers' equivalence test.
 	# test/p256_verify_portable.c stays out of every pass, for the reason
 	# test/aes_equiv_soft.c does below.
-	# p256_adx_field.c is out of this pass: on an x86-64 host its body is
-	# the assembly, which the two passes after this one read.
-	@$(call TIDY_EACH,$(filter-out p256_adx_field.c,$(P256_WIDE_SRCS)) p256.c test/p256_equiv_test.c \
+	# P256_ADX_INLINE_SRCS is out of this pass: on an x86-64 host each
+	# body holds the assembly, which the two passes after this one read.
+	@$(call TIDY_EACH,$(filter-out $(P256_ADX_INLINE_SRCS),$(P256_WIDE_SRCS)) p256.c test/p256_equiv_test.c \
 	  test/diff_p256_wide_test.c test/p256_verify_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
 	# The x86-64 P-256 field's copy over its model, the build
@@ -7172,11 +7175,12 @@ else
 	# another architecture than x86-64 each equivalence test's main is its
 	# SKIP alone. The x86-64 pass after it reads the assembly, for an
 	# x86-64 target whatever the host, with portability-no-assembler off for
-	# that file alone, for x25519_adx.c's reason (docs/decisions.md 171).
+	# the files that include the assembly alone, for x25519_adx.c's reason
+	# (docs/decisions.md 171 and 175).
 	@$(call TIDY_EACH,$(P256_ADX_SRCS) p256.c test/p256_adx_model_test.c test/p256_adx_equiv_test.c \
 	  test/p256_adx_verify_model_test.c test/p256_adx_verify_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -I. -Itest)
-	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler p256_adx_field.c, \
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler $(P256_ADX_INLINE_SRCS), \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -I.)
 	# P-384's 64-bit field, points and verifier (docs/decisions.md
