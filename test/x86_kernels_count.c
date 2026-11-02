@@ -175,21 +175,23 @@ void gcm_avx512_open_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV],
 }
 #endif
 
-void mlkem_keygen_dk_avx2(uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32], const uint8_t z[32]) {
+void mlkem_keygen_dk_rank_avx2(unsigned rank, uint8_t *dk, const uint8_t d[32],
+                               const uint8_t z[32]) {
     x86_mlkem_keygen_calls++;
-    mlkem_keygen_dk(dk, d, z);
+    mlkem_keygen_dk_rank(rank, dk, d, z);
 }
 
-int mlkem_encaps_derand_avx2(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
-                             const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32]) {
+int mlkem_encaps_derand_rank_avx2(uint8_t widemul, unsigned rank, uint8_t *ct,
+                                  uint8_t ss[MLKEM_SS_LEN], const uint8_t *ek,
+                                  const uint8_t m[32]) {
     x86_mlkem_encaps_calls++;
-    return mlkem_encaps_derand(widemul, ct, ss, ek, m);
+    return mlkem_encaps_derand_rank(widemul, rank, ct, ss, ek, m);
 }
 
-void mlkem_decaps_avx2(uint8_t widemul, uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
-                       const uint8_t dk[MLKEM_DK_LEN]) {
+void mlkem_decaps_rank_avx2(uint8_t widemul, unsigned rank, uint8_t ss[MLKEM_SS_LEN],
+                            const uint8_t *ct, const uint8_t *dk) {
     x86_mlkem_decaps_calls++;
-    mlkem_decaps(widemul, ss, ct, dk);
+    mlkem_decaps_rank(widemul, rank, ss, ct, dk);
 }
 
 // poly1305_vector_blocks_native takes any positive multiple of its group

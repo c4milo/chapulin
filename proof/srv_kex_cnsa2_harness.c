@@ -45,21 +45,25 @@ static int encaps_contract(uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
     return 0;
 }
 
-int mlkem_encaps_derand(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
-                        const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32]) {
+int mlkem_encaps_derand_rank(uint8_t widemul, unsigned rank, uint8_t *ct, uint8_t ss[MLKEM_SS_LEN],
+                             const uint8_t *ek, const uint8_t m[32]) {
     (void)widemul;
+    __CPROVER_assert(rank == MLKEM_K, "encaps: the object's rank");
     return encaps_contract(ct, ss, ek, m);
 }
 
-int mlkem_encaps_derand_hw(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
-                           const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32]) {
+int mlkem_encaps_derand_rank_hw(uint8_t widemul, unsigned rank, uint8_t *ct,
+                                uint8_t ss[MLKEM_SS_LEN], const uint8_t *ek, const uint8_t m[32]) {
     (void)widemul;
+    __CPROVER_assert(rank == MLKEM_K, "encaps: the object's rank");
     return encaps_contract(ct, ss, ek, m);
 }
 
-int mlkem_encaps_derand_avx2(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
-                             const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32]) {
+int mlkem_encaps_derand_rank_avx2(uint8_t widemul, unsigned rank, uint8_t *ct,
+                                  uint8_t ss[MLKEM_SS_LEN], const uint8_t *ek,
+                                  const uint8_t m[32]) {
     (void)widemul;
+    __CPROVER_assert(rank == MLKEM_K, "encaps: the object's rank");
     return encaps_contract(ct, ss, ek, m);
 }
 

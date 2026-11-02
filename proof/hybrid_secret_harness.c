@@ -36,16 +36,19 @@
 // kem_secret passed the pointer through unchanged.
 static const uint8_t *expected_ct;
 
-void mlkem_keygen_dk(uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32], const uint8_t z[32]) {
+// kem_secret runs the rank entries at the object's rank (mlkem.h).
+void mlkem_keygen_dk_rank(unsigned rank, uint8_t *dk, const uint8_t d[32], const uint8_t z[32]) {
+    __CPROVER_assert(rank == MLKEM_K, "keygen_dk: the object's rank");
     __CPROVER_assert(__CPROVER_w_ok(dk, MLKEM_DK_LEN), "keygen_dk: dk writable");
     __CPROVER_assert(__CPROVER_r_ok(d, 32), "keygen_dk: d readable");
     __CPROVER_assert(__CPROVER_r_ok(z, 32), "keygen_dk: z readable");
     fill_nondet(dk, MLKEM_DK_LEN);
 }
 
-void mlkem_decaps(uint8_t widemul, uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
-                  const uint8_t dk[MLKEM_DK_LEN]) {
+void mlkem_decaps_rank(uint8_t widemul, unsigned rank, uint8_t ss[MLKEM_SS_LEN], const uint8_t *ct,
+                       const uint8_t *dk) {
     (void)widemul;
+    __CPROVER_assert(rank == MLKEM_K, "decaps: the object's rank");
     __CPROVER_assert(__CPROVER_w_ok(ss, MLKEM_SS_LEN), "decaps: ss writable");
     __CPROVER_assert(__CPROVER_r_ok(ct, MLKEM_CT_LEN), "decaps: ct readable");
     __CPROVER_assert(__CPROVER_r_ok(dk, MLKEM_DK_LEN), "decaps: dk readable");

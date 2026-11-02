@@ -92,9 +92,10 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 // nonzero and nothing written for a refused key, otherwise a ciphertext and
 // a shared secret. The ciphertext is not filled, for the reason the shares
 // are not.
-int mlkem_encaps_derand(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
-                        const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32]) {
+int mlkem_encaps_derand_rank(uint8_t widemul, unsigned rank, uint8_t *ct, uint8_t ss[MLKEM_SS_LEN],
+                             const uint8_t *ek, const uint8_t m[32]) {
     (void)widemul;
+    __CPROVER_assert(rank == MLKEM_K, "encaps: the object's rank");
     __CPROVER_assert(__CPROVER_w_ok(ct, MLKEM_CT_LEN), "encaps: ciphertext writable");
     __CPROVER_assert(__CPROVER_w_ok(ss, MLKEM_SS_LEN), "encaps: secret writable");
     __CPROVER_assert(__CPROVER_r_ok(ek, MLKEM_EK_LEN), "encaps: key readable");

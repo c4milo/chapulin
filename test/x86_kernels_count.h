@@ -33,8 +33,8 @@ extern unsigned long x86_vaes_counter_calls;
 extern unsigned long x86_gcm_avx512_seal_calls;
 extern unsigned long x86_gcm_avx512_open_calls;
 // Calls to the three session calls of mlkem_avx2.c, ML-KEM's copy for the
-// four-way Keccak (docs/decisions.md 107): mlkem_keygen_dk_avx2,
-// mlkem_encaps_derand_avx2 and mlkem_decaps_avx2.
+// four-way Keccak (docs/decisions.md 107): mlkem_keygen_dk_rank_avx2,
+// mlkem_encaps_derand_rank_avx2 and mlkem_decaps_rank_avx2.
 extern unsigned long x86_mlkem_keygen_calls;
 extern unsigned long x86_mlkem_encaps_calls;
 extern unsigned long x86_mlkem_decaps_calls;
