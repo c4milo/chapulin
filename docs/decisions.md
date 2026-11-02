@@ -15595,7 +15595,12 @@ does nothing more.
       Each figure is the four-way path's time over the time of
       `sha3.c`'s. On the EPYC 7763 entry 174's signature took 1,330 µs
       under gcc, against OpenSSL's 1,210 µs, so at 0.71 it takes about
-      0.78 times OpenSSL's. The bench run re-records the table.
+      0.78 times OpenSSL's. The bench run of 2026-11-02 on 2cd2c9e4
+      recorded the landed change on an EPYC 7763. A signature takes 0.76
+      of OpenSSL's time under gcc and 0.69 under clang, where it took
+      1.08 and 1.00 on 531fa3da. A verification takes 0.34 and 0.30,
+      where it took 0.59 and 0.55. The AVX-512 column waits for a run
+      that draws a Xeon 8573C (docs/performance.md).
     - **What holds it.** `bin/mldsa_avx2_equiv_test` compares each
       entry the sampler writes with `mld_sample_ntt`'s, for 40 random
       seeds, every row, every first entry and every count. It compares
