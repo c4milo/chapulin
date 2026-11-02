@@ -81,6 +81,14 @@ void mlds_unpack(mld_poly *p, const uint8_t *in, unsigned bits, int32_t offset);
 // polynomial is written either way.
 uint32_t mlds_unpack_eta(mld_poly *p, const uint8_t in[MLDS_ETA_BYTES]);
 
+// RejBoundedPoly's loop over its MLDS_ETA_STREAM_BYTES bytes of SHAKE256, at
+// eta = 2: p's coefficients are the first 256 values of the half-bytes under
+// 15, in order. Returns 1 when 256 or more half-bytes are under 15, and 0
+// otherwise; p is written either way. Each kept value moves down by the
+// count of rejected half-bytes before it, a power of two at a pass, over
+// every entry by mask, so no branch and no address depends on the stream.
+uint32_t mlds_eta_from_stream(mld_poly *p, const uint8_t stream[MLDS_ETA_STREAM_BYTES]);
+
 // FIPS 204 Algorithm 31, RejBoundedPoly, at eta = 2, for the polynomial
 // SHAKE256(rho' || nonce) gives (Algorithm 33, ExpandS). Returns 1 when
 // MLDS_ETA_STREAM_BYTES bytes give all 256 coefficients, and 0 otherwise.

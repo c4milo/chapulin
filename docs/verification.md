@@ -1367,11 +1367,18 @@ The entries are grouped by area:
     past them, over every int32_t coefficient, and the range check of s1
     and s2 answers 1 only for coefficients in [-2, 2]
     (`mldsa_sign_pack`);
-  - one step of each masked sampler, from every state its loop reaches:
-    RejBoundedPoly's count grows by one exactly for a kept half-byte and
-    stays at most 256, SampleInBall's i grows by at most one, and each
-    coefficient is the one before or a value in range. By induction the
-    outputs are in range (`mldsa_sign_samplers`);
+  - RejBoundedPoly's steps against `Spec/MlDsaEta.lean`'s model: each
+    entry `eta_entry` writes holds the value, the kept bit and the count
+    of 15s before it, `eta_choose` makes the model's choice whenever the
+    two entries are not both chosen, and the ten passes, in order, stay in
+    their 962 entries.
+    One step of SampleInBall, from every state its loop reaches: i grows
+    by at most one, and each coefficient is the one before or a value in
+    range, so by induction c is in range (`mldsa_sign_samplers`).
+    `Spec.MlDsaEta.etaFromStream_eq` proves in Lean that ten passes over
+    the entries give RejBoundedPoly's loop on every stream, and
+    `pass_never_both` that no pass finds both entries chosen
+    (decision 176);
   - each coefficient function meets its contract on every input, on the
     native multiply and on ct.h's 16x16 decomposition: the reductions,
     the two products, the freeze and the centering, Decompose and
@@ -1382,11 +1389,12 @@ The entries are grouped by area:
   Wycheproof's 165 signing cases, the test-only signer and the
   differential (decision 159).
 - **Bound:** every length up to one byte past each input's own, every
-  coefficient in int32_t and every byte string. The loops of the two
-  samplers are not proved whole: 962 and 264 steps of a 256-position
-  scan passed 7.8 GB in cbmc's symbolic execution. Each step is proved
-  from every state, and the loops index their streams by constant
-  counts.
+  coefficient in int32_t and every byte string. SampleInBall's loop is
+  not proved whole: 264 steps of a 256-position scan passed 7.8 GB in
+  cbmc's symbolic execution. Each step is proved from every state, and
+  the loop indexes its stream by constant counts. RejBoundedPoly's loop
+  is proved whole in Lean over the model, and cbmc holds the C's entries
+  to the model.
 
 #### rsa
 

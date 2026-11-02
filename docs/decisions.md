@@ -15382,3 +15382,64 @@ does nothing more.
         156,300 under clang, slower than the inline product alone.
       - **The point formulas in assembly.** That is still OpenSSL's
         design and the next step, if Camilo chooses it.
+
+176. **RejBoundedPoly moves each kept value to its position by ten masked
+    passes, in place of a masked write to all 256 positions for each
+    half-byte.** The scoreboard of 2026-11-01 put ML-DSA-87 key
+    generation at 3.9 to 5.8 times OpenSSL 3.6.4 on x86-64. Entry 159
+    measured one masked RejBoundedPoly at 590,401 instructions, and key
+    generation runs fifteen of them: 80% of its count.
+
+    - **What changes.** `mlds_eta_from_stream` gives each of the 962
+      half-bytes an entry of 16 bits: a kept one holds its value, a kept
+      bit and its move, the count of 15s before it, and a 15 holds 0.
+      Pass `b`, for `b` from 0 to 9, writes each position from the entry
+      there, when its move lacks bit `b`, or from the entry `2^b` above
+      it, when its move has the bit. Each choice is a mask, and each pass
+      reads and writes every position, so no branch and no address
+      depends on the stream. After the ten passes position `p` holds the
+      `p`-th kept value. That is 9,620 masked choices, against 246,272
+      masked writes before. `mlds_sample_eta` hashes, then calls it.
+    - **Why no two values meet.** For kept half-bytes `i < j`, at most
+      `j - i - 1` of the half-bytes between them are 15s, so their moves
+      differ by less than `j - i`. Two moves that agree in their low `b`
+      bits and differ by less than their distance never put `i` and `j`
+      at one position. So a pass never chooses both entries, and the C's
+      OR of the two masked entries is a choice.
+    - **The masks.** clang for Cortex-M3 wrote `0 - bit` of a visible bit
+      as IT MI on the bit, and a sign extension as the same. `eta_choose`
+      masks with a 1 that each pass reads once from a volatile object, so
+      the compiler cannot know a masked value is 0 or 1. A volatile read
+      of each bit, as in `mlk_poly_frommsg` (entry 125), gave the same
+      code but stopped clang from vectorizing the passes, and key
+      generation took 6.21 million instructions, against 3.13 million.
+      Each branch the file gained is a loop bound or a vector trip count,
+      read by instruction on m3, arm64 and x86-64.
+    - **Numbers.** Instructions retired on the M1 Pro, `/usr/bin/time -l`
+      over 100 key generations of the portable build at `-O2`:
+
+      | sampler | key generation |
+      |---|---|
+      | masked write to 256 positions (entry 159) | 10,872,000 |
+      | ten passes, a volatile read of each bit | 6,210,000 |
+      | ten passes, a volatile 1 for each pass | 3,129,000 |
+
+    - **What holds it.** `Spec/MlDsaEta.lean` models the entries and the
+      passes. `final_eq` proves that after passes for every bit a move
+      can hold, position `p` holds the `p`-th kept entry, and
+      `etaFromStream_eq` that the C's readout of ten passes over 481
+      bytes equals `Spec.MlDsa.rejBoundedStream`, RejBoundedPoly's loop,
+      on every stream. `pass_never_both` proves the claim of the second
+      item. The `mldsa_sign_samplers` harness holds `eta_entry` and
+      `eta_choose` to the model and proves that the ten passes stay in their
+      array, at a bit each, in order. A harness pass with a free bit made
+      every index symbolic, and cbmc passed 14.5 GB after 46 minutes.
+      `bin/diff_mldsa` holds `mlds_eta_from_stream` to the spec on random
+      streams and on streams whose first 700 to 708 half-bytes are 15s.
+      SHAKE256 rejects one half-byte in 16, so no key reads a move of 64
+      or more. `bin/mldsa_signer_test` holds the C to FIPS 204's branching
+      loop on those chosen streams too, which
+      `inv62-mldsa-eta-last-pass-dropped` shows: nine passes fail it.
+    - **Rejected:** **the reference's branching sampler**, for entry 159's
+      reason. **Passes from the high bit down**, which let two values
+      meet.

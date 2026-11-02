@@ -8904,6 +8904,20 @@ WIDEMUL_SPECS := \
 #   13 more JE: clang now inlines mlds_matrix_row into mlds_commit and
 #   mlds_keygen_row and unrolls its seven samples, and each JE is the test
 #   of a sampler's verdict, which FIPS 204 Appendix C treats as public.
+# RejBoundedPoly's compaction (docs/decisions.md 176): mldsa_sign_pack.c
+#   holds mlds_eta_from_stream's loops over the 481 bytes, the ten passes,
+#   each pass's two loops and the 256 coefficients, all over constants, in
+#   place of keep_half_byte and store_at. m3's 27, mips32r2's 24 and
+#   rv32imac's 25 hold 2 or 3 more, and the m3 code holds no IT on an
+#   entry: eta_choose masks with a 1 read from a volatile object, as
+#   clang for Cortex-M3 wrote 0 minus a visible bit as IT MI. arm64's 40
+#   and x86-64's 32 hold 13 in mlds_eta_from_stream, where clang
+#   vectorizes each pass and adds its trip-count tests, which read only
+#   the pass's step. Under gcc m3-gcc's 20, mips32r2-gcc's 17,
+#   mips32r2-gcc-O2's 24 and the two rv32 gcc's 23 hold the same loops; a
+#   MOVZ on mips picks a trip count from SLTU on 963, and on rv32 one BEQ
+#   is the stack protector's check, which the 1924-byte array of entries
+#   adds. The m3 gcc code holds no IT.
 # The ML-DSA-87 signer's x86-64 host arms (docs/decisions.md 174), where
 #   the dispatchers pick the AVX2 lanes under CH_CPU_AVX2 and the multiply
 #   bit: each new branch is a TESTB or a CMPL of cpu with 12, those two
@@ -9208,29 +9222,29 @@ P256_SCALAR_BRANCH_CEILING := \
   mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18
 MLDSA_SIGN_BRANCH_CEILING := \
   m3/mldsa_signer.c:26 m3/mldsa_sign_round.c:5 m3/mldsa_sign_steps.c:29 m3/mldsa_sign_poly.c:16 \
-  m3/mldsa_sign_pack.c:25 \
+  m3/mldsa_sign_pack.c:27 \
   mips32r2/mldsa_signer.c:25 mips32r2/mldsa_sign_round.c:5 mips32r2/mldsa_sign_steps.c:21 \
-  mips32r2/mldsa_sign_poly.c:13 mips32r2/mldsa_sign_pack.c:21 \
+  mips32r2/mldsa_sign_poly.c:13 mips32r2/mldsa_sign_pack.c:24 \
   rv32imac/mldsa_signer.c:25 rv32imac/mldsa_sign_round.c:5 rv32imac/mldsa_sign_steps.c:21 \
-  rv32imac/mldsa_sign_poly.c:13 rv32imac/mldsa_sign_pack.c:22 \
+  rv32imac/mldsa_sign_poly.c:13 rv32imac/mldsa_sign_pack.c:25 \
   m3-gcc/mldsa_signer.c:27 m3-gcc/mldsa_sign_round.c:5 m3-gcc/mldsa_sign_steps.c:21 \
-  m3-gcc/mldsa_sign_poly.c:12 m3-gcc/mldsa_sign_pack.c:16 \
+  m3-gcc/mldsa_sign_poly.c:12 m3-gcc/mldsa_sign_pack.c:20 \
   mips32r2-gcc/mldsa_signer.c:26 mips32r2-gcc/mldsa_sign_round.c:5 \
   mips32r2-gcc/mldsa_sign_steps.c:21 mips32r2-gcc/mldsa_sign_poly.c:13 \
-  mips32r2-gcc/mldsa_sign_pack.c:13 \
+  mips32r2-gcc/mldsa_sign_pack.c:17 \
   mips32r2-gcc-O2/mldsa_signer.c:26 mips32r2-gcc-O2/mldsa_sign_round.c:5 \
   mips32r2-gcc-O2/mldsa_sign_steps.c:21 mips32r2-gcc-O2/mldsa_sign_poly.c:14 \
-  mips32r2-gcc-O2/mldsa_sign_pack.c:22 \
+  mips32r2-gcc-O2/mldsa_sign_pack.c:24 \
   rv32imac-gcc/mldsa_signer.c:29 rv32imac-gcc/mldsa_sign_round.c:6 \
   rv32imac-gcc/mldsa_sign_steps.c:24 rv32imac-gcc/mldsa_sign_poly.c:12 \
-  rv32imac-gcc/mldsa_sign_pack.c:18 \
+  rv32imac-gcc/mldsa_sign_pack.c:23 \
   rv32ic-gcc/mldsa_signer.c:29 rv32ic-gcc/mldsa_sign_round.c:6 rv32ic-gcc/mldsa_sign_steps.c:24 \
-  rv32ic-gcc/mldsa_sign_poly.c:12 rv32ic-gcc/mldsa_sign_pack.c:18 \
+  rv32ic-gcc/mldsa_sign_poly.c:12 rv32ic-gcc/mldsa_sign_pack.c:23 \
   arm64/mldsa_signer.c@host:27 arm64/mldsa_sign_round.c@host:2 arm64/mldsa_sign_steps.c@host:46 \
-  arm64/mldsa_sign_poly.c@host:25 arm64/mldsa_sign_pack.c@host:30 \
+  arm64/mldsa_sign_poly.c@host:25 arm64/mldsa_sign_pack.c@host:40 \
   x86-64/mldsa_signer.c@host:18 x86-64/mldsa_sign_round.c@host:2 \
   x86-64/mldsa_sign_steps.c@host:35 x86-64/mldsa_sign_poly.c@host:26 \
-  x86-64/mldsa_sign_pack.c@host:22
+  x86-64/mldsa_sign_pack.c@host:32
 QUIC_PACKET_BRANCH_CEILING := \
   m3/quic_packet.c:59 mips32r2/quic_packet.c:42 rv32imac/quic_packet.c:46 m3-gcc/quic_packet.c:46 \
   mips32r2-gcc/quic_packet.c:46 mips32r2-gcc-O2/quic_packet.c:52 rv32imac-gcc/quic_packet.c:55 \

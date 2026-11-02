@@ -3,6 +3,8 @@
 //  - Decompose and Power2Round at every r in [0, q), against FIPS 204's
 //    division form;
 //  - the constant-time SampleInBall against the verifier's sampler;
+//  - the masked RejBoundedPoly loop against FIPS 204's branching one, on
+//    streams that move kept values by every count up to 706;
 //  - the coefficient functions against 64-bit arithmetic;
 //  - key generation and signing byte for byte against the test-only
 //    signer, test/mldsa_sign.c, which bin/wycheproof_mldsa_sign_test holds
@@ -181,6 +183,103 @@ static void test_sample_in_ball(void) {
     CHECK(bad == 0);
 }
 
+// RejBoundedPoly's loop as FIPS 204 writes it, with a branch on each
+// half-byte. Returns 1 when it kept 256 values.
+static int eta_reference(mld_poly *p, const uint8_t stream[MLDS_ETA_STREAM_BYTES]) {
+    unsigned count = 0;
+    for (unsigned at = 0; at < 2 * MLDS_ETA_STREAM_BYTES && count < MLD_N; at++) {
+        unsigned z = at % 2 == 0 ? stream[at / 2] & 15U : stream[at / 2] >> 4;
+        if (z < 15) {
+            p->coeffs[count++] = MLDS_ETA - (int32_t)(z % 5);
+        }
+    }
+    return count == MLD_N;
+}
+
+static unsigned eta_differs(const uint8_t stream[MLDS_ETA_STREAM_BYTES]) {
+    mld_poly want;
+    mld_poly got;
+    int kept_want = eta_reference(&want, stream);
+    uint32_t kept = mlds_eta_from_stream(&got, stream);
+    if (kept != (uint32_t)kept_want) {
+        return 1;
+    }
+    return kept == 1 && memcmp(&want, &got, sizeof want) != 0;
+}
+
+// Sets half-byte `at` of stream to z.
+static void set_half(uint8_t stream[MLDS_ETA_STREAM_BYTES], unsigned at, unsigned z) {
+    unsigned shift = 4U * (at % 2);
+    stream[at / 2] = (uint8_t)((stream[at / 2] & ~(15U << shift)) | (z << shift));
+}
+
+// Streams whose first 700 to 708 half-bytes are 15: the last kept value
+// moves by up to 706, the most a stream that keeps 256 values allows, and a
+// run of 707 or more keeps fewer than 256.
+static unsigned eta_leading_rejects(void) {
+    unsigned bad = 0;
+    uint8_t stream[MLDS_ETA_STREAM_BYTES];
+    for (unsigned rejected = 700; rejected <= 708; rejected++) {
+        fill(stream, sizeof stream, 3, rejected);
+        for (unsigned at = 0; at < 2 * MLDS_ETA_STREAM_BYTES; at++) {
+            unsigned z = (stream[at / 2] >> (4U * (at % 2))) & 15U;
+            set_half(stream, at, at < rejected ? 15U : z % 15U);
+        }
+        bad += eta_differs(stream);
+    }
+    return bad;
+}
+
+// Runs of 1, 2, 4 and up to 512 rejected half-bytes, each after one kept
+// one, in increasing and in decreasing order.
+static unsigned eta_doubling_runs(void) {
+    unsigned bad = 0;
+    uint8_t stream[MLDS_ETA_STREAM_BYTES];
+    for (unsigned order = 0; order < 2; order++) {
+        fill(stream, sizeof stream, 4, order);
+        unsigned at = 0;
+        for (unsigned bit = 0; bit < 10; bit++) {
+            unsigned run = 1U << (order == 0 ? bit : 9 - bit);
+            set_half(stream, at++ % (2 * MLDS_ETA_STREAM_BYTES), 0);
+            for (unsigned r = 0; r < run; r++) {
+                set_half(stream, at++ % (2 * MLDS_ETA_STREAM_BYTES), 15);
+            }
+        }
+        bad += eta_differs(stream);
+    }
+    return bad;
+}
+
+// Random streams, and random streams in which each half-byte is 15 with a
+// probability from 0 to 3/4.
+static unsigned eta_random(void) {
+    unsigned bad = 0;
+    uint8_t stream[MLDS_ETA_STREAM_BYTES];
+    uint8_t coin[2 * MLDS_ETA_STREAM_BYTES];
+    for (uint32_t n = 0; n < 300; n++) {
+        fill(stream, sizeof stream, 5, n);
+        bad += eta_differs(stream);
+        fill(coin, sizeof coin, 6, n);
+        unsigned threshold = (n % 25) * 8;
+        for (unsigned at = 0; at < sizeof coin; at++) {
+            if (coin[at] < threshold) {
+                set_half(stream, at, 15);
+            }
+        }
+        bad += eta_differs(stream);
+    }
+    return bad;
+}
+
+// The masked RejBoundedPoly loop against the branching one. Random
+// streams reject one half-byte in 16, so each kept value moves by about
+// 17 at most and the passes for 64 and up see no move; the chosen streams
+// move values by every count up to 706.
+static void test_eta_from_stream(void) {
+    unsigned bad = eta_leading_rejects() + eta_doubling_runs() + eta_random();
+    CHECK(bad == 0);
+}
+
 // The library signer and the test signer over the same inputs.
 static void test_against_test_signer(void) {
     static mldsa_test_key key;
@@ -310,6 +409,7 @@ int main(int argc, char **argv) {
     test_rounding();
     test_coefficients();
     test_sample_in_ball();
+    test_eta_from_stream();
     test_against_test_signer();
     test_refusals();
     test_hedge();
@@ -317,7 +417,8 @@ int main(int argc, char **argv) {
         (void)fprintf(stderr, "mldsa signer: %d failure(s)\n", failures);
         return 1;
     }
-    (void)printf("mldsa signer: rounding at every r, coefficients, SampleInBall, 48 signatures "
+    (void)printf("mldsa signer: rounding at every r, coefficients, SampleInBall, RejBoundedPoly, "
+                 "48 signatures "
                  "equal to the test signer's, refusals, hedge: ok\n");
     return 0;
 }

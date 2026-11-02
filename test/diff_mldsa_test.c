@@ -19,6 +19,11 @@
 //   signature of a random message and context under a random rnd, or 32
 //   zero bytes, and one from a random mu. Then a key whose s1 is out of
 //   range and a context of 256 bytes, which both sides refuse.
+// - mlds_eta_from_stream, RejBoundedPoly's masked loop, against the
+//   spec's loop over the same 481 bytes (docs/decisions.md 176): random
+//   streams, streams in which a half-byte is 15 with a probability up to
+//   3/4, and streams whose first 700 to 708 half-bytes are 15, which move
+//   a kept value by up to 706 or keep fewer than 256.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +34,7 @@
 #include "diff_driver.h"
 #include "mldsa.h"
 #include "mldsa_poly.h"
+#include "mldsa_sign_pack.h"
 #include "mldsa_signer.h"
 #include "sha3.h"
 
@@ -304,6 +310,48 @@ static void diff_mldsa_sign(void) {
     expect_sign(sk, msg, 0, NULL, 0, rnd, pk);
 }
 
+// One stream through mlds_eta_from_stream and through the spec.
+static void expect_eta(const uint8_t stream[MLDS_ETA_STREAM_BYTES]) {
+    mld_poly p;
+    uint8_t packed[MLDS_ETA_BYTES];
+    char want[2 * MLDS_ETA_BYTES + 1];
+    if (mlds_eta_from_stream(&p, stream) == 1) {
+        mlds_pack(packed, &p, 3, MLDS_ETA);
+        (void)hex_encode(want, packed, sizeof packed);
+    } else {
+        (void)strcpy(want, "FAIL");
+    }
+    size_t at = (size_t)snprintf(request, sizeof request, "mldsa87_eta_stream ");
+    (void)put_hex(request + at, stream, MLDS_ETA_STREAM_BYTES);
+    expect(request, want);
+}
+
+static void diff_mldsa_eta(void) {
+    uint8_t stream[MLDS_ETA_STREAM_BYTES];
+    for (int round = 0; round < 20; round++) {
+        rng_fill(stream, sizeof stream);
+        expect_eta(stream);
+        // Each half-byte 15 with a probability of round / 26.
+        for (unsigned at = 0; at < 2 * MLDS_ETA_STREAM_BYTES; at++) {
+            uint8_t coin;
+            rng_fill(&coin, 1);
+            if (coin * 26U < (unsigned)round * 256U) {
+                stream[at / 2] |= (uint8_t)(15U << (4U * (at % 2)));
+            }
+        }
+        expect_eta(stream);
+    }
+    for (unsigned rejected = 700; rejected <= 708; rejected++) {
+        rng_fill(stream, sizeof stream);
+        for (unsigned at = 0; at < 2 * MLDS_ETA_STREAM_BYTES; at++) {
+            unsigned shift = 4U * (at % 2);
+            unsigned z = at < rejected ? 15U : ((stream[at / 2] >> shift) & 15U) % 15U;
+            stream[at / 2] = (uint8_t)((stream[at / 2] & ~(15U << shift)) | (z << shift));
+        }
+        expect_eta(stream);
+    }
+}
+
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "spec/lean/.lake/build/bin/diffspec";
     (void)printf("diff mldsa-87: seed 0x%016llx\n", (unsigned long long)rng_seed_from_env());
@@ -312,6 +360,7 @@ int main(int argc, char **argv) {
     diff_mldsa_challenge();
     diff_mldsa_verify();
     diff_mldsa_sign();
+    diff_mldsa_eta();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }

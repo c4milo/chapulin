@@ -35,6 +35,7 @@ import Spec.Sha3
 import Spec.Sha512
 import Spec.MlKem
 import Spec.MlDsa
+import Spec.MlDsaEta
 import Spec.Pem
 import Spec.PemBlocks
 import Spec.X509Der

@@ -2362,9 +2362,10 @@ last `ROLE=server` stub, as the entry said it would.
   CH_ASSERT reads them. `mlds_key_in_range` checks the 15 polynomials of
   s1 and s2 before the first round. Every product goes through
   `ct_widemul_s`, and every test is a mask: `mlds_at_least`,
-  `mlds_mask_eq` and `mlds_select`. RejBoundedPoly and SampleInBall
-  write each kept value to all 256 positions by mask (`store_at`,
-  `load_at`). `mlds_sign_round` ORs every check and the hint count's
+  `mlds_mask_eq` and `mlds_select`. SampleInBall writes
+  each value to all 256 positions by mask (`store_at`, `load_at`).
+  RejBoundedPoly moves each kept value down by ten masked passes over all
+  962 entries (`eta_pass`). `mlds_sign_round` ORs every check and the hint count's
   test into one word, the one value the loop branches on. Key generation
   and the loop wipe their state on every path.
 - **Check.** Known answers, a model and proofs.
@@ -2382,12 +2383,13 @@ last `ROLE=server` stub, as the entry said it would.
 - **Violation.** A PR returns a signature without the check, keeps sig
   after a refused check, admits zero rnd, leaves key generation's state
   on the stack, admits an s1 or s2 value out of range, writes a sampled
-  value by index behind a branch, reads the both form without its
+  value behind a branch, drops a pass of RejBoundedPoly's compaction, reads the both form without its
   comparison, lets a round pass with more than omega hints, or admits a
   low-bits coefficient at gamma2 - beta. `inv62-mldsa-sign-skips-verify`,
   `inv62-mldsa-sign-refusal-keeps-sig`,
-  `inv62-mldsa-sign-zero-rnd-admitted` and
-  `inv62-mldsa-eta-range-unchecked` fail `bin/mldsa_signer_test`.
+  `inv62-mldsa-sign-zero-rnd-admitted`,
+  `inv62-mldsa-eta-range-unchecked` and
+  `inv62-mldsa-eta-last-pass-dropped` fail `bin/mldsa_signer_test`.
   `inv62-mldsa-keygen-state-not-wiped` and
   `inv62-mldsa-pem-both-form-unchecked` fail `bin/pem_files_mldsa_test`.
   `inv62-mldsa-eta-sampler-branches` fails `lint-wide-multiply`.

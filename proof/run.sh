@@ -775,9 +775,11 @@ launch fast full mldsa_coefficient 2 ""
 # 49 s, 1.2 GB; mldsa_sign_keygen_row 448, 9 s, 0.8 GB;
 # mldsa_sign_keygen_row0 448, 8 s, 0.8 GB; mldsa_sign_encode 359, 12 s,
 # 0.4 GB; mldsa_sign_poly 244, 57 s, 2.9 GB; mldsa_sign_ntt 238, 190 s,
-# 2.0 GB; mldsa_sign_pack 265, 26 s, 1.6 GB; mldsa_sign_samplers 222,
-# 53 s, 0.7 GB; mldsa_sign_coefficient 61, 21 s, 0.2 GB;
-# mldsa_sign_coefficient_ct 60, 44 s, 0.1 GB. Each weight is its peak.
+# 2.0 GB; mldsa_sign_pack 265, 26 s, 1.6 GB; mldsa_sign_coefficient 61,
+# 21 s, 0.2 GB; mldsa_sign_coefficient_ct 60, 44 s, 0.1 GB. Each weight is
+# its peak. mldsa_sign_samplers, since RejBoundedPoly's passes joined it
+# (docs/decisions.md 176): 312 properties, 289 s, 2.0 GB, in an Ubuntu
+# 24.04 amd64 container under Rosetta with the pinned cbmc and kissat.
 launch fast:6 full mldsa_signer 816 "ct_wipe.0:4628" ct.c
 launch fast:5 full mldsa_signer_keygen 258 "ct_wipe.0:4897" ct.c
 launch fast full mldsa_sign_round 258 ""
@@ -791,7 +793,7 @@ launch fast full mldsa_sign_encode 258 "fill_nondet.0:641" ct.c proof/ct_wipe_st
 launch fast:3 full mldsa_sign_poly 258 "mlds_poly_ntt.2:9,mlds_poly_invntt_tomont.2:9"
 launch fast full mldsa_sign_ntt 258 "mlds_poly_ntt.2:9,mlds_poly_invntt_tomont.2:9"
 launch fast full mldsa_sign_pack 642 "" ct.c proof/ct_wipe_stub.c
-launch fast full mldsa_sign_samplers 258 "" ct.c proof/ct_wipe_stub.c
+launch fast:2 full mldsa_sign_samplers 963 "" ct.c proof/ct_wipe_stub.c
 launch fast full mldsa_sign_coefficient 2 ""
 launch fast full mldsa_sign_coefficient_ct 2 ""
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain

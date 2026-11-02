@@ -249,6 +249,14 @@ def dispatch : List String → Option String
     match Spec.MlDsa.sign (← hexArg? sk) (← hexArg? msg) (← hexArg? ctx) (← hexArg? rnd) with
     | some s => return emit s
     | none => return "FAIL"
+  -- RejBoundedPoly's loop over 481 stream bytes (docs/decisions.md 176):
+  -- the 256 coefficients as skEncode packs them, or FAIL.
+  | ["mldsa87_eta_stream", s] => do
+    let sb ← hexArg? s
+    guard (sb.size == Spec.MlDsa.etaStreamBytes)
+    match Spec.MlDsa.rejBoundedStream sb with
+    | some values => return emit (Spec.MlDsa.packOffset values 2 3)
+    | none => return "FAIL"
   | ["mldsa87_sign_mu", sk, mu, rnd] => do
     match Spec.MlDsa.signMu (← hexArg? sk) (← hexArg? mu) (← hexArg? rnd) with
     | some s => return emit s

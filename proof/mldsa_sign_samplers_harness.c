@@ -1,29 +1,33 @@
-// Proves: one step of each masked rejection sampler of mldsa_sign_pack.c,
-// RejBoundedPoly's keep_half_byte and SampleInBall's ball_step, is
-// memory-safe and UB-free with the signed-overflow check on, from every
-// state the sampler's loop can be in, and the step keeps the state's
-// invariant:
-//  - keep_half_byte, for every half-byte z, every count from 0 to 256 and
-//    every polynomial: the count grows by at most 1 and stays at most 256,
-//    it grows exactly when z is under 15 and the count was under 256, and
-//    each coefficient is the one before or the step's value, which is in
-//    [-2, 2];
+// Proves: the steps of mldsa_sign_pack.c's two masked samplers are
+// memory-safe and UB-free with the signed-overflow check on, and each
+// matches its model:
+//  - eta_entry, RejBoundedPoly's entry, for every half-byte z and every
+//    count of 15s from 0 to 961: a z under 15 gives an entry that holds
+//    2 - (z mod 5) plus 2, the kept bit and the count, and leaves the
+//    count; a 15 gives 0 and adds 1 to the count. That is
+//    Spec.MlDsaEta.start (spec/lean/Spec/MlDsaEta.lean).
+//  - eta_choose, for every two entries eta_entry can write or 0, and every
+//    bit from 0 to 9: the entry above when its move has the bit, else the
+//    entry here when its move does not, else 0, whenever the two are not
+//    both chosen. That is Spec.MlDsaEta.choose, and pass_never_both proves
+//    the two are never both chosen in a run, where the C's OR of two
+//    masked entries would differ from the model.
+//  - the ten passes of eta_pass in order, bits 0 to 9, as
+//    mlds_eta_from_stream runs them, over every array of 962 entries:
+//    every read and write stays in the array. A pass whose bit is
+//    nondeterministic makes every index symbolic, and cbmc passed 14.5 GB
+//    after 46 minutes on that formula (docs/decisions.md 176).
 //  - ball_step, for every position j from the stream, every i from 196
 //    to 256 and every polynomial and sign word: i grows by at most 1 and
 //    stays at most 256, and each coefficient is the one before, the one at
 //    j, or +1 or -1.
-// So by induction over the loop each sampler's output is in range: s1 and
-// s2 coefficients in [-2, 2], c's in {-1, 0, 1}, from the zeros each loop
-// starts with.
-//
-// The two loops that drive the steps run MLDS_ETA_STREAM_BYTES and
-// MLD_BALL_BYTES - 8 steps over constant indexes into their streams. A
-// formula of the whole loop holds 962 or 264 steps of a 256-position scan,
-// and cbmc passed 7.8 GB in symbolic execution on it after 1,108 s on an
-// M1 Pro (docs/decisions.md 159). bin/mldsa_signer_test holds
-// mlds_sample_in_ball to the verifier's sampler value for value, and the
-// keys bin/wycheproof_mldsa_library_test expands hold mlds_sample_eta to
-// FIPS 204.
+// Spec.MlDsaEta.etaFromStream_eq proves that the passes over the entries
+// give RejBoundedPoly's loop, and bin/diff_mldsa holds
+// mlds_eta_from_stream to Spec.MlDsa.rejBoundedStream (docs/decisions.md
+// 176). The loop that drives ball_step runs MLD_BALL_BYTES - 8 steps of a
+// 256-position scan, and cbmc passed 7.8 GB in symbolic execution on a
+// formula of it (docs/decisions.md 159). bin/mldsa_signer_test holds
+// mlds_sample_in_ball to the verifier's sampler value for value.
 #include "harness.h"
 
 #include "mldsa_sign_pack.c"
@@ -36,23 +40,56 @@ static void havoc_poly(mld_poly *p) {
     }
 }
 
-static void eta_step(void) {
-    mld_poly p;
-    mld_poly before;
-    havoc_poly(&p);
-    before = p;
-    uint32_t count = nondet_u32();
-    __CPROVER_assume(count <= MLD_N);
+uint16_t nondet_u16(void);
+
+static void eta_entry_step(void) {
     uint32_t z = nondet_u32() & 15U;
-    uint32_t start = count;
-    keep_half_byte(&p, &count, z);
-    __CPROVER_assert(count <= MLD_N, "keep_half_byte: the count stays at most 256");
-    __CPROVER_assert(count == start + ((z < 15 && start < MLD_N) ? 1U : 0U),
-                     "keep_half_byte: one more exactly for a kept half-byte");
-    unsigned n = nondet_u32() % MLD_N;
-    __CPROVER_assert(p.coeffs[n] == before.coeffs[n] ||
-                         (n == start && p.coeffs[n] >= -MLDS_ETA && p.coeffs[n] <= MLDS_ETA),
-                     "keep_half_byte: one coefficient takes a value in [-2, 2]");
+    uint32_t rejected = nondet_u32();
+    __CPROVER_assume(rejected < MLDS_ETA_HALVES);
+    uint32_t start = rejected;
+    uint32_t entry = eta_entry(z, &rejected);
+    if (z < 15) {
+        __CPROVER_assert(rejected == start, "eta_entry: a kept half-byte leaves the count");
+        __CPROVER_assert((entry & 7U) == 4U - z % 5U, "eta_entry: the value plus eta");
+        __CPROVER_assert((entry & MLDS_ETA_KEPT) != 0, "eta_entry: the kept bit");
+        __CPROVER_assert(entry >> MLDS_ETA_MOVE_AT == start, "eta_entry: the move is the count");
+    } else {
+        __CPROVER_assert(rejected == start + 1, "eta_entry: a 15 adds 1 to the count");
+        __CPROVER_assert(entry == 0, "eta_entry: a 15 writes no entry");
+    }
+}
+
+// An entry eta_entry can write: 0, or a value under 5, the kept bit and a
+// move under 962.
+static uint32_t nondet_entry(void) {
+    uint32_t entry = nondet_u16();
+    uint32_t kept = entry & MLDS_ETA_KEPT;
+    __CPROVER_assume(entry == 0 || (kept != 0 && (entry & 7U) < 5U &&
+                                    entry >> MLDS_ETA_MOVE_AT < MLDS_ETA_HALVES));
+    return entry;
+}
+
+static void eta_choose_step(void) {
+    uint32_t here = nondet_entry();
+    uint32_t above = nondet_entry();
+    unsigned bit = nondet_u32() % MLDS_ETA_PASSES;
+    unsigned at = MLDS_ETA_MOVE_AT + bit;
+    int moves = above != 0 && ((above >> at) & 1U) != 0;
+    int stays = here != 0 && ((here >> at) & 1U) == 0;
+    __CPROVER_assume(!(moves && stays));
+    uint32_t got = eta_choose(1U, here, above, bit);
+    uint32_t want = moves ? above : stays ? here : 0U;
+    __CPROVER_assert(got == want, "eta_choose: Spec.MlDsaEta.choose");
+}
+
+static void eta_pass_step(void) {
+    uint16_t entries[MLDS_ETA_HALVES];
+    for (unsigned i = 0; i < MLDS_ETA_HALVES; i++) {
+        entries[i] = nondet_u16();
+    }
+    for (unsigned bit = 0; bit < MLDS_ETA_PASSES; bit++) {
+        eta_pass(entries, bit);
+    }
 }
 
 static void ball(void) {
@@ -74,7 +111,9 @@ static void ball(void) {
 }
 
 int main(void) {
-    eta_step();
+    eta_entry_step();
+    eta_choose_step();
+    eta_pass_step();
     ball();
     return 0;
 }

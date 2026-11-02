@@ -1,0 +1,14 @@
+invariant: INV-62
+file: mldsa_sign_pack.c
+catches: mldsa_signer_test
+reason: RejBoundedPoly's compaction runs nine passes in place of ten, so
+  a kept value whose move is 512 or more stays 512 positions too high.
+  SHAKE256's streams reject one half-byte in 16, so no key generation
+  reads such a move, and no known answer sees it. bin/mldsa_signer_test
+  feeds streams whose first 700 to 708 half-bytes are rejected and
+  requires the branching loop's coefficients.
+
+--- old
+    for (unsigned bit = 0; bit < MLDS_ETA_PASSES; bit++) {
+--- new
+    for (unsigned bit = 0; bit + 1 < MLDS_ETA_PASSES; bit++) {

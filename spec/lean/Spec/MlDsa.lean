@@ -320,15 +320,19 @@ def packOffset (values : Array Int) (offset : Int) (width : Nat) : ByteArray :=
 def unpackOffset (B : ByteArray) (offset : Int) (width : Nat) : Array Int :=
   (unpackBits B width).map fun (v : Nat) => offset - (v : Int)
 
-/-- FIPS 204 Algorithm 31, RejBoundedPoly, at eta = 2, over
-`etaStreamBytes` bytes of SHAKE256(seed): each half-byte z under 15 gives
-`2 - (z mod 5)` (Algorithm 15, CoeffFromHalfByte), the low half first. -/
-def rejBoundedPoly (seed : ByteArray) : Option (Array Int) :=
-  let s := shake256 seed etaStreamBytes
+/-- FIPS 204 Algorithm 31, RejBoundedPoly's loop at eta = 2, over the
+`etaStreamBytes` bytes `s`: each half-byte z under 15 gives `2 - (z mod 5)`
+(Algorithm 15, CoeffFromHalfByte), the low half first. -/
+def rejBoundedStream (s : ByteArray) : Option (Array Int) :=
   let halves := (List.range etaStreamBytes).flatMap fun b => [s[b]!.toNat % 16, s[b]!.toNat / 16]
   let kept := halves.filterMap fun z =>
     if z < 15 then some ((2 : Int) - ((z % 5 : Nat) : Int)) else none
   if 256 ≤ kept.length then some (kept.take 256).toArray else none
+
+/-- FIPS 204 Algorithm 31, RejBoundedPoly, at eta = 2, over
+`etaStreamBytes` bytes of SHAKE256(seed). -/
+def rejBoundedPoly (seed : ByteArray) : Option (Array Int) :=
+  rejBoundedStream (shake256 seed etaStreamBytes)
 
 /-- FIPS 204 Algorithm 35, Power2Round: `(r1, r0)` with
 `r = r1 * 2^13 + r0` and `r0 = r mod± 2^13`. -/
