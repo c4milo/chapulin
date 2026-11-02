@@ -15330,3 +15330,55 @@ does nothing more.
         the one load and one VPERMD that read the same eight entries.
       - **The verifier in every x86-64 session.** A CPU without AVX2
         faults on the first instruction.
+
+175. **The x86-64 P-256 copy runs its product and square inline in each
+    point formula.** After decision 171 a shared secret took 1.44 times
+    OpenSSL 3.6.4's time on an EPYC 7763 under gcc and 1.21 times under
+    clang. Camilo chose to measure where that time went, then to inline
+    the field first and to measure again.
+
+    - **The measurement.** A lab bench timed each step on six runners,
+      beside OpenSSL's `ecp_nistz256` routines from its own static
+      library. On an EPYC 7763, in TSC cycles, gcc then clang:
+
+      | step | chapulin | OpenSSL |
+      |---|---|---|
+      | product | 41.5, 40.0 | 39.2, 36.2 |
+      | square | 42.6, 36.2 | 35.5 |
+      | sum mod p | 14.1, 7.6 | 6.8 |
+      | doubling | 469, 383 | 301 |
+      | addition | 660, 606 | 540 |
+      | inverse | 9,300, 5,400 | about 9,600 by Fermat |
+      | shared secret | 182,000, 155,000 | about 127,000 |
+
+      So the field was at OpenSSL's speed, and the 256 doublings were
+      most of the gap: 43,000 of 55,000 cycles under gcc. The other CPU
+      models showed the same order.
+    - **The change.** `p256_adx_field_inline.h` holds the product and
+      the square as always_inline functions over `p256_adx_asm.h`, or
+      over the model. `p256_adx_names.h` renames the wide field's two
+      routines to them, and `p256_adx_point.c` and
+      `p256_adx_verify_point.c` include the header after the renames.
+      Each statement writes rbx and r12 to r15, which the caller owns.
+      As a call, each product saved and restored them and moved its
+      operands through memory. Inline, a formula saves them once.
+      `p256_adx_field.c` keeps `p256_adx_fe_mul` and `p256_adx_fe_sqr`
+      over the same functions, for the tests and the harnesses.
+    - **Numbers.** The prototype on the same six runners, as cycles of
+      one shared secret on an EPYC 7763: under gcc 182,400 became
+      159,100, and under clang 154,900 became 144,300. The doubling took
+      384 and 346 cycles, and the addition 615 and 580. On a Xeon 8573C
+      the shared secret took 0.90 of its time under gcc and 0.93 under
+      clang, and on a Xeon 8370C 0.94 and 0.95.
+    - **What holds it.** The assembly and the model are the same text as
+      before. `bin/p256_adx_model_test`, `bin/p256_adx_verify_model_test`
+      and the qemu lane's `p256-adx` part hold the inline copy as they
+      held the called one, the stack checks included.
+    - **Rejected:**
+      - **The sum and the difference mod p in assembly.** gcc's sum takes
+        14 cycles against OpenSSL's 7. But a statement for each sum
+        stopped the compiler from moving loads and stores across it: with
+        both changes the shared secret took 167,300 cycles under gcc and
+        156,300 under clang, slower than the inline product alone.
+      - **The point formulas in assembly.** That is still OpenSSL's
+        design and the next step, if Camilo chooses it.

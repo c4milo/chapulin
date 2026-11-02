@@ -528,7 +528,7 @@ COPIES = {
     "p256_adx_point.c": (
         "p256_wide_point.c",
         "p256_wide_point.c under p256_adx_names.h's names, whose products and "
-        "squares are p256_adx_field.c's. The p256_wide_point harness proves "
+        "squares are p256_adx_field_inline.h's. The p256_wide_point harness proves "
         "that text over the field's stubs, which state the contract both "
         "fields keep, and bin/p256_adx_equiv_test holds the copy to the files "
         "under their own names on a CPU with BMI2 and ADX."
@@ -543,7 +543,7 @@ COPIES = {
     "p256_adx_verify_point.c": (
         "p256_wide_verify_point.c",
         "p256_wide_verify_point.c under p256_adx_names.h's names, whose "
-        "products and squares are p256_adx_field.c's. The "
+        "products and squares are p256_adx_field_inline.h's. The "
         "p256_wide_verify_point harness proves that text over the field's "
         "stubs, and bin/p256_adx_verify_equiv_test holds the copy's verdicts "
         "to the 32-bit verifier's."

@@ -8,13 +8,15 @@
 // the ECDSA verification on the bit alone, because every input of a
 // verification is public (docs/decisions.md 171).
 //
-// Five files make the copy. p256_adx_field.c defines p256_adx_fe_mul and
-// p256_adx_fe_sqr over the assembly, and p256_adx_point.c, p256_adx_mul.c,
+// Five files make the copy. p256_adx_point.c, p256_adx_mul.c,
 // p256_adx_verify_point.c and p256_adx_verify.c each include
 // p256_adx_names.h and then the wide file of the same stem, so the point
 // arithmetic is the same source text as the wide files'. The renames make
 // every call of those files to p256_wide_fe_mul or p256_wide_fe_sqr a call
-// of the assembly. Every other field routine, the scalar arithmetic, the
+// of p256_adx_field_inline.h's always_inline functions over the assembly,
+// which the two point files include. p256_adx_field.c defines
+// p256_adx_fe_mul and p256_adx_fe_sqr over the same functions for the tests
+// and the harnesses. Every other field routine, the scalar arithmetic, the
 // binary GCD and the table of multiples of G are the wide files' own: they
 // multiply on the wide field's rows where they multiply at all, which is a
 // few products per operation, in p256_wide_fe_to_mont and p256_wide_fe_inv.

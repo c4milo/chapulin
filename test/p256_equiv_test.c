@@ -43,6 +43,13 @@
 // bin/p256_adx_equiv_test over the assembly (test/p256_adx_equiv_test.c).
 #ifdef P256_EQUIV_ADX
 #include "p256_adx_names.h"
+// The cases call p256_adx_field.c's two routines, not the inline functions
+// of p256_adx_field_inline.h, so this unit holds no assembly beside
+// test/p256_adx_equiv_test.c's model.
+#undef p256_wide_fe_mul
+#undef p256_wide_fe_sqr
+#define p256_wide_fe_mul p256_adx_fe_mul
+#define p256_wide_fe_sqr p256_adx_fe_sqr
 #define P256_EQUIV_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY | CH_CPU_BMI2_ADX)
 #define P256_EQUIV_FILES "the x86-64 field's copy"
 #else

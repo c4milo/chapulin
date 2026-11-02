@@ -9,15 +9,16 @@
 // p256_wide_, so the two copies define no name twice. They rename the
 // declarations each file's header gives as well as the definitions, and a
 // call from one copied file to another calls the copy of the callee. The
-// first two make each copied file's products and squares p256_adx_field.c's
-// assembly. A name left out is defined by both copies, and the link of the
-// object refuses it.
+// first two make each copied file's products and squares the always_inline
+// functions of p256_adx_field_inline.h, which a file that calls them includes
+// after this header. A name left out is defined by both copies, and the link
+// of the object refuses it.
 #ifndef CH_P256_ADX_NAMES_H
 #define CH_P256_ADX_NAMES_H
 
-// p256_adx_field.c's two routines.
-#define p256_wide_fe_mul p256_adx_fe_mul
-#define p256_wide_fe_sqr p256_adx_fe_sqr
+// p256_adx_field_inline.h's two functions.
+#define p256_wide_fe_mul p256_adx_fe_mul_inline
+#define p256_wide_fe_sqr p256_adx_fe_sqr_inline
 
 // p256_wide_point.c.
 #define p256_wide_point_from_portable p256_adx_point_from_portable

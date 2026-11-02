@@ -145,6 +145,7 @@
         "p256_adx.h",
         "p256_adx_asm.h",
         "p256_adx_field.c",
+        "p256_adx_field_inline.h",
         "p256_adx_mul.c",
         "p256_adx_names.h",
         "p256_adx_point.c",
