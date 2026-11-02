@@ -11,6 +11,6 @@ reason: the verifier samples each entry of A through the call that takes
   arm64 and runs it under qemu-aarch64.
 
 --- old
-        if (!mld_sample_ntt_cpu(cpu, &entry, pk, (uint8_t)j, (uint8_t)i)) {
+        if (!mld_sample_ntt_cpu(cpu, entry, pk, (uint8_t)j, (uint8_t)i)) {
 --- new
-        if (!mld_sample_ntt(&entry, pk, (uint8_t)j, (uint8_t)i)) {
+        if (!mld_sample_ntt(entry, pk, (uint8_t)j, (uint8_t)i)) {

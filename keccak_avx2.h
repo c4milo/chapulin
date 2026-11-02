@@ -1,20 +1,22 @@
 // A host object's four-way Keccak on x86-64: Keccak-f[1600] on four states
 // at once in 256-bit vectors, lane i of every state in vector i, and the
-// start of the four SHAKE128 streams ML-KEM's matrix entries come from.
-// Every x86-64 host object carries it beside sha3.c, and mlkem_avx2.c
-// samples each row of the matrix on it, for a session whose ch_cfg.cpu
-// holds CH_CPU_AVX2 (mlkem.h). sha3.c stays the reference:
-// bin/mlkem_avx2_equiv_test holds the four streams to it on a CPU that has
-// AVX2.
+// start of the four SHAKE128 streams that the entries of ML-KEM's and
+// ML-DSA-87's matrices come from. Every x86-64 host object that holds
+// either algorithm carries it beside sha3.c. mlkem_avx2.c samples each row
+// of ML-KEM's matrix on it, and mldsa_avx2.c up to four entries of a row
+// of ML-DSA-87's, for a session whose ch_cfg.cpu holds CH_CPU_AVX2
+// (mlkem.h, mldsa_avx2.h, docs/decisions.md 107 and 178). sha3.c stays the
+// reference: bin/mlkem_avx2_equiv_test holds the four streams to it on a
+// CPU that has AVX2.
 //
-// It takes public input alone. The matrix comes from the seed rho, which
-// the encapsulation key carries in the clear, and from two indices, so no
-// state here holds a secret. That is the condition this file needs: the
+// It takes public input alone. Each matrix comes from the seed rho, which
+// the encapsulation key or the ML-DSA-87 public key carries in the clear,
+// and from two indices, so no state here holds a secret. That is the condition this file needs: the
 // 25 lanes of a state and the values a round computes from them do not
 // fit in AVX2's 16 vector registers, so the compilers keep some in stack
 // slots of their own, which no wipe written in C clears (docs/decisions.md
-// 99 and 107). ML-KEM's noise and its hashes, which read secrets, stay on
-// sha3.c.
+// 99 and 107). ML-KEM's noise and its hashes, and ML-DSA-87's, which read
+// secrets, stay on sha3.c.
 //
 // Every function in keccak_avx2.c that computes on vectors carries the
 // target attribute that turns AVX2 on, as chacha20_avx2.c's do, so the

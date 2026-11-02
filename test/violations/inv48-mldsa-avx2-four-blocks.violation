@@ -1,0 +1,15 @@
+invariant: INV-48
+file: mldsa_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mldsa-avx2
+reason: the four-way sampler stops after four blocks of each stream. Four
+  blocks hold 224 groups, fewer than 256, so every entry stops short and
+  each call returns 0, where mld_sample_ntt reads up to MLD_SAMPLE_BLOCKS.
+  Only an x86-64 compiler reads the line, so the script builds
+  bin/mldsa_avx2_equiv_test for x86-64 and runs it under qemu-x86_64. The
+  lane skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+    for (unsigned n = 1; n < MLD_SAMPLE_BLOCKS && sampled < count; n++) {
+--- new
+    for (unsigned n = 1; n < 4 && sampled < count; n++) {

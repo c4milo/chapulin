@@ -262,6 +262,22 @@ AUDITED = {
         "requires its rows to call the four-way Keccak. Delete this entry if a "
         "harness can ever compile the file."
     ),
+    "mldsa_avx2.c": (
+        "ML-DSA-87's sampler of up to four entries of a row of A for an x86-64 "
+        "host object, which calls keccak_avx2.c's AVX2 entries, so the file "
+        "has a body on x86-64 alone and no harness compiles it. Its code holds "
+        "no bitwise operator: the candidates' bits are read in "
+        "mld_sample_groups, which the mldsa_poly harness proves inside "
+        "mld_sample_ntt. Its arithmetic is unsigned: k runs below 4 and below "
+        "count, which its callers pass from 1 to 4, so count - 1 does not "
+        "wrap and first + k is at most 6 before the cast to uint8_t; n runs "
+        "below MLD_SAMPLE_BLOCKS; each entry's count is mld_sample_groups's "
+        "return, at most 256; and sampled counts at most 4 entries. "
+        "bin/mldsa_avx2_equiv_test holds each entry to mld_sample_ntt's for "
+        "every row, first entry and count, and test/mlkem-builds.sh requires "
+        "the file to call the four-way Keccak and its two callers to call it. "
+        "Delete this entry if a harness can ever compile the file."
+    ),
     "sha256_hw.c": (
         "a host object's SHA-256 on the CPU's SHA-256 instructions, written in "
         "the FEAT_SHA256 and SHA-extension intrinsics, which CBMC cannot read, "

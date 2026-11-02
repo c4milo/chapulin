@@ -1,0 +1,18 @@
+invariant: INV-48
+file: mldsa.c
+catches: test/docker-aes-runtime-qemu.sh mldsa-vector
+reason: the verifier samples A on the four-way Keccak where the session's
+  ch_cfg.cpu holds CH_CPU_VAES, not CH_CPU_AVX2, so a value with AVX2 and
+  without VAES samples A on sha3.c, and one with VAES alone runs AVX2 on a
+  CPU the caller did not say has it. Every verdict stays right, so
+  bin/mldsa_runtime_test counts the calls into the sampler under every
+  value. Only an x86-64 compiler reads the line, so the script builds the
+  binary for x86-64 and runs it under qemu-x86_64. The lane skips without
+  docker, and this then reports unguarded rather than caught.
+
+--- old
+    if (cpu & CH_CPU_AVX2) {
+        return mld_row_sum_avx2(cpu, sum, room, i, pk, z_hat);
+--- new
+    if (cpu & CH_CPU_VAES) {
+        return mld_row_sum_avx2(cpu, sum, room, i, pk, z_hat);

@@ -2598,13 +2598,20 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-48 — the four-way Keccak takes public input alone and gives sha3.c's streams
 
 - **Claim.** `keccak_avx2.c`, which an x86-64 host object runs for
-  ML-KEM's matrix in a session whose `ch_cfg.cpu` holds `CH_CPU_AVX2`,
+  ML-KEM's and ML-DSA-87's matrices in a session whose `ch_cfg.cpu` holds
+  `CH_CPU_AVX2`,
   computes for every seed and pair of indices the SHAKE128 stream
-  `sha3.c` computes, and takes nothing but public input: its one caller,
+  `sha3.c` computes, and takes nothing but public input: its first caller,
   `mlkem_avx2.c`'s row sampler, hands it the seed rho, which the
   encapsulation key carries in the clear, and two indices.
   `mlkem_avx2.c`, `mlkem.c` compiled once more with that sampler, writes
-  the keys, ciphertexts and secrets `mlkem.c` writes.
+  the keys, ciphertexts and secrets `mlkem.c` writes. Its one other
+  caller, `mldsa_avx2.c`, samples up to four entries of a row of
+  ML-DSA-87's matrix A from the seed rho, which pk carries in the clear,
+  and two indices, and each entry is the one `mld_sample_ntt` samples. So
+  `mldsa.c` and `mldsa_sign_steps.c`, which call it for a session whose
+  `ch_cfg.cpu` holds `CH_CPU_AVX2`, write the keys, signatures and
+  verdicts they write without it (decision 178).
 - **Mechanism.** The round in `keccak_avx2.c` is `sha3.c`'s, line for
   line, on four lanes at once, and reads the round constants `sha3.c`
   reads, from `keccak_round_constants.h`. The row sampler runs each block
@@ -2616,7 +2623,11 @@ last `ROLE=server` stub, as the entry said it would.
   and `mlkem.h`'s entries run the copy exactly where the value holds
   `CH_CPU_AVX2`. The four-way Keccak keeps lanes in stack slots its
   compiler picks, which no wipe clears, and that is why no secret may
-  reach it (decision 107).
+  reach it (decision 107). `mldsa_avx2.c` runs each block of each stream
+  through `mld_sample_groups`, the step `mld_sample_ntt` runs, until every
+  entry holds 256 coefficients or its stream has given
+  `MLD_SAMPLE_BLOCKS` blocks. The secrets of a signature, y and s1, meet
+  each entry only in the products after it.
 - **Check.** `bin/mlkem_avx2_equiv_test` compares ten blocks of each of
   the four streams with `sha3.c`'s SHAKE128 for 200 random seeds, each
   state with an index pair of its own; the copy's key generation,
@@ -2632,7 +2643,16 @@ last `ROLE=server` stub, as the entry said it would.
   call the four-way Keccak and not `mlk_sample_ntt`, both files to hold
   nothing on arm64, and no other source at the root to include
   `keccak_avx2.h` or call its entries, and `make lint-trust-separation`
-  holds both files to the host object.
+  holds both files to the host object. For ML-DSA-87,
+  `bin/mldsa_avx2_equiv_test` compares each entry the sampler writes with
+  `mld_sample_ntt`'s for 40 random seeds, every row, every first entry
+  and every count. It also compares the keys, signatures and verdicts
+  under four values of the two bits with those of the calls that take no
+  value. `test/docker-aes-runtime-qemu.sh mldsa-avx2` runs it under qemu.
+  `bin/mldsa_runtime_test` counts the calls into the sampler under each
+  value. `test/mlkem-builds.sh` requires `mldsa_avx2.c` to call the
+  four-way Keccak and both callers to call it, and admits it as the
+  four-way Keccak's one other caller.
 - **Violation.** A PR rotates a lane by the wrong count or shuffles the
   wrong bytes for the rotation by 8; drops chi's complement or iota;
   writes the wrong domain bits or pad bit at the start; hands a state the
@@ -2640,9 +2660,14 @@ last `ROLE=server` stub, as the entry said it would.
   group too few of a block; swaps the indices of A and A^T in the copy;
   has `mlkem.h`'s entries run the copy without the bit or the portable
   calls with it; samples the copy's rows on `sha3.c`; or includes
-  `keccak_avx2.h` in a source that reads secrets. The fifteen `inv48-*`
+  `keccak_avx2.h` in a source that reads secrets. For ML-DSA-87, it
+  exchanges A's two indices, reads every entry from state 0, stops each
+  stream after four blocks, picks the sampler on another bit in the
+  verifier, or leaves the signer's rows on `sha3.c`. The twenty `inv48-*`
   violations are these. Eleven fail `test/docker-aes-runtime-qemu.sh
-  mlkem-avx2`, two `test/docker-aes-runtime-qemu.sh x86-kernels`, and two
+  mlkem-avx2`, three `test/docker-aes-runtime-qemu.sh mldsa-avx2`, two
+  `test/docker-aes-runtime-qemu.sh mldsa-vector`, two
+  `test/docker-aes-runtime-qemu.sh x86-kernels`, and two
   `test/mlkem-builds.sh`.
 
 ### INV-50 — a host object's SHA-512 gives the portable code's digests

@@ -112,6 +112,8 @@
         "keysched_hw.c",
         "mldsa.c",
         "mldsa.h",
+        "mldsa_avx2.c",
+        "mldsa_avx2.h",
         "mldsa_poly.c",
         "mldsa_poly.h",
         "mldsa_sign_pack.c",

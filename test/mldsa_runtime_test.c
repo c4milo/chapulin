@@ -35,6 +35,15 @@
 // a call that runs the lanes without its bits fails under the values
 // without them.
 //
+// The same rows count the calls into mldsa_avx2.c's four-way sampler of
+// A (test/mldsa_avx2_count.h, docs/decisions.md 178). On x86-64 every row
+// of A runs there for a value that holds CH_CPU_AVX2, the signer's and
+// the verifier's alike, because A is public: two calls a row, which
+// sample four entries and then three. So key generation makes
+// AVX2_ROW_CALLS, each round of a signature as many, and each
+// verification as many, and a value without the bit makes none. On arm64
+// no call runs there.
+//
 // The same rows count the SHAKE calls (test/mldsa_sha3_count.h). Under
 // CH_CPU_PROBED alone each row makes its calls on sha3.c, and their counts
 // are the row's reference. In an arm64 host object that clang compiled, a
@@ -50,6 +59,7 @@
 
 #include "ch_assert.h"
 #include "mldsa.h"
+#include "mldsa_avx2_count.h"
 #include "mldsa_poly.h"
 #include "mldsa_sha3_count.h"
 #include "mldsa_signer.h"
@@ -97,7 +107,36 @@ static const mldsa_vector_calls CHALLENGE_CALLS = {
 
 static const mldsa_vector_calls NO_CALLS = {0, 0, 0, 0};
 
+// The calls into the four-way sampler for the eight rows of A, and the
+// entries they sample.
+static const mldsa_avx2_calls AVX2_ROW_CALLS = {2UL * MLD_K, (unsigned long)MLD_K * MLD_L};
+
 static int failures;
+
+// Whether a row of A runs on the four-way sampler for cpu, written apart
+// from the callers' own test.
+static unsigned long avx2_expected(uint32_t cpu) {
+#ifdef __x86_64__
+    return (cpu & CH_CPU_AVX2) != 0;
+#else
+    (void)cpu;
+    return 0;
+#endif
+}
+
+// rows times each count of AVX2_ROW_CALLS.
+static void check_avx2(const char *row, uint32_t cpu, unsigned long rows) {
+    const mldsa_avx2_calls *got = &mldsa_avx2_counted;
+    unsigned long calls = rows * AVX2_ROW_CALLS.calls;
+    unsigned long entries = rows * AVX2_ROW_CALLS.entries;
+    if (got->calls != calls || got->entries != entries) {
+        failures++;
+        (void)fprintf(stderr,
+                      "mldsa runtime: %s under 0x%x made %lu calls into the four-way sampler for "
+                      "%lu entries of A, not %lu for %lu\n",
+                      row, (unsigned)cpu, got->calls, got->entries, calls, entries);
+    }
+}
 
 // Whether a call runs the lanes for cpu: this test's own statement of the
 // bits each needs, written apart from mld_vector_runs so that a wrong test
@@ -149,6 +188,7 @@ static mldsa_sha3_calls sha3_reference[ROW_COUNT];
 static void reset_counts(void) {
     memset(&mldsa_vector_counted, 0, sizeof mldsa_vector_counted);
     memset(&mldsa_sha3_counted, 0, sizeof mldsa_sha3_counted);
+    memset(&mldsa_avx2_counted, 0, sizeof mldsa_avx2_counted);
 }
 
 // The reference under CH_CPU_PROBED; under every other value, the
@@ -221,9 +261,11 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
     unsigned long signer = (unsigned long)lanes_expected(cpu, 1);
     unsigned long verifier = (unsigned long)lanes_expected(cpu, 0);
     unsigned long no_value = (unsigned long)lanes_expected(0, 0);
+    unsigned long avx2 = avx2_expected(cpu);
     reset_counts();
     int keygen_ok = mldsa87_keygen_cpu(cpu, sk, pk, SEED);
     check_counts("mldsa87_keygen_cpu", cpu, expected(KEYGEN_CALLS, signer, NO_CALLS, 0));
+    check_avx2("mldsa87_keygen_cpu", cpu, avx2);
     check_sha3("mldsa87_keygen_cpu", ROW_KEYGEN, cpu, 1);
     check_bytes("mldsa87_keygen_cpu", cpu,
                 keygen_ok == 1 && memcmp(sk, want_sk, sizeof sk) == 0 &&
@@ -233,6 +275,7 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
     unsigned rounds = mldsa87_sign_mu_cpu(cpu, sig, sk, pk, MU, RND);
     check_counts("mldsa87_sign_mu_cpu", cpu,
                  expected(ROUND_CALLS, signer * rounds, CHALLENGE_CALLS, verifier));
+    check_avx2("mldsa87_sign_mu_cpu", cpu, avx2 * (rounds + 1UL));
     check_sha3("mldsa87_sign_mu_cpu", ROW_SIGN_MU, cpu, 1);
     check_bytes("mldsa87_sign_mu_cpu", cpu,
                 rounds == mu_rounds && memcmp(sig, want_mu_sig, sizeof sig) == 0);
@@ -242,6 +285,7 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
         mldsa87_sign_cpu(cpu, sig, sk, sizeof sk, pk, sizeof pk, MSG, sizeof MSG, NULL, 0, RND);
     check_counts("mldsa87_sign_cpu", cpu,
                  expected(ROUND_CALLS, signer * msg_rounds, CHALLENGE_CALLS, verifier));
+    check_avx2("mldsa87_sign_cpu", cpu, avx2 * (msg_rounds + 1UL));
     check_sha3("mldsa87_sign_cpu", ROW_SIGN, cpu, 1);
     check_bytes("mldsa87_sign_cpu", cpu, sign_ok == 1 && memcmp(sig, want_sig, sizeof sig) == 0);
 
@@ -249,12 +293,14 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
     int verified_cpu =
         mldsa87_verify_cpu(cpu, pk, sizeof pk, MSG, sizeof MSG, NULL, 0, sig, sizeof sig);
     check_counts("mldsa87_verify_cpu", cpu, expected(NO_CALLS, 0, CHALLENGE_CALLS, verifier));
+    check_avx2("mldsa87_verify_cpu", cpu, avx2);
     check_sha3("mldsa87_verify_cpu", ROW_VERIFY_CPU, cpu, 1);
     check_bytes("mldsa87_verify_cpu", cpu, verified_cpu == 1);
 
     reset_counts();
     int verified = mldsa87_verify(pk, sizeof pk, MSG, sizeof MSG, NULL, 0, sig, sizeof sig);
     check_counts("mldsa87_verify", cpu, expected(NO_CALLS, 0, CHALLENGE_CALLS, no_value));
+    check_avx2("mldsa87_verify", cpu, 0);
     check_sha3("mldsa87_verify", ROW_VERIFY, cpu, 0);
     check_bytes("mldsa87_verify", cpu, verified == 1);
 }

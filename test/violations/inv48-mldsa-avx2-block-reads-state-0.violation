@@ -1,0 +1,14 @@
+invariant: INV-48
+file: mldsa_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mldsa-avx2
+reason: the four-way sampler reads every entry's blocks from state 0, so
+  the entries after the first of each call are the first one's. Only an
+  x86-64 compiler reads the line, so the script builds
+  bin/mldsa_avx2_equiv_test for x86-64 and runs it under qemu-x86_64. The
+  lane skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+            keccak_avx2_block(block, state, k);
+--- new
+            keccak_avx2_block(block, state, 0);

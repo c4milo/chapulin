@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-126 of the 162 C sources in the tree root are compiled into a
+126 of the 163 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 36 sources are in no such harness:
+The other 37 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -68,6 +68,7 @@ The other 36 sources are in no such harness:
 | `mldsa_vector.c` | It runs ML-DSA-87's NTT, inverse NTT and two NTT-domain products on NEON intrinsics for arm64 and AVX2 intrinsics for x86-64, and has a body in a host object alone. | `bin/mldsa_vector_equiv_test` holds it to `mldsa_poly.c`'s and `mldsa_sign_poly.c`'s proven loops, `bin/mldsa_runtime_test` counts which calls run it, and the signer's, Wycheproof's and the CNSA 2.0 server's tests sign and verify on it ([The ML-DSA-87 lanes](#the-ml-dsa-87-lanes)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
+| `mldsa_avx2.c` | It samples up to four entries of a row of ML-DSA-87's matrix A on `keccak_avx2.c`'s four states, so it has a body on x86-64 alone. | The `mldsa_poly` harness proves `mld_sample_groups`, the step it runs on each block, inside `mld_sample_ntt`. On a CPU with AVX2, `bin/mldsa_avx2_equiv_test` holds each entry it samples to `mld_sample_ntt`'s for every row, first entry and count, and the keys, signatures and verdicts of the calls that take `CH_CPU_AVX2` to those of the calls that take no value. `bin/mldsa_runtime_test` counts its calls under each `ch_cfg.cpu` value, and `test/mlkem-builds.sh` requires both callers to call it (decision 178). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha512_hw.c` | Its arm64 arm runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics. Its x86-64 arm is `sha512.c`'s first arm compiled once more over `sha512_avx2.c`. | `bin/sha2_equiv_test` holds each arm to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions), [SHA-512 on AVX2](#sha-512-on-avx2)). The `sha512_host` harness proves the text of the x86-64 arm under its own names, over `sha512_compress_blocks.c`. |
 | `sha512_avx2.c` | It runs SHA-512's compression function with its message schedule on AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/sha2_equiv_test` holds it, under `sha512_hw.c`'s five calls, to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, searches the stack each kind of call leaves and reads ymm0 to ymm15 back as zero after a call, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it. `make lint-schedule-order` reads the order of its instructions as each compiler wrote them ([SHA-512 on AVX2](#sha-512-on-avx2)). |

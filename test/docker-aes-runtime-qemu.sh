@@ -28,7 +28,9 @@
 # searches the stack each seal and open leaves; "mldsa-vector"
 # bin/mldsa_vector_equiv_test and bin/mldsa_runtime_test alone, for arm64
 # and for x86-64, which hold ML-DSA-87's lanes to the loops and count the
-# calls into them under each ch_cfg.cpu value; "rsa-ifma-callers"
+# calls into them under each ch_cfg.cpu value; "mldsa-avx2"
+# bin/mldsa_avx2_equiv_test alone, for x86-64, which holds ML-DSA-87's
+# four-way sampler of A to mld_sample_ntt; "rsa-ifma-callers"
 # bin/tcp_blocking_loop_host and bin/webpki_auth_host alone, for x86-64,
 # which count the RSA public operations each caller of the verifiers
 # sends to AVX-512 IFMA; and

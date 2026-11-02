@@ -1,0 +1,15 @@
+invariant: INV-48
+file: mldsa_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mldsa-avx2
+reason: the four-way sampler hands each state rho || i || j, where FIPS
+  204 Algorithm 32 gives rho || j || i, so a session with CH_CPU_AVX2
+  samples another matrix and no honest signature verifies. Only an x86-64
+  compiler reads the line, so the script builds bin/mldsa_avx2_equiv_test
+  for x86-64 and runs it under qemu-x86_64. The lane skips without
+  docker, and this then reports unguarded rather than caught.
+
+--- old
+        x1[k] = (uint8_t)i;
+--- new
+        x1[k] = x0[k];
+        x0[k] = (uint8_t)i;

@@ -10,18 +10,47 @@
 #include "mldsa_sign_steps.h"
 
 #include "ct.h"
+#include "mldsa_avx2.h"
 #include "mldsa_sign_poly.h"
 #include "sha3.h"
 
-int mlds_matrix_row(uint32_t cpu, mld_poly *row, mld_poly *entry, const uint8_t rho[MLD_RHO_BYTES],
-                    unsigned i, const mld_poly v_hat[MLD_L]) {
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+// The sum mlds_matrix_row computes before its inverse NTT, with the
+// row's entries sampled four at a time on the four-way Keccak
+// (mldsa_avx2.h). Returns 1, or 0 when an entry stops at its sampling
+// bound. The entries are public, so four is not wiped.
+static int mlds_matrix_row_avx2(uint32_t cpu, mld_poly *row, const uint8_t rho[MLD_RHO_BYTES],
+                                unsigned i, const mld_poly v_hat[MLD_L]) {
+    mld_poly four[MLD_AVX2_ENTRIES];
+    for (unsigned first = 0; first < MLD_L; first += MLD_AVX2_ENTRIES) {
+        unsigned count = MLD_L - first < MLD_AVX2_ENTRIES ? MLD_L - first : MLD_AVX2_ENTRIES;
+        if (!mld_sample_ntt_avx2(four, rho, i, first, count)) {
+            return 0;
+        }
+        for (unsigned k = 0; k < count; k++) {
+            if (first + k == 0) {
+                mlds_pointwise(cpu, row, &four[0], &v_hat[0]);
+            } else {
+                mlds_pointwise_acc(cpu, row, &four[k], &v_hat[first + k]);
+            }
+        }
+    }
+    return 1;
+}
+#endif // CH_CPU_RUNTIME && __x86_64__
+
+// The sum mlds_matrix_row computes before its inverse NTT, each entry
+// sampled into entry.
+static int mlds_matrix_row_sum(uint32_t cpu, mld_poly *row, mld_poly *entry,
+                               const uint8_t rho[MLD_RHO_BYTES], unsigned i,
+                               const mld_poly v_hat[MLD_L]) {
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+    if (cpu & CH_CPU_AVX2) {
+        return mlds_matrix_row_avx2(cpu, row, rho, i, v_hat);
+    }
+#endif
     for (unsigned j = 0; j < MLD_L; j++) {
         if (!mld_sample_ntt_cpu(cpu, entry, rho, (uint8_t)j, (uint8_t)i)) {
-            // Defined values for the caller. Its ct_wipe of its state
-            // writes zero to row afterwards as well.
-            for (unsigned n = 0; n < MLD_N; n++) {
-                row->coeffs[n] = 0;
-            }
             return 0;
         }
         if (j == 0) {
@@ -29,6 +58,19 @@ int mlds_matrix_row(uint32_t cpu, mld_poly *row, mld_poly *entry, const uint8_t 
         } else {
             mlds_pointwise_acc(cpu, row, entry, &v_hat[j]);
         }
+    }
+    return 1;
+}
+
+int mlds_matrix_row(uint32_t cpu, mld_poly *row, mld_poly *entry, const uint8_t rho[MLD_RHO_BYTES],
+                    unsigned i, const mld_poly v_hat[MLD_L]) {
+    if (!mlds_matrix_row_sum(cpu, row, entry, rho, i, v_hat)) {
+        // Defined values for the caller. Its ct_wipe of its state
+        // writes zero to row afterwards as well.
+        for (unsigned n = 0; n < MLD_N; n++) {
+            row->coeffs[n] = 0;
+        }
+        return 0;
     }
     mlds_invntt_freeze(cpu, row);
     return 1;

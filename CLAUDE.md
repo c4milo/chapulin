@@ -210,7 +210,11 @@ Home: github.com/c4milo.
   is the one test: on arm64 the verifier in every session and the signer
   under `CH_CPU_CONSTANT_TIME_MULTIPLY`, on x86-64 the verifier under
   `CH_CPU_AVX2` and the signer under both bits; each AVX2 entry ends
-  with VZEROALL (docs/decisions.md 172 and 174))
+  with VZEROALL (docs/decisions.md 172 and 174)) + `mldsa_avx2.[ch]`
+  (up to four entries of a row of ML-DSA-87's matrix A on
+  `keccak_avx2.c`'s four states, an x86-64 session whose caller sets
+  CH_CPU_AVX2: A comes from the public rho, so the four-way Keccak may
+  take it, docs/decisions.md 178)
   ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) with `hash_hw.h`, `hkdf_hw.c` and `keysched_hw.c` (`hkdf.c`
@@ -566,7 +570,12 @@ Home: github.com/c4milo.
   `mldsa87_keygen_cpu` take the session's value, and the calls without
   the suffix pass 0. An x86-64 host object runs eight AVX2 lanes: a
   verification under CH_CPU_AVX2, and a signature or a key generation
-  under that bit and the multiply bit (docs/decisions.md 172 and 174). Its SHAKE calls take the same value through
+  under that bit and the multiply bit (docs/decisions.md 172 and 174).
+  Under CH_CPU_AVX2 an x86-64 host object also samples A four entries at
+  a time on `mldsa_avx2.c`, for the verifier, the signer and key
+  generation alike, and its two frames take ceilings of their own,
+  `STACK_BUDGET_MLDSA_AVX2` and `STACK_BUDGET_MLDSA_ROW_AVX2`
+  (docs/decisions.md 178). Its SHAKE calls take the same value through
   `mldsa_poly.h`'s `mld_absorb` and `mld_squeeze`, so
   CH_CPU_CONSTANT_TIME_SHA3 runs them on `sha3_hw.c`, and
   `mldsa87_verify_cpu` and `mldsa87_challenge_cpu` take the value in a
@@ -713,7 +722,8 @@ Home: github.com/c4milo.
   `bin/mldsa_vector_equiv_test` holds `mldsa_vector.c` to
   `mldsa_poly.c`'s and `mldsa_sign_poly.c`'s loops, and
   `bin/mldsa_runtime_test` counts the calls into it under each
-  `ch_cfg.cpu` value.
+  `ch_cfg.cpu` value. `bin/mldsa_avx2_equiv_test` holds `mldsa_avx2.c`
+  to `mld_sample_ntt`, and `bin/mldsa_runtime_test` counts its calls.
   `bin/mlkem_avx2_equiv_test` holds `keccak_avx2.c` to `sha3.c` and
   `mlkem_avx2.c` to `mlkem.c`.
   `bin/p256_equiv_test` and `bin/rsa_sign_equiv_test` hold the wide P-256

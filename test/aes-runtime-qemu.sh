@@ -147,6 +147,10 @@
 #     mlkem.c (test/mlkem_avx2_equiv_test.c, docs/decisions.md 107). Both
 #     files have a body on x86-64 alone, so on an arm64 machine this is
 #     the run that holds them.
+#   - bin/mldsa_avx2_equiv_test must pass for x86-64: ML-DSA-87's
+#     four-way sampler of A against mld_sample_ntt, and the calls over it
+#     against the calls that take no value
+#     (test/mldsa_avx2_equiv_test.c, docs/decisions.md 178).
 #   - bin/poly1305_equiv_test must pass for x86-64: the AVX2 Poly1305 and
 #     the SSE2 path against poly1305.c's loop, and the search of the stack
 #     each leaves for the powers of r (test/poly1305_equiv_test.c,
@@ -308,6 +312,8 @@
 #                     alone
 #   mlkem-avx2        bin/mlkem_avx2_equiv_test for x86-64, for the
 #                     violations of keccak_avx2.c and mlkem_avx2.c
+#   mldsa-avx2        bin/mldsa_avx2_equiv_test for x86-64, for the
+#                     violations of mldsa_avx2.c and its two callers
 #   rsa-ifma-callers  bin/tcp_blocking_loop_host and bin/webpki_auth_host
 #                     for x86-64, for the violations of the callers that
 #                     hand the RSA verifiers a session's ch_cfg.cpu
@@ -346,10 +352,10 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
-    mldsa-vector | mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
+    mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
     rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx]" >&2
     exit 2
     ;;
 esac
@@ -376,7 +382,8 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ] && [ "$only" != ghas
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
-if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ] &&
+if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != mldsa-avx2 ] &&
+    [ "$only" != poly1305-avx2 ] &&
     [ "$only" != chacha20-avx2 ] &&
     [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
     [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ] && [ "$only" != sha512-stack ] &&
@@ -445,6 +452,7 @@ read -r -a widemul_runtime_srcs <<< "$(sed -n 26p <<< "$lists")"
 read -r -a p256_verify_equiv_srcs <<< "$(sed -n 27p <<< "$lists")"
 read -r -a mldsa_vector_equiv_srcs <<< "$(sed -n 28p <<< "$lists")"
 read -r -a mldsa_runtime_srcs <<< "$(sed -n 29p <<< "$lists")"
+read -r -a mldsa_avx2_equiv_srcs <<< "$(sed -n 30p <<< "$lists")"
 [ "${#ghash_equiv_srcs[@]}" -gt 0 ] ||
     { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-four lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
@@ -614,6 +622,23 @@ if [ -z "$only" ] || [ "$only" = mlkem-avx2 ]; then
 fi
 if [ "$only" = mlkem-avx2 ]; then
     echo "aes-runtime-qemu: bin/mlkem_avx2_equiv_test held the four-way Keccak to sha3.c and ML-KEM's copy over it to mlkem.c, on AVX2 for x86-64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = mldsa-avx2 ]; then
+    # ML-DSA-87's four-way sampler of A against mld_sample_ntt, and the
+    # signer's and the verifier's calls over it against the calls that take
+    # no value, which have a body on x86-64 alone (docs/decisions.md 178).
+    # The rule in the Makefile passes CH_CPU_RUNTIME and CH_MLDSA_SIGN_TEST,
+    # so this line does too.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -o "$x86_out/mldsa_avx2_equiv_test" \
+        test/mldsa_avx2_equiv_test.c "${mldsa_avx2_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_X86_KERNELS=1 expect max 0 \
+        "ML-DSA-87's four-way sampler of A and mld_sample_ntt disagree, or a call over it and the call that takes no value do" \
+        mldsa_avx2_equiv_test
+fi
+if [ "$only" = mldsa-avx2 ]; then
+    echo "aes-runtime-qemu: bin/mldsa_avx2_equiv_test held ML-DSA-87's four-way sampler of A to mld_sample_ntt, and the calls over it to the calls that take no value, on AVX2 for x86-64"
     exit 0
 fi
 

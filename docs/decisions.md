@@ -15459,3 +15459,93 @@ does nothing more.
     - **Rejected:** **the reference's branching sampler**, for entry 159's
       reason. **Passes from the high bit down**, which let two values
       meet.
+
+178. **An x86-64 host object samples ML-DSA-87's matrix A four entries
+    at a time on the four-way Keccak, under `CH_CPU_AVX2`.** After entry
+    174 a signature on x86-64 took 1.02 to 1.10 times OpenSSL's, and
+    Keccak on `sha3.c` was most of the rest.
+
+    - **Where the time went.** Each round of the rejection loop samples
+      all 56 entries of A again, as the verifier does (entry 159), so
+      that a round holds one entry and not 56. Each entry reads five
+      SHAKE128 blocks: four hold 224 groups, fewer than 256. So a round
+      runs about 280 permutations of Keccak-f[1600] for A alone, and a
+      signature about four rounds. ExpandMask, the other large hash of a
+      round, runs about 35.
+    - **What runs.** `mldsa_avx2.c`'s `mld_sample_ntt_avx2` samples
+      entries `first` to `first + count - 1` of row i on
+      `keccak_avx2.c`'s four states. Each state starts from rho || j ||
+      i, 34 bytes in one block, the shape entry 107's start takes for
+      ML-KEM. Each block of each stream goes through
+      `mld_sample_groups`, the step `mld_sample_ntt` runs, until every
+      entry holds 256 coefficients or its stream has given
+      `MLD_SAMPLE_BLOCKS` blocks. A row of seven entries takes two
+      calls, of four and of three, and the fourth state of the second
+      call runs the last entry's stream again, which nothing reads.
+    - **Why the four-way Keccak may take it.** A comes from rho, which
+      pk carries in the clear, and from two indices. So the streams are
+      public, the condition entry 107 states for the lanes the compilers
+      keep in stack slots. The secrets of a signature, y and s1, meet an
+      entry only in the products after it, which stay on
+      `mldsa_vector.c` or the loops. `test/mlkem-builds.sh` admits
+      `mldsa_avx2.c` as the four-way Keccak's one other caller.
+    - **The callers.** `mldsa.c`'s `mld_row_sum` and
+      `mldsa_sign_steps.c`'s `mlds_matrix_row_sum` call it for a value
+      that holds `CH_CPU_AVX2`, and run `mld_sample_ntt_cpu` for every
+      other value. The bit decides alone, for the signer as for the
+      verifier, because the sampler multiplies nothing and A is public.
+      Key generation runs `mlds_matrix_row` too, so it takes the same
+      path.
+    - **The stack.** Four entries are 4 KB. The verifier's row holds
+      them in the room of the one entry it held before, so its frame
+      grows by three entries. `challenge` grew from 10,768 bytes to
+      13,856 under gcc 13.3 for x86-64, and the signer's
+      `mlds_matrix_row_avx2` holds 4,224. Camilo ruled on 2026-11-02 to
+      keep four entries and give the two frames ceilings of their own in
+      an x86-64 host object: `STACK_BUDGET_MLDSA_AVX2` and
+      `STACK_BUDGET_MLDSA_ROW_AVX2`. Every other object keeps its
+      ceilings, and a device object compiles none of this.
+    - **Numbers.** Run 41458601845 on a throwaway branch timed one
+      binary that holds both paths, under the runner's gcc 13 and the
+      pinned clang 23 at `-O2`, with `ch_cfg.cpu` 0xd. Each figure is
+      the lowest median of TSC cycles over 21 batches: one key
+      generation, the mean of 64 signatures over 64 messages, and the
+      mean of their 64 verifications. Six samples drew four EPYC 7763,
+      one EPYC 9V45 and one Xeon Platinum 8573C. Both paths wrote the
+      same keys and signatures in all 24 runs.
+
+      | CPU, compiler | key generation | sign | verify |
+      |---|---|---|---|
+      | EPYC 7763, gcc | 0.82 | 0.71 | 0.56 |
+      | EPYC 7763, clang | 0.72 | 0.70 | 0.53 |
+      | EPYC 9V45, gcc | 0.82 | 0.73 | 0.61 |
+      | EPYC 9V45, clang | 0.75 | 0.73 | 0.56 |
+      | Xeon 8573C, gcc | 0.84 | 0.77 | 0.61 |
+      | Xeon 8573C, clang | 0.76 | 0.76 | 0.59 |
+
+      Each figure is the four-way path's time over the time of
+      `sha3.c`'s. On the EPYC 7763 entry 174's signature took 1,330 µs
+      under gcc, against OpenSSL's 1,210 µs, so at 0.71 it takes about
+      0.78 times OpenSSL's. The bench run re-records the table.
+    - **What holds it.** `bin/mldsa_avx2_equiv_test` compares each
+      entry the sampler writes with `mld_sample_ntt`'s, for 40 random
+      seeds, every row, every first entry and every count. It compares
+      key generation, signatures and verification under the four values
+      of the two bits with the calls that take no value, and a changed
+      signature must fail. `bin/mldsa_runtime_test` links
+      `test/mldsa_avx2_count.c` in the sampler's place and counts its
+      calls: two a row under `CH_CPU_AVX2` and none without. The qemu
+      lane's new `mldsa-avx2` part builds the first binary for x86-64.
+      Five `inv48-*` violations run there and in the lane's
+      `mldsa-vector` part. `tools/proof-cover.py` records the file's
+      audit, as for `mlkem_avx2.c`: it calls `keccak_avx2.c`, which no
+      harness can compile.
+    - **Rejected:**
+      - **A matrix held whole.** 56 entries are 56 KB, the cost entry
+        159 refused.
+      - **Two entries a call.** It holds 2 KB in place of 4, and two of
+        the four states run streams that nothing reads.
+      - **Each block's coefficients added to the sum as they come.**
+        The products run on whole polynomials in `mldsa_vector.c`, and
+        a sum in another order gives other representatives of each
+        coefficient.
