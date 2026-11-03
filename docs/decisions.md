@@ -15759,3 +15759,35 @@ does nothing more.
       body's own frame. **A lower optimization level for the file**,
       which binds no compiler. **Keeping gcc 13 in CI**, which hides the
       slots from the test and not from a caller.
+
+182. **AES-GCM's seal and open on x86-64 wipe the stack below their
+    bodies.** The same ubuntu-26.04 run as entry 181 found that gcc 15.2
+    for x86-64 leaves a word of the hash subkey in a stack slot of its
+    own: `bin/ghash_equiv_test` found the two halves of H added together,
+    the operand of GHASH's middle product, below `gcm_seal_passes_hw`'s
+    one-pass seal. gcc 13.3 left none. The word is a function of the
+    traffic key, so a caller who builds a host object with gcc 15 had it.
+
+    - **What changes.** `gcm_seal_passes_hw`, `gcm_open_passes_hw` and
+      `gcm_vaes.c`'s two are wrappers, as entry 181 makes `rsa_sign64.c`'s:
+      each calls a body that is never inlined and then
+      `gcm_hw_wipe_below`, which writes zero over `GCM_HW_BELOW_LEN`
+      bytes, 1,536, under the wrapper's frame. The deepest body,
+      `gcm_vaes.c`'s, has a frame of 1,024 bytes under gcc 15.2. The
+      bodies no longer wipe their `gcm_hw_state` by name, since the
+      wrapper clears it, as Camilo ruled for entry 181. The wipe lives in
+      `gcm_hw.c`: its frame fits under `STACK_BUDGET`, and both files are
+      x86-64 code alone.
+    - **Cost.** One wipe of 1,536 bytes per seal or open of whole passes,
+      each pass 128 bytes, where the named wipe it replaces cleared 600 to
+      900. A 1,200-byte QUIC packet runs one such call.
+    - **What is not wrapped.** `gcm_hash_data_hw` hashes every packet's
+      associated data, often 20 bytes, and wipes only the powers it
+      computed. The run found nothing below it, and a fixed wipe of 1,536
+      bytes there would cost more than the hash. The 512-bit kernel wipes
+      below itself already (entry 130). arm64 runs `gcm_arm64.c`'s
+      assembly, whose registers hold its values.
+    - **What holds it.** `bin/ghash_equiv_test`'s residue runs, which look
+      below each seal and open for every power and its two halves added,
+      on an x86-64 CPU with the instructions. Four violation files drop
+      each wrapper's wipe.

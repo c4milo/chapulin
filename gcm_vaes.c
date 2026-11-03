@@ -390,9 +390,12 @@ void gcm_counter_blocks_vaes(const uint8_t *round_keys, size_t rounds, uint8_t c
     ct_wipe(keystream, sizeof keystream);
 }
 
-void gcm_seal_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                          uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
-                          const uint8_t *in, size_t passes, uint8_t *out) {
+// The body of gcm_seal_passes_vaes, which the wrapper below calls and then
+// wipes under with gcm_hw_wipe_below (gcm_hw.h).
+static __attribute__((noinline)) void seal_steps(const uint8_t *round_keys, size_t rounds,
+                                                 uint8_t counter[AES_BLOCK], uint8_t acc[AES_BLOCK],
+                                                 const uint8_t subkey[AES_BLOCK], const uint8_t *in,
+                                                 size_t passes, uint8_t *out) {
     if (passes == 0) {
         return;
     }
@@ -418,7 +421,13 @@ void gcm_seal_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t coun
     }
     ghash_store_block(acc, s.hash.single.acc);
     set_counter_count(counter, count + (uint32_t)(passes * GCM_HW_PASS_BLOCKS));
-    ct_wipe(&s, sizeof s);
+}
+
+void gcm_seal_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                          uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                          const uint8_t *in, size_t passes, uint8_t *out) {
+    seal_steps(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    gcm_hw_wipe_below();
 }
 
 // gcm_hw.c's open loop a step at a time: iteration k decrypts step k - 1
@@ -426,9 +435,10 @@ void gcm_seal_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t coun
 // gcm_hw.c gives. A step's plaintext is written at or below its
 // ciphertext and ends before the next step's ciphertext begins, so every
 // block is hashed before a plaintext byte is written to its address.
-void gcm_open_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                          uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
-                          const uint8_t *in, size_t passes, uint8_t *out) {
+static __attribute__((noinline)) void open_steps(const uint8_t *round_keys, size_t rounds,
+                                                 uint8_t counter[AES_BLOCK], uint8_t acc[AES_BLOCK],
+                                                 const uint8_t subkey[AES_BLOCK], const uint8_t *in,
+                                                 size_t passes, uint8_t *out) {
     if (passes == 0) {
         return;
     }
@@ -455,7 +465,13 @@ void gcm_open_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t coun
     }
     ghash_store_block(acc, s.hash.single.acc);
     set_counter_count(counter, count + (uint32_t)(passes * GCM_HW_PASS_BLOCKS));
-    ct_wipe(&s, sizeof s);
+}
+
+void gcm_open_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                          uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                          const uint8_t *in, size_t passes, uint8_t *out) {
+    open_steps(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    gcm_hw_wipe_below();
 }
 
 #ifdef __clang__

@@ -95,6 +95,20 @@ void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
 void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                         uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
                         size_t passes, uint8_t *out);
+
+// The seal and the open above, and gcm_vaes.c's, hold the hash subkey's
+// powers and a pass's keystream on their frames, and a compiler keeps
+// words of them in stack slots of its own, which no ct_wipe names: gcc
+// 15.2 for x86-64 left the two halves of H added together below the seal
+// (docs/decisions.md 182). So each of the four is a wrapper: it calls a
+// body that is never inlined and then gcm_hw_wipe_below, which writes zero
+// over the GCM_HW_BELOW_LEN bytes of stack under the wrapper's frame,
+// where the body's frame lay. The deepest body, gcm_vaes.c's, has a frame
+// of 1,024 bytes under gcc 15.2; lint-stack holds gcm_hw.c's frames, the
+// wipe's among them, under STACK_BUDGET.
+#define GCM_HW_BELOW_LEN 1536
+
+void gcm_hw_wipe_below(void);
 #endif // __x86_64__
 
 #endif // CH_CPU_RUNTIME

@@ -1,0 +1,13 @@
+invariant: INV-17
+file: gcm_hw.c
+catches: ghash_equiv_test
+reason: gcm_open_passes_hw returns without the wipe below its body, so the hash
+  subkey's powers, the last pass's sums and its keystream stay in the
+  stack. bin/ghash_equiv_test looks for each below the call on an x86-64
+  CPU with the instructions (docs/decisions.md 182).
+
+--- old
+    open_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    gcm_hw_wipe_below();
+--- new
+    open_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);

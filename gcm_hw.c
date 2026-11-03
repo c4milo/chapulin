@@ -320,9 +320,31 @@ void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t cou
 
 // On arm64 gcm_arm64.c runs the whole AEAD, with passes of its own.
 #ifndef GHASH_VECTOR_ARM
-void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out) {
+// The frame of this function is the array. ct_wipe is compiled apart from
+// it and takes the array's address, so the compiler keeps the array in
+// memory and cannot delete the call (gcm_hw.h).
+static void wipe_frame(void) {
+    uint8_t below[GCM_HW_BELOW_LEN];
+    ct_wipe(below, sizeof below);
+}
+
+// gcm_hw_wipe_below calls wipe_frame through this pointer: the pointer is
+// a volatile object, so the compiler cannot compile the call into the
+// caller, where the array would join the caller's frame and lie above the
+// frame it is there to wipe.
+static void (*const volatile wipe_frame_call)(void) = wipe_frame;
+
+void gcm_hw_wipe_below(void) {
+    wipe_frame_call();
+}
+
+// The body of gcm_seal_passes_hw, which the wrapper below calls and then
+// wipes under. s, the powers and the keystream, lies in this frame.
+static __attribute__((noinline)) void seal_passes(const uint8_t *round_keys, size_t rounds,
+                                                  uint8_t counter[AES_BLOCK],
+                                                  uint8_t acc[AES_BLOCK],
+                                                  const uint8_t subkey[AES_BLOCK],
+                                                  const uint8_t *in, size_t passes, uint8_t *out) {
     if (passes == 0) {
         return;
     }
@@ -346,7 +368,13 @@ void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
     ghash_hash_pass(&s.ghash, &out[(passes - 1) * GCM_HW_PASS_BYTES]);
     ghash_store_block(acc, s.ghash.acc);
     set_counter_count(counter, count + (uint32_t)(passes * GCM_HW_PASS_BLOCKS));
-    ct_wipe(&s, sizeof s);
+}
+
+void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
+                        size_t passes, uint8_t *out) {
+    seal_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    gcm_hw_wipe_below();
 }
 
 // The seal's loop the other way round. The ciphertext is the input, so a
@@ -363,9 +391,11 @@ void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
 // With the first pass's hash before the loop, gcc 13 at -O2 built each
 // counter from bytes it counted one at a time, and the loop ran about a
 // third slower.
-void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out) {
+static __attribute__((noinline)) void open_passes(const uint8_t *round_keys, size_t rounds,
+                                                  uint8_t counter[AES_BLOCK],
+                                                  uint8_t acc[AES_BLOCK],
+                                                  const uint8_t subkey[AES_BLOCK],
+                                                  const uint8_t *in, size_t passes, uint8_t *out) {
     if (passes == 0) {
         return;
     }
@@ -389,7 +419,13 @@ void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
     }
     ghash_store_block(acc, s.ghash.acc);
     set_counter_count(counter, count + (uint32_t)(passes * GCM_HW_PASS_BLOCKS));
-    ct_wipe(&s, sizeof s);
+}
+
+void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
+                        size_t passes, uint8_t *out) {
+    open_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    gcm_hw_wipe_below();
 }
 #endif
 
