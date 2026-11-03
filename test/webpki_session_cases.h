@@ -55,11 +55,11 @@ static void test_webpki_cfg_clock(void) {
     CHECK(s.hello_len > 0);
 }
 
-// Fills name with labels of 63 'a' separated by dots, n bytes in all,
-// the last label cut short: a valid shape for any n up to 253.
+// Fills n bytes of name with labels of 63 'a' between dots: a valid shape for any n up to 253.
 static void long_hostname(uint8_t *name, size_t n) {
-    for (size_t i = 0; i < n; i++) {
-        name[i] = (i % 64 == 63) ? '.' : 'a';
+    memset(name, 'a', n);
+    for (size_t i = 63; i < n; i += 64) {
+        name[i] = '.';
     }
 }
 

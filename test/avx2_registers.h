@@ -43,8 +43,12 @@ static uint64_t avx2_registers[AVX2_REGISTERS][AVX2_REGISTER_WORDS];
 // the stack pointer past the 128 bytes below it that this function may
 // use, to a multiple of 32 bytes, and then by shift more, and after the
 // call it restores it. It reads the six arguments, the kernel's address
-// and shift from block, 8 bytes each in that order, and loads the
-// arguments into rdi, rsi, rdx, rcx, r8 and r9 itself. It names as changed
+// and shift from block, 8 bytes each in that order, into rdi, rsi, rdx,
+// rcx, r8 and r9, rax and r10, and it reads all eight before it lowers the
+// stack pointer. block is an array on this function's frame, so its
+// address can equal the stack pointer, and gcc 15 then wrote %[block] as
+// %rsp: a read through it after the stack pointer moved read another
+// address. It names as changed
 // the sixteen registers and every general register the System V ABI lets
 // a call change, so the compiler keeps block, the stores' address and the
 // saved stack pointer in registers a call saves.
@@ -75,17 +79,19 @@ __attribute__((target("avx2"), noinline)) static void avx2_set_call_store(const 
                      "vpcmpeqd %%ymm15, %%ymm15, %%ymm15\n\t"
                      "cmpq $0, 48(%[block])\n\t"
                      "je 1f\n\t"
-                     "movq %%rsp, %[stack_pointer]\n\t"
-                     "subq $128, %%rsp\n\t"
-                     "andq $-32, %%rsp\n\t"
-                     "subq 56(%[block]), %%rsp\n\t"
                      "movq 0(%[block]), %%rdi\n\t"
                      "movq 8(%[block]), %%rsi\n\t"
                      "movq 16(%[block]), %%rdx\n\t"
                      "movq 24(%[block]), %%rcx\n\t"
                      "movq 32(%[block]), %%r8\n\t"
                      "movq 40(%[block]), %%r9\n\t"
-                     "call *48(%[block])\n\t"
+                     "movq 48(%[block]), %%rax\n\t"
+                     "movq 56(%[block]), %%r10\n\t"
+                     "movq %%rsp, %[stack_pointer]\n\t"
+                     "subq $128, %%rsp\n\t"
+                     "andq $-32, %%rsp\n\t"
+                     "subq %%r10, %%rsp\n\t"
+                     "call *%%rax\n\t"
                      "movq %[stack_pointer], %%rsp\n\t"
                      "1:\n\t"
                      "vmovdqu %%ymm0, 0(%[out])\n\t"
