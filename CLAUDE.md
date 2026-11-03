@@ -534,8 +534,9 @@ Home: github.com/c4milo.
   their second copy from other files on the 64x64->128 multiply:
   X25519's is `x25519_wide.c`, P-256's is the `p256_wide_*` files, and
   RSA signing's is `rsa_sign64.c`, which signs by the Chinese remainder
-  theorem and checks each signature with the public exponent before it
-  returns it (docs/decisions.md 94 and 95).
+  theorem, checks each signature with the public exponent before it
+  returns it, and after each private call runs `rsa_sign64_wipe.[ch]`'s
+  wipe of the stack below it (docs/decisions.md 94, 95 and 181).
   `widemul.h` runs the native copy for a session whose `ch_cfg.cpu` holds
   `CH_CPU_CONSTANT_TIME_MULTIPLY`: one branch per operation and no
   function pointer. The bit is the caller's statement about every
