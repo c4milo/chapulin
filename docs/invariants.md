@@ -424,8 +424,10 @@ last `ROLE=server` stub, as the entry said it would.
   exports a second entry, `ch_pubkey_from_pem`, which firmware calls
   while provisioning and no library source calls at all. A server
   role and a TRUST=webpki build export the entries `pem_files.h`
-  declares, `ch_chain_from_pem`, `ch_p256_key_from_pem` and
-  `ch_anchors_from_pem`, under the same rule (docs/decisions.md 131). Either way
+  declares, `ch_chain_from_pem`, `ch_p256_key_from_pem`,
+  `ch_rsa_key_from_pem`, `ch_mldsa_key_from_pem` and
+  `ch_anchors_from_pem`, under the same rule (docs/decisions.md 131 and
+  184). Either way
   the library never reads a clock: certificate validity is CA
   reissuance policy, not a device-side time check.
 - **Mechanism.** Two entries, each contained by a different fact.

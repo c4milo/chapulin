@@ -210,9 +210,11 @@ pub const Clock = if (has_clock) struct {
 pub const Ticket = @import("chapulin_ticket.zig").Ticket;
 
 /// A server's chain and a client's anchors, each decoded from a PEM file into rooms the caller
-/// places. A server's P-256 key, decoded into the value's own storage (chapulin_pem.zig).
+/// places. A server's P-256, RSA and ML-DSA-87 keys, each decoded into the value's own storage
+/// (chapulin_pem.zig).
 pub const Chain = @import("chapulin_pem.zig").Chain;
 pub const EcdsaP256Key = @import("chapulin_pem.zig").EcdsaP256Key;
+pub const RsaKey = @import("chapulin_pem.zig").RsaKey;
 pub const MlDsa87Key = @import("chapulin_pem.zig").MlDsa87Key;
 pub const Anchors = @import("chapulin_pem.zig").Anchors;
 /// The DNSSEC calls of an object built with DNSSEC=on (chapulin_dnssec.zig).

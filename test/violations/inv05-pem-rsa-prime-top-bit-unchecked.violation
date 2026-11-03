@@ -1,0 +1,12 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_rsa_test
+reason: ch_rsa_key_from_pem stops requiring each prime's top bit, which
+  rsa_sign.h's key form requires. Under the ladder no signature reads p,
+  so a prime with its top bit clear decodes. test_written writes one.
+
+--- old
+    return ok & (int)tops;
+--- new
+    (void)tops;
+    return ok;

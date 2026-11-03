@@ -1,0 +1,14 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_rsa_host
+reason: In a host object under CH_CPU_CONSTANT_TIME_MULTIPLY,
+  ch_rsa_key_from_pem stops signing with rsa_sign64.c, so a key whose
+  CRT values are wrong decodes, and every session under that value
+  refuses to send its CertificateVerify. test_written's dp of 128 octets
+  with its top bit set must be refused under that value.
+
+--- old
+    return !widemul_native(widemul) || signs(cpu, widemul, key);
+--- new
+    (void)widemul;
+    return 1;

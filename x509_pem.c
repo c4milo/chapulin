@@ -3,14 +3,17 @@
 //
 // Every compare against a constant goes through x509_read_exact, which
 // compares through ct_memeq. The key readers branch on a key's tags and
-// lengths, which are the same for every P-256 key of one form. They copy
-// the scalar with no branch and no index on its bytes.
+// lengths. Those are the same for every P-256 key of one form. An RSA
+// key's INTEGER lengths tell how many leading zero octets each value
+// has, which the file shows to anyone who holds it. They copy each
+// secret with no branch and no index on its bytes.
 #include "x509_pem.h"
 
 #include <string.h>
 
 #include "buf.h"
 #include "ch_assert.h"
+#include "ct.h"
 #include "x509_der.h"
 
 // DER tags this file reads.
@@ -229,6 +232,124 @@ int x509_pem_parameters_are_p256(const uint8_t *der, size_t der_len) {
     rb_init(&r, der, der_len);
     return x509_read_exact(&r, p256_parameters, sizeof p256_parameters) && rb_left(&r) == 0;
 }
+
+#if defined(CH_ROLE_SERVER) && !defined(CH_PROFILE_CNSA2)
+// rsaEncryption with NULL parameters (RFC 8017 appendix A.1), the
+// AlgorithmIdentifier SEQUENCE whole, as an RSA SubjectPublicKeyInfo and
+// an RSA PrivateKeyInfo both carry it.
+static const uint8_t rsa_algorithm[] = {0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
+                                        0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00};
+// The public exponent 65537, its INTEGER whole. rsa.h verifies under this
+// exponent alone.
+static const uint8_t rsa_exponent[] = {0x02, 0x03, 0x01, 0x00, 0x01};
+// RSAPrivateKey's version two-prime(0) (RFC 8017 appendix A.1.2).
+static const uint8_t rsa_two_prime_version[] = {0x02, 0x01, 0x00};
+// The unused-bits octet of a key's BIT STRING, and the zero octet before
+// a modulus whose top bit is set.
+static const uint8_t zero_octet[] = {0x00};
+
+// A SEQUENCE header whose body fills the rest of r.
+static int read_filling_sequence(rbuf *r) {
+    size_t len = 0;
+    return x509_read_header(r, TAG_SEQUENCE, &len) && len == rb_left(r);
+}
+
+int x509_pem_spki_is_rsa(const uint8_t *spki, size_t spki_len, const uint8_t *n, size_t n_len) {
+    CH_ASSERT(n != NULL && n_len > 0);
+    CH_ASSERT(spki != NULL || spki_len == 0);
+    rbuf s;
+    rb_init(&s, spki, spki_len);
+    size_t len = 0;
+    if (!read_filling_sequence(&s) || !x509_read_exact(&s, rsa_algorithm, sizeof rsa_algorithm) ||
+        !x509_read_header(&s, TAG_BIT_STRING, &len) || len != rb_left(&s) ||
+        !x509_read_exact(&s, zero_octet, sizeof zero_octet) || !read_filling_sequence(&s)) {
+        return 0;
+    }
+    return x509_read_header(&s, TAG_INTEGER, &len) && len == n_len + 1 &&
+           x509_read_exact(&s, zero_octet, sizeof zero_octet) && x509_read_exact(&s, n, n_len) &&
+           x509_read_exact(&s, rsa_exponent, sizeof rsa_exponent) && !s.err && rb_left(&s) == 0;
+}
+
+// One INTEGER's header, and *v at its content octets, which are not read.
+static int read_integer(rbuf *r, x509_pem_integer *v) {
+    if (!x509_read_header(r, TAG_INTEGER, &v->len) || v->len == 0) {
+        return 0;
+    }
+    v->bytes = rb_bytes(r, v->len);
+    return v->bytes != NULL;
+}
+
+// RSAPrivateKey ::= SEQUENCE { version two-prime, modulus,
+// publicExponent 65537, privateExponent, prime1, prime2, exponent1,
+// exponent2, coefficient }, which fills der.
+static int read_rsa_private_key(const uint8_t *der, size_t der_len, x509_pem_rsa_key *key) {
+    rbuf r;
+    rb_init(&r, der, der_len);
+    if (!read_filling_sequence(&r) ||
+        !x509_read_exact(&r, rsa_two_prime_version, sizeof rsa_two_prime_version) ||
+        !read_integer(&r, &key->n) || !x509_read_exact(&r, rsa_exponent, sizeof rsa_exponent)) {
+        return 0;
+    }
+    if (!read_integer(&r, &key->d) || !read_integer(&r, &key->p) || !read_integer(&r, &key->q) ||
+        !read_integer(&r, &key->dp) || !read_integer(&r, &key->dq) ||
+        !read_integer(&r, &key->qinv)) {
+        return 0;
+    }
+    return !r.err && rb_left(&r) == 0;
+}
+
+int x509_pem_read_rsa_pkcs8(const uint8_t *der, size_t der_len, x509_pem_rsa_key *key) {
+    CH_ASSERT(key != NULL);
+    CH_ASSERT(der != NULL || der_len == 0);
+    rbuf r;
+    rb_init(&r, der, der_len);
+    if (!read_filling_sequence(&r) || !x509_read_exact(&r, pkcs8_version, sizeof pkcs8_version) ||
+        !x509_read_exact(&r, rsa_algorithm, sizeof rsa_algorithm)) {
+        return 0;
+    }
+    // privateKey fills the rest: no attributes [0], no publicKey [1].
+    size_t key_len = 0;
+    if (!x509_read_header(&r, TAG_OCTET_STRING, &key_len) || key_len != rb_left(&r)) {
+        return 0;
+    }
+    const uint8_t *inner = rb_bytes(&r, key_len);
+    return inner != NULL && read_rsa_private_key(inner, key_len, key);
+}
+
+int x509_pem_integer_to_bytes(x509_pem_integer v, uint8_t *out, size_t out_len) {
+    CH_ASSERT(out != NULL && out_len > 0);
+    CH_ASSERT(v.bytes != NULL || v.len == 0);
+    if (v.len == 0 || v.len > out_len + 1) {
+        return 0;
+    }
+    // first and second are octets, so first - 1 wraps to the top bit only
+    // at zero. A lone octet takes 0x80 as its second, so that a lone zero
+    // octet, the value 0, reads as canonical.
+    uint32_t first = v.bytes[0];
+    uint32_t second = v.len > 1 ? v.bytes[1] : 0x80;
+    uint32_t first_zero = (first - 1) >> 31;
+    // A first octet with its top bit set makes the value negative. A
+    // leading zero octet is canonical only before an octet with its top
+    // bit set.
+    uint32_t bad = first >> 7;
+    bad |= first_zero & ((second >> 7) ^ 1);
+    size_t skip = 0;
+    if (v.len == out_len + 1) {
+        // out_len + 1 octets fit only as a zero octet and out_len more.
+        bad |= first_zero ^ 1;
+        skip = 1;
+    }
+    size_t pad = out_len + skip - v.len;
+    for (size_t i = 0; i < pad; i++) {
+        out[i] = 0;
+    }
+    for (size_t i = pad; i < out_len; i++) {
+        out[i] = v.bytes[i - pad + skip];
+    }
+    CT_DECLASSIFY(&bad, sizeof bad);
+    return bad == 0;
+}
+#endif
 
 #ifdef CH_SIGN_MLDSA
 // id-ml-dsa-87 (draft-ietf-lamps-dilithium-certificates), the

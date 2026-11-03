@@ -1,0 +1,13 @@
+invariant: INV-14
+file: pem_files.c
+catches: pem_files_rsa_test
+reason: ch_rsa_key_from_pem stops checking its cpu value, so a device
+  object takes a value it defines no bit for, and a host object takes one
+  without CH_CPU_PROBED. test_cpu passes such a value.
+
+--- old
+    int ok = cpu_value_ok(cpu) && read_blocks(pem, pem_len, PEM_LABEL_PRIVATE_KEY, &w, 0, NULL) &&
+             x509_pem_read_rsa_pkcs8(der, w.len, &fields) && read_modulus(fields.n, key) &&
+--- new
+    int ok = read_blocks(pem, pem_len, PEM_LABEL_PRIVATE_KEY, &w, 0, NULL) &&
+             x509_pem_read_rsa_pkcs8(der, w.len, &fields) && read_modulus(fields.n, key) &&

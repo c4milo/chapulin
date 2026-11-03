@@ -1,0 +1,16 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_rsa_test
+reason: ch_rsa_key_from_pem stops signing with the ladder, so a key whose
+  private exponent is wrong decodes, and a session that signs with the
+  ladder sends a CertificateVerify no client accepts. test_written
+  changes one bit of d.
+
+--- old
+    if (!signs(cpu, WIDEMUL_NOT_STATED, key)) {
+        return 0;
+    }
+--- new
+    if (cpu == UINT32_MAX && !signs(cpu, WIDEMUL_NOT_STATED, key)) {
+        return 0;
+    }

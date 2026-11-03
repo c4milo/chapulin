@@ -495,6 +495,16 @@ test "the PEM files: a refusal is error.Invalid, a room is the caller's, and a r
             @memset(&key.private_key, 0x5a);
             key.wipe();
             try expect(std.mem.allEqual(u8, &key.private_key, 0));
+            var rsa: chapulin.RsaKey = .{};
+            @memset(std.mem.asBytes(&rsa.private_key), 0x5a);
+            try expectError(error.Invalid, rsa.fromPem(if (has_cpu) .{} else {}, not_pem, chain.leaf()));
+            try expect(std.mem.allEqual(u8, std.mem.asBytes(&rsa.private_key), 0));
+            rsa.private_key.n_len = 3;
+            try expectEqual(@as(usize, 3), rsa.publicKey().len);
+            try expectEqual(@as([*]const u8, &rsa.private_key.n), rsa.publicKey().ptr);
+            @memset(std.mem.asBytes(&rsa.private_key), 0x5a);
+            rsa.wipe();
+            try expect(std.mem.allEqual(u8, std.mem.asBytes(&rsa.private_key), 0));
         }
         if (has_mldsa_server) {
             var key: chapulin.MlDsa87Key = .{};
@@ -591,7 +601,7 @@ test "every declaration this object has compiles" {
     compile(chapulin, &.{ "fromCode", "buildMatches", "Limits", "Group", "Suite", "State", "Hook", "RandomSource", "attachRandom" });
     try expect(chapulin.buildMatches());
     if (has_client) compile(chapulin, &.{ "Client", "Ticket", "Trust" });
-    if (has_classic_server) compile(chapulin, &.{ "Server", "EcdsaP256Identity", "RsaPssIdentity", "Chain", "EcdsaP256Key" });
+    if (has_classic_server) compile(chapulin, &.{ "Server", "EcdsaP256Identity", "RsaPssIdentity", "Chain", "EcdsaP256Key", "RsaKey" });
     if (has_mldsa_server) compile(chapulin, &.{ "Server", "MlDsa87Identity", "Chain", "MlDsa87Key" });
     if (has_webpki) compile(chapulin, &.{ "TrustAnchor", "CertType", "Anchors" });
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hookContext"});

@@ -1,8 +1,11 @@
 // The DER inside the PEM files that an operator provisions
-// (pem_files.h). It reads three things:
+// (pem_files.h). It reads these things:
 //  - a certificate, as far as its subject Name and its
 //    subjectPublicKeyInfo;
 //  - a P-256 private key in PKCS #8 or SEC 1 form;
+//  - an RSA private key in PKCS #8 form, in a server role;
+//  - an ML-DSA-87 private key in PKCS #8 form, in an object that signs
+//    ML-DSA-87;
 //  - the EC PARAMETERS that a SEC 1 key file may hold above its key.
 //
 // These are certificate files under INV-5, beside x509_ca.c. They read
@@ -83,6 +86,74 @@ int x509_pem_read_sec1(const uint8_t *der, size_t der_len, uint8_t scalar[32],
 // PRIVATE KEY block. Any other curve, an explicit curve and any byte
 // after the OBJECT IDENTIFIER answer 0. Returns 1 or 0.
 int x509_pem_parameters_are_p256(const uint8_t *der, size_t der_len);
+
+#if defined(CH_ROLE_SERVER) && !defined(CH_PROFILE_CNSA2)
+// One INTEGER's content octets in der: where they start and how many
+// there are. The count is the DER's length field, which the reader
+// branches on. The octets themselves may be secret, and the reader reads
+// none of them.
+typedef struct {
+    const uint8_t *bytes;
+    size_t len;
+} x509_pem_integer;
+
+// The integers of an RSAPrivateKey (RFC 8017 appendix A.1.2) after its
+// version, under RFC 8017's names, with the public exponent left out:
+// x509_pem_read_rsa_pkcs8 requires it to be 65537.
+typedef struct {
+    x509_pem_integer n;
+    x509_pem_integer d;
+    x509_pem_integer p;
+    x509_pem_integer q;
+    x509_pem_integer dp;
+    x509_pem_integer dq;
+    x509_pem_integer qinv;
+} x509_pem_rsa_key;
+
+// Whether spki, a whole SubjectPublicKeyInfo TLV, is the RSA key with the
+// modulus n, n_len bytes, and the public exponent 65537, byte for byte.
+// Such a key is rsaEncryption with NULL parameters and a BIT STRING that
+// holds an RSAPublicKey (RFC 8017 appendix A.1.1). n must have its top
+// bit set, so its INTEGER is a zero octet and then n. Returns 1 or 0.
+int x509_pem_spki_is_rsa(const uint8_t *spki, size_t spki_len, const uint8_t *n, size_t n_len);
+
+// Reads der as a PKCS #8 PrivateKeyInfo (RFC 5958 section 2) that holds
+// an RSA key. Its fields are these:
+//  - version 0;
+//  - the AlgorithmIdentifier rsaEncryption with NULL parameters, byte
+//    for byte (RFC 8017 appendix A.1);
+//  - a privateKey OCTET STRING that fills the rest, so no attributes and
+//    no publicKey field. It holds an RSAPrivateKey: version two-prime
+//    (0), so no otherPrimeInfos, then modulus, publicExponent,
+//    privateExponent, prime1, prime2, exponent1, exponent2 and
+//    coefficient, and nothing after them. The publicExponent must be
+//    65537, its INTEGER byte for byte.
+// The reader checks each INTEGER's tag and length, and reads no content
+// octet of any INTEGER but the exponent. x509_pem_integer_to_bytes reads
+// and checks them.
+//
+// Returns 1, and points each field of key at its INTEGER's content
+// octets in der. Returns 0 otherwise, and then key holds nothing the
+// caller may read. der is a secret: the caller wipes it.
+int x509_pem_read_rsa_pkcs8(const uint8_t *der, size_t der_len, x509_pem_rsa_key *key);
+
+// Copies the value of v, an INTEGER's content octets, to out, out_len
+// bytes, big-endian and padded on the left with zero bytes. Returns 1
+// when v is a non-negative INTEGER in canonical DER whose value fits
+// out_len bytes:
+//  - the first octet does not have its top bit set, since that makes the
+//    value negative;
+//  - a first octet of zero comes before an octet with its top bit set,
+//    or is the only octet (X.690 section 8.3.2);
+//  - the octets after a leading zero octet are at most out_len.
+// Returns 0 otherwise, and then out holds unspecified bytes.
+//
+// v.len and out_len are public, and the call branches on them alone. It
+// reads the octets with no branch and no memory index that their values
+// decide, and it computes the answer from them with masks. The answer
+// leaves as the result, which is public.
+int x509_pem_integer_to_bytes(x509_pem_integer v, uint8_t *out, size_t out_len);
+#endif
 
 #ifdef CH_SIGN_MLDSA
 // Whether spki, a whole SubjectPublicKeyInfo TLV, is the ML-DSA-87 key

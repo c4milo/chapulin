@@ -1,0 +1,14 @@
+invariant: INV-17
+file: pem_files.c
+catches: pem_files_rsa_test
+reason: A refused RSA key file leaves the integers the call read in the
+  caller's key. Every refusal in test_files and test_written requires
+  the key zeroed.
+
+--- old
+    if (!ok) {
+        ct_wipe(key, sizeof *key);
+        return CH_EINVAL;
+--- new
+    if (!ok) {
+        return CH_EINVAL;

@@ -91,9 +91,9 @@ static size_t pem_wrap_label(const char *label, const uint8_t *body, size_t n, s
     return o + eol_len;
 }
 
-// The same for a CERTIFICATE block. It and pem_armor_label are inline. So
-// a file that includes this header and calls neither compiles under
-// -Wunused-function.
+// The same for a CERTIFICATE block. It, pem_armor_label and pem_armor are
+// inline. So a file that includes this header and calls none of them
+// compiles under -Wunused-function.
 static inline size_t pem_wrap_text(const uint8_t *body, size_t n, size_t width, const char *eol,
                                    uint8_t *dst) {
     return pem_wrap_label("CERTIFICATE", body, n, width, eol, dst);
@@ -122,7 +122,8 @@ static inline size_t pem_armor_label(const char *label, const uint8_t *src, size
 }
 
 // src as one CERTIFICATE block in dst.
-static size_t pem_armor(const uint8_t *src, size_t n, size_t width, const char *eol, uint8_t *dst) {
+static inline size_t pem_armor(const uint8_t *src, size_t n, size_t width, const char *eol,
+                               uint8_t *dst) {
     return pem_armor_label("CERTIFICATE", src, n, width, eol, dst);
 }
 

@@ -1,6 +1,7 @@
-//! The PEM files of the Zig API: a server's certificate chain and P-256 private key, and a
-//! client's CA bundle. The three C calls that pem_files.h declares decode them, and chapulin.zig
-//! declares the values as chapulin.Chain, chapulin.EcdsaP256Key and chapulin.Anchors. A chain
+//! The PEM files of the Zig API: a server's certificate chain and its P-256, RSA and ML-DSA-87
+//! private keys, and a client's CA bundle. The C calls that pem_files.h declares decode them, and
+//! chapulin.zig declares the values as chapulin.Chain, chapulin.EcdsaP256Key, chapulin.RsaKey,
+//! chapulin.MlDsa87Key and chapulin.Anchors. A chain
 //! and a bundle decode into rooms the caller places and sizes, and each value names the entries
 //! the C call filled. A key decodes into the value's own storage. It sits in a file of its own
 //! because chapulin.zig stands near the 500-line cap CLAUDE.md sets and make lint-size holds.
@@ -12,9 +13,11 @@ const c = chapulin.c;
 const has_server = @hasField(c.ch_cfg, "srv");
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_cpu = @hasField(c.ch_cfg, "cpu");
-// The key call each server role's object exports: the P-256 one, or the
-// ML-DSA-87 one in a PROFILE=cnsa2 server (docs/decisions.md 162).
+// The key calls each server role's object exports: the P-256 and RSA ones,
+// and the ML-DSA-87 one in a host object, or the ML-DSA-87 one alone in a
+// PROFILE=cnsa2 server (docs/decisions.md 162, 180 and 184).
 const has_p256_key = has_server and @hasDecl(c, "ch_p256_key_from_pem");
+const has_rsa_key = has_server and @hasDecl(c, "ch_rsa_key_from_pem");
 const has_mldsa_key = has_server and @hasDecl(c, "ch_mldsa_key_from_pem");
 
 /// A server's certificate chain, decoded from a PEM file by ch_chain_from_pem into the caller's
@@ -68,6 +71,37 @@ pub const EcdsaP256Key = if (has_p256_key) struct {
         std.crypto.secureZero(u8, &self.private_key);
     }
 } else @compileError("EcdsaP256Key needs ROLE=server or ROLE=both outside PROFILE=cnsa2");
+
+/// An RSA private key, decoded from a PEM file by ch_rsa_key_from_pem: the ch_rsa_priv that
+/// RsaPssIdentity.private_key points at. publicKey returns its modulus, which
+/// RsaPssIdentity.public_key takes. The key's integers are secrets: wipe zeroes them once no
+/// session uses the key. The program wipes the key file's text after fromPem returns, on success
+/// and on error.
+pub const RsaKey = if (has_rsa_key) struct {
+    private_key: c.ch_rsa_priv = undefined,
+
+    /// ch_rsa_key_from_pem: one PRIVATE KEY block, a PKCS #8 PrivateKeyInfo of rsaEncryption that
+    /// holds a two-prime key with the public exponent 65537. leaf, the end-entity certificate's
+    /// DER, carries the modulus. cpu is the value a session's Server.cpu takes, in a host object
+    /// alone, where null is refused. The call signs once with the key and verifies the signature
+    /// under the leaf's key. error.Invalid for a cpu, a file, a leaf or a key that pem_files.h
+    /// refuses, and private_key is then zero.
+    pub fn fromPem(self: *@This(), cpu: if (has_cpu) ?chapulin.Cpu else void, pem: []const u8, leaf: []const u8) error{Invalid}!void {
+        const bits: u32 = if (has_cpu) chapulin.cpuBits(cpu) else 0;
+        return chapulin.fromCode(error{Invalid}, c.ch_rsa_key_from_pem(bits, pem.ptr, pem.len, leaf.ptr, leaf.len, &self.private_key));
+    }
+
+    /// The modulus, big-endian, n_len bytes of private_key.n: what RsaPssIdentity.public_key
+    /// takes. It points into self, so self stays where fromPem filled it.
+    pub fn publicKey(self: *const @This()) []const u8 {
+        return self.private_key.n[0..self.private_key.n_len];
+    }
+
+    /// Writes zero over the whole key, through a write the compiler keeps.
+    pub fn wipe(self: *@This()) void {
+        std.crypto.secureZero(u8, std.mem.asBytes(&self.private_key));
+    }
+} else @compileError("RsaKey needs ROLE=server or ROLE=both outside PROFILE=cnsa2");
 
 /// An ML-DSA-87 key pair, expanded from a PEM file's 32-byte seed by ch_mldsa_key_from_pem:
 /// the secret and public keys MlDsa87Identity.private_key and public_key point at. The secret

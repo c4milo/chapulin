@@ -34,10 +34,10 @@ Other targets:
   `TRUST=webpki` exports the eight calls and `ch_anchors_from_pem`. That
   call decodes a CA bundle file into the anchors that `ch_cfg` takes. An
   object with a server role, `ROLE=server` or `ROLE=both`, exports
-  `ch_chain_from_pem` and `ch_p256_key_from_pem`. They decode a
-  certificate chain file and a P-256 key file into what a server identity
-  takes. So a `ROLE=both TRUST=webpki` object exports all three
-  (`pem_files.h`, decision 131). A host object with a server role also
+  `ch_chain_from_pem`, `ch_p256_key_from_pem` and `ch_rsa_key_from_pem`.
+  They decode a certificate chain file, a P-256 key file and an RSA key
+  file into what a server identity takes. So a `ROLE=both TRUST=webpki`
+  object exports all four (`pem_files.h`, decisions 131 and 184). A host object with a server role also
   exports `ch_mldsa_key_from_pem`, which decodes an ML-DSA-87 key file
   for the `mldsa87` identity it holds beside the other two (decision
   180).

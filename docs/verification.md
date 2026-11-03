@@ -3454,7 +3454,7 @@ harness proves.
 
 #### x509_pem
 
-- **Harnesses:** `x509_pem` (fast), `x509_pem_key` (fast)
+- **Harnesses:** `x509_pem` (fast), `x509_pem_key` (fast), `x509_pem_rsa` (fast), `x509_pem_rsa_integer` (slow)
 - **Proves:**
   - the certificate walk stays safe on any certificate of up to 2^40
     bytes. On success it points the subject Name and the
@@ -3469,7 +3469,19 @@ harness proves.
     scalar;
   - `x509_pem_parameters_are_p256` stays safe on any DER of up to one
     byte past `CH_PEM_PARAMETERS_DER_MAX`, and answers 1 only for the 10
-    bytes of prime256v1's OBJECT IDENTIFIER.
+    bytes of prime256v1's OBJECT IDENTIFIER;
+  - in a server role (decision 184), the RSA PKCS #8 reader and the RSA
+    key compare (`x509_pem_rsa`) stay safe on any input of up to 2^40
+    bytes, over the stubs of the DER primitives. Each of the seven
+    INTEGERs the reader returns lies inside the DER. Over the real
+    primitives the reader gave no verdict in 20 minutes.
+    `x509_pem_integer_to_bytes` (`x509_pem_rsa_integer`) stays safe on
+    content of up to two octets past its field, at the two field lengths
+    the key call passes at the bound of 384: 384 and 192 bytes. Over fields of up to 6 bytes and content
+    of up to 8 octets, it answers 1 exactly for a canonical non-negative
+    INTEGER that fits, and then the field holds the value, padded on the
+    left with zero bytes. `bin/pem_files_rsa_test` holds the RSA key
+    compare's verdict on OpenSSL's leaves.
 - **Bound:** each input is a heap object of its exact length. The
   certificate walk and the key compare take up to 2^40 bytes, which
   stands for no cap. The key call passes its caller's leaf with no cap of
@@ -3546,11 +3558,48 @@ harness proves.
   That mutant checks the whole room of the EC PARAMETERS block. Then
   only a byte that an earlier call left in the room tells it apart, so
   no test catches it on every compiler.
+  The RSA key call has its own entry, [pem_files_rsa](#pem_files_rsa).
   Where the calls live is held by `inv05-pem-reader-in-raw-client`
   (`make lint-trust-separation`), `inv20-pem-files-called-by-srv`
   (`make lint-invariants`), `inv35-anchors-not-transport-named`
   (`lib-check`) and `inv36-header-pem-files-outside-server`
   (`make lint-zig-build`).
+
+#### pem_files_rsa
+
+- **Harnesses:** `pem_files_rsa` (fast), `pem_files_rsa_host` (fast)
+- **Proves:** `ch_rsa_key_from_pem` (decision 184) stays safe and honors
+  its contract over any input. Every reader below it is stubbed to its
+  proven contract, and the signers and verifiers to their headers'.
+  - A key is accepted only under a `cpu` value the object takes, and
+    only after one PRIVATE KEY block alone and the end of the run. Its
+    `n_len` lies inside `rsa.h`'s bound.
+  - The leaf was asked about the key's own modulus and answered yes.
+  - The ladder signed, and its signature verified under that modulus.
+    In a host object under `CH_CPU_CONSTANT_TIME_MULTIPLY`,
+    `rsa_sign64.c` signed too, and its signature verified. In a host
+    object both primes' top bits are set in the key.
+  - Every refusal zeroes every byte of the key.
+
+  `pem_files_rsa` runs in a device object and `pem_files_rsa_host` in a
+  host object. The DER room is the call's own array, which CBMC lets hold
+  any bytes, so the stub of the block reader writes none of them.
+- **Bound:** any input; the room of `CH_PEM_RSA_KEY_DER_MAX` bytes at a
+  modulus bound of 384.
+- **Not proved:** the values. `bin/pem_files_rsa_test` and
+  `bin/pem_files_rsa_host` read OpenSSL's keys, compare the integers with
+  the ones Python read, and search the stack the call leaves.
+- **Violations:** each of these mutants is caught by
+  `bin/pem_files_rsa_test`: `inv05-pem-rsa-key-leaf-unchecked`,
+  `inv05-pem-rsa-ladder-check-skipped`,
+  `inv05-pem-rsa-prime-top-bit-unchecked`,
+  `inv05-pem-rsa-integer-leading-zero-admitted`,
+  `inv05-pem-rsa-integer-negative-admitted`,
+  `inv05-pem-rsa-integer-one-octet-over`,
+  `inv14-pem-rsa-key-cpu-unchecked`, `inv17-pem-rsa-key-der-not-wiped`,
+  `inv17-pem-rsa-crt-room-not-wiped` and
+  `inv17-pem-rsa-refusal-keeps-key`. `bin/pem_files_rsa_host` catches
+  `inv05-pem-rsa-crt-check-skipped`.
 
 ### Certificates: TRUST=webpki
 

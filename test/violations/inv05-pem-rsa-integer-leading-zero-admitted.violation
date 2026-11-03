@@ -1,0 +1,12 @@
+invariant: INV-5
+file: x509_pem.c
+catches: pem_files_rsa_test
+reason: x509_pem_integer_to_bytes stops refusing a leading zero octet
+  before an octet whose top bit is clear, which canonical DER refuses
+  (X.690 section 8.3.2). test_written writes such a dq, which the ladder
+  never reads.
+
+--- old
+    bad |= first_zero & ((second >> 7) ^ 1);
+--- new
+    (void)second;

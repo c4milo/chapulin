@@ -193,6 +193,7 @@ signature, a date or a name, and no session calls one.
 | --- | --- | --- | --- |
 | `ch_chain_from_pem` | `ROLE=server`, `ROLE=both` | A certificate chain | The chain of a server identity |
 | `ch_p256_key_from_pem` | `ROLE=server`, `ROLE=both`, outside `PROFILE=cnsa2` | A P-256 key, PKCS #8 or SEC 1 | The scalar and the point of an ECDSA identity |
+| `ch_rsa_key_from_pem` | `ROLE=server`, `ROLE=both`, outside `PROFILE=cnsa2` | An RSA key, PKCS #8 | The `ch_rsa_priv` of an RSA-PSS identity |
 | `ch_mldsa_key_from_pem` | `ROLE=server` and `ROLE=both` host objects, and `PROFILE=cnsa2 ROLE=server` | An ML-DSA-87 key, PKCS #8 seed or both form | The secret and public keys of an ML-DSA-87 identity |
 | `ch_anchors_from_pem` | `TRUST=webpki` | A CA bundle | The roots that `ch_cfg.anchors` takes |
 | `ch_pubkey_from_pem` | `TRUST=ca-rsa`, `TRUST=ca-ecdsa`, `TRUST=ca-mldsa` | One CA certificate | The key that `ch_cfg.server_pubkey` takes |

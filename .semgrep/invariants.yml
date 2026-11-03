@@ -676,8 +676,9 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-20: ch_chain_from_pem, ch_p256_key_from_pem and
-      ch_anchors_from_pem are provisioning calls. A program calls them
+      INV-20: ch_chain_from_pem, ch_p256_key_from_pem,
+      ch_rsa_key_from_pem, ch_mldsa_key_from_pem and ch_anchors_from_pem
+      are provisioning calls. A program calls them
       while it reads its operator's files, and no library source calls
       them. A call from
       inside the library would put x509_pem.c's readers on a path peer
@@ -689,6 +690,8 @@ rules:
     pattern-either:
       - pattern: ch_chain_from_pem(...)
       - pattern: ch_p256_key_from_pem(...)
+      - pattern: ch_rsa_key_from_pem(...)
+      - pattern: ch_mldsa_key_from_pem(...)
       - pattern: ch_anchors_from_pem(...)
 
   - id: inv-20-no-time-calls

@@ -203,9 +203,9 @@ const public_record_either_role = [_][]const u8{
 const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_write_parts", "ch_writable_len", "ch_close", "ch_fail" } ++ public_alert;
 /// The PEM calls that a server role exports, and the one that a
 /// TRUST=webpki object exports (pem_files.h).
-const public_pem_server = [_][]const u8{ "ch_chain_from_pem", "ch_p256_key_from_pem" };
-/// A PROFILE=cnsa2 server exports the ML-DSA-87 key call in the P-256 one's
-/// place (docs/decisions.md 162).
+const public_pem_server = [_][]const u8{ "ch_chain_from_pem", "ch_p256_key_from_pem", "ch_rsa_key_from_pem" };
+/// A PROFILE=cnsa2 server exports the ML-DSA-87 key call in place of the
+/// P-256 and RSA ones (docs/decisions.md 162 and 184).
 const public_pem_server_cnsa2 = [_][]const u8{ "ch_chain_from_pem", "ch_mldsa_key_from_pem" };
 const public_pem_webpki = [_][]const u8{"ch_anchors_from_pem"};
 

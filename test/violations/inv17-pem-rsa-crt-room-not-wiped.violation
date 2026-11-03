@@ -1,0 +1,16 @@
+invariant: INV-17
+file: pem_files.c
+catches: pem_files_rsa_test
+reason: In a device object, ch_rsa_key_from_pem returns with its copies
+  of p, q and the three CRT values on its own stack, since the device key
+  holds none of them. test_wipes searches the stack below the call and
+  finds p and q.
+
+--- old
+#ifndef CH_CPU_RUNTIME
+    ct_wipe(crt_room, sizeof crt_room);
+#endif
+--- new
+#ifndef CH_CPU_RUNTIME
+    (void)crt_room;
+#endif

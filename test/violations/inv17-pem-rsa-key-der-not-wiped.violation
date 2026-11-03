@@ -1,0 +1,14 @@
+invariant: INV-17
+file: pem_files.c
+catches: pem_files_rsa_test
+reason: ch_rsa_key_from_pem returns with the decoded key DER on its own
+  stack, and that DER holds d, p and q whole. test_wipes searches the
+  stack below the call and finds them.
+
+--- old
+    ct_wipe(der, sizeof der);
+#ifndef CH_CPU_RUNTIME
+    ct_wipe(crt_room, sizeof crt_room);
+--- new
+#ifndef CH_CPU_RUNTIME
+    ct_wipe(crt_room, sizeof crt_room);

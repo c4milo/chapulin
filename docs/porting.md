@@ -676,6 +676,7 @@ call:
 | `ch_pubkey_from_pem` | `ch_pubkey_from_pem_tcp_blocking`, `ch_pubkey_from_pem_tcp_nonblocking`, `ch_pubkey_from_pem_quic_nonblocking` | `x509_ca.h` |
 | `ch_chain_from_pem` | `ch_chain_from_pem_tcp_blocking`, `ch_chain_from_pem_tcp_nonblocking`, `ch_chain_from_pem_quic_nonblocking` | `pem_files.h` |
 | `ch_p256_key_from_pem` | `ch_p256_key_from_pem_tcp_blocking`, `ch_p256_key_from_pem_tcp_nonblocking`, `ch_p256_key_from_pem_quic_nonblocking` | `pem_files.h` |
+| `ch_rsa_key_from_pem` | `ch_rsa_key_from_pem_tcp_blocking`, `ch_rsa_key_from_pem_tcp_nonblocking`, `ch_rsa_key_from_pem_quic_nonblocking` | `pem_files.h` |
 | `ch_mldsa_key_from_pem` | `ch_mldsa_key_from_pem_tcp_blocking`, `ch_mldsa_key_from_pem_tcp_nonblocking`, `ch_mldsa_key_from_pem_quic_nonblocking` | `pem_files.h` |
 | `ch_anchors_from_pem` | `ch_anchors_from_pem_tcp_blocking`, `ch_anchors_from_pem_tcp_nonblocking`, `ch_anchors_from_pem_quic_nonblocking` | `pem_files.h` |
 | `ch_ticket_obfuscated_age` | `ch_ticket_obfuscated_age_tcp_blocking`, `ch_ticket_obfuscated_age_tcp_nonblocking`, `ch_ticket_obfuscated_age_quic_nonblocking` | `ticket.h` |

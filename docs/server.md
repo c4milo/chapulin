@@ -1976,10 +1976,17 @@ object computes the point on the wide P-256 field. A device object takes 0. The
 key call also requires that the end-entity certificate carries that point. So
 it closes the first gap that `ch_srv_check` leaves for the ECDSA identity.
 
-Neither call does I/O. The caller reads each file into its own buffer, and
-each call writes into rooms that the caller gives. No session calls either
-one. An RSA identity's key is still the integers that the operator's own
-step writes.
+`ch_rsa_key_from_pem` decodes an RSA key file into the `ch_rsa_priv` that the
+RSA-PSS identity takes (decision 184). The file holds one PKCS #8 key with the
+public exponent 65537, as `openssl genpkey -algorithm RSA` writes it. The
+modulus and the exponent must be the end-entity certificate's. Then the call
+signs once with the ladder and verifies the signature under the modulus. Under
+`CH_CPU_CONSTANT_TIME_MULTIPLY` a host object signs once more with the 64-bit
+signer. So a wrong private integer is refused when the key loads, not when a
+session first signs.
+
+No call does I/O. The caller reads each file into its own buffer, and each
+call writes into rooms that the caller gives. No session calls one.
 
 `chapulin.hpp` forks by role. `CLAUDE.md:249-254` says the wrapper adds no logic
 the C core lacks, and a server session is the same RAII shape over one
@@ -3105,7 +3112,7 @@ under the profile.
   and `rsa_pss`. `ch_mldsa_key_from_pem` expands the key file's 32-byte
   seed into the 4,896-byte secret key and the 2,592-byte public key the
   slot points at, and `ch_chain_from_pem` decodes the chain. The object
-  does not export `ch_p256_key_from_pem`.
+  exports neither `ch_p256_key_from_pem` nor `ch_rsa_key_from_pem`.
 - **CertificateVerify.** mldsa87 (0x0906) over the whole 146-byte
   content with an empty context, hedged with `rnd` from `rand_draw`.
   The signer verifies each signature before it returns it, and

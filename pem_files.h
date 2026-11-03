@@ -27,7 +27,7 @@
 //
 // Which objects define the calls decides which builds declare them
 // (INV-36). Every object with a server role, ROLE=server and ROLE=both,
-// defines the chain and the key calls. Every TRUST=webpki object, client
+// defines the chain call and its key calls (below). Every TRUST=webpki object, client
 // or ROLE=both, defines the bundle call. colibri's ROLE=both TRUST=webpki
 // object has all three. Every call names the object's transport in its
 // symbol, as ch_srv_check does (docs/decisions.md 61), because one image
@@ -46,11 +46,14 @@
 #include "cfg.h"
 #include "pem.h"
 
-// A PROFILE=cnsa2 server holds no P-256 identity and no P-256 arithmetic,
-// so it defines the chain call and ch_mldsa_key_from_pem below, and not the
-// P-256 key call (docs/decisions.md 162).
+// A PROFILE=cnsa2 server holds no P-256 or RSA identity and no P-256 or
+// RSA arithmetic, so it defines the chain call and ch_mldsa_key_from_pem
+// below, and not the P-256 and RSA key calls (docs/decisions.md 162 and
+// 184).
 #if defined(CH_ROLE_SERVER) && !defined(CH_PROFILE_CNSA2)
 #define CH_PEM_P256_KEY_CALL
+#define CH_PEM_RSA_KEY_CALL
+#include "rsa_sign.h" // ch_rsa_priv
 #endif
 
 #ifdef CH_ROLE_SERVER
@@ -160,6 +163,95 @@ int CH_MUST_USE ch_chain_from_pem(const uint8_t *pem, size_t pem_len, uint8_t *d
 int CH_MUST_USE ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len,
                                      const uint8_t *leaf, size_t leaf_len, uint8_t priv[32],
                                      uint8_t pub[64]);
+#endif
+
+#ifdef CH_PEM_RSA_KEY_CALL
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define ch_rsa_key_from_pem ch_rsa_key_from_pem_quic_nonblocking
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
+#define ch_rsa_key_from_pem ch_rsa_key_from_pem_tcp_nonblocking
+#else
+#define ch_rsa_key_from_pem ch_rsa_key_from_pem_tcp_blocking
+#endif
+
+// The room for an RSA private key's DER. Every key the call admits fits
+// in it, for a modulus of at most CH_RSA_MODULUS_MAX bytes, M below. The
+// key is a PKCS #8 PrivateKeyInfo:
+//  - the SEQUENCE header 4, version 3, the AlgorithmIdentifier 15 and the
+//    OCTET STRING header 4;
+//  - the RSAPrivateKey's own header 4 and version 3;
+//  - the modulus and the private exponent, each at most a 4-byte header,
+//    a zero octet and M octets;
+//  - the public exponent 5;
+//  - the two primes and the three CRT values, each at most a 4-byte
+//    header, a zero octet and M / 2 octets.
+// That is 73 + 9 * M / 2 bytes: 1,801 for M = 384 and 2,377 for M = 512.
+// OpenSSL's RSA-4096 key is 2,373 bytes. A longer DER outgrows the room,
+// and the call refuses it.
+#define CH_PEM_RSA_KEY_DER_MAX (73 + 9 * CH_RSA_MODULUS_MAX / 2)
+
+// Decodes an RSA private key. The file holds one PRIVATE KEY block, a
+// PKCS #8 PrivateKeyInfo (RFC 5958) whose algorithm is rsaEncryption and
+// whose privateKey is a two-prime RSAPrivateKey (RFC 8017 appendix
+// A.1.2), as `openssl genpkey -algorithm RSA` writes it. The text around
+// the block follows ch_anchors_from_pem's rule, as for
+// ch_p256_key_from_pem. x509_pem.h states the fields.
+//
+// cpu describes the CPU, as for ch_p256_key_from_pem, and the call
+// refuses the same values. It picks the signers that check the key
+// (below).
+//
+// Writes the key to key, in rsa_sign.h's form: n, d and n_len, and in a
+// host object p, q, dp, dq and qinv too. Each integer is big-endian and
+// padded on the left with zero bytes to its field's length. key is what
+// ch_identity's rsa_pss slot takes as priv, and key->n with key->n_len is
+// what it takes as pub (srv_cfg.h). A device object keeps n and d alone.
+// The call still reads the five other integers there and checks their
+// form (below).
+//
+// The key must be one a server signs with: n_len is 256 to
+// CH_RSA_MODULUS_MAX and a multiple of 8, n has its top bit set and is
+// odd, the public exponent is 65537, each prime fills n_len / 2 bytes
+// with its top bit set, and d and the three CRT values fit their fields.
+//
+// leaf is the end-entity certificate's DER, chain[0] from
+// ch_chain_from_pem. Its subjectPublicKeyInfo must be RSA's with the
+// modulus n and the exponent 65537, byte for byte.
+//
+// Then the call signs one fixed digest with the key, and verifies each
+// signature under the leaf's key. So the call refuses a private half that
+// is not the certificate's, as ch_p256_key_from_pem does:
+//  - in every object, with rsa_sign.c's ladder, which reads n and d;
+//  - in a host object under CH_CPU_CONSTANT_TIME_MULTIPLY, also with
+//    rsa_sign64.c's signer, which reads p, q, dp, dq and qinv. It requires
+//    p * q = n, and it checks its own signature (rsa_sign64.h).
+// A host object without that bit holds the five CRT values unchecked. A
+// session under such a value signs with the ladder and never reads them.
+//
+// Returns CH_OK. Returns CH_EINVAL, with key zeroed, for:
+//  - a cpu value that the object refuses;
+//  - a block of any other label, RSA PRIVATE KEY (PKCS #1) and ENCRYPTED
+//    PRIVATE KEY among them;
+//  - DER over CH_PEM_RSA_KEY_DER_MAX bytes;
+//  - a form or a field that the grammar refuses, a multi-prime key among
+//    them;
+//  - an INTEGER that is negative, not in canonical DER, or longer than
+//    its field;
+//  - a key that is not one a server signs with (above);
+//  - a leaf that is not a certificate, or whose key is not n and 65537;
+//  - a check signature that a signer refuses or that does not verify.
+//
+// The private integers are secrets. The call reads each one with no
+// branch and no memory index that its value decides. Each INTEGER's DER
+// length tells how many leading zero octets its value has, and the call
+// branches on that length, as every reader of the file does. Before the
+// call returns, on every path, it wipes every copy it makes: the decoded
+// DER, the base64 accumulator and, in a device object, its copies of the
+// five CRT integers. Two copies are the caller's: key, and the text in
+// pem, which the caller wipes once this returns. The signature and its
+// digest are public.
+int CH_MUST_USE ch_rsa_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len,
+                                    const uint8_t *leaf, size_t leaf_len, ch_rsa_priv *key);
 #endif
 
 #if defined(CH_ROLE_SERVER) && defined(CH_SIGN_MLDSA)

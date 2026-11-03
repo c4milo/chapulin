@@ -2578,11 +2578,13 @@ PUBLIC_BUILD := ch_build
 # the chain and the key calls, and every TRUST=webpki object the CA
 # bundle call. So a ROLE=both TRUST=webpki object exports all three
 # (docs/decisions.md 131).
-# A PROFILE=cnsa2 server holds no P-256 identity, so it exports the
-# ML-DSA-87 key call in the P-256 one's place (docs/decisions.md 162).
-# Every other host server exports both key calls (docs/decisions.md 180).
+# A PROFILE=cnsa2 server holds no P-256 or RSA identity, so it exports
+# the ML-DSA-87 key call in place of the P-256 and RSA ones
+# (docs/decisions.md 162 and 184). Every other server exports the P-256
+# and RSA key calls, and every other host server the ML-DSA-87 one too
+# (docs/decisions.md 180).
 PUBLIC_PEM := $(if $(filter -DCH_ROLE_SERVER,$(ROLE_DEF)),ch_chain_from_pem \
-                $(if $(filter cnsa2,$(PROFILE)),,ch_p256_key_from_pem) \
+                $(if $(filter cnsa2,$(PROFILE)),,ch_p256_key_from_pem ch_rsa_key_from_pem) \
                 $(if $(filter -DCH_SIGN_MLDSA,$(ROLE_DEF) $(LIB_DEF)),ch_mldsa_key_from_pem)) \
               $(if $(filter webpki,$(TRUST)),ch_anchors_from_pem)
 # The lists above name each export as its header declares it. Nine of
@@ -2598,7 +2600,8 @@ PUBLIC_PEM := $(if $(filter -DCH_ROLE_SERVER,$(ROLE_DEF)),ch_chain_from_pem \
 # image of those two objects for ch_read, ch_write and ch_close already.
 # PUBLIC holds symbol names, because those are what the link keeps and
 # what lib-check reads.
-TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_chain_from_pem ch_p256_key_from_pem ch_mldsa_key_from_pem \
+TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_chain_from_pem ch_p256_key_from_pem ch_rsa_key_from_pem \
+                   ch_mldsa_key_from_pem \
                    ch_anchors_from_pem ch_ticket_obfuscated_age ch_alert_sent ch_alert_received $(PUBLIC_DNSSEC)
 # A symbol name takes no hyphen, so the suffix is the TRANSPORT value
 # with underscores, and the build record's symbol is named for its type,
@@ -2631,7 +2634,7 @@ DECLARES_srv_tcp_nonblocking.h := ch_srv_record_init ch_srv_record_in
 DECLARES_srv_quic.h := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag
 DECLARES_quic_token.h := ch_srv_quic_token_mint ch_srv_quic_token_check
 DECLARES_x509_ca.h := ch_pubkey_from_pem
-DECLARES_pem_files.h := ch_chain_from_pem ch_p256_key_from_pem ch_mldsa_key_from_pem \
+DECLARES_pem_files.h := ch_chain_from_pem ch_p256_key_from_pem ch_rsa_key_from_pem ch_mldsa_key_from_pem \
                         ch_anchors_from_pem
 DECLARES_ticket.h := ch_ticket_obfuscated_age
 DECLARES_alert.h := ch_alert_sent ch_alert_received
@@ -4357,7 +4360,7 @@ bin/webpki_chain_test: test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC) $(HDRS)
 # its rows read which copy computed a key's point under each cpu value.
 # It links the sources those copies call too, PEM_FILES_COUNT_SRCS.
 PEM_FILES_TEST_SRCS := $(sort $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) \
-                         $(WEBPKI_CHAIN_TEST_SRC))
+                         $(WEBPKI_CHAIN_TEST_SRC) rsa_sign.c)
 PEM_FILES_TEST_DEFS := -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF)
 bin/pem_files_test: test/pem_files_test.c test/stack_residue.c $(PEM_FILES_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -4371,12 +4374,32 @@ PEM_FILES_HOST_SRCS := $(sort $(PEM_FILES_TEST_SRCS) $(PEM_FILES_COUNT_SRCS))
 # -DCH_SIGN_MLDSA, the define of the object that signs ML-DSA-87. No
 # packaged object takes the define yet.
 PEM_FILES_MLDSA_TEST_SRCS := $(sort $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) \
-                               $(MLDSA_SIGN_SRCS) mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c buf.c)
+                               $(MLDSA_SIGN_SRCS) mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c buf.c \
+                               rsa_sign.c rsa.c rsa_mont.c sha256.c)
 bin/pem_files_mldsa_test: test/pem_files_mldsa_test.c test/stack_residue.c $(PEM_FILES_MLDSA_TEST_SRCS) \
                           $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_SIGN_MLDSA -I. -Itest -o $@ test/pem_files_mldsa_test.c \
 	  test/stack_residue.c $(PEM_FILES_MLDSA_TEST_SRCS)
+# ch_rsa_key_from_pem against OpenSSL's files and keys the test writes
+# (test/pem_files_rsa_test.c, docs/decisions.md 184). It builds as a
+# ROLE=server device object, whose key holds n and d alone. It builds
+# again as a ROLE=both TRUST=webpki host object with CH_RSA_MODULUS_MAX
+# 512, whose key holds the five CRT values too, and which signs on
+# rsa_sign64.c under the multiply bit.
+PEM_FILES_RSA_TEST_SRCS := $(sort $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) \
+                             rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c ct_wipe.c buf.c)
+bin/pem_files_rsa_test: test/pem_files_rsa_test.c test/stack_residue.c $(PEM_FILES_RSA_TEST_SRCS) \
+                        $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -Itest -o $@ test/pem_files_rsa_test.c \
+	  test/stack_residue.c $(PEM_FILES_RSA_TEST_SRCS)
+bin/pem_files_rsa_host: test/pem_files_rsa_test.c test/stack_residue.c \
+                        $(call host_srcs,$(PEM_FILES_RSA_TEST_SRCS)) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI \
+	  $(RSA_WIDE_DEF) -I. -Itest -o $@ test/pem_files_rsa_test.c test/stack_residue.c \
+	  $(call host_srcs,$(PEM_FILES_RSA_TEST_SRCS))
 bin/pem_files_host: $(SHA512_AVX2_UNIT)
 bin/pem_files_host: test/pem_files_test.c test/stack_residue.c $(PEM_FILES_HOST_SRCS) $(WIDEMUL_COUNT_UNITS) \
                     test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
@@ -4777,7 +4800,7 @@ bin/webpki_auth_host: test/webpki_auth_test.c $(WEBPKI_TEST_SRCS) $(WIDEMUL_COUN
 # CPU's instructions.
 HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host \
                                  bin/webpki_session_host bin/webpki_auth_host bin/pem_files_host \
-                                 bin/widemul_runtime_test \
+                                 bin/pem_files_rsa_host bin/widemul_runtime_test \
                                  bin/x25519_equiv_test \
                                  bin/x25519_adx_model_test bin/x25519_adx_equiv_test \
                                  bin/p256_equiv_test bin/p256_equiv_test_sum bin/p256_equiv_test_builtin \
@@ -5013,7 +5036,7 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   webpki_chain_test pem_files_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 \
                   mlkem_test_two_ranks mlkem_test_two_ranks_1024 \
                   mldsa_test mldsa_signer_test mldsa_signer_test_ct_widemul pem_files_mldsa_test \
-                  quic_driver_test \
+                  pem_files_rsa_test quic_driver_test \
                   quic_test $(patsubst bin/%,%,$(AES_EXTERN_BINS)) \
                   $(patsubst bin/%,%,$(X86_KERNEL_BINS) $(HOST_BINS)) \
                   srv_auth_test srv_test srv_quic_test srv_quic_both_test srv_tcp_nonblocking_test \
@@ -5818,7 +5841,8 @@ bin/diff_p256_wide: test/diff_p256_wide_test.c $(DIFF_P256_WIDE_SRCS) $(HDRS) $(
 # its own main, because the calls exist only in an object with a server
 # role and TRUST=webpki, and bin/diff compiles neither. It builds as such
 # a device object's sources (docs/decisions.md 131).
-DIFF_PEM_FILES_SRCS := $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) buf.c ct.c ct_wipe.c
+DIFF_PEM_FILES_SRCS := $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) buf.c ct.c ct_wipe.c \
+                       rsa_sign.c rsa.c rsa_mont.c sha256.c
 bin/diff_pem_files: test/diff_pem_files_test.c $(DIFF_PEM_FILES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(PEM_FILES_TEST_DEFS) -I. -Itest -o $@ test/diff_pem_files_test.c \

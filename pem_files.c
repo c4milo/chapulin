@@ -1,10 +1,12 @@
-// The three calls that decode the files an operator provisions.
-// Contracts in pem_files.h.
+// The calls that decode the files an operator provisions. Contracts in
+// pem_files.h.
 //
-// Each call composes three readers: pem_blocks.c for the text, x509_pem.c
-// for the DER, and for the key p256_ecdh.c for the point. It decides
-// nothing of its own beyond the order, the labels, the caller's rooms and
-// the cpu value. No library source calls these, and
+// Each call composes readers: pem_blocks.c for the text, x509_pem.c for
+// the DER, p256_ecdh.c for a P-256 key's point, mldsa_signer.c for an
+// ML-DSA-87 key's expansion, and an RSA key's signer and verifier
+// (widemul.h, rsa.h) for its one check signature. It decides nothing of
+// its own beyond the order, the labels, the caller's rooms and the cpu
+// value. No library source calls these, and
 // no session calls them (.semgrep/invariants.yml).
 #include "pem_files.h"
 
@@ -191,6 +193,129 @@ int ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len, const
     if (!ok) {
         ct_wipe(priv, 32);
         ct_wipe(pub, 64);
+        return CH_EINVAL;
+    }
+    return CH_OK;
+}
+#endif
+
+#ifdef CH_PEM_RSA_KEY_CALL
+// The digest the call signs, and the salt it signs under. Both are
+// public, and so is the signature. The salt is not all zero, which
+// rsa_pss_sign refuses (rsa_sign.h). The call draws nothing, as
+// ch_p256_key_from_pem draws nothing.
+static const uint8_t rsa_check_digest[32] = {
+    0x63, 0x68, 0x5f, 0x72, 0x73, 0x61, 0x5f, 0x6b, 0x65, 0x79, 0x5f, 0x66, 0x72, 0x6f, 0x6d, 0x5f,
+    0x70, 0x65, 0x6d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+static const uint8_t rsa_check_salt[RSA_PSS_SALT_LEN] = {
+    0x73, 0x61, 0x6c, 0x74, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+
+// Where the five CRT integers go, each n_len / 2 bytes. A host object's
+// key holds them. A device object's key does not, so the call reads them
+// into rooms on its own frame, which it wipes.
+typedef struct {
+    uint8_t *p;
+    uint8_t *q;
+    uint8_t *dp;
+    uint8_t *dq;
+    uint8_t *qinv;
+} rsa_crt;
+
+// The modulus, which is public: a zero octet, then n_len octets whose top
+// bit is set. The rest of rsa_pss_sign_key_ok's test runs in key_usable.
+static int read_modulus(x509_pem_integer n, ch_rsa_priv *key) {
+    if (n.len < 2 || n.len - 1 < 256 || n.len - 1 > CH_RSA_MODULUS_MAX) {
+        return 0;
+    }
+    key->n_len = n.len - 1;
+    return x509_pem_integer_to_bytes(n, key->n, key->n_len);
+}
+
+// The secret integers, each into a field of its own length. Each prime
+// fills its n_len / 2 bytes and has its top bit set, as rsa_sign.h
+// requires. The top bits are read with no branch.
+static int read_secrets(const x509_pem_rsa_key *v, size_t n_len, uint8_t *d, const rsa_crt *crt) {
+    size_t half = n_len / 2;
+    int ok = x509_pem_integer_to_bytes(v->d, d, n_len) &
+             x509_pem_integer_to_bytes(v->p, crt->p, half) &
+             x509_pem_integer_to_bytes(v->q, crt->q, half) &
+             x509_pem_integer_to_bytes(v->dp, crt->dp, half) &
+             x509_pem_integer_to_bytes(v->dq, crt->dq, half) &
+             x509_pem_integer_to_bytes(v->qinv, crt->qinv, half);
+    uint32_t tops = (uint32_t)(crt->p[0] & crt->q[0]) >> 7;
+    CT_DECLASSIFY(&tops, sizeof tops);
+    return ok & (int)tops;
+}
+
+// Whether leaf is a certificate whose key is RSA's with the modulus n and
+// the exponent 65537.
+static int leaf_holds_rsa(const uint8_t *leaf, size_t leaf_len, const ch_rsa_priv *key) {
+    const uint8_t *name = NULL;
+    const uint8_t *spki = NULL;
+    size_t name_len = 0;
+    size_t spki_len = 0;
+    return x509_pem_read_subject_key(leaf, leaf_len, &name, &name_len, &spki, &spki_len) &&
+           x509_pem_spki_is_rsa(spki, spki_len, key->n, key->n_len);
+}
+
+// The key test of the signer that the answer widemul picks, then one
+// signature with that signer, verified under the modulus, which
+// leaf_holds_rsa has matched to the leaf's.
+static int signs(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *key) {
+    if (!widemul_rsa_pss_sign_key_ok(widemul, key)) {
+        return 0;
+    }
+    uint8_t sig[CH_RSA_MODULUS_MAX];
+    size_t sig_len = 0;
+    return widemul_rsa_pss_sign_cpu(cpu, widemul, key, rsa_check_digest, rsa_check_salt, sig,
+                                    sizeof sig, &sig_len) &&
+           RSA_PSS_VERIFY_CPU(cpu, key->n, key->n_len, rsa_check_digest, sig, sig_len);
+}
+
+// The ladder reads n and d, and every object holds it, so the call signs
+// with it under every cpu value. Where cpu picks the 64-bit signer, which
+// reads p, q and the three CRT values, the call signs with that one too.
+// A device object holds the ladder alone.
+static int key_usable(uint32_t cpu, const ch_rsa_priv *key) {
+    if (!signs(cpu, WIDEMUL_NOT_STATED, key)) {
+        return 0;
+    }
+#ifdef CH_CPU_RUNTIME
+    uint8_t widemul = widemul_of_cpu(cpu);
+    return !widemul_native(widemul) || signs(cpu, widemul, key);
+#else
+    return 1;
+#endif
+}
+
+int ch_rsa_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len, const uint8_t *leaf,
+                        size_t leaf_len, ch_rsa_priv *key) {
+    CH_ASSERT(key != NULL);
+    CH_ASSERT(pem != NULL || pem_len == 0);
+    CH_ASSERT(leaf != NULL || leaf_len == 0);
+    // Every byte past an integer's n_len or n_len / 2 bytes stays zero.
+    ct_wipe(key, sizeof *key);
+    uint8_t der[CH_PEM_RSA_KEY_DER_MAX];
+    x509_pem_rsa_key fields;
+    wbuf w;
+    wb_init(&w, der, sizeof der);
+#ifdef CH_CPU_RUNTIME
+    const rsa_crt crt = {key->p, key->q, key->dp, key->dq, key->qinv};
+#else
+    uint8_t crt_room[5][CH_RSA_MODULUS_MAX / 2];
+    const rsa_crt crt = {crt_room[0], crt_room[1], crt_room[2], crt_room[3], crt_room[4]};
+#endif
+    int ok = cpu_value_ok(cpu) && read_blocks(pem, pem_len, PEM_LABEL_PRIVATE_KEY, &w, 0, NULL) &&
+             x509_pem_read_rsa_pkcs8(der, w.len, &fields) && read_modulus(fields.n, key) &&
+             read_secrets(&fields, key->n_len, key->d, &crt) &&
+             leaf_holds_rsa(leaf, leaf_len, key) && key_usable(cpu, key);
+    ct_wipe(der, sizeof der);
+#ifndef CH_CPU_RUNTIME
+    ct_wipe(crt_room, sizeof crt_room);
+#endif
+    if (!ok) {
+        ct_wipe(key, sizeof *key);
         return CH_EINVAL;
     }
     return CH_OK;

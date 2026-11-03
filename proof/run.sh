@@ -1567,6 +1567,23 @@ launch fast full x509_pem 66 "" buf.c
 launch fast full x509_pem_key 33 "ct_memeq.0:22" x509_der.c buf.c ct.c proof/ct_wipe_stub.c
 launch fast:4 full pem_files 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anchors_from_pem_tcp_blocking.4:6" -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI buf.c ct.c proof/ct_wipe_stub.c
 launch fast:4 full pem_files_host 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anchors_from_pem_tcp_blocking.4:6" -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME buf.c ct.c proof/ct_wipe_stub.c
+# The RSA key call (docs/decisions.md 184), measured on 2026-11-03 in the
+# chapulin-lab:amd64 container on the M1 at a load average near 19
+# (PROVE_ONLY=<name> PROVE_NO_CACHE=1 /usr/bin/time -v). x509_pem_rsa
+# proves the PKCS #8 reader and the key compare over the DER stubs of
+# proof/x509_der_layer.h, at 2^40 bytes: 590 properties, 688 s, 0.26 GB.
+# Over the real primitives the reader at CH_PEM_RSA_KEY_DER_MAX gave no
+# verdict in 20 minutes. x509_pem_rsa_integer proves
+# x509_pem_integer_to_bytes at the two field lengths of the bound of 384
+# and its contract over fields of up to 6 bytes: 992 properties, 1114 s,
+# 1.6 GB. At a symbolic field length it gave no verdict in 25 minutes.
+# pem_files_rsa and pem_files_rsa_host prove the call over its stubs:
+# 940 properties, 34 s, 0.23 GB, and 944 properties, 170 s, 0.48 GB.
+# Their first stubs wrote whole fields and ran the solver out of memory.
+launch fast full x509_pem_rsa 8 "" -DCH_ROLE_SERVER buf.c
+launch slow:2 full x509_pem_rsa_integer 9 "x509_pem_integer_to_bytes.2:514,x509_pem_integer_to_bytes.3:514" -DCH_ROLE_SERVER x509_der.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast full pem_files_rsa 1802 "" -DCH_ROLE_SERVER buf.c ct.c proof/ct_wipe_stub.c
+launch fast full pem_files_rsa_host 1802 "" -DCH_ROLE_SERVER -DCH_CPU_RUNTIME buf.c ct.c proof/ct_wipe_stub.c
 launch fast:1 full x509ca 400 "fill_nondet.0:1537" buf.c ct.c proof/ct_wipe_stub.c
 launch fast:1 full x509ca_ecdsa 400 "fill_nondet.0:1537" buf.c ct.c proof/ct_wipe_stub.c
 launch fast:1 full x509ca_mldsa 400 "fill_nondet.0:2689,ct_wipe.0:2593,main.0:2593" buf.c ct.c proof/ct_wipe_stub.c

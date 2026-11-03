@@ -15849,3 +15849,55 @@ does nothing more.
       the 7763 (entry 122). **Rows chosen by CPU model,** the 4-word
       entry on the newer EPYCs and the 1-word loop on the 7763, because
       chapulin probes no CPU and no bit of `ch_cfg.cpu` names a model.
+
+184. **`ch_rsa_key_from_pem` reads a PKCS #8 RSA key and signs once with
+    it.** colibri's `tls.Key` takes its scheme from a PEM file's PKCS #8
+    algorithm (https://github.com/c4milo/colibri/issues/115). P-256 and
+    ML-DSA-87 keys had a PEM call, and an `rsa_pss` identity needed a
+    `ch_rsa_priv` that no call filled. Camilo ruled on 2026-11-02 and
+    2026-11-03.
+
+    - **The form.** One PRIVATE KEY block, a PKCS #8 PrivateKeyInfo of
+      rsaEncryption that holds a two-prime RSAPrivateKey with the public
+      exponent 65537. OpenSSL 3 writes this form by default. The PKCS #1
+      RSA PRIVATE KEY block, a multi-prime key, an id-RSASSA-PSS key and
+      any other exponent are refused. The verifier admits 65537 alone
+      (`rsa.h`), so a key with another exponent signs nothing a client
+      checks.
+    - **The objects.** Every server object outside PROFILE=cnsa2 exports
+      the call, as it exports `ch_p256_key_from_pem`. A device object's
+      key holds n and d alone. The call still reads the five CRT
+      integers there and checks their form.
+    - **The check.** The key's modulus and exponent must be the leaf's.
+      Then the call signs one fixed digest with the ladder, which reads n
+      and d, and verifies the signature under the modulus. Where cpu
+      holds `CH_CPU_CONSTANT_TIME_MULTIPLY`, it signs again with
+      `rsa_sign64.c`, which reads p, q and the three CRT values. So a
+      wrong private integer that a session under that cpu value reads is
+      refused when the key loads, as `ch_p256_key_from_pem` refuses a
+      scalar that is not the leaf's. Without the bit, a host object keeps
+      the CRT values unchecked, and a session under that value never
+      reads them.
+    - **Constant time.** `x509_pem_integer_to_bytes` copies each secret
+      integer to its field with no branch and no index that its octets
+      decide. It checks the sign and the leading zero octet with masks.
+      The reader branches on each INTEGER's DER length, which tells how
+      many leading zero octets the value has. The file shows those
+      lengths to anyone who holds it, and the call runs once, while the
+      program provisions.
+    - **The room.** `CH_PEM_RSA_KEY_DER_MAX` is 73 + 9M/2 bytes for a
+      modulus bound of M bytes: 2,377 at 512. OpenSSL's RSA-4096 key is
+      2,373 bytes.
+    - **What holds it.** `bin/pem_files_rsa_test`, a device object, and
+      `bin/pem_files_rsa_host`, a host object under two cpu values, read
+      OpenSSL's 2048-, 3072- and 4096-bit keys and refuse the forms
+      above. Keys the test writes from the 2048-bit key's integers hold
+      each refusal: one bit of d, a prime with its top bit clear, a
+      leading zero octet, a negative INTEGER, a CRT value one octet over
+      its field and a byte after the last INTEGER. Then each binary
+      searches the stack below the call for d, p and q.
+    - **Rejected:** **PKCS #1 beside PKCS #8**, a second grammar for a
+      form OpenSSL 3 no longer writes by default. **A match of n and e
+      alone**, which leaves a wrong d to `ch_srv_check`. **A device
+      object without the call**, which leaves device firmware to fill
+      `ch_rsa_priv` by hand.

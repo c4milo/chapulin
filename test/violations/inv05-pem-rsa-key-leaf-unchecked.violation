@@ -1,0 +1,14 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_rsa_test
+reason: ch_rsa_key_from_pem stops comparing the key's modulus with the
+  end-entity certificate's, so a key file paired with the wrong chain
+  decodes. The call's own signature then verifies under the key's
+  modulus, and every client refuses the server's CertificateVerify.
+  test_files passes the leaf of another key and a bare modulus.
+
+--- old
+             leaf_holds_rsa(leaf, leaf_len, key) && key_usable(cpu, key);
+--- new
+             key_usable(cpu, key);
+    (void)leaf_holds_rsa;
