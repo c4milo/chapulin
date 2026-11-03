@@ -348,8 +348,8 @@ Home: github.com/c4milo.
   `x509_der.[ch]` (canonical DER, read by both certificate verifiers) +
   `x509_pem.[ch]` (the DER of the PEM files: a certificate's outer fields
   as far as its subject and key, a P-256 private key in PKCS #8 or SEC 1
-  form, and an EC PARAMETERS block that names prime256v1; a server role
-  and TRUST=webpki) +
+  form, an EC PARAMETERS block that names prime256v1, and an RSA private
+  key in PKCS #8 form; a server role and TRUST=webpki) +
   `x509.[ch]` (profiled certificate verify, the ca modes) +
   `webpki.[ch]` with `webpki_cert.c`, `webpki_ext.c`, `webpki_name.c`,
   `webpki_sigalg.c`, `webpki_spki.c` and `webpki_time.c` (chain verify
@@ -403,12 +403,16 @@ Home: github.com/c4milo.
   `ch_pubkey_from_pem` as a fifth public call, which firmware calls
   while provisioning and no session calls. `pem_files.[ch]` sits off
   the chain the same way. It decodes the files an operator holds. A PEM
-  certificate chain and a P-256 key file decode to what `ch_identity`
-  takes. A CA bundle decodes to what `ch_cfg.anchors` takes. It reads
+  certificate chain, a P-256 key file and an RSA key file decode to what
+  `ch_identity` takes. A CA bundle decodes to what `ch_cfg.anchors` takes. It reads
   `pem.[ch]`, `pem_blocks.[ch]`, `x509_pem.[ch]` and `p256_ecdh.[ch]`,
+  and, for an RSA key's check signature, `rsa_sign.[ch]` and `rsa.[ch]`,
   and no library source reads it. Every object with a server role
   exports `ch_chain_from_pem`, and every one outside PROFILE=cnsa2
-  exports `ch_p256_key_from_pem`. Every TRUST=webpki object exports
+  exports `ch_p256_key_from_pem` and `ch_rsa_key_from_pem`. The RSA call
+  reads a two-prime PKCS #8 key with the exponent 65537. It signs once and
+  verifies the signature under the leaf's key before it returns
+  (docs/decisions.md 184). Every TRUST=webpki object exports
   `ch_anchors_from_pem`. Under `CH_SIGN_MLDSA`, which every host server
   object and the PROFILE=cnsa2 server object set, `ch_mldsa_key_from_pem` reads a PKCS #8 seed or
   both form and expands the seed once. Its frame holds the 4,962-byte DER
@@ -523,10 +527,11 @@ Home: github.com/c4milo.
   fast paths beside the portable code, and each session picks among them
   from `ch_cfg.cpu`, the caller's description of its CPU in `cpu_cfg.h`'s
   bits. The caller probes the CPU and owns PSTATE.DIT and DOITM, and
-  chapulin probes nothing and sets no mode. Every init, `ch_srv_check`
-  and `ch_p256_key_from_pem` refuse a value without `CH_CPU_PROBED` or
-  with a bit the object does not define for its architecture (`cpu.h`).
-  The key call takes 0 alone in a device object. A device object has no
+  chapulin probes nothing and sets no mode. Every init, `ch_srv_check`,
+  `ch_p256_key_from_pem` and `ch_rsa_key_from_pem` refuse a value without
+  `CH_CPU_PROBED` or with a bit the object does not define for its
+  architecture (`cpu.h`). The P-256 and RSA key calls take 0 alone in a
+  device object. A device object has no
   `ch_cfg.cpu`, and the build record's `CH_BUILD_CPU_RUNTIME` tells the
   two layouts apart. No host object takes an `AES` or `WIDEMUL` value,
   and no object takes `X25519` or `CHACHA` (docs/decisions.md 89).
