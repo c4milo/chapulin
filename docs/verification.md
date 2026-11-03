@@ -2614,7 +2614,10 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 
 #### srv_parser_ext
 
-- **Harness:** `srv_parser_ext` (fast)
+- **Harnesses:** `srv_parser_ext` (fast), `srv_parser_ext_mldsa` (fast)
+- **Defines:** `srv_parser_ext_mldsa` runs under `CH_SIGN_MLDSA`, where
+  the signature_algorithms reader sets the mldsa87 bit too
+  (docs/decisions.md 180).
 - **Proves:** every reader of `srv_parser_ext.c` stays safe and free of
   UB over an unconstrained extension body, any extension type and any
   offset the walk can hand it, and each answers `CH_OK` or `CH_EPROTO`.

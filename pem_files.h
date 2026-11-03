@@ -163,12 +163,12 @@ int CH_MUST_USE ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pe
 #endif
 
 #if defined(CH_ROLE_SERVER) && defined(CH_SIGN_MLDSA)
-// The ML-DSA-87 key call. CH_SIGN_MLDSA marks the object that signs
-// ML-DSA-87, the PROFILE=cnsa2 server role, which exports this call
-// (docs/decisions.md 159 and 162). Its frame holds the 4,962-byte DER, so
-// pem_files.c takes its own measured stack ceiling (Makefile
-// STACK_BUDGET_PEM_FILES_MLDSA). It runs once while the program
-// provisions, and no session calls it.
+// The ML-DSA-87 key call. CH_SIGN_MLDSA marks an object that signs
+// ML-DSA-87: the PROFILE=cnsa2 server role and every host server role,
+// which export this call (docs/decisions.md 159, 162 and 180). Its frame
+// holds the 4,962-byte DER, so pem_files.c takes its own measured stack
+// ceiling (Makefile STACK_BUDGET_PEM_FILES_MLDSA). It runs once while the
+// program provisions, and no session calls it.
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #define ch_mldsa_key_from_pem ch_mldsa_key_from_pem_quic_nonblocking
 #elif defined(CH_TRANSPORT_TCP_NONBLOCKING)

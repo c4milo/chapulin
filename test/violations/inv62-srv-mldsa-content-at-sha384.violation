@@ -1,0 +1,19 @@
+invariant: INV-62
+file: srv_mldsa.c
+catches: test/e2e.sh
+builds: bin/tlsclient_tcp_nonblocking bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_aes bin/tlsclient_webpki_aes_extern bin/tlsclient_pq bin/tlsclient_cnsa2 bin/tlsclient_cnsa2_tcp_nonblocking bin/tlsclient_cnsa2_mldsa bin/tlsclient_cnsa2_ca_mldsa bin/example_psk bin/example_pinned bin/example_ca bin/example_webpki bin/pemkey bin/pemkey_ecdsa bin/tlsserver bin/tlsserver_aes bin/tlsserver_aes_extern bin/tlsserver_cnsa2
+reason: the server's ML-DSA-87 CertificateVerify content takes 48 bytes of
+  transcript hash under a SHA-256 suite, 16 bytes past the hash, so every
+  client refuses the signature. No in-process test signs a whole
+  CertificateVerify over a live transcript, so the e2e lanes against
+  bin/tlsserver_aes hold it: OpenSSL's s_client verifies the signature
+  under TLS_CHACHA20_POLY1305_SHA256 and TLS_AES_128_GCM_SHA256.
+
+--- old
+    } else {
+        wb_bytes(&w, transcript_hash, SHA256_LEN);
+    }
+--- new
+    } else {
+        wb_bytes(&w, transcript_hash, SHA384_LEN);
+    }

@@ -106,8 +106,10 @@ for a `@compileError` declaration too.
 | Declaration | Present when the object has |
 |---|---|
 | `Client` | a client role: its transport's client entry point, `ch_connect`, `ch_record_init` or `ch_quic_init` |
-| `Server`, `EcdsaP256Identity`, `RsaPssIdentity`, `cert` | a server role (`ch_cfg.srv`) |
-| `Chain`, `EcdsaP256Key` | a server role (`ch_chain_from_pem`, `ch_p256_key_from_pem`) |
+| `Server`, `EcdsaP256Identity`, `RsaPssIdentity`, `cert` | a server role (`ch_cfg.srv`) outside PROFILE=cnsa2 |
+| `MlDsa87Identity` | a host server role or the PROFILE=cnsa2 server (`srv.mldsa87`, docs/decisions.md 162 and 180) |
+| `Chain`, `EcdsaP256Key` | a server role (`ch_chain_from_pem`, `ch_p256_key_from_pem`) outside PROFILE=cnsa2 |
+| `MlDsa87Key` | `ch_mldsa_key_from_pem`, which the same objects as `MlDsa87Identity` export |
 | `Anchors` | `ch_anchors_from_pem` (TRUST=webpki) |
 | `record.Client` | `ch_record_init` |
 | `record.Server` | `ch_srv_record_init` |
@@ -278,6 +280,7 @@ over.
 |---|---|
 | `ecdsa_p256`, null by default | `srv.ecdsa_p256`: `chain`, `chain_count`, `priv`, `priv_len = 32`, `pub`, `pub_len = 64` |
 | `rsa_pss`, null by default | `srv.rsa_pss`: `chain`, `chain_count`, `priv`, `priv_len = @sizeOf(c.ch_rsa_priv)`, `pub`, `pub_len` |
+| `mldsa87`, null by default, a host object alone | `srv.mldsa87`: `chain`, `chain_count`, `priv`, `priv_len = 4896`, `pub`, `pub_len = 2592` |
 | `cookie_key` | `srv.cookie_key` |
 | `ticket_key`, null for no tickets | `srv.ticket_key` |
 | `clock`, null for no clock | `now_seconds`, `clock_io` |
@@ -313,6 +316,7 @@ answers `error.Invalid` for a file that the C call refuses.
 |---|---|---|
 | `Chain` | `ch_chain_from_pem` | `certs`, the DER slices the call filled, which the identities' `chain` takes; `leaf()` is the end-entity certificate's DER |
 | `EcdsaP256Key` | `ch_p256_key_from_pem` | `private_key` and `public_key`, what `EcdsaP256Identity` points at; `fromPem` takes the `cpu` value and the leaf the key must match |
+| `MlDsa87Key` | `ch_mldsa_key_from_pem` | `private_key` and `public_key`, what `MlDsa87Identity` points at; `fromPem` takes the `cpu` value and the leaf the key must match |
 | `Anchors` | `ch_anchors_from_pem` | `anchors`, the `TrustAnchor` values the call filled, which `Trust.web_pki.anchors` takes |
 
 `Chain.fromPem` and `Anchors.fromPem` take two rooms that the program

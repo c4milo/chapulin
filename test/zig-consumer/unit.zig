@@ -29,9 +29,11 @@ comptime {
 // header declares only where the object defines it.
 const has_client = @hasDecl(c, "ch_connect") or @hasDecl(c, "ch_record_init") or @hasDecl(c, "ch_quic_init");
 const has_server = @hasField(c.ch_cfg, "srv");
-// A PROFILE=cnsa2 server holds the ML-DSA-87 slot alone.
+// A PROFILE=cnsa2 server holds the ML-DSA-87 slot alone, and every other
+// host server holds it beside the ECDSA and RSA slots (docs/decisions.md
+// 180), as chapulin.zig reads them.
 const has_mldsa_server = has_server and @hasField(c.ch_srv_cfg, "mldsa87");
-const has_classic_server = has_server and !has_mldsa_server;
+const has_classic_server = has_server and @hasField(c.ch_srv_cfg, "ecdsa_p256");
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
 const has_quic = @hasDecl(c, "CH_QUIC_DISCARD");
@@ -260,7 +262,7 @@ test "the Client values\' ch_cfg under a raw or ca mode: both pins, and a ticket
     try expectFields(c.ch_cfg, want, (try cfgOf(values)));
 }
 
-test "the Server values\' ch_cfg under PROFILE=cnsa2: the one ML-DSA-87 identity and its chain's u8" {
+test "the Server values\' ch_cfg: the ML-DSA-87 identity and its chain's u8" {
     if (!has_mldsa_server) return error.SkipZigTest;
     const chain = [_][]const u8{"leaf"};
     const public_key = [_]u8{0x31} ** 2592;
@@ -493,7 +495,8 @@ test "the PEM files: a refusal is error.Invalid, a room is the caller's, and a r
             @memset(&key.private_key, 0x5a);
             key.wipe();
             try expect(std.mem.allEqual(u8, &key.private_key, 0));
-        } else {
+        }
+        if (has_mldsa_server) {
             var key: chapulin.MlDsa87Key = .{};
             @memset(&key.private_key, 0x5a);
             try expectError(error.Invalid, key.fromPem(.{}, not_pem, chain.leaf()));

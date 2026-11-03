@@ -2270,6 +2270,11 @@ launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.
 # 1,568-byte length or one byte either side, which srv_parser_ext_cnsa2_share
 # walks in at most two entries.
 launch fast:2 full srv_parser_ext_cnsa2 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
+# The same readers in a host server outside the profile, whose
+# signature_algorithms reader sets the mldsa87 bit beside the other two
+# (docs/decisions.md 180): 1036 properties, 183 s and 0.27 GB of resident
+# memory on an M1 Pro at a load average near 25 (2026-11-02).
+launch fast:2 full srv_parser_ext_mldsa 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_SIGN_MLDSA
 launch fast full srv_parser_ext_cnsa2_share 3 "fill_nondet.0:1580" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The same shape in a server outside the profile, which holds ML-KEM-1024
 # beside its other three groups (docs/decisions.md 179). Measured in the

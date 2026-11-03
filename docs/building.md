@@ -37,7 +37,10 @@ Other targets:
   `ch_chain_from_pem` and `ch_p256_key_from_pem`. They decode a
   certificate chain file and a P-256 key file into what a server identity
   takes. So a `ROLE=both TRUST=webpki` object exports all three
-  (`pem_files.h`, decision 131).
+  (`pem_files.h`, decision 131). A host object with a server role also
+  exports `ch_mldsa_key_from_pem`, which decodes an ML-DSA-87 key file
+  for the `mldsa87` identity it holds beside the other two (decision
+  180).
   `EXPORTER=on` adds `ch_export`, the exporter of RFC 9846 §7.5, and 32
   bytes to `ch_tls`; it is off
   by default, so the figures in [`performance.md`](performance.md) are a build that exports nothing,

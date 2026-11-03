@@ -727,7 +727,10 @@ last `ROLE=server` stub, as the entry said it would.
   that names the group when the hello carried no share for it, so a hello
   that lists the hybrid and shares x25519 alone is asked for the hybrid
   rather than answered over x25519. A `PROFILE=cnsa2` server holds
-  ML-KEM-1024 alone. Its suite order is the one its build's client
+  ML-KEM-1024 alone. A server's signature scheme order is fixed too: in
+  a host object mldsa87 whenever the client lists it and the mldsa87 slot
+  is provisioned, then ecdsa_secp256r1_sha256, then rsa_pss_rsae_sha256,
+  each only for a provisioned slot (decisions.md 180). Its suite order is the one its build's client
   offers in, and it selects the first of them the client listed, or the
   first of `ch_srv_cfg.cipher_suites` when the caller names an order
   (decisions.md 58, 80). It never selects a suite the client did not
@@ -881,7 +884,10 @@ last `ROLE=server` stub, as the entry said it would.
   tcp-nonblocking server hand-written hellos that list secp256r1 alone
   and beside x25519. `test/e2e.sh` runs the same rows against OpenSSL's
   `s_client`, and the webpki client against an OpenSSL server that holds
-  P-256 alone.
+  P-256 alone. The server's scheme order is `srv_select_sigalg`'s, which
+  `bin/srv_mldsa_identity_test` and `test/e2e.sh` drive row by row;
+  `inv07-srv-ecdsa-before-mldsa87` asks about ECDSA first, and the test
+  fails.
 - **Violation.** A PR accepts a second cipher suite value in
   ServerHello and downgrade surface exists again, takes back a suite
   the caller's `ch_cfg.cipher_suites` left out of the hello, lets a
@@ -2358,7 +2364,10 @@ last `ROLE=server` stub, as the entry said it would.
   lists, the round's among them, which FIPS 204 treats as public.
   `ch_mldsa_key_from_pem` reads the seed form and the both form of
   PKCS #8, refuses a both form whose expanded key is not the seed's, and
-  wipes every copy of the seed.
+  wipes every copy of the seed. A server's ML-DSA-87 CertificateVerify,
+  in the profile and in every host server, signs RFC 9846 §4.5.2's
+  content over the selected suite's transcript hash, 32 or 48 bytes, with
+  an empty context (`srv_mldsa.c`, decisions.md 162 and 180).
 - **Mechanism.** `sign_checked` runs the loop, then the verifier, and
   wipes sig on either refusal. `rnd_drawn` ORs the 32 bytes before the
   CH_ASSERT reads them. `mlds_key_in_range` checks the 15 polynomials of
@@ -2397,7 +2406,9 @@ last `ROLE=server` stub, as the entry said it would.
   `inv62-mldsa-eta-sampler-branches` fails `lint-wide-multiply`.
   `inv62-mldsa-hint-count-unchecked` fails the `mldsa_sign_round` proof,
   and `inv62-mldsa-low-bits-bound-admits-edge` fails Wycheproof's cases
-  (`test/wycheproof.sh`). No mutant of the ct0 check fails a test: at
+  (`test/wycheproof.sh`). `inv62-srv-mldsa-content-at-sha384` signs 48
+  bytes of transcript hash under a SHA-256 suite, and `test/e2e.sh`, whose
+  OpenSSL client verifies the signature, fails. No mutant of the ct0 check fails a test: at
   ML-DSA-87 a coefficient of c t0 is at most tau * 2^12 = 245,760, below
   gamma2, so the check never rejects (decision 159).
 
