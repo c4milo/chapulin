@@ -3101,6 +3101,18 @@ launch slow full rsa_mont64_blocks_webpki 66 "ct_wipe.0:1041" ct.c proof/ct_wipe
 launch fast full rsa_mont64_addcarry_sums 10 "ct_wipe.0:137" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_addcarry 50 "ct_wipe.0:777" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast:3 full rsa_mont64_addcarry_webpki 66 "ct_wipe.0:1033" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+# rsa_mont64_adx.c, the window's multiplication and square on MULX, ADCX and ADOX
+# (docs/decisions.md 183), compiled over test/rsa_mont64_adx_model.h, which writes the words the
+# assembly writes, under the same product contract. rsa_mont64_adx_sums runs both at four words
+# and at eight with the wrap check on. rsa_mont64_adx and its _webpki variant run them at the
+# build's bound without it, for their memory accesses. Measured one line at a time through
+# proof/run.sh's PROVE_ONLY on 2026-11-03 (an M1 Pro, a load average of 12 to 19):
+#   rsa_mont64_adx_sums     1185 properties,  37 s, 0.34 GB
+#   rsa_mont64_adx          1045 properties,  64 s, 0.41 GB
+#   rsa_mont64_adx_webpki   1045 properties, 130 s, 0.62 GB
+launch fast full rsa_mont64_adx_sums 10 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -Itest --unsigned-overflow-check
+launch fast full rsa_mont64_adx 50 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -Itest
+launch fast full rsa_mont64_adx_webpki 66 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -Itest
 launch fast full rsa_mont64_init 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_init_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME

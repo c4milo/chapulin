@@ -124,9 +124,16 @@ static void print_hex(const char *name, const uint8_t *p, size_t n) {
 static ch_rsa_priv key;
 
 // The ch_cfg.cpu value every signature here runs under: the multiply bit
-// alone in the first pass, and with CH_CPU_AVX512_IFMA in the second.
+// alone in the first pass, with CH_CPU_AVX512_IFMA in the second, and with
+// CH_CPU_BMI2_ADX in the third (docs/decisions.md 183).
 #define EQUIV_WINDOW_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY)
 static uint32_t equiv_cpu = EQUIV_WINDOW_CPU;
+
+#ifdef __x86_64__
+// 1 where this CPU has BMI2 and ADX, so run_window holds rsa_sign64_power_adx
+// to the ladder beside rsa_sign64_power.
+static int window_adx = 0;
+#endif
 
 // The length of the moduli the window is compared with the ladder under:
 // the ladder's shortest, and the window's longest at this build's bound.
@@ -373,7 +380,18 @@ static void run_window(size_t m_len, size_t e_len) {
         power_by_bits(want, base, e + 3, e_len, &mod);
         rsa_sign64_power(got, base, e + 3, e_len, &mod);
         rsa_sign64_power(padded, base, e, e_len + 3, &mod);
-        if (memcmp(want, got, word_bytes) != 0 || memcmp(want, padded, word_bytes) != 0) {
+        int same = memcmp(want, got, word_bytes) == 0 && memcmp(want, padded, word_bytes) == 0;
+#ifdef __x86_64__
+        // The window on rsa_mont64_adx.c, which takes 2 words or more.
+        if (window_adx && mod.words >= 2) {
+            rsa_sign64_power_adx(got, base, e + 3, e_len, &mod);
+            rsa_sign64_power_adx(padded, base, e, e_len + 3, &mod);
+            same =
+                same && memcmp(want, got, word_bytes) == 0 && memcmp(want, padded, word_bytes) == 0;
+            compared += 2;
+        }
+#endif
+        if (!same) {
             failures++;
             (void)fprintf(stderr,
                           "FAIL window: a %zu-byte modulus and a %zu-byte exponent, pattern %d\n",
@@ -431,32 +449,13 @@ static void run_signatures(void) {
     run_key(&key_4096, 1);
 }
 
-#ifdef __x86_64__
-// The second pass of run_signatures, on AVX-512 IFMA, where this CPU has
-// it. Returns 0 when the CPU lacks it and the environment requires it.
-static int run_ifma_signatures(void) {
-    if (!x86_cpu_has_avx512_ifma()) {
-        if (x86_ifma_required()) {
-            (void)fprintf(stderr, "rsa_sign_equiv_test: this CPU lacks AVX-512 IFMA, and "
-                                  "CH_REQUIRE_AVX512_IFMA is 1\n");
-            return 0;
-        }
-        (void)printf("SKIP rsa_sign_equiv_test on AVX-512 IFMA: this CPU lacks it\n");
-        return 1;
-    }
-    equiv_cpu = EQUIV_WINDOW_CPU | CH_CPU_AVX512_IFMA;
-    run_signatures();
-    equiv_cpu = EQUIV_WINDOW_CPU;
-    (void)printf("rsa_sign_equiv_test: the private operation on AVX-512 IFMA ran\n");
-    return 1;
-}
-#endif
+#include "rsa_sign_equiv_x86.h"
 
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     run_signatures();
 #ifdef __x86_64__
-    if (!run_ifma_signatures()) {
+    if (!run_ifma_signatures() || !run_adx_signatures()) {
         return 1;
     }
 #endif

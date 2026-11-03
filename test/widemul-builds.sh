@@ -413,13 +413,15 @@ fi
 # proof unit that stubs the kernel they call, CH_X25519_ADX_MODEL makes
 # x25519_adx.c read test/x25519_adx_model.h in place of its assembly, and
 # CH_P256_ADX_MODEL makes p256_adx_field.c read test/p256_adx_model.h in
-# place of its assembly. No root source defines any of the six, and the
+# place of its assembly, and CH_RSA_MONT64_ADX_MODEL makes rsa_mont64_adx.c
+# read test/rsa_mont64_adx_model.h in place of its assembly
+# (docs/decisions.md 183). No root source defines any of the seven, and the
 # defines make and build.zig write for a library object, checked below,
 # never name one.
 model_defined=$(git ls-files -- '*.c' '*.h' | grep -v / |
-    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_((RSA|POLY1305)_IFMA|RSA_AVX2|GCM_AVX512|X25519_ADX|P256_ADX)_MODEL' || true)
+    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_((RSA|POLY1305)_IFMA|RSA_AVX2|GCM_AVX512|X25519_ADX|P256_ADX|RSA_MONT64_ADX)_MODEL' || true)
 if [ -n "$model_defined" ]; then
-    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL, CH_RSA_AVX2_MODEL, CH_GCM_AVX512_MODEL, CH_X25519_ADX_MODEL or CH_P256_ADX_MODEL, which only a test or proof unit may: under each a kernel runs a model" >&2
+    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL, CH_RSA_AVX2_MODEL, CH_GCM_AVX512_MODEL, CH_X25519_ADX_MODEL, CH_P256_ADX_MODEL or CH_RSA_MONT64_ADX_MODEL, which only a test or proof unit may: under each a kernel runs a model" >&2
     exit 1
 fi
 
@@ -492,12 +494,12 @@ if ! has_words "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" "${ho
     exit 1
 fi
 # Whether a list names CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL,
-# CH_RSA_AVX2_MODEL, CH_GCM_AVX512_MODEL, CH_X25519_ADX_MODEL or
-# CH_P256_ADX_MODEL, which no library object may.
+# CH_RSA_AVX2_MODEL, CH_GCM_AVX512_MODEL, CH_X25519_ADX_MODEL,
+# CH_P256_ADX_MODEL or CH_RSA_MONT64_ADX_MODEL, which no library object may.
 names_model() { # $1 = a list of words
     case " $1 " in
     *CH_RSA_IFMA_MODEL* | *CH_POLY1305_IFMA_MODEL* | *CH_RSA_AVX2_MODEL* | *CH_GCM_AVX512_MODEL* | *CH_X25519_ADX_MODEL* | \
-        *CH_P256_ADX_MODEL*) return 0 ;;
+        *CH_P256_ADX_MODEL* | *CH_RSA_MONT64_ADX_MODEL*) return 0 ;;
     *) return 1 ;;
     esac
 }

@@ -653,8 +653,11 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks over rsa_sign.c's ladder
     // (docs/decisions.md 95), and its exponentiations on AVX-512 IFMA,
     // which a session's CH_CPU_AVX512_IFMA bit picks beside it on x86-64
-    // and which hold nothing on arm64 (docs/decisions.md 120).
-    if (host and contains(lib_srcs, "rsa_sign.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{ "rsa_sign64.c", "rsa_sign64_wipe.c", "rsa_ifma_sign.c" } });
+    // and which hold nothing on arm64 (docs/decisions.md 120), and the
+    // window's multiplication and square on MULX and ADX, which a session's
+    // CH_CPU_BMI2_ADX bit picks beside the multiply bit on x86-64 and which
+    // hold nothing on arm64 (docs/decisions.md 183).
+    if (host and contains(lib_srcs, "rsa_sign.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{ "rsa_sign64.c", "rsa_sign64_wipe.c", "rsa_ifma_sign.c", "rsa_mont64_adx.c" } });
     // The vector NTT every session of a host object runs in place of
     // mlkem_poly.c's loops, in an object that carries ML-KEM
     // (docs/decisions.md 101).

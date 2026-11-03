@@ -149,6 +149,7 @@ def selftestAll (_ : Unit) : String :=
     ("rsa_ifma", Spec.RsaIfma.selftest),
     ("poly1305_ifma", Spec.Poly1305Ifma.selftest),
     ("rsa_avx2", Spec.RsaAvx2.selftest),
+    ("rsa_mont64_adx", Spec.RsaMont64Adx.selftest),
     ("p384", Spec.P384.selftest),
     ("rsa_pkcs1", Spec.RsaPkcs1.selftest),
     ("pem", Spec.Pem.selftest),
@@ -842,6 +843,26 @@ def dispatch : List String → Option String
       (Spec.Poly1305Ifma.digitsOfWords (w 0) (w 1) (w 2) (w 3) (w 4))
     return bytesToHex (ifmaRegisterBytes powers.lastFirst ++ ifmaRegisterBytes powers.lastSecond ++
       ifmaRegisterBytes powers.by16 ++ ifmaRegisterBytes powers.by8)
+  | ["rsa_adx_mul", words, m0inv, modulus, a, b] => do
+    -- rsa_mont64_adx_mul of rsa_mont64_adx.c, as test/rsa_mont64_adx_model.h writes it
+    -- (Spec/RsaMont64Adx.lean): a b R⁻¹ mod m for a and b below m, under an m of `words` 64-bit
+    -- words and m0inv, its -m⁻¹ mod 2^64 in decimal; m, a and b are big-endian hex of any
+    -- length. The answer is 8 * words big-endian bytes. The guard is montMul_lt's hypotheses.
+    let k ← words.toNat?
+    let inverse ← m0inv.toNat?
+    let m := bytesToNatBE (← hexArg? modulus)
+    let x := bytesToNatBE (← hexArg? a)
+    let y := bytesToNatBE (← hexArg? b)
+    guard (m < 2 ^ (64 * k) && (m * inverse + 1) % 2 ^ 64 == 0 && x < m && y < m)
+    return bytesToHex (natToBytesBE (Spec.RsaMont64Adx.montMul k m inverse x y) (8 * k))
+  | ["rsa_adx_square", words, m0inv, modulus, a] => do
+    -- rsa_mont64_adx_square, as rsa_adx_mul, from the square's own rows.
+    let k ← words.toNat?
+    let inverse ← m0inv.toNat?
+    let m := bytesToNatBE (← hexArg? modulus)
+    let x := bytesToNatBE (← hexArg? a)
+    guard (m < 2 ^ (64 * k) && (m * inverse + 1) % 2 ^ 64 == 0 && x < m)
+    return bytesToHex (natToBytesBE (Spec.RsaMont64Adx.montSquare k m inverse x) (8 * k))
   | ["rsa_avx2_multiply", words, k0, modulus, a, b] => do
     -- rsa_avx2.c's multiplication of a by b, both below 2m, under an m of `words` 64-bit words
     -- and k0, its -m⁻¹ mod 2^D in decimal; m, a and b are big-endian hex of any length. The

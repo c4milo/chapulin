@@ -444,18 +444,20 @@ static void check_value(uint32_t cpu) {
 
 int main(void) {
     fill(payload, sizeof payload, 0x99);
-    // The six bits are 0x02 to 0x10, 0x100 and 0x200, so the 64 values are
-    // the probe's bit with each of 0 to 15 shifted up one, each of those
-    // with CH_CPU_AVX512_IFMA, and each of the 32 with CH_CPU_AVX512.
-    for (uint32_t bits = 0; bits < 64; bits++) {
+    // The seven bits are 0x02 to 0x10, 0x100, 0x200 and 0x400, so the 128
+    // values are the probe's bit with each of 0 to 15 shifted up one, each
+    // of those with CH_CPU_AVX512_IFMA, each of the 32 with CH_CPU_AVX512,
+    // and each of the 64 with CH_CPU_BMI2_ADX.
+    for (uint32_t bits = 0; bits < 128; bits++) {
         uint32_t ifma = (bits & 16U) != 0 ? CH_CPU_AVX512_IFMA : 0U;
         uint32_t avx512 = (bits & 32U) != 0 ? CH_CPU_AVX512 : 0U;
-        check_value(CH_CPU_PROBED | ((bits & 15U) << 1) | ifma | avx512);
+        uint32_t adx = (bits & 64U) != 0 ? CH_CPU_BMI2_ADX : 0U;
+        check_value(CH_CPU_PROBED | ((bits & 15U) << 1) | ifma | avx512 | adx);
     }
     check_value(0);
     if (failures == 0) {
         (void)printf(
-            "x86 kernels: under each of 65 ch_cfg.cpu values, the ChaCha20 keystream ran on the "
+            "x86 kernels: under each of 129 ch_cfg.cpu values, the ChaCha20 keystream ran on the "
             "AVX-512 kernel where CH_CPU_AVX512_IFMA was set and on the AVX2 kernel where "
             "CH_CPU_AVX2 was and that bit was not, ML-KEM's matrix on the AVX2 kernel where "
             "CH_CPU_AVX2 was, Poly1305 on the IFMA kernel where CH_CPU_AVX512_IFMA and "
@@ -467,8 +469,9 @@ int main(void) {
             "on the AVX2 kernel where CH_CPU_AVX2 was, RSA's public operation on the IFMA "
             "kernel where CH_CPU_AVX512_IFMA was and else on the AVX2 kernel where CH_CPU_AVX2 "
             "was, RSA signing's exponentiations and check on the IFMA kernels, each followed by "
-            "both wipes, where CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY were, and none "
-            "of them anywhere else\n");
+            "both wipes, where CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY were, and its "
+            "exponentiations on MULX and ADX where CH_CPU_BMI2_ADX and the multiply bit were and "
+            "CH_CPU_AVX512_IFMA was not, and none of them anywhere else\n");
     }
     return failures != 0;
 }

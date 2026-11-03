@@ -9,7 +9,7 @@ reason: rsa_sign64_power returns without the wipe below its body, so the table
   (docs/decisions.md 181).
 
 --- old
-    power_window(o, base, e, e_len, mod);
+    power_window(o, base, e, e_len, mod, 0);
     rsa_sign64_wipe_below();
 --- new
-    power_window(o, base, e, e_len, mod);
+    power_window(o, base, e, e_len, mod, 0);

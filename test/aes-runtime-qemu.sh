@@ -331,6 +331,9 @@
 #                     and bin/widemul_runtime_test for x86-64, for the
 #                     violations of p256_adx_asm.h's assembly and of the
 #                     dispatch that picks it
+#   rsa-adx           bin/rsa_mont64_adx_test and bin/rsa_sign_equiv_test
+#                     for x86-64, for the violations of
+#                     rsa_mont64_adx_asm.h's assembly
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -353,9 +356,9 @@ only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
     mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
-    rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx) ;;
+    rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx]" >&2
     exit 2
     ;;
 esac
@@ -387,7 +390,7 @@ if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != mldsa
     [ "$only" != chacha20-avx2 ] &&
     [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
     [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ] && [ "$only" != sha512-stack ] &&
-    [ "$only" != x25519-adx ] && [ "$only" != p256-adx ]; then
+    [ "$only" != x25519-adx ] && [ "$only" != p256-adx ] && [ "$only" != rsa-adx ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -453,6 +456,7 @@ read -r -a p256_verify_equiv_srcs <<< "$(sed -n 27p <<< "$lists")"
 read -r -a mldsa_vector_equiv_srcs <<< "$(sed -n 28p <<< "$lists")"
 read -r -a mldsa_runtime_srcs <<< "$(sed -n 29p <<< "$lists")"
 read -r -a mldsa_avx2_equiv_srcs <<< "$(sed -n 30p <<< "$lists")"
+read -r -a rsa_mont64_adx_test_srcs <<< "$(sed -n 31p <<< "$lists")"
 [ "${#ghash_equiv_srcs[@]}" -gt 0 ] ||
     { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-four lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
@@ -814,6 +818,26 @@ if [ -z "$only" ] || [ "$only" = p256-adx ]; then
         exit 1
     CH_REQUIRE_BMI2_ADX=1 expect max 0 \
         "a P-256 dispatch ran a field the session's ch_cfg.cpu does not name" widemul_runtime_test
+fi
+if [ -z "$only" ] || [ "$only" = rsa-adx ]; then
+    # rsa_mont64_adx.c, whose body compiles for x86-64 alone, and the signer
+    # that runs it under CH_CPU_BMI2_ADX beside the multiply bit
+    # (docs/decisions.md 183). qemu's max model has BMI2 and ADX, so both
+    # binaries run every row.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -o "$x86_out/rsa_mont64_adx_test" \
+        "${rsa_mont64_adx_test_srcs[@]}" || exit 1
+    CH_REQUIRE_BMI2_ADX=1 expect max 0 \
+        "rsa_mont64_adx.c's assembly and its model, or the model and rsa_mont64.c, disagree" \
+        rsa_mont64_adx_test
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -o "$x86_out/rsa_sign_equiv_test" \
+        test/rsa_sign_equiv_test.c "${rsa_sign_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_BMI2_ADX=1 expect max 0 \
+        "the signer on MULX and ADX and the ladder disagree, or a call left a value it computed from the key on the stack" \
+        rsa_sign_equiv_test
+fi
+if [ "$only" = rsa-adx ]; then
+    echo "aes-runtime-qemu: for x86-64, bin/rsa_mont64_adx_test held rsa_mont64_adx.c's assembly to its model and rsa_mont64.c, and bin/rsa_sign_equiv_test held the signer on it to the ladder and found nothing on the stack"
+    exit 0
 fi
 if [ "$only" = p256-adx ]; then
     echo "aes-runtime-qemu: for x86-64, bin/p256_adx_equiv_test held p256_adx_asm.h's assembly to its model and the copy to the files under their own names, bin/p256_adx_verify_equiv_test held its verifier to the 32-bit one, and bin/widemul_runtime_test held the dispatch to the field each value names"

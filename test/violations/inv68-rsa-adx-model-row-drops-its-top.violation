@@ -1,0 +1,26 @@
+invariant: INV-68
+file: test/rsa_mont64_adx_model.h
+catches: rsa_mont64_adx_test
+reason: the model's product rows store no top word, so the product they
+  write is short by every carry out of a row, and the model no longer writes
+  the words the assembly writes. bin/rsa_mont64_adx_test holds the model to
+  rsa_mont64.c word for word on every host.
+
+--- old
+        ct_u128 sum = ct_mul128(y, v[j]) + t[j] + carry;
+        t[j] = (uint64_t)sum;
+        carry = (uint64_t)(sum >> 64);
+    }
+    t[n] = carry;
+}
+
+// t[0..n] += y * v[0..n-1] + cin * 2^(64n). Returns the carry out of t[n].
+--- new
+        ct_u128 sum = ct_mul128(y, v[j]) + t[j] + carry;
+        t[j] = (uint64_t)sum;
+        carry = (uint64_t)(sum >> 64);
+    }
+    t[n] = 0;
+}
+
+// t[0..n] += y * v[0..n-1] + cin * 2^(64n). Returns the carry out of t[n].

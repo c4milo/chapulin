@@ -15791,3 +15791,61 @@ does nothing more.
       below each seal and open for every power and its two halves added,
       on an x86-64 CPU with the instructions. Four violation files drop
       each wrapper's wipe.
+
+183. **An x86-64 host object signs RSA on MULX, ADCX and ADOX under
+    CH_CPU_BMI2_ADX beside the multiply bit.** On the EPYC 7763, which has
+    no AVX-512, an RSA-2048 signature took 1.27 ms under gcc and 1.37 ms
+    under clang on `rsa_mont64.c`'s C, where OpenSSL 3.0.13 took 661 µs.
+    OpenSSL multiplies with MULX, ADCX and ADOX. Camilo ruled on
+    2026-11-03 to prototype the same, as entries 165 and 171 did for
+    X25519 and P-256, and to land it after the runner numbers.
+
+    - **What changes.** `rsa_mont64_adx.c` runs the Montgomery
+      multiplication and square of a signature's two exponentiations. It
+      scans operands separately: the product, or the square from its cross
+      products, into 2k words; then k reduction rows, each adding the
+      multiple of m that clears the lowest word; then one subtraction of
+      m, which CMOVC keeps or drops on the borrow. A row adds the low half
+      of each product on ADCX's carry and the high half on ADOX's
+      overflow, and LEA and JRCXZ move the pointers and the count without
+      a flag, so both chains run a whole row. `rsa_mont64_adx_asm.h` holds
+      the five operations, and `test/rsa_mont64_adx_model.h` the same
+      words in portable C. `rsa_sign64.c` runs them where the session's
+      `ch_cfg.cpu` holds `CH_CPU_BMI2_ADX` and
+      `CH_CPU_CONSTANT_TIME_MULTIPLY` and the IFMA path does not take it.
+      Verification keeps its AVX2 and IFMA kernels. Every frame the pair
+      writes lies under `rsa_sign64.c`'s wrappers, whose wipe below them
+      (entry 181) clears the product, so the pair names no wipe of its own.
+    - **Numbers.** RSA-PSS signing on GitHub's runners, the EPYC 7763,
+      against OpenSSL 3.0.13's `openssl speed` on the same machine:
+
+      | modulus | gcc, C | gcc, ADX | clang, C | clang, ADX | OpenSSL |
+      |---|---|---|---|---|---|
+      | RSA-2048 | 1,269 µs | 949 µs | 1,367 µs | 901 µs | 661 µs |
+      | RSA-3072 | 3.64 ms | 2.75 ms | 4.29 ms | 2.68 ms | 2.01 ms |
+
+      At 1,024 bits a square takes about 300 ns: 108 for the cross
+      products, 158 for the reduction rows, 21 for the subtraction and 6
+      for the wipe. The rows run near 2 cycles a product.
+    - **What was tried and dropped.** Four rows of the product per pass
+      with five words of the sum in registers, which cuts the loads and
+      stores of the sum by 4 times, ran 1.04 to 1.20 times slower than the
+      rows: on these AMD cores ADCX and ADOX appear to run one after the
+      other through the flags register, so the carry chains and not memory
+      set the pace. Rows that enter their 4-word loop at the word n % 4
+      names, with no 1-word loop, ran faster on the EPYC 9V74 and 9V45 and
+      slower on the 7763. A window of 5 bits saved nothing.
+    - **What holds it.** INV-68. `bin/rsa_mont64_adx_test`, the model on
+      every host and the assembly on BMI2 and ADX;
+      `bin/rsa_sign_equiv_test`'s pass under the two bits, with its stack
+      search and its differential; `bin/x86_kernels_test`'s count under
+      129 values; the qemu lane's `rsa-adx` part; the `rsa_mont64_adx`
+      harnesses over the model; `spec/lean/Spec/RsaMont64Adx.lean`,
+      which proves that the model's rows, reduction and subtraction write
+      a b R^-1 mod m below m, and `bin/diff_rsa_mont64_adx`, which holds
+      the model's words to that module's; and five violation files.
+    - **Rejected:** **ADX for verification too.** The AVX2 kernel already
+      runs RSA-2048 verification at 0.95 of OpenSSL's time under clang on
+      the 7763 (entry 122). **Rows chosen by CPU model,** the 4-word
+      entry on the newer EPYCs and the 1-word loop on the 7763, because
+      chapulin probes no CPU and no bit of `ch_cfg.cpu` names a model.

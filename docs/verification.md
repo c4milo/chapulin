@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-127 of the 164 C sources in the tree root are compiled into a
+128 of the 165 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1750,6 +1750,41 @@ The entries are grouped by area:
   `bin/rsa_sign_equiv_test`'s search of the stack under gcc for x86-64,
   which `test/docker-aes-runtime-qemu.sh rsa-addcarry` runs on any
   machine.
+
+#### rsa_mont64_adx
+
+- **Harnesses:** `rsa_mont64_adx_sums` (fast), `rsa_mont64_adx` (fast), `rsa_mont64_adx_webpki` (fast)
+- **Build:** the signer's multiplication and square on MULX, ADCX and
+  ADOX (`rsa_mont64_adx.c`, INV-68, decision 183), under
+  `-DCH_CPU_RUNTIME` and `-DCH_RSA_MONT64_ADX_MODEL`, over
+  `test/rsa_mont64_adx_model.h`, the five assembly operations in
+  portable C, which write the words the assembly writes, and over the
+  product contract of `proof/rsa_mont64_stubs.h`.
+  `rsa_mont64_adx_sums` adds `--unsigned-overflow-check`.
+- **Proves:**
+  - `rsa_mont64_adx_sums`: at four words and at eight, over any operands,
+    any modulus and any `m0inv`, no sum wraps: each word of a row, the
+    top word a row stores or adds its carry into, the doubling and the
+    squares of the square, the low word of each reduction's multiple,
+    and each word of the final subtraction.
+  - `rsa_mont64_adx`: the multiplication and the square read and write
+    inside their arrays at the largest word count, each into a third
+    array and in place.
+
+  The `_webpki` line is the same harness at the `CH_TRUST_WEBPKI`
+  bound.
+- **Bound:** 48 words, and 64 under `CH_TRUST_WEBPKI`; full-range words;
+  four and eight words for `rsa_mont64_adx_sums`.
+- **Not proved:** any value, and the assembly, which CBMC cannot read.
+  `spec/lean/Spec/RsaMont64Adx.lean` proves on its model of the C that
+  the multiplication and the square write a b R^-1 mod m below m, and
+  `bin/diff_rsa_mont64_adx` holds the C model's words to it.
+  `bin/rsa_mont64_adx_test` holds the model to `rsa_mont64.c` word for
+  word on every host, and the assembly to the model on an x86-64 CPU with
+  BMI2 and ADX, which `test/docker-aes-runtime-qemu.sh rsa-adx` runs on
+  any machine. The file's timing claim is `make lint-wide-multiply`'s
+  count of its conditional branches and `bin/rsa_sign_equiv_test`'s
+  search of the stack on the same CPUs.
 
 #### rsa_ifma
 

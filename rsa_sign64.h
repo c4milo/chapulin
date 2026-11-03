@@ -139,6 +139,16 @@ int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_
 void rsa_sign64_power(uint64_t *o, const uint64_t *base, const uint8_t *e, size_t e_len,
                       const rsa_mont64_modulus *mod);
 
+#if defined(__x86_64__) || defined(CH_RSA_MONT64_ADX_MODEL)
+// rsa_sign64_power on rsa_mont64_adx.c's MULX, ADCX and ADOX, for mod of 2
+// words or more: the same words (docs/decisions.md 183). rsa_sign64_sp1
+// runs it for a session whose ch_cfg.cpu holds CH_CPU_BMI2_ADX and
+// CH_CPU_CONSTANT_TIME_MULTIPLY and not the IFMA path's bits. Not part of
+// the public API.
+void rsa_sign64_power_adx(uint64_t *o, const uint64_t *base, const uint8_t *e, size_t e_len,
+                          const rsa_mont64_modulus *mod);
+#endif
+
 #endif // CH_CPU_RUNTIME
 
 #endif

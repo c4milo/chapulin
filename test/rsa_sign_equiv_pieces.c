@@ -8,11 +8,12 @@
 // test/rsa_sign_equiv_residue.h looks in it.
 //
 // This unit compiles rsa_sign64.c once more, under the binary's flags, and
-// gives its four entries second names, because the binary links
+// gives its entries second names, because the binary links
 // rsa_sign64.c itself too. The source is the same lines, so a wipe that
 // file loses is lost here.
 #define rsa_sign64_key_ok rsa_sign64_key_ok_pieces
 #define rsa_sign64_power rsa_sign64_power_pieces
+#define rsa_sign64_power_adx rsa_sign64_power_adx_pieces
 #define rsa_sign64_pss rsa_sign64_pss_pieces
 #define rsa_sign64_sp1 rsa_sign64_sp1_pieces
 

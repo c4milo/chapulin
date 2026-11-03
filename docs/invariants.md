@@ -1499,6 +1499,49 @@ last `ROLE=server` stub, as the entry said it would.
 - See [decisions: Engineering](decisions.md#engineering), entries 172
   and 174.
 
+### INV-68 — the x86-64 RSA signer's multiplication gives rsa_mont64.c's words, and runs only under its two bits
+
+- **Claim.** On x86-64, `rsa_mont64_adx_mul` and `rsa_mont64_adx_square`
+  write the words `rsa_mont64_mont_mul` and `rsa_mont64_mont_square` write,
+  for every operand below the modulus and every odd modulus of 2 words or
+  more. `rsa_sign64.c` runs them for a signature's two exponentiations in a
+  session whose `ch_cfg.cpu` holds `CH_CPU_BMI2_ADX` beside
+  `CH_CPU_CONSTANT_TIME_MULTIPLY` and not the IFMA path's bits, and for no
+  other session. No branch and no address in them depends on a word of an
+  operand or of the product.
+- **Mechanism.** `rsa_mont64_adx.c` scans operands separately: the
+  product, or the square from its cross products, into 2k words, then k
+  reduction rows, then one subtraction of m that CMOVC chooses. Its five
+  operations are assembly in `rsa_mont64_adx_asm.h`, whose loops count
+  words with LEA and JRCXZ, and `test/rsa_mont64_adx_model.h` writes the
+  same words in portable C. `rsa_sign64.c`'s `use_adx` reads both bits,
+  and `power_window` runs the pair through `rsa_mont64_adx.h`'s
+  `rsa_mont64_window_mul` and `rsa_mont64_window_square` (decision 183).
+- **Check.** `bin/rsa_mont64_adx_test` holds the model to `rsa_mont64.c`
+  word for word on every host, at every word count from 2 to 64, and on a
+  CPU with BMI2 and ADX the assembly to the model too.
+  `bin/rsa_sign_equiv_test` runs every signature, its stack search and its
+  differential under the two bits on such a CPU, and holds
+  `rsa_sign64_power_adx` to the ladder. `bin/x86_kernels_test` counts the
+  calls into the pair under 129 `ch_cfg.cpu` values. The qemu lane's
+  `rsa-adx` and `x86-kernels` parts run them under `qemu-x86_64`'s `max`
+  model, so a machine of either architecture runs every row. CBMC reads no
+  assembly, so the `rsa_mont64_adx` harnesses compile the file over the
+  model: no sum wraps on any words, and both entries stay inside their
+  arrays at the build's bound. `make lint-wide-multiply` holds its
+  conditional branches at 32 on x86-64, each a loop over a word count.
+- **Violation.** A PR runs the pair without one of its bits.
+  `inv68-rsa-adx-ignores-adx-bit` drops `CH_CPU_BMI2_ADX` from `use_adx`,
+  and `inv68-rsa-adx-ignores-multiply-bit` drops the multiply bit;
+  `bin/x86_kernels_test` catches both through the qemu lane. Every byte
+  stays right in both, so no vector notices; only the count does. A PR
+  breaks the assembly or its model: `inv68-rsa-adx-final-sub-keeps-the-larger`
+  inverts the CMOVC, which `bin/rsa_mont64_adx_test` catches through the
+  qemu lane's `rsa-adx` part, and `inv68-rsa-adx-model-row-drops-its-top`
+  stores no top word in a product row, which the same binary catches on
+  every host.
+- See [decisions: Engineering](decisions.md#engineering), entry 183.
+
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
 - **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit words

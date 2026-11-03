@@ -1,0 +1,15 @@
+invariant: INV-68
+file: rsa_sign64.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: rsa_sign64.c runs a signature's exponentiations on rsa_mont64_adx.c
+  under the multiply bit alone, whatever CH_CPU_BMI2_ADX says, so a session
+  on a CPU without BMI2 or ADX dies of SIGILL at its first signature. On a
+  CPU with them every byte stays right, so no vector notices.
+  bin/x86_kernels_test counts the calls into rsa_mont64_adx.c under each
+  ch_cfg.cpu value, and the qemu lane runs it for x86-64, the one
+  architecture whose signer holds the test.
+
+--- old
+    uint32_t both = CH_CPU_BMI2_ADX | CH_CPU_CONSTANT_TIME_MULTIPLY;
+--- new
+    uint32_t both = CH_CPU_CONSTANT_TIME_MULTIPLY;

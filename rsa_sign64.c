@@ -25,8 +25,11 @@
 // rsa_ifma.c's public operation through rsa_vp1_cpu (docs/decisions.md
 // 120). After each of the two calls, the function that made it wipes the
 // stack below its frame and the vector and mask registers, where the
-// compiler keeps what no wipe in C names. Every other session runs the
-// window below and checks on rsa_mont64_public.
+// compiler keeps what no wipe in C names. A session whose ch_cfg.cpu holds
+// CH_CPU_BMI2_ADX beside the multiply bit, and not the IFMA path's bits, runs
+// the window below on rsa_mont64_adx.c's MULX, ADCX and ADOX
+// (docs/decisions.md 183). Every other session runs the window on
+// rsa_mont64.c. Every session checks on rsa_mont64_public.
 //
 // Four calls are wrappers: rsa_sign64_power, the reduction modulo a
 // prime, the recombination and rsa_sign64_sp1. Each calls a body that is
@@ -65,6 +68,14 @@
 #endif
 #if defined(__x86_64__) && !defined(CH_RSA_IFMA_MODEL)
 #include "avx512_wipe.h"
+#endif
+// rsa_mont64_adx.h's declarations exist in an x86-64 host object and in a
+// test unit that defines CH_RSA_MONT64_ADX_MODEL, which runs the five
+// operations over test/rsa_mont64_adx_model.h. The ADX path compiles under
+// the same condition (docs/decisions.md 183).
+#include "rsa_mont64_adx.h"
+#if defined(__x86_64__) || defined(CH_RSA_MONT64_ADX_MODEL)
+#define RSA_SIGN64_ADX 1
 #endif
 
 // The bits of the exponent one step reads, and the powers the table holds
@@ -146,7 +157,7 @@ static uint64_t exponent_digit(const uint8_t *e, size_t i) {
 // wipes under.
 static __attribute__((noinline)) void power_window(uint64_t *o, const uint64_t *base,
                                                    const uint8_t *e, size_t e_len,
-                                                   const rsa_mont64_modulus *mod) {
+                                                   const rsa_mont64_modulus *mod, int adx) {
     size_t k = mod->words;
     CH_ASSERT(k >= 1 && k <= PRIME_WORDS_MAX);
     // Zeroed at declaration, as rsa_mont64_public's arrays are: the words
@@ -157,10 +168,10 @@ static __attribute__((noinline)) void power_window(uint64_t *o, const uint64_t *
     // powers[i] = base^i in the domain. 1 in the domain is R mod m, which
     // one multiplication of the plain 1 by r2 gives.
     pick[0] = 1;
-    rsa_mont64_mont_mul(table.powers[0], pick, mod->r2, mod);
+    rsa_mont64_window_mul(adx, table.powers[0], pick, mod->r2, mod);
     memcpy(table.powers[1], base, k * sizeof(uint64_t));
     for (size_t i = 2; i < TABLE_ENTRIES; i++) {
-        rsa_mont64_mont_mul(table.powers[i], table.powers[i - 1], base, mod);
+        rsa_mont64_window_mul(adx, table.powers[i], table.powers[i - 1], base, mod);
     }
 
     // The running power starts at 1. Each step raises it to the 16th
@@ -169,18 +180,26 @@ static __attribute__((noinline)) void power_window(uint64_t *o, const uint64_t *
     memcpy(o, table.powers[0], k * sizeof(uint64_t));
     for (size_t i = 0; i < 2 * e_len; i++) {
         for (int square = 0; square < WINDOW_BITS; square++) {
-            rsa_mont64_mont_square(o, o, mod);
+            rsa_mont64_window_square(adx, o, o, mod);
         }
         table_select(pick, &table, exponent_digit(e, i), k);
-        rsa_mont64_mont_mul(o, o, pick, mod);
+        rsa_mont64_window_mul(adx, o, o, pick, mod);
     }
 }
 
 void rsa_sign64_power(uint64_t *o, const uint64_t *base, const uint8_t *e, size_t e_len,
                       const rsa_mont64_modulus *mod) {
-    power_window(o, base, e, e_len, mod);
+    power_window(o, base, e, e_len, mod, 0);
     rsa_sign64_wipe_below();
 }
+
+#ifdef RSA_SIGN64_ADX
+void rsa_sign64_power_adx(uint64_t *o, const uint64_t *base, const uint8_t *e, size_t e_len,
+                          const rsa_mont64_modulus *mod) {
+    power_window(o, base, e, e_len, mod, 1);
+    rsa_sign64_wipe_below();
+}
+#endif
 
 // o = em mod the prime, in the Montgomery domain of mod, the prime's
 // record: the base of one half of a signature. em is em_words words, the
@@ -259,6 +278,20 @@ static void crt_combine(uint64_t *s, uint64_t *m1, uint64_t *m2, const uint8_t *
     garner(s, m1, m2, qinv, half_len, mod_p, mod_q);
     rsa_sign64_wipe_below();
 }
+
+#ifdef RSA_SIGN64_ADX
+// Whether a signature's two exponentiations run on rsa_mont64_adx.c: where
+// cpu, the session's ch_cfg.cpu, holds both CH_CPU_BMI2_ADX, which says the
+// CPU has MULX, ADCX and ADOX, and CH_CPU_CONSTANT_TIME_MULTIPLY, whose
+// statement covers MULX's 64-bit products (cpu_cfg.h), as X25519's and
+// P-256's fields ask (docs/decisions.md 165, 171 and 183). both_powers asks
+// it after the IFMA path, which takes the session first where its bits are
+// set.
+static int use_adx(uint32_t cpu) {
+    uint32_t both = CH_CPU_BMI2_ADX | CH_CPU_CONSTANT_TIME_MULTIPLY;
+    return (cpu & both) == both;
+}
+#endif
 
 #ifdef RSA_SIGN64_IFMA
 // Whether a signature runs on AVX-512 IFMA: where cpu, the session's
@@ -370,8 +403,10 @@ static int write_if_verified(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *
 // domain. Where cpu names IFMA the two run side by side on
 // rsa_ifma_sign.c, and the stack under this frame and the registers are
 // wiped after the call: the kernel's frames lay there, with the slots the
-// compiler kept words and 512-bit registers in (rsa_ifma_sign.h). Every
-// other value runs the window above, once for each prime.
+// compiler kept words and 512-bit registers in (rsa_ifma_sign.h). Where cpu
+// names MULX and ADX, and not IFMA, the window above runs once for each
+// prime on rsa_mont64_adx.c, and each call's wrapper wipes under it. Every
+// other value runs the window on rsa_mont64.c.
 static void both_powers(uint32_t cpu, uint64_t *m1, uint64_t *m2, const ch_rsa_priv *k,
                         size_t half_len, const rsa_mont64_modulus *mod_p,
                         const rsa_mont64_modulus *mod_q) {
@@ -382,8 +417,16 @@ static void both_powers(uint32_t cpu, uint64_t *m1, uint64_t *m2, const ch_rsa_p
         wipe_vector_registers();
         return;
     }
-#else
-    // arm64 has no such kernel, so no bit picks here.
+#endif
+#ifdef RSA_SIGN64_ADX
+    if (use_adx(cpu)) {
+        rsa_sign64_power_adx(m1, m1, k->dp, half_len, mod_p);
+        rsa_sign64_power_adx(m2, m2, k->dq, half_len, mod_q);
+        return;
+    }
+#endif
+#if !defined(RSA_SIGN64_IFMA) && !defined(RSA_SIGN64_ADX)
+    // arm64 has neither kernel, so no bit picks here.
     (void)cpu;
 #endif
     rsa_sign64_power(m1, m1, k->dp, half_len, mod_p);

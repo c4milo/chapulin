@@ -23,9 +23,11 @@
 #include "rsa_avx2_count.h"
 #include "rsa_ifma_count.h"
 #include "rsa_ifma_sign_count.h"
+#include "rsa_mont64_adx_count.h"
 #include "rsa_pkcs1.h"
 #include "rsa_pkcs1_vectors.h"
 #include "rsa_sign.h"
+#include "rsa_sign64.h"
 #include "rsa_sign_key.h"
 #include "sha256.h"
 #include "widemul.h"
@@ -144,7 +146,17 @@ static unsigned long names_ifma_signer(uint32_t cpu) {
     return (cpu & both) == both ? 1 : 0;
 }
 
+// What a value names for a signature's exponentiations otherwise, written
+// apart from rsa_sign64.c's use_adx: rsa_mont64_adx.c where it holds
+// CH_CPU_BMI2_ADX and CH_CPU_CONSTANT_TIME_MULTIPLY both and the IFMA path
+// does not take it (docs/decisions.md 183).
+static unsigned long names_adx_signer(uint32_t cpu) {
+    uint32_t both = CH_CPU_BMI2_ADX | CH_CPU_CONSTANT_TIME_MULTIPLY;
+    return (cpu & both) == both && names_ifma_signer(cpu) == 0 ? 1 : 0;
+}
+
 static void reset_signer_calls(void) {
+    rsa_mont64_adx_calls = 0;
     rsa_ifma_sign_pair_calls = 0;
     rsa_ifma_public_calls = 0;
     rsa_ifma_sign_wipe_calls = 0;
@@ -195,6 +207,17 @@ static void check_rsa_signer(uint32_t cpu) {
     reset_signer_calls();
     CHECK(widemul_rsa_pss_sign_cpu(cpu, widemul_of_cpu(cpu), &key, digest, salt, sig, sizeof sig,
                                    &sig_len) == 1);
+    // A signature on rsa_mont64_adx.c runs both exponentiations' every
+    // multiplication and square there, and one on any other path runs none.
+    CHECK((rsa_mont64_adx_calls != 0) == (names_adx_signer(cpu) != 0));
+    CHECK(signer_calls_are(names_ifma_signer(cpu)));
+    CHECK(sig_len == want_len && memcmp(sig, want, want_len) == 0);
+    // The same value straight into rsa_sign64_pss, which widemul.h calls
+    // only under the multiply bit. So a value with CH_CPU_BMI2_ADX alone
+    // asks use_adx itself, and must run no product on rsa_mont64_adx.c.
+    sig_len = 0;
+    CHECK(rsa_sign64_pss(cpu, &key, digest, salt, sig, sizeof sig, &sig_len) == 1);
+    CHECK((rsa_mont64_adx_calls != 0) == (names_adx_signer(cpu) != 0));
     CHECK(signer_calls_are(names_ifma_signer(cpu)));
     CHECK(sig_len == want_len && memcmp(sig, want, want_len) == 0);
 }

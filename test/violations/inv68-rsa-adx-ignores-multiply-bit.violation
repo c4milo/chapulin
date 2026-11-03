@@ -1,0 +1,15 @@
+invariant: INV-68
+file: rsa_sign64.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: rsa_sign64.c runs a signature's exponentiations on rsa_mont64_adx.c
+  under CH_CPU_BMI2_ADX alone, so a session whose caller did not state that
+  MULX runs in constant time multiplies the primes' words on it. Every byte
+  stays right, so no vector notices. widemul.h sends no such value to the
+  signer, so bin/x86_kernels_test also calls rsa_sign64_pss straight under
+  each ch_cfg.cpu value and counts the calls into rsa_mont64_adx.c. The
+  qemu lane runs it for x86-64.
+
+--- old
+    uint32_t both = CH_CPU_BMI2_ADX | CH_CPU_CONSTANT_TIME_MULTIPLY;
+--- new
+    uint32_t both = CH_CPU_BMI2_ADX;
