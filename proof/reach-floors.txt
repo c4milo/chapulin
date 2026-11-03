@@ -262,7 +262,14 @@ p384_mul 13
 # printed them. Each compiles the whole of p384_wide_field.c, and the
 # three that run over contracts never call the routines a contract
 # replaces, which is most of what they leave out.
-p384_wide_digits 160
+#
+# p384_wide_digits's nightly cover runs took 1504 s to 1708 s on eight
+# nights from 2026-10-27 to 2026-11-03, under the same command. On
+# 2026-11-02 it passed 1800 s and failed the check with no number (run
+# 41432954451, https://github.com/c4milo/chapulin/issues/216). Its
+# budget is 3600 s, 2.1 times its slowest run, the margin that
+# rsa_ifma_sign_power carries.
+p384_wide_digits 160 budget=3600
 p384_wide_field 210
 p384_wide_point 228
 p384_wide_verify 163
@@ -862,6 +869,13 @@ x509parse_ecdsa 415
 # with a launch line and a proof of its own, as rsa_avx2_chain_32 is for
 # rsa_avx2_chain, and none of the eleven has one.
 #
+# mldsa_sign_round, mldsa_sign_commit and mlkem_1024 timed out at 1800 s
+# on each of eight nights from 2026-10-27 to 2026-11-03, nightly runs
+# 40557039359 to 41622233823. They carry no floor, so each timeout
+# failed nothing, and the three took 90 minutes of each night. Their
+# proofs pass. Part 1 held two of them and took up to 274 of its 330
+# minutes.
+#
 #   eeparse
 #   handshake_parser
 #   handshake_parser_suite
@@ -872,7 +886,10 @@ x509parse_ecdsa 415
 #   hkdf_expand
 #   hkdf_expand_label
 #   io
+#   mldsa_sign_commit
+#   mldsa_sign_round
 #   mlkem
+#   mlkem_1024
 #   mlkem_invntt_high
 #   mlkem_invntt_low
 #   mlkem_ntt

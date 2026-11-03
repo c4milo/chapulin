@@ -43,6 +43,10 @@ jobs:
   # A part that the limit stops writes no table, so the limit leaves room
   # for more such runs. 330 minutes is 2.1 times 156, and the 174 minutes
   # between them hold about five more cover runs to the 1800 s budget.
+  # From 2026-11-01 to 2026-11-03 the parts took 212 to 274, 185 to 221
+  # and 73 to 159 minutes. Then proof/reach-floors.txt moved three cover
+  # runs that never converged into its skips, 60 minutes of part 1 and
+  # 30 of part 2, and gave p384_wide_digits 3600 s.
   # The limit stays below the 360 minutes that GitHub gives a job on a
   # hosted runner.
   proof-reach:
