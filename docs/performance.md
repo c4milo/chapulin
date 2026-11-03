@@ -163,9 +163,11 @@ beside its ECDSA and RSA identities (180) and which the
 deployment sets the `mldsa87` slot. With the ML-DSA-87 CertificateVerify,
 whose own frame stages the 4,627-byte signature, pruned from the call
 graph (`STACK_PRUNE=srv_mldsa_send_certificate_verify`) the deepest chain is
-`rsa_sign64.c`'s RSA-PSS signer, at 12,752 bytes, which holds a modulus
+`rsa_sign64.c`'s RSA-PSS signer, at 19,872 bytes, which holds a modulus
 record for each prime, the signature it checks and a table of sixteen
-powers ([`docs/decisions.md`](decisions.md) 95). Its square holds a copy
+powers ([`docs/decisions.md`](decisions.md) 95). The deepest frame on that
+chain is `rsa_sign64_wipe.c`'s, which writes zero over the
+`RSA_SIGN64_BELOW_LEN` bytes under each private call (181). Its square holds a copy
 of 2a (106) and calls `rsa_mont64_blocks.c`'s square, which multiplies in
 blocks of four words under clang for arm64 (118). With the RSA signer
 pruned too (`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss`) it is the
