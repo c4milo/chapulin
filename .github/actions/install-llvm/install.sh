@@ -11,7 +11,9 @@
 # releases the workflows run.
 set -euo pipefail
 
-wget -qO "$RUNNER_TEMP/llvm-snapshot.gpg.key" https://apt.llvm.org/llvm-snapshot.gpg.key
+# apt.llvm.org did not answer for a few minutes on 2026-11-03, which
+# failed four jobs of one run. So the download and apt retry.
+wget -q --tries=5 --waitretry=15 --retry-connrefused --timeout=30 -O "$RUNNER_TEMP/llvm-snapshot.gpg.key" https://apt.llvm.org/llvm-snapshot.gpg.key
 echo "$SHA256  $RUNNER_TEMP/llvm-snapshot.gpg.key" | sha256sum -c -
 sudo install -d -m 0755 /etc/apt/keyrings
 sudo gpg --dearmor --yes -o /etc/apt/keyrings/apt.llvm.org.gpg "$RUNNER_TEMP/llvm-snapshot.gpg.key"
@@ -19,8 +21,8 @@ codename=$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release)
 [ -n "$codename" ] || { echo "install-llvm: /etc/os-release names no VERSION_CODENAME" >&2; exit 1; }
 echo "deb [signed-by=/etc/apt/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/$codename/ llvm-toolchain-$codename-$MAJOR main" |
   sudo tee /etc/apt/sources.list.d/apt.llvm.org.list > /dev/null
-sudo apt-get update -q
-sudo apt-get install -y "clang-$MAJOR" "lld-$MAJOR"
+sudo apt-get -o Acquire::Retries=5 update -q
+sudo apt-get -o Acquire::Retries=5 install -y "clang-$MAJOR" "lld-$MAJOR"
 
 packages=()
 if [ "$WITH_CLANG_TIDY" = true ]; then
@@ -35,7 +37,7 @@ if [ "$WITH_LLVM" = true ]; then
   packages+=("llvm-$MAJOR")
 fi
 if [ "${#packages[@]}" -gt 0 ]; then
-  sudo apt-get install -y "${packages[@]}"
+  sudo apt-get -o Acquire::Retries=5 install -y "${packages[@]}"
 fi
 
 # apt.llvm.org installs the versioned names, so the Makefile's variables
