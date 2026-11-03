@@ -116,7 +116,7 @@ jobs:
         uses: ./.github/actions/install-llvm
         with:
           major: ${{ env.LLVM_MAJOR }}
-          sha256: ${{ env.LLVM_SH_SHA256 }}
+          sha256: ${{ env.LLVM_KEY_SHA256 }}
       - name: Build the pinned OpenSSL and put it on PATH
         # The OpenSSL rows time `openssl speed` on the same machine. The
         # runner's own OpenSSL is 3.0, which has no ML-KEM; the pinned

@@ -1,6 +1,6 @@
 # check=skip=InvalidDefaultArgInFrom
 
-# The image test/docker-check.sh runs `make check` in: Ubuntu 24.04 on
+# The image test/docker-check.sh runs `make check` in: Ubuntu 26.04 on
 # x86-64, the system CI's check job runs on, with apt's gcc as cc and the
 # pinned tools that job installs for `make check`, in the job's order.
 #
@@ -34,10 +34,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # What a runner's image already holds and `make check` or an install
 # script reads, and two packages for the taint lane: libc6-dbg, whose
 # symbols of the dynamic linker Valgrind reads, and bzip2, which unpacks
-# Valgrind's tarball. The x86-64 and arm64 jobs install both with apt. gcc and g++ are Ubuntu 24.04's default, the major CI
-# compiles with. llvm.sh needs gnupg, lsb-release and
-# software-properties-common, CBMC's package depends on bash-completion,
-# and the install scripts call sudo.
+# Valgrind's tarball. The x86-64 and arm64 jobs install both with apt. gcc and g++ are Ubuntu 26.04's default, the major CI
+# compiles with. The LLVM install script needs gnupg for the keyring,
+# CBMC's package depends on bash-completion, and the install scripts call
+# sudo.
 RUN apt-get update -q \
     && apt-get install -y -q --no-install-recommends \
         bash-completion bzip2 ca-certificates cmake curl g++ gcc git gnupg libc6-dbg libc6-dev \
@@ -52,8 +52,8 @@ RUN apt-get update -q \
 # writes CLANG_RV, CLANG_TIDY and CLANG_FORMAT to GITHUB_ENV itself.
 COPY .github/actions/install-llvm/install.sh /ci/install-llvm.sh
 ARG LLVM_MAJOR
-ARG LLVM_SH_SHA256
-RUN MAJOR="$LLVM_MAJOR" SHA256="$LLVM_SH_SHA256" \
+ARG LLVM_KEY_SHA256
+RUN MAJOR="$LLVM_MAJOR" SHA256="$LLVM_KEY_SHA256" \
         WITH_CLANG_TIDY=true WITH_CLANG_FORMAT=true WITH_LLVM=true bash /ci/install-llvm.sh \
     && rm -rf /var/lib/apt/lists/* "${RUNNER_TEMP:?}"/*
 

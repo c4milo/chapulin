@@ -34,7 +34,7 @@ jobs:
   # binaries run in an RSA build and in an ECDSA build, and thirteen in
   # a TRUST=webpki build. No proofs, no e2e, minutes not hours.
   coverage:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     # The badge step pushes the regenerated SVG to the badges branch; the
     # default token is read-only, so this job alone gets write. The
@@ -111,7 +111,7 @@ jobs:
   # test/san_selftest.c proves on every run that the sanitizer is
   # armed.
   san:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -124,6 +124,9 @@ jobs:
   # rows without the AES bit under qemu-x86_64, which the same qemu-user
   # package carries.
   mips:
+    # ubuntu-24.04: ubuntu-26.04 packages no MIPS cross gcc
+    # (gcc-mips-linux-gnu, libc6-dev-mips-cross), and the Makefile's
+    # mips32r2-gcc ceilings are Ubuntu 24.04's gcc-mips-linux-gnu.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -165,7 +168,7 @@ jobs:
     # suite roster, built with the runner's own gcc and run natively.
     # Lints stay with the amd64 check job — duplicating that toolchain
     # buys no platform coverage.
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -188,7 +191,7 @@ jobs:
         uses: ./.github/actions/install-llvm
         with:
           major: ${{ env.LLVM_MAJOR }}
-          sha256: ${{ env.LLVM_SH_SHA256 }}
+          sha256: ${{ env.LLVM_KEY_SHA256 }}
       - run: make keccak-instructions-check
       # A host object, which holds the vector ChaCha20, both multiplies and
       # the vector Poly1305 as the native copy's: this job packages the
@@ -235,7 +238,7 @@ jobs:
     # kernel too, SHA-512's compression function with its message schedule
     # in AVX2 registers: the equivalence test with its checks of the stack
     # and the registers, and the published vectors (docs/decisions.md 128).
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -308,7 +311,7 @@ jobs:
     # QEMU's MPS2-AN385 through newlib semihosting (make m3-check).
     # The Arm GNU toolchain is pinned in tools/toolchain.env and
     # cached by that version.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -338,7 +341,7 @@ jobs:
     # FreeRTOS as a supported platform, first rung: the pinned kernel
     # boots on QEMU's MPS2-AN385 and two static tasks must interleave
     # before PASS. Same Arm toolchain as the m3 job, same cache.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -353,7 +356,7 @@ jobs:
         uses: ./.github/actions/install-llvm
         with:
           major: ${{ env.LLVM_MAJOR }}
-          sha256: ${{ env.LLVM_SH_SHA256 }}
+          sha256: ${{ env.LLVM_KEY_SHA256 }}
           clang-tidy: "true"
       - name: Install the Arm GNU toolchain (pinned)
         uses: ./.github/actions/install-arm-gnu
@@ -371,7 +374,7 @@ jobs:
     # own ABI; rv32imac codegen is checked separately by lint-wide-multiply
     # under clang in the check job and under this gcc in the step below,
     # which also measures rv32ic, the core with no multiplier.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -412,7 +415,7 @@ jobs:
   # the time its prove job took to prove 94 harnesses again. The comment
   # at the Makefile's ci target lists the target each job runs.
   check:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # The PR-lane budget. `make check` costs a minute on a development
     # machine and took 11.6 here, because CI keeps no stamps and so skips
     # no lint. If this job starts approaching the cap, move work to the
@@ -499,7 +502,7 @@ jobs:
         uses: ./.github/actions/install-llvm
         with:
           major: ${{ env.LLVM_MAJOR }}
-          sha256: ${{ env.LLVM_SH_SHA256 }}
+          sha256: ${{ env.LLVM_KEY_SHA256 }}
           clang-tidy: "true"
           clang-format: "true"
           llvm: "true" # llvm-nm, which lint-runtime-symbols reads with
@@ -673,7 +676,7 @@ jobs:
   # test/zig-build-check.sh hold it for what they read.
   slow:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -695,17 +698,17 @@ jobs:
 
       - name: Install clang (apt.llvm.org, pinned major)
         # test/qemu-m3.sh compiles for the Cortex-M3 with the pinned clang
-        # and links with the ld.lld-<major> that llvm.sh installs beside it.
+        # and links with the ld.lld-<major> that install-llvm installs beside it.
         uses: ./.github/actions/install-llvm
         with:
           major: ${{ env.LLVM_MAJOR }}
-          sha256: ${{ env.LLVM_SH_SHA256 }}
+          sha256: ${{ env.LLVM_KEY_SHA256 }}
 
       - name: Install qemu-system-arm
         # test/qemu-m3.sh runs the crypto on an emulated Cortex-M3. On CI
         # the script fails where its emulator or its linker is missing, so
         # no run skips it: the check job skipped it until the script
-        # looked for the ld.lld that llvm.sh installs, ld.lld-<major>, and
+        # looked for the ld.lld that install-llvm installs, ld.lld-<major>, and
         # meanwhile its Cortex-M3 build stopped compiling unseen
         # (docs/invariants.md, INV-40).
         uses: ./.github/actions/apt-install
@@ -758,7 +761,7 @@ jobs:
           "$CLANG_RV" --version | grep -qE "version $LLVM_MAJOR\\." \
             || { echo "CLANG_RV is not the pinned LLVM $LLVM_MAJOR"; exit 1; }
           command -v "ld.lld-$LLVM_MAJOR" >/dev/null \
-            || { echo "ld.lld-$LLVM_MAJOR is missing; llvm.sh installs it beside clang"; exit 1; }
+            || { echo "ld.lld-$LLVM_MAJOR is missing; install-llvm installs it beside clang"; exit 1; }
           go version | grep -qF "go$GO_VERSION " \
             || { echo "go is not the pinned $GO_VERSION"; exit 1; }
           rustc --version | grep -qF "rustc $RUST_VERSION " \
@@ -792,7 +795,7 @@ jobs:
   # nightly's job installs them and this one does not.
   mutants:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -830,7 +833,7 @@ jobs:
         uses: ./.github/actions/install-llvm
         with:
           major: ${{ env.LLVM_MAJOR }}
-          sha256: ${{ env.LLVM_SH_SHA256 }}
+          sha256: ${{ env.LLVM_KEY_SHA256 }}
           llvm: "true"
 
       - name: Install Zig (pinned)
@@ -879,7 +882,7 @@ jobs:
   # runs in the nightly workflow, one job per harness.
   prove:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # A run this cap stops still saves its cache below, so the next run
     # proves only the harnesses this one did not finish.
     timeout-minutes: 120

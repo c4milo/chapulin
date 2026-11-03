@@ -46,7 +46,7 @@ jobs:
   # The limit stays below the 360 minutes that GitHub gives a job on a
   # hosted runner.
   proof-reach:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 330
     strategy:
       # Each part runs to its own verdict, and a part that fails costs
@@ -88,7 +88,7 @@ jobs:
     # Also after a part fails or runs out of time: those are the nights
     # when the table must say which part is missing.
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -105,7 +105,7 @@ jobs:
         run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
   prove-slow:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 300
     strategy:
       # Every job runs to its own verdict: one heavyweight failing tells
@@ -200,7 +200,7 @@ jobs:
   # server either takes the share or fails, and only the mock can send a
   # cookie retry.
   handshake-sequence-pq:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -243,7 +243,7 @@ jobs:
   # a solver run that stalls costs this job nothing
   # (https://github.com/c4milo/chapulin/issues/144).
   test-invariants:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # On two workers (test/violations.py --jobs, half the runner's cores)
     # the whole class took 119 minutes of run 37605840873 for 818
     # violations. From 2026-10-08 it reached its 150-minute limit each
@@ -314,7 +314,7 @@ jobs:
         uses: ./.github/actions/install-llvm
         with:
           major: ${{ env.LLVM_MAJOR }}
-          sha256: ${{ env.LLVM_SH_SHA256 }}
+          sha256: ${{ env.LLVM_KEY_SHA256 }}
           llvm: "true"
           clang-tidy: "true"
       - name: Install cppcheck (pinned)
@@ -420,7 +420,7 @@ jobs:
   # any one run at an hour and reports no verdict, which the runner
   # counts as ERROR.
   test-invariants-proof-backed:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # A violation is two runs and prove-one.sh's clock holds each to an
     # hour, so this is a backstop above that clock, not the budget.
     timeout-minutes: 300
@@ -479,7 +479,7 @@ jobs:
   # exact run anywhere, which is why the seed is drawn once and echoed
   # rather than taken from the clock.
   diff-random:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -538,7 +538,7 @@ jobs:
   # What the Lean spec checks, rendered on the run page like the C
   # coverage table. Nightly because the instrumented build is -O0.
   spec-coverage:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -569,7 +569,7 @@ jobs:
   # RSA parser, so the P-256 certificate rows run against real C only
   # here.
   diff-ecdsa:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -595,7 +595,7 @@ jobs:
   # x25519 key_share parser, so the 1120-byte hybrid share meets real C
   # only here.
   diff-pq:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -622,7 +622,7 @@ jobs:
   # acknowledgement and the three webpki schemes run against real C only
   # here.
   diff-webpki:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -647,7 +647,7 @@ jobs:
   # The deeper UB pass: -O0 sees code the optimizer would delete. The
   # PR lane runs the same suites at -O2, the level that ships.
   san-deep:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -660,6 +660,8 @@ jobs:
   # a check. ASan stays off here — its shadow memory does not map
   # cleanly under qemu-user.
   mips-ubsan:
+    # ubuntu-24.04: ubuntu-26.04 packages no MIPS cross gcc, as the check
+    # workflow's mips job says.
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -674,7 +676,7 @@ jobs:
   # Longer fuzz runs than a PR could afford; the corpus persists so
   # every night extends the last one instead of rediscovering it.
   fuzz:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -721,7 +723,7 @@ jobs:
   # compute and nothing about how long they take on any CPU, so this job
   # checks the kernels' results and none of their timing.
   rsa-ifma-sde:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -750,7 +752,7 @@ jobs:
     if: >-
       ${{ always() && (contains(needs.*.result, 'failure') ||
       contains(needs.*.result, 'cancelled')) }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       issues: write
     steps:

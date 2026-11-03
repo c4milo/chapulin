@@ -4,9 +4,9 @@
 # names as CLANG_RV, CLANG_TIDY and CLANG_FORMAT, the variables the
 # Makefile reads. The pin values come from the job's env via
 # ./.github/actions/load-pins: major is LLVM_MAJOR and sha256 is
-# LLVM_SH_SHA256, the hash of llvm.sh. That script runs as root, so the
-# download is checked against the hash before it runs
-# (https://github.com/c4milo/chapulin/issues/87).
+# LLVM_KEY_SHA256, the hash of apt.llvm.org's signing key. The key decides
+# which packages apt trusts, so the download is checked against the hash
+# before it becomes a keyring (https://github.com/c4milo/chapulin/issues/87).
 name: install-llvm
 description: Install the pinned LLVM major from apt.llvm.org
 inputs:
@@ -14,7 +14,7 @@ inputs:
     description: The LLVM major to install (LLVM_MAJOR)
     required: true
   sha256:
-    description: The sha256 of https://apt.llvm.org/llvm.sh (LLVM_SH_SHA256)
+    description: The sha256 of https://apt.llvm.org/llvm-snapshot.gpg.key (LLVM_KEY_SHA256)
     required: true
   clang-tidy:
     description: Also install clang-tidy-<major> and export CLANG_TIDY

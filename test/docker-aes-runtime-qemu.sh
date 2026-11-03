@@ -79,7 +79,7 @@ if [ "${1:-}" != "--inside" ]; then
         echo "SKIP the host object's qemu lane: docker not available" >&2
         exit 0
     }
-    exec docker run --rm -v "$PWD":/src -w /src "ubuntu@$UBUNTU_DIGEST" \
+    exec docker run --rm -v "$PWD":/src -w /src "ubuntu@$UBUNTU_2404_DIGEST" \
         bash /src/test/docker-aes-runtime-qemu.sh --inside "$@"
 fi
 shift

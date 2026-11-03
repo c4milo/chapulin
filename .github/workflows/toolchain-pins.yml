@@ -19,11 +19,12 @@ name: toolchain-pins
 # pin keeps its value, because crossing a major is a decision for a person.
 # OpenSSL is the case that made this rule: the pin is 3.6.x and 4.0 shipped.
 #
-# The two install scripts CI executes, llvm.sh and elan-init.sh, have no
-# releases to ask about: tools/toolchain.env pins each by the sha256 of its
+# Two files CI trusts have no releases to ask about: apt.llvm.org's signing
+# key, which decides which LLVM packages apt installs, and elan-init.sh,
+# which CI executes. tools/toolchain.env pins each by the sha256 of its
 # content. This job downloads both and proposes the new hash when upstream
-# serves a different file. The pull request's check run executes that file,
-# and a person reads the script before merging.
+# serves a different file. The pull request's check run uses that file,
+# and a person reads it before merging.
 #
 # The release files CI downloads by version -- the cbmc .deb, the kissat,
 # cppcheck and OpenSSL source tarballs, the shellcheck binary -- each carry
@@ -65,7 +66,7 @@ env:
 
 jobs:
   propose:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -255,8 +256,9 @@ jobs:
               >> "$bumps"
           fi
 
-          # The two install scripts, pinned by content alone.
-          rehash LLVM_SH_SHA256 "$LLVM_SH_SHA256" https://apt.llvm.org/llvm.sh
+          # apt.llvm.org's signing key and elan's install script, pinned by
+          # content alone.
+          rehash LLVM_KEY_SHA256 "$LLVM_KEY_SHA256" https://apt.llvm.org/llvm-snapshot.gpg.key
           rehash ELAN_INIT_SHA256 "$ELAN_INIT_SHA256" https://elan.lean-lang.org/elan-init.sh
 
           if [ ! -s "$bumps" ]; then

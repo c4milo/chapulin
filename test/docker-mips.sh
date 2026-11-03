@@ -17,7 +17,7 @@ if [ "${1:-}" != "--inside" ]; then
         exit 0
     }
     exec docker run --rm --platform linux/amd64 \
-        -v "$PWD":/src -w /src "ubuntu@$UBUNTU_DIGEST" \
+        -v "$PWD":/src -w /src "ubuntu@$UBUNTU_2404_DIGEST" \
         bash /src/test/docker-mips.sh --inside
 fi
 

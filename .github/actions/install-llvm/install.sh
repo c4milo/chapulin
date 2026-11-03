@@ -1,13 +1,26 @@
 #!/bin/bash
-# Download llvm.sh, check it against the pinned hash, run it for the
-# pinned major, then install the extra packages the job asked for.
-# Reads MAJOR, SHA256 and the WITH_* flags from the environment that
-# action.yml sets from its inputs.
+# Download apt.llvm.org's signing key, check it against the pinned hash,
+# add it as a keyring, name the repository of the pinned major for the
+# runner's Ubuntu release under that keyring, then install clang and
+# ld.lld of that major and the extra packages the job asked for. Reads
+# MAJOR, SHA256 and the WITH_* flags from the environment that action.yml
+# sets from its inputs.
+#
+# llvm.sh did this before, and it added the key with apt-key, which
+# ubuntu-26.04 does not carry; a keyring named in the source works on both
+# releases the workflows run.
 set -euo pipefail
 
-wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
-echo "$SHA256  $RUNNER_TEMP/llvm.sh" | sha256sum -c -
-sudo bash "$RUNNER_TEMP/llvm.sh" "$MAJOR"
+wget -qO "$RUNNER_TEMP/llvm-snapshot.gpg.key" https://apt.llvm.org/llvm-snapshot.gpg.key
+echo "$SHA256  $RUNNER_TEMP/llvm-snapshot.gpg.key" | sha256sum -c -
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo gpg --dearmor --yes -o /etc/apt/keyrings/apt.llvm.org.gpg "$RUNNER_TEMP/llvm-snapshot.gpg.key"
+codename=$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release)
+[ -n "$codename" ] || { echo "install-llvm: /etc/os-release names no VERSION_CODENAME" >&2; exit 1; }
+echo "deb [signed-by=/etc/apt/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/$codename/ llvm-toolchain-$codename-$MAJOR main" |
+  sudo tee /etc/apt/sources.list.d/apt.llvm.org.list > /dev/null
+sudo apt-get update -q
+sudo apt-get install -y "clang-$MAJOR" "lld-$MAJOR"
 
 packages=()
 if [ "$WITH_CLANG_TIDY" = true ]; then
@@ -18,7 +31,7 @@ if [ "$WITH_CLANG_FORMAT" = true ]; then
 fi
 if [ "$WITH_LLVM" = true ]; then
   # llvm-<major> carries llvm-nm, which lint-runtime-symbols reads the
-  # rv32ic objects with. llvm.sh alone does not install it.
+  # rv32ic objects with. clang alone does not pull it in.
   packages+=("llvm-$MAJOR")
 fi
 if [ "${#packages[@]}" -gt 0 ]; then

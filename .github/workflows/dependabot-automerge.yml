@@ -56,7 +56,7 @@ jobs:
     if: >-
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.actor == 'dependabot[bot]'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # contents: write enables auto-merge; pull-requests: write lets
     # fetch-metadata read the pull request and gh act on it. These take effect
