@@ -34,7 +34,7 @@ Home: github.com/c4milo.
   links of one chain are signed by different algorithm families, so that
   object carries `rsa.[ch]`, `rsa_pkcs1.[ch]`, `p256.[ch]` and
   `p384.[ch]` at once. A server object names none either, because
-  ch_srv_check verifies both provisioned identities at boot. The
+  ch_srv_check verifies every provisioned identity at boot. The
   algorithm is half of a TRUST value rather than an axis of its own
   precisely because it selects nothing in those two builds, and a
   separate axis let a build ask for a verifier it would not get. The key exchange of a
@@ -200,10 +200,12 @@ Home: github.com/c4milo.
   over a fixed byte count, and the round's verdict the one branch on a
   secret-derived value; each signature is verified with
   `mldsa87_verify` before it leaves; `mldsa_signer.c` stays under
-  `STACK_BUDGET_MLDSA_SIGN`; the PROFILE=cnsa2 server role packages
-  them, and `CH_MLDSA_SIGN_TEST` declares their two test entries,
-  docs/decisions.md 159; `srv_mldsa.[ch]` is that server's ML-DSA-87
-  identity, its CertificateVerify, which it writes through `srv_frag`
+  `STACK_BUDGET_MLDSA_SIGN`; every host server object and the
+  PROFILE=cnsa2 server role package them, and `CH_MLDSA_SIGN_TEST`
+  declares their two test entries, docs/decisions.md 159;
+  `srv_mldsa.[ch]` is the ML-DSA-87 identity of both, which a host
+  server signs with first when the client offers mldsa87
+  (docs/decisions.md 180), its CertificateVerify, which it writes through `srv_frag`
   from a frame under `STACK_BUDGET_SRV_MLDSA`, and its boot check, and
   `srv_auth.c` compiles to nothing under the profile, docs/decisions.md
   162) + `mldsa_vector.[ch]` (ML-DSA-87's NTT, inverse NTT and two
@@ -403,8 +405,8 @@ Home: github.com/c4milo.
   and no library source reads it. Every object with a server role
   exports `ch_chain_from_pem`, and every one outside PROFILE=cnsa2
   exports `ch_p256_key_from_pem`. Every TRUST=webpki object exports
-  `ch_anchors_from_pem`. Under `CH_SIGN_MLDSA`, which the PROFILE=cnsa2
-  server object sets, `ch_mldsa_key_from_pem` reads a PKCS #8 seed or
+  `ch_anchors_from_pem`. Under `CH_SIGN_MLDSA`, which every host server
+  object and the PROFILE=cnsa2 server object set, `ch_mldsa_key_from_pem` reads a PKCS #8 seed or
   both form and expands the seed once. Its frame holds the 4,962-byte DER
   under `STACK_BUDGET_PEM_FILES_MLDSA`. A program calls
   them while it reads its files, and no session calls them. None does
