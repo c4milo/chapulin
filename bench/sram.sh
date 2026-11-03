@@ -58,7 +58,10 @@ RXBUF_WEBPKI=$("$TMP/floor_webpki" | awk '{print $2}')
 # ClientHello lists two more suites (docs/decisions.md 58).
 SUITE_DEFS="-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME"
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER $SUITE_DEFS -I. -o "$TMP/sz_server_aes" "$TMP/sz.c"
+# A host server holds the mldsa87 slot beside the other two
+# (docs/decisions.md 180), so its ch_cfg carries the define the Makefile
+# gives a host server object.
+cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -DCH_SIGN_MLDSA $SUITE_DEFS -I. -o "$TMP/sz_server_aes" "$TMP/sz.c"
 SESSION_SERVER_AES=$("$TMP/sz_server_aes" | awk '{print $2}')
 # shellcheck disable=SC2086
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $SUITE_DEFS -I. -o "$TMP/sz_webpki_aes" "$TMP/sz.c"
@@ -74,7 +77,7 @@ RXBUF_WEBPKI_AES=$("$TMP/floor_webpki_aes" | awk '{print $2}')
 # on those two architectures alone, so these rows are host figures.
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME -I. -o "$TMP/sz_webpki_host" "$TMP/sz.c"
 SESSION_WEBPKI_HOST=$("$TMP/sz_webpki_host" | awk '{print $2}')
-cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -DCH_CPU_RUNTIME -I. -o "$TMP/sz_server_host" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA -I. -o "$TMP/sz_server_host" "$TMP/sz.c"
 SESSION_SERVER_HOST=$("$TMP/sz_server_host" | awk '{print $2}')
 # ch_quic in the object colibri links, ROLE=both TRUST=webpki
 # TRANSPORT=quic-nonblocking, without and with the suite: under SUITE=aesgcm each
@@ -242,18 +245,25 @@ head -1 "$TMP/webpki_device_without_mlkem.stack"
 echo "-- KEX=pq; ch_connect peak includes ML-KEM's K-PKE frames --"
 stack_report pq STACK_MAKE=KEX=pq
 head -1 "$TMP/pq.stack"
-echo "-- ROLE=server; ch_srv_accept peak is the deeper of the hybrid encapsulation and the RSA-PSS signer --"
+# A host server signs ML-DSA-87 beside its other two identities
+# (docs/decisions.md 180), and that signer is its deepest chain. Each row
+# after the first prunes one more chain to show the next one.
+echo "-- ROLE=server; ch_srv_accept peak = the ML-DSA-87 signer --"
 stack_report server "STACK_MAKE=ROLE=server TRUST=none"
 head -1 "$TMP/server.stack"
-grep '^ch_chain_from_pem\|^ch_p256_key_from_pem' "$TMP/server.stack"
-echo "-- ROLE=server without rsa_sign64_pss; ch_srv_accept peak = the hybrid encapsulation --"
-stack_report server_without_rsa_sign64_pss "STACK_MAKE=ROLE=server TRUST=none" \
-    STACK_PRUNE=rsa_sign64_pss
-head -1 "$TMP/server_without_rsa_sign64_pss.stack"
-echo "-- ROLE=server without rsa_sign64_pss and srv_kex_share; peak = the ECDSA signer --"
-stack_report server_without_rsa_sign64_pss_srv_kex_share "STACK_MAKE=ROLE=server TRUST=none" \
-    STACK_PRUNE=rsa_sign64_pss,srv_kex_share
-head -1 "$TMP/server_without_rsa_sign64_pss_srv_kex_share.stack"
+grep '^ch_chain_from_pem\|^ch_p256_key_from_pem\|^ch_mldsa_key_from_pem' "$TMP/server.stack"
+echo "-- ROLE=server without srv_mldsa_send_certificate_verify; peak = the RSA-PSS signer --"
+stack_report server_without_srv_mldsa_send_certificate_verify "STACK_MAKE=ROLE=server TRUST=none" \
+    STACK_PRUNE=srv_mldsa_send_certificate_verify
+head -1 "$TMP/server_without_srv_mldsa_send_certificate_verify.stack"
+echo "-- the same without rsa_sign64_pss; peak = the ML-KEM encapsulation --"
+stack_report server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss "STACK_MAKE=ROLE=server TRUST=none" \
+    STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss
+head -1 "$TMP/server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss.stack"
+echo "-- the same without srv_kex_share; peak = the ECDSA signer --"
+stack_report server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss_srv_kex_share \
+    "STACK_MAKE=ROLE=server TRUST=none" STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss,srv_kex_share
+head -1 "$TMP/server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss_srv_kex_share.stack"
 echo "-- ROLE=server device object; no 64-bit signer and no wide P-256 field --"
 stack_report server_device "STACK_MAKE=ROLE=server TRUST=none HOST_TARGET="
 head -1 "$TMP/server_device.stack"
@@ -349,10 +359,12 @@ TMPOUT="$TMP/results-sram.csv"
     row static_working_set_server_arm64 "$((SESSION_SERVER + RXBUF))"
     row static_working_set_server_rv32 "$((SESSION_RV32_SERVER + RXBUF))"
     row stack_accept_server "$(peak server ch_srv_accept)"
-    row stack_accept_server_without_rsa_sign64_pss \
-        "$(peak server_without_rsa_sign64_pss ch_srv_accept)"
-    row stack_accept_server_without_rsa_sign64_pss_srv_kex_share \
-        "$(peak server_without_rsa_sign64_pss_srv_kex_share ch_srv_accept)"
+    row stack_accept_server_without_srv_mldsa_send_certificate_verify \
+        "$(peak server_without_srv_mldsa_send_certificate_verify ch_srv_accept)"
+    row stack_accept_server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss \
+        "$(peak server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss ch_srv_accept)"
+    row stack_accept_server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss_srv_kex_share \
+        "$(peak server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss_srv_kex_share ch_srv_accept)"
     row stack_accept_server_device "$(peak server_device ch_srv_accept)"
     row stack_accept_server_device_without_srv_kex_share \
         "$(peak server_device_without_srv_kex_share ch_srv_accept)"

@@ -1405,6 +1405,20 @@ endif
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter mlkem.c,$(LIB_SRCS)),mlkem_vector.c)
 endif
+# ML-DSA-87's signer in every host server object (docs/decisions.md 180):
+# the mldsa87 slot of ch_srv_cfg beside the ECDSA and RSA ones, the
+# signer's five files, and the verifier that the signer's own check and
+# ch_srv_check run. A device server holds none of it, because the
+# signer's frames do not fit a device's stack. The profile's server added
+# them with its role above.
+ifneq ($(CPU_RUNTIME_DEF),)
+ifneq ($(filter server both,$(ROLE)),)
+ifneq ($(PROFILE),cnsa2)
+LIB_DEF += -DCH_SIGN_MLDSA
+LIB_SRCS += $(filter-out $(LIB_SRCS),$(MLDSA_SRCS) $(MLDSA_SIGN_SRCS))
+endif
+endif
+endif
 # ML-DSA-87's NTT. A device object runs mldsa_poly.c's and
 # mldsa_sign_poly.c's loops. A host object also holds mldsa_vector.c, the
 # same transforms and products on 32-bit lanes, NEON's four on arm64 and
@@ -2553,8 +2567,10 @@ PUBLIC_BUILD := ch_build
 # (docs/decisions.md 131).
 # A PROFILE=cnsa2 server holds no P-256 identity, so it exports the
 # ML-DSA-87 key call in the P-256 one's place (docs/decisions.md 162).
+# Every other host server exports both key calls (docs/decisions.md 180).
 PUBLIC_PEM := $(if $(filter -DCH_ROLE_SERVER,$(ROLE_DEF)),ch_chain_from_pem \
-                $(if $(filter cnsa2,$(PROFILE)),ch_mldsa_key_from_pem,ch_p256_key_from_pem)) \
+                $(if $(filter cnsa2,$(PROFILE)),,ch_p256_key_from_pem) \
+                $(if $(filter -DCH_SIGN_MLDSA,$(ROLE_DEF) $(LIB_DEF)),ch_mldsa_key_from_pem)) \
               $(if $(filter webpki,$(TRUST)),ch_anchors_from_pem)
 # The lists above name each export as its header declares it. Nine of
 # those names belong to exports that objects of more than one transport
@@ -3777,11 +3793,15 @@ bin/tlsserver: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c t
 # sessions state the AES instructions (test/tls_server.c), which
 # test/e2e.sh drives with s_client restricted to one suite at a time. A
 # compiler that fails the host test builds none of it, and e2e says so.
+# A host server signs ML-DSA-87 as well (docs/decisions.md 180), so the
+# binary holds the signer, its verifier and the PEM files that read its key.
 TLSSERVER_AES_SRCS = $(call host_srcs,$(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c \
-                       handshake_post.c aes.c $(AES_HW_SRCS) gcm.c sha512.c sha512_compress.c)
+                       handshake_post.c aes.c $(AES_HW_SRCS) gcm.c sha512.c sha512_compress.c \
+                       $(MLDSA_SRCS) $(MLDSA_SIGN_SRCS) $(PEM_READER_SRCS) \
+                       $(PEM_FILES_SRCS))
 bin/tlsserver_aes: test/tls_server.c $(TLSSERVER_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER $(HOST_SUITE_DEF) -I. -Itest -o $@ test/tls_server.c \
+	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_SIGN_MLDSA $(HOST_SUITE_DEF) -I. -Itest -o $@ test/tls_server.c \
 	  $(TLSSERVER_AES_SRCS)
 # The same server on AES=extern, its AES blocks answered by
 # test/aes_extern_hook.c. It needs no AES instruction, so e2e runs it on
@@ -3819,6 +3839,19 @@ bin/cnsa2_server_test: test/cnsa2_server_test.c $(wildcard *.c *.h) $(TESTH)
 	srcs=$$(printf '%s\n' "$$lines" | sed -n 1p); def=$$(printf '%s\n' "$$lines" | sed -n 2p); \
 	echo "$(CC) $(HOST_CFLAGS) $$def -I. -Itest -o $@ test/cnsa2_server_test.c <the object's sources>"; \
 	$(CC) $(HOST_CFLAGS) $$def -I. -Itest -o $@ test/cnsa2_server_test.c $$srcs
+
+# The ML-DSA-87 identity of a host server outside the profile
+# (test/srv_mldsa_identity_test.c, docs/decisions.md 180), over the sources
+# the host ROLE=server object packages under its defines, read from this
+# Makefile by print-lib-lists as bin/cnsa2_server_test reads the profile's.
+SRV_MLDSA_LIB := ROLE=server TRUST=none RAND=extern
+bin/srv_mldsa_identity_test: test/srv_mldsa_identity_test.c $(wildcard *.c *.h) $(TESTH)
+	@mkdir -p bin
+	@lines=$$($(MAKE) --no-print-directory -s print-lib-lists $(SRV_MLDSA_LIB) \
+	  TRANSPORT=tcp-blocking | tail -2); \
+	srcs=$$(printf '%s\n' "$$lines" | sed -n 1p); def=$$(printf '%s\n' "$$lines" | sed -n 2p); \
+	echo "$(CC) $(HOST_CFLAGS) $$def -I. -Itest -o $@ test/srv_mldsa_identity_test.c <the object's sources>"; \
+	$(CC) $(HOST_CFLAGS) $$def -I. -Itest -o $@ test/srv_mldsa_identity_test.c $$srcs
 
 # The role's unit vectors: the messages srv_message.c writes, the cookie
 # srv_cookie.c mints and opens, and the ClientHello srv_parser.c reads. It
@@ -4969,7 +5002,7 @@ CHECK_LIBRARY_BUILDS := check-lib-drbg check-lib-session check-lib-session-cxx c
               check-lib-quic check-lib-quic-webpki-both check-lib-server check-lib-server-tcp-nonblocking \
               check-lib-raw-ecdsa-pq check-lib-cnsa2 check-lib-cnsa2-ca check-lib-cnsa2-tcp-nonblocking \
               check-lib-cnsa2-quic check-lib-cnsa2-mldsa check-lib-cnsa2-ca-mldsa \
-              check-lib-cnsa2-ca-mldsa-quic check-cnsa2-server check-lib-cnsa2-server \
+              check-lib-cnsa2-ca-mldsa-quic check-cnsa2-server check-srv-mldsa check-lib-cnsa2-server \
               check-lib-cnsa2-server-tcp-nonblocking \
               check-lib-cnsa2-server-quic check-lib-exporter check-lib-dnssec check-lib-dnssec-quic \
               check-lib-server-quic-keylog \
@@ -5288,6 +5321,12 @@ ifeq ($(HOST_TARGET),)
 	@echo "SKIP bin/cnsa2_server_test: $(CC) fails the host test"
 else
 	@./bin/cnsa2_server_test
+endif
+check-srv-mldsa: $(if $(HOST_TARGET),bin/srv_mldsa_identity_test)
+ifeq ($(HOST_TARGET),)
+	@echo "SKIP bin/srv_mldsa_identity_test: $(CC) fails the host test"
+else
+	@./bin/srv_mldsa_identity_test
 endif
 check-lib-cnsa2-server:
 ifeq ($(HOST_TARGET),)

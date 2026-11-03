@@ -89,7 +89,7 @@ pub const MlDsa87Key = if (has_mldsa_key) struct {
     pub fn wipe(self: *@This()) void {
         std.crypto.secureZero(u8, &self.private_key);
     }
-} else @compileError("MlDsa87Key needs PROFILE=cnsa2 ROLE=server");
+} else @compileError("MlDsa87Key needs a host server object, or PROFILE=cnsa2 ROLE=server");
 
 /// A client's trust anchors, decoded from a CA bundle by ch_anchors_from_pem into the caller's
 /// rooms. anchors is the start of the caller's room that the call filled. Each anchor points into

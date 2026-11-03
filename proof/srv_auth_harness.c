@@ -49,10 +49,38 @@
 // SHA-256 is a contract stub (CH_PROOF_STUB_SHA256 in proof/harness.h),
 // so this formula holds the assembly and not the compression function.
 // sha256_harness.c proves the real one.
+//
+// Under CH_SIGN_MLDSA, through proof/srv_auth_mldsa_harness.c, the slot
+// mldsa87 joins the other two (docs/decisions.md 180). srv_mldsa.h's four
+// calls are contract stubs, which proof/srv_mldsa_host_harness.c proves
+// real, and two more facts hold: srv_select_sigalg names mldsa87 exactly
+// when the client offered it and the slot is live, and
+// srv_sign_certificate_verify refuses mldsa87, which srv_mldsa.c signs.
 #define CH_PROOF_STUB_SHA256
 #include "harness.h"
 
 #include "srv_auth.c"
+
+#ifdef CH_SIGN_MLDSA
+// Whether the mldsa87 slot is live, chosen once per configuration, so
+// every call about one configuration gets one answer.
+static int mldsa_live;
+
+int srv_mldsa_live(const ch_cfg *cfg) {
+    __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "srv_mldsa_live: cfg readable");
+    return mldsa_live;
+}
+
+int srv_mldsa_usable(const ch_cfg *cfg) {
+    __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "srv_mldsa_usable: cfg readable");
+    return nondet_u8() & 1;
+}
+
+int srv_mldsa_check(const ch_cfg *cfg) {
+    __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "srv_mldsa_check: cfg readable");
+    return nondet_u8() ? CH_OK : CH_EINVAL;
+}
+#endif
 
 // The signer and verifier contracts, asserted. Each one states the
 // buffers the real function reads and writes at the lengths it uses,
@@ -211,6 +239,10 @@ static void make_identities(ch_cfg *cfg) {
     havoc_keys();
     make_identity(&cfg->srv.ecdsa_p256);
     make_identity(&cfg->srv.rsa_pss);
+#ifdef CH_SIGN_MLDSA
+    make_identity(&cfg->srv.mldsa87);
+    mldsa_live = nondet_u8() & 1;
+#endif
 }
 
 // One of the two schemes this build signs, which is the domain
@@ -261,5 +293,24 @@ int main(void) {
 
     make_identities(&cfg);
     (void)srv_identity_check(&cfg, nondet_scheme());
+
+#ifdef CH_SIGN_MLDSA
+    // mldsa87 first: named exactly when offered and live, and every other
+    // offer and slot then answers as without it.
+    make_identities(&cfg);
+    uint8_t offered = nondet_u8();
+    uint16_t chosen = srv_select_sigalg(&cfg, offered);
+    __CPROVER_assert((chosen == SIGALG_MLDSA87) ==
+                         ((offered & SRV_SIGALG_MLDSA87) != 0 && mldsa_live),
+                     "mldsa87 is selected exactly when offered and provisioned");
+    // srv_sign_certificate_verify leaves mldsa87 to srv_mldsa.c.
+    alert = 0;
+    __CPROVER_assert(srv_sign_certificate_verify(&cfg, SIGALG_MLDSA87, transcript, SHA256_LEN, sig,
+                                                 sizeof sig, &sig_len, &alert) == CH_EAUTH &&
+                         alert == ALERT_INTERNAL_ERROR,
+                     "the classic signers refuse mldsa87");
+    int checked = srv_identity_check(&cfg, SIGALG_MLDSA87);
+    __CPROVER_assert(checked == CH_OK || checked == CH_EINVAL, "the mldsa87 check answers");
+#endif
     return 0;
 }

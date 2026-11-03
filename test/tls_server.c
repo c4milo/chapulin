@@ -16,7 +16,13 @@
 // tlsserver <cert.der> <key.pem>: an ML-DSA-87 certificate and the PKCS #8
 // key file OpenSSL writes, which ch_mldsa_key_from_pem expands into the
 // one identity the profile holds (docs/decisions.md 162). Those binaries
-// link the packaged object, so this file calls the public API alone. The ticket key and the cookie
+// link the packaged object, so this file calls the public API alone.
+//
+// A host server outside the profile, bin/tlsserver_aes, also signs
+// ML-DSA-87 (docs/decisions.md 180), and takes two more arguments for that
+// identity: tlsserver <cert.der> <priv-hex> <pub-hex> [<mldsa.der>
+// <mldsa.pem>]. With them the server proves itself with ML-DSA-87 to a
+// client that offers mldsa87, and with ECDSA P-256 to every other. The ticket key and the cookie
 // key are drawn fresh at start, so tickets live as long as this process, and the clock is time(),
 // which is what ch_cfg.now_seconds asks for.
 #include <arpa/inet.h>
@@ -35,7 +41,7 @@
 #include "srv.h"
 #include "srv_ticket.h"
 #include "test_random.h"
-#ifdef CH_PROFILE_CNSA2
+#ifdef CH_SIGN_MLDSA
 #include "pem_files.h"
 #endif
 
@@ -135,8 +141,58 @@ static int load_identity(char **argv, ch_cert *cert) {
 #endif
 }
 
+#if defined(CH_SIGN_MLDSA) && !defined(CH_PROFILE_CNSA2)
+// The optional ML-DSA-87 identity of a host server: its certificate, and
+// the key pair ch_mldsa_key_from_pem expands from the PKCS #8 file.
+static uint8_t mldsa_cert_der[8192];
+static uint8_t mldsa_priv[4896];
+static uint8_t mldsa_pub[2592];
+static uint8_t mldsa_key_pem[16384];
+static ch_cert mldsa_chain[1];
+
+static int load_mldsa(const char *cert_path, const char *key_path) {
+    FILE *f = fopen(cert_path, "rb");
+    if (f == NULL) {
+        return -1;
+    }
+    size_t n = fread(mldsa_cert_der, 1, sizeof mldsa_cert_der, f);
+    (void)fclose(f);
+    f = fopen(key_path, "rb");
+    if (n == 0 || n == sizeof mldsa_cert_der || f == NULL) {
+        return -1;
+    }
+    size_t pem_len = fread(mldsa_key_pem, 1, sizeof mldsa_key_pem, f);
+    (void)fclose(f);
+    int rc = ch_mldsa_key_from_pem(CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES, mldsa_key_pem, pem_len,
+                                   mldsa_cert_der, n, mldsa_priv, mldsa_pub);
+    memset(mldsa_key_pem, 0, sizeof mldsa_key_pem);
+    mldsa_chain[0].der = mldsa_cert_der;
+    mldsa_chain[0].len = n;
+    return rc == CH_OK ? 0 : -1;
+}
+
+// Sets the mldsa87 slot when the command line named the identity.
+static void set_mldsa(ch_cfg *cfg) {
+    if (mldsa_chain[0].len == 0) {
+        return;
+    }
+    ch_identity *id = &cfg->srv.mldsa87;
+    id->chain = mldsa_chain;
+    id->chain_count = 1;
+    id->priv = mldsa_priv;
+    id->priv_len = sizeof mldsa_priv;
+    id->pub = mldsa_pub;
+    id->pub_len = sizeof mldsa_pub;
+}
+#else
+static void set_mldsa(ch_cfg *cfg) {
+    (void)cfg;
+}
+#endif
+
 // The one identity the configuration proves itself with: ECDSA P-256, or
-// ML-DSA-87 under PROFILE=cnsa2.
+// ML-DSA-87 under PROFILE=cnsa2. A host server adds its optional
+// ML-DSA-87 identity through set_mldsa.
 static void set_identity(ch_cfg *cfg, const ch_cert *chain) {
 #ifdef CH_PROFILE_CNSA2
     ch_identity *id = &cfg->srv.mldsa87;
@@ -197,9 +253,14 @@ int main(int argc, char **argv) {
 #else
     int args_want = 4;
 #endif
+#if defined(CH_SIGN_MLDSA) && !defined(CH_PROFILE_CNSA2)
+    if (argc == args_want + 2 && load_mldsa(argv[4], argv[5]) == 0) {
+        argc = args_want;
+    }
+#endif
     if (argc != args_want || load_identity(argv, &chain[0]) != 0) {
-        (void)fprintf(stderr, "usage: tlsserver <cert.der> <priv-hex> <pub-hex>, or under "
-                              "PROFILE=cnsa2 <cert.der> <key.pem>\n");
+        (void)fprintf(stderr, "usage: tlsserver <cert.der> <priv-hex> <pub-hex> [<mldsa.der> "
+                              "<mldsa.pem>], or under PROFILE=cnsa2 <cert.der> <key.pem>\n");
         return 2;
     }
     ch_rand_bytes(ticket_key, sizeof ticket_key);
@@ -209,6 +270,7 @@ int main(int argc, char **argv) {
     ch_cfg boot;
     memset(&boot, 0, sizeof boot);
     set_identity(&boot, chain);
+    set_mldsa(&boot);
     boot.srv.cookie_key = cookie_key;
     boot.srv.ticket_key = ticket_key;
 #ifdef CH_CPU_RUNTIME
@@ -240,6 +302,7 @@ int main(int argc, char **argv) {
         cfg.recv = io_recv;
         cfg.io = &fd;
         set_identity(&cfg, chain);
+        set_mldsa(&cfg);
         cfg.srv.cookie_key = cookie_key;
         cfg.srv.ticket_key = ticket_key;
         cfg.now_seconds = wall_clock;
@@ -254,6 +317,7 @@ int main(int argc, char **argv) {
             (void)printf("handshake: %s\n", t.psk_selected ? "resumed" : "full");
             (void)printf("group: 0x%04x\n", (unsigned)t.group);
             (void)printf("suite: 0x%04x\n", (unsigned)t.suite);
+            (void)printf("sigalg: 0x%04x\n", (unsigned)t.sigalg);
             (void)fflush(stdout);
             echo_reversed(&t);
         } else {

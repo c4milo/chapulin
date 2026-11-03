@@ -9,7 +9,7 @@ const c = chapulin.c;
 
 const has_server = @hasField(c.ch_cfg, "srv");
 const has_mldsa_server = has_server and @hasField(c.ch_srv_cfg, "mldsa87");
-const has_classic_server = has_server and !has_mldsa_server;
+const has_classic_server = has_server and @hasField(c.ch_srv_cfg, "ecdsa_p256");
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
 const has_suite_order = has_server and @hasField(c.ch_srv_cfg, "cipher_suites");

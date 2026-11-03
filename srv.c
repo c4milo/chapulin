@@ -292,6 +292,11 @@ int ch_srv_check(const ch_cfg *cfg) {
         srv_identity_check(cfg, SIGALG_RSA_PSS_RSAE_SHA256) != CH_OK) {
         return CH_EINVAL;
     }
+#ifdef CH_SIGN_MLDSA
+    if ((live & SRV_IDENTITY_MLDSA87) != 0 && srv_identity_check(cfg, SIGALG_MLDSA87) != CH_OK) {
+        return CH_EINVAL;
+    }
+#endif
     return CH_OK;
 #endif
 }

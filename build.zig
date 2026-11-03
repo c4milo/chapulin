@@ -549,6 +549,12 @@ fn cnsa2Server(config: Config) bool {
     return config.profile == .cnsa2 and config.role == .server;
 }
 
+/// A host server outside the profile, which signs ML-DSA-87 beside ECDSA
+/// P-256 and RSA-PSS (docs/decisions.md 180).
+fn signsMldsaBeside(config: Config, host: bool) bool {
+    return host and config.role != .client and config.profile != .cnsa2;
+}
+
 /// A raw or ca client: the one build whose key exchange KEX chooses, and
 /// the one product that builds the portable object on a host target.
 fn deviceClient(config: Config) bool {
@@ -611,6 +617,13 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // CPU_RUNTIME_DEF: the host object, which each session's ch_cfg.cpu
     // describes the CPU to.
     if (host) defs = concat(b, &.{ defs, &.{"-DCH_CPU_RUNTIME"} });
+    // ML-DSA-87's signer and verifier in every host server object, beside
+    // its ECDSA and RSA identities (docs/decisions.md 180). The profile's
+    // server added them with its role.
+    if (signsMldsaBeside(config, host)) {
+        defs = concat(b, &.{ defs, &.{"-DCH_SIGN_MLDSA"} });
+        lib_srcs = concat(b, &.{ lib_srcs, without(b, concat(b, &.{ &mldsa_srcs, &mldsa_sign_srcs }), lib_srcs) });
+    }
     // The wide X25519 field, which a session's
     // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks (docs/decisions.md 52 and 89),
     // and the field on MULX and ADX, which CH_CPU_BMI2_ADX beside it picks
@@ -716,6 +729,7 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // bundle in every TRUST=webpki object.
     const public_pem = concat(b, &.{
         if (cnsa2Server(config)) &public_pem_server_cnsa2 else if (config.role != .client) &public_pem_server else &.{},
+        if (signsMldsaBeside(config, host)) &.{"ch_mldsa_key_from_pem"} else &.{},
         if (config.trust == .webpki) &public_pem_webpki else &.{},
     });
     const public_dnssec_names: Names = if (config.dnssec == .on) &public_dnssec else &.{};

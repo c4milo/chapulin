@@ -15677,3 +15677,43 @@ does nothing more.
       code. **The hybrid first, then ML-KEM-1024,** because a client that
       lists both asks for CNSA 2.0, and the hybrid is not a CNSA 2.0
       key exchange.
+
+180. **Every host server holds an ML-DSA-87 identity and signs with it
+    first.** colibri's server (https://github.com/c4milo/colibri/issues/115)
+    has to prove itself with CNSA 2.0's signature to a client that asks
+    for it, and with ECDSA or RSA to every other client, from one object
+    and with no build option. Camilo ruled on 2026-11-02 that every host
+    server object holds the identity.
+
+    - **What changes.** A host server object, `ROLE=server` or
+      `ROLE=both` under every trust value, takes `CH_SIGN_MLDSA` and the
+      signer, its verifier and `ch_mldsa_key_from_pem`. `ch_srv_cfg`
+      gains the `mldsa87` slot beside the other two, and
+      `srv_select_sigalg` names mldsa87 first whenever the client offers
+      it and the slot is set. `srv_mldsa.c` signs and checks that slot in
+      every such object, and under the profile it still defines
+      `srv_auth.h`'s calls alone (entry 162).
+    - **The signed content.** The profile signs over a SHA-384
+      transcript hash alone. Here a ChaCha20 or AES-128-GCM suite
+      gives a SHA-256 hash, so the content takes the hash of the
+      selected suite: 130 or 146 bytes. draft-ietf-tls-mldsa names no
+      suite, and OpenSSL 3.6's `s_client` checks both lengths in
+      `test/e2e.sh`.
+    - **Numbers.** `bench/sram.sh` on the M1 Pro: `ch_srv_accept` peaks
+      at 28,752 bytes in the host server object, against 12,752 through
+      the RSA-PSS signer before, and the slot adds 48 bytes to
+      `ch_tls`. The peak counts whether or not a deployment sets the
+      slot. The signer's files add about 25 kB of code on arm64.
+    - **What holds it.** `bin/srv_mldsa_identity_test` runs the boot
+      check at the key lengths and with a foreign public key, and the
+      order of the three schemes. `test/e2e.sh` runs eight connections
+      against OpenSSL under the three suites, resumed, and with ECDSA
+      alone. The `srv_auth_mldsa` harness proves the order and that the
+      classic signers refuse mldsa87, and `srv_mldsa_host` proves
+      `srv_mldsa.c`'s memory safety in a host server. A `.violation`
+      asks about ECDSA before mldsa87.
+    - **Rejected:** **ML-DSA-87 in colibri's object alone**, a trust
+      mode condition in the signature code, its tests and its proofs.
+      **A build option**, which colibri's request excludes. **A device
+      server with the signer**, whose 28 kB of stack does not fit a
+      device.

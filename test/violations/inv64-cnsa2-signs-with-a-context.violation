@@ -7,6 +7,8 @@ reason: the server signs its CertificateVerify content under a one-byte
   empty context, and test_identity_and_cpu requires it to pass.
 
 --- old
-                                     content, n, NULL, 0, rnd);
+    return mldsa87_sign_cpu(cfg->cpu, sig, id->priv, id->priv_len, id->pub, id->pub_len, content, n,
+                            NULL, 0, rnd);
 --- new
-                                     content, n, (const uint8_t *)"x", 1, rnd);
+    return mldsa87_sign_cpu(cfg->cpu, sig, id->priv, id->priv_len, id->pub, id->pub_len, content, n,
+                            (const uint8_t *)"x", 1, rnd);

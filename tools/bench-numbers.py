@@ -148,12 +148,15 @@ STACK_PROSE = [
      [["stack_connect_webpki_device_without_mlkem"]]),
     ("`ch_srv_accept` peaks at {} bytes in the host object this host builds",
      [["stack_accept_server"]]),
-    ("(`STACK_PRUNE=rsa_sign64_pss`) the deepest chain is the encapsulation to the "
+    ("(`STACK_PRUNE=srv_mldsa_send_certificate_verify`) the deepest chain is `rsa_sign64.c`'s RSA-PSS "
+     "signer, at {} bytes",
+     [["stack_accept_server_without_srv_mldsa_send_certificate_verify"]]),
+    ("(`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss`) it is the encapsulation to the "
      "client's key into K-PKE encrypt and Keccak, at {} bytes",
-     [["stack_accept_server_without_rsa_sign64_pss"]]),
-    ("(`STACK_PRUNE=rsa_sign64_pss,srv_kex_share`) it is the ECDSA signer on the wide "
-     "P-256 field, at {} bytes",
-     [["stack_accept_server_without_rsa_sign64_pss_srv_kex_share"]]),
+     [["stack_accept_server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss"]]),
+    ("(`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss,srv_kex_share`) it is the ECDSA "
+     "signer on the wide P-256 field, at {} bytes",
+     [["stack_accept_server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss_srv_kex_share"]]),
     ("its `ch_srv_accept` peaks at {} bytes, through the encapsulation "
      "(`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`)",
      [["stack_accept_server_device"]]),

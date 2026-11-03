@@ -124,8 +124,10 @@ typedef struct {
     size_t pub_len;
 } ch_identity;
 
-// mldsa87 is the one identity of a PROFILE=cnsa2 server
-// (docs/decisions.md 162). priv points at the 4,896-byte ML-DSA-87
+// mldsa87 is the ML-DSA-87 identity of an object that signs ML-DSA-87
+// (CH_SIGN_MLDSA): the one identity of a PROFILE=cnsa2 server
+// (docs/decisions.md 162), and a third beside the other two in every
+// host server (docs/decisions.md 180). priv points at the 4,896-byte ML-DSA-87
 // secret key and pub at the 2,592-byte public key, the two rooms
 // ch_mldsa_key_from_pem writes (pem_files.h). So priv_len is 4896 and
 // pub_len is 2592. mldsa87_sign reads priv. ch_srv_check's self-test
@@ -133,16 +135,16 @@ typedef struct {
 
 // The server's own configuration, which ch_cfg carries as one member.
 typedef struct {
-#ifdef CH_PROFILE_CNSA2
-    // The one signing identity a PROFILE=cnsa2 server offers. CNSA 2.0
-    // admits no ECDSA or RSA key, so the profile holds neither slot.
-    ch_identity mldsa87; // signs mldsa87
-#else
-    // The two signing identities this server may offer, one per
-    // signature scheme. The scheme the client and this build agree on
-    // picks which one signs the CertificateVerify.
+#ifndef CH_PROFILE_CNSA2
+    // The signing identities this server may offer, one per signature
+    // scheme. The scheme the client and this build agree on picks which
+    // one signs the CertificateVerify. CNSA 2.0 admits no ECDSA or RSA
+    // key, so the profile holds neither of these two slots.
     ch_identity ecdsa_p256; // signs ecdsa_secp256r1_sha256
     ch_identity rsa_pss;    // signs rsa_pss_rsae_sha256
+#endif
+#ifdef CH_SIGN_MLDSA
+    ch_identity mldsa87; // signs mldsa87
 #endif
 
     // The HMAC key that protects the HelloRetryRequest cookie,

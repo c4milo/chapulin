@@ -29,14 +29,14 @@ and `size_t` lengths, so that build needs 120 bytes less than the host figure on
 | **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15410** | **15290** |
 | `ch_tls` under `ROLE=server` (includes 1669 B TX staging) | 2440 | 2272 |
 | **total static working set, `ROLE=server`** (2048 buffer) | **4488** | **4320** |
-| `ch_tls` under `ROLE=server SUITE=aesgcm` | 3208 | — |
-| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **5256** | — |
+| `ch_tls` under `ROLE=server SUITE=aesgcm` | 3256 | — |
+| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **5304** | — |
 | `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3856 | — |
 | **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **16194** | — |
 | `ch_tls` under `TRUST=webpki`, host object | 3072 | — |
 | **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15410** | — |
-| `ch_tls` under `ROLE=server`, host object | 2440 | — |
-| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4488** | — |
+| `ch_tls` under `ROLE=server`, host object | 2488 | — |
+| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4536** | — |
 | `ch_tls` under `PROFILE=cnsa2 TRUST=raw-mldsa` | 2992 | — |
 | **total static working set, `PROFILE=cnsa2 TRUST=raw-mldsa`** (7843 buffer, its floor) | **10835** | — |
 | `ch_tls` under `PROFILE=cnsa2 TRUST=ca-mldsa` | 2992 | — |
@@ -96,11 +96,11 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`KEX=pq`) | 11952 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1888 |
 | peak stack, `ch_write` / `ch_close` | 1616 / 896 |
-| peak stack, `ch_srv_accept` (`ROLE=server`) | 12752 |
-| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12912 |
+| peak stack, `ch_srv_accept` (`ROLE=server`) | 28752 |
+| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 28912 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 13808 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`) | 16448 |
-| peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`) | 28032 |
+| peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`) | 28048 |
 
 Two of these rows grew in October 2026, and `bench/stack.py` names the
 frame each time:
@@ -156,18 +156,23 @@ server holds the hybrid ([`docs/decisions.md`](decisions.md) 54) and
 ML-KEM-1024 (179). Its ServerHello is built in the clear in the same
 staging array, and the ML-KEM-1024 one carries a 1,568-byte share, so
 the array holds 1,664 bytes of message behind the record header.
-`ch_srv_accept` peaks at 12,752
-bytes in the host object this host builds, through `rsa_sign64.c`'s
-RSA-PSS signer, which holds a modulus record for each prime, the
-signature it checks and a table of sixteen powers
-([`docs/decisions.md`](decisions.md) 95). Its square holds a copy of 2a
-(106) and calls `rsa_mont64_blocks.c`'s square, which multiplies in
-blocks of four words under clang for arm64 (118). With that signer
-pruned from the call graph (`STACK_PRUNE=rsa_sign64_pss`) the deepest
-chain is the encapsulation to the client's key into K-PKE encrypt and
-Keccak, at 8,992 bytes. With the encapsulation pruned as well
-(`STACK_PRUNE=rsa_sign64_pss,srv_kex_share`) it is the ECDSA signer on
-the wide P-256 field, at 6,192 bytes. After each wide operation,
+`ch_srv_accept` peaks at 28,752 bytes in the host object this host
+builds, through the ML-DSA-87 signer, which every host server holds
+beside its ECDSA and RSA identities (180) and which the
+`PROFILE=cnsa2` server also runs. The peak counts whether or not a
+deployment sets the `mldsa87` slot. With the ML-DSA-87 CertificateVerify,
+whose own frame stages the 4,627-byte signature, pruned from the call
+graph (`STACK_PRUNE=srv_mldsa_send_certificate_verify`) the deepest chain is
+`rsa_sign64.c`'s RSA-PSS signer, at 12,752 bytes, which holds a modulus
+record for each prime, the signature it checks and a table of sixteen
+powers ([`docs/decisions.md`](decisions.md) 95). Its square holds a copy
+of 2a (106) and calls `rsa_mont64_blocks.c`'s square, which multiplies in
+blocks of four words under clang for arm64 (118). With the RSA signer
+pruned too (`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss`) it is the
+encapsulation to the client's key into K-PKE encrypt and Keccak, at
+8,992 bytes. With the encapsulation pruned as well
+(`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss,srv_kex_share`) it is the
+ECDSA signer on the wide P-256 field, at 6,192 bytes. After each wide operation,
 `p256_wide_wipe_below` writes zero over the stack below it, in a frame
 of 3,120 bytes. A device object holds neither the 64-bit signer nor the
 wide field: its `ch_srv_accept` peaks at 8,944 bytes, through the
@@ -222,7 +227,7 @@ column. `bench/sram.sh` measures:
 - a receive floor of 2,179 bytes, the 2,174-byte largest ClientHello of
   the profile's client behind its record header, and 2,698 bytes over
   QUIC;
-- a `ch_srv_accept` peak of 28,032 bytes, through the ML-DSA-87 signer's
+- a `ch_srv_accept` peak of 28,048 bytes, through the ML-DSA-87 signer's
   rejection loop under the CertificateVerify. With the signer pruned
   (`STACK_PRUNE=mldsa87_sign_cpu`) the peak is ML-KEM-1024's encapsulation,
   at 9,024 bytes.

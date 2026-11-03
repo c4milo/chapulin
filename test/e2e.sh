@@ -1702,6 +1702,53 @@ else
     CHSRV_AES_TESTS=""
     skip "chapulin server aesgcm tests: bin/tlsserver_aes is absent (no AES instructions)"
 fi
+# --- The host server's ML-DSA-87 identity beside its ECDSA P-256 one
+# (docs/decisions.md 180). bin/tlsserver_aes holds both. A client that
+# offers mldsa87 gets an ML-DSA-87 CertificateVerify under each suite, so
+# under a SHA-256 transcript hash and a SHA-384 one, and resumes its
+# ticket. A client that offers ECDSA alone still gets ECDSA. The server's
+# "sigalg:" line names the scheme that signed. ---
+chsrv_mldsa_line() {
+    local label=$1 state=$2 suite=$3 sigalg=$4
+    shift 4
+    printf '%s\n' 'dos firmas' | "$OPENSSL" s_client -connect "127.0.0.1:$PORT_CHSRV_MD" -tls1_3 \
+        -ciphersuites "$suite" -ign_eof "$@" > "$DIR/$label.log" 2>&1 || {
+        echo "FAIL $label: s_client exited nonzero"
+        cat "$DIR/$label.log" "$CHSRV_MD_LOG"
+        exit 1
+    }
+    if ! grep -q "^$state, TLSv1.3, Cipher is $suite" "$DIR/$label.log" ||
+        ! grep -q "^samrif sod$" "$DIR/$label.log" ||
+        [ "$(grep '^sigalg: ' "$CHSRV_MD_LOG" | tail -1)" != "sigalg: $sigalg" ]; then
+        echo "FAIL $label: want a $state session under $suite signed with $sigalg"
+        cat "$DIR/$label.log" "$CHSRV_MD_LOG"
+        exit 1
+    fi
+    echo "ok   $label"
+}
+if [ -x ./bin/tlsserver_aes ] &&
+    "$OPENSSL" list -tls-signature-algorithms 2>/dev/null | tr ':' '\n' | grep -qix mldsa87; then
+    "$OPENSSL" genpkey -algorithm ML-DSA-87 -out "$DIR/chsrv_md.key" 2>/dev/null
+    "$OPENSSL" req -new -x509 -key "$DIR/chsrv_md.key" -subj /CN=sapo -days 1 \
+        -outform DER -out "$DIR/chsrv_md.der" 2>/dev/null
+    CHSRV_BIN=./bin/tlsserver_aes start_chserver "$DIR/cert.der" "$PRIV" "$PUB" \
+        "$DIR/chsrv_md.der" "$DIR/chsrv_md.key"
+    PORT_CHSRV_MD=$SRV_PORT
+    CHSRV_MD_LOG=$SRV_LOG
+    for suite in TLS_CHACHA20_POLY1305_SHA256 TLS_AES_128_GCM_SHA256 TLS_AES_256_GCM_SHA384; do
+        chsrv_mldsa_line "chsrv-mldsa-$suite" New "$suite" 0x0906 \
+            -sigalgs mldsa87:ecdsa_secp256r1_sha256 -sess_out "$DIR/sess_chsrv_md_$suite.pem"
+        chsrv_mldsa_line "chsrv-mldsa-$suite-resume" Reused "$suite" 0x0000 \
+            -sigalgs mldsa87:ecdsa_secp256r1_sha256 -sess_in "$DIR/sess_chsrv_md_$suite.pem"
+    done
+    chsrv_mldsa_line chsrv-mldsa-ecdsa-first New TLS_AES_256_GCM_SHA384 0x0906 \
+        -sigalgs ecdsa_secp256r1_sha256:mldsa87
+    chsrv_mldsa_line chsrv-mldsa-ecdsa-alone New TLS_AES_256_GCM_SHA384 0x0403 \
+        -sigalgs ecdsa_secp256r1_sha256
+    CHSRV_AES_TESTS="$CHSRV_AES_TESTS + chapulin server mldsa87 x8"
+else
+    skip "chapulin server mldsa87 tests: bin/tlsserver_aes is absent or $("$OPENSSL" version) lists no mldsa87"
+fi
 [ -x ./bin/tlsserver_aes_extern ] || {
     echo "FAIL e2e chsrv-aes-extern: bin/tlsserver_aes_extern is absent; make ci-slow builds it"
     exit 1

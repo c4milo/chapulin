@@ -1,12 +1,10 @@
-// The server's flight handlers, one function per handshake message.
-// srv_flight.h states every contract, every alert and the RFC line
-// behind each one, so the comments here say what the header does not:
-// how a message is staged and why a step sits where it does. A message
-// sent in the clear is staged at t->tx + SRV_OUT_STAGE and goes out through
-// srv_out_plain; a protected one is staged on the handler's own
-// frame and goes out through srv_out_sealed; the Certificate is the one
-// message no frame holds, so srv_frag streams it. srv_out.[ch] owns all
-// three and is where the two transports differ.
+// The server's flight handlers, one function per handshake message. srv_flight.h states every
+// contract, every alert and the RFC line behind each one, so the comments here say what the header
+// does not: how a message is staged and why a step sits where it does. A message sent in the clear
+// is staged at t->tx + SRV_OUT_STAGE and goes out through srv_out_plain; a protected one is staged
+// on the handler's own frame and goes out through srv_out_sealed; the Certificate is the one
+// message no frame holds, so srv_frag streams it, as srv_mldsa.c streams an ML-DSA-87
+// CertificateVerify. srv_out.[ch] owns all three and is where the two transports differ.
 #include "srv_flight.h"
 
 #ifdef CH_ROLE_SERVER
@@ -127,15 +125,13 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
         return CH_EPROTO;
     }
     sel->hash_len = (uint8_t)suite_hash_len(sel->suite); // rfc9846.txt:4055-4056
-    // srv_kex.h's order: the hybrid, x25519, then secp256r1, or the
-    // profile's ML-KEM-1024. A hello that listed none has none in common.
+    // srv_kex.h's order. A hello that listed none of its groups has none in common.
     sel->group = srv_kex_group(ch);
     if (sel->group == 0) {
         return CH_EPROTO;
     }
-    // A hello with no scheme a slot signs can still resume a ticket, and
-    // only srv_select_auth can tell, so only a hello that offers no PSK
-    // fails here.
+    // A hello with no scheme a slot signs can still resume a ticket, and only srv_select_auth can
+    // tell, so only a hello that offers no PSK fails here.
     sel->sigalg = srv_select_sigalg(&h->t->cfg, ch->sigalgs);
     if (sel->sigalg == 0 && (ch->seen & SRV_EXT_PRE_SHARED_KEY) == 0) {
         return CH_EPROTO;
@@ -396,6 +392,11 @@ int srv_send_certificate_verify(handshake_state *h, const selection *sel) {
 #ifdef CH_PROFILE_CNSA2
     return srv_mldsa_send_certificate_verify(h, sel); // its signature's frame (srv_mldsa.h)
 #else
+#ifdef CH_SIGN_MLDSA
+    if (sel->sigalg == SIGALG_MLDSA87) { // a host server's third identity (srv_mldsa.h)
+        return srv_mldsa_send_certificate_verify(h, sel);
+    }
+#endif
     uint8_t hash[HKDF_HASH_MAX];
     (void)hsr_transcript_hash(h, sel->hash_len, hash);
     uint8_t sig[SRV_SIG_MAX];

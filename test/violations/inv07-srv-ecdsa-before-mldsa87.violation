@@ -1,0 +1,19 @@
+invariant: INV-7
+file: srv_auth.c
+catches: srv_mldsa_identity_test
+reason: the server asks about ECDSA P-256 before mldsa87, so a client that
+  offers both, as OpenSSL 3.5's default list does, gets an ECDSA
+  CertificateVerify from a server that holds an ML-DSA-87 identity.
+  docs/decisions.md 180 has the server sign with mldsa87 whenever the
+  client offers it and the slot is set, and test_selection requires it
+  for an offer of all three schemes.
+
+--- old
+    uint8_t live = srv_identity_live(cfg);
+#ifdef CH_SIGN_MLDSA
+--- new
+    uint8_t live = srv_identity_live(cfg);
+    if ((offered & SRV_SIGALG_ECDSA_P256) != 0 && (live & SRV_IDENTITY_ECDSA_P256) != 0) {
+        return SIGALG_ECDSA_P256_SHA256;
+    }
+#ifdef CH_SIGN_MLDSA

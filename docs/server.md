@@ -3069,6 +3069,31 @@ ranks, and their frames are held to the 4,608-byte `STACK_BUDGET_KEX_HYBRID`
 device object from 7,856 to 8,944 bytes; colibri's `ROLE=both TRUST=webpki`
 object moved by neither.
 
+## The ML-DSA-87 identity of a host server
+
+Every host server object, `ROLE=server` and `ROLE=both` under every trust
+value, holds a third identity slot, `cfg.srv.mldsa87`, beside `ecdsa_p256`
+and `rsa_pss` ([decisions.md](decisions.md) 180). A device server holds
+none of it, because the signer's frames do not fit a device's stack.
+
+- **Selection.** mldsa87 (0x0906) whenever the client offers it and the
+  slot is set, then ecdsa_secp256r1_sha256, then rsa_pss_rsae_sha256. A
+  client that does not offer mldsa87 gets the same server as before.
+- **CertificateVerify.** `srv_mldsa.c` signs it, as it does for the
+  profile: pure ML-DSA-87 over the whole content with an empty context,
+  hedged with `rnd` from `rand_draw`, checked before it leaves, and
+  streamed through `srv_frag`. The content holds the transcript hash of
+  the selected suite, 130 bytes under SHA-256 and 146 under SHA-384.
+- **Keys.** `ch_mldsa_key_from_pem` writes the slot's keys, and
+  `ch_srv_check` signs and verifies once at boot with each set slot.
+- **Memory.** The signer sets `ch_srv_accept`'s peak whether or not the
+  slot is set: 28,752 bytes in the arm64 host object, against 12,752
+  before, measured by `bench/sram.sh` ([performance.md](performance.md)).
+  The slot adds 48 bytes to `ch_tls`.
+- **Tests.** `bin/srv_mldsa_identity_test` holds the boot check and the
+  order at their boundaries, and `test/e2e.sh` runs OpenSSL's `s_client`
+  against the server under each suite, resumed, and with ECDSA alone.
+
 ## The PROFILE=cnsa2 server
 
 `PROFILE=cnsa2 ROLE=server TRUST=none` builds a server of CNSA 2.0's
@@ -3096,7 +3121,7 @@ under the profile.
 - **CPU.** Every init call and `ch_srv_check` refuse a `ch_cfg.cpu`
   without `CH_CPU_CONSTANT_TIME_AES`.
 - **Memory.** A `ch_tls` of 3,160 bytes, a receive floor of 2,179 bytes
-  (2,698 over QUIC), and a `ch_srv_accept` peak of 28,032 bytes through
+  (2,698 over QUIC), and a `ch_srv_accept` peak of 28,048 bytes through
   the signer, measured by `bench/sram.sh` ([performance.md](performance.md)).
 
 ## What is still open

@@ -50,14 +50,17 @@
 // other, which costs a client that offers only the missing scheme a
 // handshake_failure.
 //
-// A PROFILE=cnsa2 server holds one slot, mldsa87, which signs
-// SIGALG_MLDSA87, and srv_mldsa.c defines this header's calls for it in
-// place of srv_auth.c (docs/decisions.md 162).
-#ifdef CH_PROFILE_CNSA2
-#define SRV_IDENTITY_MLDSA87 0x04
-#else
+// An object that signs ML-DSA-87 (CH_SIGN_MLDSA) holds a third slot,
+// mldsa87, which signs SIGALG_MLDSA87: every host server
+// (docs/decisions.md 180). A PROFILE=cnsa2 server holds that slot alone,
+// and srv_mldsa.c defines this header's calls for it in place of
+// srv_auth.c (docs/decisions.md 162).
+#ifndef CH_PROFILE_CNSA2
 #define SRV_IDENTITY_ECDSA_P256 0x01
 #define SRV_IDENTITY_RSA_PSS 0x02
+#endif
+#ifdef CH_SIGN_MLDSA
+#define SRV_IDENTITY_MLDSA87 0x04
 #endif
 
 // The largest CertificateVerify signature this build writes, in bytes.
@@ -67,6 +70,9 @@
 // the larger whichever identity signs, because sizing it per identity
 // would make one build's frame depend on a run-time choice.
 // A PROFILE=cnsa2 server's one signature is MLDSA87_SIG_LEN bytes, 4627.
+// Every other server's mldsa87 signature goes out through
+// srv_mldsa_send_certificate_verify, which stages it on a frame of its own
+// (srv_mldsa.h), so it sets no bound here.
 #ifdef CH_PROFILE_CNSA2
 #define SRV_SIG_MAX MLDSA87_SIG_LEN
 #else
@@ -86,6 +92,7 @@ uint8_t srv_identity_live(const ch_cfg *cfg);
 
 // Whether the flight can use every identity srv_identity_live reports.
 // For each one: its key lengths are the ones srv_cfg.h states, with an
+// mldsa87 slot's checked by srv_mldsa_usable (srv_mldsa.h), with an
 // RSA pub_len of at most SRV_SIG_MAX, because the flight signs into that
 // many bytes; the scheme's signer takes its private key
 // (p256_sign_key_ok in p256_sign.h, rsa_pss_sign_key_ok in rsa_sign.h,
@@ -105,9 +112,10 @@ uint8_t srv_identity_live(const ch_cfg *cfg);
 int srv_identities_usable(const ch_cfg *cfg);
 
 // The SignatureScheme this connection's CertificateVerify is signed
-// with: the first in docs/server.md's order, ecdsa_secp256r1_sha256 then
-// rsa_pss_rsae_sha256, that the client offered and a provisioned slot
-// signs. offered is the client's signature_algorithms as the SRV_SIGALG_
+// with: the first in docs/server.md's order, mldsa87 in an object that
+// signs ML-DSA-87 (docs/decisions.md 180), then ecdsa_secp256r1_sha256,
+// then rsa_pss_rsae_sha256, that the client offered and a provisioned
+// slot signs. offered is the client's signature_algorithms as the SRV_SIGALG_
 // bits srv_parser.h defines.
 //
 // It is a predicate over configuration and the offer, and changes
@@ -120,8 +128,9 @@ uint16_t srv_select_sigalg(const ch_cfg *cfg, uint8_t offered);
 //
 // Requires a cfg the caller owns and a sigalg code point.
 //
-// Returns &cfg->srv.ecdsa_p256 for SIGALG_ECDSA_P256_SHA256 and
-// &cfg->srv.rsa_pss for SIGALG_RSA_PSS_RSAE_SHA256, when that slot is
+// Returns &cfg->srv.ecdsa_p256 for SIGALG_ECDSA_P256_SHA256,
+// &cfg->srv.rsa_pss for SIGALG_RSA_PSS_RSAE_SHA256, and in an object that
+// signs ML-DSA-87 &cfg->srv.mldsa87 for SIGALG_MLDSA87, when that slot is
 // provisioned. Returns NULL for an unprovisioned slot and for every
 // other scheme, including the RSASSA-PKCS1-v1_5 code points, which RFC
 // 9846 §4.3.3 says are not defined for use in signed TLS handshake
@@ -175,7 +184,9 @@ void srv_hash_signed_content(uint32_t cpu, uint16_t sigalg, const uint8_t *trans
 
 // Signs the CertificateVerify content for one connection: it builds
 // the digest with srv_hash_signed_content and hands it to the signer
-// the selected scheme names.
+// the selected scheme names. mldsa87 signs through
+// srv_mldsa_send_certificate_verify instead (srv_mldsa.h), and this call
+// returns CH_EAUTH for it, as for a slot it does not sign.
 //
 // The two signers are p256_sign.c for SIGALG_ECDSA_P256_SHA256 and
 // rsa_sign.c for SIGALG_RSA_PSS_RSAE_SHA256, in whose place a host
@@ -251,8 +262,8 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
 // The verifier is the one already in the object: p256_ecdsa_verify
 // (p256.h) for the ECDSA identity and rsa_pss_verify (rsa.h) for the
 // RSA one, which a host object calls as rsa_pss_verify_cpu under
-// cfg->cpu. A ROLE=server object carries both, which is why the ROLE
-// arm leaves PIN_FILTER empty, because TRUST selects nothing in it.
+// cfg->cpu. For mldsa87 this call runs srv_mldsa_check (srv_mldsa.h). A ROLE=server object carries
+// both, which is why the ROLE arm leaves PIN_FILTER empty, because TRUST selects nothing in it.
 //
 // It catches a broken signer and a key the operator paired with the
 // wrong slot, once, at boot, with a local error code instead of a

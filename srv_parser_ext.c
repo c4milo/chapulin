@@ -78,8 +78,8 @@ static int read_supported_groups(rbuf *e, hello_parse *p) {
 }
 
 // signature_algorithms (§4.3.3): SignatureScheme
-// supported_signature_algorithms<2..2^16-2>. One walk sets both bits;
-// a scheme outside the two is read and ignored.
+// supported_signature_algorithms<2..2^16-2>. One walk sets every bit
+// this build defines; a scheme outside them is read and ignored.
 static int read_signature_algorithms(rbuf *e, hello_parse *p) {
     size_t list_len = 0;
     if (!srv_open_code_point_list(e, &list_len)) {
@@ -87,12 +87,12 @@ static int read_signature_algorithms(rbuf *e, hello_parse *p) {
     }
     for (size_t i = 0; i < list_len; i += 2) {
         uint16_t scheme = rb_u16(e);
-#ifdef CH_PROFILE_CNSA2
-        // The profile's one scheme (srv_parser.h).
+#ifdef CH_SIGN_MLDSA
         if (scheme == SIGALG_MLDSA87) {
             p->ch->sigalgs |= SRV_SIGALG_MLDSA87;
         }
-#else
+#endif
+#ifndef CH_PROFILE_CNSA2
         if (scheme == SIGALG_ECDSA_P256_SHA256) {
             p->ch->sigalgs |= SRV_SIGALG_ECDSA_P256;
         }

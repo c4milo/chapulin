@@ -1,5 +1,7 @@
 // Proves: the entries of srv_mldsa.c, the PROFILE=cnsa2 server's
-// authentication (docs/decisions.md 162), read and write only inside their
+// authentication (docs/decisions.md 162), and through
+// proof/srv_mldsa_host_harness.c a host server's third identity
+// (docs/decisions.md 180), read and write only inside their
 // own buffers and commit no undefined behavior, over an unconstrained
 // mldsa87 slot, every SignatureScheme code point and every hash length a
 // selection can carry.
@@ -63,10 +65,20 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
     fill_nondet(p, n);
 }
 
+// srv_mldsa_send_certificate_verify takes a hash of either suite length
+// and no other, so the stub asserts that and fills at each constant length:
+// a fill of a length that is one of two values would run fill_nondet's
+// loop to its bound.
 int hsr_transcript_hash(handshake_state *h, size_t hash_len, uint8_t *out) {
     (void)h;
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == SHA384_LEN,
+                     "hsr_transcript_hash: a suite's hash length");
     __CPROVER_assert(__CPROVER_w_ok(out, hash_len), "hsr_transcript_hash: output writable");
-    fill_nondet(out, hash_len);
+    if (hash_len == SHA384_LEN) {
+        fill_nondet(out, SHA384_LEN);
+    } else {
+        fill_nondet(out, SHA256_LEN);
+    }
     return CH_OK;
 }
 
@@ -133,14 +145,21 @@ int main(void) {
     selection sel;
 
     make_identity(&t.cfg);
+#ifdef CH_PROFILE_CNSA2
     (void)srv_identity_live(&t.cfg);
     int usable = srv_identities_usable(&t.cfg);
-    __CPROVER_assert(usable == 0 || usable == 1, "srv_identities_usable answers 0 or 1");
+#else
+    (void)srv_mldsa_live(&t.cfg);
+    int usable = srv_mldsa_usable(&t.cfg);
+#endif
+    __CPROVER_assert(usable == 0 || usable == 1, "the usable check answers 0 or 1");
 
     make_identity(&t.cfg);
     uint16_t any_sigalg = (uint16_t)(((uint16_t)nondet_u8() << 8) | nondet_u8());
+#ifdef CH_PROFILE_CNSA2
     (void)srv_identity_for(&t.cfg, any_sigalg);
     (void)srv_select_sigalg(&t.cfg, nondet_u8());
+#endif
 
     make_identity(&t.cfg);
     h.t = &t;
@@ -152,6 +171,10 @@ int main(void) {
                      "a refusal names internal_error");
 
     make_identity(&t.cfg);
+#ifdef CH_PROFILE_CNSA2
     (void)srv_identity_check(&t.cfg, nondet_u8() ? SIGALG_MLDSA87 : any_sigalg);
+#else
+    (void)srv_mldsa_check(&t.cfg);
+#endif
     return 0;
 }

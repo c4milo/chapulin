@@ -18,6 +18,10 @@
 // and hands the pointer on, to the signer or to the signer's own key
 // test, so the private key is read inside p256_sign.c, rsa_sign.[ch]
 // and, in a host object, rsa_sign64.[ch], and nowhere else.
+//
+// An object that signs ML-DSA-87 (CH_SIGN_MLDSA), every host server,
+// holds a third slot, mldsa87. srv_mldsa.c signs and checks it, and this
+// file asks srv_mldsa.h's calls about it (docs/decisions.md 180).
 #include "srv_auth.h"
 
 // A PROFILE=cnsa2 server signs ML-DSA-87 alone, and srv_mldsa.c defines
@@ -35,6 +39,7 @@
 #include "rand_draw.h"
 #include "rsa.h"
 #include "rsa_sign.h"
+#include "srv_mldsa.h"
 #include "widemul.h"
 
 // The 64 bytes of 0x20 that RFC 9846 section 4.5.2 puts in front of the
@@ -73,11 +78,23 @@ uint8_t srv_identity_live(const ch_cfg *cfg) {
     if (identity_provisioned(&cfg->srv.rsa_pss)) {
         live |= SRV_IDENTITY_RSA_PSS;
     }
+#ifdef CH_SIGN_MLDSA
+    if (srv_mldsa_live(cfg)) {
+        live |= SRV_IDENTITY_MLDSA87;
+    }
+#endif
     return live;
 }
 
 uint16_t srv_select_sigalg(const ch_cfg *cfg, uint8_t offered) {
     uint8_t live = srv_identity_live(cfg);
+#ifdef CH_SIGN_MLDSA
+    // CNSA 2.0's one signature scheme, ahead of the other two
+    // (docs/decisions.md 180).
+    if ((offered & SRV_SIGALG_MLDSA87) != 0 && (live & SRV_IDENTITY_MLDSA87) != 0) {
+        return SIGALG_MLDSA87;
+    }
+#endif
     if ((offered & SRV_SIGALG_ECDSA_P256) != 0 && (live & SRV_IDENTITY_ECDSA_P256) != 0) {
         return SIGALG_ECDSA_P256_SHA256;
     }
@@ -93,6 +110,10 @@ const ch_identity *srv_identity_for(const ch_cfg *cfg, uint16_t sigalg) {
         id = &cfg->srv.ecdsa_p256;
     } else if (sigalg == SIGALG_RSA_PSS_RSAE_SHA256) {
         id = &cfg->srv.rsa_pss;
+#ifdef CH_SIGN_MLDSA
+    } else if (sigalg == SIGALG_MLDSA87) {
+        id = &cfg->srv.mldsa87;
+#endif
     } else {
         // Every other code point, including the RSASSA-PKCS1-v1_5 ones
         // RFC 9846 section 4.3.3 leaves undefined for signed handshake
@@ -143,6 +164,12 @@ void srv_hash_signed_content(uint32_t cpu, uint16_t sigalg, const uint8_t *trans
     ct_wipe(&s, sizeof s);
 }
 
+// Whether this file's signers sign the scheme: ECDSA P-256 and RSA-PSS,
+// and not mldsa87, which srv_mldsa.c signs.
+static int signed_here(uint16_t sigalg) {
+    return sigalg == SIGALG_ECDSA_P256_SHA256 || sigalg == SIGALG_RSA_PSS_RSAE_SHA256;
+}
+
 // True when the slot's two lengths are the lengths this scheme's key
 // types have. It is what makes the pointers safe to pass on: p256_sign
 // reads P256_PRIV_LEN bytes and p256_ecdsa_verify reads SRV_P256_PUB_LEN
@@ -186,6 +213,11 @@ int srv_identities_usable(const ch_cfg *cfg) {
         !identity_usable(cfg, &cfg->srv.rsa_pss, SIGALG_RSA_PSS_RSAE_SHA256)) {
         return 0;
     }
+#ifdef CH_SIGN_MLDSA
+    if (!srv_mldsa_usable(cfg)) {
+        return 0;
+    }
+#endif
     return 1;
 }
 
@@ -262,9 +294,11 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
                                 uint8_t *alert) {
     // srv_identities_usable accepted this slot before the session
     // started, so the flight never meets this refusal; it keeps the
-    // signer's reads in bounds for any caller.
+    // signer's reads in bounds for any caller. mldsa87 signs in
+    // srv_mldsa.c, so this call refuses it as it refuses a slot it holds
+    // no signer for.
     const ch_identity *id = srv_identity_for(cfg, sigalg);
-    if (id == NULL || !key_lengths_match(id, sigalg)) {
+    if (id == NULL || !signed_here(sigalg) || !key_lengths_match(id, sigalg)) {
         *alert = ALERT_INTERNAL_ERROR;
         return CH_EAUTH;
     }
@@ -312,8 +346,13 @@ static int verify_digest(uint32_t cpu, const ch_identity *id, uint16_t sigalg,
 }
 
 int srv_identity_check(const ch_cfg *cfg, uint16_t sigalg) {
+#ifdef CH_SIGN_MLDSA
+    if (sigalg == SIGALG_MLDSA87) {
+        return srv_mldsa_check(cfg);
+    }
+#endif
     const ch_identity *id = srv_identity_for(cfg, sigalg);
-    if (id == NULL || !key_lengths_match(id, sigalg)) {
+    if (id == NULL || !signed_here(sigalg) || !key_lengths_match(id, sigalg)) {
         return CH_EINVAL;
     }
 

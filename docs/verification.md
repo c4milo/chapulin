@@ -2681,7 +2681,7 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 
 #### srv_auth
 
-- **Harness:** `srv_auth` (fast)
+- **Harnesses:** `srv_auth` (fast), `srv_auth_mldsa` (fast)
 - **Proves:** the six entries of `srv_auth.c` read and write only
   inside their own buffers and commit no undefined behavior, over an
   unconstrained configuration, an unconstrained transcript hash at every
@@ -2699,6 +2699,13 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   - `srv_identities_usable`, the rule a configuration is held to before
     a session starts, answers 0 or 1, and an assert against either
     answer fails, so the formula holds both.
+  - `srv_auth_mldsa` proves the same under `CH_SIGN_MLDSA`, which every
+    host server sets, with the `mldsa87` slot beside the other two
+    (`docs/decisions.md` 180). There `srv_select_sigalg` names mldsa87
+    exactly when the client offered it and the slot is live, and
+    `srv_sign_certificate_verify` refuses mldsa87 with internal_error,
+    because `srv_mldsa.c` signs it. `srv_mldsa.h`'s four calls are
+    contract stubs there, and [srv_mldsa](#srv_mldsa) proves them.
 
   The two signers, the two verifiers, the ECDSA key test, the chain rule
   and SHA-256 are contract stubs. [p256_sign](#p256_sign),
@@ -2716,9 +2723,10 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 
 #### srv_mldsa
 
-- **Harness:** `srv_mldsa` (fast)
+- **Harnesses:** `srv_mldsa` (fast), `srv_mldsa_host` (fast)
 - **Proves:** the entries of `srv_mldsa.c`, a `PROFILE=cnsa2` server's
-  authentication (docs/decisions.md 162), read and write only inside
+  authentication (docs/decisions.md 162), and through `srv_mldsa_host`
+  a host server's third identity (docs/decisions.md 180), read and write only inside
   their own buffers and commit no undefined behavior, over an
   unconstrained `mldsa87` slot, every SignatureScheme code point and
   every selection hash length.
@@ -2730,8 +2738,10 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   - The signer and the verifier stubs assert the context is empty.
   - A refusal of `srv_mldsa_send_certificate_verify` names
     internal_error.
-- **Bound:** the full domain at 716 properties, 13 s of solver time
-  and 0.13 GB of resident memory on an M1 Pro (2026-10-28).
+- **Bound:** the full domain at 747 properties, 17 s and 0.16 GB of
+  resident memory in the pinned amd64 container (2026-11-02), and
+  `srv_mldsa_host` at 747 properties, 15 s and 0.16 GB. Each selection
+  hash length is SHA-256's or SHA-384's.
 - **Not proved:** that a signature is correct. `mldsa87_sign`,
   `mldsa87_verify`, the transcript snapshot, the two `srv_frag` calls,
   the CertificateVerify head and the chain rule are contract stubs, and

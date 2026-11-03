@@ -132,13 +132,16 @@ static inline uint8_t srv_group_bit(uint16_t group) {
 // use in signed TLS handshake messages" (rfc9846.txt:1882-1884), so no
 // bit exists for a scheme that can never sign this message.
 //
-// A PROFILE=cnsa2 server signs mldsa87 alone, with its one slot, mldsa87
-// (srv_cfg.h), and holds neither of the two schemes above.
-#ifdef CH_PROFILE_CNSA2
-#define SRV_SIGALG_MLDSA87 0x04
-#else
+// An object that signs ML-DSA-87 (CH_SIGN_MLDSA) reads mldsa87 too, which
+// its slot mldsa87 signs (srv_cfg.h): every host server
+// (docs/decisions.md 180) and the PROFILE=cnsa2 server, which holds
+// neither of the two schemes above (docs/decisions.md 162).
+#ifndef CH_PROFILE_CNSA2
 #define SRV_SIGALG_ECDSA_P256 0x01
 #define SRV_SIGALG_RSA_PSS 0x02
+#endif
+#ifdef CH_SIGN_MLDSA
+#define SRV_SIGALG_MLDSA87 0x04
 #endif
 
 // The recognized extensions, one bit each, in seen. The parser sets a
