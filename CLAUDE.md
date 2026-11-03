@@ -147,10 +147,11 @@ Home: github.com/c4milo.
   compiler cannot remove) and `avx512_wipe.[ch]` (a block of assembly,
   32 VPXORD and 7 KXORW, which zeros zmm0 to zmm31 and k1 to k7 for a
   kernel that held secrets in them, an x86-64 host object alone);
-  `gcm_arm64_passes.h`, `x25519_adx_asm.h` and `p256_adx_asm.h` hold the
-  tree's other assembly, the arm64 AES-GCM passes, the x86-64 X25519
-  field's five operations and the x86-64 P-256 field's product and square
-  (docs/decisions.md 158, 165 and 171)
+  `gcm_arm64_passes.h`, `x25519_adx_asm.h`, `p256_adx_asm.h` and
+  `rsa_mont64_adx_asm.h` hold the tree's other assembly, the arm64 AES-GCM
+  passes, the x86-64 X25519 field's five operations, the x86-64 P-256
+  field's product and square, and the x86-64 RSA signer's five row
+  operations (docs/decisions.md 158, 165, 171 and 183)
   ← `sha256.[ch]` with `sha256_hw.c` (SHA-256 on
   FEAT_SHA256 or the x86-64 SHA extensions, a host session whose caller
   sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` with
@@ -309,7 +310,10 @@ Home: github.com/c4milo.
   every session of a host object, and the square both it and the signer
   run), `rsa_mont64_blocks.[ch]` (its multiplication and square in
   blocks of four words, which a clang build for arm64 runs at a word
-  count that is a multiple of 4), `rsa_mont64_addcarry.[ch]` (its
+  count that is a multiple of 4), `rsa_mont64_adx.[ch]` with
+  `rsa_mont64_adx_asm.h` (the signer's multiplication and square on
+  MULX, ADCX and ADOX, x86-64; `test/rsa_mont64_adx_model.h` writes the
+  same words in portable C, docs/decisions.md 183), `rsa_mont64_addcarry.[ch]` (its
   multiplication and square in rows of four words whose carries go down
   `_addcarry_u64` chains, which a gcc build for x86-64 runs at every word
   count, with a 128-bit sum in the intrinsic's place everywhere else),
@@ -552,7 +556,8 @@ Home: github.com/c4milo.
   `rsa_sign64.c`, which on x86-64 with CH_CPU_AVX512_IFMA runs both CRT
   exponentiations on `rsa_ifma_sign.c` and its check on `rsa_ifma.c`
   through `rsa_vp1_cpu`, and wipes the stack below each call and the
-  vector registers after it. `ct.h` refuses
+  vector registers after it, or with CH_CPU_BMI2_ADX runs both
+  exponentiations on `rsa_mont64_adx.c`. `ct.h` refuses
   `CH_NATIVE_WIDEMUL` in a host object and a native copy outside one
   (docs/decisions.md 52, 83, 87, 94, 95, 120 and 121, INV-34).
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
@@ -599,7 +604,9 @@ Home: github.com/c4milo.
   a shared secret's X25519 on `x25519_adx.c` and P-256's point arithmetic
   on `p256_adx.h`'s copy, whose products are MULX's widening multiplies,
   and by itself an ECDSA P-256 verification on that copy, whose inputs are
-  public (docs/decisions.md 165 and 171).
+  public (docs/decisions.md 165 and 171). Beside the multiply bit and
+  without the IFMA path it also runs RSA signing's two exponentiations on
+  `rsa_mont64_adx.c` (docs/decisions.md 183).
   Each entry of `gcm_avx512.c` wipes
   `GCM_AVX512_BELOW_LEN` bytes of the stack below its frame after the
   kernel. The kernel calls no function, since every other function in
@@ -922,7 +929,12 @@ Home: github.com/c4milo.
   and prove no word wraps; `spec/lean/Spec/P256Adx.lean` proves the
   reduction's value, which `bin/diff_p256_adx` holds the C to, and
   `bin/p256_adx_equiv_test` holds the assembly to the model
-  (docs/decisions.md 171). Portable C that
+  (docs/decisions.md 171). `rsa_mont64_adx.c`'s harnesses compile it over
+  `test/rsa_mont64_adx_model.h` and prove no word wraps;
+  `spec/lean/Spec/RsaMont64Adx.lean` proves that the multiplication and
+  the square write a b R^-1 mod m below m, which `bin/diff_rsa_mont64_adx`
+  holds the C to, and `bin/rsa_mont64_adx_test` holds the assembly to the
+  model (docs/decisions.md 183). Portable C that
   a host object alone compiles carries harnesses as every module does:
   `sha512_compress_blocks`, `sha512_compress_blocks_steps` and
   `sha512_compress_blocks_advancing` prove `sha512_compress_blocks.c`'s
