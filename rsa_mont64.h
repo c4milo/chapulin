@@ -206,7 +206,10 @@ void rsa_mont64_mul_add(uint64_t *o, const uint64_t *a, const uint64_t *b, const
 
 // out = base^65537 mod m (RSAVP1, RFC 8017 5.2.2), base and out both len
 // big-endian bytes, len <= 8 * mod->words. It takes any base of that
-// length: the result is a function of base mod m.
+// length: the result is a function of base mod m. It wipes nothing: the
+// one caller with a secret base, rsa_sign64.c's check of a candidate
+// signature, runs it inside rsa_sign64_sp1, whose wrapper wipes the stack
+// below it (rsa_sign64_wipe.h).
 void rsa_mont64_public(uint8_t *out, const uint8_t *base, size_t len,
                        const rsa_mont64_modulus *mod);
 

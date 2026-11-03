@@ -9,10 +9,10 @@ reason: the Makefile adds rsa_sign64.c and rsa_ifma_sign.c to every
   both files from a device server object.
 
 --- old
-RSA_SIGN64_SRCS := rsa_sign64.c rsa_ifma_sign.c
+RSA_SIGN64_SRCS := rsa_sign64.c rsa_sign64_wipe.c rsa_ifma_sign.c
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter rsa_sign.c,$(LIB_SRCS)),$(RSA_SIGN64_SRCS))
 endif
 --- new
-RSA_SIGN64_SRCS := rsa_sign64.c rsa_ifma_sign.c
+RSA_SIGN64_SRCS := rsa_sign64.c rsa_sign64_wipe.c rsa_ifma_sign.c
 LIB_SRCS += $(if $(filter rsa_sign.c,$(LIB_SRCS)),$(RSA_SIGN64_SRCS))

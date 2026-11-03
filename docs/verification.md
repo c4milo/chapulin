@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-126 of the 163 C sources in the tree root are compiled into a
+127 of the 164 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -994,6 +994,20 @@ The entries are grouped by area:
 - **Bound:** full-range coordinates.
 - **Not proved:** the 256-round loop whole. It calls nothing but that
   round; unrolled whole, it returned no verdict in 42 minutes.
+
+#### rsa_sign64_wipe
+
+- **Harness:** `rsa_sign64_wipe` (fast)
+- **Proves:** `rsa_sign64_wipe_below` is memory-safe and UB-free, runs
+  `wipe_frame` through its volatile pointer, and wipes exactly its array
+  of `RSA_SIGN64_BELOW_LEN` bytes, 16,384 at the 512-byte bound
+  (docs/decisions.md 181). The `rsa_sign64_power` and `rsa_sign64_crt`
+  harnesses state that each of `rsa_sign64.c`'s wrappers calls it once
+  after its body.
+- **Not proved:** that the array lies where the body's frames lay, which
+  is no property of C. `bin/rsa_sign_equiv_test` requires the stack below
+  each wrapped call equal under two secrets on each compiler it runs
+  under.
 
 #### p256_wide
 

@@ -267,6 +267,8 @@
         "rsa_sign.h",
         "rsa_sign64.c",
         "rsa_sign64.h",
+        "rsa_sign64_wipe.c",
+        "rsa_sign64_wipe.h",
         "session.c",
         "session.h",
         "session_report.h",

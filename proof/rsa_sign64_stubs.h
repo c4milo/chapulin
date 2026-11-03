@@ -192,6 +192,16 @@ static void stub_public(uint8_t *out, const uint8_t *base, size_t len,
     }
 }
 
+// rsa_sign64_wipe_below, which each of rsa_sign64.c's four wrappers calls
+// after its body (rsa_sign64_wipe.h). proof/rsa_sign64_wipe_harness.c
+// proves the real one. This one counts its calls, so a harness can state
+// that a wrapper wipes once.
+static unsigned stub_wipe_below_calls;
+
+void rsa_sign64_wipe_below(void) {
+    stub_wipe_below_calls++;
+}
+
 // From here on rsa_sign64.c's calls into rsa_mont64.c are the contracts
 // above.
 #define rsa_mont64_mont_mul stub_mont_mul

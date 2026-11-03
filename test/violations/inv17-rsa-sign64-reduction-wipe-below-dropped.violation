@@ -1,0 +1,14 @@
+invariant: INV-17
+file: rsa_sign64.c
+catches: rsa_sign_equiv_test
+reason: the reduction modulo a prime returns without the wipe below its body, so
+  the message's low and high words and r3 stay in the stack.
+  bin/rsa_sign_equiv_test requires no two words of a value the call held
+  in the stack below it, and requires the stack equal under two secrets
+  (docs/decisions.md 181).
+
+--- old
+    reduce_mod_prime(o, em, em_words, mod);
+    rsa_sign64_wipe_below();
+--- new
+    reduce_mod_prime(o, em, em_words, mod);

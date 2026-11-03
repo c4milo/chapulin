@@ -11,6 +11,7 @@ reason: the signer includes rsa_avx2.h, the first step to a call into the
 #include "ch_assert.h"
 #include "cpu_cfg.h"
 #include "ct.h"
+#include "rsa_sign64_wipe.h"
 
 // rsa_ifma_sign.h's declarations exist
 --- new
@@ -18,5 +19,6 @@ reason: the signer includes rsa_avx2.h, the first step to a call into the
 #include "cpu_cfg.h"
 #include "ct.h"
 #include "rsa_avx2.h"
+#include "rsa_sign64_wipe.h"
 
 // rsa_ifma_sign.h's declarations exist

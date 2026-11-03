@@ -6198,22 +6198,18 @@ last `ROLE=server` stub, as the entry said it would.
   changed, which it refuses; and the reduction, the exponentiation and
   the recombination each called on its own, because inside a signature a
   later call's frame is written over theirs
-  (`test/rsa_sign_equiv_pieces.c`). One violation file drops each wipe
-  but the square's running sum:
-  `inv17-rsa-mont64-running-sum-wipe-dropped`,
-  `inv17-rsa-mont64-square-double-wipe-dropped`,
-  `inv17-rsa-mont64-public-base-wipe-dropped`,
-  `inv17-rsa-mont64-public-power-wipe-dropped`,
-  `inv17-rsa-sign64-table-wipe-dropped`,
-  `inv17-rsa-sign64-last-entry-wipe-dropped`, and under
-  `inv17-rsa-crt-` the names `reduction-low`, `reduction-high`,
-  `reduction-r3`, `recombination-qinv`, `recombination-factor`,
-  `key-test-p`, `key-test-q`, `key-test-product`, `check-power`,
-  `prime-record`, `second-prime-record`, `message-words`, `first-half`,
-  `second-half`, `refused-signature-words` and `refused-candidate`, each
-  ending in `-wipe-dropped`. The test catches each under Apple clang 21
-  for arm64 and x86-64 and under gcc 13.3 for both, except the square's
-  two (decision 106): it catches both of those under Apple clang 21 for
+  (`test/rsa_sign_equiv_pieces.c`). The exponentiation, the reduction,
+  the recombination and the signature are wrappers that wipe the stack
+  below their bodies, which wipe no array by name (decision 181), so one
+  violation file drops each wrapper's wipe: `inv17-rsa-sign64-` with
+  `power`, `reduction`, `recombination` and `sp1`, each ending in
+  `-wipe-below-dropped`. One more drops each named wipe that remains,
+  but the square's running sum: `inv17-rsa-mont64-running-sum-wipe-dropped`,
+  `inv17-rsa-mont64-square-double-wipe-dropped`, and under
+  `inv17-rsa-crt-` the key test's `key-test-p`, `key-test-q` and
+  `key-test-product`, each ending in `-wipe-dropped`. The test catches each
+  under Apple clang 21 for arm64 and x86-64 and under gcc 13.3 for both,
+  except the square's two (decision 106): it catches both of those under Apple clang 21 for
   arm64, and under gcc 13 for x86-64 it catches the dropped wipe of 2a
   and not that of the running sum, whose bytes a later call's frame
   writes over before the test looks. CI's mutants job runs gcc 13 for
@@ -6241,9 +6237,10 @@ last `ROLE=server` stub, as the entry said it would.
   the key test under exchanged primes and under two wrong keys, the
   reduction modulo each prime and the recombination under exchanged
   primes. `table_select` now writes its output in one statement and
-  calls nothing. `inv17-rsa-sign64-digit-kept-in-frame` keeps the digit
-  in a local of the exponentiation, and the nine runs catch it;
-  `inv17-rsa-sign64-table-read-zeroes-first` restores the loop of zeros,
+  calls nothing. A digit kept in a local of the exponentiation now lies in
+  the frame the wrapper's wipe clears, so it needs no violation file of
+  its own (decision 181); `inv17-rsa-sign64-table-read-zeroes-first`
+  restores the loop of zeros,
   and the Semgrep rule of INV-16 catches it, because only clang for
   arm64 makes that loop a byte that differs.
   Two things no run holds. A register no callee saves keeps what the

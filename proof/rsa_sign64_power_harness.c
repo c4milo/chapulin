@@ -53,7 +53,10 @@ static void prove_exponent_bound(void) {
     havoc_modulus(&mod, STEPS_WORDS);
     fill_nondet(e, sizeof e);
     havoc_words(base, STEPS_WORDS);
+    stub_wipe_below_calls = 0;
     rsa_sign64_power(o, base, e, sizeof e, &mod);
+    __CPROVER_assert(stub_wipe_below_calls == 1,
+                     "rsa_sign64_power wipes the stack below its body once");
 }
 
 static void prove_word_bound(void) {

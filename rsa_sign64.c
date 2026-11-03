@@ -28,6 +28,14 @@
 // compiler keeps what no wipe in C names. Every other session runs the
 // window below and checks on rsa_mont64_public.
 //
+// Four calls are wrappers: rsa_sign64_power, the reduction modulo a
+// prime, the recombination and rsa_sign64_sp1. Each calls a body that is
+// never inlined and then rsa_sign64_wipe_below, which writes zero over
+// the stack where the body's frames lay: the arrays the body names and
+// the slots the compiler kept words in. So no body wipes an array of its
+// own (rsa_sign64_wipe.h, docs/decisions.md 181). rsa_sign64_key_ok,
+// which no wrapper covers, wipes its arrays by name.
+//
 // The branches this file compiles to are loops over word counts, the
 // sixteen table entries, the four squarings and the exponent's digits,
 // whose count comes from the exponent's length in bytes, the CH_ASSERTs
@@ -44,6 +52,7 @@
 #include "ch_assert.h"
 #include "cpu_cfg.h"
 #include "ct.h"
+#include "rsa_sign64_wipe.h"
 
 // rsa_ifma_sign.h's declarations exist in an x86-64 host object and in a
 // test unit that defines CH_RSA_IFMA_MODEL, which runs the kernel over a
@@ -133,8 +142,11 @@ static uint64_t exponent_digit(const uint8_t *e, size_t i) {
     return ((uint64_t)e[i >> 1] >> (WINDOW_BITS * (1 - (i & 1)))) & (TABLE_ENTRIES - 1);
 }
 
-void rsa_sign64_power(uint64_t *o, const uint64_t *base, const uint8_t *e, size_t e_len,
-                      const rsa_mont64_modulus *mod) {
+// The body of rsa_sign64_power, which the wrapper below calls and then
+// wipes under.
+static __attribute__((noinline)) void power_window(uint64_t *o, const uint64_t *base,
+                                                   const uint8_t *e, size_t e_len,
+                                                   const rsa_mont64_modulus *mod) {
     size_t k = mod->words;
     CH_ASSERT(k >= 1 && k <= PRIME_WORDS_MAX);
     // Zeroed at declaration, as rsa_mont64_public's arrays are: the words
@@ -162,8 +174,12 @@ void rsa_sign64_power(uint64_t *o, const uint64_t *base, const uint8_t *e, size_
         table_select(pick, &table, exponent_digit(e, i), k);
         rsa_mont64_mont_mul(o, o, pick, mod);
     }
-    ct_wipe(&table, sizeof table);
-    ct_wipe(pick, sizeof pick);
+}
+
+void rsa_sign64_power(uint64_t *o, const uint64_t *base, const uint8_t *e, size_t e_len,
+                      const rsa_mont64_modulus *mod) {
+    power_window(o, base, e, e_len, mod);
+    rsa_sign64_wipe_below();
 }
 
 // o = em mod the prime, in the Montgomery domain of mod, the prime's
@@ -176,9 +192,9 @@ void rsa_sign64_power(uint64_t *o, const uint64_t *base, const uint8_t *e, size_
 // high * R^2 and low times R^2 is low * R, each below the prime, and
 // their sum modulo the prime is em * R: em in the domain. Neither product
 // needs its first operand below the prime, only its second, which r2 and
-// r3 are.
-static void message_mod_prime(uint64_t *o, const uint64_t *em, size_t em_words,
-                              const rsa_mont64_modulus *mod) {
+// r3 are. message_mod_prime below is the wrapper that wipes under it.
+static __attribute__((noinline)) void
+reduce_mod_prime(uint64_t *o, const uint64_t *em, size_t em_words, const rsa_mont64_modulus *mod) {
     size_t k = mod->words;
     uint64_t low[PRIME_WORDS_MAX];
     uint64_t high[PRIME_WORDS_MAX];
@@ -194,9 +210,12 @@ static void message_mod_prime(uint64_t *o, const uint64_t *em, size_t em_words,
     rsa_mont64_mont_mul(high, high, r3, mod);
     rsa_mont64_mont_mul(low, low, mod->r2, mod);
     rsa_mont64_add(o, low, high, mod);
-    ct_wipe(low, sizeof low);
-    ct_wipe(high, sizeof high);
-    ct_wipe(r3, sizeof r3);
+}
+
+static void message_mod_prime(uint64_t *o, const uint64_t *em, size_t em_words,
+                              const rsa_mont64_modulus *mod) {
+    reduce_mod_prime(o, em, em_words, mod);
+    rsa_sign64_wipe_below();
 }
 
 // Garner's formula: s = m2 + q * h, with h = qinv * (m1 - m2) mod p. m1
@@ -210,10 +229,12 @@ static void message_mod_prime(uint64_t *o, const uint64_t *em, size_t em_words,
 // of p, chosen by a mask, reduces it modulo p. The difference m1 - m2 is
 // taken in p's domain and adds p back under a mask when it borrowed. The
 // product by the plain qinv leaves the domain, so h is plain and below p.
-// m1 and m2 are overwritten.
-static void crt_combine(uint64_t *s, uint64_t *m1, uint64_t *m2, const uint8_t *qinv,
-                        size_t half_len, const rsa_mont64_modulus *mod_p,
-                        const rsa_mont64_modulus *mod_q) {
+// m1 and m2 are overwritten. crt_combine below is the wrapper that wipes
+// under it.
+static __attribute__((noinline)) void garner(uint64_t *s, uint64_t *m1, uint64_t *m2,
+                                             const uint8_t *qinv, size_t half_len,
+                                             const rsa_mont64_modulus *mod_p,
+                                             const rsa_mont64_modulus *mod_q) {
     size_t k = mod_p->words;
     uint64_t t[PRIME_WORDS_MAX];
     uint64_t h[PRIME_WORDS_MAX];
@@ -230,8 +251,13 @@ static void crt_combine(uint64_t *s, uint64_t *m1, uint64_t *m2, const uint8_t *
     rsa_mont64_mont_mul(h, t, m1, mod_p);
 
     rsa_mont64_mul_add(s, mod_q->m, h, m2, k);
-    ct_wipe(t, sizeof t);
-    ct_wipe(h, sizeof h);
+}
+
+static void crt_combine(uint64_t *s, uint64_t *m1, uint64_t *m2, const uint8_t *qinv,
+                        size_t half_len, const rsa_mont64_modulus *mod_p,
+                        const rsa_mont64_modulus *mod_q) {
+    garner(s, m1, m2, qinv, half_len, mod_p, mod_q);
+    rsa_sign64_wipe_below();
 }
 
 #ifdef RSA_SIGN64_IFMA
@@ -314,14 +340,13 @@ static void check_power(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *candi
 // Whether candidate^65537 mod n is em: the check a signature passes
 // before it leaves. A candidate that fails it differs from the signature
 // modulo one prime and not the other, and one such value factors n, so
-// the power is computed in constant time in its base (check_power),
-// compared by ct_memeq and wiped.
+// the power is computed in constant time in its base (check_power) and
+// compared by ct_memeq. rsa_sign64_sp1's wipe clears it with the frame.
 static int signature_verifies(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em,
                               const uint8_t *candidate) {
     uint8_t power[CH_RSA_MODULUS_MAX];
     check_power(cpu, k, candidate, power);
     int same = ct_memeq(power, em, k->n_len) != 0;
-    ct_wipe(power, sizeof power);
     return same;
 }
 
@@ -365,7 +390,10 @@ static void both_powers(uint32_t cpu, uint64_t *m1, uint64_t *m2, const ch_rsa_p
     rsa_sign64_power(m2, m2, k->dq, half_len, mod_q);
 }
 
-int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
+// The body of rsa_sign64_sp1, which the wrapper below calls and then wipes
+// under.
+static __attribute__((noinline)) int sign_halves(uint32_t cpu, const ch_rsa_priv *k,
+                                                 const uint8_t *em, uint8_t *sig) {
     CH_ASSERT(k->n_len >= 256 && k->n_len <= CH_RSA_MODULUS_MAX && (k->n_len & 7) == 0);
     size_t half_len = k->n_len / 2;
     size_t em_words = k->n_len / 8;
@@ -393,18 +421,15 @@ int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_
     crt_combine(s, m1, m2, k->qinv, half_len, &mod_p, &mod_q);
     rsa_mont64_to_bytes(candidate, k->n_len, s);
 
-    // The check, and the signature written only when it passed. Every
-    // array below is wiped on either verdict: a candidate that failed is
-    // as secret as a prime.
-    int verified = write_if_verified(cpu, k, em, candidate, sig);
+    // The check, and the signature written only when it passed. The
+    // wrapper's wipe clears every array here on either verdict: a
+    // candidate that failed is as secret as a prime.
+    return write_if_verified(cpu, k, em, candidate, sig);
+}
 
-    ct_wipe(&mod_p, sizeof mod_p);
-    ct_wipe(&mod_q, sizeof mod_q);
-    ct_wipe(em_plain, sizeof em_plain);
-    ct_wipe(m1, sizeof m1);
-    ct_wipe(m2, sizeof m2);
-    ct_wipe(s, sizeof s);
-    ct_wipe(candidate, sizeof candidate);
+int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
+    int verified = sign_halves(cpu, k, em, sig);
+    rsa_sign64_wipe_below();
     return verified;
 }
 

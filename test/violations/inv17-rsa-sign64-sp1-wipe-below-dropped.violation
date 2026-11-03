@@ -1,0 +1,15 @@
+invariant: INV-17
+file: rsa_sign64.c
+catches: rsa_sign_equiv_test
+reason: rsa_sign64_sp1 returns without the wipe below its body, so the two
+  primes' records, the message, both halves and the candidate stay in the
+  stack, and a candidate that failed its check factors the modulus.
+  bin/rsa_sign_equiv_test requires no two words of a value the call held
+  in the stack below it, and requires the stack equal under two secrets
+  (docs/decisions.md 181).
+
+--- old
+    int verified = sign_halves(cpu, k, em, sig);
+    rsa_sign64_wipe_below();
+--- new
+    int verified = sign_halves(cpu, k, em, sig);

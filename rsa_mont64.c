@@ -470,8 +470,6 @@ void rsa_mont64_public(uint8_t *out, const uint8_t *base, size_t len,
     }
     rsa_mont64_mont_mul(acc, x, acc, mod);
     rsa_mont64_to_bytes(out, len, acc);
-    ct_wipe(x, sizeof x);
-    ct_wipe(acc, sizeof acc);
 }
 
 #endif // CH_CPU_RUNTIME

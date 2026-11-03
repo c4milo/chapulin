@@ -79,6 +79,12 @@ STACK_BUDGET_RSA_IFMA_SIGN := 21504
 # sums, so the array is 3,072 bytes (p256_wide_wipe.h, docs/decisions.md
 # 114).
 STACK_BUDGET_P256_WIDE_WIPE := 3584
+# rsa_sign64_wipe.c, which only a host object holds, gets its own ceiling
+# for the same reason: its frame is the array it wipes after each of
+# rsa_sign64.c's private calls, RSA_SIGN64_BELOW_LEN bytes, 16,384 at the
+# 512-byte bound. gcc 15.2 for x86-64 wrote 12,416 bytes below the caller
+# of rsa_sign64_sp1 (rsa_sign64_wipe.h, docs/decisions.md 181).
+STACK_BUDGET_RSA_SIGN64_WIPE := 16896
 # sha512_compress_blocks.c, which only a host object holds, gets a ceiling
 # below every other: sha512.c wipes SHA512_COMPRESS_BLOCKS_BELOW_LEN
 # bytes, 512, of the stack below each call of the file's one function, so
@@ -333,7 +339,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
 
 HDRS := p256_sign_der.h ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h x25519_adx.h x25519_adx_asm.h x25519_wide_edwards.h x25519_wide_ed25519.h ed25519_verify.h x25519_wide_table.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h rsa_avx2.h rsa_avx2_lanes.h rsa_avx2_number.h ch_assert.h \
         pem.h base64.h pem_blocks.h x509_pem.h pem_files.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
-        tls.h rand.h rand_draw.h drbg.h sha3.h keccak_hw.h sha1.h dnssec.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mldsa_vector.h mlkem_lanes.h mlkem_zetas.h mldsa.h mldsa_poly.h mldsa_zetas.h mldsa_signer.h mldsa_sign_round.h mldsa_sign_steps.h mldsa_sign_poly.h mldsa_sign_pack.h mlkem_avx2.h mldsa_avx2.h keccak_avx2.h keccak_round_constants.h \
+        tls.h rand.h rand_draw.h drbg.h sha3.h keccak_hw.h sha1.h dnssec.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h rsa_sign64_wipe.h mlkem.h mlkem_poly.h mlkem_vector.h mldsa_vector.h mlkem_lanes.h mlkem_zetas.h mldsa.h mldsa_poly.h mldsa_zetas.h mldsa_signer.h mldsa_sign_round.h mldsa_sign_steps.h mldsa_sign_poly.h mldsa_sign_pack.h mlkem_avx2.h mldsa_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
         p256_wide_mul.h p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
         p256_adx.h p256_adx_names.h p256_adx_asm.h p256_adx_field_inline.h \
@@ -1394,7 +1400,7 @@ endif
 # CH_CPU_AVX512_IFMA beside the multiply bit (docs/decisions.md 120). It
 # holds nothing on arm64, as rsa_ifma.c does, and the wipe of the vector
 # registers it needs is in every x86-64 host object (AVX512_WIPE_SRCS).
-RSA_SIGN64_SRCS := rsa_sign64.c rsa_ifma_sign.c
+RSA_SIGN64_SRCS := rsa_sign64.c rsa_sign64_wipe.c rsa_ifma_sign.c
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter rsa_sign.c,$(LIB_SRCS)),$(RSA_SIGN64_SRCS))
 endif
@@ -3473,7 +3479,7 @@ bin/rsa_sign_equiv_test_loops: test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_
 # the instructions: they have a body on x86-64 alone, and on a CPU
 # without AVX-512 IFMA they skip unless CH_REQUIRE_AVX512_IFMA is 1.
 RSA_IFMA_SIGN_TEST_UNITS := test/rsa_ifma_sign_test.c test/rsa_ifma_sign_entries.c
-RSA_IFMA_SIGN_TEST_SRCS := rsa_sign64.c rsa_sign.c rsa_mont.c $(RSA_MONT64_SRCS) sha256.c ct.c ct_wipe.c
+RSA_IFMA_SIGN_TEST_SRCS := rsa_sign64.c rsa_sign64_wipe.c rsa_sign.c rsa_mont.c $(RSA_MONT64_SRCS) sha256.c ct.c ct_wipe.c
 bin/rsa_ifma_sign_model_test: $(RSA_IFMA_SIGN_TEST_UNITS) rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) -I. -Itest \
@@ -4662,7 +4668,7 @@ WIDEMUL_COUNT_CHACHA := $(filter-out chacha20_avx512.c,$(CHACHA_VECTOR_SRCS))
 WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c rsa_sign.c
 WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_inverse.c p256_wide_table.c \
                         p256_wide_wipe.c p256_wide_verify_point.c p256_adx_field.c \
-                        p256_adx_verify_point.c
+                        p256_adx_verify_point.c rsa_sign64_wipe.c
 WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(WIDEMUL_COUNT_CHACHA) hkdf.c sha256.c $(call hash_hw_of,hkdf.c sha256.c) \
                       ct.c ct_wipe.c buf.c record.c mlkem.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
                       sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(RSA_MONT64_SRCS) \
@@ -6953,6 +6959,7 @@ lint-stack-run:
 	    *" $$f "*) budget=$(STACK_BUDGET_KEX_HYBRID) ;; esac; \
 	  case " $(RSA_SIGN64_SRCS) " in *" $$f "*) budget=$(STACK_BUDGET_RSA_SIGN64) ;; esac; \
 	  case "$$f" in p256_wide_wipe.c) budget=$(STACK_BUDGET_P256_WIDE_WIPE) ;; esac; \
+	  case "$$f" in rsa_sign64_wipe.c) budget=$(STACK_BUDGET_RSA_SIGN64_WIPE) ;; esac; \
 	  case "$$f" in rsa_ifma_sign.c) budget=$(STACK_BUDGET_RSA_IFMA_SIGN) ;; esac; \
 	  case "$$f" in sha512_compress_blocks.c) budget=$(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) ;; esac; \
 	  case "$$f" in sha512_avx2.c) budget=$(STACK_BUDGET_SHA512_AVX2); apart="$(call unit_cflags,sha512_avx2.c)" ;; esac; \
@@ -8562,7 +8569,7 @@ WIDE64_CEILING := x25519_wide.c:0 x25519_adx.c:0 chacha20_vector.c:0 chacha20_av
                   poly1305_avx2.c:0 poly1305_native.c:0 mlkem_poly_native.c:0 \
                   poly1305_vector_native.c:0 poly1305_avx2_native.c:0 poly1305_ifma.c:0 \
                   poly1305_ifma_native.c:0 sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 \
-                  rsa_mont64_blocks.c:0 rsa_mont64_addcarry.c:0 rsa_sign64.c:0 rsa_ifma.c:0 rsa_ifma_sign.c:0 \
+                  rsa_mont64_blocks.c:0 rsa_mont64_addcarry.c:0 rsa_sign64.c:0 rsa_sign64_wipe.c:0 rsa_ifma.c:0 rsa_ifma_sign.c:0 \
                   rsa_avx2.c:0 \
                   sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 mldsa_vector.c:0 \
                   keccak_avx2.c:0 mlkem_avx2.c:0 mldsa_avx2.c:0 avx512_wipe.c:0 sha512_compress_blocks.c:0 \
@@ -8682,7 +8689,8 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    x25519_wide.c:-DCH_CPU_RUNTIME x25519_adx.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME rsa_mont64_blocks.c:-DCH_CPU_RUNTIME \
                    rsa_mont64_addcarry.c:-DCH_CPU_RUNTIME$(COMMA)-DRSA_MONT64_ADDCARRY=1$(COMMA)-DRSA_MONT64_BLOCKS=0 \
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
-                   rsa_sign64.c:-DCH_CPU_RUNTIME rsa_ifma.c:-DCH_CPU_RUNTIME avx512_wipe.c:-DCH_CPU_RUNTIME \
+                   rsa_sign64.c:-DCH_CPU_RUNTIME rsa_sign64_wipe.c:-DCH_CPU_RUNTIME rsa_ifma.c:-DCH_CPU_RUNTIME \
+                   avx512_wipe.c:-DCH_CPU_RUNTIME \
                    rsa_avx2.c:-DCH_CPU_RUNTIME rsa_avx2.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
                    rsa_ifma.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
                    rsa_ifma_sign.c:-DCH_CPU_RUNTIME \
@@ -9528,7 +9536,8 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                poly1305_ifma_native.c \
                sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_mont64_blocks.c \
                sha512_compress_blocks.c sha512_avx2.c \
-               rsa_mont64_addcarry.c rsa_sign64.c rsa_ifma.c rsa_ifma.c@512 rsa_avx2.c rsa_avx2.c@512 \
+               rsa_mont64_addcarry.c rsa_sign64.c rsa_sign64_wipe.c rsa_ifma.c rsa_ifma.c@512 rsa_avx2.c \
+               rsa_avx2.c@512 \
                $(P256_WIDE_SRCS) \
                sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c mldsa_vector.c keccak_avx2.c mlkem_avx2.c \
                mldsa_avx2.c avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512 rsa_sign64.c@512 base64.c \
@@ -9701,6 +9710,7 @@ BRANCH_CEILING := \
   arm64/rsa_mont64_addcarry.c:11 x86-64/rsa_mont64_addcarry.c:23 \
   arm64/rsa_sign64.c:41 x86-64/rsa_sign64.c:39 \
   arm64/rsa_sign64.c@512:45 x86-64/rsa_sign64.c@512:41 \
+  arm64/rsa_sign64_wipe.c:0 x86-64/rsa_sign64_wipe.c:0 \
   arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:41 arm64/rsa_ifma.c@512:0 x86-64/rsa_ifma.c@512:45 \
   arm64/rsa_avx2.c:0 x86-64/rsa_avx2.c:49 arm64/rsa_avx2.c@512:0 x86-64/rsa_avx2.c@512:86 \
   arm64/mlkem_vector.c:7 x86-64/mlkem_vector.c:7 \

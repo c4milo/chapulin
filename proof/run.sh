@@ -2872,6 +2872,13 @@ launch fast full p256_wide_point 100 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTI
 launch fast full p256_wide_digit 66 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_wipe 2 "ct_wipe.0:3073" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+# rsa_sign64.c's wipe below its four wrappers (docs/decisions.md 181), the
+# p256_wide_wipe shape at the 512-byte bound, whose array is 16,384 bytes.
+# Measured in the pinned amd64 container on 2026-11-03: 40 properties,
+# 23 s, 0.14 GB. With the wrappers, the same way, rsa_sign64_power and
+# its _webpki twin took 186 and 223 s, rsa_sign64_crt and its twin 22 and
+# 56 s, and the window and IFMA lines their old times.
+launch fast full rsa_sign64_wipe 2 "ct_wipe.0:16385" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 --unsigned-overflow-check
 # The wide inverse, p256_wide_inverse.c (docs/decisions.md 115), in four harnesses.
 # p256_wide_inverse_steps holds the approximations and one step to references that branch,
 # over every input, and the unpacking of the factors over the range of each; it runs without

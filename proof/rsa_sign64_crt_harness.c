@@ -71,7 +71,10 @@ static void prove_reduction(size_t em_words) {
     uint64_t o[PRIME_WORDS_MAX];
     havoc_modulus(&mod, PRIME_WORDS_MAX);
     havoc_words(em, em_words);
+    stub_wipe_below_calls = 0;
     message_mod_prime(o, em, em_words, &mod);
+    __CPROVER_assert(stub_wipe_below_calls == 1,
+                     "the reduction wipes the stack below its body once");
 }
 
 static void prove_recombination(void) {
@@ -86,7 +89,10 @@ static void prove_recombination(void) {
     havoc_words(m1, PRIME_WORDS_MAX);
     havoc_words(m2, PRIME_WORDS_MAX);
     fill_nondet(qinv, sizeof qinv);
+    stub_wipe_below_calls = 0;
     crt_combine(s, m1, m2, qinv, sizeof qinv, &mod_p, &mod_q);
+    __CPROVER_assert(stub_wipe_below_calls == 1,
+                     "the recombination wipes the stack below its body once");
 }
 
 static ch_rsa_priv key;

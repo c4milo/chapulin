@@ -15717,3 +15717,45 @@ does nothing more.
       **A build option**, which colibri's request excludes. **A device
       server with the signer**, whose 28 kB of stack does not fit a
       device.
+
+181. **rsa_sign64.c wipes the stack below each private call on every
+    path.** The ubuntu-26.04 trial run found that gcc 15.2 for x86-64
+    leaves words computed from the primes and the exponents in stack
+    slots no C name covers. `bin/rsa_sign_equiv_test` saw them below
+    `rsa_sign64_power`, `rsa_sign64_sp1`, the reduction modulo a prime
+    and the recombination, from 2,432 to 12,416 bytes under the caller,
+    on the 26.04 runner (EPYC 9V74). gcc 13.3 on that CPU, and gcc 15.2
+    on an EPYC 7763, left none, so the slots depend on the compiler and
+    on what the run sees, and a host object a caller builds with gcc 15
+    has them. Before this, only the AVX-512 IFMA path wiped below its
+    kernel (entry 120).
+
+    - **What changes.** `rsa_sign64_wipe.[ch]` holds
+      `rsa_sign64_wipe_below`, whose frame is one array of
+      `RSA_SIGN64_BELOW_LEN` bytes, 32 per byte of the modulus bound,
+      which it wipes. Each of the four calls is a wrapper: it calls a
+      body that is never inlined and then the wipe, so the array lies
+      where the body's frames lay. This is `p256_wide_wipe.[ch]`'s shape
+      (entry 114).
+    - **One mechanism.** The bodies' own wipes of the arrays they name,
+      and `rsa_mont64_public`'s, which the signer's check runs inside
+      `rsa_sign64_sp1`, are gone: the wrapper's wipe clears the same
+      bytes, so a test could no longer see one of them dropped, and their
+      eighteen violation files passed on broken code. Camilo ruled on
+      2026-11-03 for the wrapper's wipe alone. Four violation files drop
+      each wrapper's wipe instead. `rsa_sign64_key_ok`, which no wrapper
+      covers, keeps its named wipes.
+    - **Cost.** Six wipes per signature, 16,384 bytes each at the
+      512-byte bound, against a private operation of about a
+      millisecond. The array adds 16 kB to the depth below a signature,
+      which stays under the host server's peak, set by the ML-DSA-87
+      signer (entry 180).
+    - **What holds it.** `bin/rsa_sign_equiv_test`'s differential runs,
+      which require the stack below each call equal under two secrets,
+      and the `rsa_sign64_wipe` harness. The `rsa_sign64_power` and
+      `rsa_sign64_crt` harnesses state that each wrapper wipes once. CI
+      runs the test with gcc 15 once the workflows move to ubuntu-26.04.
+    - **Rejected:** **a wipe inside each body**, which cannot reach the
+      body's own frame. **A lower optimization level for the file**,
+      which binds no compiler. **Keeping gcc 13 in CI**, which hides the
+      slots from the test and not from a caller.
