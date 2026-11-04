@@ -65,7 +65,9 @@ def diff_srcs():
                          cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
     if not out:
         sys.exit("make print-diff-srcs printed no sources")
-    return out
+    # make names the library sources by their path in src/, and SRCS by
+    # name, so the two lists meet on the name.
+    return [s.removeprefix("src/") for s in out]
 
 
 def spec_ops():
@@ -152,7 +154,8 @@ def build_and_run():
     linked = SRCS + [s for s in diff_srcs() if s not in SRCS]
     for src in (s for s in linked if s not in TRUST_WEBPKI_ONLY):
         obj = OUT_DIR / (src[:-2] + ".o")
-        subprocess.run(["gcc", *flags, "-c", str(ROOT / src), "-o", str(obj)],
+        path = ROOT / "src" / src if (ROOT / "src" / src).exists() else ROOT / src
+        subprocess.run(["gcc", *flags, "-c", str(path), "-o", str(obj)],
                        check=True, cwd=ROOT)
         objs.append(str(obj))
     binary = OUT_DIR / "diff"
