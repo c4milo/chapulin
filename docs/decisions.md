@@ -15888,6 +15888,10 @@ does nothing more.
     - **The room.** `CH_PEM_RSA_KEY_DER_MAX` is 73 + 9M/2 bytes for a
       modulus bound of M bytes: 2,377 at 512. OpenSSL's RSA-4096 key is
       2,373 bytes.
+    - **Stack.** `bench/sram.sh` on the M1 Pro: 20,304 bytes in the host
+      server object, through `rsa_sign64.c`'s wipe below each private
+      call (entry 181), and 7,360 in the device object, through the
+      verification of the call's signature.
     - **What holds it.** `bin/pem_files_rsa_test`, a device object, and
       `bin/pem_files_rsa_host`, a host object under two cpu values, read
       OpenSSL's 2048-, 3072- and 4096-bit keys and refuse the forms

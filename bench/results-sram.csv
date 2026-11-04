@@ -40,6 +40,8 @@ stack_pubkey_from_pem_ca_ecdsa,640
 stack_chain_from_pem,592
 stack_p256_key_from_pem,3776
 stack_p256_key_from_pem_device,1392
+stack_rsa_key_from_pem,20304
+stack_rsa_key_from_pem_device,7360
 stack_anchors_from_pem,560
 session_struct_server_aes_arm64,3256
 static_working_set_server_aes_arm64,5304

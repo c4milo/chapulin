@@ -251,7 +251,7 @@ head -1 "$TMP/pq.stack"
 echo "-- ROLE=server; ch_srv_accept peak = the ML-DSA-87 signer --"
 stack_report server "STACK_MAKE=ROLE=server TRUST=none"
 head -1 "$TMP/server.stack"
-grep '^ch_chain_from_pem\|^ch_p256_key_from_pem\|^ch_mldsa_key_from_pem' "$TMP/server.stack"
+grep '^ch_chain_from_pem\|^ch_p256_key_from_pem\|^ch_rsa_key_from_pem\|^ch_mldsa_key_from_pem' "$TMP/server.stack"
 echo "-- ROLE=server without srv_mldsa_send_certificate_verify; peak = the RSA-PSS signer --"
 stack_report server_without_srv_mldsa_send_certificate_verify "STACK_MAKE=ROLE=server TRUST=none" \
     STACK_PRUNE=srv_mldsa_send_certificate_verify
@@ -267,7 +267,7 @@ head -1 "$TMP/server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss_sr
 echo "-- ROLE=server device object; no 64-bit signer and no wide P-256 field --"
 stack_report server_device "STACK_MAKE=ROLE=server TRUST=none HOST_TARGET="
 head -1 "$TMP/server_device.stack"
-grep '^ch_p256_key_from_pem' "$TMP/server_device.stack"
+grep '^ch_p256_key_from_pem\|^ch_rsa_key_from_pem' "$TMP/server_device.stack"
 echo "-- ROLE=server device object without srv_kex_share; peak = rsa_sign.c's ladder --"
 stack_report server_device_without_srv_kex_share "STACK_MAKE=ROLE=server TRUST=none HOST_TARGET=" \
     STACK_PRUNE=srv_kex_share
@@ -373,6 +373,8 @@ TMPOUT="$TMP/results-sram.csv"
     row stack_chain_from_pem "$(peak server ch_chain_from_pem_tcp_blocking)"
     row stack_p256_key_from_pem "$(peak server ch_p256_key_from_pem_tcp_blocking)"
     row stack_p256_key_from_pem_device "$(peak server_device ch_p256_key_from_pem_tcp_blocking)"
+    row stack_rsa_key_from_pem "$(peak server ch_rsa_key_from_pem_tcp_blocking)"
+    row stack_rsa_key_from_pem_device "$(peak server_device ch_rsa_key_from_pem_tcp_blocking)"
     row stack_anchors_from_pem "$(peak webpki ch_anchors_from_pem_tcp_blocking)"
     row session_struct_server_aes_arm64 "$SESSION_SERVER_AES"
     row static_working_set_server_aes_arm64 "$((SESSION_SERVER_AES + RXBUF))"

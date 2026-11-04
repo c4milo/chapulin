@@ -34,10 +34,11 @@ ROOT = Path(__file__).resolve().parent.parent
 ENTRIES = ["_ch_connect", "_ch_read", "_ch_write", "_ch_close"]
 CA_ENTRIES = ["_ch_pubkey_from_pem_tcp_blocking"]
 # The PEM calls (pem_files.h): a server role exports the chain and the
-# key call, and a TRUST=webpki object the bundle call. The script
-# measures each where the object defines it, as it measures CA_ENTRIES.
+# P-256 and RSA key calls, and a TRUST=webpki object the bundle call. The
+# script measures each where the object defines it, as it measures
+# CA_ENTRIES.
 PEM_ENTRIES = ["_ch_chain_from_pem_tcp_blocking", "_ch_p256_key_from_pem_tcp_blocking",
-               "_ch_anchors_from_pem_tcp_blocking"]
+               "_ch_rsa_key_from_pem_tcp_blocking", "_ch_anchors_from_pem_tcp_blocking"]
 # A ROLE=server build exports ch_srv_accept where a client exports
 # ch_connect, and shares the other three.
 SERVER_ENTRIES = ["_ch_srv_accept", "_ch_read", "_ch_write", "_ch_close"]

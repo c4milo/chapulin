@@ -312,6 +312,7 @@ the DER of any file.
 |---|---|---|---|
 | chain, `ch_chain_from_pem` | the caller's | the caller's | 16 bytes a `ch_cert`, 255 at most |
 | P-256 key, `ch_p256_key_from_pem` | the caller's | none: 32 for the scalar and 64 for the point | none |
+| RSA key, `ch_rsa_key_from_pem` | the caller's | none: one `ch_rsa_priv` | none |
 | CA bundle, `ch_anchors_from_pem` | the caller's | the caller's | 32 bytes a `ch_trust_anchor` |
 
 The sizes of an entry are the arm64 compiler's. Homebrew's
@@ -335,6 +336,16 @@ host program gives the key call 3,776 bytes of stack. Both grew 16 bytes
 on 2026-10-31: the key call reads its blocks through `pem_blocks`, and
 the EC PARAMETERS room now sits in the call's own frame
 (docs/decisions.md 170).
+
+The RSA key call (decision 184) decodes into a room of
+`CH_PEM_RSA_KEY_DER_MAX` bytes in its own frame, and then signs once.
+On arm64 it peaks at 20,304 bytes in `ROLE=server TRUST=none`. Its
+deepest chain is the 64-bit signer's wipe below each private call, an
+array of 16,384 bytes (decision 181). The call signs on that signer
+under `CH_CPU_CONSTANT_TIME_MULTIPLY` alone. A device object holds the
+ladder alone, and there the call peaks at 7,360 bytes, through the
+verification of its signature
+(`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`).
 
 ### Compared with other libraries
 

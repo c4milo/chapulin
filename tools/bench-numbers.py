@@ -172,6 +172,9 @@ STACK_PROSE = [
     ("its key call peaks at {} bytes (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`)",
      [["stack_p256_key_from_pem_device"]]),
     ("So a host program gives the key call {} bytes of stack", [["stack_p256_key_from_pem"]]),
+    ("On arm64 it peaks at {} bytes in `ROLE=server TRUST=none`", [["stack_rsa_key_from_pem"]]),
+    ("and there the call peaks at {} bytes, through the verification of its signature",
+     [["stack_rsa_key_from_pem_device"]]),
     ("`ch_connect` peaks through ML-KEM-1024's decapsulation, at {} bytes in the raw mode and {} "
      "in the CA mode", [["stack_connect_cnsa2_mldsa"], ["stack_connect_cnsa2_ca_mldsa"]]),
     ("the deepest chain is the ML-DSA-87 verify, at {} bytes in the raw mode and {} in the CA mode",
