@@ -15745,6 +15745,18 @@ does nothing more.
       2026-11-03 for the wrapper's wipe alone. Four violation files drop
       each wrapper's wipe instead. `rsa_sign64_key_ok`, which no wrapper
       covers, keeps its named wipes.
+    - **The rows, 2026-11-04.** The first nightly after this entry
+      (run 41743004759) found four more violation files that passed on
+      broken code. Each dropped a wipe in a row function:
+      `rsa_mont64_mont_mul`'s running sum, `rsa_mont64_mont_square`'s
+      2a, and `rsa_mont64_addcarry_mul`'s running sum and u. Every caller
+      that hands those functions a secret runs under a wrapper: the key
+      setup and the reduction under `rsa_sign64_sp1` and
+      `message_mod_prime`, the window under `rsa_sign64_power`, and the
+      IFMA setup under `rsa_ifma_sign_wipe_below`. The other callers,
+      the verifier and `rsa_mont64_exp.c`, take public input. So Camilo
+      ruled the same way. The rows of both multiplications and both
+      squares wipe nothing by name, and the four files are gone.
     - **Cost.** Six wipes per signature, 16,384 bytes each at the
       512-byte bound, against a private operation of about a
       millisecond. The array adds 16 kB to the depth below a signature,

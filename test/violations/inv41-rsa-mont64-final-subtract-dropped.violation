@@ -8,7 +8,11 @@ reason: rsa_mont64_mont_mul copies the running sum out without its last
 
 --- old
     reduce_once(o, t, t[k], m, k);
-    // t held a * b / R before its last subtraction, which is as secret as
+}
+
+// The square of a is the sum over i of a_i B^i V_i, where B = 2^64 and
 --- new
     memcpy(o, t, k * sizeof(uint64_t));
-    // t held a * b / R before its last subtraction, which is as secret as
+}
+
+// The square of a is the sum over i of a_i B^i V_i, where B = 2^64 and

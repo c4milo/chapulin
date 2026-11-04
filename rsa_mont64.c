@@ -229,9 +229,6 @@ void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
         t[k] = (uint64_t)(top >> 64);
     }
     reduce_once(o, t, t[k], m, k);
-    // t held a * b / R before its last subtraction, which is as secret as
-    // the product, and the last round's u above it.
-    ct_wipe(t, (k + 2) * sizeof(uint64_t));
 }
 
 // The square of a is the sum over i of a_i B^i V_i, where B = 2^64 and
@@ -343,10 +340,6 @@ void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_mod
         }
     }
     reduce_once(o, t, t[k], m, k);
-    // d is twice a, and t held a^2 / R before its last subtraction and the
-    // last row's u above it: as secret as a.
-    ct_wipe(d, (k + 1) * sizeof(uint64_t));
-    ct_wipe(t, (k + 2) * sizeof(uint64_t));
 }
 
 void rsa_mont64_add(uint64_t *o, const uint64_t *a, const uint64_t *b,

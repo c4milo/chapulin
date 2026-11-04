@@ -134,12 +134,7 @@ uint64_t rsa_mont64_addcarry_mul(uint64_t *o, const uint64_t *a, const uint64_t 
     for (size_t j = 0; j < k; j++) {
         o[j] = t[k + j];
     }
-    uint64_t top = t[2 * k];
-    // t held a * b and the multiples of m, and u_word the last round's u: as secret as the
-    // product.
-    ct_wipe(t, (2 * k + 1) * sizeof(addcarry_word));
-    ct_wipe(u_word, sizeof u_word);
-    return top;
+    return t[2 * k];
 }
 
 // The square of a is the cross products a_i a_j, i < j, each once and doubled, and the squares
@@ -184,9 +179,6 @@ uint64_t rsa_mont64_addcarry_square(uint64_t *o, const uint64_t *a, const rsa_mo
     for (size_t j = 0; j < k; j++) {
         o[j] = t[k + j];
     }
-    // t held a^2 and the multiples of m, and u_word the last row's u: as secret as a.
-    ct_wipe(t, 2 * k * sizeof(addcarry_word));
-    ct_wipe(u_word, sizeof u_word);
     return top;
 }
 

@@ -1847,11 +1847,8 @@ last `ROLE=server` stub, as the entry said it would.
   `inv41-rsa-mont64-addcarry-tail-carry-dropped` and
   `inv41-rsa-mont64-addcarry-square-bit-not-moved`, which
   `bin/rsa_addcarry_equiv_test` catches on every machine; hands
-  `_addcarry_u64` a carry in of zero, drops the multiplication's wipe of
-  its running sum or of u, or turns the rows off under gcc for x86-64:
-  `inv41-rsa-mont64-addcarry-intrinsic-carry-in-dropped`,
-  `inv41-rsa-mont64-addcarry-row-wipe-dropped`,
-  `inv41-rsa-mont64-addcarry-u-wipe-dropped` and
+  `_addcarry_u64` a carry in of zero, or turns the rows off under gcc
+  for x86-64: `inv41-rsa-mont64-addcarry-intrinsic-carry-in-dropped` and
   `inv41-rsa-mont64-addcarry-off-under-gcc`, which
   `test/docker-aes-runtime-qemu.sh rsa-addcarry` catches; turns them on
   under clang, `inv41-rsa-mont64-addcarry-under-clang`, which
@@ -6249,16 +6246,12 @@ last `ROLE=server` stub, as the entry said it would.
   violation file drops each wrapper's wipe: `inv17-rsa-sign64-` with
   `power`, `reduction`, `recombination` and `sp1`, each ending in
   `-wipe-below-dropped`. One more drops each named wipe that remains,
-  but the square's running sum: `inv17-rsa-mont64-running-sum-wipe-dropped`,
-  `inv17-rsa-mont64-square-double-wipe-dropped`, and under
-  `inv17-rsa-crt-` the key test's `key-test-p`, `key-test-q` and
+  under `inv17-rsa-crt-`: the key test's `key-test-p`, `key-test-q` and
   `key-test-product`, each ending in `-wipe-dropped`. The test catches each
-  under Apple clang 21 for arm64 and x86-64 and under gcc 13.3 for both,
-  except the square's two (decision 106): it catches both of those under Apple clang 21 for
-  arm64, and under gcc 13 for x86-64 it catches the dropped wipe of 2a
-  and not that of the running sum, whose bytes a later call's frame
-  writes over before the test looks. CI's mutants job runs gcc 13 for
-  x86-64, so the running sum's wipe has no violation file. `table_select` ends
+  under Apple clang 21 for arm64 and x86-64 and under gcc 13.3 for both.
+  The rows of `rsa_mont64.c` and `rsa_mont64_addcarry.c` wipe nothing by
+  name: every caller that hands them a secret runs under one of those
+  wrappers, so no test could see such a wipe go. `table_select` ends
   by writing zero through the pointer its masks went through, so the
   word behind it does not end on the last one; no test can look for a
   word of all ones or of zeros, so the Semgrep rule of INV-16 holds that
