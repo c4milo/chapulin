@@ -416,14 +416,20 @@ rsa_ifma_sign_setup_webpki 125
 rsa_ifma_sign_wipe 11
 rsa_ifma_sign_wipe_webpki 11
 rsa_ifma_sums 227
-rsa_mont64_addcarry_sums 148
+# e0a917d5 took rsa_mont64_addcarry_sums from 148 to 144: the rows no
+# longer wipe t and u by name, and those ct_wipe calls were locations it
+# reached (nightly run 41779440395, docs/decisions.md 181).
+rsa_mont64_addcarry_sums 144
 rsa_mont64_blocks_sums 162
 rsa_mont64_mul128 4
 rsa_mont64_ops 147
 rsa_mont64_ops_webpki 147
 rsa_mont64_step 8
 rsa_mont64_step_sum 8
-rsa_mont64_sums 172
+# e0a917d5 took rsa_mont64_sums from 172 to 164: the multiplication and
+# the square no longer wipe t and 2a by name, and those ct_wipe calls were
+# locations it reached (nightly run 41779440395, docs/decisions.md 181).
+rsa_mont64_sums 164
 # The six rsa_mont lines took their floors on 2026-10-17 from the
 # nightly runner, under the cover command with --sat-solver cadical. Each
 # took 28 s to 118 s there, and on MiniSat each returned no number in
