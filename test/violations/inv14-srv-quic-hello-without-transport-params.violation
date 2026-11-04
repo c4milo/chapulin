@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_quic.c
+file: src/srv_quic.c
 catches: proof/prove-one.sh srv_quic
 reason: take_transport_params accepts a ClientHello that carries no
   quic_transport_parameters, which RFC 9001 section 8.2 makes a fatal

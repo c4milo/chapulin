@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_blocks.c
+file: src/pem_blocks.c
 catches: pem_files_test
 reason: "-----BEGIN " that does not start its line is skipped as text,
   with the block's body and END line, so a bundle saved with a

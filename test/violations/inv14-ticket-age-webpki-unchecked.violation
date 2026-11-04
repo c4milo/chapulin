@@ -1,5 +1,5 @@
 invariant: INV-14
-file: tls.c
+file: src/tls.c
 catches: webpki_resume_test
 reason: the TRUST=webpki tlsi_config_ok stops asking hspost_ticket_age_ok,
   so ch_connect and ch_record_init in that mode offer a stale ticket that

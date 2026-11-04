@@ -1,5 +1,5 @@
 invariant: INV-17
-file: gcm_arm64.c
+file: src/gcm_arm64.c
 catches: test/docker-aes-runtime-qemu.sh ghash-equiv
 reason: the arm64 AES-GCM seal and open wipe their state only up to the
   powers of the hash subkey, so H to H^8, which the key fixes, stay in the

@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_avx2.c
+file: src/rsa_avx2.c
 catches: proof/prove-one.sh rsa_avx2_sums_multiply_2
 reason: the triangle multiplies the whole lane by k0 for row 0's y, where it
   multiplies the lane's low D bits. The product wraps 2^64 for a lane

@@ -1,5 +1,5 @@
 invariant: INV-3
-file: p256_ecdh.c
+file: src/p256_ecdh.c
 catches: proof/prove-one.sh p256_ecdh
 reason: an all-zero draw is the scalar 0, whose public key is the point at
   infinity and whose shared secret is that point whatever the peer sends.

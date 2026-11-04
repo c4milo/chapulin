@@ -1,5 +1,5 @@
 invariant: INV-11
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test
 reason: the server binds each direction to the opposite handshake secret
   from the client, and this restores handshake.c:94-95's client

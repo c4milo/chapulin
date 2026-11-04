@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: webpki_encrypted_exts_test
 reason: the EncryptedExtensions handler stops seeding
   ch_tls.server_cert_type with CH_CERT_TYPE_X509, so a server that sends

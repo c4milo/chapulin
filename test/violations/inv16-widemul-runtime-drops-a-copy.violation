@@ -7,6 +7,6 @@ reason: a host object stops carrying the native copy of mlkem_poly.c, and its
   WIDEMUL_COPIED beside its native copy.
 
 --- old
-WIDEMUL_COPIED := poly1305.c mlkem_poly.c
+WIDEMUL_COPIED := src/poly1305.c src/mlkem_poly.c
 --- new
-WIDEMUL_COPIED := poly1305.c
+WIDEMUL_COPIED := src/poly1305.c

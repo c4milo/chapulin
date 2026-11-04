@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: src/widemul.h
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: widemul_poly1305_avx2 reads CH_CPU_AVX2 alone, so a session that
   states AVX2 and not the multiply bit runs the kernel, whose VPMULUDQ

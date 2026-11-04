@@ -1,5 +1,5 @@
 invariant: INV-17
-file: ct_wipe.c
+file: src/ct_wipe.c
 catches: test/lint-runtime-symbols.sh
 reason: ct_wipe stores its whole words through an lvalue that is not
   volatile. Every byte is still zero, so no vector notices, but a hosted

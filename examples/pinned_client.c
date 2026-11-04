@@ -25,7 +25,7 @@
  *
  *   make lib RAND=extern                         # RSA-PSS pins
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *      -I. -include bin/chapulin.h \
+ *      -Isrc -include bin/chapulin.h \
  *      -o pinned_client examples/pinned_client.c bin/chapulin.o
  *
  * For P-256 pins, build the library with `make lib TRUST=raw-ecdsa RAND=extern`

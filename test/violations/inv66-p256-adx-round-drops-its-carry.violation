@@ -1,5 +1,5 @@
 invariant: INV-66
-file: p256_adx_asm.h
+file: src/p256_adx_asm.h
 catches: test/docker-aes-runtime-qemu.sh p256-adx
 reason: p256_adx_mul_mont's second round of the reduction drops the carry
   the first round left past its fifth word, so a product whose first round

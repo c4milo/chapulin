@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_parser_ee.c
+file: src/handshake_parser_ee.c
 catches: handshake_strict_webpki
 reason: a TRUST=webpki server_name acknowledgement that carries data
   still fails, but with unsupported_extension, the alert for an

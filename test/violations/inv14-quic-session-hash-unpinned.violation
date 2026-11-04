@@ -1,5 +1,5 @@
 invariant: INV-14
-file: quic.c
+file: src/quic.c
 catches: quic_loop_webpki
 reason: ch_quic_init hashes the configuration for its tickets without the
   SPKI pins, so the tickets a pinned QUIC session receives are bound to a

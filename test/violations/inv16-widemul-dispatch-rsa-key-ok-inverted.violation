@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: src/widemul.h
 catches: widemul_runtime_test
 reason: widemul_rsa_pss_sign_key_ok inverts its branch, so a session that
   does not state its multiply runs rsa_sign64_key_ok, which multiplies the

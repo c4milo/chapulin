@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_cert.c
+file: src/webpki_cert.c
 catches: quic_loop_webpki
 reason: a TRANSPORT=quic-nonblocking build holds the leaf under pins
   alone to the walk's CH_WEBPKI_CERT_MAX, so a DNS-over-QUIC client

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_point.c
+file: src/p256_wide_point.c
 catches: diff_p256_wide
 reason: the incomplete addition adds vvv * Y1 to Y3 where the formula
   takes it away, so Y3 comes out for another point. bin/diff_p256_wide

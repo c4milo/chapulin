@@ -1,5 +1,5 @@
 invariant: INV-46
-file: mlkem_vector.c
+file: src/mlkem_vector.c
 catches: mlkem_vector_equiv_test
 reason: the base multiplication reads its twiddle factors four entries
   below the ones mlk_poly_basemul reads for each block of 16

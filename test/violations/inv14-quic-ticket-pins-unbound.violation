@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: quic_loop_webpki
 reason: the configuration hash leaves out the SPKI pins, so a ticket a
   pinned QUIC session received resumes under another pin set, and the

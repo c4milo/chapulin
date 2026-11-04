@@ -1,5 +1,5 @@
 invariant: INV-16
-file: ct.h
+file: src/ct.h
 catches: test/docker-mips.sh
 reason: ct_widemul_opaque's compare-carry recombination, written into
   ct_widemul, hands gcc `ll + (mid << 16)` and `hh + ...` in place of

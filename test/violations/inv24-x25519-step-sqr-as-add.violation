@@ -1,5 +1,5 @@
 invariant: INV-24
-file: x25519.c
+file: src/x25519.c
 catches: proof/prove-one.sh x25519_step
 reason: turning the step's last square into an add of e to itself hands
   the next step a b whose words reach 2^18, twice the bound the field-op

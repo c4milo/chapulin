@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify_point.c
+file: src/p256_wide_verify_point.c
 catches: p256_verify_equiv_test
 reason: the host verifier's general Jacobian addition doubles a point
   where its other operand is the point's negative, whose sum is the point

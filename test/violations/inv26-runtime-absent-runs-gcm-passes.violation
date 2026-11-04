@@ -1,5 +1,5 @@
 invariant: INV-26
-file: gcm.c
+file: src/gcm.c
 catches: aes_runtime_test
 reason: a QUIC host object hands the whole passes of a seal or an open
   under a schedule the table runs to gcm_hw.c's one-pass loops, so a

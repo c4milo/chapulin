@@ -53,7 +53,7 @@ STACK_BUDGET_KEX_HYBRID := 4608
 # ML-KEM-768 (docs/decisions.md 177). Its row sampler holds the row's
 # three entries, so mlk_matvec_row's frame is 2,656 bytes where mlkem.c's
 # is 1,120 (docs/decisions.md 107).
-STACK_KEX_HYBRID_COPIES = $(if $(filter mlkem.c,$(KEX_HYBRID_SRCS)),mlkem_avx2.c)
+STACK_KEX_HYBRID_COPIES = $(if $(filter src/mlkem.c,$(KEX_HYBRID_SRCS)),src/mlkem_avx2.c)
 # rsa_sign64.c, the RSA signer a host object runs on 64-bit words, gets
 # its own ceiling too, set by what a CRT signature holds at once.
 # rsa_sign64_sp1 holds a modulus record for each prime, the message, the
@@ -133,7 +133,7 @@ STACK_BUDGET_SHA512_AVX2 := 384
 # test/quic-builds.sh, which compiles the kernel for x86-64 with the
 # pinned clang under the same ceiling, for the baseline target and for
 # x86-64-v4, and requires the same of its object.
-GCM_AVX512_BELOW_LEN := $(shell sed -n 's/^.define GCM_AVX512_BELOW_LEN \([0-9][0-9]*\)$$/\1/p' gcm_avx512_kernel.h)
+GCM_AVX512_BELOW_LEN := $(shell sed -n 's/^.define GCM_AVX512_BELOW_LEN \([0-9][0-9]*\)$$/\1/p' src/gcm_avx512_kernel.h)
 STACK_BUDGET_GCM_AVX512 := $(shell expr $(GCM_AVX512_BELOW_LEN) - 512)
 STACK_BUDGET_GCM_AVX512_WIPE := $(shell expr $(GCM_AVX512_BELOW_LEN) + 512)
 # mldsa.c, ML-DSA-87's verifier, gets a ceiling of its own, set from its
@@ -145,7 +145,7 @@ STACK_BUDGET_GCM_AVX512_WIPE := $(shell expr $(GCM_AVX512_BELOW_LEN) + 512)
 # lint-stack compiles MLDSA_SRCS in every other build it checks too, so a
 # frame that grows fails in every lane; mldsa_poly.c takes the build's
 # budget, as every other file does.
-MLDSA_SRCS := mldsa.c mldsa_poly.c
+MLDSA_SRCS := src/mldsa.c src/mldsa_poly.c
 STACK_BUDGET_MLDSA := 11264
 # mldsa_signer.c, ML-DSA-87's signer, gets a ceiling of its own, set from
 # its measured frame (docs/decisions.md 159). sign_rounds holds one round
@@ -157,7 +157,7 @@ STACK_BUDGET_MLDSA := 11264
 # keeps. No packaged object holds the files yet, so lint-stack compiles
 # MLDSA_SIGN_SRCS in every build it checks; the other four files take
 # the build's budget.
-MLDSA_SIGN_SRCS := mldsa_signer.c mldsa_sign_round.c mldsa_sign_steps.c mldsa_sign_poly.c mldsa_sign_pack.c
+MLDSA_SIGN_SRCS := src/mldsa_signer.c src/mldsa_sign_round.c src/mldsa_sign_steps.c src/mldsa_sign_poly.c src/mldsa_sign_pack.c
 STACK_BUDGET_MLDSA_SIGN := 20480
 # An x86-64 host object samples four entries of a row of A at once on the
 # four-way Keccak (docs/decisions.md 178), so two frames hold four
@@ -333,21 +333,21 @@ SHELLCHECK ?= shellcheck
 # success.
 SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*' 2>/dev/null)
 
-SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-        pem.c base64.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
-        handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
+SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly1305.c src/aead.c src/x25519.c src/p256.c src/rsa.c src/rsa_mont.c \
+        src/pem.c src/base64.c src/x509.c src/x509_der.c src/x509_ca.c src/webpki_time.c src/webpki_name.c src/webpki_spki.c src/webpki_ext.c src/buf.c src/record.c src/keysched.c src/io.c src/handshake_message.c src/handshake_parser.c src/handshake_parser_ee.c src/handshake_record.c src/session.c \
+        src/handshake_auth.c src/handshake_flight.c src/handshake.c src/handshake_post.c src/tls.c src/tls_write.c src/softmul.c src/build.c
 
-HDRS := p256_sign_der.h ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h x25519_adx.h x25519_adx_asm.h x25519_wide_edwards.h x25519_wide_ed25519.h ed25519_verify.h x25519_wide_table.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_mont64_adx.h rsa_mont64_adx_asm.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h rsa_avx2.h rsa_avx2_lanes.h rsa_avx2_number.h ch_assert.h \
-        pem.h base64.h pem_blocks.h x509_pem.h pem_files.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
-        tls.h rand.h rand_draw.h drbg.h sha3.h keccak_hw.h sha1.h dnssec.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h rsa_sign64_wipe.h mlkem.h mlkem_poly.h mlkem_vector.h mldsa_vector.h mlkem_lanes.h mlkem_zetas.h mldsa.h mldsa_poly.h mldsa_zetas.h mldsa_signer.h mldsa_sign_round.h mldsa_sign_steps.h mldsa_sign_poly.h mldsa_sign_pack.h mlkem_avx2.h mldsa_avx2.h keccak_avx2.h keccak_round_constants.h \
-        p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
-        p256_wide_mul.h p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
-        p256_adx.h p256_adx_names.h p256_adx_asm.h p256_adx_field_inline.h \
-        p384_wide_field.h p384_wide_point.h p384_wide_verify.h \
-        handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h gcm_ghash.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_arm64.h gcm_arm64_passes.h gcm_vaes.h gcm_avx512.h gcm_avx512_kernel.h gcm_avx512_ghash.h \
-        srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_mldsa.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
-        tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
-        alert.h result.h session_report.h widemul.h widemul_answer.h widemul_p256.h widemul_native.h cpu_cfg.h cpu.h hash_hw.h profile_cfg.h
+HDRS := src/p256_sign_der.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h src/ch_assert.h \
+        src/pem.h src/base64.h src/pem_blocks.h src/x509_pem.h src/pem_files.h src/x509.h src/x509_der.h src/x509_ca.h src/webpki.h src/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h src/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
+        src/tls.h src/rand.h src/rand_draw.h src/drbg.h src/sha3.h src/keccak_hw.h src/sha1.h src/dnssec.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
+        src/p256_wide_word.h src/p256_wide_field.h src/p256_wide_scalar.h src/p256_wide_inverse.h src/p256_wide_point.h \
+        src/p256_wide_mul.h src/p256_wide_table.h src/p256_wide_wipe.h src/p256_wide_verify.h src/p256_wide_verify_point.h \
+        src/p256_adx.h src/p256_adx_names.h src/p256_adx_asm.h src/p256_adx_field_inline.h \
+        src/p384_wide_field.h src/p384_wide_point.h src/p384_wide_verify.h \
+        src/handshake_flight.h src/handshake_groups.h src/quic.h src/quic_cfg.h src/quic_session.h src/quic_version.h src/quic_config.h src/quic_initial.h src/quic_keys.h src/quic_packet.h src/quic_retry.h src/quic_step.h src/quic_fail.h src/quic_token.h src/aes.h src/aes_block.h src/aes_public_key.h src/aes_traffic_key.h src/aes_schedule.h src/gcm.h src/gcm_ghash.h src/ghash_hw.h src/ghash_vector.h src/gcm_hw.h src/gcm_arm64.h src/gcm_arm64_passes.h src/gcm_vaes.h src/gcm_avx512.h src/gcm_avx512_kernel.h src/gcm_avx512_ghash.h \
+        src/srv_cfg.h src/srv.h src/srv_parser.h src/srv_parser_ext.h src/srv_message.h src/srv_cookie.h src/srv_ticket.h src/srv_auth.h src/srv_mldsa.h src/srv_out.h src/srv_flight.h src/srv_resume.h src/srv_handshake.h src/srv_quic.h src/srv_tcp_nonblocking.h src/srv_kex.h src/keylog.h \
+        src/tcp_nonblocking.h src/tcp_nonblocking_frame.h src/tcp_nonblocking_step.h src/build.h src/suite.h src/transcript.h src/ticket.h \
+        src/alert.h src/result.h src/session_report.h src/widemul.h src/widemul_answer.h src/widemul_p256.h src/widemul_native.h src/cpu_cfg.h src/cpu.h src/hash_hw.h src/profile_cfg.h
 
 # The wide P-256 files and the table of multiples of G the base
 # multiplication reads, which a host object holds beside p256_field.c,
@@ -362,21 +362,21 @@ HDRS := p256_sign_der.h ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha
 # p256.c run where the session's ch_cfg.cpu holds CH_CPU_BMI2_ADX
 # (docs/decisions.md 171). They are named once, here, for the object, for
 # the test binaries that link a host object's P-256 and for the lints.
-P256_ADX_SRCS := p256_adx_field.c p256_adx_point.c p256_adx_mul.c p256_adx_verify_point.c \
-                 p256_adx_verify.c
+P256_ADX_SRCS := src/p256_adx_field.c src/p256_adx_point.c src/p256_adx_mul.c src/p256_adx_verify_point.c \
+                 src/p256_adx_verify.c
 # The three that include p256_adx_asm.h, through p256_adx_field_inline.h
 # (docs/decisions.md 175).
-P256_ADX_INLINE_SRCS := p256_adx_field.c p256_adx_point.c p256_adx_verify_point.c
-P256_WIDE_SRCS := p256_wide_field.c p256_wide_scalar.c p256_wide_inverse.c p256_wide_point.c \
-                  p256_wide_mul.c p256_wide_table.c p256_wide_wipe.c p256_wide_verify.c \
-                  p256_wide_verify_point.c $(P256_ADX_SRCS)
+P256_ADX_INLINE_SRCS := src/p256_adx_field.c src/p256_adx_point.c src/p256_adx_verify_point.c
+P256_WIDE_SRCS := src/p256_wide_field.c src/p256_wide_scalar.c src/p256_wide_inverse.c src/p256_wide_point.c \
+                  src/p256_wide_mul.c src/p256_wide_table.c src/p256_wide_wipe.c src/p256_wide_verify.c \
+                  src/p256_wide_verify_point.c $(P256_ADX_SRCS)
 
 # P-384 on six 64-bit words: the field, the points and the verifier over
 # them, which a host object holds in place of p384_field.c and of p384.c's
 # 32-bit arm (docs/decisions.md 97). They are named once, here, for the
 # object, for the test binaries that link a host object's P-384 and for
 # the lints.
-P384_WIDE_SRCS := p384_wide_field.c p384_wide_point.c p384_wide_verify.c
+P384_WIDE_SRCS := src/p384_wide_field.c src/p384_wide_point.c src/p384_wide_verify.c
 
 # The TRANSPORT=quic-nonblocking mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -476,8 +476,8 @@ endif
 # gcm_arm64.c and gcm_arm64_eor3.c hold the arm64 host object's whole
 # AES-GCM, with its passes in inline assembly, and have no body on any
 # other target (docs/decisions.md 158).
-GCM_ARM64_SRCS := gcm_arm64.c gcm_arm64_eor3.c
-AES_HW_SRCS := aes_hw.c ghash_hw.c gcm_hw.c $(GCM_ARM64_SRCS) gcm_vaes.c gcm_avx512.c gcm_avx512_kernel.c
+GCM_ARM64_SRCS := src/gcm_arm64.c src/gcm_arm64_eor3.c
+AES_HW_SRCS := src/aes_hw.c src/ghash_hw.c src/gcm_hw.c $(GCM_ARM64_SRCS) src/gcm_vaes.c src/gcm_avx512.c src/gcm_avx512_kernel.c
 # AES-256 outside a suite build, for the test binaries and proof harnesses
 # that hold it to FIPS 197 and SP 800-38D on every AES value: on AES=soft
 # it compiles the software reference quic_aes_soft.c keeps for that, and
@@ -492,15 +492,15 @@ ifneq ($(filter hw runtime,$(AES)),)
 $(error AES=$(AES) is gone: on arm64 and x86-64 a TRUST=webpki client, ROLE=server and ROLE=both hold the AES instructions and each session picks them from ch_cfg.cpu (docs/decisions.md 89); a device object takes AES=soft or AES=extern)
 else ifeq ($(AES),soft)
 AES_DEF :=
-AES_IMPL := quic_aes_soft.c
+AES_IMPL := src/quic_aes_soft.c
 else ifeq ($(AES),extern)
 AES_DEF := -DCH_AES_EXTERN
-AES_IMPL := aes_extern.c
+AES_IMPL := src/aes_extern.c
 else
 $(error AES=$(AES) is not an AES implementation; use AES=soft or AES=extern)
 endif
-QUIC_SRCS := aes.c $(AES_IMPL) gcm.c quic_keys.c quic_packet.c quic_initial.c \
-             quic_retry.c quic_config.c quic_fail.c quic_step.c quic.c
+QUIC_SRCS := src/aes.c $(AES_IMPL) src/gcm.c src/quic_keys.c src/quic_packet.c src/quic_initial.c \
+             src/quic_retry.c src/quic_config.c src/quic_fail.c src/quic_step.c src/quic.c
 # What SUITE=aesgcm adds to an object: the key expansion and the AEAD,
 # which record.c and quic_packet.c call under -DCH_SUITE_AES_GCM, and
 # SHA-512's core, which TLS_AES_256_GCM_SHA384's key schedule runs, with
@@ -509,10 +509,10 @@ QUIC_SRCS := aes.c $(AES_IMPL) gcm.c quic_keys.c quic_packet.c quic_initial.c \
 # QUIC object already compiles the AES sources through QUIC_SRCS and a
 # TRUST=webpki one the SHA-512 core through WEBPKI_SRCS, so LIB_SRCS
 # takes out of this list what another axis added.
-SUITE_ADD := $(if $(SUITE_DEF),aes.c gcm.c sha512.c sha512_compress.c)
+SUITE_ADD := $(if $(SUITE_DEF),src/aes.c src/gcm.c src/sha512.c src/sha512_compress.c)
 # The implementation sources, named whichever ones this build picks, so a
 # check that reads every AES choice does not re-derive the list.
-AES_IMPL_SRCS := quic_aes_soft.c $(AES_HW_SRCS) aes_extern.c
+AES_IMPL_SRCS := src/quic_aes_soft.c $(AES_HW_SRCS) src/aes_extern.c
 # The host test (docs/decisions.md 89). A host object compiles each fast
 # path beside the portable code, and each session picks among them at
 # init from ch_cfg.cpu, the caller's description of its CPU (cpu_cfg.h). A
@@ -575,21 +575,21 @@ AES_SUITE_ENTRY := $(if $(HOST_TARGET),-DCH_SUITE_AES_GCM$(COMMA)-DCH_CPU_RUNTIM
 # (docs/decisions.md 131). So its entry names the defines of a ROLE=both
 # TRUST=webpki object, and both runs read all three calls. srv_cfg.h
 # refuses a trust mode in a server-only object.
-QUIC_EXTRA_DEFINES := aes.c:$(AES_SUITE_ENTRY) aes.h:$(AES_SUITE_ENTRY) \
-                      aes_block.h:$(AES_SUITE_ENTRY) aes_public_key.h:$(AES_SUITE_ENTRY) \
-                      aes_traffic_key.h:$(AES_SUITE_ENTRY) aes_schedule.h:$(AES_SUITE_ENTRY) \
-                      aes_hw.c:$(AES_SUITE_ENTRY) gcm.c:$(AES_SUITE_ENTRY) gcm.h:$(AES_SUITE_ENTRY) \
-                      ghash_hw.c:$(AES_SUITE_ENTRY) ghash_hw.h:$(AES_SUITE_ENTRY) \
-                      ghash_vector.h:$(AES_SUITE_ENTRY) gcm_hw.c:$(AES_SUITE_ENTRY) \
-                      gcm_hw.h:$(AES_SUITE_ENTRY) gcm_vaes.c:$(AES_SUITE_ENTRY) \
-                      gcm_vaes.h:$(AES_SUITE_ENTRY) gcm_ghash.h:$(AES_SUITE_ENTRY) \
-                      gcm_avx512.c:$(AES_SUITE_ENTRY) gcm_avx512.h:$(AES_SUITE_ENTRY) \
-                      gcm_avx512_kernel.c:$(AES_SUITE_ENTRY) gcm_avx512_kernel.h:$(AES_SUITE_ENTRY) \
-                      gcm_avx512_ghash.h:$(AES_SUITE_ENTRY) \
-                      aes_extern.c:$(AES_EXTERN_SUITE_ENTRY) \
-                      quic_token.c:-DCH_ROLE_SERVER quic_token.h:-DCH_ROLE_SERVER \
-                      x509_ca.h:-DCH_TRUST_CA \
-                      pem_files.h:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI
+QUIC_EXTRA_DEFINES := src/aes.c:$(AES_SUITE_ENTRY) src/aes.h:$(AES_SUITE_ENTRY) \
+                      src/aes_block.h:$(AES_SUITE_ENTRY) src/aes_public_key.h:$(AES_SUITE_ENTRY) \
+                      src/aes_traffic_key.h:$(AES_SUITE_ENTRY) src/aes_schedule.h:$(AES_SUITE_ENTRY) \
+                      src/aes_hw.c:$(AES_SUITE_ENTRY) src/gcm.c:$(AES_SUITE_ENTRY) src/gcm.h:$(AES_SUITE_ENTRY) \
+                      src/ghash_hw.c:$(AES_SUITE_ENTRY) src/ghash_hw.h:$(AES_SUITE_ENTRY) \
+                      src/ghash_vector.h:$(AES_SUITE_ENTRY) src/gcm_hw.c:$(AES_SUITE_ENTRY) \
+                      src/gcm_hw.h:$(AES_SUITE_ENTRY) src/gcm_vaes.c:$(AES_SUITE_ENTRY) \
+                      src/gcm_vaes.h:$(AES_SUITE_ENTRY) src/gcm_ghash.h:$(AES_SUITE_ENTRY) \
+                      src/gcm_avx512.c:$(AES_SUITE_ENTRY) src/gcm_avx512.h:$(AES_SUITE_ENTRY) \
+                      src/gcm_avx512_kernel.c:$(AES_SUITE_ENTRY) src/gcm_avx512_kernel.h:$(AES_SUITE_ENTRY) \
+                      src/gcm_avx512_ghash.h:$(AES_SUITE_ENTRY) \
+                      src/aes_extern.c:$(AES_EXTERN_SUITE_ENTRY) \
+                      src/quic_token.c:-DCH_ROLE_SERVER src/quic_token.h:-DCH_ROLE_SERVER \
+                      src/x509_ca.h:-DCH_TRUST_CA \
+                      src/pem_files.h:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI
 # The files this compiler cannot judge, because the build choice they
 # need is one it does not offer. aes_hw.c, ghash_hw.c, ghash_vector.h,
 # gcm_hw.c, gcm_vaes.c, gcm_avx512.c, gcm_avx512_kernel.c and
@@ -597,16 +597,16 @@ QUIC_EXTRA_DEFINES := aes.c:$(AES_SUITE_ENTRY) aes.h:$(AES_SUITE_ENTRY) \
 # body under -DCH_CPU_RUNTIME, which cpu_cfg.h refuses on a compiler that
 # fails the host test, so lint-quic-partition skips them there and judges
 # them everywhere else.
-QUIC_UNPROBED := $(if $(HOST_TARGET),,aes_hw.c ghash_hw.c ghash_vector.h gcm_hw.c gcm_vaes.c gcm_avx512.c \
-                   gcm_avx512_kernel.c gcm_avx512_ghash.h)
+QUIC_UNPROBED := $(if $(HOST_TARGET),,src/aes_hw.c src/ghash_hw.c src/ghash_vector.h src/gcm_hw.c src/gcm_vaes.c src/gcm_avx512.c \
+                   src/gcm_avx512_kernel.c src/gcm_avx512_ghash.h)
 # The hash sources of a host object hold their body under the same define
 # (docs/decisions.md 93), so the lint skips them on such a compiler too.
-QUIC_UNPROBED += $(if $(HOST_TARGET),,sha256_hw.c sha512_hw.c sha512_avx2.c hash_hw.h hkdf_hw.c keysched_hw.c)
+QUIC_UNPROBED += $(if $(HOST_TARGET),,src/sha256_hw.c src/sha512_hw.c src/sha512_avx2.c src/hash_hw.h src/hkdf_hw.c src/keysched_hw.c)
 # So do Keccak on the SHA-3 instructions and ML-KEM's two copies over it
 # (docs/decisions.md 99), and the four-way Keccak and ML-KEM's copy over
 # it (107).
-QUIC_UNPROBED += $(if $(HOST_TARGET),,sha3_hw.c keccak_hw.h mlkem_hw.c mlkem_poly_hw.c)
-QUIC_UNPROBED += $(if $(HOST_TARGET),,keccak_avx2.c mlkem_avx2.h mlkem_avx2.c)
+QUIC_UNPROBED += $(if $(HOST_TARGET),,src/sha3_hw.c src/keccak_hw.h src/mlkem_hw.c src/mlkem_poly_hw.c)
+QUIC_UNPROBED += $(if $(HOST_TARGET),,src/keccak_avx2.c src/mlkem_avx2.h src/mlkem_avx2.c)
 
 # The ROLE=server mode's own sources, named here for the reason
 # QUIC_SRCS and WEBPKI_SRCS are named: an auditor reads the object's
@@ -628,8 +628,8 @@ QUIC_UNPROBED += $(if $(HOST_TARGET),,keccak_avx2.c mlkem_avx2.h mlkem_avx2.c)
 # states the rule they were written under: each file defined every
 # function its header declares from its first commit, so a ROLE=server
 # object linked before any handler was implemented.
-SRV_SRCS := srv_ticket.c srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.c srv_auth.c \
-            srv_mldsa.c srv_out.c srv_resume.c srv_kex.c srv_flight.c srv_handshake.c srv.c
+SRV_SRCS := src/srv_ticket.c src/srv_parser.c src/srv_parser_ext.c src/srv_message.c src/srv_cookie.c src/srv_auth.c \
+            src/srv_mldsa.c src/srv_out.c src/srv_resume.c src/srv_kex.c src/srv_flight.c src/srv_handshake.c src/srv.c
 # Which of them were still stubs was read from a marker rather than from
 # a hand-kept list: every stub body held one `// CH_SRV_STUB: ` line and
 # an implemented body held none. SRV_STUB_SRCS read that marker, and two
@@ -650,8 +650,8 @@ SRV_SRCS := srv_ticket.c srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.
 # CH_ROLE_SERVER.
 # handshake_flight.c holds the client's flight handlers, which both
 # transports compile and a server does not.
-CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c handshake_parser_ee.c \
-                   handshake_message.c handshake_flight.c
+CLIENT_REPLACED := src/handshake.c src/handshake_auth.c src/handshake_parser.c src/handshake_parser_ee.c \
+                   src/handshake_message.c src/handshake_flight.c
 # softmul.c is excluded on purpose. It has to define __mulsi3 and
 # __muldi3 -- the names the compiler emits, so they replace the runtime
 # library's -- and clang-tidy rejects those as reserved identifiers that
@@ -664,8 +664,8 @@ CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c handshake_par
 # 89), which compile only under -DCH_CPU_RUNTIME: the native copies, the
 # counting test and the units that compile the files built on the multiply
 # again under counted names. lint-tidy reads them in passes of their own.
-WIDEMUL_HOST_LINT_C := poly1305_native.c mlkem_poly_native.c poly1305_vector_native.c \
-                          poly1305_avx2_native.c poly1305_ifma_native.c \
+WIDEMUL_HOST_LINT_C := src/poly1305_native.c src/mlkem_poly_native.c src/poly1305_vector_native.c \
+                          src/poly1305_avx2_native.c src/poly1305_ifma_native.c \
                           test/widemul_runtime_test.c test/widemul_runtime_count.c \
                           test/widemul_count_decomposed.c test/widemul_count_decomposed_point.c \
                           test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
@@ -675,8 +675,8 @@ WIDEMUL_HOST_LINT_C := poly1305_native.c mlkem_poly_native.c poly1305_vector_nat
 # instructions, SHA-512's AVX2 kernel for x86-64 (docs/decisions.md 128),
 # the two copies over them, the equivalence test, and the counting test
 # with its counting entries. lint-tidy reads them in passes of their own.
-HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c sha512_avx2.c hkdf_hw.c keysched_hw.c test/sha2_equiv_test.c \
-                    sha3_hw.c mlkem_hw.c mlkem_poly_hw.c test/sha3_hw_equiv_test.c \
+HASH_HOST_LINT_C := src/sha256_hw.c src/sha512_hw.c src/sha512_avx2.c src/hkdf_hw.c src/keysched_hw.c test/sha2_equiv_test.c \
+                    src/sha3_hw.c src/mlkem_hw.c src/mlkem_poly_hw.c test/sha3_hw_equiv_test.c \
                     test/mlkem_hw_equiv_test.c \
                     test/hash_runtime_test.c test/hash_runtime_count.c \
                     test/hash_runtime_compress_count.c
@@ -688,8 +688,8 @@ HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c sha512_avx2.c hkdf_hw.c keysched_hw.
 # exponentiations on AVX-512 IFMA, with its tests and counts, which
 # compile only under -DCH_CPU_RUNTIME. lint-tidy reads them in passes of
 # their own.
-RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c rsa_ifma.c rsa_avx2.c rsa_sign64.c \
-                   rsa_ifma_sign.c \
+RSA_HOST_LINT_C := src/rsa_mont64.c src/rsa_mont64_blocks.c src/rsa_mont64_addcarry.c src/rsa_ifma.c src/rsa_avx2.c src/rsa_sign64.c \
+                   src/rsa_ifma_sign.c \
                    test/rsa_ifma_sign_test.c test/rsa_ifma_sign_entries.c \
                    test/rsa_ifma_sign_residue_test.c test/rsa_ifma_sign_count.c test/rsa_mont64_adx_count.c \
                    test/rsa_equiv_test.c \
@@ -700,7 +700,7 @@ RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c rsa_if
                    test/rsa_avx2_model_test.c test/rsa_avx2_equiv_test.c test/rsa_avx2_model.c \
                    test/rsa_avx2_instructions.c test/diff_rsa_avx2_test.c \
                    test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c
-LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c mldsa.c mldsa_poly.c $(MLDSA_SIGN_SRCS) test/mldsa_signer_test.c test/unit_test.c test/tls_client.c \
+LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c src/sha3.c src/sha512.c src/sha512_compress.c src/p384.c src/p384_field.c src/p256_field.c src/p256_scalar.c src/p256_point.c src/p256_sign.c src/p256_ecdh.c src/rsa_pkcs1.c src/rsa_sign.c src/webpki_sigalg.c src/webpki_cert.c src/webpki.c src/webpki_ticket.c src/webpki_pin.c src/webpki_cfg.c src/mlkem.c src/mlkem_poly.c src/mldsa.c src/mldsa_poly.c $(MLDSA_SIGN_SRCS) test/mldsa_signer_test.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/diff_mldsa_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_sign_fault_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c test/webpki_encrypted_exts_test.c \
@@ -709,7 +709,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/diff_x509_mldsa_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c test/tls_server.c \
-          srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c \
+          src/srv_quic.c src/quic_token.c src/srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c test/exporter_test.c src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c \
           test/tcp_blocking_key_limit_test.c \
           test/quic_driver_test.c test/quic_loop_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c test/aes_equiv_arm64.c test/aes_equiv_arm64_eor3.c \
@@ -718,12 +718,12 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/aead_avx512_count.c test/rsa_avx2_count.c \
           test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
-          chacha20_vector.c chacha20_avx2.c chacha20_avx512.c test/chacha20_equiv_test.c \
+          src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c test/chacha20_equiv_test.c \
           test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c test/chacha20_equiv_avx512.c \
-          avx512_wipe.c test/avx512_wipe_test.c x25519_wide.c \
-          test/x25519_equiv_test.c x25519_adx.c test/x25519_adx_model.c test/x25519_adx_model_test.c \
+          src/avx512_wipe.c test/avx512_wipe_test.c src/x25519_wide.c \
+          test/x25519_equiv_test.c src/x25519_adx.c test/x25519_adx_model.c test/x25519_adx_model_test.c \
           test/x25519_adx_equiv_test.c \
-          rsa_mont64_adx.c test/rsa_mont64_adx_model.c test/rsa_mont64_adx_test.c \
+          src/rsa_mont64_adx.c test/rsa_mont64_adx_model.c test/rsa_mont64_adx_test.c \
           $(P256_WIDE_SRCS) test/p256_equiv_test.c test/diff_p256_wide_test.c \
           test/p256_verify_equiv_test.c test/p256_verify_portable.c \
           test/p256_adx_model_test.c test/p256_adx_equiv_test.c test/p256_adx_verify_model_test.c \
@@ -731,13 +731,13 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
           test/p384_portable.c \
           $(RSA_HOST_LINT_C) \
-          poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
-          poly1305_avx2.c test/poly1305_equiv_avx2.c poly1305_ifma.c test/poly1305_equiv_ifma.c \
+          src/poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
+          src/poly1305_avx2.c test/poly1305_equiv_avx2.c src/poly1305_ifma.c test/poly1305_equiv_ifma.c \
           test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c \
-          mlkem_vector.c test/mlkem_vector_equiv_test.c \
-          mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
-          keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
-          mldsa_avx2.c test/mldsa_avx2_equiv_test.c test/mldsa_avx2_count.c \
+          src/mlkem_vector.c test/mlkem_vector_equiv_test.c \
+          src/mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
+          src/keccak_avx2.c src/mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
+          src/mldsa_avx2.c test/mldsa_avx2_equiv_test.c test/mldsa_avx2_count.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
           test/entropy_recipe.c test/ticket_epoch_test.c test/webpki_ticket_count.c \
           $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C) \
@@ -858,23 +858,23 @@ endif
 # while git tracks a root webpki*.c file this list leaves out. A tree
 # without webpki.c still builds; the object then fails every handshake
 # closed (handshake_auth.c).
-WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_ext.c \
-                webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c
+WEBPKI_SRCS := src/webpki_time.c src/webpki_name.c src/webpki_spki.c src/webpki_sigalg.c src/webpki_ext.c \
+                src/webpki_cert.c src/webpki.c src/webpki_ticket.c src/webpki_pin.c src/webpki_cfg.c
 # The verifiers and the SHA-384 core a public chain needs. SRCS lists
 # x509_der.c, rsa.c, rsa_mont.c and p256.c already; these five it does
 # not, because the device objects never package them. dnssec.c, the
 # DNSSEC check, rides with them and compiles to nothing outside a
 # CH_DNSSEC build (https://github.com/c4milo/chapulin/issues/189).
-WEBPKI_CHAIN_SRCS := sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c dnssec.c sha1.c
+WEBPKI_CHAIN_SRCS := src/sha512.c src/sha512_compress.c src/p384.c src/p384_field.c src/rsa_pkcs1.c src/dnssec.c src/sha1.c
 # The constant-time P-256 key exchange: p256_ecdh.c over the arithmetic
 # p256_sign.c computes with too. p256.c is the variable-time verifier and
 # is not among them. Every server role and every TRUST=webpki client
 # carries them (docs/decisions.md 63); the device clients do not.
-P256_ECDH_SRCS := p256_ecdh.c p256_point.c p256_scalar.c p256_field.c
+P256_ECDH_SRCS := src/p256_ecdh.c src/p256_point.c src/p256_scalar.c src/p256_field.c
 # What the TRUST=webpki client adds for its key exchange: the retry to
 # secp256r1, the group a ServerHello may then select, and the classic
 # secrets (handshake_groups.h), with the P-256 arithmetic under them.
-WEBPKI_KEX_SRCS := handshake_groups.c $(P256_ECDH_SRCS)
+WEBPKI_KEX_SRCS := src/handshake_groups.c $(P256_ECDH_SRCS)
 # The files that decode an operator's PEM files (pem_files.h,
 # docs/decisions.md 131). They are the run of CERTIFICATE blocks, the DER
 # readers of a certificate and a P-256 key, and the three public calls. A TRUST=webpki object holds them
@@ -883,8 +883,8 @@ WEBPKI_KEX_SRCS := handshake_groups.c $(P256_ECDH_SRCS)
 # one-block reader and the DER primitives under them, PEM_READER_SRCS.
 # SRCS lists those three, and the raw modes and TRUST=none filter them
 # out, so a server role adds them back.
-PEM_FILES_SRCS := pem_blocks.c x509_pem.c pem_files.c
-PEM_READER_SRCS := pem.c base64.c x509_der.c
+PEM_FILES_SRCS := src/pem_blocks.c src/x509_pem.c src/pem_files.c
+PEM_READER_SRCS := src/pem.c src/base64.c src/x509_der.c
 TRUST ?= raw-rsa
 # Provisioning is a public call only where its parser is linked, so
 # PUBLIC_CA is set by the two ca arms alone.
@@ -892,29 +892,29 @@ ifeq ($(TRUST),raw-rsa)
 TRUST_DEF :=
 PIN_DEF :=
 PUBLIC_CA :=
-TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
-PIN_FILTER := p256.c
+TRUST_FILTER := $(PEM_READER_SRCS) src/x509.c src/x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER := src/p256.c
 TRUST_ADD :=
 else ifeq ($(TRUST),raw-ecdsa)
 TRUST_DEF :=
 PIN_DEF := -DCH_PIN_ECDSA
 PUBLIC_CA :=
-TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
-PIN_FILTER := rsa.c rsa_mont.c
+TRUST_FILTER := $(PEM_READER_SRCS) src/x509.c src/x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER := src/rsa.c src/rsa_mont.c
 TRUST_ADD :=
 else ifeq ($(TRUST),ca-rsa)
 TRUST_DEF := -DCH_TRUST_CA
 PIN_DEF :=
 PUBLIC_CA := ch_pubkey_from_pem
 TRUST_FILTER := $(WEBPKI_SRCS)
-PIN_FILTER := p256.c
+PIN_FILTER := src/p256.c
 TRUST_ADD :=
 else ifeq ($(TRUST),ca-ecdsa)
 TRUST_DEF := -DCH_TRUST_CA
 PIN_DEF := -DCH_PIN_ECDSA
 PUBLIC_CA := ch_pubkey_from_pem
 TRUST_FILTER := $(WEBPKI_SRCS)
-PIN_FILTER := rsa.c rsa_mont.c
+PIN_FILTER := src/rsa.c src/rsa_mont.c
 TRUST_ADD :=
 else ifeq ($(TRUST),raw-mldsa)
 # The ML-DSA-87 pair (docs/decisions.md 157): CNSA 2.0's signature, so
@@ -924,15 +924,15 @@ else ifeq ($(TRUST),raw-mldsa)
 TRUST_DEF :=
 PIN_DEF := -DCH_PIN_MLDSA
 PUBLIC_CA :=
-TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
-PIN_FILTER := rsa.c rsa_mont.c p256.c
+TRUST_FILTER := $(PEM_READER_SRCS) src/x509.c src/x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER := src/rsa.c src/rsa_mont.c src/p256.c
 TRUST_ADD := $(MLDSA_SRCS)
 else ifeq ($(TRUST),ca-mldsa)
 TRUST_DEF := -DCH_TRUST_CA
 PIN_DEF := -DCH_PIN_MLDSA
 PUBLIC_CA := ch_pubkey_from_pem
 TRUST_FILTER := $(WEBPKI_SRCS)
-PIN_FILTER := rsa.c rsa_mont.c p256.c
+PIN_FILTER := src/rsa.c src/rsa_mont.c src/p256.c
 TRUST_ADD := $(MLDSA_SRCS)
 else ifeq ($(TRUST),none)
 # The server's value. A server proves its own identity and judges no
@@ -946,7 +946,7 @@ else ifeq ($(TRUST),none)
 TRUST_DEF :=
 PIN_DEF :=
 PUBLIC_CA :=
-TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
+TRUST_FILTER := $(PEM_READER_SRCS) src/x509.c src/x509_ca.c $(WEBPKI_SRCS)
 PIN_FILTER :=
 TRUST_ADD :=
 else ifeq ($(TRUST),webpki)
@@ -957,7 +957,7 @@ PIN_DEF :=
 PUBLIC_CA :=
 # x509.c and x509_ca.c are the ca modes' certificate readers. pem.c and
 # base64.c stay, for ch_anchors_from_pem's bundle.
-TRUST_FILTER := x509.c x509_ca.c
+TRUST_FILTER := src/x509.c src/x509_ca.c
 PIN_FILTER :=
 TRUST_ADD := $(WEBPKI_CHAIN_SRCS) $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(WEBPKI_KEX_SRCS) $(PEM_FILES_SRCS)
 else
@@ -979,7 +979,7 @@ endif
 #
 # The six sources a QUIC object replaces: it compiles none of them
 # (docs/quic.md, "What is reused, and what changes").
-QUIC_REPLACED := io.c record.c session.c handshake.c tls.c tls_write.c
+QUIC_REPLACED := src/io.c src/record.c src/session.c src/handshake.c src/tls.c src/tls_write.c
 # The sources that keep their TLS text, carry a QUIC arm under #ifdef
 # CH_TRANSPORT_QUIC_NONBLOCKING, and cannot be compiled into the object until they
 # have one. Every arm landed with the driver, so the list is empty and
@@ -1014,8 +1014,8 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 # that has finished the handshake holds its bytes and its callbacks no
 # longer block (tcp_nonblocking.h).
 TRANSPORT_DEF := -DCH_TRANSPORT_TCP_NONBLOCKING
-TRANSPORT_FILTER := handshake.c
-TRANSPORT_ADD := tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
+TRANSPORT_FILTER := src/handshake.c
+TRANSPORT_ADD := src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c
 PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_close \
                     ch_record_whole_len ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_ticket_obfuscated_age \
                     ch_alert_sent ch_alert_received
@@ -1090,13 +1090,13 @@ ROLE_FILTER := $(CLIENT_REPLACED)
 # The PEM readers and files are ch_chain_from_pem's and
 # ch_p256_key_from_pem's (pem_files.h). TRUST=none filters the readers
 # out of SRCS with the raw modes, so this adds them back.
-ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c $(P256_ECDH_SRCS) $(PEM_READER_SRCS) $(PEM_FILES_SRCS)
+ROLE_ADD    := $(SRV_SRCS) src/rsa_sign.c src/p256_sign.c $(P256_ECDH_SRCS) $(PEM_READER_SRCS) $(PEM_FILES_SRCS)
 # PROFILE=cnsa2's server signs ML-DSA-87 alone and selects ML-KEM-1024
 # alone (docs/decisions.md 162). It holds neither signer above nor the
 # P-256 key exchange, and it holds ML-DSA-87's signer and verifier, the
 # verifier for ch_srv_check's self-test and for the signer's own check.
 ifeq ($(PROFILE),cnsa2)
-ROLE_ADD    := $(filter-out rsa_sign.c p256_sign.c $(P256_ECDH_SRCS),$(ROLE_ADD)) $(MLDSA_SRCS) \
+ROLE_ADD    := $(filter-out src/rsa_sign.c src/p256_sign.c $(P256_ECDH_SRCS),$(ROLE_ADD)) $(MLDSA_SRCS) \
                $(MLDSA_SIGN_SRCS)
 endif
 ifeq ($(TRANSPORT),quic-nonblocking)
@@ -1107,8 +1107,8 @@ ifeq ($(TRANSPORT),quic-nonblocking)
 # needs every one; its own client driver is guarded out there. The
 # server adds quic_token.c, which mints and checks the Retry token and
 # which no client calls.
-TRANSPORT_ADD := $(filter-out quic_step.c,$(TRANSPORT_ADD))
-ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c quic_token.c
+TRANSPORT_ADD := $(filter-out src/quic_step.c,$(TRANSPORT_ADD))
+ROLE_ADD    := $(filter-out src/srv_handshake.c,$(ROLE_ADD)) src/srv_quic.c src/quic_token.c
 # What this object exports: the server's five calls, the boot check, the
 # packet calls quic.h declares for either role, and alert.h's two calls,
 # which every object exports. Not ch_quic_init, ch_quic_crypto_in,
@@ -1131,8 +1131,8 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 # there. tcp_nonblocking_frame.c stays for the same reason: one inbound
 # record reads the same from either side, and a failure's alert record
 # is sealed the same way on either side.
-TRANSPORT_ADD := $(filter-out tcp_nonblocking_step.c,$(TRANSPORT_ADD))
-ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_tcp_nonblocking.c
+TRANSPORT_ADD := $(filter-out src/tcp_nonblocking_step.c,$(TRANSPORT_ADD))
+ROLE_ADD    := $(filter-out src/srv_handshake.c,$(ROLE_ADD)) src/srv_tcp_nonblocking.c
 # What this object exports: the server's two driver calls, the boot check,
 # the two session calls either role uses, the record framing call either
 # role uses, the record-layer calls a connected session needs, and
@@ -1160,7 +1160,7 @@ endif
 # out the RSA and P-256 verifiers. LIB_DEF takes CH_SIGN_MLDSA, the define
 # of the object that signs ML-DSA-87 (pem_files.h).
 ifeq ($(PROFILE),cnsa2)
-PIN_FILTER  := rsa.c rsa_mont.c p256.c
+PIN_FILTER  := src/rsa.c src/rsa_mont.c src/p256.c
 ROLE_DEF    += -DCH_SIGN_MLDSA
 endif
 else ifeq ($(ROLE),both)
@@ -1186,9 +1186,9 @@ ROLE_DEF    := -DCH_ROLE_SERVER -DCH_ROLE_BOTH
 # Nothing is replaced: ROLE=server filters $(CLIENT_REPLACED) because its
 # srv_*.c files stand in for those drivers, and here both sets compile.
 ROLE_FILTER :=
-ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c $(P256_ECDH_SRCS) $(PEM_READER_SRCS) $(PEM_FILES_SRCS)
+ROLE_ADD    := $(SRV_SRCS) src/rsa_sign.c src/p256_sign.c $(P256_ECDH_SRCS) $(PEM_READER_SRCS) $(PEM_FILES_SRCS)
 ifeq ($(TRANSPORT),quic-nonblocking)
-ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c quic_token.c
+ROLE_ADD    := $(filter-out src/srv_handshake.c,$(ROLE_ADD)) src/srv_quic.c src/quic_token.c
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_quic_init ch_srv_quic_crypto_in \
                ch_srv_quic_retry_tag ch_srv_quic_token_mint ch_srv_quic_token_check \
                ch_srv_check
@@ -1197,7 +1197,7 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 # place, the same swap the quic arm above makes. tcp_nonblocking_step.c
 # stays, unlike the ROLE=server arm: this object keeps the client half, so
 # both step tables compile and each driver calls its own.
-ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_tcp_nonblocking.c
+ROLE_ADD    := $(filter-out src/srv_handshake.c,$(ROLE_ADD)) src/srv_tcp_nonblocking.c
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_record_init ch_srv_record_in ch_srv_check
 else
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_accept ch_srv_check
@@ -1243,7 +1243,7 @@ endif
 # and over QUIC the table beside them; a device object holds AES_IMPL.
 AES_CARRIED := $(if $(filter quic-nonblocking,$(TRANSPORT)),yes,$(SUITE_DEF))
 AES_ADD := $(if $(AES_CARRIED),$(if $(CPU_RUNTIME_DEF),$(AES_HW_SRCS) \
-             $(if $(filter quic-nonblocking,$(TRANSPORT)),quic_aes_soft.c),$(AES_IMPL)))
+             $(if $(filter quic-nonblocking,$(TRANSPORT)),src/quic_aes_soft.c),$(AES_IMPL)))
 LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_DEF) $(ROLE_DEF) \
              $(CPU_RUNTIME_DEF))
 # The one assignment. Every axis above filters or names the sources
@@ -1278,13 +1278,13 @@ KEX ?= x25519
 ifeq ($(filter x25519 pq,$(KEX)),)
 $(error KEX=$(KEX) is not a key exchange; use KEX=x25519 or KEX=pq)
 endif
-KEX_HYBRID_SRCS := sha3.c mlkem.c mlkem_poly.c
+KEX_HYBRID_SRCS := src/sha3.c src/mlkem.c src/mlkem_poly.c
 ifeq ($(PROFILE),cnsa2)
 # The profile's one group, which LIB_VARIANT records in KEX's place. Its
 # object holds ML-KEM-1024 and no X25519 field, which it never runs.
 KEX_VARIANT := mlkem1024
 LIB_DEF += -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024
-LIB_SRCS := $(filter-out x25519.c,$(LIB_SRCS)) $(KEX_HYBRID_SRCS)
+LIB_SRCS := $(filter-out src/x25519.c,$(LIB_SRCS)) $(KEX_HYBRID_SRCS)
 else ifeq ($(ROLE)-$(filter raw-rsa raw-ecdsa ca-rsa ca-ecdsa,$(TRUST)),client-$(TRUST))
 KEX_VARIANT := $(KEX)
 else
@@ -1325,7 +1325,7 @@ ifneq ($(origin X25519),undefined)
 $(error X25519=$(X25519) is gone: on arm64 and x86-64 a TRUST=webpki client, ROLE=server and ROLE=both hold the wide X25519 field and run it for a session whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY, and every other object runs the 16-word field (docs/decisions.md 89))
 endif
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter cnsa2,$(PROFILE)),,x25519_wide.c x25519_adx.c)
+LIB_SRCS += $(if $(filter cnsa2,$(PROFILE)),,src/x25519_wide.c src/x25519_adx.c)
 endif
 # P-256, which a TRUST=webpki client and every server role run. Every
 # object that carries it holds p256_field.c, p256_scalar.c and
@@ -1337,7 +1337,7 @@ endif
 # P-256's second copy there, as x25519_wide.c is X25519's, so neither
 # p256_field.c nor p256_scalar.c has a native copy.
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter p256_point.c,$(LIB_SRCS)),$(P256_WIDE_SRCS))
+LIB_SRCS += $(if $(filter src/p256_point.c,$(LIB_SRCS)),$(P256_WIDE_SRCS))
 endif
 # RSA's public operation, rsa_vp1, which the two RSA verifiers call. A
 # device object runs it on rsa_mont.c's 32-bit words. In a host object
@@ -1355,10 +1355,10 @@ endif
 # CH_CPU_AVX512_IFMA, and rsa_avx2.c, the same on AVX2, which it calls for
 # a session whose value holds CH_CPU_AVX2 (docs/decisions.md 122). Each
 # holds nothing on arm64, as chacha20_avx2.c does.
-RSA_MONT64_SRCS := rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c rsa_ifma.c rsa_avx2.c \
-                   rsa_mont64_exp.c
+RSA_MONT64_SRCS := src/rsa_mont64.c src/rsa_mont64_blocks.c src/rsa_mont64_addcarry.c src/rsa_ifma.c src/rsa_avx2.c \
+                   src/rsa_mont64_exp.c
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
+LIB_SRCS += $(if $(filter src/rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
 endif
 # ECDSA P-384, which a TRUST=webpki client checks a chain's signatures
 # with. A device object runs p384.c's 32-bit arm over p384_field.c. In a
@@ -1369,7 +1369,7 @@ endif
 # multiply's timing for them (docs/decisions.md 97). The three files join
 # every host object that holds p384.c.
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter p384.c,$(LIB_SRCS)),$(P384_WIDE_SRCS))
+LIB_SRCS += $(if $(filter src/p384.c,$(LIB_SRCS)),$(P384_WIDE_SRCS))
 endif
 # SHA-512 and SHA-384, which a TRUST=webpki client hashes a chain's
 # signed bytes with and a SUITE=aesgcm object runs its key schedule and
@@ -1384,8 +1384,8 @@ endif
 # sha512_compress.c's place in every host object that holds sha512.c.
 # sha512_host_of is $(1) as a host object holds it, and host_srcs below
 # calls it for the test binaries.
-sha512_host_of = $(filter-out $(if $(filter sha512.c,$(1)),sha512_compress.c),$(1)) \
-                 $(if $(filter sha512.c,$(1)),sha512_compress_blocks.c)
+sha512_host_of = $(filter-out $(if $(filter src/sha512.c,$(1)),src/sha512_compress.c),$(1)) \
+                 $(if $(filter src/sha512.c,$(1)),src/sha512_compress_blocks.c)
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS := $(call sha512_host_of,$(LIB_SRCS))
 endif
@@ -1406,16 +1406,16 @@ endif
 # ADCX and ADOX, which rsa_sign64.c runs on x86-64 for a session whose
 # ch_cfg.cpu holds CH_CPU_BMI2_ADX beside the multiply bit and not the IFMA
 # path's bits (docs/decisions.md 183). It holds nothing on arm64.
-RSA_SIGN64_SRCS := rsa_sign64.c rsa_sign64_wipe.c rsa_ifma_sign.c rsa_mont64_adx.c
+RSA_SIGN64_SRCS := src/rsa_sign64.c src/rsa_sign64_wipe.c src/rsa_ifma_sign.c src/rsa_mont64_adx.c
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter rsa_sign.c,$(LIB_SRCS)),$(RSA_SIGN64_SRCS))
+LIB_SRCS += $(if $(filter src/rsa_sign.c,$(LIB_SRCS)),$(RSA_SIGN64_SRCS))
 endif
 # ML-KEM's NTT. A device object runs mlkem_poly.c's loops. A host object
 # also holds mlkem_vector.c, the same transforms on eight 16-bit lanes,
 # NEON on arm64 and SSE2 on x86-64, which mlkem.c runs in every session
 # (docs/decisions.md 101).
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter mlkem.c,$(LIB_SRCS)),mlkem_vector.c)
+LIB_SRCS += $(if $(filter src/mlkem.c,$(LIB_SRCS)),src/mlkem_vector.c)
 endif
 # ML-DSA-87's signer in every host server object (docs/decisions.md 180):
 # the mldsa87 slot of ch_srv_cfg beside the ECDSA and RSA ones, the
@@ -1439,7 +1439,7 @@ endif
 # runs it for a session whose value holds the multiply bit, and on x86-64
 # CH_CPU_AVX2 beside it (docs/decisions.md 172 and 174).
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter mldsa.c,$(LIB_SRCS)),mldsa_vector.c)
+LIB_SRCS += $(if $(filter src/mldsa.c,$(LIB_SRCS)),src/mldsa_vector.c)
 endif
 # ML-KEM's matrix. An x86-64 host object also holds keccak_avx2.c, Keccak
 # on four states at once in AVX2, and mlkem_avx2.c, mlkem.c compiled once
@@ -1448,7 +1448,7 @@ endif
 # 107). Every host object lists both, and on arm64 they hold nothing, as
 # chacha20_avx2.c does.
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter mlkem.c,$(LIB_SRCS)),keccak_avx2.c mlkem_avx2.c)
+LIB_SRCS += $(if $(filter src/mlkem.c,$(LIB_SRCS)),src/keccak_avx2.c src/mlkem_avx2.c)
 endif
 # ML-DSA-87's matrix. An x86-64 host object also holds mldsa_avx2.c,
 # which samples up to four entries of a row of A at once on keccak_avx2.c,
@@ -1456,7 +1456,7 @@ endif
 # 178). An object without ML-KEM takes keccak_avx2.c here. On arm64 both
 # hold nothing.
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter mldsa.c,$(LIB_SRCS)),$(filter-out $(LIB_SRCS),keccak_avx2.c) mldsa_avx2.c)
+LIB_SRCS += $(if $(filter src/mldsa.c,$(LIB_SRCS)),$(filter-out $(LIB_SRCS),src/keccak_avx2.c) src/mldsa_avx2.c)
 endif
 # The ChaCha20 keystream, which every build runs
 # (https://github.com/c4milo/chapulin/issues/181). A device object runs
@@ -1483,7 +1483,7 @@ endif
 # passes the variable would get an object it did not name, so any value
 # of it stops the build here.
 ifneq ($(origin CHACHA),undefined)
-$(error CHACHA=$(CHACHA) is gone: on arm64 and x86-64 a TRUST=webpki client, ROLE=server and ROLE=both run the vector ChaCha20 in every session, and every other object runs chacha20.c's loop (docs/decisions.md 89))
+$(error CHACHA=$(CHACHA) is gone: on arm64 and x86-64 a TRUST=webpki client, ROLE=server and ROLE=both run the vector ChaCha20 in every session, and every other object runs src/chacha20.c's loop (docs/decisions.md 89))
 endif
 # Whether the compiler targets x86-64, whose host object holds the x86-64
 # kernels below.
@@ -1506,7 +1506,7 @@ GCC_X86_64_TARGET := $(if $(X86_KERNEL_PROBE),$(shell macros=$$($(CC) -dM -E -x 
 # so no other object lists it. build.zig adds it under the same two
 # conditions.
 X86_64_TARGET := $(X86_KERNEL_PROBE)
-AVX512_WIPE_SRCS := $(if $(X86_64_TARGET),avx512_wipe.c)
+AVX512_WIPE_SRCS := $(if $(X86_64_TARGET),src/avx512_wipe.c)
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(AVX512_WIPE_SRCS)
 endif
@@ -1515,7 +1515,7 @@ endif
 # and the AVX-512 kernel, which a session whose ch_cfg.cpu holds
 # CH_CPU_AVX512_IFMA runs for its records and packets, sixteen blocks a
 # pass. Both kernels compile to nothing on arm64.
-CHACHA_VECTOR_SRCS := chacha20_vector.c chacha20_avx2.c chacha20_avx512.c
+CHACHA_VECTOR_SRCS := src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(CHACHA_VECTOR_SRCS)
 endif
@@ -1625,7 +1625,7 @@ endif
 DNSSEC ?= off
 ifeq ($(DNSSEC),on)
 ifeq ($(CPU_RUNTIME_DEF),)
-$(error DNSSEC=on needs a host object: the RSA check runs on rsa_mont64.c, so build for arm64 or x86-64 with HOST_TARGET=yes)
+$(error DNSSEC=on needs a host object: the RSA check runs on src/rsa_mont64.c, so build for arm64 or x86-64 with HOST_TARGET=yes)
 endif
 ifneq ($(TRUST),webpki)
 $(error DNSSEC=on needs TRUST=webpki, whose object packages the PKCS#1 v1.5 verifier the RSA check shares)
@@ -1721,24 +1721,24 @@ endif
 # multiply, and LIB_VARIANT and the object's cc-stamp record the choice.
 # A host object takes no WIDEMUL value, as it takes no AES value, and the
 # test is $(origin WIDEMUL) for the same reason.
-WIDEMUL_COPIED := poly1305.c mlkem_poly.c
+WIDEMUL_COPIED := src/poly1305.c src/mlkem_poly.c
 # A native copy preprocesses only under -DCH_CPU_RUNTIME, because ct.h
 # refuses one anywhere else, so lint-quic-partition judges each with it.
 QUIC_EXTRA_DEFINES += $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):-DCH_CPU_RUNTIME) \
-                      poly1305_vector_native.c:-DCH_CPU_RUNTIME poly1305_avx2_native.c:-DCH_CPU_RUNTIME \
-                      poly1305_ifma_native.c:-DCH_CPU_RUNTIME
+                      src/poly1305_vector_native.c:-DCH_CPU_RUNTIME src/poly1305_avx2_native.c:-DCH_CPU_RUNTIME \
+                      src/poly1305_ifma_native.c:-DCH_CPU_RUNTIME
 # The copies on the hash instructions preprocess only under
 # -DCH_CPU_RUNTIME too, because hash_hw.h refuses one anywhere else
 # (docs/decisions.md 93), and sha256_hw.c holds its body under the define.
-QUIC_EXTRA_DEFINES += hash_hw.h:-DCH_CPU_RUNTIME hkdf_hw.c:-DCH_CPU_RUNTIME keysched_hw.c:-DCH_CPU_RUNTIME \
-                      sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME \
-                      sha512_avx2.c:-DCH_CPU_RUNTIME \
-                      keccak_hw.h:-DCH_CPU_RUNTIME sha3_hw.c:-DCH_CPU_RUNTIME mlkem_hw.c:-DCH_CPU_RUNTIME \
-                      mlkem_poly_hw.c:-DCH_CPU_RUNTIME
+QUIC_EXTRA_DEFINES += src/hash_hw.h:-DCH_CPU_RUNTIME src/hkdf_hw.c:-DCH_CPU_RUNTIME src/keysched_hw.c:-DCH_CPU_RUNTIME \
+                      src/sha256_hw.c:-DCH_CPU_RUNTIME src/sha512_hw.c:-DCH_CPU_RUNTIME \
+                      src/sha512_avx2.c:-DCH_CPU_RUNTIME \
+                      src/keccak_hw.h:-DCH_CPU_RUNTIME src/sha3_hw.c:-DCH_CPU_RUNTIME src/mlkem_hw.c:-DCH_CPU_RUNTIME \
+                      src/mlkem_poly_hw.c:-DCH_CPU_RUNTIME
 # So does ML-KEM's copy for the four-way Keccak, whose mlkem_avx2.h refuses
 # one anywhere else (docs/decisions.md 107).
-QUIC_EXTRA_DEFINES += keccak_avx2.c:-DCH_CPU_RUNTIME mlkem_avx2.h:-DCH_CPU_RUNTIME \
-                      mlkem_avx2.c:-DCH_CPU_RUNTIME
+QUIC_EXTRA_DEFINES += src/keccak_avx2.c:-DCH_CPU_RUNTIME src/mlkem_avx2.h:-DCH_CPU_RUNTIME \
+                      src/mlkem_avx2.c:-DCH_CPU_RUNTIME
 # What a host test binary compiles with, and what it links
 # (docs/decisions.md 89). HOST_CFLAGS is the test flags without the host's
 # CH_NATIVE_WIDEMUL, which ct.h refuses beside -DCH_CPU_RUNTIME, because a
@@ -1774,11 +1774,11 @@ widemul_native_of = $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(1)))
 # compiled once more over it, as mlkem_hw.c and mlkem_poly_hw.c, which a
 # session's CH_CPU_CONSTANT_TIME_SHA3 bit picks. The three have a body
 # where clang compiles an arm64 object and none anywhere else (cpu_cfg.h).
-SHA512_HW_SRCS := sha512_hw.c sha512_avx2.c
-hash_hw_srcs_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512.c,$(1)),$(SHA512_HW_SRCS)) \
-                  $(if $(filter hkdf.c,$(1)),hkdf_hw.c) $(if $(filter keysched.c,$(1)),keysched_hw.c) \
-                  $(if $(filter sha3.c,$(1)),sha3_hw.c) $(if $(filter mlkem.c,$(1)),mlkem_hw.c) \
-                  $(if $(filter mlkem_poly.c,$(1)),mlkem_poly_hw.c)
+SHA512_HW_SRCS := src/sha512_hw.c src/sha512_avx2.c
+hash_hw_srcs_of = $(if $(filter src/sha256.c,$(1)),src/sha256_hw.c) $(if $(filter src/sha512.c,$(1)),$(SHA512_HW_SRCS)) \
+                  $(if $(filter src/hkdf.c,$(1)),src/hkdf_hw.c) $(if $(filter src/keysched.c,$(1)),src/keysched_hw.c) \
+                  $(if $(filter src/sha3.c,$(1)),src/sha3_hw.c) $(if $(filter src/mlkem.c,$(1)),src/mlkem_hw.c) \
+                  $(if $(filter src/mlkem_poly.c,$(1)),src/mlkem_poly_hw.c)
 # sha512_avx2.c's kernel runs a quarter of a schedule step after each
 # round (docs/decisions.md 128, INV-51). clang writes the instructions in
 # that order. gcc's second scheduling pass, which runs after gcc has
@@ -1808,16 +1808,16 @@ hash_hw_srcs_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512
 # its path, and san-check asks the same way with its own flags in
 # SHA512_AVX2_UNIT_CFLAGS.
 SHA512_AVX2_GCC_CFLAGS := $(if $(GCC_X86_64_TARGET),-fno-schedule-insns2)
-unit_cflags = $(if $(filter sha512_avx2.c,$(1)),$(SHA512_AVX2_GCC_CFLAGS))
+unit_cflags = $(if $(filter src/sha512_avx2.c,$(1)),$(SHA512_AVX2_GCC_CFLAGS))
 SHA512_AVX2_UNIT_DIR := bin/obj/host-tests
 SHA512_AVX2_UNIT := $(SHA512_AVX2_UNIT_DIR)/sha512_avx2.o
 SHA512_AVX2_UNIT_CFLAGS = $(HOST_CFLAGS)
 # The rule's compile line without its output, which make
 # lint-schedule-order runs with -S in place of -c, so the lint reads the
 # code the rule's command writes.
-SHA512_AVX2_UNIT_CC = $(CC) $(SHA512_AVX2_UNIT_CFLAGS) -DCH_CPU_RUNTIME $(call unit_cflags,sha512_avx2.c) -I.
-sha512_avx2_apart = $(patsubst sha512_avx2.c,$(SHA512_AVX2_UNIT),$(1))
-sha512_avx2_named = $(patsubst $(SHA512_AVX2_UNIT),sha512_avx2.c,$(1))
+SHA512_AVX2_UNIT_CC = $(CC) $(SHA512_AVX2_UNIT_CFLAGS) -DCH_CPU_RUNTIME $(call unit_cflags,src/sha512_avx2.c) -Isrc -I.
+sha512_avx2_apart = $(patsubst src/sha512_avx2.c,$(SHA512_AVX2_UNIT),$(1))
+sha512_avx2_named = $(patsubst $(SHA512_AVX2_UNIT),src/sha512_avx2.c,$(1))
 # The object is one file that many binaries link, so it must be the
 # object of this build's command. The rule records the command beside the
 # object, and a record that differs from this build's command forces the
@@ -1830,9 +1830,9 @@ SHA512_AVX2_UNIT_FORCE :=
 ifneq ($(strip $(shell cat $(SHA512_AVX2_UNIT_RECORD) 2>/dev/null)),$(strip $(SHA512_AVX2_UNIT_CC)))
 SHA512_AVX2_UNIT_FORCE := FORCE
 endif
-$(SHA512_AVX2_UNIT): sha512_avx2.c $(HDRS) $(SHA512_AVX2_UNIT_FORCE)
+$(SHA512_AVX2_UNIT): src/sha512_avx2.c $(HDRS) $(SHA512_AVX2_UNIT_FORCE)
 	@mkdir -p $(SHA512_AVX2_UNIT_DIR)
-	$(SHA512_AVX2_UNIT_CC) -c sha512_avx2.c -o $@.$$$$ && mv -f $@.$$$$ $@
+	$(SHA512_AVX2_UNIT_CC) -c src/sha512_avx2.c -o $@.$$$$ && mv -f $@.$$$$ $@
 	@echo "$(strip $(SHA512_AVX2_UNIT_CC))" > $(SHA512_AVX2_UNIT_RECORD)
 .PHONY: sha512-avx2-unit
 sha512-avx2-unit: $(SHA512_AVX2_UNIT)
@@ -1842,22 +1842,22 @@ sha512-avx2-unit: $(SHA512_AVX2_UNIT)
 # other does: one source a line, and after it its flags.
 .PHONY: print-unit-cflags
 print-unit-cflags:
-	@echo sha512_avx2.c $(call unit_cflags,sha512_avx2.c)
+	@echo src/sha512_avx2.c $(call unit_cflags,src/sha512_avx2.c)
 hash_hw_of = $(call sha512_avx2_apart,$(call hash_hw_srcs_of,$(1)))
 host_srcs = $(call sha512_host_of,$(1)) $(call widemul_native_of,$(1)) \
-            $(if $(filter x25519.c,$(1)),x25519_wide.c x25519_adx.c) \
-            $(if $(filter p256_point.c p256.c,$(1)),$(P256_WIDE_SRCS)) \
-            $(if $(filter p256.c,$(1)),$(filter-out $(1),p256_scalar.c ct_wipe.c)) \
-            $(if $(filter p384.c,$(1)),$(P384_WIDE_SRCS)) \
-            $(if $(filter chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
-            $(if $(filter chacha20.c poly1305.c rsa_sign.c gcm.c,$(1)),$(AVX512_WIPE_SRCS)) \
-            $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c poly1305_avx2_native.c \
-              poly1305_ifma_native.c) \
-            $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
-            $(if $(filter rsa_sign.c,$(1)),$(RSA_SIGN64_SRCS)) \
-            $(if $(filter mlkem.c,$(1)),mlkem_vector.c keccak_avx2.c mlkem_avx2.c) \
-            $(if $(filter mldsa.c,$(1)),mldsa_vector.c mldsa_avx2.c \
-              $(if $(filter mlkem.c,$(1)),,keccak_avx2.c)) \
+            $(if $(filter src/x25519.c,$(1)),src/x25519_wide.c src/x25519_adx.c) \
+            $(if $(filter src/p256_point.c src/p256.c,$(1)),$(P256_WIDE_SRCS)) \
+            $(if $(filter src/p256.c,$(1)),$(filter-out $(1),src/p256_scalar.c src/ct_wipe.c)) \
+            $(if $(filter src/p384.c,$(1)),$(P384_WIDE_SRCS)) \
+            $(if $(filter src/chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
+            $(if $(filter src/chacha20.c src/poly1305.c src/rsa_sign.c src/gcm.c,$(1)),$(AVX512_WIPE_SRCS)) \
+            $(if $(filter src/poly1305.c,$(1)),src/poly1305_vector_native.c src/poly1305_avx2_native.c \
+              src/poly1305_ifma_native.c) \
+            $(if $(filter src/rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
+            $(if $(filter src/rsa_sign.c,$(1)),$(RSA_SIGN64_SRCS)) \
+            $(if $(filter src/mlkem.c,$(1)),src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c) \
+            $(if $(filter src/mldsa.c,$(1)),src/mldsa_vector.c src/mldsa_avx2.c \
+              $(if $(filter src/mlkem.c,$(1)),,src/keccak_avx2.c)) \
             $(call hash_hw_of,$(1))
 WIDEMUL ?= decomposed
 ifneq ($(CPU_RUNTIME_DEF),)
@@ -1883,7 +1883,7 @@ endif
 # in a host object's native copy and nowhere else. docs/decisions.md
 # entries 83, 89 and 110 say why.
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += poly1305_vector_native.c poly1305_avx2_native.c poly1305_ifma_native.c
+LIB_SRCS += src/poly1305_vector_native.c src/poly1305_avx2_native.c src/poly1305_ifma_native.c
 endif
 # A host object holds SHA-256 on the CPU's instructions and the two copies
 # over it (hash_hw_of above); a session's hash bit picks them, and a device
@@ -1933,7 +1933,7 @@ endif
 # system meets the same demand.
 ifeq ($(RAND),drbg)
 LIB_DEF += -DCH_RAND_DRBG
-LIB_SRCS += drbg.c
+LIB_SRCS += src/drbg.c
 PUBLIC_RAND := ch_drbg_seed ch_rand_bytes
 else ifeq ($(RAND),extern)
 LIB_DEF += -DCH_RAND_EXTERN
@@ -2080,10 +2080,10 @@ print-aes-runtime-qemu-srcs:
 	@echo $(call sha512_avx2_named,$(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS)))
 	@echo $(call sha512_avx2_named,$(call widemul_counted,$(WEBPKI_TEST_SRCS)))
 	@echo $(call sha512_avx2_named,$(AES_EQUIV_TEST_SRCS))
-	@echo $(call sha512_avx2_named,$(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c)
+	@echo $(call sha512_avx2_named,$(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) src/ct.c src/ct_wipe.c)
 	@echo $(call sha512_avx2_named,$(RSA_SIGN_EQUIV_TEST_SRCS))
-	@echo $(call sha512_avx2_named,$(RSA_AVX2_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_AVX2_TEST_SRCS))
-	@echo $(call sha512_avx2_named,$(call host_srcs,$(SHA512_TEST_SRCS) ct_wipe.c))
+	@echo $(call sha512_avx2_named,$(RSA_AVX2_EQUIV_TEST_UNITS) src/rsa_mont.c $(RSA_AVX2_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(call host_srcs,$(SHA512_TEST_SRCS) src/ct_wipe.c))
 	@echo $(call sha512_avx2_named,$(call host_srcs,$(HKDF384_SRCS)))
 	@echo $(call sha512_avx2_named,$(CHACHA20_EQUIV_TEST_SRCS))
 	@echo $(call sha512_avx2_named,$(GHASH_EQUIV_TEST_SRCS))
@@ -2117,11 +2117,11 @@ print-aes-runtime-qemu-srcs:
 # match below wants. `make -w lint-trust-separation` reproduces that.
 #
 # The transport rows read their file list the same way, from git's
-# quic*.c at the root, so a QUIC_SRCS that loses a file fails here
+# quic*.c in src/, so a QUIC_SRCS that loses a file fails here
 # instead of leaving that file out of the object. The AES and GCM
 # sources a SUITE=aesgcm build compiles carry no quic prefix, because
 # that build compiles them over TCP too, so the rows read a second list
-# from git's aes*.c, gcm*.c and ghash*.c at the root: the TCP row, which
+# from git's aes*.c, gcm*.c and ghash*.c in src/: the TCP row, which
 # builds the default ChaCha20 suite, bans every file on both lists, and
 # the QUIC rows require aes.c and gcm.c, what remains of the second list
 # once the instructions' six sources and aes_extern.c come out. The three
@@ -2185,7 +2185,7 @@ print-aes-runtime-qemu-srcs:
 #
 # The webpki rows read their file lists from nowhere the build reads
 # them: the chain verifiers are written out, and the webpki*.c files are
-# the ones git tracks at the root. A filter that loses a webpki file
+# the ones git tracks in src/. A filter that loses a webpki file
 # then fails here instead of passing against its own mistake. The same
 # git list is what the TRUST=webpki rows require, so a root webpki*.c
 # file that git tracks and WEBPKI_SRCS leaves out fails those rows
@@ -2313,7 +2313,7 @@ lint-trust-separation:
 lint-trust-separation-run:
 	@rc=0; rows=$$(mktemp -d); n=0; \
 	row() { \
-	  axis=$$1; want="$$2 build.c"; ban=$$3; wantdef=$$4; bandef=$$5; \
+	  axis=$$1; want="$$2 src/build.c"; ban=$$3; wantdef=$$4; bandef=$$5; \
 	  lists=$$($(MAKE) -s --no-print-directory -f $(firstword $(MAKEFILE_LIST)) print-lib-lists $$axis); \
 	  srcs=" $$(printf '%s\n' "$$lists" | sed -n 1p) "; \
 	  defs=" $$(printf '%s\n' "$$lists" | sed -n 2p) "; \
@@ -2333,35 +2333,35 @@ lint-trust-separation-run:
 	  fi; \
 	}; \
 	check() { n=$$((n + 1)); row "$$@" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & }; \
-	webpki_files=$$(git ls-files 'webpki*.c' | grep -v / | tr '\n' ' '); \
-	[ -n "$$webpki_files" ] || { echo "lint-trust-separation: git tracks no webpki*.c file at the root, so the webpki rows would check nothing"; rc=1; }; \
-	webpki_only="sha512.c sha512_compress_blocks.c p384.c p384_field.c p384_wide_field.c p384_wide_point.c p384_wide_verify.c rsa_pkcs1.c handshake_groups.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c $$webpki_files"; \
+	webpki_files=$$(git ls-files 'src/webpki*.c' | tr '\n' ' '); \
+	[ -n "$$webpki_files" ] || { echo "lint-trust-separation: git tracks no webpki*.c file in src/, so the webpki rows would check nothing"; rc=1; }; \
+	webpki_only="src/sha512.c src/sha512_compress_blocks.c src/p384.c src/p384_field.c src/p384_wide_field.c src/p384_wide_point.c src/p384_wide_verify.c src/rsa_pkcs1.c src/handshake_groups.c src/p256_ecdh.c src/p256_point.c src/p256_scalar.c src/p256_field.c $$webpki_files"; \
 	pem_readers="$(PEM_READER_SRCS)"; pem_files="$(PEM_FILES_SRCS)"; \
-	check "TRUST=raw-rsa" "rsa.c rsa_mont.c" "p256.c x509.c x509_ca.c $(MLDSA_SRCS) $$pem_readers $$pem_files $$webpki_only" "" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI -DCH_PIN_ECDSA -DCH_PIN_MLDSA"; \
-	check "TRUST=raw-ecdsa" "p256.c" "rsa.c rsa_mont.c x509.c x509_ca.c $$pem_readers $$pem_files $$webpki_only" "-DCH_PIN_ECDSA" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
-	check "TRUST=ca-rsa" "x509.c x509_ca.c rsa.c rsa_mont.c $$pem_readers" "p256.c $$pem_files $$webpki_only" "-DCH_TRUST_CA" "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
-	check "TRUST=ca-ecdsa" "x509.c x509_ca.c p256.c $$pem_readers" "rsa.c rsa_mont.c $$pem_files $$webpki_only" "-DCH_TRUST_CA -DCH_PIN_ECDSA" "-DCH_TRUST_WEBPKI"; \
-	check "TRUST=webpki" "rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c $$pem_readers $$pem_files $$webpki_only" "x509.c x509_ca.c $(MLDSA_SRCS)" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_PIN_MLDSA -DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none" "$$pem_readers $$pem_files" "x509.c x509_ca.c $$webpki_files" "-DCH_ROLE_SERVER" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
-	check "ROLE=both TRUST=raw-rsa" "$$pem_readers $$pem_files" "x509.c x509_ca.c $$webpki_files" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
-	check "ROLE=both TRUST=ca-ecdsa" "x509.c x509_ca.c $$pem_readers $$pem_files" "$$webpki_files" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_CA" "-DCH_TRUST_WEBPKI"; \
-	check "TRUST=raw-rsa KEX=x25519" "x25519.c" "sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ"; \
-	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
-	cnsa2_want="sha3.c mlkem.c mlkem_poly.c aes.c aes_extern.c gcm.c sha512.c sha512_compress.c"; \
+	check "TRUST=raw-rsa" "src/rsa.c src/rsa_mont.c" "src/p256.c src/x509.c src/x509_ca.c $(MLDSA_SRCS) $$pem_readers $$pem_files $$webpki_only" "" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI -DCH_PIN_ECDSA -DCH_PIN_MLDSA"; \
+	check "TRUST=raw-ecdsa" "src/p256.c" "src/rsa.c src/rsa_mont.c src/x509.c src/x509_ca.c $$pem_readers $$pem_files $$webpki_only" "-DCH_PIN_ECDSA" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
+	check "TRUST=ca-rsa" "src/x509.c src/x509_ca.c src/rsa.c src/rsa_mont.c $$pem_readers" "src/p256.c $$pem_files $$webpki_only" "-DCH_TRUST_CA" "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
+	check "TRUST=ca-ecdsa" "src/x509.c src/x509_ca.c src/p256.c $$pem_readers" "src/rsa.c src/rsa_mont.c $$pem_files $$webpki_only" "-DCH_TRUST_CA -DCH_PIN_ECDSA" "-DCH_TRUST_WEBPKI"; \
+	check "TRUST=webpki" "src/rsa.c src/rsa_mont.c src/p256.c src/sha3.c src/mlkem.c src/mlkem_poly.c $$pem_readers $$pem_files $$webpki_only" "src/x509.c src/x509_ca.c $(MLDSA_SRCS)" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_PIN_MLDSA -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none" "$$pem_readers $$pem_files" "src/x509.c src/x509_ca.c $$webpki_files" "-DCH_ROLE_SERVER" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
+	check "ROLE=both TRUST=raw-rsa" "$$pem_readers $$pem_files" "src/x509.c src/x509_ca.c $$webpki_files" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
+	check "ROLE=both TRUST=ca-ecdsa" "src/x509.c src/x509_ca.c $$pem_readers $$pem_files" "$$webpki_files" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_CA" "-DCH_TRUST_WEBPKI"; \
+	check "TRUST=raw-rsa KEX=x25519" "src/x25519.c" "src/sha3.c src/mlkem.c src/mlkem_poly.c" "" "-DCH_KEX_PQ"; \
+	check "TRUST=raw-rsa KEX=pq" "src/x25519.c src/sha3.c src/mlkem.c src/mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
+	cnsa2_want="src/sha3.c src/mlkem.c src/mlkem_poly.c src/aes.c src/aes_extern.c src/gcm.c src/sha512.c src/sha512_compress.c"; \
 	cnsa2_def="-DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_AES_EXTERN"; \
-	check "PROFILE=cnsa2 TRUST=raw-rsa AES=extern" "$$cnsa2_want rsa.c" "x25519.c quic_aes_soft.c $(MLDSA_SRCS)" "$$cnsa2_def" "-DCH_KEX_PQ -DCH_PIN_MLDSA"; \
-	check "PROFILE=cnsa2 TRUST=ca-ecdsa AES=extern" "$$cnsa2_want x509.c p256.c" "x25519.c quic_aes_soft.c" \
+	check "PROFILE=cnsa2 TRUST=raw-rsa AES=extern" "$$cnsa2_want src/rsa.c" "src/x25519.c src/quic_aes_soft.c $(MLDSA_SRCS)" "$$cnsa2_def" "-DCH_KEX_PQ -DCH_PIN_MLDSA"; \
+	check "PROFILE=cnsa2 TRUST=ca-ecdsa AES=extern" "$$cnsa2_want src/x509.c src/p256.c" "src/x25519.c src/quic_aes_soft.c" \
 	  "$$cnsa2_def -DCH_TRUST_CA" "-DCH_KEX_PQ"; \
-	check "PROFILE=cnsa2 TRUST=raw-rsa AES=extern TRANSPORT=quic-nonblocking" "$$cnsa2_want quic.c" \
-	  "x25519.c quic_aes_soft.c" "$$cnsa2_def -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_KEX_PQ"; \
+	check "PROFILE=cnsa2 TRUST=raw-rsa AES=extern TRANSPORT=quic-nonblocking" "$$cnsa2_want src/quic.c" \
+	  "src/x25519.c src/quic_aes_soft.c" "$$cnsa2_def -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_KEX_PQ"; \
 	check "PROFILE=cnsa2 TRUST=raw-mldsa AES=extern" "$$cnsa2_want $(MLDSA_SRCS)" \
-	  "rsa.c rsa_mont.c p256.c x509.c x509_ca.c $$pem_readers $$pem_files x25519.c quic_aes_soft.c mldsa_vector.c" \
+	  "src/rsa.c src/rsa_mont.c src/p256.c src/x509.c src/x509_ca.c $$pem_readers $$pem_files src/x25519.c src/quic_aes_soft.c src/mldsa_vector.c" \
 	  "$$cnsa2_def -DCH_PIN_MLDSA" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_KEX_PQ"; \
-	check "PROFILE=cnsa2 TRUST=ca-mldsa AES=extern" "$$cnsa2_want $(MLDSA_SRCS) x509.c x509_ca.c $$pem_readers" \
-	  "rsa.c rsa_mont.c p256.c $$pem_files x25519.c quic_aes_soft.c" "$$cnsa2_def -DCH_TRUST_CA -DCH_PIN_MLDSA" \
+	check "PROFILE=cnsa2 TRUST=ca-mldsa AES=extern" "$$cnsa2_want $(MLDSA_SRCS) src/x509.c src/x509_ca.c $$pem_readers" \
+	  "src/rsa.c src/rsa_mont.c src/p256.c $$pem_files src/x25519.c src/quic_aes_soft.c" "$$cnsa2_def -DCH_TRUST_CA -DCH_PIN_MLDSA" \
 	  "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA -DCH_KEX_PQ"; \
-	check "PROFILE=cnsa2 TRUST=ca-mldsa AES=extern TRANSPORT=quic-nonblocking" "$$cnsa2_want $(MLDSA_SRCS) quic.c x509.c" \
-	  "rsa.c p256.c x25519.c quic_aes_soft.c" "$$cnsa2_def -DCH_TRUST_CA -DCH_PIN_MLDSA -DCH_TRANSPORT_QUIC_NONBLOCKING" \
+	check "PROFILE=cnsa2 TRUST=ca-mldsa AES=extern TRANSPORT=quic-nonblocking" "$$cnsa2_want $(MLDSA_SRCS) src/quic.c src/x509.c" \
+	  "src/rsa.c src/p256.c src/x25519.c src/quic_aes_soft.c" "$$cnsa2_def -DCH_TRUST_CA -DCH_PIN_MLDSA -DCH_TRANSPORT_QUIC_NONBLOCKING" \
 	  "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	n=$$((n + 1)); refused_build "TRUST=raw-mldsa" "an ML-DSA-87 pin builds under PROFILE=cnsa2 alone" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "TRUST=ca-mldsa AES=extern" "an ML-DSA-87 pin builds under PROFILE=cnsa2 alone" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
@@ -2369,128 +2369,128 @@ lint-trust-separation-run:
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 TRUST=webpki AES=extern" "the profile is a raw or ca client's" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 ROLE=server TRUST=none AES=extern HOST_TARGET=yes" "the profile's server is a host object, which takes no AES value" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 ROLE=server TRUST=none AES=extern HOST_TARGET=" "the profile's server is a host object alone" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
-	cnsa2_srv_want="$(MLDSA_SRCS) $(MLDSA_SIGN_SRCS) mldsa_vector.c srv_mldsa.c sha3.c mlkem.c mlkem_poly.c aes.c gcm.c $(AES_HW_SRCS) $$pem_readers $$pem_files"; \
-	cnsa2_srv_ban="rsa.c rsa_mont.c rsa_sign.c p256.c p256_sign.c p256_ecdh.c p256_point.c x25519.c x25519_wide.c x25519_adx.c quic_aes_soft.c aes_extern.c x509.c x509_ca.c"; \
+	cnsa2_srv_want="$(MLDSA_SRCS) $(MLDSA_SIGN_SRCS) src/mldsa_vector.c src/srv_mldsa.c src/sha3.c src/mlkem.c src/mlkem_poly.c src/aes.c src/gcm.c $(AES_HW_SRCS) $$pem_readers $$pem_files"; \
+	cnsa2_srv_ban="src/rsa.c src/rsa_mont.c src/rsa_sign.c src/p256.c src/p256_sign.c src/p256_ecdh.c src/p256_point.c src/x25519.c src/x25519_wide.c src/x25519_adx.c src/quic_aes_soft.c src/aes_extern.c src/x509.c src/x509_ca.c"; \
 	cnsa2_srv_def="-DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_ROLE_SERVER -DCH_SIGN_MLDSA -DCH_CPU_RUNTIME"; \
-	check "PROFILE=cnsa2 ROLE=server TRUST=none HOST_TARGET=yes" "$$cnsa2_srv_want srv_handshake.c" "$$cnsa2_srv_ban" \
+	check "PROFILE=cnsa2 ROLE=server TRUST=none HOST_TARGET=yes" "$$cnsa2_srv_want src/srv_handshake.c" "$$cnsa2_srv_ban" \
 	  "$$cnsa2_srv_def" "-DCH_ROLE_BOTH -DCH_AES_EXTERN -DCH_KEX_PQ -DCH_PIN_MLDSA"; \
-	check "PROFILE=cnsa2 ROLE=server TRUST=none HOST_TARGET=yes TRANSPORT=quic-nonblocking" "$$cnsa2_srv_want srv_quic.c" \
-	  "rsa.c rsa_sign.c p256.c p256_sign.c x25519.c aes_extern.c" "$$cnsa2_srv_def -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_ROLE_BOTH"; \
+	check "PROFILE=cnsa2 ROLE=server TRUST=none HOST_TARGET=yes TRANSPORT=quic-nonblocking" "$$cnsa2_srv_want src/srv_quic.c" \
+	  "src/rsa.c src/rsa_sign.c src/p256.c src/p256_sign.c src/x25519.c src/aes_extern.c" "$$cnsa2_srv_def -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_ROLE_BOTH"; \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 TRUST=raw-rsa" "the profile runs AES-256 on AES=extern alone" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 TRUST=raw-rsa AES=extern KEX=pq" "the profile fixes the key exchange" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=cnsa2 TRUST=raw-rsa AES=extern SUITE=aesgcm" "the profile fixes the cipher suite" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	n=$$((n + 1)); refused_build "PROFILE=fips TRUST=raw-rsa AES=extern" "fips is not a profile" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
-	check "TRUST=raw-rsa" "x25519.c" "x25519_wide.c x25519_adx.c x25519_native.c" "" "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "x25519.c x25519_wide.c x25519_adx.c" "x25519_native.c" "-DCH_CPU_RUNTIME" \
+	check "TRUST=raw-rsa" "src/x25519.c" "src/x25519_wide.c src/x25519_adx.c x25519_native.c" "" "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "src/x25519.c src/x25519_wide.c src/x25519_adx.c" "x25519_native.c" "-DCH_CPU_RUNTIME" \
 	  "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "x25519.c x25519_wide.c x25519_adx.c" "x25519_native.c" "-DCH_CPU_RUNTIME" \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "src/x25519.c src/x25519_wide.c src/x25519_adx.c" "x25519_native.c" "-DCH_CPU_RUNTIME" \
 	  "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "x25519.c" "x25519_wide.c x25519_adx.c x25519_native.c" "" \
+	check "ROLE=server TRUST=none HOST_TARGET=" "src/x25519.c" "src/x25519_wide.c src/x25519_adx.c x25519_native.c" "" \
 	  "-DCH_X25519_WIDE -DCH_NATIVE_MUL128 -DCH_CPU_RUNTIME"; \
 	for value in portable wide; do \
 	  for axis in "TRUST=raw-rsa" "ROLE=client TRUST=webpki HOST_TARGET=yes" "ROLE=server TRUST=none HOST_TARGET="; do \
 	    n=$$((n + 1)); refused_build "$$axis X25519=$$value" "X25519 is gone: a host object holds the wide field and each session's ch_cfg.cpu picks it" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	  done; \
 	done; \
-	p256_portable="p256_field.c p256_scalar.c p256_point.c"; \
+	p256_portable="src/p256_field.c src/p256_scalar.c src/p256_point.c"; \
 	p256_gone="p256_field_native.c p256_scalar_native.c"; \
 	check "TRUST=raw-rsa" "" "$$p256_portable $(P256_WIDE_SRCS) $$p256_gone" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "$$p256_portable $(P256_WIDE_SRCS)" "$$p256_gone" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "$$p256_portable $(P256_WIDE_SRCS)" "$$p256_gone" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=" "$$p256_portable" "$(P256_WIDE_SRCS) $$p256_gone" "" "-DCH_CPU_RUNTIME"; \
-	check "TRUST=raw-rsa" "rsa_mont.c" "$(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "p384.c p384_field.c $(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=" "p384.c p384_field.c" "$(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "rsa_mont.c $(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "rsa_mont.c $(RSA_MONT64_SRCS) rsa_sign.c $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=" "rsa_mont.c" "$(RSA_MONT64_SRCS) $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "rsa_mont.c rsa_sign.c" "$(RSA_MONT64_SRCS) $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
-	check "TRUST=raw-rsa X86_64_TARGET=yes" "chacha20.c" \
-	  "chacha20_vector.c chacha20_avx2.c chacha20_avx512.c poly1305_vector.c poly1305_avx2.c avx512_wipe.c" "" \
+	check "TRUST=raw-rsa" "src/rsa_mont.c" "$(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "src/p384.c src/p384_field.c $(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=" "src/p384.c src/p384_field.c" "$(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "src/rsa_mont.c $(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "src/rsa_mont.c $(RSA_MONT64_SRCS) src/rsa_sign.c $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=" "src/rsa_mont.c" "$(RSA_MONT64_SRCS) $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "src/rsa_mont.c src/rsa_sign.c" "$(RSA_MONT64_SRCS) $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
+	check "TRUST=raw-rsa X86_64_TARGET=yes" "src/chacha20.c" \
+	  "src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c src/poly1305_vector.c src/poly1305_avx2.c src/avx512_wipe.c" "" \
 	  "-DCH_CHACHA_VECTOR"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes X86_64_TARGET=yes" \
-	  "chacha20.c chacha20_vector.c chacha20_avx2.c chacha20_avx512.c avx512_wipe.c" \
-	  "poly1305_vector.c poly1305_avx2.c" "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
+	  "src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c src/avx512_wipe.c" \
+	  "src/poly1305_vector.c src/poly1305_avx2.c" "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes X86_64_TARGET=yes" \
-	  "chacha20.c chacha20_vector.c chacha20_avx2.c chacha20_avx512.c avx512_wipe.c" \
-	  "poly1305_vector.c poly1305_avx2.c" "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
+	  "src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c src/avx512_wipe.c" \
+	  "src/poly1305_vector.c src/poly1305_avx2.c" "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes X86_64_TARGET=" \
-	  "chacha20.c chacha20_vector.c chacha20_avx2.c chacha20_avx512.c" "avx512_wipe.c" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET= X86_64_TARGET=yes" "chacha20.c" \
-	  "chacha20_vector.c chacha20_avx2.c chacha20_avx512.c poly1305_vector.c poly1305_avx2.c avx512_wipe.c" "" \
+	  "src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c" "src/avx512_wipe.c" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET= X86_64_TARGET=yes" "src/chacha20.c" \
+	  "src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c src/poly1305_vector.c src/poly1305_avx2.c src/avx512_wipe.c" "" \
 	  "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME"; \
 	for value in portable vector; do \
 	  for axis in "TRUST=raw-rsa" "ROLE=client TRUST=webpki HOST_TARGET=yes" "ROLE=server TRUST=none HOST_TARGET="; do \
 	    n=$$((n + 1)); refused_build "$$axis CHACHA=$$value" "CHACHA is gone: a host object runs the vector ChaCha20 in every session, and a device object the portable loop" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	  done; \
 	done; \
-	hash_hw="sha256_hw.c hkdf_hw.c keysched_hw.c"; \
-	sha512_hw="sha512_hw.c sha512_avx2.c"; \
-	check "TRUST=raw-rsa" "sha256.c hkdf.c keysched.c" "$$hash_hw $$sha512_hw" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "sha256.c hkdf.c keysched.c sha512.c $$hash_hw" "$$sha512_hw" \
+	hash_hw="src/sha256_hw.c src/hkdf_hw.c src/keysched_hw.c"; \
+	sha512_hw="src/sha512_hw.c src/sha512_avx2.c"; \
+	check "TRUST=raw-rsa" "src/sha256.c src/hkdf.c src/keysched.c" "$$hash_hw $$sha512_hw" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "src/sha256.c src/hkdf.c src/keysched.c src/sha512.c $$hash_hw" "$$sha512_hw" \
 	  "-DCH_CPU_RUNTIME" "-DCH_SUITE_AES_GCM"; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "sha256.c hkdf.c keysched.c $$hash_hw" "$$sha512_hw" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "src/sha256.c src/hkdf.c src/keysched.c $$hash_hw" "$$sha512_hw" "-DCH_CPU_RUNTIME" ""; \
 	check "TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki EXPORTER=off HOST_TARGET=yes" \
-	  "sha256.c hkdf.c keysched.c $$hash_hw" "$$sha512_hw" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "sha256.c hkdf.c keysched.c" "$$hash_hw $$sha512_hw" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=server TRUST=none SUITE=aesgcm HOST_TARGET=yes" "sha512.c $$sha512_hw $$hash_hw" "" \
+	  "src/sha256.c src/hkdf.c src/keysched.c $$hash_hw" "$$sha512_hw" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "src/sha256.c src/hkdf.c src/keysched.c" "$$hash_hw $$sha512_hw" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=server TRUST=none SUITE=aesgcm HOST_TARGET=yes" "src/sha512.c $$sha512_hw $$hash_hw" "" \
 	  "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
 	check "TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm EXPORTER=off HOST_TARGET=yes" \
-	  "sha512.c $$sha512_hw $$hash_hw" "" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
-	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "sha512.c" "$$sha512_hw $$hash_hw" \
+	  "src/sha512.c $$sha512_hw $$hash_hw" "" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
+	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "src/sha512.c" "$$sha512_hw $$hash_hw" \
 	  "-DCH_SUITE_AES_GCM" "-DCH_CPU_RUNTIME"; \
-	sha512_both="sha512_compress.c sha512_compress_blocks.c"; \
-	check "TRUST=raw-rsa" "" "sha512.c $$sha512_both" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "sha512.c sha512_compress_blocks.c" "sha512_compress.c" \
+	sha512_both="src/sha512_compress.c src/sha512_compress_blocks.c"; \
+	check "TRUST=raw-rsa" "" "src/sha512.c $$sha512_both" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "src/sha512.c src/sha512_compress_blocks.c" "src/sha512_compress.c" \
 	  "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=" "sha512.c sha512_compress.c" "sha512_compress_blocks.c" "" \
+	check "ROLE=client TRUST=webpki HOST_TARGET=" "src/sha512.c src/sha512_compress.c" "src/sha512_compress_blocks.c" "" \
 	  "-DCH_CPU_RUNTIME"; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "" "sha512.c $$sha512_both" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none SUITE=aesgcm HOST_TARGET=yes" "sha512.c sha512_compress_blocks.c" \
-	  "sha512_compress.c" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "" "src/sha512.c $$sha512_both" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none SUITE=aesgcm HOST_TARGET=yes" "src/sha512.c src/sha512_compress_blocks.c" \
+	  "src/sha512_compress.c" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
 	check "TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm EXPORTER=off HOST_TARGET=yes" \
-	  "sha512.c sha512_compress_blocks.c" "sha512_compress.c" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
-	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "sha512.c sha512_compress.c" \
-	  "sha512_compress_blocks.c" "-DCH_SUITE_AES_GCM" "-DCH_CPU_RUNTIME"; \
-	keccak_hw="sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c"; \
-	check "TRUST=raw-rsa KEX=pq" "sha3.c mlkem.c mlkem_poly.c" "$$keccak_hw" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "sha3.c mlkem.c mlkem_poly.c $$keccak_hw" "" \
+	  "src/sha512.c src/sha512_compress_blocks.c" "src/sha512_compress.c" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
+	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "src/sha512.c src/sha512_compress.c" \
+	  "src/sha512_compress_blocks.c" "-DCH_SUITE_AES_GCM" "-DCH_CPU_RUNTIME"; \
+	keccak_hw="src/sha3_hw.c src/mlkem_hw.c src/mlkem_poly_hw.c src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c"; \
+	check "TRUST=raw-rsa KEX=pq" "src/sha3.c src/mlkem.c src/mlkem_poly.c" "$$keccak_hw" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "src/sha3.c src/mlkem.c src/mlkem_poly.c $$keccak_hw" "" \
 	  "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "sha3.c mlkem.c mlkem_poly.c $$keccak_hw" "" \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "src/sha3.c src/mlkem.c src/mlkem_poly.c $$keccak_hw" "" \
 	  "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "sha3.c mlkem.c mlkem_poly.c" "$$keccak_hw" "" \
+	check "ROLE=server TRUST=none HOST_TARGET=" "src/sha3.c src/mlkem.c src/mlkem_poly.c" "$$keccak_hw" "" \
 	  "-DCH_CPU_RUNTIME"; \
-	native_files=$$(git ls-files '*_native.c' | grep -v / | tr '\n' ' '); \
-	[ -n "$$native_files" ] || { echo "lint-trust-separation: git tracks no *_native.c file at the root, so the WIDEMUL rows would check nothing"; rc=1; }; \
-	check "TRUST=raw-rsa WIDEMUL=decomposed" "poly1305.c" \
-	  "poly1305_vector.c poly1305_avx2.c poly1305_ifma.c $$native_files" "" \
+	native_files=$$(git ls-files 'src/*_native.c' | tr '\n' ' '); \
+	[ -n "$$native_files" ] || { echo "lint-trust-separation: git tracks no *_native.c file in src/, so the WIDEMUL rows would check nothing"; rc=1; }; \
+	check "TRUST=raw-rsa WIDEMUL=decomposed" "src/poly1305.c" \
+	  "src/poly1305_vector.c src/poly1305_avx2.c src/poly1305_ifma.c $$native_files" "" \
 	  "-DCH_NATIVE_WIDEMUL -DCH_CPU_RUNTIME"; \
-	check "TRUST=raw-rsa WIDEMUL=native" "poly1305.c" \
-	  "chacha20_vector.c chacha20_avx2.c poly1305_vector.c poly1305_avx2.c poly1305_ifma.c $$native_files" \
+	check "TRUST=raw-rsa WIDEMUL=native" "src/poly1305.c" \
+	  "src/chacha20_vector.c src/chacha20_avx2.c src/poly1305_vector.c src/poly1305_avx2.c src/poly1305_ifma.c $$native_files" \
 	  "-DCH_NATIVE_WIDEMUL" \
 	  "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "poly1305.c poly1305_native.c poly1305_vector_native.c \
-	  poly1305_avx2_native.c poly1305_ifma_native.c mlkem_poly.c mlkem_poly_native.c" \
-	  "poly1305_vector.c poly1305_avx2.c poly1305_ifma.c rsa_sign.c $(RSA_SIGN64_SRCS)" "-DCH_CPU_RUNTIME" \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "src/poly1305.c src/poly1305_native.c src/poly1305_vector_native.c \
+	  src/poly1305_avx2_native.c src/poly1305_ifma_native.c src/mlkem_poly.c src/mlkem_poly_native.c" \
+	  "src/poly1305_vector.c src/poly1305_avx2.c src/poly1305_ifma.c src/rsa_sign.c $(RSA_SIGN64_SRCS)" "-DCH_CPU_RUNTIME" \
 	  "-DCH_NATIVE_WIDEMUL"; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "poly1305.c poly1305_native.c poly1305_vector_native.c \
-	  poly1305_avx2_native.c poly1305_ifma_native.c mlkem_poly.c mlkem_poly_native.c \
-	  rsa_sign.c" "poly1305_vector.c poly1305_avx2.c poly1305_ifma.c" "-DCH_CPU_RUNTIME" \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "src/poly1305.c src/poly1305_native.c src/poly1305_vector_native.c \
+	  src/poly1305_avx2_native.c src/poly1305_ifma_native.c src/mlkem_poly.c src/mlkem_poly_native.c \
+	  src/rsa_sign.c" "src/poly1305_vector.c src/poly1305_avx2.c src/poly1305_ifma.c" "-DCH_CPU_RUNTIME" \
 	  "-DCH_NATIVE_WIDEMUL"; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "poly1305.c mlkem_poly.c rsa_sign.c" \
-	  "poly1305_vector.c poly1305_avx2.c poly1305_ifma.c $$native_files" "" \
+	check "ROLE=server TRUST=none HOST_TARGET=" "src/poly1305.c src/mlkem_poly.c src/rsa_sign.c" \
+	  "src/poly1305_vector.c src/poly1305_avx2.c src/poly1305_ifma.c $$native_files" "" \
 	  "-DCH_NATIVE_WIDEMUL -DCH_CPU_RUNTIME"; \
-	check "ROLE=server TRUST=none WIDEMUL=native HOST_TARGET=" "poly1305.c rsa_sign.c" \
-	  "poly1305_vector.c poly1305_avx2.c poly1305_ifma.c $$native_files" "-DCH_NATIVE_WIDEMUL" \
+	check "ROLE=server TRUST=none WIDEMUL=native HOST_TARGET=" "src/poly1305.c src/rsa_sign.c" \
+	  "src/poly1305_vector.c src/poly1305_avx2.c src/poly1305_ifma.c $$native_files" "-DCH_NATIVE_WIDEMUL" \
 	  "-DCH_CPU_RUNTIME"; \
 	for value in decomposed native; do \
 	  n=$$((n + 1)); refused_build "ROLE=server TRUST=none HOST_TARGET=yes WIDEMUL=$$value" "a host object holds both multiplies and takes no WIDEMUL value" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	done; \
 	n=$$((n + 1)); refused_build "TRUST=raw-rsa WIDEMUL=runtime" \
 	  "WIDEMUL=runtime put both multiplies in an object, and a host object holds them now and picks one per session from ch_cfg.cpu (docs/decisions.md 89)" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
-	check "TRUST=raw-rsa RAND=extern" "" "drbg.c" "-DCH_RAND_EXTERN" "-DCH_RAND_DRBG -DCH_RAND_SESSION"; \
-	check "TRUST=raw-rsa RAND=drbg" "drbg.c" "" "-DCH_RAND_DRBG" "-DCH_RAND_EXTERN -DCH_RAND_SESSION"; \
-	check "TRUST=raw-rsa RAND=session" "" "drbg.c" "-DCH_RAND_SESSION" "-DCH_RAND_EXTERN -DCH_RAND_DRBG"; \
+	check "TRUST=raw-rsa RAND=extern" "" "src/drbg.c" "-DCH_RAND_EXTERN" "-DCH_RAND_DRBG -DCH_RAND_SESSION"; \
+	check "TRUST=raw-rsa RAND=drbg" "src/drbg.c" "" "-DCH_RAND_DRBG" "-DCH_RAND_EXTERN -DCH_RAND_SESSION"; \
+	check "TRUST=raw-rsa RAND=session" "" "src/drbg.c" "-DCH_RAND_SESSION" "-DCH_RAND_EXTERN -DCH_RAND_DRBG"; \
 	for axis in "ROLE=client TRUST=raw-rsa" "ROLE=client TRUST=raw-ecdsa" "ROLE=client TRUST=ca-rsa" "ROLE=client TRUST=ca-ecdsa"; do \
 	  check "$$axis HOST_TARGET=yes" "" "" "" "-DCH_CPU_RUNTIME"; \
 	done; \
@@ -2503,19 +2503,19 @@ lint-trust-separation-run:
 	    n=$$((n + 1)); refused "$$axis" $$k > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	  done; \
 	done; \
-	quic_files=$$(git ls-files 'quic*.c' | grep -v / | tr '\n' ' '); \
-	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
-	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_token.c | tr '\n' ' '); \
-	aes_files=$$(git ls-files 'aes*.c' 'gcm*.c' 'ghash*.c' | grep -v / | tr '\n' ' '); \
-	[ -n "$$aes_files" ] || { echo "lint-trust-separation: git tracks no aes*.c, gcm*.c or ghash*.c file at the root, so the AES rows would check nothing"; rc=1; }; \
-	instructions="aes_hw.c ghash_hw.c gcm_hw.c gcm_vaes.c gcm_avx512.c gcm_avx512_kernel.c gcm_arm64.c gcm_arm64_eor3.c"; \
-	aes_always=$$(printf '%s\n' $$aes_files | grep -vxF -e aes_hw.c -e ghash_hw.c -e gcm_hw.c -e gcm_vaes.c \
-	  -e gcm_avx512.c -e gcm_avx512_kernel.c -e gcm_arm64.c -e gcm_arm64_eor3.c -e aes_extern.c | tr '\n' ' '); \
-	check "TRANSPORT=tcp-blocking" "io.c record.c session.c handshake.c tls.c tls_write.c" "$$quic_files $$aes_files" "" "-DCH_TRANSPORT_QUIC_NONBLOCKING"; \
-	check "TRANSPORT=quic-nonblocking EXPORTER=off" "$$quic_always $$aes_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c tls_write.c $$instructions aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_CPU_RUNTIME -DCH_AES_256_TEST"; \
-	check "TRANSPORT=quic-nonblocking AES=soft EXPORTER=off" "quic_aes_soft.c" "$$instructions aes_extern.c" "" "-DCH_AES_EXTERN -DCH_CPU_RUNTIME"; \
-	check "TRANSPORT=quic-nonblocking AES=extern EXPORTER=off" "aes_extern.c" "quic_aes_soft.c $$instructions" "-DCH_AES_EXTERN" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki TRANSPORT=quic-nonblocking EXPORTER=off HOST_TARGET=yes" "$$quic_always $$aes_always $$instructions quic_aes_soft.c" "aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
+	quic_files=$$(git ls-files 'src/quic*.c' | tr '\n' ' '); \
+	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file in src/, so the transport rows would check nothing"; rc=1; }; \
+	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e src/quic_aes_soft.c -e src/quic_token.c | tr '\n' ' '); \
+	aes_files=$$(git ls-files 'src/aes*.c' 'src/gcm*.c' 'src/ghash*.c' | tr '\n' ' '); \
+	[ -n "$$aes_files" ] || { echo "lint-trust-separation: git tracks no aes*.c, gcm*.c or ghash*.c file in src/, so the AES rows would check nothing"; rc=1; }; \
+	instructions="src/aes_hw.c src/ghash_hw.c src/gcm_hw.c src/gcm_vaes.c src/gcm_avx512.c src/gcm_avx512_kernel.c src/gcm_arm64.c src/gcm_arm64_eor3.c"; \
+	aes_always=$$(printf '%s\n' $$aes_files | grep -vxF -e src/aes_hw.c -e src/ghash_hw.c -e src/gcm_hw.c -e src/gcm_vaes.c \
+	  -e src/gcm_avx512.c -e src/gcm_avx512_kernel.c -e src/gcm_arm64.c -e src/gcm_arm64_eor3.c -e src/aes_extern.c | tr '\n' ' '); \
+	check "TRANSPORT=tcp-blocking" "src/io.c src/record.c src/session.c src/handshake.c src/tls.c src/tls_write.c" "$$quic_files $$aes_files" "" "-DCH_TRANSPORT_QUIC_NONBLOCKING"; \
+	check "TRANSPORT=quic-nonblocking EXPORTER=off" "$$quic_always $$aes_always src/quic_aes_soft.c" "src/io.c src/record.c src/session.c src/handshake.c src/tls.c src/tls_write.c $$instructions src/aes_extern.c src/quic_token.c" "-DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_CPU_RUNTIME -DCH_AES_256_TEST"; \
+	check "TRANSPORT=quic-nonblocking AES=soft EXPORTER=off" "src/quic_aes_soft.c" "$$instructions src/aes_extern.c" "" "-DCH_AES_EXTERN -DCH_CPU_RUNTIME"; \
+	check "TRANSPORT=quic-nonblocking AES=extern EXPORTER=off" "src/aes_extern.c" "src/quic_aes_soft.c $$instructions" "-DCH_AES_EXTERN" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki TRANSPORT=quic-nonblocking EXPORTER=off HOST_TARGET=yes" "$$quic_always $$aes_always $$instructions src/quic_aes_soft.c" "src/aes_extern.c src/quic_token.c" "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	check "ROLE=client TRUST=webpki TRANSPORT=tcp-nonblocking HOST_TARGET=yes" "" "$$quic_files $$aes_files" "-DCH_CPU_RUNTIME" "-DCH_SUITE_AES_GCM -DCH_AES_EXTERN"; \
 	for value in hw runtime; do \
 	  n=$$((n + 1)); refused_build "TRUST=raw-rsa AES=$$value" "AES=$$value chose the AES instructions when the object was built, and each session picks them from ch_cfg.cpu now (docs/decisions.md 89)" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
@@ -2523,21 +2523,21 @@ lint-trust-separation-run:
 	for value in soft extern; do \
 	  n=$$((n + 1)); refused_build "ROLE=server TRUST=none HOST_TARGET=yes AES=$$value" "a host object holds the AES instructions and takes no AES value" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	done; \
-	srv_files=$$(git ls-files 'srv*.c' | grep -v / | tr '\n' ' '); \
-	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
-	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_parser_ee.c handshake_message.c"; \
-	role_crypto="rsa_sign.c p256_sign.c p256_ecdh.c p256_scalar.c p256_point.c p256_field.c"; \
-	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c -e srv_quic.c -e srv_tcp_nonblocking.c | tr '\n' ' '); \
-	check "ROLE=client TRUST=raw-rsa TRANSPORT=tcp-blocking" "$$client_only tls.c tls_write.c" "$$srv_files $$role_crypto" "" "-DCH_ROLE_SERVER"; \
-	check "ROLE=both TRUST=webpki TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c tls_write.c handshake.c handshake_groups.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c tls_write.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_quic.c srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
-	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
-	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$role_crypto $$quic_srv $$aes_always sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_tcp_nonblocking.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared srv_tcp_nonblocking.c $$role_crypto tcp_nonblocking.c tcp_nonblocking_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c tcp_nonblocking_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm HOST_TARGET=yes" "aes.c $$instructions gcm.c sha512.c sha512_compress_blocks.c" "quic_aes_soft.c aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME" "-DCH_AES_EXTERN -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
-	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm EXPORTER=off HOST_TARGET=yes" "aes.c $$instructions quic_aes_soft.c gcm.c quic_packet.c sha512.c sha512_compress_blocks.c" "aes_extern.c record.c" "-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=extern HOST_TARGET=" "aes.c aes_extern.c gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c $$instructions" "-DCH_SUITE_AES_GCM -DCH_AES_EXTERN" "-DCH_CPU_RUNTIME -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
-	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=extern EXPORTER=off HOST_TARGET=" "aes.c aes_extern.c gcm.c quic_packet.c sha512.c sha512_compress.c" "quic_aes_soft.c $$instructions record.c" "-DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_CPU_RUNTIME -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
+	srv_files=$$(git ls-files 'src/srv*.c' | tr '\n' ' '); \
+	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file in src/, so the role rows would check nothing"; rc=1; }; \
+	client_only="src/handshake.c src/handshake_auth.c src/handshake_parser.c src/handshake_parser_ee.c src/handshake_message.c"; \
+	role_crypto="src/rsa_sign.c src/p256_sign.c src/p256_ecdh.c src/p256_scalar.c src/p256_point.c src/p256_field.c"; \
+	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e src/srv_handshake.c -e src/srv_quic.c -e src/srv_tcp_nonblocking.c | tr '\n' ' '); \
+	check "ROLE=client TRUST=raw-rsa TRANSPORT=tcp-blocking" "$$client_only src/tls.c src/tls_write.c" "$$srv_files $$role_crypto" "" "-DCH_ROLE_SERVER"; \
+	check "ROLE=both TRUST=webpki TRANSPORT=tcp-blocking" "$$srv_shared src/srv_handshake.c $$role_crypto src/tls.c src/tls_write.c src/handshake.c src/handshake_groups.c src/sha3.c src/mlkem.c src/mlkem_poly.c" "src/srv_quic.c src/srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking" "$$srv_shared src/srv_handshake.c $$role_crypto src/tls.c src/tls_write.c src/rsa.c src/rsa_mont.c src/p256.c src/sha3.c src/mlkem.c src/mlkem_poly.c" "$$client_only src/srv_quic.c src/srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e src/quic_step.c | tr '\n' ' '); \
+	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off" "$$srv_shared src/srv_quic.c src/quic_token.c $$role_crypto $$quic_srv $$aes_always src/sha3.c src/mlkem.c src/mlkem_poly.c" "$$client_only src/srv_handshake.c src/srv_tcp_nonblocking.c src/quic_step.c src/record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared src/srv_tcp_nonblocking.c $$role_crypto src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/record.c src/sha3.c src/mlkem.c src/mlkem_poly.c" "$$client_only src/srv_handshake.c src/srv_quic.c src/tcp_nonblocking_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm HOST_TARGET=yes" "src/aes.c $$instructions src/gcm.c src/sha512.c src/sha512_compress_blocks.c" "src/quic_aes_soft.c src/aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME" "-DCH_AES_EXTERN -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm EXPORTER=off HOST_TARGET=yes" "src/aes.c $$instructions src/quic_aes_soft.c src/gcm.c src/quic_packet.c src/sha512.c src/sha512_compress_blocks.c" "src/aes_extern.c src/record.c" "-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=extern HOST_TARGET=" "src/aes.c src/aes_extern.c src/gcm.c src/sha512.c src/sha512_compress.c" "src/quic_aes_soft.c $$instructions" "-DCH_SUITE_AES_GCM -DCH_AES_EXTERN" "-DCH_CPU_RUNTIME -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=extern EXPORTER=off HOST_TARGET=" "src/aes.c src/aes_extern.c src/gcm.c src/quic_packet.c src/sha512.c src/sha512_compress.c" "src/quic_aes_soft.c $$instructions src/record.c" "-DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_CPU_RUNTIME -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
 	wait; \
 	for f in "$$rows"/*; do [ -s "$$f" ] && { cat "$$f"; rc=1; }; done; \
 	rm -rf "$$rows"; \
@@ -2616,7 +2616,7 @@ PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $
 # the names lib-check admits as undefined, as build.zig's plan lists them.
 LIB_HOOKS = ch_assert_fail $(if $(filter extern,$(RAND)),ch_rand_bytes) \
             $(if $(filter -DCH_KEYLOG,$(LIB_DEF)),ch_keylog) \
-            $(if $(filter aes_extern.c,$(LIB_SRCS)),ch_aes_block)
+            $(if $(filter src/aes_extern.c,$(LIB_SRCS)),ch_aes_block)
 # The public headers of the object: each header that declares a name the
 # object exports or imports, in the order of build.zig's declarations, so
 # both builds name the same headers (lint-zig-build). DECLARES_<header>
@@ -2646,12 +2646,12 @@ DECLARES_keylog.h := ch_keylog
 DECLARES_aes_block.h := ch_aes_block
 DECLARES_ch_assert.h := ch_assert_fail
 DECLARES_build.h := ch_build
-LIB_HEADER_ORDER := tls.h tcp_nonblocking.h quic.h srv.h srv_tcp_nonblocking.h srv_quic.h \
-                    quic_token.h x509_ca.h pem_files.h ticket.h alert.h dnssec.h drbg.h rand.h keylog.h \
-                    aes_block.h ch_assert.h build.h
+LIB_HEADER_ORDER := src/tls.h src/tcp_nonblocking.h src/quic.h src/srv.h src/srv_tcp_nonblocking.h src/srv_quic.h \
+                    src/quic_token.h src/x509_ca.h src/pem_files.h src/ticket.h src/alert.h src/dnssec.h src/drbg.h src/rand.h src/keylog.h \
+                    src/aes_block.h src/ch_assert.h src/build.h
 LIB_DECLARED = $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) \
                $(PUBLIC_BUILD) $(PUBLIC_DNSSEC) $(LIB_HOOKS)
-LIB_HEADERS = $(foreach h,$(LIB_HEADER_ORDER),$(if $(filter $(DECLARES_$(h)),$(LIB_DECLARED)),$(h)))
+LIB_HEADERS = $(foreach h,$(LIB_HEADER_ORDER),$(if $(filter $(DECLARES_$(notdir $(h))),$(LIB_DECLARED)),$(h)))
 
 # LIB_VARIANT names the build variables that pick the sources and the
 # defines, and the compiler is not one of them. So `make CC=<cross> lib`
@@ -2668,7 +2668,7 @@ CC_STAMP := bin/obj/$(LIB_VARIANT)/cc-stamp
 # The stamp's line: the compile command of every source, and after it the
 # flag sha512_avx2.c alone compiles with (unit_cflags above), so a build
 # that changes either compiles the objects again.
-CC_STAMP_LINE = $(CC) $(LIB_CFLAGS) $(LIB_DEF) $(call unit_cflags,sha512_avx2.c)
+CC_STAMP_LINE = $(CC) $(LIB_CFLAGS) $(LIB_DEF) $(call unit_cflags,src/sha512_avx2.c)
 $(CC_STAMP): FORCE
 	@mkdir -p bin/obj/$(LIB_VARIANT)
 	@[ "$$(cat $@ 2>/dev/null)" = "$(CC_STAMP_LINE)" ] \
@@ -2679,9 +2679,9 @@ $(CC_STAMP): FORCE
 # above says why). LIB_UNIT_CC is the compile line of one source without
 # its output, which make lint-schedule-order runs with -S for
 # sha512_avx2.c.
-LIB_UNIT_CC = $(CC) $(LIB_CFLAGS) $(LIB_DEF) $(call unit_cflags,$(1)) -I.
+LIB_UNIT_CC = $(CC) $(LIB_CFLAGS) $(LIB_DEF) $(call unit_cflags,$(1)) -Isrc -I.
 bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS) $(CC_STAMP)
-	@mkdir -p bin/obj/$(LIB_VARIANT)
+	@mkdir -p $(@D)
 	$(call LIB_UNIT_CC,$<) -c $< -o $@
 
 # The stamp holds PUBLIC, because the link decides from that list which
@@ -2834,7 +2834,7 @@ cxx-check: $(LIB_OBJ) chapulin.hpp test/hpp_test.cpp bin/srv_flight_test
 	@command -v $(CXX) >/dev/null || { \
 	  [ -n "$$CI" ] && { echo "$(CXX): missing on CI; the gate must not skip"; exit 1; }; \
 	  echo "SKIP cxx-check: no C++ compiler"; exit 0; }
-	$(CXX) $(CXXFLAGS) $(LIB_DEF) -D_DEFAULT_SOURCE -I. -c test/hpp_test.cpp -o bin/obj/$(LIB_VARIANT)/hpp_test.o
+	$(CXX) $(CXXFLAGS) $(LIB_DEF) -D_DEFAULT_SOURCE -Isrc -I. -c test/hpp_test.cpp -o bin/obj/$(LIB_VARIANT)/hpp_test.o
 	$(CXX) -o bin/obj/$(LIB_VARIANT)/hpp_test bin/obj/$(LIB_VARIANT)/hpp_test.o $(LIB_OBJ)
 	./bin/obj/$(LIB_VARIANT)/hpp_test
 
@@ -2874,7 +2874,7 @@ ifeq ($(RAND),drbg)
 # TCP-blocking client and defines no hook but ch_assert_fail, so it runs
 # on the objects that carry that client and import no other hook.
 ifeq ($(TRANSPORT)-$(ROLE)-$(KEYLOG),tcp-blocking-client-off)
-	@$(CC) $(LIB_CFLAGS) $(LIB_DEF) -I. -o bin/obj/$(LIB_VARIANT)/entropy_recipe test/entropy_recipe.c $(LIB_OBJ)
+	@$(CC) $(LIB_CFLAGS) $(LIB_DEF) -Isrc -I. -o bin/obj/$(LIB_VARIANT)/entropy_recipe test/entropy_recipe.c $(LIB_OBJ)
 	@bin/obj/$(LIB_VARIANT)/entropy_recipe || { \
 	  echo "lib-check: docs/entropy.md's boot-seed recipe links against this object but does not run"; exit 1; }
 	@echo "lib-check: docs/entropy.md's boot-seed recipe links against this object, and the handshake it starts draws from the seeded generator"
@@ -2929,14 +2929,14 @@ endif
 # the other transport's record. A build.h that gave two transports one
 # record name would let that consumer link and read this object's
 # record. The three builds add about 0.3 s to each lib-check run.
-	@$(CC) $(LIB_CFLAGS) $(LIB_DEF) -I. -o $(BUILD_TEST) test/build_test.c $(LIB_OBJ)
+	@$(CC) $(LIB_CFLAGS) $(LIB_DEF) -Isrc -I. -o $(BUILD_TEST) test/build_test.c $(LIB_OBJ)
 	@$(BUILD_TEST) || { echo "lib-check: the build record disagrees with the headers compiled under this object's own defines"; exit 1; }
-	@$(CC) $(LIB_CFLAGS) $(BUILD_PIN_MOVED_DEF) -I. -o $(BUILD_TEST)_pin test/build_test.c $(LIB_OBJ)
+	@$(CC) $(LIB_CFLAGS) $(BUILD_PIN_MOVED_DEF) -Isrc -I. -o $(BUILD_TEST)_pin test/build_test.c $(LIB_OBJ)
 	@rc=0; $(BUILD_TEST)_pin > /dev/null || rc=$$?; \
 	[ $$rc -eq 1 ] || { echo "lib-check: a consumer compiled with $(BUILD_PIN_MOVED) moved must read a different build record, and it exited $$rc"; exit 1; }
-	@$(CC) $(LIB_CFLAGS) $(BUILD_TRANSPORT_MOVED_DEF) -I. -c test/build_test.c -o $(BUILD_TEST)_transport.o
+	@$(CC) $(LIB_CFLAGS) $(BUILD_TRANSPORT_MOVED_DEF) -Isrc -I. -c test/build_test.c -o $(BUILD_TEST)_transport.o
 	@if $(CC) -o $(BUILD_TEST)_transport $(BUILD_TEST)_transport.o $(LIB_OBJ) 2> $(BUILD_TEST)_transport.err; then \
-	  echo "lib-check: a consumer compiled for another transport linked against this object; build.h must give each transport's record its own name"; exit 1; fi
+	  echo "lib-check: a consumer compiled for another transport linked against this object; src/build.h must give each transport's record its own name"; exit 1; fi
 	@grep -q "$(BUILD_OTHER_RECORD)" $(BUILD_TEST)_transport.err || { cat $(BUILD_TEST)_transport.err; \
 	  echo "lib-check: a consumer compiled for another transport failed to link without naming $(BUILD_OTHER_RECORD)"; exit 1; }
 	@echo "lib-check: the build record matches this object's defines, differs from a consumer's with $(BUILD_PIN_MOVED) moved, and is not the record a consumer of another transport names"
@@ -2945,9 +2945,9 @@ endif
 # of its own, must read the record its headers compute and exit 0. The
 # same program with a transport define the object lacks must stop at the
 # header's own #error. BUILD_HEADER_MOVED_DEF is that define.
-	@$(CC) $(LIB_CFLAGS) -I. -include $(LIB_HEADER) -o $(BUILD_TEST)_header test/build_test.c $(LIB_OBJ)
+	@$(CC) $(LIB_CFLAGS) -Isrc -I. -include $(LIB_HEADER) -o $(BUILD_TEST)_header test/build_test.c $(LIB_OBJ)
 	@$(BUILD_TEST)_header || { echo "lib-check: a consumer compiled under $(LIB_HEADER) alone reads a build record its headers do not compute"; exit 1; }
-	@if $(CC) $(LIB_CFLAGS) -I. -include $(LIB_HEADER) $(BUILD_HEADER_MOVED_DEF) -fsyntax-only test/build_test.c \
+	@if $(CC) $(LIB_CFLAGS) -Isrc -I. -include $(LIB_HEADER) $(BUILD_HEADER_MOVED_DEF) -fsyntax-only test/build_test.c \
 	  2> $(BUILD_TEST)_header.err; then \
 	  echo "lib-check: a consumer with $(BUILD_HEADER_MOVED_DEF) compiled under $(LIB_HEADER), which this object lacks"; exit 1; fi
 	@grep -q 'was built without' $(BUILD_TEST)_header.err || { cat $(BUILD_TEST)_header.err; \
@@ -2964,15 +2964,15 @@ rand-check:
 	@set -e; \
 	for d in "" "-DCH_RAND_EXTERN -DCH_RAND_DRBG" "-DCH_RAND_EXTERN -DCH_RAND_SESSION" \
 	  "-DCH_RAND_DRBG -DCH_RAND_SESSION" "-DCH_RAND_EXTERN -DCH_RAND_DRBG -DCH_RAND_SESSION"; do \
-	  if $(CC) $(LIB_CFLAGS) $$d -I. -fsyntax-only tls.c 2>/dev/null; then \
-	    echo "rand-check: tls.c compiled with [$$d]; the cfg.h guard did not fire"; exit 1; \
+	  if $(CC) $(LIB_CFLAGS) $$d -Isrc -I. -fsyntax-only src/tls.c 2>/dev/null; then \
+	    echo "rand-check: src/tls.c compiled with [$$d]; the src/cfg.h guard did not fire"; exit 1; \
 	  fi; \
 	done; \
 	for d in -DCH_RAND_EXTERN -DCH_RAND_DRBG -DCH_RAND_SESSION; do \
-	  $(CC) $(LIB_CFLAGS) $$d -I. -fsyntax-only tls.c || { \
-	    echo "rand-check: tls.c must compile with $$d alone"; exit 1; }; \
+	  $(CC) $(LIB_CFLAGS) $$d -Isrc -I. -fsyntax-only src/tls.c || { \
+	    echo "rand-check: src/tls.c must compile with $$d alone"; exit 1; }; \
 	done; \
-	echo "rand-check: cfg.h admits exactly one of CH_RAND_EXTERN, CH_RAND_DRBG and CH_RAND_SESSION"
+	echo "rand-check: src/cfg.h admits exactly one of CH_RAND_EXTERN, CH_RAND_DRBG and CH_RAND_SESSION"
 
 # The reference generator's own vectors. It builds here whatever RAND
 # says, because the module is the subject of the test rather than the
@@ -2986,17 +2986,17 @@ rand-check:
 # CH_CT_WIDEMUL builds and the host object's builds read the variable
 # this rule reads, so a source the test comes to need fails check, which
 # builds this rule, before it fails one of those recipes.
-DRBG_TEST_SRCS := drbg.c chacha20.c sha256.c ct.c ct_wipe.c
+DRBG_TEST_SRCS := src/drbg.c src/chacha20.c src/sha256.c src/ct.c src/ct_wipe.c
 bin/drbg_test: test/drbg_test.c $(DRBG_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(LIB_CFLAGS) -DCH_RAND_DRBG -I. -o $@ test/drbg_test.c $(DRBG_TEST_SRCS)
+	$(CC) $(LIB_CFLAGS) -DCH_RAND_DRBG -Isrc -I. -o $@ test/drbg_test.c $(DRBG_TEST_SRCS)
 
 # softmul.c only compiles where there is no hardware multiplier, so the
 # test forces it on and includes the unit. The host has a multiplier,
 # which is what makes the compiler's own `*` an independent oracle.
-bin/softmul_test: test/softmul_test.c softmul.c $(HDRS) $(TESTH)
+bin/softmul_test: test/softmul_test.c src/softmul.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/softmul_test.c
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/softmul_test.c
 
 # RSA-PSS verify vectors; its own binary like drbg_test, so the module
 # stays testable without the rest of the stack. Built with rsa.h's
@@ -3009,10 +3009,10 @@ bin/softmul_test: test/softmul_test.c softmul.c $(HDRS) $(TESTH)
 # CertificateVerify rules, and bin/diff must keep diffing the pinned
 # ones (diff-webpki diffs the others).
 RSA_WIDE_DEF := -DCH_RSA_MODULUS_MAX=512
-RSA_TEST_SRCS := rsa.c rsa_mont.c sha256.c ct.c ct_wipe.c
+RSA_TEST_SRCS := src/rsa.c src/rsa_mont.c src/sha256.c src/ct.c src/ct_wipe.c
 bin/rsa_test: test/rsa_test.c $(RSA_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_test.c $(RSA_TEST_SRCS)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/rsa_test.c $(RSA_TEST_SRCS)
 
 # RSA-PSS signing: the known answers, the round trip through the verifier
 # and the refusals. Its own binary like bin/rsa_test, at the same
@@ -3020,58 +3020,58 @@ bin/rsa_test: test/rsa_test.c $(RSA_TEST_SRCS) $(HDRS) $(TESTH)
 # 384-byte bound the ROLE=server object that now packages rsa_sign.c
 # builds it at. It links rsa.c for the verifier the round trip checks
 # against, which is the same pairing bin/rsa_pkcs1_test uses.
-RSA_SIGN_TEST_SRCS := rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c ct_wipe.c
+RSA_SIGN_TEST_SRCS := src/rsa_sign.c src/rsa.c src/rsa_mont.c src/sha256.c src/ct.c src/ct_wipe.c
 bin/rsa_sign_test: test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS)
 
 # SHA-3 vectors and the SHAKE streaming contract. Its own binary: sha3.c stays
 # out of the packaged object until the ML-KEM build calls it
 # (https://github.com/c4milo/chapulin/issues/21).
-SHA3_TEST_SRCS := sha3.c ct.c ct_wipe.c
+SHA3_TEST_SRCS := src/sha3.c src/ct.c src/ct_wipe.c
 bin/sha3_test: test/sha3_test.c $(SHA3_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/sha3_test.c $(SHA3_TEST_SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/sha3_test.c $(SHA3_TEST_SRCS)
 # sha3.c against FIPS 202 as the standard writes it, proof/sha3_reference.h:
 # the permutation, both digests, and both XOFs through split calls
 # (docs/decisions.md 98). The test includes sha3.c itself, to call the
 # permutation that file keeps static, so the line links no second copy.
 bin/sha3_equiv_test: test/sha3_equiv_test.c $(SHA3_TEST_SRCS) proof/sha3_reference.h $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/sha3_equiv_test.c $(filter-out sha3.c,$(SHA3_TEST_SRCS))
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/sha3_equiv_test.c $(filter-out src/sha3.c,$(SHA3_TEST_SRCS))
 
 # ML-KEM-768 known answers, the CCTV decaps anchors, and the input checks. Its
 # own binary, out of the packaged object like sha3
 # (https://github.com/c4milo/chapulin/issues/21).
-MLKEM_TEST_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c ct_wipe.c
+MLKEM_TEST_SRCS := src/mlkem.c src/mlkem_poly.c src/sha3.c src/ct.c src/ct_wipe.c
 bin/mlkem_test: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 # The same file under -DCH_MLKEM_1024, ML-KEM-1024's checks that need no
 # vector (docs/decisions.md 150). One object holds one parameter set, so
 # each set takes a binary of its own; bin/wycheproof_mlkem1024_test holds
 # its known answers.
 bin/mlkem_test_1024: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(CFLAGS) -DCH_MLKEM_1024 -Isrc -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 # The same file twice more under -DCH_MLKEM_TWO_RANKS, an object that runs
 # both ranks (docs/decisions.md 177): its own rank 3 and then its own rank
 # 4, so each set's tests above run on the code that takes the rank at run
 # time, and each binary adds the tests of the other rank.
 bin/mlkem_test_two_ranks: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -Isrc -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 bin/mlkem_test_two_ranks_1024: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -Isrc -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 # ML-DSA-87 verification against answers the test computes from FIPS 204:
 # the arithmetic, every Decompose and UseHint input, and whole signatures
 # under a key whose t1 is 0 (docs/decisions.md 154). Its own binary, out
 # of every packaged object until a TRUST value runs it.
-MLDSA_TEST_SRCS := mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c
+MLDSA_TEST_SRCS := src/mldsa.c src/mldsa_poly.c src/sha3.c src/ct.c src/ct_wipe.c
 bin/mldsa_test: test/mldsa_test.c $(MLDSA_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/mldsa_test.c $(MLDSA_TEST_SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/mldsa_test.c $(MLDSA_TEST_SRCS)
 # ML-DSA-87 signing, mldsa_signer.c, against the test-only signer, FIPS
 # 204's rounding at every input, the verifier's SampleInBall and each
 # refusal at its boundary (docs/decisions.md 159). The second binary runs
@@ -3079,13 +3079,13 @@ bin/mldsa_test: test/mldsa_test.c $(MLDSA_TEST_SRCS) $(HDRS) $(TESTH)
 # object runs for a session without CH_CPU_CONSTANT_TIME_MULTIPLY. Both
 # take -DCH_MLDSA_SIGN_TEST, which declares the signer's test entries; no
 # library object takes it.
-MLDSA_SIGNER_TEST_SRCS := $(MLDSA_SIGN_SRCS) test/mldsa_sign.c mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c
+MLDSA_SIGNER_TEST_SRCS := $(MLDSA_SIGN_SRCS) test/mldsa_sign.c src/mldsa.c src/mldsa_poly.c src/sha3.c src/ct.c src/ct_wipe.c
 bin/mldsa_signer_test: test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_MLDSA_SIGN_TEST -I. -Itest -o $@ test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS)
+	$(CC) $(CFLAGS) -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest -o $@ test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS)
 bin/mldsa_signer_test_ct_widemul: test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLDSA_SIGN_TEST -I. -Itest -o $@ test/mldsa_signer_test.c \
+	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest -o $@ test/mldsa_signer_test.c \
 	  $(MLDSA_SIGNER_TEST_SRCS)
 # The TRANSPORT=quic-nonblocking driver through its sixteen public entries: the
 # configuration rules, the staged ClientHello, a ServerHello delivered
@@ -3097,13 +3097,13 @@ bin/mldsa_signer_test_ct_widemul: test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_S
 # which a -DCH_TRANSPORT_QUIC_NONBLOCKING build does not compile. It is also the
 # build that compiles quic.c for test/quic-builds.sh, the catch target
 # of the INV-26 mutants the compiler refuses.
-QUIC_DRIVER_SRCS := $(QUIC_SRCS) handshake_message.c handshake_parser.c handshake_parser_ee.c \
-                    handshake_record.c handshake_auth.c handshake_post.c handshake_flight.c \
-                    keysched.c x25519.c \
-                    rsa.c rsa_mont.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
+QUIC_DRIVER_SRCS := $(QUIC_SRCS) src/handshake_message.c src/handshake_parser.c src/handshake_parser_ee.c \
+                    src/handshake_record.c src/handshake_auth.c src/handshake_post.c src/handshake_flight.c \
+                    src/keysched.c src/x25519.c \
+                    src/rsa.c src/rsa_mont.c src/hkdf.c src/sha256.c src/chacha20.c src/poly1305.c src/aead.c src/buf.c src/ct.c src/ct_wipe.c
 bin/quic_driver_test: test/quic_driver_test.c $(QUIC_DRIVER_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/quic_driver_test.c $(QUIC_DRIVER_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I. -o $@ test/quic_driver_test.c $(QUIC_DRIVER_SRCS)
 # The mode against its published vectors: FIPS 197 for the AES-128 and
 # AES-256 forward ciphers, SP 800-38D for both AEADs, and RFC 9001
 # Appendix A for the Initial keys, the header protection masks and the
@@ -3116,11 +3116,11 @@ bin/quic_driver_test: test/quic_driver_test.c $(QUIC_DRIVER_SRCS) $(HDRS) $(TEST
 # it through aes_block.h's two entries, which take plain bytes rather than
 # a key object. A later lane that adds a vector section for another quic source
 # links that source here.
-bin/quic_test: test/quic_vectors.c aes.c $(AES_IMPL) gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
-               hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c $(HDRS) $(TESTH)
+bin/quic_test: test/quic_vectors.c src/aes.c $(AES_IMPL) src/gcm.c src/quic_keys.c src/quic_retry.c src/quic_initial.c src/quic_packet.c \
+               src/hkdf.c src/sha256.c src/chacha20.c src/poly1305.c src/aead.c src/buf.c src/ct.c src/ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/quic_vectors.c aes.c \
-	  $(AES_IMPL) gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(AES_256_TEST_DEF) -Isrc -I. -o $@ test/quic_vectors.c src/aes.c \
+	  $(AES_IMPL) src/gcm.c src/quic_keys.c src/quic_retry.c src/quic_initial.c src/quic_packet.c src/hkdf.c src/sha256.c src/chacha20.c src/poly1305.c src/aead.c src/buf.c src/ct.c src/ct_wipe.c
 # The same vectors in a QUIC host object (docs/decisions.md 89), which
 # holds aes_hw.c's AES instructions and quic_aes_soft.c's table beside
 # them. test/quic_vectors.c runs every vector twice there: with
@@ -3148,28 +3148,28 @@ bin/quic_test: test/quic_vectors.c aes.c $(AES_IMPL) gcm.c quic_keys.c quic_retr
 # instructions, so one source covers both builds.
 # The flight handlers and what they call in the role, without the parser,
 # which both flight binaries replace with test/srv_flight_tests.h's own.
-SRV_FLIGHT_SRCS := srv_flight.c srv_out.c srv_message.c srv_cookie.c srv_auth.c srv_ticket.c \
-                   srv_resume.c srv_kex.c
-SRV_FLIGHT_AES_SRCS = $(call host_srcs,$(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) gcm.c aes.c \
-                        $(AES_HW_SRCS) sha512.c sha512_compress.c)
+SRV_FLIGHT_SRCS := src/srv_flight.c src/srv_out.c src/srv_message.c src/srv_cookie.c src/srv_auth.c src/srv_ticket.c \
+                   src/srv_resume.c src/srv_kex.c
+SRV_FLIGHT_AES_SRCS = $(call host_srcs,$(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) src/gcm.c src/aes.c \
+                        $(AES_HW_SRCS) src/sha512.c src/sha512_compress.c)
 bin/srv_flight_test_aes: test/srv_flight_test.c $(SRV_FLIGHT_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER $(HOST_SUITE_DEF) -I. -o $@ test/srv_flight_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER $(HOST_SUITE_DEF) -Isrc -I. -o $@ test/srv_flight_test.c \
 	  $(SRV_FLIGHT_AES_SRCS)
 
-AES_SUITE_TEST_SRCS := $(call host_srcs,record.c gcm.c aes.c $(AES_HW_SRCS) aead.c chacha20.c poly1305.c \
-                         hkdf.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c buf.c)
+AES_SUITE_TEST_SRCS := $(call host_srcs,src/record.c src/gcm.c src/aes.c $(AES_HW_SRCS) src/aead.c src/chacha20.c src/poly1305.c \
+                         src/hkdf.c src/sha256.c src/sha512.c src/sha512_compress.c src/ct.c src/ct_wipe.c src/buf.c)
 bin/aes_suite_test: test/aes_suite_test.c $(AES_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) -I. -o $@ test/aes_suite_test.c $(AES_SUITE_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) -Isrc -I. -o $@ test/aes_suite_test.c $(AES_SUITE_TEST_SRCS)
 
 # test/aes-runtime-qemu.sh links QUIC_TEST_HW_SRCS too, for x86-64.
-QUIC_TEST_HW_SRCS := $(call host_srcs,aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c quic_keys.c quic_retry.c \
-                       quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c \
-                       ct_wipe.c)
+QUIC_TEST_HW_SRCS := $(call host_srcs,src/aes.c $(AES_HW_SRCS) src/quic_aes_soft.c src/gcm.c src/quic_keys.c src/quic_retry.c \
+                       src/quic_initial.c src/quic_packet.c src/hkdf.c src/sha256.c src/chacha20.c src/poly1305.c src/aead.c src/buf.c src/ct.c \
+                       src/ct_wipe.c)
 bin/quic_test_hw: test/quic_vectors.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME $(AES_256_TEST_DEF) -I. -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME $(AES_256_TEST_DEF) -Isrc -I. -o $@ \
 	  test/quic_vectors.c $(QUIC_TEST_HW_SRCS)
 # The AES instructions against the table over the same inputs, the check
 # that holds the instruction path where a proof cannot reach. Both
@@ -3192,12 +3192,12 @@ bin/quic_test_hw: test/quic_vectors.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 # CH_CPU_RUNTIME, and ct.h refuses the test flags' CH_NATIVE_WIDEMUL
 # beside it. No unit on the line multiplies.
 AES_EQUIV_TEST_SRCS := test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c \
-                       test/aes_equiv_arm64.c test/aes_equiv_arm64_eor3.c test/stack_residue.c ct.c \
-                       ct_wipe.c
-bin/aes_equiv_test: test/aes_equiv_test.c $(AES_EQUIV_TEST_SRCS) quic_aes_soft.c aes_hw.c gcm_hw.c \
-                    gcm_arm64.c gcm_arm64_eor3.c gcm_vaes.c $(HDRS) $(TESTH)
+                       test/aes_equiv_arm64.c test/aes_equiv_arm64_eor3.c test/stack_residue.c src/ct.c \
+                       src/ct_wipe.c
+bin/aes_equiv_test: test/aes_equiv_test.c $(AES_EQUIV_TEST_SRCS) src/quic_aes_soft.c src/aes_hw.c src/gcm_hw.c \
+                    src/gcm_arm64.c src/gcm_arm64_eor3.c src/gcm_vaes.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/aes_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I. -o $@ test/aes_equiv_test.c \
 	  $(AES_EQUIV_TEST_SRCS)
 # GHASH on the carry-less multiply against gcm.c's portable GHASH, the
 # same check for ghash_hw.c: the multiply, the loop over data and the
@@ -3217,10 +3217,10 @@ bin/aes_equiv_test: test/aes_equiv_test.c $(AES_EQUIV_TEST_SRCS) quic_aes_soft.c
 # object's, so HOST_BINS names it. bin/unit_host runs RFC 7748's vectors
 # and the unit suite's handshakes on the wide field, with the multiply bit,
 # and on the 16-word one, without it.
-X25519_EQUIV_TEST_SRCS := x25519.c x25519_wide.c x25519_adx.c ct.c ct_wipe.c
+X25519_EQUIV_TEST_SRCS := src/x25519.c src/x25519_wide.c src/x25519_adx.c src/ct.c src/ct_wipe.c
 bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o $@ test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -o $@ test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS)
 # x25519_adx.c over its model, test/x25519_adx_model.h, against the 16-word
 # field on every host, and its assembly against the model on an x86-64 CPU
 # with BMI2 and ADX, where the second binary also runs the model test's
@@ -3228,28 +3228,28 @@ bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) $(HDRS
 # prints SKIP, and CH_REQUIRE_BMI2_ADX=1 makes a missing CPU fail it.
 # Each defines CH_X25519_ADX_TEST for the field's test entries, which no
 # library object holds.
-X25519_ADX_TEST_SRCS := test/x25519_adx_model.c x25519.c x25519_wide.c ct.c ct_wipe.c
-X25519_ADX_EQUIV_SRCS := test/x25519_adx_equiv_test.c x25519_adx.c $(X25519_ADX_TEST_SRCS)
-bin/x25519_adx_model_test: test/x25519_adx_model_test.c test/x25519_equiv_test.c x25519_adx.c \
+X25519_ADX_TEST_SRCS := test/x25519_adx_model.c src/x25519.c src/x25519_wide.c src/ct.c src/ct_wipe.c
+X25519_ADX_EQUIV_SRCS := test/x25519_adx_equiv_test.c src/x25519_adx.c $(X25519_ADX_TEST_SRCS)
+bin/x25519_adx_model_test: test/x25519_adx_model_test.c test/x25519_equiv_test.c src/x25519_adx.c \
                            $(X25519_ADX_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -Isrc -I. -Itest -o $@ \
 	  test/x25519_adx_model_test.c $(X25519_ADX_TEST_SRCS)
-bin/x25519_adx_equiv_test: test/x25519_adx_equiv_test.c test/x25519_equiv_test.c x25519_adx.c \
+bin/x25519_adx_equiv_test: test/x25519_adx_equiv_test.c test/x25519_equiv_test.c src/x25519_adx.c \
                            $(X25519_ADX_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -I. -Itest -o $@ $(X25519_ADX_EQUIV_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -Isrc -I. -Itest -o $@ $(X25519_ADX_EQUIV_SRCS)
 # rsa_mont64_adx.c's multiplication and square against rsa_mont64.c's, word
 # for word, at every word count from 2 to the 512-byte bound: the model
 # build on every host, and the assembly build too on an x86-64 CPU with BMI2
 # and ADX, where CH_REQUIRE_BMI2_ADX=1 makes a missing CPU fail it
 # (docs/decisions.md 183).
-RSA_MONT64_ADX_TEST_SRCS := test/rsa_mont64_adx_test.c test/rsa_mont64_adx_model.c rsa_mont64_adx.c \
-                            rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c ct.c ct_wipe.c
-bin/rsa_mont64_adx_test: $(RSA_MONT64_ADX_TEST_SRCS) test/rsa_mont64_adx_model.h rsa_mont64_adx_asm.h \
+RSA_MONT64_ADX_TEST_SRCS := test/rsa_mont64_adx_test.c test/rsa_mont64_adx_model.c src/rsa_mont64_adx.c \
+                            src/rsa_mont64.c src/rsa_mont64_blocks.c src/rsa_mont64_addcarry.c src/ct.c src/ct_wipe.c
+bin/rsa_mont64_adx_test: $(RSA_MONT64_ADX_TEST_SRCS) test/rsa_mont64_adx_model.h src/rsa_mont64_adx_asm.h \
                          $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -Isrc -I. -Itest -o $@ \
 	  $(RSA_MONT64_ADX_TEST_SRCS)
 # The wide P-256 files against p256_field.c, p256_scalar.c and
 # p256_point.c, all in one binary under the names the library gives them,
@@ -3266,12 +3266,12 @@ bin/rsa_mont64_adx_test: $(RSA_MONT64_ADX_TEST_SRCS) test/rsa_mont64_adx_model.h
 # HOST_BINS names it. bin/p256_sign_test_host and bin/p256_ecdh_test_host
 # run RFC 6979's vectors and Python's on the wide files, with the multiply
 # bit, and on the files under their own names, without it.
-P256_EQUIV_TEST_SRCS := p256.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c \
-                        $(P256_WIDE_SRCS) test/p256_verify_portable.c sha256.c hkdf.c $(call hash_hw_of,sha256.c hkdf.c) \
-                        buf.c ct.c ct_wipe.c test/stack_residue.c
+P256_EQUIV_TEST_SRCS := src/p256.c src/p256_sign.c src/p256_ecdh.c src/p256_point.c src/p256_scalar.c src/p256_field.c \
+                        $(P256_WIDE_SRCS) test/p256_verify_portable.c src/sha256.c src/hkdf.c $(call hash_hw_of,src/sha256.c src/hkdf.c) \
+                        src/buf.c src/ct.c src/ct_wipe.c test/stack_residue.c
 bin/p256_equiv_test: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
 # The x86-64 field's copy of the wide files (P256_ADX_SRCS) under the
 # same cases. bin/p256_adx_model_test and bin/p256_adx_verify_model_test
 # compile every unit under CH_P256_ADX_MODEL, so the copy's product and
@@ -3284,12 +3284,12 @@ bin/p256_equiv_test: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TE
 bin/p256_adx_model_test: test/p256_adx_model_test.c test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) \
                          $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Isrc -I. -Itest -o $@ \
 	  test/p256_adx_model_test.c $(P256_EQUIV_TEST_SRCS)
 bin/p256_adx_equiv_test: test/p256_adx_equiv_test.c test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) \
                          $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/p256_adx_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ test/p256_adx_equiv_test.c \
 	  $(P256_EQUIV_TEST_SRCS)
 # The same binary on the 128-bit sums, the form of p256_wide_word.h's two
 # carry steps that gcc compiles for a machine other than x86-64. The
@@ -3298,7 +3298,7 @@ bin/p256_adx_equiv_test: test/p256_adx_equiv_test.c test/p256_equiv_test.c $(P25
 # compiler picks the sums, so this rule names them (docs/decisions.md 94).
 bin/p256_equiv_test_sum: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_SUM -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_SUM -Isrc -I. -Itest -o $@ \
 	  test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
 # A host object's ECDSA P-256 verifier against the portable one
 # (docs/decisions.md 96). The binary compiles as a host object compiles
@@ -3307,22 +3307,22 @@ bin/p256_equiv_test_sum: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) 
 # device object's, under a second name beside it. The signer and the
 # 32-bit point and scalar files link so that the test computes its own
 # signatures on an arithmetic that is neither verifier's.
-P256_VERIFY_EQUIV_TEST_SRCS := p256.c p256_sign.c p256_point.c p256_scalar.c p256_field.c $(P256_WIDE_SRCS) \
-                               sha256.c hkdf.c $(call hash_hw_of,sha256.c hkdf.c) buf.c ct.c ct_wipe.c
+P256_VERIFY_EQUIV_TEST_SRCS := src/p256.c src/p256_sign.c src/p256_point.c src/p256_scalar.c src/p256_field.c $(P256_WIDE_SRCS) \
+                               src/sha256.c src/hkdf.c $(call hash_hw_of,src/sha256.c src/hkdf.c) src/buf.c src/ct.c src/ct_wipe.c
 P256_VERIFY_EQUIV_TEST_UNITS := test/p256_verify_equiv_test.c test/p256_verify_portable.c
 bin/p256_verify_equiv_test: $(P256_VERIFY_EQUIV_TEST_UNITS) $(P256_VERIFY_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ $(P256_VERIFY_EQUIV_TEST_UNITS) \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ $(P256_VERIFY_EQUIV_TEST_UNITS) \
 	  $(P256_VERIFY_EQUIV_TEST_SRCS)
 bin/p256_adx_verify_model_test: test/p256_adx_verify_model_test.c $(P256_VERIFY_EQUIV_TEST_UNITS) \
                                 $(P256_VERIFY_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Isrc -I. -Itest -o $@ \
 	  test/p256_adx_verify_model_test.c test/p256_verify_portable.c $(P256_VERIFY_EQUIV_TEST_SRCS)
 bin/p256_adx_verify_equiv_test: test/p256_adx_verify_equiv_test.c $(P256_VERIFY_EQUIV_TEST_UNITS) \
                                 $(P256_VERIFY_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/p256_adx_verify_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ test/p256_adx_verify_equiv_test.c \
 	  test/p256_verify_portable.c $(P256_VERIFY_EQUIV_TEST_SRCS)
 # The same binary on the overflow builtins, the form clang compiles. CI's
 # check job and test/docker-check.sh compile with gcc for x86-64, which
@@ -3330,7 +3330,7 @@ bin/p256_adx_verify_equiv_test: test/p256_adx_verify_equiv_test.c $(P256_VERIFY_
 # whose compiler is gcc runs them too (docs/decisions.md 94).
 bin/p256_equiv_test_builtin: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_BUILTIN -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_BUILTIN -Isrc -I. -Itest -o $@ \
 	  test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
 # A host object's RSA arithmetic against the portable code
 # (docs/decisions.md 95). The binary compiles as a host object compiles
@@ -3338,27 +3338,27 @@ bin/p256_equiv_test_builtin: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HD
 # words, and test/rsa_equiv_portable.c compiles the same file's 32-bit
 # arm, a device object's, under a second name beside it. It builds at the
 # 512-byte bound, so RSA-4096 runs on both.
-RSA_EQUIV_TEST_SRCS := rsa_mont.c $(RSA_MONT64_SRCS) ct.c ct_wipe.c
+RSA_EQUIV_TEST_SRCS := src/rsa_mont.c $(RSA_MONT64_SRCS) src/ct.c src/ct_wipe.c
 RSA_EQUIV_TEST_UNITS := test/rsa_equiv_test.c test/rsa_equiv_portable.c
 bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
 # rsa_mont64_exp.c, the DNSSEC public operation with the key's own
 # exponent (https://github.com/c4milo/chapulin/issues/189), against
 # Python's pow (test/gen_rsa_exp_vectors.py) and against rsa_mont64_public
 # at 65537. It builds as a host object with CH_DNSSEC at the 512-byte bound.
 # dnssec.c's check against OpenSSL's keys and signatures
 # (test/gen_dnssec_vectors.py) and at every refusal dnssec.h states.
-DNSSEC_TEST_SRCS := dnssec.c rsa_pkcs1.c rsa.c $(RSA_EQUIV_TEST_SRCS) p256.c $(P256_WIDE_SRCS) \
-                    p256_scalar.c p256_field.c p256_point.c buf.c sha256.c sha512.c \
-                    sha512_compress_blocks.c x25519_wide.c p384.c p384_field.c $(P384_WIDE_SRCS) sha1.c
+DNSSEC_TEST_SRCS := src/dnssec.c src/rsa_pkcs1.c src/rsa.c $(RSA_EQUIV_TEST_SRCS) src/p256.c $(P256_WIDE_SRCS) \
+                    src/p256_scalar.c src/p256_field.c src/p256_point.c src/buf.c src/sha256.c src/sha512.c \
+                    src/sha512_compress_blocks.c src/x25519_wide.c src/p384.c src/p384_field.c $(P384_WIDE_SRCS) src/sha1.c
 bin/dnssec_test: test/dnssec_test.c test/dnssec_vectors.h test/dnssec_rfc_vectors.h $(DNSSEC_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -Isrc -I. -Itest -o $@ \
 	  test/dnssec_test.c $(sort $(DNSSEC_TEST_SRCS))
 bin/rsa_exp_test: test/rsa_exp_test.c test/rsa_exp_vectors.h $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC $(RSA_WIDE_DEF) -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC $(RSA_WIDE_DEF) -Isrc -I. -Itest -o $@ \
 	  test/rsa_exp_test.c $(RSA_EQUIV_TEST_SRCS)
 # The same binary on each form of rsa_mont64.h's step: the binary above
 # runs the form its compiler picks, the compare form under clang and the
@@ -3372,31 +3372,31 @@ bin/rsa_exp_test: test/rsa_exp_test.c test/rsa_exp_vectors.h $(RSA_EQUIV_TEST_SR
 bin/rsa_equiv_test_compare: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_COMPARE -DRSA_MONT64_BLOCKS=0 \
-	  -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+	  -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -Isrc -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
 bin/rsa_equiv_test_sum: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_SUM -DRSA_MONT64_BLOCKS=0 \
-	  -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+	  -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -Isrc -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
 # rsa_mont64_blocks.c's blocks against rsa_mont64.c's loops, word for word
 # (docs/decisions.md 118). Every unit compiles with the blocks on, whatever
 # the compiler, so every machine runs them, and test/rsa_mont64_loops.c
 # compiles rsa_mont64.c once more with them off, under second names. The
 # rows are off, which a gcc build for x86-64 would otherwise turn on.
 RSA_BLOCKS_EQUIV_TEST_UNITS := test/rsa_blocks_equiv_test.c test/rsa_mont64_loops.c
-bin/rsa_blocks_equiv_test: $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c $(HDRS) $(TESTH)
+bin/rsa_blocks_equiv_test: $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) src/ct.c src/ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -I. \
-	  -o $@ $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -Isrc -I. \
+	  -o $@ $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) src/ct.c src/ct_wipe.c
 # rsa_mont64_addcarry.c's rows against the same loops, word for word
 # (docs/decisions.md 122): the same two units with the rows on, whatever
 # the compiler, so every machine runs them. Each machine runs the form of
 # the add with carry it picks, _addcarry_u64 on x86-64 and a 128-bit sum
 # elsewhere, so CI's gcc check job runs the form a gcc build for x86-64
 # ships.
-bin/rsa_addcarry_equiv_test: $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c $(HDRS) $(TESTH)
+bin/rsa_addcarry_equiv_test: $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) src/ct.c src/ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -DRSA_MONT64_BLOCKS=0 $(RSA_WIDE_DEF) -I. \
-	  -o $@ $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -DRSA_MONT64_BLOCKS=0 $(RSA_WIDE_DEF) -Isrc -I. \
+	  -o $@ $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) src/ct.c src/ct_wipe.c
 # rsa_ifma.c's kernel over a model of each AVX-512 instruction in portable
 # C, against rsa_mont64.c, on every machine. test/rsa_ifma_model.c
 # compiles rsa_mont.c and rsa_ifma.c under CH_RSA_IFMA_MODEL and second
@@ -3408,14 +3408,14 @@ bin/rsa_addcarry_equiv_test: $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) c
 # stop at 8 there, and its arrays and switch take a layout the 512-byte
 # build does not compile.
 RSA_IFMA_MODEL_TEST_UNITS := test/rsa_ifma_model_test.c test/rsa_ifma_model.c
-RSA_IFMA_TEST_SRCS := $(filter-out rsa_ifma.c,$(RSA_MONT64_SRCS)) ct.c ct_wipe.c
-bin/rsa_ifma_model_test: $(RSA_IFMA_MODEL_TEST_UNITS) rsa_mont.c rsa_ifma.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
+RSA_IFMA_TEST_SRCS := $(filter-out src/rsa_ifma.c,$(RSA_MONT64_SRCS)) src/ct.c src/ct_wipe.c
+bin/rsa_ifma_model_test: $(RSA_IFMA_MODEL_TEST_UNITS) src/rsa_mont.c src/rsa_ifma.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest \
 	  -o $@ $(RSA_IFMA_MODEL_TEST_UNITS) $(RSA_IFMA_TEST_SRCS)
-bin/rsa_ifma_model_test_384: $(RSA_IFMA_MODEL_TEST_UNITS) rsa_mont.c rsa_ifma.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
+bin/rsa_ifma_model_test_384: $(RSA_IFMA_MODEL_TEST_UNITS) src/rsa_mont.c src/rsa_ifma.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -Isrc -I. -Itest \
 	  -o $@ $(RSA_IFMA_MODEL_TEST_UNITS) $(RSA_IFMA_TEST_SRCS)
 # The same kernel on the instructions against the model: each lane
 # operation, normalize_digits, the products and rsa_ifma_public, and
@@ -3424,10 +3424,10 @@ bin/rsa_ifma_model_test_384: $(RSA_IFMA_MODEL_TEST_UNITS) rsa_mont.c rsa_ifma.c 
 # functions. The binary has a body on x86-64 alone, and on a CPU without
 # AVX-512 IFMA it skips unless CH_REQUIRE_AVX512_IFMA is 1.
 RSA_IFMA_EQUIV_TEST_UNITS := test/rsa_ifma_equiv_test.c test/rsa_ifma_model.c test/rsa_ifma_instructions.c
-bin/rsa_ifma_equiv_test: $(RSA_IFMA_EQUIV_TEST_UNITS) rsa_mont.c rsa_ifma.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
+bin/rsa_ifma_equiv_test: $(RSA_IFMA_EQUIV_TEST_UNITS) src/rsa_mont.c src/rsa_ifma.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest \
-	  -o $@ $(RSA_IFMA_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_IFMA_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest \
+	  -o $@ $(RSA_IFMA_EQUIV_TEST_UNITS) src/rsa_mont.c $(RSA_IFMA_TEST_SRCS)
 # rsa_avx2.c's kernel over a model of each AVX2 instruction in portable C,
 # against rsa_mont64.c, on every machine (docs/decisions.md 122), as the
 # two rules above build rsa_ifma.c's: test/rsa_avx2_model.c compiles
@@ -3439,29 +3439,29 @@ bin/rsa_ifma_equiv_test: $(RSA_IFMA_EQUIV_TEST_UNITS) rsa_mont.c rsa_ifma.c $(RS
 # model on x86-64; every runner CI draws has AVX2, and on a CPU without it
 # the binary skips unless CH_REQUIRE_X86_KERNELS is 1.
 RSA_AVX2_MODEL_TEST_UNITS := test/rsa_avx2_model_test.c test/rsa_avx2_model.c
-RSA_AVX2_TEST_SRCS := $(filter-out rsa_avx2.c,$(RSA_MONT64_SRCS)) ct.c ct_wipe.c
-bin/rsa_avx2_model_test: $(RSA_AVX2_MODEL_TEST_UNITS) rsa_mont.c rsa_avx2.c $(RSA_AVX2_TEST_SRCS) $(HDRS) $(TESTH)
+RSA_AVX2_TEST_SRCS := $(filter-out src/rsa_avx2.c,$(RSA_MONT64_SRCS)) src/ct.c src/ct_wipe.c
+bin/rsa_avx2_model_test: $(RSA_AVX2_MODEL_TEST_UNITS) src/rsa_mont.c src/rsa_avx2.c $(RSA_AVX2_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest \
 	  -o $@ $(RSA_AVX2_MODEL_TEST_UNITS) $(RSA_AVX2_TEST_SRCS)
-bin/rsa_avx2_model_test_384: $(RSA_AVX2_MODEL_TEST_UNITS) rsa_mont.c rsa_avx2.c $(RSA_AVX2_TEST_SRCS) $(HDRS) $(TESTH)
+bin/rsa_avx2_model_test_384: $(RSA_AVX2_MODEL_TEST_UNITS) src/rsa_mont.c src/rsa_avx2.c $(RSA_AVX2_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -Isrc -I. -Itest \
 	  -o $@ $(RSA_AVX2_MODEL_TEST_UNITS) $(RSA_AVX2_TEST_SRCS)
 RSA_AVX2_EQUIV_TEST_UNITS := test/rsa_avx2_equiv_test.c test/rsa_avx2_model.c test/rsa_avx2_instructions.c
-bin/rsa_avx2_equiv_test: $(RSA_AVX2_EQUIV_TEST_UNITS) rsa_mont.c rsa_avx2.c $(RSA_AVX2_TEST_SRCS) $(HDRS) $(TESTH)
+bin/rsa_avx2_equiv_test: $(RSA_AVX2_EQUIV_TEST_UNITS) src/rsa_mont.c src/rsa_avx2.c $(RSA_AVX2_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest \
-	  -o $@ $(RSA_AVX2_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_AVX2_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest \
+	  -o $@ $(RSA_AVX2_EQUIV_TEST_UNITS) src/rsa_mont.c $(RSA_AVX2_TEST_SRCS)
 # avx512_wipe.c's call on the instructions: every vector register and k1
 # to k7 set, the call, and each of them read back as zero
 # (test/avx512_wipe_test.c). The file is in an x86-64 host object alone,
 # so the binary compiles it on x86-64 alone; elsewhere the test's main
 # prints SKIP. On a CPU without AVX-512F it skips unless
 # CH_REQUIRE_AVX512_IFMA is 1.
-bin/avx512_wipe_test: test/avx512_wipe_test.c avx512_wipe.c $(HDRS) $(TESTH)
+bin/avx512_wipe_test: test/avx512_wipe_test.c src/avx512_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/avx512_wipe_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ test/avx512_wipe_test.c \
 	  $(AVX512_WIPE_SRCS)
 # The same for the signer: rsa_sign.c is the ladder a host object holds
 # for a session that does not state its multiply, the code a device object
@@ -3474,19 +3474,19 @@ bin/avx512_wipe_test: test/avx512_wipe_test.c avx512_wipe.c $(HDRS) $(TESTH)
 # its wipes cover what it held, and test/rsa_sign_equiv_pieces.c compiles
 # rsa_sign64.c once more under second names, so that the check can call
 # that file's static reduction and recombination on their own.
-RSA_SIGN_EQUIV_TEST_SRCS := test/rsa_sign_equiv_pieces.c test/stack_residue.c rsa_sign.c \
-                            $(RSA_SIGN64_SRCS) $(AVX512_WIPE_SRCS) rsa_mont.c $(RSA_MONT64_SRCS) sha256.c \
-                            ct.c ct_wipe.c
+RSA_SIGN_EQUIV_TEST_SRCS := test/rsa_sign_equiv_pieces.c test/stack_residue.c src/rsa_sign.c \
+                            $(RSA_SIGN64_SRCS) $(AVX512_WIPE_SRCS) src/rsa_mont.c $(RSA_MONT64_SRCS) src/sha256.c \
+                            src/ct.c src/ct_wipe.c
 bin/rsa_sign_equiv_test: test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS)
 # The same check with rsa_mont64.c's loops wherever a build would take the
 # _addcarry_u64 rows, as bin/rsa_equiv_test_sum holds the loops' words
 # (docs/decisions.md 122): gcc's x86-64 build of the signer runs the rows,
 # so without this build no x86-64 run reads the loops' wipes.
 bin/rsa_sign_equiv_test_loops: test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -I. -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -Isrc -I. -o $@ \
 	  test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS)
 # rsa_ifma_sign.c's exponentiations against rsa_sign64.c's window, and
 # rsa_sign64_sp1 on AVX-512 IFMA against the same call on the window
@@ -3501,41 +3501,41 @@ bin/rsa_sign_equiv_test_loops: test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_
 # the instructions: they have a body on x86-64 alone, and on a CPU
 # without AVX-512 IFMA they skip unless CH_REQUIRE_AVX512_IFMA is 1.
 RSA_IFMA_SIGN_TEST_UNITS := test/rsa_ifma_sign_test.c test/rsa_ifma_sign_entries.c
-RSA_IFMA_SIGN_TEST_SRCS := rsa_sign64.c rsa_sign64_wipe.c rsa_mont64_adx.c rsa_sign.c rsa_mont.c $(RSA_MONT64_SRCS) sha256.c \
-                           ct.c ct_wipe.c
-bin/rsa_ifma_sign_model_test: $(RSA_IFMA_SIGN_TEST_UNITS) rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
+RSA_IFMA_SIGN_TEST_SRCS := src/rsa_sign64.c src/rsa_sign64_wipe.c src/rsa_mont64_adx.c src/rsa_sign.c src/rsa_mont.c $(RSA_MONT64_SRCS) src/sha256.c \
+                           src/ct.c src/ct_wipe.c
+bin/rsa_ifma_sign_model_test: $(RSA_IFMA_SIGN_TEST_UNITS) src/rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) -I. -Itest \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) -Isrc -I. -Itest \
 	  -o $@ $(RSA_IFMA_SIGN_TEST_UNITS) $(RSA_IFMA_SIGN_TEST_SRCS)
-bin/rsa_ifma_sign_model_test_384: $(RSA_IFMA_SIGN_TEST_UNITS) rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) \
+bin/rsa_ifma_sign_model_test_384: $(RSA_IFMA_SIGN_TEST_UNITS) src/rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) \
                                   $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -DCH_RSA_MODULUS_MAX=384 -Isrc -I. -Itest \
 	  -o $@ $(RSA_IFMA_SIGN_TEST_UNITS) $(RSA_IFMA_SIGN_TEST_SRCS)
-bin/rsa_ifma_sign_equiv_test: $(RSA_IFMA_SIGN_TEST_UNITS) rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
+bin/rsa_ifma_sign_equiv_test: $(RSA_IFMA_SIGN_TEST_UNITS) src/rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest \
 	  -o $@ $(RSA_IFMA_SIGN_TEST_UNITS) $(RSA_IFMA_SIGN_TEST_SRCS) $(AVX512_WIPE_SRCS)
-bin/rsa_ifma_sign_equiv_test_384: $(RSA_IFMA_SIGN_TEST_UNITS) rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) \
+bin/rsa_ifma_sign_equiv_test_384: $(RSA_IFMA_SIGN_TEST_UNITS) src/rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) \
                                   $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -Isrc -I. -Itest \
 	  -o $@ $(RSA_IFMA_SIGN_TEST_UNITS) $(RSA_IFMA_SIGN_TEST_SRCS) $(AVX512_WIPE_SRCS)
 # What the kernel calls leave on the stack and in the vector registers,
 # with the two wipes after each and without them, how far below their
 # caller they write, and the stack two secrets leave, on the instructions
 # (test/rsa_ifma_sign_residue_test.c). It links the library's units under
 # their own names, at each bound, and has a body on x86-64 alone.
-RSA_IFMA_SIGN_RESIDUE_SRCS := test/stack_residue.c rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) \
+RSA_IFMA_SIGN_RESIDUE_SRCS := test/stack_residue.c src/rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) \
                               $(AVX512_WIPE_SRCS)
 bin/rsa_ifma_sign_residue_test: test/rsa_ifma_sign_residue_test.c $(RSA_IFMA_SIGN_RESIDUE_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest \
 	  -o $@ test/rsa_ifma_sign_residue_test.c $(RSA_IFMA_SIGN_RESIDUE_SRCS)
 bin/rsa_ifma_sign_residue_test_384: test/rsa_ifma_sign_residue_test.c $(RSA_IFMA_SIGN_RESIDUE_SRCS) $(HDRS) \
                                     $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -Isrc -I. -Itest \
 	  -o $@ test/rsa_ifma_sign_residue_test.c $(RSA_IFMA_SIGN_RESIDUE_SRCS)
 # The RSA-PSS verifier's vectors on a host object's public operation:
 # bin/rsa_test's main, built as a host object builds its sources. It takes
@@ -3549,7 +3549,7 @@ bin/rsa_ifma_sign_residue_test_384: test/rsa_ifma_sign_residue_test.c $(RSA_IFMA
 # beside bin/rsa_pkcs1_test.
 bin/rsa_test_host: test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS)) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS))
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS))
 # A host object's ChaCha20 against chacha20.c's loop, the paths in one
 # binary under their own names: chacha20.c compiles here without
 # -DCH_CPU_RUNTIME, so chacha20_xor is the portable loop, as a device
@@ -3561,11 +3561,11 @@ bin/rsa_test_host: test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS)) $(HDRS) $(
 # ct_wipe.c is the wipe of the buffer a vector path's last bytes pass
 # through. The line takes HOST_CFLAGS for bin/aes_equiv_test's reason.
 CHACHA20_EQUIV_TEST_SRCS := test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c \
-                            test/chacha20_equiv_avx512.c chacha20.c ct.c ct_wipe.c
+                            test/chacha20_equiv_avx512.c src/chacha20.c src/ct.c src/ct_wipe.c
 bin/chacha20_equiv_test: test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS) $(CHACHA_VECTOR_SRCS) \
-                         avx512_wipe.c $(HDRS) $(TESTH)
+                         src/avx512_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -I. -o $@ test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -Isrc -I. -o $@ test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS)
 # The vector Poly1305 against poly1305.c's loop, both in one binary:
 # poly1305.c compiles here without -DCH_CPU_RUNTIME, the loop alone on the
 # 16x16 decomposition, as a device object runs it, and
@@ -3578,13 +3578,13 @@ bin/chacha20_equiv_test: test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS) 
 # (test/poly1305_equiv_residue.h).
 POLY1305_EQUIV_TEST_SRCS := test/poly1305_equiv_vector.c test/poly1305_equiv_avx2.c \
                             test/poly1305_equiv_ifma.c test/poly1305_ifma_model.c test/stack_residue.c \
-                            poly1305.c ct.c ct_wipe.c
-bin/poly1305_equiv_test: test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS) poly1305_native.c \
-                         poly1305_vector_native.c poly1305_vector.c poly1305_avx2_native.c \
-                         poly1305_avx2.c poly1305_ifma_native.c poly1305_ifma.c avx512_wipe.c \
+                            src/poly1305.c src/ct.c src/ct_wipe.c
+bin/poly1305_equiv_test: test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS) src/poly1305_native.c \
+                         src/poly1305_vector_native.c src/poly1305_vector.c src/poly1305_avx2_native.c \
+                         src/poly1305_avx2.c src/poly1305_ifma_native.c src/poly1305_ifma.c src/avx512_wipe.c \
                          $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -I. -Itest -o $@ test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -Isrc -I. -Itest -o $@ test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS)
 # A host object's SHA-256 on the CPU's instructions against sha256.c, and
 # the copies of hkdf.c and keysched.c over it against the files under
 # their own names, all in one binary under the names the library gives
@@ -3601,50 +3601,50 @@ bin/poly1305_equiv_test: test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS) 
 # sha512_compress.c. Those cases run on every CPU.
 SHA2_EQUIV_TEST_DEFS := -DCH_CPU_RUNTIME -DCH_HASH_SHA384 $(EXPORTER_DEF)
 SHA2_EQUIV_TEST_SRCS := test/stack_residue.c test/sha512_portable.c \
-                        $(call host_srcs,sha256.c hkdf.c keysched.c sha512.c) sha512_compress.c ct.c ct_wipe.c
-bin/sha2_equiv_test: test/sha2_equiv_test.c $(SHA2_EQUIV_TEST_SRCS) hkdf.c keysched.c $(HDRS) $(TESTH)
+                        $(call host_srcs,src/sha256.c src/hkdf.c src/keysched.c src/sha512.c) src/sha512_compress.c src/ct.c src/ct_wipe.c
+bin/sha2_equiv_test: test/sha2_equiv_test.c $(SHA2_EQUIV_TEST_SRCS) src/hkdf.c src/keysched.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest -o $@ test/sha2_equiv_test.c $(SHA2_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) $(SHA2_EQUIV_TEST_DEFS) -Isrc -I. -Itest -o $@ test/sha2_equiv_test.c $(SHA2_EQUIV_TEST_SRCS)
 # A host object's Keccak on arm64's SHA-3 instructions against sha3.c, the
 # portable code CBMC proves (docs/decisions.md 99). test/stack_residue.c
 # copies the stack a call left, for the check that no lane the call
 # computed is still there (test/sha3_hw_equiv_residue.h). In an object
 # that holds no such path, and on a CPU without the instructions, the
 # binary says so and passes.
-SHA3_HW_EQUIV_TEST_SRCS := test/stack_residue.c $(call host_srcs,sha3.c) ct.c ct_wipe.c
+SHA3_HW_EQUIV_TEST_SRCS := test/stack_residue.c $(call host_srcs,src/sha3.c) src/ct.c src/ct_wipe.c
 bin/sha3_hw_equiv_test: test/sha3_hw_equiv_test.c test/sha3_hw_equiv_residue.h \
                         $(SHA3_HW_EQUIV_TEST_SRCS) proof/sha3_reference.h $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/sha3_hw_equiv_test.c $(SHA3_HW_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ test/sha3_hw_equiv_test.c $(SHA3_HW_EQUIV_TEST_SRCS)
 # ML-KEM's two copies on the SHA-3 instructions against mlkem.c and
 # mlkem_poly.c, the code CBMC proves (docs/decisions.md 99): the same
 # keys, ciphertexts and secrets on the two paths, and the three calls a
 # session makes under each kind of ch_cfg.cpu.
-MLKEM_HW_EQUIV_TEST_SRCS := $(call host_srcs,sha3.c mlkem.c mlkem_poly.c) ct.c ct_wipe.c
+MLKEM_HW_EQUIV_TEST_SRCS := $(call host_srcs,src/sha3.c src/mlkem.c src/mlkem_poly.c) src/ct.c src/ct_wipe.c
 bin/mlkem_hw_equiv_test: test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS)
 bin/mlkem_hw_equiv_test_1024: test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -I. -Itest -o $@ test/mlkem_hw_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -Isrc -I. -Itest -o $@ test/mlkem_hw_equiv_test.c \
 	  $(MLKEM_HW_EQUIV_TEST_SRCS)
 # The vector NTT against mlkem_poly.c's loops, the code CBMC proves
 # (docs/decisions.md 101). mlkem_poly.c compiles to the same code in a host
 # object as in a device object, so the binary links it under its own names.
-MLKEM_VECTOR_EQUIV_TEST_SRCS := mlkem_poly.c mlkem_vector.c $(call host_srcs,sha3.c) ct.c ct_wipe.c
+MLKEM_VECTOR_EQUIV_TEST_SRCS := src/mlkem_poly.c src/mlkem_vector.c $(call host_srcs,src/sha3.c) src/ct.c src/ct_wipe.c
 bin/mlkem_vector_equiv_test: test/mlkem_vector_equiv_test.c $(MLKEM_VECTOR_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mlkem_vector_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ test/mlkem_vector_equiv_test.c \
 	  $(MLKEM_VECTOR_EQUIV_TEST_SRCS)
 # ML-DSA-87's lanes against the verifier's and the signer's loops, the code
 # CBMC proves (docs/decisions.md 172 and 174). On x86-64 the lanes are
 # AVX2's, and on a CPU without AVX2 the binary compares the two loops
 # alone, unless CH_REQUIRE_X86_KERNELS is 1.
-MLDSA_VECTOR_EQUIV_TEST_SRCS := mldsa_poly.c mldsa_sign_poly.c mldsa_vector.c $(call host_srcs,sha3.c) \
-                                ct.c ct_wipe.c
+MLDSA_VECTOR_EQUIV_TEST_SRCS := src/mldsa_poly.c src/mldsa_sign_poly.c src/mldsa_vector.c $(call host_srcs,src/sha3.c) \
+                                src/ct.c src/ct_wipe.c
 bin/mldsa_vector_equiv_test: test/mldsa_vector_equiv_test.c $(MLDSA_VECTOR_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mldsa_vector_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ test/mldsa_vector_equiv_test.c \
 	  $(MLDSA_VECTOR_EQUIV_TEST_SRCS)
 # The calls into mldsa_vector.c that the signer and the verifier make
 # under each ch_cfg.cpu value (test/mldsa_runtime_test.c). The binary links
@@ -3654,34 +3654,34 @@ bin/mldsa_vector_equiv_test: test/mldsa_vector_equiv_test.c $(MLDSA_VECTOR_EQUIV
 # and test/mldsa_avx2_count.c in mldsa_avx2.c's and keccak_avx2.c's, which
 # counts each call into the four-way sampler of A and runs mld_sample_ntt,
 # so it gives the same verdict on every host.
-MLDSA_RUNTIME_TEST_SRCS := $(MLDSA_SIGN_SRCS) mldsa.c mldsa_poly.c ct.c ct_wipe.c \
+MLDSA_RUNTIME_TEST_SRCS := $(MLDSA_SIGN_SRCS) src/mldsa.c src/mldsa_poly.c src/ct.c src/ct_wipe.c \
                            test/mldsa_vector_count.c test/mldsa_sha3_count.c test/mldsa_avx2_count.c
 bin/mldsa_runtime_test: test/mldsa_runtime_test.c $(MLDSA_RUNTIME_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest -o $@ \
 	  test/mldsa_runtime_test.c $(MLDSA_RUNTIME_TEST_SRCS)
 # ML-DSA-87's four-way sampler of A against mld_sample_ntt, and the
 # signer's and the verifier's calls with it against the calls that take no
 # value (docs/decisions.md 178). It has a body on x86-64 alone; on another
 # target the binary says so and passes.
-MLDSA_AVX2_EQUIV_TEST_SRCS := $(call host_srcs,$(MLDSA_SIGN_SRCS) mldsa.c mldsa_poly.c sha3.c) \
-                              ct.c ct_wipe.c
+MLDSA_AVX2_EQUIV_TEST_SRCS := $(call host_srcs,$(MLDSA_SIGN_SRCS) src/mldsa.c src/mldsa_poly.c src/sha3.c) \
+                              src/ct.c src/ct_wipe.c
 bin/mldsa_avx2_equiv_test: test/mldsa_avx2_equiv_test.c $(MLDSA_AVX2_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest -o $@ \
 	  test/mldsa_avx2_equiv_test.c $(MLDSA_AVX2_EQUIV_TEST_SRCS)
 # The four-way Keccak against sha3.c, and ML-KEM's copy over it against
 # mlkem.c (docs/decisions.md 107). Both have a body on x86-64 alone; on
 # another target the binary says so and passes.
-MLKEM_AVX2_EQUIV_TEST_SRCS := $(call host_srcs,sha3.c mlkem.c mlkem_poly.c) ct.c ct_wipe.c
+MLKEM_AVX2_EQUIV_TEST_SRCS := $(call host_srcs,src/sha3.c src/mlkem.c src/mlkem_poly.c) src/ct.c src/ct_wipe.c
 bin/mlkem_avx2_equiv_test: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mlkem_avx2_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ test/mlkem_avx2_equiv_test.c \
 	  $(MLKEM_AVX2_EQUIV_TEST_SRCS)
 # At K = 4 the row sampler runs one entry on each of the four states.
 bin/mlkem_avx2_equiv_test_1024: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -I. -Itest -o $@ test/mlkem_avx2_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -Isrc -I. -Itest -o $@ test/mlkem_avx2_equiv_test.c \
 	  $(MLKEM_AVX2_EQUIV_TEST_SRCS)
 # Which SHA-256 and which SHA-512 a host object's hash calls run under
 # each ch_cfg.cpu value (docs/decisions.md 93). test/hash_runtime_count.c
@@ -3702,25 +3702,25 @@ bin/mlkem_avx2_equiv_test_1024: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_
 # the SHA-256 bit, and srv_parser.c, whose ClientHello digest follows it
 # too (test/hash_runtime_srv.h). Both link the P-256 signer,
 # whose nonce's HMACs follow the SHA-256 bit (p256_sign_cpu).
-HASH_RUNTIME_COUNTED := sha256.c sha256_hw.c sha512.c $(call sha512_avx2_apart,$(SHA512_HW_SRCS)) \
-                        sha512_compress_blocks.c
+HASH_RUNTIME_COUNTED := src/sha256.c src/sha256_hw.c src/sha512.c $(call sha512_avx2_apart,$(SHA512_HW_SRCS)) \
+                        src/sha512_compress_blocks.c
 HASH_RUNTIME_TEST_SRCS := test/hash_runtime_count.c test/hash_runtime_compress_count.c \
-                          $(filter-out $(HASH_RUNTIME_COUNTED),$(call host_srcs,record.c aes.c $(AES_HW_SRCS) \
-                          gcm.c aead.c chacha20.c poly1305.c hkdf.c keysched.c sha256.c sha512.c \
-                          sha512_compress.c p256_sign.c p256_scalar.c p256_point.c p256_field.c \
-                          buf.c ct.c ct_wipe.c))
-HASH_RUNTIME_QUIC_SRCS := quic_packet.c quic_keys.c quic_initial.c quic_aes_soft.c webpki_ticket.c
-bin/hash_runtime_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS) sha256.c \
-                       sha512.c sha512_compress_blocks.c hkdf.c keysched.c $(HDRS) $(TESTH)
+                          $(filter-out $(HASH_RUNTIME_COUNTED),$(call host_srcs,src/record.c src/aes.c $(AES_HW_SRCS) \
+                          src/gcm.c src/aead.c src/chacha20.c src/poly1305.c src/hkdf.c src/keysched.c src/sha256.c src/sha512.c \
+                          src/sha512_compress.c src/p256_sign.c src/p256_scalar.c src/p256_point.c src/p256_field.c \
+                          src/buf.c src/ct.c src/ct_wipe.c))
+HASH_RUNTIME_QUIC_SRCS := src/quic_packet.c src/quic_keys.c src/quic_initial.c src/quic_aes_soft.c src/webpki_ticket.c
+bin/hash_runtime_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS) src/sha256.c \
+                       src/sha512.c src/sha512_compress_blocks.c src/hkdf.c src/keysched.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -Isrc -I. -Itest -o $@ \
 	  test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS)
-HASH_RUNTIME_SRV_SRCS := srv_auth.c srv_parser.c srv_parser_ext.c
-bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) sha256.c sha512.c \
-                                sha512_compress_blocks.c hkdf.c keysched.c $(HASH_RUNTIME_SRV_SRCS) \
+HASH_RUNTIME_SRV_SRCS := src/srv_auth.c src/srv_parser.c src/srv_parser_ext.c
+bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) src/sha256.c src/sha512.c \
+                                src/sha512_compress_blocks.c src/hkdf.c src/keysched.c $(HASH_RUNTIME_SRV_SRCS) \
                                 $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -Isrc -I. -Itest -o $@ \
 	  test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_SRV_SRCS)
 # Which calls an x86-64 host object sends to its kernels under each
 # ch_cfg.cpu value (docs/decisions.md 89, 90, 107, 110 and 119 to 122):
@@ -3749,26 +3749,26 @@ bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRC
 # packet calls, so it compiles both under the QUIC and suite defines. What
 # the kernels compute is held by the equivalence binaries and by the
 # vectors the host binaries run under the kernels' bits.
-X86_KERNELS_TEST_SRCS := $(filter-out chacha20_avx2.c chacha20_avx512.c gcm_vaes.c gcm_avx512_kernel.c keccak_avx2.c \
-                           mlkem_avx2.c \
-                           poly1305_avx2_native.c poly1305_ifma_native.c rsa_ifma.c rsa_avx2.c rsa_ifma_sign.c \
-                           rsa_mont64_adx.c avx512_wipe.c $(SHA512_AVX2_UNIT) sha512_compress_blocks.c, \
-                           $(call host_srcs,record.c \
-                           quic_packet.c quic_keys.c quic_initial.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c aead.c \
-                           chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c buf.c ct.c ct_wipe.c \
-                           mlkem.c mlkem_poly.c sha3.c rsa.c rsa_pkcs1.c rsa_mont.c rsa_sign.c)) \
+X86_KERNELS_TEST_SRCS := $(filter-out src/chacha20_avx2.c src/chacha20_avx512.c src/gcm_vaes.c src/gcm_avx512_kernel.c src/keccak_avx2.c \
+                           src/mlkem_avx2.c \
+                           src/poly1305_avx2_native.c src/poly1305_ifma_native.c src/rsa_ifma.c src/rsa_avx2.c src/rsa_ifma_sign.c \
+                           src/rsa_mont64_adx.c src/avx512_wipe.c $(SHA512_AVX2_UNIT) src/sha512_compress_blocks.c, \
+                           $(call host_srcs,src/record.c \
+                           src/quic_packet.c src/quic_keys.c src/quic_initial.c src/aes.c $(AES_HW_SRCS) src/quic_aes_soft.c src/gcm.c src/aead.c \
+                           src/chacha20.c src/poly1305.c src/hkdf.c src/sha256.c src/sha512.c src/sha512_compress.c src/buf.c src/ct.c src/ct_wipe.c \
+                           src/mlkem.c src/mlkem_poly.c src/sha3.c src/rsa.c src/rsa_pkcs1.c src/rsa_mont.c src/rsa_sign.c)) \
                          test/rsa_ifma_count.c test/rsa_ifma_sign_count.c test/rsa_avx2_count.c \
                          test/rsa_mont64_adx_count.c test/hash_runtime_compress_count.c
 bin/x86_kernels_test: test/x86_kernels_test.c test/x86_kernels_count.c $(X86_KERNELS_TEST_SRCS) \
-                      sha512_compress_blocks.c $(HDRS) $(TESTH)
+                      src/sha512_compress_blocks.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -Isrc -I. -Itest -o $@ \
 	  test/x86_kernels_test.c test/x86_kernels_count.c $(X86_KERNELS_TEST_SRCS)
-GHASH_EQUIV_TEST_SRCS := test/ghash_equiv_soft.c test/stack_residue.c gcm.c aes.c $(AES_HW_SRCS) quic_aes_soft.c \
-                         $(call host_srcs,hkdf.c sha256.c) ct.c ct_wipe.c $(AVX512_WIPE_SRCS)
+GHASH_EQUIV_TEST_SRCS := test/ghash_equiv_soft.c test/stack_residue.c src/gcm.c src/aes.c $(AES_HW_SRCS) src/quic_aes_soft.c \
+                         $(call host_srcs,src/hkdf.c src/sha256.c) src/ct.c src/ct_wipe.c $(AVX512_WIPE_SRCS)
 bin/ghash_equiv_test: test/ghash_equiv_test.c $(GHASH_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -I. -o $@ test/ghash_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -Isrc -I. -o $@ test/ghash_equiv_test.c \
 	  $(GHASH_EQUIV_TEST_SRCS)
 # The 512-bit AES-GCM kernel against gcm.c's path on gcm_hw.c's 128-bit
 # loops, byte for byte, its reads and writes at the ends of its buffers,
@@ -3778,10 +3778,10 @@ bin/ghash_equiv_test: test/ghash_equiv_test.c $(GHASH_EQUIV_TEST_SRCS) $(HDRS) $
 # with the suite, whose traffic keys take AES-128 and AES-256. The kernel
 # has a body on x86-64 alone, and on a CPU without what CH_CPU_AVX512
 # names the binary skips unless CH_REQUIRE_AVX512 is 1.
-GCM_AVX512_EQUIV_SRCS := test/stack_residue.c $(call host_srcs,gcm.c aes.c) $(AES_HW_SRCS) ct.c ct_wipe.c
+GCM_AVX512_EQUIV_SRCS := test/stack_residue.c $(call host_srcs,src/gcm.c src/aes.c) $(AES_HW_SRCS) src/ct.c src/ct_wipe.c
 bin/gcm_avx512_equiv_test: test/gcm_avx512_equiv_test.c $(GCM_AVX512_EQUIV_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) -I. -Itest -o $@ test/gcm_avx512_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) -Isrc -I. -Itest -o $@ test/gcm_avx512_equiv_test.c \
 	  $(GCM_AVX512_EQUIV_SRCS)
 # The same two rules for the ROLE=server mode, over the role's sources under
 # -DCH_ROLE_SERVER. Beside the seven srv sources it links what the implemented
@@ -3798,50 +3798,50 @@ bin/gcm_avx512_equiv_test: test/gcm_avx512_equiv_test.c $(GCM_AVX512_EQUIV_SRCS)
 # srv_kex.c adds the key exchange: x25519.c, p256_ecdh.c over the P-256
 # arithmetic SRV_SIGNERS lists, and the ML-KEM-768 and SHA-3 sources
 # every server role carries. No stub is left in the role.
-SRV_BELOW := buf.c ct.c ct_wipe.c session.c io.c record.c aead.c chacha20.c poly1305.c hkdf.c sha256.c \
-             keysched.c x25519.c p256_ecdh.c handshake_record.c $(KEX_HYBRID_SRCS)
+SRV_BELOW := src/buf.c src/ct.c src/ct_wipe.c src/session.c src/io.c src/record.c src/aead.c src/chacha20.c src/poly1305.c src/hkdf.c src/sha256.c \
+             src/keysched.c src/x25519.c src/p256_ecdh.c src/handshake_record.c $(KEX_HYBRID_SRCS)
 # The two signers srv_auth.c calls, each with the arithmetic it computes
 # over, and the two verifiers its boot-time check calls. Every binary
 # that links srv_auth.c links these, and so does the ROLE=server object
 # through ROLE_ADD.
-SRV_SIGNERS := rsa_sign.c rsa.c rsa_mont.c p256_sign.c p256_scalar.c p256_point.c \
-               p256_field.c p256.c
+SRV_SIGNERS := src/rsa_sign.c src/rsa.c src/rsa_mont.c src/p256_sign.c src/p256_scalar.c src/p256_point.c \
+               src/p256_field.c src/p256.c
 bin/srv_auth_test: test/srv_auth_test.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -Itest -o $@ test/srv_auth_test.c $(SRV_SRCS) \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -Isrc -I. -Itest -o $@ test/srv_auth_test.c $(SRV_SRCS) \
 	  $(SRV_BELOW) $(SRV_SIGNERS)
 # The e2e server: this tree's ROLE=server object behind a TCP socket,
 # which test/e2e.sh drives OpenSSL's s_client and this tree's own client
 # against, a full handshake and then a resumed one each.
-bin/tlsserver: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c \
-               handshake_post.c $(HDRS) $(TESTH)
+bin/tlsserver: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) src/tls.c src/tls_write.c \
+               src/handshake_post.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -Itest -o $@ test/tls_server.c $(SRV_SRCS) \
-	  $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c handshake_post.c
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -Isrc -I. -Itest -o $@ test/tls_server.c $(SRV_SRCS) \
+	  $(SRV_BELOW) $(SRV_SIGNERS) src/tls.c src/tls_write.c src/handshake_post.c
 # The same server under -DCH_SUITE_AES_GCM in a host object, whose
 # sessions state the AES instructions (test/tls_server.c), which
 # test/e2e.sh drives with s_client restricted to one suite at a time. A
 # compiler that fails the host test builds none of it, and e2e says so.
 # A host server signs ML-DSA-87 as well (docs/decisions.md 180), so the
 # binary holds the signer, its verifier and the PEM files that read its key.
-TLSSERVER_AES_SRCS = $(call host_srcs,$(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c \
-                       handshake_post.c aes.c $(AES_HW_SRCS) gcm.c sha512.c sha512_compress.c \
+TLSSERVER_AES_SRCS = $(call host_srcs,$(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) src/tls.c src/tls_write.c \
+                       src/handshake_post.c src/aes.c $(AES_HW_SRCS) src/gcm.c src/sha512.c src/sha512_compress.c \
                        $(MLDSA_SRCS) $(MLDSA_SIGN_SRCS) $(PEM_READER_SRCS) \
                        $(PEM_FILES_SRCS))
 bin/tlsserver_aes: test/tls_server.c $(TLSSERVER_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_SIGN_MLDSA $(HOST_SUITE_DEF) -I. -Itest -o $@ test/tls_server.c \
+	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_SIGN_MLDSA $(HOST_SUITE_DEF) -Isrc -I. -Itest -o $@ test/tls_server.c \
 	  $(TLSSERVER_AES_SRCS)
 # The same server on AES=extern, its AES blocks answered by
 # test/aes_extern_hook.c. It needs no AES instruction, so e2e runs it on
 # every host.
-bin/tlsserver_aes_extern: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c \
-                          tls_write.c handshake_post.c aes.c $(AES_EXTERN_DEPS) gcm.c sha512.c \
-                          sha512_compress.c $(HDRS) $(TESTH)
+bin/tlsserver_aes_extern: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) src/tls.c \
+                          src/tls_write.c src/handshake_post.c src/aes.c $(AES_EXTERN_DEPS) src/gcm.c src/sha512.c \
+                          src/sha512_compress.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER $(AES_EXTERN_SUITE_DEF) -I. -Itest -o $@ test/tls_server.c \
-	  $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c handshake_post.c aes.c \
-	  $(AES_EXTERN_SRCS) gcm.c sha512.c sha512_compress.c
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER $(AES_EXTERN_SUITE_DEF) -Isrc -I. -Itest -o $@ test/tls_server.c \
+	  $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) src/tls.c src/tls_write.c src/handshake_post.c src/aes.c \
+	  $(AES_EXTERN_SRCS) src/gcm.c src/sha512.c src/sha512_compress.c
 # The PROFILE=cnsa2 server (docs/decisions.md 162), on each transport's
 # blocking or record driver: test/tls_server.c over the packaged host
 # object, which test/e2e.sh drives with OpenSSL's s_client and this tree's
@@ -3849,60 +3849,60 @@ bin/tlsserver_aes_extern: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNE
 # under the flags its own build gives it, so the binary links it rather than
 # list the sources again. lib-pair-object prints its path and defines.
 CNSA2_SERVER_LIB := PROFILE=cnsa2 ROLE=server TRUST=none RAND=extern
-bin/tlsserver_cnsa2: test/tls_server.c $(wildcard *.c *.h) $(TESTH)
+bin/tlsserver_cnsa2: test/tls_server.c $(wildcard src/*.c src/*.h) $(TESTH)
 	@mkdir -p bin
 	@lines=$$($(MAKE) --no-print-directory -s lib-pair-object $(CNSA2_SERVER_LIB) \
 	  TRANSPORT=tcp-blocking | tail -3); \
 	obj=$$(printf '%s\n' "$$lines" | sed -n 1p); def=$$(printf '%s\n' "$$lines" | sed -n 2p); \
-	echo "$(CC) $(HOST_CFLAGS) $$def -I. -Itest -o $@ test/tls_server.c $$obj"; \
-	$(CC) $(HOST_CFLAGS) $$def -I. -Itest -o $@ test/tls_server.c $$obj
+	echo "$(CC) $(HOST_CFLAGS) $$def -Isrc -I. -Itest -o $@ test/tls_server.c $$obj"; \
+	$(CC) $(HOST_CFLAGS) $$def -Isrc -I. -Itest -o $@ test/tls_server.c $$obj
 
 # The PROFILE=cnsa2 server's rules at their boundaries
 # (test/cnsa2_server_test.c, INV-64), over the sources the profile's
 # server object packages under the defines it packages them with, both
 # read from this Makefile by print-lib-lists.
-bin/cnsa2_server_test: test/cnsa2_server_test.c $(wildcard *.c *.h) $(TESTH)
+bin/cnsa2_server_test: test/cnsa2_server_test.c $(wildcard src/*.c src/*.h) $(TESTH)
 	@mkdir -p bin
 	@lines=$$($(MAKE) --no-print-directory -s print-lib-lists $(CNSA2_SERVER_LIB) \
 	  TRANSPORT=tcp-blocking | tail -2); \
 	srcs=$$(printf '%s\n' "$$lines" | sed -n 1p); def=$$(printf '%s\n' "$$lines" | sed -n 2p); \
-	echo "$(CC) $(HOST_CFLAGS) $$def -I. -Itest -o $@ test/cnsa2_server_test.c <the object's sources>"; \
-	$(CC) $(HOST_CFLAGS) $$def -I. -Itest -o $@ test/cnsa2_server_test.c $$srcs
+	echo "$(CC) $(HOST_CFLAGS) $$def -Isrc -I. -Itest -o $@ test/cnsa2_server_test.c <the object's sources>"; \
+	$(CC) $(HOST_CFLAGS) $$def -Isrc -I. -Itest -o $@ test/cnsa2_server_test.c $$srcs
 
 # The ML-DSA-87 identity of a host server outside the profile
 # (test/srv_mldsa_identity_test.c, docs/decisions.md 180), over the sources
 # the host ROLE=server object packages under its defines, read from this
 # Makefile by print-lib-lists as bin/cnsa2_server_test reads the profile's.
 SRV_MLDSA_LIB := ROLE=server TRUST=none RAND=extern
-bin/srv_mldsa_identity_test: test/srv_mldsa_identity_test.c $(wildcard *.c *.h) $(TESTH)
+bin/srv_mldsa_identity_test: test/srv_mldsa_identity_test.c $(wildcard src/*.c src/*.h) $(TESTH)
 	@mkdir -p bin
 	@lines=$$($(MAKE) --no-print-directory -s print-lib-lists $(SRV_MLDSA_LIB) \
 	  TRANSPORT=tcp-blocking | tail -2); \
 	srcs=$$(printf '%s\n' "$$lines" | sed -n 1p); def=$$(printf '%s\n' "$$lines" | sed -n 2p); \
-	echo "$(CC) $(HOST_CFLAGS) $$def -I. -Itest -o $@ test/srv_mldsa_identity_test.c <the object's sources>"; \
-	$(CC) $(HOST_CFLAGS) $$def -I. -Itest -o $@ test/srv_mldsa_identity_test.c $$srcs
+	echo "$(CC) $(HOST_CFLAGS) $$def -Isrc -I. -Itest -o $@ test/srv_mldsa_identity_test.c <the object's sources>"; \
+	$(CC) $(HOST_CFLAGS) $$def -Isrc -I. -Itest -o $@ test/srv_mldsa_identity_test.c $$srcs
 
 # The role's unit vectors: the messages srv_message.c writes, the cookie
 # srv_cookie.c mints and opens, and the ClientHello srv_parser.c reads. It
 # links those sources and their dependencies alone, not the whole role,
 # because the builders, the cookie and the parser are pure functions over
 # caller buffers and touch no session.
-SRV_DEPS := buf.c ct.c ct_wipe.c sha256.c hkdf.c aead.c chacha20.c poly1305.c
+SRV_DEPS := src/buf.c src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/aead.c src/chacha20.c src/poly1305.c
 # The QUIC server driver end to end: this tree's own ClientHello, built by
 # handshake_message.c, through srv_quic.c and out as the flight it pushes.
 # It links both sides of the connection on purpose, which no packaged
 # object does, so the builder and the parser check each other.
-SRV_QUIC_SRCS := srv_quic.c srv_flight.c srv_out.c srv_message.c srv_cookie.c srv_auth.c \
-                 srv_ticket.c srv_resume.c srv_kex.c p256_ecdh.c $(KEX_HYBRID_SRCS) \
-                 srv_parser.c srv_parser_ext.c srv.c handshake_message.c handshake_record.c \
-                 quic_fail.c quic.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c \
-                 aes.c quic_aes_soft.c gcm.c quic_config.c buf.c ct.c ct_wipe.c sha256.c \
-                 hkdf.c keysched.c x25519.c chacha20.c poly1305.c aead.c rsa_sign.c \
-                 p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c \
-                 quic_token.c
+SRV_QUIC_SRCS := src/srv_quic.c src/srv_flight.c src/srv_out.c src/srv_message.c src/srv_cookie.c src/srv_auth.c \
+                 src/srv_ticket.c src/srv_resume.c src/srv_kex.c src/p256_ecdh.c $(KEX_HYBRID_SRCS) \
+                 src/srv_parser.c src/srv_parser_ext.c src/srv.c src/handshake_message.c src/handshake_record.c \
+                 src/quic_fail.c src/quic.c src/quic_keys.c src/quic_packet.c src/quic_initial.c src/quic_retry.c \
+                 src/aes.c src/quic_aes_soft.c src/gcm.c src/quic_config.c src/buf.c src/ct.c src/ct_wipe.c src/sha256.c \
+                 src/hkdf.c src/keysched.c src/x25519.c src/chacha20.c src/poly1305.c src/aead.c src/rsa_sign.c \
+                 src/p256_sign.c src/p256_scalar.c src/p256_point.c src/p256_field.c src/p256.c src/rsa.c src/rsa_mont.c \
+                 src/quic_token.c
 bin/srv_quic_test: test/srv_quic_test.c $(SRV_QUIC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/srv_quic_test.c \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I. -o $@ test/srv_quic_test.c \
 	  $(SRV_QUIC_SRCS)
 
 # The same main over a ROLE=both TRANSPORT=quic-nonblocking object: the server's QUIC
@@ -3912,7 +3912,7 @@ bin/srv_quic_test: test/srv_quic_test.c $(SRV_QUIC_SRCS) $(HDRS) $(TESTH)
 SRV_QUIC_BOTH_SRCS := $(sort $(SRV_QUIC_SRCS) $(QUIC_DRIVER_SRCS))
 bin/srv_quic_both_test: test/srv_quic_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I. -o $@ \
 	  test/srv_quic_test.c $(SRV_QUIC_BOTH_SRCS)
 
 # Both QUIC drivers against each other in one ROLE=both object, the one
@@ -3922,7 +3922,7 @@ bin/srv_quic_both_test: test/srv_quic_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TES
 # its full handshake would run, which the resumed one never calls.
 bin/quic_loop_test: test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -I. -Itest \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -Isrc -I. -Itest \
 	  -o $@ test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS)
 # The raw build under RAND=session (docs/decisions.md 77): every case
 # above with the client's source and the server's apart, and
@@ -3930,12 +3930,12 @@ bin/quic_loop_test: test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
 bin/quic_loop_session: test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(SESSION_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA \
-	  -I. -Itest -o $@ test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS)
-QUIC_LOOP_WEBPKI_SRCS := $(sort $(SRV_QUIC_BOTH_SRCS) $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) x509_der.c \
+	  -Isrc -I. -Itest -o $@ test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS)
+QUIC_LOOP_WEBPKI_SRCS := $(sort $(SRV_QUIC_BOTH_SRCS) $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) src/x509_der.c \
                                 $(KEX_HYBRID_SRCS) $(WEBPKI_KEX_SRCS))
 bin/quic_loop_webpki: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -Isrc -I. \
 	  -Itest -o $@ test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS)
 # The same loop under -DCH_SUITE_AES_GCM in a host object, the object
 # colibri links for a suite build: each of the three suites over QUIC, full
@@ -3944,25 +3944,25 @@ bin/quic_loop_webpki: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(T
 # which set each end's ch_cfg.cpu with and without the AES bit. It links
 # test/webpki_ticket_count.c in place of webpki_ticket.c, as
 # bin/webpki_loop_aes does, for ch_quic_init (docs/decisions.md 132).
-QUIC_LOOP_AES_SRCS := $(filter-out $(AES_IMPL_SRCS),$(QUIC_LOOP_WEBPKI_SRCS)) $(AES_HW_SRCS) quic_aes_soft.c
+QUIC_LOOP_AES_SRCS := $(filter-out $(AES_IMPL_SRCS),$(QUIC_LOOP_WEBPKI_SRCS)) $(AES_HW_SRCS) src/quic_aes_soft.c
 bin/quic_loop_aes: test/quic_loop_test.c test/quic_loop_suites.h test/quic_loop_runtime.h \
                    $(call host_srcs,$(QUIC_LOOP_AES_SRCS)) test/webpki_ticket_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  -DTEST_WEBPKI_TICKET_COUNTED $(HOST_SUITE_DEF) -I. -Itest -o $@ test/quic_loop_test.c \
-	  $(filter-out webpki_ticket.c,$(call host_srcs,$(QUIC_LOOP_AES_SRCS))) test/webpki_ticket_count.c
+	  -DTEST_WEBPKI_TICKET_COUNTED $(HOST_SUITE_DEF) -Isrc -I. -Itest -o $@ test/quic_loop_test.c \
+	  $(filter-out src/webpki_ticket.c,$(call host_srcs,$(QUIC_LOOP_AES_SRCS))) test/webpki_ticket_count.c
 # QUIC packet and header protection under the two AES-GCM suites against
 # an independent computation, the key update and the §6.6 count
 # (test/quic_suite_test.c), on the AES instructions of a QUIC host object.
 # QUIC_SUITE_TEST_DEVICE_SRCS is the list without a host object's native
 # copies, which bin/quic_suite_test_extern, a device object, links.
-QUIC_SUITE_TEST_DEVICE_SRCS := quic_packet.c quic_keys.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c \
-                               hkdf.c sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c \
-                               ct_wipe.c
+QUIC_SUITE_TEST_DEVICE_SRCS := src/quic_packet.c src/quic_keys.c src/aes.c $(AES_HW_SRCS) src/quic_aes_soft.c src/gcm.c \
+                               src/hkdf.c src/sha256.c src/sha512.c src/sha512_compress.c src/chacha20.c src/poly1305.c src/aead.c src/buf.c src/ct.c \
+                               src/ct_wipe.c
 QUIC_SUITE_TEST_SRCS := $(call host_srcs,$(QUIC_SUITE_TEST_DEVICE_SRCS))
 bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -o $@ test/quic_suite_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -Isrc -I. -o $@ test/quic_suite_test.c \
 	  $(QUIC_SUITE_TEST_SRCS)
 
 # The AES=extern binaries. An AES=extern object runs every AES block on the
@@ -3977,36 +3977,36 @@ bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TE
 # No binary here needs an AES instruction, so every compiler builds them
 # and check runs them on every host. The hook includes quic_aes_soft.c,
 # which is why that file is a prerequisite and not on a compile line.
-AES_EXTERN_SRCS := aes_extern.c test/aes_extern_hook.c
-AES_EXTERN_DEPS := $(AES_EXTERN_SRCS) quic_aes_soft.c
+AES_EXTERN_SRCS := src/aes_extern.c test/aes_extern_hook.c
+AES_EXTERN_DEPS := $(AES_EXTERN_SRCS) src/quic_aes_soft.c
 AES_EXTERN_BINS := bin/quic_test_extern bin/aes_suite_test_extern bin/quic_suite_test_extern \
                    bin/webpki_loop_aes_extern bin/quic_loop_aes_extern bin/tcp_blocking_key_limit \
                    bin/webpki_session_aes_extern
 # FIPS 197, SP 800-38D and RFC 9001 Appendix A through the hook, AES-256
 # included, and what aes_extern.c writes into round_keys at the exact
 # bound (test_extern_layout).
-bin/quic_test_extern: test/quic_vectors.c aes.c $(AES_EXTERN_DEPS) gcm.c quic_keys.c quic_retry.c \
-                      quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c \
-                      ct.c ct_wipe.c $(HDRS) $(TESTH)
+bin/quic_test_extern: test/quic_vectors.c src/aes.c $(AES_EXTERN_DEPS) src/gcm.c src/quic_keys.c src/quic_retry.c \
+                      src/quic_initial.c src/quic_packet.c src/hkdf.c src/sha256.c src/chacha20.c src/poly1305.c src/aead.c src/buf.c \
+                      src/ct.c src/ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN $(AES_256_TEST_DEF) -I. -o $@ \
-	  test/quic_vectors.c aes.c $(AES_EXTERN_SRCS) gcm.c quic_keys.c quic_retry.c quic_initial.c \
-	  quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN $(AES_256_TEST_DEF) -Isrc -I. -o $@ \
+	  test/quic_vectors.c src/aes.c $(AES_EXTERN_SRCS) src/gcm.c src/quic_keys.c src/quic_retry.c src/quic_initial.c \
+	  src/quic_packet.c src/hkdf.c src/sha256.c src/chacha20.c src/poly1305.c src/aead.c src/buf.c src/ct.c src/ct_wipe.c
 # TLS_AES_128_GCM_SHA256 in the record layer against RFC 8448's printed
 # record, as bin/aes_suite_test runs it.
-bin/aes_suite_test_extern: test/aes_suite_test.c record.c gcm.c aes.c $(AES_EXTERN_DEPS) aead.c \
-                           chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c buf.c \
+bin/aes_suite_test_extern: test/aes_suite_test.c src/record.c src/gcm.c src/aes.c $(AES_EXTERN_DEPS) src/aead.c \
+                           src/chacha20.c src/poly1305.c src/hkdf.c src/sha256.c src/sha512.c src/sha512_compress.c src/ct.c src/ct_wipe.c src/buf.c \
                            $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_EXTERN_SUITE_DEF) -I. -o $@ test/aes_suite_test.c record.c gcm.c aes.c \
-	  $(AES_EXTERN_SRCS) aead.c chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c \
-	  ct.c ct_wipe.c buf.c
+	$(CC) $(CFLAGS) $(AES_EXTERN_SUITE_DEF) -Isrc -I. -o $@ test/aes_suite_test.c src/record.c src/gcm.c src/aes.c \
+	  $(AES_EXTERN_SRCS) src/aead.c src/chacha20.c src/poly1305.c src/hkdf.c src/sha256.c src/sha512.c src/sha512_compress.c \
+	  src/ct.c src/ct_wipe.c src/buf.c
 # QUIC packet and header protection under both AES suites against the
 # independent computation bin/quic_suite_test checks, AES-256 included.
 bin/quic_suite_test_extern: test/quic_suite_test.c $(filter-out $(AES_IMPL_SRCS),$(QUIC_SUITE_TEST_DEVICE_SRCS)) \
                             $(AES_EXTERN_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_EXTERN_SUITE_DEF) -I. -o $@ \
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_EXTERN_SUITE_DEF) -Isrc -I. -o $@ \
 	  test/quic_suite_test.c $(filter-out $(AES_IMPL_SRCS),$(QUIC_SUITE_TEST_DEVICE_SRCS)) $(AES_EXTERN_SRCS)
 # This tree's client against this tree's server over QUIC, on the
 # AES=extern suite object: the rows bin/quic_loop_aes runs, each suite
@@ -4016,10 +4016,10 @@ bin/quic_suite_test_extern: test/quic_suite_test.c $(filter-out $(AES_IMPL_SRCS)
 # object, bin/webpki_loop_aes_extern, sits below WEBPKI_LOOP_SRCS.
 QUIC_LOOP_AES_EXTERN_SRCS := $(filter-out $(AES_IMPL_SRCS),$(QUIC_LOOP_WEBPKI_SRCS)) $(AES_EXTERN_SRCS)
 bin/quic_loop_aes_extern: test/quic_loop_test.c test/quic_loop_suites.h $(QUIC_LOOP_AES_EXTERN_SRCS) \
-                          quic_aes_soft.c $(HDRS) $(TESTH)
+                          src/quic_aes_soft.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  $(AES_EXTERN_SUITE_DEF) -I. -Itest -o $@ test/quic_loop_test.c $(QUIC_LOOP_AES_EXTERN_SRCS)
+	  $(AES_EXTERN_SUITE_DEF) -Isrc -I. -Itest -o $@ test/quic_loop_test.c $(QUIC_LOOP_AES_EXTERN_SRCS)
 
 # bin/aes_runtime_test runs RFC 9001 and RFC 9369 Appendix A with the
 # CH_CPU_CONSTANT_TIME_AES bit and without it, in a QUIC host object, and
@@ -4029,27 +4029,27 @@ bin/quic_loop_aes_extern: test/quic_loop_test.c test/quic_loop_suites.h $(QUIC_L
 # and not on the line (docs/decisions.md 81 and 89). test/aes-runtime-qemu.sh
 # builds it for x86-64 and runs its half without the bit on a CPU model
 # without AES-NI and PCLMULQDQ.
-AES_RUNTIME_TEST_SRCS := $(call host_srcs,aes.c gcm.c gcm_vaes.c gcm_avx512.c gcm_avx512_kernel.c quic_initial.c \
-                           quic_retry.c quic_packet.c \
-                           quic_keys.c hkdf.c sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c \
-                           buf.c ct.c ct_wipe.c)
+AES_RUNTIME_TEST_SRCS := $(call host_srcs,src/aes.c src/gcm.c src/gcm_vaes.c src/gcm_avx512.c src/gcm_avx512_kernel.c src/quic_initial.c \
+                           src/quic_retry.c src/quic_packet.c \
+                           src/quic_keys.c src/hkdf.c src/sha256.c src/sha512.c src/sha512_compress.c src/chacha20.c src/poly1305.c src/aead.c \
+                           src/buf.c src/ct.c src/ct_wipe.c)
 bin/aes_runtime_test: test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c \
-                      $(AES_RUNTIME_TEST_SRCS) $(AES_HW_SRCS) quic_aes_soft.c $(HDRS) $(TESTH)
+                      $(AES_RUNTIME_TEST_SRCS) $(AES_HW_SRCS) src/quic_aes_soft.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -Isrc -I. -Itest -o $@ \
 	  test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c $(AES_RUNTIME_TEST_SRCS)
 
 # The tcp-nonblocking server driver, over the same flight sources the blocking
 # server builds: srv_tcp_nonblocking.c replaces srv_handshake.c and
 # tcp_nonblocking_frame.c comes with the transport, and no
 # tcp_nonblocking_step.c, which is the client's table.
-SRV_TCP_NONBLOCKING_SRCS := $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_tcp_nonblocking.c tcp_nonblocking.c tcp_nonblocking_frame.c $(KEX_HYBRID_SRCS) \
-                handshake_message.c handshake_record.c record.c session.c buf.c ct.c ct_wipe.c sha256.c hkdf.c keysched.c \
-                x25519.c chacha20.c poly1305.c aead.c io.c rsa_sign.c p256_sign.c p256_ecdh.c \
-                p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c
+SRV_TCP_NONBLOCKING_SRCS := $(filter-out src/srv_handshake.c,$(SRV_SRCS)) src/srv_tcp_nonblocking.c src/tcp_nonblocking.c src/tcp_nonblocking_frame.c $(KEX_HYBRID_SRCS) \
+                src/handshake_message.c src/handshake_record.c src/record.c src/session.c src/buf.c src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/keysched.c \
+                src/x25519.c src/chacha20.c src/poly1305.c src/aead.c src/io.c src/rsa_sign.c src/p256_sign.c src/p256_ecdh.c \
+                src/p256_scalar.c src/p256_point.c src/p256_field.c src/p256.c src/rsa.c src/rsa_mont.c
 bin/srv_tcp_nonblocking_test: test/srv_tcp_nonblocking_test.c $(SRV_TCP_NONBLOCKING_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/srv_tcp_nonblocking_test.c \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -I. -o $@ test/srv_tcp_nonblocking_test.c \
 	  $(SRV_TCP_NONBLOCKING_SRCS)
 
 # Both tcp-nonblocking drivers against each other in one process, under the
@@ -4061,13 +4061,13 @@ bin/srv_tcp_nonblocking_test: test/srv_tcp_nonblocking_test.c $(SRV_TCP_NONBLOCK
 # $(SRCS) whole, like every other test binary, so it also links the
 # certificate parsers a raw-rsa object filters out and this program never
 # reaches.
-TCP_NONBLOCKING_LOOP_SRCS := $(filter-out handshake.c,$(SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c \
-                 $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_tcp_nonblocking.c $(KEX_HYBRID_SRCS) \
-                 rsa_sign.c p256_sign.c $(P256_ECDH_SRCS)
+TCP_NONBLOCKING_LOOP_SRCS := $(filter-out src/handshake.c,$(SRCS)) src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c \
+                 $(filter-out src/srv_handshake.c,$(SRV_SRCS)) src/srv_tcp_nonblocking.c $(KEX_HYBRID_SRCS) \
+                 src/rsa_sign.c src/p256_sign.c $(P256_ECDH_SRCS)
 bin/tcp_nonblocking_loop_test: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG \
-	  -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
+	  -Isrc -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
 # The same main with the KEX=pq client, which offers X25519MLKEM768 alone,
 # so the server's hybrid half runs against this tree's own client for a
 # full handshake and a resumed one. The Makefile refuses KEX beside
@@ -4077,7 +4077,7 @@ bin/tcp_nonblocking_loop_test: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKIN
 bin/tcp_nonblocking_loop_pq: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) \
-	  -DCH_KEYLOG -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
+	  -DCH_KEYLOG -Isrc -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
 # The same KEX=pq main under RAND=session, where each session draws from
 # the source its ch_cfg names (docs/decisions.md 77). Every case above runs
 # with the client's source and the server's apart, and
@@ -4090,7 +4090,7 @@ bin/tcp_nonblocking_loop_session: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOC
                                   $(TESTH)
 	@mkdir -p bin
 	$(CC) $(SESSION_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ \
-	  $(EXPORTER_DEF) -DCH_KEYLOG -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
+	  $(EXPORTER_DEF) -DCH_KEYLOG -Isrc -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
 # Each tcp-blocking driver against the other role's flight handlers, which
 # the test calls from inside the driver's recv callback, under the defines
 # of the one object that carries both blocking drivers: ROLE=both
@@ -4098,29 +4098,29 @@ bin/tcp_nonblocking_loop_session: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOC
 # record boundary (INV-39), which bin/tcp_nonblocking_loop_test holds for
 # the other transport. The list is $(SRCS) and the server's sources, the
 # way that test's list is.
-TCP_BLOCKING_LOOP_SRCS := $(SRCS) $(SRV_SRCS) $(KEX_HYBRID_SRCS) rsa_sign.c p256_sign.c \
+TCP_BLOCKING_LOOP_SRCS := $(SRCS) $(SRV_SRCS) $(KEX_HYBRID_SRCS) src/rsa_sign.c src/p256_sign.c \
                           $(P256_ECDH_SRCS)
 bin/tcp_blocking_loop_test: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I. -o $@ test/tcp_blocking_loop_test.c \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -Isrc -I. -o $@ test/tcp_blocking_loop_test.c \
 	  $(TCP_BLOCKING_LOOP_SRCS)
 # The same main as a ROLE=both SUITE=aesgcm host object, whose raw client
 # half runs tls.c's raw and ca rules: every case above with both ends
 # stating the AES instructions, the rows of test/tcp_blocking_loop_cpu.h
 # and test/tcp_blocking_loop_runtime.h's row (docs/decisions.md 81 and 89).
-TCP_BLOCKING_LOOP_AES_SRCS = $(call host_srcs,$(TCP_BLOCKING_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c sha512.c \
-                               sha512_compress.c)
+TCP_BLOCKING_LOOP_AES_SRCS = $(call host_srcs,$(TCP_BLOCKING_LOOP_SRCS) src/aes.c $(AES_HW_SRCS) src/gcm.c src/sha512.c \
+                               src/sha512_compress.c)
 bin/tcp_blocking_loop_aes: test/tcp_blocking_loop_test.c test/tcp_blocking_loop_runtime.h \
                            $(TCP_BLOCKING_LOOP_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH $(HOST_SUITE_DEF) -I. -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH $(HOST_SUITE_DEF) -Isrc -I. -o $@ \
 	  test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_AES_SRCS)
 # The same main under RAND=session (docs/decisions.md 77): every case above
 # with the client's source and the server's apart, and
 # test/tcp_blocking_session_tests.h's checks of what each source handed out.
 bin/tcp_blocking_loop_session: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(SESSION_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I. -o $@ test/tcp_blocking_loop_test.c \
+	$(CC) $(SESSION_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -Isrc -I. -o $@ test/tcp_blocking_loop_test.c \
 	  $(TCP_BLOCKING_LOOP_SRCS)
 # The AES-GCM key-usage ceiling between the two tcp-blocking sessions of
 # the ROLE=both TRUST=webpki SUITE=aesgcm object, on AES=extern so every
@@ -4128,25 +4128,25 @@ bin/tcp_blocking_loop_session: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP
 # test/key_limit_cases.h's writes across the ceiling each way
 # (docs/decisions.md 78). bin/webpki_loop_aes runs the same cases over
 # tcp-nonblocking.
-TCP_BLOCKING_KEY_LIMIT_SRCS := $(sort $(filter-out pem.c base64.c x509.c x509_ca.c,$(TCP_BLOCKING_LOOP_SRCS)) \
+TCP_BLOCKING_KEY_LIMIT_SRCS := $(sort $(filter-out src/pem.c src/base64.c src/x509.c src/x509_ca.c,$(TCP_BLOCKING_LOOP_SRCS)) \
                                       $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) $(WEBPKI_KEX_SRCS))
-bin/tcp_blocking_key_limit: test/tcp_blocking_key_limit_test.c $(TCP_BLOCKING_KEY_LIMIT_SRCS) aes.c \
-                            $(AES_EXTERN_DEPS) gcm.c $(HDRS) $(TESTH)
+bin/tcp_blocking_key_limit: test/tcp_blocking_key_limit_test.c $(TCP_BLOCKING_KEY_LIMIT_SRCS) src/aes.c \
+                            $(AES_EXTERN_DEPS) src/gcm.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -I. \
-	  -o $@ test/tcp_blocking_key_limit_test.c $(TCP_BLOCKING_KEY_LIMIT_SRCS) aes.c $(AES_EXTERN_SRCS) \
-	  gcm.c
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -Isrc -I. \
+	  -o $@ test/tcp_blocking_key_limit_test.c $(TCP_BLOCKING_KEY_LIMIT_SRCS) src/aes.c $(AES_EXTERN_SRCS) \
+	  src/gcm.c
 # The TRUST=webpki tcp-nonblocking client against this tree's tcp-nonblocking
 # server, over
 # the ROLE=both TRANSPORT=tcp-nonblocking TRUST=webpki object's sources: the server
 # presents the r2 corpus chain with its leaf key, and a server holding
 # another ticket key declines the client's ticket (docs/decisions.md 55).
-WEBPKI_LOOP_SRCS := $(sort $(filter-out pem.c base64.c x509.c x509_ca.c,$(TCP_NONBLOCKING_LOOP_SRCS)) \
+WEBPKI_LOOP_SRCS := $(sort $(filter-out src/pem.c src/base64.c src/x509.c src/x509_ca.c,$(TCP_NONBLOCKING_LOOP_SRCS)) \
                            $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) $(WEBPKI_KEX_SRCS))
 bin/webpki_loop_tcp_nonblocking: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS)
+	  -Isrc -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS)
 # The same loop at TX_RECORD=16384, the object stompy links: every row
 # above, and test/webpki_loop_tx_record.h's application records of
 # CH_TX_PT bytes each way (docs/decisions.md 71). The define is written
@@ -4156,7 +4156,7 @@ bin/webpki_loop_tx_record: test/webpki_loop_test.c test/webpki_loop_tx_record.h 
                            $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  -DCH_TX_PT=16384 -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS)
+	  -DCH_TX_PT=16384 -Isrc -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS)
 # The TX_RECORD axis in one target, for check-lib-tx-record: the range
 # and the refusals of the headers, make and build.zig, then the loop above.
 .PHONY: tx-record-check
@@ -4175,13 +4175,13 @@ tx-record-check: bin/webpki_loop_tx_record
 # (docs/decisions.md 132). The rows of test/webpki_ticket_rows.h then
 # count the hashes of each ch_record_init. The count also records the cpu
 # value of each received ticket's binding.
-WEBPKI_LOOP_AES_SRCS = $(call host_srcs,$(WEBPKI_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c)
+WEBPKI_LOOP_AES_SRCS = $(call host_srcs,$(WEBPKI_LOOP_SRCS) src/aes.c $(AES_HW_SRCS) src/gcm.c)
 bin/webpki_loop_aes: test/webpki_loop_test.c test/webpki_loop_suites.h test/webpki_loop_runtime.h \
                      $(WEBPKI_LOOP_AES_SRCS) test/webpki_ticket_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  -DTEST_WEBPKI_TICKET_COUNTED $(HOST_SUITE_DEF) -I. -o $@ test/webpki_loop_test.c \
-	  $(filter-out webpki_ticket.c,$(WEBPKI_LOOP_AES_SRCS)) test/webpki_ticket_count.c
+	  -DTEST_WEBPKI_TICKET_COUNTED $(HOST_SUITE_DEF) -Isrc -I. -o $@ test/webpki_loop_test.c \
+	  $(filter-out src/webpki_ticket.c,$(WEBPKI_LOOP_AES_SRCS)) test/webpki_ticket_count.c
 # The same loop on the AES=extern suite object, the rows bin/webpki_loop_aes
 # runs. Both ends run the same hook, so a loop alone cannot tell a wrong
 # cipher from a right one; the vectors and the Wycheproof and e2e tests are
@@ -4189,70 +4189,70 @@ bin/webpki_loop_aes: test/webpki_loop_test.c test/webpki_loop_suites.h test/webp
 # rule's prerequisites where it reads the rule: above it the list was
 # empty, and an edit to a library source left this binary as it was.
 bin/webpki_loop_aes_extern: test/webpki_loop_test.c test/webpki_loop_suites.h $(WEBPKI_LOOP_SRCS) \
-                            aes.c $(AES_EXTERN_DEPS) gcm.c $(HDRS) $(TESTH)
+                            src/aes.c $(AES_EXTERN_DEPS) src/gcm.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  $(AES_EXTERN_SUITE_DEF) -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) aes.c \
-	  $(AES_EXTERN_SRCS) gcm.c
-bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_ticket.c srv_parser.c \
-              srv_parser_ext.c $(SRV_DEPS) $(HDRS) $(TESTH)
+	  $(AES_EXTERN_SUITE_DEF) -Isrc -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) src/aes.c \
+	  $(AES_EXTERN_SRCS) src/gcm.c
+bin/srv_test: test/srv_test.c src/srv_message.c src/srv_cookie.c src/srv_ticket.c src/srv_parser.c \
+              src/srv_parser_ext.c $(SRV_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_test.c srv_message.c srv_cookie.c \
-	  srv_ticket.c srv_parser.c srv_parser_ext.c $(SRV_DEPS)
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -Isrc -I. -o $@ test/srv_test.c src/srv_message.c src/srv_cookie.c \
+	  src/srv_ticket.c src/srv_parser.c src/srv_parser_ext.c $(SRV_DEPS)
 # The flight handlers, in their own binary. test/srv_flight_tests.h defines
 # srv_parse_client_hello itself, so the flight cases drive every answer the
 # parser's contract admits rather than only the ones a real hello produces;
 # that definition and srv_parser.c cannot link into one object.
-SRV_FLIGHT_DEPS := buf.c ct.c ct_wipe.c sha256.c hkdf.c keysched.c x25519.c p256_ecdh.c handshake_record.c io.c $(KEX_HYBRID_SRCS) \
-                   record.c aead.c chacha20.c poly1305.c
+SRV_FLIGHT_DEPS := src/buf.c src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/keysched.c src/x25519.c src/p256_ecdh.c src/handshake_record.c src/io.c $(KEX_HYBRID_SRCS) \
+                   src/record.c src/aead.c src/chacha20.c src/poly1305.c
 bin/srv_flight_test: test/srv_flight_test.c $(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) \
                      $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_flight_test.c $(SRV_FLIGHT_SRCS) \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -Isrc -I. -o $@ test/srv_flight_test.c $(SRV_FLIGHT_SRCS) \
 	  $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS)
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
-SHA512_TEST_SRCS := sha512.c sha512_compress.c
+SHA512_TEST_SRCS := src/sha512.c src/sha512_compress.c
 bin/sha512_test: test/sha512_test.c $(SHA512_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/sha512_test.c $(SHA512_TEST_SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/sha512_test.c $(SHA512_TEST_SRCS)
 # HMAC-SHA-384 and the SHA-384 key schedule against RFC 4231 and a
 # published TLS_AES_256_GCM_SHA384 trace. -DCH_HASH_SHA384 turns SHA-384
 # on in hkdf.c without the AES suite, which needs the AES instructions, so
 # this runs on every host.
-HKDF384_SRCS := hkdf.c keysched.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c
+HKDF384_SRCS := src/hkdf.c src/keysched.c src/sha256.c src/sha512.c src/sha512_compress.c src/ct.c src/ct_wipe.c
 bin/hkdf384_test: test/hkdf384_test.c $(HKDF384_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_HASH_SHA384 -I. -o $@ test/hkdf384_test.c $(HKDF384_SRCS)
+	$(CC) $(CFLAGS) -DCH_HASH_SHA384 -Isrc -I. -o $@ test/hkdf384_test.c $(HKDF384_SRCS)
 # P-384 ECDSA verification against RFC 6979 A.2.6 and openssl, and PKCS#1
 # v1.5 against openssl: their own binaries, out of the packaged object
 # like sha3, until TRUST=webpki links them.
-P384_TEST_SRCS := p384.c p384_field.c buf.c sha512.c sha512_compress.c
+P384_TEST_SRCS := src/p384.c src/p384_field.c src/buf.c src/sha512.c src/sha512_compress.c
 bin/p384_test: test/p384_test.c $(P384_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/p384_test.c $(P384_TEST_SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/p384_test.c $(P384_TEST_SRCS)
 # The same vectors on a host object's verifier, as bin/rsa_test_host runs
 # RSA's: p384.c compiles the arm that calls p384_wide_verify.c
 # (docs/decisions.md 97). It takes no ch_cfg.cpu value, because no bit
 # picks P-384's verifier. ct_wipe.c links for sha512_hw.c, which host_srcs
 # writes beside sha512.c and which wipes its working state.
-P384_TEST_HOST_SRCS := $(call host_srcs,$(P384_TEST_SRCS)) ct_wipe.c
+P384_TEST_HOST_SRCS := $(call host_srcs,$(P384_TEST_SRCS)) src/ct_wipe.c
 bin/p384_test_host: test/p384_test.c $(P384_TEST_HOST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o $@ test/p384_test.c $(P384_TEST_HOST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -o $@ test/p384_test.c $(P384_TEST_HOST_SRCS)
 # A host object's P-384 against the portable files (docs/decisions.md 97):
 # the field routine by routine, and then the verifier's verdicts. The
 # binary compiles as a host object compiles its sources, so p384.c is the
 # arm that calls p384_wide_verify.c and p384_field.c has no body, and
 # test/p384_portable.c compiles what a device object holds beside them,
 # the verifier under a second name.
-P384_EQUIV_TEST_SRCS := p384.c p384_field.c $(P384_WIDE_SRCS) buf.c
+P384_EQUIV_TEST_SRCS := src/p384.c src/p384_field.c $(P384_WIDE_SRCS) src/buf.c
 P384_EQUIV_TEST_UNITS := test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
                          test/p384_portable.c
 bin/p384_equiv_test: $(P384_EQUIV_TEST_UNITS) $(P384_EQUIV_TEST_SRCS) $(HDRS) $(TESTH) \
                      test/p384_equiv.h test/p384_portable.h
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ $(P384_EQUIV_TEST_UNITS) \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ $(P384_EQUIV_TEST_UNITS) \
 	  $(P384_EQUIV_TEST_SRCS)
 # The constant-time P-256 field arithmetic, against vectors Python
 # computed. Its own binary for the same reason: nothing links
@@ -4261,18 +4261,18 @@ bin/p384_equiv_test: $(P384_EQUIV_TEST_UNITS) $(P384_EQUIV_TEST_SRCS) $(HDRS) $(
 # ct-widemul-check below runs the same vectors over ct.h's multiply
 # decomposition, the form that ships to a target whose widening multiply
 # is variable time (https://github.com/c4milo/chapulin/issues/53).
-P256_FIELD_TEST_SRCS := p256_field.c
+P256_FIELD_TEST_SRCS := src/p256_field.c
 bin/p256_field_test: test/p256_field_test.c $(P256_FIELD_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
 # Constant-time P-256 ECDH: key pairs, shared secrets, the points it
 # refuses and the scalar boundary. Its own binary, like p384_test,
 # because only the server roles and the TRUST=webpki client link
 # p256_ecdh.c, and bin/unit builds neither.
-P256_ECDH_TEST_SRCS := p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c ct_wipe.c
+P256_ECDH_TEST_SRCS := src/p256_ecdh.c src/p256_point.c src/p256_scalar.c src/p256_field.c src/ct.c src/ct_wipe.c
 bin/p256_ecdh_test: test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
 # ECDSA P-256 signing against Python's integers and RFC 6979 A.2.5, the
 # hedged form against the same generator's fixed-noise vectors, and every
 # signature checked again by the independent verifier in p256.c. Its own
@@ -4281,10 +4281,10 @@ bin/p256_ecdh_test: test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS) $(HDRS) $(TESTH
 # p256.c is on the line as the cross-check, not as a dependency --
 # p256_sign.c calls nothing in it, which is the whole point of the file
 # (p256_sign.h).
-P256_SIGN_SRC := p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c sha256.c hkdf.c buf.c ct.c ct_wipe.c
+P256_SIGN_SRC := src/p256_sign.c src/p256_scalar.c src/p256_point.c src/p256_field.c src/p256.c src/sha256.c src/hkdf.c src/buf.c src/ct.c src/ct_wipe.c
 bin/p256_sign_test: test/p256_sign_test.c $(P256_SIGN_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -Itest -o $@ test/p256_sign_test.c $(P256_SIGN_SRC)
+	$(CC) $(CFLAGS) -Isrc -I. -Itest -o $@ test/p256_sign_test.c $(P256_SIGN_SRC)
 # The signer's two checks against injected faults (docs/decisions.md 153):
 # test/p256_sign_fault_test.c changes one word of k*G or of s through the
 # hooks CH_P256_SIGN_FAULT_TEST compiles into p256_sign.c, and requires
@@ -4294,61 +4294,61 @@ bin/p256_sign_test: test/p256_sign_test.c $(P256_SIGN_SRC) $(HDRS) $(TESTH)
 P256_SIGN_FAULT_DEF := -DCH_P256_SIGN_FAULT_TEST
 bin/p256_sign_fault_test: test/p256_sign_fault_test.c $(P256_SIGN_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(P256_SIGN_FAULT_DEF) -I. -Itest -o $@ test/p256_sign_fault_test.c \
+	$(CC) $(CFLAGS) $(P256_SIGN_FAULT_DEF) -Isrc -I. -Itest -o $@ test/p256_sign_fault_test.c \
 	  $(P256_SIGN_SRC)
-RSA_PKCS1_TEST_SRCS := rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c
+RSA_PKCS1_TEST_SRCS := src/rsa_pkcs1.c src/rsa.c src/rsa_mont.c src/sha256.c src/sha512.c src/sha512_compress.c src/ct.c src/ct_wipe.c
 bin/rsa_pkcs1_test: test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
 # The same vectors on a host object's public operation, through
 # rsa_pkcs1_verify_cpu under the value it takes as its argument, as
 # bin/rsa_test_host runs the RSA-PSS ones.
 bin/rsa_pkcs1_test_host: test/rsa_pkcs1_test.c $(call host_srcs,$(RSA_PKCS1_TEST_SRCS)) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/rsa_pkcs1_test.c $(call host_srcs,$(RSA_PKCS1_TEST_SRCS))
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/rsa_pkcs1_test.c $(call host_srcs,$(RSA_PKCS1_TEST_SRCS))
 # The TRUST=webpki date reader and hostname matcher at their boundaries:
 # their own binaries, out of the raw and ca objects like sha512, each
 # over the DER primitives it reads through.
-WEBPKI_TIME_SRC := webpki_time.c x509_der.c buf.c ct.c ct_wipe.c
-WEBPKI_NAME_SRC := webpki_name.c x509_der.c buf.c ct.c ct_wipe.c
+WEBPKI_TIME_SRC := src/webpki_time.c src/x509_der.c src/buf.c src/ct.c src/ct_wipe.c
+WEBPKI_NAME_SRC := src/webpki_name.c src/x509_der.c src/buf.c src/ct.c src/ct_wipe.c
 bin/webpki_time_test: test/webpki_time_test.c $(WEBPKI_TIME_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/webpki_time_test.c $(WEBPKI_TIME_SRC)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/webpki_time_test.c $(WEBPKI_TIME_SRC)
 bin/webpki_name_test: test/webpki_name_test.c $(WEBPKI_NAME_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/webpki_name_test.c $(WEBPKI_NAME_SRC)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/webpki_name_test.c $(WEBPKI_NAME_SRC)
 # The TRUST=webpki public-key reader and signature dispatch: their own
 # binaries, out of the raw and ca objects like sha512. Both build with
 # RSA_WIDE_DEF, -DCH_RSA_MODULUS_MAX=512, so the RSA-4096 key is the last
 # one the modulus gate admits, as the webpki object will. The dispatch
 # binary links every verifier and both hashes it calls.
-WEBPKI_SPKI_SRC := webpki_spki.c x509_der.c buf.c ct.c ct_wipe.c
-WEBPKI_SIGALG_SRC := webpki_sigalg.c $(WEBPKI_SPKI_SRC) sha256.c sha512.c sha512_compress.c p256.c \
-                     p384.c p384_field.c rsa_pkcs1.c rsa.c rsa_mont.c
+WEBPKI_SPKI_SRC := src/webpki_spki.c src/x509_der.c src/buf.c src/ct.c src/ct_wipe.c
+WEBPKI_SIGALG_SRC := src/webpki_sigalg.c $(WEBPKI_SPKI_SRC) src/sha256.c src/sha512.c src/sha512_compress.c src/p256.c \
+                     src/p384.c src/p384_field.c src/rsa_pkcs1.c src/rsa.c src/rsa_mont.c
 bin/webpki_spki_test: test/webpki_spki_test.c $(WEBPKI_SPKI_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
 bin/webpki_sigalg_test: test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
 # The TRUST=webpki certificate parser and extension walk: one binary over
 # both files, the chain corpus and the boundary mutants. The parser calls
 # webpki_read_sigalg, so the binary links the dispatch's sources too, and
 # it builds with -DCH_TRUST_WEBPKI (RSA_WIDE_DEF) so the captured RSA-4096
 # keys pass the modulus gate.
-WEBPKI_CERT_SRC := webpki_cert.c webpki_ext.c webpki_time.c $(WEBPKI_SIGALG_SRC)
+WEBPKI_CERT_SRC := src/webpki_cert.c src/webpki_ext.c src/webpki_time.c $(WEBPKI_SIGALG_SRC)
 bin/webpki_cert_test: test/webpki_cert_test.c $(WEBPKI_CERT_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
 # The TRUST=webpki chain walk: the corpus and the captures through
 # webpki_verify_chain, plus the lists that test reframes to reach the
 # bounds. It builds with -DCH_TRUST_WEBPKI rather than RSA_WIDE_DEF,
 # because ch_cfg declares the anchors, the hostname and the clock only
 # there, and that define widens the modulus gate the same way.
-WEBPKI_CHAIN_TEST_SRC := webpki.c webpki_name.c $(WEBPKI_CERT_SRC)
+WEBPKI_CHAIN_TEST_SRC := src/webpki.c src/webpki_name.c $(WEBPKI_CERT_SRC)
 bin/webpki_chain_test: test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC)
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -Isrc -I. -o $@ test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC)
 
 # The PEM calls against real files and at their boundaries
 # (test/pem_files_test.c). The test compiles as the ROLE=both
@@ -4360,26 +4360,26 @@ bin/webpki_chain_test: test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC) $(HDRS)
 # its rows read which copy computed a key's point under each cpu value.
 # It links the sources those copies call too, PEM_FILES_COUNT_SRCS.
 PEM_FILES_TEST_SRCS := $(sort $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) \
-                         $(WEBPKI_CHAIN_TEST_SRC) rsa_sign.c)
+                         $(WEBPKI_CHAIN_TEST_SRC) src/rsa_sign.c)
 PEM_FILES_TEST_DEFS := -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF)
 bin/pem_files_test: test/pem_files_test.c test/stack_residue.c $(PEM_FILES_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(PEM_FILES_TEST_DEFS) -I. -Itest -o $@ test/pem_files_test.c \
+	$(CC) $(CFLAGS) $(PEM_FILES_TEST_DEFS) -Isrc -I. -Itest -o $@ test/pem_files_test.c \
 	  test/stack_residue.c $(PEM_FILES_TEST_SRCS)
-PEM_FILES_COUNT_SRCS := aead.c chacha20.c hkdf.c sha256.c sha3.c ct.c ct_wipe.c buf.c record.c \
-                        p256.c p256_sign.c rsa.c rsa_mont.c
+PEM_FILES_COUNT_SRCS := src/aead.c src/chacha20.c src/hkdf.c src/sha256.c src/sha3.c src/ct.c src/ct_wipe.c src/buf.c src/record.c \
+                        src/p256.c src/p256_sign.c src/rsa.c src/rsa_mont.c
 PEM_FILES_HOST_SRCS := $(sort $(PEM_FILES_TEST_SRCS) $(PEM_FILES_COUNT_SRCS))
 # ch_mldsa_key_from_pem against OpenSSL 3.5's files (test/pem_files_mldsa_test.c,
 # docs/decisions.md 159), as a ROLE=server device object with
 # -DCH_SIGN_MLDSA, the define of the object that signs ML-DSA-87. No
 # packaged object takes the define yet.
 PEM_FILES_MLDSA_TEST_SRCS := $(sort $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) \
-                               $(MLDSA_SIGN_SRCS) mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c buf.c \
-                               rsa_sign.c rsa.c rsa_mont.c sha256.c)
+                               $(MLDSA_SIGN_SRCS) src/mldsa.c src/mldsa_poly.c src/sha3.c src/ct.c src/ct_wipe.c src/buf.c \
+                               src/rsa_sign.c src/rsa.c src/rsa_mont.c src/sha256.c)
 bin/pem_files_mldsa_test: test/pem_files_mldsa_test.c test/stack_residue.c $(PEM_FILES_MLDSA_TEST_SRCS) \
                           $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_SIGN_MLDSA -I. -Itest -o $@ test/pem_files_mldsa_test.c \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_SIGN_MLDSA -Isrc -I. -Itest -o $@ test/pem_files_mldsa_test.c \
 	  test/stack_residue.c $(PEM_FILES_MLDSA_TEST_SRCS)
 # ch_rsa_key_from_pem against OpenSSL's files and keys the test writes
 # (test/pem_files_rsa_test.c, docs/decisions.md 184). It builds as a
@@ -4388,32 +4388,32 @@ bin/pem_files_mldsa_test: test/pem_files_mldsa_test.c test/stack_residue.c $(PEM
 # 512, whose key holds the five CRT values too, and which signs on
 # rsa_sign64.c under the multiply bit.
 PEM_FILES_RSA_TEST_SRCS := $(sort $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) \
-                             rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c ct_wipe.c buf.c)
+                             src/rsa_sign.c src/rsa.c src/rsa_mont.c src/sha256.c src/ct.c src/ct_wipe.c src/buf.c)
 bin/pem_files_rsa_test: test/pem_files_rsa_test.c test/stack_residue.c $(PEM_FILES_RSA_TEST_SRCS) \
                         $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -Itest -o $@ test/pem_files_rsa_test.c \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -Isrc -I. -Itest -o $@ test/pem_files_rsa_test.c \
 	  test/stack_residue.c $(PEM_FILES_RSA_TEST_SRCS)
 bin/pem_files_rsa_host: test/pem_files_rsa_test.c test/stack_residue.c \
                         $(call host_srcs,$(PEM_FILES_RSA_TEST_SRCS)) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI \
-	  $(RSA_WIDE_DEF) -I. -Itest -o $@ test/pem_files_rsa_test.c test/stack_residue.c \
+	  $(RSA_WIDE_DEF) -Isrc -I. -Itest -o $@ test/pem_files_rsa_test.c test/stack_residue.c \
 	  $(call host_srcs,$(PEM_FILES_RSA_TEST_SRCS))
 bin/pem_files_host: $(SHA512_AVX2_UNIT)
 bin/pem_files_host: test/pem_files_test.c test/stack_residue.c $(PEM_FILES_HOST_SRCS) $(WIDEMUL_COUNT_UNITS) \
                     test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED $(PEM_FILES_TEST_DEFS) -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED $(PEM_FILES_TEST_DEFS) -Isrc -I. -Itest -o $@ \
 	  test/pem_files_test.c test/stack_residue.c $(call widemul_counted,$(PEM_FILES_HOST_SRCS))
 
 # Parser strictness: drives the ServerHello/EE parsers directly; their
 # whole dependency closure is handshake_parser.c, handshake_parser_ee.c
 # and buf.c.
-HANDSHAKE_STRICT_SRCS := handshake_parser.c handshake_parser_ee.c buf.c
+HANDSHAKE_STRICT_SRCS := src/handshake_parser.c src/handshake_parser_ee.c src/buf.c
 bin/handshake_strict_test: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 
 # The TRUST=webpki arms of the same parsers: the server_name
 # acknowledgement, the ALPN selection and the server_certificate_type in
@@ -4421,7 +4421,7 @@ bin/handshake_strict_test: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 # PKCS#1 v1.5 two refused.
 bin/handshake_strict_webpki: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -Isrc -I. -o $@ test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 
 # The TRUST=webpki session surface: ch_connect's config rules, the
 # ClientHello bytes and the fail-closed handshake, linked over the
@@ -4431,26 +4431,26 @@ bin/handshake_strict_webpki: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRC
 # (docs/decisions.md 132). Every webpki client offers the hybrid
 # (docs/decisions.md 53), so the ML-KEM and SHA-3 sources are on the list
 # and there is one build, not one per KEX value.
-WEBPKI_TEST_SRCS := $(filter-out pem.c base64.c x509.c x509_ca.c,$(SRCS)) $(WEBPKI_CHAIN_SRCS) \
+WEBPKI_TEST_SRCS := $(filter-out src/pem.c src/base64.c src/x509.c src/x509_ca.c,$(SRCS)) $(WEBPKI_CHAIN_SRCS) \
                     $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(KEX_HYBRID_SRCS) $(WEBPKI_KEX_SRCS)
 bin/webpki_session_test: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) test/webpki_ticket_count.c $(HDRS) \
                          $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DTEST_WEBPKI_TICKET_COUNTED -I. -o $@ test/webpki_session_test.c \
-	  $(filter-out webpki_ticket.c,$(WEBPKI_TEST_SRCS)) test/webpki_ticket_count.c
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DTEST_WEBPKI_TICKET_COUNTED -Isrc -I. -o $@ test/webpki_session_test.c \
+	  $(filter-out src/webpki_ticket.c,$(WEBPKI_TEST_SRCS)) test/webpki_ticket_count.c
 # The TRUST=webpki CertificateVerify arm: hsa_server_auth over a corpus
 # chain and the signatures test/webpki_auth_vectors.h carries, linked
 # over the same sources the session test uses, because the flight runs
 # through the record reader and the chain walk to reach that arm.
 bin/webpki_auth_test: test/webpki_auth_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_auth_test.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -Isrc -I. -o $@ test/webpki_auth_test.c $(WEBPKI_TEST_SRCS)
 # The TRUST=webpki EncryptedExtensions flight handler: what the
 # ClientHello asked for reaches the parser, and the certificate type the
 # server selected reaches ch_tls.server_cert_type.
 bin/webpki_encrypted_exts_test: test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -Isrc -I. -o $@ test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
 
 # TRUST=webpki resumption (webpki_ticket.h) over both TCP drivers: the
 # blocking one, and TRANSPORT=tcp-nonblocking's, which drops handshake.c for
@@ -4459,15 +4459,15 @@ bin/webpki_encrypted_exts_test: test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_
 # r2 corpus leaf key, so both binaries link the P-256 signer beside the
 # client. The arithmetic under it is in WEBPKI_TEST_SRCS already, because
 # the client's secp256r1 key exchange computes over it too.
-P256_SIGN_SRCS := p256_sign.c
+P256_SIGN_SRCS := src/p256_sign.c
 bin/webpki_resume_test: test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) $(P256_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) \
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -Isrc -I. -o $@ test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) \
 	  $(P256_SIGN_SRCS)
-WEBPKI_TCP_NONBLOCKING_SRCS := $(filter-out handshake.c,$(WEBPKI_TEST_SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
+WEBPKI_TCP_NONBLOCKING_SRCS := $(filter-out src/handshake.c,$(WEBPKI_TEST_SRCS)) src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c
 bin/webpki_resume_tcp_nonblocking: test/webpki_resume_test.c $(WEBPKI_TCP_NONBLOCKING_SRCS) $(P256_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/webpki_resume_test.c \
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -I. -o $@ test/webpki_resume_test.c \
 	  $(WEBPKI_TCP_NONBLOCKING_SRCS) $(P256_SIGN_SRCS)
 
 # The same main in the client that offers all three cipher suites
@@ -4478,54 +4478,54 @@ bin/webpki_resume_tcp_nonblocking: test/webpki_resume_test.c $(WEBPKI_TCP_NONBLO
 # lists the AES-first order, and the rows of test/webpki_suite_cases.h
 # that clear the bit offer ChaCha20 alone and refuse a list that names an
 # AES-GCM suite (docs/decisions.md 81 and 89).
-WEBPKI_TEST_AES_SRCS = $(call host_srcs,$(WEBPKI_TEST_SRCS) aes.c $(AES_HW_SRCS) gcm.c)
+WEBPKI_TEST_AES_SRCS = $(call host_srcs,$(WEBPKI_TEST_SRCS) src/aes.c $(AES_HW_SRCS) src/gcm.c)
 bin/webpki_session_aes: test/webpki_session_test.c $(WEBPKI_TEST_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I. -o $@ test/webpki_session_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -Isrc -I. -o $@ test/webpki_session_test.c \
 	  $(WEBPKI_TEST_AES_SRCS)
 # The same main on the AES=extern suite object, through
 # test/aes_extern_hook.c, on every host. Its ClientHello lists ChaCha20
 # first where bin/webpki_session_aes lists AES-256-GCM first
 # (docs/decisions.md 80). The rule sits below WEBPKI_TEST_SRCS for the
 # reason bin/webpki_loop_aes_extern's does.
-bin/webpki_session_aes_extern: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) aes.c $(AES_EXTERN_DEPS) \
-                               gcm.c $(HDRS) $(TESTH)
+bin/webpki_session_aes_extern: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) src/aes.c $(AES_EXTERN_DEPS) \
+                               src/gcm.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -I. -o $@ test/webpki_session_test.c \
-	  $(WEBPKI_TEST_SRCS) aes.c $(AES_EXTERN_SRCS) gcm.c
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -Isrc -I. -o $@ test/webpki_session_test.c \
+	  $(WEBPKI_TEST_SRCS) src/aes.c $(AES_EXTERN_SRCS) src/gcm.c
 
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.
-X509STRICT_SRC := test/x509_strict_test.c pem.c base64.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c \
-                  ct_wipe.c
+X509STRICT_SRC := test/x509_strict_test.c src/pem.c src/base64.c src/x509.c src/x509_der.c src/x509_ca.c src/buf.c src/sha256.c src/ct.c \
+                  src/ct_wipe.c
 
 # The provisioning tool the e2e suite feeds real openssl armour to.
-PEMKEY_SRC := test/pemkey.c pem.c base64.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c ct_wipe.c
-bin/pemkey: $(PEMKEY_SRC) rsa.c rsa_mont.c $(HDRS)
+PEMKEY_SRC := test/pemkey.c src/pem.c src/base64.c src/x509.c src/x509_der.c src/x509_ca.c src/buf.c src/sha256.c src/ct.c src/ct_wipe.c
+bin/pemkey: $(PEMKEY_SRC) src/rsa.c src/rsa_mont.c $(HDRS)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ $(PEMKEY_SRC) rsa.c rsa_mont.c
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -Isrc -I. -o $@ $(PEMKEY_SRC) src/rsa.c src/rsa_mont.c
 
-bin/pemkey_ecdsa: $(PEMKEY_SRC) p256.c $(HDRS)
+bin/pemkey_ecdsa: $(PEMKEY_SRC) src/p256.c $(HDRS)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -I. -o $@ $(PEMKEY_SRC) p256.c
-X509STRICT_RSA_SRCS := $(X509STRICT_SRC) rsa.c rsa_mont.c
-X509STRICT_ECDSA_SRCS := $(X509STRICT_SRC) p256.c
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -Isrc -I. -o $@ $(PEMKEY_SRC) src/p256.c
+X509STRICT_RSA_SRCS := $(X509STRICT_SRC) src/rsa.c src/rsa_mont.c
+X509STRICT_ECDSA_SRCS := $(X509STRICT_SRC) src/p256.c
 # The ML-DSA-87 profile (docs/decisions.md 157), whose certificates
 # test/x509_mldsa_test.c builds and signs at run time with the test-only
 # signer.
-X509STRICT_MLDSA_SRCS := test/x509_mldsa_test.c pem.c base64.c x509.c x509_der.c x509_ca.c buf.c sha256.c \
-                         ct.c ct_wipe.c mldsa.c mldsa_poly.c sha3.c test/mldsa_sign.c
+X509STRICT_MLDSA_SRCS := test/x509_mldsa_test.c src/pem.c src/base64.c src/x509.c src/x509_der.c src/x509_ca.c src/buf.c src/sha256.c \
+                         src/ct.c src/ct_wipe.c src/mldsa.c src/mldsa_poly.c src/sha3.c test/mldsa_sign.c
 bin/x509strict_mldsa: $(X509STRICT_MLDSA_SRCS) $(HDRS) $(TESTH) test/mldsa_cert.h test/mldsa_sign.h
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 $(AES_EXTERN_SUITE_DEF) -DCH_PIN_MLDSA -I. -Itest \
+	$(CC) $(CFLAGS) -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 $(AES_EXTERN_SUITE_DEF) -DCH_PIN_MLDSA -Isrc -I. -Itest \
 	  -o $@ $(X509STRICT_MLDSA_SRCS)
 bin/x509strict: $(X509STRICT_RSA_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ $(X509STRICT_RSA_SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ $(X509STRICT_RSA_SRCS)
 
 bin/x509strict_ecdsa: $(X509STRICT_ECDSA_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ $(X509STRICT_ECDSA_SRCS)
+	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -Isrc -I. -o $@ $(X509STRICT_ECDSA_SRCS)
 
 # Sequence differential: every server message sequence to a bounded depth
 # (ENUM_DEPTH overrides; the default sweep is ~466k sequences over both modes) against the
@@ -4533,14 +4533,14 @@ bin/x509strict_ecdsa: $(X509STRICT_ECDSA_SRCS) $(HDRS) $(TESTH)
 # verifiers, which it stubs — V in a sequence means "signature valid".
 # `--shard K/N` checks the sequences whose index is K mod N, and
 # test/handshake_sequence_shards.sh runs one shard per core.
-HANDSHAKE_SEQUENCE_SRCS = $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
+HANDSHAKE_SEQUENCE_SRCS = $(filter-out src/p256.c src/rsa.c src/rsa_mont.c,$(SRCS))
 bin/handshake_sequence_test: test/handshake_sequence_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/handshake_sequence_test.c $(HANDSHAKE_SEQUENCE_SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/handshake_sequence_test.c $(HANDSHAKE_SEQUENCE_SRCS)
 
 bin/unit: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/unit_test.c $(SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/unit_test.c $(SRCS)
 
 # The exporter, which no other binary compiles: EXPORTER=off is the
 # default, so ks_exporter and ch_export exist only under these defines.
@@ -4548,13 +4548,13 @@ bin/unit: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 # binary that checks the public call's refusals.
 bin/exporter_test: test/exporter_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(EXPORTER_DEF) -I. -o $@ test/exporter_test.c $(SRCS)
+	$(CC) $(CFLAGS) $(EXPORTER_DEF) -Isrc -I. -o $@ test/exporter_test.c $(SRCS)
 
 # The CA-build unit: the #ifdef CH_TRUST_CA test arms (floor
 # derivation, CA slot validation) only execute here.
 bin/unit_ca: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ test/unit_test.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -Isrc -I. -o $@ test/unit_test.c $(SRCS)
 
 # The hybrid-build variants, like bin/unit_ca for KEX=pq: the #ifdef
 # CH_KEX_PQ test arms (share sizes, the receive-buffer floor, the mock
@@ -4562,18 +4562,18 @@ bin/unit_ca: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 # pulls the ML-KEM modules onto the link line (the same additions
 # KEX=pq makes to LIB_SRCS). handshake_strict_pq needs no ML-KEM code: the
 # parser only reads lengths.
-bin/unit_pq: test/unit_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
+bin/unit_pq: test/unit_test.c $(SRCS) src/sha3.c src/mlkem.c src/mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/unit_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) -DCH_KEX_PQ -Isrc -I. -o $@ test/unit_test.c $(SRCS) src/sha3.c src/mlkem.c src/mlkem_poly.c
 
-bin/handshake_sequence_pq: test/handshake_sequence_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
+bin/handshake_sequence_pq: test/handshake_sequence_test.c $(SRCS) src/sha3.c src/mlkem.c src/mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_sequence_test.c \
-	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS)) sha3.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) -DCH_KEX_PQ -Isrc -I. -o $@ test/handshake_sequence_test.c \
+	  $(filter-out src/p256.c src/rsa.c src/rsa_mont.c,$(SRCS)) src/sha3.c src/mlkem.c src/mlkem_poly.c
 
 bin/handshake_strict_pq: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
+	$(CC) $(CFLAGS) -DCH_KEX_PQ -Isrc -I. -o $@ test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 
 # The decomposed-multiply variants: bin/unit and bin/mlkem_test compiled
 # with the host's CH_NATIVE_WIDEMUL assertion filtered out and
@@ -4590,26 +4590,26 @@ bin/handshake_strict_pq: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS) $
 CT_WIDEMUL_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(CFLAGS)) -DCH_CT_WIDEMUL
 bin/unit_ct_widemul: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/unit_test.c $(SRCS)
+	$(CC) $(CT_WIDEMUL_CFLAGS) -Isrc -I. -o $@ test/unit_test.c $(SRCS)
 
 bin/mlkem_test_ct_widemul: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(CT_WIDEMUL_CFLAGS) -Isrc -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 bin/mlkem_test_1024_ct_widemul: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLKEM_1024 -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLKEM_1024 -Isrc -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 # The signer multiplies through ct_widemul in three files -- the field,
 # the scalar arithmetic and, through them, every point addition -- so its
 # vectors run over both forms for the reason the two above do.
 bin/p256_sign_test_ct_widemul: test/p256_sign_test.c $(P256_SIGN_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -Itest -o $@ test/p256_sign_test.c $(P256_SIGN_SRC)
+	$(CC) $(CT_WIDEMUL_CFLAGS) -Isrc -I. -Itest -o $@ test/p256_sign_test.c $(P256_SIGN_SRC)
 
 # p256_field.c multiplies through ct_widemul too, so its vectors run over
 # both forms for the reason the two above do.
 bin/p256_field_test_ct_widemul: test/p256_field_test.c $(P256_FIELD_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
+	$(CC) $(CT_WIDEMUL_CFLAGS) -Isrc -I. -o $@ test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
 
 .PHONY: ct-widemul-check
 ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/mlkem_test_1024_ct_widemul \
@@ -4656,7 +4656,7 @@ HOST_VECTOR_CPU := 0x5 0x1
 define HOST_VECTOR_BIN
 bin/$(1)_host: $(2) $(3) $$(call host_srcs,$(3)) $$(HDRS) $$(TESTH)
 	@mkdir -p bin
-	$$(CC) $$(HOST_CFLAGS) -DCH_CPU_RUNTIME $(4) -I. -Itest -o $$@ $(2) $$(call host_srcs,$(3))
+	$$(CC) $$(HOST_CFLAGS) -DCH_CPU_RUNTIME $(4) -Isrc -I. -Itest -o $$@ $(2) $$(call host_srcs,$(3))
 endef
 HOST_VECTOR_TESTS := unit mlkem_test mlkem_test_1024 mlkem_test_two_ranks mlkem_test_two_ranks_1024 p256_ecdh_test p256_sign_test p256_sign_fault_test rsa_sign_test sha512_test hkdf384_test \
                      rsa_test rsa_pkcs1_test mldsa_signer_test
@@ -4681,7 +4681,7 @@ $(eval $(call HOST_VECTOR_BIN,mldsa_signer_test,test/mldsa_signer_test.c,$(MLDSA
 # takes, which on arm64 names the SHA-512 instructions and on x86-64
 # CH_CPU_AVX2, whose kernel sha512_hw.c runs there. sha512_hw.c wipes
 # what it computes, so the first links ct_wipe.c beside the hash.
-$(eval $(call HOST_VECTOR_BIN,sha512_test,test/sha512_test.c,$(SHA512_TEST_SRCS) ct_wipe.c,))
+$(eval $(call HOST_VECTOR_BIN,sha512_test,test/sha512_test.c,$(SHA512_TEST_SRCS) src/ct_wipe.c,))
 $(eval $(call HOST_VECTOR_BIN,hkdf384_test,test/hkdf384_test.c,$(HKDF384_SRCS),-DCH_HASH_SHA384))
 # The counting test: the files whose entries widemul.h dispatches to again
 # under the second names of test/widemul_count_names.h, in the
@@ -4707,22 +4707,22 @@ WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomp
                        test/widemul_count_wide_p256.c test/widemul_count_adx_p256.c \
                        test/widemul_count_sign64.c \
                        test/rsa_ifma_sign_count.c test/aead_avx512_count.c test/rsa_mont64_adx_count.c
-WIDEMUL_COUNT_CHACHA := $(filter-out chacha20_avx512.c,$(CHACHA_VECTOR_SRCS))
-WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c rsa_sign.c
-WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_inverse.c p256_wide_table.c \
-                        p256_wide_wipe.c p256_wide_verify_point.c p256_adx_field.c \
-                        p256_adx_verify_point.c rsa_sign64_wipe.c
-WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(WIDEMUL_COUNT_CHACHA) hkdf.c sha256.c $(call hash_hw_of,hkdf.c sha256.c) \
-                      ct.c ct_wipe.c buf.c record.c mlkem.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
-                      sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(RSA_MONT64_SRCS) \
+WIDEMUL_COUNT_CHACHA := $(filter-out src/chacha20_avx512.c,$(CHACHA_VECTOR_SRCS))
+WIDEMUL_COUNTED := $(WIDEMUL_COPIED) src/x25519.c src/p256_scalar.c src/p256_point.c src/rsa_sign.c
+WIDEMUL_COUNT_FIELDS := src/p256_field.c src/p256_wide_field.c src/p256_wide_inverse.c src/p256_wide_table.c \
+                        src/p256_wide_wipe.c src/p256_wide_verify_point.c src/p256_adx_field.c \
+                        src/p256_adx_verify_point.c src/rsa_sign64_wipe.c
+WIDEMUL_COUNT_SRCS := src/aead.c src/chacha20.c $(WIDEMUL_COUNT_CHACHA) src/hkdf.c src/sha256.c $(call hash_hw_of,src/hkdf.c src/sha256.c) \
+                      src/ct.c src/ct_wipe.c src/buf.c src/record.c src/mlkem.c src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c \
+                      src/sha3.c src/p256.c src/p256_ecdh.c src/p256_sign.c src/rsa.c src/rsa_mont.c $(RSA_MONT64_SRCS) \
                       $(WIDEMUL_COUNT_FIELDS)
 WIDEMUL_RUNTIME_TEST_SRCS := test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
                              $(WIDEMUL_COUNT_SRCS)
 bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
-                          $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COUNTED) x25519_wide.c poly1305_vector.c poly1305_avx2.c \
+                          $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COUNTED) src/x25519_wide.c src/poly1305_vector.c src/poly1305_avx2.c \
                           $(P256_WIDE_SRCS) $(RSA_SIGN64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ $(WIDEMUL_RUNTIME_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ $(WIDEMUL_RUNTIME_TEST_SRCS)
 # The host object's loop and session binaries (docs/decisions.md 89), each
 # built as a host object builds its sources, on the same counting copies:
 # the sources a loop links, with the files built on the multiply replaced by the count
@@ -4748,9 +4748,9 @@ bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count
 widemul_counted = $(call sha512_host_of,$(filter-out $(WIDEMUL_COUNTED) $(WIDEMUL_COUNT_FIELDS),$(1))) \
                   $(WIDEMUL_COUNT_FIELDS) \
                   $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(WIDEMUL_COUNT_CHACHA) \
-                  $(if $(filter rsa_mont.c,$(1)),$(filter-out rsa_ifma.c,$(RSA_MONT64_SRCS)) test/rsa_ifma_count.c) \
-                  $(if $(filter p384.c,$(1)),$(P384_WIDE_SRCS)) \
-                  $(if $(filter mlkem.c,$(1)),mlkem_vector.c keccak_avx2.c mlkem_avx2.c) \
+                  $(if $(filter src/rsa_mont.c,$(1)),$(filter-out src/rsa_ifma.c,$(RSA_MONT64_SRCS)) test/rsa_ifma_count.c) \
+                  $(if $(filter src/p384.c,$(1)),$(P384_WIDE_SRCS)) \
+                  $(if $(filter src/mlkem.c,$(1)),src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c) \
                   $(call hash_hw_of,$(1))
 # A list that holds sha512.c links sha512_avx2.c's object (hash_hw_of),
 # which the five rules below do not name among their prerequisites, so
@@ -4760,26 +4760,26 @@ bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host bin/
 bin/tcp_blocking_loop_host: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(WIDEMUL_COUNT_UNITS) \
                             test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -Isrc -I. -Itest -o $@ \
 	  test/tcp_blocking_loop_test.c $(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS))
 bin/tcp_nonblocking_loop_host: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) \
                                $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING \
-	  $(EXPORTER_DEF) -DCH_KEYLOG -I. -Itest -o $@ test/tcp_nonblocking_loop_test.c \
+	  $(EXPORTER_DEF) -DCH_KEYLOG -Isrc -I. -Itest -o $@ test/tcp_nonblocking_loop_test.c \
 	  $(call widemul_counted,$(TCP_NONBLOCKING_LOOP_SRCS))
 bin/quic_loop_host: test/quic_loop_test.c $(QUIC_LOOP_AES_SRCS) $(WIDEMUL_COUNT_UNITS) \
                     test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING \
-	  -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/quic_loop_test.c $(call widemul_counted,$(QUIC_LOOP_AES_SRCS))
+	  -DCH_TRUST_WEBPKI -Isrc -I. -Itest -o $@ test/quic_loop_test.c $(call widemul_counted,$(QUIC_LOOP_AES_SRCS))
 bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMUL_COUNT_UNITS) \
                          test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c \
                          test/webpki_ticket_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DTEST_WEBPKI_TICKET_COUNTED -DCH_TRUST_WEBPKI \
-	  -I. -Itest -o $@ test/webpki_session_test.c \
-	  $(call widemul_counted,$(filter-out webpki_ticket.c,$(WEBPKI_TEST_SRCS))) test/webpki_ticket_count.c
+	  -Isrc -I. -Itest -o $@ test/webpki_session_test.c \
+	  $(call widemul_counted,$(filter-out src/webpki_ticket.c,$(WEBPKI_TEST_SRCS))) test/webpki_ticket_count.c
 # The TRUST=webpki CertificateVerify test as the same host object, on the
 # same counting copies. No mock server signs a CertificateVerify over this
 # client's random ClientHello, so this is the binary whose flight walks a
@@ -4789,7 +4789,7 @@ bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMU
 bin/webpki_auth_host: test/webpki_auth_test.c $(WEBPKI_TEST_SRCS) $(WIDEMUL_COUNT_UNITS) \
                       test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/webpki_auth_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI -Isrc -I. -Itest -o $@ test/webpki_auth_test.c \
 	  $(call widemul_counted,$(WEBPKI_TEST_SRCS))
 # The binaries of the host object's AES are named here with them: the
 # vectors, the two equivalence tests, the two ciphers' counts, and each
@@ -4835,10 +4835,10 @@ HOST_VECTOR_BINS := $(if $(HOST_TARGET),$(foreach t,$(HOST_VECTOR_TESTS),bin/$(t
 # The TRANSPORT=tcp-nonblocking client, which owns its socket and lets chapulin
 # touch none of it. test/e2e.sh runs it against the same PSK server
 # bin/tlsclient uses, so the two drivers are compared over one wire.
-TCP_NONBLOCKING_SRCS := $(filter-out handshake.c,$(SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
+TCP_NONBLOCKING_SRCS := $(filter-out src/handshake.c,$(SRCS)) src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c
 bin/tlsclient_tcp_nonblocking: test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -I. -o $@ test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_SRCS)
 
 # The CA build's ticket epoch rule at the two non-blocking client entries,
 # ch_record_init and ch_quic_init, from one main. No other test binary
@@ -4848,46 +4848,46 @@ bin/tlsclient_tcp_nonblocking: test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_S
 # which QUIC_DRIVER_SRCS leaves out.
 bin/ticket_epoch_tcp_nonblocking: test/ticket_epoch_test.c $(TCP_NONBLOCKING_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/ticket_epoch_test.c \
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -I. -o $@ test/ticket_epoch_test.c \
 	  $(TCP_NONBLOCKING_SRCS)
-bin/ticket_epoch_quic: test/ticket_epoch_test.c $(QUIC_DRIVER_SRCS) x509.c x509_der.c $(HDRS) $(TESTH)
+bin/ticket_epoch_quic: test/ticket_epoch_test.c $(QUIC_DRIVER_SRCS) src/x509.c src/x509_der.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/ticket_epoch_test.c \
-	  $(QUIC_DRIVER_SRCS) x509.c x509_der.c
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I. -o $@ test/ticket_epoch_test.c \
+	  $(QUIC_DRIVER_SRCS) src/x509.c src/x509_der.c
 
 bin/tlsclient: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/tls_client.c $(SRCS)
+	$(CC) $(CFLAGS) -Isrc -I. -o $@ test/tls_client.c $(SRCS)
 
 # The same client compiled for the P-256 pinned mode; e2e runs both
 # builds against matching servers.
 bin/tlsclient_ecdsa: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ test/tls_client.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -Isrc -I. -o $@ test/tls_client.c $(SRCS)
 
 # The CA-trust clients: the same main under -DCH_TRUST_CA, one per PIN,
 # so e2e proves certificate verification against real issued chains.
 bin/tlsclient_ca: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ test/tls_client.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -Isrc -I. -o $@ test/tls_client.c $(SRCS)
 
 bin/tlsclient_ca_ecdsa: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -I. -o $@ test/tls_client.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -Isrc -I. -o $@ test/tls_client.c $(SRCS)
 
 # The web PKI client: the same main under -DCH_TRUST_WEBPKI, over the
 # sources that object packages, so e2e proves the chain walk against a
 # chain openssl issued and a root the caller configures as an anchor.
 bin/tlsclient_webpki: test/tls_client.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/tls_client.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -Isrc -I. -o $@ test/tls_client.c $(WEBPKI_TEST_SRCS)
 
 # The hybrid-build client: the same main under -DCH_KEX_PQ, with the
 # ML-KEM and SHA-3 sources KEX=pq adds to LIB_SRCS; e2e runs it against
 # servers that accept only X25519MLKEM768.
-bin/tlsclient_pq: test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
+bin/tlsclient_pq: test/tls_client.c $(SRCS) src/sha3.c src/mlkem.c src/mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) -DCH_KEX_PQ -Isrc -I. -o $@ test/tls_client.c $(SRCS) src/sha3.c src/mlkem.c src/mlkem_poly.c
 
 # The web PKI client that offers both cipher suites (docs/decisions.md
 # entry 45). It is a host object whose sessions state the AES
@@ -4896,15 +4896,15 @@ bin/tlsclient_pq: test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) 
 # where it is absent.
 bin/tlsclient_webpki_aes: test/tls_client.c $(WEBPKI_TEST_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I. -o $@ test/tls_client.c \
+	$(CC) $(HOST_CFLAGS) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -Isrc -I. -o $@ test/tls_client.c \
 	  $(WEBPKI_TEST_AES_SRCS)
 # The same client on AES=extern, for e2e's tests against OpenSSL, built
 # on every host because the hook needs no AES instruction.
-bin/tlsclient_webpki_aes_extern: test/tls_client.c $(WEBPKI_TEST_SRCS) aes.c $(AES_EXTERN_DEPS) gcm.c \
+bin/tlsclient_webpki_aes_extern: test/tls_client.c $(WEBPKI_TEST_SRCS) src/aes.c $(AES_EXTERN_DEPS) src/gcm.c \
                                  $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -I. -o $@ test/tls_client.c \
-	  $(WEBPKI_TEST_SRCS) aes.c $(AES_EXTERN_SRCS) gcm.c
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -Isrc -I. -o $@ test/tls_client.c \
+	  $(WEBPKI_TEST_SRCS) src/aes.c $(AES_EXTERN_SRCS) src/gcm.c
 
 # The PROFILE=cnsa2 client (docs/decisions.md 151), under the defines that
 # PROFILE=cnsa2 puts in a raw or ca object, on the hook
@@ -4915,8 +4915,8 @@ bin/tlsclient_webpki_aes_extern: test/tls_client.c $(WEBPKI_TEST_SRCS) aes.c $(A
 # no x25519.c, so the clients link none; the mock tests link SRCS, which
 # hold it, and call none of it.
 CNSA2_DEF := -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 $(AES_EXTERN_SUITE_DEF)
-CNSA2_SRCS := sha3.c mlkem.c mlkem_poly.c aes.c gcm.c sha512.c sha512_compress.c $(AES_EXTERN_SRCS)
-CNSA2_DEPS := $(CNSA2_SRCS) quic_aes_soft.c test/cnsa2_mock.h test/cnsa2_cases.h
+CNSA2_SRCS := src/sha3.c src/mlkem.c src/mlkem_poly.c src/aes.c src/gcm.c src/sha512.c src/sha512_compress.c $(AES_EXTERN_SRCS)
+CNSA2_DEPS := $(CNSA2_SRCS) src/quic_aes_soft.c test/cnsa2_mock.h test/cnsa2_cases.h
 CNSA2_BINS := bin/cnsa2_test bin/cnsa2_test_ca bin/cnsa2_tcp_nonblocking bin/cnsa2_quic_test \
               bin/cnsa2_test_mldsa bin/cnsa2_test_ca_mldsa bin/cnsa2_tcp_nonblocking_mldsa \
               bin/cnsa2_quic_test_ca_mldsa
@@ -4924,58 +4924,58 @@ CNSA2_BINS := bin/cnsa2_test bin/cnsa2_test_ca bin/cnsa2_tcp_nonblocking bin/cns
 # its CertificateVerify and the CA tests sign their chains with the
 # test-only signer, test/mldsa_sign.c, which bin/wycheproof_mldsa_sign_test
 # holds to Wycheproof's seeded signing suite.
-CNSA2_MLDSA_SRCS := $(CNSA2_SRCS) mldsa.c mldsa_poly.c test/mldsa_sign.c
-CNSA2_MLDSA_DEPS := $(CNSA2_DEPS) mldsa.c mldsa_poly.c test/mldsa_sign.c test/mldsa_sign.h \
+CNSA2_MLDSA_SRCS := $(CNSA2_SRCS) src/mldsa.c src/mldsa_poly.c test/mldsa_sign.c
+CNSA2_MLDSA_DEPS := $(CNSA2_DEPS) src/mldsa.c src/mldsa_poly.c test/mldsa_sign.c test/mldsa_sign.h \
                     test/mldsa_cert.h test/cnsa2_mldsa_cases.h test/cnsa2_mldsa_fixture.h
 bin/cnsa2_test_mldsa: test/cnsa2_test.c $(SRCS) $(CNSA2_MLDSA_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) $(CNSA2_MLDSA_SRCS)
+	$(CC) $(CFLAGS) -DCH_PIN_MLDSA $(CNSA2_DEF) -Isrc -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) $(CNSA2_MLDSA_SRCS)
 bin/cnsa2_test_ca_mldsa: test/cnsa2_test.c $(SRCS) $(CNSA2_MLDSA_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) \
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -Isrc -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) \
 	  $(CNSA2_MLDSA_SRCS)
 bin/cnsa2_tcp_nonblocking_mldsa: test/cnsa2_test.c $(TCP_NONBLOCKING_SRCS) $(CNSA2_MLDSA_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -Itest -o $@ \
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_PIN_MLDSA $(CNSA2_DEF) -Isrc -I. -Itest -o $@ \
 	  test/cnsa2_test.c $(TCP_NONBLOCKING_SRCS) $(CNSA2_MLDSA_SRCS)
 bin/cnsa2_quic_test_ca_mldsa: test/cnsa2_quic_test.c $(QUIC_DRIVER_SRCS) $(CNSA2_MLDSA_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -Itest \
-	  -o $@ test/cnsa2_quic_test.c $(filter-out quic_aes_soft.c,$(QUIC_DRIVER_SRCS)) \
-	  $(filter-out aes.c gcm.c,$(CNSA2_MLDSA_SRCS)) x509.c x509_der.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -Isrc -I. -Itest \
+	  -o $@ test/cnsa2_quic_test.c $(filter-out src/quic_aes_soft.c,$(QUIC_DRIVER_SRCS)) \
+	  $(filter-out src/aes.c src/gcm.c,$(CNSA2_MLDSA_SRCS)) src/x509.c src/x509_der.c
 bin/cnsa2_test: test/cnsa2_test.c $(SRCS) $(CNSA2_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(CNSA2_DEF) -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) $(CNSA2_SRCS)
+	$(CC) $(CFLAGS) $(CNSA2_DEF) -Isrc -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) $(CNSA2_SRCS)
 bin/cnsa2_test_ca: test/cnsa2_test.c $(SRCS) $(CNSA2_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA $(CNSA2_DEF) -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) $(CNSA2_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_CA $(CNSA2_DEF) -Isrc -I. -Itest -o $@ test/cnsa2_test.c $(SRCS) $(CNSA2_SRCS)
 bin/cnsa2_tcp_nonblocking: test/cnsa2_test.c $(TCP_NONBLOCKING_SRCS) $(CNSA2_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING $(CNSA2_DEF) -I. -Itest -o $@ test/cnsa2_test.c \
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING $(CNSA2_DEF) -Isrc -I. -Itest -o $@ test/cnsa2_test.c \
 	  $(TCP_NONBLOCKING_SRCS) $(CNSA2_SRCS)
 bin/cnsa2_quic_test: test/cnsa2_quic_test.c $(QUIC_DRIVER_SRCS) $(CNSA2_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(CNSA2_DEF) -I. -Itest -o $@ test/cnsa2_quic_test.c \
-	  $(filter-out quic_aes_soft.c,$(QUIC_DRIVER_SRCS)) $(filter-out aes.c gcm.c,$(CNSA2_SRCS))
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(CNSA2_DEF) -Isrc -I. -Itest -o $@ test/cnsa2_quic_test.c \
+	  $(filter-out src/quic_aes_soft.c,$(QUIC_DRIVER_SRCS)) $(filter-out src/aes.c src/gcm.c,$(CNSA2_SRCS))
 bin/tlsclient_cnsa2: test/tls_client.c $(SRCS) $(CNSA2_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(CNSA2_DEF) -I. -o $@ test/tls_client.c $(filter-out x25519.c,$(SRCS)) $(CNSA2_SRCS)
+	$(CC) $(CFLAGS) $(CNSA2_DEF) -Isrc -I. -o $@ test/tls_client.c $(filter-out src/x25519.c,$(SRCS)) $(CNSA2_SRCS)
 bin/tlsclient_cnsa2_tcp_nonblocking: test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_SRCS) $(CNSA2_DEPS) \
                                      $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING $(CNSA2_DEF) -I. -o $@ test/tcp_nonblocking_client.c \
-	  $(filter-out x25519.c,$(TCP_NONBLOCKING_SRCS)) $(CNSA2_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING $(CNSA2_DEF) -Isrc -I. -o $@ test/tcp_nonblocking_client.c \
+	  $(filter-out src/x25519.c,$(TCP_NONBLOCKING_SRCS)) $(CNSA2_SRCS)
 # The two ML-DSA-87 clients e2e runs against OpenSSL 3.5's ML-DSA-87
 # server, each pinning the whole 2592-byte key: the server's own, or its
 # CA's.
-bin/tlsclient_cnsa2_mldsa: test/tls_client.c $(SRCS) $(CNSA2_DEPS) mldsa.c mldsa_poly.c $(HDRS) $(TESTH)
+bin/tlsclient_cnsa2_mldsa: test/tls_client.c $(SRCS) $(CNSA2_DEPS) src/mldsa.c src/mldsa_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -o $@ test/tls_client.c $(filter-out x25519.c,$(SRCS)) \
-	  $(CNSA2_SRCS) mldsa.c mldsa_poly.c
-bin/tlsclient_cnsa2_ca_mldsa: test/tls_client.c $(SRCS) $(CNSA2_DEPS) mldsa.c mldsa_poly.c $(HDRS) $(TESTH)
+	$(CC) $(CFLAGS) -DCH_PIN_MLDSA $(CNSA2_DEF) -Isrc -I. -o $@ test/tls_client.c $(filter-out src/x25519.c,$(SRCS)) \
+	  $(CNSA2_SRCS) src/mldsa.c src/mldsa_poly.c
+bin/tlsclient_cnsa2_ca_mldsa: test/tls_client.c $(SRCS) $(CNSA2_DEPS) src/mldsa.c src/mldsa_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -o $@ test/tls_client.c \
-	  $(filter-out x25519.c,$(SRCS)) $(CNSA2_SRCS) mldsa.c mldsa_poly.c
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -Isrc -I. -o $@ test/tls_client.c \
+	  $(filter-out src/x25519.c,$(SRCS)) $(CNSA2_SRCS) src/mldsa.c src/mldsa_poly.c
 
 # Every differential arm builds with RSA_WIDE_DEF, CH_RSA_MODULUS_MAX at
 # 512: test/diff_rsa.h and test/diff_rsa_pkcs1.h sample a 4096-bit
@@ -4984,13 +4984,13 @@ bin/tlsclient_cnsa2_ca_mldsa: test/tls_client.c $(SRCS) $(CNSA2_DEPS) mldsa.c ml
 # test/spec_coverage.py passes the same flag. diff-ecdsa, diff-pq and
 # diff-webpki link DIFF_SRCS too, beside what their arm adds, and
 # test/spec_coverage.py links it through print-diff-srcs.
-DIFF_SRCS := $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
+DIFF_SRCS := $(SRCS) src/sha3.c src/sha512.c src/sha512_compress.c src/p384.c src/p384_field.c src/rsa_pkcs1.c src/webpki_sigalg.c src/webpki_cert.c src/mlkem.c src/mlkem_poly.c
 .PHONY: print-diff-srcs
 print-diff-srcs:
 	@echo $(DIFF_SRCS)
 bin/diff: test/diff_test.c $(DIFF_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -I. -o $@ test/diff_test.c $(DIFF_SRCS)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -Isrc -I. -o $@ test/diff_test.c $(DIFF_SRCS)
 
 # Build and run one test binary: make run-unit, make run-webpki_time_test.
 # check runs every binary on its roster through a check-run- target of
@@ -5658,7 +5658,7 @@ else
 	$(call REQUIRE_MATHLIB,diff-ecdsa)
 	cd spec/lean && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff_test.c $(DIFF_SRCS)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_PIN_ECDSA -Isrc -I. -o bin/diff_ecdsa test/diff_test.c $(DIFF_SRCS)
 	./bin/diff_ecdsa
 endif
 
@@ -5674,7 +5674,7 @@ else
 	$(call REQUIRE_MATHLIB,diff-pq)
 	cd spec/lean && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_KEX_PQ -I. -o bin/diff_pq test/diff_test.c $(DIFF_SRCS)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_KEX_PQ -Isrc -I. -o bin/diff_pq test/diff_test.c $(DIFF_SRCS)
 	./bin/diff_pq
 endif
 
@@ -5701,10 +5701,10 @@ else
 	$(call REQUIRE_MATHLIB,diff-webpki)
 	cd spec/lean && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(DIFF_SRCS) webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c $(WEBPKI_KEX_SRCS)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -Isrc -I. -o bin/diff_webpki test/diff_test.c $(DIFF_SRCS) src/webpki.c src/webpki_ticket.c src/webpki_pin.c src/webpki_cfg.c $(WEBPKI_KEX_SRCS)
 	./bin/diff_webpki
 ifneq ($(HOST_TARGET),)
-	$(CC) $(HOST_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -DCH_TX_PT=16384 -I. -o bin/diff_webpki_aes test/diff_test.c $(call host_srcs,$(DIFF_SRCS) webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c $(WEBPKI_KEX_SRCS) aes.c $(AES_HW_SRCS) gcm.c)
+	$(CC) $(HOST_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -DCH_TX_PT=16384 -Isrc -I. -o bin/diff_webpki_aes test/diff_test.c $(call host_srcs,$(DIFF_SRCS) src/webpki.c src/webpki_ticket.c src/webpki_pin.c src/webpki_cfg.c $(WEBPKI_KEX_SRCS) src/aes.c $(AES_HW_SRCS) src/gcm.c)
 	./bin/diff_webpki_aes
 else
 	@echo "SKIP diff-webpki's SUITE=aesgcm binary: $(CC) fails the host test"
@@ -5780,15 +5780,15 @@ endif
 # mlkem1024_ commands, over mlkem.c under -DCH_MLKEM_1024
 # (docs/decisions.md 150). Its own main, because the parameter set changes
 # no other row; test/diff_mlkem1024_test.c says so.
-DIFF_MLKEM1024_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c ct_wipe.c
+DIFF_MLKEM1024_SRCS := src/mlkem.c src/mlkem_poly.c src/sha3.c src/ct.c src/ct_wipe.c
 bin/diff_mlkem1024: test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -Itest -o $@ test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS)
+	$(CC) $(CFLAGS) -DCH_MLKEM_1024 -Isrc -I. -Itest -o $@ test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS)
 # The same main over an object that runs both ranks, which compares each
 # round's rows at rank 4 and then at rank 3 (docs/decisions.md 177).
 bin/diff_mlkem_two_ranks: test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. -Itest -o $@ test/diff_mlkem1024_test.c \
+	$(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -Isrc -I. -Itest -o $@ test/diff_mlkem1024_test.c \
 	  $(DIFF_MLKEM1024_SRCS)
 
 # ML-DSA-87's arm: the challenge Verify_internal recomputes and the
@@ -5796,10 +5796,10 @@ bin/diff_mlkem_two_ranks: test/diff_mlkem1024_test.c $(DIFF_MLKEM1024_SRCS) $(HD
 # and key generation and signing (docs/decisions.md 159), through the
 # signer's test entries, which CH_MLDSA_SIGN_TEST declares.
 # Its own main, because no row of bin/diff runs mldsa.c.
-DIFF_MLDSA_SRCS := mldsa.c mldsa_poly.c $(MLDSA_SIGN_SRCS) sha3.c ct.c ct_wipe.c
+DIFF_MLDSA_SRCS := src/mldsa.c src/mldsa_poly.c $(MLDSA_SIGN_SRCS) src/sha3.c src/ct.c src/ct_wipe.c
 bin/diff_mldsa: test/diff_mldsa_test.c $(DIFF_MLDSA_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_MLDSA_SIGN_TEST -I. -Itest -o $@ test/diff_mldsa_test.c $(DIFF_MLDSA_SRCS)
+	$(CC) $(CFLAGS) -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest -o $@ test/diff_mldsa_test.c $(DIFF_MLDSA_SRCS)
 
 # The ML-DSA-87 arm of the certificate profile and the CertificateVerify
 # content, against Spec.X509's parse .mldsa and Spec.HandshakeParser's
@@ -5808,7 +5808,7 @@ bin/diff_mldsa: test/diff_mldsa_test.c $(DIFF_MLDSA_SRCS) $(HDRS) $(TESTH)
 # certificate.
 bin/diff_x509_mldsa: test/diff_x509_mldsa_test.c $(SRCS) $(CNSA2_MLDSA_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -I. -Itest -o $@ test/diff_x509_mldsa_test.c \
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_MLDSA $(CNSA2_DEF) -Isrc -I. -Itest -o $@ test/diff_x509_mldsa_test.c \
 	  $(SRCS) $(CNSA2_MLDSA_SRCS)
 
 # The wide field's arm: the x25519 rows against spec/lean/Spec/X25519.lean
@@ -5816,9 +5816,9 @@ bin/diff_x509_mldsa: test/diff_x509_mldsa_test.c $(SRCS) $(CNSA2_MLDSA_DEPS) $(H
 # that file. Its own main, because the field changes no other row bin/diff
 # compares; test/diff_x25519_test.c says so, and why the spec needs no
 # second model.
-bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c ct_wipe.c $(HDRS) $(TESTH)
+bin/diff_x25519_wide: test/diff_x25519_test.c src/x25519.c src/x25519_wide.c src/ct.c src/ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o $@ test/diff_x25519_test.c ct.c ct_wipe.c
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -o $@ test/diff_x25519_test.c src/ct.c src/ct_wipe.c
 
 # The constant-time P-256 arm: a key generation, a signature and a key
 # exchange against spec/lean/Spec/P256.lean, under both answers, so the
@@ -5829,23 +5829,23 @@ bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c ct_wip
 # for bin/diff_x25519_wide's reason:
 # bin/diff compares the verifier in p256.c and no row of it reads these
 # files.
-DIFF_P256_WIDE_SRCS := p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c \
-                       $(P256_WIDE_SRCS) sha256.c hkdf.c $(call hash_hw_of,sha256.c hkdf.c) buf.c ct.c \
-                       ct_wipe.c
+DIFF_P256_WIDE_SRCS := src/p256_sign.c src/p256_ecdh.c src/p256_point.c src/p256_scalar.c src/p256_field.c \
+                       $(P256_WIDE_SRCS) src/sha256.c src/hkdf.c $(call hash_hw_of,src/sha256.c src/hkdf.c) src/buf.c src/ct.c \
+                       src/ct_wipe.c
 bin/diff_p256_wide: test/diff_p256_wide_test.c $(DIFF_P256_WIDE_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/diff_p256_wide_test.c $(DIFF_P256_WIDE_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o $@ test/diff_p256_wide_test.c $(DIFF_P256_WIDE_SRCS)
 # The PEM arm holds pem.c's four labels, pem_blocks.c's two text rules,
 # x509_pem.c's readers and pem_files.c's three calls against
 # spec/lean/Spec/PemBlocks.lean and spec/lean/Spec/PemFiles.lean. It has
 # its own main, because the calls exist only in an object with a server
 # role and TRUST=webpki, and bin/diff compiles neither. It builds as such
 # a device object's sources (docs/decisions.md 131).
-DIFF_PEM_FILES_SRCS := $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) buf.c ct.c ct_wipe.c \
-                       rsa_sign.c rsa.c rsa_mont.c sha256.c
+DIFF_PEM_FILES_SRCS := $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) src/buf.c src/ct.c src/ct_wipe.c \
+                       src/rsa_sign.c src/rsa.c src/rsa_mont.c src/sha256.c
 bin/diff_pem_files: test/diff_pem_files_test.c $(DIFF_PEM_FILES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(PEM_FILES_TEST_DEFS) -I. -Itest -o $@ test/diff_pem_files_test.c \
+	$(CC) $(CFLAGS) $(PEM_FILES_TEST_DEFS) -Isrc -I. -Itest -o $@ test/diff_pem_files_test.c \
 	  $(DIFF_PEM_FILES_SRCS)
 # The RSA signers' arm: RSASSA-PSS signatures by spec/lean/Spec/Rsa.lean
 # against the two signers a host object holds, the 64-bit one and the
@@ -5854,11 +5854,11 @@ bin/diff_pem_files: test/diff_pem_files_test.c $(DIFF_PEM_FILES_SRCS) $(HDRS) $(
 # holds no 64-bit signer; test/diff_rsa_sign_test.c says why the spec
 # needs no second model. It builds at the 512-byte bound, so RSA-4096
 # signs.
-DIFF_RSA_SIGN_SRCS := rsa_sign.c $(RSA_SIGN64_SRCS) $(AVX512_WIPE_SRCS) rsa_mont.c $(RSA_MONT64_SRCS) sha256.c \
-                      ct.c ct_wipe.c
+DIFF_RSA_SIGN_SRCS := src/rsa_sign.c $(RSA_SIGN64_SRCS) $(AVX512_WIPE_SRCS) src/rsa_mont.c $(RSA_MONT64_SRCS) src/sha256.c \
+                      src/ct.c src/ct_wipe.c
 bin/diff_rsa_sign64: test/diff_rsa_sign_test.c $(DIFF_RSA_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/diff_rsa_sign_test.c $(DIFF_RSA_SIGN_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/diff_rsa_sign_test.c $(DIFF_RSA_SIGN_SRCS)
 # The AVX-512 IFMA arm: rsa_ifma.c's products, normalize_digits and
 # rsa_ifma_public, rsa_mont.c's power_of_two_mod and rsa_ifma_sign.c's
 # exponentiations, compiled over the lane model as bin/rsa_ifma_model_test
@@ -5867,72 +5867,72 @@ bin/diff_rsa_sign64: test/diff_rsa_sign_test.c $(DIFF_RSA_SIGN_SRCS) $(HDRS) $(T
 # reason: only a unit that defines CH_RSA_IFMA_MODEL compiles the kernels on
 # every host, and no row of bin/diff reads them. It builds at the 512-byte
 # bound, so every register count each kernel has a copy for runs.
-bin/diff_rsa_ifma: test/diff_rsa_ifma_test.c test/rsa_ifma_model.c rsa_mont.c rsa_ifma.c \
-                   rsa_ifma_sign.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
+bin/diff_rsa_ifma: test/diff_rsa_ifma_test.c test/rsa_ifma_model.c src/rsa_mont.c src/rsa_ifma.c \
+                   src/rsa_ifma_sign.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) -I. -Itest -o $@ \
-	  test/diff_rsa_ifma_test.c test/rsa_ifma_model.c rsa_ifma_sign.c $(RSA_IFMA_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) -Isrc -I. -Itest -o $@ \
+	  test/diff_rsa_ifma_test.c test/rsa_ifma_model.c src/rsa_ifma_sign.c $(RSA_IFMA_TEST_SRCS)
 # The AVX-512 IFMA Poly1305 arm: poly1305_ifma.c's group step and
 # compute_powers, compiled over the lane model as bin/poly1305_equiv_test
 # compiles them, against spec/lean/Spec/Poly1305Ifma.lean. Its own main,
 # for bin/diff_rsa_ifma's reason. test/poly1305_ifma_model.c defines
 # CH_CPU_RUNTIME itself, for ct.h's 64x64->128 multiply, so the line
 # names no define.
-bin/diff_poly1305_ifma: test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.c poly1305.c \
-                        poly1305_ifma.c ct.c ct_wipe.c $(HDRS) $(TESTH)
+bin/diff_poly1305_ifma: test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.c src/poly1305.c \
+                        src/poly1305_ifma.c src/ct.c src/ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -I. -Itest -o $@ test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.c \
-	  ct.c ct_wipe.c
+	$(CC) $(HOST_CFLAGS) -Isrc -I. -Itest -o $@ test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.c \
+	  src/ct.c src/ct_wipe.c
 # The AVX2 arm: rsa_avx2.c's products and squares and rsa_vp1_cpu's AVX2
 # path, compiled over the lane model as bin/rsa_avx2_model_test compiles
 # them, against spec/lean/Spec/RsaAvx2.lean. Its own main for the same
 # reason. It builds at the 512-byte bound, so both digit widths run.
-bin/diff_rsa_avx2: test/diff_rsa_avx2_test.c test/rsa_avx2_model.c rsa_mont.c rsa_avx2.c \
+bin/diff_rsa_avx2: test/diff_rsa_avx2_test.c test/rsa_avx2_model.c src/rsa_mont.c src/rsa_avx2.c \
                    $(RSA_AVX2_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest -o $@ \
 	  test/diff_rsa_avx2_test.c test/rsa_avx2_model.c $(RSA_AVX2_TEST_SRCS)
 # The DNSSEC exponent's arm: rsa_mont64_public_exp against
 # spec/lean/Spec/RsaExp.lean, built as bin/rsa_exp_test is. Its own main
 # for the same reason.
 bin/diff_rsa_exp: test/diff_rsa_exp_test.c $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC $(RSA_WIDE_DEF) -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC $(RSA_WIDE_DEF) -Isrc -I. -Itest -o $@ \
 	  test/diff_rsa_exp_test.c $(RSA_EQUIV_TEST_SRCS)
 # The DNSSEC Ed25519 arm: reduce_step and reduce_mod_l against
 # spec/lean/Spec/Ed25519ModL.lean. The unit includes x25519_wide.c, as
 # bin/diff_x25519_wide's does, for its static functions.
-bin/diff_ed25519: test/diff_ed25519_test.c x25519.c x25519_wide.c ct.c ct_wipe.c $(HDRS) $(TESTH)
+bin/diff_ed25519: test/diff_ed25519_test.c src/x25519.c src/x25519_wide.c src/ct.c src/ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -I. -Itest -o $@ test/diff_ed25519_test.c \
-	  ct.c ct_wipe.c
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -Isrc -I. -Itest -o $@ test/diff_ed25519_test.c \
+	  src/ct.c src/ct_wipe.c
 # The radix-2^64 X25519 arm: x25519_adx.c's five operations, its final
 # reduction and its shared secret, compiled over its model as
 # bin/x25519_adx_model_test compiles them, against
 # spec/lean/Spec/X25519Adx.lean and spec/lean/Spec/X25519.lean. Its own
 # main for the same reason.
-bin/diff_x25519_adx: test/diff_x25519_adx_test.c x25519_adx.c $(X25519_ADX_TEST_SRCS) $(HDRS) $(TESTH)
+bin/diff_x25519_adx: test/diff_x25519_adx_test.c src/x25519_adx.c $(X25519_ADX_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -Isrc -I. -Itest -o $@ \
 	  test/diff_x25519_adx_test.c $(X25519_ADX_TEST_SRCS)
 # The x86-64 P-256 field's arm: p256_adx_field.c's product and square and
 # its model's reduction, compiled over test/p256_adx_model.h as
 # bin/p256_adx_model_test compiles them, against
 # spec/lean/Spec/P256Adx.lean. Its own main for the same reason.
-bin/diff_p256_adx: test/diff_p256_adx_test.c p256_adx_field.c ct.c $(HDRS) $(TESTH)
+bin/diff_p256_adx: test/diff_p256_adx_test.c src/p256_adx_field.c src/ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -I. -Itest -o $@ \
-	  test/diff_p256_adx_test.c p256_adx_field.c ct.c
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Isrc -I. -Itest -o $@ \
+	  test/diff_p256_adx_test.c src/p256_adx_field.c src/ct.c
 # The x86-64 RSA signer's arm: rsa_mont64_adx.c's multiplication and square,
 # compiled over test/rsa_mont64_adx_model.h as bin/rsa_mont64_adx_test
 # compiles them, against spec/lean/Spec/RsaMont64Adx.lean. Its own main for
 # the same reason. rsa_mont64.c computes each modulus's m0inv.
 DIFF_RSA_MONT64_ADX_SRCS := test/diff_rsa_mont64_adx_test.c test/rsa_mont64_adx_model.c \
-                            rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c ct.c ct_wipe.c
-bin/diff_rsa_mont64_adx: $(DIFF_RSA_MONT64_ADX_SRCS) rsa_mont64_adx.c test/rsa_mont64_adx_model.h \
+                            src/rsa_mont64.c src/rsa_mont64_blocks.c src/rsa_mont64_addcarry.c src/ct.c src/ct_wipe.c
+bin/diff_rsa_mont64_adx: $(DIFF_RSA_MONT64_ADX_SRCS) src/rsa_mont64_adx.c test/rsa_mont64_adx_model.h \
                          $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -Isrc -I. -Itest -o $@ \
 	  $(DIFF_RSA_MONT64_ADX_SRCS)
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
@@ -5943,10 +5943,10 @@ bin/diff_rsa_mont64_adx: $(DIFF_RSA_MONT64_ADX_SRCS) rsa_mont64_adx.c test/rsa_m
 # each of the three binaries links beside them: quic_keys.c and
 # quic_retry.c, whose version 1 and version 2 rows test/diff_quic.h
 # holds, and the HKDF and constant-time sources they call.
-DIFF_QUIC_SRCS := quic_keys.c quic_retry.c hkdf.c sha256.c ct.c ct_wipe.c
-bin/diff_quic: test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c $(DIFF_QUIC_SRCS) $(HDRS) $(TESTH)
+DIFF_QUIC_SRCS := src/quic_keys.c src/quic_retry.c src/hkdf.c src/sha256.c src/ct.c src/ct_wipe.c
+bin/diff_quic: test/diff_quic_test.c src/aes.c $(AES_IMPL) src/gcm.c $(DIFF_QUIC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c $(DIFF_QUIC_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(AES_256_TEST_DEF) -Isrc -I. -o $@ test/diff_quic_test.c src/aes.c $(AES_IMPL) src/gcm.c $(DIFF_QUIC_SRCS)
 # The same main in a QUIC host object, whatever this build's AES value is,
 # so the rows in test/diff_aes.h and test/diff_gcm.h run the AES instructions
 # and the carry-less multiply GHASH against spec/lean/Spec/Aes.lean and
@@ -5958,21 +5958,21 @@ bin/diff_quic: test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c $(DIFF_QUIC_SRCS) $
 # object's binary, so it links the hash sources such an object holds
 # beside hkdf.c and sha256.c, which the entries its key derivations call
 # name (docs/decisions.md 93).
-DIFF_QUIC_HW_SRCS := aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c $(DIFF_QUIC_SRCS) \
+DIFF_QUIC_HW_SRCS := src/aes.c $(AES_HW_SRCS) src/quic_aes_soft.c src/gcm.c $(DIFF_QUIC_SRCS) \
                      $(call hash_hw_of,$(DIFF_QUIC_SRCS)) $(AVX512_WIPE_SRCS)
 bin/diff_quic_hw: test/diff_quic_test.c $(DIFF_QUIC_HW_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME $(AES_256_TEST_DEF) -I. -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME $(AES_256_TEST_DEF) -Isrc -I. -o $@ \
 	  test/diff_quic_test.c $(DIFF_QUIC_HW_SRCS)
 # The same main on AES=extern, with test/aes_extern_hook.c as the hook,
 # so the AES and GCM rows, AES-256 among them, run aes_extern.c's
 # forwarding against the spec. It needs no instruction, so `diff` builds
 # it on every host.
-bin/diff_quic_extern: test/diff_quic_test.c aes.c $(AES_EXTERN_DEPS) gcm.c $(DIFF_QUIC_SRCS) $(HDRS) \
+bin/diff_quic_extern: test/diff_quic_test.c src/aes.c $(AES_EXTERN_DEPS) src/gcm.c $(DIFF_QUIC_SRCS) $(HDRS) \
                       $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN $(AES_256_TEST_DEF) -I. -o $@ \
-	  test/diff_quic_test.c aes.c $(AES_EXTERN_SRCS) gcm.c $(DIFF_QUIC_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN $(AES_256_TEST_DEF) -Isrc -I. -o $@ \
+	  test/diff_quic_test.c src/aes.c $(AES_EXTERN_SRCS) src/gcm.c $(DIFF_QUIC_SRCS)
 
 # The sequence enumerations compare against spec/lean/.lake/build/bin/diffspec,
 # and handshake_sequence_test skips the comparison when that binary is
@@ -6030,7 +6030,7 @@ COVERAGE_FLOOR := 93
 GCOVR ?= $(shell command -v gcovr)
 GCOV_TOOL := $(shell $(CC) --version 2>/dev/null | grep -qi clang \
   && echo "$$(xcrun --find llvm-cov 2>/dev/null || command -v llvm-cov) gcov" || echo gcov)
-COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $$def -I.
+COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $$def -Isrc -I.
 # drbg.c and test/drbg_test.c compile as bin/drbg_test does, under
 # CH_RAND_DRBG in place of the host's pattern.
 COV_DRBG_CC = $(filter-out $(HOST_RAND_DEF),$(COV_CC)) -DCH_RAND_DRBG
@@ -6039,7 +6039,7 @@ COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 # variable the binary's own rule reads, so a source a test's rule gains
 # is compiled and linked here as well. drbg.c compiles on its own line,
 # under COV_DRBG_CC.
-COV_PIN_SRCS = $(sort $(filter-out test/% drbg.c,$(SRCS) $(DRBG_TEST_SRCS) $(RSA_TEST_SRCS) \
+COV_PIN_SRCS = $(sort $(filter-out test/% src/drbg.c,$(SRCS) $(DRBG_TEST_SRCS) $(RSA_TEST_SRCS) \
   $(HANDSHAKE_STRICT_SRCS) $(X509STRICT_RSA_SRCS) $(X509STRICT_ECDSA_SRCS)))
 COV_WEBPKI_SRCS = $(sort $(WEBPKI_TEST_SRCS) $(WEBPKI_SRCS) $(SHA512_TEST_SRCS) $(P384_TEST_SRCS) \
   $(RSA_PKCS1_TEST_SRCS) $(WEBPKI_TIME_SRC) $(WEBPKI_NAME_SRC) $(WEBPKI_SPKI_SRC) $(WEBPKI_SIGALG_SRC) \
@@ -6108,9 +6108,9 @@ else
 	@echo "| --- | --- | --- |" >> bin/coverage.md
 	@set -e; for pin in rsa ecdsa; do \
 	  def=""; [ $$pin = ecdsa ] && def=-DCH_PIN_ECDSA; \
-	  d=bin/cov/$$pin; mkdir -p $$d; \
+	  d=bin/cov/$$pin; mkdir -p $$d/src; \
 	  for f in $(COV_PIN_SRCS); do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
-	  $(COV_DRBG_CC) -c drbg.c -o $$d/drbg.o; \
+	  $(COV_DRBG_CC) -c src/drbg.c -o $$d/src/drbg.o; \
 	  $(COV_CC) test/unit_test.c $(COV_LIB_OBJS) -o $$d/unit; \
 	  $(COV_DRBG_CC) test/drbg_test.c $(patsubst %.c,$$d/%.o,$(DRBG_TEST_SRCS)) -o $$d/drbg_test; \
 	  $(COV_CC) test/rsa_test.c $(patsubst %.c,$$d/%.o,$(RSA_TEST_SRCS)) -o $$d/rsa_test; \
@@ -6134,7 +6134,7 @@ else
 	# widens the modulus gate the way RSA_WIDE_DEF does, then every
 	# binary check runs for the mode, each over the sources its own rule
 	# names. The strictness binary here runs the parsers' webpki arms.
-	@set -e; d=bin/cov/webpki; def=-DCH_TRUST_WEBPKI; mkdir -p $$d; \
+	@set -e; d=bin/cov/webpki; def=-DCH_TRUST_WEBPKI; mkdir -p $$d/src; \
 	  for f in $(COV_WEBPKI_SRCS); do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
 	  link() { name=$$1; shift; objs=""; for f in "$$@"; do objs="$$objs $$d/$${f%.c}.o"; done; \
 	    $(COV_CC) test/$$name.c $$objs -o $$d/$$name; }; \
@@ -6248,43 +6248,43 @@ wycheproof:
 # only under SUITE=aesgcm, which needs a host object or AES=extern, so
 # these two are how the other tests run TLS_AES_256_GCM_SHA384's primitives.
 WYCHEPROOF_TEST_DEFS := $(AES_256_TEST_DEF) -DCH_HASH_SHA384
-WYCHEPROOF_SRCS := x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c \
-  mlkem.c mlkem_poly.c sha3.c buf.c ct.c ct_wipe.c sha512.c sha512_compress.c p384.c p384_field.c \
-  rsa_pkcs1.c rsa_sign.c aes.c gcm.c p256_sign.c p256_ecdh.c p256_point.c \
-  p256_scalar.c p256_field.c mldsa.c mldsa_poly.c
+WYCHEPROOF_SRCS := src/x25519.c src/chacha20.c src/poly1305.c src/aead.c src/hkdf.c src/sha256.c src/p256.c src/rsa.c src/rsa_mont.c \
+  src/mlkem.c src/mlkem_poly.c src/sha3.c src/buf.c src/ct.c src/ct_wipe.c src/sha512.c src/sha512_compress.c src/p384.c src/p384_field.c \
+  src/rsa_pkcs1.c src/rsa_sign.c src/aes.c src/gcm.c src/p256_sign.c src/p256_ecdh.c src/p256_point.c \
+  src/p256_scalar.c src/p256_field.c src/mldsa.c src/mldsa_poly.c
 WYCHEPROOF_STAMP_INPUTS = $(STAMP_MAKEFILES) --output '$(CC) --version' --output 'uname -srm'
 # Each test's compile line without its output, so the stamp's -E run and
 # the compile read the same flags and the same sources.
 WYCHEPROOF_DEFAULT = $(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) \
-  $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_IMPL)
+  $(WYCHEPROOF_TEST_DEFS) -Isrc -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_IMPL)
 WYCHEPROOF_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
-  $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(call host_srcs,$(WYCHEPROOF_SRCS)) \
-  $(AES_HW_SRCS) quic_aes_soft.c
+  $(WYCHEPROOF_TEST_DEFS) -Isrc -I. -Ibin test/wycheproof_test.c $(call host_srcs,$(WYCHEPROOF_SRCS)) \
+  $(AES_HW_SRCS) src/quic_aes_soft.c
 WYCHEPROOF_AES_EXTERN = $(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN \
-  $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_EXTERN_SRCS)
+  $(WYCHEPROOF_TEST_DEFS) -Isrc -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_EXTERN_SRCS)
 # ML-KEM-1024's three suites (docs/decisions.md 150). One object holds one
 # ML-KEM parameter set, so they run in a binary of their own over
 # bin/wycheproof_mlkem1024_vectors.h, which the generator writes from the
 # same checkout. The runners are wycheproof_test.c's (test/wycheproof_mlkem.h).
 # The host binary runs the vector NTT, and under CH_CPU_CONSTANT_TIME_MULTIPLY
 # the native compression.
-WYCHEPROOF_MLKEM1024_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c ct_wipe.c
-WYCHEPROOF_MLKEM1024_DEFAULT = $(CC) $(CFLAGS) -DCH_MLKEM_1024 -I. -Itest -Ibin \
+WYCHEPROOF_MLKEM1024_SRCS := src/mlkem.c src/mlkem_poly.c src/sha3.c src/ct.c src/ct_wipe.c
+WYCHEPROOF_MLKEM1024_DEFAULT = $(CC) $(CFLAGS) -DCH_MLKEM_1024 -Isrc -I. -Itest -Ibin \
   test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS)
-WYCHEPROOF_MLKEM1024_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -I. -Itest -Ibin \
+WYCHEPROOF_MLKEM1024_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -Isrc -I. -Itest -Ibin \
   test/wycheproof_mlkem1024_test.c $(call host_srcs,$(WYCHEPROOF_MLKEM1024_SRCS))
 # The same suites on an object that runs both ranks (docs/decisions.md
 # 177), whose own rank is 4: each call takes the rank at run time.
-WYCHEPROOF_MLKEM1024_TWO_RANKS = $(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. -Itest -Ibin \
+WYCHEPROOF_MLKEM1024_TWO_RANKS = $(CC) $(CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -Isrc -I. -Itest -Ibin \
   test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS)
-WYCHEPROOF_MLKEM1024_TWO_RANKS_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. \
+WYCHEPROOF_MLKEM1024_TWO_RANKS_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -Isrc -I. \
   -Itest -Ibin test/wycheproof_mlkem1024_test.c $(call host_srcs,$(WYCHEPROOF_MLKEM1024_SRCS))
 # The test-only ML-DSA-87 signer the PROFILE=cnsa2 mocks sign with,
 # held to the seeded signing suite over bin/wycheproof_mldsa_sign_vectors.h
 # (docs/decisions.md 157). It is test code alone, so it runs on the
 # portable files in one lane.
-WYCHEPROOF_MLDSA_SIGN = $(CC) $(CFLAGS) -I. -Itest -Ibin test/wycheproof_mldsa_sign_test.c \
-  test/mldsa_sign.c mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c
+WYCHEPROOF_MLDSA_SIGN = $(CC) $(CFLAGS) -Isrc -I. -Itest -Ibin test/wycheproof_mldsa_sign_test.c \
+  test/mldsa_sign.c src/mldsa.c src/mldsa_poly.c src/sha3.c src/ct.c src/ct_wipe.c
 .PHONY: wycheproof-mldsa-sign wycheproof-run-mldsa-sign
 wycheproof-mldsa-sign:
 	@python3 tools/stamp.py wycheproof-mldsa-sign $(WYCHEPROOF_STAMP_INPUTS) \
@@ -6296,9 +6296,9 @@ wycheproof-run-mldsa-sign:
 # links x509_pem.c's PKCS #8 reader under -DCH_SIGN_MLDSA, which refuses
 # the suite's seeds of the wrong length, and takes -DCH_MLDSA_SIGN_TEST
 # for the deterministic cases and the cases by mu.
-WYCHEPROOF_MLDSA_LIBRARY_SRCS := $(MLDSA_SIGN_SRCS) mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c x509_pem.c \
-                                 x509_der.c buf.c
-WYCHEPROOF_MLDSA_LIBRARY = $(CC) $(CFLAGS) -DCH_MLDSA_SIGN_TEST -DCH_SIGN_MLDSA -I. -Itest -Ibin \
+WYCHEPROOF_MLDSA_LIBRARY_SRCS := $(MLDSA_SIGN_SRCS) src/mldsa.c src/mldsa_poly.c src/sha3.c src/ct.c src/ct_wipe.c src/x509_pem.c \
+                                 src/x509_der.c src/buf.c
+WYCHEPROOF_MLDSA_LIBRARY = $(CC) $(CFLAGS) -DCH_MLDSA_SIGN_TEST -DCH_SIGN_MLDSA -Isrc -I. -Itest -Ibin \
   test/wycheproof_mldsa_library_test.c $(WYCHEPROOF_MLDSA_LIBRARY_SRCS)
 .PHONY: wycheproof-mldsa-library wycheproof-run-mldsa-library
 wycheproof-mldsa-library:
@@ -6313,7 +6313,7 @@ wycheproof-run-mldsa-library:
 # machine with AVX2, X86_UNIT_CPU's values add the AVX2 lanes, which both
 # need CH_CPU_AVX2 there (docs/decisions.md 174).
 WYCHEPROOF_MLDSA_LIBRARY_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -DCH_SIGN_MLDSA \
-  -I. -Itest -Ibin test/wycheproof_mldsa_library_test.c $(call host_srcs,$(WYCHEPROOF_MLDSA_LIBRARY_SRCS))
+  -Isrc -I. -Itest -Ibin test/wycheproof_mldsa_library_test.c $(call host_srcs,$(WYCHEPROOF_MLDSA_LIBRARY_SRCS))
 .PHONY: wycheproof-mldsa-library-host wycheproof-run-mldsa-library-host
 wycheproof-mldsa-library-host:
 ifeq ($(HOST_TARGET),)
@@ -6366,7 +6366,7 @@ wycheproof-run-mlkem1024-two-ranks-host:
 # (https://github.com/c4milo/chapulin/issues/189). It builds as a host
 # object with CH_DNSSEC, as bin/dnssec_test does, so a compiler that fails
 # the host test skips it.
-WYCHEPROOF_ED25519 = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -I. -Itest \
+WYCHEPROOF_ED25519 = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -Isrc -I. -Itest \
   -Ibin test/wycheproof_ed25519_test.c $(sort $(DNSSEC_TEST_SRCS))
 wycheproof-ed25519:
 ifeq ($(HOST_TARGET),)
@@ -6499,13 +6499,13 @@ wycheproof-ct-widemul:
 	@$(call wycheproof_fetch,wycheproof-ct-widemul); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h \
 	  bin/wycheproof_mldsa_sign_vectors.h && \
-	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
+	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -Isrc -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
 	  $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
 	./bin/wycheproof_test_ct_widemul && \
-	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLKEM_1024 -I. -Itest -Ibin -o bin/wycheproof_mlkem1024_test_ct_widemul \
+	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLKEM_1024 -Isrc -I. -Itest -Ibin -o bin/wycheproof_mlkem1024_test_ct_widemul \
 	  test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS) && \
 	./bin/wycheproof_mlkem1024_test_ct_widemul && \
-	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLDSA_SIGN_TEST -DCH_SIGN_MLDSA -I. -Itest -Ibin \
+	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLDSA_SIGN_TEST -DCH_SIGN_MLDSA -Isrc -I. -Itest -Ibin \
 	  -o bin/wycheproof_mldsa_library_test_ct_widemul test/wycheproof_mldsa_library_test.c \
 	  $(WYCHEPROOF_MLDSA_LIBRARY_SRCS) && \
 	./bin/wycheproof_mldsa_library_test_ct_widemul
@@ -6543,52 +6543,52 @@ san_host_srcs = $(patsubst $(SHA512_AVX2_UNIT),$(SAN_SHA512_AVX2_UNIT),$(1))
 san-check:
 	@rm -rf bin/san && mkdir -p bin/san
 	@echo "san-check at -O$(O) with $$($(CC) --version | head -1)"
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/unit test/unit_test.c $(SRCS)
-	$(CC) $(filter-out $(HOST_RAND_DEF),$(SAN_CFLAGS)) -DCH_RAND_DRBG -I. -o bin/san/drbg_test test/drbg_test.c $(DRBG_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_equiv_test test/sha3_equiv_test.c $(filter-out sha3.c,$(SHA3_TEST_SRCS))
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -DCH_HASH_SHA384 -I. -o bin/san/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p384_test test/p384_test.c $(P384_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p256_field_test test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -Itest -o bin/san/p256_sign_test test/p256_sign_test.c $(P256_SIGN_SRC)
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_pkcs1_test test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_sign_test test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/webpki_time_test test/webpki_time_test.c $(WEBPKI_TIME_SRC)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/webpki_name_test test/webpki_name_test.c $(WEBPKI_NAME_SRC)
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/unit test/unit_test.c $(SRCS)
+	$(CC) $(filter-out $(HOST_RAND_DEF),$(SAN_CFLAGS)) -DCH_RAND_DRBG -Isrc -I. -o bin/san/drbg_test test/drbg_test.c $(DRBG_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/san/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/sha3_equiv_test test/sha3_equiv_test.c $(filter-out src/sha3.c,$(SHA3_TEST_SRCS))
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_HASH_SHA384 -Isrc -I. -o bin/san/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/p384_test test/p384_test.c $(P384_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/p256_field_test test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -Itest -o bin/san/p256_sign_test test/p256_sign_test.c $(P256_SIGN_SRC)
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/san/rsa_pkcs1_test test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/san/rsa_sign_test test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/webpki_time_test test/webpki_time_test.c $(WEBPKI_TIME_SRC)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/webpki_name_test test/webpki_name_test.c $(WEBPKI_NAME_SRC)
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/san/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/san/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/san/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
 	# The walk, the session it runs inside and the CertificateVerify
 	# binding, over the TRUST=webpki object's own source set, so the
 	# sanitizers read the chain walk and the webpki ch_connect too.
-	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_chain_test test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC)
-	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_session_test test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_auth_test test/webpki_auth_test.c $(WEBPKI_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_encrypted_exts_test test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_1024 -I. -o bin/san/mlkem_test_1024 test/mlkem_test.c $(MLKEM_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_TWO_RANKS -I. -o bin/san/mlkem_test_two_ranks test/mlkem_test.c $(MLKEM_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. -o bin/san/mlkem_test_two_ranks_1024 \
+	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -Isrc -I. -o bin/san/webpki_chain_test test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC)
+	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -Isrc -I. -o bin/san/webpki_session_test test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -Isrc -I. -o bin/san/webpki_auth_test test/webpki_auth_test.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -Isrc -I. -o bin/san/webpki_encrypted_exts_test test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_1024 -Isrc -I. -o bin/san/mlkem_test_1024 test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_TWO_RANKS -Isrc -I. -o bin/san/mlkem_test_two_ranks test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -Isrc -I. -o bin/san/mlkem_test_two_ranks_1024 \
 	  test/mlkem_test.c $(MLKEM_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mldsa_test test/mldsa_test.c $(MLDSA_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -DCH_MLDSA_SIGN_TEST -I. -Itest -o bin/san/mldsa_signer_test test/mldsa_signer_test.c \
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/mldsa_test test/mldsa_test.c $(MLDSA_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest -o bin/san/mldsa_signer_test test/mldsa_signer_test.c \
 	  $(MLDSA_SIGNER_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_RSA_SRCS)
-	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/x509strict_test $(X509STRICT_RSA_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -Isrc -I. -o bin/san/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(HANDSHAKE_SEQUENCE_SRCS)
 	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 mlkem_test_two_ranks mlkem_test_two_ranks_1024 mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h && \
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -Isrc -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
 	  $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
 	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test && \
-	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_1024 -I. -Itest -Ibin -o bin/san/wycheproof_mlkem1024_test \
+	$(CC) $(SAN_CFLAGS) -DCH_MLKEM_1024 -Isrc -I. -Itest -Ibin -o bin/san/wycheproof_mlkem1024_test \
 	  test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS) && \
 	echo "== wycheproof_mlkem1024_test (SAN -O$(O))" && ./bin/san/wycheproof_mlkem1024_test
 	# A host object's paths, where the compiler passes the host test. The
@@ -6622,85 +6622,85 @@ san-check:
 	@[ -z "$(HOST_TARGET)" ] || $(MAKE) -s --no-print-directory sha512-avx2-unit \
 	  SHA512_AVX2_UNIT_DIR=bin/san SHA512_AVX2_UNIT_CFLAGS='$(SAN_HOST_CFLAGS)' > /dev/null
 	@set -e; if [ -n "$(HOST_TARGET)" ]; then \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o bin/san/x25519_equiv_test test/x25519_equiv_test.c \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -o bin/san/x25519_equiv_test test/x25519_equiv_test.c \
 	    $(X25519_EQUIV_TEST_SRCS); \
 	  echo "== x25519_equiv_test (SAN -O$(O))"; ./bin/san/x25519_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/p256_equiv_test test/p256_equiv_test.c \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o bin/san/p256_equiv_test test/p256_equiv_test.c \
 	    $(P256_EQUIV_TEST_SRCS); \
 	  echo "== p256_equiv_test (SAN -O$(O))"; CH_P256_EQUIV_NO_STACK=1 ./bin/san/p256_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -I. -o bin/san/chacha20_equiv_test test/chacha20_equiv_test.c \
+	  $(CC) $(SAN_HOST_CFLAGS) -Isrc -I. -o bin/san/chacha20_equiv_test test/chacha20_equiv_test.c \
 	    $(CHACHA20_EQUIV_TEST_SRCS); \
 	  echo "== chacha20_equiv_test (SAN -O$(O))"; ./bin/san/chacha20_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -I. -Itest -o bin/san/poly1305_equiv_test test/poly1305_equiv_test.c \
+	  $(CC) $(SAN_HOST_CFLAGS) -Isrc -I. -Itest -o bin/san/poly1305_equiv_test test/poly1305_equiv_test.c \
 	    $(POLY1305_EQUIV_TEST_SRCS); \
 	  echo "== poly1305_equiv_test (SAN -O$(O))"; ./bin/san/poly1305_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest -o bin/san/sha2_equiv_test test/sha2_equiv_test.c \
+	  $(CC) $(SAN_HOST_CFLAGS) $(SHA2_EQUIV_TEST_DEFS) -Isrc -I. -Itest -o bin/san/sha2_equiv_test test/sha2_equiv_test.c \
 	    $(call san_host_srcs,$(SHA2_EQUIV_TEST_SRCS)); \
 	  echo "== sha2_equiv_test (SAN -O$(O))"; ./bin/san/sha2_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/sha3_hw_equiv_test test/sha3_hw_equiv_test.c \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o bin/san/sha3_hw_equiv_test test/sha3_hw_equiv_test.c \
 	    $(SHA3_HW_EQUIV_TEST_SRCS); \
 	  echo "== sha3_hw_equiv_test (SAN -O$(O))"; ./bin/san/sha3_hw_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/mlkem_hw_equiv_test test/mlkem_hw_equiv_test.c \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o bin/san/mlkem_hw_equiv_test test/mlkem_hw_equiv_test.c \
 	    $(MLKEM_HW_EQUIV_TEST_SRCS); \
 	  echo "== mlkem_hw_equiv_test (SAN -O$(O))"; ./bin/san/mlkem_hw_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/mlkem_vector_equiv_test \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o bin/san/mlkem_vector_equiv_test \
 	    test/mlkem_vector_equiv_test.c $(MLKEM_VECTOR_EQUIV_TEST_SRCS); \
 	  echo "== mlkem_vector_equiv_test (SAN -O$(O))"; ./bin/san/mlkem_vector_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/mldsa_vector_equiv_test \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o bin/san/mldsa_vector_equiv_test \
 	    test/mldsa_vector_equiv_test.c $(MLDSA_VECTOR_EQUIV_TEST_SRCS); \
 	  echo "== mldsa_vector_equiv_test (SAN -O$(O))"; ./bin/san/mldsa_vector_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -I. -Itest -o bin/san/mldsa_runtime_test \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest -o bin/san/mldsa_runtime_test \
 	    test/mldsa_runtime_test.c $(MLDSA_RUNTIME_TEST_SRCS); \
 	  echo "== mldsa_runtime_test (SAN -O$(O))"; ./bin/san/mldsa_runtime_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -I. -Itest -o bin/san/mldsa_avx2_equiv_test \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest -o bin/san/mldsa_avx2_equiv_test \
 	    test/mldsa_avx2_equiv_test.c $(MLDSA_AVX2_EQUIV_TEST_SRCS); \
 	  echo "== mldsa_avx2_equiv_test (SAN -O$(O))"; ./bin/san/mldsa_avx2_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/mlkem_avx2_equiv_test \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -I. -Itest -o bin/san/mlkem_avx2_equiv_test \
 	    test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_TEST_SRCS); \
 	  echo "== mlkem_avx2_equiv_test (SAN -O$(O))"; ./bin/san/mlkem_avx2_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o bin/san/rsa_equiv_test \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -o bin/san/rsa_equiv_test \
 	    $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS); \
 	  echo "== rsa_equiv_test (SAN -O$(O))"; ./bin/san/rsa_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -I. \
-	    -o bin/san/rsa_blocks_equiv_test $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -Isrc -I. \
+	    -o bin/san/rsa_blocks_equiv_test $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) src/ct.c src/ct_wipe.c; \
 	  echo "== rsa_blocks_equiv_test (SAN -O$(O))"; ./bin/san/rsa_blocks_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -DRSA_MONT64_BLOCKS=0 $(RSA_WIDE_DEF) -I. \
-	    -o bin/san/rsa_addcarry_equiv_test $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -DRSA_MONT64_BLOCKS=0 $(RSA_WIDE_DEF) -Isrc -I. \
+	    -o bin/san/rsa_addcarry_equiv_test $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) src/ct.c src/ct_wipe.c; \
 	  echo "== rsa_addcarry_equiv_test (SAN -O$(O))"; ./bin/san/rsa_addcarry_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o bin/san/rsa_ifma_model_test \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest -o bin/san/rsa_ifma_model_test \
 	    $(RSA_IFMA_MODEL_TEST_UNITS) $(RSA_IFMA_TEST_SRCS); \
 	  echo "== rsa_ifma_model_test (SAN -O$(O))"; ./bin/san/rsa_ifma_model_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -Isrc -I. -Itest \
 	    -o bin/san/rsa_ifma_model_test_384 $(RSA_IFMA_MODEL_TEST_UNITS) $(RSA_IFMA_TEST_SRCS); \
 	  echo "== rsa_ifma_model_test_384 (SAN -O$(O))"; ./bin/san/rsa_ifma_model_test_384; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o bin/san/rsa_ifma_equiv_test \
-	    $(RSA_IFMA_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_IFMA_TEST_SRCS); \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest -o bin/san/rsa_ifma_equiv_test \
+	    $(RSA_IFMA_EQUIV_TEST_UNITS) src/rsa_mont.c $(RSA_IFMA_TEST_SRCS); \
 	  echo "== rsa_ifma_equiv_test (SAN -O$(O))"; ./bin/san/rsa_ifma_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o bin/san/rsa_avx2_model_test \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest -o bin/san/rsa_avx2_model_test \
 	    $(RSA_AVX2_MODEL_TEST_UNITS) $(RSA_AVX2_TEST_SRCS); \
 	  echo "== rsa_avx2_model_test (SAN -O$(O))"; ./bin/san/rsa_avx2_model_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -Isrc -I. -Itest \
 	    -o bin/san/rsa_avx2_model_test_384 $(RSA_AVX2_MODEL_TEST_UNITS) $(RSA_AVX2_TEST_SRCS); \
 	  echo "== rsa_avx2_model_test_384 (SAN -O$(O))"; ./bin/san/rsa_avx2_model_test_384; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o bin/san/rsa_avx2_equiv_test \
-	    $(RSA_AVX2_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_AVX2_TEST_SRCS); \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest -o bin/san/rsa_avx2_equiv_test \
+	    $(RSA_AVX2_EQUIV_TEST_UNITS) src/rsa_mont.c $(RSA_AVX2_TEST_SRCS); \
 	  echo "== rsa_avx2_equiv_test (SAN -O$(O))"; ./bin/san/rsa_avx2_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o bin/san/rsa_sign_equiv_test \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -o bin/san/rsa_sign_equiv_test \
 	    test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS); \
 	  echo "== rsa_sign_equiv_test (SAN -O$(O))"; ./bin/san/rsa_sign_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o bin/san/rsa_sign_test_host \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -I. -Itest -o bin/san/rsa_sign_test_host \
 	    test/rsa_sign_test.c $(call san_host_srcs,$(call host_srcs,$(RSA_SIGN_TEST_SRCS))); \
 	  for bits in $(HOST_VECTOR_CPU); do \
 	    echo "== rsa_sign_test_host $$bits (SAN -O$(O))"; ./bin/san/rsa_sign_test_host $$bits; \
 	  done; \
 	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof host object: the fetch above skipped"; exit 0; }; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
-	    $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test_host test/wycheproof_test.c \
-	    $(call san_host_srcs,$(call host_srcs,$(WYCHEPROOF_SRCS))) $(AES_HW_SRCS) quic_aes_soft.c; \
+	    $(WYCHEPROOF_TEST_DEFS) -Isrc -I. -Ibin -o bin/san/wycheproof_test_host test/wycheproof_test.c \
+	    $(call san_host_srcs,$(call host_srcs,$(WYCHEPROOF_SRCS))) $(AES_HW_SRCS) src/quic_aes_soft.c; \
 	  for bits in 0x5 $(X86_WYCHEPROOF_CPU) $(HASH_WYCHEPROOF_CPU); do \
 	    echo "== wycheproof_test_host $$bits (SAN -O$(O))"; ./bin/san/wycheproof_test_host $$bits; \
 	  done; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -I. -Itest -Ibin \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -Isrc -I. -Itest -Ibin \
 	    -o bin/san/wycheproof_mlkem1024_test_host test/wycheproof_mlkem1024_test.c \
 	    $(call san_host_srcs,$(call host_srcs,$(WYCHEPROOF_MLKEM1024_SRCS))); \
 	  for bits in $(HOST_VECTOR_CPU); do \
@@ -6716,7 +6716,7 @@ san-check:
 # branch: a committed, deliberate out-of-bounds read that must abort.
 san-selftest:
 	@mkdir -p bin/san
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/selftest test/san_selftest.c
+	$(CC) $(SAN_CFLAGS) -Isrc -I. -o bin/san/selftest test/san_selftest.c
 	@if ./bin/san/selftest >/dev/null 2>&1; then \
 	  echo "san-selftest: the deliberate violation did not trip the sanitizer"; exit 1; \
 	else echo "san-selftest: sanitizer trips as required"; fi
@@ -6732,10 +6732,10 @@ san-selftest:
 # host object holds them (host_srcs) beside the AES instructions' six
 # files. VALGRIND names the program and VALGRIND_INCLUDE the directory of
 # <valgrind/memcheck.h>; CI's install-valgrind action sets both.
-CT_TAINT_SRCS := x25519.c chacha20.c poly1305.c aead.c hkdf.c keysched.c sha256.c sha512.c \
-                 sha512_compress.c sha3.c mlkem.c mlkem_poly.c buf.c ct.c ct_wipe.c p256_sign.c \
-                 p256_ecdh.c p256_point.c p256_scalar.c p256_field.c rsa_sign.c rsa_mont.c aes.c \
-                 gcm.c base64.c
+CT_TAINT_SRCS := src/x25519.c src/chacha20.c src/poly1305.c src/aead.c src/hkdf.c src/keysched.c src/sha256.c src/sha512.c \
+                 src/sha512_compress.c src/sha3.c src/mlkem.c src/mlkem_poly.c src/buf.c src/ct.c src/ct_wipe.c src/p256_sign.c \
+                 src/p256_ecdh.c src/p256_point.c src/p256_scalar.c src/p256_field.c src/rsa_sign.c src/rsa_mont.c src/aes.c \
+                 src/gcm.c src/base64.c
 CT_TAINT_TEST_SRCS = test/ct_taint_keys.c $(call host_srcs,$(CT_TAINT_SRCS)) $(AES_HW_SRCS)
 # The recipe links the binary again on every run, so a run under another
 # CC tests that compiler's code.
@@ -6759,7 +6759,7 @@ CT_TAINT_VALGRIND_FLAGS := --tool=memcheck --error-exitcode=1 --track-origins=ye
 bin/ct_taint_test: test/ct_taint_test.c $(CT_TAINT_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -g $(HOST_SUITE_DEF) $(RSA_WIDE_DEF) $(CT_TAINT_DEF) \
-	  $(if $(VALGRIND_INCLUDE),-isystem $(VALGRIND_INCLUDE)) -I. -Itest -o $@ \
+	  $(if $(VALGRIND_INCLUDE),-isystem $(VALGRIND_INCLUDE)) -Isrc -I. -Itest -o $@ \
 	  test/ct_taint_test.c $(CT_TAINT_TEST_SRCS)
 .PHONY: ct-taint ct-taint-docker
 ct-taint:
@@ -6808,44 +6808,44 @@ include test/platforms.mk
 cross-check:
 	@[ -n "$(CROSS)" ] || { echo "cross-check: set CROSS=<toolchain-prefix> (and RUNNER=<emulator>)"; exit 1; }
 	@mkdir -p bin/cross
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/unit test/unit_test.c $(SRCS)
-	$(CROSS)gcc $(filter-out $(HOST_RAND_DEF),$(CFLAGS)) -DCH_RAND_DRBG $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c $(DRBG_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_equiv_test test/sha3_equiv_test.c $(filter-out sha3.c,$(SHA3_TEST_SRCS))
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_HASH_SHA384 -I. -o bin/cross/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p384_test test/p384_test.c $(P384_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p256_field_test test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -Itest -o bin/cross/p256_sign_test test/p256_sign_test.c $(P256_SIGN_SRC)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/rsa_pkcs1_test test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/webpki_time_test test/webpki_time_test.c $(WEBPKI_TIME_SRC)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/webpki_name_test test/webpki_name_test.c $(WEBPKI_NAME_SRC)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_1024 -I. -o bin/cross/mlkem_test_1024 test/mlkem_test.c \
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/unit test/unit_test.c $(SRCS)
+	$(CROSS)gcc $(filter-out $(HOST_RAND_DEF),$(CFLAGS)) -DCH_RAND_DRBG $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/drbg_test test/drbg_test.c $(DRBG_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -Isrc -I. -o bin/cross/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/sha3_equiv_test test/sha3_equiv_test.c $(filter-out src/sha3.c,$(SHA3_TEST_SRCS))
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_HASH_SHA384 -Isrc -I. -o bin/cross/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/p384_test test/p384_test.c $(P384_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/p256_field_test test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -Itest -o bin/cross/p256_sign_test test/p256_sign_test.c $(P256_SIGN_SRC)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -Isrc -I. -o bin/cross/rsa_pkcs1_test test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/webpki_time_test test/webpki_time_test.c $(WEBPKI_TIME_SRC)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/webpki_name_test test/webpki_name_test.c $(WEBPKI_NAME_SRC)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -Isrc -I. -o bin/cross/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -Isrc -I. -o bin/cross/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -Isrc -I. -o bin/cross/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_1024 -Isrc -I. -o bin/cross/mlkem_test_1024 test/mlkem_test.c \
 	  $(MLKEM_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_TWO_RANKS -I. -o bin/cross/mlkem_test_two_ranks \
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_TWO_RANKS -Isrc -I. -o bin/cross/mlkem_test_two_ranks \
 	  test/mlkem_test.c $(MLKEM_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -I. \
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLKEM_TWO_RANKS -DCH_MLKEM_1024 -Isrc -I. \
 	  -o bin/cross/mlkem_test_two_ranks_1024 test/mlkem_test.c $(MLKEM_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mldsa_test test/mldsa_test.c $(MLDSA_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLDSA_SIGN_TEST -I. -Itest -o bin/cross/mldsa_signer_test \
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/mldsa_test test/mldsa_test.c $(MLDSA_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest -o bin/cross/mldsa_signer_test \
 	  test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_RSA_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_sequence_test test/handshake_sequence_test.c \
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/x509strict_test $(X509STRICT_RSA_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -Isrc -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -I. -o bin/cross/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(HANDSHAKE_SEQUENCE_SRCS)
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
 	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h && \
-	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
+	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -static -Isrc -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
 	    $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
-	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -DCH_MLKEM_1024 -static -I. -Itest -Ibin -o bin/cross/wycheproof_mlkem1024_test \
+	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -DCH_MLKEM_1024 -static -Isrc -I. -Itest -Ibin -o bin/cross/wycheproof_mlkem1024_test \
 	    test/wycheproof_mlkem1024_test.c $(WYCHEPROOF_MLKEM1024_SRCS) ; \
 	else \
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
@@ -7010,31 +7010,31 @@ lint-stack:
 	@python3 tools/stamp.py lint-stack --content '*.[ch]' $(STAMP_MAKEFILES) \
 	  --output '$(CC) --version' --output 'uname -srm' -- $(MAKE) --no-print-directory lint-stack-run
 lint-stack-run:
-	@mkdir -p bin/obj; objs=$$(mktemp -d bin/obj/stack.XXXXXX); \
-	rc=0; for f in $(LIB_SRCS) drbg.c $(filter-out $(LIB_SRCS),$(MLDSA_SRCS) $(MLDSA_SIGN_SRCS)); do \
+	@mkdir -p bin/obj; objs=$$(mktemp -d bin/obj/stack.XXXXXX); mkdir -p $$objs/src; \
+	rc=0; for f in $(LIB_SRCS) src/drbg.c $(filter-out $(LIB_SRCS),$(MLDSA_SRCS) $(MLDSA_SIGN_SRCS)); do \
 	  budget=$(STACK_BUDGET); apart=; \
 	  case " $(KEX_HYBRID_SRCS) $(call hash_hw_of,$(KEX_HYBRID_SRCS)) $(STACK_KEX_HYBRID_COPIES) " in \
 	    *" $$f "*) budget=$(STACK_BUDGET_KEX_HYBRID) ;; esac; \
 	  case " $(RSA_SIGN64_SRCS) " in *" $$f "*) budget=$(STACK_BUDGET_RSA_SIGN64) ;; esac; \
-	  case "$$f" in p256_wide_wipe.c) budget=$(STACK_BUDGET_P256_WIDE_WIPE) ;; esac; \
-	  case "$$f" in rsa_sign64_wipe.c) budget=$(STACK_BUDGET_RSA_SIGN64_WIPE) ;; esac; \
-	  case "$$f" in rsa_ifma_sign.c) budget=$(STACK_BUDGET_RSA_IFMA_SIGN) ;; esac; \
-	  case "$$f" in sha512_compress_blocks.c) budget=$(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) ;; esac; \
-	  case "$$f" in sha512_avx2.c) budget=$(STACK_BUDGET_SHA512_AVX2); apart="$(call unit_cflags,sha512_avx2.c)" ;; esac; \
-	  case "$$f" in gcm_avx512_kernel.c) budget=$(STACK_BUDGET_GCM_AVX512) ;; esac; \
-	  case "$$f" in gcm_avx512.c) budget=$(STACK_BUDGET_GCM_AVX512_WIPE) ;; esac; \
-	  case "$$f" in mldsa.c) budget=$(STACK_BUDGET_MLDSA) ;; esac; \
-	  case "$$f-$(STACK_MLDSA_AVX2)" in mldsa.c--DCH_CPU_RUNTIME) budget=$(STACK_BUDGET_MLDSA_AVX2) ;; \
-	    mldsa_sign_steps.c--DCH_CPU_RUNTIME) budget=$(STACK_BUDGET_MLDSA_ROW_AVX2) ;; esac; \
-	  case "$$f" in mldsa_signer.c) budget=$(STACK_BUDGET_MLDSA_SIGN) ;; esac; \
-	  case "$$f" in srv_mldsa.c) budget=$(STACK_BUDGET_SRV_MLDSA) ;; esac; \
-	  case "$$f-$(filter -DCH_SIGN_MLDSA,$(LIB_DEF))" in pem_files.c--DCH_SIGN_MLDSA) \
+	  case "$$f" in src/p256_wide_wipe.c) budget=$(STACK_BUDGET_P256_WIDE_WIPE) ;; esac; \
+	  case "$$f" in src/rsa_sign64_wipe.c) budget=$(STACK_BUDGET_RSA_SIGN64_WIPE) ;; esac; \
+	  case "$$f" in src/rsa_ifma_sign.c) budget=$(STACK_BUDGET_RSA_IFMA_SIGN) ;; esac; \
+	  case "$$f" in src/sha512_compress_blocks.c) budget=$(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) ;; esac; \
+	  case "$$f" in src/sha512_avx2.c) budget=$(STACK_BUDGET_SHA512_AVX2); apart="$(call unit_cflags,src/sha512_avx2.c)" ;; esac; \
+	  case "$$f" in src/gcm_avx512_kernel.c) budget=$(STACK_BUDGET_GCM_AVX512) ;; esac; \
+	  case "$$f" in src/gcm_avx512.c) budget=$(STACK_BUDGET_GCM_AVX512_WIPE) ;; esac; \
+	  case "$$f" in src/mldsa.c) budget=$(STACK_BUDGET_MLDSA) ;; esac; \
+	  case "$$f-$(STACK_MLDSA_AVX2)" in src/mldsa.c--DCH_CPU_RUNTIME) budget=$(STACK_BUDGET_MLDSA_AVX2) ;; \
+	    src/mldsa_sign_steps.c--DCH_CPU_RUNTIME) budget=$(STACK_BUDGET_MLDSA_ROW_AVX2) ;; esac; \
+	  case "$$f" in src/mldsa_signer.c) budget=$(STACK_BUDGET_MLDSA_SIGN) ;; esac; \
+	  case "$$f" in src/srv_mldsa.c) budget=$(STACK_BUDGET_SRV_MLDSA) ;; esac; \
+	  case "$$f-$(filter -DCH_SIGN_MLDSA,$(LIB_DEF))" in src/pem_files.c--DCH_SIGN_MLDSA) \
 	    budget=$(STACK_BUDGET_PEM_FILES_MLDSA) ;; esac; \
-	  $(CC) $(STACK_CFLAGS) $(LIB_DEF) $$apart -Wframe-larger-than=$$budget -I. -c $$f -o $$objs/$$f.o || rc=1; \
-	  case "$$f" in gcm_avx512_kernel.c) \
+	  $(CC) $(STACK_CFLAGS) $(LIB_DEF) $$apart -Wframe-larger-than=$$budget -Isrc -I. -c $$f -o $$objs/$$f.o || rc=1; \
+	  case "$$f" in src/gcm_avx512_kernel.c) \
 	    local_functions=$$(nm $$objs/$$f.o 2>/dev/null | awk '$$2 == "t" && $$3 !~ /^(\.|L|ltmp)/ {print $$3}' | tr '\n' ' '); \
 	    if [ -n "$$local_functions" ]; then \
-	      echo "lint-stack: gcm_avx512_kernel.c defines [$$local_functions] beside its four functions; a kernel must call no function, so that its frame is all the stack it writes"; rc=1; \
+	      echo "lint-stack: src/gcm_avx512_kernel.c defines [$$local_functions] beside its four functions; a kernel must call no function, so that its frame is all the stack it writes"; rc=1; \
 	    fi ;; esac; \
 	done; rm -rf $$objs; \
 	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B, its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B, the 512-bit AES-GCM kernel's under $(STACK_BUDGET_GCM_AVX512) B, its stack wipe's under $(STACK_BUDGET_GCM_AVX512_WIPE) B, ML-DSA-87's verifier's under $(STACK_BUDGET_MLDSA) B and its signer's under $(STACK_BUDGET_MLDSA_SIGN) B$(if $(STACK_MLDSA_AVX2),; on the four-way sampler its verifier's under $(STACK_BUDGET_MLDSA_AVX2) B and its signer's row under $(STACK_BUDGET_MLDSA_ROW_AVX2) B)$(if $(filter -DCH_SIGN_MLDSA,$(LIB_DEF)),; the profile server's CertificateVerify under $(STACK_BUDGET_SRV_MLDSA) B and its key file call under $(STACK_BUDGET_PEM_FILES_MLDSA) B)"; exit $$rc
@@ -7184,10 +7184,10 @@ lint-exact-fill:
 	@python3 tools/exact-fill.py
 
 # INV-27: the QUIC mode's partition, read from the preprocessor rather
-# than from a list kept by hand. A root file belongs to TRANSPORT=quic-nonblocking
+# than from a list kept by hand. A file in src/ belongs to TRANSPORT=quic-nonblocking
 # when it writes no declaration without -DCH_TRANSPORT_QUIC_NONBLOCKING and gains
 # something with it. The rule is that every such file is named quic*,
-# and that no other root file is one, so `git ls-files 'quic*'` names
+# and that no other file in src/ is one, so `git ls-files 'quic*'` names
 # every file the mode owns and a reader sees how much it covers without
 # reading the build. tools/quic-partition.py carries the reasoning, the
 # flags each run passes and what the check cannot see.
@@ -7206,7 +7206,7 @@ lint-exact-fill:
 # QUIC_SHARED file that becomes QUIC-only fails this lint too, under the
 # message that belongs to it, which says a file both transports compile
 # has stopped compiling in a TCP build.
-QUIC_SHARED := handshake_flight.c handshake_flight.h
+QUIC_SHARED := src/handshake_flight.c src/handshake_flight.h
 # The shared files that carry a #ifdef CH_TRANSPORT_QUIC_NONBLOCKING arm: the
 # configuration, the session struct, the handshake layers the mode
 # reuses, the build record, which holds sizeof(ch_quic) in a QUIC build
@@ -7221,11 +7221,11 @@ QUIC_SHARED := handshake_flight.c handshake_flight.h
 # to a file that holds nothing. pem_files.h is in the list for the reason
 # x509_ca.h is. In a QUIC build it gives the symbol names of the three
 # PEM calls the QUIC transport's suffix (docs/decisions.md 131).
-QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
-                    handshake_auth.h handshake_parser.h handshake_message.c \
-                    handshake_parser_ee.c handshake_record.c handshake_auth.c \
-                    handshake_post.c build.h build.c x509_ca.h x509_ca.c \
-                    pem_files.h aes.h aes.c ticket.h alert.h result.h session_report.h
+QUIC_CONDITIONAL := src/cfg.h src/session.h src/handshake_record.h src/handshake_post.h \
+                    src/handshake_auth.h src/handshake_parser.h src/handshake_message.c \
+                    src/handshake_parser_ee.c src/handshake_record.c src/handshake_auth.c \
+                    src/handshake_post.c src/build.h src/build.c src/x509_ca.h src/x509_ca.c \
+                    src/pem_files.h src/aes.h src/aes.c src/ticket.h src/alert.h src/result.h src/session_report.h
 # A QUIC host object holds two AES ciphers, the instructions and the table
 # (CH_AES_TWO_CIPHERS, aes.h), so where this compiler passes the host test
 # QUIC_EXTRA_DEFINES judges these three under the host object's suite
@@ -7234,9 +7234,9 @@ QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
 # GHASH by that record and gcm.c's choice of counter mode by it. Under any
 # other compiler the four are judged under the AES=extern suite build,
 # which holds one cipher and no such arm.
-QUIC_CONDITIONAL += $(if $(HOST_TARGET),aes_block.h aes_schedule.h gcm.c gcm_ghash.h)
+QUIC_CONDITIONAL += $(if $(HOST_TARGET),src/aes_block.h src/aes_schedule.h src/gcm.c src/gcm_ghash.h)
 #
-# The lint preprocesses every root source and header with $(CC) and reads
+# The lint preprocesses every library source and header with $(CC) and reads
 # the Makefile and git's file list, so its stamp covers every file git
 # does not ignore and the compiler's version (tools/stamp.py).
 .PHONY: lint-quic-partition
@@ -7300,8 +7300,8 @@ else
 	# compiles webpki_ticket.c's text with two calls under other names. It
 	# stays out of every pass, for the reason test/aes_equiv_soft.c does
 	# below.
-	@$(call TIDY_EACH,$(filter-out webpki.c webpki_ticket.c webpki_pin.c \
-	  webpki_cfg.c handshake_groups.c x509_ca.c drbg.c test/drbg_test.c test/entropy_recipe.c \
+	@$(call TIDY_EACH,$(filter-out src/webpki.c src/webpki_ticket.c src/webpki_pin.c \
+	  src/webpki_cfg.c src/handshake_groups.c src/x509_ca.c src/drbg.c test/drbg_test.c test/entropy_recipe.c \
 	  test/webpki_resume_test.c test/webpki_session_test.c test/cnsa2_test.c test/cnsa2_quic_test.c \
 	  test/x509_mldsa_test.c test/diff_x509_mldsa_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
 	  test/mldsa_signer_test.c test/diff_mldsa_test.c \
@@ -7313,36 +7313,36 @@ else
 	  test/aes_equiv_hw.c test/aes_equiv_arm64.c test/aes_equiv_arm64_eor3.c test/aes_extern_hook.c test/ghash_equiv_test.c test/ghash_equiv_soft.c \
 	  test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c \
 	  $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
-	  test/tls_server.c srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c \
+	  test/tls_server.c src/srv_quic.c src/quic_token.c src/srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c \
 	  test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c \
 	  test/tcp_blocking_key_limit_test.c test/quic_loop_test.c test/ticket_epoch_test.c \
-	  test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c x25519_wide.c \
-	  test/x25519_equiv_test.c x25519_adx.c test/x25519_adx_model.c test/x25519_adx_model_test.c \
+	  test/exporter_test.c src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c src/x25519_wide.c \
+	  test/x25519_equiv_test.c src/x25519_adx.c test/x25519_adx_model.c test/x25519_adx_model_test.c \
 	  test/x25519_adx_equiv_test.c $(P256_WIDE_SRCS) test/p256_equiv_test.c test/hkdf384_test.c \
-	  rsa_mont64_adx.c test/rsa_mont64_adx_model.c test/rsa_mont64_adx_test.c \
+	  src/rsa_mont64_adx.c test/rsa_mont64_adx_model.c test/rsa_mont64_adx_test.c \
 	  $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
 	  test/p384_portable.c \
-	  test/diff_x25519_test.c test/diff_p256_wide_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
+	  test/diff_x25519_test.c test/diff_p256_wide_test.c src/chacha20_vector.c test/chacha20_equiv_vector.c \
 	  test/chacha20_equiv_test.c \
-	  avx512_wipe.c test/avx512_wipe_test.c test/chacha20_equiv_avx512.c poly1305_vector.c \
+	  src/avx512_wipe.c test/avx512_wipe_test.c test/chacha20_equiv_avx512.c src/poly1305_vector.c \
 	  test/poly1305_equiv_vector.c test/stack_residue.c \
-	  poly1305_avx2.c test/poly1305_equiv_avx2.c poly1305_ifma.c test/poly1305_equiv_ifma.c \
+	  src/poly1305_avx2.c test/poly1305_equiv_avx2.c src/poly1305_ifma.c test/poly1305_equiv_ifma.c \
 	  test/poly1305_equiv_test.c test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c \
-	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
-	  mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
-	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
-	  mldsa_avx2.c test/mldsa_avx2_equiv_test.c test/mldsa_avx2_count.c \
+	  src/mlkem_vector.c test/mlkem_vector_equiv_test.c \
+	  src/mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
+	  src/keccak_avx2.c src/mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
+	  src/mldsa_avx2.c test/mldsa_avx2_equiv_test.c test/mldsa_avx2_count.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c test/aead_avx512_count.c \
 	  test/gcm_avx512_equiv_test.c test/webpki_ticket_count.c test/ct_taint_test.c test/ct_taint_keys.c \
 	  $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -Isrc -I.)
 	# The wide X25519 field. x25519_wide.c guards its body on
 	# -DCH_CPU_RUNTIME and compiles x25519.c's clamp and all-zero check
 	# inside it, so the pass above reads the 16-word field and this one
 	# reads the other, with the equivalence test, which calls both, and the
 	# differential main, which refuses any other build.
-	@$(call TIDY_EACH,x25519_wide.c test/x25519_equiv_test.c test/diff_x25519_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
+	@$(call TIDY_EACH,src/x25519_wide.c test/x25519_equiv_test.c test/diff_x25519_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -I.)
 	# x25519_adx.c over its model, the build bin/x25519_adx_model_test runs
 	# on every host, so this pass reads test/x25519_adx_model.h and the
 	# field's C, with the two test mains: on another architecture than
@@ -7353,22 +7353,22 @@ else
 	# implicit operand nor the two carry flags ADCX and ADOX keep apart
 	# (docs/decisions.md 165). test/x25519_adx_model.c stays out of every
 	# pass, for test/rsa_ifma_model.c's reason.
-	@$(call TIDY_EACH,x25519_adx.c test/x25519_adx_model_test.c test/x25519_adx_equiv_test.c, \
+	@$(call TIDY_EACH,src/x25519_adx.c test/x25519_adx_model_test.c test/x25519_adx_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL \
-	  -DCH_X25519_ADX_TEST -I. -Itest)
-	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler x25519_adx.c, \
+	  -DCH_X25519_ADX_TEST -Isrc -I. -Itest)
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler src/x25519_adx.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -I.)
+	  -DCH_CPU_RUNTIME -Isrc -I.)
 	# rsa_mont64_adx.c the same two ways: over its model with its test main,
 	# and the assembly for an x86-64 target, with portability-no-assembler
 	# off for that file alone, for x25519_adx.c's reason (docs/decisions.md
 	# 183). test/rsa_mont64_adx_model.c stays out of every pass, for
 	# test/rsa_ifma_model.c's reason.
-	@$(call TIDY_EACH,rsa_mont64_adx.c test/rsa_mont64_adx_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_RSA_MONT64_ADX_MODEL -I. -Itest)
-	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler rsa_mont64_adx.c, \
+	@$(call TIDY_EACH,src/rsa_mont64_adx.c test/rsa_mont64_adx_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_RSA_MONT64_ADX_MODEL -Isrc -I. -Itest)
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler src/rsa_mont64_adx.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -I.)
+	  -DCH_CPU_RUNTIME -Isrc -I.)
 	# The wide P-256 files, whose bodies sit behind -DCH_CPU_RUNTIME too,
 	# with the equivalence test, which calls them and the files under
 	# their own names, and the differential main, which refuses any other
@@ -7379,9 +7379,9 @@ else
 	# test/aes_equiv_soft.c does below.
 	# P256_ADX_INLINE_SRCS is out of this pass: on an x86-64 host each
 	# body holds the assembly, which the two passes after this one read.
-	@$(call TIDY_EACH,$(filter-out $(P256_ADX_INLINE_SRCS),$(P256_WIDE_SRCS)) p256.c test/p256_equiv_test.c \
+	@$(call TIDY_EACH,$(filter-out $(P256_ADX_INLINE_SRCS),$(P256_WIDE_SRCS)) src/p256.c test/p256_equiv_test.c \
 	  test/diff_p256_wide_test.c test/p256_verify_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -I. -Itest)
 	# The x86-64 P-256 field's copy over its model, the build
 	# bin/p256_adx_model_test runs on every host, so this pass reads
 	# test/p256_adx_model.h and the copy, with the four test mains: on
@@ -7390,20 +7390,20 @@ else
 	# x86-64 target whatever the host, with portability-no-assembler off for
 	# the files that include the assembly alone, for x25519_adx.c's reason
 	# (docs/decisions.md 171 and 175).
-	@$(call TIDY_EACH,$(P256_ADX_SRCS) p256.c test/p256_adx_model_test.c test/p256_adx_equiv_test.c \
+	@$(call TIDY_EACH,$(P256_ADX_SRCS) src/p256.c test/p256_adx_model_test.c test/p256_adx_equiv_test.c \
 	  test/p256_adx_verify_model_test.c test/p256_adx_verify_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Isrc -I. -Itest)
 	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler $(P256_ADX_INLINE_SRCS), \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -I.)
+	  -DCH_CPU_RUNTIME -Isrc -I.)
 	# P-384's 64-bit field, points and verifier (docs/decisions.md
 	# 97), whose bodies sit behind -DCH_CPU_RUNTIME, with p384.c, which
 	# compiles the arm that calls them under the define, and the three
 	# units of the equivalence test that are its own. test/p384_portable.c stays out of every
 	# pass, for the reason test/aes_equiv_soft.c does below.
-	@$(call TIDY_EACH,$(P384_WIDE_SRCS) p384.c test/p384_equiv_test.c test/p384_equiv_field.c \
+	@$(call TIDY_EACH,$(P384_WIDE_SRCS) src/p384.c test/p384_equiv_test.c test/p384_equiv_field.c \
 	  test/p384_equiv_sign.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -I. -Itest)
 	# RSA's arithmetic on 64-bit words and the signer built on it
 	# (docs/decisions.md 95). rsa_mont64.c and rsa_sign64.c guard their
 	# bodies on -DCH_CPU_RUNTIME and rsa_mont.c compiles its other arm
@@ -7418,9 +7418,9 @@ else
 	# 64x64->128 multiply with unsigned __int128, so the pass runs only
 	# where HOST_TARGET found a host compiler.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,rsa_mont64.c rsa_mont.c rsa.c rsa_pkcs1.c rsa_sign64.c test/rsa_equiv_test.c \
+	  $(call TIDY_EACH,src/rsa_mont64.c src/rsa_mont.c src/rsa.c src/rsa_pkcs1.c src/rsa_sign64.c test/rsa_equiv_test.c \
 	  test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -I.)
 	# The IFMA signer's residue test, under the same defines, with
 	# portability-no-assembler off for this file alone: on x86-64 it reads
 	# zmm0 to zmm31 back with a block of assembly, because C names no
@@ -7428,7 +7428,7 @@ else
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
 	  test/rsa_ifma_sign_residue_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -I.)
 	# rsa_mont64_blocks.c's blocks and rsa_mont64.c's calls into them,
 	# which only a clang build for arm64 compiles unless a build names them
 	# (docs/decisions.md 118). This pass names them with
@@ -7437,9 +7437,9 @@ else
 	# test/rsa_mont64_loops.c stays out of every pass, for the reason
 	# test/rsa_equiv_portable.c does.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,rsa_mont64.c rsa_mont64_blocks.c test/rsa_blocks_equiv_test.c, \
+	  $(call TIDY_EACH,src/rsa_mont64.c src/rsa_mont64_blocks.c test/rsa_blocks_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 \
-	  -DRSA_MONT64_ADDCARRY=0 -I.)
+	  -DRSA_MONT64_ADDCARRY=0 -Isrc -I.)
 	# rsa_mont64_addcarry.c's rows and rsa_mont64.c's calls into them,
 	# which only a gcc build for x86-64 compiles unless a build names them
 	# (docs/decisions.md 122). This pass names them with
@@ -7448,12 +7448,12 @@ else
 	# machine and _addcarry_u64 on CI's x86-64 runner. The pass after it
 	# reads the intrinsic for an x86-64 target whatever the host.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,rsa_mont64.c rsa_mont64_addcarry.c test/rsa_blocks_equiv_test.c, \
+	  $(call TIDY_EACH,src/rsa_mont64.c src/rsa_mont64_addcarry.c test/rsa_blocks_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 \
-	  -DRSA_MONT64_BLOCKS=0 -I.)
-	@$(call TIDY_EACH,rsa_mont64_addcarry.c rsa_mont64.c, \
+	  -DRSA_MONT64_BLOCKS=0 -Isrc -I.)
+	@$(call TIDY_EACH,src/rsa_mont64_addcarry.c src/rsa_mont64.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -I.)
+	  -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -Isrc -I.)
 	# rsa_ifma.c over the lane model, the build bin/rsa_ifma_model_test
 	# runs on every host, so this pass reads test/rsa_ifma_model_lanes.h
 	# and, at the 512-byte bound, the kernel's copies for nine and ten
@@ -7464,10 +7464,10 @@ else
 	# test/rsa_ifma_instructions.c and test/rsa_ifma_sign_entries.c stay
 	# out of every pass, for the reason test/aes_equiv_soft.c does below.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,rsa_ifma.c test/rsa_ifma_model_test.c test/rsa_ifma_equiv_test.c \
-	  test/diff_rsa_ifma_test.c rsa_ifma_sign.c rsa_sign64.c test/rsa_ifma_sign_test.c, \
+	  $(call TIDY_EACH,src/rsa_ifma.c test/rsa_ifma_model_test.c test/rsa_ifma_equiv_test.c \
+	  test/diff_rsa_ifma_test.c src/rsa_ifma_sign.c src/rsa_sign64.c test/rsa_ifma_sign_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) \
-	  -I. -Itest)
+	  -Isrc -I. -Itest)
 	# poly1305_ifma.c over the lane model, the build bin/poly1305_equiv_test
 	# and bin/diff_poly1305_ifma run on every host, so this pass reads
 	# test/poly1305_ifma_model_lanes.h; the pass of the native copies below
@@ -7475,11 +7475,11 @@ else
 	# flags. test/poly1305_ifma_model.c stays out of every pass, for the
 	# reason test/aes_equiv_soft.c does below.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,poly1305_ifma.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -I. -Itest)
+	  $(call TIDY_EACH,src/poly1305_ifma.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Isrc -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/diff_poly1305_ifma_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -Isrc -I. -Itest)
 	# The ChaCha20 and Poly1305 equivalence tests, each in a pass of its
 	# own with portability-no-assembler off for that file alone: on x86-64
 	# each reads ymm0 to ymm15 back after its AVX2 kernel through
@@ -7490,26 +7490,26 @@ else
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
 	  test/poly1305_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -Isrc -I. -Itest)
 	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
 	  test/chacha20_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -Isrc -I.)
 	# rsa_avx2.c over its lane model, as bin/rsa_avx2_model_test runs it on
 	# every host, with rsa_mont.c's dispatch to it and the two test mains
 	# (docs/decisions.md 122). test/rsa_avx2_model.c and
 	# test/rsa_avx2_instructions.c stay out of every pass, for the reason
 	# test/aes_equiv_soft.c does below.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,rsa_avx2.c rsa_mont.c test/rsa_avx2_model_test.c test/rsa_avx2_equiv_test.c \
+	  $(call TIDY_EACH,src/rsa_avx2.c src/rsa_mont.c test/rsa_avx2_model_test.c test/rsa_avx2_equiv_test.c \
 	  test/diff_rsa_avx2_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL $(RSA_WIDE_DEF) \
-	  -I. -Itest)
+	  -Isrc -I. -Itest)
 	# The AVX2 kernel on the instructions at the 512-byte bound, where its
 	# copies for digits of 27 bits exist alone. The x86-64 pass of the IFMA
 	# kernel below reads it at the 384-byte bound.
-	@$(call TIDY_EACH,rsa_avx2.c, \
+	@$(call TIDY_EACH,src/rsa_avx2.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -I.)
+	  -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -Isrc -I.)
 	# A host object's ChaCha20. chacha20_vector.c guards its body on
 	# -DCH_CPU_RUNTIME, and chacha20.c and aead.c hold the entries that
 	# take a session's ch_cfg.cpu under it, so this pass reads the three in
@@ -7519,8 +7519,8 @@ else
 	# test/poly1305_equiv_vector.c and test/poly1305_equiv_avx2.c stay out
 	# of every pass, for the reason test/aes_equiv_soft.c does below.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,chacha20.c chacha20_vector.c aead.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
+	  $(call TIDY_EACH,src/chacha20.c src/chacha20_vector.c src/aead.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -I.)
 	# The x86-64 kernels and the two files that choose them, read for an
 	# x86-64 target whatever the host, as the QEMU pass below names its
 	# core: chacha20_avx2.c, chacha20_avx512.c, gcm_vaes.c, gcm_avx512.c and
@@ -7531,38 +7531,38 @@ else
 	# its binary's, and test/aead_avx512_count.c, the counting binaries'
 	# stand-in for the AVX-512 kernels, joins the first. Freestanding, with
 	# tools/freestanding's string.h.
-	@$(call TIDY_EACH,chacha20_avx2.c chacha20_avx512.c chacha20.c test/aead_avx512_count.c, \
+	@$(call TIDY_EACH,src/chacha20_avx2.c src/chacha20_avx512.c src/chacha20.c test/aead_avx512_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -I.)
-	@$(call TIDY_EACH,gcm_vaes.c gcm_avx512.c gcm_avx512_kernel.c gcm.c test/x86_kernels_count.c, \
+	  -DCH_CPU_RUNTIME -Isrc -I.)
+	@$(call TIDY_EACH,src/gcm_vaes.c src/gcm_avx512.c src/gcm_avx512_kernel.c src/gcm.c test/x86_kernels_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest)
+	  -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -Isrc -I. -Itest)
 	# The AVX2 Poly1305 (docs/decisions.md 110) and the AVX-512 IFMA
 	# Poly1305 as their native copies, which have a body on x86-64 alone,
 	# with poly1305.c's native copy, whose x86-64 arm holds the updates that
 	# call them, and aead.c, whose MAC calls them through widemul.h's x86-64
 	# arm.
-	@$(call TIDY_EACH,poly1305_avx2_native.c poly1305_ifma_native.c poly1305_native.c aead.c, \
+	@$(call TIDY_EACH,src/poly1305_avx2_native.c src/poly1305_ifma_native.c src/poly1305_native.c src/aead.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -I.)
 	# A host object's ML-KEM NTT (docs/decisions.md 101). mlkem_vector.c
 	# holds one arm for each architecture, so two passes read it for a named
 	# target whatever the host, as the passes above read the kernels, with
 	# mlkem.c, whose host arm calls it. Its equivalence test follows with
 	# the Keccak test mains below.
-	@$(call TIDY_EACH,mlkem_vector.c mlkem.c, \
+	@$(call TIDY_EACH,src/mlkem_vector.c src/mlkem.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
-	@$(call TIDY_EACH,mlkem_vector.c mlkem.c, \
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -I.)
+	@$(call TIDY_EACH,src/mlkem_vector.c src/mlkem.c, \
 	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -I.)
 	# A host object's ML-DSA-87 NTT (docs/decisions.md 172). mldsa_vector.c
 	# has a body on arm64 alone, so one pass reads it for that target
 	# whatever the host, with mldsa.c and the signer's dispatchers, whose
 	# arm64 host arms call it.
-	@$(call TIDY_EACH,mldsa_vector.c mldsa.c mldsa_sign_steps.c mldsa_signer.c, \
+	@$(call TIDY_EACH,src/mldsa_vector.c src/mldsa.c src/mldsa_sign_steps.c src/mldsa_signer.c, \
 	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -I.)
 	# The four-way Keccak and ML-KEM's copy over it (docs/decisions.md
 	# 107), which have a body on x86-64 alone, read for an x86-64 target
 	# whatever the host, as the kernels' passes above are. mlkem_avx2.c
@@ -7570,9 +7570,9 @@ else
 	# equivalence test follows with the Keccak test mains below. The pass
 	# reads ML-DSA-87's sampler of A over the four-way Keccak, and the x86-64
 	# arms of its two callers, the same way (docs/decisions.md 178).
-	@$(call TIDY_EACH,keccak_avx2.c mlkem_avx2.c mldsa_avx2.c mldsa.c mldsa_sign_steps.c, \
+	@$(call TIDY_EACH,src/keccak_avx2.c src/mlkem_avx2.c src/mldsa_avx2.c src/mldsa.c src/mldsa_sign_steps.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -I.)
 	# RSA's public operation on AVX-512 IFMA and on AVX2, which have a body
 	# on x86-64 alone, with rsa_mont.c, whose x86-64 host arm holds use_ifma,
 	# use_avx2, power_of_two_mod and the dispatch in rsa_vp1_cpu that calls
@@ -7582,19 +7582,19 @@ else
 	# exponentiations on AVX-512 IFMA join them, with rsa_sign64.c, whose
 	# x86-64 arm calls them and the wipes, and test/rsa_ifma_sign_count.c,
 	# the counts linked in their place.
-	@$(call TIDY_EACH,rsa_ifma.c rsa_avx2.c rsa_mont.c test/rsa_ifma_count.c test/rsa_avx2_count.c \
-	  rsa_ifma_sign.c rsa_sign64.c test/rsa_ifma_sign_count.c test/rsa_mont64_adx_count.c, \
+	@$(call TIDY_EACH,src/rsa_ifma.c src/rsa_avx2.c src/rsa_mont.c test/rsa_ifma_count.c test/rsa_avx2_count.c \
+	  src/rsa_ifma_sign.c src/rsa_sign64.c test/rsa_ifma_sign_count.c test/rsa_mont64_adx_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -I.)
+	  -DCH_CPU_RUNTIME -Isrc -I.)
 	# The wipe of the vector registers, which has a body on x86-64 alone,
 	# read for an x86-64 target whatever the host, as the kernels' passes
 	# above are. portability-no-assembler is off for this file alone: its
 	# body is the one block of assembly in the library, because C names
 	# no register, and the block is the file's whole purpose
 	# (avx512_wipe.c).
-	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler avx512_wipe.c, \
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler src/avx512_wipe.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -I.)
+	  -DCH_CPU_RUNTIME -Isrc -I.)
 	# A host object's SHA-256 and SHA-512 on the CPU's instructions
 	# (docs/decisions.md 93). sha256_hw.c holds one arm for each
 	# architecture, so two passes read it for a named target whatever the
@@ -7614,18 +7614,18 @@ else
 	# sha3_hw.c and ML-KEM's two copies have a body for arm64 under clang
 	# alone (docs/decisions.md 99), which the arm64 pass's target gives
 	# them, and the two Keccak test mains follow under the host's own target.
-	@$(call TIDY_EACH,sha256_hw.c sha512_hw.c sha512_avx2.c, \
+	@$(call TIDY_EACH,src/sha256_hw.c src/sha512_hw.c src/sha512_avx2.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -I.)
-	@$(call TIDY_EACH,sha256_hw.c sha512_hw.c, \
+	  -DCH_CPU_RUNTIME -Isrc -I.)
+	@$(call TIDY_EACH,src/sha256_hw.c src/sha512_hw.c, \
 	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -I.)
-	@$(call TIDY_EACH,sha3_hw.c mlkem_hw.c mlkem_poly_hw.c, \
+	  -DCH_CPU_RUNTIME -Isrc -I.)
+	@$(call TIDY_EACH,src/sha3_hw.c src/mlkem_hw.c src/mlkem_poly_hw.c, \
 	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -I.)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,hkdf.c keysched.c hkdf_hw.c keysched_hw.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest)
+	  $(call TIDY_EACH,src/hkdf.c src/keysched.c src/hkdf_hw.c src/keysched_hw.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -Isrc -I. -Itest)
 	# The equivalence test, under the same defines, with
 	# portability-no-assembler off for this file alone: on x86-64 it sets
 	# ymm0 to ymm15, calls sha512_avx2.c's kernel and stores the sixteen
@@ -7637,11 +7637,11 @@ else
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
 	  test/sha2_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -Isrc -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/sha3_hw_equiv_test.c test/mlkem_hw_equiv_test.c test/mlkem_vector_equiv_test.c \
 	    test/mlkem_avx2_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -I. -Itest)
 	# The ML-DSA-87 lanes' equivalence test, in a pass of its own with
 	# portability-no-assembler off for that file alone: on x86-64 it reads
 	# ymm0 to ymm15 back after each AVX2 entry through
@@ -7651,15 +7651,15 @@ else
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
 	  test/mldsa_vector_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/mldsa_runtime_test.c test/mldsa_vector_count.c test/mldsa_avx2_count.c \
 	  test/mldsa_avx2_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,test/hash_runtime_test.c record.c quic_keys.c webpki_ticket.c, \
+	  $(call TIDY_EACH,test/hash_runtime_test.c src/record.c src/quic_keys.c src/webpki_ticket.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  $(HOST_SUITE_DEF) -I. -Itest)
+	  $(HOST_SUITE_DEF) -Isrc -I. -Itest)
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
 	# compile against the webpki layout of ch_cfg and handshake_state, and
@@ -7668,89 +7668,89 @@ else
 	# build offers the hybrid (docs/decisions.md 53), so the pass reads
 	# webpki_session_test.c's hybrid arm too. Measured with clang-tidy
 	# 23.1.1: 2.9 s.
-	@$(call TIDY_EACH,tls.c handshake_parser.c handshake_parser_ee.c \
-	  handshake_message.c handshake_auth.c handshake.c handshake_record.c handshake_flight.c \
-	  handshake_groups.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c \
+	@$(call TIDY_EACH,src/tls.c src/handshake_parser.c src/handshake_parser_ee.c \
+	  src/handshake_message.c src/handshake_auth.c src/handshake.c src/handshake_record.c src/handshake_flight.c \
+	  src/handshake_groups.c src/webpki.c src/webpki_ticket.c src/webpki_pin.c src/webpki_cfg.c \
 	  test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
 	  test/webpki_encrypted_exts_test.c test/handshake_strict_test.c \
 	  test/diff_test.c examples/webpki_client.c test/webpki_resume_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -Isrc -I.)
 	# The CA mode's provisioning call, under -DCH_TRUST_CA: every object
 	# that packages x509_ca.c compiles with that define, and x509_ca.h
 	# declares ch_pubkey_from_pem only under it.
-	@$(call TIDY_EACH,x509_ca.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -I.)
+	@$(call TIDY_EACH,src/x509_ca.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -Isrc -I.)
 	# The reference generator, its test main and docs/entropy.md's recipe,
 	# under -DCH_RAND_DRBG in place of the host's pattern, as bin/drbg_test
 	# builds: drbg.h declares ch_drbg_seed only under that define.
-	@$(call TIDY_EACH,drbg.c test/drbg_test.c test/entropy_recipe.c, \
-	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_DRBG -I.)
+	@$(call TIDY_EACH,src/drbg.c test/drbg_test.c test/entropy_recipe.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_DRBG -Isrc -I.)
 	# RAND=session, in place of the host's pattern: the draw sites and the
 	# configuration checks read rand.h's session arm and ch_cfg's two
 	# fields only under -DCH_RAND_SESSION, and so do the three loop tests
 	# built under it, whose fixture is test/rand_session.h. Each file takes
 	# the role, trust mode or transport its body sits behind.
-	@$(call TIDY_EACH,tls.c handshake_flight.c srv_flight.c srv_kex.c srv_resume.c srv_auth.c srv.c, \
-	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
-	@$(call TIDY_EACH,handshake_groups.c, \
-	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_TRUST_WEBPKI -I.)
-	@$(call TIDY_EACH,quic_config.c, \
-	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
+	@$(call TIDY_EACH,src/tls.c src/handshake_flight.c src/srv_flight.c src/srv_kex.c src/srv_resume.c src/srv_auth.c src/srv.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -Isrc -I.)
+	@$(call TIDY_EACH,src/handshake_groups.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_TRUST_WEBPKI -Isrc -I.)
+	@$(call TIDY_EACH,src/quic_config.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I.)
 	@$(call TIDY_EACH,test/tcp_nonblocking_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) -DCH_KEYLOG -I.)
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) -DCH_KEYLOG -Isrc -I.)
 	@$(call TIDY_EACH,test/tcp_blocking_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -Isrc -I.)
 	@$(call TIDY_EACH,test/quic_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -Isrc -I. -Itest)
 	# PROFILE=cnsa2 (docs/decisions.md 151): the sources that carry its
 	# arms and its two test mains, under the defines a profile object
 	# compiles with, once for each transport.
-	@$(call TIDY_EACH,tls.c handshake_message.c handshake_parser.c handshake_flight.c \
-	  handshake_record.c test/cnsa2_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(CNSA2_DEF) -I. -Itest)
+	@$(call TIDY_EACH,src/tls.c src/handshake_message.c src/handshake_parser.c src/handshake_flight.c \
+	  src/handshake_record.c test/cnsa2_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(CNSA2_DEF) -Isrc -I. -Itest)
 	@$(call TIDY_EACH,test/cnsa2_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_TCP_NONBLOCKING $(CNSA2_DEF) -I. -Itest)
-	@$(call TIDY_EACH,quic_config.c test/cnsa2_quic_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(CNSA2_DEF) -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_TCP_NONBLOCKING $(CNSA2_DEF) -Isrc -I. -Itest)
+	@$(call TIDY_EACH,src/quic_config.c test/cnsa2_quic_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(CNSA2_DEF) -Isrc -I. -Itest)
 	# The profile's two ML-DSA-87 trust modes (docs/decisions.md 157): the
 	# sources whose arms CH_PIN_MLDSA picks and the test mains that run
 	# them, raw and CA, and the CA mode over QUIC.
-	@$(call TIDY_EACH,tls.c handshake_auth.c handshake_message.c handshake_parser.c x509.c x509_der.c \
+	@$(call TIDY_EACH,src/tls.c src/handshake_auth.c src/handshake_message.c src/handshake_parser.c src/x509.c src/x509_der.c \
 	  test/cnsa2_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(CNSA2_DEF) -DCH_PIN_MLDSA -I. -Itest)
-	@$(call TIDY_EACH,handshake_auth.c x509_ca.c test/cnsa2_test.c test/x509_mldsa_test.c \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(CNSA2_DEF) -DCH_PIN_MLDSA -Isrc -I. -Itest)
+	@$(call TIDY_EACH,src/handshake_auth.c src/x509_ca.c test/cnsa2_test.c test/x509_mldsa_test.c \
 	  test/diff_x509_mldsa_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(CNSA2_DEF) -DCH_TRUST_CA -DCH_PIN_MLDSA -I. -Itest)
-	@$(call TIDY_EACH,quic_config.c test/cnsa2_quic_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(CNSA2_DEF) -DCH_TRUST_CA -DCH_PIN_MLDSA -Isrc -I. -Itest)
+	@$(call TIDY_EACH,src/quic_config.c test/cnsa2_quic_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA $(CNSA2_DEF) \
-	  -DCH_PIN_MLDSA -I. -Itest)
+	  -DCH_PIN_MLDSA -Isrc -I. -Itest)
 	# ML-DSA-87 signing (docs/decisions.md 159): the signer with the test
 	# entries CH_MLDSA_SIGN_TEST declares, and the test main that calls
 	# them, and the key file's readers under CH_SIGN_MLDSA, the define of
 	# the object that signs, in a server role.
-	@$(call TIDY_EACH,mldsa_signer.c test/mldsa_signer_test.c test/diff_mldsa_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_MLDSA_SIGN_TEST -I. -Itest)
-	@$(call TIDY_EACH,x509_pem.c pem_files.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_SIGN_MLDSA -I.)
+	@$(call TIDY_EACH,src/mldsa_signer.c test/mldsa_signer_test.c test/diff_mldsa_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest)
+	@$(call TIDY_EACH,src/x509_pem.c src/pem_files.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_SIGN_MLDSA -Isrc -I.)
 	# The QUIC mode: its sources and its three test mains, under every
 	# check.
 	@$(call TIDY_EACH,$(QUIC_SRCS), \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I.)
 	@$(call TIDY_EACH,test/quic_driver_test.c test/quic_vectors.c \
 	  test/diff_quic_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I.)
 	# The AES implementation this build did not pick, read under the suite
 	# build's defines, the text that holds its AES-256 pair as well as the
 	# AES-128 one. The pass above already read what $(AES_IMPL) names.
-	@$(call TIDY_EACH,$(filter-out $(AES_IMPL),aes_extern.c), \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_EXTERN_SUITE_DEF) -I.)
+	@$(call TIDY_EACH,$(filter-out $(AES_IMPL),src/aes_extern.c), \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_EXTERN_SUITE_DEF) -Isrc -I.)
 	# test/aes_equiv_test.c alone: the two wrappers beside it compile a
 	# library source in under a renamed symbol, so linting them would
 	# report that source's findings a second time under a name no file
 	# on disk carries. test/aes_extern_hook.c stays out for the same
 	# reason: it compiles quic_aes_soft.c in under renamed entries.
 	@$(call TIDY_EACH,test/aes_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I.)
 	# The host object's AES (docs/decisions.md 81 and 89), in the builds of
 	# the binaries that run it, where HOST_TARGET found a host compiler:
 	# the instructions' six sources and gcm.c's arm for them, which compile
@@ -7764,11 +7764,11 @@ else
 	# test/aes_equiv_test.c does above, and test/aes_runtime_soft.c and
 	# test/aes_runtime_hw.c stay out for the same reason.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,$(filter-out $(GCM_ARM64_SRCS),$(AES_HW_SRCS)) aes.c quic_aes_soft.c gcm.c \
-	  quic_initial.c quic.c quic_config.c \
-	  srv_flight.c srv.c webpki_cfg.c test/aes_runtime_test.c test/quic_loop_test.c test/ghash_equiv_test.c, \
+	  $(call TIDY_EACH,$(filter-out $(GCM_ARM64_SRCS),$(AES_HW_SRCS)) src/aes.c src/quic_aes_soft.c src/gcm.c \
+	  src/quic_initial.c src/quic.c src/quic_config.c \
+	  src/srv_flight.c src/srv.c src/webpki_cfg.c test/aes_runtime_test.c test/quic_loop_test.c test/ghash_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI \
-	  -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest)
+	  -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -Isrc -I. -Itest)
 	# gcm_arm64.c and its EOR3 copy, read for an arm64 target whatever the
 	# host, as the x86-64 kernels are read for theirs, with
 	# portability-no-assembler off for these two files alone: their passes
@@ -7778,7 +7778,7 @@ else
 	# string.h.
 	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler $(GCM_ARM64_SRCS), \
 	  -std=c11 --target=aarch64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
-	  -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -I.)
+	  -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -Isrc -I.)
 	# The 512-bit AES-GCM kernel's equivalence test, under the defines
 	# bin/gcm_avx512_equiv_test builds with, with portability-no-assembler
 	# off for this file alone: on x86-64 it stores zmm0 to zmm31 and k1 to
@@ -7788,43 +7788,43 @@ else
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
 	  test/gcm_avx512_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(HOST_SUITE_DEF) -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(HOST_SUITE_DEF) -Isrc -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/quic_vectors.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME \
-	  $(AES_256_TEST_DEF) -I.)
+	  $(AES_256_TEST_DEF) -Isrc -I.)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/x86_kernels_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -Isrc -I. -Itest)
 	# The taint lane's two units (docs/decisions.md 155), under the defines
 	# bin/ct_taint_test builds with, less -DCH_CT_TAINT: with it each mark is
 	# a Valgrind client request, whose header the lint machine need not hold.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/ct_taint_test.c test/ct_taint_keys.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(HOST_SUITE_DEF) $(RSA_WIDE_DEF) -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(HOST_SUITE_DEF) $(RSA_WIDE_DEF) -Isrc -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,$(filter-out $(GCM_ARM64_SRCS),$(AES_HW_SRCS)) aes.c gcm.c tls.c test/webpki_loop_test.c, \
+	  $(call TIDY_EACH,$(filter-out $(GCM_ARM64_SRCS),$(AES_HW_SRCS)) src/aes.c src/gcm.c src/tls.c test/webpki_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI \
-	  -DCH_TRANSPORT_TCP_NONBLOCKING $(HOST_SUITE_DEF) -I.)
+	  -DCH_TRANSPORT_TCP_NONBLOCKING $(HOST_SUITE_DEF) -Isrc -I.)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/webpki_session_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -Isrc -I.)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/srv_flight_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER $(HOST_SUITE_DEF) -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER $(HOST_SUITE_DEF) -Isrc -I.)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/tcp_blocking_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH $(HOST_SUITE_DEF) -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH $(HOST_SUITE_DEF) -Isrc -I.)
 	# The host object's multiply (docs/decisions.md 87 and 89): the native
 	# copies, which ct.h refuses outside -DCH_CPU_RUNTIME; the answer the
 	# record directions hold, which compiles only under it; and the vector
 	# tests and the counting test, built under it. The count units stay
 	# out, for the reason test/aes_equiv_soft.c does below.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,$(WIDEMUL_COPIED:.c=_native.c) poly1305_vector_native.c record.c \
+	  $(call TIDY_EACH,$(WIDEMUL_COPIED:.c=_native.c) src/poly1305_vector_native.c src/record.c \
 	  test/widemul_runtime_test.c test/widemul_runtime_count.c test/unit_test.c test/mlkem_test.c \
 	  test/p256_ecdh_test.c test/p256_sign_test.c test/rsa_sign_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -I. -Itest)
 	# A host object (docs/decisions.md 89): the rule every init call and
 	# ch_srv_check apply to ch_cfg.cpu, which compiles only under
 	# -DCH_CPU_RUNTIME, in each role, trust mode and transport that has it,
@@ -7835,61 +7835,61 @@ else
 	# compiler that fails the host test, so the passes run only where
 	# HOST_TARGET found one.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,tls.c srv.c test/tcp_blocking_loop_test.c, \
+	  $(call TIDY_EACH,src/tls.c src/srv.c test/tcp_blocking_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER \
-	  -DCH_ROLE_BOTH -I. -Itest)
+	  -DCH_ROLE_BOTH -Isrc -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,tls.c test/webpki_session_test.c test/webpki_auth_test.c examples/webpki_client.c, \
+	  $(call TIDY_EACH,src/tls.c test/webpki_session_test.c test/webpki_auth_test.c examples/webpki_client.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI \
-	  -I. -Itest)
+	  -Isrc -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,tcp_nonblocking.c srv_tcp_nonblocking.c test/tcp_nonblocking_loop_test.c \
+	  $(call TIDY_EACH,src/tcp_nonblocking.c src/srv_tcp_nonblocking.c test/tcp_nonblocking_loop_test.c \
 	  test/lib_pair_half.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER \
-	  -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -I. -Itest)
+	  -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -Isrc -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,quic_config.c test/quic_loop_test.c, \
+	  $(call TIDY_EACH,src/quic_config.c test/quic_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER \
-	  -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. -Itest)
+	  -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -Isrc -I. -Itest)
 	# The server role gets its own pass: every declaration these files
 	# hold sits behind -DCH_ROLE_SERVER, so the pass above would read
 	# seven empty translation units.
 	@$(call TIDY_EACH,$(SRV_SRCS) test/srv_auth_test.c test/srv_test.c \
 	  test/srv_flight_test.c test/tls_server.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -Isrc -I.)
 	# The tcp-nonblocking transport's client driver, behind -DCH_TRANSPORT_TCP_NONBLOCKING,
 	# and the build record's arm for that transport.
-	@$(call TIDY_EACH,tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c build.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
+	@$(call TIDY_EACH,src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c src/build.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -I.)
 	# Each server driver with the transport it is written for. Neither
 	# reads a declaration the role pass above sets, because both sit
 	# behind a transport define as well as the role. quic_token.c, the
 	# QUIC server's Retry token, sits behind the same two defines, and so
 	# do the build record's QUIC and server arms.
-	@$(call TIDY_EACH,srv_quic.c quic_token.c build.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
-	@$(call TIDY_EACH,srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
+	@$(call TIDY_EACH,src/srv_quic.c src/quic_token.c src/build.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I.)
+	@$(call TIDY_EACH,src/srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -I.)
 	# The loopback drives both drivers, so it is the one source that needs
 	# CH_ROLE_BOTH as well: srv_cfg.h and tls.h keep the client half only
 	# under that define.
 	@$(call TIDY_EACH,test/tcp_nonblocking_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -Isrc -I.)
 	@$(call TIDY_EACH,test/tcp_nonblocking_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) -DCH_KEYLOG -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) -DCH_KEYLOG -Isrc -I.)
 	# The blocking loopback, under the ROLE=both TRANSPORT=tcp-blocking
 	# defines its object takes.
 	@$(call TIDY_EACH,test/tcp_blocking_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -Isrc -I.)
 	# The QUIC loopback, once per trust mode it is built in, because each
 	# includes a different half.
 	@$(call TIDY_EACH,test/quic_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -Isrc -I. -Itest)
 	@$(call TIDY_EACH,test/quic_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -Isrc -I. -Itest)
 	# The TRUST=webpki record loopback, under the defines its object takes.
 	@$(call TIDY_EACH,test/webpki_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI -Isrc -I.)
 	# The AES-GCM key-usage ceiling (docs/decisions.md 78): tls_write.c's
 	# KeyUpdate step and record.c's refusal compile only under
 	# -DCH_SUITE_AES_GCM, and so do the tcp-blocking loop that writes
@@ -7897,38 +7897,38 @@ else
 	# of test/diff_writable_len.h, which bin/diff_webpki_aes runs. The
 	# AES=extern defines name a suite build no instruction flag has to
 	# turn on.
-	@$(call TIDY_EACH,tls_write.c record.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_EXTERN_SUITE_DEF) -I.)
+	@$(call TIDY_EACH,src/tls_write.c src/record.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_EXTERN_SUITE_DEF) -Isrc -I.)
 	@$(call TIDY_EACH,test/tcp_blocking_key_limit_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -Isrc -I.)
 	@$(call TIDY_EACH,test/diff_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -Isrc -I.)
 	# The ticket epoch test, once per non-blocking transport it is built
 	# for, under the CA mode it refuses to build without.
 	@$(call TIDY_EACH,test/ticket_epoch_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -I.)
 	@$(call TIDY_EACH,test/ticket_epoch_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I.)
 	# The four ch_keylog call sites, which no other pass compiles: the
 	# hook exists only under CH_KEYLOG, and keylog.h refuses that define
 	# without a server role, so this pass names ROLE=both's pair.
-	@$(call TIDY_EACH,handshake_flight.c srv_flight.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_KEYLOG -I.)
+	@$(call TIDY_EACH,src/handshake_flight.c src/srv_flight.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_KEYLOG -Isrc -I.)
 	# SHA-384 in the key schedule, behind -DCH_HASH_SHA384: hmac_sha384,
 	# the dispatcher's second arm and keysched.c's SHA-384 constants and
 	# context hash compile only there, and so do the SHA-384 rows of the
 	# differential and test/hkdf384_test.c. The exporter's defines ride
 	# along, so ks_exporter's SHA-384 arm is read too.
-	@$(call TIDY_EACH,hkdf.c keysched.c test/hkdf384_test.c test/diff_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_HASH_SHA384 $(EXPORTER_DEF) -I.)
+	@$(call TIDY_EACH,src/hkdf.c src/keysched.c test/hkdf384_test.c test/diff_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_HASH_SHA384 $(EXPORTER_DEF) -Isrc -I.)
 	# The exporter, behind its own axis: without these defines tls.h
 	# declares no ch_export and keysched.h no ks_exporter, so this pass
 	# would read a file with nothing in it.
-	@$(call TIDY_EACH,test/exporter_test.c tls.c keysched.c hkdf.c \
-	  handshake_flight.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -I.)
-	@$(call TIDY_EACH,srv_flight.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -I.)
+	@$(call TIDY_EACH,test/exporter_test.c src/tls.c src/keysched.c src/hkdf.c \
+	  src/handshake_flight.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -Isrc -I.)
+	@$(call TIDY_EACH,src/srv_flight.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -Isrc -I.)
 	# test/lib_pair_half.c, under the defines of the objects
 	# test/lib-pair-check.sh compiles it for. The first pass above reads
 	# its TRANSPORT=tcp-blocking client; these read the tcp-nonblocking client with the
@@ -7936,15 +7936,15 @@ else
 	# and the boot check, and the two server-only drivers. The last reads
 	# the image's key log hook, which only a KEYLOG=on pair compiles.
 	@$(call TIDY_EACH,test/lib_pair_half.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -I.)
 	@$(call TIDY_EACH,test/lib_pair_half.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_ROLE_SERVER -DCH_ROLE_BOTH -Isrc -I.)
 	@$(call TIDY_EACH,test/lib_pair_half.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -I.)
 	@$(call TIDY_EACH,test/lib_pair_half.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I.)
 	@$(call TIDY_EACH,test/lib_pair_main.c, \
-	  -std=c11 -D_DEFAULT_SOURCE -DLIB_PAIR_TCP_BLOCKING -DLIB_PAIR_TCP_NONBLOCKING -DLIB_PAIR_QUIC_NONBLOCKING -DLIB_PAIR_KEYLOG -I.)
+	  -std=c11 -D_DEFAULT_SOURCE -DLIB_PAIR_TCP_BLOCKING -DLIB_PAIR_TCP_NONBLOCKING -DLIB_PAIR_QUIC_NONBLOCKING -DLIB_PAIR_KEYLOG -Isrc -I.)
 	# The M3 smoke runtimes and the KAT program lint with the target's
 	# own flags. Three checks are off, each with its reason:
 	# bugprone-reserved-identifier and its two cert aliases, because the
@@ -7957,9 +7957,9 @@ else
 	# headers, so freertos-check lints them (test/platforms.mk).
 	@$(call TIDY_EACH,--tidy-arg --checks=$(QEMU_TIDY_CHECKS) \
 	  test/qemu/m3_runtime.c test/qemu/m3_start.c test/qemu/m3_kat.c, \
-	  -std=c11 --target=armv7m-none-eabi -ffreestanding -DCH_RAND_EXTERN -I. -Itest/qemu)
+	  -std=c11 --target=armv7m-none-eabi -ffreestanding -DCH_RAND_EXTERN -Isrc -I. -Itest/qemu)
 	# The host half of the KAT diff is ordinary hosted C; no checks off.
-	@$(call TIDY_EACH,test/qemu/host_runtime.c,-std=c11 -D_DEFAULT_SOURCE -I. -Itest/qemu)
+	@$(call TIDY_EACH,test/qemu/host_runtime.c,-std=c11 -D_DEFAULT_SOURCE -Isrc -I. -Itest/qemu)
 	# Every pass above wrote one line; this checks them all from one pool.
 	+@CLANG_TIDY='$(CLANG_TIDY)' CLANG='$(CLANG_RV)' LINT_JOBS=$(LINT_JOBS) \
 	  python3 tools/tidy-each.py --passes $(TIDY_PASSES)
@@ -8047,11 +8047,11 @@ endif
 CPPCHECK_FLAGS := --std=c11 --enable=warning,style,performance,portability \
   --inline-suppr --suppress=missingIncludeSystem \
   --suppress=constParameterCallback --suppress=shiftTooManyBitsSigned \
-  --suppress=shiftNegativeLHS:ct.h \
+  --suppress=shiftNegativeLHS:src/ct.h \
   $(HOST_RAND_DEF) -UCH_MLKEM_1024 -UCH_PROFILE_CNSA2 -UCH_PIN_MLDSA --force --error-exitcode=1 --quiet
 # ML-KEM-1024's sources and the tests that build it, in one set's
 # configuration: the files stop at an #error without the define.
-MLKEM1024_CPPCHECK_C := mlkem.c mlkem_poly.c test/mlkem_test.c test/diff_mlkem1024_test.c \
+MLKEM1024_CPPCHECK_C := src/mlkem.c src/mlkem_poly.c test/mlkem_test.c test/diff_mlkem1024_test.c \
   test/wycheproof_mlkem1024_test.c
 # A host object's native copies, and the units that compile them again
 # under counted names, define CH_WIDEMUL_NATIVE_COPY, which ct.h refuses
@@ -8075,11 +8075,11 @@ MLKEM1024_CPPCHECK_C := mlkem.c mlkem_poly.c test/mlkem_test.c test/diff_mlkem10
 # build directory, though not on its first.
 WIDEMUL_NATIVE_COPY_DEFS := -DCH_CPU_RUNTIME -D__x86_64__ -D__SIZEOF_INT128__=16 -D__SSE2__ \
                             -D__BYTE_ORDER__=__ORDER_LITTLE_ENDIAN__
-WIDEMUL_NATIVE_COPY_C := poly1305_native.c mlkem_poly_native.c \
-                         poly1305_vector_native.c poly1305_avx2_native.c poly1305_ifma_native.c \
+WIDEMUL_NATIVE_COPY_C := src/poly1305_native.c src/mlkem_poly_native.c \
+                         src/poly1305_vector_native.c src/poly1305_avx2_native.c src/poly1305_ifma_native.c \
                          test/widemul_count_native.c test/widemul_count_native_vector.c \
                          test/widemul_count_native_avx2.c \
-                         hkdf_hw.c keysched_hw.c
+                         src/hkdf_hw.c src/keysched_hw.c
 # PROFILE=cnsa2's sources and its two test mains, in the profile's
 # configuration, which the base run leaves out (-U): the profile builds
 # ML-KEM-1024, and its test mains stop at an #error without the define.
@@ -8087,13 +8087,13 @@ WIDEMUL_NATIVE_COPY_C := poly1305_native.c mlkem_poly_native.c \
 # hsf_derive_handshake_secrets refuses a key exchange whose x25519 step
 # fails, and the profile runs no x25519, so in this configuration the
 # refusal's condition is always false. The base run keeps the check there.
-CNSA2_CPPCHECK_C := tls.c handshake_message.c handshake_parser.c handshake_flight.c handshake_record.c \
-  quic_config.c mlkem.c mlkem_poly.c test/cnsa2_test.c test/cnsa2_quic_test.c
+CNSA2_CPPCHECK_C := src/tls.c src/handshake_message.c src/handshake_parser.c src/handshake_flight.c src/handshake_record.c \
+  src/quic_config.c src/mlkem.c src/mlkem_poly.c test/cnsa2_test.c test/cnsa2_quic_test.c
 # The two ML-DSA-87 trust modes, which build under the profile alone
 # (docs/decisions.md 157): the sources whose arms CH_PIN_MLDSA picks, and
 # the test mains, in the CA mode's configuration, which --force reads
 # with the raw arms as well.
-MLDSA_CPPCHECK_C := tls.c handshake_auth.c x509.c x509_der.c x509_ca.c quic_config.c test/cnsa2_test.c \
+MLDSA_CPPCHECK_C := src/tls.c src/handshake_auth.c src/x509.c src/x509_der.c src/x509_ca.c src/quic_config.c test/cnsa2_test.c \
   test/cnsa2_quic_test.c test/x509_mldsa_test.c test/diff_x509_mldsa_test.c
 CPPCHECK_C = $(filter-out $(WIDEMUL_NATIVE_COPY_C) test/cnsa2_test.c test/cnsa2_quic_test.c \
   test/x509_mldsa_test.c test/diff_x509_mldsa_test.c,$(LINT_C))
@@ -8118,7 +8118,7 @@ lint-cppcheck-run:
 	  | $(SHA256) | cut -c1-16); \
 	mkdir -p $$build; \
 	$(CPPCHECK) $(filter-out -UCH_MLKEM_1024 -UCH_PROFILE_CNSA2,$(CPPCHECK_FLAGS)) $(CNSA2_DEF) -Itest \
-	  --suppress=knownConditionTrueFalse:handshake_flight.c \
+	  --suppress=knownConditionTrueFalse:src/handshake_flight.c \
 	  --cppcheck-build-dir=$$build -j$(LINT_JOBS) --relative-paths=$(CURDIR) \
 	  $(addprefix $(CURDIR)/,$(CNSA2_CPPCHECK_C))
 	@build=bin/cppcheck/$$(printf '%s\n' '$(CPPCHECK_FLAGS) $(CNSA2_DEF) -DCH_PIN_MLDSA $(MLDSA_CPPCHECK_C)' \
@@ -8180,10 +8180,10 @@ EXAMPLE_PSK := bin/obj/$(LIB_VARIANT)/example_psk
 EXAMPLE_PINNED := bin/obj/$(LIB_VARIANT)/example_pinned
 
 $(EXAMPLE_PSK): examples/psk_client.c $(LIB_OBJ) $(LIB_HEADER)
-	$(CC) $(CFLAGS) -I. -include $(LIB_HEADER) -o $@ examples/psk_client.c $(LIB_OBJ)
+	$(CC) $(CFLAGS) -Isrc -I. -include $(LIB_HEADER) -o $@ examples/psk_client.c $(LIB_OBJ)
 
 $(EXAMPLE_PINNED): examples/pinned_client.c $(LIB_OBJ) $(LIB_HEADER)
-	$(CC) $(CFLAGS) -I. -include $(LIB_HEADER) -o $@ examples/pinned_client.c $(LIB_OBJ)
+	$(CC) $(CFLAGS) -Isrc -I. -include $(LIB_HEADER) -o $@ examples/pinned_client.c $(LIB_OBJ)
 
 # Phony on purpose: the file at each path is whichever variant was copied
 # there last, so the copy runs on every invocation instead of when make
@@ -8201,7 +8201,7 @@ bin/example_pinned: $(EXAMPLE_PINNED)
 # the sources rather than the packaged raw-pin object.
 bin/example_ca: examples/ca_client.c $(SRCS) $(HDRS)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ examples/ca_client.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -Isrc -I. -o $@ examples/ca_client.c $(SRCS)
 
 # The web PKI example needs the TRUST=webpki library, so it links its own
 # copy of the sources that object packages, under that object's defines:
@@ -8211,7 +8211,7 @@ bin/example_ca: examples/ca_client.c $(SRCS) $(HDRS)
 EXAMPLE_WEBPKI_SRCS := $(if $(HOST_TARGET),$(call host_srcs,$(WEBPKI_TEST_SRCS)),$(WEBPKI_TEST_SRCS))
 bin/example_webpki: examples/webpki_client.c $(EXAMPLE_WEBPKI_SRCS) $(HDRS)
 	@mkdir -p bin
-	$(CC) $(if $(HOST_TARGET),$(HOST_CFLAGS) -DCH_CPU_RUNTIME,$(CFLAGS)) -DCH_TRUST_WEBPKI -I. -o $@ \
+	$(CC) $(if $(HOST_TARGET),$(HOST_CFLAGS) -DCH_CPU_RUNTIME,$(CFLAGS)) -DCH_TRUST_WEBPKI -Isrc -I. -o $@ \
 	  examples/webpki_client.c $(EXAMPLE_WEBPKI_SRCS)
 
 .PHONY: examples-check
@@ -8511,21 +8511,21 @@ lint-impact:
 # lowering is a compiler choice, and zero cannot be undershot, so every
 # other module is held exactly. The divisions take a count and a ceiling of
 # their own, DIVIDE_CEILING below.
-WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
-                   x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
-                   session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_parser_ee.c:0 handshake_record.c:0 \
-                   handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
-                   tls.c:0 tls_write.c:0 drbg.c:0 softmul.c:0 tcp_nonblocking.c:0 tcp_nonblocking_frame.c:0 \
-                   tcp_nonblocking_step.c:0 \
-                   quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
-                   quic_fail.c:0 srv_quic.c:0 quic_token.c:0 srv_tcp_nonblocking.c:0 \
-                   aes.c:0 quic_aes_soft.c:0 aes_extern.c:0 gcm.c:0 \
-                   srv_parser.c:0 srv_parser_ext.c:0 srv_message.c:0 srv_cookie.c:0 \
-                   srv_ticket.c:0 srv_resume.c:0 srv_kex.c:0 \
-                   srv_auth.c:0 srv_mldsa.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
-                   p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0 webpki_ticket.c:0 \
-                   sha512.c:0 sha512_compress.c:0 handshake_groups.c:0 \
-                   pem.c:0 base64.c:0 x509_pem.c:0 pem_files.c:0 $(addsuffix :0,$(MLDSA_SIGN_SRCS))
+WIDEMUL_CEILING := src/ct.c:0 src/ct_wipe.c:0 src/sha256.c:0 src/sha3.c:0 src/hkdf.c:0 src/chacha20.c:0 src/poly1305.c:0 src/aead.c:0 \
+                   src/x25519.c:0 src/p256_field.c:0 src/mlkem.c:0 src/mlkem_poly.c:0 src/buf.c:0 src/record.c:0 src/keysched.c:0 src/io.c:0 \
+                   src/session.c:0 src/handshake_message.c:0 src/handshake_parser.c:0 src/handshake_parser_ee.c:0 src/handshake_record.c:0 \
+                   src/handshake_auth.c:0 src/handshake_flight.c:0 src/handshake.c:0 src/handshake_post.c:0 \
+                   src/tls.c:0 src/tls_write.c:0 src/drbg.c:0 src/softmul.c:0 src/tcp_nonblocking.c:0 src/tcp_nonblocking_frame.c:0 \
+                   src/tcp_nonblocking_step.c:0 \
+                   src/quic_keys.c:0 src/quic_packet.c:0 src/quic_config.c:0 src/quic_step.c:0 src/quic.c:0 \
+                   src/quic_fail.c:0 src/srv_quic.c:0 src/quic_token.c:0 src/srv_tcp_nonblocking.c:0 \
+                   src/aes.c:0 src/quic_aes_soft.c:0 src/aes_extern.c:0 src/gcm.c:0 \
+                   src/srv_parser.c:0 src/srv_parser_ext.c:0 src/srv_message.c:0 src/srv_cookie.c:0 \
+                   src/srv_ticket.c:0 src/srv_resume.c:0 src/srv_kex.c:0 \
+                   src/srv_auth.c:0 src/srv_mldsa.c:0 src/srv_out.c:0 src/srv_flight.c:0 src/srv_handshake.c:0 src/srv.c:0 src/rsa_sign.c:0 \
+                   src/p256_scalar.c:0 src/p256_point.c:0 src/p256_sign.c:0 src/p256_ecdh.c:0 src/webpki_ticket.c:0 \
+                   src/sha512.c:0 src/sha512_compress.c:0 src/handshake_groups.c:0 \
+                   src/pem.c:0 src/base64.c:0 src/x509_pem.c:0 src/pem_files.c:0 $(addsuffix :0,$(MLDSA_SIGN_SRCS))
 # The wide X25519 field, x25519_wide.c, is one of three secret-bearing sources
 # no spec in WIDEMUL_SPECS can compile: its products are unsigned __int128,
 # which no 32-bit target has, and it compiles only in a host object, which
@@ -8633,16 +8633,16 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # bin/gcm_avx512_equiv_test, bin/quic_test_hw and the host Wycheproof test
 # hold their bytes. None of these measures timing (docs/quic.md, "What the
 # AES axis proves").
-WIDE64_CEILING := x25519_wide.c:0 x25519_adx.c:0 rsa_mont64_adx.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20_avx512.c:0 \
-                  poly1305_vector.c:0 \
-                  poly1305_avx2.c:0 poly1305_native.c:0 mlkem_poly_native.c:0 \
-                  poly1305_vector_native.c:0 poly1305_avx2_native.c:0 poly1305_ifma.c:0 \
-                  poly1305_ifma_native.c:0 sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 \
-                  rsa_mont64_blocks.c:0 rsa_mont64_addcarry.c:0 rsa_sign64.c:0 rsa_sign64_wipe.c:0 rsa_ifma.c:0 rsa_ifma_sign.c:0 \
-                  rsa_avx2.c:0 \
-                  sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 mldsa_vector.c:0 \
-                  keccak_avx2.c:0 mlkem_avx2.c:0 mldsa_avx2.c:0 avx512_wipe.c:0 sha512_compress_blocks.c:0 \
-                  sha512_avx2.c:0 $(addsuffix :0,$(AES_HW_SRCS)) \
+WIDE64_CEILING := src/x25519_wide.c:0 src/x25519_adx.c:0 src/rsa_mont64_adx.c:0 src/chacha20_vector.c:0 src/chacha20_avx2.c:0 src/chacha20_avx512.c:0 \
+                  src/poly1305_vector.c:0 \
+                  src/poly1305_avx2.c:0 src/poly1305_native.c:0 src/mlkem_poly_native.c:0 \
+                  src/poly1305_vector_native.c:0 src/poly1305_avx2_native.c:0 src/poly1305_ifma.c:0 \
+                  src/poly1305_ifma_native.c:0 src/sha256_hw.c:0 src/sha512_hw.c:0 src/hkdf_hw.c:0 src/keysched_hw.c:0 src/rsa_mont64.c:0 \
+                  src/rsa_mont64_blocks.c:0 src/rsa_mont64_addcarry.c:0 src/rsa_sign64.c:0 src/rsa_sign64_wipe.c:0 src/rsa_ifma.c:0 src/rsa_ifma_sign.c:0 \
+                  src/rsa_avx2.c:0 \
+                  src/sha3_hw.c:0 src/mlkem_hw.c:0 src/mlkem_poly_hw.c:0 src/mlkem_vector.c:0 src/mldsa_vector.c:0 \
+                  src/keccak_avx2.c:0 src/mlkem_avx2.c:0 src/mldsa_avx2.c:0 src/avx512_wipe.c:0 src/sha512_compress_blocks.c:0 \
+                  src/sha512_avx2.c:0 $(addsuffix :0,$(AES_HW_SRCS)) \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
 # Files the two 64-bit specs compile once more under other defines, each
 # entry name:ceiling, whose name is a file, an @ and a tag.
@@ -8681,10 +8681,10 @@ WIDE64_CEILING := x25519_wide.c:0 x25519_adx.c:0 rsa_mont64_adx.c:0 chacha20_vec
 # name. sha512_compress.c has no entry since docs/decisions.md 127: a
 # host object compiles sha512_compress_blocks.c in its place, which
 # WIDE64_CEILING holds.
-WIDE64_HOST_COPIES := x25519.c mlkem_poly.c ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c \
-                      poly1305.c aead.c mlkem.c drbg.c rsa_sign.c aes.c gcm.c p256_field.c \
-                      p256_scalar.c sha512.c quic_packet.c base64.c $(MLDSA_SIGN_SRCS)
-WIDE64_REBUILT := rsa_ifma.c@512:0 rsa_ifma_sign.c@512:0 rsa_avx2.c@512:0 rsa_sign64.c@512:0 \
+WIDE64_HOST_COPIES := src/x25519.c src/mlkem_poly.c src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/chacha20.c \
+                      src/poly1305.c src/aead.c src/mlkem.c src/drbg.c src/rsa_sign.c src/aes.c src/gcm.c src/p256_field.c \
+                      src/p256_scalar.c src/sha512.c src/quic_packet.c src/base64.c $(MLDSA_SIGN_SRCS)
+WIDE64_REBUILT := src/rsa_ifma.c@512:0 src/rsa_ifma_sign.c@512:0 src/rsa_avx2.c@512:0 src/rsa_sign64.c@512:0 \
                   $(addsuffix @host:0,$(WIDE64_HOST_COPIES))
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
@@ -8733,72 +8733,72 @@ WIDE64_HOST_AES_DEFINES := -DCH_CPU_RUNTIME$(COMMA)-DCH_TRANSPORT_QUIC_NONBLOCKI
 # client offers both groups in every build (docs/decisions.md 53). The server
 # entries need no such flag. -DCH_KEX_PQ chooses a client's group, and a
 # server source holds both groups whatever it says (docs/decisions.md 54).
-WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
-                   quic_config.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_step.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
-                   quic.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_fail.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
-                   srv_quic.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC_NONBLOCKING \
-                   quic_token.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC_NONBLOCKING \
-                   aes.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_aes_soft.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
-                   aes_extern.c:$(AES_EXTERN_SUITE_ENTRY) \
-                   gcm.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
-                   srv_parser.c:-DCH_ROLE_SERVER srv_parser_ext.c:-DCH_ROLE_SERVER \
-                   srv_message.c:-DCH_ROLE_SERVER \
-                   srv_cookie.c:-DCH_ROLE_SERVER srv_auth.c:-DCH_ROLE_SERVER \
-                   srv_ticket.c:-DCH_ROLE_SERVER \
-                   srv_resume.c:-DCH_ROLE_SERVER srv_out.c:-DCH_ROLE_SERVER \
-                   srv_kex.c:-DCH_ROLE_SERVER srv_flight.c:-DCH_ROLE_SERVER \
-                   srv_handshake.c:-DCH_ROLE_SERVER \
-                   srv.c:-DCH_ROLE_SERVER webpki_ticket.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
-                   hkdf.c:-DCH_HASH_SHA384 keysched.c:-DCH_HASH_SHA384 \
-                   handshake_groups.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
-                   chacha20_vector.c:-DCH_CPU_RUNTIME chacha20_avx2.c:-DCH_CPU_RUNTIME \
-                   chacha20_avx512.c:-DCH_CPU_RUNTIME \
-                   poly1305_vector.c:-DCH_CPU_RUNTIME poly1305_avx2.c:-DCH_CPU_RUNTIME \
-                   poly1305_ifma.c:-DCH_CPU_RUNTIME \
-                   x25519_wide.c:-DCH_CPU_RUNTIME x25519_adx.c:-DCH_CPU_RUNTIME rsa_mont64_adx.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME rsa_mont64_blocks.c:-DCH_CPU_RUNTIME \
-                   rsa_mont64_addcarry.c:-DCH_CPU_RUNTIME$(COMMA)-DRSA_MONT64_ADDCARRY=1$(COMMA)-DRSA_MONT64_BLOCKS=0 \
+WIDEMUL_DEFINES := src/quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_packet.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   src/quic_config.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_step.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   src/quic.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_fail.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   src/srv_quic.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   src/quic_token.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   src/aes.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_aes_soft.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   src/aes_extern.c:$(AES_EXTERN_SUITE_ENTRY) \
+                   src/gcm.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   src/srv_parser.c:-DCH_ROLE_SERVER src/srv_parser_ext.c:-DCH_ROLE_SERVER \
+                   src/srv_message.c:-DCH_ROLE_SERVER \
+                   src/srv_cookie.c:-DCH_ROLE_SERVER src/srv_auth.c:-DCH_ROLE_SERVER \
+                   src/srv_ticket.c:-DCH_ROLE_SERVER \
+                   src/srv_resume.c:-DCH_ROLE_SERVER src/srv_out.c:-DCH_ROLE_SERVER \
+                   src/srv_kex.c:-DCH_ROLE_SERVER src/srv_flight.c:-DCH_ROLE_SERVER \
+                   src/srv_handshake.c:-DCH_ROLE_SERVER \
+                   src/srv.c:-DCH_ROLE_SERVER src/webpki_ticket.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
+                   src/hkdf.c:-DCH_HASH_SHA384 src/keysched.c:-DCH_HASH_SHA384 \
+                   src/handshake_groups.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
+                   src/chacha20_vector.c:-DCH_CPU_RUNTIME src/chacha20_avx2.c:-DCH_CPU_RUNTIME \
+                   src/chacha20_avx512.c:-DCH_CPU_RUNTIME \
+                   src/poly1305_vector.c:-DCH_CPU_RUNTIME src/poly1305_avx2.c:-DCH_CPU_RUNTIME \
+                   src/poly1305_ifma.c:-DCH_CPU_RUNTIME \
+                   src/x25519_wide.c:-DCH_CPU_RUNTIME src/x25519_adx.c:-DCH_CPU_RUNTIME src/rsa_mont64_adx.c:-DCH_CPU_RUNTIME src/rsa_mont64.c:-DCH_CPU_RUNTIME src/rsa_mont64_blocks.c:-DCH_CPU_RUNTIME \
+                   src/rsa_mont64_addcarry.c:-DCH_CPU_RUNTIME$(COMMA)-DRSA_MONT64_ADDCARRY=1$(COMMA)-DRSA_MONT64_BLOCKS=0 \
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
-                   rsa_sign64.c:-DCH_CPU_RUNTIME rsa_sign64_wipe.c:-DCH_CPU_RUNTIME rsa_ifma.c:-DCH_CPU_RUNTIME \
-                   avx512_wipe.c:-DCH_CPU_RUNTIME \
-                   rsa_avx2.c:-DCH_CPU_RUNTIME rsa_avx2.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
-                   rsa_ifma.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
-                   rsa_ifma_sign.c:-DCH_CPU_RUNTIME \
-                   rsa_ifma_sign.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
-                   rsa_sign64.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
-                   $(addsuffix @host:-DCH_CPU_RUNTIME,$(filter-out hkdf.c aes.c gcm.c quic_packet.c,$(WIDE64_HOST_COPIES))) \
-                   hkdf.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
-                   aes.c@host:$(WIDE64_HOST_AES_DEFINES) gcm.c@host:$(WIDE64_HOST_AES_DEFINES) \
-                   quic_packet.c@host:$(WIDE64_HOST_AES_DEFINES) \
+                   src/rsa_sign64.c:-DCH_CPU_RUNTIME src/rsa_sign64_wipe.c:-DCH_CPU_RUNTIME src/rsa_ifma.c:-DCH_CPU_RUNTIME \
+                   src/avx512_wipe.c:-DCH_CPU_RUNTIME \
+                   src/rsa_avx2.c:-DCH_CPU_RUNTIME src/rsa_avx2.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
+                   src/rsa_ifma.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
+                   src/rsa_ifma_sign.c:-DCH_CPU_RUNTIME \
+                   src/rsa_ifma_sign.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
+                   src/rsa_sign64.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
+                   $(addsuffix @host:-DCH_CPU_RUNTIME,$(filter-out src/hkdf.c src/aes.c src/gcm.c src/quic_packet.c,$(WIDE64_HOST_COPIES))) \
+                   src/hkdf.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
+                   src/aes.c@host:$(WIDE64_HOST_AES_DEFINES) src/gcm.c@host:$(WIDE64_HOST_AES_DEFINES) \
+                   src/quic_packet.c@host:$(WIDE64_HOST_AES_DEFINES) \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
-                   poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
-                   poly1305_avx2_native.c:$(WIDEMUL_NATIVE_DEFINES) \
-                   poly1305_ifma_native.c:$(WIDEMUL_NATIVE_DEFINES) \
-                   sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME \
-                   sha512_avx2.c:-DCH_CPU_RUNTIME \
-                   sha512_compress_blocks.c:-DCH_CPU_RUNTIME \
-                   sha3_hw.c:-DCH_CPU_RUNTIME mlkem_hw.c:-DCH_CPU_RUNTIME mlkem_poly_hw.c:-DCH_CPU_RUNTIME \
-                   keccak_avx2.c:-DCH_CPU_RUNTIME mlkem_avx2.c:-DCH_CPU_RUNTIME mldsa_avx2.c:-DCH_CPU_RUNTIME \
-                   mlkem_vector.c:-DCH_CPU_RUNTIME mldsa_vector.c:-DCH_CPU_RUNTIME \
-                   hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
-                   keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
-                   pem_files.c:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
+                   src/poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
+                   src/poly1305_avx2_native.c:$(WIDEMUL_NATIVE_DEFINES) \
+                   src/poly1305_ifma_native.c:$(WIDEMUL_NATIVE_DEFINES) \
+                   src/sha256_hw.c:-DCH_CPU_RUNTIME src/sha512_hw.c:-DCH_CPU_RUNTIME \
+                   src/sha512_avx2.c:-DCH_CPU_RUNTIME \
+                   src/sha512_compress_blocks.c:-DCH_CPU_RUNTIME \
+                   src/sha3_hw.c:-DCH_CPU_RUNTIME src/mlkem_hw.c:-DCH_CPU_RUNTIME src/mlkem_poly_hw.c:-DCH_CPU_RUNTIME \
+                   src/keccak_avx2.c:-DCH_CPU_RUNTIME src/mlkem_avx2.c:-DCH_CPU_RUNTIME src/mldsa_avx2.c:-DCH_CPU_RUNTIME \
+                   src/mlkem_vector.c:-DCH_CPU_RUNTIME src/mldsa_vector.c:-DCH_CPU_RUNTIME \
+                   src/hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
+                   src/keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
+                   src/pem_files.c:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    $(addsuffix :$(WIDE64_HOST_AES_DEFINES),$(AES_HW_SRCS))
-WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c rsa_mont64_exp.c dnssec.c sha1.c pem_blocks.c x509.c x509_der.c x509_ca.c \
-                  p384.c p384_field.c $(P384_WIDE_SRCS) rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c \
-                  webpki_sigalg.c \
-                  webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
-                  quic_initial.c quic_retry.c build.c $(MLDSA_SRCS)
+WIDEMUL_PUBLIC := src/p256.c src/rsa.c src/rsa_mont.c src/rsa_mont64_exp.c src/dnssec.c src/sha1.c src/pem_blocks.c src/x509.c src/x509_der.c src/x509_ca.c \
+                  src/p384.c src/p384_field.c $(P384_WIDE_SRCS) src/rsa_pkcs1.c src/webpki_time.c src/webpki_name.c src/webpki_spki.c \
+                  src/webpki_sigalg.c \
+                  src/webpki_ext.c src/webpki_cert.c src/webpki.c src/webpki_pin.c src/webpki_cfg.c \
+                  src/quic_initial.c src/quic_retry.c src/build.c $(MLDSA_SRCS)
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather
-# than through SRCS, and every library source is a root file whichever
+# than through SRCS, and every library source sits in src/ whichever
 # build variable lists it, so git's view is the one no Makefile list can
 # fall behind (SH_SRCS is the precedent). $(SRCS) stays in the union so a
 # file listed before it is tracked fails here rather than on CI.
 .PHONY: lint-codegen-partition
 lint-codegen-partition:
 	@rc=0; \
-	 srcs=" $$({ printf '%s\n' $(SRCS) drbg.c; git ls-files '*.c' | grep -v /; } | sort -u | tr '\n' ' ')"; \
+	 srcs=" $$({ printf '%s\n' $(SRCS) src/drbg.c; git ls-files 'src/*.c'; } | sort -u | tr '\n' ' ')"; \
 	 for f in $$srcs; do \
 	   gated=0; public=0; \
 	   for g in $(CODEGEN_SRCS); do [ "$$g" = "$$f" ] && gated=1; done; \
@@ -9419,12 +9419,12 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # p256_scalar_inverse, whose exponent n-2 is a build constant, the same
 # shape as p256_field.c's.
 WIDEMUL_NATIVE_BRANCH_CEILING := \
-  arm64/poly1305_native.c:22 arm64/mlkem_poly_native.c:53 \
-  x86-64/poly1305_native.c:22 \
-  x86-64/mlkem_poly_native.c:54 \
-  arm64/poly1305_vector_native.c:4 x86-64/poly1305_vector_native.c:4 \
-  arm64/poly1305_avx2_native.c:0 x86-64/poly1305_avx2_native.c:4 \
-  arm64/poly1305_ifma_native.c:0 x86-64/poly1305_ifma_native.c:4
+  arm64/src/poly1305_native.c:22 arm64/src/mlkem_poly_native.c:53 \
+  x86-64/src/poly1305_native.c:22 \
+  x86-64/src/mlkem_poly_native.c:54 \
+  arm64/src/poly1305_vector_native.c:4 x86-64/src/poly1305_vector_native.c:4 \
+  arm64/src/poly1305_avx2_native.c:0 x86-64/src/poly1305_avx2_native.c:4 \
+  arm64/src/poly1305_ifma_native.c:0 x86-64/src/poly1305_ifma_native.c:4
 # A host object's hash sources on the CPU's instructions (docs/decisions.md
 # 93 and 99), under the two 64-bit specs, which are the targets they run
 # on. sha3_hw.c, mlkem_hw.c and mlkem_poly_hw.c have no body on x86-64.
@@ -9436,12 +9436,12 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
 # plain C that every session of a host object runs (docs/decisions.md
 # 127): only a host object compiles it, so only these two specs read it.
 HASH_HW_BRANCH_CEILING := \
-  arm64/sha256_hw.c:6 x86-64/sha256_hw.c:10 arm64/hkdf_hw.c:19 x86-64/hkdf_hw.c:19 \
-  arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:17 x86-64/sha512_hw.c:13 \
-  arm64/sha3_hw.c:72 x86-64/sha3_hw.c:0 arm64/mlkem_hw.c:11 x86-64/mlkem_hw.c:0 \
-  arm64/mlkem_poly_hw.c:49 x86-64/mlkem_poly_hw.c:0 \
-  arm64/sha512_compress_blocks.c:3 x86-64/sha512_compress_blocks.c:3 \
-  arm64/sha512_avx2.c:0 x86-64/sha512_avx2.c:3
+  arm64/src/sha256_hw.c:6 x86-64/src/sha256_hw.c:10 arm64/src/hkdf_hw.c:19 x86-64/src/hkdf_hw.c:19 \
+  arm64/src/keysched_hw.c:0 x86-64/src/keysched_hw.c:0 arm64/src/sha512_hw.c:17 x86-64/src/sha512_hw.c:13 \
+  arm64/src/sha3_hw.c:72 x86-64/src/sha3_hw.c:0 arm64/src/mlkem_hw.c:11 x86-64/src/mlkem_hw.c:0 \
+  arm64/src/mlkem_poly_hw.c:49 x86-64/src/mlkem_poly_hw.c:0 \
+  arm64/src/sha512_compress_blocks.c:3 x86-64/src/sha512_compress_blocks.c:3 \
+  arm64/src/sha512_avx2.c:0 x86-64/src/sha512_avx2.c:3
 # The wide P-256 files, under the two 64-bit specs alone, for the reason
 # WIDE64_CEILING gives. The counts are the same on both specs, and the
 # comment above WIDE64_SPECS says what each file's branches read. Every one
@@ -9450,51 +9450,51 @@ HASH_HW_BRANCH_CEILING := \
 # p256_wide_verify_point.c's are the verifier's, which is variable time on
 # purpose (docs/decisions.md 96 and 104).
 P256_WIDE_BRANCH_CEILING := \
-  arm64/p256_wide_field.c:0 x86-64/p256_wide_field.c:0 \
-  arm64/p256_wide_scalar.c:0 x86-64/p256_wide_scalar.c:0 \
-  arm64/p256_wide_inverse.c:3 x86-64/p256_wide_inverse.c:3 \
-  arm64/p256_wide_point.c:3 x86-64/p256_wide_point.c:3 \
-  arm64/p256_wide_mul.c:14 x86-64/p256_wide_mul.c:14 \
-  arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
-  arm64/p256_wide_wipe.c:0 x86-64/p256_wide_wipe.c:0 \
-  arm64/p256_wide_verify.c:6 x86-64/p256_wide_verify.c:6 \
-  arm64/p256_wide_verify_point.c:30 x86-64/p256_wide_verify_point.c:30 \
-  arm64/p256_adx_field.c:0 x86-64/p256_adx_field.c:0 arm64/p256_adx_point.c:0 \
-  x86-64/p256_adx_point.c:3 arm64/p256_adx_mul.c:0 x86-64/p256_adx_mul.c:14 \
-  arm64/p256_adx_verify_point.c:0 x86-64/p256_adx_verify_point.c:30 arm64/p256_adx_verify.c:0 \
-  x86-64/p256_adx_verify.c:6
+  arm64/src/p256_wide_field.c:0 x86-64/src/p256_wide_field.c:0 \
+  arm64/src/p256_wide_scalar.c:0 x86-64/src/p256_wide_scalar.c:0 \
+  arm64/src/p256_wide_inverse.c:3 x86-64/src/p256_wide_inverse.c:3 \
+  arm64/src/p256_wide_point.c:3 x86-64/src/p256_wide_point.c:3 \
+  arm64/src/p256_wide_mul.c:14 x86-64/src/p256_wide_mul.c:14 \
+  arm64/src/p256_wide_table.c:0 x86-64/src/p256_wide_table.c:0 \
+  arm64/src/p256_wide_wipe.c:0 x86-64/src/p256_wide_wipe.c:0 \
+  arm64/src/p256_wide_verify.c:6 x86-64/src/p256_wide_verify.c:6 \
+  arm64/src/p256_wide_verify_point.c:30 x86-64/src/p256_wide_verify_point.c:30 \
+  arm64/src/p256_adx_field.c:0 x86-64/src/p256_adx_field.c:0 arm64/src/p256_adx_point.c:0 \
+  x86-64/src/p256_adx_point.c:3 arm64/src/p256_adx_mul.c:0 x86-64/src/p256_adx_mul.c:14 \
+  arm64/src/p256_adx_verify_point.c:0 x86-64/src/p256_adx_verify_point.c:30 arm64/src/p256_adx_verify.c:0 \
+  x86-64/src/p256_adx_verify.c:6
 P256_SCALAR_BRANCH_CEILING := \
-  m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
-  mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18
+  m3/src/p256_scalar.c:15 mips32r2/src/p256_scalar.c:14 rv32imac/src/p256_scalar.c:14 m3-gcc/src/p256_scalar.c:12 \
+  mips32r2-gcc/src/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/src/p256_scalar.c:18 rv32ic-gcc/src/p256_scalar.c:18
 MLDSA_SIGN_BRANCH_CEILING := \
-  m3/mldsa_signer.c:26 m3/mldsa_sign_round.c:5 m3/mldsa_sign_steps.c:29 m3/mldsa_sign_poly.c:16 \
-  m3/mldsa_sign_pack.c:27 \
-  mips32r2/mldsa_signer.c:25 mips32r2/mldsa_sign_round.c:5 mips32r2/mldsa_sign_steps.c:21 \
-  mips32r2/mldsa_sign_poly.c:13 mips32r2/mldsa_sign_pack.c:24 \
-  rv32imac/mldsa_signer.c:25 rv32imac/mldsa_sign_round.c:5 rv32imac/mldsa_sign_steps.c:21 \
-  rv32imac/mldsa_sign_poly.c:13 rv32imac/mldsa_sign_pack.c:25 \
-  m3-gcc/mldsa_signer.c:27 m3-gcc/mldsa_sign_round.c:5 m3-gcc/mldsa_sign_steps.c:21 \
-  m3-gcc/mldsa_sign_poly.c:12 m3-gcc/mldsa_sign_pack.c:20 \
-  mips32r2-gcc/mldsa_signer.c:26 mips32r2-gcc/mldsa_sign_round.c:5 \
-  mips32r2-gcc/mldsa_sign_steps.c:21 mips32r2-gcc/mldsa_sign_poly.c:13 \
-  mips32r2-gcc/mldsa_sign_pack.c:17 \
+  m3/src/mldsa_signer.c:26 m3/src/mldsa_sign_round.c:5 m3/src/mldsa_sign_steps.c:29 m3/src/mldsa_sign_poly.c:16 \
+  m3/src/mldsa_sign_pack.c:27 \
+  mips32r2/src/mldsa_signer.c:25 mips32r2/src/mldsa_sign_round.c:5 mips32r2/src/mldsa_sign_steps.c:21 \
+  mips32r2/src/mldsa_sign_poly.c:13 mips32r2/src/mldsa_sign_pack.c:24 \
+  rv32imac/src/mldsa_signer.c:25 rv32imac/src/mldsa_sign_round.c:5 rv32imac/src/mldsa_sign_steps.c:21 \
+  rv32imac/src/mldsa_sign_poly.c:13 rv32imac/src/mldsa_sign_pack.c:25 \
+  m3-gcc/src/mldsa_signer.c:27 m3-gcc/src/mldsa_sign_round.c:5 m3-gcc/src/mldsa_sign_steps.c:21 \
+  m3-gcc/src/mldsa_sign_poly.c:12 m3-gcc/src/mldsa_sign_pack.c:20 \
+  mips32r2-gcc/src/mldsa_signer.c:26 mips32r2-gcc/src/mldsa_sign_round.c:5 \
+  mips32r2-gcc/src/mldsa_sign_steps.c:21 mips32r2-gcc/src/mldsa_sign_poly.c:13 \
+  mips32r2-gcc/src/mldsa_sign_pack.c:17 \
   mips32r2-gcc-O2/mldsa_signer.c:26 mips32r2-gcc-O2/mldsa_sign_round.c:5 \
   mips32r2-gcc-O2/mldsa_sign_steps.c:21 mips32r2-gcc-O2/mldsa_sign_poly.c:14 \
   mips32r2-gcc-O2/mldsa_sign_pack.c:24 \
-  rv32imac-gcc/mldsa_signer.c:29 rv32imac-gcc/mldsa_sign_round.c:6 \
-  rv32imac-gcc/mldsa_sign_steps.c:24 rv32imac-gcc/mldsa_sign_poly.c:12 \
-  rv32imac-gcc/mldsa_sign_pack.c:23 \
-  rv32ic-gcc/mldsa_signer.c:29 rv32ic-gcc/mldsa_sign_round.c:6 rv32ic-gcc/mldsa_sign_steps.c:24 \
-  rv32ic-gcc/mldsa_sign_poly.c:12 rv32ic-gcc/mldsa_sign_pack.c:23 \
-  arm64/mldsa_signer.c@host:27 arm64/mldsa_sign_round.c@host:2 arm64/mldsa_sign_steps.c@host:46 \
-  arm64/mldsa_sign_poly.c@host:25 arm64/mldsa_sign_pack.c@host:40 \
-  x86-64/mldsa_signer.c@host:18 x86-64/mldsa_sign_round.c@host:2 \
-  x86-64/mldsa_sign_steps.c@host:40 x86-64/mldsa_sign_poly.c@host:26 \
-  x86-64/mldsa_sign_pack.c@host:32
+  rv32imac-gcc/src/mldsa_signer.c:29 rv32imac-gcc/src/mldsa_sign_round.c:6 \
+  rv32imac-gcc/src/mldsa_sign_steps.c:24 rv32imac-gcc/src/mldsa_sign_poly.c:12 \
+  rv32imac-gcc/src/mldsa_sign_pack.c:23 \
+  rv32ic-gcc/src/mldsa_signer.c:29 rv32ic-gcc/src/mldsa_sign_round.c:6 rv32ic-gcc/src/mldsa_sign_steps.c:24 \
+  rv32ic-gcc/src/mldsa_sign_poly.c:12 rv32ic-gcc/src/mldsa_sign_pack.c:23 \
+  arm64/src/mldsa_signer.c@host:27 arm64/src/mldsa_sign_round.c@host:2 arm64/src/mldsa_sign_steps.c@host:46 \
+  arm64/src/mldsa_sign_poly.c@host:25 arm64/src/mldsa_sign_pack.c@host:40 \
+  x86-64/src/mldsa_signer.c@host:18 x86-64/src/mldsa_sign_round.c@host:2 \
+  x86-64/src/mldsa_sign_steps.c@host:40 x86-64/src/mldsa_sign_poly.c@host:26 \
+  x86-64/src/mldsa_sign_pack.c@host:32
 QUIC_PACKET_BRANCH_CEILING := \
-  m3/quic_packet.c:59 mips32r2/quic_packet.c:42 rv32imac/quic_packet.c:46 m3-gcc/quic_packet.c:46 \
-  mips32r2-gcc/quic_packet.c:46 mips32r2-gcc-O2/quic_packet.c:52 rv32imac-gcc/quic_packet.c:55 \
-  rv32ic-gcc/quic_packet.c:55 arm64/quic_packet.c@host:37 x86-64/quic_packet.c@host:37
+  m3/src/quic_packet.c:59 mips32r2/src/quic_packet.c:42 rv32imac/src/quic_packet.c:46 m3-gcc/src/quic_packet.c:46 \
+  mips32r2-gcc/src/quic_packet.c:46 mips32r2-gcc-O2/quic_packet.c:52 rv32imac-gcc/src/quic_packet.c:55 \
+  rv32ic-gcc/src/quic_packet.c:55 arm64/src/quic_packet.c@host:37 x86-64/src/quic_packet.c@host:37
 WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2
 # The division count, read from the same assembly with the DIVIDE_OPS
 # tokens (docs/decisions.md 156). DIVIDE_CEILING is file:count and holds on
@@ -9508,7 +9508,7 @@ WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar
 # length holds after a KeyUpdate record by the same length
 # (docs/decisions.md 138). Every operand of both divisions is a public
 # length, and no key, plaintext or secret reaches either.
-DIVIDE_CEILING := tls_write.c:2
+DIVIDE_CEILING := src/tls_write.c:2
 DIVIDE_CEILING_SPEC := mips32r2-gcc-O2/tls_write.c:3
 # The files the branch count covers: the arithmetic under the record
 # layer, whose every input is a key, a word or a block. Almost every
@@ -9606,21 +9606,21 @@ DIVIDE_CEILING_SPEC := mips32r2-gcc-O2/tls_write.c:3
 # one predicated instruction and none is a branch, the form the arm list
 # counts for the reason it gives. No other spec has a counted instruction
 # on those lines.
-BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
-               mlkem_poly.c drbg.c softmul.c rsa_sign.c aes.c quic_aes_soft.c quic_packet.c \
-               aes_extern.c gcm.c p256_field.c x25519_wide.c x25519_adx.c rsa_mont64_adx.c chacha20_vector.c chacha20_avx2.c chacha20_avx512.c \
-               poly1305_vector.c \
-               sha512.c \
-               sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c \
-               poly1305_vector_native.c poly1305_avx2.c poly1305_avx2_native.c poly1305_ifma.c \
-               poly1305_ifma_native.c \
-               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_mont64_blocks.c \
-               sha512_compress_blocks.c sha512_avx2.c \
-               rsa_mont64_addcarry.c rsa_sign64.c rsa_sign64_wipe.c rsa_ifma.c rsa_ifma.c@512 rsa_avx2.c \
-               rsa_avx2.c@512 \
+BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/chacha20.c src/poly1305.c src/aead.c src/x25519.c src/mlkem.c \
+               src/mlkem_poly.c src/drbg.c src/softmul.c src/rsa_sign.c src/aes.c src/quic_aes_soft.c src/quic_packet.c \
+               src/aes_extern.c src/gcm.c src/p256_field.c src/x25519_wide.c src/x25519_adx.c src/rsa_mont64_adx.c src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c \
+               src/poly1305_vector.c \
+               src/sha512.c \
+               src/sha512_compress.c src/p256_scalar.c src/poly1305_native.c src/mlkem_poly_native.c \
+               src/poly1305_vector_native.c src/poly1305_avx2.c src/poly1305_avx2_native.c src/poly1305_ifma.c \
+               src/poly1305_ifma_native.c \
+               src/sha256_hw.c src/sha512_hw.c src/hkdf_hw.c src/keysched_hw.c src/rsa_mont64.c src/rsa_mont64_blocks.c \
+               src/sha512_compress_blocks.c src/sha512_avx2.c \
+               src/rsa_mont64_addcarry.c src/rsa_sign64.c src/rsa_sign64_wipe.c src/rsa_ifma.c src/rsa_ifma.c@512 src/rsa_avx2.c \
+               src/rsa_avx2.c@512 \
                $(P256_WIDE_SRCS) \
-               sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c mldsa_vector.c keccak_avx2.c mlkem_avx2.c \
-               mldsa_avx2.c avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512 rsa_sign64.c@512 base64.c \
+               src/sha3_hw.c src/mlkem_hw.c src/mlkem_poly_hw.c src/mlkem_vector.c src/mldsa_vector.c src/keccak_avx2.c src/mlkem_avx2.c \
+               src/mldsa_avx2.c src/avx512_wipe.c src/rsa_ifma_sign.c src/rsa_ifma_sign.c@512 src/rsa_sign64.c@512 src/base64.c \
                $(MLDSA_SIGN_SRCS) $(addsuffix @host,$(WIDE64_HOST_COPIES))
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
@@ -9729,91 +9729,91 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # in the comment above WIDE64_SPECS, at the flags a host object is
 # compiled with.
 BRANCH_CEILING := \
-  m3/ct.c:2 m3/ct_wipe.c:7 m3/sha256.c:17 m3/sha3.c:38 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
-  m3/aead.c:4 m3/x25519.c:33 m3/p256_field.c:24 m3/mlkem.c:16 m3/mlkem_poly.c:43 m3/drbg.c:9 \
-  m3/softmul.c:0 m3/aes.c:3 m3/quic_aes_soft.c:12 m3/aes_extern.c:0 \
-  m3/gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:2 mips32r2/ct_wipe.c:6 mips32r2/sha256.c:16 mips32r2/sha3.c:25 \
-  mips32r2/hkdf.c:16 mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 \
-  mips32r2/x25519.c:31 mips32r2/p256_field.c:21 mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:36 \
-  mips32r2/drbg.c:8 mips32r2/softmul.c:0 mips32r2/aes.c:2 mips32r2/quic_aes_soft.c:12 \
-  mips32r2/aes_extern.c:0 mips32r2/gcm.c:16 mips32r2/rsa_sign.c:27 rv32imac/ct.c:2 rv32imac/ct_wipe.c:7 \
-  rv32imac/sha256.c:17 rv32imac/sha3.c:32 rv32imac/hkdf.c:18 rv32imac/chacha20.c:8 \
-  rv32imac/poly1305.c:18 rv32imac/aead.c:2 rv32imac/x25519.c:31 rv32imac/p256_field.c:21 \
-  rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:36 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
-  rv32imac/aes.c:3 rv32imac/quic_aes_soft.c:12 rv32imac/aes_extern.c:0 \
-  rv32imac/gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:1 m3-gcc/ct_wipe.c:4 m3-gcc/sha256.c:12 \
-  m3-gcc/sha3.c:21 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
-  m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:13 m3-gcc/mlkem_poly.c:37 \
-  m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 m3-gcc/aes.c:3 m3-gcc/quic_aes_soft.c:9 \
-  m3-gcc/aes_extern.c:0 m3-gcc/gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:1 mips32r2-gcc/ct_wipe.c:3 \
-  mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:17 mips32r2-gcc/hkdf.c:18 \
-  mips32r2-gcc/chacha20.c:6 mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 \
-  mips32r2-gcc/x25519.c:20 mips32r2-gcc/p256_field.c:13 mips32r2-gcc/mlkem.c:13 \
-  mips32r2-gcc/mlkem_poly.c:41 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
-  mips32r2-gcc/aes.c:3 mips32r2-gcc/quic_aes_soft.c:9 mips32r2-gcc/aes_extern.c:0 \
-  mips32r2-gcc/gcm.c:13 mips32r2-gcc/rsa_sign.c:23 \
+  m3/src/ct.c:2 m3/src/ct_wipe.c:7 m3/src/sha256.c:17 m3/src/sha3.c:38 m3/src/hkdf.c:19 m3/src/chacha20.c:9 m3/src/poly1305.c:19 \
+  m3/src/aead.c:4 m3/src/x25519.c:33 m3/src/p256_field.c:24 m3/src/mlkem.c:16 m3/src/mlkem_poly.c:43 m3/src/drbg.c:9 \
+  m3/src/softmul.c:0 m3/src/aes.c:3 m3/src/quic_aes_soft.c:12 m3/src/aes_extern.c:0 \
+  m3/src/gcm.c:22 m3/src/rsa_sign.c:29 mips32r2/src/ct.c:2 mips32r2/src/ct_wipe.c:6 mips32r2/src/sha256.c:16 mips32r2/src/sha3.c:25 \
+  mips32r2/src/hkdf.c:16 mips32r2/src/chacha20.c:7 mips32r2/src/poly1305.c:18 mips32r2/src/aead.c:2 \
+  mips32r2/src/x25519.c:31 mips32r2/src/p256_field.c:21 mips32r2/src/mlkem.c:13 mips32r2/src/mlkem_poly.c:36 \
+  mips32r2/src/drbg.c:8 mips32r2/src/softmul.c:0 mips32r2/src/aes.c:2 mips32r2/src/quic_aes_soft.c:12 \
+  mips32r2/src/aes_extern.c:0 mips32r2/src/gcm.c:16 mips32r2/src/rsa_sign.c:27 rv32imac/src/ct.c:2 rv32imac/src/ct_wipe.c:7 \
+  rv32imac/src/sha256.c:17 rv32imac/src/sha3.c:32 rv32imac/src/hkdf.c:18 rv32imac/src/chacha20.c:8 \
+  rv32imac/src/poly1305.c:18 rv32imac/src/aead.c:2 rv32imac/src/x25519.c:31 rv32imac/src/p256_field.c:21 \
+  rv32imac/src/mlkem.c:14 rv32imac/src/mlkem_poly.c:36 rv32imac/src/drbg.c:9 rv32imac/src/softmul.c:0 \
+  rv32imac/src/aes.c:3 rv32imac/src/quic_aes_soft.c:12 rv32imac/src/aes_extern.c:0 \
+  rv32imac/src/gcm.c:20 rv32imac/src/rsa_sign.c:27 m3-gcc/src/ct.c:1 m3-gcc/src/ct_wipe.c:4 m3-gcc/src/sha256.c:12 \
+  m3-gcc/src/sha3.c:21 m3-gcc/src/hkdf.c:19 m3-gcc/src/chacha20.c:7 m3-gcc/src/poly1305.c:14 m3-gcc/src/aead.c:2 \
+  m3-gcc/src/x25519.c:23 m3-gcc/src/p256_field.c:14 m3-gcc/src/mlkem.c:13 m3-gcc/src/mlkem_poly.c:37 \
+  m3-gcc/src/drbg.c:8 m3-gcc/src/softmul.c:0 m3-gcc/src/aes.c:3 m3-gcc/src/quic_aes_soft.c:9 \
+  m3-gcc/src/aes_extern.c:0 m3-gcc/src/gcm.c:15 m3-gcc/src/rsa_sign.c:26 mips32r2-gcc/src/ct.c:1 mips32r2-gcc/src/ct_wipe.c:3 \
+  mips32r2-gcc/src/sha256.c:12 mips32r2-gcc/src/sha3.c:17 mips32r2-gcc/src/hkdf.c:18 \
+  mips32r2-gcc/src/chacha20.c:6 mips32r2-gcc/src/poly1305.c:14 mips32r2-gcc/src/aead.c:2 \
+  mips32r2-gcc/src/x25519.c:20 mips32r2-gcc/src/p256_field.c:13 mips32r2-gcc/src/mlkem.c:13 \
+  mips32r2-gcc/src/mlkem_poly.c:41 mips32r2-gcc/src/drbg.c:7 mips32r2-gcc/src/softmul.c:0 \
+  mips32r2-gcc/src/aes.c:3 mips32r2-gcc/src/quic_aes_soft.c:9 mips32r2-gcc/src/aes_extern.c:0 \
+  mips32r2-gcc/src/gcm.c:13 mips32r2-gcc/src/rsa_sign.c:23 \
   mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:6 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:32 \
   mips32r2-gcc-O2/hkdf.c:23 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
   mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/p256_field.c:24 \
   mips32r2-gcc-O2/mlkem.c:17 \
   mips32r2-gcc-O2/mlkem_poly.c:39 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
-  rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:4 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:22 rv32imac-gcc/hkdf.c:23 \
-  rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
-  rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:19 \
-  rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
-  rv32imac-gcc/aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/aes_extern.c:0 \
-  rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:1 rv32ic-gcc/ct_wipe.c:4 \
-  rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:22 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
-  rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
-  rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:19 rv32ic-gcc/mlkem_poly.c:39 \
-  rv32ic-gcc/drbg.c:10 rv32ic-gcc/softmul.c:2 rv32ic-gcc/aes.c:4 \
-  rv32ic-gcc/quic_aes_soft.c:12 rv32ic-gcc/aes_extern.c:0 rv32ic-gcc/gcm.c:23 \
-  rv32ic-gcc/rsa_sign.c:27 mips32r2-gcc-O2/aes.c:3 mips32r2-gcc-O2/quic_aes_soft.c:12 \
+  rv32imac-gcc/src/ct.c:1 rv32imac-gcc/src/ct_wipe.c:4 rv32imac-gcc/src/sha256.c:15 rv32imac-gcc/src/sha3.c:22 rv32imac-gcc/src/hkdf.c:23 \
+  rv32imac-gcc/src/chacha20.c:10 rv32imac-gcc/src/poly1305.c:15 rv32imac-gcc/src/aead.c:4 \
+  rv32imac-gcc/src/x25519.c:24 rv32imac-gcc/src/p256_field.c:20 rv32imac-gcc/src/mlkem.c:19 \
+  rv32imac-gcc/src/mlkem_poly.c:39 rv32imac-gcc/src/drbg.c:10 rv32imac-gcc/src/softmul.c:0 \
+  rv32imac-gcc/src/aes.c:4 rv32imac-gcc/src/quic_aes_soft.c:12 rv32imac-gcc/src/aes_extern.c:0 \
+  rv32imac-gcc/src/gcm.c:23 rv32imac-gcc/src/rsa_sign.c:27 rv32ic-gcc/src/ct.c:1 rv32ic-gcc/src/ct_wipe.c:4 \
+  rv32ic-gcc/src/sha256.c:15 rv32ic-gcc/src/sha3.c:22 rv32ic-gcc/src/hkdf.c:23 rv32ic-gcc/src/chacha20.c:10 \
+  rv32ic-gcc/src/poly1305.c:15 rv32ic-gcc/src/aead.c:4 rv32ic-gcc/src/x25519.c:24 \
+  rv32ic-gcc/src/p256_field.c:20 rv32ic-gcc/src/mlkem.c:19 rv32ic-gcc/src/mlkem_poly.c:39 \
+  rv32ic-gcc/src/drbg.c:10 rv32ic-gcc/src/softmul.c:2 rv32ic-gcc/src/aes.c:4 \
+  rv32ic-gcc/src/quic_aes_soft.c:12 rv32ic-gcc/src/aes_extern.c:0 rv32ic-gcc/src/gcm.c:23 \
+  rv32ic-gcc/src/rsa_sign.c:27 mips32r2-gcc-O2/aes.c:3 mips32r2-gcc-O2/quic_aes_soft.c:12 \
   mips32r2-gcc-O2/aes_extern.c:0 mips32r2-gcc-O2/gcm.c:16 \
   mips32r2-gcc-O2/rsa_sign.c:26 \
-  m3/sha512.c:24 m3/sha512_compress.c:4 mips32r2/sha512.c:20 mips32r2/sha512_compress.c:4 \
-  rv32imac/sha512.c:23 rv32imac/sha512_compress.c:4 m3-gcc/sha512.c:12 \
-  m3-gcc/sha512_compress.c:4 mips32r2-gcc/sha512.c:12 mips32r2-gcc/sha512_compress.c:4 \
-  mips32r2-gcc-O2/sha512.c:27 mips32r2-gcc-O2/sha512_compress.c:4 rv32imac-gcc/sha512.c:14 \
-  rv32imac-gcc/sha512_compress.c:5 rv32ic-gcc/sha512.c:14 rv32ic-gcc/sha512_compress.c:5 \
-  m3/base64.c:0 mips32r2/base64.c:0 rv32imac/base64.c:0 m3-gcc/base64.c:0 mips32r2-gcc/base64.c:0 \
-  mips32r2-gcc-O2/base64.c:0 rv32imac-gcc/base64.c:0 rv32ic-gcc/base64.c:0 \
-  arm64/x25519_wide.c:8 x86-64/x25519_wide.c:9 arm64/x25519_adx.c:0 x86-64/x25519_adx.c:4 \
-  arm64/rsa_mont64_adx.c:0 x86-64/rsa_mont64_adx.c:32 \
-  arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:26 \
-  arm64/chacha20_avx2.c:0 x86-64/chacha20_avx2.c:31 \
-  arm64/chacha20_avx512.c:0 x86-64/chacha20_avx512.c:77 \
-  arm64/poly1305_vector.c:0 x86-64/poly1305_vector.c:0 \
-  arm64/poly1305_avx2.c:0 x86-64/poly1305_avx2.c:0 \
-  arm64/poly1305_ifma.c:0 x86-64/poly1305_ifma.c:0 \
-  arm64/rsa_mont64.c:71 x86-64/rsa_mont64.c:109 \
-  arm64/rsa_mont64_blocks.c:13 x86-64/rsa_mont64_blocks.c:0 \
-  arm64/rsa_mont64_addcarry.c:11 x86-64/rsa_mont64_addcarry.c:23 \
-  arm64/rsa_sign64.c:41 x86-64/rsa_sign64.c:41 \
-  arm64/rsa_sign64.c@512:45 x86-64/rsa_sign64.c@512:41 \
-  arm64/rsa_sign64_wipe.c:0 x86-64/rsa_sign64_wipe.c:0 \
-  arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:41 arm64/rsa_ifma.c@512:0 x86-64/rsa_ifma.c@512:45 \
-  arm64/rsa_avx2.c:0 x86-64/rsa_avx2.c:49 arm64/rsa_avx2.c@512:0 x86-64/rsa_avx2.c@512:86 \
-  arm64/mlkem_vector.c:7 x86-64/mlkem_vector.c:7 \
-  arm64/mldsa_vector.c:13 x86-64/mldsa_vector.c:13 \
-  arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:1 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:24 \
-  arm64/mldsa_avx2.c:0 x86-64/mldsa_avx2.c:8 \
-  arm64/avx512_wipe.c:0 x86-64/avx512_wipe.c:0 \
-  arm64/rsa_ifma_sign.c:0 x86-64/rsa_ifma_sign.c:62 arm64/rsa_ifma_sign.c@512:0 \
-  x86-64/rsa_ifma_sign.c@512:65 \
-  arm64/x25519.c@host:8 x86-64/x25519.c@host:12 \
-  arm64/mlkem_poly.c@host:49 x86-64/mlkem_poly.c@host:50 \
-  arm64/ct.c@host:9 x86-64/ct.c@host:4 arm64/ct_wipe.c@host:5 x86-64/ct_wipe.c@host:11 \
-  arm64/base64.c@host:0 x86-64/base64.c@host:0 \
-  arm64/sha256.c@host:28 x86-64/sha256.c@host:35 arm64/sha3.c@host:75 x86-64/sha3.c@host:84 \
-  arm64/hkdf.c@host:19 x86-64/hkdf.c@host:19 arm64/chacha20.c@host:1 x86-64/chacha20.c@host:3 \
-  arm64/poly1305.c@host:21 x86-64/poly1305.c@host:19 arm64/aead.c@host:4 x86-64/aead.c@host:6 \
-  arm64/mlkem.c@host:11 x86-64/mlkem.c@host:11 arm64/rsa_sign.c@host:55 x86-64/rsa_sign.c@host:47 \
-  arm64/drbg.c@host:5 x86-64/drbg.c@host:5 \
-  arm64/aes.c@host:20 x86-64/aes.c@host:19 arm64/gcm.c@host:22 x86-64/gcm.c@host:32 \
-  arm64/p256_field.c@host:4 x86-64/p256_field.c@host:4 \
-  arm64/p256_scalar.c@host:4 x86-64/p256_scalar.c@host:4 \
-  arm64/sha512.c@host:9 x86-64/sha512.c@host:9 \
+  m3/src/sha512.c:24 m3/src/sha512_compress.c:4 mips32r2/src/sha512.c:20 mips32r2/src/sha512_compress.c:4 \
+  rv32imac/src/sha512.c:23 rv32imac/src/sha512_compress.c:4 m3-gcc/src/sha512.c:12 \
+  m3-gcc/src/sha512_compress.c:4 mips32r2-gcc/src/sha512.c:12 mips32r2-gcc/src/sha512_compress.c:4 \
+  mips32r2-gcc-O2/sha512.c:27 mips32r2-gcc-O2/sha512_compress.c:4 rv32imac-gcc/src/sha512.c:14 \
+  rv32imac-gcc/src/sha512_compress.c:5 rv32ic-gcc/src/sha512.c:14 rv32ic-gcc/src/sha512_compress.c:5 \
+  m3/src/base64.c:0 mips32r2/src/base64.c:0 rv32imac/src/base64.c:0 m3-gcc/src/base64.c:0 mips32r2-gcc/src/base64.c:0 \
+  mips32r2-gcc-O2/base64.c:0 rv32imac-gcc/src/base64.c:0 rv32ic-gcc/src/base64.c:0 \
+  arm64/src/x25519_wide.c:8 x86-64/src/x25519_wide.c:9 arm64/src/x25519_adx.c:0 x86-64/src/x25519_adx.c:4 \
+  arm64/src/rsa_mont64_adx.c:0 x86-64/src/rsa_mont64_adx.c:32 \
+  arm64/src/chacha20_vector.c:40 x86-64/src/chacha20_vector.c:26 \
+  arm64/src/chacha20_avx2.c:0 x86-64/src/chacha20_avx2.c:31 \
+  arm64/src/chacha20_avx512.c:0 x86-64/src/chacha20_avx512.c:77 \
+  arm64/src/poly1305_vector.c:0 x86-64/src/poly1305_vector.c:0 \
+  arm64/src/poly1305_avx2.c:0 x86-64/src/poly1305_avx2.c:0 \
+  arm64/src/poly1305_ifma.c:0 x86-64/src/poly1305_ifma.c:0 \
+  arm64/src/rsa_mont64.c:71 x86-64/src/rsa_mont64.c:109 \
+  arm64/src/rsa_mont64_blocks.c:13 x86-64/src/rsa_mont64_blocks.c:0 \
+  arm64/src/rsa_mont64_addcarry.c:11 x86-64/src/rsa_mont64_addcarry.c:23 \
+  arm64/src/rsa_sign64.c:41 x86-64/src/rsa_sign64.c:41 \
+  arm64/src/rsa_sign64.c@512:45 x86-64/src/rsa_sign64.c@512:41 \
+  arm64/src/rsa_sign64_wipe.c:0 x86-64/src/rsa_sign64_wipe.c:0 \
+  arm64/src/rsa_ifma.c:0 x86-64/src/rsa_ifma.c:41 arm64/src/rsa_ifma.c@512:0 x86-64/src/rsa_ifma.c@512:45 \
+  arm64/src/rsa_avx2.c:0 x86-64/src/rsa_avx2.c:49 arm64/src/rsa_avx2.c@512:0 x86-64/src/rsa_avx2.c@512:86 \
+  arm64/src/mlkem_vector.c:7 x86-64/src/mlkem_vector.c:7 \
+  arm64/src/mldsa_vector.c:13 x86-64/src/mldsa_vector.c:13 \
+  arm64/src/keccak_avx2.c:0 x86-64/src/keccak_avx2.c:1 arm64/src/mlkem_avx2.c:0 x86-64/src/mlkem_avx2.c:24 \
+  arm64/src/mldsa_avx2.c:0 x86-64/src/mldsa_avx2.c:8 \
+  arm64/src/avx512_wipe.c:0 x86-64/src/avx512_wipe.c:0 \
+  arm64/src/rsa_ifma_sign.c:0 x86-64/src/rsa_ifma_sign.c:62 arm64/src/rsa_ifma_sign.c@512:0 \
+  x86-64/src/rsa_ifma_sign.c@512:65 \
+  arm64/src/x25519.c@host:8 x86-64/src/x25519.c@host:12 \
+  arm64/src/mlkem_poly.c@host:49 x86-64/src/mlkem_poly.c@host:50 \
+  arm64/src/ct.c@host:9 x86-64/src/ct.c@host:4 arm64/src/ct_wipe.c@host:5 x86-64/src/ct_wipe.c@host:11 \
+  arm64/src/base64.c@host:0 x86-64/src/base64.c@host:0 \
+  arm64/src/sha256.c@host:28 x86-64/src/sha256.c@host:35 arm64/src/sha3.c@host:75 x86-64/src/sha3.c@host:84 \
+  arm64/src/hkdf.c@host:19 x86-64/src/hkdf.c@host:19 arm64/src/chacha20.c@host:1 x86-64/src/chacha20.c@host:3 \
+  arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:6 \
+  arm64/src/mlkem.c@host:11 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:55 x86-64/src/rsa_sign.c@host:47 \
+  arm64/src/drbg.c@host:5 x86-64/src/drbg.c@host:5 \
+  arm64/src/aes.c@host:20 x86-64/src/aes.c@host:19 arm64/src/gcm.c@host:22 x86-64/src/gcm.c@host:32 \
+  arm64/src/p256_field.c@host:4 x86-64/src/p256_field.c@host:4 \
+  arm64/src/p256_scalar.c@host:4 x86-64/src/p256_scalar.c@host:4 \
+  arm64/src/sha512.c@host:9 x86-64/src/sha512.c@host:9 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
   $(P256_WIDE_BRANCH_CEILING) $(QUIC_PACKET_BRANCH_CEILING) $(MLDSA_SIGN_BRANCH_CEILING)
 # The third count, read from the same assembly: the calls each file makes
@@ -9868,8 +9868,8 @@ BRANCH_CEILING := \
 # docs/porting.md, "The shift routines gcc calls at -Os", prints the
 # sites and what a port checks in its own libgcc.
 SHIFT_CALLS := __ashl,__lshr,__ashr,__aeabi_llsl,__aeabi_llsr,__aeabi_lasr
-SHIFT_CALL_FILES := aead.c:2 gcm.c:2 quic_packet.c:1 quic_token.c:1 record.c:1 sha256.c:1 sha3.c:3 \
-                    sha512.c:1 srv_ticket.c:1
+SHIFT_CALL_FILES := src/aead.c:2 src/gcm.c:2 src/quic_packet.c:1 src/quic_token.c:1 src/record.c:1 src/sha256.c:1 src/sha3.c:3 \
+                    src/sha512.c:1 src/srv_ticket.c:1
 SHIFT_CALL_CEILING := $(foreach s,mips32r2-gcc rv32imac-gcc rv32ic-gcc,$(addprefix $(s)/,$(SHIFT_CALL_FILES)))
 # The extended regular expression a comma-separated token list counts: an
 # opcode token matches a mnemonic at the start of an instruction, and a
@@ -10066,10 +10066,10 @@ lint-wide-multiply-gcc:
 # 32-bit products of its reductions, and mldsa_sign_steps.c's is
 # Decompose's product of r1 by constants, over secrets in both, which
 # softmul.c supplies in constant time like every other.
-RV_ALLOWED := poly1305.c:__mulsi3 x25519.c:__mulsi3 mlkem_poly.c:__mulsi3 \
-              rsa_sign.c:__mulsi3 p256_field.c:__mulsi3 p256_scalar.c:__mulsi3 \
-              mldsa_sign_poly.c:__mulsi3 mldsa_sign_steps.c:__mulsi3 \
-              tls_write.c:__mulsi3,__udivsi3
+RV_ALLOWED := src/poly1305.c:__mulsi3 src/x25519.c:__mulsi3 src/mlkem_poly.c:__mulsi3 \
+              src/rsa_sign.c:__mulsi3 src/p256_field.c:__mulsi3 src/p256_scalar.c:__mulsi3 \
+              src/mldsa_sign_poly.c:__mulsi3 src/mldsa_sign_steps.c:__mulsi3 \
+              src/tls_write.c:__mulsi3,__udivsi3
 # What softmul.c must define. The __mul* names RV_ALLOWED admits are
 # constant-time only because this file supplies them; if it stopped, the
 # admitted calls would bind to libgcc's and the allowlist would keep
@@ -10083,7 +10083,7 @@ RV_SOFTMUL := __muldi3 __mulsi3
 # freestanding one does not, because -ffreestanding implies -fno-builtin.
 # So the gate holds these files on rv32ic as above, and also compiles
 # them hosted at -O2 for arm64 and x86-64, as a host object compiles them.
-CALL_FREE_SRCS := ct_wipe.c
+CALL_FREE_SRCS := src/ct_wipe.c
 CALL_FREE_MACHINES := aarch64-none-elf x86_64-unknown-linux-gnu
 .PHONY: lint-runtime-symbols
 lint-runtime-symbols:
@@ -10103,12 +10103,12 @@ endif
 # what they were when it last passed (tools/stamp.py).
 .PHONY: lint-runtime-symbols-run
 lint-runtime-symbols-run:
-	@d=$$(mktemp -d); rc=0; seen=0; \
+	@d=$$(mktemp -d); mkdir -p $$d/src; rc=0; seen=0; \
 	 for f in $(CODEGEN32_SRCS); do \
 	   extra=""; \
 	   for o in $(WIDEMUL_DEFINES); do [ "$${o%%:*}" = "$$f" ] && extra=$$(echo "$${o#*:}" | tr ',' ' '); done; \
 	   $(CLANG_RV) -target riscv32-unknown-elf -march=rv32ic -mabi=ilp32 -Os -std=c11 -ffreestanding \
-	     -nostdlibinc -Itools/freestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ $$extra -I. \
+	     -nostdlibinc -Itools/freestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ $$extra -Isrc -I. \
 	     -c $$f -o $$d/$${f%.c}.o 2>/dev/null \
 	     || { echo "lint-runtime-symbols: $$f does not build for rv32ic"; rc=1; continue; }; \
 	   allowed=""; \
@@ -10131,7 +10131,7 @@ lint-runtime-symbols-run:
 	     if [ "$$m" != rv32ic ]; then \
 	       o=$$d/$${f%.c}-$$m.o; \
 	       $(CLANG_RV) -target $$m -O2 -std=c11 -nostdlibinc -Itools/freestanding -D_DEFAULT_SOURCE \
-	         -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -c $$f -o $$o 2>/dev/null \
+	         -DCH_RAND_EXTERN -DCH_KEX_PQ -Isrc -I. -c $$f -o $$o 2>/dev/null \
 	         || { echo "lint-runtime-symbols: $$f does not build for $$m"; rc=1; continue; }; \
 	     fi; \
 	     [ -f "$$o" ] || { echo "lint-runtime-symbols: no object of $$f for $$m"; rc=1; continue; }; \
@@ -10140,12 +10140,12 @@ lint-runtime-symbols-run:
 	       || { echo "lint-runtime-symbols: $$f refers to $$calls on $$m; CALL_FREE_SRCS holds it to no call at all (docs/decisions.md 144)"; rc=1; }; \
 	   done; \
 	 done; \
-	 def=$$($(LLVM_NM) --defined-only $$d/softmul.o 2>/dev/null | awk '{print $$3}' | grep -E '^__' | sort | tr '\n' ' '); \
+	 def=$$($(LLVM_NM) --defined-only $$d/src/softmul.o 2>/dev/null | awk '{print $$3}' | grep -E '^__' | sort | tr '\n' ' '); \
 	 want=$$(echo $(RV_SOFTMUL) | tr ' ' '\n' | sort | tr '\n' ' '); \
 	 [ "$$def" = "$$want" ] \
-	   || { echo "lint-runtime-symbols: softmul.c defines '$$def' on rv32ic; RV_SOFTMUL expects '$$want'"; rc=1; }; \
+	   || { echo "lint-runtime-symbols: src/softmul.c defines '$$def' on rv32ic; RV_SOFTMUL expects '$$want'"; rc=1; }; \
 	 rm -rf $$d; \
-	 [ $$rc -eq 0 ] && echo "lint-runtime-symbols: on rv32ic each file pulls only the runtime calls RV_ALLOWED records, softmul.c defines $(RV_SOFTMUL), and $(CALL_FREE_SRCS) calls nothing on rv32ic, arm64 or x86-64"; exit $$rc
+	 [ $$rc -eq 0 ] && echo "lint-runtime-symbols: on rv32ic each file pulls only the runtime calls RV_ALLOWED records, src/softmul.c defines $(RV_SOFTMUL), and $(CALL_FREE_SRCS) calls nothing on rv32ic, arm64 or x86-64"; exit $$rc
 
 .PHONY: lint-bench-numbers
 lint-bench-numbers:
@@ -10168,16 +10168,16 @@ lint-bench-numbers:
 # it, and the text it reads is the header's own, so it asks for no pinned
 # version.
 lint-p256-wide:
-	@python3 tools/p256_wide.py check p256_wide_field.h p256_wide_field.c p256_wide_scalar.c \
-	  p256_wide_point.c p256_wide_inverse.c spec/lean/Spec/P256WideInverse.lean
-	@python3 tools/p256_wide.py table | cmp -s - p256_wide_table.c \
-	  || { echo "lint-p256-wide: p256_wide_table.c is not what tools/p256_wide.py table prints;" \
-	       "regenerate it with: python3 tools/p256_wide.py table > p256_wide_table.c"; exit 1; }
-	@echo "lint-p256-wide: p256_wide_table.c is what tools/p256_wide.py table prints"
+	@python3 tools/p256_wide.py check src/p256_wide_field.h src/p256_wide_field.c src/p256_wide_scalar.c \
+	  src/p256_wide_point.c src/p256_wide_inverse.c spec/lean/Spec/P256WideInverse.lean
+	@python3 tools/p256_wide.py table | cmp -s - src/p256_wide_table.c \
+	  || { echo "lint-p256-wide: src/p256_wide_table.c is not what tools/p256_wide.py table prints;" \
+	       "regenerate it with: python3 tools/p256_wide.py table > src/p256_wide_table.c"; exit 1; }
+	@echo "lint-p256-wide: src/p256_wide_table.c is what tools/p256_wide.py table prints"
 ifeq ($(CLANG_RV),)
 	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	@python3 tools/p256-wide-carry.py "$(CLANG_RV)" p256_wide_word.h
+	@python3 tools/p256-wide-carry.py "$(CLANG_RV)" src/p256_wide_word.h
 endif
 
 # The table of multiples of edwards25519's base point that x25519_wide.c's
@@ -10187,10 +10187,10 @@ endif
 # the script prints: a hand edit of the table, or an edit of the script
 # without its output.
 lint-x25519-wide:
-	@python3 tools/x25519_wide.py table | cmp -s - x25519_wide_table.h \
-	  || { echo "lint-x25519-wide: x25519_wide_table.h is not what tools/x25519_wide.py table prints;" \
-	       "regenerate it with: python3 tools/x25519_wide.py table > x25519_wide_table.h"; exit 1; }
-	@echo "lint-x25519-wide: x25519_wide_table.h is what tools/x25519_wide.py table prints"
+	@python3 tools/x25519_wide.py table | cmp -s - src/x25519_wide_table.h \
+	  || { echo "lint-x25519-wide: src/x25519_wide_table.h is not what tools/x25519_wide.py table prints;" \
+	       "regenerate it with: python3 tools/x25519_wide.py table > src/x25519_wide_table.h"; exit 1; }
+	@echo "lint-x25519-wide: src/x25519_wide_table.h is what tools/x25519_wide.py table prints"
 
 # chacha20_avx2.c's pass and keccak_avx2.c's permutation hold more 256-bit
 # values than AVX2 has registers, so their loops store values to 32-byte
@@ -10208,7 +10208,7 @@ lint-frame-align:
 ifeq ($(CLANG_RV),)
 	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	@python3 tools/frame-align.py "$(CLANG_RV)" chacha20_avx2.c keccak_avx2.c sha512_avx2.c
+	@python3 tools/frame-align.py "$(CLANG_RV)" src/chacha20_avx2.c src/keccak_avx2.c src/sha512_avx2.c
 endif
 
 # sha512_avx2.c's kernel runs a quarter of a schedule step after each
@@ -10237,15 +10237,15 @@ endif
 # selects the lint for it.
 .PHONY: lint-schedule-order-gcc lint-schedule-order-library print-sha512-avx2-commands
 print-sha512-avx2-commands:
-	@echo $(SHA512_AVX2_UNIT_CC) -c sha512_avx2.c
-	@echo $(call LIB_UNIT_CC,sha512_avx2.c) -c sha512_avx2.c
-	@echo $(call LIB_UNIT_CC,sha512.c) -c sha512.c
+	@echo $(SHA512_AVX2_UNIT_CC) -c src/sha512_avx2.c
+	@echo $(call LIB_UNIT_CC,src/sha512_avx2.c) -c src/sha512_avx2.c
+	@echo $(call LIB_UNIT_CC,src/sha512.c) -c src/sha512.c
 SCHEDULE_ORDER_OBJECT := TRUST=webpki SUITE=aesgcm ROLE=client
 lint-schedule-order:
 ifeq ($(CLANG_RV),)
 	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	@python3 tools/schedule-order.py clang "$(CLANG_RV)" sha512_avx2.c
+	@python3 tools/schedule-order.py clang "$(CLANG_RV)" src/sha512_avx2.c
 endif
 	@for gcc in yes ""; do \
 	  commands=$$($(MAKE) -s --no-print-directory print-sha512-avx2-commands GCC_X86_64_TARGET=$$gcc \
@@ -10253,24 +10253,24 @@ endif
 	  flagged=$$(printf '%s\n' "$$commands" | grep -n -e '-fno-schedule-insns2' | cut -d: -f1 | tr '\n' ' '); \
 	  want="1 2 "; [ -n "$$gcc" ] || want=""; \
 	  [ "$$flagged" = "$$want" ] || { \
-	    echo "lint-schedule-order: with GCC_X86_64_TARGET=$$gcc, of the commands that compile sha512_avx2.c for the test binaries, sha512_avx2.c for the packaged object and sha512.c for it, the ones with -fno-schedule-insns2 are [ $$flagged] and not [ $$want]: gcc for x86-64 must compile sha512_avx2.c with that flag, and no other compile may carry it (SHA512_AVX2_GCC_CFLAGS, docs/decisions.md 128)"; \
+	    echo "lint-schedule-order: with GCC_X86_64_TARGET=$$gcc, of the commands that compile src/sha512_avx2.c for the test binaries, src/sha512_avx2.c for the packaged object and src/sha512.c for it, the ones with -fno-schedule-insns2 are [ $$flagged] and not [ $$want]: gcc for x86-64 must compile src/sha512_avx2.c with that flag, and no other compile may carry it (SHA512_AVX2_GCC_CFLAGS, docs/decisions.md 128)"; \
 	    exit 1; }; \
 	done; \
-	echo "lint-schedule-order: a gcc build for x86-64 gives -fno-schedule-insns2 to sha512_avx2.c in the packaged object's rule and in the test binaries', and to no other source, and no other build gives it to any"
+	echo "lint-schedule-order: a gcc build for x86-64 gives -fno-schedule-insns2 to src/sha512_avx2.c in the packaged object's rule and in the test binaries', and to no other source, and no other build gives it to any"
 ifneq ($(GCC_X86_64_TARGET),)
 	@$(MAKE) -s --no-print-directory lint-schedule-order-gcc
 endif
 lint-schedule-order-gcc:
 ifeq ($(GCC_X86_64_TARGET),)
-	@echo "lint-schedule-order-gcc: $(CC) is not gcc for x86-64, so it compiles sha512_avx2.c with no flag of its own and this target has nothing to read"; exit 1
+	@echo "lint-schedule-order-gcc: $(CC) is not gcc for x86-64, so it compiles src/sha512_avx2.c with no flag of its own and this target has nothing to read"; exit 1
 else
-	@$(SHA512_AVX2_UNIT_CC) -S -o - sha512_avx2.c \
-	  | python3 tools/schedule-order.py assembly "$(CC) in the test binaries' rule" sha512_avx2.c
+	@$(SHA512_AVX2_UNIT_CC) -S -o - src/sha512_avx2.c \
+	  | python3 tools/schedule-order.py assembly "$(CC) in the test binaries' rule" src/sha512_avx2.c
 	@$(MAKE) -s --no-print-directory lint-schedule-order-library $(SCHEDULE_ORDER_OBJECT)
 endif
 lint-schedule-order-library:
-	@$(call LIB_UNIT_CC,sha512_avx2.c) -S -o - sha512_avx2.c \
-	  | python3 tools/schedule-order.py assembly "$(CC) in the packaged object's rule" sha512_avx2.c
+	@$(call LIB_UNIT_CC,src/sha512_avx2.c) -S -o - src/sha512_avx2.c \
+	  | python3 tools/schedule-order.py assembly "$(CC) in the packaged object's rule" src/sha512_avx2.c
 
 # bench/stack.py, which computes the peaks docs/performance.md states,
 # reads the call graph from the relocations objdump prints under each call
@@ -10445,7 +10445,7 @@ endif
 # libm and macOS's libc holds itself.
 bin/timing: test/timing_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL -I. -o $@ test/timing_test.c $(SRCS) -lm
+	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL -Isrc -I. -o $@ test/timing_test.c $(SRCS) -lm
 # The same t-test over the wide X25519 field, built as a host object builds
 # its sources, with -DTEST_X25519_WIDE so that the x25519 row calls the
 # field's entry. What this binary measures is whether the caller's multiply
@@ -10454,7 +10454,7 @@ bin/timing: test/timing_test.c $(SRCS) $(HDRS) $(TESTH)
 # in. It cannot say what another part does, which is ct.h's point.
 bin/timing_x25519_wide: test/timing_test.c $(call host_srcs,$(SRCS)) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CT_WIDEMUL -DCH_CPU_RUNTIME -DTEST_X25519_WIDE -I. -o $@ test/timing_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_CT_WIDEMUL -DCH_CPU_RUNTIME -DTEST_X25519_WIDE -Isrc -I. -o $@ test/timing_test.c \
 	  $(call host_srcs,$(SRCS)) -lm
 # The same t-test over the wide P-256 files and the table of multiples of
 # G (docs/decisions.md 94), with -DTEST_P256_WIDE: a key generation, a key
@@ -10464,7 +10464,7 @@ bin/timing_x25519_wide: test/timing_test.c $(call host_srcs,$(SRCS)) $(HDRS) $(T
 P256_TIMING_SRCS := $(filter-out test/stack_residue.c,$(P256_EQUIV_TEST_SRCS))
 bin/timing_p256_wide: test/timing_test.c $(P256_TIMING_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_P256_WIDE -I. -o $@ test/timing_test.c $(P256_TIMING_SRCS) -lm
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_P256_WIDE -Isrc -I. -o $@ test/timing_test.c $(P256_TIMING_SRCS) -lm
 
 # The same t-test over the host object's RSA arithmetic, with
 # -DTEST_RSA_SIGN64 so that the binary runs that file's two rows: the
@@ -10472,10 +10472,10 @@ bin/timing_p256_wide: test/timing_test.c $(P256_TIMING_SRCS) $(HDRS) $(TESTH)
 # its last subtraction, and the windowed exponentiation over an exponent of
 # zeros and random ones (docs/decisions.md 95). Like the wide field's, it
 # measures this host in the mode it runs the multiply in.
-bin/timing_rsa_sign64: test/timing_test.c $(call host_srcs,$(SRCS)) rsa_sign.c $(RSA_SIGN64_SRCS) $(HDRS) $(TESTH)
+bin/timing_rsa_sign64: test/timing_test.c $(call host_srcs,$(SRCS)) src/rsa_sign.c $(RSA_SIGN64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CT_WIDEMUL -DCH_CPU_RUNTIME -DTEST_RSA_SIGN64 -I. -o $@ test/timing_test.c \
-	  $(call host_srcs,$(SRCS)) rsa_sign.c $(RSA_SIGN64_SRCS) -lm
+	$(CC) $(HOST_CFLAGS) -DCH_CT_WIDEMUL -DCH_CPU_RUNTIME -DTEST_RSA_SIGN64 -Isrc -I. -o $@ test/timing_test.c \
+	  $(call host_srcs,$(SRCS)) src/rsa_sign.c $(RSA_SIGN64_SRCS) -lm
 
 # The same t-test over ML-DSA-87's signer (docs/decisions.md 159), with
 # -DTEST_MLDSA so that the binary runs test/timing_mldsa.h's two rows: key
@@ -10484,10 +10484,10 @@ bin/timing_rsa_sign64: test/timing_test.c $(call host_srcs,$(SRCS)) rsa_sign.c $
 # It builds on the decomposition, as bin/timing does, and takes
 # -DCH_MLDSA_SIGN_TEST for mldsa87_sign_mu, which reports the count of
 # rounds.
-TIMING_MLDSA_SRCS := $(MLDSA_SIGN_SRCS) mldsa.c mldsa_poly.c sha3.c ct.c ct_wipe.c
+TIMING_MLDSA_SRCS := $(MLDSA_SIGN_SRCS) src/mldsa.c src/mldsa_poly.c src/sha3.c src/ct.c src/ct_wipe.c
 bin/timing_mldsa: test/timing_test.c $(TIMING_MLDSA_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL -DCH_MLDSA_SIGN_TEST -DTEST_MLDSA -I. -Itest -o $@ \
+	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL -DCH_MLDSA_SIGN_TEST -DTEST_MLDSA -Isrc -I. -Itest -o $@ \
 	  test/timing_test.c $(TIMING_MLDSA_SRCS) -lm
 
 # Constant-time check (Welch's t over interleaved input classes). Load-
@@ -10511,30 +10511,30 @@ endif
 # skipped with a message otherwise. New corpus units and crash repros land
 # under bin/ (gitignored); fuzz/corpus/* stays read-only seed input.
 FUZZ_CC ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
-FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
+FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -Isrc -I.
 FUZZ_TIME ?= 30
-FUZZ_RECORD_LINK := record.c ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
-FUZZ_HANDSHAKE_PARSER_LINK := handshake_parser.c handshake_parser_ee.c buf.c
+FUZZ_RECORD_LINK := src/record.c src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly1305.c src/aead.c
+FUZZ_HANDSHAKE_PARSER_LINK := src/handshake_parser.c src/handshake_parser_ee.c src/buf.c
 # handshake_post.c needs handshake.c, and handshake.c needs most of the
 # client, so this list is SRCS less the file the harness includes. A
 # hand-kept list lost the link when 33978f6 moved the flight handlers
 # into handshake_flight.c; SRCS gains every such file.
-FUZZ_HANDSHAKE_POST_LINK := $(filter-out handshake_post.c,$(SRCS))
-FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c ct_wipe.c sha256.c rsa.c rsa_mont.c
+FUZZ_HANDSHAKE_POST_LINK := $(filter-out src/handshake_post.c,$(SRCS))
+FUZZ_X509_LINK := src/x509.c src/x509_der.c src/buf.c src/ct.c src/ct_wipe.c src/sha256.c src/rsa.c src/rsa_mont.c
 # The TRUST=webpki walk and every file under it. -DCH_TRUST_WEBPKI is
 # not optional here: ch_cfg declares the anchors, the hostname and the
 # clock only there, and it widens the modulus gate to the RSA-4096 a
 # public root carries.
-FUZZ_WEBPKI_LINK := -DCH_TRUST_WEBPKI webpki.c webpki_cert.c webpki_ext.c webpki_name.c webpki_sigalg.c \
-                    webpki_spki.c webpki_time.c x509_der.c buf.c ct.c ct_wipe.c sha256.c sha512.c \
-                    sha512_compress.c p256.c p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c
+FUZZ_WEBPKI_LINK := -DCH_TRUST_WEBPKI src/webpki.c src/webpki_cert.c src/webpki_ext.c src/webpki_name.c src/webpki_sigalg.c \
+                    src/webpki_spki.c src/webpki_time.c src/x509_der.c src/buf.c src/ct.c src/ct_wipe.c src/sha256.c src/sha512.c \
+                    src/sha512_compress.c src/p256.c src/p384.c src/p384_field.c src/rsa.c src/rsa_mont.c src/rsa_pkcs1.c
 # The two rules SPKI pins run (webpki_pin.c), on a raw public key and on a
 # chain under pins alone, over the walk's files, which hold their entry
 # framing (webpki.c), the raw key's reader (webpki_spki.c) and the leaf's
 # key reader (webpki_cert.c).
-FUZZ_WEBPKI_PIN_LINK := $(FUZZ_WEBPKI_LINK) webpki_pin.c
-FUZZ_HANDSHAKE_RECORD_LINK := handshake_record.c io.c record.c buf.c ct.c ct_wipe.c sha256.c hkdf.c \
-                    chacha20.c poly1305.c aead.c
+FUZZ_WEBPKI_PIN_LINK := $(FUZZ_WEBPKI_LINK) src/webpki_pin.c
+FUZZ_HANDSHAKE_RECORD_LINK := src/handshake_record.c src/io.c src/record.c src/buf.c src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c \
+                    src/chacha20.c src/poly1305.c src/aead.c
 
 .PHONY: fuzz
 fuzz:
@@ -10654,8 +10654,8 @@ bench-primitives:
 # from the same two lines with this host's compiler. So a call one of
 # these sources gains into a file the list leaves out, or a define a
 # header comes to require, fails check (docs/decisions.md 88).
-INSN_SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-             buf.c keysched.c record.c sha3.c mlkem.c mlkem_poly.c
+INSN_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly1305.c src/aead.c src/x25519.c src/p256.c src/rsa.c src/rsa_mont.c \
+             src/buf.c src/keysched.c src/record.c src/sha3.c src/mlkem.c src/mlkem_poly.c
 INSN_DEF := -DCH_RAND_EXTERN
 .PHONY: print-insn-lists
 print-insn-lists:

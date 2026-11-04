@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: rsa_ifma_sign_model_test
 reason: rsa_sign64.c's use_ifma reads CH_CPU_AVX512_IFMA alone, so a
   signature runs its exponentiations on AVX-512 IFMA under a value whose

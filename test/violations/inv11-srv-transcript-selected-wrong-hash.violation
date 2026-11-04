@@ -1,5 +1,5 @@
 invariant: INV-11
-file: srv_flight.c
+file: src/srv_flight.c
 catches: webpki_loop_aes
 reason: the server hashes its CertificateVerify into the SHA-256
   transcript whatever suite it selected. In a TLS_AES_256_GCM_SHA384

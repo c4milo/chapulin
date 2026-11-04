@@ -1,5 +1,5 @@
 invariant: INV-64
-file: srv_cookie.c
+file: src/srv_cookie.c
 catches: cnsa2_server_test
 reason: the profile's server keys its HelloRetryRequest cookie with
   HMAC-SHA-256 and leaves the last 16 bytes of the 48-byte MAC as the

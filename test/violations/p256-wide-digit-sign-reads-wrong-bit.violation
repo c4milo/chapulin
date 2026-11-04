@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: proof/prove-one.sh p256_wide_digit
 reason: a window's digit takes its sign from the window's own top bit,
   bit wi + w - 1 for windows of w bits, where the recoding takes it from

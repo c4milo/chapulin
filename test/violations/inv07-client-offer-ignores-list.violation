@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_message.c
+file: src/handshake_message.c
 catches: webpki_session_aes
 builds: bin/webpki_session_aes
 reason: the ClientHello writes the build's default order whatever

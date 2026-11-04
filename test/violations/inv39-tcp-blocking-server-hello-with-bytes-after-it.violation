@@ -1,5 +1,5 @@
 invariant: INV-39
-file: handshake.c
+file: src/handshake.c
 catches: tcp_blocking_loop_test
 reason: the tcp-blocking client installs the handshake keys with bytes
   still unread after the ServerHello in its record, and reads them as the

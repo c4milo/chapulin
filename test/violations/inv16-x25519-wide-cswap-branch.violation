@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide.c
+file: src/x25519_wide.c
 catches: test/lint-wide-multiply.sh
 reason: cswap takes the secret scalar bit, and writing the swap as an if
   on that bit puts the bit on the control path of every ladder step. The

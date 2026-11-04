@@ -1,5 +1,5 @@
 invariant: INV-46
-file: mlkem_lanes.h
+file: src/mlkem_lanes.h
 catches: test/docker-aes-runtime-qemu.sh mlkem-vector
 reason: the NEON split for the layers of span 2 takes the odd pairs
   into lo as well as into hi, so half the coefficients drop out of the

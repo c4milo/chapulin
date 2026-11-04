@@ -47,21 +47,21 @@ _Static_assert(CH_TX_STAGE == STAGE, "CH_TX_STAGE is the size the case expects")
 EOF
 
 compiles() {
-    "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN "$@" "$tu" 2> /dev/null
+    "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN "$@" "$tu" 2> /dev/null
 }
 
-compiles -DCH_TX_PT=512 || fail "cfg.h must accept CH_TX_PT=512"
-compiles -DCH_TX_PT=16384 || fail "cfg.h must accept CH_TX_PT=16384"
+compiles -DCH_TX_PT=512 || fail "src/cfg.h must accept CH_TX_PT=512"
+compiles -DCH_TX_PT=16384 || fail "src/cfg.h must accept CH_TX_PT=16384"
 if compiles -DCH_TX_PT=511; then
-    fail "CH_TX_PT=511 compiled; cfg.h must refuse a value below 512"
+    fail "CH_TX_PT=511 compiled; src/cfg.h must refuse a value below 512"
 fi
 if compiles -DCH_TX_PT=16385; then
-    fail "CH_TX_PT=16385 compiled; cfg.h must refuse a value above 2^14"
+    fail "CH_TX_PT=16385 compiled; src/cfg.h must refuse a value above 2^14"
 fi
 compiles -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TX_PT=512 ||
-    fail "session.h must accept CH_TX_PT=512 under TRANSPORT=quic-nonblocking"
+    fail "src/session.h must accept CH_TX_PT=512 under TRANSPORT=quic-nonblocking"
 if compiles -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TX_PT=513; then
-    fail "CH_TX_PT=513 compiled under TRANSPORT=quic-nonblocking; session.h must hold a QUIC build at 512"
+    fail "CH_TX_PT=513 compiled under TRANSPORT=quic-nonblocking; src/session.h must hold a QUIC build at 512"
 fi
 
 compiles -DSTAGE=617 || fail "the default classic CH_TX_STAGE must stay 617"

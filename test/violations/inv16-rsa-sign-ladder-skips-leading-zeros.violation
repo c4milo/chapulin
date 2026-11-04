@@ -1,5 +1,5 @@
 invariant: INV-16
-file: rsa_sign.c
+file: src/rsa_sign.c
 catches: test/lint-wide-multiply.sh
 reason: the ladder starts at the highest set bit of d instead of at bit
   8 * n_len - 1, so the number of Montgomery multiplications a signature

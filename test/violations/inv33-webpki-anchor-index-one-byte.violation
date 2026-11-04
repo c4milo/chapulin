@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki.h
+file: src/webpki.h
 catches: pem_files_test
 reason: webpki_leaf_info holds the anchor's index in one byte, as it did
   under a cap of twelve anchors, so the index of an anchor past 255 is

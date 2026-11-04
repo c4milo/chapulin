@@ -1,5 +1,5 @@
 invariant: INV-26
-file: quic.c
+file: src/quic.c
 catches: test/docker-aes-runtime-qemu.sh
 reason: a QUIC host object's session seals its Initial packets as though
   its caller had set CH_CPU_CONSTANT_TIME_AES, whatever ch_cfg.cpu says,

@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_verify.c
+file: src/p384_wide_verify.c
 catches: p384_equiv_test
 reason: the host verifier compares x for a sum at infinity. Infinity's
   words are zeros, so X equals r times Z^2 for every r, and a

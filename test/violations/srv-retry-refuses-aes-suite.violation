@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test_aes
 reason: srv_check_retry_hello takes a second ClientHello only when the
   cookie names ChaCha20, the check the first SUITE=aesgcm server carried

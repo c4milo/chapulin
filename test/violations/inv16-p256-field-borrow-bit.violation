@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_field.c
+file: src/p256_field.c
 catches: proof/prove-one.sh p256_field
 reason: returning the borrow as a bit rather than as a whole mask leaves
   every select keeping bit 0 of one side and the other 31 bits of the

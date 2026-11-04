@@ -1,5 +1,5 @@
 invariant: INV-38
-file: handshake.c
+file: src/handshake.c
 catches: test/handshake_sequence_shards.sh ./bin/handshake_sequence_test
 builds: bin/handshake_sequence_test
 reason: the blocking client sends its record_size_limit in the ClientHello

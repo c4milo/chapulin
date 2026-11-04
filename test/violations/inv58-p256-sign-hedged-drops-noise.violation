@@ -1,5 +1,5 @@
 invariant: INV-58
-file: p256_sign.c
+file: src/p256_sign.c
 catches: p256_sign_test
 reason: sign_hedged hands sign_digest no noise, so the hedged entry signs
   with the RFC 6979 nonce. Two signatures over one message are the same

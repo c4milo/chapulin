@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_pin.c
+file: src/webpki_pin.c
 catches: webpki_auth_test
 reason: read_whole_spki accepts bytes after the SubjectPublicKeyInfo
   inside the raw entry, so the key the reader decoded is not the whole of

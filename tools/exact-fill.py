@@ -263,7 +263,7 @@ def problems_in(path):
 
 def main():
     problems, seen, readers = [], set(), 0
-    for path in sorted(ROOT.glob("*.c")):
+    for path in sorted((ROOT / "src").glob("*.c")):
         found, keys = problems_in(path)
         problems += found
         seen |= keys

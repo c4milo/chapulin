@@ -1,5 +1,5 @@
 invariant: INV-7
-file: srv_kex.c
+file: src/srv_kex.c
 catches: srv_flight_test
 reason: the server selects by key share rather than by supported_groups, so
   a client that lists X25519MLKEM768 and shares x25519 alone gets x25519

@@ -1,5 +1,5 @@
 invariant: INV-13
-file: srv_quic.c
+file: src/srv_quic.c
 catches: quic_loop_test
 reason: the QUIC server wipes its handshake state before it returns a
   failed NewSessionTicket push, so quic_fail reads an alert of 0 and the

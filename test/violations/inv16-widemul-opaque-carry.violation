@@ -1,5 +1,5 @@
 invariant: INV-16
-file: ct.h
+file: src/ct.h
 catches: softmul_test
 reason: dropping the carry out of ct_widemul_opaque's cross sum makes its
   product wrong whenever that sum passes 2^32. Its one caller never gets

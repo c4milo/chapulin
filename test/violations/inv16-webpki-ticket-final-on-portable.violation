@@ -1,5 +1,5 @@
 invariant: INV-16
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: proof/prove-one.sh webpki_ticket_host
 reason: the configuration hash of a host object ends on sha256.c whatever
   the session's ch_cfg.cpu states (docs/decisions.md 132). The

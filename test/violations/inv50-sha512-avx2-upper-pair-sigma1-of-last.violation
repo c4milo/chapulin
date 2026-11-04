@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512_avx2.c
+file: src/sha512_avx2.c
 catches: test/docker-aes-runtime-qemu.sh sha512-avx2
 reason: step_third_quarter computes W[t + 2] and W[t + 3] with lower_sigma1
   of W[t - 2] and W[t - 1], the words W[t] and W[t + 1] take, where FIPS

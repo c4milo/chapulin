@@ -1,5 +1,5 @@
 invariant: INV-13
-file: io.c
+file: src/io.c
 catches: unit
 reason: io_send_all takes a count above the bytes it handed the send, so
   the count of bytes left wraps and the loop calls the send past the end

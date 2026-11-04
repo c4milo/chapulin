@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide_table.h
+file: src/x25519_wide_table.h
 catches: test/lint-x25519-wide.sh
 reason: the checked-in table differs from what tools/x25519_wide.py table
   prints: one word of the last entry of the last row changed by hand.

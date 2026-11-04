@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: webpki_auth_test
 reason: the scheme that selects the SHA-384 signed content is the P-256
   one, so a P-384 leaf's signature is checked over a SHA-256 digest and

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: tcp_nonblocking_loop_host
 reason: the client derives its x25519 share under WIDEMUL_NOT_STATED whatever
   its ch_cfg.cpu states. The share is the same.

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_test
 reason: check_required stops comparing the groups a KeyShareEntry named
   against supported_groups, so a share for this build's group parses

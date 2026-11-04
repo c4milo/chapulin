@@ -1,5 +1,5 @@
 invariant: INV-14
-file: quic_config.c
+file: src/quic_config.c
 catches: quic_driver_test
 reason: ch_quic_init takes an external PSK of any length, which tls.c's
   rule refuses below CH_PSK_LEN_MIN, so a QUIC client keyed with a short

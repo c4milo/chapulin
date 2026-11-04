@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_test
 reason: RFC 9001 §8.2 requires a fatal unsupported_extension from an
   implementation that understands quic_transport_parameters when the

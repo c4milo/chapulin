@@ -1,5 +1,5 @@
 invariant: INV-13
-file: tcp_nonblocking_frame.c
+file: src/tcp_nonblocking_frame.c
 catches: tcp_nonblocking_loop_test
 reason: tcp_nonblocking_fail emits the alert record it chose and no longer
   records the alert for ch_alert_sent, so the one call a caller reads across

@@ -1,5 +1,5 @@
 invariant: INV-67
-file: mldsa.c
+file: src/mldsa.c
 catches: test/docker-aes-runtime-qemu.sh mldsa-vector
 reason: mldsa.c's forward transform calls mldsa_poly.c's loop in a
   host object, so every verification runs that transform at the loop's

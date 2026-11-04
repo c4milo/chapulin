@@ -1,5 +1,5 @@
 invariant: INV-19
-file: sha512_compress_blocks.c
+file: src/sha512_compress_blocks.c
 catches: test/lint-stack-webpki.sh
 reason: sha512_compress_blocks keeps an array of eighty words beside its
   ring, the size of the reference's message schedule, and writes a state

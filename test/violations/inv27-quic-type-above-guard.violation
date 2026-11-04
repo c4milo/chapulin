@@ -1,5 +1,5 @@
 invariant: INV-27
-file: quic_initial.h
+file: src/quic_initial.h
 catches: test/lint-quic-partition.sh
 reason: a new type lands at the top of quic_initial.h, above the
   #ifdef CH_TRANSPORT_QUIC_NONBLOCKING the rest of the file sits under, so a

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_auth.c
+file: src/srv_auth.c
 catches: srv_auth_test
 reason: ch_srv_check signs with the private key and then ignores the
   verifier's verdict, so a slot whose public key belongs to another key

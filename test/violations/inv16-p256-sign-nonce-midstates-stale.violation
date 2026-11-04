@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_sign.c
+file: src/p256_sign.c
 catches: p256_sign_test
 reason: generator_update writes a new K and keeps the midstates of the
   old one, so every HMAC after the first update runs under a key RFC 6979

@@ -1,5 +1,5 @@
 invariant: INV-3
-file: x25519.c
+file: src/x25519.c
 catches: unit
 reason: the RFC 7748 clamp does not stop a low-order peer point from driving
   the shared secret to zero, so dropping the test derives handshake

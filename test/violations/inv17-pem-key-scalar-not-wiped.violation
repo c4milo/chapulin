@@ -1,5 +1,5 @@
 invariant: INV-17
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_test
 reason: ch_p256_key_from_pem returns with the scalar's working copy on
   its own stack. pem_files.h promises every copy the call makes is wiped

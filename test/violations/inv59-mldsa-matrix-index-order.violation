@@ -1,5 +1,5 @@
 invariant: INV-59
-file: mldsa.c
+file: src/mldsa.c
 catches: test/wycheproof.sh
 reason: entry A[i][j] is sampled from rho || i || j, where FIPS 204
   Algorithm 32 gives rho || j || i, so A is another matrix and no honest

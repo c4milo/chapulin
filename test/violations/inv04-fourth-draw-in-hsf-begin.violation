@@ -1,5 +1,5 @@
 invariant: INV-4
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: test/lint-invariants.sh
 reason: hsf_begin draws the ClientHello random twice. The second call is a
   fourth site in a function that holds three admitted ones, so

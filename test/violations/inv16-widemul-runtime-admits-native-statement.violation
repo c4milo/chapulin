@@ -1,5 +1,5 @@
 invariant: INV-16
-file: ct.h
+file: src/ct.h
 catches: test/widemul-builds.sh
 reason: ct.h takes CH_NATIVE_WIDEMUL beside CH_CPU_RUNTIME, so the files under
   their own names, which every session without

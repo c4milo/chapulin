@@ -1,5 +1,5 @@
 invariant: INV-26
-file: ct.h
+file: src/ct.h
 catches: test/quic-builds.sh
 reason: a TRANSPORT=quic-nonblocking build takes the AES-GCM suites on the
   AES=soft table, so quic_packet.c hands the S-box the Handshake and 1-RTT

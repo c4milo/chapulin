@@ -1,5 +1,5 @@
 invariant: INV-25
-file: srv_parser_ext.c
+file: src/srv_parser_ext.c
 catches: srv_test
 reason: read_key_share stops requiring the entries to fill client_shares, so
   a list length that names fewer bytes than its one entry spans still yields

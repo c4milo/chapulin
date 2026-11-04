@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont.c
+file: src/rsa_mont.c
 catches: rsa_ifma_model_test
 reason: rsa_mont.c's use_ifma answers 0 whatever the session's ch_cfg.cpu
   says, so no session runs the AVX-512 IFMA kernel and CH_CPU_AVX512_IFMA

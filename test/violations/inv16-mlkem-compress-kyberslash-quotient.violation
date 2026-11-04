@@ -1,5 +1,5 @@
 invariant: INV-16
-file: mlkem_poly.c
+file: src/mlkem_poly.c
 catches: test/lint-wide-multiply.sh
 reason: KyberSlash's compression, the rounded quotient of a secret
   coefficient by the constant q. clang writes the quotient as a multiply

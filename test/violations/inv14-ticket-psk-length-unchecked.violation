@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.h
+file: src/handshake_post.h
 catches: unit
 reason: hspost_present_ticket takes a kept ticket whose PSK length is no
   hash length this build holds, and a raw or ca build checks a PSK's

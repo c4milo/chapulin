@@ -1,5 +1,5 @@
 invariant: INV-26
-file: quic_keys.c
+file: src/quic_keys.c
 catches: quic_suite_test
 reason: a host object stores the AES header protection key's schedule at
   AES-128's 16 bytes under every AES suite, so a TLS_AES_256_GCM_SHA384

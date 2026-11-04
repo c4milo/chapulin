@@ -3,7 +3,7 @@
 
 Run from the repository root, with the pinned clang:
 
-    python3 tools/p256-wide-carry.py "$(make -s print-clang-rv)" p256_wide_word.h
+    python3 tools/p256-wide-carry.py "$(make -s print-clang-rv)" src/p256_wide_word.h
 
 The second argument is the header the script reads. It takes it so that the
 recipe of make lint-p256-wide names it, and it refuses any other.
@@ -43,7 +43,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-HEADER = "p256_wide_word.h"
+HEADER = "src/p256_wide_word.h"
 
 # The machines lint-wide-multiply compiles the wide files for, with its flags
 # (the Makefile's WIDE64_SPECS).
@@ -51,7 +51,7 @@ MACHINES = {
     "arm64": ["--target=aarch64-none-elf", "-march=armv8-a"],
     "x86-64": ["--target=x86_64-unknown-linux-gnu", "-march=x86-64"],
 }
-FLAGS = ["-std=c11", "-ffreestanding", "-nostdlibinc", "-Itools/freestanding", "-I.",
+FLAGS = ["-std=c11", "-ffreestanding", "-nostdlibinc", "-Itools/freestanding", "-Isrc", "-I.",
          "-DCH_RAND_EXTERN", "-DCH_CPU_RUNTIME", "-E", "-P", "-x", "c", "-"]
 
 # What names each form in the body of a step.

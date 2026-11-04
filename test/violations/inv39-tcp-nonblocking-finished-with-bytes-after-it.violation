@@ -1,5 +1,5 @@
 invariant: INV-39
-file: tcp_nonblocking_step.c
+file: src/tcp_nonblocking_step.c
 catches: tcp_nonblocking_loop_test
 reason: the tcp-nonblocking client completes on a server Finished that has
   bytes after it in its record, and drops them when it resets cfg.buf for

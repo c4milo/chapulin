@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_resume.c
+file: src/srv_resume.c
 catches: srv_flight_test
 reason: the lifetime check measures the distance between the two instants in
   either direction, so a ticket dated after the server's clock resumes.

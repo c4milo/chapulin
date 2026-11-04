@@ -1,5 +1,5 @@
 invariant: INV-48
-file: mlkem.h
+file: src/mlkem.h
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: mlkem.h's entries pick the copy for the four-way Keccak on
   CH_CPU_VAES, so a session that states AVX2 alone runs mlkem.c and

@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes.c
+file: src/aes.c
 catches: aes_runtime_test
 reason: the Initial key's constructor records the low byte of the
   session's description of the CPU and leaves the byte above it as the

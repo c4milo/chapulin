@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma_sign.c
+file: src/rsa_ifma_sign.c
 catches: rsa_ifma_sign_model_test
 reason: pair_core runs the second prime's round under the first prime's
   digits, so every product under q reduces modulo p, and the second half

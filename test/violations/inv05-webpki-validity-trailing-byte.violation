@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_cert.c
+file: src/webpki_cert.c
 catches: webpki_cert_test
 reason: read_validity accepts bytes after notAfter inside the Validity
   SEQUENCE, so a certificate carrying a third Time, or one stray byte,

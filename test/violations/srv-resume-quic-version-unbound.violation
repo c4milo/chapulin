@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_resume.c
+file: src/srv_resume.c
 catches: quic_loop_test
 reason: the ticket walk holds each ticket to its own QUIC version rather
   than the session's, so a server that chose version 2 resumes a ticket

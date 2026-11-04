@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: p256_equiv_test
 reason: a digit reads one bit fewer than its window holds, so its size
   loses its top bit and every digit whose window has that bit set names

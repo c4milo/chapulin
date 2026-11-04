@@ -1,5 +1,5 @@
 invariant: INV-10
-file: record.c
+file: src/record.c
 catches: unit
 reason: dropping the send-side wrap guard lets the sequence counter roll over
   from UINT64_MAX to 0, so the same (key, nonce) pair protects two records

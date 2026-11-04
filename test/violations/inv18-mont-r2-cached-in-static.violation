@@ -1,5 +1,5 @@
 invariant: INV-18
-file: rsa_mont.c
+file: src/rsa_mont.c
 catches: rsa_test
 reason: rsa_vp1 caches the Montgomery R^2 constant in a function-scope static,
   so the second key verified in a process silently reuses the first

@@ -1,5 +1,5 @@
 invariant: INV-4
-file: srv_kex.c
+file: src/srv_kex.c
 catches: proof/prove-one.sh srv_kex
 reason: srv_kex_begin draws the server's x25519 scalar into h->pub,
   where x25519_base then writes the public value, so the scalar stays

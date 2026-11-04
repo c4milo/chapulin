@@ -1,5 +1,5 @@
 invariant: INV-22
-file: tcp_nonblocking_frame.c
+file: src/tcp_nonblocking_frame.c
 catches: tcp_nonblocking_loop_test
 reason: tcp_nonblocking_fail writes an alert record after the peer's fatal
   alert, so a client stages one for ch_record_out and a server pushes one, and

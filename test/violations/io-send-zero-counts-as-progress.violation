@@ -1,5 +1,5 @@
 invariant: INV-13
-file: io.c
+file: src/io.c
 catches: unit
 reason: io_send_all takes a send that answers 0 as progress and calls it
   again, so a send that moves nothing keeps the session in its loop.

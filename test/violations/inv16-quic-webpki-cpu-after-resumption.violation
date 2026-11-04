@@ -1,5 +1,5 @@
 invariant: INV-16
-file: quic_config.c
+file: src/quic_config.c
 catches: proof/prove-one.sh quic_config_webpki_suite
 reason: quic_config_ok checks ch_cfg.cpu after the web PKI rules, so a
   presented ticket's check hashes on the path a value no rule has taken

@@ -1,5 +1,5 @@
 invariant: INV-4
-file: srv_flight.c
+file: src/srv_flight.c
 catches: test/lint-invariants.sh
 reason: srv_send_server_hello draws its random twice. The second call is a
   new site inside a file that already holds two admitted ones, so the

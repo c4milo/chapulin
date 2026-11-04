@@ -1,5 +1,5 @@
 invariant: INV-14
-file: cpu_cfg.h
+file: src/cpu_cfg.h
 catches: test/host-builds.sh
 reason: cpu_cfg.h's x86-64 set loses CH_CPU_AVX512, so every init call of
   an x86-64 object refuses a caller that states what the 512-bit AES-GCM

@@ -1,5 +1,5 @@
 invariant: INV-39
-file: srv_quic.c
+file: src/srv_quic.c
 catches: srv_quic_test
 reason: the QUIC server installs the Handshake keys after a ClientHello
   whose delivery has Initial bytes left over and moves on, and a later

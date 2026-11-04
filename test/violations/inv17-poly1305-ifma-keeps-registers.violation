@@ -1,5 +1,5 @@
 invariant: INV-17
-file: poly1305_ifma.c
+file: src/poly1305_ifma.c
 catches: test/chacha-builds.sh
 reason: poly1305_ifma_blocks returns without calling lanes_wipe_registers,
   which is avx512_wipe_registers,

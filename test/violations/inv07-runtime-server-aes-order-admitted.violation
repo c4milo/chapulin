@@ -1,5 +1,5 @@
 invariant: INV-7
-file: srv.c
+file: src/srv.c
 catches: webpki_loop_aes
 reason: a host object's server whose caller did not set
   CH_CPU_CONSTANT_TIME_AES admits a caller's srv.cipher_suites list that

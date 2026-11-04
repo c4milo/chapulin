@@ -1,5 +1,5 @@
 invariant: INV-16
-file: srv_resume.c
+file: src/srv_resume.c
 catches: test/lint-invariants.sh
 reason: the binder is compared with memcmp instead of ct_memeq. memcmp returns
   at the first differing byte, so a client that can repeat a ClientHello

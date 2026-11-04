@@ -1,5 +1,5 @@
 invariant: INV-58
-file: p256_sign.c
+file: src/p256_sign.c
 catches: p256_sign_fault_test
 reason: compute_signature takes every k*G as on the curve, so a fault that
   moves k*G off the curve still gives a signature, and its r comes from a

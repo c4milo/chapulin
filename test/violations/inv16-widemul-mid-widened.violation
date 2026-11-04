@@ -1,5 +1,5 @@
 invariant: INV-16
-file: ct.h
+file: src/ct.h
 catches: test/lint-wide-multiply-gcc.sh
 reason: summing ct_widemul's two 16x16 cross products as a 64-bit value,
   the recombination ct.h shipped until the rework, hands gcc a widening

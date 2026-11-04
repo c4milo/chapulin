@@ -1,5 +1,5 @@
 invariant: INV-29
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: tcp_nonblocking_loop_test
 reason: the client files its key log lines under the ClientHello random
   read after the key exchange wiped it, so every line carries 32 zero

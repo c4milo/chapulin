@@ -1,5 +1,5 @@
 invariant: INV-22
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: webpki_resume_test
 reason: a TRUST=webpki client fails a declined ticket closed with
   handshake_failure, the behavior before docs/decisions.md 55, although

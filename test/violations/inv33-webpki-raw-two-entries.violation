@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_pin.c
+file: src/webpki_pin.c
 catches: webpki_auth_test
 reason: webpki_verify_raw_key reads the first entry and ignores what
   follows it, so a RawPublicKey list with a second entry, or a trailing

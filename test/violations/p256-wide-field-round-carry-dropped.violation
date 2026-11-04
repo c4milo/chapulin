@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_field.c
+file: src/p256_wide_field.c
 catches: p256_equiv_test
 reason: the second round of the Montgomery reduction is handed 0 where
   the first round's carry belongs, so a product whose first round carried

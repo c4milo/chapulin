@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha512.c
+file: src/sha512.c
 catches: sha2_equiv_test
 reason: a host object's sha512_of returns without wiping the context it
   hashed in, so its dead frame keeps the state after the last block and

@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_message.h
+file: src/handshake_message.h
 catches: webpki_session_aes
 builds: bin/webpki_session_aes
 reason: a host object's client under CH_CPU_CONSTANT_TIME_AES offers ChaCha20 first when

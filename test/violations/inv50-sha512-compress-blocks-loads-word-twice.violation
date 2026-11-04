@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512_compress_blocks.c
+file: src/sha512_compress_blocks.c
 catches: sha2_equiv_test
 reason: load_block reads the block's third word into the ring's second
   place as well as its third, so the block's second word never enters

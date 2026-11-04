@@ -1,5 +1,5 @@
 invariant: INV-14
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_test
 reason: ch_p256_key_from_pem stops checking its cpu value, so a device
   object, which defines no bit, takes any value, and a host object takes

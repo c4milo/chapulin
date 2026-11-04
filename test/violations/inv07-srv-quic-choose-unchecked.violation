@@ -1,5 +1,5 @@
 invariant: INV-7
-file: srv_quic.c
+file: src/srv_quic.c
 catches: srv_quic_test
 reason: the server takes any answer choose_version gives, so a session
   negotiates a version this build derives no keys for and derives its

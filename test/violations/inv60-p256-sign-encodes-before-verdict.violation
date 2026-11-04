@@ -1,5 +1,5 @@
 invariant: INV-60
-file: p256_sign.c
+file: src/p256_sign.c
 catches: test/ct-taint.sh
 reason: write_if_checked writes the DER of r and s before it reads the
   checks' verdict, so write_integer branches on the leading bytes of a

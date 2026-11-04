@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma_sign.c
+file: src/rsa_ifma_sign.c
 catches: rsa_ifma_sign_model_test
 reason: state_finish reduces the k words of the last product's power and
   drops the word above them, so a power at or above 2^(64k), which a

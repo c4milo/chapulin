@@ -1,5 +1,5 @@
 invariant: INV-63
-file: srv_kex.c
+file: src/srv_kex.c
 catches: tcp_blocking_loop_test
 reason: the server selects X25519MLKEM768 for every hello, also for one
   that lists x25519 alone, so its HelloRetryRequest names a group the

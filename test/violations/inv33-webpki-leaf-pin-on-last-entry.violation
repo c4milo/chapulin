@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki.c
+file: src/webpki.c
 catches: webpki_auth_test
 reason: under pins alone the key read for the pin comes from the chain's
   last entry instead of its leaf, so a pin on an intermediate or root key

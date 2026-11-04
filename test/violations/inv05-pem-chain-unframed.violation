@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_test
 reason: the call takes a chain block and does not read its outer fields,
   so a block of other DER, or a certificate with a byte after it, joins

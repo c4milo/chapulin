@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_field.c
+file: src/p256_wide_field.c
 catches: test/lint-invariants.sh
 reason: zero_mask_word takes its mask from the borrow of 0 - v. The mask
   is the same, so every vector, proof and count under clang passes. On

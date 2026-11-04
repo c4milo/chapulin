@@ -1,5 +1,5 @@
 invariant: INV-39
-file: quic.c
+file: src/quic.c
 catches: quic_driver_test
 reason: the QUIC client installs the Handshake keys and moves on with
   Initial bytes still unread after the ServerHello, and a later message

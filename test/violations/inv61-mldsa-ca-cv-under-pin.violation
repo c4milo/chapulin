@@ -1,5 +1,5 @@
 invariant: INV-61
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: cnsa2_test_ca_mldsa
 reason: a CA build checks the CertificateVerify under the pinned CA key
   instead of the leaf key the chain vouched for, so the leaf's signature

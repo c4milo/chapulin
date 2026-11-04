@@ -1,5 +1,5 @@
 invariant: INV-13
-file: handshake.c
+file: src/handshake.c
 catches: unit
 reason: a ClientHello or client Finished whose send fails keeps the
   handshake's default alert, decode_error, which says the peer sent a

@@ -1,5 +1,5 @@
 invariant: INV-17
-file: chacha20_avx512.c
+file: src/chacha20_avx512.c
 catches: test/chacha-builds.sh
 reason: chacha20_avx512_xor returns without calling avx512_wipe_registers,
   so the key words, the state and the keystream it ran through the 512-bit

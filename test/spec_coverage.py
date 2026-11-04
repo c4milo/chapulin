@@ -147,7 +147,7 @@ def build_and_run():
     # SHA-384 rows of test/diff_hash384.h run too.
     flags =["--coverage", "-O0", "-g", "-std=c11", "-D_DEFAULT_SOURCE",
              "-DCH_RAND_EXTERN", "-DCH_TRUST_CA", "-DCH_RSA_MODULUS_MAX=512", "-DCH_HASH_SHA384",
-             f"-I{ROOT}"]
+             f"-I{ROOT / 'src'}", f"-I{ROOT}"]
     objs = []
     linked = SRCS + [s for s in diff_srcs() if s not in SRCS]
     for src in (s for s in linked if s not in TRUST_WEBPKI_ONLY):

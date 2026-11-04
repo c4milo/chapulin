@@ -1,5 +1,5 @@
 invariant: INV-14
-file: quic_token.c
+file: src/quic_token.c
 catches: srv_quic_test
 reason: the check writes the connection IDs before it judges the window, so
   an expired token leaves the IDs it carried in *cids although the answer

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: srv_auth.c
+file: src/srv_auth.c
 catches: tcp_blocking_loop_host
 reason: the server signs with its RSA key under WIDEMUL_NOT_STATED whatever
   its ch_cfg.cpu states. The signature is the same. The blocking loop's

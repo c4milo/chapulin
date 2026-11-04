@@ -1,5 +1,5 @@
 invariant: INV-17
-file: gcm.c
+file: src/gcm.c
 catches: quic_test
 builds: bin/quic_test
 reason: gcm_open decrypts while it hashes, so a tag that does not match

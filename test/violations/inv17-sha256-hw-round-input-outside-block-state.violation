@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha256_hw.c
+file: src/sha256_hw.c
 catches: test/docker-aes-runtime-qemu.sh sha2-equiv
 reason: the x86-64 rounds keep four schedule words plus their constants in a
   local of their own, which the compiler must hold in memory, where they

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_message.c
+file: src/srv_message.c
 catches: srv_auth_test
 reason: srv_certificate_fits admits one byte more than the Certificate
   message's 3-byte length field holds, so a server takes a chain whose

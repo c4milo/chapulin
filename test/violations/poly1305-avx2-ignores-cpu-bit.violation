@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: src/widemul.h
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: widemul_poly1305_avx2 reads the multiply bit alone, so every
   session with it runs the AVX2 kernel and dies of SIGILL on a CPU

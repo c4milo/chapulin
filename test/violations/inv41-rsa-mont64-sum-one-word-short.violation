@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64.c
+file: src/rsa_mont64.c
 catches: proof/prove-one.sh rsa_mont64_mul
 reason: rsa_mont64_mont_mul's array is one word short, so at the largest
   word count the word above the running sum, where a round keeps its

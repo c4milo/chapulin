@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide_edwards.h
+file: src/x25519_wide_edwards.h
 catches: test/lint-invariants.sh
 reason: select_entry loads the one entry its digit names, so the address
   of the load is the digit's size, three bits of the private key, and the

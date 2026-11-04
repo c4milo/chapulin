@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.h
+file: src/handshake_post.h
 catches: proof/prove-one.sh quic_config_webpki
 reason: hspost_ticket_age_ok ignores the presented ticket's lifetime and
   holds every age to seven days alone, so a ticket past a shorter

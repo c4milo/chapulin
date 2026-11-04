@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha512_compress_blocks.c
+file: src/sha512_compress_blocks.c
 catches: test/lint-wide-multiply.sh
 reason: next_word writes a schedule word to the ring only where it differs
   from the word it replaces, so whether W[t] equals W[t - 16] decides

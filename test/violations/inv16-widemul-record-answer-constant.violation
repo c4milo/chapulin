@@ -1,5 +1,5 @@
 invariant: INV-16
-file: record.c
+file: src/record.c
 catches: tcp_blocking_loop_host
 reason: the record layer seals every ChaCha20-Poly1305 record under the probe's
   bit alone, whatever the direction's cpu states, so a caller that stated

@@ -1,5 +1,5 @@
 invariant: INV-34
-file: x25519_wide_edwards.h
+file: src/x25519_wide_edwards.h
 catches: proof/prove-one.sh x25519_wide_edwards
 reason: double_point subtracts H = YY + XX from (X + Y)^2 over 2p where it
   takes 4p. H's words reach 2^52 + 2^14, above 2p's, so a word of E wraps

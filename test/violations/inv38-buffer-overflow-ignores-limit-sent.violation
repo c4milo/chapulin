@@ -1,5 +1,5 @@
 invariant: INV-38
-file: io.c
+file: src/io.c
 catches: unit
 reason: a record longer than all of cfg.buf gets internal_error whether or
   not this side sent its record_size_limit, so a peer over the limit this

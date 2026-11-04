@@ -151,7 +151,7 @@ size_t strlen(const char *s) {
 // gcc at -Os lowers a 64-bit shift by a runtime count to a libgcc call.
 // The toolchain's libgcc is built for the ilp32d ABI and cannot link
 // into an ilp32 image, so the runtime supplies the two routines the
-// sources pull under the compiler's own names (the softmul.c
+// sources pull under the compiler's own names (the src/softmul.c
 // precedent), written the way libgcc2.c writes them. Every count is
 // public: a byte position, a length, a sequence number or a Keccak
 // rotation constant.

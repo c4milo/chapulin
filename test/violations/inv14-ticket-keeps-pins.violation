@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.h
+file: src/handshake_post.h
 catches: unit_ca
 reason: hspost_present_ticket leaves the pins in the session copy beside
   the ticket's PSK, so a raw or ca configuration that keeps its pins, as

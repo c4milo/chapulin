@@ -1,5 +1,5 @@
 invariant: INV-16
-file: chacha20_vector.c
+file: src/chacha20_vector.c
 catches: chacha20_equiv_test
 reason: each group XORs the rows of three of its four lanes, so the
   fourth block of every group keeps the input's bytes: in place, 64 bytes

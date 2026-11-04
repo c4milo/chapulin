@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma_product.h
+file: src/rsa_ifma_product.h
 catches: rsa_ifma_model_test
 reason: A round keeps all 64 bits of its quotient rather than the low 52.
   VPMADD52LUQ and VPMADD52HUQ read the low 52 bits of each lane, so the

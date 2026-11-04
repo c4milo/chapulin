@@ -1,5 +1,5 @@
 invariant: INV-4
-file: srv_kex.c
+file: src/srv_kex.c
 catches: test/lint-invariants.sh
 reason: encapsulate draws the ML-KEM randomness from ch_rand_bytes rather
   than through rand_draw, the one draw path. Under RAND=extern the bytes

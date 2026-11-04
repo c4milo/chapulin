@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.c
+file: src/handshake_post.c
 catches: unit
 reason: a ticket names the key in pin slot A whichever slot authenticated
   the handshake. A ticket from a handshake that the key in slot B

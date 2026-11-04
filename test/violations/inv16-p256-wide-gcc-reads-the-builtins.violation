@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_word.h
+file: src/p256_wide_word.h
 catches: test/lint-p256-wide.sh
 reason: the header picks the overflow builtins for every compiler that
   defines __GNUC__, which gcc does as clang does. gcc expands a builtin

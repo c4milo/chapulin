@@ -1,5 +1,5 @@
 invariant: INV-68
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: rsa_sign64.c runs a signature's exponentiations on rsa_mont64_adx.c
   under CH_CPU_BMI2_ADX alone, so a session whose caller did not state that

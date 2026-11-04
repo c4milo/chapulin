@@ -1,5 +1,5 @@
 invariant: INV-3
-file: p256_point.c
+file: src/p256_point.c
 catches: p256_ecdh_test
 reason: the P-256 counterpart of the x25519 zero check — a peer point that
   does not satisfy the curve equation lies on a different curve whose order

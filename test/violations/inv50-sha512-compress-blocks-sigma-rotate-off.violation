@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512_compress_blocks.c
+file: src/sha512_compress_blocks.c
 catches: proof/prove-one.sh sha512_compress_blocks_steps
 reason: upper_sigma1's first nested rotate turns by 22 where 23 makes the
   three rotates turn x by 41, 18 and 14, so the function is no longer

@@ -1,5 +1,5 @@
 invariant: INV-4
-file: drbg.c
+file: src/drbg.c
 catches: drbg_test
 reason: ch_drbg_seed takes a 31-byte seed, one byte under
   CH_DRBG_SEED_MIN, so a caller that passes a short buffer by mistake

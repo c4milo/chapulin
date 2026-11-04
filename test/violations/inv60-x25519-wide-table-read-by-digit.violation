@@ -1,5 +1,5 @@
 invariant: INV-60
-file: x25519_wide_edwards.h
+file: src/x25519_wide_edwards.h
 catches: test/ct-taint.sh
 reason: select_entry reads one entry of the row, the one the scalar's
   digit names, in place of all eight. The address of each load depends

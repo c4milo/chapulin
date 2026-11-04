@@ -117,7 +117,7 @@ build_server() {
     local defs=()
     read -r -a defs <<<"$(tr '\n' ' ' <"$out/obj-$name/lib-def.txt")"
     [ "${#defs[@]}" -gt 0 ] || fail "zig build lib-lists wrote no defines"
-    zig cc "${cc_target[@]}" -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -I. -Ibench \
+    zig cc "${cc_target[@]}" -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Isrc -I. -Ibench \
         "${defs[@]}" bench/handshake_server.c bench/handshake_window.c \
         "$out/obj-$name/lib/chapulin.o" -o "$out/chapulin_server_$name"
 }

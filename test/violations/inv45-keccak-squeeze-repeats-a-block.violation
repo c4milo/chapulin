@@ -1,5 +1,5 @@
 invariant: INV-45
-file: sha3.c
+file: src/sha3.c
 catches: sha3_equiv_test
 reason: squeeze hands out a second block without the permutation, so
   output past one block repeats the first. Both digests fit in one

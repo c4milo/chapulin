@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha512_hw.c
+file: src/sha512_hw.c
 catches: test/docker-aes-runtime-qemu.sh sha2-equiv
 reason: sha512_hw.c's last two rounds of each sixteen take the constants of
   the two rounds before them, one pair off FIPS 180-4 §4.2.3's, so every

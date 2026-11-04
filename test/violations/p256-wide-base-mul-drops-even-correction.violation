@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: p256_equiv_test
 reason: p256_wide_base_mul never keeps the sum it corrected, so an even
   scalar k gives (k + 1) * G: the digits are those of k | 1. Every odd

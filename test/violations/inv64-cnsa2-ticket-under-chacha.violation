@@ -1,5 +1,5 @@
 invariant: INV-64
-file: srv_ticket.c
+file: src/srv_ticket.c
 catches: cnsa2_server_test
 reason: the profile's server seals its tickets under ChaCha20-Poly1305,
   the cipher CNSA 2.0 does not name. test_ticket opens the sealed body

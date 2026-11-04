@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512_avx2.c
+file: src/sha512_avx2.c
 catches: test/docker-aes-runtime-qemu.sh sha512-avx2
 reason: four_lower_sigma0 shifts right by 6 where FIPS 180-4's equation 4.12
   shifts by 7, which is lower_sigma1's count. Every schedule word past a

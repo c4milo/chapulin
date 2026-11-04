@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes_hw.c
+file: src/aes_hw.c
 catches: test/docker-aes-runtime-qemu.sh aes-equiv
 reason: the AES-256 key expansion rotates the temporary of the step
   every second round key takes, where FIPS 197 applies SubWord alone. That

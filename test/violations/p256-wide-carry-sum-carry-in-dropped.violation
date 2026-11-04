@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_word.h
+file: src/p256_wide_word.h
 catches: p256_equiv_test_sum
 reason: the 128-bit sum, the form of the add with carry that gcc compiles
   for a machine other than x86-64, adds its two words and leaves the

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide_table.h
+file: src/x25519_wide_table.h
 catches: x25519_equiv_test
 reason: one word of one entry of the table of multiples of the base point
   is off by one: y + x of 7 * 256^17 * B, entry [17][6]. The key

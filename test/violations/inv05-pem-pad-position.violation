@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem.c
+file: src/pem.c
 catches: x509strict
 reason: dropping RFC 4648 §3.5's pad-position rule accepts pads anywhere,
   so inputs that are not canonical base64 decode instead of failing —

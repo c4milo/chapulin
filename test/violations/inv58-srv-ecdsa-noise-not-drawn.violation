@@ -1,5 +1,5 @@
 invariant: INV-58
-file: srv_auth.c
+file: src/srv_auth.c
 catches: srv_auth_test
 reason: sign_ecdsa fills the noise with a constant instead of a draw, so
   the server signs one transcript the same way every time, and the hedge

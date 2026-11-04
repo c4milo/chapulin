@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64_blocks.c
+file: src/rsa_mont64_blocks.c
 catches: rsa_blocks_equiv_test
 reason: the square's doubling drops the top bit of each odd word of the
   cross products, the bit that moves into the next even word, so the

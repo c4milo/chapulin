@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_test
 reason: a key file's run ends at a refusal as it ends at the text's end,
   so a BEGIN line of another label after the key is skipped. A key file

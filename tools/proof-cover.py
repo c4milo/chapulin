@@ -23,7 +23,7 @@ nothing but the text of the source it copies.
 The shipped sources are the ones make packages, which the Makefile's
 print-lib-srcs prints for each build in tools/shipped_sources.py's BUILDS,
 and the sources their text includes. tools/impact_map.py reads the same set.
-A root .c file outside that set fails as well, because a list of builds can
+A .c file in src/ outside that set fails as well, because a list of builds can
 leave out the one that packages a new source.
 
 Run through `make lint-proof-cover`.
@@ -38,6 +38,7 @@ from pathlib import Path
 from shipped_sources import INCLUDED_SOURCE, shipped_sources
 
 ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "src"
 
 # Sources with no `full` harness, read by hand instead. Each entry carries what
 # the reader established. Re-audit an entry when its file changes shape, and
@@ -609,7 +610,7 @@ COPIES = {
 
 
 # Root sources that no build packages yet, each with the commit that will
-# package it. The check that every root source is shipped skips them, and
+# package it. The check that every library source is shipped skips them, and
 # each must still be compiled by a harness under the `full` check set. An
 # entry is stale, and fails, once a build in BUILDS packages its file. The
 # PROFILE=cnsa2 server packages the five ML-DSA-87 signer files
@@ -629,13 +630,14 @@ STUB_MARKER = re.compile(r"(?m)^[ \t]*// CH_(QUIC|SRV)_STUB: ")
 
 
 def root_sources():
-    """The .c files git tracks at the root, where every library source sits:
-    the tests, proofs, examples and tools sit in directories of their own."""
-    r = subprocess.run(["git", "ls-files", "-z", "--", "*.c"], cwd=ROOT, capture_output=True)
+    """The .c files git tracks in src/, where every library source sits, by
+    name: the tests, proofs, examples and tools sit in directories of their
+    own."""
+    r = subprocess.run(["git", "ls-files", "-z", "--", "*.c"], cwd=SRC, capture_output=True)
     names = {os.fsdecode(p) for p in r.stdout.split(b"\0") if p and b"/" not in p}
     if r.returncode != 0 or not names:
-        sys.exit("lint-proof-cover: git lists no .c file at the root, so the check that "
-                 "every root source is shipped would check nothing")
+        sys.exit("lint-proof-cover: git lists no .c file in src/, so the check that "
+                 "every library source is shipped would check nothing")
     return names
 
 
@@ -648,7 +650,7 @@ def stubbed_sources(sources):
     set shrinks by itself on that commit, which is the retirement
     docs/quic.md and docs/server.md state for the markers."""
     return {s for s in sources
-            if STUB_MARKER.search((ROOT / s).read_text())}
+            if STUB_MARKER.search((SRC / s).read_text())}
 
 
 def harness_compiles(name):
@@ -667,7 +669,7 @@ def full_covered():
         if checks != "full":
             continue
         covered |= harness_compiles(name)
-        covered |= {t for t in re.split(r"\s+", rest) if t.endswith(".c")}
+        covered |= {t.removeprefix("src/") for t in re.split(r"\s+", rest) if t.endswith(".c")}
     return covered
 
 
@@ -680,7 +682,7 @@ COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
 
 def copy_problem(copy, original):
     """Why copy is no longer original's text compiled once more, or None."""
-    text = COMMENT.sub("", (ROOT / copy).read_text())
+    text = COMMENT.sub("", (SRC / copy).read_text())
     for line in text.splitlines():
         if line.strip() and not COPY_DIRECTIVE.match(line.strip()):
             return f"holds a line of its own, `{line.strip()}`"
@@ -721,7 +723,7 @@ def source_problem(src, covered, stubs):
 
 
 def main():
-    sources = shipped_sources("lint-proof-cover")
+    sources = {s.removeprefix("src/") for s in shipped_sources("lint-proof-cover")}
     covered = full_covered()
     stubs = stubbed_sources(sources)
     problems = []
@@ -737,7 +739,7 @@ def main():
     unpackaged -= set(NOT_YET_PACKAGED)
     for name in sorted(unpackaged):
         problems.append(
-            f"{name} is a root source, and no build in BUILDS packages it or a source that "
+            f"{name} is a library source, and no build in BUILDS packages it or a source that "
             f"includes it. Name a build that packages it in tools/shipped_sources.py's BUILDS, "
             f"or move a file no object packages out of the root."
         )
@@ -749,7 +751,7 @@ def main():
 
     for name in sorted(set(AUDITED) & set(COPIES)):
         problems.append(f"{name} is in both AUDITED and COPIES. Keep one entry.")
-    # A root source outside the shipped set is the build list's gap, which
+    # A library source outside the shipped set is the build list's gap, which
     # the first loop names, so its entry is not reported as stale as well.
     for table, names in (("AUDITED", AUDITED), ("COPIES", COPIES)):
         for name in sorted(set(names) - sources - unpackaged):

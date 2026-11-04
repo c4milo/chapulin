@@ -1,5 +1,5 @@
 invariant: INV-16
-file: srv_auth.c
+file: src/srv_auth.c
 catches: hash_runtime_exporter_test
 reason: srv_hash_signed_content hashes a CertificateVerify's signed
   content on sha256.c whatever the session's ch_cfg.cpu states, so a

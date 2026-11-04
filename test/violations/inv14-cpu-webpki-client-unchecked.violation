@@ -1,5 +1,5 @@
 invariant: INV-14
-file: tls.c
+file: src/tls.c
 catches: webpki_session_host
 reason: the webpki client of a host object stops asking for the caller's
   description of its CPU, so ch_connect sends a ClientHello for a

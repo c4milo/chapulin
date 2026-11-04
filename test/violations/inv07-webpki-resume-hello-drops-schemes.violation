@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_message.c
+file: src/handshake_message.c
 catches: webpki_resume_test
 reason: a resuming TRUST=webpki hello offers the ticket alone again, with
   no signature_algorithms and no server_certificate_type, which is the

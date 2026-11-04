@@ -221,6 +221,8 @@ def proof_includes(path, seen=None):
         local = ROOT / "proof" / inc
         if local.exists():
             found |= proof_includes(local, seen)
+        elif (ROOT / "src" / inc).exists():
+            found.add(f"src/{inc}")
         elif inc.endswith(".c") or ("/" in inc and (ROOT / inc).exists()):
             found.add(inc)
     return found

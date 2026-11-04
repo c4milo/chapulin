@@ -1,5 +1,5 @@
 invariant: INV-63
-file: srv_flight.h
+file: src/srv_flight.h
 catches: tcp_blocking_loop_test
 reason: the server sends its own record_size_limit in the
   EncryptedExtensions to a hello that offered none

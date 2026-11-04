@@ -1,5 +1,5 @@
 invariant: INV-26
-file: record.c
+file: src/record.c
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: the record layer's open builds its AES key and never records the
   direction's cpu in it, so every record it opens under AES-GCM runs

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: aead.c
+file: src/aead.c
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: aead_seal_cpu runs its keystream through chacha20_xor, which takes no
   description of the CPU, so no record or packet a session seals runs the

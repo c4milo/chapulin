@@ -1,5 +1,5 @@
 invariant: INV-14
-file: quic_config.c
+file: src/quic_config.c
 catches: quic_loop_test
 reason: ticket_version_ok admits every configuration, so a client starts
   a connection in one QUIC version with a ticket from a connection in

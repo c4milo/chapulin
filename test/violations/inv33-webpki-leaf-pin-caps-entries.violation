@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki.c
+file: src/webpki.c
 catches: webpki_auth_test
 reason: under pins alone the list framing refuses a Certificate message
   with more than CH_WEBPKI_FLIGHT_ENTRIES entries, the walk's cap, though

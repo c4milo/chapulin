@@ -189,7 +189,7 @@ cache_key() {
             # expansion below passes each one to cc as its own argument.
             # shellcheck disable=SC2086
             case "$a" in
-            *.c) cc -E -D__CPROVER__ $defs -I . "$a" 2>/dev/null || true ;;
+            *.c) cc -E -D__CPROVER__ $defs -I src -I . "$a" 2>/dev/null || true ;;
             esac
         done
     } | $HASHER | awk '{print $1}'
@@ -290,7 +290,7 @@ launch() {
     if [ -n "$widemul_def" ]; then
         args+=("$widemul_def")
     fi
-    args+=(-I . --unwind "$unwind")
+    args+=(-I src -I . --unwind "$unwind")
     # bash 3.2 errors on expanding an empty array under set -u, so each
     # arm checks its length before expanding, as the caller below does.
     local solver=()
@@ -379,8 +379,8 @@ launch() {
 # over 299. Re-measured after hash_len joined the signatures, with make
 # check running beside them: expand 283 properties, 660 s wall and 631 s
 # of CPU, 1.95 GB; expand_label 299, 668 s wall and 640 s of CPU, 1.98 GB.
-launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 ct.c proof/ct_wipe_stub.c
-launch slow full hkdf_expand_label 120 "hkdf_expand.0:5" --object-bits 11 ct.c proof/ct_wipe_stub.c
+launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 src/ct.c proof/ct_wipe_stub.c
+launch slow full hkdf_expand_label 120 "hkdf_expand.0:5" --object-bits 11 src/ct.c proof/ct_wipe_stub.c
 # The SHA-384 arms of the two lines above, under CH_HASH_SHA384 with
 # hash_len fixed at 48: output up to three 48-byte blocks, info up to the
 # 70-byte HKDF_INFO_MAX that build declares, and the SHA-512 context
@@ -389,22 +389,22 @@ launch slow full hkdf_expand_label 120 "hkdf_expand.0:5" --object-bits 11 ct.c p
 # /usr/bin/time -l, slow tier, with make check running beside them):
 # expand 348 properties, 1817 s wall and 1365 s of CPU, 3.50 GB peak;
 # expand_label 364 properties, 1828 s wall and 1375 s of CPU, 3.61 GB.
-launch slow full hkdf384_expand 130 "hkdf_expand.0:5,fill_nondet.0:209,ct_wipe.0:209" --object-bits 11 ct.c proof/ct_wipe_stub.c
-launch slow full hkdf384_expand_label 130 "hkdf_expand.0:5,fill_nondet.0:209,ct_wipe.0:209" --object-bits 11 ct.c proof/ct_wipe_stub.c
+launch slow full hkdf384_expand 130 "hkdf_expand.0:5,fill_nondet.0:209,ct_wipe.0:209" --object-bits 11 src/ct.c proof/ct_wipe_stub.c
+launch slow full hkdf384_expand_label 130 "hkdf_expand.0:5,fill_nondet.0:209,ct_wipe.0:209" --object-bits 11 src/ct.c proof/ct_wipe_stub.c
 # These three prove aead.c's framing against the contract stubs in
 # proof/aead_stubs.h rather than compiling chacha20.c and poly1305.c into
 # every formula. Concretely they returned no verdict in five hours a night;
 # measured now: 3 s, 2 s and 2 s. What the stubs model, and what moved from
 # proof to argument, is written at the top of that header
 # (https://github.com/c4milo/chapulin/issues/56).
-launch fast full aead 85 "fill_nondet.0:65" ct.c proof/ct_wipe_stub.c
-launch fast full aead_overlap 85 "fill_nondet.0:65" ct.c proof/ct_wipe_stub.c
-launch fast full aead_forge 85 "fill_nondet.0:65" ct.c proof/ct_wipe_stub.c
+launch fast full aead 85 "fill_nondet.0:65" src/ct.c proof/ct_wipe_stub.c
+launch fast full aead_overlap 85 "fill_nondet.0:65" src/ct.c proof/ct_wipe_stub.c
+launch fast full aead_forge 85 "fill_nondet.0:65" src/ct.c proof/ct_wipe_stub.c
 # aead_inplace has no launch line: its formula returned no verdict in an
 # hour under kissat (3.8 GB and climbing), and an unconverged launch line
 # proves nothing (docs/proofs.md). The harness is written and reviewed, so
 # adding the line is the whole job once the formula converges.
-launch slow:5 noovf x25519 65 "" ct.c proof/ct_wipe_stub.c
+launch slow:5 noovf x25519 65 "" src/ct.c proof/ct_wipe_stub.c
 launch slow:5 noovf x25519_mul_alias_a 65 ""
 launch slow:5 noovf x25519_mul_alias_b 65 ""
 launch slow:5 noovf x25519_mul_inputs_alias 65 ""
@@ -489,8 +489,8 @@ launch slow:5 noovf x25519_sqr 65 ""
 # no x25519 draw (docs/decisions.md 151). Measured the same way on
 # 2026-10-25 at a load average near 35: psk 1867 properties in 561 s at
 # 2.43 GB, pin 1869 in 137 s at 1.28 GB.
-launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c proof/ct_wipe_stub.c
-launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c proof/ct_wipe_stub.c
+launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" src/handshake_auth.c src/handshake_flight.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" src/handshake_auth.c src/handshake_flight.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 # ML-KEM's chained-product functions, one formula each; the inverse
 # NTT is two half formulas, because the whole transform returns no
 # verdict in 900 s (the mlkem comment below states the split and the
@@ -512,7 +512,7 @@ launch slow:5 full mlkem_basemul 260 ""
 # handshake_parser_ee.c. The weight stays at 10: the address-space cap
 # it sizes applies on Linux only, where this formula was not
 # re-measured.
-launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c
+launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" src/handshake_parser.c src/buf.c
 # The same harness in the client that offers both cipher suites
 # (docs/decisions.md entry 45): cipher_suite may carry AES-128-GCM there,
 # and the harness asserts an accepted message carries one of the two
@@ -533,9 +533,9 @@ launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=handshake_parser_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
 # 743 properties, 128 s, 6.13 GB peak.
-launch fast:10 full handshake_parser_suite 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c -DCH_SUITE_AES_GCM -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME
-launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser_ee.c buf.c
-launch fast full certparse 260 "" handshake_parser.c buf.c
+launch fast:10 full handshake_parser_suite 260 "hsp_parse_server_hello.0:66" src/handshake_parser.c src/buf.c -DCH_SUITE_AES_GCM -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME
+launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" src/handshake_parser_ee.c src/buf.c
+launch fast full certparse 260 "" src/handshake_parser.c src/buf.c
 # The eeparse lines compile handshake_parser_ee.c, which holds the
 # EncryptedExtensions parser alone; the certparse, certverify and
 # handshake_parser lines compile handshake_parser.c, which holds the
@@ -570,7 +570,7 @@ launch fast full certparse 260 "" handshake_parser.c buf.c
 # properties, 34 s, 2.1 GB, inside the fast tier's default weight;
 # certparse 525 properties, 0.7 s, 36 MB; certparse_webpki 532
 # properties, 0.6 s, 36 MB.
-launch fast:6 full eeparse_webpki 260 "hsp_parse_encrypted_exts.0:66" -DCH_TRUST_WEBPKI handshake_parser_ee.c buf.c
+launch fast:6 full eeparse_webpki 260 "hsp_parse_encrypted_exts.0:66" -DCH_TRUST_WEBPKI src/handshake_parser_ee.c src/buf.c
 # eeparse_alpn: the ALPN arm (RFC 7301 §3.2) at the offer bound
 # ch_connect admits — CH_ALPN_MAX names of up to CH_ALPN_NAME_MAX bytes,
 # every byte and every length symbolic — over any extension body up to
@@ -587,8 +587,8 @@ launch fast:6 full eeparse_webpki 260 "hsp_parse_encrypted_exts.0:66" -DCH_TRUST
 # /usr/bin/time -l over this script): 616 properties, 4 s, 414 MB, and
 # 552 properties, 5 s, 377 MB once it included handshake_parser_ee.c
 # rather than handshake_parser.c.
-launch fast full eeparse_alpn 260 "parse_alpn.0:9,memcmp.0:33" -DCH_TRUST_WEBPKI buf.c
-launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
+launch fast full eeparse_alpn 260 "parse_alpn.0:9,memcmp.0:33" -DCH_TRUST_WEBPKI src/buf.c
+launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI src/handshake_parser.c src/buf.c
 # certverify_webpki: the arm that reads what certparse_webpki parsed.
 # The scheme must be the one the leaf key's family can produce, and only
 # the P-384 scheme's signed content takes SHA-384. Both rules run over
@@ -606,7 +606,7 @@ launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI handshake_parser.c bu
 # leaf pin call: 802 properties, 1.6 s, 45 MB.
 # Each of the three inv14-webpki-certificate-verify violations fails a
 # named assertion here as well as bin/webpki_auth_test.
-launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
+launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI src/handshake_parser.c src/buf.c
 # webpki_ticket: the resumption rule of a TRUST=webpki client
 # (webpki_ticket.h), at a hostname of up to CH_HOSTNAME_MAX bytes and up
 # to 12 anchors, over every PSK field NULL or set. No cap bounds the
@@ -624,7 +624,7 @@ launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI han
 # bound in place of the cap, on 2026-10-13: 948 properties, 8 s,
 # 0.15 GB. On 2026-10-14, with the cpu argument (docs/decisions.md 132):
 # 954 properties, 8 s, 0.15 GB.
-launch fast full webpki_ticket 66 "fill_nondet.0:254,webpki_ticket_config_hash.1:254,webpki_ticket_config_hash.2:13,webpki_ticket_config_hash.3:5,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI buf.c ct.c proof/ct_wipe_stub.c hkdf.c
+launch fast full webpki_ticket 66 "fill_nondet.0:254,webpki_ticket_config_hash.1:254,webpki_ticket_config_hash.2:13,webpki_ticket_config_hash.3:5,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI src/buf.c src/ct.c proof/ct_wipe_stub.c src/hkdf.c
 # webpki_ticket_host: the same harness in a host object (-DCH_CPU_RUNTIME),
 # over any 32-bit ch_cfg.cpu. The stubs of the calls on the SHA-256
 # instructions run the portable calls and assert the bit. main asserts
@@ -634,7 +634,7 @@ launch fast full webpki_ticket 66 "fill_nondet.0:254,webpki_ticket_config_hash.1
 # PROVE_ONLY=webpki_ticket_host PROVE_NO_CACHE=1 /usr/bin/time -l, M1
 # Pro): 970 properties, 14 s, 0.25 GB. inv16-webpki-ticket-final-on-portable
 # fails it.
-launch fast full webpki_ticket_host 66 "fill_nondet.0:254,webpki_ticket_config_hash.1:254,webpki_ticket_config_hash.2:13,webpki_ticket_config_hash.3:5,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME buf.c ct.c proof/ct_wipe_stub.c hkdf.c
+launch fast full webpki_ticket_host 66 "fill_nondet.0:254,webpki_ticket_config_hash.1:254,webpki_ticket_config_hash.2:13,webpki_ticket_config_hash.3:5,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME src/buf.c src/ct.c proof/ct_wipe_stub.c src/hkdf.c
 launch slow:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 # SHA-512 splits as ML-KEM does: the framing over a stubbed compression,
 # and the compression alone. One formula carrying both hashes and the
@@ -702,9 +702,9 @@ launch fast:4 full sha512_host 2 "havoc_context.0:9,fill_nondet.0:129,ct_wipe.0:
 #   sha3          1,719 properties, 115 s, 3.7 GB
 #   sha3_stream   1,757 properties,  96 s, 2.3 GB
 #   sha3_round    2,006 properties,  34 s, 0.8 GB
-launch fast:4 full sha3 26 "keccak_f1600.0:25,block_xor.0:8,block_xor.1:22,block_xor.2:8,block_bytes.0:8,block_bytes.1:22,block_bytes.2:8,absorb_whole_blocks.0:3,squeeze.0:3,shake_init.0:26,ct_wipe.0:201,fill_nondet.0:202" ct.c proof/ct_wipe_stub.c
-launch fast:3 full sha3_stream 26 "keccak_f1600.0:25,block_xor.0:8,block_xor.1:5,block_xor.2:8,block_bytes.0:8,block_bytes.1:5,block_bytes.2:8,absorb_whole_blocks.0:1,squeeze.0:2,fill_context.0:26,fill_nondet.0:33" ct.c proof/ct_wipe_stub.c
-launch fast full sha3_round 26 "keccak_f1600.0:25,reference_f1600.0:25,reference_theta.0:6,reference_theta.1:6,reference_theta.2:6,reference_rho.0:25,reference_pi.0:6,reference_pi.1:6,reference_chi.0:6,reference_chi.1:6,reference_rc.0:9,reference_rc.1:256,reference_round_constant.0:8,main.0:26,main.1:26,main.2:25,main.3:26" ct.c proof/ct_wipe_stub.c
+launch fast:4 full sha3 26 "keccak_f1600.0:25,block_xor.0:8,block_xor.1:22,block_xor.2:8,block_bytes.0:8,block_bytes.1:22,block_bytes.2:8,absorb_whole_blocks.0:3,squeeze.0:3,shake_init.0:26,ct_wipe.0:201,fill_nondet.0:202" src/ct.c proof/ct_wipe_stub.c
+launch fast:3 full sha3_stream 26 "keccak_f1600.0:25,block_xor.0:8,block_xor.1:5,block_xor.2:8,block_bytes.0:8,block_bytes.1:5,block_bytes.2:8,absorb_whole_blocks.0:1,squeeze.0:2,fill_context.0:26,fill_nondet.0:33" src/ct.c proof/ct_wipe_stub.c
+launch fast full sha3_round 26 "keccak_f1600.0:25,reference_f1600.0:25,reference_theta.0:6,reference_theta.1:6,reference_theta.2:6,reference_rho.0:25,reference_pi.0:6,reference_pi.1:6,reference_chi.0:6,reference_chi.1:6,reference_rc.0:9,reference_rc.1:256,reference_round_constant.0:8,main.0:26,main.1:26,main.2:25,main.3:26" src/ct.c proof/ct_wipe_stub.c
 # ML-KEM splits six ways: the KEM layer over contract stubs of the
 # polynomial layer; the polynomial layer minus its chained-product
 # functions; and one slow formula each for the NTT, the two halves of
@@ -715,8 +715,8 @@ launch fast full sha3_round 26 "keccak_f1600.0:25,reference_f1600.0:25,reference
 # mode. Measured peaks (kissat): mlkem 1.4 GB / 45 s, mlkem_poly
 # 4.3 GB / 86 s, ntt 3.3 GB / 195 s, invntt halves 2.7 GB / 349 s
 # and 2.8 GB / 186 s, basemul 3.6 GB / 254 s.
-launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" ct.c proof/ct_wipe_stub.c
-launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c
+launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" src/ct.c proof/ct_wipe_stub.c
+launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" src/ct.c proof/ct_wipe_stub.c
 # The same two formulas at ML-KEM-1024 (docs/decisions.md 150), whose
 # object holds K = 4, du = 11 and dv = 5. The NTT, its inverse and the
 # base multiplication read one polynomial, so their four harnesses cover
@@ -730,8 +730,8 @@ launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fil
 # 310 s, 3.9 GB; mlkem_poly_1024 1269 properties, 263 s, 4.3 GB. The
 # macOS peaks read above the runner's, so mlkem_1024 takes the weight of
 # 3 that mlkem_poly takes.
-launch fast:3 full mlkem_1024 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
-launch fast:3 full mlkem_poly_1024 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
+launch fast:3 full mlkem_1024 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" src/ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
+launch fast:3 full mlkem_poly_1024 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" src/ct.c proof/ct_wipe_stub.c -DCH_MLKEM_1024
 # The same two formulas on an object that runs both ranks (docs/decisions.md
 # 177), whose calls take the rank at run time. mlkem_poly_two_ranks
 # reaches K = 3 and K = 4 from one free rank value. The KEM layer takes a
@@ -744,9 +744,9 @@ launch fast:3 full mlkem_poly_1024 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:
 # the M1 (proof/prove-one.sh, kissat): mlkem_two_ranks_768 566 properties,
 # 258 s, 2.4 GB; mlkem_two_ranks_1024 566, 625 s, 3.0 GB;
 # mlkem_poly_two_ranks 1567, 214 s, 2.0 GB.
-launch fast:3 full mlkem_two_ranks_768 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_TWO_RANKS
-launch fast:3 full mlkem_two_ranks_1024 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_TWO_RANKS
-launch fast:3 full mlkem_poly_two_ranks 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c -DCH_MLKEM_TWO_RANKS
+launch fast:3 full mlkem_two_ranks_768 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" src/ct.c proof/ct_wipe_stub.c -DCH_MLKEM_TWO_RANKS
+launch fast:3 full mlkem_two_ranks_1024 385 "fill_nondet.0:3169,ct_wipe.0:2049,ct_memeq.0:1569,mlk_modulus_check.0:513,mlk_matvec_row.0:5,mlk_pke_keygen.0:5,mlk_pke_keygen.1:5,mlk_pke_encrypt.0:5,mlk_pke_encrypt.1:5,mlk_pke_decrypt.0:5" src/ct.c proof/ct_wipe_stub.c -DCH_MLKEM_TWO_RANKS
+launch fast:3 full mlkem_poly_two_ranks 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" src/ct.c proof/ct_wipe_stub.c -DCH_MLKEM_TWO_RANKS
 # ML-DSA-87 verification (docs/decisions.md 154), four formulas: the layer
 # in mldsa.c over stubs of the polynomial layer, the polynomial layer and
 # the two transforms over the contracts of the coefficient functions
@@ -759,7 +759,7 @@ launch fast:3 full mlkem_poly_two_ranks 260 "mlk_sample_ntt.0:65,mlk_sample_grou
 # 561 properties, 77 s, 3.0 GB; mldsa_ntt 519 properties, 58 s, 2.0 GB;
 # mldsa_coefficient 25 properties, 3 s, 0.2 GB. mldsa_poly takes a weight
 # of 3 from its peak.
-launch fast full mldsa 258 "" ct.c proof/ct_wipe_stub.c
+launch fast full mldsa 258 "" src/ct.c proof/ct_wipe_stub.c
 launch fast:3 full mldsa_poly 642 ""
 launch fast full mldsa_ntt 258 "mld_poly_ntt.2:9,mld_poly_invntt_tomont.2:9"
 launch fast full mldsa_coefficient 2 ""
@@ -800,20 +800,20 @@ launch fast full mldsa_coefficient 2 ""
 # --max-field-sensitivity-array-size 962 splits it: 312 properties, 412 s,
 # 0.65 GB resident, in an Ubuntu 24.04 amd64 container under Rosetta with
 # the pinned cbmc and kissat, against 2.0 GB without the flag.
-launch fast:6 full mldsa_signer 816 "ct_wipe.0:4628" ct.c
-launch fast:5 full mldsa_signer_keygen 258 "ct_wipe.0:4897" ct.c
+launch fast:6 full mldsa_signer 816 "ct_wipe.0:4628" src/ct.c
+launch fast:5 full mldsa_signer_keygen 258 "ct_wipe.0:4897" src/ct.c
 launch fast full mldsa_sign_round 258 ""
-launch fast:8 full mldsa_sign_commit 258 "" ct.c proof/ct_wipe_stub.c
-launch fast full mldsa_sign_response 258 "" ct.c proof/ct_wipe_stub.c
-launch fast full mldsa_sign_hint_row 258 "" ct.c proof/ct_wipe_stub.c
-launch fast full mldsa_sign_hint_row0 258 "" ct.c proof/ct_wipe_stub.c
-launch fast full mldsa_sign_keygen_row 258 "" ct.c proof/ct_wipe_stub.c
-launch fast full mldsa_sign_keygen_row0 258 "" ct.c proof/ct_wipe_stub.c
-launch fast full mldsa_sign_encode 258 "fill_nondet.0:641" ct.c proof/ct_wipe_stub.c
+launch fast:8 full mldsa_sign_commit 258 "" src/ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_response 258 "" src/ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_hint_row 258 "" src/ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_hint_row0 258 "" src/ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_keygen_row 258 "" src/ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_keygen_row0 258 "" src/ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_encode 258 "fill_nondet.0:641" src/ct.c proof/ct_wipe_stub.c
 launch fast:3 full mldsa_sign_poly 258 "mlds_poly_ntt.2:9,mlds_poly_invntt_tomont.2:9"
 launch fast full mldsa_sign_ntt 258 "mlds_poly_ntt.2:9,mlds_poly_invntt_tomont.2:9"
-launch fast full mldsa_sign_pack 642 "" ct.c proof/ct_wipe_stub.c
-launch fast full mldsa_sign_samplers 963 "" --max-field-sensitivity-array-size 962 ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_pack 642 "" src/ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_samplers 963 "" --max-field-sensitivity-array-size 962 src/ct.c proof/ct_wipe_stub.c
 launch fast full mldsa_sign_coefficient 2 ""
 launch fast full mldsa_sign_coefficient_ct 2 ""
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain
@@ -830,7 +830,7 @@ launch fast full mldsa_sign_coefficient_ct 2 ""
 # record's plaintext (docs/decisions.md 167), measured on 2026-10-31 on an
 # ubuntu-24.04 runner (PROVE_ONLY=record PROVE_NO_CACHE=1 /usr/bin/time -v,
 # cbmc 6.11.0, kissat): 415 properties, 753 s, 2.9 GB peak.
-launch slow:4 full record 165 "" ct.c proof/ct_wipe_stub.c
+launch slow:4 full record 165 "" src/ct.c proof/ct_wipe_stub.c
 # record_suite: rec_dir_init_suite, rec_dir_update and one seal and one
 # open in the -DCH_SUITE_AES_GCM build, over each of the three suites,
 # with hkdf, the ChaCha20 AEAD and the AES-GCM traffic entries stubbed to
@@ -863,7 +863,7 @@ launch slow:4 full record 165 "" ct.c proof/ct_wipe_stub.c
 # (PROVE_ONLY=record_suite PROVE_NO_CACHE=1, the summed resident size of
 # cbmc and the solver polled every two seconds, load near 10): 730
 # properties, 14 s, 0.55 GB, with the store under the AES bit alone.
-launch fast full record_suite 250 "" ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
+launch fast full record_suite 250 "" src/ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The x25519 ladder keeps its words inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
 # proves one loop step on the shipped step(): from any state with
@@ -879,32 +879,32 @@ launch fast full record_suite 250 "" ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GC
 # x25519_tail 458 properties, 156 s, 2.6 GB.
 launch slow:3 full x25519_step 17 ""
 launch fast:3 full x25519_tail 17 ""
-launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,encoded_message_verifies.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c proof/ct_wipe_stub.c
+launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,encoded_message_verifies.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 src/ct.c proof/ct_wipe_stub.c
 # rsa_webpki is the same harness with CH_TRUST_WEBPKI set, so
 # CH_RSA_MODULUS_MAX is 512 (RSA-4096, the bound the webpki build
 # accepts): every bound above grows from the 384-byte width to the
 # 512-byte one, and the field-sensitivity size follows. Measured (cbmc
 # 6.11.0, kissat, /usr/bin/time -l): 250 properties, 70 s, 595 MB for
 # cbmc and 89 MB for kissat.
-launch fast full rsa_webpki 513 "fill_nondet.0:513,ct_memeq.0:33,greater_or_equal.0:513,modulus_bits.0:513,modulus_bits.1:9,mgf1.0:16,emsa_pss_verify.0:480,emsa_pss_verify.1:448,encoded_message_verifies.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 ct.c proof/ct_wipe_stub.c
+launch fast full rsa_webpki 513 "fill_nondet.0:513,ct_memeq.0:33,greater_or_equal.0:513,modulus_bits.0:513,modulus_bits.1:9,mgf1.0:16,emsa_pss_verify.0:480,emsa_pss_verify.1:448,encoded_message_verifies.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 src/ct.c proof/ct_wipe_stub.c
 # rsa_pkcs1 is rsa's shape without the alignment pins: v1.5 fills every
 # em_len byte, so the modulus stays wholly nondet and one call per
 # admitted digest length runs the encode-and-compare end to end over the
 # same rsa_vp1 stub. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l):
 # 321 properties, 9.8 s, 105 MB.
-launch fast full rsa_pkcs1 385 "fill_nondet.0:385,ct_memeq.0:385,ct_wipe.0:385,greater_or_equal.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c proof/ct_wipe_stub.c
+launch fast full rsa_pkcs1 385 "fill_nondet.0:385,ct_memeq.0:385,ct_wipe.0:385,greater_or_equal.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 src/ct.c proof/ct_wipe_stub.c
 # rsa_pkcs1_webpki: the same harness at the 512-byte bound, as rsa_webpki
 # is to rsa. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l): 321
 # properties, 17 s, 154 MB for cbmc and 84 MB for kissat.
-launch fast full rsa_pkcs1_webpki 513 "fill_nondet.0:513,ct_memeq.0:513,ct_wipe.0:513,greater_or_equal.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 ct.c proof/ct_wipe_stub.c
+launch fast full rsa_pkcs1_webpki 513 "fill_nondet.0:513,ct_memeq.0:513,ct_wipe.0:513,greater_or_equal.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 src/ct.c proof/ct_wipe_stub.c
 # rsa_pkcs1_verify_exponent, the DNSSEC RSA check
 # (https://github.com/c4milo/chapulin/issues/189), over contract stubs of
 # the two rsa_mont64 calls. The harness bounds the modulus at 129 bytes and
 # the line sets CH_RSA_MODULUS_MAX to 136, so the verifier's buffers match:
 # with the length free at 384 bytes kissat ran out of memory. Measured on
 # 2026-10-31 in the pinned amd64 container: 397 properties, 32 s, 0.45 GB.
-launch fast full rsa_pkcs1_exponent 130 "fill_nondet.0:130,ct_memeq.0:130,greater_or_equal.0:130" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_RSA_MODULUS_MAX=136
-launch fast full p256 85 "" buf.c
+launch fast full rsa_pkcs1_exponent 130 "fill_nondet.0:130,ct_memeq.0:130,greater_or_equal.0:130" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_RSA_MODULUS_MAX=136
+launch fast full p256 85 "" src/buf.c
 # p256_field is the constant-time twin, and it proves more than p256 does
 # because the arithmetic is written as masks: every masked choice against
 # a reference that branches, the field contract on add, subtract and
@@ -946,7 +946,7 @@ launch fast full p256_scalar 34 "prove_exponent_index_bounds.0:257"
 # before its last read would get wrong. ct.c is on the line because
 # p256_point_affine wipes its inverse. Measured (cbmc 6.11.0, kissat,
 # /usr/bin/time -l): 176 properties, 2.2 s, and 40 MB of cbmc.
-launch fast full p256_point 34 "" ct.c proof/ct_wipe_stub.c
+launch fast full p256_point 34 "" src/ct.c proof/ct_wipe_stub.c
 # p256_point_ladder is one round of p256_point_mul over the same field
 # stubs, on the shipped ladder_round rather than a copy, for any scalar,
 # any three points and any bit index in [0, 255]: the index and the shift
@@ -985,7 +985,7 @@ launch fast full p256_point_ladder 34 ""
 # PROVE_NO_CACHE=1 on an arm64 macOS machine: 876 properties in 66 s at a
 # load average near 25, 187 s near 75, 2.0 GB of resident memory at the
 # peak, and a reach of 81.0%.
-launch fast:3 full p256_sign 100 "ct_wipe.0:289" --object-bits 10 buf.c proof/ct_wipe_stub.c
+launch fast:3 full p256_sign 100 "ct_wipe.0:289" --object-bits 10 src/buf.c proof/ct_wipe_stub.c
 # p256_ecdh is the three public entries over the scalar and point layers
 # stubbed to their contracts, proof/p256_scalar_stubs.h and
 # proof/p256_point_stubs.h, which p256_sign shares: memory safety over any
@@ -998,7 +998,7 @@ launch fast:3 full p256_sign 100 "ct_wipe.0:289" --object-bits 10 buf.c proof/ct
 # cbmc. With each call that answers 1 required to have found the scalar
 # below n and not zero, measured on 2026-10-31 the same way on the M1 Pro
 # at a load average near 37: 286 properties, 5 s, 28 MB.
-launch fast full p256_ecdh 100 "" ct.c proof/ct_wipe_stub.c
+launch fast full p256_ecdh 100 "" src/ct.c proof/ct_wipe_stub.c
 # webpki_spki: webpki_read_spki over any bytes up to CH_WEBPKI_CERT_MAX,
 # with the real DER primitives, rbuf and ct_memeq, at the webpki
 # CH_RSA_MODULUS_MAX of 512. x509_der.c is its own translation unit on
@@ -1013,7 +1013,7 @@ launch fast full p256_ecdh 100 "" ct.c proof/ct_wipe_stub.c
 # CH_RSA_MODULUS_MAX on the RSA arm and 0 on the other two, fails all
 # three (3 of 992), so every arm is reached, the RSA one at the largest
 # modulus.
-launch fast full webpki_spki 22 "" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast full webpki_spki 22 "" -DCH_TRUST_WEBPKI src/x509_der.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 # webpki_sigalg: webpki_read_sigalg concrete at the same bound, and
 # webpki_verify's dispatch over any certificate and signer with the two
 # hashes and the three verifiers stubbed to their headers' contracts.
@@ -1028,20 +1028,20 @@ launch fast full webpki_spki 22 "" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c proof
 # 15 bytes at fixed offsets. An assert on the reader's success that n is
 # under CH_WEBPKI_CERT_MAX fails (1 of 1401), so the reader succeeds at
 # the bound.
-launch fast full webpki_sigalg 50 "" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast full webpki_sigalg 50 "" -DCH_TRUST_WEBPKI src/x509_der.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 # p384 is p256's harness at twelve words: the same concrete pieces, the
 # same two loop drivers left to their proven bodies, sig up to 112 bytes
 # (a valid one is at most 104), the bit walk over [0,383]. Measured (cbmc
 # 6.11.0, kissat, /usr/bin/time -l): 975 properties, 46 s, 410 MB.
-launch fast full p384 113 "" buf.c
-launch fast full hkdf 120 "" ct.c proof/ct_wipe_stub.c
+launch fast full p384 113 "" src/buf.c
+launch fast full hkdf 120 "" src/ct.c proof/ct_wipe_stub.c
 # hkdf384: the hmac and extract proof under CH_HASH_SHA384, with keys up
 # to 160 bytes, one past SHA-512's 128-byte block plus 32, and extract's
 # hash_len free over the two values the dispatcher takes. Measured the
 # way the expand lines above were: 347 properties, 6 s, 0.10 GB peak.
 # The SHA-256 proof on the line above measured 282 properties, 2 s,
 # 0.04 GB after hash_len joined the signatures.
-launch fast full hkdf384 170 "fill_nondet.0:209,ct_wipe.0:209" ct.c proof/ct_wipe_stub.c
+launch fast full hkdf384 170 "fill_nondet.0:209,ct_wipe.0:209" src/ct.c proof/ct_wipe_stub.c
 # io: 462 s and 3.6 GB under this script's own flags, measured on
 # 2026-10-17 once io_send_all moved to io_send below: 122 properties.
 # The read half of the transport shim over the caller's callbacks,
@@ -1066,7 +1066,7 @@ launch fast full io_send 17 ""
 # properties, 0.3 s, 22 MB once tcp_nonblocking_fail sealed the alert
 # record of a failure, code the harness includes and never calls
 # (docs/decisions.md 76).
-launch fast full record_whole_len 2 "" -DCH_TRANSPORT_TCP_NONBLOCKING buf.c
+launch fast full record_whole_len 2 "" -DCH_TRANSPORT_TCP_NONBLOCKING src/buf.c
 # write_parts: ch_write_parts over three parts of up to nine bytes in all,
 # at record limits of 1 to 4, with wb_bytes as a byte loop: the
 # records hold the parts joined, every record but the last is full, and
@@ -1136,12 +1136,12 @@ launch fast full ch_fail 2 "is_error_alert.0:27"
 # keysched: 13 s under this script's own flags. Extract and Expand-Label sequencing
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
 # arithmetic is length handling rather than compression.
-launch fast full keysched 120 "" ct.c proof/ct_wipe_stub.c
+launch fast full keysched 120 "" src/ct.c proof/ct_wipe_stub.c
 # keysched384: the same harness under CH_HASH_SHA384, every secret,
 # transcript hash and PSK at 48 bytes. Measured the same way: 359
 # properties, 27 s, 0.28 GB peak; the SHA-256 line above measured 294
 # properties, 18 s, 0.18 GB after hash_len joined the signatures.
-launch fast full keysched384 130 "fill_nondet.0:209,ct_wipe.0:209" ct.c proof/ct_wipe_stub.c
+launch fast full keysched384 130 "fill_nondet.0:209,ct_wipe.0:209" src/ct.c proof/ct_wipe_stub.c
 # transcript384: the transcript's two hashes and hsr_transcript_hash,
 # transcript_hash_after and hsr_restart_transcript under CH_HASH_SHA384,
 # hash_len free over 32 and 48, with both hashes stubbed to their
@@ -1177,7 +1177,7 @@ launch fast full transcript384 70 "fill_nondet.0:209"
 # verdict matching its reported status, and the stored epoch never moving
 # backwards -- and leaves the driver's record reading to handshake_psk and
 # handshake_pin.
-launch fast full epoch 40 "" ct.c proof/ct_wipe_stub.c
+launch fast full epoch 40 "" src/ct.c proof/ct_wipe_stub.c
 # Weighted from the measured peak: 694 properties, 2.6 GB RSS in 293 s,
 # up from 1.9 GB in 154 s before handle_ticket read the ticket's
 # extensions vector, compared rb_left against zero and refused a message
@@ -1215,7 +1215,7 @@ launch fast full epoch 40 "" ct.c proof/ct_wipe_stub.c
 # (docs/decisions.md 142): 1002 properties, 673 s, 1.9 GB peak on an M1 Pro
 # on 2026-10-19 (PROVE_NO_CACHE=1 proof/prove-one.sh handshake_post), at a
 # load average near 106, so the weight stays 6.
-launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c proof/ct_wipe_stub.c session.c
+launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 src/buf.c src/ct.c proof/ct_wipe_stub.c src/session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). kem_secret over any seed,
 # any server ciphertext and any server share, with mlkem and x25519 stubbed to
@@ -1231,13 +1231,13 @@ launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:
 # 671 properties, 12 s, 85 MB at a load average near 30. The hybrid ServerHello
 # parser stays unproven: the 256-byte handshake_parser bound cannot hold a
 # 1,128-byte key share.
-launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_PQ ct.c proof/ct_wipe_stub.c
+launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_PQ src/ct.c proof/ct_wipe_stub.c
 # The same function under PROFILE=cnsa2 (docs/decisions.md 151): an
 # ML-KEM-1024 dk of 3168 bytes, a 32-byte ikm and no x25519, so CH_OK is
 # the only exit, and both wipes of the seed hold. Measured through
 # proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-25 at a load average
 # near 30: 737 properties, 16 s, 101 MB.
-launch fast full kem_secret_cnsa2 65 "fill_nondet.0:3169,ct_wipe.0:3169" -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME ct.c proof/ct_wipe_stub.c
+launch fast full kem_secret_cnsa2 65 "fill_nondet.0:3169,ct_wipe.0:3169" -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME src/ct.c proof/ct_wipe_stub.c
 # The server's half of the hybrid, and its group choice: srv_kex.c over any
 # groups and shares a parsed ClientHello reports, with mlkem_encaps_derand,
 # x25519 and ch_rand_bytes stubbed to their headers' contracts, the shape
@@ -1266,12 +1266,12 @@ launch fast full kem_secret_cnsa2 65 "fill_nondet.0:3169,ct_wipe.0:3169" -DCH_PR
 # group, ahead of the others, and the encapsulation stub taking the rank
 # (docs/decisions.md 179), the same way on 2026-11-02: 710 properties,
 # 7 s, 0.17 GB.
-launch fast full srv_kex 66 "fill_nondet.0:66,same.0:33,zero.0:65" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+launch fast full srv_kex 66 "fill_nondet.0:66,same.0:33,zero.0:65" src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The PROFILE=cnsa2 arm of srv_kex.c (docs/decisions.md 162): the
 # selection, the share and the secret of ML-KEM-1024 alone, with the
 # encapsulation stubbed by its contract under each name a host object's
 # dispatch can call. fill_nondet covers the 1,568-byte encapsulation key.
-launch fast full srv_kex_cnsa2 34 "fill_nondet.0:1569" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
+launch fast full srv_kex_cnsa2 34 "fill_nondet.0:1569" src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The TRUST=webpki client's three-group rules (docs/decisions.md 63):
 # handshake_groups.c with ch_rand_bytes, the P-256 keygen and exchange, and
 # x25519 stubbed to their headers' contracts, the srv_kex shape on the
@@ -1287,7 +1287,7 @@ launch fast full srv_kex_cnsa2 34 "fill_nondet.0:1569" ct.c proof/ct_wipe_stub.c
 # before the source runs (docs/decisions.md 141), through
 # proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load average
 # near 106: 277 properties, 10 s, 0.05 GB.
-launch fast full handshake_groups 66 "fill_nondet.0:66,zero.0:65" -DCH_TRUST_WEBPKI ct.c proof/ct_wipe_stub.c
+launch fast full handshake_groups 66 "fill_nondet.0:66,zero.0:65" -DCH_TRUST_WEBPKI src/ct.c proof/ct_wipe_stub.c
 # The parser half of the hybrid build
 # (https://github.com/c4milo/chapulin/issues/47). parse_key_share is driven
 # directly because handshake_parser bounds its message at 256 bytes and a
@@ -1300,7 +1300,7 @@ launch fast full handshake_groups 66 "fill_nondet.0:66,zero.0:65" -DCH_TRUST_WEB
 # cfg.require_pq compares. Measured: 661 properties, 1 s, 207 MB (kissat,
 # /usr/bin/time -l over this script), and 648 properties, 1 s, 197 MB once
 # the EncryptedExtensions parser left the handshake_parser.c it includes.
-launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
+launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ src/buf.c
 # The same arm in the build that offers two groups with a key share for each
 # (docs/decisions.md entry 53): -DCH_TRUST_WEBPKI turns on CH_KEX_TWO_GROUPS,
 # where a ServerHello may select x25519 with a 32-byte share beside the
@@ -1319,7 +1319,7 @@ launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
 # retry naming secp256r1, which a one-group build still refuses: 740
 # properties, 1.3 s, 0.23 GB (PROVE_ONLY=key_share_webpki PROVE_NO_CACHE=1
 # /usr/bin/time -l), and a probe in each of the two new arms fails both.
-launch fast full key_share_webpki 1200 "fill_nondet.0:1133" -DCH_TRUST_WEBPKI buf.c
+launch fast full key_share_webpki 1200 "fill_nondet.0:1133" -DCH_TRUST_WEBPKI src/buf.c
 # handshake_message.c was the last library source no harness compiled
 # (https://github.com/c4milo/chapulin/issues/33). Beyond memory safety this
 # checks the constant handshake.c asserts CH_TX_STAGE against: at CH_HELLO_MAX
@@ -1331,7 +1331,7 @@ launch fast full key_share_webpki 1200 "fill_nondet.0:1133" -DCH_TRUST_WEBPKI bu
 # written matched nothing and is gone
 # (https://github.com/c4milo/chapulin/issues/136). Measured: 486
 # properties, 3 s, 61 MB (kissat).
-launch fast full hello_build 400 "fill_nondet.0:321" buf.c
+launch fast full hello_build 400 "fill_nondet.0:321" src/buf.c
 # hello_build_webpki: the builder's TRUST=webpki arm — the server_name
 # extension over any hostname of up to CH_HOSTNAME_MAX bytes and none at
 # length 0, the ALPN extension over any offer of up to CH_ALPN_MAX names
@@ -1362,7 +1362,7 @@ launch fast full hello_build 400 "fill_nondet.0:321" buf.c
 # with its binders list, which would make pre_shared_key's position a
 # proof, returned no verdict in nine minutes at 5.7 GB of kissat, so it is
 # not here and the tests hold that order.
-launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0:9" -DCH_TRUST_WEBPKI buf.c
+launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0:9" -DCH_TRUST_WEBPKI src/buf.c
 # hello_build_suite: the same builder in the SUITE=aesgcm TRUST=webpki
 # client, whose cipher_suites are suite.h's default order or a caller's
 # list of 1 to SUITE_HELD_COUNT code points, and whose ticket may carry a
@@ -1382,7 +1382,7 @@ launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=hello_build_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
 # 671 properties, 165 s, 0.17 GB peak.
-launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,write_alpn.0:9,write_cipher_suites.0:4" -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME buf.c
+launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,write_alpn.0:9,write_cipher_suites.0:4" -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME src/buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
 # every check; the RSA walker's formula is a SAT heavyweight, so it
@@ -1552,21 +1552,21 @@ launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,writ
 # CH_X509_MAX to 2688 in place of 7808, which passed 8 GB in 17 s, and
 # unwinds the wipe and the harness's check of the 2592-byte key: 760
 # properties, 24 s, 2.6 GB (docs/decisions.md 157).
-launch fast full base64 66 "" base64.c
-launch fast full pem_step 66 "" base64.c buf.c ct.c proof/ct_wipe_stub.c
-launch fast full pem_step_ecdsa 66 "" base64.c buf.c ct.c proof/ct_wipe_stub.c
-launch fast:3 full pem 66 "" -DCH_PROOF_PEM_LEN=64 base64.c buf.c ct.c proof/ct_wipe_stub.c
-launch fast:3 full pem_ecdsa 66 "" -DCH_PROOF_PEM_LEN=64 base64.c buf.c ct.c proof/ct_wipe_stub.c
-launch fast:3 full pem_one 66 "" -DCH_PROOF_PEM_LEN=64 base64.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast full base64 66 "" src/base64.c
+launch fast full pem_step 66 "" src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast full pem_step_ecdsa 66 "" src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:3 full pem 66 "" -DCH_PROOF_PEM_LEN=64 src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:3 full pem_ecdsa 66 "" -DCH_PROOF_PEM_LEN=64 src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:3 full pem_one 66 "" -DCH_PROOF_PEM_LEN=64 src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 # One rule for a chain, a key file and a bundle, and a label the caller
 # names (docs/decisions.md 170), measured on 2026-10-31 on an ubuntu-24.04
 # runner (PROVE_ONLY=pem_blocks PROVE_NO_CACHE=1 /usr/bin/time -v, cbmc
 # 6.11.0, kissat): 544 properties, 144 s, 0.76 GB peak.
-launch fast:5 full pem_blocks 66 "" -DCH_PROOF_BLOCKS_LEN=64 buf.c
-launch fast full x509_pem 66 "" buf.c
-launch fast full x509_pem_key 33 "ct_memeq.0:22" x509_der.c buf.c ct.c proof/ct_wipe_stub.c
-launch fast:4 full pem_files 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anchors_from_pem_tcp_blocking.4:6" -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI buf.c ct.c proof/ct_wipe_stub.c
-launch fast:4 full pem_files_host 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anchors_from_pem_tcp_blocking.4:6" -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME buf.c ct.c proof/ct_wipe_stub.c
+launch fast:5 full pem_blocks 66 "" -DCH_PROOF_BLOCKS_LEN=64 src/buf.c
+launch fast full x509_pem 66 "" src/buf.c
+launch fast full x509_pem_key 33 "ct_memeq.0:22" src/x509_der.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:4 full pem_files 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anchors_from_pem_tcp_blocking.4:6" -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:4 full pem_files_host 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anchors_from_pem_tcp_blocking.4:6" -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME src/buf.c src/ct.c proof/ct_wipe_stub.c
 # The RSA key call (docs/decisions.md 184), measured on 2026-11-03 in the
 # chapulin-lab:amd64 container on the M1 at a load average near 19
 # (PROVE_ONLY=<name> PROVE_NO_CACHE=1 /usr/bin/time -v). x509_pem_rsa
@@ -1580,13 +1580,13 @@ launch fast:4 full pem_files_host 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anc
 # pem_files_rsa and pem_files_rsa_host prove the call over its stubs:
 # 940 properties, 34 s, 0.23 GB, and 944 properties, 170 s, 0.48 GB.
 # Their first stubs wrote whole fields and ran the solver out of memory.
-launch fast full x509_pem_rsa 8 "" -DCH_ROLE_SERVER buf.c
-launch slow:2 full x509_pem_rsa_integer 9 "x509_pem_integer_to_bytes.2:514,x509_pem_integer_to_bytes.3:514" -DCH_ROLE_SERVER x509_der.c buf.c ct.c proof/ct_wipe_stub.c
-launch fast full pem_files_rsa 1802 "" -DCH_ROLE_SERVER buf.c ct.c proof/ct_wipe_stub.c
-launch fast full pem_files_rsa_host 1802 "" -DCH_ROLE_SERVER -DCH_CPU_RUNTIME buf.c ct.c proof/ct_wipe_stub.c
-launch fast:1 full x509ca 400 "fill_nondet.0:1537" buf.c ct.c proof/ct_wipe_stub.c
-launch fast:1 full x509ca_ecdsa 400 "fill_nondet.0:1537" buf.c ct.c proof/ct_wipe_stub.c
-launch fast:1 full x509ca_mldsa 400 "fill_nondet.0:2689,ct_wipe.0:2593,main.0:2593" buf.c ct.c proof/ct_wipe_stub.c
+launch fast full x509_pem_rsa 8 "" -DCH_ROLE_SERVER src/buf.c
+launch slow:2 full x509_pem_rsa_integer 9 "x509_pem_integer_to_bytes.2:514,x509_pem_integer_to_bytes.3:514" -DCH_ROLE_SERVER src/x509_der.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast full pem_files_rsa 1802 "" -DCH_ROLE_SERVER src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast full pem_files_rsa_host 1802 "" -DCH_ROLE_SERVER -DCH_CPU_RUNTIME src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:1 full x509ca 400 "fill_nondet.0:1537" src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:1 full x509ca_ecdsa 400 "fill_nondet.0:1537" src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:1 full x509ca_mldsa 400 "fill_nondet.0:2689,ct_wipe.0:2593,main.0:2593" src/buf.c src/ct.c proof/ct_wipe_stub.c
 # The TRUST=webpki pieces that read no certificate. webpki_time proves
 # the Time reader over 40 nondet bytes from any reader state and the
 # clock packer over every uint64. The packer's order, a later clock
@@ -1634,9 +1634,9 @@ launch fast:1 full x509ca_mldsa 400 "fill_nondet.0:2689,ct_wipe.0:2593,main.0:25
 # read_entry's content as a heap object it held 3.8 million clauses, but
 # took 317 s of CPU at 2.9 GB, and 321 s of CPU at 1.6 GB against 236 s
 # at 2.1 GB in a second pair of runs.
-launch fast full webpki_time 41 "" buf.c x509_der.c ct.c proof/ct_wipe_stub.c
-launch fast:7 full webpki_name 254 "fill_nondet.0:1025" buf.c x509_der.c ct.c proof/ct_wipe_stub.c
-launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH_PROOF_SAN_LEN=32 -DCH_PROOF_HOST_LEN=16 buf.c x509_der.c ct.c proof/ct_wipe_stub.c
+launch fast full webpki_time 41 "" src/buf.c src/x509_der.c src/ct.c proof/ct_wipe_stub.c
+launch fast:7 full webpki_name 254 "fill_nondet.0:1025" src/buf.c src/x509_der.c src/ct.c proof/ct_wipe_stub.c
+launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH_PROOF_SAN_LEN=32 -DCH_PROOF_HOST_LEN=16 src/buf.c src/x509_der.c src/ct.c proof/ct_wipe_stub.c
 # The TRUST=webpki certificate parser and its extension walk. Every
 # number below is cbmc 6.11.0 with kissat under /usr/bin/time -l on a
 # 10-core development machine, measured while other proofs ran beside
@@ -1718,7 +1718,7 @@ launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH
 # tail that n is under CH_WEBPKI_CERT_MAX fails that one assert (1 of
 # 1253, 167 s, 0.70 GB), so a certificate at the cap reaches the tail.
 # The tier's default weight covers that peak.
-launch fast full webpki_cert 17 "ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast full webpki_cert 17 "ct_memeq.0:16" -DCH_TRUST_WEBPKI src/x509_der.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 # webpki_cert_key proves webpki_read_certificate_key, the reader a leaf
 # pinned with no anchor goes through, over the same stubs, with x509_skip
 # real for the fields it frames after the key, and over a certificate of
@@ -1741,10 +1741,10 @@ launch fast full webpki_cert 17 "ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf
 # 0.31 GB), so a certificate at the cap reaches the tail. Over a fixed
 # array one past CH_WEBPKI_CERT_MAX it proved 1316 properties in 180 s at
 # 4.2 GB. inv05-webpki-leaf-key-reads-extensions fails it.
-launch fast full webpki_cert_key 17 "ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c proof/ct_wipe_stub.c
-launch slow:4 full webpki_ext 18 "fill_nondet.0:65,read_ext_key_usage.0:23,oid_minimal.0:17,ct_memeq.0:9" x509_der.c buf.c ct.c proof/ct_wipe_stub.c
-launch slow:3 full webpki_ext_one 18 "fill_nondet.0:97,read_ext_key_usage.0:33,oid_minimal.0:17,ct_memeq.0:9" -DCH_PROOF_ONE_LEN=96 x509_der.c buf.c ct.c proof/ct_wipe_stub.c
-launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0:8,read_ext_key_usage.0:13,oid_minimal.0:17,ct_memeq.0:9" --object-bits 11 -DCH_PROOF_EXT_LEN=48 x509_der.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast full webpki_cert_key 17 "ct_memeq.0:16" -DCH_TRUST_WEBPKI src/x509_der.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch slow:4 full webpki_ext 18 "fill_nondet.0:65,read_ext_key_usage.0:23,oid_minimal.0:17,ct_memeq.0:9" src/x509_der.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch slow:3 full webpki_ext_one 18 "fill_nondet.0:97,read_ext_key_usage.0:33,oid_minimal.0:17,ct_memeq.0:9" -DCH_PROOF_ONE_LEN=96 src/x509_der.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0:8,read_ext_key_usage.0:13,oid_minimal.0:17,ct_memeq.0:9" --object-bits 11 -DCH_PROOF_EXT_LEN=48 src/x509_der.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 # The TRUST=webpki chain walk, over a CertificateEntry list of up to
 # CH_PROOF_LIST_LEN bytes and CH_PROOF_ANCHORS anchors of unconstrained
 # bytes, with the five calls it makes stubbed to the contracts their own
@@ -1790,7 +1790,7 @@ launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0
 # GB; and an assert of 0 at the CH_OK tail fails that one assert (1 of
 # 1177, 110 s, 4.4 GB). fast:8 stays, whose 12 GB cap is 2.7 times the
 # highest of those peaks.
-launch fast:8 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,anchor_verifies.0:3,webpki_verify_chain.0:5" -DCH_TRUST_WEBPKI -DCH_PROOF_LIST_LEN=48 buf.c
+launch fast:8 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,anchor_verifies.0:3,webpki_verify_chain.0:5" -DCH_TRUST_WEBPKI -DCH_PROOF_LIST_LEN=48 src/buf.c
 # webpki_pin: the SPKI pin calls of webpki_pin.c (webpki_pin.h). The raw
 # public key half runs at its real bound, a list one byte past an entry at
 # CH_WEBPKI_SPKI_MAX, so both sides of the entry cap and of the exact fill
@@ -1821,7 +1821,7 @@ launch fast:8 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,a
 # 1.04 GB and 0.69 million clauses. An assert at the raw half's CH_OK
 # tail that the entry is under CH_WEBPKI_SPKI_MAX fails (1 of 1397), so
 # an entry at the cap reaches the tail.
-launch fast full webpki_pin 5 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast full webpki_pin 5 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI src/webpki.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 # webpki_leaf_pin proves webpki_verify_leaf_pin, the rule for a chain
 # under SPKI pins alone (docs/decisions.md 65), apart from the other two
 # calls, whose formula is near its weight already. The list framing in
@@ -1843,13 +1843,13 @@ launch fast full webpki_pin 5 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH
 # CH_WEBPKI_CERT_MAX to CH_WEBPKI_LEAF_PIN_CERT_MAX, at a load average of
 # 3 to 8: 1269 properties, 46 s, 1.2 GB; an assert of 0 at the CH_OK
 # tail fails that one assert (1 of 1270, 64 s, 3.9 GB).
-launch fast full webpki_leaf_pin 6 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c proof/ct_wipe_stub.c
-launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
-launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
-launch fast:3 full x509der_mldsa 452 "fill_nondet.0:2625,ct_memeq.0:68" buf.c ct.c proof/ct_wipe_stub.c
-launch slow:2 full x509parse_ecdsa 260 "fill_nondet.0:257" buf.c proof/ct_wipe_stub.c
-launch slow:2 full x509parse_mldsa 260 "fill_nondet.0:257" buf.c proof/ct_wipe_stub.c
-launch slow:2 full x509parse 844 "fill_nondet.0:841" buf.c proof/ct_wipe_stub.c
+launch fast full webpki_leaf_pin 6 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI src/webpki.c src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch fast:3 full x509der_mldsa 452 "fill_nondet.0:2625,ct_memeq.0:68" src/buf.c src/ct.c proof/ct_wipe_stub.c
+launch slow:2 full x509parse_ecdsa 260 "fill_nondet.0:257" src/buf.c proof/ct_wipe_stub.c
+launch slow:2 full x509parse_mldsa 260 "fill_nondet.0:257" src/buf.c proof/ct_wipe_stub.c
+launch slow:2 full x509parse 844 "fill_nondet.0:841" src/buf.c proof/ct_wipe_stub.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 # The AES-128 forward cipher and the two aes_public_key constructors,
 # TRANSPORT=quic-nonblocking. HKDF is a contract stub (proof/aes_stubs.h), so
@@ -1938,7 +1938,7 @@ launch fast full aes_extern 2 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_AES_EX
 # properties, under 1 s, 0.02 GB with the QUIC version each call takes
 # (docs/decisions.md 79); 107 properties, under 1 s, 0.02 GB once the
 # version chooses between version 1's labels and version 2's.
-launch fast full quic_keys 45 "fill_nondet.0:177" ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING
+launch fast full quic_keys 45 "fill_nondet.0:177" src/ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # quic_keys_suite: the three derivations and the update in the
 # -DCH_SUITE_AES_GCM QUIC build, over each of the three suites, with HKDF
 # a stub that asserts the suite's hash and key lengths.
@@ -1956,7 +1956,7 @@ launch fast full quic_keys 45 "fill_nondet.0:177" ct.c proof/ct_wipe_stub.c -DCH
 # With a host object's stored schedule (docs/decisions.md 160), whose
 # 244-byte wipe and stub fill the unwindset bounds, measured as
 # record_suite's was on 2026-10-27: 179 properties, 14 s, 0.71 GB.
-launch fast full quic_keys_suite 60 "ct_wipe.0:245,fill_nondet.0:245" ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
+launch fast full quic_keys_suite 60 "ct_wipe.0:245,fill_nondet.0:245" src/ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
 # are contract stubs the harness defines, so this formula holds the one
 # call's framing and its verdict and not AES-128-GCM; the harness states
@@ -1969,7 +1969,7 @@ launch fast full quic_keys_suite 60 "ct_wipe.0:245,fill_nondet.0:245" ct.c proof
 # gcm_seal stub holding each version to the nonce its RFC prints: 185
 # properties, 11 s, 0.21 GB. A quic_retry.c whose version 2 entry names
 # version 1's nonce fails that assertion (1 of 185).
-launch fast full quic_retry 70 "fill_nondet.0:177" ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING
+launch fast full quic_retry 70 "fill_nondet.0:177" src/ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The Initial packet path: both entries over unconstrained lengths, with
 # the eight calls they make stubbed to their contracts
 # (proof/quic_initial_stubs.h). The cipher, the AEAD and the header
@@ -1995,7 +1995,7 @@ launch fast full quic_initial 40 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC_NONBLOC
 # of 0 at each of its three CH_OK tails fails all three (3 of 926, 4
 # iterations), so every tail is reached. With quic_pn_read and
 # quic_pn_decode shifting by constants alone: 921 properties, 7 s.
-launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING
+launch fast full quic_packet 65 "fill_nondet.0:133" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # quic_packet_suite: the same file in the -DCH_SUITE_AES_GCM QUIC build,
 # over each of the three suites: the mask, the seal and the Handshake open
 # run the cipher the set's suite names at its key length, and the seal
@@ -2024,7 +2024,7 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c proof/ct_wipe_stu
 # byte of a key set is unconstrained, so both the load and the expansion
 # run. Measured as record_suite's was on 2026-10-27: 1260 properties,
 # 13 s, 0.37 GB.
-launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
+launch fast full quic_packet_suite 250 "" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # AEAD_AES_128_GCM's memory safety, its refusal, which leaves zeros where
 # the plaintext went, and
 # GHASH on its own. The forward cipher is a contract stub
@@ -2064,9 +2064,9 @@ launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_T
 # 72 s, 1.8 GB; ghash 454 properties, 319 s, 2.4 GB.
 # Neither proves a functional or authenticity property; the two harnesses
 # that state those carry no launch line, below.
-launch slow:3 full gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
-launch slow:2 full gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
-launch slow:2 full ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING
+launch slow:3 full gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 src/ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
+launch slow:2 full gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 src/ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
+launch slow:2 full ghash 130 "fill_nondet.0:257,hash_data.1:17" src/ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # gcm_avx512.c's two entries (docs/decisions.md 130), over stubs of the 512-bit kernel's four
 # functions, of ct_wipe and of avx512_wipe_registers that record each call: each entry calls the
 # kernel's function for its direction and round count once, with its own arguments, then wipes
@@ -2081,7 +2081,7 @@ launch slow:2 full ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c proof/ct_wi
 #   gcm_avx512_wipe_quic    62 properties, 2 s, 39 MB
 launch fast full gcm_avx512_wipe 2 "ct_wipe.0:2561" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_GCM_AVX512_MODEL --unsigned-overflow-check
 launch fast full gcm_avx512_wipe_quic 2 "ct_wipe.0:2561" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_GCM_AVX512_MODEL --unsigned-overflow-check
-launch fast full poly1305 85 "blocks.0:8" ct.c proof/ct_wipe_stub.c
+launch fast full poly1305 85 "blocks.0:8" src/ct.c proof/ct_wipe_stub.c
 # The ROLE=server authentication flight: the two slot predicates over
 # every SignatureScheme code point, the CertificateVerify signed content
 # of RFC 9846 section 4.5.2 at every transcript length the contract
@@ -2112,19 +2112,19 @@ launch fast full poly1305 85 "blocks.0:8" ct.c proof/ct_wipe_stub.c
 # in sign_ecdsa and handed to the p256_sign_hedged stub, which asserts the
 # noise readable (docs/decisions.md 153), took it to 479 properties, 8 s
 # and 0.34 GB of resident memory, the same way on 2026-10-25.
-launch fast full srv_auth 385 "" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+launch fast full srv_auth 385 "" src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The same entries under CH_SIGN_MLDSA, which every host server sets, with
 # the mldsa87 slot beside the other two and srv_mldsa.h's calls stubbed
 # (docs/decisions.md 180). Measured in the pinned amd64 container on
 # 2026-11-02: 497 properties, 112 s, 0.41 GB.
-launch fast full srv_auth_mldsa 385 "" ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_SIGN_MLDSA
+launch fast full srv_auth_mldsa 385 "" src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_SIGN_MLDSA
 # The PROFILE=cnsa2 server's authentication, srv_mldsa.c (docs/decisions.md
 # 162), over one unconstrained mldsa87 slot, every scheme and every
 # selection hash length, with the signer, the verifier, the transcript
 # snapshot and the two srv_frag calls as contract stubs. fill_nondet runs
 # to the 4,627-byte signature, ct_wipe to the 146-byte content and the
 # padding loop to 64. Measured below.
-launch fast full srv_mldsa 2 "fill_nondet.0:4628,ct_wipe.0:147,signed_content.0:65" buf.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
+launch fast full srv_mldsa 2 "fill_nondet.0:4628,ct_wipe.0:147,signed_content.0:65" src/buf.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The same file in a host server outside the profile, where it is the third
 # identity and defines srv_mldsa.h's calls alone (docs/decisions.md 180).
 # The transcript stub fills at each suite's constant length: a fill of a
@@ -2132,7 +2132,7 @@ launch fast full srv_mldsa 2 "fill_nondet.0:4628,ct_wipe.0:147,signed_content.0:
 # the formula did not finish in 50 minutes. Measured in the pinned amd64
 # container on 2026-11-02: 747 properties, 15 s, 0.16 GB, and srv_mldsa
 # above 747 properties, 17 s, 0.16 GB.
-launch fast full srv_mldsa_host 2 "fill_nondet.0:4628,ct_wipe.0:147,signed_content.0:65" buf.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
+launch fast full srv_mldsa_host 2 "fill_nondet.0:4628,ct_wipe.0:147,signed_content.0:65" src/buf.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The server's ticket selection and issue, srv_resume.c, over any
 # identities and binders lists up to the bounds the harness states, any
 # ticket key, clock, modes and ALPN selection, with srv_ticket.c, the key
@@ -2166,7 +2166,7 @@ launch fast full srv_mldsa_host 2 "fill_nondet.0:4628,ct_wipe.0:147,signed_conte
 # bytes before the source runs (docs/decisions.md 141), through
 # proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load average
 # near 106: 1072 properties, 632 s, 1.56 GB peak.
-launch slow full srv_resume 120 "fill_nondet.0:122,find_ticket.0:24,binder_at.0:36,ct_wipe.0:92,ct_memeq.0:33" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+launch slow full srv_resume 120 "fill_nondet.0:122,find_ticket.0:24,binder_at.0:36,ct_wipe.0:92,ct_memeq.0:33" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # gcm and gcm_forge have no launch line, for the reason
 # aead_inplace has none: neither formula returned a verdict, and an
 # unconverged launch line proves nothing (docs/proofs.md). Measured with
@@ -2202,13 +2202,13 @@ launch slow full srv_resume 120 "fill_nondet.0:122,find_ticket.0:24,binder_at.0:
 # asserted equal to the chain rule over two entries of any length: 604
 # properties, 11 s, 0.77 GB peak. With the rule's bound one byte lower or
 # one byte higher in the harness the assertion fails, so it is exact.
-launch fast full srv_message 130 "fill_nondet.0:118" buf.c -DCH_ROLE_SERVER
-launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c proof/ct_wipe_stub.c hkdf.c -DCH_ROLE_SERVER
+launch fast full srv_message 130 "fill_nondet.0:118" src/buf.c -DCH_ROLE_SERVER
+launch fast full srv_cookie 130 "fill_nondet.0:119" src/buf.c src/ct.c proof/ct_wipe_stub.c src/hkdf.c -DCH_ROLE_SERVER
 # The same harness for the PROFILE=cnsa2 cookie: HMAC-SHA-384, a 48-byte MAC
 # and a 133-byte cookie, with SHA-384 the contract stub beside SHA-256's.
 # fill_nondet and ct_wipe cover the 208-byte SHA-384 context, the
 # largest object it runs over.
-launch fast full srv_cookie_cnsa2 130 "fill_nondet.0:209,ct_wipe.0:209" buf.c ct.c proof/ct_wipe_stub.c hkdf.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
+launch fast full srv_cookie_cnsa2 130 "fill_nondet.0:209,ct_wipe.0:209" src/buf.c src/ct.c proof/ct_wipe_stub.c src/hkdf.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # srv_select_suite: suite.h's srv_first_offered_suite, the walk
 # srv_select runs over the server's order, in the -DCH_SUITE_AES_GCM
 # build, over every offer of the three suites and every order of up to
@@ -2244,12 +2244,12 @@ launch fast full srv_select_runtime 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DC
 # is reached. With the ticket's QUIC version, a 108-byte ticket and version
 # 2 of the format (docs/decisions.md 79): 711 properties, 1 s, 0.03 GB,
 # measured the same way on 2026-09-29.
-launch fast full srv_ticket 110 "fill_nondet.0:110" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+launch fast full srv_ticket 110 "fill_nondet.0:110" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The same harness for the PROFILE=cnsa2 tickets: AES-256-GCM on a key
 # expanded on srv_ticket.c's frame, with version byte 3, and the three AES
 # calls stubbed by contract. fill_nondet and ct_wipe cover the expanded key,
 # the largest object either one runs over.
-launch fast full srv_ticket_cnsa2 130 "fill_nondet.0:260,ct_wipe.0:260" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
+launch fast full srv_ticket_cnsa2 130 "fill_nondet.0:260,ct_wipe.0:260" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The QUIC server's Retry token, the same shape as the cookie above: buf.c,
 # ct.c and hkdf.c real, SHA-256 the contract stub in harness.h, and both
 # calls over unconstrained inputs, the address length and the two connection
@@ -2265,7 +2265,7 @@ launch fast full srv_ticket_cnsa2 130 "fill_nondet.0:260,ct_wipe.0:260" buf.c ct
 # refused unless quic_version_derived admits it (docs/decisions.md 79): 916
 # properties, 30 s, 1.04 GB, measured the same way on 2026-09-29; a check
 # that drops the version from the refusal fails both CH_EINVAL assertions.
-launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:21,prove_check.1:21,prove_check.2:21" buf.c ct.c proof/ct_wipe_stub.c hkdf.c -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING
+launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:21,prove_check.1:21,prove_check.2:21" src/buf.c src/ct.c proof/ct_wipe_stub.c src/hkdf.c -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The ROLE=server ClientHello parser, split in two at srv_read_extension,
 # the one entry between its files. This line is the readers half: every
 # reader in srv_parser_ext.c over an unconstrained extension body, any
@@ -2281,22 +2281,22 @@ launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:
 # body under the 32 bytes of the shortest share, so this formula holds the
 # key_share reader's refusals and its walk; bin/srv_test holds each group's
 # exact length.
-launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The same readers under the PROFILE=cnsa2 server's defines, and the one
 # shape a 24-byte body cannot hold: a key_share entry for ML-KEM-1024 at its
 # 1,568-byte length or one byte either side, which srv_parser_ext_cnsa2_share
 # walks in at most two entries.
-launch fast:2 full srv_parser_ext_cnsa2 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
+launch fast:2 full srv_parser_ext_cnsa2 26 "fill_nondet.0:129,ct_memeq.0:33" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The same readers in a host server outside the profile, whose
 # signature_algorithms reader sets the mldsa87 bit beside the other two
 # (docs/decisions.md 180): 1036 properties, 183 s and 0.27 GB of resident
 # memory on an M1 Pro at a load average near 25 (2026-11-02).
-launch fast:2 full srv_parser_ext_mldsa 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_SIGN_MLDSA
-launch fast full srv_parser_ext_cnsa2_share 3 "fill_nondet.0:1580" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
+launch fast:2 full srv_parser_ext_mldsa 26 "fill_nondet.0:129,ct_memeq.0:33" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_SIGN_MLDSA
+launch fast full srv_parser_ext_cnsa2_share 3 "fill_nondet.0:1580" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER -DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA
 # The same shape in a server outside the profile, which holds ML-KEM-1024
 # beside its other three groups (docs/decisions.md 179). Measured in the
 # pinned amd64 container on 2026-11-02: 1026 properties, 5 s, 0.40 GB.
-launch fast full srv_parser_ext_mlkem1024_share 3 "fill_nondet.0:1580" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+launch fast full srv_parser_ext_mlkem1024_share 3 "fill_nondet.0:1580" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The walk half, proof/srv_parser_walk_harness.c: srv_parser.c real with
 # srv_read_extension stubbed to its contract, over any message up to 64
 # bytes, which leaves room for five empty extensions after the head.
@@ -2345,7 +2345,7 @@ launch fast full srv_parser_ext_mlkem1024_share 3 "fill_nondet.0:1580" buf.c ct.
 # srv_list_has call per suite (docs/decisions.md 58), at the bound
 # srv_list_has.0 had; at the default unwind of 8 its unwinding assertion
 # fails. Measured under this script's flags on 2026-09-24: 834 properties, 304 s, 1.20 GB peak.
-launch slow:3 full srv_parser_walk 8 "main.0:65,sha256_final.0:33,parse_head.0:33,srv_ext_over_max.0:5,srv_ext_duplicate.0:5,type_before.0:4,srv_parse_client_hello.0:5,next_covered.0:5,add_frozen_extensions.0:5" buf.c ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
+launch slow:3 full srv_parser_walk 8 "main.0:65,sha256_final.0:33,parse_head.0:33,srv_ext_over_max.0:5,srv_ext_duplicate.0:5,type_before.0:4,srv_parse_client_hello.0:5,next_covered.0:5,add_frozen_extensions.0:5" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # The frozen digest's walk and the duplicate check under it, over any
 # extension block up to 24 bytes, six extensions: the walk reads only
 # inside the block, srv_ext_duplicate answers 1 on a whole block exactly
@@ -2364,7 +2364,7 @@ launch slow:3 full srv_parser_walk 8 "main.0:65,sha256_final.0:33,parse_head.0:3
 # above lowest_type rather than the smallest, and one that takes only types
 # strictly above it, fail the count (592 s and 991 s); and srv_ext_duplicate
 # over recognized types alone fails the duplicate answer (822 s).
-launch slow:3 full srv_parser_frozen 8 "main.0:25" buf.c -DCH_ROLE_SERVER
+launch slow:3 full srv_parser_frozen 8 "main.0:25" src/buf.c -DCH_ROLE_SERVER
 # srv_ext_over_max, the count that bounds both walks above
 # (docs/decisions.md 59), over any extension block up to 24 bytes:
 # memory safe, 1 exactly when the block begins with more than
@@ -2378,7 +2378,7 @@ launch slow:3 full srv_parser_frozen 8 "main.0:25" buf.c -DCH_ROLE_SERVER
 # 5 it fails the answer; a count that walks the whole block before it
 # answers fails the loop bound. Asserting each answer in turn fails both,
 # so both are reached.
-launch fast full srv_parser_count 8 "main.0:25,srv_ext_over_max.0:4,whole_prefix.0:7" buf.c -DCH_ROLE_SERVER
+launch fast full srv_parser_count 8 "main.0:25,srv_ext_over_max.0:4,whole_prefix.0:7" src/buf.c -DCH_ROLE_SERVER
 launch fast full buf 100 ""
 # handshake_record on its own, so the two drivers can stub it
 # (https://github.com/c4milo/chapulin/issues/37). Before this harness,
@@ -2465,8 +2465,8 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # resident size stays under a gigabyte. The CA harness exists because
 # hsa_epoch_commit sits behind CH_TRUST_CA and its wipe bound is the
 # larger handshake_state that mode carries.
-launch fast:4 full quic_driver 5 "fill_nondet.0:257,ct_wipe.0:441,drive.0:8,assert_dead.0:33,zero_bytes.0:133" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 handshake_record.c quic_config.c ct.c proof/ct_wipe_stub.c
-launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 ct.c proof/ct_wipe_stub.c
+launch fast:4 full quic_driver 5 "fill_nondet.0:257,ct_wipe.0:441,drive.0:8,assert_dead.0:33,zero_bytes.0:133" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 src/handshake_record.c src/quic_config.c src/ct.c proof/ct_wipe_stub.c
+launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 src/ct.c proof/ct_wipe_stub.c
 # quic_config_webpki: the configuration rules ch_quic_init applies under
 # TRUST=webpki, which are webpki_cfg_ok's plus RFC 9001's, SPKI pins
 # included (docs/decisions.md 64). quic_driver compiles quic_config.c
@@ -2496,7 +2496,7 @@ launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUI
 # with the cpu rule in the webpki_resumption_ok stub of the host object
 # (docs/decisions.md 132): 607 properties, 6 s, 0.12 GB;
 # quic_config_webpki_suite 777 properties, 6 s, 0.15 GB.
-launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING quic_config.c webpki_cfg.c
+launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_config.c src/webpki_cfg.c
 # quic_config_webpki_suite: the same rules in the SUITE=aesgcm build,
 # which add the client's suite list, ch_cfg.cipher_suites: any code points
 # in an array of SUITE_HELD_COUNT beside a count of any size, so the
@@ -2518,8 +2518,8 @@ launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=quic_config_webpki_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
 # 782 properties, 6 s, 0.14 GB peak.
-launch fast full quic_config_webpki_suite 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME quic_config.c webpki_cfg.c
-launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c proof/ct_wipe_stub.c
+launch fast full quic_config_webpki_suite 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME src/quic_config.c src/webpki_cfg.c
+launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 src/ct.c proof/ct_wipe_stub.c
 # The ROLE=server public calls and the flight driver above them. The
 # fourteen srv_flight.h handlers are contract stubs the harness defines,
 # because a handler and the driver that calls it are separate formulas;
@@ -2580,7 +2580,7 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # near 15 (Apple M1, macOS, whose resident peaks read above the runner's):
 # 1011 properties, 103 s, 4.94 GB, and reach 95.6% against the 95.5 floor.
 # The weight is 3 because the peaks above pass the fast tier's 2 GB default.
-launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c proof/ct_wipe_stub.c session.c
+launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER src/srv.c src/srv_handshake.c src/ct.c proof/ct_wipe_stub.c src/session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
 # srv_accept's layering: srv_tcp_nonblocking.c and tcp_nonblocking_frame.c
 # real, the fifteen handlers contract stubs. It covers the step table, the
@@ -2598,7 +2598,7 @@ launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:5
 # formula to 11.8 GB, so the harness states ct_wipe's contract over one
 # memset. Measured on 2026-10-30 in the pinned amd64 container, the way the
 # runner runs it: 1656 properties, 97 s, 1.26 GB resident.
-launch fast:2 full srv_tcp_nonblocking 4 "fill_nondet.0:33,no_secret_left.0:33" --object-bits 10 -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING tcp_nonblocking_frame.c ct.c buf.c
+launch fast:2 full srv_tcp_nonblocking 4 "fill_nondet.0:33,no_secret_left.0:33" --object-bits 10 -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_nonblocking_frame.c src/ct.c src/buf.c
 # The ROLE=server QUIC driver, srv_quic.c, with srv_tcp_nonblocking's
 # layering: the driver, quic_fail.c and the QUIC arm of
 # handshake_record.c real, the fifteen handlers the contract stubs of
@@ -2607,7 +2607,7 @@ launch fast:2 full srv_tcp_nonblocking 4 "fill_nondet.0:33,no_secret_left.0:33" 
 # server's handshake state ran past it. Measured on 2026-10-31 in the
 # pinned amd64 container: 1557 properties, 55 s to 61 s, 0.66 GB
 # resident.
-launch fast:2 full srv_quic 5 "fill_nondet.0:257,drive.0:5,zero_bytes.0:133" -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 handshake_record.c ct.c
+launch fast:2 full srv_quic 5 "fill_nondet.0:257,drive.0:5,zero_bytes.0:133" -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 src/handshake_record.c src/ct.c
 # The client's tcp-nonblocking driver, in two formulas with the
 # quic_step and quic_driver layering. tcp_nonblocking runs init, the
 # real step table, ch_record_out and ch_record_close, with the
@@ -2618,8 +2618,8 @@ launch fast:2 full srv_quic 5 "fill_nondet.0:257,drive.0:5,zero_bytes.0:133" -DC
 # fast tier's five minutes. Measured on 2026-10-31 in the pinned amd64
 # container: tcp_nonblocking 1755 properties, 7 s to 11 s, 80 MB resident;
 # tcp_nonblocking_in 1628, 72 s, 1.32 GB.
-launch fast full tcp_nonblocking 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING tcp_nonblocking.c tcp_nonblocking_step.c tcp_nonblocking_frame.c ct.c buf.c
-launch fast:2 full tcp_nonblocking_in 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING tcp_nonblocking.c tcp_nonblocking_frame.c ct.c buf.c
+launch fast full tcp_nonblocking 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_nonblocking.c src/tcp_nonblocking_step.c src/tcp_nonblocking_frame.c src/ct.c src/buf.c
+launch fast:2 full tcp_nonblocking_in 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/ct.c src/buf.c
 # The ROLE=server flight handlers, with srv_accept's layering turned
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the
@@ -2646,7 +2646,7 @@ launch fast:2 full tcp_nonblocking_in 4 "fill_nondet.0:129,no_secret_left.0:33" 
 # and the ALPN arms, with no list in the configuration. Measured on
 # 2026-10-30 in the pinned amd64 container, the way the runner runs it:
 # 1686 properties, 34 s, 1.25 GB resident.
-launch fast:2 full srv_flight 4 "ct_wipe.0:65,ct_memeq.0:33,fill_nondet.0:118" -DCH_ROLE_SERVER ct.c proof/ct_wipe_stub.c
+launch fast:2 full srv_flight 4 "ct_wipe.0:65,ct_memeq.0:33,fill_nondet.0:118" -DCH_ROLE_SERVER src/ct.c proof/ct_wipe_stub.c
 # srv_out.c, the server's handshake output, under each transport: the
 # record split, the plaintext header, the writer that streams the
 # Certificate, and the alert on each refusal. rec_seal, the transport, the
@@ -2659,9 +2659,9 @@ launch fast:2 full srv_flight 4 "ct_wipe.0:65,ct_memeq.0:33,fill_nondet.0:118" -
 # to 16 s, 81 MB. Over QUIC the message bound is
 # 260 bytes, so the writer fills to CH_TX_PT; at 260 the TCP formulas took
 # 215 s and reached no more lines.
-launch fast full srv_out 2 "fill_nondet.0:129,srv_frag_bytes.0:6,srv_out_sealed.0:5" -DCH_ROLE_SERVER srv_out.c
-launch fast full srv_out_nonblocking 2 "fill_nondet.0:129,srv_frag_bytes.0:6,srv_out_sealed.0:5" -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING srv_out.c
-launch fast full srv_out_quic 2 "fill_nondet.0:129,srv_frag_bytes.0:7" -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING srv_out.c
+launch fast full srv_out 2 "fill_nondet.0:129,srv_frag_bytes.0:6,srv_out_sealed.0:5" -DCH_ROLE_SERVER src/srv_out.c
+launch fast full srv_out_nonblocking 2 "fill_nondet.0:129,srv_frag_bytes.0:6,srv_out_sealed.0:5" -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING src/srv_out.c
+launch fast full srv_out_quic 2 "fill_nondet.0:129,srv_frag_bytes.0:7" -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING src/srv_out.c
 # ct proves ct_memeq and the contract of proof/ct_wipe_stub.c, the
 # ct_wipe every other line links. ct_wipe proves ct_wipe.c, the body that
 # ships, to the same contract with its 16-byte word, and ct_wipe_u32 with
@@ -2741,12 +2741,12 @@ launch fast full x25519_ops 260 ""
 #   x25519_wide_invert  22 s, 1.5 GB, then 131 s, 3.5 GB, hence fast:4
 #   x25519_wide_edwards  7 s, 203 MB, then 15 s, 532 MB
 launch fast full x25519_wide_mul128 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full x25519_wide_mul 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full x25519_wide_sqr 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full x25519_wide_ops 256 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full x25519_wide_step 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full x25519_wide_tail 41 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast:4 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_mul 6 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_sqr 6 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_ops 256 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_step 6 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_tail 41 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast:4 full x25519_wide_invert 101 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # The wide field's key generation, x25519_wide_edwards.h (docs/decisions.md
 # 144), under the same flags. x25519_wide_select runs recode() and
 # select_entry() on their real bodies and the shipped table: the digits add
@@ -2761,8 +2761,8 @@ launch fast:4 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # (cbmc 6.11.0, kissat 4.0.4), on 2026-10-24, run 40142481095:
 #   x25519_wide_select   1892 properties, 38 s, 161 MB
 #   x25519_wide_edwards  1941 properties,  6 s, 203 MB
-launch fast full x25519_wide_select 65 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full x25519_wide_edwards 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_select 65 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_edwards 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # Ed25519 verification on the same field, x25519_wide_ed25519.h, for
 # DNSSEC algorithm 15 (https://github.com/c4milo/chapulin/issues/189).
 # x25519_wide_ed25519 proves to_entry() writes canonical words, the entry
@@ -2774,8 +2774,8 @@ launch fast full x25519_wide_edwards 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUN
 # 512 steps in one formula cbmc gave no verdict in 15 minutes. Measured on
 # 2026-10-31 in the pinned amd64 container: 2630 properties, 4 s, 98 MB;
 # and 2474 properties, 2 s.
-launch fast full x25519_wide_ed25519 9 "ct_wipe.0:41" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI --unsigned-overflow-check
-launch fast full x25519_wide_ed25519_mod_l 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI
+launch fast full x25519_wide_ed25519 9 "ct_wipe.0:41" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI --unsigned-overflow-check
+launch fast full x25519_wide_ed25519_mod_l 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI
 # The radix-2^64 field, x25519_adx.c (docs/decisions.md 165), over its
 # model, test/x25519_adx_model.h: CBMC reads no assembly, so each line
 # compiles the file with -DCH_X25519_ADX_MODEL, as bin/x25519_adx_model_test
@@ -2795,10 +2795,10 @@ launch fast full x25519_wide_ed25519_mod_l 9 "" ct.c proof/ct_wipe_stub.c -DCH_C
 #   x25519_adx_mul     519 properties, 30 s, 550 MB
 #   x25519_adx_sqr     519 properties, 32 s, 580 MB
 #   x25519_adx_ladder  263 properties, 28 s, 450 MB
-launch fast full x25519_adx_ops 33 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest --unsigned-overflow-check
-launch fast full x25519_adx_mul 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest --unsigned-overflow-check
-launch fast full x25519_adx_sqr 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest --unsigned-overflow-check
-launch fast full x25519_adx_ladder 321 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest
+launch fast full x25519_adx_ops 33 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full x25519_adx_mul 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full x25519_adx_sqr 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full x25519_adx_ladder 321 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_X25519_ADX_MODEL -Itest
 # The wide P-256 arithmetic of a host object (docs/decisions.md 94): four
 # 64-bit words under p256_wide_field.c and p256_wide_scalar.c, the point
 # formulas in p256_wide_point.c, the two scalar multiplications in
@@ -2883,19 +2883,19 @@ launch fast full p256_wide_row 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_row_sum 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_sqr 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_field 34 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_field_mul 6 "ct_wipe.0:33" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_scalar 34 "" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_point 100 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_field_mul 6 "ct_wipe.0:33" --object-bits 10 src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_scalar 34 "" --object-bits 10 src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_point 100 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_digit 66 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_wipe 2 "ct_wipe.0:3073" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_mul 65 "ct_wipe.0:769" src/ct.c proof/ct_wipe_stub.c src/p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_wipe 2 "ct_wipe.0:3073" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # rsa_sign64.c's wipe below its four wrappers (docs/decisions.md 181), the
 # p256_wide_wipe shape at the 512-byte bound, whose array is 16,384 bytes.
 # Measured in the pinned amd64 container on 2026-11-03: 40 properties,
 # 23 s, 0.14 GB. With the wrappers, the same way, rsa_sign64_power and
 # its _webpki twin took 186 and 223 s, rsa_sign64_crt and its twin 22 and
 # 56 s, and the window and IFMA lines their old times.
-launch fast full rsa_sign64_wipe 2 "ct_wipe.0:16385" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 --unsigned-overflow-check
+launch fast full rsa_sign64_wipe 2 "ct_wipe.0:16385" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 --unsigned-overflow-check
 # The wide inverse, p256_wide_inverse.c (docs/decisions.md 115), in four harnesses.
 # p256_wide_inverse_steps holds the approximations and one step to references that branch,
 # over every input, and the unpacking of the factors over the range of each; it runs without
@@ -2925,7 +2925,7 @@ launch fast full p256_wide_inverse_round 33 "" -DCH_CPU_RUNTIME
 # line runs without --unsigned-overflow-check, as p256_scalar's does:
 # p256_scalar.c builds its masks and its borrows from sums that wrap on
 # purpose, and p256_wide_verify.c adds nothing itself.
-launch fast full p256_wide_verify 65 "" p256_scalar.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full p256_wide_verify 65 "" src/p256_scalar.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # The verifier's variable-time points, p256_wide_verify_point.c
 # (docs/decisions.md 104), in two harnesses over proof/p256_wide_field_stubs.h,
 # as p384_wide_point and p384_wide_digits split P-384's: the formulas, the
@@ -2940,8 +2940,8 @@ launch fast full p256_wide_verify 65 "" p256_scalar.c proof/ct_wipe_stub.c -DCH_
 #   p256_wide_verify_digits  281 properties, 6 s, 330 MB
 # and p256_wide_verify above, over the new entries' contracts, 547 properties,
 # 4 s, 83 MB.
-launch fast full p256_wide_verify_point 9 "" --object-bits 10 p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_verify_digits 9 "signed_digits.0:257" --object-bits 10 p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_verify_point 9 "" --object-bits 10 src/p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_verify_digits 9 "signed_digits.0:257" --object-bits 10 src/p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # The x86-64 P-256 field, p256_adx_field.c (docs/decisions.md 171), over its
 # model, test/p256_adx_model.h: CBMC reads no assembly, so each line compiles
 # the file with -DCH_P256_ADX_MODEL, as bin/p256_adx_model_test does, and
@@ -2960,9 +2960,9 @@ launch fast full p256_wide_verify_digits 9 "signed_digits.0:257" --object-bits 1
 #   p256_adx_reduce  768 properties,  3 s,  117 MB
 #   p256_adx_mul     210 properties, 37 s, 2826 MB
 #   p256_adx_sqr     210 properties, 35 s, 1529 MB
-launch fast full p256_adx_reduce 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
-launch fast full p256_adx_mul 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
-launch fast full p256_adx_sqr 9 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full p256_adx_reduce 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full p256_adx_mul 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
+launch fast full p256_adx_sqr 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
 # P-384 on six 64-bit words, which a host object verifies with
 # (docs/decisions.md 97): three layers, each over a contract of the one
 # below it. p384_wide_field runs every routine of p384_wide_field.c but
@@ -2989,7 +2989,7 @@ launch fast full p384_wide_verify 97 "" -DCH_CPU_RUNTIME
 # stub, then wipes the 112-byte context, so the stub's fill_nondet and
 # ct_wipe each loop 112 times, past the global bound. Measured (cbmc
 # 6.11.0, kissat, /usr/bin/time -l): 131 properties, 23 s, 671 MB.
-launch fast full drbg 100 "ch_rand_bytes.3:4,fill_nondet.0:113,ct_wipe.0:113" ct.c proof/ct_wipe_stub.c
+launch fast full drbg 100 "ch_rand_bytes.3:4,fill_nondet.0:113,ct_wipe.0:113" src/ct.c proof/ct_wipe_stub.c
 launch fast full p256_mul 20 ""
 # p384_mul is p256_mul's carry lemma at twelve words. Measured (cbmc
 # 6.11.0, kissat, /usr/bin/time -l): 7 properties, 2.1 s, 106 MB.
@@ -3011,7 +3011,7 @@ launch fast full rsa_mul_webpki 20 "fill_nondet.0:513,from_bytes.0:129,main.0:12
 # salt an argument the encoder takes rather than a draw it makes, so the
 # harness holds no ch_rand_bytes stub (docs/decisions.md 77), PROVE_ONLY=rsa_sign
 # PROVE_NO_CACHE=1 /usr/bin/time -l: 755 properties, 8 s, 206 MB.
-launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
+launch fast full rsa_sign 385 "" src/ct.c proof/ct_wipe_stub.c
 # rsa_mont64.c, RSA's Montgomery arithmetic on 64-bit words, which a host
 # object runs for rsa_vp1 (docs/decisions.md 95). Every line compiles the
 # file as a host object does, under -DCH_CPU_RUNTIME, which its body and
@@ -3077,11 +3077,11 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 launch fast full rsa_mont64_mul128 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_step 2 "" -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_step_sum 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_mont64_sums 6 "ct_wipe.0:49" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_mont64_ops 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast:3 full rsa_mont64_ops_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_mont64_mul 50 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_sums 6 "ct_wipe.0:49" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_ops 385 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast:3 full rsa_mont64_ops_webpki 513 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_mul 50 "ct_wipe.0:401" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:529" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont64_blocks.c, the multiplication and square in blocks of four words that a clang build
 # for arm64 runs (docs/decisions.md 118). Every line over proof/rsa_mont64_stubs.h above runs
 # rsa_mont64.c's own loops, and these three set RSA_MONT64_BLOCKS to 1, include the blocks and
@@ -3099,9 +3099,9 @@ launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:529" ct.c proof/ct_wipe_stu
 #   rsa_mont64_blocks_webpki  1088 properties, 450 s, 2.2 GB, hence slow
 # The prove job's runner took about 1.35 times the M1's processor time on the rsa_mont64 lines
 # above, which puts the last line near ten minutes there.
-launch fast full rsa_mont64_blocks_sums 10 "ct_wipe.0:145" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_mont64_blocks 50 "ct_wipe.0:785" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch slow full rsa_mont64_blocks_webpki 66 "ct_wipe.0:1041" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_blocks_sums 10 "ct_wipe.0:145" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_blocks 50 "ct_wipe.0:785" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch slow full rsa_mont64_blocks_webpki 66 "ct_wipe.0:1041" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont64_addcarry.c, the multiplication and square in rows whose carries go down
 # _addcarry_u64 chains, which a gcc build for x86-64 runs at every word count (docs/decisions.md
 # 122). These three set RSA_MONT64_ADDCARRY to 1 and the add with carry to its 128-bit sum form,
@@ -3115,9 +3115,9 @@ launch slow full rsa_mont64_blocks_webpki 66 "ct_wipe.0:1041" ct.c proof/ct_wipe
 #   rsa_mont64_addcarry_sums     981 properties,  47 s, 1.1 GB
 #   rsa_mont64_addcarry          821 properties,  72 s, 1.4 GB
 #   rsa_mont64_addcarry_webpki   821 properties, 124 s, 2.4 GB, hence weight 3
-launch fast full rsa_mont64_addcarry_sums 10 "ct_wipe.0:137" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_mont64_addcarry 50 "ct_wipe.0:777" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast:3 full rsa_mont64_addcarry_webpki 66 "ct_wipe.0:1033" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_addcarry_sums 10 "ct_wipe.0:137" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_addcarry 50 "ct_wipe.0:777" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast:3 full rsa_mont64_addcarry_webpki 66 "ct_wipe.0:1033" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont64_adx.c, the window's multiplication and square on MULX, ADCX and ADOX
 # (docs/decisions.md 183), compiled over test/rsa_mont64_adx_model.h, which writes the words the
 # assembly writes, under the same product contract. rsa_mont64_adx_sums runs both at four words
@@ -3127,12 +3127,12 @@ launch fast:3 full rsa_mont64_addcarry_webpki 66 "ct_wipe.0:1033" ct.c proof/ct_
 #   rsa_mont64_adx_sums     1185 properties,  37 s, 0.34 GB
 #   rsa_mont64_adx          1045 properties,  64 s, 0.41 GB
 #   rsa_mont64_adx_webpki   1045 properties, 130 s, 0.62 GB
-launch fast full rsa_mont64_adx_sums 10 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -Itest --unsigned-overflow-check
-launch fast full rsa_mont64_adx 50 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -Itest
-launch fast full rsa_mont64_adx_webpki 66 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -Itest
-launch fast full rsa_mont64_init 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast full rsa_mont64_init_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_adx_sums 10 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -Itest --unsigned-overflow-check
+launch fast full rsa_mont64_adx 50 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -Itest
+launch fast full rsa_mont64_adx_webpki 66 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -Itest
+launch fast full rsa_mont64_init 385 "ct_wipe.0:401" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_init_webpki 513 "ct_wipe.0:529" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:401" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont64_exp.c, the DNSSEC public operation with the key's own
 # exponent (https://github.com/c4milo/chapulin/issues/189), over contract
 # stubs of rsa_mont64.c's calls. rsa_mont64_exp proves the memory
@@ -3142,19 +3142,19 @@ launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub
 # verdict in 20 minutes. Measured on 2026-10-31 in the pinned amd64
 # container: 91 properties, 5 s, 0.10 GB; and 97 properties, 37 s,
 # 0.10 GB.
-launch fast full rsa_mont64_exp 66 "ct_wipe.0:385,fill_nondet.0:385" ct.c proof/ct_wipe_stub.c rsa_mont64_exp.c -DCH_CPU_RUNTIME -DCH_DNSSEC
-launch fast full rsa_mont64_exp_schedule 66 "ct_wipe.0:385,fill_nondet.0:385" ct.c proof/ct_wipe_stub.c rsa_mont64_exp.c -DCH_CPU_RUNTIME -DCH_DNSSEC
+launch fast full rsa_mont64_exp 66 "ct_wipe.0:385,fill_nondet.0:385" src/ct.c proof/ct_wipe_stub.c src/rsa_mont64_exp.c -DCH_CPU_RUNTIME -DCH_DNSSEC
+launch fast full rsa_mont64_exp_schedule 66 "ct_wipe.0:385,fill_nondet.0:385" src/ct.c proof/ct_wipe_stub.c src/rsa_mont64_exp.c -DCH_CPU_RUNTIME -DCH_DNSSEC
 # dnssec.c, the DNSSEC check's key reader and dispatcher, over contract
 # stubs of the RSA and P-256 checks. Measured on 2026-10-31 in the pinned
 # amd64 container: 583 properties, 5 s, 0.06 GB.
-launch fast full dnssec 10 "fill_nondet.0:97" -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI dnssec.c buf.c
+launch fast full dnssec 10 "fill_nondet.0:97" -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI src/dnssec.c src/buf.c
 # sha1.c, the SHA-1 a DNSSEC=on object holds for NSEC3 and DS digests of
 # type 1 (docs/decisions.md 169): init, one update of up to a block and
 # the final padding, which writes into the block directly, so a final runs
 # at most two compressions. Measured on 2026-10-31 in the pinned amd64
 # container: 463 properties, 24 s, 98 MB.
-launch fast full sha1 3 "fill_nondet.0:65,sha1_update.0:65,sha1_update.1:4,sha1_update.2:65,sha1_final.0:9,sha1_final.1:6,compress.0:17,compress.1:65,compress.2:81" -DCH_DNSSEC sha1.c
-launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full sha1 3 "fill_nondet.0:65,sha1_update.0:65,sha1_update.1:4,sha1_update.2:65,sha1_final.0:9,sha1_final.1:6,compress.0:17,compress.1:65,compress.2:81" -DCH_DNSSEC src/sha1.c
+launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont_host runs rsa_mont.c's host arm, rsa_vp1 as a host object
 # compiles it, whole: the division that computes R^2 for a modulus with
 # its top bit set (docs/decisions.md 103), over the product contract,
@@ -3165,8 +3165,8 @@ launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe
 # kissat, an M1 Pro at a load average of 2 to 5), on 2026-10-07:
 #   rsa_mont_host          900 properties, 29 s, 2.6 GB, hence fast:3
 #   rsa_mont_host_webpki   900 properties, 60 s, 5.2 GB, hence slow
-launch fast:3 full rsa_mont_host 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch slow full rsa_mont_host_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast:3 full rsa_mont_host 385 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch slow full rsa_mont_host_webpki 513 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_ifma.c, RSA's public operation on AVX-512 IFMA, which an x86-64 host
 # object runs for a session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA, and
 # rsa_mont.c's power_of_two_mod, which computes the 2^(104n) mod m it takes.
@@ -3425,10 +3425,10 @@ launch fast full rsa_sign64_window 385 "" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME 
 launch fast full rsa_sign64_window_webpki 513 "" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_sign64_power 385 "ct_wipe.0:3073" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_sign64_power_webpki 513 "ct_wipe.0:4097" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast full rsa_sign64_crt 385 "ct_wipe.0:385" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast full rsa_sign64_crt_webpki 513 "ct_wipe.0:513" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast full rsa_sign64_ifma 385 "ct_wipe.0:385" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
-launch fast full rsa_sign64_ifma_webpki 513 "ct_wipe.0:513" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
+launch fast full rsa_sign64_crt 385 "ct_wipe.0:385" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_sign64_crt_webpki 513 "ct_wipe.0:513" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_sign64_ifma 385 "ct_wipe.0:385" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
+launch fast full rsa_sign64_ifma_webpki 513 "ct_wipe.0:513" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
 
 FAIL=0
 i=0

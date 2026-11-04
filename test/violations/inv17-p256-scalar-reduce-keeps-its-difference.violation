@@ -1,5 +1,5 @@
 invariant: INV-17
-file: p256_scalar.c
+file: src/p256_scalar.c
 catches: proof/prove-one.sh p256_scalar
 reason: the conditional subtraction of n returns without wiping its
   difference, which is its operand less n modulo 2^256 and so gives the

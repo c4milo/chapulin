@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64.c
+file: src/rsa_mont64.c
 catches: proof/prove-one.sh rsa_mont64_sums
 reason: a round of rsa_mont64_mont_mul hands the first of its two steps
   both carries, added in one 64-bit sum. Two carries can pass 2^64, so

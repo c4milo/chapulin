@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: test/lint-invariants.sh
 reason: table_select loads the one entry its digit names, so the address
   of the load is five bits of the signing nonce, and the cache line it

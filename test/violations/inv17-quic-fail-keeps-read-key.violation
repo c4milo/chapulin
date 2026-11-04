@@ -1,5 +1,5 @@
 invariant: INV-17
-file: quic_fail.c
+file: src/quic_fail.c
 catches: quic_driver_test
 reason: quic_fail skips the Handshake receive key set, so a failed session
   keeps a key that opens the peer's packets, where INV-17 lets it keep only

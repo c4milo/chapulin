@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify.c
+file: src/p256_wide_verify.c
 catches: proof/prove-one.sh p256_wide_verify
 reason: the host verifier admits zero for r and for s. A zero s has the
   inverse zero, so R is the point at infinity, and a zero r never equals

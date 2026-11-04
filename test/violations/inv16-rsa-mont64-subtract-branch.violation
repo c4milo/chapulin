@@ -1,5 +1,5 @@
 invariant: INV-16
-file: rsa_mont64.c
+file: src/rsa_mont64.c
 catches: test/lint-wide-multiply.sh
 reason: reduce_once picks a - m or a with an if where it selected with a
   mask, so whether a Montgomery product needed its last subtraction

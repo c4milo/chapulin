@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test
 reason: srv_select stops refusing a client whose ALPN list holds no name the
   caller offers, so the handshake completes with alpn_selected at

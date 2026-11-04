@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_inverse.c
+file: src/p256_wide_inverse.c
 catches: p256_equiv_test
 reason: p256_wide_inverse_public stops at the first round whose a has a zero
   low word, where it must stop at the first round whose a is zero. A

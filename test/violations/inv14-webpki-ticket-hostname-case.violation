@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: webpki_resume_test
 reason: the configuration hash takes the hostname's bytes as they are, so a
   ticket fails to resume under the same name written with different

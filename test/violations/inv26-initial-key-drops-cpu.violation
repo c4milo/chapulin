@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes.c
+file: src/aes.c
 catches: aes_runtime_test
 reason: the Initial key's constructor never records the session's description
   of the CPU in a schedule, so the schedule reads what its storage held,

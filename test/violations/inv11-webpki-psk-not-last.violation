@@ -1,5 +1,5 @@
 invariant: INV-11
-file: handshake_message.c
+file: src/handshake_message.c
 catches: webpki_resume_test
 reason: a resuming TRUST=webpki hello writes pre_shared_key ahead of the
   certificate path. RFC 9846 section 4.3.11 requires it last, and

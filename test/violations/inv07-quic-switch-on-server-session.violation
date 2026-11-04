@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic.c
+file: src/quic.c
 catches: srv_quic_both_test
 reason: ch_quic_switch_version takes a switch on a server session, which
   RFC 9369 section 4.1 never gives a server: the client learns the

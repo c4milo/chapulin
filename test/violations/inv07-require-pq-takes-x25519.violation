@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: webpki_session_test
 reason: require_pq no longer refuses a ServerHello that selects x25519. The
   webpki parser accepts both groups, because the hello normally shares

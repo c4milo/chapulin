@@ -1,5 +1,5 @@
 invariant: INV-63
-file: srv_parser.c
+file: src/srv_parser.c
 catches: tcp_blocking_loop_test
 reason: the parser takes a hello without supported_versions, so the
   server answers with a supported_versions extension the hello did not

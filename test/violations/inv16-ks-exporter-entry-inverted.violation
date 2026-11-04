@@ -1,5 +1,5 @@
 invariant: INV-16
-file: keysched.h
+file: src/keysched.h
 catches: hash_runtime_exporter_test
 reason: ks_exporter_cpu calls the copy on the instructions for a value that
   does not name them, and keysched.c for one that does, so ch_export in a

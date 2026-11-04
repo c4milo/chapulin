@@ -1,5 +1,5 @@
 invariant: INV-7
-file: suite.h
+file: src/suite.h
 catches: webpki_session_aes
 builds: bin/webpki_session_aes
 reason: the AES-first default order puts AES-128-GCM ahead of AES-256-GCM,

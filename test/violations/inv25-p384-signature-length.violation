@@ -1,5 +1,5 @@
 invariant: INV-25
-file: p384.c
+file: src/p384.c
 catches: p384_test
 builds: bin/p384_test
 reason: der_parse reads r and s from the whole signature buffer without

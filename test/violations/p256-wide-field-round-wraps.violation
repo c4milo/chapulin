@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_field.c
+file: src/p256_wide_field.c
 catches: proof/prove-one.sh p256_wide_field
 reason: the multiple of p's top word loses the subtraction that keeps its
   high word at or under 2^64 - 2^32, so that word is u itself and adding

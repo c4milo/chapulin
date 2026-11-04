@@ -1,5 +1,5 @@
 invariant: INV-17
-file: gcm_avx512.c
+file: src/gcm_avx512.c
 catches: test/quic-builds.sh
 reason: gcm_open_avx512 returns without wiping the stack below its frame,
   so the powers of the hash subkey in the kernel's frame, and whatever the

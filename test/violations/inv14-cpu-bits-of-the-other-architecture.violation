@@ -1,5 +1,5 @@
 invariant: INV-14
-file: cpu_cfg.h
+file: src/cpu_cfg.h
 catches: quic_loop_host
 reason: cpu_cfg.h gives each architecture the other's bits: an arm64
   object takes CH_CPU_AVX2, CH_CPU_VAES and CH_CPU_AVX512_IFMA, which it

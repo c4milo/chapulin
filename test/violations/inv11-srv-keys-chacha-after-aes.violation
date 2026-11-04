@@ -1,5 +1,5 @@
 invariant: INV-11
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test_aes
 reason: the server names TLS_AES_128_GCM_SHA256 in its ServerHello and
   keys both handshake directions with ChaCha20, which is what 9aa1f65

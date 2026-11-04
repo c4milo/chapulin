@@ -1,5 +1,5 @@
 invariant: INV-40
-file: aead.c
+file: src/aead.c
 catches: test/script-builds.sh
 reason: aead.c gains a call into hkdf.c, the way chacha20_vector.c gained one
   into ct.c that san-check's list for bin/san/chacha20_equiv_test missed.

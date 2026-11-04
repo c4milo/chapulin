@@ -12,7 +12,7 @@
 # The Zig build runs in bin/zig/consumer/package, a copy of exactly the
 # files build.zig.zon's .paths names, because that is what a dependent
 # receives.
-# Before the copy, .paths must name every root C source and header git
+# Before the copy, .paths must name every library source and header git
 # tracks, the Zig API's files, every tools/localize_*.zig file, and
 # nothing else but the build files, the license and the README.
 #
@@ -222,7 +222,8 @@ stage_package() {
     local listed want
     listed=$(sed -n '/\.paths = \.{/,/}/p' build.zig.zon | grep -o '"[^"]*"' | tr -d '"' | sort)
     want=$({
-        git ls-files '*.c' '*.h' '*.hpp' 'chapulin*.zig' | grep -v /
+        git ls-files '*.hpp' 'chapulin*.zig' | grep -v /
+        git ls-files 'src/*.c' 'src/*.h'
         git ls-files 'tools/localize_*.zig'
         printf '%s\n' build.zig build.zig.zon LICENSE README.md
     } | sort)
@@ -333,7 +334,7 @@ build_cross() {
 #  - pem_files.h declares a server role's ch_chain_from_pem and
 #    ch_p256_key_from_pem, and TRUST=webpki's ch_anchors_from_pem;
 #  - drbg.h declares RAND=drbg's ch_drbg_seed.
-optional_headers=(x509_ca.h pem_files.h drbg.h)
+optional_headers=(src/x509_ca.h src/pem_files.h src/drbg.h)
 
 # check_optional_headers NAME ZIG-OBJECT
 #
@@ -347,15 +348,15 @@ check_optional_headers() {
     read -r -a defines <<< "$(tr '\n' ' ' < "$out/$name/lib-def.txt")"
     for header in "${optional_headers[@]}"; do
         ! grep -qxF "$header" "$out/$name/lib-headers.txt" || continue
-        "$zig" translate-c -lc --cache-dir "$root/$out/cache" -I. "${defines[@]}" "$header" \
-            > "$out/$name/$header.zig" 2> "$out/$name/$header.err" || {
-            cat "$out/$name/$header.err" >&2
+        "$zig" translate-c -lc --cache-dir "$root/$out/cache" -Isrc -I. "${defines[@]}" "$header" \
+            > "$out/$name/${header##*/}.zig" 2> "$out/$name/${header##*/}.err" || {
+            cat "$out/$name/${header##*/}.err" >&2
             fail "$name: zig translate-c $header failed"
         }
         while read -r symbol; do
             grep -qxF "$symbol" <<< "$provided" ||
                 fail "$name: $header declares $symbol, which the object neither exports nor imports"
-        done < <(sed -n 's/^pub extern fn \(ch_[A-Za-z0-9_]*\)(.*/\1/p' "$out/$name/$header.zig")
+        done < <(sed -n 's/^pub extern fn \(ch_[A-Za-z0-9_]*\)(.*/\1/p' "$out/$name/${header##*/}.zig")
         checked="$checked $header"
     done
     [ -z "$checked" ] ||
@@ -387,7 +388,7 @@ check() {
     local def_words flag_words
     read -r -a def_words <<< "$make_defs"
     read -r -a flag_words <<< "$make_flags"
-    "$cc" "${flag_words[@]}" "${def_words[@]}" "${link_flags[@]}" -I. -o "$out/$name/build_test" \
+    "$cc" "${flag_words[@]}" "${def_words[@]}" "${link_flags[@]}" -Isrc -I. -o "$out/$name/build_test" \
         test/build_test.c "$zig_obj" || fail "$name: test/build_test.c does not link against the Zig object"
     "$out/$name/build_test" > /dev/null ||
         fail "$name: the Zig object's build record disagrees with the headers compiled under make's defines"
@@ -441,7 +442,7 @@ compile_half() {
     local name=$1 def_words flag_words
     read -r -a def_words <<< "$(sed -n 2p "$out/$name/make-object.txt")"
     read -r -a flag_words <<< "$(sed -n 3p "$out/$name/make-object.txt")"
-    "$cc" "${flag_words[@]}" "${def_words[@]}" -I. -Itest -c test/lib_pair_half.c -o "$out/pair-$name.o" ||
+    "$cc" "${flag_words[@]}" "${def_words[@]}" -Isrc -I. -Itest -c test/lib_pair_half.c -o "$out/pair-$name.o" ||
         fail "pair: compiling the $name half failed"
 }
 
@@ -454,7 +455,7 @@ pair() {
     compile_half quic
     read -r -a flag_words <<< "$(sed -n 3p "$out/h2/make-object.txt")"
     "$cc" "${flag_words[@]}" -DLIB_PAIR_TCP_NONBLOCKING -DLIB_PAIR_QUIC_NONBLOCKING -DLIB_PAIR_KEYLOG \
-        -I. -Itest -c test/lib_pair_main.c -o "$out/pair-main.o" || fail "pair: compiling the main failed"
+        -Isrc -I. -Itest -c test/lib_pair_main.c -o "$out/pair-main.o" || fail "pair: compiling the main failed"
     "$cc" "${link_flags[@]}" -o "$image" "$out/pair-main.o" "$out/pair-h2.o" "$out/pair-quic.o" \
         "$out/h2/lib/chapulin.o" "$out/quic/lib/chapulin.o" ||
         fail "pair: one image does not link the tcp-nonblocking ROLE=both object beside the QUIC one"

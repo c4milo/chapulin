@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64.c
+file: src/rsa_mont64.c
 catches: rsa_equiv_test
 reason: neg_inverse stops Newton's iteration after five steps, the count
   rsa_mont.c's 32-bit word takes, so the inverse of a 64-bit word is

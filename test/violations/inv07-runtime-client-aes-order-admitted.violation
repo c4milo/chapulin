@@ -1,5 +1,5 @@
 invariant: INV-7
-file: webpki_cfg.c
+file: src/webpki_cfg.c
 catches: webpki_session_aes
 reason: a host object's client whose caller did not set
   CH_CPU_CONSTANT_TIME_AES admits a caller's cipher_suites list that names

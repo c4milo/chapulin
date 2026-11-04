@@ -1,5 +1,5 @@
 invariant: INV-13
-file: tls_write.c
+file: src/tls_write.c
 catches: tcp_nonblocking_loop_test
 reason: ch_fail takes close_notify as an error alert, so a caller that
   passes 0 fails the session and sends a close_notify it did not mean.

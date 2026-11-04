@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_resume.c
+file: src/srv_resume.c
 catches: srv_flight_test
 reason: a ticket resumes a connection that negotiated another application
   protocol than the one it was issued under. srv_resume.h binds the

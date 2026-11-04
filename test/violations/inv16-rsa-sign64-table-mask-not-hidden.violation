@@ -1,5 +1,5 @@
 invariant: INV-16
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: test/lint-invariants.sh
 reason: table_select uses the mask it computed, with no volatile pointer
   between the computation and the use, so the compiler knows the mask is

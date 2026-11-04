@@ -1,5 +1,5 @@
 invariant: INV-14
-file: quic_config.c
+file: src/quic_config.c
 catches: quic_loop_webpki
 reason: a TRUST=webpki QUIC client takes an ALPN offer of no protocol,
   which webpki_cfg_ok admits because a TCP client may offer none, and

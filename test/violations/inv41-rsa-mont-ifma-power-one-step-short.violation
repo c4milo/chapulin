@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont.c
+file: src/rsa_mont.c
 catches: rsa_ifma_model_test
 reason: power_of_two_mod runs one step of the division fewer than its
   exponent needs, so rsa_ifma_public gets 2^(104n - 64) mod m and every

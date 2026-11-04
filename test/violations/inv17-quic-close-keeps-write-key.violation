@@ -1,5 +1,5 @@
 invariant: INV-17
-file: quic.c
+file: src/quic.c
 catches: quic_driver_test
 reason: ch_quic_seal_close clears the level's write bit after its one
   seal and leaves the key bytes in the session, so a secret Handshake or

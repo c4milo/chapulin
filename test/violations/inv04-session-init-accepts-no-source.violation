@@ -1,5 +1,5 @@
 invariant: INV-4
-file: tls.c
+file: src/tls.c
 catches: tcp_nonblocking_loop_session
 reason: tlsi_config_ok stops asking rand_source_ok, so ch_record_init and
   ch_connect accept a RAND=session configuration whose rand_bytes is NULL.

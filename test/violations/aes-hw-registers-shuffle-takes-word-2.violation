@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes_hw.c
+file: src/aes_hw.c
 catches: test/docker-aes-runtime-qemu.sh aes-equiv
 reason: the x86-64 key expansion's shuffle copies word 2 of a round key into
   the four words where FIPS 197 takes SubWord of word 3, so both key

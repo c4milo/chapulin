@@ -1,5 +1,5 @@
 invariant: INV-36
-file: pem_files.h
+file: src/pem_files.h
 catches: test/zig-build-check.sh
 reason: pem_files.h declares the chain and key calls in every build, so
   a client object, which compiles no pem_files.c server arm, declares

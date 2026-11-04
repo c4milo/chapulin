@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_test
 reason: the key call reads a PKCS #8 PRIVATE KEY block under an EC
   PARAMETERS block in place of a SEC 1 one. The ruling admits the block

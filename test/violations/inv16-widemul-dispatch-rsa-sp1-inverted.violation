@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: src/widemul.h
 catches: widemul_runtime_test
 reason: widemul_rsa_sp1_cpu inverts its branch, so the private operation runs
   rsa_sign64.c's words on the native multiply for every answer but

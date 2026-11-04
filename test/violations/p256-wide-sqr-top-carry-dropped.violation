@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_word.h
+file: src/p256_wide_word.h
 catches: p256_equiv_test
 reason: the square of four words leaves out the carry into its top word,
   so a square whose chain of the four a_i^2 carried there is short by

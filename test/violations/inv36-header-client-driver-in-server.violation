@@ -1,5 +1,5 @@
 invariant: INV-36
-file: tcp_nonblocking.h
+file: src/tcp_nonblocking.h
 catches: test/zig-build-check.sh
 reason: tcp_nonblocking.h declares the client's driver, ch_record_init,
   ch_record_in and ch_record_out, in a ROLE=server object as well, which

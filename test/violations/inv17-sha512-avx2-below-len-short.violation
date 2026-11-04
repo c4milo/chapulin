@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha512_avx2.h
+file: src/sha512_avx2.h
 catches: test/docker-aes-runtime-qemu.sh sha512-avx2
 reason: SHA512_AVX2_BELOW_LEN, the bytes of stack sha512_hw.c wipes below
   each call of the AVX2 kernel, is 192, less than the frame

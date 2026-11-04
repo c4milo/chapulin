@@ -34,19 +34,19 @@ make -s bin/quic_driver_test || exit 1
 tu=$(mktemp -t chapulin_cfg_XXXXXX).c
 gcm_obj=$(mktemp -t chapulin_gcm_XXXXXX).o
 trap 'rm -f "$tu" "$tu.s" "${tu%.c}" "$gcm_obj" "${gcm_obj%.o}"' EXIT
-echo '#include "ct.h"' > "$tu"
+echo '#include "src/ct.h"' > "$tu"
 cc=${CC:-cc}
 
 # The suite in a host object: it compiles, on this host compiler.
-if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME "$tu"; then
+if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME "$tu"; then
     echo "quic-builds: -DCH_SUITE_AES_GCM in a host object must compile" >&2
     exit 1
 fi
 
 # The suite build that takes the AES=soft table a device object defaults
 # to: it does not.
-if "$cc" -std=c11 -I. -fsyntax-only -DCH_SUITE_AES_GCM "$tu" 2>/dev/null; then
-    echo "quic-builds: -DCH_SUITE_AES_GCM on AES=soft compiled; ct.h must refuse it" >&2
+if "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_SUITE_AES_GCM "$tu" 2>/dev/null; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM on AES=soft compiled; src/ct.h must refuse it" >&2
     exit 1
 fi
 
@@ -54,8 +54,8 @@ fi
 # every build that still writes it, a host suite build among them.
 for defs in "-DCH_NATIVE_AES" "-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_NATIVE_AES"; do
     # shellcheck disable=SC2086 # one define per word
-    if "$cc" -std=c11 -I. -fsyntax-only $defs "$tu" 2>/dev/null; then
-        echo "quic-builds: $defs compiled; ct.h must refuse CH_NATIVE_AES" >&2
+    if "$cc" -std=c11 -Isrc -I. -fsyntax-only $defs "$tu" 2>/dev/null; then
+        echo "quic-builds: $defs compiled; src/ct.h must refuse CH_NATIVE_AES" >&2
         exit 1
     fi
 done
@@ -65,21 +65,21 @@ done
 # CH_AES_EXTERN_CONSTANT_TIME (docs/decisions.md 68). With it the build
 # compiles. Without it ct.h refuses the build. The extern statement
 # without AES=extern is the AES=soft build, which no statement admits.
-if ! "$cc" -std=c11 -I. -fsyntax-only \
+if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only \
     -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME "$tu"; then
     echo "quic-builds: -DCH_SUITE_AES_GCM with AES=extern and CH_AES_EXTERN_CONSTANT_TIME must compile" >&2
     exit 1
 fi
-if "$cc" -std=c11 -I. -fsyntax-only \
+if "$cc" -std=c11 -Isrc -I. -fsyntax-only \
     -DCH_SUITE_AES_GCM -DCH_AES_EXTERN "$tu" 2>/dev/null; then
     echo "quic-builds: -DCH_SUITE_AES_GCM on AES=extern without CH_AES_EXTERN_CONSTANT_TIME compiled;" \
-        "ct.h must refuse it" >&2
+        "src/ct.h must refuse it" >&2
     exit 1
 fi
-if "$cc" -std=c11 -I. -fsyntax-only \
+if "$cc" -std=c11 -Isrc -I. -fsyntax-only \
     -DCH_SUITE_AES_GCM -DCH_AES_EXTERN_CONSTANT_TIME "$tu" 2>/dev/null; then
     echo "quic-builds: -DCH_SUITE_AES_GCM on AES=soft compiled with CH_AES_EXTERN_CONSTANT_TIME;" \
-        "ct.h must refuse it" >&2
+        "src/ct.h must refuse it" >&2
     exit 1
 fi
 
@@ -89,28 +89,28 @@ fi
 # compiles in a host object, and on the AES=soft table ct.h refuses it, as
 # it refuses every suite build: the file itself, not only ct.h's own
 # translation unit above, is what is checked.
-if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
-    -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME quic_packet.c; then
-    echo "quic-builds: quic_packet.c under the suite in a host object must compile" >&2
+if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+    -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME src/quic_packet.c; then
+    echo "quic-builds: src/quic_packet.c under the suite in a host object must compile" >&2
     exit 1
 fi
-if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
-    -DCH_SUITE_AES_GCM quic_packet.c 2>/dev/null; then
-    echo "quic-builds: a QUIC suite build on AES=soft compiled; ct.h must refuse it" >&2
+if "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+    -DCH_SUITE_AES_GCM src/quic_packet.c 2>/dev/null; then
+    echo "quic-builds: a QUIC suite build on AES=soft compiled; src/ct.h must refuse it" >&2
     exit 1
 fi
 # The same pair on AES=extern, where the image's ch_aes_block gets those
 # keys.
-if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
-    -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME quic_packet.c; then
-    echo "quic-builds: quic_packet.c under the suite with AES=extern and CH_AES_EXTERN_CONSTANT_TIME" \
+if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+    -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME src/quic_packet.c; then
+    echo "quic-builds: src/quic_packet.c under the suite with AES=extern and CH_AES_EXTERN_CONSTANT_TIME" \
         "must compile" >&2
     exit 1
 fi
-if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
-    -DCH_SUITE_AES_GCM -DCH_AES_EXTERN quic_packet.c 2>/dev/null; then
+if "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+    -DCH_SUITE_AES_GCM -DCH_AES_EXTERN src/quic_packet.c 2>/dev/null; then
     echo "quic-builds: a QUIC suite build on AES=extern without CH_AES_EXTERN_CONSTANT_TIME compiled;" \
-        "ct.h must refuse it" >&2
+        "src/ct.h must refuse it" >&2
     exit 1
 fi
 
@@ -120,14 +120,14 @@ fi
 # this is the one line that stops a tree with its own build system from
 # pairing them. Without the suite the same file compiles, AES-256
 # reference included, so what fails is the refusal and nothing else.
-if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST \
-    quic_aes_soft.c; then
-    echo "quic-builds: quic_aes_soft.c with its AES-256 reference must compile" >&2
+if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST \
+    src/quic_aes_soft.c; then
+    echo "quic-builds: src/quic_aes_soft.c with its AES-256 reference must compile" >&2
     exit 1
 fi
-if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM \
-    quic_aes_soft.c 2>/dev/null; then
-    echo "quic-builds: quic_aes_soft.c under -DCH_SUITE_AES_GCM compiled; it must refuse the suite" >&2
+if "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM \
+    src/quic_aes_soft.c 2>/dev/null; then
+    echo "quic-builds: src/quic_aes_soft.c under -DCH_SUITE_AES_GCM compiled; it must refuse the suite" >&2
     exit 1
 fi
 
@@ -135,14 +135,14 @@ fi
 # that client offers ChaCha20 alone (docs/decisions.md entry 45). The
 # same flags compile for a TRUST=webpki client, which offers both suites,
 # and for a build with a server role, whose server selects AES.
-suite_flags=(-std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME)
-if "$cc" "${suite_flags[@]}" handshake_message.c 2>/dev/null; then
-    echo "quic-builds: -DCH_SUITE_AES_GCM in a raw client compiled; handshake_message.c must refuse it" >&2
+suite_flags=(-std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME)
+if "$cc" "${suite_flags[@]}" src/handshake_message.c 2>/dev/null; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM in a raw client compiled; src/handshake_message.c must refuse it" >&2
     exit 1
 fi
 for role in -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER; do
-    if ! "$cc" "${suite_flags[@]}" "$role" handshake_message.c; then
-        echo "quic-builds: handshake_message.c with the suite and $role must compile" >&2
+    if ! "$cc" "${suite_flags[@]}" "$role" src/handshake_message.c; then
+        echo "quic-builds: src/handshake_message.c with the suite and $role must compile" >&2
         exit 1
     fi
 done
@@ -152,18 +152,18 @@ done
 # than compile the table in its place. A host object beside AES=extern is
 # refused there too: aes_hw.c and aes_extern.c define the same entries. A
 # host object compiles over QUIC and under the suite.
-block_tu() { # $@ = defines: compiles one file that reads cfg.h and aes_block.h
-    printf '#include "cfg.h"\n#include "aes_block.h"\n' > "$tu"
-    "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN "$@" "$tu"
+block_tu() { # $@ = defines: compiles one file that reads src/cfg.h and src/aes_block.h
+    printf '#include "src/cfg.h"\n#include "src/aes_block.h"\n' > "$tu"
+    "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN "$@" "$tu"
 }
 for gone in -DCH_AES_HW -DCH_AES_RUNTIME; do
     if block_tu -DCH_TRANSPORT_QUIC_NONBLOCKING "$gone" 2>/dev/null; then
-        echo "quic-builds: $gone compiled; aes_block.h must refuse it" >&2
+        echo "quic-builds: $gone compiled; src/aes_block.h must refuse it" >&2
         exit 1
     fi
 done
 if block_tu -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_AES_EXTERN 2>/dev/null; then
-    echo "quic-builds: a host object beside AES=extern compiled; aes_block.h must refuse it" >&2
+    echo "quic-builds: a host object beside AES=extern compiled; src/aes_block.h must refuse it" >&2
     exit 1
 fi
 if ! block_tu -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME ||
@@ -180,20 +180,20 @@ fi
 for defs in "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME" \
     "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM"; do
     # shellcheck disable=SC2086 # one define per word
-    if ! "$cc" -std=c11 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN $defs quic_aes_soft.c; then
-        echo "quic-builds: quic_aes_soft.c in a QUIC host object under $defs must compile" >&2
+    if ! "$cc" -std=c11 -Isrc -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN $defs src/quic_aes_soft.c; then
+        echo "quic-builds: src/quic_aes_soft.c in a QUIC host object under $defs must compile" >&2
         exit 1
     fi
     soft_defs=$(nm -g "$gcm_obj" | awk '$2 == "T" {print $3}' | sed 's/^_//' | sort | tr '\n' ' ')
     if [ "$soft_defs" != "aes_soft_cipher_block aes_soft_expand_round_keys " ]; then
-        echo "quic-builds: quic_aes_soft.c under $defs defines [$soft_defs];" \
+        echo "quic-builds: src/quic_aes_soft.c under $defs defines [$soft_defs];" \
             "it must define aes_soft_cipher_block and aes_soft_expand_round_keys alone" >&2
         exit 1
     fi
 done
-if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME \
-    quic_aes_soft.c 2>/dev/null; then
-    echo "quic-builds: quic_aes_soft.c in a TCP suite host object compiled; it must refuse the suite" >&2
+if "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME \
+    src/quic_aes_soft.c 2>/dev/null; then
+    echo "quic-builds: src/quic_aes_soft.c in a TCP suite host object compiled; it must refuse the suite" >&2
     exit 1
 fi
 
@@ -217,8 +217,8 @@ fi
 # Mach-O object prefixes each name with an underscore.
 hw_entries='gcm_(multiply_by_subkey|hash_data|counter_blocks|seal_passes|open_passes)_hw$'
 hw_want="gcm_counter_blocks_hw gcm_hash_data_hw gcm_multiply_by_subkey_hw gcm_open_passes_hw gcm_seal_passes_hw "
-ghash_calls() { # $@ = defines: the instruction entries gcm.c calls, on one line
-    "$cc" -std=c11 -O2 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN "$@" gcm.c || return 1
+ghash_calls() { # $@ = defines: the instruction entries src/gcm.c calls, on one line
+    "$cc" -std=c11 -O2 -Isrc -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN "$@" src/gcm.c || return 1
     nm -u "$gcm_obj" | grep -oE "$hw_entries" | sort -u | tr '\n' ' '
 }
 for defs in "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME" \
@@ -226,22 +226,22 @@ for defs in "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME" \
     "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM"; do
     # shellcheck disable=SC2086 # one define per word
     if ! host_calls=$(ghash_calls $defs); then
-        echo "quic-builds: gcm.c under $defs must compile" >&2
+        echo "quic-builds: src/gcm.c under $defs must compile" >&2
         exit 1
     fi
     if [ "$host_calls" != "$hw_want" ]; then
-        echo "quic-builds: gcm.c under $defs calls [$host_calls] of the instruction entries;" \
+        echo "quic-builds: src/gcm.c under $defs calls [$host_calls] of the instruction entries;" \
             "it must call [$hw_want]" >&2
         exit 1
     fi
 done
 if ! soft_calls=$(ghash_calls -DCH_TRANSPORT_QUIC_NONBLOCKING); then
-    echo "quic-builds: gcm.c in a device QUIC object must compile" >&2
+    echo "quic-builds: src/gcm.c in a device QUIC object must compile" >&2
     exit 1
 fi
 if [ -n "$soft_calls" ]; then
-    echo "quic-builds: gcm.c in a device QUIC object calls $soft_calls;" \
-        "only a host object carries ghash_hw.c and gcm_hw.c" >&2
+    echo "quic-builds: src/gcm.c in a device QUIC object calls $soft_calls;" \
+        "only a host object carries src/ghash_hw.c and src/gcm_hw.c" >&2
     exit 1
 fi
 
@@ -270,49 +270,49 @@ if [ -z "$clang_rv" ]; then
 fi
 cross_gcm() { # $1 = target, $2 = source; writes $gcm_obj and $tu.s
     local target=$1 source=$2
-    "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
+    "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
         -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -c "$source" -o "$gcm_obj" || exit 1
-    "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
+    "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
         -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -S "$source" -o "$tu.s" || exit 1
 }
 vaes_kernels="gcm_counter_blocks_vaes gcm_open_passes_vaes gcm_seal_passes_vaes "
-cross_gcm x86_64-unknown-linux-gnu gcm_vaes.c
+cross_gcm x86_64-unknown-linux-gnu src/gcm_vaes.c
 defined=$(nm "$gcm_obj" | awk '$2 == "T" {print $3}' | sed 's/^_//' | grep _vaes | sort | tr '\n' ' ')
 if [ "$defined" != "$vaes_kernels" ] ||
     ! grep -qE 'vaesenc[[:space:]]+%ymm' "$tu.s" || ! grep -qE 'vpclmulqdq[[:space:]].*%ymm' "$tu.s"; then
-    echo "quic-builds: gcm_vaes.c for x86-64 defines [$defined]; it must define" \
+    echo "quic-builds: src/gcm_vaes.c for x86-64 defines [$defined]; it must define" \
         "[$vaes_kernels] on 256-bit VAESENC and VPCLMULQDQ" >&2
     exit 1
 fi
-cross_gcm x86_64-unknown-linux-gnu gcm_hw.c
+cross_gcm x86_64-unknown-linux-gnu src/gcm_hw.c
 if grep -q '%ymm' "$tu.s"; then
-    echo "quic-builds: gcm_hw.c for x86-64 holds a 256-bit instruction; only gcm_vaes.c may" >&2
+    echo "quic-builds: src/gcm_hw.c for x86-64 holds a 256-bit instruction; only src/gcm_vaes.c may" >&2
     exit 1
 fi
 if nm -u "$gcm_obj" | grep -q '_vaes$'; then
-    echo "quic-builds: gcm_hw.c for x86-64 calls a VAES kernel; gcm.c alone picks one" >&2
+    echo "quic-builds: src/gcm_hw.c for x86-64 calls a VAES kernel; src/gcm.c alone picks one" >&2
     exit 1
 fi
-cross_gcm x86_64-unknown-linux-gnu gcm.c
+cross_gcm x86_64-unknown-linux-gnu src/gcm.c
 if grep -q '%ymm' "$tu.s"; then
-    echo "quic-builds: gcm.c for x86-64 holds a 256-bit instruction; only gcm_vaes.c may" >&2
+    echo "quic-builds: src/gcm.c for x86-64 holds a 256-bit instruction; only src/gcm_vaes.c may" >&2
     exit 1
 fi
 gcm_entries="gcm_counter_blocks_hw gcm_counter_blocks_vaes gcm_open_passes_hw gcm_open_passes_vaes gcm_seal_passes_hw gcm_seal_passes_vaes "
 called=$(nm -u "$gcm_obj" | awk '{print $NF}' | sed 's/^_//' | grep -E '^gcm_(counter_blocks|open_passes|seal_passes)_(hw|vaes)$' | sort | tr '\n' ' ')
 if [ "$called" != "$gcm_entries" ]; then
-    echo "quic-builds: gcm.c for x86-64 calls [$called]; it must call [$gcm_entries]," \
+    echo "quic-builds: src/gcm.c for x86-64 calls [$called]; it must call [$gcm_entries]," \
         "the 128-bit entries for a key without CH_CPU_VAES and the kernels for one with it" >&2
     exit 1
 fi
-cross_gcm aarch64-none-elf gcm_vaes.c
+cross_gcm aarch64-none-elf src/gcm_vaes.c
 if nm "$gcm_obj" | grep -q '_vaes$'; then
-    echo "quic-builds: gcm_vaes.c for arm64 defines a kernel; it has a body on x86-64 alone" >&2
+    echo "quic-builds: src/gcm_vaes.c for arm64 defines a kernel; it has a body on x86-64 alone" >&2
     exit 1
 fi
-cross_gcm aarch64-none-elf gcm.c
+cross_gcm aarch64-none-elf src/gcm.c
 if nm -u "$gcm_obj" | grep -q '_vaes$'; then
-    echo "quic-builds: gcm.c for arm64 calls a VAES kernel, which has a body on x86-64 alone" >&2
+    echo "quic-builds: src/gcm.c for arm64 calls a VAES kernel, which has a body on x86-64 alone" >&2
     exit 1
 fi
 
@@ -343,17 +343,17 @@ fi
 budget=$(make -s --no-print-directory print-stack-budget-gcm-avx512)
 for march in -march=x86-64 -march=x86-64-v4; do
     "$clang_rv" -target x86_64-unknown-linux-gnu "$march" -ffreestanding -nostdlibinc -Itools/freestanding \
-        -std=c11 -O2 -I. -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME "-Wframe-larger-than=$budget" \
-        -Werror -c gcm_avx512_kernel.c -o "$gcm_obj" || {
-        echo "quic-builds: gcm_avx512_kernel.c for x86-64 ($march) has a frame over $budget bytes," \
+        -std=c11 -O2 -Isrc -I. -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME "-Wframe-larger-than=$budget" \
+        -Werror -c src/gcm_avx512_kernel.c -o "$gcm_obj" || {
+        echo "quic-builds: src/gcm_avx512_kernel.c for x86-64 ($march) has a frame over $budget bytes," \
             "the ceiling GCM_AVX512_BELOW_LEN leaves it; the entries' wipe would leave part of it" >&2
         exit 1
     }
 done
-cross_gcm x86_64-unknown-linux-gnu gcm_avx512_kernel.c
+cross_gcm x86_64-unknown-linux-gnu src/gcm_avx512_kernel.c
 local_functions=$(nm "$gcm_obj" | awk '$2 == "t" {print $3}' | tr '\n' ' ')
 if [ -n "$local_functions" ] || grep -E '^[[:space:]]+call' "$tu.s" >/dev/null; then
-    echo "quic-builds: gcm_avx512_kernel.c for x86-64 defines [$local_functions] beside its four" \
+    echo "quic-builds: src/gcm_avx512_kernel.c for x86-64 defines [$local_functions] beside its four" \
         "functions or makes a call; a kernel must call nothing, so that its frame is all the stack" \
         "it writes and the wipe's length bounds it" >&2
     exit 1
@@ -362,14 +362,14 @@ avx512_kernels="gcm_avx512_open_128 gcm_avx512_open_256 gcm_avx512_seal_128 gcm_
 defined=$(nm "$gcm_obj" | awk '$2 == "T" {print $3}' | sed 's/^_//' | grep '^gcm_avx512_' | sort | tr '\n' ' ')
 if [ "$defined" != "$avx512_kernels" ] ||
     ! grep -qE 'vaesenc[[:space:]]+%zmm' "$tu.s" || ! grep -qE 'vpclmulqdq[[:space:]].*%zmm' "$tu.s"; then
-    echo "quic-builds: gcm_avx512_kernel.c for x86-64 defines [$defined]; it must define" \
+    echo "quic-builds: src/gcm_avx512_kernel.c for x86-64 defines [$defined]; it must define" \
         "[$avx512_kernels] on 512-bit VAESENC and VPCLMULQDQ" >&2
     exit 1
 fi
-cross_gcm x86_64-unknown-linux-gnu gcm_avx512.c
+cross_gcm x86_64-unknown-linux-gnu src/gcm_avx512.c
 defined=$(nm "$gcm_obj" | awk '$2 == "T" {print $3}' | sed 's/^_//' | sort | tr '\n' ' ')
 if [ "$defined" != "gcm_open_avx512 gcm_seal_avx512 " ] || grep -qE '%[yz]mm' "$tu.s"; then
-    echo "quic-builds: gcm_avx512.c for x86-64 defines [$defined] or holds a vector register;" \
+    echo "quic-builds: src/gcm_avx512.c for x86-64 defines [$defined] or holds a vector register;" \
         "it must define the two entries alone and hold none" >&2
     exit 1
 fi
@@ -384,28 +384,28 @@ for entry in gcm_seal_avx512 gcm_open_avx512; do
         exit 1
     fi
 done
-for source in gcm.c gcm_hw.c gcm_vaes.c; do
+for source in src/gcm.c src/gcm_hw.c src/gcm_vaes.c; do
     cross_gcm x86_64-unknown-linux-gnu "$source"
     if grep -q '%zmm' "$tu.s"; then
-        echo "quic-builds: $source for x86-64 holds a 512-bit register; only gcm_avx512_kernel.c may" >&2
+        echo "quic-builds: $source for x86-64 holds a 512-bit register; only src/gcm_avx512_kernel.c may" >&2
         exit 1
     fi
 done
-cross_gcm x86_64-unknown-linux-gnu gcm.c
+cross_gcm x86_64-unknown-linux-gnu src/gcm.c
 called=$(nm -u "$gcm_obj" | awk '{print $NF}' | sed 's/^_//' | grep -E '^gcm_(seal|open)_avx512$' | sort | tr '\n' ' ')
 if [ "$called" != "gcm_open_avx512 gcm_seal_avx512 " ]; then
-    echo "quic-builds: gcm.c for x86-64 calls [$called]; it must call both of gcm_avx512.c's entries" >&2
+    echo "quic-builds: src/gcm.c for x86-64 calls [$called]; it must call both of src/gcm_avx512.c's entries" >&2
     exit 1
 fi
-for source in gcm_avx512.c gcm_avx512_kernel.c; do
+for source in src/gcm_avx512.c src/gcm_avx512_kernel.c; do
     cross_gcm aarch64-none-elf "$source"
     if nm "$gcm_obj" | grep -q 'avx512'; then
         echo "quic-builds: $source for arm64 defines a function; it has a body on x86-64 alone" >&2
         exit 1
     fi
 done
-cross_gcm aarch64-none-elf gcm.c
+cross_gcm aarch64-none-elf src/gcm.c
 if nm -u "$gcm_obj" | grep -q 'avx512'; then
-    echo "quic-builds: gcm.c for arm64 calls the 512-bit kernel, which has a body on x86-64 alone" >&2
+    echo "quic-builds: src/gcm.c for arm64 calls the 512-bit kernel, which has a body on x86-64 alone" >&2
     exit 1
 fi

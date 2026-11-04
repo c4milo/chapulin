@@ -1,5 +1,5 @@
 invariant: INV-41
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: test/docker-aes-runtime-qemu.sh rsa-ifma-callers
 reason: the webpki client verifies an RSA leaf's CertificateVerify under 0
   in place of the session's ch_cfg.cpu, so a session whose caller set

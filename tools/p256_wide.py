@@ -103,10 +103,10 @@ def on_curve(point):
 
 
 def check_field():
-    header = "p256_wide_field.h"
+    header = "src/p256_wide_field.h"
     expect(header, "the prime P256_WIDE_P0..P3",
            [defined(source(header), f"P256_WIDE_P{i}") for i in range(4)], words(P))
-    name = "p256_wide_field.c"
+    name = "src/p256_wide_field.c"
     text = source(name)
     expect(name, "RR, 2^512 mod p", initialized(text, "RR"), words(R * R % P))
     expect(name, "p256_wide_fe_one_mont, 2^256 mod p",
@@ -125,7 +125,7 @@ def check_field():
 
 
 def check_scalar():
-    name = "p256_wide_scalar.c"
+    name = "src/p256_wide_scalar.c"
     text = source(name)
     expect(name, "the order N0..N3", [defined(text, f"N{i}") for i in range(4)], words(N))
     expect(name, "N0_INV, -n^-1 mod 2^64", defined(text, "N0_INV"), (-pow(N, -1, WORD)) % WORD)
@@ -134,18 +134,18 @@ def check_scalar():
 
 
 def check_point():
-    name = "p256_wide_point.c"
+    name = "src/p256_wide_point.c"
     text = source(name)
     expect(name, "B_MONT, b * 2^256 mod p", initialized(text, "B_MONT"), words(B * R % P))
     assert on_curve((GX, GY)), "G is not on the curve"
 
 
-CHECKED = ["p256_wide_field.h", "p256_wide_field.c", "p256_wide_scalar.c", "p256_wide_point.c",
-           "p256_wide_inverse.c", "spec/lean/Spec/P256WideInverse.lean"]
+CHECKED = ["src/p256_wide_field.h", "src/p256_wide_field.c", "src/p256_wide_scalar.c", "src/p256_wide_point.c",
+           "src/p256_wide_inverse.c", "spec/lean/Spec/P256WideInverse.lean"]
 
 
 def check_inverse():
-    name = "p256_wide_inverse.c"
+    name = "src/p256_wide_inverse.c"
     text = source(name)
     model = source("spec/lean/Spec/P256WideInverse.lean")
     for macro, lean in (("STEPS", "steps"), ("ROUNDS", "rounds")):

@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic.c
+file: src/quic.c
 catches: quic_driver_test
 reason: after a switch the Initial level admits the negotiated version
   alone, so a client drops the server's Initial packets in the original

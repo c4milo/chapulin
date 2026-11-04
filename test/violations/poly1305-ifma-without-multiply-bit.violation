@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: src/widemul.h
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: widemul_poly1305_ifma reads CH_CPU_AVX512_IFMA alone, so a session
   whose caller did not state CH_CPU_CONSTANT_TIME_MULTIPLY runs IFMA's

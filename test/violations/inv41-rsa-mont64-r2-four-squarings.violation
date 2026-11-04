@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64.c
+file: src/rsa_mont64.c
 catches: rsa_equiv_test
 reason: rsa_mont64_modulus_init squares the Montgomery form of 2^(2k) four
   times where five are needed, so r2 holds the form of 2^(32k) and not of

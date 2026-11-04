@@ -1,5 +1,5 @@
 invariant: INV-11
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test
 reason: the HelloRetryRequest keeps the first ClientHello in the transcript
   instead of replacing it with RFC 9846 section 4.1's synthetic

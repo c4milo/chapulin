@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_inverse.c
+file: src/p256_wide_inverse.c
 catches: p256_equiv_test
 reason: the factors are unpacked with a bias of 2^31, which separates the
   halves of a word for factors from -2^31 to 2^31 - 1, where the steps leave

@@ -1,5 +1,5 @@
 invariant: INV-17
-file: chacha20_avx2.c
+file: src/chacha20_avx2.c
 catches: test/docker-aes-runtime-qemu.sh chacha20-avx2
 reason: chacha20_avx2_xor ends with VZEROUPPER where it had VZEROALL,
   which is all the call cost of the upper halves asks for. VZEROUPPER

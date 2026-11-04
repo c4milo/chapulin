@@ -1,5 +1,5 @@
 invariant: INV-16
-file: ct.h
+file: src/ct.h
 catches: test/widemul-builds.sh
 reason: ct.h takes a native copy outside a host object, so a build that
   states nothing about the multiply can carry the native multiply under

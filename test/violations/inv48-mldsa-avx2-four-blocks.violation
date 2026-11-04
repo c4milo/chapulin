@@ -1,5 +1,5 @@
 invariant: INV-48
-file: mldsa_avx2.c
+file: src/mldsa_avx2.c
 catches: test/docker-aes-runtime-qemu.sh mldsa-avx2
 reason: the four-way sampler stops after four blocks of each stream. Four
   blocks hold 224 groups, fewer than 256, so every entry stops short and

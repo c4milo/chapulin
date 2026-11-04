@@ -1,5 +1,5 @@
 invariant: INV-13
-file: srv_out.c
+file: src/srv_out.c
 catches: srv_tcp_nonblocking_test
 reason: a record the server's transport refused keeps the handler's
   default alert, decode_error, which says the peer sent a malformed

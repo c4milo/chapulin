@@ -1,5 +1,5 @@
 invariant: INV-22
-file: quic.c
+file: src/quic.c
 catches: proof/prove-one.sh quic_driver
 reason: ch_quic_open opens a 1-RTT packet before the handshake completes,
   which RFC 9001 section 5.7 forbids a client. The quic_driver harness

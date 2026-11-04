@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha512_compress_blocks.h
+file: src/sha512_compress_blocks.h
 catches: sha2_equiv_test
 reason: SHA512_COMPRESS_BLOCKS_BELOW_LEN, the bytes of stack sha512.c wipes
   below each compression call, is 64, less than the frame

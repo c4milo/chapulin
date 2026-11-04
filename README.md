@@ -92,7 +92,7 @@ The struct sizes depend on the defines the object was built with.
 compile your program with it and pass no `-D` flag of your own:
 
 ```sh
-cc -std=c11 -I path/to/chapulin -include path/to/chapulin/bin/chapulin.h \
+cc -std=c11 -I path/to/chapulin/src -include path/to/chapulin/bin/chapulin.h \
     app.c path/to/chapulin/bin/chapulin.o -o app
 ```
 

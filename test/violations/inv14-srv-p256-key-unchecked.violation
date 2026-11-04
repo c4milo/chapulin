@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_auth.c
+file: src/srv_auth.c
 catches: srv_auth_test
 reason: srv_identities_usable stops asking p256_sign_key_ok, so a
   server starts a session with an ECDSA scalar of 0 or of the group

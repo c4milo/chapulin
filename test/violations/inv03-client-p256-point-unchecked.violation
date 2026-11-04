@@ -1,5 +1,5 @@
 invariant: INV-3
-file: handshake_groups.c
+file: src/handshake_groups.c
 catches: webpki_session_test
 reason: the client drops p256_ecdh_cpu's verdict on the server's secp256r1
   point, so a point off the curve, which lies on a curve whose order the

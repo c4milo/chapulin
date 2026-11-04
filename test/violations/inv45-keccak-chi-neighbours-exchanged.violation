@@ -1,5 +1,5 @@
 invariant: INV-45
-file: sha3.c
+file: src/sha3.c
 catches: sha3_equiv_test
 reason: one lane of chi takes its two neighbours in the other order. The
   equivalence test runs the permutation on each of the 1,600 states

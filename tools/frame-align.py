@@ -70,15 +70,15 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # Each source, and the function whose loop keeps its values in stack slots.
 SOURCES = {
-    "chacha20_avx2.c": "pass",
-    "keccak_avx2.c": "keccak_avx2_permute",
-    "sha512_avx2.c": "sha512_avx2_compress_blocks",
+    "src/chacha20_avx2.c": "pass",
+    "src/keccak_avx2.c": "keccak_avx2_permute",
+    "src/sha512_avx2.c": "sha512_avx2_compress_blocks",
 }
 
 # lint-wide-multiply's x86-64 machine, headers, level and hosted compile
 # (the Makefile's WIDE64_SPECS), under the define of a host object.
 FLAGS = ["--target=x86_64-unknown-linux-gnu", "-march=x86-64", "-std=c11", "-O2",
-         "-nostdlibinc", "-Itools/freestanding", "-I.", "-D_DEFAULT_SOURCE",
+         "-nostdlibinc", "-Itools/freestanding", "-Isrc", "-I.", "-D_DEFAULT_SOURCE",
          "-DCH_RAND_EXTERN", "-DCH_CPU_RUNTIME", "-S", "-o", "-"]
 
 LABEL = re.compile(r"^([A-Za-z_.$][\w.$]*):")

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305_vector.c
+file: src/poly1305_vector.c
 catches: poly1305_equiv_test
 reason: lane 1 starts from the accumulator as lane 0 does, so the value
   of every block before the update counts twice, once times each lane's

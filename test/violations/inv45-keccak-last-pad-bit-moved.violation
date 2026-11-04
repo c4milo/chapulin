@@ -1,5 +1,5 @@
 invariant: INV-45
-file: sha3.c
+file: src/sha3.c
 catches: sha3_test
 reason: pad_finish sets the bit below the top bit of the block's last
   byte. Every FIPS 202 vector differs.

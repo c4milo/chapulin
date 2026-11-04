@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_test
 reason: the publicKey field an ECPrivateKey carries is no longer compared
   with the scalar's point, so a file whose two halves disagree decodes.

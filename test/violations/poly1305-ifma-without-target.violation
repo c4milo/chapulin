@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305_ifma.c
+file: src/poly1305_ifma.c
 catches: test/chacha-builds.sh
 reason: poly1305_ifma.c drops the target attribute that turns AVX-512F and
   AVX-512 IFMA on for its own functions, so the kernel compiles only where

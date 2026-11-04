@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: rsa_sign_equiv_test
 reason: table_select starts its scan at entry 1, so a zero digit of the
   exponent reads no entry: the output keeps the entry the step before

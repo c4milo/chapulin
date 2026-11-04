@@ -1,5 +1,5 @@
 invariant: INV-34
-file: x25519_wide.c
+file: src/x25519_wide.c
 catches: x25519_equiv_test
 reason: the carry out of the top column is worth 19 at the bottom because
   2^255 = 19 mod p. Folding it in times 38, the 16-word field's constant

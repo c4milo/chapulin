@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305.c
+file: src/poly1305.c
 catches: test/widemul-builds.sh
 reason: poly1305.c guards its call to the vector path on a macro no
   build defines, so a host object's native copy runs the portable loop

@@ -1,5 +1,5 @@
 invariant: INV-11
-file: hkdf.c
+file: src/hkdf.c
 catches: unit
 reason: hmac_sha256 hashes a key of exactly one block, 64 bytes, though
   RFC 2104 section 2 hashes only a key longer than the block. Every HMAC

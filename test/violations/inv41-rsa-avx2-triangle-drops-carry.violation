@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_avx2.c
+file: src/rsa_avx2.c
 catches: rsa_avx2_model_test
 reason: the triangle drops the carry out of lane 0, the bits of x above D,
   where it adds row 0's y times m's digit 1 to lane 1. Lane 0 still ends

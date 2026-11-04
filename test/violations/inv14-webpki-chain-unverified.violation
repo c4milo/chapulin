@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki.c
+file: src/webpki.c
 catches: webpki_chain_test
 reason: the walk runs out of certificates without an anchor verifying a
   signature and returns CH_OK with the leaf key, so a chain anchored at

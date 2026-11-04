@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305.c
+file: src/poly1305.c
 catches: test/lint-wide-multiply.sh
 reason: poly1305_final picks h or h - p by the sign of g4, the last
   word after the trial subtraction, through a mask. Written as an if

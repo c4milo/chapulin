@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_test
 reason: the key call reads an EC PARAMETERS block and does not ask which
   curve it names, so secp384r1's parameters, or any 10 bytes of DER, pass

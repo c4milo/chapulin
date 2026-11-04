@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: test/lint-invariants.sh
 reason: multiple_select loads the one multiple of the peer's point its
   digit names, so the address of the load is three bits of the key

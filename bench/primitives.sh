@@ -125,15 +125,15 @@ W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
 FLAGS=(-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_DRBG
-    -I. -Ibench -Itest)
+    -Isrc -I. -Ibench -Itest)
 # The primitives program links each module it times and what that module
 # calls, and nothing else. CH_RSA_MODULUS_MAX=512 is the bound TRUST=webpki
 # gives rsa.h, so the RSA-4096 rows run.
 PRIMITIVE_SRCS=(bench/primitives.c bench/primitives_symmetric.c bench/primitives_public_key.c
-    drbg.c ct.c ct_wipe.c buf.c sha256.c sha512.c sha512_compress.c sha3.c hkdf.c chacha20.c poly1305.c
-    aead.c x25519.c mlkem.c mlkem_poly.c p256.c p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c
-    rsa_sign.c p256_ecdh.c p256_sign.c p256_scalar.c p256_point.c p256_field.c mldsa.c mldsa_poly.c
-    mldsa_signer.c mldsa_sign_round.c mldsa_sign_steps.c mldsa_sign_poly.c mldsa_sign_pack.c)
+    src/drbg.c src/ct.c src/ct_wipe.c src/buf.c src/sha256.c src/sha512.c src/sha512_compress.c src/sha3.c src/hkdf.c src/chacha20.c src/poly1305.c
+    src/aead.c src/x25519.c src/mlkem.c src/mlkem_poly.c src/p256.c src/p384.c src/p384_field.c src/rsa.c src/rsa_mont.c src/rsa_pkcs1.c
+    src/rsa_sign.c src/p256_ecdh.c src/p256_sign.c src/p256_scalar.c src/p256_point.c src/p256_field.c src/mldsa.c src/mldsa_poly.c
+    src/mldsa_signer.c src/mldsa_sign_round.c src/mldsa_sign_steps.c src/mldsa_sign_poly.c src/mldsa_sign_pack.c)
 # The handshake program links what bin/tcp_nonblocking_loop_test links, under
 # the defines of the ROLE=both TRANSPORT=tcp-nonblocking object, at the device
 # RSA bound.
@@ -143,7 +143,7 @@ if [ "${#LOOP_SRCS[@]}" -eq 0 ]; then
     exit 1
 fi
 HANDSHAKE_DEFS=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DBENCH_HANDSHAKE_PROGRAM)
-HANDSHAKE_SRCS=(bench/primitives.c bench/primitives_handshake.c drbg.c "${LOOP_SRCS[@]}")
+HANDSHAKE_SRCS=(bench/primitives.c bench/primitives_handshake.c src/drbg.c "${LOOP_SRCS[@]}")
 # The two lists as a host object holds them: with the native copies, the
 # wide X25519 field and the vector paths make adds.
 read -r -a HOST_PRIMITIVE_SRCS <<<"$(make -s --no-print-directory print-host-srcs \
@@ -165,8 +165,8 @@ if [ ! -f "$SHA512_AVX2_UNIT" ]; then
     echo "FAIL primitives bench: make sha512-avx2-unit built no object" >&2
     exit 1
 fi
-HOST_PRIMITIVE_SRCS=("${HOST_PRIMITIVE_SRCS[@]/#sha512_avx2.c/$SHA512_AVX2_UNIT}")
-HOST_HANDSHAKE_SRCS=("${HOST_HANDSHAKE_SRCS[@]/#sha512_avx2.c/$SHA512_AVX2_UNIT}")
+HOST_PRIMITIVE_SRCS=("${HOST_PRIMITIVE_SRCS[@]/#src\/sha512_avx2.c/$SHA512_AVX2_UNIT}")
+HOST_HANDSHAKE_SRCS=("${HOST_HANDSHAKE_SRCS[@]/#src\/sha512_avx2.c/$SHA512_AVX2_UNIT}")
 
 # --build times nothing, so it compiles every program at once, each into
 # a log of its own, and names the programs that failed once all have

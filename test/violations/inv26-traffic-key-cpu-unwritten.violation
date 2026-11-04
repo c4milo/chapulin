@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes.c
+file: src/aes.c
 catches: aes_runtime_test
 reason: aes_traffic_key_cpu writes nothing, so no traffic key records its
   session's description of the CPU and AES-GCM runs the 128-bit loops for

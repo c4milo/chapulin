@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_resume.c
+file: src/srv_resume.c
 catches: srv_flight_test
 reason: a server with no clock issues and accepts tickets. With an instant
   of 0 it writes 0 as every ticket's instant, and a later server with a

@@ -1,5 +1,5 @@
 invariant: INV-28
-file: handshake_post.c
+file: src/handshake_post.c
 catches: tcp_nonblocking_loop_test
 reason: inv55-key-update-answer-per-request's edit, with the tcp-nonblocking
   loop as the catcher: ch_read calls cfg.send to answer a KeyUpdate, which

@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_point.c
+file: src/p384_wide_point.c
 catches: p384_equiv_test
 reason: the decoder takes a coordinate at or above p, and the field
   reduces it, so a point has a second encoding. bin/p384_equiv_test

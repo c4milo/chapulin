@@ -1,5 +1,5 @@
 invariant: INV-16
-file: chacha20_vector.c
+file: src/chacha20_vector.c
 catches: chacha20_equiv_test
 reason: a group whose counters wrap past 2^32 carries one into the first
   nonce word, as the original ChaCha's 64-bit counter does, where RFC

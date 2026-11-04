@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_message.c
+file: src/handshake_message.c
 catches: webpki_session_test
 reason: require_pq keeps secp256r1 in supported_groups, so a server without
   the hybrid asks for a P-256 share with a HelloRetryRequest the client then

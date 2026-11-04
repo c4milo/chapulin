@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64.h
+file: src/rsa_mont64.h
 catches: rsa_equiv_test_sum
 reason: the sum form of rsa_mont64_mul_add_add, which gcc reads, leaves
   out b, the carry in from the word below, so every word past the first

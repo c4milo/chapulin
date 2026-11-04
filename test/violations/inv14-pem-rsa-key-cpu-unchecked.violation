@@ -1,5 +1,5 @@
 invariant: INV-14
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_rsa_test
 reason: ch_rsa_key_from_pem stops checking its cpu value, so a device
   object takes a value it defines no bit for, and a host object takes one

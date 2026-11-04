@@ -1,5 +1,5 @@
 invariant: INV-39
-file: tcp_nonblocking_step.c
+file: src/tcp_nonblocking_step.c
 catches: tcp_nonblocking_loop_test
 reason: the tcp-nonblocking client installs the handshake keys with bytes
   still unread after the ServerHello in its record, and reads them as the

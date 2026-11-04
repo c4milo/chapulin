@@ -1,5 +1,5 @@
 invariant: INV-33
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: quic_loop_webpki
 reason: a TRANSPORT=quic-nonblocking build skips CertificateVerify for a
   chain accepted under pins alone, so a QUIC server that presents a

@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma_sign.c
+file: src/rsa_ifma_sign.c
 catches: rsa_ifma_sign_model_test
 reason: state_setup doubles R mod m one time fewer than spare, the bits
   R' holds beyond R, so the table's first entry is half of 1 in the

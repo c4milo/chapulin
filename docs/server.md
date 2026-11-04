@@ -1076,8 +1076,8 @@ type. Open question fifteen asks which, and "Bounds that need measuring"
 carries the row.
 
 The rename satisfies both halves of INV-27 (`docs/invariants.md:279`), which
-claims that every root file only a `TRANSPORT=quic-nonblocking` build compiles is named
-`quic*` and no other root file is. These two files stop being QUIC-only, so
+claims that every file in src/ that only a `TRANSPORT=quic-nonblocking` build compiles is named
+`quic*` and no other file in src/ is. These two files stop being QUIC-only, so
 they lose the prefix rather than joining `QUIC_SHARED` (`Makefile:1615`).
 Renaming before the patch lands is cheaper: the patch already carries the old
 names into its Makefile lists, its Semgrep rule, its proof harness names, its
@@ -1702,7 +1702,7 @@ still open" asks whether it stays open.
 
 ### The partition
 
-The rule, stated the way INV-27 states its own: every root source and header
+The rule, stated the way INV-27 states its own: every library source and header
 that only a `ROLE=server` build compiles is named `srv*`, and no other root
 file is, except what two named lists carry with their reasons.
 

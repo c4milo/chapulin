@@ -1,5 +1,5 @@
 invariant: INV-67
-file: mldsa_vector.c
+file: src/mldsa_vector.c
 catches: test/docker-aes-runtime-qemu.sh mldsa-vector
 reason: the AVX2 inverse transform gives the four groups of its layer of
   span 2 their twiddle factors in the wrong order: each pair of groups

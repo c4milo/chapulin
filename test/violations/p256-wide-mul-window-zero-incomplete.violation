@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: p256_equiv_test
 reason: window 0 adds its entry by the incomplete Jacobian addition in
   place of the complete one. For k = n - 2 and n - 3 the sum before

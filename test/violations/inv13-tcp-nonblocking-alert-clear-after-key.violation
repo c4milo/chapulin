@@ -1,5 +1,5 @@
 invariant: INV-13
-file: tcp_nonblocking_frame.c
+file: src/tcp_nonblocking_frame.c
 catches: tcp_nonblocking_loop_test
 reason: a tcp-nonblocking handshake failure writes its alert in the clear
   after this side has installed its write key, sealing only once the session

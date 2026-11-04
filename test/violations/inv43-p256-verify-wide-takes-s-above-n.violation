@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify.c
+file: src/p256_wide_verify.c
 catches: p256_verify_equiv_test
 reason: the host verifier checks r against 1..n-1 and not s. s + n is the
   same number modulo n, so the equation holds for it, and one signature

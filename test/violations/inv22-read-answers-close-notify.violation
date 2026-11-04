@@ -1,5 +1,5 @@
 invariant: INV-22
-file: tls.c
+file: src/tls.c
 catches: tcp_nonblocking_loop_test
 reason: ch_read answers the peer's close_notify with this side's own, as
   TLS 1.2 required and RFC 9846 section 6.1 dropped. In TRANSPORT=tcp-nonblocking

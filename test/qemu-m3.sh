@@ -23,13 +23,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SRCS="test/qemu/m3_kat.c sha256.c x25519.c chacha20.c poly1305.c aead.c ct.c ct_wipe.c softmul.c"
+SRCS="test/qemu/m3_kat.c src/sha256.c src/x25519.c src/chacha20.c src/poly1305.c src/aead.c src/ct.c src/ct_wipe.c src/softmul.c"
 
 # The host build of the same main, same multiply path, host libc.
 host_build() { # $1 = the binary to write
     # SRCS holds the paths as one string, which the shell must split.
     # shellcheck disable=SC2086
-    cc -Os -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -I. \
+    cc -Os -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -Isrc -I. \
         -o "$1" $SRCS test/qemu/host_runtime.c
 }
 
@@ -73,7 +73,7 @@ trap 'rm -rf "$W"' EXIT
 "$CLANG" -target thumbv7m-none-eabi -mcpu=cortex-m3 -Os -std=c11 \
     -ffreestanding -nostdlibinc -nostdlib -isystem test/qemu/libc \
     -fuse-ld="$LLD" \
-    -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -I. \
+    -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -Isrc -I. \
     -Wl,--entry=reset_handler -T test/qemu/m3.ld -o "$W/m3.elf" $SRCS test/qemu/m3_runtime.c
 
 host_build "$W/host"

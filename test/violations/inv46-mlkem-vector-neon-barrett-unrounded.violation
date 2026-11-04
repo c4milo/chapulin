@@ -1,5 +1,5 @@
 invariant: INV-46
-file: mlkem_lanes.h
+file: src/mlkem_lanes.h
 catches: test/docker-aes-runtime-qemu.sh mlkem-vector
 reason: the NEON Barrett reduction shifts without adding 2^10 first, so
   its quotient rounds down where mlk_barrett_reduce rounds to the

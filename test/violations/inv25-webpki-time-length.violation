@@ -1,5 +1,5 @@
 invariant: INV-25
-file: webpki_time.c
+file: src/webpki_time.c
 catches: webpki_time_test
 builds: bin/webpki_time_test
 reason: webpki_read_time takes the tag's fixed length for the field's

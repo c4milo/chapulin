@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_test
 reason: check_required stops requiring signature_algorithms of a hello that
   offers no PSK, so the server would go on to sign a CertificateVerify

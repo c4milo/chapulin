@@ -1,5 +1,5 @@
 invariant: INV-13
-file: tcp_nonblocking.c
+file: src/tcp_nonblocking.c
 catches: tcp_nonblocking_loop_test
 reason: the tcp-nonblocking client stages no alert record when its handshake
   fails, so ch_record_out answers CH_EINVAL at once and the caller, who holds

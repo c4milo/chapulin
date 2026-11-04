@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha512.c
+file: src/sha512.c
 catches: sha2_equiv_test
 reason: a host object's compress_blocks wipes the stack below it before it
   calls its compression function and not after, so that function's dead

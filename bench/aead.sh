@@ -76,11 +76,11 @@ W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
 FLAGS=(-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE
-    -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -Ibench)
-COMMON=(bench/aead.c bench/aead_gcm.c aes.c hkdf.c sha256.c ct.c ct_wipe.c chacha20.c poly1305.c
-    aead.c)
-"$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" quic_aes_soft.c
-"$CC" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/native" "${COMMON[@]}" quic_aes_soft.c
+    -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I. -Ibench)
+COMMON=(bench/aead.c bench/aead_gcm.c src/aes.c src/hkdf.c src/sha256.c src/ct.c src/ct_wipe.c src/chacha20.c src/poly1305.c
+    src/aead.c)
+"$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" src/quic_aes_soft.c
+"$CC" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/native" "${COMMON[@]}" src/quic_aes_soft.c
 # A host object holds each file built on the multiply twice and the vector
 # ChaCha20 and Poly1305, so the host build links what make names beside
 # poly1305.c and chacha20.c (print-host-srcs, docs/decisions.md 89).
@@ -89,7 +89,7 @@ if [ "${#HOST_COMMON[@]}" -le "${#COMMON[@]}" ]; then
     echo "FAIL aead bench: make print-host-srcs added no source for a host object" >&2
     exit 1
 fi
-"$CC" "${FLAGS[@]}" -DCH_CPU_RUNTIME -o "$W/hw" "${HOST_COMMON[@]}" "${AES_HW_SRCS[@]}" quic_aes_soft.c
+"$CC" "${FLAGS[@]}" -DCH_CPU_RUNTIME -o "$W/hw" "${HOST_COMMON[@]}" "${AES_HW_SRCS[@]}" src/quic_aes_soft.c
 if [ -n "$BUILD_ONLY" ]; then
     echo "aead bench: --build built every variant and ran nothing" >&2
     exit 0

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv.c
+file: src/srv.c
 catches: tcp_nonblocking_loop_host
 reason: the server init calls of a host object stop asking for the
   caller's description of its CPU, so ch_srv_record_init takes a

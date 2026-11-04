@@ -1,5 +1,5 @@
 invariant: INV-16
-file: quic_packet.c
+file: src/quic_packet.c
 catches: test/docker-mips.sh
 reason: the window written the way RFC 9000 Appendix A.3 writes it, 1
   shifted left by the encoded length in bits, is a 64-bit shift by a

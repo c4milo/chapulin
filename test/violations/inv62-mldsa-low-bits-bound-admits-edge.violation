@@ -1,5 +1,5 @@
 invariant: INV-62
-file: mldsa_sign_steps.c
+file: src/mldsa_sign_steps.c
 catches: test/wycheproof.sh
 reason: a round passes with a low-bits coefficient of w - c s2 at exactly
   gamma2 - beta, which FIPS 204 Algorithm 7 rejects, since it requires

@@ -1,5 +1,5 @@
 invariant: INV-17
-file: gcm_avx512.c
+file: src/gcm_avx512.c
 catches: test/quic-builds.sh
 reason: gcm_seal_avx512 returns without calling avx512_wipe_registers, so
   the round keys, the keystream, H, E(K, J0) and the GHASH sums the kernel

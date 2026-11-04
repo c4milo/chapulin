@@ -1,5 +1,5 @@
 invariant: INV-16
-file: ct.h
+file: src/ct.h
 catches: unit_ct_widemul
 reason: dropping the carry out of ct_widemul's first cross sum, which
   poly1305's word products overflow on nearly every block, makes the

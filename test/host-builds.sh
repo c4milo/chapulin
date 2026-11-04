@@ -51,7 +51,7 @@ clang_rv=$(make -s --no-print-directory print-clang-rv)
 # One translation unit that reads cpu_cfg.h and nothing else, so what passes
 # or fails is the header's rule and not a later compile error.
 tu=$out/cpu_cfg.c
-echo '#include "cpu_cfg.h"' > "$tu"
+echo '#include "src/cpu_cfg.h"' > "$tu"
 
 # The targets that fail the host test, as clang's arguments: a 64-bit
 # little-endian core with SSE2's macro and unsigned __int128 that is
@@ -67,16 +67,16 @@ refused=(
     "thumbv7m-none-eabi -mcpu=cortex-m3"
 )
 
-if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_CPU_RUNTIME "$tu"; then
+if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_CPU_RUNTIME "$tu"; then
     fail "-DCH_CPU_RUNTIME must compile on $cc, a host target"
 fi
 for target in "${refused[@]}"; do
     read -r -a words <<< "$target"
-    if ! "$clang_rv" -target "${words[@]}" -std=c11 -I. -fsyntax-only "$tu"; then
-        fail "cpu_cfg.h must compile without -DCH_CPU_RUNTIME for $target"
+    if ! "$clang_rv" -target "${words[@]}" -std=c11 -Isrc -I. -fsyntax-only "$tu"; then
+        fail "src/cpu_cfg.h must compile without -DCH_CPU_RUNTIME for $target"
     fi
-    if "$clang_rv" -target "${words[@]}" -std=c11 -I. -fsyntax-only -DCH_CPU_RUNTIME "$tu" 2>/dev/null; then
-        fail "-DCH_CPU_RUNTIME compiled for $target; cpu_cfg.h must refuse a target that fails the host test"
+    if "$clang_rv" -target "${words[@]}" -std=c11 -Isrc -I. -fsyntax-only -DCH_CPU_RUNTIME "$tu" 2>/dev/null; then
+        fail "-DCH_CPU_RUNTIME compiled for $target; src/cpu_cfg.h must refuse a target that fails the host test"
     fi
 done
 
@@ -86,12 +86,12 @@ done
 # bit, 0x80 the SHA-3 bit, 0x100 CH_CPU_AVX512_IFMA and 0x200
 # CH_CPU_AVX512.
 defined_tu=$out/cpu_defined.c
-printf '%s\n' '#include "cpu_cfg.h"' \
+printf '%s\n' '#include "src/cpu_cfg.h"' \
     '_Static_assert(CH_CPU_DEFINED == WANT, "CH_CPU_DEFINED holds another set of bits");' \
     > "$defined_tu"
 defined() { # $1 = a clang target, $2 = the bits its object defines
-    "$clang_rv" -target "$1" -std=c11 -I. -fsyntax-only -DCH_CPU_RUNTIME "-DWANT=$2" "$defined_tu" ||
-        fail "cpu_cfg.h's CH_CPU_DEFINED for $1 is not $2"
+    "$clang_rv" -target "$1" -std=c11 -Isrc -I. -fsyntax-only -DCH_CPU_RUNTIME "-DWANT=$2" "$defined_tu" ||
+        fail "src/cpu_cfg.h's CH_CPU_DEFINED for $1 is not $2"
 }
 defined aarch64-none-elf 0xe7U
 defined x86_64-none-elf 0x73fU
@@ -186,6 +186,6 @@ case " $(tr '\n' ' ' < "$out/aes-device/lib-def.txt") " in
 *) fail "build.zig gives the AES=extern server for $device no -DCH_AES_EXTERN" ;;
 esac
 
-echo "host-builds: cpu_cfg.h, the Makefile and build.zig each give -DCH_CPU_RUNTIME to a host target alone," \
+echo "host-builds: src/cpu_cfg.h, the Makefile and build.zig each give -DCH_CPU_RUNTIME to a host target alone," \
     "CH_CPU_DEFINED holds each architecture's bits, both builds take HOST_TARGET as the test's result," \
     "and build.zig takes AES for a device object alone"

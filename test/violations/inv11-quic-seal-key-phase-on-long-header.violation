@@ -1,5 +1,5 @@
 invariant: INV-11
-file: quic_packet.c
+file: src/quic_packet.c
 catches: quic_test
 reason: quic_packet_seal writes key_phase into bit 2 of byte 0 at the
   Handshake level too, where a long header holds a reserved bit there and

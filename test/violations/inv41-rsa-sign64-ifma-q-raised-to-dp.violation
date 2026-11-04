@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: proof/prove-one.sh rsa_sign64_ifma
 reason: the IFMA arm of both_powers raises the second half to dp in place
   of dq, so every signature it computes is wrong modulo q, and the check

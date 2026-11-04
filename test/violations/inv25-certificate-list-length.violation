@@ -1,5 +1,5 @@
 invariant: INV-25
-file: handshake_parser.c
+file: src/handshake_parser.c
 catches: handshake_strict_test
 builds: bin/handshake_strict_test
 reason: hsp_parse_certificate accepts a certificate_list shorter than the

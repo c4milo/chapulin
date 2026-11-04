@@ -299,7 +299,7 @@ Other targets:
 
   ```sh
   make lib TRUST=webpki RAND=extern
-  cc -I. -include bin/chapulin.h -o app app.c bin/chapulin.o
+  cc -Isrc -include bin/chapulin.h -o app app.c bin/chapulin.o
   ```
 
   The header holds one `#error` for each layout define the object lacks,

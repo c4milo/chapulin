@@ -313,8 +313,8 @@ pub fn build(b: *std.Build) void {
         .stack_protector = false,
         .stack_check = false,
     });
-    module.addIncludePath(b.path(""));
-    module.addCSourceFiles(.{ .files = plan.srcs, .flags = flags });
+    module.addIncludePath(b.path("src"));
+    module.addCSourceFiles(.{ .root = b.path("src"), .files = plan.srcs, .flags = flags });
     const partial = b.addObject(.{ .name = "chapulin-partial", .root_module = module });
 
     // The localizer runs on the host; test/localize-check.sh installs it.
@@ -336,8 +336,8 @@ pub fn build(b: *std.Build) void {
     b.addNamedLazyPath("chapulin.o", object);
     b.getInstallStep().dependOn(&b.addInstallFile(object, "lib/chapulin.o").step);
 
-    // make lib compiles with -I. at the root, where every header sits.
-    b.addNamedLazyPath("include", b.path(""));
+    // make lib compiles with -Isrc, where every header sits.
+    b.addNamedLazyPath("include", b.path("src"));
 
     // The headers of the plan, translated by translate-c for the object's
     // target and optimize mode under the defines in flags, so a dependent's
@@ -351,7 +351,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = .ReleaseFast,
     });
-    translate.addIncludePath(b.path(""));
+    translate.addIncludePath(b.path("src"));
     for (flags) |flag| {
         if (std.mem.startsWith(u8, flag, "-D")) translate.defineCMacroRaw(flag["-D".len..]);
     }
@@ -389,9 +389,9 @@ pub fn build(b: *std.Build) void {
     // translated from, which tools/public-constants.py reads.
     const lists = b.addWriteFiles();
     const lists_step = b.step("lib-lists", "Install lib-srcs.txt, lib-def.txt and lib-headers.txt, the object's sources, defines and public headers");
-    lists_step.dependOn(&b.addInstallFile(lists.add("lib-srcs.txt", lines(b, plan.srcs)), "lib-srcs.txt").step);
+    lists_step.dependOn(&b.addInstallFile(lists.add("lib-srcs.txt", sourceLines(b, plan.srcs)), "lib-srcs.txt").step);
     lists_step.dependOn(&b.addInstallFile(lists.add("lib-def.txt", lines(b, plan.defs)), "lib-def.txt").step);
-    lists_step.dependOn(&b.addInstallFile(lists.add("lib-headers.txt", lines(b, plan.headers)), "lib-headers.txt").step);
+    lists_step.dependOn(&b.addInstallFile(lists.add("lib-headers.txt", sourceLines(b, plan.headers)), "lib-headers.txt").step);
 }
 
 /// The Makefile's refusals of a SUITE or KEX value beside PROFILE=cnsa2,
@@ -990,6 +990,13 @@ fn includes(b: *std.Build, headers: Names) []const u8 {
     var text: std.ArrayList(u8) = .empty;
     text.appendSlice(b.allocator, "// Written by build.zig: the public headers of one packaged object.\n") catch @panic("OOM");
     for (headers) |header| text.print(b.allocator, "#include \"{s}\"\n", .{header}) catch @panic("OOM");
+    return text.items;
+}
+
+/// One path per line under src/, each line ended, as make prints the names.
+fn sourceLines(b: *std.Build, names: Names) []const u8 {
+    var text: std.ArrayList(u8) = .empty;
+    for (names) |name| text.print(b.allocator, "src/{s}\n", .{name}) catch @panic("OOM");
     return text.items;
 }
 

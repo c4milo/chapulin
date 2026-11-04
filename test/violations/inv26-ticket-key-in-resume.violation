@@ -1,5 +1,5 @@
 invariant: INV-26
-file: srv_resume.c
+file: src/srv_resume.c
 catches: test/lint-invariants.sh
 reason: srv_resume.c names a traffic-key entry, so a file outside the four
   INV-26 admits would hand AES a key nobody reviewed for it. srv_ticket.c

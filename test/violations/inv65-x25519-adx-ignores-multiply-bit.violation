@@ -1,5 +1,5 @@
 invariant: INV-65
-file: widemul.h
+file: src/widemul.h
 catches: test/docker-aes-runtime-qemu.sh x25519-adx
 reason: widemul_x25519_cpu runs x25519_adx.c under CH_CPU_BMI2_ADX alone,
   so a session whose caller states nothing about the multiply runs MULX's

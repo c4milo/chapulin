@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512.c
+file: src/sha512.c
 catches: sha2_equiv_test
 reason: a host object's finalize writes zero as the upper word of the
   length where FIPS 180-4 §5.1.2 writes the upper 64 bits of the bit

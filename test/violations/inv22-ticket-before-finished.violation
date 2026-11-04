@@ -1,5 +1,5 @@
 invariant: INV-22
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: test/handshake_sequence_shards.sh ./bin/handshake_sequence_test
 builds: bin/handshake_sequence_test
 reason: tolerating a NewSessionTicket ahead of the server Finished accepts a

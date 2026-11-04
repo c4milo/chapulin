@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_avx2.c
+file: src/rsa_avx2.c
 catches: rsa_avx2_model_test
 reason: the triangle gives row 3 of every group a y, where the last group's
   rows from the digit count n up must take none: their lanes hold the

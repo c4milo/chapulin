@@ -1,5 +1,5 @@
 invariant: INV-14
-file: quic_token.c
+file: src/quic_token.c
 catches: proof/prove-one.sh quic_token
 reason: the check stops bounding the Original Destination Connection ID's
   length, so a token whose tag verifies and whose first length byte is above

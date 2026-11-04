@@ -1,5 +1,5 @@
 invariant: INV-16
-file: mldsa.c
+file: src/mldsa.c
 catches: test/docker-aes-runtime-qemu.sh keccak
 reason: the verifier samples each entry of A through the call that takes
   no value, so a verification under CH_CPU_CONSTANT_TIME_SHA3 runs the 56

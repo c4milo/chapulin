@@ -148,11 +148,11 @@ for object in "${objects[@]}"; do
         # The sets the file may hold: a pattern that matches no mnemonic
         # for every file but the seven.
         case "$src" in
-        aes_hw.c | ghash_hw.c | gcm_hw.c | gcm_vaes.c | gcm_avx512_kernel.c | gcm_arm64.c | gcm_arm64_eor3.c)
+        src/aes_hw.c | src/ghash_hw.c | src/gcm_hw.c | src/gcm_vaes.c | src/gcm_avx512_kernel.c | src/gcm_arm64.c | src/gcm_arm64_eor3.c)
             own="$aes|$clmul"
             ;;
-        sha256_hw.c) own="$sha256" ;;
-        sha512_hw.c) own="$sha512" ;;
+        src/sha256_hw.c) own="$sha256" ;;
+        src/sha512_hw.c) own="$sha512" ;;
         *) own='^$' ;;
         esac
         in_files=$((in_files + $(count "$found" "$own")))
@@ -164,38 +164,38 @@ for object in "${objects[@]}"; do
             rc=1
         fi
         case "$src" in
-        aes_hw.c) holds "$object" "$(count "$found" "$aes")" "AES instruction in aes_hw.o" ;;
-        ghash_hw.c) holds "$object" "$(count "$found" "$clmul")" "carry-less multiply in ghash_hw.o" ;;
-        gcm_hw.c)
+        src/aes_hw.c) holds "$object" "$(count "$found" "$aes")" "AES instruction in aes_hw.o" ;;
+        src/ghash_hw.c) holds "$object" "$(count "$found" "$clmul")" "carry-less multiply in ghash_hw.o" ;;
+        src/gcm_hw.c)
             holds "$object" "$(count "$found" "$aes")" "AES instruction in gcm_hw.o"
             # On arm64 gcm_hw.c runs counter mode alone (gcm_hw.h).
             [ -n "$sha512_body" ] ||
                 holds "$object" "$(count "$found" "$clmul")" "carry-less multiply in gcm_hw.o"
             ;;
-        gcm_arm64.c | gcm_arm64_eor3.c)
+        src/gcm_arm64.c | src/gcm_arm64_eor3.c)
             if [ -n "$sha512_body" ]; then
                 holds "$object" "$(count "$found" "$aes")" "AES instruction in ${src%.c}.o"
                 holds "$object" "$(count "$found" "$clmul")" "carry-less multiply in ${src%.c}.o"
             fi
-            if [ -n "$sha512_body" ] && [ "$src" = gcm_arm64_eor3.c ]; then
+            if [ -n "$sha512_body" ] && [ "$src" = src/gcm_arm64_eor3.c ]; then
                 holds "$object" "$(count "$(instructions "$o" '^eor3')" '^eor3')" "eor3 in gcm_arm64_eor3.o"
             fi
-            if [ -n "$sha512_body" ] && [ "$src" = gcm_arm64.c ] && [ "$machine" = "${machine%apple*}" ]; then
+            if [ -n "$sha512_body" ] && [ "$src" = src/gcm_arm64.c ] && [ "$machine" = "${machine%apple*}" ]; then
                 while read -r label mnemonic; do
                     [ -n "$label" ] || continue
-                    echo "aes-runtime-disasm: [$object]: gcm_arm64.c runs $mnemonic in $label, which" \
-                        "only gcm_arm64_eor3.c's copy may run" >&2
+                    echo "aes-runtime-disasm: [$object]: src/gcm_arm64.c runs $mnemonic in $label, which" \
+                        "only src/gcm_arm64_eor3.c's copy may run" >&2
                     rc=1
                 done <<< "$(instructions "$o" '^eor3')"
             fi
             ;;
-        sha256_hw.c) holds "$object" "$(count "$found" "$sha256")" "SHA-256 instruction in sha256_hw.o" ;;
-        sha512_hw.c)
+        src/sha256_hw.c) holds "$object" "$(count "$found" "$sha256")" "SHA-256 instruction in sha256_hw.o" ;;
+        src/sha512_hw.c)
             if [ -n "$sha512_body" ]; then
                 holds "$object" "$(count "$found" "$sha512")" "SHA-512 instruction in sha512_hw.o"
                 while read -r label mnemonic; do
                     [ -n "$label" ] || continue
-                    echo "aes-runtime-disasm: [$object]: sha512_hw.c runs $mnemonic in $label, one of" \
+                    echo "aes-runtime-disasm: [$object]: src/sha512_hw.c runs $mnemonic in $label, one of" \
                         "FEAT_SHA3's, which CH_CPU_CONSTANT_TIME_SHA512 does not name" >&2
                     rc=1
                 done <<< "$(instructions "$o" "$sha3")"
@@ -210,8 +210,8 @@ for object in "${objects[@]}"; do
             "gcm_arm64_eor3.o, sha256_hw.o and sha512_hw.o hold $in_files" >&2
         rc=1
     fi
-    echo "aes-runtime-disasm: [$object]: $linked instructions, $in_files of them in aes_hw.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c, gcm_avx512_kernel.c, gcm_arm64.c, gcm_arm64_eor3.c, sha256_hw.c and sha512_hw.c"
+    echo "aes-runtime-disasm: [$object]: $linked instructions, $in_files of them in src/aes_hw.c, src/ghash_hw.c, src/gcm_hw.c, src/gcm_vaes.c, src/gcm_avx512_kernel.c, src/gcm_arm64.c, src/gcm_arm64_eor3.c, src/sha256_hw.c and src/sha512_hw.c"
 done
 [ "$rc" -ne 0 ] ||
-    echo "aes-runtime-disasm: on $machine, no AES or carry-less multiply instruction outside aes_hw.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c, gcm_avx512_kernel.c, gcm_arm64.c and gcm_arm64_eor3.c, no SHA-256 instruction outside sha256_hw.c, no SHA-512 instruction outside sha512_hw.c and none of FEAT_SHA3's in it"
+    echo "aes-runtime-disasm: on $machine, no AES or carry-less multiply instruction outside src/aes_hw.c, src/ghash_hw.c, src/gcm_hw.c, src/gcm_vaes.c, src/gcm_avx512_kernel.c, src/gcm_arm64.c and src/gcm_arm64_eor3.c, no SHA-256 instruction outside src/sha256_hw.c, no SHA-512 instruction outside src/sha512_hw.c and none of FEAT_SHA3's in it"
 exit "$rc"

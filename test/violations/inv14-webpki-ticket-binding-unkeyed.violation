@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: webpki_resume_test
 reason: the binding's HMAC is keyed by the configuration hash instead of the
   ticket's PSK, so the binding no longer names one ticket: a binding

@@ -1,5 +1,5 @@
 invariant: INV-48
-file: mlkem_poly.c
+file: src/mlkem_poly.c
 catches: test/mlkem-builds.sh
 reason: mlkem_poly.c, whose noise sampler reads ML-KEM's secret seed,
   includes keccak_avx2.h, the step before a secret stream runs on

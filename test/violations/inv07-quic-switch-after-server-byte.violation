@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic.c
+file: src/quic.c
 catches: quic_driver_test
 reason: ch_quic_switch_version takes a switch after a CRYPTO byte from the
   server arrived. The server sends every CRYPTO frame in the negotiated

@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512.c
+file: src/sha512.c
 catches: test/hash-builds.sh
 reason: sha512.c picks the copy's compression function on a macro no build
   defines, so sha512_hw.c's copy for x86-64 compresses on

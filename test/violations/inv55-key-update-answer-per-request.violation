@@ -1,5 +1,5 @@
 invariant: INV-55
-file: handshake_post.c
+file: src/handshake_post.c
 catches: unit
 reason: ch_read answers each request at once, so a run of requests costs
   one write-side rekey and one send inside ch_read apiece, where RFC 9846

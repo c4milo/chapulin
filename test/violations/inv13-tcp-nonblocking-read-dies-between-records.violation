@@ -1,5 +1,5 @@
 invariant: INV-13
-file: io.c
+file: src/io.c
 catches: tcp_nonblocking_loop_test
 reason: a tcp-nonblocking ch_read turns an empty recv at a record boundary
   into CH_EIO, so a caller that has no record yet loses the session. A

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test
 reason: the second ClientHello of a retry leaves the signature scheme where the
   caller's selection had it. The tcp-nonblocking and QUIC drivers zero their

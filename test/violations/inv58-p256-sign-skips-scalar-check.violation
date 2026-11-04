@@ -1,5 +1,5 @@
 invariant: INV-58
-file: p256_sign.c
+file: src/p256_sign.c
 catches: p256_sign_fault_test
 reason: compute_signature takes every s as s*k = z + r*d, so a fault in s,
   in the inverse of k or in r*d still gives a signature. Such an s beside

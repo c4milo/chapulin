@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic.c
+file: src/quic.c
 catches: quic_driver_test
 reason: ch_quic_switch_version takes a switch to the version the session
   already negotiated, which spends the one switch RFC 9369 section 4.1

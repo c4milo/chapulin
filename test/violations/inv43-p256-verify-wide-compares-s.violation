@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify.c
+file: src/p256_wide_verify.c
 catches: p256_verify_equiv_test
 reason: the host verifier compares R's x with s where the equation names r,
   so it refuses every signature a signer wrote and accepts a pair whose

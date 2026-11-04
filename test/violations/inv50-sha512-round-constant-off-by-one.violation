@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512_round_constants.h
+file: src/sha512_round_constants.h
 catches: sha2_equiv_test
 reason: the first of the eighty round constants a host object's two
   compression functions read is one more than FIPS 180-4 §4.2.3's, so

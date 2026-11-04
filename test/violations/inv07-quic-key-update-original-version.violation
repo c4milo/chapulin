@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic.c
+file: src/quic.c
 catches: quic_loop_test
 reason: ch_quic_key_update advances the 1-RTT secrets under the original
   version's key update label, "quic ku" where a switched session owes

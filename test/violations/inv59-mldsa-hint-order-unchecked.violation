@@ -1,5 +1,5 @@
 invariant: INV-59
-file: mldsa.c
+file: src/mldsa.c
 catches: mldsa_test
 reason: HintBitUnpack's check that a row's positions increase is gone, so
   a hint encoding with a repeated or a backward position decodes. FIPS 204

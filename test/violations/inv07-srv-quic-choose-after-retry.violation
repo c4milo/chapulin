@@ -1,5 +1,5 @@
 invariant: INV-7
-file: srv_quic.c
+file: src/srv_quic.c
 catches: srv_quic_test
 reason: the second ClientHello after a HelloRetryRequest asks
   choose_version again, so the server can change the negotiated version

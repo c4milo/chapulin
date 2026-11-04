@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.c
+file: src/handshake_post.c
 catches: unit
 reason: the trust hash leaves out the kind, so a PSK with the bytes of the
   pin that issued a ticket holds that ticket's trust. test/session_ticket_tests.h

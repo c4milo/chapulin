@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes_hw.c
+file: src/aes_hw.c
 catches: test/docker-aes-runtime-qemu.sh aes-equiv
 reason: the host object's arm64 key expansion reads word 3 of a round key
   unrotated into word 0 of the temporary, where FIPS 197 takes RotWord, so

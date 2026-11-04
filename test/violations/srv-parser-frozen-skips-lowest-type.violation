@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_test
 reason: next_covered takes a type strictly above lowest_type instead of at or
   above it, so the first pass never adds an extension of type 0 and each

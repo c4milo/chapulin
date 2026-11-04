@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_word.h
+file: src/p256_wide_word.h
 catches: p256_equiv_test_builtin
 reason: the form of the add with carry that clang compiles keeps the carry
   of a + b and drops the carry of adding the carry in, so a word sum of

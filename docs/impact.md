@@ -82,7 +82,7 @@ have to costs minutes; a plan that drops a gate that would have failed
 lets a bad commit land, which is worse than running everything. So:
 
 - A changed path the mapping cannot place selects everything and says
-  which path did it. That covers an edit to the Makefile, a root header,
+  which path did it. That covers an edit to the Makefile, a library header,
   `tools/toolchain.env`, anything under `.github/` or `.semgrep/`,
   `proof/run.sh`, `proof/prove-one.sh`, and `.gitignore`, which decides
   which files the gates that read `git ls-files` see at all.
@@ -95,7 +95,7 @@ lets a bad commit land, which is worse than running everything. So:
   join `WEBPKI_SRCS`, and `lint-codegen-partition` requires every
   library source to be in exactly one gate list — and neither has a
   source list to narrow by.
-- Any root header selects everything, because `$(HDRS)` is a
+- Any library header selects everything, because `$(HDRS)` is a
   prerequisite of every test binary. Narrowing `rsa.h` to the RSA
   binaries would be a guess the Makefile does not support.
 - A variable inside a make function expands to its whole value:

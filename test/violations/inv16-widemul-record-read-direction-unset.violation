@@ -1,5 +1,5 @@
 invariant: INV-16
-file: session.c
+file: src/session.c
 catches: tcp_nonblocking_loop_host
 reason: tlsi_record_cpu writes the session's ch_cfg.cpu into the write direction
   alone, so every record a session opens runs under 0, which names no

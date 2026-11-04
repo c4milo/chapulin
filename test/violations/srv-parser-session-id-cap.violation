@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_test
 reason: parse_head copies a legacy_session_id of any length the byte names
   into the 32-byte session_id array, so a 33-byte id writes one byte

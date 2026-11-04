@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes.c
+file: src/aes.c
 catches: aes_runtime_test
 reason: a QUIC host object records the table in a traffic key's schedule,
   so every AES-128 block under a TLS traffic key runs on

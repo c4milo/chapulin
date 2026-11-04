@@ -19,6 +19,6 @@
 #define rec_seal bench_rec_seal_without_aead
 #define rec_open bench_rec_open_without_aead
 
-#include "../record.c"
+#include "../src/record.c"
 
 #include "record_stages.h"

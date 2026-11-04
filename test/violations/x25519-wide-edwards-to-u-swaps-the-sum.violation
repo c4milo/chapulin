@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide_edwards.h
+file: src/x25519_wide_edwards.h
 catches: diff_x25519_wide
 reason: to_u writes (Z - Y) / (Z + Y), the u of the negated y, which is
   1 / u: another point than the ladder's. bin/diff_x25519_wide holds to_u

@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha3.c
+file: src/sha3.c
 catches: test/docker-aes-runtime-qemu.sh keccak
 reason: sha3_256 and sha3_512 no longer wipe the state they hash in, so
   the 25 lanes of the last permutation stay on the stack below the call

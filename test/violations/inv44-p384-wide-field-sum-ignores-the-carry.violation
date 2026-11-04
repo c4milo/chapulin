@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_field.c
+file: src/p384_wide_field.c
 catches: p384_equiv_test
 reason: the modular sum subtracts the modulus when the low 384 bits
   are at or above it and not when the sum carried out of them, so (m -

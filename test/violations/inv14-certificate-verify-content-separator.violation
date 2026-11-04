@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: diff
 builds: bin/diff
 reason: the client drops the zero byte between the context string and the

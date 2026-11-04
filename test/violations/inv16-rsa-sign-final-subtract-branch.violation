@@ -1,5 +1,5 @@
 invariant: INV-16
-file: rsa_sign.c
+file: src/rsa_sign.c
 catches: test/lint-wide-multiply.sh
 reason: mont_mul picks t or t - m with an if instead of a mask, so whether
   a Montgomery product needed its final subtract -- a fact about a secret

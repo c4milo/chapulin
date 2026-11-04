@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify_point.c
+file: src/p256_wide_verify_point.c
 catches: p256_verify_equiv_test
 reason: the host verifier's general Jacobian addition runs its formula on
   a running sum at infinity. The sum's coordinates are then zero, U1 and

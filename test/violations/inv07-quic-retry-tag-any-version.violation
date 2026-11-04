@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic_retry.c
+file: src/quic_retry.c
 catches: srv_quic_test
 reason: quic_retry_tag mints a Retry tag in a version this build
   derives no keys for, under version 1's key and nonce, so

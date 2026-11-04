@@ -1,5 +1,5 @@
 invariant: INV-38
-file: tls_write.c
+file: src/tls_write.c
 catches: diff
 builds: bin/diff
 reason: records_fill pays the overhead of the whole records and not of the

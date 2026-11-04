@@ -1,5 +1,5 @@
 invariant: INV-52
-file: gcm_avx512_kernel.c
+file: src/gcm_avx512_kernel.c
 catches: test/avx512-run.sh bin/gcm_avx512_equiv_test
 builds: bin/gcm_avx512_equiv_test
 reason: register_mask answers every byte of a register that holds any

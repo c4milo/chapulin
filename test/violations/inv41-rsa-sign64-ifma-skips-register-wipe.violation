@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: both_powers returns after the exponentiations on AVX-512 IFMA
   without wiping the vector and mask registers, which hold digits of the

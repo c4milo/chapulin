@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_parser.c
+file: src/handshake_parser.c
 catches: webpki_session_aes
 builds: bin/webpki_session_aes
 reason: the three-suite client accepts TLS_AES_128_CCM_SHA256 in a

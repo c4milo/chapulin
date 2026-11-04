@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test
 reason: srv_select drops the term that reads SRV_EXT_ALPN, so it refuses a
   ClientHello that sent no application_layer_protocol_negotiation extension

@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_test
 reason: the chain call gives its writer one byte more than der_len, so a
   chain one byte over the caller's DER room reads and its last byte lands

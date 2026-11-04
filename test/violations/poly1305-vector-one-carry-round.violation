@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305_vector.c
+file: src/poly1305_vector.c
 catches: poly1305_equiv_test
 reason: the group loop carries its sums once, not twice, so a word can
   reach 2^33 where the next group's multiply reads 32 bits of it: NEON's

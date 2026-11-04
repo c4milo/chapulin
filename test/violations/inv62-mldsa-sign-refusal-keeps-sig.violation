@@ -1,5 +1,5 @@
 invariant: INV-62
-file: mldsa_signer.c
+file: src/mldsa_signer.c
 catches: mldsa_signer_test
 reason: a signature that fails the check under pk stays in the caller's
   buffer when mldsa87_sign returns 0, so a caller that ignores the result

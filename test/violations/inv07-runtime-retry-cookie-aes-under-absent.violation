@@ -1,5 +1,5 @@
 invariant: INV-7
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test_aes
 reason: a host object's server whose caller did not set
   CH_CPU_CONSTANT_TIME_AES takes a second ClientHello whose cookie holds

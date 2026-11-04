@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_pin.c
+file: src/webpki_pin.c
 catches: webpki_session_test
 reason: pins alone offer the raw key alone, the offer before
   docs/decisions.md 65, so a server that holds both types may not select

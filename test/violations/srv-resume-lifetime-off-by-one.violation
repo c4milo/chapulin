@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_resume.c
+file: src/srv_resume.c
 catches: srv_flight_test
 reason: the lifetime check admits a ticket one second past SRV_TICKET_LIFETIME,
   so a server issues tickets whose ticket_lifetime understates how long it

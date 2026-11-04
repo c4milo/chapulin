@@ -1,5 +1,5 @@
 invariant: INV-13
-file: tls_write.c
+file: src/tls_write.c
 catches: test/handshake_sequence_shards.sh ./bin/handshake_sequence_test
 builds: bin/handshake_sequence_test
 reason: ch_fail sends on a session that already failed. tlsi_send_alert

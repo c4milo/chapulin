@@ -1,5 +1,5 @@
 invariant: INV-34
-file: gcm_arm64.h
+file: src/gcm_arm64.h
 catches: test/docker-aes-runtime-qemu.sh arm64-hash-count
 reason: gcm_use_eor3 reads CH_CPU_CONSTANT_TIME_SHA512 where it should read
   CH_CPU_CONSTANT_TIME_SHA3, so a session whose caller stated FEAT_SHA3

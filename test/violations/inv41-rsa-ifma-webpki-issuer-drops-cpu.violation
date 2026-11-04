@@ -1,5 +1,5 @@
 invariant: INV-41
-file: webpki.c
+file: src/webpki.c
 catches: test/docker-aes-runtime-qemu.sh rsa-ifma-callers
 reason: the chain walk verifies a certificate's signature under the key of
   the issuer the peer sent with 0 in place of the session's ch_cfg.cpu,

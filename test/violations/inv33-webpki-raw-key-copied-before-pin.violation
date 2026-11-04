@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_pin.c
+file: src/webpki_pin.c
 catches: proof/prove-one.sh webpki_pin
 reason: webpki_verify_raw_key copies the key into out before it checks the
   pins, so a raw key no pin names is refused with the key already in out,

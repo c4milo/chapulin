@@ -1,5 +1,5 @@
 invariant: INV-56
-file: mlkem.c
+file: src/mlkem.c
 catches: test/wycheproof.sh
 reason: encryption draws e2 under nonce 6, ML-KEM-768's, where FIPS 203
   gives 2k, 8 at ML-KEM-1024. Encapsulation and the re-encryption inside

@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_cert.c
+file: src/webpki_cert.c
 catches: webpki_cert_test
 reason: the outer signatureAlgorithm is read as any SEQUENCE instead of
   compared with the TBS signature field, so a certificate whose two

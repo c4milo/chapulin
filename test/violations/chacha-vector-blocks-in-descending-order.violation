@@ -1,5 +1,5 @@
 invariant: INV-16
-file: chacha20_vector.c
+file: src/chacha20_vector.c
 catches: chacha20_equiv_test
 reason: each group XORs its sixteen rows of 16 bytes last to first. In
   place each 16 bytes are still read before they are written, so the

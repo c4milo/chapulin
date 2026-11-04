@@ -1,5 +1,5 @@
 invariant: INV-11
-file: record.c
+file: src/record.c
 catches: aes_suite_test
 reason: KeyUpdate rekeys an AES-GCM direction through rec_dir_init, which
   derives a 32-byte ChaCha20 key, so the first KeyUpdate switches the

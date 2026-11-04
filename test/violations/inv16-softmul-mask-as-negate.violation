@@ -1,5 +1,5 @@
 invariant: INV-16
-file: softmul.c
+file: src/softmul.c
 catches: test/docker-riscv32.sh
 reason: the mask written as `0 - bit` is a shape gcc rewrites into
   `a * bit`, and at -Os for rv32ic it emits that 64-bit product as a

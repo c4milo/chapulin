@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: proof/prove-one.sh p256_wide_digit
 reason: the bit read drops its test of the position against 255, so the
   top six-bit window reads bits 256 and 257, which index the scalar's

@@ -10,6 +10,6 @@ reason: the Makefile lists sha512_hw.c beside sha512.c and no
   list per build, and its host rows with the suite require both files.
 
 --- old
-SHA512_HW_SRCS := sha512_hw.c sha512_avx2.c
+SHA512_HW_SRCS := src/sha512_hw.c src/sha512_avx2.c
 --- new
-SHA512_HW_SRCS := sha512_hw.c
+SHA512_HW_SRCS := src/sha512_hw.c

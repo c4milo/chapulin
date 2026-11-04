@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_resume.c
+file: src/srv_resume.c
 catches: srv_flight_test
 reason: the server considers a ticket from a client that listed psk_ke alone.
   RFC 9846 §4.3.9 forbids a server to select a mode the client did not

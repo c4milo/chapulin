@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha512_hw.c
+file: src/sha512_hw.c
 catches: test/hash-builds.sh
 reason: sha512_hw.c passes a round's words plus their constants through
   veor3q_u64, one of FEAT_SHA3's four instructions, which the file's

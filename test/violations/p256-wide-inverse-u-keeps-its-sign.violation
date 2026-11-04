@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_inverse.c
+file: src/p256_wide_inverse.c
 catches: p256_equiv_test
 reason: combine_modular no longer gives u and v the sign a and b took, so a
   round that negates a below zero leaves a = -u y modulo m where the rounds

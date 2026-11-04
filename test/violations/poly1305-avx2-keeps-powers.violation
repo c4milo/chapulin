@@ -1,5 +1,5 @@
 invariant: INV-17
-file: poly1305_avx2.c
+file: src/poly1305_avx2.c
 catches: test/docker-aes-runtime-qemu.sh poly1305-avx2
 reason: the AVX2 Poly1305 returns without wiping r^2 to r^8 and its two
   multipliers, so its dead frame keeps them. r and a tag seen on the

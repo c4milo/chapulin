@@ -1,5 +1,5 @@
 invariant: INV-22
-file: session.c
+file: src/session.c
 catches: unit
 reason: tlsi_fail answers the peer's fatal alert with one of its own, which
   RFC 9846 section 6.2 forbids: on a fatal alert both sides close the

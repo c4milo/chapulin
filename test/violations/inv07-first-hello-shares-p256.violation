@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_message.c
+file: src/handshake_message.c
 catches: webpki_session_test
 reason: the first webpki hello carries a secp256r1 share beside the hybrid
   and x25519 ones, a 65-byte point it never drew a scalar for. A server that

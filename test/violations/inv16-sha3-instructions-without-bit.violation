@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha3.h
+file: src/sha3.h
 catches: test/docker-aes-runtime-qemu.sh
 reason: sha3_on_instructions answers yes where the session's ch_cfg.cpu
   leaves CH_CPU_CONSTANT_TIME_SHA3 clear, so a session runs ML-KEM's

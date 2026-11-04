@@ -1,5 +1,5 @@
 invariant: INV-26
-file: quic_packet.c
+file: src/quic_packet.c
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: quic_packet.c's seal builds its AES key and never records the
   session's cpu in it, so every packet it seals under AES-GCM runs

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv.c
+file: src/srv.c
 catches: proof/prove-one.sh srv_accept
 reason: a server with no ticket_key takes a cookie_key of all zero bytes,
   so anyone mints the cookies of its HelloRetryRequest. The srv_accept

@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_point.c
+file: src/p384_wide_point.c
 catches: p384_equiv_test
 reason: the comparison never tries r + n, so a signature whose point
   has an x above n, where r is x - n, does not verify.

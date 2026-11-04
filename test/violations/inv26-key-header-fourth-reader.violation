@@ -1,5 +1,5 @@
 invariant: INV-26
-file: quic_packet.c
+file: src/quic_packet.c
 catches: test/lint-quic-surface.sh
 reason: quic_packet.c includes aes_public_key.h, which gives it the body of
   aes_public_key and with it the ability to declare a key and write a

@@ -1,5 +1,5 @@
 invariant: INV-61
-file: x509.c
+file: src/x509.c
 catches: diff_x509_mldsa
 reason: the CA walk hands ML-DSA-87 the TBSCertificate less its last
   byte, so every signature check fails and an accepted chain is

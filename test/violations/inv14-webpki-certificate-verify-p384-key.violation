@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: webpki_auth_test
 reason: a P-384 leaf key goes to the P-256 verifier, which reads 64 of
   its 96 bytes as a point and 32 of the 48 digest bytes. Every P-384

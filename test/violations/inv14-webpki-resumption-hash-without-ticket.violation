@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: webpki_session_test
 reason: webpki_resumption_ok hashes the configuration before it asks whether
   the session presents a ticket, so every init call hashes the anchors

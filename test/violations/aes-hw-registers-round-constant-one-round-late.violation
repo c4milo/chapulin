@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes_hw.c
+file: src/aes_hw.c
 catches: test/docker-aes-runtime-qemu.sh aes-equiv
 reason: the x86-64 AES-128 key expansion starts from the second round
   constant, so every round key after the key itself takes the constant of

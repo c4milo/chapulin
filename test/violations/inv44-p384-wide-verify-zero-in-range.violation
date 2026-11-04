@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_verify.c
+file: src/p384_wide_verify.c
 catches: proof/prove-one.sh p384_wide_verify
 reason: the host verifier admits zero for r and for s. A zero s has
   the inverse zero, so both scalars are zero and the sum is infinity,

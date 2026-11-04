@@ -1,5 +1,5 @@
 invariant: INV-7
-file: suite.h
+file: src/suite.h
 catches: webpki_loop_aes_extern
 reason: an AES=extern build takes the AES-first default order that only a
   host object whose caller sets CH_CPU_CONSTANT_TIME_AES may take

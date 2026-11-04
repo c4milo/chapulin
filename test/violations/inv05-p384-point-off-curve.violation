@@ -1,5 +1,5 @@
 invariant: INV-5
-file: p384.c
+file: src/p384.c
 catches: webpki_sigalg_test
 reason: p384_ecdsa_verify stops checking the curve equation, so a key
   that is not on P-384 verifies a signature forged for it, and

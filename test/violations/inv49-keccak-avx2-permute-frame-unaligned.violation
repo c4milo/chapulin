@@ -1,5 +1,5 @@
 invariant: INV-49
-file: keccak_avx2.c
+file: src/keccak_avx2.c
 catches: test/lint-frame-align.sh
 reason: keccak_avx2_permute loses the attribute that makes clang align its
   frame to 32 bytes. The state is 25 vectors and AVX2 has 16 registers, so

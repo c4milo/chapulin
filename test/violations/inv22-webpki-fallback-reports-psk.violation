@@ -1,5 +1,5 @@
 invariant: INV-22
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: webpki_resume_test
 reason: ch_tls.psk_selected is set whenever the hello offered a ticket,
   a declined one included. The drivers read it to decide whether a

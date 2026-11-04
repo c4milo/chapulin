@@ -1,5 +1,5 @@
 invariant: INV-17
-file: gcm_hw.c
+file: src/gcm_hw.c
 catches: ghash_equiv_test
 reason: gcm_seal_passes_hw returns without the wipe below its body, so the hash
   subkey's powers, the last pass's sums and its keystream stay in the

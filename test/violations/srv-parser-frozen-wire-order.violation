@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_quic_test
 reason: the frozen digest adds the covered extensions in the order the client
   sent them, which is what the parser did before docs/decisions.md 59. A

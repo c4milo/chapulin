@@ -1,5 +1,5 @@
 invariant: INV-51
-file: sha512_avx2.c
+file: src/sha512_avx2.c
 catches: test/lint-schedule-order.sh
 reason: the first schedule step of eight_rounds_advancing stands whole
   after its four rounds, as the kernel had it before decision 128's

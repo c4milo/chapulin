@@ -1,5 +1,5 @@
 invariant: INV-62
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_mldsa_test
 reason: ch_mldsa_key_from_pem takes the both form without its check that
   the file's expanded key is the seed's, so a file whose two halves

@@ -1,5 +1,5 @@
 invariant: INV-25
-file: srv_parser_ext.c
+file: src/srv_parser_ext.c
 catches: srv_test
 reason: read_supported_versions stops holding versions<2..254> to an even
   byte count, so a list whose last version is one byte short is read as a

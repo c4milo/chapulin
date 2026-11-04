@@ -1,5 +1,5 @@
 invariant: INV-38
-file: session.h
+file: src/session.h
 catches: test/tx-record-builds.sh
 reason: session.h stops holding a QUIC build's CH_TX_PT at 512, so a firmware
   tree that sets the value for a TRANSPORT=quic-nonblocking build compiles an

@@ -1,5 +1,5 @@
 invariant: INV-4
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: tcp_nonblocking_loop_session
 reason: hsf_begin draws the ClientHello random from ch_rand_bytes, with a
   declaration of its own because a RAND=session build's rand.h declares

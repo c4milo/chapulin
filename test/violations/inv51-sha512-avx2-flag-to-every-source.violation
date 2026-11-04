@@ -11,6 +11,6 @@ reason: unit_cflags returns -fno-schedule-insns2 for every source, so a
   for the packaged object carries no such flag.
 
 --- old
-unit_cflags = $(if $(filter sha512_avx2.c,$(1)),$(SHA512_AVX2_GCC_CFLAGS))
+unit_cflags = $(if $(filter src/sha512_avx2.c,$(1)),$(SHA512_AVX2_GCC_CFLAGS))
 --- new
 unit_cflags = $(SHA512_AVX2_GCC_CFLAGS)

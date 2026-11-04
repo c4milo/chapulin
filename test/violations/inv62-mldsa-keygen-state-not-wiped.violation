@@ -1,5 +1,5 @@
 invariant: INV-62
-file: mldsa_signer.c
+file: src/mldsa_signer.c
 catches: pem_files_mldsa_test
 reason: key generation leaves its state on the stack: NTT(s1), a row of
   t, s2 and the seeds. bin/pem_files_mldsa_test searches the stack below

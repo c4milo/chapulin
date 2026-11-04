@@ -216,6 +216,11 @@ FULL_COMMANDS = [
 ]
 
 
+
+def library_source(path):
+    """Whether path names a library source: a file directly in src/."""
+    return path.startswith("src/") and path.count("/") == 1
+
 def full_plan(mapping, why):
     entries = [Entry("everything", "# " + why,
                      "an unmapped change selects every gate (over-select, "
@@ -429,12 +434,12 @@ AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-q
 
 
 # The sources test/hash-builds.sh compiles. hash_hw.h and keccak_hw.h,
-# which the copies include, are root headers and select every gate.
-HASH_BUILDS_SOURCES = {"sha256.c", "sha512.c", "sha512_compress.c", "sha512_compress_blocks.c",
-                       "hkdf.c", "keysched.c",
-                       "sha256_hw.c", "sha512_hw.c", "sha512_avx2.c", "hkdf_hw.c", "keysched_hw.c",
-                       "sha3.c", "mlkem.c", "mlkem_poly.c", "mlkem_poly_native.c",
-                       "sha3_hw.c", "mlkem_hw.c", "mlkem_poly_hw.c"}
+# which the copies include, are library headers and select every gate.
+HASH_BUILDS_SOURCES = {"src/sha256.c", "src/sha512.c", "src/sha512_compress.c", "src/sha512_compress_blocks.c",
+                       "src/hkdf.c", "src/keysched.c",
+                       "src/sha256_hw.c", "src/sha512_hw.c", "src/sha512_avx2.c", "src/hkdf_hw.c", "src/keysched_hw.c",
+                       "src/sha3.c", "src/mlkem.c", "src/mlkem_poly.c", "src/mlkem_poly_native.c",
+                       "src/sha3_hw.c", "src/mlkem_hw.c", "src/mlkem_poly_hw.c"}
 
 
 def select_aes_runtime_qemu(out, changed):
@@ -498,7 +503,7 @@ def select_ct_taint(out, changed):
 
 # test/script-builds.sh builds the programs the bench and platform
 # scripts compile from source lists of their own (docs/decisions.md 88).
-# Any root source can gain a call into a file one of those lists leaves
+# Any library source can gain a call into a file one of those lists leaves
 # out, and each script it runs, bench/openssl.sh, which two of them
 # source, and the sources under bench/ and test/qemu/ those scripts
 # compile, can break a build of its own.
@@ -507,10 +512,10 @@ SCRIPT_BUILDS_FILES = {"test/script-builds.sh", "bench/aead.sh", "bench/record.s
 
 
 def select_script_builds(out, changed):
-    """test/script-builds.sh: every root C source, the scripts it runs,
+    """test/script-builds.sh: every library source, the scripts it runs,
     and the C under bench/ and test/qemu/ they compile."""
     for path in changed:
-        root_source = "/" not in path and path.endswith(".c")
+        root_source = library_source(path) and path.endswith(".c")
         script_source = (path.startswith(("bench/", "test/qemu/"))
                          and path.endswith((".c", ".h")))
         if root_source or script_source or path in SCRIPT_BUILDS_FILES:
@@ -547,7 +552,7 @@ def select_zig(out, changed, lib):
                     f"build's check, which builds objects both ways",
                     ["test/zig-build-check.sh", "test/localize-check.sh"])
         # test/tx-record-builds.sh runs build.zig's TX_RECORD refusals
-        # beside make's and the headers'. A root header or the Makefile
+        # beside make's and the headers'. A library header or the Makefile
         # selects every gate already, so the Zig build and the script are
         # the paths left to name.
         if path in ("build.zig", "build.zig.zon", "test/tx-record-builds.sh"):
@@ -666,25 +671,25 @@ def select_lints(out, changed, csources, lib):
                 "the Zig API's files stay under 500 lines, as the C does")
     # lint-proof-cover asks which shipped source a harness proves, so a
     # library source selects it and a test main does not. It also reads
-    # every root source, a source no build packages yet included
-    # (tools/proof-cover.py's NOT_YET_PACKAGED), so a root .c file selects
+    # every library source, a source no build packages yet included
+    # (tools/proof-cover.py's NOT_YET_PACKAGED), so a .c file in src/ selects
     # it too. The frame budget
     # is per packaged object, so select_modes above runs the frame-budget
     # check of each object that compiles a source instead of one
     # lint-stack for every source.
     for path in csources:
-        if path in lib or ("/" not in path and path.endswith(".c")):
+        if path in lib or (library_source(path) and path.endswith(".c")):
             out.add("lint", "make lint-proof-cover",
-                    f"{path} is a root source, so it needs a build that packages "
+                    f"{path} is a library source, so it needs a build that packages "
                     f"it and a full harness or an audit entry",
                     ["test/lint-proof-cover.sh"])
-    # lint-exact-fill reads the root .c files, so a root source selects it
+    # lint-exact-fill reads the .c files in src/, so a library source selects it
     # whether or not the packaged object carries that source: the lint
     # judges the reader, not the object.
     for path in csources:
-        if "/" not in path:
+        if library_source(path):
             out.add("lint", "make lint-exact-fill",
-                    f"{path} is a root source, and tools/exact-fill.py reads "
+                    f"{path} is a library source, and tools/exact-fill.py reads "
                     f"every reader in one",
                     ["test/lint-exact-fill.sh"])
             break
@@ -702,11 +707,11 @@ def select_lints(out, changed, csources, lib):
     # SUITE=aesgcm build compiles carry no quic prefix, because that build
     # compiles them over TCP too, and the same three gates still read them:
     # INV-26 holds their keys, and lint-quic-partition judges each with the
-    # suite's defines. So an aes*, gcm* or ghash* path at the root selects
+    # suite's defines. So an aes*, gcm* or ghash* path in src/ selects
     # them as well. quic_aes_soft.c, which a suite build refuses, keeps
     # the prefix and is selected through it.
-    quic_root = [p for p in csources if "/" not in p
-                 and p.startswith(("quic", "aes", "gcm", "ghash"))]
+    quic_root = [p for p in csources if library_source(p)
+                 and p.startswith(("src/quic", "src/aes", "src/gcm", "src/ghash"))]
     if quic_root:
         out.add("lint", "make lint-quic-partition",
                 "a root quic, AES or GCM source changed, and this gate holds "
@@ -719,7 +724,7 @@ def select_lints(out, changed, csources, lib):
     # handshake_message.c holds the refusal of SUITE=aesgcm in a raw or ca
     # client (docs/decisions.md entry 45), and test/quic-builds.sh compiles
     # that file on both sides of the refusal, beside ct.h's two.
-    if "handshake_message.c" in csources:
+    if "src/handshake_message.c" in csources:
         out.add("tests", "test/quic-builds.sh",
                 "handshake_message.c refuses the AES suite in a raw or ca "
                 "client, and this script compiles it either side of that",
@@ -729,7 +734,7 @@ def select_lints(out, changed, csources, lib):
     # chacha20_vector.h's two refusals, and reads which path each of its
     # two entries calls. A device object's poly1305.c calls no vector
     # path, and the script compiles it under each multiply.
-    if "chacha20.c" in csources:
+    if "src/chacha20.c" in csources:
         out.add("tests", "test/chacha-builds.sh",
                 "chacha20.c calls the vector paths in a host object alone, and "
                 "this script compiles it either side of that define",
@@ -737,14 +742,14 @@ def select_lints(out, changed, csources, lib):
     # chacha20_avx2.c turns AVX2 on for its own functions alone, and the
     # script compiles it for x86-64 with no instruction flag and requires
     # the kernel there (docs/decisions.md 90).
-    if "chacha20_avx2.c" in csources:
+    if "src/chacha20_avx2.c" in csources:
         out.add("tests", "test/chacha-builds.sh",
                 "chacha20_avx2.c turns AVX2 on for its own functions, and this "
                 "script compiles it for x86-64 with no instruction flag",
                 ["test/chacha-builds.sh"])
     # chacha20_avx512.c does the same for AVX-512F, and the script requires
     # its call to avx512_wipe_registers.
-    if "chacha20_avx512.c" in csources:
+    if "src/chacha20_avx512.c" in csources:
         out.add("tests", "test/chacha-builds.sh",
                 "chacha20_avx512.c turns AVX-512F on for its own functions, and this "
                 "script compiles it for x86-64 with no instruction flag",
@@ -752,7 +757,7 @@ def select_lints(out, changed, csources, lib):
     # avx512_wipe.c holds the one block of assembly that zeros the AVX-512
     # registers, and the script compiles it for x86-64 and requires a zeroing
     # instruction for each register.
-    if "avx512_wipe.c" in csources:
+    if "src/avx512_wipe.c" in csources:
         out.add("tests", "test/chacha-builds.sh",
                 "avx512_wipe.c zeros the AVX-512 registers, and this script "
                 "requires its instruction for each register on x86-64",
@@ -760,8 +765,8 @@ def select_lints(out, changed, csources, lib):
     # poly1305_avx2.c does the same for the AVX2 Poly1305, and the script
     # requires the kernel in its native copy for x86-64 and nowhere else
     # (docs/decisions.md 110).
-    if set(csources) & {"poly1305_avx2.c", "poly1305_avx2_native.c", "poly1305_ifma.c",
-                        "poly1305_ifma_native.c"}:
+    if set(csources) & {"src/poly1305_avx2.c", "src/poly1305_avx2_native.c", "src/poly1305_ifma.c",
+                        "src/poly1305_ifma_native.c"}:
         out.add("tests", "test/chacha-builds.sh",
                 "poly1305_avx2.c turns AVX2 on for its own functions, and this "
                 "script compiles its native copy for x86-64 with no instruction flag",
@@ -770,16 +775,16 @@ def select_lints(out, changed, csources, lib):
     # test/mlkem-builds.sh compiles it either side of that define and
     # reads which transforms it calls (docs/decisions.md 101), and which
     # entries the copy for the four-way Keccak calls (107). The script also
-    # reads every root source for an include of keccak_avx2.h or a call
-    # into it, so a change to any root source selects it.
-    if set(csources) & {"mlkem.c", "mlkem_hw.c", "mlkem_avx2.c", "keccak_avx2.c"}:
+    # reads every library source for an include of keccak_avx2.h or a call
+    # into it, so a change to any library source selects it.
+    if set(csources) & {"src/mlkem.c", "src/mlkem_hw.c", "src/mlkem_avx2.c", "src/keccak_avx2.c"}:
         out.add("tests", "test/mlkem-builds.sh",
                 "mlkem.c calls the vector NTT in a host object alone, and this "
                 "script compiles it either side of that define",
                 ["test/mlkem-builds.sh"])
-    elif any("/" not in p for p in csources):
+    elif any(library_source(p) for p in csources):
         out.add("tests", "test/mlkem-builds.sh",
-                "a root source changed, and this script requires that none but "
+                "a library source changed, and this script requires that none but "
                 "keccak_avx2.c and mlkem_avx2.c reach the four-way Keccak",
                 ["test/mlkem-builds.sh"])
     # test/hash-builds.sh compiles the hash sources, their copies,
@@ -792,7 +797,7 @@ def select_lints(out, changed, csources, lib):
                 f"{path} is compiled by this script, which holds each hash's "
                 f"instructions to its file and each copy to the hash it calls",
                 ["test/hash-builds.sh"])
-    if "poly1305.c" in csources:
+    if "src/poly1305.c" in csources:
         out.add("tests", "test/chacha-builds.sh",
                 "a device object's poly1305.c calls no vector path, and this "
                 "script compiles it under each multiply",
@@ -808,24 +813,24 @@ def select_lints(out, changed, csources, lib):
     # reads rsa_mont64.c's calls into rsa_mont64_addcarry.c's rows the same
     # way (docs/decisions.md 122). It also compiles rsa_ifma.c, rsa_avx2.c
     # and rsa_mont.c's calls into them for x86-64 and arm64, and reads every
-    # root source for an include of rsa_ifma.h or rsa_avx2.h or a call into
-    # either, so a change to any root source selects it.
-    if set(csources) & {"rsa_mont.c", "rsa_mont64.c", "rsa_mont64_blocks.c",
-                        "rsa_mont64_addcarry.c", "rsa_ifma.c", "rsa_avx2.c"}:
+    # library source for an include of rsa_ifma.h or rsa_avx2.h or a call into
+    # either, so a change to any library source selects it.
+    if set(csources) & {"src/rsa_mont.c", "src/rsa_mont64.c", "src/rsa_mont64_blocks.c",
+                        "src/rsa_mont64_addcarry.c", "src/rsa_ifma.c", "src/rsa_avx2.c"}:
         out.add("tests", "test/widemul-builds.sh",
                 "rsa_mont.c calls the 64-bit arithmetic in a host object "
                 "alone, and this script compiles it either side of that define",
                 ["test/widemul-builds.sh"])
-    elif any("/" not in p for p in csources):
+    elif any(library_source(p) for p in csources):
         out.add("tests", "test/widemul-builds.sh",
-                "a root source changed, and this script requires that none but "
+                "a library source changed, and this script requires that none but "
                 "rsa_mont.c include rsa_ifma.h or call rsa_ifma_public",
                 ["test/widemul-builds.sh"])
     # p256.c hands a signature to p256_wide_verify.c in a host object alone
     # (docs/decisions.md 96). Both arms give the same verdict, so no test
     # of the verifier tells which one an object compiled, and the script
     # compiles the file either side of the define and reads its call.
-    if "p256.c" in csources or "p256_wide_verify.c" in csources:
+    if "src/p256.c" in csources or "src/p256_wide_verify.c" in csources:
         out.add("tests", "test/widemul-builds.sh",
                 "p256.c calls the wide verifier in a host object alone, and "
                 "this script compiles it either side of that define",
@@ -833,18 +838,18 @@ def select_lints(out, changed, csources, lib):
     # The same for P-384 (docs/decisions.md 97): p384.c hands a signature
     # to p384_wide_verify.c in a host object alone, and p384_field.c has a
     # body in a device object alone.
-    p384_files = {"p384.c", "p384_field.c", "p384_wide_field.c", "p384_wide_point.c",
-                  "p384_wide_verify.c"}
+    p384_files = {"src/p384.c", "src/p384_field.c", "src/p384_wide_field.c", "src/p384_wide_point.c",
+                  "src/p384_wide_verify.c"}
     if p384_files & set(csources):
         out.add("tests", "test/widemul-builds.sh",
                 "p384.c calls the 64-bit verifier in a host object alone, and "
                 "this script compiles it and p384_field.c either side of that "
                 "define",
                 ["test/widemul-builds.sh"])
-    # lint-quic-surface also reads every root source for an include of a
+    # lint-quic-surface also reads every library source for an include of a
     # key header, aes_public_key.h, aes_traffic_key.h or aes_schedule.h,
-    # outside the files each one names, so any root C source selects it.
-    if any("/" not in p for p in csources) or "docs/quic.md" in changed:
+    # outside the files each one names, so any library source selects it.
+    if any(library_source(p) for p in csources) or "docs/quic.md" in changed:
         out.add("lint", "make lint-quic-surface",
                 "quic.h and docs/quic.md must name one public surface, and "
                 "only the sources each AES key header names may include it",

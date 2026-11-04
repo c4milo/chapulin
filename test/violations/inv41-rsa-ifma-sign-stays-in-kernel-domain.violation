@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma_sign.c
+file: src/rsa_ifma_sign.c
 catches: rsa_ifma_sign_model_test
 reason: the exponentiation ends without its product by R mod m, so each
   power leaves in the kernel's domain, R' = 2^(52n), and not in

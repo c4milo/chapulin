@@ -58,7 +58,7 @@ def comment_names(text, public):
     for line in text.splitlines():
         m = MARKER.match(line)
         if m:
-            # The tree's headers come in as relative paths through -I.;
+            # The tree's headers come in as relative paths through -Isrc and -I.;
             # system headers and the generated source are absolute.
             path = pathlib.Path(m.group(1))
             header = None if path.is_absolute() else path.name
@@ -85,11 +85,11 @@ def main():
     cc, headers_path, defines_path = sys.argv[1:]
     headers = pathlib.Path(headers_path).read_text().split()
     defines = pathlib.Path(defines_path).read_text().split()
-    public = set(headers) | CONFIG_HEADERS
+    public = {pathlib.Path(h).name for h in headers} | CONFIG_HEADERS
     with tempfile.NamedTemporaryFile("w", suffix=".c", delete=False) as f:
         f.write("".join('#include "%s"\n' % h for h in headers))
         source = f.name
-    flags = ["-std=c11", "-I."] + defines
+    flags = ["-std=c11", "-Isrc", "-I."] + defines
     try:
         kept = subprocess.run([cc, "-E", "-C"] + flags + [source],
                               capture_output=True, text=True, check=True).stdout

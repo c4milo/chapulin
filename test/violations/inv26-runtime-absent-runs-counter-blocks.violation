@@ -1,5 +1,5 @@
 invariant: INV-26
-file: gcm.c
+file: src/gcm.c
 catches: aes_runtime_test
 reason: a QUIC host object hands the whole blocks of a schedule the table
   runs to the AES instructions, so a session whose caller did not set

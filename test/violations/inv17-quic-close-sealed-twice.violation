@@ -1,5 +1,5 @@
 invariant: INV-17
-file: quic_fail.c
+file: src/quic_fail.c
 catches: quic_driver_test
 reason: quic_wipe_write_keys zeroes a level's write keys and leaves its
   write bit set, so ch_quic_seal_close admits a second packet at a level

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki.c
+file: src/webpki.c
 catches: webpki_resume_test
 reason: the leaf's subjectAltName is matched against the hostname only
   when the hello offered no ticket, so a server that declines a ticket

@@ -1,5 +1,5 @@
 invariant: INV-25
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_test
 reason: parse_extension stops comparing rb_left for the body it opened, so a
   recognized extension with a byte after its struct parses, and two

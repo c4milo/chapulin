@@ -1,5 +1,5 @@
 invariant: INV-17
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: rsa_sign_equiv_test
 reason: the recombination returns without the wipe below its body, so qinv's
   words and the factor h stay in the stack.

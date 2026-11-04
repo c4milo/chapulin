@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont.c
+file: src/rsa_mont.c
 catches: rsa_ifma_model_test
 reason: rsa_mont.c's kernel_takes admits an even modulus, so rsa_vp1_cpu
   hands rsa_ifma_public a modulus that has no inverse of its low digit,

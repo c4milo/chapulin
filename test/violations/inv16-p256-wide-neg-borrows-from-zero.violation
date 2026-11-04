@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_field.c
+file: src/p256_wide_field.c
 catches: test/lint-invariants.sh
 reason: p256_wide_fe_neg computes 0 - a word by word and adds p when it
   borrowed. The value is the same, so every vector, proof and count

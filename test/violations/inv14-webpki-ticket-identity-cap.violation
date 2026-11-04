@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: webpki_resume_test
 reason: the ticket shape admits an identity one byte over CH_TICKET_ID_MAX,
   the largest one CH_HELLO_MAX makes room for, so the config passes

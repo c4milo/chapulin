@@ -1,5 +1,5 @@
 invariant: INV-38
-file: srv_parser_ext.c
+file: src/srv_parser_ext.c
 catches: srv_test
 reason: the wire record_size_limit counts the inner content-type byte
   (RFC 8449 §4), so a parser that stores it unchanged reports one byte

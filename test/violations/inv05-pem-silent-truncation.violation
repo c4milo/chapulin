@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem.c
+file: src/pem.c
 catches: x509strict
 reason: ignoring the writer's overflow turns a body larger than the DER
   array into CH_OK with the first CH_X509_MAX bytes — a truncated

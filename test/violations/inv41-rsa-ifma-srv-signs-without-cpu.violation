@@ -1,5 +1,5 @@
 invariant: INV-41
-file: srv_auth.c
+file: src/srv_auth.c
 catches: test/docker-aes-runtime-qemu.sh rsa-ifma-callers
 reason: the server signs under 0 in place of its configuration's
   ch_cfg.cpu, so its RSA signatures never run on AVX-512 IFMA, and

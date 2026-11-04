@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: src/rsa_ifma.c
 catches: rsa_ifma_model_test_384
 reason: The switch's case for eight registers passes a where b belongs,
   so a modulus of 46 to 51 words, RSA-3072 among them, gets a squared in

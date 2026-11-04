@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512.c
+file: src/sha512.c
 catches: sha2_equiv_test
 reason: a host object's finalize takes a second block for the length when
   the 1 bit ends 112 bytes into the pending block, where FIPS 180-4

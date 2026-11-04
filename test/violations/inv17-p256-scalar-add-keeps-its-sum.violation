@@ -1,5 +1,5 @@
 invariant: INV-17
-file: p256_scalar.c
+file: src/p256_scalar.c
 catches: proof/prove-one.sh p256_scalar
 reason: p256_scalar_add returns without wiping its sum. The signer's one
   call adds z to r*d, and that sum gives the private key to whoever holds

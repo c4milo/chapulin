@@ -1,5 +1,5 @@
 invariant: INV-22
-file: srv_tcp_nonblocking.c
+file: src/srv_tcp_nonblocking.c
 catches: tcp_nonblocking_loop_test
 reason: the tcp-nonblocking server sends its Certificate and CertificateVerify on a
   handshake a ticket authenticated. The resumed flight is

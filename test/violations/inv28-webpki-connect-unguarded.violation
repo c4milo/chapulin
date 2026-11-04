@@ -1,5 +1,5 @@
 invariant: INV-28
-file: tls.c
+file: src/tls.c
 catches: test/lib-check-webpki-tcp-nonblocking.sh
 reason: the webpki ch_connect loses the #ifndef CH_TRANSPORT_TCP_NONBLOCKING guard
   the pinned one carries, so a tcp-nonblocking object compiles the blocking

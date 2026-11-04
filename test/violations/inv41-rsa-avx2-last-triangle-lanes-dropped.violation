@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_avx2.c
+file: src/rsa_avx2.c
 catches: rsa_avx2_model_test
 reason: the last triangle runs on its copy of the register and leaves the
   window's register 0 as it was. Its lanes from the digit count n up hold

@@ -1,5 +1,5 @@
 invariant: INV-57
-file: handshake_message.c
+file: src/handshake_message.c
 catches: cnsa2_test
 reason: the hello lists TLS_AES_128_GCM_SHA256 after the profile's
   suite, so a server may select a suite CNSA 2.0 does not admit.

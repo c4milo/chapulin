@@ -1,5 +1,5 @@
 invariant: INV-38
-file: io.c
+file: src/io.c
 catches: unit
 reason: io_read_record refuses a length field over rec_body_max
   with decode_error, the alert every caller sent before

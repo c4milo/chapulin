@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha256.h
+file: src/sha256.h
 catches: hash_runtime_test
 reason: sha256.h's sha256_on_instructions reads CH_CPU_CONSTANT_TIME_SHA512,
   the bit of another hash's instructions. A caller that states the SHA-512

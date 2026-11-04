@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512_compress_blocks.c
+file: src/sha512_compress_blocks.c
 catches: sha2_equiv_test
 reason: next_word adds the ring word eight places on where FIPS 180-4
   §6.4.2 step 1 adds W[t - 7], the word nine places on, so every schedule

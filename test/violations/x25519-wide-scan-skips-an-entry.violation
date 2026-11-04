@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide_edwards.h
+file: src/x25519_wide_edwards.h
 catches: x25519_equiv_test
 reason: select_entry stops its scan before the row's last entry, so a
   digit of size 8 selects nothing and the addition adds the all-zero

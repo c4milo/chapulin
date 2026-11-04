@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_pin.c
+file: src/webpki_pin.c
 catches: proof/prove-one.sh webpki_pin
 reason: copy_key copies one byte more than the key the reader decoded, so a
   key of CH_WEBPKI_KEY_MAX bytes writes one byte past webpki_leaf_info.key.

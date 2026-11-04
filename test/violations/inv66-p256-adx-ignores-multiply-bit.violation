@@ -1,5 +1,5 @@
 invariant: INV-66
-file: widemul_p256.h
+file: src/widemul_p256.h
 catches: test/docker-aes-runtime-qemu.sh p256-adx
 reason: widemul_p256_adx answers yes under CH_CPU_BMI2_ADX alone, so a
   session whose caller states nothing about the multiply runs MULX's

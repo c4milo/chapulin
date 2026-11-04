@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha512.h
+file: src/sha512.h
 catches: test/docker-aes-runtime-qemu.sh arm64-hash-count
 reason: sha512.h's sha512_on_instructions answers yes for a value without
   CH_CPU_CONSTANT_TIME_SHA512, so an arm64 session whose caller never

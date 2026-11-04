@@ -1,5 +1,5 @@
 invariant: INV-16
-file: aead.c
+file: src/aead.c
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: the MAC hands its ciphertext to the update that reads no
   description of the CPU, so no record or packet runs the AVX2 Poly1305

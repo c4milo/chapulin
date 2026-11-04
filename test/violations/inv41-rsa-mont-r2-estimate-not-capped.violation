@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont.c
+file: src/rsa_mont.c
 catches: rsa_equiv_test
 reason: the division by which a host object's rsa_vp1 computes R^2 divides
   the remainder's top two words by the modulus's top word even when the

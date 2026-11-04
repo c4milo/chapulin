@@ -1,5 +1,5 @@
 invariant: INV-13
-file: io.c
+file: src/io.c
 catches: unit
 reason: io_send_all stops after the first call that moves a byte, so a
   socket that took part of a record drops the rest, and the session goes

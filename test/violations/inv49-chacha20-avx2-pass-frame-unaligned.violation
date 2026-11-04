@@ -1,5 +1,5 @@
 invariant: INV-49
-file: chacha20_avx2.c
+file: src/chacha20_avx2.c
 catches: test/lint-frame-align.sh
 reason: pass loses the attribute that makes clang align its frame to 32
   bytes. Its ten double rounds store and reload six state words in 32-byte

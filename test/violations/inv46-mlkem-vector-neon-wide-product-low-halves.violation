@@ -1,5 +1,5 @@
 invariant: INV-46
-file: mlkem_lanes.h
+file: src/mlkem_lanes.h
 catches: test/docker-aes-runtime-qemu.sh mlkem-vector
 reason: the NEON product of two coefficient vectors takes the low halves
   of the 32-bit differences, which are zero, where the quotient by 2^16

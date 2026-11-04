@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # sha512_compress_blocks.c takes in a host object (docs/decisions.md 127).
 # EXPORTER, KEYLOG, TX_RECORD and WIDEMUL change defines and no source, so each
 # build takes their defaults. A source that a later build packages under a
-# combination this list lacks is a root .c file outside the union, and
+# combination this list lacks is a .c file in src/ outside the union, and
 # tools/proof-cover.py fails it until a build here packages it. The last
 # build is PROFILE=cnsa2's, which fixes SUITE and KEX and so names neither: it
 # packages ML-DSA-87's verifier, which TRUST=raw-mldsa and TRUST=ca-mldsa alone
@@ -97,8 +97,11 @@ def shipped_sources(caller):
     out = {s for s in out if (ROOT / s).exists()}
     pending = sorted(out)
     while pending:
-        for name in INCLUDED_SOURCE.findall((ROOT / pending.pop()).read_text()):
-            if name not in out and (ROOT / name).exists():
-                out.add(name)
-                pending.append(name)
+        path = pending.pop()
+        # A quoted include names a file beside the one that includes it.
+        for name in INCLUDED_SOURCE.findall((ROOT / path).read_text()):
+            included = str(Path(path).parent / name)
+            if included not in out and (ROOT / included).exists():
+                out.add(included)
+                pending.append(included)
     return out

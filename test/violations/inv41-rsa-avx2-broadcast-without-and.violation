@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_avx2.c
+file: src/rsa_avx2.c
 catches: test/widemul-builds.sh
 reason: broadcast_four drops the AND with the digit mask, which changes no
   digit, so every byte stays right. Without it clang 23 cannot show that a

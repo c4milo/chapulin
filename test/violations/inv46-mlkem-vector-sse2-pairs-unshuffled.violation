@@ -1,5 +1,5 @@
 invariant: INV-46
-file: mlkem_lanes.h
+file: src/mlkem_lanes.h
 catches: test/docker-aes-runtime-qemu.sh mlkem-vector
 reason: the SSE2 split for the layers of span 2 leaves a's 32-bit lanes
   in their order, so lo and hi take the wrong pairs of a's coefficients

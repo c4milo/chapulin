@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64.c
+file: src/rsa_mont64.c
 catches: rsa_blocks_equiv_test
 reason: rsa_mont64_mont_mul runs the blocks for every even word count, not
   only a multiple of 4, so a count of 6, 10 or more reads a last block of

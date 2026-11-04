@@ -1,5 +1,5 @@
 invariant: INV-16
-file: ct.h
+file: src/ct.h
 catches: mlkem_test_ct_widemul
 reason: narrowing ct_widemul_opaque's volatile copy of b to 16 bits
   truncates the 1290168 mlk_compress passes, so every compressed

@@ -1,5 +1,5 @@
 invariant: INV-22
-file: handshake_record.c
+file: src/handshake_record.c
 catches: tcp_blocking_loop_test
 reason: the blocking reader reads an alert in the clear only until its read
   key is installed, so a server that has sent its flight refuses the alert of

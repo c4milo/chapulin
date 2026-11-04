@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic.c
+file: src/quic.c
 catches: quic_driver_test
 reason: ch_quic_switch_version switches to a version this build derives
   no keys for, so every Initial packet after it is refused and the

@@ -1,5 +1,5 @@
 invariant: INV-22
-file: srv_quic.c
+file: src/srv_quic.c
 catches: quic_loop_test
 reason: the QUIC server completes on a client Finished that has more bytes
   after it in the same Handshake delivery. srv_complete empties cfg.buf, so

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: handshake_post.c
+file: src/handshake_post.c
 catches: webpki_loop_aes
 reason: handshake_post.c binds a received ticket with 0 in place of the
   session's ch_cfg.cpu, so the binding's HMAC runs on the portable code

@@ -1,5 +1,5 @@
 invariant: INV-61
-file: x509_der.c
+file: src/x509_der.c
 catches: x509strict_mldsa
 reason: the SPKI reader takes an ML-DSA-87 key of any length, so a
   certificate whose key is 2591 or 2593 bytes passes the profile and

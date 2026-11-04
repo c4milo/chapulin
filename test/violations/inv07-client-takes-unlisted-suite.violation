@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: webpki_session_aes
 builds: bin/webpki_session_aes
 reason: a client whose ch_cfg.cipher_suites left a suite out takes that

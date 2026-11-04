@@ -32,15 +32,15 @@ import json
 import sys
 
 PARTIAL = {
-    "handshake_auth.c": "hsa_server_auth closes and hsa_read_certificate_verify "
+    "src/handshake_auth.c": "hsa_server_auth closes and hsa_read_certificate_verify "
     "opens inside one #if arm",
-    "handshake_message.c": "#ifdef inside hs_build_client_hello's parameter list",
-    "handshake_message.h": "#ifdef inside hs_build_client_hello's parameter list",
-    "handshake_parser.c": "#ifdef inside hsp_parse_certificate_verify's parameter list",
-    "handshake_parser.h": "#ifdef inside the parameter lists of hsp_parse_encrypted_exts "
+    "src/handshake_message.c": "#ifdef inside hs_build_client_hello's parameter list",
+    "src/handshake_message.h": "#ifdef inside hs_build_client_hello's parameter list",
+    "src/handshake_parser.c": "#ifdef inside hsp_parse_certificate_verify's parameter list",
+    "src/handshake_parser.h": "#ifdef inside the parameter lists of hsp_parse_encrypted_exts "
     "and hsp_parse_certificate_verify",
-    "handshake_parser_ee.c": "#ifdef inside hsp_parse_encrypted_exts's parameter list",
-    "handshake_post.c": "#ifdef inside handle_ticket's parameter list",
+    "src/handshake_parser_ee.c": "#ifdef inside hsp_parse_encrypted_exts's parameter list",
+    "src/handshake_post.c": "#ifdef inside handle_ticket's parameter list",
 }
 
 

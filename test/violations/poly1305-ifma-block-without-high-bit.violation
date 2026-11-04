@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305_ifma.c
+file: src/poly1305_ifma.c
 catches: poly1305_equiv_test
 reason: load_blocks drops the 2^128 bit RFC 8439 section 2.5.1 adds to
   every whole block, so each block the kernel absorbs is short by 2^128

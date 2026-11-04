@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_scalar.c
+file: src/p256_wide_scalar.c
 catches: proof/prove-one.sh p256_wide_scalar
 reason: the conditional subtraction of n ignores the word above the four,
   so a Montgomery product that carried past 2^256 keeps its low four

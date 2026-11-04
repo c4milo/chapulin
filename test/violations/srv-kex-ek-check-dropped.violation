@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_kex.c
+file: src/srv_kex.c
 catches: srv_flight_test
 reason: the server ignores the verdict of FIPS 203 section 7.2's modulus
   check on the client's encapsulation key. mlkem_encaps_derand writes

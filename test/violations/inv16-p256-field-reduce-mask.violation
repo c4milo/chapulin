@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_field.c
+file: src/p256_field.c
 catches: p256_field_test
 reason: dropping the complement inverts the conditional subtraction: the
   value is reduced exactly when it is already below p and left alone when

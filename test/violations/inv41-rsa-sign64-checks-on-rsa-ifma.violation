@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: test/widemul-builds.sh
 reason: the signer checks each candidate signature on the AVX-512 IFMA
   kernel through a declaration of its own, under every session's value:

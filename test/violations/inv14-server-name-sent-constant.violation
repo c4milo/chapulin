@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: webpki_encrypted_exts_test
 reason: the EncryptedExtensions handler tells the parser the
   ClientHello sent server_name whatever the configuration, so a

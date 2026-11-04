@@ -1,5 +1,5 @@
 invariant: INV-16
-file: record.c
+file: src/record.c
 catches: hash_runtime_test
 reason: rec_dir_init_suite derives a direction's key under a value with
   every bit set, where it must hand on the direction's own cpu, which the

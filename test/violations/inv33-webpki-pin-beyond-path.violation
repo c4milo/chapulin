@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_pin.c
+file: src/webpki_pin.c
 catches: webpki_auth_test
 reason: webpki_path_pinned reads every entry of the list instead of the
   path_entries the walk validated, so a pinned certificate appended to a

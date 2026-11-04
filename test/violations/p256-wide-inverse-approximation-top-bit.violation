@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_inverse.c
+file: src/p256_wide_inverse.c
 catches: proof/prove-one.sh p256_wide_inverse_steps
 reason: the approximations' shifts stop a bit short, so the top bit of a | b
   ends at bit 126 of the pair and an approximation keeps 32 of the value's

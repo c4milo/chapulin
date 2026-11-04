@@ -1,5 +1,5 @@
 invariant: INV-14
-file: tls.c
+file: src/tls.c
 catches: unit
 reason: tlsi_config_ok takes a PSK identity one byte past CH_TICKET_ID_MAX,
   the bound hello_build proves the ClientHello in ch_tls.tx holds, so a

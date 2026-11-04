@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_test
 reason: srv_ext_duplicate compares only the types this build recognizes, so a
   block carrying two extensions of one unknown type passes, and RFC 9846

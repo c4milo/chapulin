@@ -1,5 +1,5 @@
 invariant: INV-16
-file: quic_packet.c
+file: src/quic_packet.c
 catches: test/lint-wide-multiply.sh
 reason: byte_in_use builds its mask from the borrow itself, without the
   volatile read. A compiler then knows the mask is all ones or zero, and

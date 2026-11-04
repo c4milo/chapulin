@@ -1,5 +1,5 @@
 invariant: INV-4
-file: drbg.c
+file: src/drbg.c
 catches: drbg_test
 reason: ch_drbg_seed copies the first 32 seed bytes into the key instead
   of hashing the whole seed, so every source an image concatenates after

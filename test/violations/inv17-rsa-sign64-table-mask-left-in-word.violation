@@ -1,5 +1,5 @@
 invariant: INV-17
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: test/lint-invariants.sh
 reason: table_select returns without writing zero through the pointer
   its masks went through, so the word behind it ends on the last entry's

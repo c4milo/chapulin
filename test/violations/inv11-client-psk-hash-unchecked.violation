@@ -1,5 +1,5 @@
 invariant: INV-11
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: webpki_session_aes
 reason: the client accepts a ServerHello that selects its PSK under a
   suite with another hash, so a SHA-384 ticket runs its early secret

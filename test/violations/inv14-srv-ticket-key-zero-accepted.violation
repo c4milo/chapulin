@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv.c
+file: src/srv.c
 catches: srv_auth_test
 reason: a server takes a ticket_key of all zero bytes, so anyone opens its
   tickets for their PSKs and resumes as this server with every client

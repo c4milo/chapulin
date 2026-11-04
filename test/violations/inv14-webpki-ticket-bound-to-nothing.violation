@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.c
+file: src/handshake_post.c
 catches: webpki_resume_test
 reason: a received ticket's binding is computed over its own PSK in place of
   the session's configuration hash, so the binding names no hostname

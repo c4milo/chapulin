@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: p256_equiv_test
 reason: the top window adds its entry by the incomplete addition. For
   k = 0xe0000000ffffffff00000000000000004319055258e8617b0c46353d039cdaaf

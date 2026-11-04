@@ -1,5 +1,5 @@
 invariant: INV-16
-file: mlkem_poly.c
+file: src/mlkem_poly.c
 catches: test/lint-wide-multiply.sh
 reason: the compression divides each secret coefficient by q, read from a
   volatile object as a table of moduli would hold it, so no compiler can

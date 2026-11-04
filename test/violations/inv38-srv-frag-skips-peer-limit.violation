@@ -1,5 +1,5 @@
 invariant: INV-38
-file: srv_out.c
+file: src/srv_out.c
 catches: proof/prove-one.sh srv_out
 reason: srv_frag_bytes fills SRV_FRAG_MAX bytes before it flushes and
   ignores srv_out_limit, so a Certificate record carries more plaintext

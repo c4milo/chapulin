@@ -1,5 +1,5 @@
 invariant: INV-17
-file: ct_wipe.c
+file: src/ct_wipe.c
 catches: poly1305_equiv_test
 reason: ct_wipe calls memset by name instead of storing each byte and
   word through a volatile lvalue. Where the compiler sees that body at the

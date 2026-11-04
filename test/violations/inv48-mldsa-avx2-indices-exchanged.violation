@@ -1,5 +1,5 @@
 invariant: INV-48
-file: mldsa_avx2.c
+file: src/mldsa_avx2.c
 catches: test/docker-aes-runtime-qemu.sh mldsa-avx2
 reason: the four-way sampler hands each state rho || i || j, where FIPS
   204 Algorithm 32 gives rho || j || i, so a session with CH_CPU_AVX2

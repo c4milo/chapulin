@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_cert.c
+file: src/webpki_cert.c
 catches: proof/prove-one.sh webpki_cert_key
 reason: the reader a leaf pinned without anchors goes through parses the
   whole TBSCertificate under the leaf arm, extensions included, where

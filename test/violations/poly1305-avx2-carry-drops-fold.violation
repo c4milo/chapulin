@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305_avx2.c
+file: src/poly1305_avx2.c
 catches: test/docker-aes-runtime-qemu.sh poly1305-avx2
 reason: each round of carries keeps word 0's low 26 bits and drops 5
   times the carry out of word 4, so every group loses the part of its sums

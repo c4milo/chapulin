@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512_compress_blocks.c
+file: src/sha512_compress_blocks.c
 catches: sha512_test_host
 reason: majority joins a ^ b and b ^ c with OR where the three-operation
   form of FIPS 180-4's equation 4.9 joins them with AND, so where a and b

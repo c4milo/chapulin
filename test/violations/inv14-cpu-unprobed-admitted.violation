@@ -1,5 +1,5 @@
 invariant: INV-14
-file: cpu.h
+file: src/cpu.h
 catches: tcp_blocking_loop_host
 reason: cpu_value_ok stops requiring CH_CPU_PROBED, so a configuration
   that never set ch_cfg.cpu, 0, runs as though its caller had looked and

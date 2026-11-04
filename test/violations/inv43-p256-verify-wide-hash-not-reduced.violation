@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify.c
+file: src/p256_wide_verify.c
 catches: proof/prove-one.sh p256_wide_verify
 reason: the host verifier multiplies the hash by s's inverse without
   reducing it modulo n first, and p256_wide_scalar_mul takes scalars

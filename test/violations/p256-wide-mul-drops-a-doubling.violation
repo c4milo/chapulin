@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: p256_equiv_test
 reason: p256_wide_mul doubles three times between windows where a
   four-bit window needs four, so every digit but the last lands one bit

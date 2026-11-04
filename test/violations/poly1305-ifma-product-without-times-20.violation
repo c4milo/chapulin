@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305_ifma.c
+file: src/poly1305_ifma.c
 catches: poly1305_equiv_test
 reason: multiply_add adds a2 times r2 at 2^44 rather than a2 times 20 r2,
   the part of the product at 2^176 that is 20 2^44 modulo 2^130 - 5, so

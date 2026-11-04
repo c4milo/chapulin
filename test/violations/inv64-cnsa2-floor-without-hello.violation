@@ -1,5 +1,5 @@
 invariant: INV-64
-file: profile_cfg.h
+file: src/profile_cfg.h
 catches: cnsa2_server_test
 reason: the profile's server floors its receive buffer at the client's
   ServerHello, 1,637 bytes, so a buffer at the floor cannot hold the

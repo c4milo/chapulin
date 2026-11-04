@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: p256_equiv_test
 reason: the correction for an even scalar adds -G by the incomplete
   addition. For k = n - 1 the sum before it is the point at infinity,

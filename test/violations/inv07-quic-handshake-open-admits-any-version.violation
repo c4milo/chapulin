@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic.c
+file: src/quic.c
 catches: quic_driver_test
 reason: ch_quic_open opens a Handshake packet in a version the
   connection did not negotiate, which RFC 9369 section 4.1 makes an

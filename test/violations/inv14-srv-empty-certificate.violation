@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_message.c
+file: src/srv_message.c
 catches: srv_quic_test
 reason: srv_certificate_fits admits a certificate of no bytes, which RFC
   9846 section 4.5.1 forbids (cert_data<1..2^24-1>), so a server sends a

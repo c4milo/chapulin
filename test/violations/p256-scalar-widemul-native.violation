@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_scalar.c
+file: src/p256_scalar.c
 catches: test/docker-mips.sh
 reason: mont_mul's inner product is the one place a secret scalar word
   meets another, and ct_widemul is what keeps it four 16x16 pieces. This

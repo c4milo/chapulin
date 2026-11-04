@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_rsa_host
 reason: In a host object under CH_CPU_CONSTANT_TIME_MULTIPLY,
   ch_rsa_key_from_pem stops signing with rsa_sign64.c, so a key whose

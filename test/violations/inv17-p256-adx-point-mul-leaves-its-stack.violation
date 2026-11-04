@@ -1,5 +1,5 @@
 invariant: INV-17
-file: widemul_p256.h
+file: src/widemul_p256.h
 catches: p256_adx_model_test
 reason: widemul_p256_point_mul no longer calls p256_wide_wipe_below after
   the call into the x86-64 field's copy. Every object that call names is

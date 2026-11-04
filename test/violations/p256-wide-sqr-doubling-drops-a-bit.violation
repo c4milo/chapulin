@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_word.h
+file: src/p256_wide_word.h
 catches: p256_equiv_test
 reason: the square of four words doubles the sum of the products a_i a_j
   without the bit that crosses from word 4 into word 5, so a square whose

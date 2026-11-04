@@ -1,5 +1,5 @@
 invariant: INV-59
-file: mldsa.c
+file: src/mldsa.c
 catches: test/wycheproof.sh
 reason: the call takes a context of 256 bytes or more, which FIPS 204
   Algorithm 3 refuses. Its length byte wraps to 0, so a signature made

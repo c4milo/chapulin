@@ -415,7 +415,7 @@ x86_clang_out=bin/qemu-clang
 mkdir -p "$x86_out" "$arm64_out" "$x86_clang_out"
 # No -DCH_NATIVE_WIDEMUL: every binary here is a host object, which holds
 # both multiplies and whose ct.h refuses the define.
-flags=(-Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -static -I. -Itest
+flags=(-Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -static -Isrc -I. -Itest
        -DCH_RAND_EXTERN)
 runtime=(-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME)
 both=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI)
@@ -467,11 +467,11 @@ arm64_tcp_srcs=()
 arm64_hash_count_srcs=()
 arm64_runtime_test_srcs=()
 arm64_ghash_equiv_srcs=()
-for src in "${ghash_equiv_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_ghash_equiv_srcs+=("$src"); done
-for src in "${quic_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_quic_srcs+=("$src"); done
-for src in "${tcp_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_tcp_srcs+=("$src"); done
-for src in "${hash_count_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_hash_count_srcs+=("$src"); done
-for src in "${runtime_test_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_runtime_test_srcs+=("$src"); done
+for src in "${ghash_equiv_srcs[@]}"; do [ "$src" = src/avx512_wipe.c ] || arm64_ghash_equiv_srcs+=("$src"); done
+for src in "${quic_srcs[@]}"; do [ "$src" = src/avx512_wipe.c ] || arm64_quic_srcs+=("$src"); done
+for src in "${tcp_srcs[@]}"; do [ "$src" = src/avx512_wipe.c ] || arm64_tcp_srcs+=("$src"); done
+for src in "${hash_count_srcs[@]}"; do [ "$src" = src/avx512_wipe.c ] || arm64_hash_count_srcs+=("$src"); done
+for src in "${runtime_test_srcs[@]}"; do [ "$src" = src/avx512_wipe.c ] || arm64_runtime_test_srcs+=("$src"); done
 # sha512_avx2.c compiles apart from every other source: where gcc compiles
 # for x86-64 the Makefile gives that file a flag no other file gets
 # (SHA512_AVX2_UNIT there, docs/decisions.md 128). So each list a binary
@@ -489,13 +489,13 @@ if [ -n "$x86_cc" ]; then
     x86_unit=$(make -s --no-print-directory sha512-avx2-unit CC="$x86_cc" SHA512_AVX2_UNIT_DIR="$x86_out") &&
         [ -f "$x86_unit" ] ||
         { echo "aes-runtime-qemu: make sha512-avx2-unit built no object under $x86_cc" >&2; exit 1; }
-    x86_quic_srcs=("${quic_srcs[@]/#sha512_avx2.c/$x86_unit}")
-    x86_tcp_srcs=("${tcp_srcs[@]/#sha512_avx2.c/$x86_unit}")
-    x86_runtime_test_srcs=("${runtime_test_srcs[@]/#sha512_avx2.c/$x86_unit}")
-    x86_sha2_equiv_srcs=("${sha2_equiv_srcs[@]/#sha512_avx2.c/$x86_unit}")
-    x86_webpki_auth_counted_srcs=("${webpki_auth_counted_srcs[@]/#sha512_avx2.c/$x86_unit}")
-    x86_sha512_test_host_srcs=("${sha512_test_host_srcs[@]/#sha512_avx2.c/$x86_unit}")
-    x86_hkdf384_test_host_srcs=("${hkdf384_test_host_srcs[@]/#sha512_avx2.c/$x86_unit}")
+    x86_quic_srcs=("${quic_srcs[@]/#src\/sha512_avx2.c/$x86_unit}")
+    x86_tcp_srcs=("${tcp_srcs[@]/#src\/sha512_avx2.c/$x86_unit}")
+    x86_runtime_test_srcs=("${runtime_test_srcs[@]/#src\/sha512_avx2.c/$x86_unit}")
+    x86_sha2_equiv_srcs=("${sha2_equiv_srcs[@]/#src\/sha512_avx2.c/$x86_unit}")
+    x86_webpki_auth_counted_srcs=("${webpki_auth_counted_srcs[@]/#src\/sha512_avx2.c/$x86_unit}")
+    x86_sha512_test_host_srcs=("${sha512_test_host_srcs[@]/#src\/sha512_avx2.c/$x86_unit}")
+    x86_hkdf384_test_host_srcs=("${hkdf384_test_host_srcs[@]/#src\/sha512_avx2.c/$x86_unit}")
 fi
 
 # Runs one binary on a CPU model and requires its exit status. A run that
@@ -576,13 +576,13 @@ if [ -z "$only" ] || [ "$only" = mlkem-vector ]; then
     # on NEON for arm64.
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/mlkem_vector_equiv_test" \
         test/mlkem_vector_equiv_test.c "${mlkem_vector_equiv_srcs[@]}" || exit 1
-    expect max 0 "the vector NTT on SSE2 and mlkem_poly.c's loops disagree" mlkem_vector_equiv_test
+    expect max 0 "the vector NTT on SSE2 and src/mlkem_poly.c's loops disagree" mlkem_vector_equiv_test
     "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$arm64_out/mlkem_vector_equiv_test" \
         test/mlkem_vector_equiv_test.c "${mlkem_vector_equiv_srcs[@]}" || exit 1
-    expect_arm64 max 0 "the vector NTT on NEON and mlkem_poly.c's loops disagree" mlkem_vector_equiv_test
+    expect_arm64 max 0 "the vector NTT on NEON and src/mlkem_poly.c's loops disagree" mlkem_vector_equiv_test
 fi
 if [ "$only" = mlkem-vector ]; then
-    echo "aes-runtime-qemu: bin/mlkem_vector_equiv_test held the vector NTT to mlkem_poly.c's loops, on SSE2 for x86-64 and on NEON for arm64"
+    echo "aes-runtime-qemu: bin/mlkem_vector_equiv_test held the vector NTT to src/mlkem_poly.c's loops, on SSE2 for x86-64 and on NEON for arm64"
     exit 0
 fi
 
@@ -621,11 +621,11 @@ if [ -z "$only" ] || [ "$only" = mlkem-avx2 ]; then
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/mlkem_avx2_equiv_test" \
         test/mlkem_avx2_equiv_test.c "${mlkem_avx2_equiv_srcs[@]}" || exit 1
     CH_REQUIRE_X86_KERNELS=1 expect max 0 \
-        "the four-way Keccak and sha3.c disagree, or ML-KEM's copy over it and mlkem.c do" \
+        "the four-way Keccak and src/sha3.c disagree, or ML-KEM's copy over it and src/mlkem.c do" \
         mlkem_avx2_equiv_test
 fi
 if [ "$only" = mlkem-avx2 ]; then
-    echo "aes-runtime-qemu: bin/mlkem_avx2_equiv_test held the four-way Keccak to sha3.c and ML-KEM's copy over it to mlkem.c, on AVX2 for x86-64"
+    echo "aes-runtime-qemu: bin/mlkem_avx2_equiv_test held the four-way Keccak to src/sha3.c and ML-KEM's copy over it to src/mlkem.c, on AVX2 for x86-64"
     exit 0
 fi
 
@@ -652,11 +652,11 @@ if [ -z "$only" ] || [ "$only" = poly1305-avx2 ]; then
     "$x86_cc" "${flags[@]}" -o "$x86_out/poly1305_equiv_test" test/poly1305_equiv_test.c \
         "${poly1305_equiv_srcs[@]}" || exit 1
     CH_REQUIRE_X86_KERNELS=1 expect max 0 \
-        "the AVX2 Poly1305 or the SSE2 path and poly1305.c's loop disagree, or a call left a power of r on the stack" \
+        "the AVX2 Poly1305 or the SSE2 path and src/poly1305.c's loop disagree, or a call left a power of r on the stack" \
         poly1305_equiv_test
 fi
 if [ "$only" = poly1305-avx2 ]; then
-    echo "aes-runtime-qemu: bin/poly1305_equiv_test held the AVX2 Poly1305 and the SSE2 path to poly1305.c's loop, on AVX2 for x86-64"
+    echo "aes-runtime-qemu: bin/poly1305_equiv_test held the AVX2 Poly1305 and the SSE2 path to src/poly1305.c's loop, on AVX2 for x86-64"
     exit 0
 fi
 
@@ -667,11 +667,11 @@ if [ -z "$only" ] || [ "$only" = chacha20-avx2 ]; then
     "$x86_cc" "${flags[@]}" -o "$x86_out/chacha20_equiv_test" test/chacha20_equiv_test.c \
         "${chacha20_equiv_srcs[@]}" || exit 1
     CH_REQUIRE_X86_KERNELS=1 expect max 0 \
-        "the AVX2 ChaCha20 or the SSE2 path and chacha20.c's loop disagree, or the AVX2 kernel left a register it wrote" \
+        "the AVX2 ChaCha20 or the SSE2 path and src/chacha20.c's loop disagree, or the AVX2 kernel left a register it wrote" \
         chacha20_equiv_test
 fi
 if [ "$only" = chacha20-avx2 ]; then
-    echo "aes-runtime-qemu: bin/chacha20_equiv_test held the AVX2 ChaCha20 and the SSE2 path to chacha20.c's loop, on AVX2 for x86-64"
+    echo "aes-runtime-qemu: bin/chacha20_equiv_test held the AVX2 ChaCha20 and the SSE2 path to src/chacha20.c's loop, on AVX2 for x86-64"
     exit 0
 fi
 
@@ -684,16 +684,16 @@ if [ -z "$only" ] || [ "$only" = aes-equiv ]; then
     "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -o "$x86_out/aes_equiv_test" \
         test/aes_equiv_test.c "${aes_equiv_srcs[@]}" || exit 1
     expect max 0 \
-        "aes_hw.c's AES-NI arm and the table disagree, or a key expansion left a word it computed on the stack" \
+        "src/aes_hw.c's AES-NI arm and the table disagree, or a key expansion left a word it computed on the stack" \
         aes_equiv_test
     "$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -o "$arm64_out/aes_equiv_test" \
         test/aes_equiv_test.c "${aes_equiv_srcs[@]}" || exit 1
     expect_arm64 max 0 \
-        "aes_hw.c's Arm arm and the table disagree, or a key expansion left a word it computed on the stack" \
+        "src/aes_hw.c's Arm arm and the table disagree, or a key expansion left a word it computed on the stack" \
         aes_equiv_test
 fi
 if [ "$only" = aes-equiv ]; then
-    echo "aes-runtime-qemu: bin/aes_equiv_test held aes_hw.c to the table and found no word of a schedule on the stack, on AES-NI for x86-64 and on the Arm AES instructions for arm64"
+    echo "aes-runtime-qemu: bin/aes_equiv_test held src/aes_hw.c to the table and found no word of a schedule on the stack, on AES-NI for x86-64 and on the Arm AES instructions for arm64"
     exit 0
 fi
 
@@ -709,11 +709,11 @@ if [ -z "$only" ] || [ "$only" = ghash-equiv ]; then
         -o "$arm64_out/ghash_equiv_test" test/ghash_equiv_test.c "${arm64_ghash_equiv_srcs[@]}" ||
         exit 1
     expect_arm64 max 0 \
-        "ghash_hw.c or gcm_arm64.c and gcm.c's portable path disagree, or an arm64 seal or open left a power of the hash subkey on the stack" \
+        "src/ghash_hw.c or src/gcm_arm64.c and src/gcm.c's portable path disagree, or an arm64 seal or open left a power of the hash subkey on the stack" \
         ghash_equiv_test
 fi
 if [ "$only" = ghash-equiv ]; then
-    echo "aes-runtime-qemu: bin/ghash_equiv_test held ghash_hw.c and gcm_arm64.c to gcm.c's portable path and found no power of the hash subkey on the stack, on the Arm AES and carry-less multiply instructions"
+    echo "aes-runtime-qemu: bin/ghash_equiv_test held src/ghash_hw.c and src/gcm_arm64.c to src/gcm.c's portable path and found no power of the hash subkey on the stack, on the Arm AES and carry-less multiply instructions"
     exit 0
 fi
 
@@ -749,19 +749,19 @@ if [ -z "$only" ] || [ "$only" = rsa-addcarry ]; then
     # in the Makefile do for bin/rsa_addcarry_equiv_test.
     rows_called=1
     "$x86_cc" -dM -E -x c /dev/null | grep -qw __clang__ && rows_called=0
-    "$x86_cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -I. -c rsa_mont64.c -o "$x86_out/rsa_mont64.o" ||
+    "$x86_cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -Isrc -I. -c src/rsa_mont64.c -o "$x86_out/rsa_mont64.o" ||
         exit 1
     for symbol in rsa_mont64_addcarry_mul rsa_mont64_addcarry_square; do
         called=0
         nm -u "$x86_out/rsa_mont64.o" | grep -qw "$symbol" && called=1
         [ "$called" = "$rows_called" ] ||
-            { echo "aes-runtime-qemu: rsa_mont64.c under $x86_cc calls $symbol: $called, where a gcc build alone does" >&2
+            { echo "aes-runtime-qemu: src/rsa_mont64.c under $x86_cc calls $symbol: $called, where a gcc build alone does" >&2
               exit 1; }
     done
     rows=(-DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -DRSA_MONT64_BLOCKS=0 -DCH_RSA_MODULUS_MAX=512)
     "$x86_cc" "${flags[@]}" "${rows[@]}" -o "$x86_out/rsa_addcarry_equiv_test" "${rsa_addcarry_equiv_srcs[@]}" ||
         exit 1
-    expect max 0 "the rows on _addcarry_u64 and rsa_mont64.c's loops disagree" rsa_addcarry_equiv_test
+    expect max 0 "the rows on _addcarry_u64 and src/rsa_mont64.c's loops disagree" rsa_addcarry_equiv_test
     "$x86_cc" "${flags[@]}" "${rows[@]}" -o "$x86_out/rsa_sign_equiv_test" test/rsa_sign_equiv_test.c \
         "${rsa_sign_equiv_srcs[@]}" || exit 1
     expect max 0 \
@@ -775,11 +775,11 @@ if [ -z "$only" ] || [ "$only" = rsa-avx2 ]; then
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -o "$x86_out/rsa_avx2_equiv_test" \
         "${rsa_avx2_equiv_srcs[@]}" || exit 1
     CH_REQUIRE_X86_KERNELS=1 expect max 0 \
-        "rsa_avx2.c on AVX2 and its lane model disagree, or rsa_vp1_cpu under CH_CPU_AVX2 and rsa_vp1 do" \
+        "src/rsa_avx2.c on AVX2 and its lane model disagree, or rsa_vp1_cpu under CH_CPU_AVX2 and rsa_vp1 do" \
         rsa_avx2_equiv_test
 fi
 if [ "$only" = rsa-avx2 ]; then
-    echo "aes-runtime-qemu: bin/rsa_avx2_equiv_test held rsa_avx2.c on AVX2 to its lane model, and rsa_vp1_cpu under CH_CPU_AVX2 to rsa_vp1, for x86-64"
+    echo "aes-runtime-qemu: bin/rsa_avx2_equiv_test held src/rsa_avx2.c on AVX2 to its lane model, and rsa_vp1_cpu under CH_CPU_AVX2 to rsa_vp1, for x86-64"
     exit 0
 fi
 if [ -z "$only" ] || [ "$only" = x25519-adx ]; then
@@ -789,7 +789,7 @@ if [ -z "$only" ] || [ "$only" = x25519-adx ]; then
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_X25519_ADX_TEST -o "$x86_out/x25519_adx_equiv_test" \
         "${x25519_adx_equiv_srcs[@]}" || exit 1
     CH_REQUIRE_BMI2_ADX=1 expect max 0 \
-        "x25519_adx.c's assembly and its model, or the field and the 16-word one, disagree" \
+        "src/x25519_adx.c's assembly and its model, or the field and the 16-word one, disagree" \
         x25519_adx_equiv_test
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/widemul_runtime_test" "${widemul_runtime_srcs[@]}" ||
         exit 1
@@ -797,7 +797,7 @@ if [ -z "$only" ] || [ "$only" = x25519-adx ]; then
         "widemul_x25519_cpu ran a field the session's ch_cfg.cpu does not name" widemul_runtime_test
 fi
 if [ "$only" = x25519-adx ]; then
-    echo "aes-runtime-qemu: for x86-64, bin/x25519_adx_equiv_test held x25519_adx.c's assembly to its model and the field to the 16-word one, and bin/widemul_runtime_test held widemul_x25519_cpu to the field each value names"
+    echo "aes-runtime-qemu: for x86-64, bin/x25519_adx_equiv_test held src/x25519_adx.c's assembly to its model and the field to the 16-word one, and bin/widemul_runtime_test held widemul_x25519_cpu to the field each value names"
     exit 0
 fi
 if [ -z "$only" ] || [ "$only" = p256-adx ]; then
@@ -808,7 +808,7 @@ if [ -z "$only" ] || [ "$only" = p256-adx ]; then
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/p256_adx_equiv_test" \
         test/p256_adx_equiv_test.c "${p256_equiv_srcs[@]}" || exit 1
     CH_REQUIRE_BMI2_ADX=1 expect max 0 \
-        "p256_adx_asm.h's assembly and its model, or the copy and the files under their own names, disagree, or a call left a word on the stack" \
+        "src/p256_adx_asm.h's assembly and its model, or the copy and the files under their own names, disagree, or a call left a word on the stack" \
         p256_adx_equiv_test
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/p256_adx_verify_equiv_test" \
         test/p256_adx_verify_equiv_test.c "${p256_verify_equiv_srcs[@]}" || exit 1
@@ -827,7 +827,7 @@ if [ -z "$only" ] || [ "$only" = rsa-adx ]; then
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -o "$x86_out/rsa_mont64_adx_test" \
         "${rsa_mont64_adx_test_srcs[@]}" || exit 1
     CH_REQUIRE_BMI2_ADX=1 expect max 0 \
-        "rsa_mont64_adx.c's assembly and its model, or the model and rsa_mont64.c, disagree" \
+        "src/rsa_mont64_adx.c's assembly and its model, or the model and src/rsa_mont64.c, disagree" \
         rsa_mont64_adx_test
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -o "$x86_out/rsa_sign_equiv_test" \
         test/rsa_sign_equiv_test.c "${rsa_sign_equiv_srcs[@]}" || exit 1
@@ -836,16 +836,16 @@ if [ -z "$only" ] || [ "$only" = rsa-adx ]; then
         rsa_sign_equiv_test
 fi
 if [ "$only" = rsa-adx ]; then
-    echo "aes-runtime-qemu: for x86-64, bin/rsa_mont64_adx_test held rsa_mont64_adx.c's assembly to its model and rsa_mont64.c, and bin/rsa_sign_equiv_test held the signer on it to the ladder and found nothing on the stack"
+    echo "aes-runtime-qemu: for x86-64, bin/rsa_mont64_adx_test held src/rsa_mont64_adx.c's assembly to its model and src/rsa_mont64.c, and bin/rsa_sign_equiv_test held the signer on it to the ladder and found nothing on the stack"
     exit 0
 fi
 if [ "$only" = p256-adx ]; then
-    echo "aes-runtime-qemu: for x86-64, bin/p256_adx_equiv_test held p256_adx_asm.h's assembly to its model and the copy to the files under their own names, bin/p256_adx_verify_equiv_test held its verifier to the 32-bit one, and bin/widemul_runtime_test held the dispatch to the field each value names"
+    echo "aes-runtime-qemu: for x86-64, bin/p256_adx_equiv_test held src/p256_adx_asm.h's assembly to its model and the copy to the files under their own names, bin/p256_adx_verify_equiv_test held its verifier to the 32-bit one, and bin/widemul_runtime_test held the dispatch to the field each value names"
     exit 0
 fi
 
 if [ "$only" = rsa-addcarry ]; then
-    echo "aes-runtime-qemu: under gcc for x86-64 rsa_mont64.c called the rows, bin/rsa_addcarry_equiv_test held them to the loops on _addcarry_u64, and bin/rsa_sign_equiv_test held the signer on them to the ladder and found nothing on the stack"
+    echo "aes-runtime-qemu: under gcc for x86-64 src/rsa_mont64.c called the rows, bin/rsa_addcarry_equiv_test held them to the loops on _addcarry_u64, and bin/rsa_sign_equiv_test held the signer on them to the ladder and found nothing on the stack"
     exit 0
 fi
 
@@ -866,12 +866,12 @@ if [ -z "$only" ] || [ "$only" = keccak ]; then
     "$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -DCH_CPU_RUNTIME \
         -o "$arm64_out/sha3_hw_equiv_test" test/sha3_hw_equiv_test.c "${sha3_hw_equiv_srcs[@]}" || exit 1
     CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 \
-        "sha3_hw.c and sha3.c disagree, a call left a lane it computed on the stack, the object holds no Keccak on the instructions, or this qemu's max model lacks FEAT_SHA3" \
+        "src/sha3_hw.c and src/sha3.c disagree, a call left a lane it computed on the stack, the object holds no Keccak on the instructions, or this qemu's max model lacks FEAT_SHA3" \
         sha3_hw_equiv_test
     "$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -DCH_CPU_RUNTIME \
         -o "$arm64_out/mlkem_hw_equiv_test" test/mlkem_hw_equiv_test.c "${mlkem_hw_equiv_srcs[@]}" || exit 1
     CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 \
-        "ML-KEM's copies and mlkem.c disagree, the object holds no Keccak on the instructions, or this qemu's max model lacks FEAT_SHA3" \
+        "ML-KEM's copies and src/mlkem.c disagree, the object holds no Keccak on the instructions, or this qemu's max model lacks FEAT_SHA3" \
         mlkem_hw_equiv_test
     # ML-DSA-87's SHAKE calls under each ch_cfg.cpu value, as clang
     # compiles them for arm64: only there does the SHA-3 bit name a path,
@@ -882,7 +882,7 @@ if [ -z "$only" ] || [ "$only" = keccak ]; then
         mldsa_runtime_keccak_test
 fi
 if [ "$only" = keccak ]; then
-    echo "aes-runtime-qemu: as clang compiles them for arm64, bin/sha3_hw_equiv_test held sha3_hw.c to sha3.c and found no lane on the stack, bin/mlkem_hw_equiv_test held ML-KEM's copies to mlkem.c, and bin/mldsa_runtime_test counted ML-DSA-87's SHAKE calls on each path"
+    echo "aes-runtime-qemu: as clang compiles them for arm64, bin/sha3_hw_equiv_test held src/sha3_hw.c to src/sha3.c and found no lane on the stack, bin/mlkem_hw_equiv_test held ML-KEM's copies to src/mlkem.c, and bin/mldsa_runtime_test counted ML-DSA-87's SHAKE calls on each path"
     exit 0
 fi
 
@@ -900,7 +900,7 @@ if [ -z "$only" ] || [ "$only" = sha512-avx2 ]; then
     # lacks AVX2, so these rows cannot pass by skipping.
     build_x86_sha2_equiv || exit 1
     CH_REQUIRE_X86_KERNELS=1 CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 \
-        "sha512_hw.c over the AVX2 kernel and sha512.c's second arm disagree, a call left a value it computed on the stack or in a vector register, the sums do not lie at a multiple of 32 bytes, or this qemu's max model lacks AVX2" \
+        "src/sha512_hw.c over the AVX2 kernel and src/sha512.c's second arm disagree, a call left a value it computed on the stack or in a vector register, the sums do not lie at a multiple of 32 bytes, or this qemu's max model lacks AVX2" \
         sha2_equiv_test
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/sha512_test_host" test/sha512_test.c \
         "${x86_sha512_test_host_srcs[@]}" || exit 1
@@ -922,7 +922,7 @@ if [ -z "$only" ] || [ "$only" = sha512-avx2 ]; then
     fi
 fi
 if [ "$only" = sha512-avx2 ]; then
-    echo "aes-runtime-qemu: bin/sha2_equiv_test held sha512_hw.c over sha512_avx2.c's kernel to sha512.c's second arm on AVX2 for x86-64, found no word of a call on the stack and none in ymm0 to ymm15, and bin/sha512_test_host and bin/hkdf384_test_host ran the published vectors on it"
+    echo "aes-runtime-qemu: bin/sha2_equiv_test held src/sha512_hw.c over src/sha512_avx2.c's kernel to src/sha512.c's second arm on AVX2 for x86-64, found no word of a call on the stack and none in ymm0 to ymm15, and bin/sha512_test_host and bin/hkdf384_test_host ran the published vectors on it"
     exit 0
 fi
 
@@ -941,14 +941,14 @@ if [ -z "$only" ] || [ "$only" = sha512-stack ]; then
         SHA512_AVX2_UNIT_DIR="$x86_clang_out") && [ -f "$clang_unit" ] ||
         { echo "aes-runtime-qemu: make sha512-avx2-unit built no object under $sha512_clang for x86-64" >&2; exit 1; }
     "$sha512_clang" --target=x86_64-linux-gnu "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 "${exporter[@]}" \
-        -o "$x86_clang_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]/#sha512_avx2.c/$clang_unit}" ||
+        -o "$x86_clang_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]/#src\/sha512_avx2.c/$clang_unit}" ||
         exit 1
     CH_REQUIRE_X86_KERNELS=1 CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_on "$x86_qemu" "$x86_clang_out" max 0 \
-        "as $sha512_clang compiles them for x86-64, a SHA-512 compression function writes below the stack its caller wipes, a call left a value it computed on the stack or in a vector register, a path disagrees with sha512.c's second arm, or this qemu's max model lacks AVX2" \
+        "as $sha512_clang compiles them for x86-64, a SHA-512 compression function writes below the stack its caller wipes, a call left a value it computed on the stack or in a vector register, a path disagrees with src/sha512.c's second arm, or this qemu's max model lacks AVX2" \
         sha2_equiv_test
 fi
 if [ "$only" = sha512-stack ]; then
-    echo "aes-runtime-qemu: under $x86_cc every frame of the x86-64 host object that holds sha512_avx2.c was under its budget, and as $sha512_clang compiled it for x86-64 bin/sha2_equiv_test found each SHA-512 compression function's frame inside the stack its caller wipes and no word of a call on the stack"
+    echo "aes-runtime-qemu: under $x86_cc every frame of the x86-64 host object that holds src/sha512_avx2.c was under its budget, and as $sha512_clang compiled it for x86-64 bin/sha2_equiv_test found each SHA-512 compression function's frame inside the stack its caller wipes and no word of a call on the stack"
     exit 0
 fi
 
@@ -960,16 +960,16 @@ if [ -z "$only" ] || [ "$only" = sha2-equiv ]; then
     # it fails where the model lacks AVX2, which sha512_hw.c's kernel runs.
     build_x86_sha2_equiv || exit 1
     CH_REQUIRE_X86_KERNELS=1 CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 \
-        "sha256_hw.c and sha256.c disagree, sha512_hw.c over the AVX2 kernel disagrees with sha512.c's second arm, a call left a value it computed on the stack, or this qemu's max model lacks the SHA extensions or AVX2" \
+        "src/sha256_hw.c and src/sha256.c disagree, src/sha512_hw.c over the AVX2 kernel disagrees with src/sha512.c's second arm, a call left a value it computed on the stack, or this qemu's max model lacks the SHA extensions or AVX2" \
         sha2_equiv_test
     "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 "${exporter[@]}" \
         -o "$arm64_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]}" || exit 1
     CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 \
-        "sha256_hw.c or sha512_hw.c disagrees with the portable code, a call left a value it computed on the stack, or this qemu's max model lacks FEAT_SHA256 or FEAT_SHA512" \
+        "src/sha256_hw.c or src/sha512_hw.c disagrees with the portable code, a call left a value it computed on the stack, or this qemu's max model lacks FEAT_SHA256 or FEAT_SHA512" \
         sha2_equiv_test
 fi
 if [ "$only" = sha2-equiv ]; then
-    echo "aes-runtime-qemu: bin/sha2_equiv_test held sha256_hw.c to sha256.c, sha512.c's first arm to its second and sha512_hw.c to that second arm, on x86-64 and arm64"
+    echo "aes-runtime-qemu: bin/sha2_equiv_test held src/sha256_hw.c to src/sha256.c, src/sha512.c's first arm to its second and src/sha512_hw.c to that second arm, on x86-64 and arm64"
     exit 0
 fi
 
@@ -981,7 +981,7 @@ fi
     "${hash_count_quic_srcs[@]}" || exit 1
 "$arm64_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -DCH_ROLE_SERVER \
     -o "$arm64_out/hash_runtime_exporter_test" test/hash_runtime_test.c "${arm64_hash_count_srcs[@]}" \
-    srv_auth.c srv_parser.c srv_parser_ext.c || exit 1
+    src/srv_auth.c src/srv_parser.c src/srv_parser_ext.c || exit 1
 for b in hash_runtime_test hash_runtime_exporter_test; do
     expect_arm64 "$no_sha512" 0 \
         "a hash call ran on a path its ch_cfg.cpu value does not name" "$b"
@@ -1011,7 +1011,7 @@ build_webpki_loop || exit 1
     "${hash_count_quic_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -DCH_ROLE_SERVER \
     -o "$x86_out/hash_runtime_exporter_test" test/hash_runtime_test.c "${hash_count_srcs[@]}" \
-    srv_auth.c srv_parser.c srv_parser_ext.c || exit 1
+    src/srv_auth.c src/srv_parser.c src/srv_parser_ext.c || exit 1
 loops=(quic_loop_aes webpki_loop_aes)
 
 # No AES-NI, PCLMULQDQ or AVX2.
@@ -1068,10 +1068,10 @@ rsa_ifma_rows
 # ChaCha20, whose key schedule runs SHA-256, and with AES-256-GCM, whose
 # transcript takes SHA-256 beside SHA-384.
 for b in "${loops[@]}"; do
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and sha256.c disagree" "$b" cpu 0x25 0x5
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and sha256.c disagree" "$b" cpu 0x5 0x25
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and sha256.c disagree" "$b" cpu 0x27 0x7
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and sha256.c disagree" "$b" cpu 0x7 0x27
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and src/sha256.c disagree" "$b" cpu 0x25 0x5
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and src/sha256.c disagree" "$b" cpu 0x5 0x25
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and src/sha256.c disagree" "$b" cpu 0x27 0x7
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and src/sha256.c disagree" "$b" cpu 0x7 0x27
 done
 
 # Every instruction this qemu has. One end on a kernel and the other on
@@ -1131,10 +1131,10 @@ for b in "${loops[@]}"; do
         expect_arm64 "$no_sha512" "$sigill" "a session with the SHA-512 bit ran no SHA-512 instruction" \
             "$b" cpu "$bits" "$bits"
     done
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and sha512.c disagree" "$b" cpu 0x65 0x25
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and sha512.c disagree" "$b" cpu 0x25 0x65
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and sha512.c disagree" "$b" cpu 0x67 0x27
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and sha512.c disagree" "$b" cpu 0x27 0x67
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and src/sha512.c disagree" "$b" cpu 0x65 0x25
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and src/sha512.c disagree" "$b" cpu 0x25 0x65
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and src/sha512.c disagree" "$b" cpu 0x67 0x27
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and src/sha512.c disagree" "$b" cpu 0x27 0x67
 done
 
 # The two loops once more as clang compiles them for arm64, the one object
@@ -1154,10 +1154,10 @@ for b in quic_loop_keccak webpki_loop_keccak; do
         expect_arm64 "$no_sha3" "$sigill" "a session with the SHA-3 bit ran no SHA-3 instruction" \
             "$b" cpu "$bits" "$bits"
     done
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and sha3.c disagree" "$b" cpu 0xa5 0x25
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and sha3.c disagree" "$b" cpu 0x25 0xa5
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and sha3.c disagree" "$b" cpu 0xa7 0x27
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and sha3.c disagree" "$b" cpu 0x27 0xa7
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and src/sha3.c disagree" "$b" cpu 0xa5 0x25
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and src/sha3.c disagree" "$b" cpu 0x25 0xa5
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and src/sha3.c disagree" "$b" cpu 0xa7 0x27
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and src/sha3.c disagree" "$b" cpu 0x27 0xa7
 done
 
 echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU_AVX2 passed in the" \
@@ -1165,19 +1165,19 @@ echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU
     "the AES bit passed and the rows that add CH_CPU_VAES died of SIGILL; on $no_sha the rows" \
     "without the SHA-256 bit passed and the rows with it died of SIGILL; on $no_named the two" \
     "binaries that count each hash's calls passed; on $no_ifma the webpki loop passed without" \
-    "CH_CPU_AVX512_IFMA and died of SIGILL with it; on max, sha256_hw.c" \
-    "agreed with sha256.c, sha512_hw.c over the AVX2 kernel agreed with sha512.c and left no word" \
+    "CH_CPU_AVX512_IFMA and died of SIGILL with it; on max, src/sha256_hw.c" \
+    "agreed with src/sha256.c, src/sha512_hw.c over the AVX2 kernel agreed with src/sha512.c and left no word" \
     "on the stack or in ymm0 to ymm15, as $sha512_clang compiled them for x86-64 each SHA-512" \
     "compression function's frame lay inside the stack its caller wipes, every frame of the" \
     "object that holds the kernel was under its budget," \
-    "one end on the SHA extensions and the other on sha256.c agreed, and" \
+    "one end on the SHA extensions and the other on src/sha256.c agreed, and" \
     "$mixed; on arm64's $no_sha512 the rows without the SHA-512 bit passed and the rows with it" \
-    "died of SIGILL, and on its max sha512_hw.c agreed with sha512.c and one end on the SHA-512" \
-    "instructions and the other on sha512.c agreed; as clang compiles arm64, on $no_sha3 the rows" \
-    "without the SHA-3 bit passed and the rows with it died of SIGILL, and on max sha3_hw.c agreed" \
-    "with sha3.c and left no lane on the stack, ML-KEM's copies agreed with mlkem.c, and one end on" \
-    "the SHA-3 instructions and the other on sha3.c agreed; the vector NTT agreed with" \
-    "mlkem_poly.c's loops on SSE2 and on NEON; aes_hw.c agreed with the table and left no word of a" \
+    "died of SIGILL, and on its max src/sha512_hw.c agreed with src/sha512.c and one end on the SHA-512" \
+    "instructions and the other on src/sha512.c agreed; as clang compiles arm64, on $no_sha3 the rows" \
+    "without the SHA-3 bit passed and the rows with it died of SIGILL, and on max src/sha3_hw.c agreed" \
+    "with src/sha3.c and left no lane on the stack, ML-KEM's copies agreed with src/mlkem.c, and one end on" \
+    "the SHA-3 instructions and the other on src/sha3.c agreed; the vector NTT agreed with" \
+    "src/mlkem_poly.c's loops on SSE2 and on NEON; src/aes_hw.c agreed with the table and left no word of a" \
     "schedule on the stack on AES-NI and on the Arm AES instructions; and each caller of the RSA" \
     "verifiers sent the public operation to AVX-512 IFMA exactly where its session's ch_cfg.cpu" \
     "held the bit"

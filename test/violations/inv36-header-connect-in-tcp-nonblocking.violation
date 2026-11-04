@@ -1,5 +1,5 @@
 invariant: INV-36
-file: tls.h
+file: src/tls.h
 catches: test/zig-build-check.sh
 reason: tls.h declares ch_connect by role alone again, so a
   TRANSPORT=tcp-nonblocking client object, which defines no ch_connect

@@ -1,5 +1,5 @@
 invariant: INV-4
-file: rand_draw.h
+file: src/rand_draw.h
 catches: quic_loop_session
 reason: rand_draw hands the session's rand_bytes a NULL context instead of
   the session's rand_io. A source that keeps its state behind rand_io, as

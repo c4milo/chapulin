@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha256_hw.c
+file: src/sha256_hw.c
 catches: test/docker-aes-runtime-qemu.sh sha2-equiv
 reason: sha256_hw.c's first round constant is one more than FIPS 180-4
   §4.2.2's, so every digest a session computes on the instructions is

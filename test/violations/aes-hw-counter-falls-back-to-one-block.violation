@@ -1,5 +1,5 @@
 invariant: INV-26
-file: gcm.c
+file: src/gcm.c
 catches: test/quic-builds.sh
 reason: gcm.c guards its call to the multi-block counter mode on a macro no
   build defines, so a host object runs every block of counter mode

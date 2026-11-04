@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_test
 reason: the chain call stops at the caller's entries alone, so a file of
   256 certificates under 300 entries reads, and its count, cut to

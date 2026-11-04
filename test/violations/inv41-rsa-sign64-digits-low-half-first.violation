@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: rsa_sign_equiv_test
 reason: exponent_digit reads the low half of each byte before the high
   half, so the window raises the message to the exponent with the two

@@ -1,5 +1,5 @@
 invariant: INV-26
-file: handshake_post.c
+file: src/handshake_post.c
 catches: test/lint-quic-surface.sh
 reason: handshake_post.c includes aes_traffic_key.h, the one header that
   gives the traffic key a body, so the file that rekeys a direction on a

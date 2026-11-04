@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_point.c
+file: src/p384_wide_point.c
 catches: p384_equiv_test
 reason: the comparison takes r + n modulo 2^384 for a second value of
   x, so r = x + 2^384 - n, which is in range for nearly every x,

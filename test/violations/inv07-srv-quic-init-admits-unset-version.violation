@@ -1,5 +1,5 @@
 invariant: INV-7
-file: srv_quic.c
+file: src/srv_quic.c
 catches: srv_quic_test
 reason: ch_srv_quic_init takes a configuration whose original version
   is 0 or one this build derives no keys for, so the server starts a

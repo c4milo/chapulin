@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic_initial.c
+file: src/quic_initial.c
 catches: quic_test
 builds: bin/quic_test
 reason: quic_initial_open derives an Initial key for a version this

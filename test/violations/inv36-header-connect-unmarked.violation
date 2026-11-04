@@ -1,5 +1,5 @@
 invariant: INV-36
-file: tls.h
+file: src/tls.h
 catches: test/zig-build-check.sh
 reason: ch_connect returns its result code without CH_MUST_USE, so a
   caller that drops the code and writes to a session whose handshake

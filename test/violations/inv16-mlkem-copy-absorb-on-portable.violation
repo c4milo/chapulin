@@ -1,5 +1,5 @@
 invariant: INV-16
-file: keccak_hw.h
+file: src/keccak_hw.h
 catches: test/hash-builds.sh
 reason: keccak_hw.h stops renaming shake_absorb, so ML-KEM's two copies
   absorb their seeds on sha3.c's portable code while every other call of

@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha3_hw.c
+file: src/sha3_hw.c
 catches: test/docker-aes-runtime-qemu.sh keccak
 reason: permute_blocks writes lane 7 to a stack slot of its own each
   round, as a compiler does that needs a 33rd register where arm64 has

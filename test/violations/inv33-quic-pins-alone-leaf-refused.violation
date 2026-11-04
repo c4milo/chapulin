@@ -1,5 +1,5 @@
 invariant: INV-33
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: quic_loop_webpki
 reason: a TRANSPORT=quic-nonblocking build keeps the rule before
   docs/decisions.md 65 and refuses every chain under pins alone, so a

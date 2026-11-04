@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64_addcarry.c
+file: src/rsa_mont64_addcarry.c
 catches: rsa_addcarry_equiv_test
 reason: a row's tail, the words past its last block of four, drops the
   carry word from the word below, so a row whose length is not a multiple

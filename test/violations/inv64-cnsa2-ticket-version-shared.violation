@@ -1,5 +1,5 @@
 invariant: INV-64
-file: srv_ticket.h
+file: src/srv_ticket.h
 catches: cnsa2_server_test
 reason: the profile's AES-256-GCM tickets take the version byte 2, the one
   every other server's ChaCha20-Poly1305 tickets carry, so one ticket_key

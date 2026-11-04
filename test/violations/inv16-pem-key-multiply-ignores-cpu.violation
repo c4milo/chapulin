@@ -1,5 +1,5 @@
 invariant: INV-16
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_host
 reason: a host object computes the key's point on ct.h's 16x16
   decomposition whatever its cpu value states. The point is the same. The

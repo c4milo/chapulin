@@ -1,5 +1,5 @@
 invariant: INV-38
-file: srv_flight.h
+file: src/srv_flight.h
 catches: srv_flight_test
 reason: the server sends its own record_size_limit in the
   EncryptedExtensions to a hello that offered none, an extension response

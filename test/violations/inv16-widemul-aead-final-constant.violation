@@ -1,5 +1,5 @@
 invariant: INV-16
-file: aead.c
+file: src/aead.c
 catches: widemul_runtime_test
 reason: the AEAD's Poly1305 final runs under WIDEMUL_NOT_STATED whatever
   answer the seal or open was handed. The tag is the same.

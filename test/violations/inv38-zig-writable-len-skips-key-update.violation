@@ -1,5 +1,5 @@
 invariant: INV-38
-file: tls_write.c
+file: src/tls_write.c
 catches: test/zig-build-check.sh
 reason: inv38-writable-len-skips-key-update's edit, with the Zig API as
   the catcher: ch_writable_len does not count the KeyUpdate record ch_write

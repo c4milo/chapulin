@@ -1,5 +1,5 @@
 invariant: INV-26
-file: ghash_hw.c
+file: src/ghash_hw.c
 catches: ghash_equiv_test
 reason: the host object's GHASH data loop hashes whole blocks alone and drops a
   last partial block, so any associated data or ciphertext whose length is

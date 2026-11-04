@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: src/widemul.h
 catches: test/chacha-builds.sh
 reason: widemul_poly1305_ifma reads the multiply bit alone, so every session
   with it runs the AVX-512 IFMA Poly1305 and dies of SIGILL on a CPU without

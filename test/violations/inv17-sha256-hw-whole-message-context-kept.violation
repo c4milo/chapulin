@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha256_hw.c
+file: src/sha256_hw.c
 catches: test/docker-aes-runtime-qemu.sh sha2-equiv
 reason: sha256_of_hw returns without wiping the context it hashed in, so its
   dead frame keeps the end of the input and the digest's eight words.

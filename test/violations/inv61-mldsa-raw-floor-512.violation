@@ -1,5 +1,5 @@
 invariant: INV-61
-file: profile_cfg.h
+file: src/profile_cfg.h
 catches: cnsa2_test_mldsa
 reason: a raw-mldsa build keeps the 512-byte raw floor, so CH_MIN_RXBUF is
   the ML-KEM-1024 ServerHello's 1637 bytes and a buffer at the floor

@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_sigalg.c
+file: src/webpki_sigalg.c
 catches: webpki_chain_test
 reason: webpki_read_sigalg admits sha1WithRSAEncryption as if it were
   sha256WithRSAEncryption, so a SHA-1 certificate signature is no longer

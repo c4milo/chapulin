@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify_point.c
+file: src/p256_wide_verify_point.c
 catches: test/wycheproof.sh
 reason: the host verifier compares R's affine x with r and never with
   r + n, so it refuses a signature whose R has an x of n or more. x is

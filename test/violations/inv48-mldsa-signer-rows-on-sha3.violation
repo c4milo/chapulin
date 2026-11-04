@@ -1,5 +1,5 @@
 invariant: INV-48
-file: mldsa_sign_steps.c
+file: src/mldsa_sign_steps.c
 catches: test/docker-aes-runtime-qemu.sh mldsa-vector
 reason: the signer's and key generation's rows of A run on sha3.c under
   every value, so a session with CH_CPU_AVX2 signs at the speed of the

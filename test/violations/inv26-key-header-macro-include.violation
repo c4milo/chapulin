@@ -1,5 +1,5 @@
 invariant: INV-26
-file: quic_keys.c
+file: src/quic_keys.c
 catches: test/lint-quic-surface.sh
 reason: quic_keys.c reaches the body of aes_public_key through a macro that
   expands to the header's name, so the directive carries no literal

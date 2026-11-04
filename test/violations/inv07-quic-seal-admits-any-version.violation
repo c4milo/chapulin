@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic.c
+file: src/quic.c
 catches: quic_driver_test
 reason: the two seal calls take a packet in any version, so a Handshake
   packet goes out in a version the connection did not negotiate, which

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305.c
+file: src/poly1305.c
 catches: poly1305_equiv_test
 reason: poly1305_update hands the vector path every whole block of a
   long update, not only its whole groups, so an update whose whole

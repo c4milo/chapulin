@@ -1,5 +1,5 @@
 invariant: INV-16
-file: ct.h
+file: src/ct.h
 catches: test/widemul-builds.sh
 reason: ct.h defines ct_mul128 wherever the compiler has unsigned __int128,
   so a device object built for a 64-bit core can run the 64x64->128

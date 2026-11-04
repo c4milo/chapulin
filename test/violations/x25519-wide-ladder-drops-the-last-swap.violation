@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide.c
+file: src/x25519_wide.c
 catches: diff_x25519_wide
 reason: the ladder swaps the points once a step, by the step's bit exclusive-or
   the bit before, so after the last step the points stay swapped when bit 0

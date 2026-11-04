@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide_edwards.h
+file: src/x25519_wide_edwards.h
 catches: x25519_equiv_test
 reason: select_entry swaps y + x and y - x for a negative digit and keeps
   2dxy, so it adds (-x, y) with the T term of (x, y): a point that is on

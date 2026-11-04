@@ -8,6 +8,6 @@ reason: a TCP host object packages the S-box table beside the AES
   and 89). The lint's TCP suite host row bans quic_aes_soft.c.
 
 --- old
-             $(if $(filter quic-nonblocking,$(TRANSPORT)),quic_aes_soft.c),$(AES_IMPL)))
+             $(if $(filter quic-nonblocking,$(TRANSPORT)),src/quic_aes_soft.c),$(AES_IMPL)))
 --- new
-             quic_aes_soft.c,$(AES_IMPL)))
+             src/quic_aes_soft.c,$(AES_IMPL)))

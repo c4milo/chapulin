@@ -1,5 +1,5 @@
 invariant: INV-56
-file: mlkem_poly.c
+file: src/mlkem_poly.c
 catches: mlkem_test_1024
 reason: ByteEncode_11 writes the last coefficient of each group of eight
   without its top bit, so the ciphertext's u is not the one FIPS 203

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki.c
+file: src/webpki.c
 catches: webpki_chain_test
 reason: webpki_read_entry accepts a non-empty per-entry extensions
   vector, so a CertificateEntry extension this client never offered — a

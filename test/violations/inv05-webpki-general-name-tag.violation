@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_name.c
+file: src/webpki_name.c
 catches: webpki_name_test
 reason: dropping the GeneralName tag check lets read_entry take the
   first byte of a high-tag-number header (9f 1f ...) as the whole tag

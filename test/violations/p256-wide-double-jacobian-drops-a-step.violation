@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_point.c
+file: src/p256_wide_point.c
 catches: p256_equiv_test
 reason: the Jacobian doubling leaves out the step that makes m three
   times (X1 - zz) (X1 + zz), so m is twice that, and X3 and Y3 come out

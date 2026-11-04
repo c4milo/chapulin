@@ -1,5 +1,5 @@
 invariant: INV-16
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: hash_runtime_test
 reason: the check of a presented ticket hashes the configuration with 0 in
   place of the configuration's own ch_cfg.cpu, so a resuming session that

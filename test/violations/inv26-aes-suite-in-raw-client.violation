@@ -1,5 +1,5 @@
 invariant: INV-26
-file: handshake_message.c
+file: src/handshake_message.c
 catches: test/quic-builds.sh
 reason: a raw or ca client outside PROFILE=cnsa2 takes -DCH_SUITE_AES_GCM, so a device image
   carries the AES suite and a traffic key path it never offers, and

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide_edwards.h
+file: src/x25519_wide_edwards.h
 catches: test/lint-wide-multiply.sh
 reason: equal_mask builds its mask from the bit as computed, with no read
   back from a volatile object. clang 23 for x86-64 then sees that the mask

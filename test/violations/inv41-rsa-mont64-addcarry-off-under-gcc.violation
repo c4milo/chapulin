@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64.h
+file: src/rsa_mont64.h
 catches: test/docker-aes-runtime-qemu.sh rsa-addcarry
 reason: a gcc build for x86-64 no longer runs rsa_mont64_addcarry.c's rows
   and runs the loops, whose every word waits on the carry of the word

@@ -26,8 +26,8 @@ The rule is over-select, never miss. Every ambiguity resolves toward
 running more: a source no list in the tree names selects every gate and
 says which path did it, a variable reference inside a make function
 expands to its whole value rather than to what the function would keep,
-and a root header selects every gate because every test binary lists
-every root header as a prerequisite. A plan that runs a gate it did not
+and a library header selects every gate because every test binary lists
+every library header as a prerequisite. A plan that runs a gate it did not
 have to costs minutes. A plan that drops a gate that would have failed
 lets a bad commit land, which is worse than running everything.
 Selection is an inner-loop tool and never a landing gate: `make check`

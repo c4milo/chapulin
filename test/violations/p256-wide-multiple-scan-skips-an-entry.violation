@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: p256_equiv_test
 reason: multiple_select starts its scan at the second of the eight
   multiples of the point, so a digit of size 1 selects nothing and

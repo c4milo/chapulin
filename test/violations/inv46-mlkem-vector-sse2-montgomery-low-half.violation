@@ -1,5 +1,5 @@
 invariant: INV-46
-file: mlkem_lanes.h
+file: src/mlkem_lanes.h
 catches: test/docker-aes-runtime-qemu.sh mlkem-vector
 reason: the SSE2 Montgomery multiply subtracts the low 16 bits of t*q
   where it needs the high 16, so no product leaves reduced. Only an

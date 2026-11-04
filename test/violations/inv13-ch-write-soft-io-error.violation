@@ -1,5 +1,5 @@
 invariant: INV-13
-file: tls_write.c
+file: src/tls_write.c
 catches: unit
 reason: ch_write returns the transport error without the alert-wipe-dead
   funnel, so a failed session keeps live keys and the caller can retry

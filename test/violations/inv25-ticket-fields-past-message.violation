@@ -1,5 +1,5 @@
 invariant: INV-25
-file: handshake_post.c
+file: src/handshake_post.c
 catches: unit
 builds: bin/unit
 reason: handle_ticket stops reading at the ticket and never asks what is

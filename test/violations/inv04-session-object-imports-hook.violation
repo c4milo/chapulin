@@ -1,5 +1,5 @@
 invariant: INV-4
-file: srv_kex.c
+file: src/srv_kex.c
 catches: test/lib-check-rand-session.sh
 reason: srv_kex_begin draws the server's x25519 scalar from ch_rand_bytes, with
   a declaration of its own because a RAND=session build's rand.h declares

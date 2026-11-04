@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_blocks.c
+file: src/pem_blocks.c
 catches: pem_files_test
 reason: a bundle's END line may end in a lone CR, which ends no line in
   pem.c, so the bytes after it on the same line are skipped as text

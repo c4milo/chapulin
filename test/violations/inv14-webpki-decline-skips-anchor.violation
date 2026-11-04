@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: webpki_resume_test
 reason: the chain walk's verdict is dropped when the hello offered a
   ticket, so a server that declines the ticket may present a chain no

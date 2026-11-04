@@ -17,7 +17,7 @@
  *
  *   make lib RAND=extern
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *       -I. -include bin/chapulin.h examples/psk_client.c bin/chapulin.o -o psk_client
+ *       -Isrc -include bin/chapulin.h examples/psk_client.c bin/chapulin.o -o psk_client
  *
  * make lib writes bin/chapulin.h beside bin/chapulin.o. It holds the
  * defines the object was built with, so this file compiles under them

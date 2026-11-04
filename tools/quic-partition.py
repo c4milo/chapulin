@@ -5,7 +5,7 @@ Run from the repository root through `make lint-quic-partition`:
 
     python3 tools/quic-partition.py
 
-INV-27. Every root source and header that only a `TRANSPORT=quic-nonblocking` build
+INV-27. Every library source and header that only a `TRANSPORT=quic-nonblocking` build
 compiles is named `quic*`, so `git ls-files 'quic*'` names every file the
 mode owns. Two sets of file hold mode-only text under another name, and
 the Makefile lists each so a reader finds them without the prefix:
@@ -86,7 +86,7 @@ CC = os.environ.get("CC") or "cc"
 # Reading a gcc run as a clang run says every quic* file declares its body
 # without the define, which is how this lint passed here and failed on CI
 # until 2026-09-18. Plain -E evaluates conditionals on both.
-FLAGS = ["-E", "-x", "c", "-std=c11", "-DCH_RAND_EXTERN", "-I."]
+FLAGS = ["-E", "-x", "c", "-std=c11", "-DCH_RAND_EXTERN", "-Isrc", "-I."]
 DEFINE = "-DCH_TRANSPORT_QUIC_NONBLOCKING"
 
 # A conditional and the identifiers it tests. `defined` is the operator,
@@ -210,7 +210,7 @@ def extra_defines(entries):
 
 
 def judge(path, quic, shared, conditional, extra=()):
-    """What one root file is, and every complaint about it.
+    """What one file in src/ is, and every complaint about it.
 
     Returns the verdict -- "quic", "conditional", "shared" or "silent"
     -- and the messages. A file is QUIC-only when it writes no
@@ -334,8 +334,8 @@ def main(argv):
         sys.exit(f"quic-partition: unknown option {argv[0]}")
     names = lists()
     shared = [f for f in names["QUIC_SHARED"] if (ROOT / f).exists()]
-    quic = [p for p in run("git", "ls-files", "quic*") if "/" not in p]
-    roots = [p for p in run("git", "ls-files", "*.c", "*.h") if "/" not in p]
+    quic = [p for p in run("git", "ls-files", "src/quic*") if p.count("/") == 1]
+    roots = [p for p in run("git", "ls-files", "src/*.c", "src/*.h") if p.count("/") == 1]
     # A QUIC object compiles neither list: QUIC_REPLACED names the six
     # sources the mode replaces outright, QUIC_PENDING the four that owe an
     # arm they do not have yet. Asking what those contribute under the
@@ -355,7 +355,7 @@ def main(argv):
 
     problems, counts, conditional = [], {}, []
     if not quic:
-        problems.append("git tracks no root quic*.c or quic*.h file, so the "
+        problems.append("git tracks no quic*.c or quic*.h file in src/, so the "
                         "checks below would read nothing")
     problems += absent(names["QUIC_SHARED"], "QUIC_SHARED")
     # Two preprocessor runs over ninety files is most of a second even
@@ -386,8 +386,8 @@ def main(argv):
         for problem in problems:
             print(f"lint-quic-partition: {problem}")
         return 1
-    print(f"lint-quic-partition: {counts.get('quic', 0)} of {len(roots)} root "
-          f"files are QUIC-only and every one is named quic*; "
+    print(f"lint-quic-partition: {counts.get('quic', 0)} of {len(roots)} "
+          f"files in src/ are QUIC-only and every one is named quic*; "
           f"{len(skipped)} the QUIC object does not compile went unjudged; "
           f"{len(unprobed)} this compiler cannot build went unjudged; "
           f"QUIC_SHARED "

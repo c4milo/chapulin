@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.h
+file: src/handshake_post.h
 catches: unit
 reason: hspost_ticket_age_ok compares the age's low 32 bits alone, so a
   ticket about 49.7 days old or older reads as a young one and is offered.

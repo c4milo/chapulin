@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.c
+file: src/handshake_post.c
 catches: unit
 reason: the trust check reads pin slot A and the external PSK and not
   slot B. A ticket from a handshake that the key in slot B authenticated

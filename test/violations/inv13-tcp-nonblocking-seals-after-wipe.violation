@@ -1,5 +1,5 @@
 invariant: INV-13
-file: tcp_nonblocking_frame.c
+file: src/tcp_nonblocking_frame.c
 catches: tcp_nonblocking_loop_test
 reason: tcp_nonblocking_fail writes the alert record after the wipe, when the
   write key it would seal under is gone, so every handshake failure after that

@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify_point.c
+file: src/p256_wide_verify_point.c
 catches: p256_verify_equiv_test
 reason: the host verifier's pass over the two scalars' digits reads no
   digit of u1, so it adds no multiple of G, R is u2*Q and the verifier

@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_ext.c
+file: src/webpki_ext.c
 catches: webpki_cert_test
 reason: the basicConstraints judgement stops comparing cA with the arm
   on the leaf, so a leaf that asserts CA parses as a leaf, the row

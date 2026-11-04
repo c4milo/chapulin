@@ -1,5 +1,5 @@
 invariant: INV-16
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: hash_runtime_test
 reason: a ticket's binding runs its HMAC on sha256.c whatever the session's
   ch_cfg.cpu states (docs/decisions.md 132). bin/hash_runtime_test's

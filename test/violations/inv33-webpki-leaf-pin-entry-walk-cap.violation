@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki.c
+file: src/webpki.c
 catches: webpki_auth_test
 reason: under pins alone the list framing holds every entry after the
   leaf to the walk's CH_WEBPKI_CERT_MAX, though it stores none of them

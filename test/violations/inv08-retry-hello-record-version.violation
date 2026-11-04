@@ -1,5 +1,5 @@
 invariant: INV-8
-file: handshake.c
+file: src/handshake.c
 catches: webpki_session_test
 reason: the retry hello a HelloRetryRequest asked for goes out under
   legacy_record_version 0x0301, which RFC 9846 section 5.1 admits only on

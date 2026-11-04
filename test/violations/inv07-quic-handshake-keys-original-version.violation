@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic_step.c
+file: src/quic_step.c
 catches: quic_driver_test
 reason: the ServerHello step derives the Handshake keys under the
   original version's labels, so a client that switched to version 2

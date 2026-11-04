@@ -1,5 +1,5 @@
 invariant: INV-59
-file: mldsa_poly.h
+file: src/mldsa_poly.h
 catches: mldsa_test
 reason: Decompose rounds r / (2 gamma2) at a quarter of a step where it
   rounds at a half, so near each boundary r1 is one less than FIPS 204

@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384.c
+file: src/p384.c
 catches: p384_equiv_test
 reason: the entry both arms share hands s where the arm reads r, so no
   signature verifies in a host object or a device object.

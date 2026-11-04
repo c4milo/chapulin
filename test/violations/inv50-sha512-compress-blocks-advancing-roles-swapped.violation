@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512_compress_blocks.c
+file: src/sha512_compress_blocks.c
 catches: proof/prove-one.sh sha512_compress_blocks_advancing
 reason: the third of eight_rounds_advancing's eight rounds names the
   working variables at f and g in each other's roles, so Ch takes them in

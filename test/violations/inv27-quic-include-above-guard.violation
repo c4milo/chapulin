@@ -1,5 +1,5 @@
 invariant: INV-27
-file: quic_retry.h
+file: src/quic_retry.h
 catches: test/lint-quic-partition.sh
 reason: quic_retry.h moves its #include lines above the transport
   guard, which is ordinary C layout and puts stddef.h's and stdint.h's

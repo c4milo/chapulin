@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_avx2_lanes.h
+file: src/rsa_avx2_lanes.h
 catches: test/docker-aes-runtime-qemu.sh rsa-avx2
 reason: lanes_first_from blends four 32-bit halves of low where it takes
   two, so lanes 0 and 1 come from low and the square multiplies a digit

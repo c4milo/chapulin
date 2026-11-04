@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305.c
+file: src/poly1305.c
 catches: test/lint-wide-multiply.sh
 reason: a quotient under a condition: clang folds the branch into an IT
   block and emits udivne on the M3, a mnemonic lint-wide-multiply's old

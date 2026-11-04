@@ -1,5 +1,5 @@
 invariant: INV-17
-file: ghash_hw.c
+file: src/ghash_hw.c
 catches: ghash_equiv_test
 reason: the host object's GHASH data loop wipes its state only up to the powers
   of the hash subkey, so H * x^-1 to H^8 * x^-1 stay in the dead frame

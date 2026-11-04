@@ -1,5 +1,5 @@
 invariant: INV-39
-file: handshake.c
+file: src/handshake.c
 catches: tcp_blocking_loop_test
 reason: the tcp-blocking client completes on a server Finished that has
   bytes after it in its record, and drops them when it resets cfg.buf for

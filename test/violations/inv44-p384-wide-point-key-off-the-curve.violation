@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_point.c
+file: src/p384_wide_point.c
 catches: p384_equiv_test
 reason: the decoder takes a key that is on no curve but the one its
   own coordinates pick. The point formulas never read b, so u2 times

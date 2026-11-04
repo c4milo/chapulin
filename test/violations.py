@@ -312,7 +312,7 @@ def run_steps(name, root, env, say):
 # reads the workflows and the Makefile in two, the TRUST=webpki frame-budget
 # script, which compiles that object's sources in two, the stack walk script, which
 # compiles a fixture twice in under one, the QUIC partition lint
-# script, which preprocesses the root sources in three, and the
+# script, which preprocesses the library sources in three, and the
 # tcp-nonblocking webpki link script, which links that object in two
 # and a half, the X25519 equivalence binary, which runs in fifteen
 # seconds, and the two Zig build scripts, which answer in five and two

@@ -1,5 +1,5 @@
 invariant: INV-7
-file: srv_auth.c
+file: src/srv_auth.c
 catches: srv_mldsa_identity_test
 reason: the server asks about ECDSA P-256 before mldsa87, so a client that
   offers both, as OpenSSL 3.5's default list does, gets an ECDSA

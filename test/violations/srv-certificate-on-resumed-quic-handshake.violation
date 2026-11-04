@@ -1,5 +1,5 @@
 invariant: INV-22
-file: srv_quic.c
+file: src/srv_quic.c
 catches: quic_loop_test
 reason: the QUIC server sends its Certificate and CertificateVerify on a
   handshake a ticket authenticated, which is the second connection the

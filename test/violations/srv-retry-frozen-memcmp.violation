@@ -1,5 +1,5 @@
 invariant: INV-16
-file: srv_flight.c
+file: src/srv_flight.c
 catches: test/lint-invariants.sh
 reason: the frozen digest from the cookie is compared with memcmp instead of
   ct_memeq. memcmp returns at the first differing byte, so a client that

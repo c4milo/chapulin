@@ -1,5 +1,5 @@
 invariant: INV-17
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_rsa_test
 reason: A refused RSA key file leaves the integers the call read in the
   caller's key. Every refusal in test_files and test_written requires

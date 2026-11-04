@@ -1,5 +1,5 @@
 invariant: INV-22
-file: handshake_record.c
+file: src/handshake_record.c
 catches: unit
 reason: hsr_refuse_alert reads a record of the alert type of any length as
   one alert, so three bytes from the peer read as its fatal alert and go

@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha512_hw.c
+file: src/sha512_hw.c
 catches: test/docker-aes-runtime-qemu.sh sha2-equiv
 reason: round_pair keeps what SHA512H returns in a local of its own, which
   the compiler must hold in memory, where it belongs in the block_state.

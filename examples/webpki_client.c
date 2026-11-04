@@ -51,7 +51,7 @@
  *
  *   make TRUST=webpki RAND=extern lib
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *      -I. -include bin/chapulin.h \
+ *      -Isrc -include bin/chapulin.h \
  *      -o webpki_client examples/webpki_client.c bin/chapulin.o
  *
  * make lib writes bin/chapulin.h beside bin/chapulin.o. It holds the

@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_cert.c
+file: src/webpki_cert.c
 catches: webpki_cert_test
 reason: the full parser the walk reads each certificate with takes
   CH_WEBPKI_LEAF_PIN_CERT_MAX, the cap of the reader pins alone use, in

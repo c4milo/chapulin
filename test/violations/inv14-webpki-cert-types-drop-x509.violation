@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_message.c
+file: src/handshake_message.c
 catches: webpki_session_test
 reason: the hello offers the raw public key alone to a configuration that has
   anchors too, so a server with a certificate chain and no raw key

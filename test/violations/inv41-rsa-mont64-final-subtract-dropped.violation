@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64.c
+file: src/rsa_mont64.c
 catches: rsa_equiv_test_sum
 reason: rsa_mont64_mont_mul copies the running sum out without its last
   subtraction, so a product at or above the modulus stays there, and the

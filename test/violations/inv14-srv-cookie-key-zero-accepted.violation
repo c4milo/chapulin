@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv.c
+file: src/srv.c
 catches: srv_auth_test
 reason: a server takes a cookie_key of all zero bytes, the bytes a static
   array holds until something fills it, so anyone mints the cookies of

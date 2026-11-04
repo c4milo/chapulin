@@ -1,5 +1,5 @@
 invariant: INV-17
-file: tcp_nonblocking_step.c
+file: src/tcp_nonblocking_step.c
 catches: proof/prove-one.sh tcp_nonblocking
 reason: step_finished stages the client Finished and switches to the
   application keys without wiping r->hs, so the handshake secrets

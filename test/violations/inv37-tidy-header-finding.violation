@@ -1,5 +1,5 @@
 invariant: INV-37
-file: suite.h
+file: src/suite.h
 catches: test/lint-tidy.sh
 reason: suite_key_len returns from both arms of an if and its else,
   which readability-else-after-return reports in every file that

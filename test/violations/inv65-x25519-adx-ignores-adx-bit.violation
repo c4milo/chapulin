@@ -1,5 +1,5 @@
 invariant: INV-65
-file: widemul.h
+file: src/widemul.h
 catches: test/docker-aes-runtime-qemu.sh x25519-adx
 reason: widemul_x25519_cpu runs x25519_adx.c under the multiply bit alone,
   whatever CH_CPU_BMI2_ADX says, so a session on a CPU without BMI2 or ADX

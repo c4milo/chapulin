@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide_edwards.h
+file: src/x25519_wide_edwards.h
 catches: test/lint-wide-multiply.sh
 reason: select_entry tests the mask and moves on when the entry is not
   the digit's, so the scan keeps one entry of eight, and which one is

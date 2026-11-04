@@ -1,5 +1,5 @@
 invariant: INV-38
-file: srv_parser_ext.c
+file: src/srv_parser_ext.c
 catches: srv_test
 reason: read_record_size_limit admits 63, one below the smallest limit RFC
   8449 §4 lets a peer send, which the section makes a fatal

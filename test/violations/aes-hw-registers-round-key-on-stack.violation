@@ -1,5 +1,5 @@
 invariant: INV-17
-file: aes_hw.c
+file: src/aes_hw.c
 catches: test/docker-aes-runtime-qemu.sh aes-equiv
 reason: the x86-64 AES-128 key expansion keeps its round key in a volatile
   variable, so each round key passes through a stack slot and the last,

@@ -1,5 +1,5 @@
 invariant: INV-46
-file: mlkem_vector.c
+file: src/mlkem_vector.c
 catches: mlkem_vector_equiv_test
 reason: the product of the two odd coefficients takes the even ones'
   b times q^-1 for its Montgomery step, so t is not the low half of

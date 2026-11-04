@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: webpki_resume_test
 reason: the configuration hash leaves out the SPKI pins, so a ticket issued
   under one pin set resumes under another, and a resumed handshake

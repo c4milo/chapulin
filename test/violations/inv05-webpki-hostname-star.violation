@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_name.c
+file: src/webpki_name.c
 catches: webpki_name_test
 reason: admitting '*' into the reference-name alphabet lets a caller's
   "*.example.test" pass webpki_hostname_ok, the check docs/webpki.md

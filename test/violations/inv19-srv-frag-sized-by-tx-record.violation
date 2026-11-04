@@ -1,5 +1,5 @@
 invariant: INV-19
-file: srv_out.h
+file: src/srv_out.h
 catches: webpki_loop_tx_record
 reason: srv_frag's buffer is sized by CH_TX_PT again, so a TX_RECORD=16384
   build puts 16 KiB on srv_send_certificate's stack frame, four times the

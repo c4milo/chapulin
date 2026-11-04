@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_test
 reason: parse_head checks that legacy_compression_methods holds one byte and
   not that the byte is zero, so a hello asking for DEFLATE parses. RFC

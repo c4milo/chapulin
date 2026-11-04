@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_rsa_test
 reason: ch_rsa_key_from_pem stops comparing the key's modulus with the
   end-entity certificate's, so a key file paired with the wrong chain

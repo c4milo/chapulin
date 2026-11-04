@@ -1,5 +1,5 @@
 invariant: INV-11
-file: handshake.c
+file: src/handshake.c
 catches: webpki_session_aes
 builds: bin/webpki_session_aes
 reason: the client takes AES-128-GCM from the ServerHello and keys its

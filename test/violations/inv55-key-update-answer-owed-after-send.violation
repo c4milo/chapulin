@@ -1,5 +1,5 @@
 invariant: INV-55
-file: handshake_post.c
+file: src/handshake_post.c
 catches: unit
 reason: a KeyUpdate this side sends leaves the answer owed, so every
   later write sends one more KeyUpdate and rekeys once more, where one

@@ -1,5 +1,5 @@
 invariant: INV-41
-file: dnssec.c
+file: src/dnssec.c
 catches: proof/prove-one.sh dnssec
 reason: verify_rsa hands the RSA check an even exponent, which the RSA
   check's contract forbids and rsa_mont64_public_exp's CH_ASSERT faults

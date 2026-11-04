@@ -1,5 +1,5 @@
 invariant: INV-17
-file: gcm_avx512_kernel.h
+file: src/gcm_avx512_kernel.h
 catches: test/quic-builds.sh
 reason: GCM_AVX512_BELOW_LEN, the bytes of stack gcm_avx512.c's entries wipe
   below their frames after each kernel call, is 1,024, less than the

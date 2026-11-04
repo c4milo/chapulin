@@ -1,5 +1,5 @@
 invariant: INV-9
-file: record.c
+file: src/record.c
 catches: aes_suite_test
 reason: rec_seal copies one byte less than the caller's plaintext into the
   record, so the last byte of every record is whatever the output buffer

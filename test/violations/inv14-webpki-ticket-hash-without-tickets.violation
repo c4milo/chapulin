@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: webpki_session_test
 reason: webpki_takes_tickets answers 1 for every configuration, so every init
   call hashes the anchors, whether or not the session takes tickets

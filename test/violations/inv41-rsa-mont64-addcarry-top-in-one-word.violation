@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64_addcarry.c
+file: src/rsa_mont64_addcarry.c
 catches: proof/prove-one.sh rsa_mont64_addcarry_sums
 reason: a round of rsa_mont64_addcarry_mul adds the a[i] * b row's carry
   word to the running sum's top word in a 64-bit sum. The top word is 0

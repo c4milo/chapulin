@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_field.c
+file: src/p384_wide_field.c
 catches: p384_equiv_test
 reason: a round of the Montgomery product drops the carry out of its
   second pass, so a running sum of 2^384 or more loses its top bit.

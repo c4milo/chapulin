@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64.c
+file: src/rsa_mont64.c
 catches: proof/prove-one.sh rsa_mont64_ops
 reason: at_or_above subtracts with a borrow where it added a complement,
   so each word of the comparison wraps below zero whenever the modulus's

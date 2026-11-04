@@ -1,5 +1,5 @@
 invariant: INV-34
-file: x25519_wide.c
+file: src/x25519_wide.c
 catches: proof/prove-one.sh x25519_wide_tail
 reason: mul adds column 0's carry in 128 bits because the multiply contract
   cannot show that column 0 is under 2^115: it holds four products of a

@@ -1,5 +1,5 @@
 invariant: INV-22
-file: tls_write.c
+file: src/tls_write.c
 catches: unit
 reason: ch_write refuses a session whose peer sent close_notify, so this
   side cannot send what it still owes, although RFC 9846 section 6.1 says

@@ -1,5 +1,5 @@
 invariant: INV-4
-file: srv.c
+file: src/srv.c
 catches: test/lint-invariants.sh
 reason: ch_srv_check draws four bytes before it checks the identities.
   srv.c is not one of the six files that hold the ten admitted rand_draw

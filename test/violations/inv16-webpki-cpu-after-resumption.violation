@@ -1,5 +1,5 @@
 invariant: INV-16
-file: tls.c
+file: src/tls.c
 catches: webpki_session_host
 reason: the webpki tlsi_config_ok checks ch_cfg.cpu after the web PKI rules.
   So the check of a presented ticket hashes on the path of a value that

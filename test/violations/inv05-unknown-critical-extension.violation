@@ -1,5 +1,5 @@
 invariant: INV-5
-file: x509.c
+file: src/x509.c
 catches: x509strict
 reason: an unknown critical extension is accepted instead of rejected, so a
   CA constraint the client cannot interpret is silently ignored and

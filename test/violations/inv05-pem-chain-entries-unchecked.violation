@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_test
 reason: the chain call stops comparing its count with chain_max, so a
   file of more blocks than the caller's entries writes past the caller's

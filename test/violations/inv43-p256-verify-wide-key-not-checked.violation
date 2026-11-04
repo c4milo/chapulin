@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify.c
+file: src/p256_wide_verify.c
 catches: proof/prove-one.sh p256_wide_verify
 reason: the host verifier computes on whatever the decoder left for a key
   it refused: a coordinate at or above p, or a pair off the curve. The

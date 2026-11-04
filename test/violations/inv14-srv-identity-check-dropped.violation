@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv.c
+file: src/srv.c
 catches: srv_tcp_nonblocking_test
 reason: srv_config_ok stops asking srv_identities_usable, so a server
   starts a session with an identity its flight cannot sign with or send,

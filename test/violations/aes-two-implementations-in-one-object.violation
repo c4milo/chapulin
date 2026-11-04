@@ -13,6 +13,6 @@ reason: AES=soft stops being one implementation and adds the instructions
   belong.
 
 --- old
-AES_IMPL := quic_aes_soft.c
+AES_IMPL := src/quic_aes_soft.c
 --- new
-AES_IMPL := quic_aes_soft.c aes_hw.c
+AES_IMPL := src/quic_aes_soft.c src/aes_hw.c

@@ -1,5 +1,5 @@
 invariant: INV-11
-file: quic_packet.c
+file: src/quic_packet.c
 catches: quic_test
 reason: quic_packet_seal keeps the Key Phase bit the caller's header
   holds instead of the key_phase it takes, so a caller who never set the

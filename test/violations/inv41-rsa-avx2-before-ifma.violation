@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont.c
+file: src/rsa_mont.c
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: rsa_vp1_cpu asks for AVX2 before AVX-512 IFMA, so a session whose
   ch_cfg.cpu holds both bits runs the AVX2 kernel, which took more time

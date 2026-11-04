@@ -1,5 +1,5 @@
 invariant: INV-16
-file: tcp_nonblocking.c
+file: src/tcp_nonblocking.c
 catches: webpki_loop_aes
 reason: the webpki ch_record_init hands the configuration hash 0 in place of
   the session's ch_cfg.cpu, so the hash runs on the portable code whatever

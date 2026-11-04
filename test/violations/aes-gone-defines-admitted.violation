@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes_block.h
+file: src/aes_block.h
 catches: test/quic-builds.sh
 reason: aes_block.h stops refusing CH_AES_HW and CH_AES_RUNTIME, the
   defines that chose the AES instructions when the object was built. A

@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic_retry.c
+file: src/quic_retry.c
 catches: quic_test
 reason: version 2's Retry nonce holds version 1's bytes, so a server's
   version 2 Retry carries a tag no version 2 client validates, and a

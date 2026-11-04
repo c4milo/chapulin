@@ -1,5 +1,5 @@
 invariant: INV-16
-file: aead.c
+file: src/aead.c
 catches: test/lint-runtime-symbols.sh
 reason: on a core with no multiplier a new `*` in aead.c becomes a call
   to __mulsi3, and the old check subtracted softmul.c's definition of that

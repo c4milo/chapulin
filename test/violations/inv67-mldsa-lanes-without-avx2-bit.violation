@@ -1,5 +1,5 @@
 invariant: INV-67
-file: mldsa_vector.h
+file: src/mldsa_vector.h
 catches: test/docker-aes-runtime-qemu.sh mldsa-vector
 reason: the dispatch to the lanes drops its test of CH_CPU_AVX2 on
   x86-64. So the verifier runs the AVX2 lanes in every session, and the

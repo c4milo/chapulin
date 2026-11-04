@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: webpki_session_test
 reason: a TRUST=webpki config may carry an external PSK, and a resumed
   handshake presents no certificate, so it skips the hostname check.

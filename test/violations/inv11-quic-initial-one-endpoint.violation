@@ -1,5 +1,5 @@
 invariant: INV-11
-file: quic_initial.c
+file: src/quic_initial.c
 catches: quic_test
 reason: quic_initial_open derives the caller's own endpoint's Initial
   secret instead of the peer's, so a client reads under "client in" and a

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_field.c
+file: src/p256_wide_field.c
 catches: p256_equiv_test
 reason: the field's inverse multiplies p256_wide_inverse's answer by a word
   off 2^768 mod p, so every inverse leaves the Montgomery domain wrong.

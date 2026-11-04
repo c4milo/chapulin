@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.h
+file: src/handshake_post.h
 catches: proof/prove-one.sh quic_driver
 reason: ch_quic_init offers a kept ticket whose trust its configuration
   no longer holds, so a device resumes the tickets of a server key it

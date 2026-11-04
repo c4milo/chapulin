@@ -1,5 +1,5 @@
 invariant: INV-16
-file: aead.c
+file: src/aead.c
 catches: test/lint-wide-multiply.sh
 reason: aead.c holds the key, the nonce and the plaintext, and sat
   outside the four files lint-wide-multiply used to read, so a widening

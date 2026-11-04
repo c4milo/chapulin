@@ -1,5 +1,5 @@
 invariant: INV-16
-file: chacha20.c
+file: src/chacha20.c
 catches: test/chacha-builds.sh
 reason: chacha20.c's use_avx512 answers 0 whatever the session's ch_cfg.cpu
   says, so no session runs the AVX-512 kernel and CH_CPU_AVX512_IFMA picks

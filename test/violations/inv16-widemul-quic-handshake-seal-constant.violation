@@ -1,5 +1,5 @@
 invariant: INV-16
-file: quic.c
+file: src/quic.c
 catches: quic_loop_host
 reason: a Handshake packet ch_quic_seal seals runs under the probe's bit alone, whatever
   the session's ch_cfg.cpu states, so no other bit picks a path there and

@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_avx2_number.h
+file: src/rsa_avx2_number.h
 catches: proof/prove-one.sh rsa_avx2_number
 reason: value_at_or_zero reads values[count], one word past the count, so
   words_to_digits reads one word past the k words of the modulus, of

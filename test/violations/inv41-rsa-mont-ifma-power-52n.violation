@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont.c
+file: src/rsa_mont.c
 catches: rsa_ifma_model_test
 reason: rsa_vp1_cpu hands rsa_ifma_public 2^(52n) mod m in place of
   2^(104n) mod m, which is R' rather than R'^2, so the first product

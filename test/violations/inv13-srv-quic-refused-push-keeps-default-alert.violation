@@ -1,5 +1,5 @@
 invariant: INV-13
-file: srv_out.c
+file: src/srv_out.c
 catches: quic_loop_test
 reason: CRYPTO bytes the QUIC server's on_crypto_out refused keep the
   handler's last alert, which names a peer fault, where RFC 9846 section

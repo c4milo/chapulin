@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_inverse.c
+file: src/p256_wide_inverse.c
 catches: test/lint-p256-wide.sh
 reason: the inverse runs 16 rounds, 496 steps, where
   spec/lean/Spec/P256WideInverse.lean proves that 17 take a to zero for every

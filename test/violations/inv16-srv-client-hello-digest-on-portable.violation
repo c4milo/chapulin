@@ -1,5 +1,5 @@
 invariant: INV-16
-file: srv_parser.c
+file: src/srv_parser.c
 catches: hash_runtime_exporter_test
 reason: srv_parse_client_hello computes a ClientHello's frozen digest on
   sha256.c whatever the session's ch_cfg.cpu states, so a server that

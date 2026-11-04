@@ -1,5 +1,5 @@
 invariant: INV-17
-file: aes_hw.c
+file: src/aes_hw.c
 catches: test/docker-aes-runtime-qemu.sh aes-equiv
 reason: the arm64 key expansion keeps a copy of each round key it builds
   on in a volatile variable, so the last one, from which the expansion runs

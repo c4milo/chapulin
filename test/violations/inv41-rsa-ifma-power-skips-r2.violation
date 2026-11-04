@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: src/rsa_ifma.c
 catches: rsa_ifma_model_test
 reason: rsa_ifma_public starts the power from the base's words rather than
   digit_r2, so the first product writes base^2 / R' in place of base *

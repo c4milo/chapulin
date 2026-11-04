@@ -1,5 +1,5 @@
 invariant: INV-49
-file: sha512_avx2.c
+file: src/sha512_avx2.c
 catches: test/docker-aes-runtime-qemu.sh sha512-avx2
 reason: sums, the array sha512_avx2_compress_blocks stores four sums at a
   time to, loses its declared alignment of 32 bytes. gcc 13.3 still

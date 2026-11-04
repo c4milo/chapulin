@@ -1,5 +1,5 @@
 invariant: INV-36
-file: x509_ca.h
+file: src/x509_ca.h
 catches: test/zig-build-check.sh
 reason: x509_ca.h declares ch_pubkey_from_pem in every build again, so a
   raw, webpki or server object, which compiles no x509_ca.c and defines

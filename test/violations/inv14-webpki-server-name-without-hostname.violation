@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_message.c
+file: src/handshake_message.c
 catches: webpki_session_test
 reason: the hello leaves out server_name even when a hostname is set, so a
   server that picks its certificate by name answers with the wrong

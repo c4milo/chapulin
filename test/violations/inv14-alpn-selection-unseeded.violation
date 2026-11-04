@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake.c
+file: src/handshake.c
 catches: webpki_session_test
 reason: the session reports index 0 rather than CH_ALPN_NONE when the
   server sent no ALPN extension, because ch_connect's memset left the

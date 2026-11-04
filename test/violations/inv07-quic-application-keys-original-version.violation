@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic_step.c
+file: src/quic_step.c
 catches: quic_loop_test
 reason: the Finished step derives the 1-RTT keys under the original
   version's labels, so a client that switched to version 2 protects its

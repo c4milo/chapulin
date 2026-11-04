@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_name.c
+file: src/webpki_name.c
 catches: webpki_name_test
 reason: dropping the refusal in label_edges_ok lets a reference name
   whose label starts or ends with '-', such as "-a.b" or "a.b-", pass

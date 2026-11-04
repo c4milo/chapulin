@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.h
+file: src/handshake_post.h
 catches: unit
 reason: a raw or ca client presents a kept ticket whose trust its
   configuration no longer holds, so a device keeps resuming the tickets of

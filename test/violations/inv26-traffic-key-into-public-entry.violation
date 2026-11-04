@@ -1,5 +1,5 @@
 invariant: INV-26
-file: record.c
+file: src/record.c
 catches: test/lint-invariants.sh
 reason: the record layer seals an AES-GCM record through gcm_seal, the
   public-key entry, with a cast that silences the compiler, so a traffic

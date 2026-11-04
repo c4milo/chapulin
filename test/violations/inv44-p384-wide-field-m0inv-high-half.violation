@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_field.c
+file: src/p384_wide_field.c
 catches: p384_equiv_test
 reason: the constant that clears a round's low word modulo n is right
   in its low 32 bits, which p384_field.c's constant shows, and wrong

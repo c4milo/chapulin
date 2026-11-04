@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify.c
+file: src/p256_wide_verify.c
 catches: p256_verify_equiv_test
 reason: the host verifier multiplies G by u2 and the key by u1, so no
   signature a signer wrote verifies. bin/p256_verify_equiv_test requires

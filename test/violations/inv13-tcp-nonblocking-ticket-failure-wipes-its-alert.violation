@@ -1,5 +1,5 @@
 invariant: INV-13
-file: srv_tcp_nonblocking.c
+file: src/srv_tcp_nonblocking.c
 catches: tcp_nonblocking_loop_test
 reason: the tcp-nonblocking server wipes its handshake state before it
   returns a failed NewSessionTicket push, so fail() reads an alert of 0,

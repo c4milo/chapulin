@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_cfg.c
+file: src/webpki_cfg.c
 catches: webpki_session_test
 reason: a TRUST=webpki client with anchors takes a clock that answers 0,
   an unset clock, and the handshake it starts fails later with CH_EAUTH at

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305_vector.h
+file: src/poly1305_vector.h
 catches: test/chacha-builds.sh
 reason: poly1305_vector.h turns the vector Poly1305 on wherever the multiply is
   native, a device object on WIDEMUL=native among them, so that object

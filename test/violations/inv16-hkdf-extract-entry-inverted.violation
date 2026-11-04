@@ -1,5 +1,5 @@
 invariant: INV-16
-file: hkdf.h
+file: src/hkdf.h
 catches: hash_runtime_test
 reason: hkdf_extract_cpu calls the copy on the instructions for a value that
   does not name them, and hkdf.c for one that does. The early secret, the

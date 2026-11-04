@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes_hw.c
+file: src/aes_hw.c
 catches: test/docker-aes-runtime-qemu.sh aes-equiv
 reason: the AES-256 key expansion stops after round key 13 and never
   stores round key 14, so the last round of every TLS_AES_256_GCM_SHA384

@@ -1,5 +1,5 @@
 invariant: INV-17
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: rsa_sign_equiv_test
 reason: the reduction modulo a prime returns without the wipe below its body, so
   the message's low and high words and r3 stay in the stack.

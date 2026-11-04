@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha512_avx2.c
+file: src/sha512_avx2.c
 catches: test/docker-aes-runtime-qemu.sh sha512-avx2
 reason: sha512_avx2_compress_blocks ends with VZEROUPPER where it had
   VZEROALL, which is all the call cost of the upper halves asks for.

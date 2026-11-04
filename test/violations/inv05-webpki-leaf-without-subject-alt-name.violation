@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_ext.c
+file: src/webpki_ext.c
 catches: webpki_cert_test
 reason: a leaf without subjectAltName is accepted, so the walk would
   match the hostname against nothing and a client that falls back to the

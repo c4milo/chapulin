@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_pin.c
+file: src/webpki_pin.c
 catches: webpki_auth_test
 reason: webpki_spki_pinned counts every configured pin as a match
   without comparing it with the key's digest, so any raw public key, and

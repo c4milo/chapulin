@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha512_hw.c
+file: src/sha512_hw.c
 catches: test/hash-builds.sh
 reason: sha512_hw.c drops the target attribute that turns the SHA-512
   instructions on for its own functions, so the file compiles only where

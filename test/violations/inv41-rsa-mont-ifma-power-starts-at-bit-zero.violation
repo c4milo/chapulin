@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont.c
+file: src/rsa_mont.c
 catches: rsa_ifma_model_test
 reason: power_of_two_mod starts rem at bit 0 of its top word whatever the
   exponent, so rsa_vp1_cpu hands rsa_ifma_public 2^(104n - e) mod m,

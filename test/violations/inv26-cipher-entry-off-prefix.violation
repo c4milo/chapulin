@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes.h
+file: src/aes.h
 catches: test/lint-quic-surface.sh
 reason: aes.h gains a second forward-cipher entry named
   quic_encrypt_block rather than aes_encrypt_block. Both branches of

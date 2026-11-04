@@ -1,5 +1,5 @@
 invariant: INV-26
-file: quic_step.c
+file: src/quic_step.c
 catches: test/lint-quic-surface.sh
 reason: quic_step.c spells the body of struct aes_public_key itself, so it
   declares a key and writes a traffic secret into one without including

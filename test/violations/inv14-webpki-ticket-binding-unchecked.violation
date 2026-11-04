@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: webpki_resume_test
 reason: a presented ticket of the right shape passes without its binding being
   compared, so a ticket received for one hostname resumes a connection

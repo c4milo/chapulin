@@ -1,5 +1,5 @@
 invariant: INV-17
-file: ghash_vector.h
+file: src/ghash_vector.h
 catches: ghash_equiv_test
 reason: the host object's GHASH reads each power of H and its halves added
   through an ordinary pointer, so the compiler loads the eight powers once

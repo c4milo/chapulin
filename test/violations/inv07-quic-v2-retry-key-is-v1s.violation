@@ -1,5 +1,5 @@
 invariant: INV-7
-file: aes.c
+file: src/aes.c
 catches: quic_test
 reason: version 2's Retry integrity key holds version 1's bytes, so a
   version 2 Retry is sealed and checked under the key RFC 9001 prints for

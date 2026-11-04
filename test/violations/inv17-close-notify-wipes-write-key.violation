@@ -1,5 +1,5 @@
 invariant: INV-17
-file: tls.c
+file: src/tls.c
 catches: unit
 reason: the peer's close_notify wipes the write key too, so ch_write and
   ch_close seal under a zero key and the peer cannot open what this side

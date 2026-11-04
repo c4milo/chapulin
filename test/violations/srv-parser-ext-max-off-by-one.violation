@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_test
 reason: srv_ext_over_max answers 1 only past SRV_CLIENT_HELLO_EXT_MAX + 1
   extensions, so the parser accepts a ClientHello of 129, one past the

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_ticket.c
+file: src/srv_ticket.c
 catches: srv_test
 reason: a ticket whose tag does not verify is decrypted under this server's key
   anyway, so a ticket sealed under another key, or one a client altered,

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide_edwards.h
+file: src/x25519_wide_edwards.h
 catches: test/lint-wide-multiply.sh
 reason: select_entry negates an entry under an if on the digit's sign
   instead of by mask, so the sign of each of the 64 digits of the private

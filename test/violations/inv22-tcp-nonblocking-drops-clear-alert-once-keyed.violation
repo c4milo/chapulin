@@ -1,5 +1,5 @@
 invariant: INV-22
-file: tcp_nonblocking_frame.c
+file: src/tcp_nonblocking_frame.c
 catches: tcp_nonblocking_loop_test
 reason: the tcp-nonblocking reader reads an alert in the clear only until its
   read key is installed, so a server that has sent its flight decrypts the

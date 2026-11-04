@@ -1,5 +1,5 @@
 invariant: INV-26
-file: gcm.c
+file: src/gcm.c
 catches: quic_test
 builds: bin/quic_test
 reason: gcm_open runs counter mode over the bytes the whole passes left

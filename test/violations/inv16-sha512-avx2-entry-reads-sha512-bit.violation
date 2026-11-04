@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha512.h
+file: src/sha512.h
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: on x86-64 sha512.h's sha512_on_instructions reads
   CH_CPU_CONSTANT_TIME_SHA512, arm64's bit, which every x86-64 init call

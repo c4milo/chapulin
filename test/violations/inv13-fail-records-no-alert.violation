@@ -1,5 +1,5 @@
 invariant: INV-13
-file: session.c
+file: src/session.c
 catches: unit
 reason: tlsi_fail sends the alert its failure chose and no longer records it,
   so ch_alert_sent reads 0 after a failure that sent decode_error or

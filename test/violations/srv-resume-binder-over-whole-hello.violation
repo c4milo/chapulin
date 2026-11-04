@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test
 reason: the binder is checked against the hash of the whole ClientHello, binders
   included, where RFC 9846 §4.3.11.2 computes it over the hello truncated

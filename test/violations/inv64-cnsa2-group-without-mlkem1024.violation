@@ -1,5 +1,5 @@
 invariant: INV-64
-file: srv_kex.c
+file: src/srv_kex.c
 catches: cnsa2_server_test
 reason: the profile's server selects ML-KEM-1024 for a hello that does not
   list it, and asks for it with a HelloRetryRequest, where the profile

@@ -1,5 +1,5 @@
 invariant: INV-13
-file: handshake_post.c
+file: src/handshake_post.c
 catches: tcp_nonblocking_loop_test
 reason: hspost_read returns CH_RECORD_AGAIN for a message split across
   records without writing post_fill, so the next ch_read reads the

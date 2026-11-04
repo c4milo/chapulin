@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_point.c
+file: src/p256_wide_point.c
 catches: p256_equiv_test
 reason: the conversion to Jacobian coordinates multiplies Y by Z where
   the formula multiplies it by Z^2, so every point whose Z is not 1 comes

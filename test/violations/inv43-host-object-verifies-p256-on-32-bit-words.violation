@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256.c
+file: src/p256.c
 catches: test/widemul-builds.sh
 reason: p256.c chooses its arm on a define no build passes, so a host
   object compiles the 32-bit arithmetic and never calls

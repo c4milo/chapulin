@@ -1,5 +1,5 @@
 invariant: INV-62
-file: mldsa_sign_pack.c
+file: src/mldsa_sign_pack.c
 catches: test/lint-wide-multiply.sh
 reason: A pass of RejBoundedPoly's compaction moves a kept entry down
   behind a branch on its move, in place of the masked choice at every

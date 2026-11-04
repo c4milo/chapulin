@@ -11,10 +11,10 @@ reason: the Makefile adds rsa_ifma.c to every object that holds
 
 --- old
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
+LIB_SRCS += $(if $(filter src/rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
 endif
 --- new
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(filter-out rsa_ifma.c,$(RSA_MONT64_SRCS)))
+LIB_SRCS += $(if $(filter src/rsa_mont.c,$(LIB_SRCS)),$(filter-out src/rsa_ifma.c,$(RSA_MONT64_SRCS)))
 endif
-LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),rsa_ifma.c)
+LIB_SRCS += $(if $(filter src/rsa_mont.c,$(LIB_SRCS)),src/rsa_ifma.c)

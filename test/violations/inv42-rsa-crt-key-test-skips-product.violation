@@ -1,5 +1,5 @@
 invariant: INV-42
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: rsa_sign_test_host
 reason: rsa_sign64_key_ok computes the product of the primes and admits
   the key whatever it is. A key whose p or q is not a factor of its

@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki.c
+file: src/webpki.c
 catches: webpki_auth_test
 reason: under pins alone the list framing refuses an entry after the
   leaf of exactly CH_WEBPKI_LEAF_PIN_CERT_MAX bytes, the largest a

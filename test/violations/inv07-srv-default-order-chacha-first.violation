@@ -1,5 +1,5 @@
 invariant: INV-7
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test_aes
 reason: a host object's server under CH_CPU_CONSTANT_TIME_AES walks ChaCha20 first when its
   caller names no order, the order docs/decisions.md 80 replaced, so a

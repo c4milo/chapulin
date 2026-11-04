@@ -1,5 +1,5 @@
 invariant: INV-16
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: test/lint-invariants.sh
 reason: table_select leaves its scan once it has passed the entry its
   index names, so how many entries a step reads is the digit of the

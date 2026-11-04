@@ -1,5 +1,5 @@
 invariant: INV-66
-file: widemul_p256.h
+file: src/widemul_p256.h
 catches: test/docker-aes-runtime-qemu.sh p256-adx
 reason: widemul_p256_adx answers yes under the multiply bit alone, whatever
   CH_CPU_BMI2_ADX says, so a session on a CPU without BMI2 or ADX dies of

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: chacha20_vector.h
+file: src/chacha20_vector.h
 catches: test/chacha-builds.sh
 reason: chacha20_vector.h no longer stops a big-endian build. There a
   keystream word leaves its lane in big-endian byte order, which is not

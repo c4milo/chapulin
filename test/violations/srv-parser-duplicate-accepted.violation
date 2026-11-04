@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_parser.c
+file: src/srv_parser.c
 catches: srv_quic_test
 reason: the parser no longer refuses a second extension of one type, which RFC
   9846 §4.3 forbids (rfc9846.txt:1673-1674). The frozen digest depends on

@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont.c
+file: src/rsa_mont.c
 catches: rsa_avx2_model_test
 reason: rsa_vp1_cpu hands rsa_avx2_public 2^(2Dn - 64) mod m in place of
   2^(2Dn) mod m, so power_of_two_mod runs one step short and the first

@@ -1,5 +1,5 @@
 invariant: INV-6
-file: handshake_parser.c
+file: src/handshake_parser.c
 catches: handshake_strict_webpki
 reason: the TRUST=webpki CertificateVerify parser admits rsa_pkcs1_sha256,
   which the ClientHello offers for certificate signatures only, so a

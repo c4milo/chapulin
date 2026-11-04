@@ -1,5 +1,5 @@
 invariant: INV-26
-file: quic_aes_soft.c
+file: src/quic_aes_soft.c
 catches: test/quic-builds.sh
 reason: quic_aes_soft.c stops refusing -DCH_SUITE_AES_GCM, so a tree that
   compiles these sources with its own build system can pair the AES=soft

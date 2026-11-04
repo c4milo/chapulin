@@ -1,5 +1,5 @@
 invariant: INV-14
-file: quic_token.c
+file: src/quic_token.c
 catches: srv_quic_test
 reason: the token check computes the tag under version 1 whatever version
   the caller names, so a token minted in a version 1 Retry checks in a

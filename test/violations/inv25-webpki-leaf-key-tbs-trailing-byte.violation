@@ -1,5 +1,5 @@
 invariant: INV-25
-file: webpki_cert.c
+file: src/webpki_cert.c
 catches: webpki_cert_test
 reason: the reader a leaf pinned with no anchor goes through skips the
   extensions and stops there, so a TBSCertificate with a byte after its

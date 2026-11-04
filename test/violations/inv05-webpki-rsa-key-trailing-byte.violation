@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_spki.c
+file: src/webpki_spki.c
 catches: webpki_spki_test
 reason: webpki_read_spki accepts a byte after the exponent inside
   RSAPublicKey when the SEQUENCE length counts it, so two encodings yield

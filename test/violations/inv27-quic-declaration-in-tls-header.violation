@@ -1,5 +1,5 @@
 invariant: INV-27
-file: tls.h
+file: src/tls.h
 catches: test/lint-quic-partition.sh
 reason: a QUIC-only declaration lands in tls.h, a header both
   transports compile, so the mode owns text that no quic* name points

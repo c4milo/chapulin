@@ -1,5 +1,5 @@
 invariant: INV-19
-file: sha512_avx2.c
+file: src/sha512_avx2.c
 catches: test/docker-aes-runtime-qemu.sh sha512-stack
 reason: sha512_avx2_compress_blocks keeps an array of eighty words beside
   its sums, the size of the reference's message schedule, writes a state

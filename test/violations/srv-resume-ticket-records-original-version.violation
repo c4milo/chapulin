@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_resume.c
+file: src/srv_resume.c
 catches: quic_loop_test
 reason: the server seals the connection's original QUIC version into its
   ticket instead of the negotiated one, so a ticket from a connection the

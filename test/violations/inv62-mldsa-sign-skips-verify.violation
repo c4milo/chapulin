@@ -1,5 +1,5 @@
 invariant: INV-62
-file: mldsa_signer.c
+file: src/mldsa_signer.c
 catches: mldsa_signer_test
 reason: mldsa87_sign returns its signature without the check under the
   public key, so a signature under a key that is not pk's, or one a fault

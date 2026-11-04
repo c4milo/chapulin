@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512.c
+file: src/sha512.c
 catches: hash_runtime_test
 reason: sha512.c picks its first arm on a macro no build defines, so a host
   object compiles the second arm, a device object's, and every SHA-384

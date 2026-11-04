@@ -1,5 +1,5 @@
 invariant: INV-16
-file: mlkem.c
+file: src/mlkem.c
 catches: widemul_runtime_test
 reason: the compression of u in ML-KEM encryption runs under
   WIDEMUL_NOT_STATED whatever answer the operation was handed. The

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: ct.h
+file: src/ct.h
 catches: test/widemul-builds.sh
 reason: ct.h gives every file of a host object the native multiply, so the
   files under their own names, which a session without

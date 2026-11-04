@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_cfg.c
+file: src/webpki_cfg.c
 catches: proof/prove-one.sh quic_config_webpki
 reason: webpki_cfg_ok checks the ticket before the pin, hostname and
   anchor rules, so webpki_resumption_ok hashes a pin count, a hostname

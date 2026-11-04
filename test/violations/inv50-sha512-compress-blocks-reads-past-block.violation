@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512_compress_blocks.c
+file: src/sha512_compress_blocks.c
 catches: proof/prove-one.sh sha512_compress_blocks
 reason: load_block reads the block's last word one byte late, so it reads
   the byte after the block: the first byte of the next block, or, for a

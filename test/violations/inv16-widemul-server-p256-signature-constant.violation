@@ -1,5 +1,5 @@
 invariant: INV-16
-file: srv_auth.c
+file: src/srv_auth.c
 catches: quic_loop_host
 reason: the server signs its CertificateVerify with its P-256 key under
   WIDEMUL_NOT_STATED whatever its ch_cfg.cpu states: it hands

@@ -1,5 +1,5 @@
 invariant: INV-22
-file: handshake_record.c
+file: src/handshake_record.c
 catches: unit
 reason: hsr_refuse_alert no longer records the peer's fatal alert, so
   ch_alert_received reads 0 and the failure funnel, which sends nothing only

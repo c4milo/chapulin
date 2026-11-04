@@ -1,5 +1,5 @@
 invariant: INV-3
-file: x25519.c
+file: src/x25519.c
 catches: diff
 builds: bin/diff
 reason: dropping the RFC 7748 cofactor clamp lets a scalar leave the

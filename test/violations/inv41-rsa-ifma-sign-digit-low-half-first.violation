@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma_sign.c
+file: src/rsa_ifma_sign.c
 catches: diff_rsa_ifma
 reason: table_select reads the low four bits of the exponent's byte for an
   even digit index and the high four for an odd one, so the window raises

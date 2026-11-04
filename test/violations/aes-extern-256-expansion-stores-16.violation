@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes_extern.c
+file: src/aes_extern.c
 catches: quic_test_extern
 reason: aes_expand_round_keys_256 stores 16 of the 32 key bytes and
   zeros the rest, so the hook gets an AES-256 key whose second half is

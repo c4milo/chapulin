@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_point.c
+file: src/p256_wide_point.c
 catches: diff_p256_wide
 reason: the conversion back from Jacobian coordinates builds the move's
   mask from X where it reads Z. At (0 : 0 : 0) X is zero too, so the

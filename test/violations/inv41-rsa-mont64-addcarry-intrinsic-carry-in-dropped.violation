@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64_addcarry.c
+file: src/rsa_mont64_addcarry.c
 catches: test/docker-aes-runtime-qemu.sh rsa-addcarry
 reason: the form of the add with carry that x86-64 reads hands
   _addcarry_u64 a carry in of zero, so every block's chain drops the

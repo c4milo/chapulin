@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64.h
+file: src/rsa_mont64.h
 catches: test/widemul-builds.sh
 reason: a clang build for x86-64 runs rsa_mont64_addcarry.c's rows too,
   where decision 122 keeps it on the loops' compare form of the step.

@@ -1,5 +1,5 @@
 invariant: INV-33
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: webpki_auth_test
 reason: a chain accepted under pins alone skips CertificateVerify, so a
   server that presents a pinned leaf it does not hold the key for passes:

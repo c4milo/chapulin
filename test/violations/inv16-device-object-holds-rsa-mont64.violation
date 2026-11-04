@@ -10,7 +10,7 @@ reason: every object that holds rsa_mont.c carries rsa_mont64.c, a device
 
 --- old
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
+LIB_SRCS += $(if $(filter src/rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
 endif
 --- new
-LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
+LIB_SRCS += $(if $(filter src/rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))

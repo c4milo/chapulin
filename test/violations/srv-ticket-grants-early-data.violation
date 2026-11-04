@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_message.c
+file: src/srv_message.c
 catches: srv_test
 reason: the NewSessionTicket carries an early_data extension, which tells the
   client it may send 0-RTT data under the ticket (RFC 9846 §4.7.1). This

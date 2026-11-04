@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv.c
+file: src/srv.c
 catches: srv_tcp_nonblocking_test
 reason: a tcp-nonblocking server takes a configuration whose on_record_out is
   NULL, so srv_out.c's emit calls through a null pointer on the first

@@ -1,5 +1,5 @@
 invariant: INV-28
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_tcp_nonblocking_test
 reason: the compatibility change_cipher_spec, the one record a server sends
   when the client's hello carries a legacy_session_id, goes out through

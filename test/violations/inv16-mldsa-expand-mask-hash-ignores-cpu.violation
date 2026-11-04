@@ -1,5 +1,5 @@
 invariant: INV-16
-file: mldsa_sign_pack.c
+file: src/mldsa_sign_pack.c
 catches: test/docker-aes-runtime-qemu.sh keccak
 reason: ExpandMask squeezes y's stream under 0 in place of the session's
   value, so a signer whose caller stated CH_CPU_CONSTANT_TIME_SHA3 hashes

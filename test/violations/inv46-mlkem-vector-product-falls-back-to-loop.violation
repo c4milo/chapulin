@@ -1,5 +1,5 @@
 invariant: INV-46
-file: mlkem.c
+file: src/mlkem.c
 catches: test/mlkem-builds.sh
 reason: mlkem.c guards its call to the vector base multiplication on a
   macro no build defines, so a host object's sessions run

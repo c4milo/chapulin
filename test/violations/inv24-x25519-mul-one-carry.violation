@@ -1,5 +1,5 @@
 invariant: INV-24
-file: x25519.c
+file: src/x25519.c
 catches: proof/prove-one.sh x25519_tail
 reason: dropping one of mul's two carry passes leaves word 0 holding the
   top word's fold, far outside (-2^17, 2^17), the range every x25519

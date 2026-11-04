@@ -1,5 +1,5 @@
 invariant: INV-68
-file: rsa_mont64_adx_asm.h
+file: src/rsa_mont64_adx_asm.h
 catches: test/docker-aes-runtime-qemu.sh rsa-adx
 reason: adx_final_sub keeps t where t - m did not borrow and t - m where it
   did, the choice inverted, so a product comes out at or above m, or wrapped

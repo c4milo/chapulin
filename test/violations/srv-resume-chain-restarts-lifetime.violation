@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_resume.c
+file: src/srv_resume.c
 catches: srv_flight_test
 reason: a ticket issued after a resumed handshake carries the instant of that
   handshake rather than the instant the resumed ticket carried, so a

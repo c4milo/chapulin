@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.c
+file: src/handshake_post.c
 catches: webpki_loop_tcp_nonblocking
 reason: handle_ticket gives a ticket to an on_ticket that the caller set in
   the session after the init call. That init call wrote no

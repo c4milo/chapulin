@@ -1,5 +1,5 @@
 invariant: INV-61
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: cnsa2_test_mldsa
 reason: the ML-DSA-87 signed content loses the NUL byte after the context
   string, so it is no longer RFC 9846 section 4.4.3's content. The mock

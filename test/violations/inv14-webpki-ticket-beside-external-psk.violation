@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.h
+file: src/handshake_post.h
 catches: webpki_resume_test
 reason: hspost_present_ticket writes a ticket over an external PSK in a
   TRUST=webpki configuration, which takes a PSK only as a ticket it bound

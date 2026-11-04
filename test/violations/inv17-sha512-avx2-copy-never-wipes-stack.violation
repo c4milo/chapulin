@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha512.c
+file: src/sha512.c
 catches: test/docker-aes-runtime-qemu.sh sha512-avx2
 reason: sha512_hw.c's copy of sha512.c's first arm, which an x86-64 session
   with CH_CPU_AVX2 runs, calls sha512_avx2_compress_blocks and never wipes

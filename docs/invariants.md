@@ -511,8 +511,8 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-27 — the QUIC mode stays in files named quic*
 
-- **Claim.** Every root source and header that only a `TRANSPORT=quic-nonblocking`
-  build compiles is named `quic*`, and no other root file is one. So
+- **Claim.** Every library source and header that only a `TRANSPORT=quic-nonblocking`
+  build compiles is named `quic*`, and no other file in src/ is one. So
   `git ls-files 'quic*'` names every file the mode owns, and a reader
   sees where the QUIC code is without reading the build. Two lists in
   the Makefile hold the mode's text under other names, and a reader who
@@ -1760,7 +1760,7 @@ last `ROLE=server` stub, as the entry said it would.
   runs it under Intel SDE's model of such a CPU.
   `test/widemul-builds.sh` requires the 512-bit instructions in
   `rsa_ifma.c`'s x86-64 object and in no other RSA source, a call to the
-  kernel from `rsa_vp1_cpu` and not from `rsa_vp1`, no other root source
+  kernel from `rsa_vp1_cpu` and not from `rsa_vp1`, no other library source
   that includes `rsa_ifma.h` or calls into it, no device object that
   lists the file, and no library build that names `CH_RSA_IFMA_MODEL`.
   docs/verification.md, "The AVX-512 IFMA public operation", lists each
@@ -2709,7 +2709,7 @@ last `ROLE=server` stub, as the entry said it would.
   any machine. `bin/x86_kernels_test` counts the copy's calls under
   thirty-three values. `test/mlkem-builds.sh` requires the copy's rows to
   call the four-way Keccak and not `mlk_sample_ntt`, both files to hold
-  nothing on arm64, and no other source at the root to include
+  nothing on arm64, and no other source in src/ to include
   `keccak_avx2.h` or call its entries, and `make lint-trust-separation`
   holds both files to the host object. For ML-DSA-87,
   `bin/mldsa_avx2_equiv_test` compares each entry the sampler writes with
@@ -5857,7 +5857,7 @@ last `ROLE=server` stub, as the entry said it would.
   entry and requires `test/lint-quic-surface.sh` to fail. It fails when
   either header gives a type a body, because that would put a key back
   within reach of every file that includes them. And it fails when any
-  root source outside `aes.c`, `quic_initial.c` and `quic_retry.c`
+  library source outside `aes.c`, `quic_initial.c` and `quic_retry.c`
   includes `aes_public_key.h`, which is the one line that undoes the
   opacity; `inv26-key-header-fourth-reader.violation` adds that include
   to `quic_packet.c` and requires `test/lint-quic-surface.sh` to fail.

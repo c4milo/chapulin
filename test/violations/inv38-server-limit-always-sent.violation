@@ -1,5 +1,5 @@
 invariant: INV-38
-file: srv_flight.c
+file: src/srv_flight.c
 catches: srv_flight_test
 reason: the server sets ch_tls.limit_sent for an EncryptedExtensions that
   carries no record_size_limit, so a legal client record its buffer cannot

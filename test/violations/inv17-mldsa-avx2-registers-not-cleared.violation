@@ -1,5 +1,5 @@
 invariant: INV-17
-file: mldsa_vector.c
+file: src/mldsa_vector.c
 catches: test/docker-aes-runtime-qemu.sh mldsa-vector
 reason: mld_vector_pointwise_acc ends with VZEROUPPER where it had
   VZEROALL. VZEROUPPER clears bits 128 to 255 alone, so the low halves

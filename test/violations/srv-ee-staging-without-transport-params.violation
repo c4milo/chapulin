@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_message.h
+file: src/srv_message.h
 catches: srv_quic_test
 reason: a QUIC server stages its EncryptedExtensions in a frame with no room
   for the transport parameters RFC 9001 section 8.2 makes it send, so

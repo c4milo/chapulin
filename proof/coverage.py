@@ -53,9 +53,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 REPORT = ROOT / "bin" / "proof-coverage.md"
 DOC = ROOT / "docs" / "verification.md"
 
-# Sources that ship in the library. A file here with no harness is a
-# gap; a file absent from here is not library code.
-LIB = sorted(p.name for p in ROOT.glob("*.c"))
+# Sources that ship in the library, by name in src/. A file here with no
+# harness is a gap; a file absent from here is not library code.
+LIB = sorted(p.name for p in (ROOT / "src").glob("*.c"))
 
 
 def launch_lines():
@@ -329,7 +329,7 @@ def main():
             continue
         closure |= runs[name][2]
         for src in closure:
-            proven.setdefault(src, []).append(name)
+            proven.setdefault(src.removeprefix("src/"), []).append(name)
 
     lines = ["## What CBMC proves", "",
              "CBMC proves over every input at a bound, so this counts",
@@ -656,8 +656,8 @@ def reach_command(name, runs, shared_defines, solver=None, object_bits=None):
     _tier, unwind, linked, unwindset, defines = runs[name]
     cmd = ["cbmc", str(ROOT / "proof" / f"{name}_harness.c")]
     cmd += [str(ROOT / src) for src in sorted(linked)]
-    cmd += [*defines, *added_defines(shared_defines, defines), "-I", str(ROOT),
-            "--cover", "location", "--slice-formula", "--unwind", str(unwind)]
+    cmd += [*defines, *added_defines(shared_defines, defines), "-I", str(ROOT / "src"),
+            "-I", str(ROOT), "--cover", "location", "--slice-formula", "--unwind", str(unwind)]
     if unwindset:
         cmd += ["--unwindset", unwindset]
     if solver:

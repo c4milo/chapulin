@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: proof/prove-one.sh webpki_ticket
 reason: the ticket shape accepts a PSK of any non-zero length, though
   ks_res_psk writes exactly a suite's hash length, SHA256_LEN in this

@@ -1,5 +1,5 @@
 invariant: INV-64
-file: srv_mldsa.c
+file: src/srv_mldsa.c
 catches: cnsa2_server_test
 reason: the server signs its CertificateVerify content under a one-byte
   context, where draft-ietf-tls-mldsa fixes an empty one, so every client

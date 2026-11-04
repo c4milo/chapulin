@@ -18,7 +18,7 @@ each with the frames the .su files give:
 - wide() and narrow() each call a static helper() of their own object,
   with a different frame and different callees. The walk once keyed a
   function by its symbol alone, so it took the larger frame and both
-  sets of callees for each helper(). It also compiled every root source
+  sets of callees for each helper(). It also compiled every library source
   then, and the two together put p384.c's point_add() and rsa_mont.c's
   mont_mul() under a TRUST=raw-ecdsa build's p256_ecdsa_verify(), so
   that build's ch_connect peak read 720 bytes high.
@@ -262,8 +262,8 @@ class Compiled(Exception):
 
 def check_sources(stack) -> bool:
     """main() compiles the sources make packages for the build it walks,
-    with the defines make packages them with, and no other root source. It
-    once compiled every root source, so a TRUST=raw-ecdsa walk read p384.c
+    with the defines make packages them with, and no other library source. It
+    once compiled every library source, so a TRUST=raw-ecdsa walk read p384.c
     and rsa_mont.c, which that build does not package. The check walks
     that build because its defines name more than RAND's: without
     -DCH_PIN_ECDSA, handshake_auth.c calls the RSA verifier that build does

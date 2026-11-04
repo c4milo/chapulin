@@ -1,5 +1,5 @@
 invariant: INV-55
-file: handshake_post.c
+file: src/handshake_post.c
 catches: unit
 reason: the run limit refuses a KeyUpdate before the parser's other
   refusals, so after a full run a request_update of 2 gets unexpected_message

@@ -1,5 +1,5 @@
 invariant: INV-38
-file: cfg.h
+file: src/cfg.h
 catches: test/tx-record-builds.sh
 reason: cfg.h admits a CH_TX_PT of 16385, one byte over the 2^14 plaintext
   RFC 9846 section 5.1 lets one record carry. rec_seal checks the

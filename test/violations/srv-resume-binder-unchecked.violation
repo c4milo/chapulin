@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_resume.c
+file: src/srv_resume.c
 catches: srv_flight_test
 reason: the server accepts the ticket it selected without checking the client's
   binder, which RFC 9846 §4.3.11 makes a MUST before accepting a PSK

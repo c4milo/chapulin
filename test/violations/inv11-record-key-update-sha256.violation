@@ -1,5 +1,5 @@
 invariant: INV-11
-file: record.c
+file: src/record.c
 catches: aes_suite_test
 reason: rec_dir_update runs "traffic upd" at SHA256_LEN under every
   suite, so a TLS_AES_256_GCM_SHA384 direction rekeys from 32 of its 48

@@ -1,5 +1,5 @@
 invariant: INV-11
-file: quic.c
+file: src/quic.c
 catches: quic_loop_test
 reason: ch_quic_seal hands quic_packet_seal a Key Phase bit of 0 in place
   of q->key_phase, so after a key update every 1-RTT packet names the

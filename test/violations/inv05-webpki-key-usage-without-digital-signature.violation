@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_ext.c
+file: src/webpki_ext.c
 catches: webpki_cert_test
 reason: the leaf's keyUsage passes on keyEncipherment alone, the
   openssl sslserver rule docs/webpki.md refuses: TLS 1.3 has no RSA key

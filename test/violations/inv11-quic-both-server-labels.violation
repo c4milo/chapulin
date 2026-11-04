@@ -1,5 +1,5 @@
 invariant: INV-11
-file: quic.c
+file: src/quic.c
 catches: srv_quic_both_test
 builds: bin/srv_quic_both_test
 reason: a ROLE=both object gives every QUIC session the server's Initial

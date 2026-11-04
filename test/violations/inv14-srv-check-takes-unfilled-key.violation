@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv.c
+file: src/srv.c
 catches: srv_auth_test
 reason: ch_srv_check accepts a cookie_key or ticket_key that ch_srv_accept
   refuses, such as a key of all zero bytes that nothing filled. The

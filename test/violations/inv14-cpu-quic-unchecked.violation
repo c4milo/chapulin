@@ -1,5 +1,5 @@
 invariant: INV-14
-file: quic_config.c
+file: src/quic_config.c
 catches: quic_loop_host
 reason: ch_quic_init of a host object stops asking for the caller's
   description of its CPU, so a QUIC client stages a ClientHello for a

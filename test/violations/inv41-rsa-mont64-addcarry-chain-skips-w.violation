@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64_addcarry.c
+file: src/rsa_mont64_addcarry.c
 catches: rsa_addcarry_equiv_test
 reason: block_mul_add's chain starts from zero in place of w, the carry
   word of the block below, so every block but a row's first loses the

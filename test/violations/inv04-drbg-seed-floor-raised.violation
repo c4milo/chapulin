@@ -1,5 +1,5 @@
 invariant: INV-4
-file: drbg.c
+file: src/drbg.c
 catches: drbg_test
 reason: ch_drbg_seed refuses a seed of exactly CH_DRBG_SEED_MIN bytes,
   the one-key seed drbg.h admits, so an image that seeds from one 32-byte

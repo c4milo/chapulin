@@ -1,5 +1,5 @@
 invariant: INV-55
-file: tls.c
+file: src/tls.c
 catches: unit
 reason: a record of application data does not end a run of KeyUpdates,
   so the limit counts every KeyUpdate of the session and refuses a peer

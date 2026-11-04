@@ -1,5 +1,5 @@
 invariant: INV-11
-file: transcript.h
+file: src/transcript.h
 catches: hkdf384_test
 reason: transcript_update_selected feeds SHA-256 as well as SHA-384 in a
   SHA-384 session, so a server hashes every message after its ServerHello

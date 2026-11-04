@@ -1,5 +1,5 @@
 invariant: INV-17
-file: sha256_hw.c
+file: src/sha256_hw.c
 catches: test/docker-aes-runtime-qemu.sh sha2-equiv
 reason: kept reads the state a block began with through a plain pointer, so
   the compiler may hold that state in a register across the block's

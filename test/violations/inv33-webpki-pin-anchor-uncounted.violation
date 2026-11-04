@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_pin.c
+file: src/webpki_pin.c
 catches: webpki_auth_test
 reason: webpki_path_pinned stops at the path's last certificate and
   never hashes the anchor that verified it, so a pin on the root the

@@ -1,5 +1,5 @@
 invariant: INV-34
-file: x25519_wide.c
+file: src/x25519_wide.c
 catches: proof/prove-one.sh x25519_wide_step
 reason: dropping carry_columns' last carry leaves all of r0 in word 0 and
   none of it in word 1. The value is the same, so mul's result is still

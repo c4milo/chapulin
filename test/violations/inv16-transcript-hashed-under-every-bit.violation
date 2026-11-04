@@ -1,5 +1,5 @@
 invariant: INV-16
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: test/docker-aes-runtime-qemu.sh
 reason: the client hashes the ClientHello it built under a value with every
   bit set, where it must hand on the session's ch_cfg.cpu. A client whose

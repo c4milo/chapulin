@@ -1,5 +1,5 @@
 invariant: INV-28
-file: tcp_nonblocking.c
+file: src/tcp_nonblocking.c
 catches: tcp_nonblocking_loop_test
 reason: the client's tcp-nonblocking driver reaches for the socket to wait for the
   rest of a message instead of returning and letting the caller bring

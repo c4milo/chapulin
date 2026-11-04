@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_message.c
+file: src/handshake_message.c
 catches: webpki_session_test
 reason: require_pq keeps x25519 in supported_groups, so the hello tells a
   server this client would accept a classic exchange it will then refuse.

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_word.h
+file: src/p256_wide_word.h
 catches: p256_equiv_test
 reason: the row of a product returns the word above its four without the
   carry out of the high halves' chain, so a product whose chain carried

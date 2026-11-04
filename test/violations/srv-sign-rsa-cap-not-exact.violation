@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_auth.c
+file: src/srv_auth.c
 catches: srv_auth_test
 reason: the RSA cap test asks for CH_RSA_MODULUS_MAX instead of the
   modulus length in pub_len, so a server whose key is smaller than the

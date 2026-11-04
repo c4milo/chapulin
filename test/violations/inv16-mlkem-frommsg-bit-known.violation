@@ -1,5 +1,5 @@
 invariant: INV-16
-file: mlkem_poly.c
+file: src/mlkem_poly.c
 catches: test/lint-wide-multiply.sh
 reason: mlk_poly_frommsg builds each coefficient's mask from the message
   bit without reading the bit back from a volatile object. The compiler

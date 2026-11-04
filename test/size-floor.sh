@@ -14,15 +14,15 @@ fail() {
 }
 [ -n "$cc" ] || fail "no clang that targets msp430 and armv7m (CLANG_RV)"
 compile() {
-    "$cc" --target="$1" -ffreestanding -fsyntax-only -std=c11 -I. -x c ct.h 2>&1
+    "$cc" --target="$1" -ffreestanding -fsyntax-only -std=c11 -Isrc -I. -x c src/ct.h 2>&1
 }
 
 if out=$(compile msp430); then
-    fail "ct.h compiled for msp430, whose size_t is 16 bits"
+    fail "src/ct.h compiled for msp430, whose size_t is 16 bits"
 fi
 case "$out" in
 *"a size_t of at least 32 bits"*) ;;
-*) fail "ct.h stopped for msp430, but not on the size_t floor: $out" ;;
+*) fail "src/ct.h stopped for msp430, but not on the size_t floor: $out" ;;
 esac
-out=$(compile armv7m-none-eabi) || fail "ct.h does not compile for armv7m, whose size_t is 32 bits: $out"
-echo "lint-size-floor: ct.h refuses msp430's 16-bit size_t and compiles for armv7m's 32-bit one"
+out=$(compile armv7m-none-eabi) || fail "src/ct.h does not compile for armv7m, whose size_t is 32 bits: $out"
+echo "lint-size-floor: src/ct.h refuses msp430's 16-bit size_t and compiles for armv7m's 32-bit one"

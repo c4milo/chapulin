@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: webpki_encrypted_exts_test
 reason: the EncryptedExtensions handler hands the parser a temporary
   instead of ch_tls.server_cert_type, so the type the server selected

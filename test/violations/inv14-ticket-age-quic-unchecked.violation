@@ -1,5 +1,5 @@
 invariant: INV-14
-file: quic_config.c
+file: src/quic_config.c
 catches: quic_loop_test
 reason: quic_config_ok stops asking hspost_ticket_age_ok, so ch_quic_init
   builds a ClientHello around a ticket older than its lifetime, which

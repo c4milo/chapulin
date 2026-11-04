@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify.c
+file: src/p256_wide_verify.c
 catches: proof/prove-one.sh p256_wide_verify
 reason: the host verifier compares r with the x of a sum at infinity. The
   sum's coordinates are then zero, and X == r * Z^2 holds, so the verifier

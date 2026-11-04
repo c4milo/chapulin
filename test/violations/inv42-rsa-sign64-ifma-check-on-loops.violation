@@ -1,5 +1,5 @@
 invariant: INV-42
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: test/docker-aes-runtime-qemu.sh x86-kernels
 reason: check_power runs the check's public operation on rsa_vp1, which
   takes no description of the CPU, where the session's value names AVX-512

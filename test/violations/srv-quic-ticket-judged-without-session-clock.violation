@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_quic.c
+file: src/srv_quic.c
 catches: quic_loop_test
 reason: ch_srv_quic_init reads no instant from the caller's clock, so the
   session's instant stays 0, and the QUIC server issues no ticket and

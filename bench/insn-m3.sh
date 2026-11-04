@@ -89,7 +89,7 @@ DEFS=$(sed -n 2p <<<"$LISTS")
 # driver over the umull the decomposition exists to avoid.
 CC="$M3_CC -std=c11 -O2 -mcpu=cortex-m3 -mthumb --specs=rdimon.specs \
     -Wl,--no-warn-rwx-segments -T test/qemu/m3_semi.ld test/qemu/m3_start.c \
-    -I. -Ibench $DEFS"
+    -Isrc -I. -Ibench $DEFS"
 
 # $3 selects the multiply: CH_CT_WIDEMUL is the decomposition firmware
 # ships (ct.h takes it as the default, so the define only names the

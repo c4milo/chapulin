@@ -9,7 +9,7 @@
 #define aead_seal_cpu bench_aead_copy_seal_cpu
 #define aead_open_cpu bench_aead_copy_open_cpu
 
-#include "../aead.c"
+#include "../src/aead.c"
 
 #include "record_stages.h"
 

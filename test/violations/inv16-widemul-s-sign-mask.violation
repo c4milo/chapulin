@@ -1,5 +1,5 @@
 invariant: INV-16
-file: ct.h
+file: src/ct.h
 catches: test/lint-wide-multiply.sh
 reason: ct_widemul_s goes back to the unsigned product of the bit
   patterns with two corrections of its high word, each a mask of an

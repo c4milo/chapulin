@@ -1,5 +1,5 @@
 invariant: INV-28
-file: srv_out.c
+file: src/srv_out.c
 catches: srv_tcp_nonblocking_test
 reason: a tcp-nonblocking server sends its own flight through the caller's
   blocking send instead of handing it to on_record_out, which is the one

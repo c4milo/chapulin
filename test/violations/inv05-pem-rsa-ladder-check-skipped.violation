@@ -1,5 +1,5 @@
 invariant: INV-5
-file: pem_files.c
+file: src/pem_files.c
 catches: pem_files_rsa_test
 reason: ch_rsa_key_from_pem stops signing with the ladder, so a key whose
   private exponent is wrong decodes, and a session that signs with the

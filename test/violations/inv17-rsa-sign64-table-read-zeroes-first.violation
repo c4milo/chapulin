@@ -1,5 +1,5 @@
 invariant: INV-17
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: test/lint-invariants.sh
 reason: table_select writes zeros to its output in a loop of its own and
   then adds each entry under its mask, as its first form did. A compiler

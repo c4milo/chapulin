@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: src/widemul.h
 catches: widemul_runtime_test
 reason: widemul_x25519_base inverts its branch, so x25519_base runs the wide
   field, on the native 64x64->128 multiply, for every answer but

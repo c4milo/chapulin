@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: src/widemul.h
 catches: test/chacha-builds.sh
 reason: widemul_poly1305_ifma answers 0 whatever the session's ch_cfg.cpu
   says, so no session runs the AVX-512 IFMA Poly1305 and CH_CPU_AVX512_IFMA

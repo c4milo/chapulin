@@ -1,5 +1,5 @@
 invariant: INV-17
-file: quic.c
+file: src/quic.c
 catches: quic_driver_test
 reason: ch_quic_open checks the level's range and the version and
   neither the session state nor the read bit, so a failed session, which

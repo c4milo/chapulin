@@ -1,5 +1,5 @@
 invariant: INV-17
-file: gcm_avx512.c
+file: src/gcm_avx512.c
 catches: proof/prove-one.sh gcm_avx512_wipe
 reason: wipe_frame's array holds half of GCM_AVX512_BELOW_LEN, so each
   entry wipes 1,280 bytes below its frame. The kernel's frames measured

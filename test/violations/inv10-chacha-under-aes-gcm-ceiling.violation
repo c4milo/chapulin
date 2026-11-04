@@ -1,5 +1,5 @@
 invariant: INV-10
-file: tls_write.c
+file: src/tls_write.c
 catches: webpki_loop_aes_extern
 reason: the AES-GCM ceiling is applied to every suite a session selected,
   ChaCha20-Poly1305 included, whose sequence number wraps before any usage

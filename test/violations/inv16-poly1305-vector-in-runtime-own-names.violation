@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305_vector.h
+file: src/poly1305_vector.h
 catches: test/widemul-builds.sh
 reason: poly1305_vector.h turns the vector Poly1305 on in every file of a host
   object, so poly1305.c under its own names, which a session without

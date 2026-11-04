@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512_compress_blocks.c
+file: src/sha512_compress_blocks.c
 catches: sha2_equiv_test
 reason: end_block leaves b ^ c as the last round wrote it, a ^ b of the
   working variables before the state was added to them, so the first

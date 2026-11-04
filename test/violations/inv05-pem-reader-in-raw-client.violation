@@ -7,9 +7,9 @@ reason: the raw-rsa arm stops filtering the PEM readers, so a raw client,
 
 --- old
 PUBLIC_CA :=
-TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
-PIN_FILTER := p256.c
+TRUST_FILTER := $(PEM_READER_SRCS) src/x509.c src/x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER := src/p256.c
 --- new
 PUBLIC_CA :=
-TRUST_FILTER := x509.c x509_ca.c $(WEBPKI_SRCS)
-PIN_FILTER := p256.c
+TRUST_FILTER := src/x509.c src/x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER := src/p256.c

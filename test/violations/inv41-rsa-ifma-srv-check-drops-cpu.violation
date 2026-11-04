@@ -1,5 +1,5 @@
 invariant: INV-41
-file: srv_auth.c
+file: src/srv_auth.c
 catches: test/docker-aes-runtime-qemu.sh rsa-ifma-callers
 reason: ch_srv_check verifies the RSA identity's signature under 0 in
   place of the configuration's ch_cfg.cpu, so the check never runs the

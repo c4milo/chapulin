@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_parser_ee.c
+file: src/handshake_parser_ee.c
 catches: handshake_strict_webpki
 reason: the server_certificate_type arm accepts either type this
   client knows instead of the types its ClientHello offered, so a

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_cfg.c
+file: src/webpki_cfg.c
 catches: quic_loop_webpki
 reason: the SPKI pin rule admits one pin over CH_SPKI_PIN_MAX, and
   ch_quic_init takes that rule from webpki_cfg_ok, so a QUIC config

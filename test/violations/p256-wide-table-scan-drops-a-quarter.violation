@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_mul.c
+file: src/p256_wide_mul.c
 catches: p256_equiv_test
 reason: table_select never adds the high half of an entry's Y into its
   sum, so every entry it returns has Y's two high words zero and the base

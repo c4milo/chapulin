@@ -1,5 +1,5 @@
 invariant: INV-46
-file: mlkem_lanes.h
+file: src/mlkem_lanes.h
 catches: test/docker-aes-runtime-qemu.sh mlkem-vector
 reason: the SSE2 split for the base multiplication leaves the high four
   coefficients of a in their order, so two of a's odd coefficients land

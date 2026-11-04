@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: webpki_resume_test
 reason: the configuration hash leaves out the hostname, so a ticket's binding
   names only the anchors and resumes under any hostname they share.

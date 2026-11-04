@@ -1,5 +1,5 @@
 invariant: INV-16
-file: srv_cookie.c
+file: src/srv_cookie.c
 catches: test/lint-invariants.sh
 reason: the HelloRetryRequest cookie's MAC is compared with memcmp instead
   of ct_memeq. memcmp returns at the first differing byte, so a client that

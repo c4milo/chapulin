@@ -1,5 +1,5 @@
 invariant: INV-11
-file: srv_resume.c
+file: src/srv_resume.c
 catches: webpki_loop_aes
 reason: the server resumes a ticket under a suite whose hash is not the
   ticket's, which RFC 9846 §4.7.1 forbids (rfc9846.txt:3219-3220). A

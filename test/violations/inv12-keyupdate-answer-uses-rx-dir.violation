@@ -1,5 +1,5 @@
 invariant: INV-12
-file: handshake_post.c
+file: src/handshake_post.c
 catches: unit
 reason: the KeyUpdate this side sends is sealed with the receive direction's
   rec_dir, so one key and sequence counter now covers records that go both

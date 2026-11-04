@@ -1,5 +1,5 @@
 invariant: INV-7
-file: quic_version.h
+file: src/quic_version.h
 catches: quic_test
 reason: version 2 derives its packet protection key, IV and header
   protection key under version 1's labels, where RFC 9369 section 3.3.2

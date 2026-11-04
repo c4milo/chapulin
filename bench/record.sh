@@ -149,13 +149,13 @@ fi
 
 # LIB_CFLAGS is a list of flags, so it splits on spaces.
 # shellcheck disable=SC2206
-FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -I. -Ibench)
+FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -Isrc -I. -Ibench)
 SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     bench/record_chacha_vector.c bench/record_aead.c bench/record_stub.c
-    record.c gcm.c aes.c "${AES_HW_SRCS[@]}" aead.c chacha20.c chacha20_vector.c chacha20_avx2.c
-    chacha20_avx512.c poly1305.c poly1305_native.c poly1305_vector_native.c poly1305_avx2_native.c
-    poly1305_ifma_native.c ct.c ct_wipe.c
-    hkdf.c hkdf_hw.c sha256.c sha256_hw.c sha512.c sha512_compress_blocks.c sha512_hw.c
+    src/record.c src/gcm.c src/aes.c "${AES_HW_SRCS[@]}" src/aead.c src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c
+    src/chacha20_avx512.c src/poly1305.c src/poly1305_native.c src/poly1305_vector_native.c src/poly1305_avx2_native.c
+    src/poly1305_ifma_native.c src/ct.c src/ct_wipe.c
+    src/hkdf.c src/hkdf_hw.c src/sha256.c src/sha256_hw.c src/sha512.c src/sha512_compress_blocks.c src/sha512_hw.c
     "$SHA512_AVX2_UNIT")
 # Whether the compiler targets x86-64. grep reads every line the compiler
 # writes: with -q it exits at the first match, the compiler may then write
@@ -170,7 +170,7 @@ fi
 # body on x86-64 alone, and -Wpedantic refuses a translation unit with no
 # declaration, so the list names it on x86-64 alone, as the Makefile does.
 if [ -n "$X86_64" ]; then
-    SRCS+=(avx512_wipe.c)
+    SRCS+=(src/avx512_wipe.c)
 fi
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x3 -o "$W/record" "${SRCS[@]}"
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x7 -o "$W/record_multiply" "${SRCS[@]}"

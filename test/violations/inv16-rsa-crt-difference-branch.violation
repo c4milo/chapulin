@@ -1,5 +1,5 @@
 invariant: INV-16
-file: rsa_mont64.c
+file: src/rsa_mont64.c
 catches: test/lint-wide-multiply.sh
 reason: rsa_mont64_sub adds the modulus back with an if where it added it
   under a mask, so whether the first half of a CRT signature is below the

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki.c
+file: src/webpki.c
 catches: webpki_chain_test
 reason: read_issuer skips the clock check on an intermediate, so a chain
   under an expired or not-yet-valid CA certificate verifies whenever

@@ -1,5 +1,5 @@
 invariant: INV-62
-file: mldsa_sign_pack.c
+file: src/mldsa_sign_pack.c
 catches: mldsa_signer_test
 reason: the range check of s1 and s2 accepts every 3-bit value, so a key
   whose s1 or s2 skDecode decodes out of [-2, 2] signs.

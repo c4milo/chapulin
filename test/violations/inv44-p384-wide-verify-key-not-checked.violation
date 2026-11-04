@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_verify.c
+file: src/p384_wide_verify.c
 catches: p384_equiv_test
 reason: the host verifier computes on a key the decoder refused, which
   the decoder had already written. bin/p384_equiv_test gives it a key

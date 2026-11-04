@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_avx2.c
+file: src/rsa_avx2.c
 catches: rsa_avx2_model_test
 reason: the square multiplies row 0 of each group by twice its digit in
   lane 0, the lane of its own digit, so it adds 2 a_r^2 where the

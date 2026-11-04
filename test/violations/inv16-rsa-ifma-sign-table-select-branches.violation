@@ -1,5 +1,5 @@
 invariant: INV-16
-file: rsa_ifma_sign.c
+file: src/rsa_ifma_sign.c
 catches: test/lint-invariants.sh
 reason: table_select chooses each entry's mask with a conditional
   expression on the exponent's digit, which a compiler may write as a

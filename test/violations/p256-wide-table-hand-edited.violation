@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_table.c
+file: src/p256_wide_table.c
 catches: test/lint-p256-wide.sh
 reason: the checked-in table differs from what tools/p256_wide.py table
   prints: one word of the last row changed by hand. make lint-p256-wide

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha256.h
+file: src/sha256.h
 catches: hash_runtime_test
 reason: sha256.h's sha256_on_instructions answers yes for a value without
   CH_CPU_CONSTANT_TIME_SHA256, so a session whose caller never stated the

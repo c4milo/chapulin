@@ -1,5 +1,5 @@
 invariant: INV-33
-file: webpki_cert.c
+file: src/webpki_cert.c
 catches: webpki_auth_test
 reason: under pins alone the key reader holds the leaf to the walk's
   CH_WEBPKI_CERT_MAX of 3072 bytes, though a Certificate message carries

@@ -315,35 +315,35 @@ m3-check:
 	  [ -n "$$CI" ] && { echo "m3-check: qemu-system-arm missing on CI; the check must not skip"; exit 1; }; \
 	  echo "SKIP m3-check: no qemu-system-arm"; exit 0; }
 	@mkdir -p bin/m3
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/unit test/unit_test.c $(SRCS)
-	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/p384_test test/p384_test.c $(P384_TEST_SRCS)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
-	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/rsa_pkcs1_test test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/webpki_time_test test/webpki_time_test.c $(WEBPKI_TIME_SRC)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/webpki_name_test test/webpki_name_test.c $(WEBPKI_NAME_SRC)
-	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
-	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
-	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
-	$(M3_CC) $(M3_FLAGS) -I. -Itest -o bin/m3/p256_sign_test test/p256_sign_test.c $(P256_SIGN_SRC)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/mldsa_test test/mldsa_test.c $(MLDSA_TEST_SRCS)
-	$(M3_CC) $(M3_FLAGS) -DCH_MLDSA_SIGN_TEST -I. -Itest -o bin/m3/mldsa_signer_test test/mldsa_signer_test.c \
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/unit test/unit_test.c $(SRCS)
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/m3/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/p384_test test/p384_test.c $(P384_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/m3/rsa_pkcs1_test test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/webpki_time_test test/webpki_time_test.c $(WEBPKI_TIME_SRC)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/webpki_name_test test/webpki_name_test.c $(WEBPKI_NAME_SRC)
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/m3/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/m3/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o bin/m3/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -Itest -o bin/m3/p256_sign_test test/p256_sign_test.c $(P256_SIGN_SRC)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/mldsa_test test/mldsa_test.c $(MLDSA_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest -o bin/m3/mldsa_signer_test test/mldsa_signer_test.c \
 	  $(MLDSA_SIGNER_TEST_SRCS)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/x509strict_test $(X509STRICT_RSA_SRCS)
-	$(M3_CC) $(M3_FLAGS) -DCH_PIN_ECDSA -I. -o bin/m3/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -o bin/m3/x509strict_test $(X509STRICT_RSA_SRCS)
+	$(M3_CC) $(M3_FLAGS) -DCH_PIN_ECDSA -Isrc -I. -o bin/m3/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
 	# No QUIC transport is defined here, so test/wycheproof_test.c runs no
 	# AES-GCM suite and the line leaves aes.c and gcm.c out. The 4 MB image
 	# cannot hold every suite at once, so the ML-DSA-87 suites run in a
 	# binary of their own (docs/decisions.md 154).
 	@$(call wycheproof_fetch,m3 wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -DWYCHEPROOF_NO_MLDSA -I. -Ibin \
-	  -o bin/m3/wycheproof_test test/wycheproof_test.c $(filter-out aes.c gcm.c,$(WYCHEPROOF_SRCS)) && \
-	$(M3_CC) $(M3_FLAGS) -I. -Ibin -Itest -o bin/m3/wycheproof_mldsa_test test/wycheproof_mldsa_test.c \
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -DWYCHEPROOF_NO_MLDSA -Isrc -I. -Ibin \
+	  -o bin/m3/wycheproof_test test/wycheproof_test.c $(filter-out src/aes.c src/gcm.c,$(WYCHEPROOF_SRCS)) && \
+	$(M3_CC) $(M3_FLAGS) -Isrc -I. -Ibin -Itest -o bin/m3/wycheproof_mldsa_test test/wycheproof_mldsa_test.c \
 	  $(MLDSA_TEST_SRCS)
 	@set -e; for b in unit rsa_test sha3_test sha512_test p384_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (m3/qemu)"; $(M3_RUN) bin/m3/$$b; done; \
@@ -409,7 +409,7 @@ freertos-check:
 	    test/freertos/boot_test.c test/freertos/tls_test.c -- \
 	    -std=c11 --target=armv7m-none-eabi -ffreestanding -DCH_RAND_EXTERN \
 	    -isystem "$$($(M3_CC) -print-sysroot)/include" \
-	    -I. -Itest/freertos \
+	    -Isrc -I. -Itest/freertos \
 	    -I$(FREERTOS_KERNEL_DIR)/include -I$(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3 \
 	    -I$(FREERTOS_TCP_DIR)/source/include -I$(FREERTOS_TCP_DIR)/source/portable/Compiler/GCC \
 	    -I$(FREERTOS_TCP_DIR)/source/portable/NetworkInterface/MPS2_AN385/ether_lan9118; \
@@ -421,7 +421,7 @@ freertos-check:
 	  -DCH_RAND_EXTERN \
 	  -Itest/freertos -I$(FREERTOS_KERNEL_DIR)/include -I$(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3 \
 	  -I$(FREERTOS_TCP_DIR)/source/include -I$(FREERTOS_TCP_DIR)/source/portable/Compiler/GCC \
-	  -I$(FREERTOS_TCP_DIR)/source/portable/NetworkInterface/MPS2_AN385/ether_lan9118 -I. \
+	  -I$(FREERTOS_TCP_DIR)/source/portable/NetworkInterface/MPS2_AN385/ether_lan9118 -Isrc -I. \
 	  -T test/qemu/m3.ld -o bin/freertos/tls_test test/freertos/tls_test.c \
 	  $(FREERTOS_KERNEL_DIR)/tasks.c $(FREERTOS_KERNEL_DIR)/list.c $(FREERTOS_KERNEL_DIR)/queue.c \
 	  $(FREERTOS_KERNEL_DIR)/event_groups.c $(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3/port.c \

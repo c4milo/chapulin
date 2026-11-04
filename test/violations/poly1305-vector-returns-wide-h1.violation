@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305_scalar.h
+file: src/poly1305_scalar.h
 catches: poly1305_equiv_test
 reason: carry_scalar hands back the vector path's accumulator after
   one pass of carries, so h1 can reach 2^26 + 2^10, past the at most

@@ -1,5 +1,5 @@
 invariant: INV-62
-file: mldsa_sign_pack.c
+file: src/mldsa_sign_pack.c
 catches: mldsa_signer_test
 reason: RejBoundedPoly's compaction runs nine passes in place of ten, so
   a kept value whose move is 512 or more stays 512 positions too high.

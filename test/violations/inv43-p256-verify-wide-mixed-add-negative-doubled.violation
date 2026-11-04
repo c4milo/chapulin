@@ -1,5 +1,5 @@
 invariant: INV-43
-file: p256_wide_verify_point.c
+file: src/p256_wide_verify_point.c
 catches: p256_verify_equiv_test
 reason: the host verifier's mixed addition doubles the running sum where
   the entry of the table of multiples of G it adds is the sum's negative,

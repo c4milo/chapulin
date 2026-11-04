@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_point.c
+file: src/p256_wide_point.c
 catches: p256_equiv_test
 reason: the incomplete Jacobian addition leaves out the step that
   multiplies s1 by z2z2, so s1 is Y1 Z2 where the formula takes

@@ -1,5 +1,5 @@
 invariant: INV-13
-file: srv_flight.c
+file: src/srv_flight.c
 catches: proof/prove-one.sh srv_flight
 reason: srv_read_client_finished returns the record reader's CH_ECAP and
   writes no alert, so the session sends whatever h->alert held. The

@@ -1,5 +1,5 @@
 invariant: INV-26
-file: quic_aes_soft.c
+file: src/quic_aes_soft.c
 catches: proof/prove-one.sh aes
 reason: the key expansion's loop runs one word past round_keys, so the
   last four stores land outside the round key array and inside whatever

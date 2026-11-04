@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_point.c
+file: src/p384_wide_point.c
 catches: p384_equiv_test
 reason: the addition doubles its left operand for a point and its
   negative, where the sum is infinity. With the key -G and scalars

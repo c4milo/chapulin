@@ -1,5 +1,5 @@
 invariant: INV-16
-file: gcm_ghash.h
+file: src/gcm_ghash.h
 catches: test/lint-wide-multiply.sh
 reason: multiply_by_subkey adds the running multiple into the product
   when the accumulator bit is set, through a 0xff mask. Written as an if

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: poly1305_vector.c
+file: src/poly1305_vector.c
 catches: poly1305_equiv_test
 reason: the last group multiplies both lanes by r^4 and r^2, as every
   group before it does, so the odd blocks of the last group, and every

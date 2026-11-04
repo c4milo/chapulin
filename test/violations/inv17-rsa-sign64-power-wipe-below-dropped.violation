@@ -1,5 +1,5 @@
 invariant: INV-17
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: rsa_sign_equiv_test
 reason: rsa_sign64_power returns without the wipe below its body, so the table
   of the base's sixteen powers and the slots the compiler kept words in

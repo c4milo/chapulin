@@ -1,5 +1,5 @@
 invariant: INV-8
-file: srv.c
+file: src/srv.c
 catches: test/lint-invariants.sh
 reason: ch_srv_check runs a SHA-1 update, which puts the DNSSEC-only hash
   on a TLS path. SHA-1 is broken for collisions and TLS 1.3 uses none of

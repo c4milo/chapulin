@@ -1,5 +1,5 @@
 invariant: INV-16
-file: chacha20_avx512.c
+file: src/chacha20_avx512.c
 catches: test/chacha-builds.sh
 reason: chacha20_avx512.c drops the target attribute that turns AVX-512F on
   for its own functions, so the kernel compiles only where the whole object

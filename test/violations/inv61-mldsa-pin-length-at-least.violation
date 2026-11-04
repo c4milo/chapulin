@@ -1,5 +1,5 @@
 invariant: INV-61
-file: tls.c
+file: src/tls.c
 catches: cnsa2_test_mldsa
 reason: ch_connect takes a pin of the fixed length or longer, so a 2593-byte
   ML-DSA-87 pin, which is provisioning corruption, sends a hello.

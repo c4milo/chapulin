@@ -1,5 +1,5 @@
 invariant: INV-16
-file: webpki_ticket.c
+file: src/webpki_ticket.c
 catches: hash_runtime_test
 reason: the configuration hash runs every update on sha256.c whatever the
   session's ch_cfg.cpu states, so a session that states the SHA-256

@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_parser.c
+file: src/handshake_parser.c
 catches: webpki_session_test
 reason: the parser takes a HelloRetryRequest whose key_share names x25519,
   a group the webpki hello already carried a share for, and the client

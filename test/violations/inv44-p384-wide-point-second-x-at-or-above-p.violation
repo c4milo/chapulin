@@ -1,5 +1,5 @@
 invariant: INV-44
-file: p384_wide_point.c
+file: src/p384_wide_point.c
 catches: p384_equiv_test
 reason: the comparison takes r + n for a second value of x when it is
   p or more, and the field reduces it, so r = p - n passes for the

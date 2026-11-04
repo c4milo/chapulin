@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv.c
+file: src/srv.c
 catches: srv_auth_test
 reason: a server takes a ticket_key with cookie_key's bytes, one key for
   an HMAC and an AEAD, which srv_cfg.h forbids. test/srv_identity_tests.h

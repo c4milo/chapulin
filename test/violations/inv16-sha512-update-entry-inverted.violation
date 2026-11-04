@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha512.h
+file: src/sha512.h
 catches: test/docker-aes-runtime-qemu.sh arm64-hash-count
 reason: sha512_update_cpu calls sha512_hw.c for a value that does not name
   the SHA-512 instructions, and sha512.c for one that does. An arm64

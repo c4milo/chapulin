@@ -1,5 +1,5 @@
 invariant: INV-39
-file: handshake_post.c
+file: src/handshake_post.c
 catches: unit
 reason: ch_read rekeys on a KeyUpdate that has bytes after it in its
   record and reads on, in either role. colibri sent a server one record

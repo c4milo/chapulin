@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_sign.c
+file: src/p256_sign.c
 catches: hash_runtime_test
 reason: p256_sign_hedged_cpu, the entry a server signs through, hands its
   nonce generator 0 in place of the session's ch_cfg.cpu. A server that

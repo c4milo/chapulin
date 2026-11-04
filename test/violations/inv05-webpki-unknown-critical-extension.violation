@@ -1,5 +1,5 @@
 invariant: INV-5
-file: webpki_ext.c
+file: src/webpki_ext.c
 catches: webpki_cert_test
 reason: an unknown critical extension is skipped instead of refused, so
   a critical nameConstraints the mode cannot honour, and the CT poison

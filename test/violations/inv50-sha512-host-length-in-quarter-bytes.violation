@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512.c
+file: src/sha512.c
 catches: test/wycheproof.sh
 reason: a host object's finalize writes the message's byte count times
   four as the low word of the length where FIPS 180-4 §5.1.2 writes the

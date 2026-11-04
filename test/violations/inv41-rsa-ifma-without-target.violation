@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: src/rsa_ifma.c
 catches: test/widemul-builds.sh
 reason: rsa_ifma.c drops the target attribute that turns AVX-512F and
   AVX-512 IFMA on for its own functions, so the kernel compiles only where

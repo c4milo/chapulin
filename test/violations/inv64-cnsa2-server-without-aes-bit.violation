@@ -1,5 +1,5 @@
 invariant: INV-64
-file: srv.c
+file: src/srv.c
 catches: cnsa2_server_test
 reason: the profile's server takes a ch_cfg.cpu that holds CH_CPU_PROBED
   alone, so a session without the caller's AES statement would run

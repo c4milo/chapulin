@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_avx2_number.h
+file: src/rsa_avx2_number.h
 catches: rsa_avx2_model_test
 reason: digits_to_words writes each digit's bits below the next word's
   edge and drops the bits that run into the next word, so the bytes

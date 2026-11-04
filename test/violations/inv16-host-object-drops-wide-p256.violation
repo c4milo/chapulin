@@ -8,6 +8,6 @@ reason: a host object stops carrying the wide P-256 files, and its link
 
 --- old
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(if $(filter p256_point.c,$(LIB_SRCS)),$(P256_WIDE_SRCS))
+LIB_SRCS += $(if $(filter src/p256_point.c,$(LIB_SRCS)),$(P256_WIDE_SRCS))
 endif
 --- new

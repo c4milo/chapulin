@@ -1,5 +1,5 @@
 invariant: INV-10
-file: tls_write.c
+file: src/tls_write.c
 catches: tcp_blocking_key_limit
 reason: the ceiling is counted one record too late, so ch_write seals a data
   record at the key's last sequence number and puts the KeyUpdate at

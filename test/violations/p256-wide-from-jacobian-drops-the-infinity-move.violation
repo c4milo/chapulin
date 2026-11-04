@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_point.c
+file: src/p256_wide_point.c
 catches: p256_equiv_test
 reason: the conversion back from Jacobian coordinates leaves out the
   masked move, so a point at infinity whose Y is zero comes out as

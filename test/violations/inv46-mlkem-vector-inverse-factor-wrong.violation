@@ -1,5 +1,5 @@
 invariant: INV-46
-file: mlkem_vector.c
+file: src/mlkem_vector.c
 catches: mlkem_vector_equiv_test
 reason: the inverse transform ends with a multiply by 1440 where
   mlk_poly_invntt multiplies by 1441, 2^32 / 128 mod q, so every

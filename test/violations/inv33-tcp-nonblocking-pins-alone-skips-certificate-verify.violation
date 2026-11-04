@@ -1,5 +1,5 @@
 invariant: INV-33
-file: handshake_auth.c
+file: src/handshake_auth.c
 catches: webpki_loop_tcp_nonblocking
 reason: a TRANSPORT=tcp-nonblocking build skips CertificateVerify for a
   chain accepted under pins alone, so a server that presents a pinned

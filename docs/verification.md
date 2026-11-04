@@ -5493,7 +5493,7 @@ proof covers inside `mlk_sample_ntt`. These hold the rest (INV-48):
   holds `CH_CPU_AVX2`.
 - `test/mlkem-builds.sh` requires the copy's rows to call the four-way
   Keccak and not `mlk_sample_ntt`, both files to hold nothing on arm64,
-  and no other source at the root to include `keccak_avx2.h` or call its
+  and no other source in src/ to include `keccak_avx2.h` or call its
   entries.
 - `make lint-wide-multiply` holds `keccak_avx2.c` at 1 conditional
   branch, the loop over its rounds, and `mlkem_avx2.c` at 28 on x86-64,
@@ -7054,11 +7054,11 @@ The build rests on these:
   `rsa_vp1` nor the arm64 `rsa_vp1_cpu` to call it. It requires no
   512-bit register in `rsa.c`, `rsa_pkcs1.c`, `rsa_mont.c`,
   `rsa_mont64.c`, `rsa_mont64_blocks.c`, `rsa_sign.c` or `rsa_sign64.c`
-  for x86-64. It requires no root source but `rsa_mont.c` that calls
+  for x86-64. It requires no library source but `rsa_mont.c` that calls
   `rsa_ifma_public`, and none but it and `rsa_ifma_sign.c` that includes
   `rsa_ifma.h`, so the signer's check runs the kernel through
   `rsa_vp1_cpu` alone.
-  It refuses a root source that defines `CH_RSA_IFMA_MODEL`, and a host
+  It refuses a library source that defines `CH_RSA_IFMA_MODEL`, and a host
   object's defines from make or `build.zig` that name it.
 - `make lint-wide-multiply` holds `rsa_ifma.c` at 41 conditional
   branches under clang for x86-64 at the 384-byte bound, and, as
@@ -7249,7 +7249,7 @@ The build rests on these:
   registers with VPMADD52LUQ and VPMADD52HUQ, and the arm64 object to
   define nothing. It requires `rsa_sign64.c` for x86-64 to call the
   pair, the wipe below, `avx512_wipe_registers` and `rsa_vp1_cpu`, and
-  for arm64 none of them, and no root source but `rsa_sign64.c` that
+  for arm64 none of them, and no library source but `rsa_sign64.c` that
   includes `rsa_ifma_sign.h` or calls into the file.
 - `make lint-wide-multiply` holds `rsa_ifma_sign.c` at 62 conditional
   branches under clang for x86-64 at the 384-byte bound and 65 at the
@@ -7412,9 +7412,9 @@ The build rests on these:
   two whole 64-bit lanes on more than one VPMULUDQ. It requires the
   x86-64 `rsa_vp1_cpu` to call the kernel and the x86-64 `rsa_vp1` not
   to. It requires no 256-bit register in the other RSA sources for
-  x86-64, and no root source but `rsa_mont.c` that includes `rsa_avx2.h`
+  x86-64, and no library source but `rsa_mont.c` that includes `rsa_avx2.h`
   or calls into it, so the signer never calls the kernel. It refuses a
-  root source that defines `CH_RSA_AVX2_MODEL`, a host object's defines
+  library source that defines `CH_RSA_AVX2_MODEL`, a host object's defines
   from make or `build.zig` that name it, and a device object that lists
   the file.
 - `make lint-wide-multiply` holds `rsa_avx2.c` at 49 conditional

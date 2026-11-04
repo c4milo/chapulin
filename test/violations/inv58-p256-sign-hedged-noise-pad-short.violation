@@ -1,5 +1,5 @@
 invariant: INV-58
-file: p256_sign.c
+file: src/p256_sign.c
 catches: p256_sign_test
 reason: the zeros after the noise are one byte short, so the private
   scalar no longer starts a SHA-256 block of the step d and f input

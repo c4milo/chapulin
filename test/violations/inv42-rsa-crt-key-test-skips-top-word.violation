@@ -1,5 +1,5 @@
 invariant: INV-42
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: proof/prove-one.sh rsa_sign64_crt
 reason: rsa_sign64_key_ok compares all but the top word of p * q with the
   modulus, so a key whose primes multiply to a value that differs from

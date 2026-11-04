@@ -1,5 +1,5 @@
 invariant: INV-38
-file: record.h
+file: src/record.h
 catches: unit
 reason: a protected record's body may run to the 2^14 + 256 bytes of RFC
   9846 §5.2, so a record whose TLSInnerPlaintext is over §5.4's 2^14 + 1

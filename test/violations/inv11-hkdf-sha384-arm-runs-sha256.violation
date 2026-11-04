@@ -1,5 +1,5 @@
 invariant: INV-11
-file: hkdf.c
+file: src/hkdf.c
 catches: hkdf384_test
 reason: the dispatcher in hmac runs HMAC-SHA-256 for a hash_len of 48,
   so TLS_AES_256_GCM_SHA384's key schedule runs SHA-256 while its buffers

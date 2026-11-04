@@ -1,5 +1,5 @@
 invariant: INV-25
-file: webpki_cert.c
+file: src/webpki_cert.c
 catches: webpki_cert_test
 builds: bin/webpki_cert_test
 reason: webpki_parse_certificate reads the TBS, the signature algorithm

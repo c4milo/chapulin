@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_table.c
+file: src/p256_wide_table.c
 catches: p256_equiv_test
 reason: one word of one entry of the table of multiples of G is off by
   one: the X coordinate of 3 * 2^102 * G, entry [17][1]. The base

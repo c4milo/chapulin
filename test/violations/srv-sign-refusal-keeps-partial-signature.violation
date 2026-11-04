@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_auth.c
+file: src/srv_auth.c
 catches: srv_auth_test
 reason: a signer that refused may have written part of a signature into
   the caller's buffer, and this drops the wipe that clears it. The length

@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: test/widemul-builds.sh
 reason: the signer includes rsa_avx2.h, the first step to a call into the
   AVX2 RSA kernel, which takes public input alone: the compiler keeps

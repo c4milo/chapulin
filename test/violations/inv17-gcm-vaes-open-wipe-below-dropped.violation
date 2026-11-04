@@ -1,5 +1,5 @@
 invariant: INV-17
-file: gcm_vaes.c
+file: src/gcm_vaes.c
 catches: ghash_equiv_test
 reason: gcm_open_passes_vaes returns without the wipe below its body, so the hash
   subkey's powers, the last pass's sums and its keystream stay in the

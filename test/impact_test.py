@@ -40,7 +40,7 @@ Ten more assertions come free from the same data:
   fail-closed rule is tested rather than asserted — including a source
   the tree's own lists do not name, which is what a new file is
 
-  the plan for every root .c file git tracks runs lint-proof-cover and
+  the plan for every .c file in src/ git tracks runs lint-proof-cover and
   lint-codegen-partition, the two lints that read git's list of them
 
   every root .h file git tracks is in $(HDRS), which the mapping takes
@@ -115,7 +115,7 @@ def check_commands(mapping):
     targets = set(mapping.rules)
     bad = 0
     files = sorted({v[0] for v in impact_read.violations().values()})
-    files += ["webpki_time.c", "spec/lean/Spec/Sha256.lean", "test/unit_test.c",
+    files += ["src/webpki_time.c", "spec/lean/Spec/Sha256.lean", "test/unit_test.c",
               "proof/record_harness.c", "docs/proofs.md", "test/e2e.sh"]
     seen = set()
     for path in files:
@@ -177,7 +177,7 @@ def check_fail_closed(mapping):
     new.parent.mkdir(exist_ok=True)
     new.write_text("int impact_test_new_source(void) { return 0; }\n")
     try:
-        paths = ("Makefile", "ct.h", "cfg.h", "buf.h", "tools/toolchain.env",
+        paths = ("Makefile", "src/ct.h", "src/cfg.h", "src/buf.h", "tools/toolchain.env",
                  ".github/workflows/check.yml", "proof/prove-one.sh",
                  "a_file_nobody_added.c", NEW_SOURCE)
         for path in paths:
@@ -202,22 +202,22 @@ def check_fail_closed(mapping):
 
 
 def root_sources():
-    """The .c files git tracks at the root of the tree."""
-    listed = subprocess.run(["git", "ls-files", "-z", "--", "*.c"], cwd=ROOT,
+    """The .c files git tracks in src/, as paths from the root."""
+    listed = subprocess.run(["git", "ls-files", "-z", "--", "src/*.c"], cwd=ROOT,
                             check=True, capture_output=True).stdout
     return sorted({os.fsdecode(p) for p in listed.split(b"\0")
-                   if p and b"/" not in p})
+                   if p and p.count(b"/") == 1})
 
 
-# The lints that read git's list of root .c files. lint-proof-cover fails
-# a root source no build packages and holds each packaged one to a full
+# The lints that read git's list of .c files in src/. lint-proof-cover fails
+# a library source no build packages and holds each packaged one to a full
 # harness or an audit; lint-codegen-partition requires each one in exactly
 # one codegen list.
 ROOT_SOURCE_LINTS = ["make lint-proof-cover", "make lint-codegen-partition"]
 
 
 def check_root_sources(mapping):
-    """The plan for every root .c file runs the lints that judge it.
+    """The plan for every .c file in src/ runs the lints that judge it.
 
     select_lints and select_codegen select those two lints for a source in
     lib_sources(). That set was the union of the library builds check
@@ -233,11 +233,11 @@ def check_root_sources(mapping):
         commands = {entry.command for entry in entries}
         for lint in ROOT_SOURCE_LINTS:
             if lint not in commands:
-                print(f"impact-test: {path} is a root source, which {lint} "
+                print(f"impact-test: {path} is a library source, which {lint} "
                       f"reads, and the plan for {path} does not run it")
                 short.add(path)
                 bad += 1
-    print(f"impact-test: {len(sources)} root sources, {len(sources) - len(short)} "
+    print(f"impact-test: {len(sources)} library sources, {len(sources) - len(short)} "
           f"whose plan runs {' and '.join(ROOT_SOURCE_LINTS)}")
     return bad
 
@@ -245,23 +245,23 @@ def check_root_sources(mapping):
 def check_root_headers(mapping):
     """Every root .h file git tracks is in $(HDRS).
 
-    is_wide treats a root header as a prerequisite of every test binary,
+    is_wide treats a library header as a prerequisite of every test binary,
     and test/violations.py rebuilds a binary through make. x25519_wide_ed25519.h
     was outside $(HDRS), so the nightly of 2026-11-01 ran bin/dnssec_test
     built before the edit and reported inv14-ed25519-small-order-key as
     unguarded (https://github.com/c4milo/chapulin/issues/215)."""
-    listed = subprocess.run(["git", "ls-files", "-z", "--", "*.h"], cwd=ROOT,
+    listed = subprocess.run(["git", "ls-files", "-z", "--", "src/*.h"], cwd=ROOT,
                             check=True, capture_output=True).stdout
     headers = sorted({os.fsdecode(p) for p in listed.split(b"\0")
-                      if p and b"/" not in p})
+                      if p and p.count(b"/") == 1})
     hdrs = set(impact_read.expand("$(HDRS)", mapping.variables).split())
     bad = 0
     for path in headers:
         if path not in hdrs:
-            print(f"impact-test: {path} is a root header outside $(HDRS), so "
+            print(f"impact-test: {path} is a library header outside $(HDRS), so "
                   f"no test binary rebuilds when it changes")
             bad += 1
-    print(f"impact-test: {len(headers)} root headers, {len(headers) - bad} in $(HDRS)")
+    print(f"impact-test: {len(headers)} library headers, {len(headers) - bad} in $(HDRS)")
     return bad
 
 
@@ -354,7 +354,7 @@ def sample_paths():
     violation edits, plus one of every other shape the selectors have a
     rule for."""
     files = sorted({v[0] for v in impact_read.violations().values()})
-    return files + ["webpki_time.c", "tls.c", "p256.c", "mlkem.c",
+    return files + ["src/webpki_time.c", "src/tls.c", "src/p256.c", "src/mlkem.c",
                     "spec/lean/Spec/Sha256.lean", "test/unit_test.c",
                     "test/hpp_test.cpp", "examples/psk_client.c",
                     "proof/record_harness.c", "docs/proofs.md", "test/e2e.sh",

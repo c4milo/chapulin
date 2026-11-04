@@ -1,5 +1,5 @@
 invariant: INV-16
-file: sha512_avx2.c
+file: src/sha512_avx2.c
 catches: test/hash-builds.sh
 reason: the target attribute of sha512_avx2.c's functions turns on BMI1 and
   BMI2 beside AVX2, and the compiler then writes RORX for the rounds'

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: tls.c
+file: src/tls.c
 catches: unit
 reason: ch_connect takes an external PSK of any length, so a device keyed
   with a short or password-length PSK falls to a dictionary attack on the

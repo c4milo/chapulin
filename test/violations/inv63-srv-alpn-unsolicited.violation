@@ -1,5 +1,5 @@
 invariant: INV-63
-file: srv_parser.c
+file: src/srv_parser.c
 catches: tcp_blocking_loop_test
 reason: the parser seeds the selected protocol with index 0, the first
   name on the server's ALPN list, so a hello that offered no ALPN gets an

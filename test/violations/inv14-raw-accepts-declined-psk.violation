@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_flight.c
+file: src/handshake_flight.c
 catches: unit
 reason: a raw or ca client accepts a ServerHello that did not select the
   ticket it offered. Its hello offered no signature scheme, so the server

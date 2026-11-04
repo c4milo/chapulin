@@ -1,5 +1,5 @@
 invariant: INV-16
-file: base64.c
+file: src/base64.c
 catches: test/lint-wide-multiply.sh
 reason: base64_class tests its first two ranges with an if chain, so
   whether a key file's character is a capital, a small letter or neither

@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_mont64_addcarry.c
+file: src/rsa_mont64_addcarry.c
 catches: rsa_addcarry_equiv_test
 reason: block_mul_add drops the carry out of its chain, the carry from the
   four low words into the word above the block, so the word it returns is

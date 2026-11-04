@@ -1,5 +1,5 @@
 invariant: INV-45
-file: sha3.c
+file: src/sha3.c
 catches: sha3_equiv_test
 reason: block_xor's eight-byte step counts lanes from the block's first
   byte when the block is partly filled, so the bytes go into the wrong

@@ -1,5 +1,5 @@
 invariant: INV-7
-file: srv_kex.c
+file: src/srv_kex.c
 catches: srv_flight_test
 reason: the server takes x25519 whenever the client shared it, so a client
   that sends a key share for both groups, as every TRUST=webpki client

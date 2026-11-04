@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_post.c
+file: src/handshake_post.c
 catches: tcp_nonblocking_loop_test
 reason: a resumed session names its own PSK, the presented ticket's, as
   the trust of each ticket it receives, where it owes that ticket's trust,

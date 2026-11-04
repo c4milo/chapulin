@@ -1,5 +1,5 @@
 invariant: INV-37
-file: handshake_parser.c
+file: src/handshake_parser.c
 catches: test/lint-cppcheck.sh
 reason: hsp_parse_certificate_verify asks rb_left about a null reader,
   and rb_left in buf.c reads through it. Only cppcheck's whole-program

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: chacha20.c
+file: src/chacha20.c
 catches: test/chacha-builds.sh
 reason: chacha20.c guards chacha20_xor's call to the vector path on a macro no
   build defines, so a host object's chacha20_xor runs the portable loop.

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_word.h
+file: src/p256_wide_word.h
 catches: test/docker-aes-runtime-qemu.sh p256-equiv
 reason: the form of the subtract with borrow that gcc reads for x86-64
   hands _subborrow_u64 its two words in the other order, so it returns

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: x25519_wide_edwards.h
+file: src/x25519_wide_edwards.h
 catches: diff_x25519_wide
 reason: double_point takes F = Z^2 - G where the formula takes 2 Z^2 - G,
   so the doubling writes another point. bin/diff_x25519_wide holds the

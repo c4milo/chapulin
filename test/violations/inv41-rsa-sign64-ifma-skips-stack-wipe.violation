@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_sign64.c
+file: src/rsa_sign64.c
 catches: rsa_ifma_sign_model_test
 reason: both_powers returns after rsa_ifma_sign_power_pair without
   rsa_ifma_sign_wipe_below, so the slots the compiler kept words of the

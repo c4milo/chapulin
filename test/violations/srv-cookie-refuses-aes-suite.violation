@@ -1,5 +1,5 @@
 invariant: INV-14
-file: srv_cookie.c
+file: src/srv_cookie.c
 catches: srv_flight_test_aes
 reason: srv_cookie_open knows ChaCha20 alone again, which is what the first
   SUITE=aesgcm server shipped. That server selects AES-GCM for a client

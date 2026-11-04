@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_ecdh.c
+file: src/p256_ecdh.c
 catches: widemul_runtime_test
 reason: the scalar multiplication of the key exchange runs under
   WIDEMUL_NOT_STATED whatever answer the exchange was handed, so a session

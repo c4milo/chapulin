@@ -1,5 +1,5 @@
 invariant: INV-48
-file: mldsa.c
+file: src/mldsa.c
 catches: test/docker-aes-runtime-qemu.sh mldsa-vector
 reason: the verifier samples A on the four-way Keccak where the session's
   ch_cfg.cpu holds CH_CPU_VAES, not CH_CPU_AVX2, so a value with AVX2 and

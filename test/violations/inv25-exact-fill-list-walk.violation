@@ -1,5 +1,5 @@
 invariant: INV-25
-file: x509.c
+file: src/x509.c
 catches: test/lint-exact-fill.sh
 reason: parse_extensions drops the equality that makes the Extensions
   SEQUENCE fill its [3] wrapper and keeps the `while (rb_left(&w) > 0)`

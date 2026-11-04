@@ -15,6 +15,6 @@ reason: unit_cflags, which hands -fno-schedule-insns2 to the two rules that
   docker, and this then reports unguarded rather than caught.
 
 --- old
-unit_cflags = $(if $(filter sha512_avx2.c,$(1)),$(SHA512_AVX2_GCC_CFLAGS))
+unit_cflags = $(if $(filter src/sha512_avx2.c,$(1)),$(SHA512_AVX2_GCC_CFLAGS))
 --- new
 unit_cflags =

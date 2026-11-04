@@ -1,5 +1,5 @@
 invariant: INV-16
-file: widemul.h
+file: src/widemul.h
 catches: widemul_runtime_test
 reason: widemul_x25519_base runs the wide field's key generation, with its
   table and its 64x64->128 products, for every answer, so a session whose

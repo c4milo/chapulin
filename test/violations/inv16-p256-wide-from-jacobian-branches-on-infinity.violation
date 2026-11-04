@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_point.c
+file: src/p256_wide_point.c
 catches: test/lint-wide-multiply.sh
 reason: the conversion back from Jacobian coordinates sets Y = 1 under an
   if on Z's zero mask in place of the masked move. Z is a coordinate of a

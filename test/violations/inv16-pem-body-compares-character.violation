@@ -1,5 +1,5 @@
 invariant: INV-16
-file: pem.c
+file: src/pem.c
 catches: test/lint-invariants.sh
 reason: body_loop tests the byte it read for '-', CR and LF before it
   takes the byte's class. Apple clang 21 writes these three tests as a

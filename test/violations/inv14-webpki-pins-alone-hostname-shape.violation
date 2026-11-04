@@ -1,5 +1,5 @@
 invariant: INV-14
-file: webpki_cfg.c
+file: src/webpki_cfg.c
 catches: webpki_session_test
 reason: a configuration of pins alone takes any hostname, though the one it
   sets goes out as server_name and must have the shape

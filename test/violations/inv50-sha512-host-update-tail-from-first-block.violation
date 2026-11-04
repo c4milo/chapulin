@@ -1,5 +1,5 @@
 invariant: INV-50
-file: sha512.c
+file: src/sha512.c
 catches: hkdf384_test_host
 reason: after a host object's sha512_update compresses an input's whole
   blocks where the caller holds them, it copies the bytes left from the

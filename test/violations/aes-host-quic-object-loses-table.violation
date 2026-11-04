@@ -10,6 +10,6 @@ reason: a QUIC host object stops packaging the table, quic_aes_soft.c,
   require the table beside the instructions.
 
 --- old
-             $(if $(filter quic-nonblocking,$(TRANSPORT)),quic_aes_soft.c),$(AES_IMPL)))
+             $(if $(filter quic-nonblocking,$(TRANSPORT)),src/quic_aes_soft.c),$(AES_IMPL)))
 --- new
              ,$(AES_IMPL)))

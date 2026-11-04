@@ -1,5 +1,5 @@
 invariant: INV-10
-file: tls_write.c
+file: src/tls_write.c
 catches: tcp_blocking_key_limit
 reason: ch_write never takes the step before a record, so an AES-GCM write
   key seals a data record at its last sequence number with no KeyUpdate

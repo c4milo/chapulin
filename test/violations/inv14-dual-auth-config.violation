@@ -1,5 +1,5 @@
 invariant: INV-14
-file: tls.c
+file: src/tls.c
 catches: unit
 reason: a config carrying both a PSK and a pin is no longer refused, it
   silently resolves to pinned mode, so a provisioning mistake picks an
