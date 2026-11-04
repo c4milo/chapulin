@@ -195,6 +195,17 @@ cache_key() {
     } | $HASHER | awk '{print $1}'
 }
 
+# Whether a finished job's log is a verdict this script may cache: cbmc
+# exited 0 and printed VERIFICATION SUCCESSFUL, no callee lacked a body,
+# and no unwindset id bounded a loop the model does not have. The report
+# loop below prints why a log that fails this is not verified.
+verified() { # rc log
+    [ "$1" -eq 0 ] &&
+        grep -q "VERIFICATION SUCCESSFUL" "$2" &&
+        ! grep -q "no body for callee" "$2" &&
+        ! grep -q "^loop identifier .* provided with unwindset" "$2"
+}
+
 # Live jobs as "pid:gb" pairs in a plain string — macOS ships bash 3.2,
 # where expanding an empty array under set -u is an error.
 RUNNING=""
@@ -343,16 +354,23 @@ launch() {
     # past that line the OS kills the runner, not the job.
     if [ "$MEM_GB" -gt 2 ] && [ "$cap_gb" -gt $((MEM_GB - 1)) ]; then cap_gb=$((MEM_GB - 1)); fi
     (
+        log="$LOGDIR/$name.log"
         ulimit -v $((cap_gb * 1024 * 1024)) 2>/dev/null || true
         t0=$SECONDS
-        "$CBMC" "${args[@]}" "${flags[@]}"
+        "$CBMC" "${args[@]}" "${flags[@]}" > "$log" 2>&1
         rc=$?
-        echo "run.sh: wall $((SECONDS - t0))s"
+        echo "run.sh: wall $((SECONDS - t0))s" >> "$log"
+        # The key is recorded as soon as the proof ends, not when the
+        # report loop reaches it: a run the workflow's limit stops still
+        # keeps every proof it finished.
+        if [ -n "$key" ] && verified "$rc" "$log"; then
+            rm -f "$CACHEDIR/$name-"*.ok
+            : > "$CACHEDIR/$name-$key.ok"
+        fi
         exit $rc
-    ) > "$LOGDIR/$name.log" 2>&1 &
+    ) &
     NAMES[NJOBS]="$name"
     PIDS[NJOBS]=$!
-    KEYS[NJOBS]="$key"
     NJOBS=$((NJOBS + 1))
     RUNNING="$RUNNING $!:$w"
 }
@@ -3464,10 +3482,6 @@ while [ "$i" -lt "$NJOBS" ]; do
         FAIL=1
     else
         awk -v w="$wall" '/^\*\* .* failed/ {printf " %s  %s\n", $0, w; exit}' "$log"
-        if [ -n "${KEYS[$i]:-}" ]; then
-            rm -f "$CACHEDIR/$name-"*.ok
-            : > "$CACHEDIR/$name-${KEYS[$i]}.ok"
-        fi
     fi
     i=$((i + 1))
 done
