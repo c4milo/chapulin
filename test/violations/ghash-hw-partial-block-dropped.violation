@@ -8,9 +8,12 @@ reason: the host object's GHASH data loop hashes whole blocks alone and drops a
   every data length through three passes against gcm.c's portable loop,
   which pads the last block, and every payload length through the whole
   AEAD. The edit is shared C after either instruction, so it lands on an
-  ARMv8 runner and an x86-64 one alike.
+  ARMv8 runner and an x86-64 one alike. rest is never above n, so the
+  guard never holds. A guard of rest > AES_BLOCK held never too, but gcc
+  15 refused it: under it the copy of rest bytes overflows the 16-byte
+  block, and -Werror stops the build (nightly run 41743004759).
 
 --- old
     if (rest > 0) {
 --- new
-    if (rest > AES_BLOCK) {
+    if (rest > n) {
