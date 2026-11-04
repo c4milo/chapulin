@@ -450,12 +450,17 @@ rsa_sign64_crt 243
 rsa_sign64_crt_webpki 243
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
-# ct.h, which this harness compiles and does not call.
-rsa_sign64_ifma 138
+# ct.h, which this harness compiles and does not call. 591d896d
+# (docs/decisions.md 181) took the floor from 138 to 132: the IFMA arm of
+# rsa_sign64_sp1 no longer wipes its arrays by name, so six calls of
+# ct_wipe that the harness reached are gone, and the wrapper's wipe
+# below is a contract here (nightly run 41743004759).
+rsa_sign64_ifma 132
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
-# ct.h, which this harness compiles and does not call.
-rsa_sign64_ifma_webpki 138
+# ct.h, which this harness compiles and does not call. 591d896d took
+# the floor from 138 to 132, as for rsa_sign64_ifma above.
+rsa_sign64_ifma_webpki 132
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
