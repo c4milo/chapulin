@@ -142,6 +142,9 @@ Home: github.com/c4milo.
   ch_tls.psk_selected reports which one happened (docs/decisions.md 55); a
   raw or ca resuming hello offers the ticket alone and fails a decline
   closed.
+- The library's C sources and headers sit in `src/` and compile with
+  `-Isrc`; the root holds the build files, the C++ and Zig wrappers, and
+  the directories.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` with `ct_wipe.c` (constant-time bytes, and the wipe the
   compiler cannot remove) and `avx512_wipe.[ch]` (a block of assembly,
