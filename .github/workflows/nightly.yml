@@ -266,13 +266,19 @@ jobs:
     # before the first violation. So the slowest part takes 95 minutes, and
     # the limit is about 1.6 times that, for a slow runner and for the
     # violations that the class gains.
+    #
+    # The class gained them. From 2026-11-03 to 2026-11-04 the four parts
+    # took 96 to 150 minutes, and on run 41779440395 part 3 reached the
+    # limit as it printed its tally: 315 caught, 0 unguarded. So the class
+    # runs as six jobs, each with every sixth violation, which puts the
+    # slowest part near 100 minutes under the same limit.
     timeout-minutes: 150
     strategy:
       # Each part runs to its own verdict, and a part that fails costs
-      # the other three nothing.
+      # the other five nothing.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
@@ -396,14 +402,14 @@ jobs:
         run: |
           set -o pipefail
           SDE64="$HOME/sde/sde64" make test-invariants-not-proof-backed \
-            VIOLATION_SHARD="$SHARD/4" 2>&1 | tee /tmp/invariants.out
+            VIOLATION_SHARD="$SHARD/6" 2>&1 | tee /tmp/invariants.out
         env:
           SHARD: ${{ matrix.shard }}
       - name: Put the tally on the run page
         if: always()
         run: |
           {
-            echo "### test-invariants, shard $SHARD of 4"
+            echo "### test-invariants, shard $SHARD of 6"
             echo
             echo '```'
             cat /tmp/invariants.out 2>/dev/null || echo '(the run produced no output)'
