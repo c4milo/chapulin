@@ -12,4 +12,4 @@ LIB_DEF += -DCH_NATIVE_WIDEMUL
 --- new
 else ifeq ($(WIDEMUL),native)
 LIB_DEF += -DCH_NATIVE_WIDEMUL
-LIB_SRCS += poly1305_native.c
+LIB_SRCS += src/poly1305_native.c

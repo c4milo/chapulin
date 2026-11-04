@@ -6164,12 +6164,12 @@ else
 	@echo "" >> bin/coverage.md
 	# ENUM_DEPTH=4 above: line coverage saturates well below the check
 	# tier's depth 5; the deeper run buys sequences, not lines, and
-	# costs minutes at -O0. The filter keeps the report to the root
-	# library sources; test mains and generated code stay out.
+	# costs minutes at -O0. The filter keeps the report to the library
+	# sources in src/; test mains and generated code stay out.
 	# suspicious_hits.warn: the x25519 ladder legitimately racks up
 	# billions of hits across the RSA and ECDSA runs; the counter
 	# magnitude does not affect line coverage.
-	$(GCOVR) --root . bin/cov --filter '^[a-z0-9_]+\.c$$' \
+	$(GCOVR) --root . bin/cov --filter '^src/[a-z0-9_]+\.c$$' \
 	  --merge-mode-functions=separate \
 	  --gcov-executable "$(GCOV_TOOL)" \
 	  --gcov-ignore-parse-errors suspicious_hits.warn_once_per_file \
@@ -9465,7 +9465,7 @@ P256_WIDE_BRANCH_CEILING := \
   x86-64/src/p256_adx_verify.c:6
 P256_SCALAR_BRANCH_CEILING := \
   m3/src/p256_scalar.c:15 mips32r2/src/p256_scalar.c:14 rv32imac/src/p256_scalar.c:14 m3-gcc/src/p256_scalar.c:12 \
-  mips32r2-gcc/src/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/src/p256_scalar.c:18 rv32ic-gcc/src/p256_scalar.c:18
+  mips32r2-gcc/src/p256_scalar.c:12 mips32r2-gcc-O2/src/p256_scalar.c:14 rv32imac-gcc/src/p256_scalar.c:18 rv32ic-gcc/src/p256_scalar.c:18
 MLDSA_SIGN_BRANCH_CEILING := \
   m3/src/mldsa_signer.c:26 m3/src/mldsa_sign_round.c:5 m3/src/mldsa_sign_steps.c:29 m3/src/mldsa_sign_poly.c:16 \
   m3/src/mldsa_sign_pack.c:27 \
@@ -9478,9 +9478,9 @@ MLDSA_SIGN_BRANCH_CEILING := \
   mips32r2-gcc/src/mldsa_signer.c:26 mips32r2-gcc/src/mldsa_sign_round.c:5 \
   mips32r2-gcc/src/mldsa_sign_steps.c:21 mips32r2-gcc/src/mldsa_sign_poly.c:13 \
   mips32r2-gcc/src/mldsa_sign_pack.c:17 \
-  mips32r2-gcc-O2/mldsa_signer.c:26 mips32r2-gcc-O2/mldsa_sign_round.c:5 \
-  mips32r2-gcc-O2/mldsa_sign_steps.c:21 mips32r2-gcc-O2/mldsa_sign_poly.c:14 \
-  mips32r2-gcc-O2/mldsa_sign_pack.c:24 \
+  mips32r2-gcc-O2/src/mldsa_signer.c:26 mips32r2-gcc-O2/src/mldsa_sign_round.c:5 \
+  mips32r2-gcc-O2/src/mldsa_sign_steps.c:21 mips32r2-gcc-O2/src/mldsa_sign_poly.c:14 \
+  mips32r2-gcc-O2/src/mldsa_sign_pack.c:24 \
   rv32imac-gcc/src/mldsa_signer.c:29 rv32imac-gcc/src/mldsa_sign_round.c:6 \
   rv32imac-gcc/src/mldsa_sign_steps.c:24 rv32imac-gcc/src/mldsa_sign_poly.c:12 \
   rv32imac-gcc/src/mldsa_sign_pack.c:23 \
@@ -9493,9 +9493,9 @@ MLDSA_SIGN_BRANCH_CEILING := \
   x86-64/src/mldsa_sign_pack.c@host:32
 QUIC_PACKET_BRANCH_CEILING := \
   m3/src/quic_packet.c:59 mips32r2/src/quic_packet.c:42 rv32imac/src/quic_packet.c:46 m3-gcc/src/quic_packet.c:46 \
-  mips32r2-gcc/src/quic_packet.c:46 mips32r2-gcc-O2/quic_packet.c:52 rv32imac-gcc/src/quic_packet.c:55 \
+  mips32r2-gcc/src/quic_packet.c:46 mips32r2-gcc-O2/src/quic_packet.c:52 rv32imac-gcc/src/quic_packet.c:55 \
   rv32ic-gcc/src/quic_packet.c:55 arm64/src/quic_packet.c@host:37 x86-64/src/quic_packet.c@host:37
-WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2
+WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/src/poly1305.c:2 mips32r2-gcc-O2/src/p256_scalar.c:2
 # The division count, read from the same assembly with the DIVIDE_OPS
 # tokens (docs/decisions.md 156). DIVIDE_CEILING is file:count and holds on
 # every spec; DIVIDE_CEILING_SPEC is spec/file:count and holds where it
@@ -9509,7 +9509,7 @@ WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar
 # (docs/decisions.md 138). Every operand of both divisions is a public
 # length, and no key, plaintext or secret reaches either.
 DIVIDE_CEILING := src/tls_write.c:2
-DIVIDE_CEILING_SPEC := mips32r2-gcc-O2/tls_write.c:3
+DIVIDE_CEILING_SPEC := mips32r2-gcc-O2/src/tls_write.c:3
 # The files the branch count covers: the arithmetic under the record
 # layer, whose every input is a key, a word or a block. Almost every
 # branch they hold is loop control on a public count; the two exceptions
@@ -9752,11 +9752,11 @@ BRANCH_CEILING := \
   mips32r2-gcc/src/mlkem_poly.c:41 mips32r2-gcc/src/drbg.c:7 mips32r2-gcc/src/softmul.c:0 \
   mips32r2-gcc/src/aes.c:3 mips32r2-gcc/src/quic_aes_soft.c:9 mips32r2-gcc/src/aes_extern.c:0 \
   mips32r2-gcc/src/gcm.c:13 mips32r2-gcc/src/rsa_sign.c:23 \
-  mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:6 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:32 \
-  mips32r2-gcc-O2/hkdf.c:23 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
-  mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/p256_field.c:24 \
-  mips32r2-gcc-O2/mlkem.c:17 \
-  mips32r2-gcc-O2/mlkem_poly.c:39 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
+  mips32r2-gcc-O2/src/ct.c:2 mips32r2-gcc-O2/src/ct_wipe.c:6 mips32r2-gcc-O2/src/sha256.c:23 mips32r2-gcc-O2/src/sha3.c:32 \
+  mips32r2-gcc-O2/src/hkdf.c:23 mips32r2-gcc-O2/src/chacha20.c:7 mips32r2-gcc-O2/src/poly1305.c:21 \
+  mips32r2-gcc-O2/src/aead.c:2 mips32r2-gcc-O2/src/x25519.c:28 mips32r2-gcc-O2/src/p256_field.c:24 \
+  mips32r2-gcc-O2/src/mlkem.c:17 \
+  mips32r2-gcc-O2/src/mlkem_poly.c:39 mips32r2-gcc-O2/src/drbg.c:8 mips32r2-gcc-O2/src/softmul.c:0 \
   rv32imac-gcc/src/ct.c:1 rv32imac-gcc/src/ct_wipe.c:4 rv32imac-gcc/src/sha256.c:15 rv32imac-gcc/src/sha3.c:22 rv32imac-gcc/src/hkdf.c:23 \
   rv32imac-gcc/src/chacha20.c:10 rv32imac-gcc/src/poly1305.c:15 rv32imac-gcc/src/aead.c:4 \
   rv32imac-gcc/src/x25519.c:24 rv32imac-gcc/src/p256_field.c:20 rv32imac-gcc/src/mlkem.c:19 \
@@ -9768,16 +9768,16 @@ BRANCH_CEILING := \
   rv32ic-gcc/src/p256_field.c:20 rv32ic-gcc/src/mlkem.c:19 rv32ic-gcc/src/mlkem_poly.c:39 \
   rv32ic-gcc/src/drbg.c:10 rv32ic-gcc/src/softmul.c:2 rv32ic-gcc/src/aes.c:4 \
   rv32ic-gcc/src/quic_aes_soft.c:12 rv32ic-gcc/src/aes_extern.c:0 rv32ic-gcc/src/gcm.c:23 \
-  rv32ic-gcc/src/rsa_sign.c:27 mips32r2-gcc-O2/aes.c:3 mips32r2-gcc-O2/quic_aes_soft.c:12 \
-  mips32r2-gcc-O2/aes_extern.c:0 mips32r2-gcc-O2/gcm.c:16 \
-  mips32r2-gcc-O2/rsa_sign.c:26 \
+  rv32ic-gcc/src/rsa_sign.c:27 mips32r2-gcc-O2/src/aes.c:3 mips32r2-gcc-O2/src/quic_aes_soft.c:12 \
+  mips32r2-gcc-O2/src/aes_extern.c:0 mips32r2-gcc-O2/src/gcm.c:16 \
+  mips32r2-gcc-O2/src/rsa_sign.c:26 \
   m3/src/sha512.c:24 m3/src/sha512_compress.c:4 mips32r2/src/sha512.c:20 mips32r2/src/sha512_compress.c:4 \
   rv32imac/src/sha512.c:23 rv32imac/src/sha512_compress.c:4 m3-gcc/src/sha512.c:12 \
   m3-gcc/src/sha512_compress.c:4 mips32r2-gcc/src/sha512.c:12 mips32r2-gcc/src/sha512_compress.c:4 \
-  mips32r2-gcc-O2/sha512.c:27 mips32r2-gcc-O2/sha512_compress.c:4 rv32imac-gcc/src/sha512.c:14 \
+  mips32r2-gcc-O2/src/sha512.c:27 mips32r2-gcc-O2/src/sha512_compress.c:4 rv32imac-gcc/src/sha512.c:14 \
   rv32imac-gcc/src/sha512_compress.c:5 rv32ic-gcc/src/sha512.c:14 rv32ic-gcc/src/sha512_compress.c:5 \
   m3/src/base64.c:0 mips32r2/src/base64.c:0 rv32imac/src/base64.c:0 m3-gcc/src/base64.c:0 mips32r2-gcc/src/base64.c:0 \
-  mips32r2-gcc-O2/base64.c:0 rv32imac-gcc/src/base64.c:0 rv32ic-gcc/src/base64.c:0 \
+  mips32r2-gcc-O2/src/base64.c:0 rv32imac-gcc/src/base64.c:0 rv32ic-gcc/src/base64.c:0 \
   arm64/src/x25519_wide.c:8 x86-64/src/x25519_wide.c:9 arm64/src/x25519_adx.c:0 x86-64/src/x25519_adx.c:4 \
   arm64/src/rsa_mont64_adx.c:0 x86-64/src/rsa_mont64_adx.c:32 \
   arm64/src/chacha20_vector.c:40 x86-64/src/chacha20_vector.c:26 \

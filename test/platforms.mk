@@ -22,7 +22,7 @@ FREERTOS_TCP_DIR ?= bin/freertos-plus-tcp
 # drifts: this list was written out by hand and never gained
 # handshake_flight.c when that file was split out of handshake.c, so the
 # link failed on eight hsf_ symbols until the count was compared.
-FREERTOS_SRCS = $(filter-out webpki_%.c,$(SRCS))
+FREERTOS_SRCS = $(filter-out src/webpki_%.c,$(SRCS))
 
 # Every deterministic suite, built and run natively — the tests-only
 # half of check, for platform-parity jobs (linux arm64 today) where
