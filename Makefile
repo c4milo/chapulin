@@ -2802,7 +2802,7 @@ $(LIB_HEADER): FORCE
 	    case "$$d" in *=*) printf '#define %s %s\n' "$${d%%=*}" "$${d#*=}";; \
 	    *) printf '#define %s 1\n' "$$d";; esac; \
 	  done; \
-	  for h in $(LIB_HEADERS); do printf '#include "%s"\n' "$$h"; done; \
+	  for h in $(notdir $(LIB_HEADERS)); do printf '#include "%s"\n' "$$h"; done; \
 	  printf '%s\n' '#endif'; } > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
 
@@ -2945,9 +2945,9 @@ endif
 # of its own, must read the record its headers compute and exit 0. The
 # same program with a transport define the object lacks must stop at the
 # header's own #error. BUILD_HEADER_MOVED_DEF is that define.
-	@$(CC) $(LIB_CFLAGS) -Isrc -I. -include $(LIB_HEADER) -o $(BUILD_TEST)_header test/build_test.c $(LIB_OBJ)
+	@$(CC) $(LIB_CFLAGS) -Isrc -include $(LIB_HEADER) -o $(BUILD_TEST)_header test/build_test.c $(LIB_OBJ)
 	@$(BUILD_TEST)_header || { echo "lib-check: a consumer compiled under $(LIB_HEADER) alone reads a build record its headers do not compute"; exit 1; }
-	@if $(CC) $(LIB_CFLAGS) -Isrc -I. -include $(LIB_HEADER) $(BUILD_HEADER_MOVED_DEF) -fsyntax-only test/build_test.c \
+	@if $(CC) $(LIB_CFLAGS) -Isrc -include $(LIB_HEADER) $(BUILD_HEADER_MOVED_DEF) -fsyntax-only test/build_test.c \
 	  2> $(BUILD_TEST)_header.err; then \
 	  echo "lib-check: a consumer with $(BUILD_HEADER_MOVED_DEF) compiled under $(LIB_HEADER), which this object lacks"; exit 1; fi
 	@grep -q 'was built without' $(BUILD_TEST)_header.err || { cat $(BUILD_TEST)_header.err; \
@@ -8180,10 +8180,10 @@ EXAMPLE_PSK := bin/obj/$(LIB_VARIANT)/example_psk
 EXAMPLE_PINNED := bin/obj/$(LIB_VARIANT)/example_pinned
 
 $(EXAMPLE_PSK): examples/psk_client.c $(LIB_OBJ) $(LIB_HEADER)
-	$(CC) $(CFLAGS) -Isrc -I. -include $(LIB_HEADER) -o $@ examples/psk_client.c $(LIB_OBJ)
+	$(CC) $(CFLAGS) -Isrc -include $(LIB_HEADER) -o $@ examples/psk_client.c $(LIB_OBJ)
 
 $(EXAMPLE_PINNED): examples/pinned_client.c $(LIB_OBJ) $(LIB_HEADER)
-	$(CC) $(CFLAGS) -Isrc -I. -include $(LIB_HEADER) -o $@ examples/pinned_client.c $(LIB_OBJ)
+	$(CC) $(CFLAGS) -Isrc -include $(LIB_HEADER) -o $@ examples/pinned_client.c $(LIB_OBJ)
 
 # Phony on purpose: the file at each path is whichever variant was copied
 # there last, so the copy runs on every invocation instead of when make

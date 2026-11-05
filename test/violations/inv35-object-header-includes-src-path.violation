@@ -1,0 +1,13 @@
+invariant: INV-35
+file: Makefile
+catches: test/lib-check-webpki-tcp-nonblocking.sh
+reason: The object's header includes each public header by its path in
+  the tree, src/tls.h and the rest, as it did after the move to src/. A
+  consumer compiles with -Isrc and the header, as README.md says, and
+  then finds no src/src/tls.h, so lib-check's consumer under the header
+  alone fails to compile.
+
+--- old
+	  for h in $(notdir $(LIB_HEADERS)); do printf '#include "%s"\n' "$$h"; done; \
+--- new
+	  for h in $(LIB_HEADERS); do printf '#include "%s"\n' "$$h"; done; \
