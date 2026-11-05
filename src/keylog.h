@@ -34,7 +34,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "sha256.h"
+#include "public_sizes.h"
 
 // The client random's length. It is the same 32 bytes both ends read
 // from one ClientHello (RFC 9846 §4.2.2).

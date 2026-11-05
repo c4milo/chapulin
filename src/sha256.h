@@ -7,7 +7,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define SHA256_LEN 32
+#include "public_sizes.h"
+
 #define SHA256_BLOCK 64
 
 typedef struct {

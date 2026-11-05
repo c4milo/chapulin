@@ -30,8 +30,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "public_sizes.h"
+
 #define SHA512_LEN 64
-#define SHA384_LEN 48
 #define SHA512_BLOCK 128
 
 typedef struct {

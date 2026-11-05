@@ -10,9 +10,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "hkdf.h"
+#include "public_sizes.h"
 #include "result.h"
-#include "sha256.h"
 
 // Ticket identities beyond this cannot fit a future ClientHello; larger tickets are dropped,
 // and every client entry refuses a psk_id_len above it (cfg.h).

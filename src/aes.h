@@ -21,9 +21,10 @@
 #include <stdint.h>
 
 #include "cfg.h"
+#include "public_sizes.h"
 
-#define AES_BLOCK 16      // FIPS 197 block size
-#define AES_128_KEY 16    // the key size of every public key, and of AES-128 suites
+// AES_BLOCK, AES_128_KEY and AES_256_KEY are in public_sizes.h, because
+// ch_aes_block's declaration names them.
 #define AES_128_ROUNDS 10 // FIPS 197 Table 3, Nr for Nk = 4
 #define AES_ROUND_KEYS 11 // Nr + 1 round keys, AES_BLOCK bytes each
 #define AES_IV 12         // the 12-byte packet protection IV of §5.1
@@ -59,7 +60,6 @@
 #if defined(CH_CPU_RUNTIME) && defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 #define CH_AES_TWO_CIPHERS
 #endif
-#define AES_256_KEY 32        // FIPS 197 Table 3, Nk = 8 words
 #define AES_256_ROUNDS 14     // FIPS 197 Table 3, Nr for Nk = 8
 #define AES_256_ROUND_KEYS 15 // Nr + 1 round keys, AES_BLOCK bytes each
 

@@ -1764,7 +1764,7 @@ and `pt_len`.
 | `hs.cookie`, `hs.cookie_len` | `uint8_t[HSP_COOKIE_MAX]`, `size_t` | `cookie_len <= HSP_COOKIE_MAX` (`handshake_parser.h:22`) | the retry echo (`handshake_flight.c:79-90`, `:184-187`) |
 | `hs.alert` | `uint8_t` | any | each step seeds it before it parses (`handshake_flight.c:394`, `handshake_auth.c:114`, `:257`, `:294`, `:312`); a later step's failure reports it |
 | `hs.server_finished_ok` | `uint8_t` | any | `hsf_read_finished` sets it (`handshake_flight.c:464`) and `hsa_epoch_commit` asserts it (`handshake_auth.c:237`), both inside the Finished step |
-| `hs.leaf` | `x509_leaf_info` under a CA mode, `webpki_leaf_info` under `TRUST=webpki` | `key_len <= CH_X509_KEY_MAX` (`x509.h:35-39`) or `<= CH_WEBPKI_KEY_MAX` (`webpki.h:38`) | written at the Certificate step, read at the CertificateVerify step. This is the reason `hsa_server_auth` becomes two entry points |
+| `hs.leaf` | `x509_leaf_info` under a CA mode, `webpki_leaf_info` under `TRUST=webpki` | `key_len <= CH_X509_KEY_MAX` (`public_sizes.h`) or `<= CH_WEBPKI_KEY_MAX` (`webpki.h:38`) | written at the Certificate step, read at the CertificateVerify step. This is the reason `hsa_server_auth` becomes two entry points |
 | fenced out under QUIC: `hs.record_size_limit`, `hs.encrypted`, `hs.ccs_seen`, `hs.quiet` (`handshake_record.h:117-120`) | — | — | only the TCP hello builder (`handshake_flight.c:77`) and the TCP record reader (`handshake_record.c:25`, `:63-64`, `:74-75`) read them |
 | `step` | `uint8_t` | the full byte range; the default arm refuses every value above 6 | names the message the driver waits for |
 | `rx_level` | `uint8_t` | the full range; compared, never an index | the one level whose CRYPTO bytes `cfg.buf` holds |

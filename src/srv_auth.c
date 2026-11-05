@@ -59,7 +59,7 @@ static const char srv_cv_context[] = "TLS 1.3, server CertificateVerify";
 // The bytes each scheme's key pointers name. The ECDSA private scalar
 // is P256_PRIV_LEN (p256_sign.h) and its public point is the 64-byte
 // X||Y p256_ecdsa_verify reads (p256.h). The RSA private key is one
-// ch_rsa_priv (rsa_sign.h) and its public modulus is pub_len bytes,
+// ch_rsa_priv (rsa_key.h) and its public modulus is pub_len bytes,
 // whose range rsa_pss_verify checks itself.
 #define SRV_P256_PUB_LEN 64
 

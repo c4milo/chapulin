@@ -10,20 +10,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// The largest modulus rsa_pss_verify and rsa_pkcs1_verify admit, in
-// bytes; the smallest is 256 (RSA-2048) and the step is 8. The device
-// modes, raw and CA, stop at 384 (RSA-3072). A TRUST=webpki
-// build (-DCH_TRUST_WEBPKI) admits 512 (RSA-4096), because a public
-// chain ends at a root that size: GTS Root R1 is RSA-4096, measured in
-// docs/webpki.md under "Bounds". rsa_mont.c sizes its word arrays from
-// this value, so it also sets rsa_vp1's stack frame.
-#ifndef CH_RSA_MODULUS_MAX
-#ifdef CH_TRUST_WEBPKI
-#define CH_RSA_MODULUS_MAX 512
-#else
-#define CH_RSA_MODULUS_MAX 384
-#endif
-#endif
+#include "rsa_key.h"
+
+// CH_RSA_MODULUS_MAX, the largest modulus this file admits, is in
+// rsa_key.h.
 
 // Verifies a PSS signature. n is the raw big-endian modulus, n_len bytes,
 // 256 to CH_RSA_MODULUS_MAX (RSA-2048 to RSA-3072, or to RSA-4096 under

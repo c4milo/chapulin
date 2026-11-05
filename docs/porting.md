@@ -726,7 +726,7 @@ chapulin through colibri:
   (`docs/decisions.md` 77).
 - `ch_assert_fail` (`ch_assert.h`), which every object imports.
 - `ch_keylog` (`keylog.h`) where an object is built `KEYLOG=on`, and
-  `ch_aes_block` (`aes_block.h`) where one is built `AES=extern`. It
+  `ch_aes_block` (`aes_extern.h`) where one is built `AES=extern`. It
   takes a key length, 16 or 32 bytes, and a `SUITE=aesgcm` object passes
   it TLS traffic keys, which is why that build also needs
   `-DCH_AES_EXTERN_CONSTANT_TIME` (`docs/decisions.md` entry 68). The

@@ -236,7 +236,7 @@ const declarations = [_]Declaration{
     .{ .header = "drbg.h", .names = &.{"ch_drbg_seed"} },
     .{ .header = "rand.h", .names = &.{"ch_rand_bytes"} },
     .{ .header = "keylog.h", .names = &.{"ch_keylog"} },
-    .{ .header = "aes_block.h", .names = &.{"ch_aes_block"} },
+    .{ .header = "aes_extern.h", .names = &.{"ch_aes_block"} },
     .{ .header = "ch_assert.h", .names = &.{"ch_assert_fail"} },
     .{ .header = "build.h", .names = &.{"ch_build"} },
 };

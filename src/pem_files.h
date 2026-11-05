@@ -53,7 +53,7 @@
 #if defined(CH_ROLE_SERVER) && !defined(CH_PROFILE_CNSA2)
 #define CH_PEM_P256_KEY_CALL
 #define CH_PEM_RSA_KEY_CALL
-#include "rsa_sign.h" // ch_rsa_priv
+#include "rsa_key.h"
 #endif
 
 #ifdef CH_ROLE_SERVER
@@ -201,7 +201,7 @@ int CH_MUST_USE ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pe
 // refuses the same values. It picks the signers that check the key
 // (below).
 //
-// Writes the key to key, in rsa_sign.h's form: n, d and n_len, and in a
+// Writes the key to key, in rsa_key.h's form: n, d and n_len, and in a
 // host object p, q, dp, dq and qinv too. Each integer is big-endian and
 // padded on the left with zero bytes to its field's length. key is what
 // ch_identity's rsa_pss slot takes as priv, and key->n with key->n_len is

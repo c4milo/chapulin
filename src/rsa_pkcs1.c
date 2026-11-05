@@ -18,7 +18,7 @@
 #include "sha512.h"
 
 // The modulus size check, byte for byte the one rsa_pss_verify applies:
-// RSA-2048 up to CH_RSA_MODULUS_MAX (rsa.h) in 8-byte steps. The bound
+// RSA-2048 up to CH_RSA_MODULUS_MAX (rsa_key.h) in 8-byte steps. The bound
 // is rsa.h's, so the two verifiers and rsa_mont.c's word arrays move
 // together.
 #define MODULUS_MIN 256

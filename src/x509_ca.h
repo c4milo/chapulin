@@ -27,7 +27,7 @@
 #include <stdint.h>
 
 #include "cfg.h"
-#include "x509.h"
+#include "public_sizes.h"
 
 // Reads one "-----BEGIN CERTIFICATE-----" block and copies out the
 // SubjectPublicKeyInfo key bytes: the RSA modulus, or the P-256 point

@@ -72,7 +72,7 @@
 // CH_EINVAL, having sent nothing, when: no identity is provisioned; a
 // provisioned identity is one the flight could not sign with or send,
 // which is key lengths other than srv_cfg.h's, an RSA pub_len above
-// CH_RSA_MODULUS_MAX (rsa.h), a private key its signer refuses, or a
+// CH_RSA_MODULUS_MAX (rsa_key.h), a private key its signer refuses, or a
 // chain a Certificate message cannot carry (srv_identities_usable,
 // srv_auth.h);
 // cfg.srv.cookie_key is NULL, because §9.2 makes the cookie extension

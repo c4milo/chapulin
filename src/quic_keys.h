@@ -23,22 +23,13 @@
 #include "aead.h"
 #include "cfg.h"
 #include "chacha20.h"
+#include "public_sizes.h"
 #include "sha256.h"
 #include "suite.h"
 
-// The 1-RTT receive key sets a session holds, and the three names that
-// index them, which ch_quic_open reports in its key_set output and
-// ch_quic_key_update rotates. RFC 9001 §6.3 makes the current and the
-// next set a floor (rfc9001.txt:1711-1712) and the previous set is this
-// design's choice, so a packet delayed across a key update still opens
-// (docs/quic.md, "The decision"). A CH_QUIC_KEY_NEXT result is a
-// peer-initiated key update (rfc9001.txt:1654-1656). Every read of the
-// array uses one of the three names; no index is computed, and no index
-// comes from a secret.
-#define CH_QUIC_KEY_SETS 3
-#define CH_QUIC_KEY_PREVIOUS 0
-#define CH_QUIC_KEY_CURRENT 1
-#define CH_QUIC_KEY_NEXT 2
+// CH_QUIC_KEY_SETS and the three names that index the key sets,
+// CH_QUIC_KEY_PREVIOUS, CH_QUIC_KEY_CURRENT and CH_QUIC_KEY_NEXT, are in
+// public_sizes.h, because ch_quic_open reports one to its caller.
 
 // The library builds as C, so the guard always runs. It holds the array
 // size and the slot names to one statement of the same fact.

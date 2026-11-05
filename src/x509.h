@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "cfg.h"
+#include "public_sizes.h"
 #include "x509_der.h"
 
 // Largest single certificate the parser admits. Measured realistic
@@ -30,15 +31,8 @@ _Static_assert(CH_X509_MAX <= 0x3fe0, "a Certificate message must fit one handsh
 #define CH_X509_EXT_COUNT_MAX 8
 #define CH_X509_EXT_TLV_MAX 256
 
-// Extracted leaf identity: the SPKI key bytes, copied out because the
-// message buffer is reused before CertificateVerify arrives.
-#ifdef CH_PIN_ECDSA
-#define CH_X509_KEY_MAX 64
-#elif defined(CH_PIN_MLDSA)
-#define CH_X509_KEY_MAX 2592 // MLDSA87_PK_LEN
-#else
-#define CH_X509_KEY_MAX 384
-#endif
+// CH_X509_KEY_MAX, the longest SPKI key this build extracts, is in
+// public_sizes.h.
 
 typedef struct {
     uint8_t key[CH_X509_KEY_MAX];

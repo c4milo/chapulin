@@ -31,7 +31,7 @@
 #include "quic.h"
 #endif
 #ifdef CH_ROLE_SERVER
-#include "rsa_sign.h"
+#include "rsa_key.h"
 #endif
 
 // The format of ch_build_info. A later format appends fields and raises

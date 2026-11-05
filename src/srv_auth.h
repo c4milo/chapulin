@@ -65,7 +65,7 @@
 
 // The largest CertificateVerify signature this build writes, in bytes.
 // An RSA-PSS signature is exactly as long as the modulus, so
-// CH_RSA_MODULUS_MAX (rsa.h) bounds it at 384 in a device build; a DER
+// CH_RSA_MODULUS_MAX (rsa_key.h) bounds it at 384 in a device build; a DER
 // ECDSA-Sig-Value over P-256 is at most 72. The staging buffer takes
 // the larger whichever identity signs, because sizing it per identity
 // would make one build's frame depend on a run-time choice.

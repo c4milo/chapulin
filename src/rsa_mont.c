@@ -5,7 +5,7 @@
 // are little-endian uint32 and every product or carry lives in uint64,
 // the same shape as p256.c. Montgomery CIOS multiplication drives a
 // square-and-multiply exponentiation; 65537 = 2^16 + 1 costs 16 squares
-// and one multiply. Sizes run up to CH_RSA_MODULUS_MAX bytes (rsa.h):
+// and one multiply. Sizes run up to CH_RSA_MODULUS_MAX bytes (rsa_key.h):
 // RSA-3072, or RSA-4096 under CH_TRUST_WEBPKI.
 //
 // That is a device object's rsa_vp1, and the reference. A host object

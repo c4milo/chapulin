@@ -17,23 +17,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "public_sizes.h"
 #include "sha256.h"
 
-// SHA-384 joins HMAC and HKDF under CH_HASH_SHA384. A -DCH_SUITE_AES_GCM
-// build sets it here, because TLS_AES_256_GCM_SHA384 hashes with SHA-384;
-// a test binary or a proof harness sets it on its own to run the SHA-384
-// vectors on a host with no AES instructions. Every other build compiles
-// SHA-256 alone, links no sha512.c, and keeps every secret at 32 bytes.
-#if defined(CH_SUITE_AES_GCM) && !defined(CH_HASH_SHA384)
-#define CH_HASH_SHA384
-#endif
-
+// public_sizes.h sets CH_HASH_SHA384 and HKDF_HASH_MAX from the build.
 #ifdef CH_HASH_SHA384
 #include "sha512.h"
-// The longest hash output, and so the longest secret, this build holds.
-#define HKDF_HASH_MAX SHA384_LEN
-#else
-#define HKDF_HASH_MAX SHA256_LEN
 #endif
 
 // HMAC-SHA-256. Its callers outside the key schedule fix SHA-256 whatever

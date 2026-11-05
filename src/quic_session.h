@@ -146,8 +146,8 @@ typedef struct ch_quic {
     quic_keys handshake_rx, handshake_tx;
     quic_hp_key handshake_hp_rx, handshake_hp_tx;
     // The 1-RTT level: one send set, and three receive sets indexed by CH_QUIC_KEY_PREVIOUS,
-    // CH_QUIC_KEY_CURRENT and CH_QUIC_KEY_NEXT (quic_keys.h) and by no computed index. §6.3 makes
-    // the current and the next set a floor (rfc9001.txt:1711-1712); the previous set is this
+    // CH_QUIC_KEY_CURRENT and CH_QUIC_KEY_NEXT (public_sizes.h) and by no computed index. §6.3
+    // makes the current and the next set a floor (rfc9001.txt:1711-1712); the previous set is this
     // design's choice, so a packet delayed across a key update still opens (§6.5). The header
     // protection keys are written once and never updated (§6.1, rfc9001.txt:1607).
     quic_keys app_tx;

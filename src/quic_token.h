@@ -64,7 +64,7 @@
 #include <stdint.h>
 
 #include "cfg.h"
-#include "sha256.h"
+#include "public_sizes.h"
 
 // The token key: 32 bytes of HMAC-SHA-256 key the caller owns. One key per
 // deployment, the way ch_srv_cfg's cookie_key is one (srv_cfg.h), so a token
