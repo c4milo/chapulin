@@ -290,7 +290,7 @@ connection at once; `ch_alert_received` names that alert and
 `ch_alert_sent` reads 0. A session whose send your transport refused,
 through `cfg.send` or a server's sink, names internal_error: the failure
 is on this side, not the peer's. A tcp-nonblocking session passes
-`&r->t` and a QUIC session `&q->t`. Over QUIC `ch_alert_sent` answers
+`ch_tcp_tls(r)` and a QUIC session `ch_quic_tls(q)`. Over QUIC `ch_alert_sent` answers
 what `ch_quic_alert` answers, and `ch_alert_received` reads 0, because
 QUIC carries no alert record.
 

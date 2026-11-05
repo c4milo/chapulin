@@ -215,6 +215,10 @@ uint8_t ch_tcp_state(const ch_tcp *r) {
     return r->t.state;
 }
 
+ch_tls *ch_tcp_tls(ch_tcp *r) {
+    return &r->t;
+}
+
 void ch_tcp_close(ch_tcp *r) {
     tcp_nonblocking_wipe(r);
     r->t.state = CH_ST_CLOSED;

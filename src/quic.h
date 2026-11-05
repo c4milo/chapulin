@@ -3,21 +3,19 @@
 // the interface a TLS stack owes QUIC, and §5 defines the packet protection that interface feeds.
 // This header covers both and stops there.
 //
-// It is not a QUIC client. chapulin owns every key and every packet's protection; the
-// caller owns everything that is not cryptography, from packet numbers to loss recovery to
-// streams. docs/quic.md, "What the mode does not do", lists the split in full. The object
-// opens no socket and calls no I/O callback. Zero heap holds as it does over TCP: one
-// ch_quic, one caller-supplied buffer, no allocation. Configuration and result codes live
-// in cfg.h and quic_cfg.h, ch_quic in quic_session.h, the ch_tls under it in session.h, and
-// the random source in rand.h. No call here polls for keys: RFC 9001 §4.1.4 says the
-// availability of new keys is always a result of providing inputs to TLS
-// (rfc9001.txt:530-531), so cfg.on_level_ready fires from inside ch_quic_crypto_in and the
-// caller collects what a delivery produced.
+// It is not a QUIC client. chapulin owns every key and every packet's protection; the caller owns
+// everything that is not cryptography, from packet numbers to loss recovery to streams.
+// docs/quic.md, "What the mode does not do", lists the split in full. The object opens no socket
+// and calls no I/O callback. Zero heap holds as it does over TCP: one ch_quic, one caller-supplied
+// buffer, no allocation. Configuration and result codes live in cfg.h and quic_cfg.h, ch_quic in
+// quic_session.h, the ch_tls under it in session.h, and the random source in rand.h. No call here
+// polls for keys: RFC 9001 §4.1.4 says the availability of new keys is always a result of providing
+// inputs to TLS (rfc9001.txt:530-531), so cfg.on_level_ready fires from inside ch_quic_crypto_in
+// and the caller collects what a delivery produced.
 //
-// The QUIC version is the caller's value, like the level: every packet call takes the version
-// of the packet beside its level, and chapulin reads no header byte to learn either. It
-// derives each version's keys and refuses a packet in a version its level does not admit
-// (docs/decisions.md 79).
+// The QUIC version is the caller's value, like the level: every packet call takes the version of
+// the packet beside its level, and chapulin reads no header byte to learn either. It derives each
+// version's keys and refuses a packet in a version its level does not admit (docs/decisions.md 79).
 //
 // Result codes, in one sentence each. CH_OK means the call did what it says. CH_EINVAL means the
 // call was refused on entry and sent nothing: ch_quic_init leaves the session failed until the next
@@ -39,11 +37,8 @@
 #include "alert.h"
 #include "cfg.h"
 #include "gcm.h"
-#include "handshake_record.h"
-#include "quic_keys.h"
 #include "quic_session.h"
 #include "quic_step.h"
-#include "session.h"
 #include "session_report.h"
 
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
@@ -452,12 +447,19 @@ int CH_MUST_USE ch_quic_discard(ch_quic *q, uint8_t level);
 // chapulin never sees. Requires: q is initialized. It cannot fail and changes nothing.
 uint8_t ch_quic_state(const ch_quic *q);
 
+// ch_quic_tls returns &q->t, the ch_tls that alert.h's and session_report.h's calls take.
+// ch_quic_levels_ready reports q->levels_ready, which the packet calls read. Requires: q is
+// not NULL. Neither call can fail or change anything.
+ch_tls *ch_quic_tls(ch_quic *q);
+uint8_t ch_quic_levels_ready(const ch_quic *q);
+
 // Reports the TLS alert description behind the failure that killed the session (RFC 9846
 // §6): unexpected_message, decode_error, no_application_protocol and the rest, as
 // handshake_message.h spells them. ch_quic_error_code is what the caller puts on the wire;
 // this call names the alert behind it, for a log or a test. Requires: q is initialized.
 // Returns 0 while no failure has happened, which is close_notify and never a failure's
-// description here. It cannot fail and changes nothing. ch_alert_sent(&q->t) answers the same.
+// description here. It cannot fail and changes nothing. ch_alert_sent(ch_quic_tls(q))
+// answers the same.
 uint8_t ch_quic_alert(const ch_quic *q);
 
 // Reports the QUIC transport error code the caller sends in CONNECTION_CLOSE (RFC 9001

@@ -148,6 +148,9 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         peer_params_len: ?usize,
         /// The latest ticket on_ticket copied. A server has none.
         ticket: if (side == .client) ?chapulin.Ticket else void,
+        /// The sni_buf init took, where the C server copies server_name. A
+        /// client has none.
+        sni_buf: if (side == .server) []u8 else void,
         /// The Outgoing the running cryptoIn writes into. A client has none.
         outgoing: if (side == .server) ?*Outgoing else void,
         /// The values' choose_version, which onChooseVersion calls. A client has none.
@@ -207,14 +210,25 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
             if (self.choose != null) cfg.srv.choose_version = onChooseVersion;
             cfg.srv.sni_buf = if (sni_buf.len == 0) null else sni_buf.ptr;
             cfg.srv.sni_cap = sni_buf.len;
+            self.sni_buf = sni_buf;
             chapulin.attachRandom(&cfg, &self.random, values.random);
             return chapulin.fromCode(error{Invalid}, c.ch_srv_quic_init(&self.quic, &cfg));
         }
 
-        /// What an init call leaves after a refusal, for a list longer than its Limits cap.
+        /// What an init call leaves after a refusal, for a list longer than its Limits cap:
+        /// the session the C init call leaves when it refuses a configuration, failed and
+        /// otherwise zero (quic.h). A zero ch_cfg names no buffer, so the call refuses it.
         fn failInit(self: *Self) void {
-            self.quic = std.mem.zeroes(c.ch_quic);
-            self.quic.t.state = c.CH_ST_FAILED;
+            const zero = std.mem.zeroes(c.ch_cfg);
+            const rc = if (side == .client) c.ch_quic_init(&self.quic, &zero) else c.ch_srv_quic_init(&self.quic, &zero);
+            std.debug.assert(rc == c.CH_EINVAL);
+        }
+
+        /// The ch_tls inside the C session, which the report calls take (ch_quic_tls).
+        /// The report calls change nothing, so a method of a const session passes its
+        /// pointer without const.
+        fn tls(self: *const Self) *c.ch_tls {
+            return c.ch_quic_tls(@constCast(&self.quic));
         }
 
         fn prepare(self: *Self, peer_params: []u8) void {
@@ -279,10 +293,9 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         }
 
         fn sniServer(self: *const Self) ?[]const u8 {
-            const t = &self.quic.t;
-            const len = c.ch_sni_len(t);
+            const len = c.ch_sni_len(self.tls());
             if (len == 0) return null;
-            return t.cfg.srv.sni_buf[0..len];
+            return self.sni_buf[0..len];
         }
 
         /// ch_quic_initial_keys: the Initial keys from the Destination
@@ -292,14 +305,14 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         }
 
         /// Whether one direction at one level can protect or open packets:
-        /// its bit in ch_quic.levels_ready.
+        /// its bit in ch_quic_levels_ready.
         pub fn keysReady(self: *const Self, level: Level, direction: Direction) bool {
             const bit: u8 = switch (level) {
                 inline else => |l| switch (direction) {
                     inline else => |d| c.CH_QUIC_LEVEL_BIT(@intFromEnum(l), @intFromEnum(d)),
                 },
             };
-            return self.quic.levels_ready & bit != 0;
+            return c.ch_quic_levels_ready(&self.quic) & bit != 0;
         }
 
         /// The peer's quic_transport_parameters body, null before it
@@ -388,14 +401,14 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         /// ch_alert_sent: what alert answers, through the call a record
         /// session answers it with too.
         pub fn alertSent(self: *const Self) ?u8 {
-            const code = c.ch_alert_sent(&self.quic.t);
+            const code = c.ch_alert_sent(self.tls());
             return if (code == 0) null else code;
         }
 
         /// ch_alert_received: null, because QUIC carries no alert record;
         /// the peer's CONNECTION_CLOSE is the caller's to read.
         pub fn alertReceived(self: *const Self) ?u8 {
-            const code = c.ch_alert_received(&self.quic.t);
+            const code = c.ch_alert_received(self.tls());
             return if (code == 0) null else code;
         }
 
@@ -413,31 +426,31 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
 
         /// The protocol ALPN selected, null for CH_ALPN_NONE.
         pub fn alpnSelected(self: *const Self) ?[]const u8 {
-            const t = &self.quic.t;
-            const index = c.ch_alpn_selected(t);
+            const index = c.ch_alpn_selected(self.tls());
             if (index == c.CH_ALPN_NONE) return null;
-            const entry = t.cfg.alpn_protocols[index];
+            // The list init copied into lists, which cfg.alpn_protocols points at.
+            const entry = self.lists.alpn[index];
             return entry.name[0..entry.name_len];
         }
 
         /// ch_tls.group, null while 0.
         pub fn group(self: *const Self) ?chapulin.Group {
-            const code = c.ch_group(&self.quic.t);
+            const code = c.ch_group(self.tls());
             return if (code == 0) null else @enumFromInt(code);
         }
 
         fn suiteOf(self: *const Self) ?chapulin.Suite {
-            const code = c.ch_suite(&self.quic.t);
+            const code = c.ch_suite(self.tls());
             return if (code == 0) null else @enumFromInt(code);
         }
 
         /// ch_tls.psk_selected: a PSK authenticated the handshake.
         pub fn pskSelected(self: *const Self) bool {
-            return c.ch_psk_selected(&self.quic.t) != 0;
+            return c.ch_psk_selected(self.tls()) != 0;
         }
 
         fn serverCertTypeOf(self: *const Self) chapulin.CertType {
-            return @enumFromInt(c.ch_server_cert_type(&self.quic.t));
+            return @enumFromInt(c.ch_server_cert_type(self.tls()));
         }
 
         fn fromHook(io: ?*anyopaque) *Self {
@@ -445,7 +458,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
             return @fieldParentPtr("hook", hook);
         }
 
-        /// Does nothing: ch_quic.levels_ready holds the same bits in the
+        /// Does nothing: ch_quic_levels_ready reports the same bits after the
         /// same call, and keysReady reads them (quic.h).
         fn onLevelReady(_: ?*anyopaque, _: u8, _: u8) callconv(.c) void {}
 

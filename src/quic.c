@@ -1,8 +1,7 @@
-// chapulin's public API under TRANSPORT=quic-nonblocking: the driver, the failure
-// path and the packet calls. Contract in quic.h. It is the file beside
-// tls.c, and it holds no protocol rule of its own: hsq_advance runs the
-// handshake and quic_initial.c, quic_packet.c and quic_retry.c protect
-// the packets.
+// chapulin's public API under TRANSPORT=quic-nonblocking: the driver, the failure path and the
+// packet calls. Contract in quic.h. It is the file beside tls.c, and it holds no protocol rule of
+// its own: hsq_advance runs the handshake and quic_initial.c, quic_packet.c and quic_retry.c
+// protect the packets.
 #include "quic.h"
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -26,18 +25,16 @@
 #include "webpki_ticket.h"
 #endif
 
-// Which endpoint session q is. quic.c holds no other role: every other
-// call in it takes key sets and bytes and reads no side, which is why a
-// ROLE=server build compiles this file unchanged. The two Initial calls
-// are the exception, because RFC 9001 section 5.2 gives each endpoint its
-// own Initial secret and a server that named the client's would seal
-// under "client in" and open under "server in", inverted both ways.
+// Which endpoint session q is. quic.c holds no other role: every other call in it takes key sets
+// and bytes and reads no side, which is why a ROLE=server build compiles this file unchanged. The
+// two Initial calls are the exception, because RFC 9001 section 5.2 gives each endpoint its own
+// Initial secret and a server that named the client's would seal under "client in" and open under
+// "server in", inverted both ways.
 //
-// A one-role build is one side, so the build names it. A ROLE=both object
-// holds both drivers and names no side, so each session carries the one
-// its init call gave it (ch_quic.endpoint). That build first took the
-// server's side for every session, because it defines CH_ROLE_SERVER, and
-// a client session sealed and opened under the server's labels.
+// A one-role build is one side, so the build names it. A ROLE=both object holds both drivers and
+// names no side, so each session carries the one its init call gave it (ch_quic.endpoint). That
+// build first took the server's side for every session, because it defines CH_ROLE_SERVER, and a
+// client session sealed and opened under the server's labels.
 #ifdef CH_ROLE_BOTH
 #define CH_QUIC_SELF(q) ((q)->endpoint)
 #elif defined(CH_ROLE_SERVER)
@@ -46,11 +43,10 @@
 #define CH_QUIC_SELF(q) CH_QUIC_ENDPOINT_CLIENT
 #endif
 
-// The hello is built whole into t.tx, so that array must hold the
-// largest one this build can emit. session.h repeats CH_HELLO_MAX's
-// QUIC values as the literal CH_TX_HELLO because handshake_message.h
-// sits above it, so a drift fails the build here. A PROFILE=cnsa2 server
-// builds no ClientHello, and its CH_TX_HELLO holds its ServerHello alone.
+// The hello is built whole into t.tx, so that array must hold the largest one this build can emit.
+// session.h repeats CH_HELLO_MAX's QUIC values as the literal CH_TX_HELLO because
+// handshake_message.h sits above it, so a drift fails the build here. A PROFILE=cnsa2 server builds
+// no ClientHello, and its CH_TX_HELLO holds its ServerHello alone.
 #if !defined(__cplusplus) && !(defined(CH_PROFILE_CNSA2) && defined(CH_ROLE_SERVER))
 _Static_assert(CH_HELLO_MAX <= CH_TX_HELLO, "the largest ClientHello must fit TX staging");
 #endif
@@ -59,12 +55,11 @@ static int session_dead(const ch_quic *q) {
     return q->t.state == CH_ST_CLOSED || q->t.state == CH_ST_FAILED;
 }
 
-// Everything from here to ch_quic_crypto_out is the client's driver, and
-// a ROLE=server build compiles none of it: srv_quic.c holds the server's,
-// under its own names. The guard is on the definitions and not only on the
-// declarations, because a compiled ch_quic_init would reference the
-// ClientHello builder a server object does not carry, and the object would
-// build with a dangling import the way tls.c's ch_connect once did.
+// Everything from here to ch_quic_crypto_out is the client's driver, and a ROLE=server build
+// compiles none of it: srv_quic.c holds the server's, under its own names. The guard is on the
+// definitions and not only on the declarations, because a compiled ch_quic_init would reference the
+// ClientHello builder a server object does not carry, and the object would build with a dangling
+// import the way tls.c's ch_connect once did.
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     // Neither pointer is checked, as ch_connect does not check its own:
@@ -132,16 +127,14 @@ int ch_quic_initial_keys(ch_quic *q, const uint8_t *dcid, size_t dcid_len) {
 }
 
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
-// The input loop. It copies what fits, asks whether a whole message is
-// present, runs one step if it is, and returns when it is not.
+// The input loop. It copies what fits, asks whether a whole message is present, runs one step if it
+// is, and returns when it is not.
 //
-// It terminates because the copy compacts first, so a copy that leaves
-// input bytes over means the buffer is full, and a full buffer holds at
-// least cfg.buf_len bytes, which every term of CH_QUIC_MIN_RXBUF puts
-// at 490 or more. So hsr_peek_message always reads its 4-byte header
-// there and never answers HSR_INCOMPLETE, which makes that answer imply
-// every input byte was taken. Each iteration then either returns or
-// runs a step, and a step consumes at least four buffer bytes.
+// It terminates because the copy compacts first, so a copy that leaves input bytes over means the
+// buffer is full, and a full buffer holds at least cfg.buf_len bytes, which every term of
+// CH_QUIC_MIN_RXBUF puts at 490 or more. So hsr_peek_message always reads its 4-byte header there
+// and never answers HSR_INCOMPLETE, which makes that answer imply every input byte was taken. Each
+// iteration then either returns or runs a step, and a step consumes at least four buffer bytes.
 static int drive(ch_quic *q, const uint8_t *p, size_t n) {
     size_t off = 0;
     for (;;) {
@@ -219,17 +212,16 @@ int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size
     return CH_OK;
 }
 
-// Whether this client session can still switch versions: it is live, waits
-// for the first ServerHello, has not switched, and has taken no CRYPTO byte
-// from the server at any level. The server sends every CRYPTO frame in the
-// negotiated version, so the first one fixes it (rfc9369.txt:236-244).
+// Whether this client session can still switch versions: it is live, waits for the first
+// ServerHello, has not switched, and has taken no CRYPTO byte from the server at any level. The
+// server sends every CRYPTO frame in the negotiated version, so the first one fixes it
+// (rfc9369.txt:236-244).
 //
-// t.pt_len says whether a byte arrived. ch_quic_crypto_in feeds every byte
-// it takes into cfg.buf through hsr_feed, which raises t.pt_len; bytes at a
-// later level are refused whole while q->rx_level is CH_LEVEL_INITIAL; and
-// the one step that consumes a byte here, the ServerHello step, moves
-// q->step on or fails the session. So t.pt_len is 0 here exactly when no
-// server byte arrived.
+// t.pt_len says whether a byte arrived. ch_quic_crypto_in feeds every byte it takes into cfg.buf
+// through hsr_feed, which raises t.pt_len; bytes at a later level are refused whole while
+// q->rx_level is CH_LEVEL_INITIAL; and the one step that consumes a byte here, the ServerHello
+// step, moves q->step on or fails the session. So t.pt_len is 0 here exactly when no server byte
+// arrived.
 static int switch_open(const ch_quic *q) {
     return q->endpoint == CH_QUIC_ENDPOINT_CLIENT && q->t.state == CH_ST_START &&
            q->step == HSQ_STEP_AWAIT_SERVER_HELLO && q->t.pt_len == 0 &&
@@ -462,14 +454,21 @@ uint8_t ch_quic_state(const ch_quic *q) {
     return q->t.state;
 }
 
+ch_tls *ch_quic_tls(ch_quic *q) {
+    return &q->t;
+}
+
+uint8_t ch_quic_levels_ready(const ch_quic *q) {
+    return q->levels_ready;
+}
+
 uint8_t ch_quic_alert(const ch_quic *q) {
     return q->alert;
 }
 
-// alert.h states both contracts. quic_fail writes alert_sent beside
-// q->alert, so the first answers what ch_quic_alert answers, for a caller
-// that reads one call across its TCP and QUIC sessions. QUIC carries no
-// alert record, so no peer alert is read here and ch_tls declares no
+// alert.h states both contracts. quic_fail writes alert_sent beside q->alert, so the first answers
+// what ch_quic_alert answers, for a caller that reads one call across its TCP and QUIC sessions.
+// QUIC carries no alert record, so no peer alert is read here and ch_tls declares no
 // alert_received.
 uint8_t ch_alert_sent(const ch_tls *t) {
     return t->alert_sent;

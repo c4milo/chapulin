@@ -12,7 +12,7 @@ reason: read's error set leaves out KeyUpdateLimit, so CH_KEY_UPDATE_LIMIT
             const whole = c.ch_tcp_whole_len(input.ptr, input.len);
             self.io.begin(input[0..whole], reply);
             defer self.io.end();
-            const rc = c.ch_read(&self.tcp.t, pt.ptr, pt.len);
+            const rc = c.ch_read(self.tls(), pt.ptr, pt.len);
             self.io.reply_len = self.io.written;
             var out: Read = .{ .consumed = self.io.taken, .pt_len = 0, .reply_len = self.io.written, .peer_closed = false };
             if (rc > 0) {
@@ -26,7 +26,7 @@ reason: read's error set leaves out KeyUpdateLimit, so CH_KEY_UPDATE_LIMIT
             const whole = c.ch_tcp_whole_len(input.ptr, input.len);
             self.io.begin(input[0..whole], reply);
             defer self.io.end();
-            const rc = c.ch_read(&self.tcp.t, pt.ptr, pt.len);
+            const rc = c.ch_read(self.tls(), pt.ptr, pt.len);
             self.io.reply_len = self.io.written;
             var out: Read = .{ .consumed = self.io.taken, .pt_len = 0, .reply_len = self.io.written, .peer_closed = false };
             if (rc > 0) {

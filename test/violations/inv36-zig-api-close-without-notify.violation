@@ -8,6 +8,6 @@ reason: close calls ch_tcp_close where it calls ch_close, so the session
   the close, objects.
 
 --- old
-            c.ch_close(&self.tcp.t);
+            c.ch_close(self.tls());
 --- new
             c.ch_tcp_close(&self.tcp);

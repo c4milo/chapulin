@@ -734,7 +734,7 @@ arrived there, the client's ticket slot and the server's current
 | `Client.cryptoOut(level, out)` | `ch_quic_crypto_out` | Invalid, Cap (live) |
 | `Server.cryptoIn(level, bytes, outgoing)` | `ch_srv_quic_crypto_in` | Invalid (live), Proto, Auth, Cap, Io |
 | `Client.takeTicket()`, `Server.sni()` | as in a tcp-nonblocking session | none |
-| `keysReady(level, direction)` | the bit `CH_QUIC_LEVEL_BIT` names in `ch_quic.levels_ready` | none |
+| `keysReady(level, direction)` | the bit `CH_QUIC_LEVEL_BIT` names in `ch_quic_levels_ready` | none |
 | `peerTransportParams()` | the body `on_transport_params` copied, null before it arrives | Cap, when it was longer than `peer_params` |
 | `seal(level, version, pn, pn_len, hdr, pt, out)`, `sealClose(...)` | `ch_quic_seal`, `ch_quic_seal_close`; return the packet's length | Invalid, Cap |
 | `open(level, version, pkt, pn_off, largest_pn, current_phase_lowest_pn)` | `ch_quic_open`, in place | Invalid, Discard, AeadLimit |
@@ -781,7 +781,7 @@ A client calls `cryptoOut` at each level after `cryptoIn`, because
 `ch_quic_crypto_in` refuses more bytes while a message is staged
 (`quic.h`). `keysReady` answers which keys each step installed; no key
 leaves the session, and the API's `on_level_ready` does nothing, because
-`levels_ready` holds the same bits in the same call. Header protection
+`ch_quic_levels_ready` reports the same bits after the call. Header protection
 runs inside `seal` and `open`, as in C (RFC 9001 §9.5).
 
 ## What stays out

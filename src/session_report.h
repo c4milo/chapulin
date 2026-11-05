@@ -1,6 +1,6 @@
 // What a session reports to its caller: one read call for each field of ch_tls that a caller
 // reads. tls.h, tcp_nonblocking.h and quic.h include this header. A tcp-nonblocking session
-// passes &r->t and a QUIC session &q->t, as alert.h's two calls take them.
+// passes ch_tcp_tls(r) and a QUIC session ch_quic_tls(q), as alert.h's two calls take them.
 //
 // A caller reads ch_tls through these calls and alert.h's, and through no field. Every other
 // field of ch_tls is the library's: the keys, the secrets, the transcript and the state the

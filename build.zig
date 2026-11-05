@@ -161,8 +161,8 @@ const public_quic = [_][]const u8{
     "ch_quic_init",               "ch_quic_initial_keys",       "ch_quic_crypto_in",  "ch_quic_crypto_out",
     "ch_quic_switch_version",     "ch_quic_negotiated_version", "ch_quic_seal",       "ch_quic_seal_close",
     "ch_quic_open",               "ch_quic_retry_ok",           "ch_quic_key_update", "ch_quic_key_phase",
-    "ch_quic_drop_previous_keys", "ch_quic_discard",            "ch_quic_state",      "ch_quic_alert",
-    "ch_quic_error_code",         "ch_quic_close",
+    "ch_quic_drop_previous_keys", "ch_quic_discard",            "ch_quic_state",      "ch_quic_tls",
+    "ch_quic_levels_ready",       "ch_quic_alert",              "ch_quic_error_code", "ch_quic_close",
 };
 /// The client's ticket age call, which every client object exports over
 /// every transport.
@@ -173,9 +173,9 @@ const public_alert = [_][]const u8{ "ch_alert_sent", "ch_alert_received" };
 // PUBLIC_DNSSEC: DNSSEC=on's four calls, each named for the transport.
 const public_dnssec = [_][]const u8{ "ch_dnssec_hash_init", "ch_dnssec_digest_init", "ch_dnssec_hash_update", "ch_dnssec_hash_final", "ch_dnssec_verify" };
 const public_tcp_nonblocking = [_][]const u8{
-    "ch_tcp_init",    "ch_tcp_in",        "ch_tcp_out", "ch_tcp_state",
-    "ch_tcp_close",   "ch_tcp_whole_len", "ch_read",    "ch_write",
-    "ch_write_parts", "ch_writable_len",  "ch_close",   "ch_fail",
+    "ch_tcp_init",     "ch_tcp_in",        "ch_tcp_out", "ch_tcp_state", "ch_tcp_tls",
+    "ch_tcp_close",    "ch_tcp_whole_len", "ch_read",    "ch_write",     "ch_write_parts",
+    "ch_writable_len", "ch_close",         "ch_fail",
 } ++ public_ticket ++ public_alert;
 const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_write_parts", "ch_writable_len", "ch_close", "ch_fail" } ++ public_ticket ++ public_alert;
 const public_srv_quic = [_][]const u8{
@@ -189,15 +189,14 @@ const public_srv_tcp_blocking = [_][]const u8{ "ch_srv_accept", "ch_srv_check" }
 const public_quic_either_role = [_][]const u8{
     "ch_quic_initial_keys",       "ch_quic_negotiated_version", "ch_quic_seal",       "ch_quic_seal_close",
     "ch_quic_open",               "ch_quic_retry_ok",           "ch_quic_key_update", "ch_quic_key_phase",
-    "ch_quic_drop_previous_keys", "ch_quic_discard",            "ch_quic_state",      "ch_quic_alert",
-    "ch_quic_error_code",         "ch_quic_close",
+    "ch_quic_drop_previous_keys", "ch_quic_discard",            "ch_quic_state",      "ch_quic_tls",
+    "ch_quic_levels_ready",       "ch_quic_alert",              "ch_quic_error_code", "ch_quic_close",
 } ++ public_alert;
 /// The calls a connected tcp-nonblocking session makes, which a ROLE=server
 /// object exports without the client's driver.
 const public_record_either_role = [_][]const u8{
-    "ch_tcp_state", "ch_tcp_close",   "ch_tcp_whole_len", "ch_read",
-    "ch_write",     "ch_write_parts", "ch_writable_len",  "ch_close",
-    "ch_fail",
+    "ch_tcp_state", "ch_tcp_tls",     "ch_tcp_close",    "ch_tcp_whole_len", "ch_read",
+    "ch_write",     "ch_write_parts", "ch_writable_len", "ch_close",         "ch_fail",
 } ++ public_alert;
 /// The calls a connected tcp-blocking session makes.
 const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_write_parts", "ch_writable_len", "ch_close", "ch_fail" } ++ public_alert;
@@ -220,8 +219,9 @@ const Declaration = struct { header: []const u8, names: Names };
 const declarations = [_]Declaration{
     .{ .header = "tls.h", .names = &.{ "ch_connect", "ch_read", "ch_write", "ch_write_parts", "ch_writable_len", "ch_close", "ch_fail", "ch_export" } },
     .{ .header = "tcp_nonblocking.h", .names = &.{
-        "ch_tcp_init",  "ch_tcp_in",    "ch_tcp_out",
-        "ch_tcp_state", "ch_tcp_close", "ch_tcp_whole_len",
+        "ch_tcp_init",      "ch_tcp_in",  "ch_tcp_out",
+        "ch_tcp_state",     "ch_tcp_tls", "ch_tcp_close",
+        "ch_tcp_whole_len",
     } },
     .{ .header = "quic.h", .names = &public_quic },
     .{ .header = "srv.h", .names = &.{ "ch_srv_accept", "ch_srv_check" } },

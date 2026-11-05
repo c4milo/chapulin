@@ -1003,7 +1003,7 @@ PUBLIC_TRANSPORT := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_
                     ch_quic_switch_version ch_quic_negotiated_version \
                     ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok ch_quic_key_update \
                     ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard \
-                    ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close \
+                    ch_quic_state ch_quic_tls ch_quic_levels_ready ch_quic_alert ch_quic_error_code ch_quic_close \
                     ch_ticket_obfuscated_age ch_alert_sent ch_alert_received
 else ifeq ($(TRANSPORT),tcp-nonblocking)
 # The same TLS records, driven by a caller that owns the socket. It
@@ -1016,7 +1016,7 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 TRANSPORT_DEF := -DCH_TRANSPORT_TCP_NONBLOCKING
 TRANSPORT_FILTER := src/handshake.c
 TRANSPORT_ADD := src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c
-PUBLIC_TRANSPORT := ch_tcp_init ch_tcp_in ch_tcp_out ch_tcp_state ch_tcp_close \
+PUBLIC_TRANSPORT := ch_tcp_init ch_tcp_in ch_tcp_out ch_tcp_state ch_tcp_tls ch_tcp_close \
                     ch_tcp_whole_len ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_ticket_obfuscated_age \
                     ch_alert_sent ch_alert_received
 else ifeq ($(TRANSPORT),tcp-blocking)
@@ -1120,7 +1120,8 @@ PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag \
                ch_quic_initial_keys ch_quic_negotiated_version \
                ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok \
                ch_quic_key_update ch_quic_key_phase ch_quic_drop_previous_keys \
-               ch_quic_discard ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close \
+               ch_quic_discard ch_quic_state ch_quic_tls ch_quic_levels_ready ch_quic_alert \
+               ch_quic_error_code ch_quic_close \
                ch_alert_sent ch_alert_received
 else ifeq ($(TRANSPORT),tcp-nonblocking)
 # The server's driver replaces the client's, source for source:
@@ -1141,7 +1142,7 @@ ROLE_ADD    := $(filter-out src/srv_handshake.c,$(ROLE_ADD)) src/srv_tcp_nonbloc
 # driver, not ch_ticket_obfuscated_age, which only a client presents, and
 # not ch_srv_accept, which is the blocking one.
 PUBLIC_ROLE := ch_srv_tcp_init ch_srv_tcp_in ch_srv_check \
-               ch_tcp_state ch_tcp_close ch_tcp_whole_len \
+               ch_tcp_state ch_tcp_tls ch_tcp_close ch_tcp_whole_len \
                ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_alert_sent ch_alert_received
 else
 PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail \
@@ -2622,13 +2623,13 @@ LIB_HOOKS = ch_assert_fail $(if $(filter extern,$(RAND)),ch_rand_bytes) \
 # both builds name the same headers (lint-zig-build). DECLARES_<header>
 # lists the names one header declares, under their declared names.
 DECLARES_tls.h := ch_connect ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_export
-DECLARES_tcp_nonblocking.h := ch_tcp_init ch_tcp_in ch_tcp_out ch_tcp_state \
+DECLARES_tcp_nonblocking.h := ch_tcp_init ch_tcp_in ch_tcp_out ch_tcp_state ch_tcp_tls \
                               ch_tcp_close ch_tcp_whole_len
 DECLARES_quic.h := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_crypto_out \
                    ch_quic_switch_version ch_quic_negotiated_version ch_quic_seal \
                    ch_quic_seal_close ch_quic_open ch_quic_retry_ok ch_quic_key_update \
                    ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard ch_quic_state \
-                   ch_quic_alert ch_quic_error_code ch_quic_close
+                   ch_quic_tls ch_quic_levels_ready ch_quic_alert ch_quic_error_code ch_quic_close
 DECLARES_srv.h := ch_srv_accept ch_srv_check
 DECLARES_srv_tcp_nonblocking.h := ch_srv_tcp_init ch_srv_tcp_in
 DECLARES_srv_quic.h := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag

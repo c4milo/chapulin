@@ -169,6 +169,11 @@ int CH_MUST_USE ch_tcp_out(ch_tcp *r, uint8_t *out, size_t cap, size_t *out_len)
 // because ch_write still works; r->t.read_closed says it arrived.
 uint8_t ch_tcp_state(const ch_tcp *r);
 
+// Returns the ch_tls inside r, &r->t, which ch_read, ch_write, ch_close,
+// ch_fail, alert.h's calls and session_report.h's calls take. Requires: r
+// is not NULL. It cannot fail and changes nothing.
+ch_tls *ch_tcp_tls(ch_tcp *r);
+
 // Wipes every secret and marks the session dead. Safe on a session that
 // already failed, where it also drops an alert record ch_tcp_out has
 // not handed over. It sends nothing, so a connected caller calls ch_close

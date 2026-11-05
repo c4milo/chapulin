@@ -125,6 +125,9 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         io: Io,
         /// The latest ticket on_ticket copied. A server has none.
         ticket: if (side == .client) ?chapulin.Ticket else void,
+        /// The sni_buf init took, where the C server copies server_name. A
+        /// client has none.
+        sni_buf: if (side == .server) []u8 else void,
 
         /// Client: the ch_cfg the values build, then ch_tcp_init with the API's send,
         /// recv and, when the values' takes_tickets is true, on_ticket.
@@ -188,14 +191,26 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
             cfg.srv.on_record_out = onTcpOut;
             cfg.srv.sni_buf = if (sni_buf.len == 0) null else sni_buf.ptr;
             cfg.srv.sni_cap = sni_buf.len;
+            self.sni_buf = sni_buf;
             chapulin.attachRandom(&cfg, &self.random, values.random);
             return chapulin.fromCode(error{Invalid}, c.ch_srv_tcp_init(&self.tcp, &cfg));
         }
 
-        /// What an init call leaves after a refusal, for a list longer than its Limits cap.
+        /// What an init call leaves after a refusal, for a list longer than its Limits cap:
+        /// the session the C init call leaves when it refuses a configuration, failed and
+        /// otherwise zero (tcp_nonblocking.h). A zero ch_cfg names no buffer, so the call
+        /// refuses it.
         fn failInit(self: *Self) void {
-            self.tcp = std.mem.zeroes(c.ch_tcp);
-            self.tcp.t.state = c.CH_ST_FAILED;
+            const zero = std.mem.zeroes(c.ch_cfg);
+            const rc = if (side == .client) c.ch_tcp_init(&self.tcp, &zero) else c.ch_srv_tcp_init(&self.tcp, &zero);
+            std.debug.assert(rc == c.CH_EINVAL);
+        }
+
+        /// The ch_tls inside the C session, which the record-layer calls and the report
+        /// calls take (ch_tcp_tls). The report calls change nothing, so a method of a
+        /// const session passes its pointer without const.
+        fn tls(self: *const Self) *c.ch_tls {
+            return c.ch_tcp_tls(@constCast(&self.tcp));
         }
 
         fn prepare(self: *Self) void {
@@ -259,10 +274,9 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         }
 
         fn sniServer(self: *const Self) ?[]const u8 {
-            const t = &self.tcp.t;
-            const len = c.ch_sni_len(t);
+            const len = c.ch_sni_len(self.tls());
             if (len == 0) return null;
-            return t.cfg.srv.sni_buf[0..len];
+            return self.sni_buf[0..len];
         }
 
         /// ch_tcp_state.
@@ -275,14 +289,14 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         /// stages it for recordOut, a server's recordIn writes it into
         /// output, and read and write send it into their own output.
         pub fn alertSent(self: *const Self) ?u8 {
-            const alert = c.ch_alert_sent(&self.tcp.t);
+            const alert = c.ch_alert_sent(self.tls());
             return if (alert == 0) null else alert;
         }
 
         /// ch_alert_received: the fatal alert the peer sent, null when none
         /// arrived. A session that failed on it sent nothing in answer.
         pub fn alertReceived(self: *const Self) ?u8 {
-            const alert = c.ch_alert_received(&self.tcp.t);
+            const alert = c.ch_alert_received(self.tls());
             return if (alert == 0) null else alert;
         }
 
@@ -302,7 +316,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
             const whole = c.ch_tcp_whole_len(input.ptr, input.len);
             self.io.begin(input[0..whole], reply);
             defer self.io.end();
-            const rc = c.ch_read(&self.tcp.t, pt.ptr, pt.len);
+            const rc = c.ch_read(self.tls(), pt.ptr, pt.len);
             self.io.reply_len = self.io.written;
             var out: Read = .{ .consumed = self.io.taken, .pt_len = 0, .reply_len = self.io.written, .peer_closed = false };
             if (rc > 0) {
@@ -326,7 +340,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
             if (pt.len > self.writableLen(output.len)) return error.Cap;
             self.io.begin(&.{}, output);
             defer self.io.end();
-            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write(&self.tcp.t, pt.ptr, pt.len));
+            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write(self.tls(), pt.ptr, pt.len));
             return self.io.written;
         }
 
@@ -342,13 +356,13 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
             if (total > self.writableLen(output.len)) return error.Cap;
             self.io.begin(&.{}, output);
             defer self.io.end();
-            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write_parts(&self.tcp.t, parts.ptr, parts.len));
+            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write_parts(self.tls(), parts.ptr, parts.len));
             return self.io.written;
         }
 
         /// The most plaintext one write seals into cap bytes: ch_writable_len.
         pub fn writableLen(self: *const Self, cap: usize) usize {
-            return c.ch_writable_len(&self.tcp.t, cap);
+            return c.ch_writable_len(self.tls(), cap);
         }
 
         /// ch_close: sends this side's close_notify into output, at most
@@ -358,7 +372,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         pub fn close(self: *Self, output: []u8) error{Io}!usize {
             self.io.begin(&.{}, output);
             defer self.io.end();
-            c.ch_close(&self.tcp.t);
+            c.ch_close(self.tls());
             if (self.io.refused) return error.Io;
             return self.io.written;
         }
@@ -374,7 +388,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         pub fn fail(self: *Self, description: u8, output: []u8) error{ Invalid, Proto, Cap, Io }!usize {
             self.io.begin(&.{}, output);
             defer self.io.end();
-            try chapulin.fromCode(error{ Invalid, Proto, Cap, Io }, c.ch_fail(&self.tcp.t, description));
+            try chapulin.fromCode(error{ Invalid, Proto, Cap, Io }, c.ch_fail(self.tls(), description));
             return self.io.written;
         }
 
@@ -386,45 +400,45 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         }
 
         fn exportOf(self: *const Self, label: [:0]const u8, context: []const u8, out: []u8) error{Invalid}!void {
-            return chapulin.fromCode(error{Invalid}, c.ch_export(&self.tcp.t, label.ptr, context.ptr, context.len, out.ptr, out.len));
+            return chapulin.fromCode(error{Invalid}, c.ch_export(self.tls(), label.ptr, context.ptr, context.len, out.ptr, out.len));
         }
 
         fn alpnSelectedOf(self: *const Self) ?[]const u8 {
-            const t = &self.tcp.t;
-            const index = c.ch_alpn_selected(t);
+            const index = c.ch_alpn_selected(self.tls());
             if (index == c.CH_ALPN_NONE) return null;
-            const entry = t.cfg.alpn_protocols[index];
+            // The list init copied into lists, which cfg.alpn_protocols points at.
+            const entry = self.lists.alpn[index];
             return entry.name[0..entry.name_len];
         }
 
         /// ch_tls.group, null while 0.
         pub fn group(self: *const Self) ?chapulin.Group {
-            const code = c.ch_group(&self.tcp.t);
+            const code = c.ch_group(self.tls());
             return if (code == 0) null else @enumFromInt(code);
         }
 
         fn suiteOf(self: *const Self) ?chapulin.Suite {
-            const code = c.ch_suite(&self.tcp.t);
+            const code = c.ch_suite(self.tls());
             return if (code == 0) null else @enumFromInt(code);
         }
 
         /// ch_tls.psk_selected: a PSK authenticated the handshake.
         pub fn pskSelected(self: *const Self) bool {
-            return c.ch_psk_selected(&self.tcp.t) != 0;
+            return c.ch_psk_selected(self.tls()) != 0;
         }
 
         fn serverCertTypeOf(self: *const Self) chapulin.CertType {
-            return @enumFromInt(c.ch_server_cert_type(&self.tcp.t));
+            return @enumFromInt(c.ch_server_cert_type(self.tls()));
         }
 
         /// ch_tls.peer_limit: the most plaintext per record the peer takes.
         pub fn peerLimit(self: *const Self) u16 {
-            return c.ch_peer_limit(&self.tcp.t);
+            return c.ch_peer_limit(self.tls());
         }
 
         /// ch_tls.read_closed: the peer's close_notify arrived.
         pub fn readClosed(self: *const Self) bool {
-            return c.ch_read_closed(&self.tcp.t) != 0;
+            return c.ch_read_closed(self.tls()) != 0;
         }
 
         /// Bytes the last read wrote into reply, which a failed read also sets.
