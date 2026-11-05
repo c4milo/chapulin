@@ -235,9 +235,9 @@ static void test_connect_cfg(void) {
     CHECK(t.group == 0);                               // no ServerHello arrived, so no group
 #ifdef CH_PIN_ECDSA
     cfg.server_pubkey_len = 63;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // P-256 pin must be exactly 64
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // P-256 pin must be exactly 64
     cfg.server_pubkey_len = 65;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
 #else
     cfg.server_pubkey_len = 256;
     pin[255] = 1; // the low byte the shorter length exposes must be odd too
