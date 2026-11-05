@@ -275,6 +275,7 @@
         "src/rsa_sign.h",
         "src/rsa_sign64.c",
         "src/rsa_sign64.h",
+        "src/rsa_sign64_blind.h",
         "src/rsa_sign64_wipe.c",
         "src/rsa_sign64_wipe.h",
         "src/session.c",

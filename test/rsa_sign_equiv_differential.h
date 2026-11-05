@@ -304,9 +304,9 @@ static int differential_prepare(const test_rsa_sign_key *from) {
                      &differential_records[1]);
 
     differential_exchange();
-    int signed_both =
-        rsa_sign64_sp1(equiv_cpu, &key, differential_messages[0], sig) &&
-        rsa_sign64_sp1(equiv_cpu, &differential_exchanged, differential_messages[0], residue_sig);
+    int signed_both = rsa_sign64_sp1(equiv_cpu, &key, differential_messages[0], crt_blind, sig) &&
+                      rsa_sign64_sp1(equiv_cpu, &differential_exchanged, differential_messages[0],
+                                     crt_blind, residue_sig);
     return signed_both && memcmp(sig, residue_sig, from->n_len) == 0;
 }
 

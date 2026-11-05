@@ -1,0 +1,12 @@
+invariant: INV-16
+file: src/rsa_sign64_blind.h
+catches: rsa_sign_equiv_test
+reason: blinded_prime_exponent multiplies r by p in place of p - 1, so
+  each half walks d + r p, whose power is m^(d + r) mod p and not m^d.
+  The signature fails its check, and bin/rsa_sign_equiv_test finds the
+  64-bit signer refusing its own signature.
+
+--- old
+    p_words[0] &= ~(uint64_t)1;
+--- new
+    p_words[0] &= ~(uint64_t)0;

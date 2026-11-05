@@ -7,8 +7,9 @@
 // CH_TRUST_WEBPKI in the rsa_sign64_ifma_webpki variant:
 //
 //   - both_powers runs rsa_ifma_sign_power_pair once, on m1 and m2 in
-//     place, with dp and dq, both primes' records and the primes' length
-//     in bytes, and rsa_ifma_sign_wipe_below once after it.
+//     place, with the two blinded exponents it was given, both primes'
+//     records and the exponents' length in bytes, half the modulus's and
+//     8 more, and rsa_ifma_sign_wipe_below once after it.
 //   - check_power runs rsa_vp1_cpu once, under the session's value, on
 //     the key's modulus, every byte of it, and the candidate, every byte
 //     of it, and rsa_ifma_sign_wipe_below once after it.
@@ -139,15 +140,20 @@ static void prove_powers(size_t n_len) {
     havoc_record(&mod_q, k);
     havoc_words(m1, PRIME_WORDS_MAX);
     havoc_words(m2, PRIME_WORDS_MAX);
+    uint8_t e_p[EXPONENT_LEN_MAX];
+    uint8_t e_q[EXPONENT_LEN_MAX];
+    fill_nondet(e_p, sizeof e_p);
+    fill_nondet(e_q, sizeof e_q);
+    size_t e_len = half_len + BLIND_R_LEN;
     pair_calls = 0;
     wipe_calls = 0;
-    both_powers(IFMA_CPU, m1, m2, &key, half_len, &mod_p, &mod_q);
+    both_powers(IFMA_CPU, m1, m2, e_p, e_q, e_len, &mod_p, &mod_q);
     __CPROVER_assert(pair_calls == 1 && wipe_calls == 1,
                      "the exponentiations run on the kernel once, and the wipe follows them");
     __CPROVER_assert(pair_o_p == m1 && pair_base_p == m1 && pair_o_q == m2 && pair_base_q == m2,
                      "each half is raised in place");
-    __CPROVER_assert(pair_e_p == key.dp && pair_e_q == key.dq && pair_e_len == half_len,
-                     "the exponents are dp and dq, every byte of each");
+    __CPROVER_assert(pair_e_p == e_p && pair_e_q == e_q && pair_e_len == e_len,
+                     "the exponents are the blinded ones, every byte of each");
     __CPROVER_assert(pair_mod_p == &mod_p && pair_mod_q == &mod_q, "each half under its prime");
 }
 

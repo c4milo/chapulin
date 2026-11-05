@@ -368,9 +368,11 @@ static void run_rsa_pkcs1_verify_4096(size_t n) {
 // The salt comes from ch_rand_bytes, drbg.c here, as a server draws one
 // per signature (srv_auth.c), so the signature differs from the vector's;
 // prepare checks the verifier takes it.
-// The r of the ladder's exponent (rsa_sign.h). A signature is the same
-// bytes for every r, and the cost of the ladder does not depend on it.
-static const uint8_t bench_blind[RSA_BLIND_LEN] = {0x5a, 0x3c, 0x01, 0x80, 0x7f, 0x02, 0xc4, 0x99};
+// The blind of each signature's exponents (rsa_sign.h). A signature is
+// the same bytes for every blind, and the cost of a signature does not
+// depend on it.
+static const uint8_t bench_blind[RSA_BLIND_LEN] = {0x5a, 0x3c, 0x01, 0x80, 0x7f, 0x02, 0xc4, 0x99,
+                                                   0xa5, 0x0f, 0x10, 0x08, 0xf7, 0x20, 0x4c, 0x91};
 
 static void sign_and_check(const ch_rsa_priv *k, const uint8_t hash[SHA256_LEN]) {
     uint8_t salt[RSA_PSS_SALT_LEN];

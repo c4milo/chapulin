@@ -11,9 +11,7 @@ reason: widemul_rsa_sp1_cpu inverts its branch, so the private operation runs
 
 --- old
     if (widemul_native(widemul)) {
-        (void)blind;
-        return rsa_sign64_sp1(cpu, k, em, sig);
+        return rsa_sign64_sp1(cpu, k, em, blind, sig);
 --- new
     if (!widemul_native(widemul)) {
-        (void)blind;
-        return rsa_sign64_sp1(cpu, k, em, sig);
+        return rsa_sign64_sp1(cpu, k, em, blind, sig);

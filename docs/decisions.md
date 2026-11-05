@@ -16027,3 +16027,45 @@ does nothing more.
       the ladder's signature, which the CRT signer has, is still missing.
     - **Rejected:** **base blinding**, for the inverse it needs. **An r
       derived from the salt**, which the signature publishes.
+
+187. **The 64-bit CRT signer blinds dp and dq, each with its own fresh
+    64-bit r.** Entry 186 blinded the ladder and left the CRT signer of a
+    host object unblinded. The same attack applies to it: each half's
+    input is em mod p, and traces of many signatures over one dp can be
+    correlated with its bits. Camilo ruled on 2026-11-05 for exponent
+    blinding of both halves, with two independent r.
+
+    - **The form.** The window walks dp + r_p (p - 1) modulo p and dq +
+      r_q (q - 1) modulo q. By Fermat's little theorem each gives the same
+      power for every base and every r, also a base that p divides,
+      because dp ≥ 1 (`crt_blinded_pow_mod`). p is odd, so p - 1 is p
+      with its low bit cleared.
+    - **The arithmetic.** `blinded_prime_exponent` adds r (p - 1) to d one
+      64-bit word at a time on `rsa_mont64_mul_add_add`, the step every
+      Montgomery product here runs. The session's multiply bit states its
+      timing. No branch or index reads d, p or r.
+    - **The draw.** `RSA_BLIND_LEN` is now 16 bytes: r_p, then r_q. The
+      ladder reads the first 8 as its r, `RSA_LADDER_BLIND_LEN`.
+      `srv_auth.c` draws 48 bytes in one call, so INV-4's one draw site
+      stays.
+    - **Cost.** Each exponent is 8 bytes longer, so each exponentiation
+      runs 16 more window steps: 6.25% more at RSA-2048 and 4.2% at
+      RSA-3072. `sign_halves`'s frame grows by two exponents of up to 264
+      bytes. The IFMA and ADX paths take the exponent's length as an
+      argument already, so neither kernel changed.
+    - **Stack.** `bench/sram.sh` on the M1 Pro, after both entries: the
+      host server's RSA chain went from 19,872 to 20,320 bytes, and
+      `ch_rsa_key_from_pem` from 20,304 to 20,720 in the host object and
+      from 7,360 to 7,600 in the device one. Entry 186's ladder moved the
+      device server's signer from 5,376 to 6,208 bytes, and it is now the
+      deepest chain of the host server without the 64-bit signer and the
+      encapsulation, at 6,240 bytes, above the ECDSA signer.
+    - **What holds it.** `crt_blinded_pow_mod` in
+      `spec/lean/Spec/RsaBlind.lean`. The `rsa_sign64_crt` harnesses prove
+      `blinded_exponents`'s memory accesses at both shapes, and the
+      `rsa_sign64_power` harnesses now bound the exponent at 200 and 264
+      bytes. `bin/rsa_sign_equiv_test` holds each exponent to d + r (p -
+      1) computed a byte at a time, signs under five blinds to the same
+      bytes, and its stack runs pass under the blinding.
+    - **Rejected:** **one r for both halves**, a smaller change, because a
+      fresh r for each exponentiation is the form the literature analyses.

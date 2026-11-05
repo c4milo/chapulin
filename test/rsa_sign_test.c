@@ -214,7 +214,7 @@ static void run_exponent(const vector *v) {
     uint32_t got[3][CH_RSA_MODULUS_MAX / 4 + RSA_SIGN_BLIND_WORDS];
     for (size_t b = 0; b < 3; b++) {
         uint64_t r = 0;
-        for (size_t j = RSA_BLIND_LEN; j-- > 0;) {
+        for (size_t j = RSA_LADDER_BLIND_LEN; j-- > 0;) {
             r = (r << 8) | blinds[b][j];
         }
         uint32_t want[CH_RSA_MODULUS_MAX / 4 + RSA_SIGN_BLIND_WORDS];

@@ -1,5 +1,6 @@
-// rsa_sign64.c's reduction and recombination, which are static there, as
-// two calls bin/rsa_sign_equiv_test can make on their own.
+// rsa_sign64.c's reduction, recombination and blinded exponents, which are
+// static there, as three calls bin/rsa_sign_equiv_test can make on their
+// own.
 //
 // Why this exists: inside rsa_sign64_sp1 the frame of each piece is
 // written over by the calls that follow it, so the stack after a
@@ -30,4 +31,9 @@ void rsa_sign_equiv_recombination(uint64_t *s, uint64_t *m1, uint64_t *m2, const
                                   size_t half_len, const rsa_mont64_modulus *mod_p,
                                   const rsa_mont64_modulus *mod_q) {
     crt_combine(s, m1, m2, qinv, half_len, mod_p, mod_q);
+}
+
+void rsa_sign_equiv_blinded_exponents(uint8_t *e_p, uint8_t *e_q, const ch_rsa_priv *k,
+                                      size_t half_len, const uint8_t blind[RSA_BLIND_LEN]) {
+    blinded_exponents(e_p, e_q, k, half_len, blind);
 }

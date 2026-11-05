@@ -3,9 +3,10 @@
 // digits it reads, two for each byte of the exponent, and the words each
 // step handles. So the harness makes two calls.
 //
-// The exponent's bound: the longest exponent a key has, half the largest
-// modulus the build admits (192 bytes; 256 in the rsa_sign64_power_webpki
-// variant, which sets CH_TRUST_WEBPKI), over a modulus of one word. Every
+// The exponent's bound: the longest exponent a signature walks, half the
+// largest modulus the build admits and the 8 bytes its blinding adds (200
+// bytes; 264 in the rsa_sign64_power_webpki variant, which sets
+// CH_TRUST_WEBPKI), over a modulus of one word. Every
 // digit of every byte is read, and every step squares four times, reads
 // the table and multiplies.
 //
@@ -35,7 +36,7 @@
 #include "rsa_sign64_stubs.h"
 
 #define STEPS_WORDS 1
-#define STEPS_EXPONENT_LEN (CH_RSA_MODULUS_MAX / 2)
+#define STEPS_EXPONENT_LEN EXPONENT_LEN_MAX
 #define WORDS_EXPONENT_LEN 2
 
 static void havoc_modulus(rsa_mont64_modulus *mod, size_t k) {

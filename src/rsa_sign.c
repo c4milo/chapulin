@@ -197,7 +197,8 @@ static void blind_pass(uint32_t *exponent, const uint32_t *t, size_t exponent_wo
 }
 
 // exponent = d + r (65537 d - 1) over words + BLIND_WORDS words, with r
-// the RSA_BLIND_LEN bytes of blind read as a little-endian number. 65537 d
+// the first RSA_LADDER_BLIND_LEN bytes of blind read as a little-endian
+// number. 65537 d
 // - 1 is a multiple of lambda(n), so m^exponent = m^d mod n for every m
 // (rsa_sign.h, spec/lean/Spec/RsaBlind.lean). A fresh r for each
 // signature gives the ladder a different exponent each time. No step runs
@@ -217,7 +218,7 @@ static void blinded_exponent(uint32_t *exponent, const uint8_t *d, size_t words,
     // the compiler cannot know. The last store leaves no bit of r there.
     memset(exponent, 0, exponent_words * sizeof(uint32_t));
     volatile uint32_t opaque = 0;
-    for (size_t j = (size_t)8 * RSA_BLIND_LEN; j-- > 0;) {
+    for (size_t j = (size_t)8 * RSA_LADDER_BLIND_LEN; j-- > 0;) {
         opaque = mask_of_bit(((uint32_t)blind[j >> 3] >> (j & 7)) & 1);
         blind_pass(exponent, t, exponent_words, opaque);
     }
@@ -434,8 +435,8 @@ static void emsa_pss_encode(const uint8_t msg_hash[32], const uint8_t salt[SLEN]
 // none.
 #ifdef CH_RSA_SIGN64
 int rsa_pss_sign_cpu(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                     const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
-                     size_t *sig_len)
+                     const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                     uint8_t *sig, size_t cap, size_t *sig_len)
 #else
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
                  const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
@@ -467,7 +468,7 @@ int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
 #ifdef CH_RSA_SIGN64
     // The 64-bit signer returns 0 for a signature that failed its check,
     // and has written no byte of it. The ladder has no check to fail.
-    int written = rsa_sign64_sp1(cpu, k, em, sig);
+    int written = rsa_sign64_sp1(cpu, k, em, blind, sig);
     ct_wipe(em, sizeof em);
     if (!written) {
         return 0;

@@ -88,22 +88,24 @@ static void diff_key(const test_rsa_sign_key *from) {
     for (int row = 0; row < DIFF_RSA_SIGN_ROWS; row++) {
         uint8_t hash[32];
         uint8_t salt[RSA_PSS_SALT_LEN];
+        uint8_t blind[RSA_BLIND_LEN];
         static uint8_t want[CH_RSA_MODULUS_MAX];
         static uint8_t got[CH_RSA_MODULUS_MAX];
         size_t got_len = 0;
         rng_fill(hash, sizeof hash);
         rng_fill(salt, sizeof salt);
+        rng_fill(blind, sizeof blind);
         // rsa_pss_sign asserts on an all-zero salt, which a draw gives
         // once in 2^256.
         salt[0] |= 1;
         spec_sign(hash, salt, want);
 
         int signed_ok =
-            rsa_sign64_pss(DIFF_RSA_SIGN64_CPU, &key, hash, salt, got, sizeof got, &got_len);
+            rsa_sign64_pss(DIFF_RSA_SIGN64_CPU, &key, hash, salt, blind, got, sizeof got, &got_len);
         compare("the 64-bit signer", signed_ok, got, got_len, want);
         if (row == 0) {
             got_len = 0;
-            signed_ok = rsa_pss_sign(&key, hash, salt, salt, got, sizeof got, &got_len);
+            signed_ok = rsa_pss_sign(&key, hash, salt, blind, got, sizeof got, &got_len);
             compare("the ladder", signed_ok, got, got_len, want);
         }
     }

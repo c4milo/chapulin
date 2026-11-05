@@ -26,6 +26,12 @@
 // power is the byte of the encoded message, at both shapes: no byte is
 // left out of the comparison.
 //
+// The blinding. blinded_exponents reads every byte of dp, p, dq and q,
+// half the modulus's bytes each, and of the blind, and writes the 8 more
+// bytes of each blinded exponent, at both shapes. Its words' values rest
+// on bin/rsa_sign_equiv_test, which holds them to d + r (p - 1) computed a
+// byte at a time, and on the proofs of rsa_mont64_mul_add_add.
+//
 // The write. write_if_verified leaves sig as it was, every byte, unless
 // the check passed, and then sig holds the candidate. So no byte of a
 // candidate that failed its check is written to a caller.
@@ -166,6 +172,15 @@ static void prove_check(size_t n_len) {
                      "the check passes exactly when every byte of the power is the message's");
 }
 
+static void prove_blinding(size_t n_len) {
+    uint8_t e_p[EXPONENT_LEN_MAX];
+    uint8_t e_q[EXPONENT_LEN_MAX];
+    uint8_t blind[RSA_BLIND_LEN];
+    havoc_key(n_len);
+    fill_nondet(blind, sizeof blind);
+    blinded_exponents(e_p, e_q, &key, n_len / 2, blind);
+}
+
 static void prove_write(size_t n_len) {
     uint8_t em[CH_RSA_MODULUS_MAX];
     uint8_t candidate[CH_RSA_MODULUS_MAX];
@@ -198,6 +213,8 @@ int main(void) {
     prove_key_test(CH_RSA_MODULUS_MAX - 8);
     prove_check(CH_RSA_MODULUS_MAX);
     prove_check(CH_RSA_MODULUS_MAX - 8);
+    prove_blinding(CH_RSA_MODULUS_MAX);
+    prove_blinding(CH_RSA_MODULUS_MAX - 8);
     prove_write(CH_RSA_MODULUS_MAX);
     prove_write(CH_RSA_MODULUS_MAX - 8);
     return 0;

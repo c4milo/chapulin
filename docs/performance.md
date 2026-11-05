@@ -163,9 +163,10 @@ beside its ECDSA and RSA identities (180) and which the
 deployment sets the `mldsa87` slot. With the ML-DSA-87 CertificateVerify,
 whose own frame stages the 4,627-byte signature, pruned from the call
 graph (`STACK_PRUNE=srv_mldsa_send_certificate_verify`) the deepest chain is
-`rsa_sign64.c`'s RSA-PSS signer, at 19,872 bytes, which holds a modulus
+`rsa_sign64.c`'s RSA-PSS signer, at 20,320 bytes, which holds a modulus
 record for each prime, the signature it checks and a table of sixteen
-powers ([`docs/decisions.md`](decisions.md) 95). The deepest frame on that
+powers ([`docs/decisions.md`](decisions.md) 95) and the two blinded
+exponents (187). The deepest frame on that
 chain is `rsa_sign64_wipe.c`'s, which writes zero over the
 `RSA_SIGN64_BELOW_LEN` bytes under each private call (181). Its square holds a copy
 of 2a (106) and calls `rsa_mont64_blocks.c`'s square, which multiplies in
@@ -173,13 +174,15 @@ blocks of four words under clang for arm64 (118). With the RSA signer
 pruned too (`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss`) it is the
 encapsulation to the client's key into K-PKE encrypt and Keccak, at
 8,992 bytes. With the encapsulation pruned as well
-(`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss,srv_kex_share`) it is the
-ECDSA signer on the wide P-256 field, at 6,192 bytes. After each wide operation,
-`p256_wide_wipe_below` writes zero over the stack below it, in a frame
-of 3,120 bytes. A device object holds neither the 64-bit signer nor the
+(`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss,srv_kex_share`) it is
+`rsa_sign.c`'s ladder, at 6,240 bytes, which a session without the
+multiply bit runs and whose blinded exponent takes two arrays of 99 words
+(186). The ECDSA signer on the wide P-256 field lies under it: after each
+wide operation, `p256_wide_wipe_below` writes zero over the stack below
+it, in a frame of 3,120 bytes. A device object holds neither the 64-bit signer nor the
 wide field: its `ch_srv_accept` peaks at 8,944 bytes, through the
 encapsulation (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`).
-There the signer's deepest chain is `rsa_sign.c`'s ladder, at 5,376
+There the signer's deepest chain is `rsa_sign.c`'s ladder, at 6,208
 bytes (`STACK_PRUNE=srv_kex_share`).
 
 **`SUITE=aesgcm`.** `bench/sram.sh` measures a `SUITE=aesgcm` build as the
@@ -339,11 +342,11 @@ the EC PARAMETERS room now sits in the call's own frame
 
 The RSA key call (decision 184) decodes into a room of
 `CH_PEM_RSA_KEY_DER_MAX` bytes in its own frame, and then signs once.
-On arm64 it peaks at 20,304 bytes in `ROLE=server TRUST=none`. Its
+On arm64 it peaks at 20,720 bytes in `ROLE=server TRUST=none`. Its
 deepest chain is the 64-bit signer's wipe below each private call, an
 array of 16,384 bytes (decision 181). The call signs on that signer
 under `CH_CPU_CONSTANT_TIME_MULTIPLY` alone. A device object holds the
-ladder alone, and there the call peaks at 7,360 bytes, through the
+ladder alone, and there the call peaks at 7,600 bytes, through the
 verification of its signature
 (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`).
 

@@ -149,8 +149,10 @@ static void case_rsa(uint32_t cpu, uint8_t widemul, const test_rsa_sign_key *fro
     CT_SECRET(key.qinv, sizeof key.qinv);
 #endif
     CT_SECRET(salt_copy, sizeof salt_copy);
-    // The blind is the r of the ladder's exponent (rsa_sign.h), a secret.
-    uint8_t blind[RSA_BLIND_LEN] = {0x3c, 0x5a, 0x01, 0x80, 0x7f, 0x02, 0xc4, 0x99};
+    // The blind is the r of the ladder's exponent and the r_p and r_q of
+    // the 64-bit signer's (rsa_sign.h), a secret.
+    uint8_t blind[RSA_BLIND_LEN] = {0x3c, 0x5a, 0x01, 0x80, 0x7f, 0x02, 0xc4, 0x99,
+                                    0xa5, 0x0f, 0x10, 0x08, 0xf7, 0x20, 0x4c, 0x91};
     CT_SECRET(blind, sizeof blind);
     int key_ok = widemul_rsa_pss_sign_key_ok(widemul, &key);
     // Public: the key test's verdict is the one the server's configuration check reports.

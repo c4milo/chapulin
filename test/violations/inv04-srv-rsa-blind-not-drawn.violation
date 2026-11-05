@@ -4,7 +4,7 @@ catches: tcp_blocking_loop_session
 reason: sign_rsa_pss draws the salt alone and passes the salt as the
   blind. The salt is public, since it travels inside the signature, so
   every signature's r is known to an attacker who reads the signature.
-  The session loop checks that the server source's one draw is 40 bytes:
+  The session loop checks that the server source's one draw is 48 bytes:
   the salt, then the blind.
 
 --- old

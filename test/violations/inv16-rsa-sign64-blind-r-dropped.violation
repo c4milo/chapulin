@@ -1,0 +1,13 @@
+invariant: INV-16
+file: src/rsa_sign64_blind.h
+catches: rsa_sign_equiv_test
+reason: blinded_prime_exponent reads r as zero, so each half walks dp
+  and dq themselves, the same exponent every signature. Every signature
+  is still the same bytes, so no signature test notices.
+  bin/rsa_sign_equiv_test reads the blinded exponents and holds each to
+  d + r (p - 1) computed a byte at a time.
+
+--- old
+        r = (r << 8) | r_bytes[i];
+--- new
+        r = (r << 8) & r_bytes[i];

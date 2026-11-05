@@ -342,7 +342,7 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
         src/pem.c src/base64.c src/x509.c src/x509_der.c src/x509_ca.c src/webpki_time.c src/webpki_name.c src/webpki_spki.c src/webpki_ext.c src/buf.c src/record.c src/keysched.c src/io.c src/handshake_message.c src/handshake_parser.c src/handshake_parser_ee.c src/handshake_record.c src/session.c \
         src/handshake_auth.c src/handshake_flight.c src/handshake.c src/handshake_post.c src/tls.c src/tls_entry.c src/session_report.c src/tls_write.c src/softmul.c src/build.c
 
-HDRS := src/public_sizes.h src/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h src/aes_extern.h src/rsa_key.h src/p256_sign_der.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h src/ch_assert.h \
+HDRS := src/public_sizes.h src/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h src/aes_extern.h src/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h src/ch_assert.h \
         src/pem.h src/base64.h src/pem_blocks.h src/x509_pem.h src/pem_files.h src/x509.h src/x509_der.h src/x509_ca.h src/webpki.h src/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h src/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
         src/tls.h src/rand.h src/rand_draw.h src/drbg.h src/sha3.h src/keccak_hw.h src/sha1.h src/dnssec.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
         src/p256_wide_word.h src/p256_wide_field.h src/p256_wide_scalar.h src/p256_wide_inverse.h src/p256_wide_point.h \
@@ -9322,7 +9322,7 @@ WIDEMUL_SPECS := \
 # rsa_mont64_blocks.c, 13 and 0; rsa_mont64_addcarry.c, 11 and 23: loop
 #   control over the word count and a row's length, and the tests that skip
 #   a loop of no iterations.
-# rsa_sign64.c, 41 and 39; rsa_sign64.c@512, 45 and 41: the CH_ASSERTs on a
+# rsa_sign64.c, 42 and 40; rsa_sign64.c@512, 46 and 42: the CH_ASSERTs on a
 #   key's and a prime's public lengths; rsa_sign64_power's loops over the
 #   exponent's digits, the four squarings and the sixteen entries a read of
 #   the table visits, and its loop over an entry's words, which clang runs
@@ -9339,7 +9339,10 @@ WIDEMUL_SPECS := \
 #   x86-64 holds two more than it did, which read the session's ch_cfg.cpu:
 #   the test of CH_CPU_BMI2_ADX and the multiply bit in rsa_sign64_sp1, and
 #   power_window's test of the flag that picks rsa_mont64_adx.c
-#   (docs/decisions.md 183).
+#   (docs/decisions.md 183). Each entry rose by one when the exponents were
+#   blinded (docs/decisions.md 187): blinded_prime_exponent's loop over a
+#   prime's words, read on both. The carry of its sum is a SETB on x86-64
+#   and a CSET on arm64, and no branch reads d, p or r.
 # rsa_mont64_adx.c, 0 and 32: arm64 compiles no body. On x86-64, 23 JRCXZ
 #   in the five assembly operations, each a loop over a public word count;
 #   the CH_ASSERT on the word count in each entry; the two loops over the
@@ -9843,8 +9846,8 @@ BRANCH_CEILING := \
   arm64/src/rsa_mont64.c:71 x86-64/src/rsa_mont64.c:109 \
   arm64/src/rsa_mont64_blocks.c:13 x86-64/src/rsa_mont64_blocks.c:0 \
   arm64/src/rsa_mont64_addcarry.c:11 x86-64/src/rsa_mont64_addcarry.c:23 \
-  arm64/src/rsa_sign64.c:41 x86-64/src/rsa_sign64.c:41 \
-  arm64/src/rsa_sign64.c@512:45 x86-64/src/rsa_sign64.c@512:41 \
+  arm64/src/rsa_sign64.c:42 x86-64/src/rsa_sign64.c:42 \
+  arm64/src/rsa_sign64.c@512:46 x86-64/src/rsa_sign64.c@512:42 \
   arm64/src/rsa_sign64_wipe.c:0 x86-64/src/rsa_sign64_wipe.c:0 \
   arm64/src/rsa_ifma.c:0 x86-64/src/rsa_ifma.c:41 arm64/src/rsa_ifma.c@512:0 x86-64/src/rsa_ifma.c@512:45 \
   arm64/src/rsa_avx2.c:0 x86-64/src/rsa_avx2.c:49 arm64/src/rsa_avx2.c@512:0 x86-64/src/rsa_avx2.c@512:86 \

@@ -182,10 +182,7 @@ static inline int widemul_rsa_pss_sign_cpu(uint32_t cpu, uint8_t widemul, const 
                                            const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig,
                                            size_t cap, size_t *sig_len) {
     if (widemul_native(widemul)) {
-        // The 64-bit signer reads no blind: its exponents run by the CRT,
-        // which docs/decisions.md 186 leaves unblinded.
-        (void)blind;
-        return rsa_sign64_pss(cpu, k, msg_hash, salt, sig, cap, sig_len);
+        return rsa_sign64_pss(cpu, k, msg_hash, salt, blind, sig, cap, sig_len);
     }
     return rsa_pss_sign(k, msg_hash, salt, blind, sig, cap, sig_len);
 }
@@ -197,8 +194,7 @@ static inline int widemul_rsa_sp1_cpu(uint32_t cpu, uint8_t widemul, const ch_rs
                                       const uint8_t *em, const uint8_t blind[RSA_BLIND_LEN],
                                       uint8_t *sig) {
     if (widemul_native(widemul)) {
-        (void)blind;
-        return rsa_sign64_sp1(cpu, k, em, sig);
+        return rsa_sign64_sp1(cpu, k, em, blind, sig);
     }
     rsa_sp1(k, em, blind, sig);
     return 1;

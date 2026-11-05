@@ -11,7 +11,7 @@ reason: widemul_rsa_pss_sign_cpu inverts its branch, so a signature runs
 
 --- old
     if (widemul_native(widemul)) {
-        // The 64-bit signer reads no blind: its exponents run by the CRT,
+        return rsa_sign64_pss(cpu, k, msg_hash, salt, blind, sig, cap, sig_len);
 --- new
     if (!widemul_native(widemul)) {
-        // The 64-bit signer reads no blind: its exponents run by the CRT,
+        return rsa_sign64_pss(cpu, k, msg_hash, salt, blind, sig, cap, sig_len);

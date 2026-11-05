@@ -89,9 +89,10 @@ int rsa_sign64_key_ok(const ch_rsa_priv *k) {
 }
 
 int rsa_sign64_pss(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                   const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
-                   size_t *sig_len) {
+                   const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                   uint8_t *sig, size_t cap, size_t *sig_len) {
     (void)cpu;
+    (void)blind;
     (void)k;
     (void)msg_hash;
     (void)salt;

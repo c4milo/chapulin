@@ -260,7 +260,7 @@ echo "-- the same without rsa_sign64_pss; peak = the ML-KEM encapsulation --"
 stack_report server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss "STACK_MAKE=ROLE=server TRUST=none" \
     STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss
 head -1 "$TMP/server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss.stack"
-echo "-- the same without srv_kex_share; peak = the ECDSA signer --"
+echo "-- the same without srv_kex_share; peak = src/rsa_sign.c's ladder --"
 stack_report server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss_srv_kex_share \
     "STACK_MAKE=ROLE=server TRUST=none" STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss,srv_kex_share
 head -1 "$TMP/server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss_srv_kex_share.stack"

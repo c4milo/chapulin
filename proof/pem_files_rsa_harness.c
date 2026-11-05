@@ -196,10 +196,11 @@ int rsa_sign64_key_ok(const ch_rsa_priv *k) {
 }
 
 int rsa_sign64_pss(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                   const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
-                   size_t *sig_len) {
+                   const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                   uint8_t *sig, size_t cap, size_t *sig_len) {
     __CPROVER_assert(cpu == call_cpu && (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0,
                      "sign64: only under the multiply bit");
+    __CPROVER_assert(__CPROVER_r_ok(blind, RSA_BLIND_LEN), "sign64: blind readable");
     return stub_sign(1, k, msg_hash, salt, sig, cap, sig_len);
 }
 #endif

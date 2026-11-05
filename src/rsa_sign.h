@@ -66,7 +66,8 @@ static inline int rsa_pss_sign_key_ok(const ch_rsa_priv *k) {
 // emissions across many signatures knows each one's input, since em =
 // sig^65537 mod n. Over one fixed exponent they could correlate the
 // traces with its bits. So each signature runs the ladder over d + r
-// (65537 d - 1), for r the RSA_BLIND_LEN bytes its caller drew. 65537 d
+// (65537 d - 1), for r the first RSA_LADDER_BLIND_LEN bytes of the
+// blind its caller drew. 65537 d
 // - 1 is a multiple of lambda(n), so the power is m^d mod n for every m
 // (spec/lean/Spec/RsaBlind.lean). The ladder walks 96 more bits, about 4
 // percent more time at RSA-2048. The key needs no p or q for this.
@@ -95,9 +96,16 @@ static inline int rsa_pss_sign_key_ok(const ch_rsa_priv *k) {
 // 8017 9.1.1.
 #define RSA_PSS_SALT_LEN 32
 
-// The bytes of r that blind the ladder's exponent, a 64-bit number. The
-// caller draws them for each signature, as it draws the salt.
-#define RSA_BLIND_LEN 8
+// The bytes of blind a signer takes: two 64-bit numbers. The caller draws
+// them for each signature, as it draws the salt. The ladder reads the
+// first RSA_LADDER_BLIND_LEN bytes as its r. rsa_sign64.c reads the first
+// 8 as r_p and the last 8 as r_q, one for each prime (rsa_sign64.h,
+// docs/decisions.md 187).
+#define RSA_BLIND_LEN 16
+
+// The bytes of r that blind the ladder's exponent, a 64-bit number: the
+// first bytes of blind.
+#define RSA_LADDER_BLIND_LEN 8
 
 // Signs msg_hash, the 32-byte SHA-256 of the content RFC 9846 §4.5.2
 // defines, under the salt the caller drew, and writes n_len bytes to sig.

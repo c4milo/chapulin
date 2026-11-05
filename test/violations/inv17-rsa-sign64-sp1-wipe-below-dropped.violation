@@ -9,7 +9,7 @@ reason: rsa_sign64_sp1 returns without the wipe below its body, so the two
   (docs/decisions.md 181).
 
 --- old
-    int verified = sign_halves(cpu, k, em, sig);
+    int verified = sign_halves(cpu, k, em, blind, sig);
     rsa_sign64_wipe_below();
 --- new
-    int verified = sign_halves(cpu, k, em, sig);
+    int verified = sign_halves(cpu, k, em, blind, sig);

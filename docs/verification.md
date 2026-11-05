@@ -1986,18 +1986,21 @@ The entries are grouped by area:
     before the call, at a prime's largest word count. `mask_of_bit` is
     all ones or all zeros.
   - `rsa_sign64_power`: `rsa_sign64_power` reads and writes inside its
-    arrays at each of its two bounds: the longest exponent a key has,
-    half the modulus's bytes, over a modulus of one word, and a prime's
+    arrays at each of its two bounds: the longest exponent a signature
+    walks, half the modulus's bytes and the 8 its blinding adds, over a
+    modulus of one word, and a prime's
     largest word count under an exponent of two bytes, with the output
     apart from the base and on it.
-  - `rsa_sign64_crt`: the five pieces a CRT signature joins read and
-    write inside their arrays, each whole: `message_mod_prime`, which
+  - `rsa_sign64_crt`: the six pieces a CRT signature joins read and
+    write inside their arrays, each whole: `blinded_exponents`, which
+    writes dp + r_p (p - 1) and dq + r_q (q - 1) (decision 187);
+    `message_mod_prime`, which
     splits the message into its low words and the words above them;
     `crt_combine`, Garner's formula into twice a prime's words;
     `rsa_sign64_key_ok`, which multiplies the primes and compares the
     product with the modulus; `signature_verifies`, the check of a
     signature; and `write_if_verified`, which copies a candidate to the
-    caller. All but the second run at the largest modulus and at 8
+    caller. All but the recombination run at the largest modulus and at 8
     bytes below it, where each prime is half a word past a whole number
     of words.
   - `rsa_sign64_crt` also states what three of them compare and copy,
@@ -2012,8 +2015,8 @@ The entries are grouped by area:
     that holds `CH_CPU_AVX512_IFMA` and the multiply bit and with
     `-DCH_RSA_IFMA_MODEL`, under which the arm compiles on any target.
     `both_powers` calls `rsa_ifma_sign_power_pair` once, on both halves
-    in place, with `dp`, `dq`, both primes' records and the primes'
-    length, and then wipes the stack below it once. The check calls
+    in place, with the two blinded exponents, both primes' records and
+    the exponents' length, and then wipes the stack below it once. The check calls
     `rsa_vp1_cpu` once, under the session's value, on the key's modulus
     and the whole candidate, and then wipes the stack below it once; and
     the check and the write keep `rsa_sign64_crt`'s statements. The
@@ -2035,6 +2038,11 @@ The entries are grouped by area:
   `rsa_sign64_sp1` whole, which is that exponentiation at both bounds,
   twice: its own statements are two modulus setups, the message's
   marshalling, the pieces above and seven wipes.
+- **Lean:** `crt_blinded_pow_mod` in `spec/lean/Spec/RsaBlind.lean`
+  proves that the blinded exponent gives the same power modulo a prime.
+  The words `blinded_exponents` writes rest on `bin/rsa_sign_equiv_test`,
+  which holds them to d + r (p - 1) computed a byte at a time and signs
+  under five blinds to the same bytes.
   `rsa_sign64_pss` is `rsa_sign.c`'s text, which [rsa_sign](#rsa_sign)
   proves.
 - **Not proved:** any value, that `table_select` reads every entry

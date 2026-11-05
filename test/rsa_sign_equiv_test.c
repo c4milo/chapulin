@@ -85,6 +85,11 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 // whose power equals d's only when 65537 d is 1 modulo lambda(n), so the
 // comparisons with the window over arbitrary exponents take this one.
 static const uint8_t unblinded[RSA_BLIND_LEN] = {0};
+// The blind of each signature of a vector key: nonzero r_p and r_q, so
+// the 64-bit signer walks blinded exponents, whose powers are dp's and
+// dq's for a key's primes.
+static const uint8_t crt_blind[RSA_BLIND_LEN] = {0x5a, 0x3c, 0x01, 0x80, 0x7f, 0x02, 0xc4, 0x99,
+                                                 0xa5, 0x0f, 0x10, 0x08, 0xf7, 0x20, 0x4c, 0x91};
 static uint64_t rng_state = RSA_EQUIV_DEFAULT_SEED;
 
 static uint64_t rng_seed_from_env(void) {
@@ -285,7 +290,7 @@ static void compare_crt(const char *case_name, const uint8_t *em, const uint8_t 
     memset(ladder_out, 0x55, sizeof ladder_out);
     memset(out, 0xaa, sizeof out);
     rsa_sp1(&key, em, unblinded, ladder_out);
-    if (!rsa_sign64_sp1(equiv_cpu, &key, em, out)) {
+    if (!rsa_sign64_sp1(equiv_cpu, &key, em, crt_blind, out)) {
         failures++;
         (void)fprintf(stderr, "FAIL %s: the 64-bit signer refused its own signature at %zu bytes\n",
                       case_name, key.n_len);
@@ -440,7 +445,10 @@ static void run_stack(const test_rsa_sign_key *const *keys, size_t count) {
     }
 }
 
-// Every case that signs: the stack runs and the four vector keys.
+#include "rsa_sign_equiv_blind.h"
+
+// Every case that signs: the stack runs and the four vector keys, and
+// their blinded exponents.
 static void run_signatures(void) {
     static const test_rsa_sign_key key_2048 = TEST_RSA_SIGN_KEY(2048);
     static const test_rsa_sign_key key_2112 = TEST_RSA_SIGN_KEY(2112);
@@ -453,6 +461,9 @@ static void run_signatures(void) {
     run_key(&key_2112, 2);
     run_key(&key_3072, 1);
     run_key(&key_4096, 1);
+    run_blinded_exponents(&key_2048);
+    run_blinded_exponents(&key_2112);
+    run_blinded_exponents(&key_4096);
 }
 
 #include "rsa_sign_equiv_x86.h"

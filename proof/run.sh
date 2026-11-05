@@ -3408,15 +3408,17 @@ launch fast:5 full rsa_mont_power_avx2_webpki 66 "" -DCH_CPU_RUNTIME -DCH_RSA_AV
 # rsa_sign64_window proves the two pieces that read an exponent, the digit
 # and the read of the table, with --unsigned-overflow-check on.
 # rsa_sign64_power runs the exponentiation whole for its memory accesses,
-# once at the longest exponent a key has over one word and once at a
+# once at the longest exponent a signature walks, a prime's bytes and the
+# 8 its blinding adds (docs/decisions.md 187), over one word and once at a
 # prime's largest word count under a two-byte exponent. Its unwind is one
 # past the step count, and the wipe's is one past the table's bytes.
 # The two bounds at once returned no verdict in fifteen minutes when the
 # table held whole moduli, 768 steps of 48 words, with cbmc still
 # unwinding.
-# rsa_sign64_crt runs the five pieces a CRT signature joins, each whole:
-# the reduction of the message modulo a prime, Garner's recombination,
-# the key test, the check of a signature and the copy to the caller, at
+# rsa_sign64_crt runs the six pieces a CRT signature joins, each whole:
+# the blinding of dp and dq, the reduction of the message modulo a prime,
+# Garner's recombination, the key test, the check of a signature and the
+# copy to the caller, at
 # the largest modulus and, where a length decides an index, at 8 bytes
 # below it. It states what the last three compare and copy over the
 # bytes and words the contracts wrote, which proof/rsa_sign64_stubs.h
@@ -3431,6 +3433,10 @@ launch fast:5 full rsa_mont_power_avx2_webpki 66 "" -DCH_CPU_RUNTIME -DCH_RSA_AV
 #   rsa_sign64_power_webpki    719 properties, 257 s, 576 MB
 #   rsa_sign64_crt             772 properties,  20 s, 586 MB
 #   rsa_sign64_crt_webpki      772 properties,  28 s, 893 MB
+# With the blinded exponents (docs/decisions.md 187), on CI's prove job on
+# 2026-11-05: rsa_sign64_power 754 properties, 38 s; its webpki twin 754,
+# 65 s; rsa_sign64_crt 808, 13 s, and its twin 808, 18 s; rsa_sign64_ifma
+# 871, 8 s, and its twin 871, 11 s.
 # rsa_sign64_power took 40 s and 63 s before table_select read each mask
 # back through a volatile pointer, and 116 s and 219 s at a load average
 # of 12 to 41 while it still wrote zeros to its output first. The window
@@ -3448,8 +3454,8 @@ launch fast:5 full rsa_mont_power_avx2_webpki 66 "" -DCH_CPU_RUNTIME -DCH_RSA_AV
 #   rsa_sign64_ifma_webpki     849 properties,  17 s, 793 MB, 776 MB
 launch fast full rsa_sign64_window 385 "" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_sign64_window_webpki 513 "" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_sign64_power 385 "ct_wipe.0:3073" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast full rsa_sign64_power_webpki 513 "ct_wipe.0:4097" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_sign64_power 401 "ct_wipe.0:3073" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_sign64_power_webpki 529 "ct_wipe.0:4097" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_sign64_crt 385 "ct_wipe.0:385" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_sign64_crt_webpki 513 "ct_wipe.0:513" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_sign64_ifma 385 "ct_wipe.0:385" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL

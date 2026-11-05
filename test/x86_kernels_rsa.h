@@ -198,6 +198,7 @@ static void check_rsa_signer(uint32_t cpu) {
     static size_t want_len;
     static const uint8_t digest[SHA256_LEN] = {0x5a, 0x01};
     static const uint8_t salt[RSA_PSS_SALT_LEN] = {0xa5, 0x02};
+    static const uint8_t blind[RSA_BLIND_LEN] = {0x3c, 0x01, [8] = 0x99, [15] = 0x80};
     if (want_len == 0) {
         test_rsa_sign_key_load(&key, &from);
         CHECK(rsa_pss_sign(&key, digest, salt, salt, want, sizeof want, &want_len) == 1);
@@ -216,7 +217,7 @@ static void check_rsa_signer(uint32_t cpu) {
     // only under the multiply bit. So a value with CH_CPU_BMI2_ADX alone
     // asks use_adx itself, and must run no product on rsa_mont64_adx.c.
     sig_len = 0;
-    CHECK(rsa_sign64_pss(cpu, &key, digest, salt, sig, sizeof sig, &sig_len) == 1);
+    CHECK(rsa_sign64_pss(cpu, &key, digest, salt, blind, sig, sizeof sig, &sig_len) == 1);
     CHECK((rsa_mont64_adx_calls != 0) == (names_adx_signer(cpu) != 0));
     CHECK(signer_calls_are(names_ifma_signer(cpu)));
     CHECK(sig_len == want_len && memcmp(sig, want, want_len) == 0);

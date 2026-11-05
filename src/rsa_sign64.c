@@ -12,6 +12,9 @@
 // multiplies by it. The entry for digit 0 is 1, so a zero digit runs the
 // same multiplication as any other.
 //
+// Each exponent is blinded before it runs, by a fresh multiple of its
+// prime less one (rsa_sign64_blind.h, docs/decisions.md 187).
+//
 // The two halves are joined by Garner's formula, s = m2 + q * h with
 // h = qinv * (m1 - m2) mod p, and the signature is raised to the public
 // exponent and compared with the encoded message before a byte of it is
@@ -40,7 +43,8 @@
 // which no wrapper covers, wipes its arrays by name.
 //
 // The branches this file compiles to are loops over word counts, the
-// sixteen table entries, the four squarings and the exponent's digits,
+// sixteen table entries, the four squarings, the eight bytes of each r
+// and the exponent's digits,
 // whose count comes from the exponent's length in bytes, the CH_ASSERTs
 // on a key's public length, the test of the session's ch_cfg.cpu, which
 // the caller states, and the two verdicts a caller sees anyway: whether
@@ -88,6 +92,9 @@ _Static_assert(TABLE_ENTRIES == 1 << WINDOW_BITS,
 
 // The words of one prime: half the modulus's bytes, in words of 8.
 #define PRIME_WORDS_MAX ((CH_RSA_MODULUS_MAX / 2 + 7) / 8)
+
+#include "rsa_sign64_blind.h"
+_Static_assert(BLIND_PRIME_WORDS_MAX == PRIME_WORDS_MAX, "rsa_sign64_blind.h's prime words");
 
 // The base's powers 0 to 15, each in the Montgomery domain of one prime.
 // It is a struct so that the read below can take it as a pointer to
@@ -399,20 +406,19 @@ static int write_if_verified(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *
     return verified;
 }
 
-// m1 = m1^dp mod p and m2 = m2^dq mod q, each in its prime's Montgomery
-// domain. Where cpu names IFMA the two run side by side on
-// rsa_ifma_sign.c, and the stack under this frame and the registers are
-// wiped after the call: the kernel's frames lay there, with the slots the
-// compiler kept words and 512-bit registers in (rsa_ifma_sign.h). Where cpu
-// names MULX and ADX, and not IFMA, the window above runs once for each
-// prime on rsa_mont64_adx.c, and each call's wrapper wipes under it. Every
-// other value runs the window on rsa_mont64.c.
-static void both_powers(uint32_t cpu, uint64_t *m1, uint64_t *m2, const ch_rsa_priv *k,
-                        size_t half_len, const rsa_mont64_modulus *mod_p,
+// m1 = m1^e_p mod p and m2 = m2^e_q mod q, each in its prime's Montgomery
+// domain, for e_p and e_q the blinded exponents of e_len bytes. Where cpu names IFMA the two run
+// side by side on rsa_ifma_sign.c, and the stack under this frame and the registers are wiped after
+// the call: the kernel's frames lay there, with the slots the compiler kept words and 512-bit
+// registers in (rsa_ifma_sign.h). Where cpu names MULX and ADX, and not IFMA, the window above runs
+// once for each prime on rsa_mont64_adx.c, and each call's wrapper wipes under it. Every other
+// value runs the window on rsa_mont64.c.
+static void both_powers(uint32_t cpu, uint64_t *m1, uint64_t *m2, const uint8_t *e_p,
+                        const uint8_t *e_q, size_t e_len, const rsa_mont64_modulus *mod_p,
                         const rsa_mont64_modulus *mod_q) {
 #ifdef RSA_SIGN64_IFMA
     if (use_ifma(cpu)) {
-        rsa_ifma_sign_power_pair(m1, m1, k->dp, mod_p, m2, m2, k->dq, mod_q, half_len);
+        rsa_ifma_sign_power_pair(m1, m1, e_p, mod_p, m2, m2, e_q, mod_q, e_len);
         rsa_ifma_sign_wipe_below();
         wipe_vector_registers();
         return;
@@ -420,8 +426,8 @@ static void both_powers(uint32_t cpu, uint64_t *m1, uint64_t *m2, const ch_rsa_p
 #endif
 #ifdef RSA_SIGN64_ADX
     if (use_adx(cpu)) {
-        rsa_sign64_power_adx(m1, m1, k->dp, half_len, mod_p);
-        rsa_sign64_power_adx(m2, m2, k->dq, half_len, mod_q);
+        rsa_sign64_power_adx(m1, m1, e_p, e_len, mod_p);
+        rsa_sign64_power_adx(m2, m2, e_q, e_len, mod_q);
         return;
     }
 #endif
@@ -429,14 +435,15 @@ static void both_powers(uint32_t cpu, uint64_t *m1, uint64_t *m2, const ch_rsa_p
     // arm64 has neither kernel, so no bit picks here.
     (void)cpu;
 #endif
-    rsa_sign64_power(m1, m1, k->dp, half_len, mod_p);
-    rsa_sign64_power(m2, m2, k->dq, half_len, mod_q);
+    rsa_sign64_power(m1, m1, e_p, e_len, mod_p);
+    rsa_sign64_power(m2, m2, e_q, e_len, mod_q);
 }
 
 // The body of rsa_sign64_sp1, which the wrapper below calls and then wipes
 // under.
 static __attribute__((noinline)) int sign_halves(uint32_t cpu, const ch_rsa_priv *k,
-                                                 const uint8_t *em, uint8_t *sig) {
+                                                 const uint8_t *em,
+                                                 const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig) {
     CH_ASSERT(k->n_len >= 256 && k->n_len <= CH_RSA_MODULUS_MAX && (k->n_len & 7) == 0);
     size_t half_len = k->n_len / 2;
     size_t em_words = k->n_len / 8;
@@ -445,6 +452,8 @@ static __attribute__((noinline)) int sign_halves(uint32_t cpu, const ch_rsa_priv
     uint64_t em_plain[RSA_MONT64_WORDS_MAX];
     uint64_t m1[PRIME_WORDS_MAX];
     uint64_t m2[PRIME_WORDS_MAX];
+    uint8_t e_p[EXPONENT_LEN_MAX];
+    uint8_t e_q[EXPONENT_LEN_MAX];
     // Zeroed at declaration: the words past twice the primes' are never
     // written, and rsa_mont64_to_bytes reads none of them.
     uint64_t s[2 * PRIME_WORDS_MAX] = {0};
@@ -457,10 +466,12 @@ static __attribute__((noinline)) int sign_halves(uint32_t cpu, const ch_rsa_priv
     rsa_mont64_modulus_init(&mod_q, k->q, half_len, 8 * half_len);
     rsa_mont64_from_bytes(em_plain, em_words, em, k->n_len);
 
-    // The two halves: the message modulo each prime, raised to dp and dq.
+    // The two halves: the message modulo each prime, raised to the
+    // blinded dp and dq.
+    blinded_exponents(e_p, e_q, k, half_len, blind);
     message_mod_prime(m1, em_plain, em_words, &mod_p);
     message_mod_prime(m2, em_plain, em_words, &mod_q);
-    both_powers(cpu, m1, m2, k, half_len, &mod_p, &mod_q);
+    both_powers(cpu, m1, m2, e_p, e_q, half_len + BLIND_R_LEN, &mod_p, &mod_q);
     crt_combine(s, m1, m2, k->qinv, half_len, &mod_p, &mod_q);
     rsa_mont64_to_bytes(candidate, k->n_len, s);
 
@@ -470,8 +481,9 @@ static __attribute__((noinline)) int sign_halves(uint32_t cpu, const ch_rsa_priv
     return write_if_verified(cpu, k, em, candidate, sig);
 }
 
-int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
-    int verified = sign_halves(cpu, k, em, sig);
+int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em,
+                   const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig) {
+    int verified = sign_halves(cpu, k, em, blind, sig);
     rsa_sign64_wipe_below();
     return verified;
 }

@@ -75,9 +75,10 @@ uint32_t p256_wide_point_on_curve_counted(const uint8_t x[P256_FE_LEN],
 void p256_wide_scalar_mul_counted(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
 void p256_wide_scalar_inverse_counted(p256_scalar *o, const p256_scalar *a);
 int rsa_sign64_pss_counted(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                           const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
-                           size_t *sig_len);
-int rsa_sign64_sp1_counted(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
+                           const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                           uint8_t *sig, size_t cap, size_t *sig_len);
+int rsa_sign64_sp1_counted(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em,
+                           const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig);
 int rsa_sign64_key_ok_counted(const ch_rsa_priv *k);
 
 void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
@@ -294,15 +295,16 @@ void p256_wide_scalar_inverse(p256_scalar *o, const p256_scalar *a) {
 }
 
 int rsa_sign64_pss(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                   const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
-                   size_t *sig_len) {
+                   const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                   uint8_t *sig, size_t cap, size_t *sig_len) {
     widemul_native_calls++;
-    return rsa_sign64_pss_counted(cpu, k, msg_hash, salt, sig, cap, sig_len);
+    return rsa_sign64_pss_counted(cpu, k, msg_hash, salt, blind, sig, cap, sig_len);
 }
 
-int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
+int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em,
+                   const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig) {
     widemul_native_calls++;
-    return rsa_sign64_sp1_counted(cpu, k, em, sig);
+    return rsa_sign64_sp1_counted(cpu, k, em, blind, sig);
 }
 
 int rsa_sign64_key_ok(const ch_rsa_priv *k) {

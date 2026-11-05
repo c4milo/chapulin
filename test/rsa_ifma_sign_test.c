@@ -291,6 +291,9 @@ static void run_word_counts(void) {
 }
 
 static ch_rsa_priv key;
+// r_p and r_q for every signature here: the blinding runs on each path.
+static const uint8_t sign_blind[RSA_BLIND_LEN] = {0x5a, 0x3c, 0x01, 0x80, 0x7f, 0x02, 0xc4, 0x99,
+                                                  0xa5, 0x0f, 0x10, 0x08, 0xf7, 0x20, 0x4c, 0x91};
 
 // One message under key, signed under the two values: the same verdict,
 // the same bytes, and on the IFMA value one kernel call and two wipes. A
@@ -302,16 +305,17 @@ static void compare_sign(const char *name, const uint8_t *em, int want_signed) {
     memset(got, 0x11, sizeof got);
     rsa_ifma_sign_pair_calls = 0;
     rsa_ifma_sign_wipe_calls = 0;
-    int want_rc = rsa_sign64_sp1(WINDOW_CPU, &key, em, want);
+    int want_rc = rsa_sign64_sp1(WINDOW_CPU, &key, em, sign_blind, want);
     check(rsa_ifma_sign_pair_calls == 0 && rsa_ifma_sign_wipe_calls == 0,
           "rsa_sign64_sp1 ran the kernel under a value without CH_CPU_AVX512_IFMA", key.n_len);
-    int ifma_without_multiply = rsa_sign64_sp1(CH_CPU_PROBED | CH_CPU_AVX512_IFMA, &key, em, got);
+    int ifma_without_multiply =
+        rsa_sign64_sp1(CH_CPU_PROBED | CH_CPU_AVX512_IFMA, &key, em, sign_blind, got);
     check(rsa_ifma_sign_pair_calls == 0 && rsa_ifma_sign_wipe_calls == 0,
           "rsa_sign64_sp1 ran the kernel under a value without the multiply bit", key.n_len);
     check(ifma_without_multiply == want_rc && memcmp(got, want, key.n_len) == 0,
           "rsa_sign64_sp1 without the multiply bit", key.n_len);
     memset(got, 0x11, sizeof got);
-    int rc = rsa_sign64_sp1(IFMA_CPU, &key, em, got);
+    int rc = rsa_sign64_sp1(IFMA_CPU, &key, em, sign_blind, got);
     check(rsa_ifma_sign_pair_calls == 1 && rsa_ifma_sign_wipe_calls == 2,
           "rsa_sign64_sp1 under CH_CPU_AVX512_IFMA ran the kernel once and wiped twice", key.n_len);
     if (want_rc != want_signed || rc != want_rc || memcmp(got, want, key.n_len) != 0) {

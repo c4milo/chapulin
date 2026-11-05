@@ -154,8 +154,8 @@ STACK_PROSE = [
     ("(`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss`) it is the encapsulation to the "
      "client's key into K-PKE encrypt and Keccak, at {} bytes",
      [["stack_accept_server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss"]]),
-    ("(`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss,srv_kex_share`) it is the ECDSA "
-     "signer on the wide P-256 field, at {} bytes",
+    ("(`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss,srv_kex_share`) it is "
+     "`rsa_sign.c`'s ladder, at {} bytes",
      [["stack_accept_server_without_srv_mldsa_send_certificate_verify_rsa_sign64_pss_srv_kex_share"]]),
     ("its `ch_srv_accept` peaks at {} bytes, through the encapsulation "
      "(`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`)",

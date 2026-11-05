@@ -18,6 +18,9 @@ from the top down, each `exponent := 2 exponent + bit t` (`blind_pass`).
 `passes` models that loop and `passes_eq` proves it writes `r t`. The
 `rsa_sign_blind` harness holds `blind_pass` and `scale_minus_one`, the
 step that writes `t = 65537 d - 1`, to those formulas at one word.
+
+`crt_blinded_pow_mod` is the CRT signer's form: one prime's exponent
+blinded by a multiple of `p - 1`.
 -/
 
 namespace Spec.RsaBlind
@@ -83,5 +86,13 @@ theorem blinded_pow_mod {p q d m r : ℕ} (h_p : p.Prime) (h_q : q.Prime) (h_dis
   have h_coprime : p.Coprime q := (Nat.coprime_primes h_p h_q).2 h_distinct
   exact (Nat.modEq_and_modEq_iff_modEq_mul h_coprime).1
     ⟨pow_add_mul_modEq h_p h_d h_p_divides, pow_add_mul_modEq h_q h_d h_q_divides⟩
+
+/-- The CRT signer's blinding (rsa_sign64.c, docs/decisions.md 187): raising
+any `m` to `d + r (p - 1)` gives `m ^ d` modulo a prime `p`, for every `r`
+and every `d ≥ 1`. rsa_sign64.c walks `dp + r_p (p - 1)` modulo `p` and
+`dq + r_q (q - 1)` modulo `q`. -/
+theorem crt_blinded_pow_mod {p d m r : ℕ} (h_p : p.Prime) (h_d : 1 ≤ d) :
+    m ^ (d + r * (p - 1)) % p = m ^ d % p :=
+  pow_add_mul_modEq h_p h_d dvd_rfl
 
 end Spec.RsaBlind

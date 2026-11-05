@@ -12,9 +12,9 @@ reason: both_powers returns after the exponentiations on AVX-512 IFMA
   rather than caught.
 
 --- old
-        rsa_ifma_sign_power_pair(m1, m1, k->dp, mod_p, m2, m2, k->dq, mod_q, half_len);
+        rsa_ifma_sign_power_pair(m1, m1, e_p, mod_p, m2, m2, e_q, mod_q, e_len);
         rsa_ifma_sign_wipe_below();
         wipe_vector_registers();
 --- new
-        rsa_ifma_sign_power_pair(m1, m1, k->dp, mod_p, m2, m2, k->dq, mod_q, half_len);
+        rsa_ifma_sign_power_pair(m1, m1, e_p, mod_p, m2, m2, e_q, mod_q, e_len);
         rsa_ifma_sign_wipe_below();

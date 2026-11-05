@@ -1,0 +1,12 @@
+invariant: INV-16
+file: src/rsa_sign64_blind.h
+catches: rsa_sign_equiv_test
+reason: blinded_exponents blinds dq with r_p in place of r_q, so the
+  last 8 bytes of the blind are never read and the two halves share one
+  r. Every signature is still the same bytes. bin/rsa_sign_equiv_test
+  holds dq's exponent to the one r_q gives.
+
+--- old
+    blinded_prime_exponent(e_q, k->dq, k->q, half_len, blind + BLIND_R_LEN);
+--- new
+    blinded_prime_exponent(e_q, k->dq, k->q, half_len, blind);

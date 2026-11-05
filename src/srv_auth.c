@@ -237,14 +237,15 @@ static size_t signature_bound(const ch_identity *id, uint16_t sigalg) {
 
 // Signs one digest with the RSA-PSS identity under a salt and a blind
 // drawn for this signature alone, in one draw from the source cfg names:
-// the salt's 32 bytes, then the blind's 8. rsa_pss_sign holds the salt to
+// the salt's 32 bytes, then the blind's 16. rsa_pss_sign holds the salt to
 // rand.h's contract: CH_ASSERT fires on an all-zero salt, which a source
 // that returned without writing leaves. The salt goes out inside the
-// signature, so it is not secret. The blind is a secret, the r of the
-// ladder's exponent (rsa_sign.h). The call draws it in every session,
-// also where the 64-bit signer reads none, so each signature draws the
-// same bytes in every build. Both are wiped, because the caller's stack
-// outlives the signature.
+// signature, so it is not secret. The blind is a secret: the ladder reads
+// its first 8 bytes as the r of its exponent, and the 64-bit signer reads
+// all 16 as the r_p and r_q of dp and dq (rsa_sign.h). The call draws all
+// 16 in every session, so each signature draws the same bytes in every
+// build. Both are wiped, because the caller's stack outlives the
+// signature.
 static int sign_rsa_pss(const ch_cfg *cfg, const ch_identity *id, const uint8_t digest[SHA256_LEN],
                         uint8_t *sig, size_t cap, size_t *sig_len) {
     uint8_t drawn[RSA_PSS_SALT_LEN + RSA_BLIND_LEN];

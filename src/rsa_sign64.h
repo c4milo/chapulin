@@ -79,11 +79,18 @@
 // that test makes no run over the stack in such a build, nor under
 // AddressSanitizer (test/stack_residue.c).
 //
-// What it does not cover is what rsa_sign.h says of the ladder: this
-// file blinds nothing, so it does not answer an attacker who measures
-// power or emissions over many signatures. The check answers a fault
-// that changes the signature. It does not answer one that skips the
-// check itself.
+// What it covers against power and emissions. Each exponentiation walks
+// a blinded exponent, dp + r_p (p - 1) and dq + r_q (q - 1), for two
+// 64-bit numbers the caller draws for each signature (docs/decisions.md
+// 187). Each power is the same for every r, by Fermat's little theorem
+// (spec/lean/Spec/RsaBlind.lean), and the exponent differs each
+// signature, so traces of many signatures do not line up over one
+// exponent. Each exponent is 64 bits longer: about 6 percent more steps
+// at RSA-2048 and 4 percent at RSA-3072.
+//
+// What it does not cover. It does not blind the base, as rsa_sign.h says
+// of the ladder. The check answers a fault that changes the signature. It
+// does not answer one that skips the check itself.
 #ifndef CH_RSA_SIGN64_H
 #define CH_RSA_SIGN64_H
 
@@ -117,7 +124,8 @@ int rsa_sign64_key_ok(const ch_rsa_priv *k);
 // it from rsa_sign.c, so the test of cap and the PSS encoder are that
 // file's for both signers.
 int rsa_sign64_pss(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                   const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len);
+                   const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                   uint8_t *sig, size_t cap, size_t *sig_len);
 
 // rsa_sp1 (rsa_sign.h) by the Chinese remainder theorem: sig = em^d mod
 // n, computed from p, q, dp, dq and qinv, with em and sig both n_len
@@ -126,9 +134,12 @@ int rsa_sign64_pss(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32
 // when it failed, with no byte of sig written. cpu is the session's
 // ch_cfg.cpu: on x86-64, a value with CH_CPU_AVX512_IFMA and
 // CH_CPU_CONSTANT_TIME_MULTIPLY runs the IFMA kernels, and every other
-// value the window. Each writes the same bytes. Not part of the public
-// API.
-int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
+// value the window. Each writes the same bytes. blind is the
+// RSA_BLIND_LEN bytes rsa_pss_sign takes: r_p and then r_q, which blind
+// dp and dq. The signature is the same bytes whatever blind holds. Not
+// part of the public API.
+int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em,
+                   const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig);
 
 // o = base^e mod m, in the Montgomery domain of mod: base is a Montgomery
 // form below m and o takes one. e is e_len big-endian bytes, every one of
