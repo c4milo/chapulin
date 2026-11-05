@@ -6,7 +6,7 @@
 // writes (test/test_cpu.h). In any other build test_cpu_values_at_init
 // does nothing.
 //
-// What the rows hold: ch_record_init and ch_srv_record_init refuse each
+// What the rows hold: ch_tcp_init and ch_srv_tcp_init refuse each
 // value test_cpu_taken rejects with CH_EINVAL, a failed session and
 // nothing to send, and take the others.
 #ifndef CH_TEST_TCP_NONBLOCKING_LOOP_CPU_H
@@ -16,27 +16,27 @@
 static void test_cpu_values_at_init(void) {
     for (size_t i = 0; i < TEST_CPU_VALUES; i++) {
         int taken = test_cpu_taken(i);
-        static ch_record probe;
+        static ch_tcp probe;
         uint8_t wire[WIRE_MAX];
         size_t n = 0;
         ch_cfg cfg;
         client_config(&cfg);
         cfg.cpu = test_cpu_value(i);
-        int rc = ch_record_init(&probe, &cfg);
+        int rc = ch_tcp_init(&probe, &cfg);
         if (taken) {
-            CHECK(rc == CH_OK && ch_record_out(&probe, wire, sizeof wire, &n) == CH_OK && n > 0);
+            CHECK(rc == CH_OK && ch_tcp_out(&probe, wire, sizeof wire, &n) == CH_OK && n > 0);
         } else {
-            CHECK(rc == CH_EINVAL && ch_record_state(&probe) == CH_ST_FAILED);
-            CHECK(ch_record_out(&probe, wire, sizeof wire, &n) == CH_EINVAL);
+            CHECK(rc == CH_EINVAL && ch_tcp_state(&probe) == CH_ST_FAILED);
+            CHECK(ch_tcp_out(&probe, wire, sizeof wire, &n) == CH_EINVAL);
         }
         server_config(&cfg);
         cfg.cpu = test_cpu_value(i);
-        rc = ch_srv_record_init(&probe, &cfg);
+        rc = ch_srv_tcp_init(&probe, &cfg);
         if (taken) {
-            CHECK(rc == CH_OK && ch_record_state(&probe) != CH_ST_FAILED);
+            CHECK(rc == CH_OK && ch_tcp_state(&probe) != CH_ST_FAILED);
         } else {
-            CHECK(rc == CH_EINVAL && ch_record_state(&probe) == CH_ST_FAILED);
-            CHECK(ch_record_out(&probe, wire, sizeof wire, &n) == CH_EINVAL);
+            CHECK(rc == CH_EINVAL && ch_tcp_state(&probe) == CH_ST_FAILED);
+            CHECK(ch_tcp_out(&probe, wire, sizeof wire, &n) == CH_EINVAL);
         }
     }
 }

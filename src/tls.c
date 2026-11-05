@@ -21,7 +21,7 @@
 // would leave ch_handshake undefined and the object could not go into an
 // executable at all, and a TRANSPORT=tcp-nonblocking one guards it below.
 // tlsi_epoch_init is inside the guard because only client entries call it,
-// ch_connect here and ch_record_init in tcp_nonblocking.c, in either trust
+// ch_connect here and ch_tcp_init in tcp_nonblocking.c, in either trust
 // mode. lib-check's import check holds the rule for every axis.
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 
@@ -109,7 +109,7 @@ static int psk_configured(const ch_cfg *cfg) {
 
 // Every rule a client configuration must keep whatever drives it. The I/O
 // callbacks are not among them: the blocking driver's ch_connect and
-// TRANSPORT=tcp-nonblocking's ch_record_init each require both, and each
+// TRANSPORT=tcp-nonblocking's ch_tcp_init each require both, and each
 // checks that itself. Under RAND=session the source of random bytes is
 // among them, because both drivers draw the key share before a byte goes
 // out (rand.h).
@@ -254,7 +254,7 @@ static int dispatch_one_record(ch_tls *t) {
     size_t record_len = 0;
     uint8_t alert = ALERT_DECODE_ERROR;
     int rc = io_read_record(t, t->cfg.buf, t->cfg.buf_len, &outer, &record_len, &alert);
-    if (rc == CH_RECORD_AGAIN) {
+    if (rc == CH_TCP_AGAIN) {
         return rc; // TRANSPORT=tcp-nonblocking alone returns it (tcp_nonblocking.h)
     }
     if (rc != CH_OK) {
@@ -375,7 +375,7 @@ _Static_assert(CH_TRUST_MIN_RXBUF ==
 
 // The mode's own rules (webpki_cfg.c) plus the buffer terms, the ticket
 // age rule and the source of random bytes the raw and ca definition above
-// checks. ch_record_init calls this and no
+// checks. ch_tcp_init calls this and no
 // ch_connect, so it too refuses a short receive buffer in this mode
 // (https://github.com/c4milo/chapulin/issues/171). It admits require_pq
 // in every build: every webpki client offers the hybrid

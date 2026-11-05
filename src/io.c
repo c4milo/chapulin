@@ -67,7 +67,7 @@ int io_read_record(const ch_tls *t, uint8_t *buf, size_t cap, uint8_t *outer, si
     // promise, and read_exact fails it with CH_EIO like any short read.
     int got = cfg->recv(cfg->io, buf, REC_HDR);
     if (got == 0) {
-        return CH_RECORD_AGAIN;
+        return CH_TCP_AGAIN;
     }
     if (got < 0 || (size_t)got > REC_HDR) {
         return CH_EIO;

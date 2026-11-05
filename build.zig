@@ -173,16 +173,16 @@ const public_alert = [_][]const u8{ "ch_alert_sent", "ch_alert_received" };
 // PUBLIC_DNSSEC: DNSSEC=on's four calls, each named for the transport.
 const public_dnssec = [_][]const u8{ "ch_dnssec_hash_init", "ch_dnssec_digest_init", "ch_dnssec_hash_update", "ch_dnssec_hash_final", "ch_dnssec_verify" };
 const public_tcp_nonblocking = [_][]const u8{
-    "ch_record_init",  "ch_record_in",        "ch_record_out", "ch_record_state",
-    "ch_record_close", "ch_record_whole_len", "ch_read",       "ch_write",
-    "ch_write_parts",  "ch_writable_len",     "ch_close",      "ch_fail",
+    "ch_tcp_init",    "ch_tcp_in",        "ch_tcp_out", "ch_tcp_state",
+    "ch_tcp_close",   "ch_tcp_whole_len", "ch_read",    "ch_write",
+    "ch_write_parts", "ch_writable_len",  "ch_close",   "ch_fail",
 } ++ public_ticket ++ public_alert;
 const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_write_parts", "ch_writable_len", "ch_close", "ch_fail" } ++ public_ticket ++ public_alert;
 const public_srv_quic = [_][]const u8{
     "ch_srv_quic_init",       "ch_srv_quic_crypto_in",   "ch_srv_quic_retry_tag",
     "ch_srv_quic_token_mint", "ch_srv_quic_token_check", "ch_srv_check",
 };
-const public_srv_tcp_nonblocking = [_][]const u8{ "ch_srv_record_init", "ch_srv_record_in", "ch_srv_check" };
+const public_srv_tcp_nonblocking = [_][]const u8{ "ch_srv_tcp_init", "ch_srv_tcp_in", "ch_srv_check" };
 const public_srv_tcp_blocking = [_][]const u8{ "ch_srv_accept", "ch_srv_check" };
 /// The packet calls quic.h declares for either role, which a ROLE=server
 /// QUIC object exports without the client's driver.
@@ -195,8 +195,8 @@ const public_quic_either_role = [_][]const u8{
 /// The calls a connected tcp-nonblocking session makes, which a ROLE=server
 /// object exports without the client's driver.
 const public_record_either_role = [_][]const u8{
-    "ch_record_state", "ch_record_close", "ch_record_whole_len", "ch_read",
-    "ch_write",        "ch_write_parts",  "ch_writable_len",     "ch_close",
+    "ch_tcp_state", "ch_tcp_close",   "ch_tcp_whole_len", "ch_read",
+    "ch_write",     "ch_write_parts", "ch_writable_len",  "ch_close",
     "ch_fail",
 } ++ public_alert;
 /// The calls a connected tcp-blocking session makes.
@@ -220,12 +220,12 @@ const Declaration = struct { header: []const u8, names: Names };
 const declarations = [_]Declaration{
     .{ .header = "tls.h", .names = &.{ "ch_connect", "ch_read", "ch_write", "ch_write_parts", "ch_writable_len", "ch_close", "ch_fail", "ch_export" } },
     .{ .header = "tcp_nonblocking.h", .names = &.{
-        "ch_record_init",  "ch_record_in",    "ch_record_out",
-        "ch_record_state", "ch_record_close", "ch_record_whole_len",
+        "ch_tcp_init",  "ch_tcp_in",    "ch_tcp_out",
+        "ch_tcp_state", "ch_tcp_close", "ch_tcp_whole_len",
     } },
     .{ .header = "quic.h", .names = &public_quic },
     .{ .header = "srv.h", .names = &.{ "ch_srv_accept", "ch_srv_check" } },
-    .{ .header = "srv_tcp_nonblocking.h", .names = &.{ "ch_srv_record_init", "ch_srv_record_in" } },
+    .{ .header = "srv_tcp_nonblocking.h", .names = &.{ "ch_srv_tcp_init", "ch_srv_tcp_in" } },
     .{ .header = "srv_quic.h", .names = &.{ "ch_srv_quic_init", "ch_srv_quic_crypto_in", "ch_srv_quic_retry_tag" } },
     .{ .header = "quic_token.h", .names = &.{ "ch_srv_quic_token_mint", "ch_srv_quic_token_check" } },
     .{ .header = "x509_ca.h", .names = &.{"ch_pubkey_from_pem"} },
@@ -366,7 +366,7 @@ pub fn build(b: *std.Build) void {
     // makes two configurations' directories differ (docs/decisions.md 73).
     const api_files = b.addWriteFiles();
     const root = api_files.addCopyFile(b.path("chapulin.zig"), "chapulin.zig");
-    _ = api_files.addCopyFile(b.path("chapulin_record.zig"), "chapulin_record.zig");
+    _ = api_files.addCopyFile(b.path("chapulin_tcp.zig"), "chapulin_tcp.zig");
     _ = api_files.addCopyFile(b.path("chapulin_quic.zig"), "chapulin_quic.zig");
     _ = api_files.addCopyFile(b.path("chapulin_ticket.zig"), "chapulin_ticket.zig");
     _ = api_files.addCopyFile(b.path("chapulin_pem.zig"), "chapulin_pem.zig");

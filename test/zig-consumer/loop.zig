@@ -11,7 +11,7 @@ comptime {
     hooks.define(&.{c});
 }
 
-const loop = if (@hasDecl(c, "ch_srv_record_init"))
+const loop = if (@hasDecl(c, "ch_srv_tcp_init"))
     @import("loop_record.zig")
 else if (@hasDecl(c, "ch_srv_quic_init"))
     @import("loop_quic.zig")

@@ -1,9 +1,9 @@
 # The Zig API
 
-A Zig program runs chapulin's record-mode and QUIC sessions through Zig
+A Zig program runs chapulin's tcp-nonblocking and QUIC sessions through Zig
 values, Zig errors and session types it places in its own memory. It
 never builds a `ch_cfg` or writes a C callback. The API is six files at
-the repository root: `chapulin.zig`, `chapulin_record.zig`,
+the repository root: `chapulin.zig`, `chapulin_tcp.zig`,
 `chapulin_quic.zig`, `chapulin_ticket.zig`, `chapulin_pem.zig` and
 `chapulin_cpu.zig`. `chapulin_ticket.zig` holds `Ticket`,
 `chapulin_pem.zig` holds `Chain`, `EcdsaP256Key`, `RsaKey`, `MlDsa87Key`
@@ -106,15 +106,15 @@ for a `@compileError` declaration too.
 
 | Declaration | Present when the object has |
 |---|---|
-| `Client` | a client role: its transport's client entry point, `ch_connect`, `ch_record_init` or `ch_quic_init` |
+| `Client` | a client role: its transport's client entry point, `ch_connect`, `ch_tcp_init` or `ch_quic_init` |
 | `Server`, `EcdsaP256Identity`, `RsaPssIdentity`, `cert` | a server role (`ch_cfg.srv`) outside PROFILE=cnsa2 |
 | `MlDsa87Identity` | a host server role or the PROFILE=cnsa2 server (`srv.mldsa87`, docs/decisions.md 162 and 180) |
 | `Chain`, `EcdsaP256Key`, `RsaKey` | a server role (`ch_chain_from_pem`, `ch_p256_key_from_pem`, `ch_rsa_key_from_pem`) outside PROFILE=cnsa2 |
 | `MlDsa87Key` | `ch_mldsa_key_from_pem`, which the same objects as `MlDsa87Identity` export |
 | `Anchors` | `ch_anchors_from_pem` (TRUST=webpki) |
-| `record.Client` | `ch_record_init` |
-| `record.Server` | `ch_srv_record_init` |
-| `record.alert_record_len`, `record.key_update_record_len` | `ch_record_whole_len` |
+| `tcp.Client` | `ch_tcp_init` |
+| `tcp.Server` | `ch_srv_tcp_init` |
+| `tcp.alert_record_len`, `tcp.key_update_record_len` | `ch_tcp_whole_len` |
 | `quic.Client` | `ch_quic_init` |
 | `quic.Server`, `quic.retryTag`, `quic.tokenMint`, `quic.tokenCheck`, `quic.TokenCheck`, `quic.ChooseVersion` | `ch_srv_quic_init` |
 | `quic.Level`, `quic.Direction`, `quic.KeySet`, `quic.level_count` | `ch_quic_initial_keys` |
@@ -491,7 +491,7 @@ returns.
 | `CH_QUIC_DISCARD` | `error.Discard` | Live. The caller drops the packet. |
 | `CH_QUIC_AEAD_LIMIT` | `error.AeadLimit` | Dead. |
 | `CH_KEY_UPDATE_LIMIT` | `error.KeyUpdateLimit` | Dead. The peer sent one KeyUpdate past `CH_KEY_UPDATE_RUN_MAX` in a row (docs/decisions.md 138). |
-| `CH_RECORD_AGAIN` | none | `read` returns `pt_len = 0`. |
+| `CH_TCP_AGAIN` | none | `read` returns `pt_len = 0`. |
 | `CH_ECLOSED` | none | No call returns it. |
 
 `write`'s `error.Cap` has two sources: the API's own refusal of a `pt`
@@ -507,10 +507,10 @@ session.
 panics. A program that calls a C function the API leaves out maps its
 result with `fromCode(chapulin.Error, code)`.
 
-## Record-mode sessions
+## tcp-nonblocking sessions
 
-`TRANSPORT=tcp-nonblocking`. `record.Client(receive_len, limits)` and
-`record.Server(receive_len, limits)` are types whose size is known at compile
+`TRANSPORT=tcp-nonblocking`. `tcp.Client(receive_len, limits)` and
+`tcp.Server(receive_len, limits)` are types whose size is known at compile
 time, so a program places a session in a static, in a connection struct
 or on the stack, with no allocation. Each holds the C session, `record`,
 the receive buffer `cfg.buf`, `receive`, the `hook`, the source `random`
@@ -522,23 +522,23 @@ its `lists`. colibri sizes both at 20,480 bytes.
 
 | Zig call | C call | Errors |
 |---|---|---|
-| `Client.init(values)` | the values' `ch_cfg`, built into `lists`, then `ch_record_init` with the API's `send` and `recv`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the values' `random` | Invalid |
-| `Client.recordOut(output)` | `ch_record_out`; after a failed `recordIn`, the failure's alert record, then `error.Invalid` | Invalid, Cap |
-| `Client.recordIn(input)` | `ch_record_in`; returns the bytes consumed | Invalid, Proto, Auth, Cap |
+| `Client.init(values)` | the values' `ch_cfg`, built into `lists`, then `ch_tcp_init` with the API's `send` and `recv`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the values' `random` | Invalid |
+| `Client.recordOut(output)` | `ch_tcp_out`; after a failed `recordIn`, the failure's alert record, then `error.Invalid` | Invalid, Cap |
+| `Client.recordIn(input)` | `ch_tcp_in`; returns the bytes consumed | Invalid, Proto, Auth, Cap |
 | `Client.takeTicket()` | none: moves the slot out and zeroes it | none |
-| `Server.init(values, sni_buf)` | the values' `ch_cfg`, built into `lists`, then `ch_srv_record_init` with the API's `send`, `recv` and `on_record_out`, and under `RAND=session` the values' `random`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
-| `Server.recordIn(input, output)` | `ch_srv_record_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Proto, Auth, Cap, Io |
+| `Server.init(values, sni_buf)` | the values' `ch_cfg`, built into `lists`, then `ch_srv_tcp_init` with the API's `send`, `recv` and `on_record_out`, and under `RAND=session` the values' `random`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
+| `Server.recordIn(input, output)` | `ch_srv_tcp_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Proto, Auth, Cap, Io |
 | `Server.outputLen()` | the bytes the last `recordIn` wrote into `output`, which a failed `recordIn` also sets: `Progress.written` on success | none |
 | `Server.sni()` | `sni_buf[0..ch_sni_len]`, null when 0 | none |
-| `recordState()` | `ch_record_state` | none |
+| `tcpState()` | `ch_tcp_state` | none |
 | `alertSent()`, `alertReceived()` | `ch_alert_sent`, `ch_alert_received` on `record.t` (alert.h); each null when 0 | none |
-| `read(input, pt, reply)` | `ch_record_whole_len`, then `ch_read` | Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit |
+| `read(input, pt, reply)` | `ch_tcp_whole_len`, then `ch_read` | Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit |
 | `write(pt, output)` | `ch_writable_len`, then `ch_write` | Proto, Cap, Io |
 | `writeParts(parts, output)` | `ch_writable_len` over the parts' lengths together, then `ch_write_parts`; `chapulin.part(bytes)` builds each `c.ch_part` | Proto, Cap, Io |
 | `writableLen(cap)` | `ch_writable_len` | none |
 | `close(output)` | `ch_close` | Io |
 | `fail(description, output)` | `ch_fail` | Invalid, Proto, Cap, Io |
-| `recordClose()` | `ch_record_close`, then the ticket slot zeroed | none |
+| `tcpClose()` | `ch_tcp_close`, then the ticket slot zeroed | none |
 | `exportKeyingMaterial(label, context, out)` | `ch_export` | Invalid |
 | `alpnSelected()` | the name `ch_alpn_selected` indexes; null for `CH_ALPN_NONE` | none |
 | `group()`, `suite()` | `ch_group`, `ch_suite`; null while 0 | none |
@@ -555,7 +555,7 @@ in a host object without it, and ChaCha20 first on `AES=extern`
 probes its own passes the order it chose.
 
 A record session's `keyUpdate` is reserved: no C call starts a
-record-mode KeyUpdate, so it is a `@compileError` that says so. `write`
+tcp-nonblocking KeyUpdate, so it is a `@compileError` that says so. `write`
 sends one inside `ch_write`, as the answer a peer's request owes or as
 the last record an AES-GCM write key seals, so no such call is planned
 (docs/decisions.md 78 and 138).
@@ -563,7 +563,7 @@ the last record an AES-GCM write key seals, so no such call is planned
 ### A handshake
 
 ```zig
-var client: chapulin.record.Client(20_480, .{}) = undefined;
+var client: chapulin.tcp.Client(20_480, .{}) = undefined;
 const anchors = [_]chapulin.TrustAnchor{.{ .name = root_name, .spki = root_spki }};
 const alpn = [_][]const u8{"http/1.1"};
 
@@ -572,7 +572,7 @@ try client.init(.{
     .alpn = &alpn,
 });
 send(output[0..try client.recordOut(&output)]); // the ClientHello
-// each time bytes arrive, until recordState() is .connected:
+// each time bytes arrive, until tcpState() is .connected:
 const consumed = try client.recordIn(input);
 send(output[0..try client.recordOut(&output)]);
 ```
@@ -607,7 +607,7 @@ const progress = server.recordIn(input, &output) catch |err| {
 ### Reading
 
 `read` passes at most one whole record of `input` to `ch_read`:
-`ch_record_whole_len` says how many bytes that is, and `ch_read` reads
+`ch_tcp_whole_len` says how many bytes that is, and `ch_read` reads
 them through the API's `recv`. The `Read` it returns says:
 
 - `consumed`: input bytes taken. 0 while `input` holds less than a
@@ -682,14 +682,14 @@ a session that is not connected `error.Proto`; neither sends a byte or
 changes the session. `error.Io` says `output` could not take the alert,
 and the session failed all the same (docs/decisions.md 164).
 
-`recordClose()` calls `ch_record_close`, which wipes every secret and
+`tcpClose()` calls `ch_tcp_close`, which wipes every secret and
 marks the session dead, and then zeroes the ticket slot. A connected
 caller calls `close` first.
 
 ### Secrets the API holds
 
 The ticket slot holds a resumption PSK. `takeTicket` returns the ticket
-and zeroes the slot with `std.crypto.secureZero`, and `recordClose` and
+and zeroes the slot with `std.crypto.secureZero`, and `tcpClose` and
 the QUIC `close` zero it too, after the C call has wiped the session's
 keys. `on_ticket` zeroes the slot before it copies a newer ticket in, and
 each init zeroes it before the C init call.
@@ -733,7 +733,7 @@ arrived there, the client's ticket slot and the server's current
 | `Client.cryptoIn(level, bytes)` | `ch_quic_crypto_in` | Invalid (live), Proto, Auth, Cap |
 | `Client.cryptoOut(level, out)` | `ch_quic_crypto_out` | Invalid, Cap (live) |
 | `Server.cryptoIn(level, bytes, outgoing)` | `ch_srv_quic_crypto_in` | Invalid (live), Proto, Auth, Cap, Io |
-| `Client.takeTicket()`, `Server.sni()` | as in record mode | none |
+| `Client.takeTicket()`, `Server.sni()` | as in a tcp-nonblocking session | none |
 | `keysReady(level, direction)` | the bit `CH_QUIC_LEVEL_BIT` names in `ch_quic.levels_ready` | none |
 | `peerTransportParams()` | the body `on_transport_params` copied, null before it arrives | Cap, when it was longer than `peer_params` |
 | `seal(level, version, pn, pn_len, hdr, pt, out)`, `sealClose(...)` | `ch_quic_seal`, `ch_quic_seal_close`; return the packet's length | Invalid, Cap |
@@ -745,7 +745,7 @@ arrived there, the client's ticket slot and the server's current
 | `state()`, `alert()`, `errorCode()` | `ch_quic_state`, `ch_quic_alert`, `ch_quic_error_code` | none |
 | `alertSent()`, `alertReceived()` | `ch_alert_sent`, `ch_alert_received` on `quic.t` (alert.h): `alertSent` answers what `alert` answers, and `alertReceived` is null, because QUIC carries no alert record | none |
 | `close()` | `ch_quic_close`, then the ticket slot zeroed | none |
-| `alpnSelected()`, `group()`, `suite()`, `pskSelected()`, `serverCertType()` | as in record mode | none |
+| `alpnSelected()`, `group()`, `suite()`, `pskSelected()`, `serverCertType()` | as in a tcp-nonblocking session | none |
 | `quic.retryTag(version, pseudo, tag)` | `ch_srv_quic_retry_tag` | Invalid |
 | `quic.tokenMint(key, version, address, cids, issued_seconds, out)` | `ch_srv_quic_token_mint`, the token bound to `version`, the original version; returns the token's length | Invalid, Cap |
 | `quic.tokenCheck(key, version, token, address, now_seconds, lifetime_seconds)` | `ch_srv_quic_token_check` under `version`; a token minted under another version is `.invalid` | Invalid |
@@ -797,7 +797,7 @@ runs inside `seal` and `open`, as in C (RFC 9001 §9.5).
 - **An external PSK, the CA epoch callbacks and `pin_slot`.** They serve
   device builds. Each is one `ch_cfg` or `ch_tls` field a later version
   can add.
-- **A record-mode KeyUpdate the caller starts.** Reserved, above.
+- **A tcp-nonblocking KeyUpdate the caller starts.** Reserved, above.
 - **Alert names.** No public header declares the `ALERT_` constants, so
   `alert`, `alertSent` and `alertReceived` return the AlertDescription
   byte.
@@ -814,8 +814,8 @@ none.
 
 ## Sizes
 
-`record` and `quic` are the translated `c.ch_record` and `c.ch_quic`,
-held by value. `ch_build_matches` compares `@sizeOf(c.ch_record)`,
+`record` and `quic` are the translated `c.ch_tcp` and `c.ch_quic`,
+held by value. `ch_build_matches` compares `@sizeOf(c.ch_tcp)`,
 `@sizeOf(c.ch_quic)`, `@sizeOf(c.ch_tls)`, `@sizeOf(c.ch_cfg)` and
 `@sizeOf(c.ch_ticket)` with the object's record, so `buildMatches`
 covers the C part of every session and every `Ticket`. The rest, the
@@ -828,7 +828,7 @@ through `cfg.buf`, and passes `cfg.io`, the hook's address, and
 
 `make lint-zig-build` runs `test/zig-build-check.sh`, which builds
 `test/zig-consumer` against the default object, colibri's four objects,
-stompy's (`TX_RECORD=16384`), a record-mode `ROLE=both` object under
+stompy's (`TX_RECORD=16384`), a tcp-nonblocking `ROLE=both` object under
 `SUITE=aesgcm` and colibri's QUIC object holding both widening multiplies,
 each through the module alone (INV-36):
 
@@ -862,7 +862,7 @@ each through the module alone (INV-36):
   `EcdsaP256Key` and `Anchors` from the PEM files of
   `test/pem_fixtures.h`. The key file holds an EC PARAMETERS block above
   the key, as `openssl ecparam -genkey` writes it. Each value is held
-  equal to `test/webpki_corpus.h`'s before a session uses it. In record mode:
+  equal to `test/webpki_corpus.h`'s before a session uses it. In a tcp-nonblocking session:
   - a handshake that selects ALPN `http/1.1` and X25519MLKEM768 and
     reports the server name;
   - a write of three `CH_TX_PT` records and 100 bytes each way;
@@ -926,7 +926,7 @@ each through the module alone (INV-36):
     under the other version;
   - the ticket resumed, and the stale ticket refused with no alert
     chosen;
-  - a client with `takes_tickets` false, checked as in record mode;
+  - a client with `takes_tickets` false, checked as in a tcp-nonblocking session;
   - a server whose `choose_version` answers version 2 from its hook's
     context, once, a client that switches to it, and the packets and the
     key update in version 2;
@@ -938,7 +938,7 @@ each through the module alone (INV-36):
 
 check-slow runs the script over every lib-check build's configuration as
 well, among them `RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking
-ROLE=both`, whose `loop.zig` runs the record-mode steps above with a
+ROLE=both`, whose `loop.zig` runs the tcp-nonblocking steps above with a
 seeded `std.Random` per side, and whose program defines no
 `ch_rand_bytes`, so its link shows the object imports none.
 

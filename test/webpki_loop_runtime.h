@@ -7,7 +7,7 @@
 // it holds all three in docs/decisions.md 80's order, and one without it
 // holds ChaCha20 alone and runs no AES instruction.
 //
-// What the rows hold: ch_record_init and ch_srv_record_init refuse each
+// What the rows hold: ch_tcp_init and ch_srv_tcp_init refuse each
 // value of test/test_cpu.h's that every init call refuses, and take the
 // others; each pair of values runs a whole handshake at the suite both
 // ends hold; a server without the bit selects no AES-GCM suite, even from
@@ -17,7 +17,7 @@
 // (check_runtime_hash_bits); a ticket received with the configuration
 // hash on one SHA-256 path resumes with it on the other
 // (check_runtime_tickets_across); test/webpki_ticket_rows.h's rows over
-// ch_record_init; and ch_srv_check takes a server that holds an RSA-PSS
+// ch_tcp_init; and ch_srv_check takes a server that holds an RSA-PSS
 // identity beside the r2 one (check_runtime_server_boot).
 //
 // With "absent" as its argument the binary runs check_runtime_absent alone,
@@ -45,20 +45,20 @@
 
 // Both init calls over test/test_cpu.h's values, in the suite object.
 static void check_runtime_edges(void) {
-    static ch_record probe;
+    static ch_tcp probe;
     for (size_t i = 0; i < TEST_CPU_VALUES; i++) {
         int taken = test_cpu_taken(i);
         ch_cfg cfg;
         client_config(&cfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
         cfg.cpu = test_cpu_value(i);
-        int rc = ch_record_init(&probe, &cfg);
-        CHECK(taken ? rc == CH_OK : rc == CH_EINVAL && ch_record_state(&probe) == CH_ST_FAILED);
-        ch_record_close(&probe);
+        int rc = ch_tcp_init(&probe, &cfg);
+        CHECK(taken ? rc == CH_OK : rc == CH_EINVAL && ch_tcp_state(&probe) == CH_ST_FAILED);
+        ch_tcp_close(&probe);
         server_config(&cfg, ticket_key);
         cfg.cpu = test_cpu_value(i);
-        rc = ch_srv_record_init(&probe, &cfg);
-        CHECK(taken ? rc == CH_OK : rc == CH_EINVAL && ch_record_state(&probe) == CH_ST_FAILED);
-        ch_record_close(&probe);
+        rc = ch_srv_tcp_init(&probe, &cfg);
+        CHECK(taken ? rc == CH_OK : rc == CH_EINVAL && ch_tcp_state(&probe) == CH_ST_FAILED);
+        ch_tcp_close(&probe);
     }
 }
 
@@ -88,7 +88,7 @@ static void check_runtime_server_without_aes(void) {
     ccfg.cipher_suites = aes128;
     ccfg.cipher_suite_count = 1;
     CHECK(!run(&ccfg, &scfg));
-    CHECK(ch_record_state(&server) == CH_ST_FAILED &&
+    CHECK(ch_tcp_state(&server) == CH_ST_FAILED &&
           ch_alert_sent(&server.t) == ALERT_HANDSHAKE_FAILURE);
     server_cpu = TEST_CPU;
 }
@@ -97,20 +97,20 @@ static void check_runtime_server_without_aes(void) {
 // ch_cfg.cipher_suites and the server's ch_srv_cfg.cipher_suites, each
 // refused or taken alike.
 static int runtime_list_taken(uint32_t bits, const uint16_t *list, size_t count) {
-    static ch_record probe;
+    static ch_tcp probe;
     ch_cfg cfg;
     client_cpu = bits;
     server_cpu = bits;
     client_config(&cfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
     cfg.cipher_suites = list;
     cfg.cipher_suite_count = count;
-    int client_rc = ch_record_init(&probe, &cfg);
-    ch_record_close(&probe);
+    int client_rc = ch_tcp_init(&probe, &cfg);
+    ch_tcp_close(&probe);
     server_config(&cfg, ticket_key);
     cfg.srv.cipher_suites = list;
     cfg.srv.cipher_suite_count = count;
-    int server_rc = ch_srv_record_init(&probe, &cfg);
-    ch_record_close(&probe);
+    int server_rc = ch_srv_tcp_init(&probe, &cfg);
+    ch_tcp_close(&probe);
     client_cpu = TEST_CPU;
     server_cpu = TEST_CPU;
     CHECK(client_rc == server_rc);
@@ -273,12 +273,12 @@ static void check_runtime_tickets_across(void) {
 }
 
 #ifdef TEST_WEBPKI_TICKET_COUNTED
-// ch_record_init under test/webpki_ticket_rows.h's rows.
+// ch_tcp_init under test/webpki_ticket_rows.h's rows.
 static int ticket_rows_init(const ch_cfg *cfg, uint8_t stored[SHA256_LEN]) {
-    static ch_record probe;
-    int rc = ch_record_init(&probe, cfg);
+    static ch_tcp probe;
+    int rc = ch_tcp_init(&probe, cfg);
     memcpy(stored, probe.t.ticket_config_hash, SHA256_LEN);
-    ch_record_close(&probe);
+    ch_tcp_close(&probe);
     return rc == CH_OK;
 }
 

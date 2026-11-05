@@ -179,18 +179,18 @@ static void check_suite_order_rules(void) {
     server_config(&scfg, ticket_key);
     scfg.srv.cipher_suites = unheld;
     scfg.srv.cipher_suite_count = 1;
-    CHECK(ch_srv_record_init(&server, &scfg) == CH_EINVAL);
+    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_EINVAL);
     scfg.srv.cipher_suites = NULL;
-    CHECK(ch_srv_record_init(&server, &scfg) == CH_EINVAL);
+    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_EINVAL);
     scfg.srv.cipher_suites = all;
     scfg.srv.cipher_suite_count = 0;
-    CHECK(ch_srv_record_init(&server, &scfg) == CH_EINVAL);
+    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_EINVAL);
     scfg.srv.cipher_suites = four;
     scfg.srv.cipher_suite_count = 4;
-    CHECK(ch_srv_record_init(&server, &scfg) == CH_EINVAL);
+    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_EINVAL);
     scfg.srv.cipher_suites = all;
     scfg.srv.cipher_suite_count = 3;
-    CHECK(ch_srv_record_init(&server, &scfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_OK);
 }
 
 // The client's order for one row, in static storage because the config
@@ -226,7 +226,7 @@ static void check_client_orders(void) {
     }
 }
 
-// ch_cfg.cipher_suites is checked before a byte moves, by ch_record_init
+// ch_cfg.cipher_suites is checked before a byte moves, by ch_tcp_init
 // as by ch_connect: a code point the build does not hold, a repeat, a
 // count without its list, a list without its count and a fourth entry are
 // each CH_EINVAL, and the longest valid list, all three, is taken.
@@ -239,19 +239,19 @@ static void check_client_suite_rules(void) {
     client_config(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
     ccfg.cipher_suites = unheld;
     ccfg.cipher_suite_count = 1;
-    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
     ccfg.cipher_suites = repeat;
     ccfg.cipher_suite_count = 2;
-    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
     ccfg.cipher_suites = NULL;
-    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
     ccfg.cipher_suites = four;
     ccfg.cipher_suite_count = 0;
-    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
     ccfg.cipher_suite_count = 4;
-    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
     ccfg.cipher_suite_count = 3;
-    CHECK(ch_record_init(&client, &ccfg) == CH_OK);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_OK);
 }
 
 // One handshake whose ServerHello selects suite, for

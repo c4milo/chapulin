@@ -10,7 +10,7 @@ Home: github.com/c4milo.
   caller-supplied I/O callbacks. The target is a bare-metal MCU or an
   lwIP-class socket stack.
 - Zero heap. No malloc anywhere, ever — one static session struct,
-  `ch_tls`, `ch_record` or `ch_quic` by `TRANSPORT`, plus one
+  `ch_tls`, `ch_tcp` or `ch_quic` by `TRANSPORT`, plus one
   caller-provided buffer is the entire working set; `RAND=drbg` adds
   `drbg.c`'s generator state.
   bench/sram.sh measures the memory numbers in docs/performance.md;
@@ -989,7 +989,7 @@ Home: github.com/c4milo.
   points, never in per-byte paths. INV-13 lists the results that are not
   errors in this sense: refusals on entry, calls the session cannot take,
   and the non-blocking transports' `CH_ECAP`, `CH_QUIC_DISCARD` and
-  `CH_RECORD_AGAIN`.
+  `CH_TCP_AGAIN`.
 - Record size discipline: a TCP client always sends `record_size_limit`
   (RFC 8449) sized to the caller's buffer. A QUIC build sends none (RFC
   9001 §4.1.3): `cfg.buf_len` bounds one handshake message, and a longer
@@ -1140,7 +1140,7 @@ Home: github.com/c4milo.
   it forwards to the C API and adds only RAII cleanup, byte views, and
   typed results. `make cxx-check` compiles it against the packaged
   library object as part of check.
-- `chapulin.zig`, `chapulin_record.zig` and `chapulin_quic.zig` are the
+- `chapulin.zig`, `chapulin_tcp.zig` and `chapulin_quic.zig` are the
   Zig API, the module `chapulin` that `build.zig` exports, under the same
   rule as `chapulin.hpp`: it forwards to the C calls and adds only typed
   values, the `ch_cfg` each value builds, one Zig error per result code,

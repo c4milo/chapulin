@@ -72,7 +72,7 @@ size_t srv_out_limit(const ch_tls *t) {
 // blocks and no record waits for one to drain. srv_cfg.h states why this
 // mode pushes rather than staging a record for a caller to pull.
 //
-// ch_srv_record_init refuses a configuration whose on_record_out is
+// ch_srv_tcp_init refuses a configuration whose on_record_out is
 // NULL, so this call needs no NULL test, the same way push does.
 static int emit(ch_tls *t, const uint8_t *p, size_t n) {
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING

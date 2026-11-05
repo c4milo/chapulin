@@ -228,24 +228,24 @@ static ch_cfg valid_cfg(mock_server *s) {
 }
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-// The handshake through ch_record_init, ch_record_out and ch_record_in,
+// The handshake through ch_tcp_init, ch_tcp_out and ch_tcp_in,
 // with the mock's send and recv as the caller's socket. Returns what
 // ch_connect would: CH_OK once connected, the refusal or failure code, or
 // CH_EIO when the mock has nothing more to answer.
-static ch_record record;
+static ch_tcp record;
 static int test_connect(ch_tls **t, const ch_cfg *cfg) {
     *t = &record.t;
-    int rc = ch_record_init(&record, cfg);
+    int rc = ch_tcp_init(&record, cfg);
     while (rc == CH_OK) {
         static uint8_t wire[MOCK_QUEUE_MAX];
         size_t n = 0;
-        rc = ch_record_out(&record, wire, sizeof wire, &n);
+        rc = ch_tcp_out(&record, wire, sizeof wire, &n);
         CHECK(n <= sizeof wire);
         if (rc == CH_OK && n > 0 && n <= sizeof wire) {
             CHECK(mock_send(cfg->io, wire, n) == (int)n);
             continue;
         }
-        if (rc != CH_OK || ch_record_state(&record) == CH_ST_CONNECTED) {
+        if (rc != CH_OK || ch_tcp_state(&record) == CH_ST_CONNECTED) {
             break;
         }
         int got = mock_recv(cfg->io, wire, sizeof wire);
@@ -255,7 +255,7 @@ static int test_connect(ch_tls **t, const ch_cfg *cfg) {
         size_t off = 0;
         while (rc == CH_OK && off < (size_t)got) {
             size_t used = 0;
-            rc = ch_record_in(&record, wire + off, (size_t)got - off, &used);
+            rc = ch_tcp_in(&record, wire + off, (size_t)got - off, &used);
             off += used;
         }
     }

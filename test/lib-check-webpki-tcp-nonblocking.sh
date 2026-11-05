@@ -6,7 +6,7 @@
 # which are the edited sources while a violation is applied; a nonzero
 # exit is lib-check objecting.
 #
-# This is the one client object that compiles ch_record_init and no
+# This is the one client object that compiles ch_tcp_init and no
 # ch_connect, so it is the only build that reports a ch_connect the webpki
 # arm left unguarded: the compiled call imports the ch_handshake this
 # variant leaves out (https://github.com/c4milo/chapulin/issues/171).

@@ -127,7 +127,7 @@ Other targets:
   `-DCH_AES_EXTERN_CONSTANT_TIME`, the statement `ct.h` asks for. For
   example: `make lib PROFILE=cnsa2 AES=extern RAND=extern
   CFLAGS='-std=c11 -Os -DCH_AES_EXTERN_CONSTANT_TIME'`. `ch_connect`,
-  `ch_record_init` and `ch_quic_init` refuse a pin or a CA key there with
+  `ch_tcp_init` and `ch_quic_init` refuse a pin or a CA key there with
   `CH_EINVAL`. `TRUST=webpki`, `ROLE=server` and `ROLE=both` refuse the
   profile. Size `cfg.buf_len` at `CH_MIN_RXBUF` or more: 1637 bytes over
   TCP and 1632 over QUIC. `PROFILE=general`, the default, is every other
@@ -310,7 +310,7 @@ Other targets:
   The examples compile this way (decision 133).
 - `ch_build` is the object's build record (`build.h`): the axes it was
   compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
-  `ch_record`, `ch_quic` and `ch_rsa_priv`, and the bounds a program
+  `ch_tcp`, `ch_quic` and `ch_rsa_priv`, and the bounds a program
   sizes its buffers from. A program that does not include the object's
   header compiles the headers under defines it writes itself, and a
   define it forgets changes those sizes while the program still links.
@@ -345,7 +345,7 @@ Other targets:
   every public name twice. The program writes
   `const chapulin = @import("chapulin");`, calls
   `chapulin.buildMatches()` once, and runs sessions through
-  `chapulin.record` or `chapulin.quic` ([`zig.md`](zig.md)). Under
+  `chapulin.tcp` or `chapulin.quic` ([`zig.md`](zig.md)). Under
   `.RAND = .session` each session's values carry a `std.Random`, and the
   program defines no `ch_rand_bytes`.
   `chapulin.c` is the public headers, translated by translate-c under the

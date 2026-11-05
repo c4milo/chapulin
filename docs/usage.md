@@ -296,8 +296,8 @@ QUIC carries no alert record.
 
 A tcp-nonblocking session that fails in its handshake gives you its alert
 as one record to send before you close the connection. After a failed
-`ch_record_in`, `ch_record_out` returns that record once and then answers
-`CH_EINVAL`. A failed `ch_srv_record_in` has pushed it through
+`ch_tcp_in`, `ch_tcp_out` returns that record once and then answers
+`CH_EINVAL`. A failed `ch_srv_tcp_in` has pushed it through
 `cfg.srv.on_record_out` before it returns. The record is in the clear
 before that side's write key is installed and sealed under the key after,
 so send it as it is (`tcp_nonblocking.h`).
@@ -331,7 +331,7 @@ cfg.ticket_age_ms = now_ms() - kept_at_ms;
 The hello offers the ticket in place of an external PSK, and in a raw or
 ca build in place of the pins too, so one configuration serves a full
 connection and a resumed one. chapulin reads no clock, so the age is the
-one value you measure. `ch_connect`, `ch_record_init` and `ch_quic_init`
+one value you measure. `ch_connect`, `ch_tcp_init` and `ch_quic_init`
 return `CH_EINVAL`, before a byte is sent, when the age is above the
 ticket's lifetime or above `CH_TICKET_LIFETIME_MAX`, 604,800 seconds,
 which RFC 9846 §4.7.1 makes the most any ticket lives. They also refuse a
@@ -364,13 +364,13 @@ is bound to only when `on_ticket` is set. A session whose init call saw
 no `on_ticket` gives no ticket to anyone, also when you set
 `on_ticket` in the session later ([`docs/webpki.md`](webpki.md)).
 
-## Sizing buffers in record mode
+## Sizing buffers in a tcp-nonblocking session
 
 A `TRANSPORT=tcp-nonblocking` caller owns the socket and hands records to
 `ch_read` whole (`tcp_nonblocking.h`). Two calls and two lengths tell it
 how to cut and size its bytes:
 
-- `ch_record_whole_len(p, n)` is the length of the record at the front of
+- `ch_tcp_whole_len(p, n)` is the length of the record at the front of
   `p`, header included, or 0 while `p` holds less than that record. Pass
   that many bytes to `ch_read`. A header whose length field is above
   2^14 + 256, which no peer may send, answers 5, the header alone, and
@@ -389,7 +389,7 @@ how to cut and size its bytes:
 - `CH_ALERT_RECORD_LEN`, 24, is what `ch_close` sends, and what a failing
   `ch_read` sends, unless the peer's fatal alert failed it: that read
   sends nothing. A handshake that fails once its side's write key is
-  installed gives one too, through `ch_record_out` or `on_record_out`;
+  installed gives one too, through `ch_tcp_out` or `on_record_out`;
   one that fails before it gives the alert in the clear, 7 bytes.
   `CH_KEY_UPDATE_RECORD_LEN`, 27, is one KeyUpdate record, which only
   `ch_write` sends. `ch_read` sends no record but that alert.

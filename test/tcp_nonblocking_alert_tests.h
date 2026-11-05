@@ -3,7 +3,7 @@
 // alert.h's two calls report after each.
 //
 // A fatal alert ends the session with CH_EPROTO and gets no answer. In
-// the handshake that means a client stages nothing for ch_record_out and
+// the handshake that means a client stages nothing for ch_tcp_out and
 // a server pushes nothing more; after it, ch_read calls no cfg.send.
 // ch_alert_received names the alert either way, whether it came in the
 // clear or protected, and a server reads one in the clear even after its
@@ -39,8 +39,8 @@ static size_t alert_record(uint8_t *out, size_t cap, const uint8_t *alert, size_
 }
 
 // What a session that read the alert of n bytes in its handshake reports.
-static void check_handshake_alert(const ch_record *r, int rc, const uint8_t *alert, size_t n) {
-    CHECK(rc == CH_EPROTO && ch_record_state(r) == CH_ST_FAILED);
+static void check_handshake_alert(const ch_tcp *r, int rc, const uint8_t *alert, size_t n) {
+    CHECK(rc == CH_EPROTO && ch_tcp_state(r) == CH_ST_FAILED);
     if (n == 2) {
         CHECK(ch_alert_received(&r->t) == alert[1] && ch_alert_sent(&r->t) == 0);
         return;
@@ -53,7 +53,7 @@ static void check_handshake_alert(const ch_record *r, int rc, const uint8_t *ale
 // after a fatal alert, and decode_error after a record that is not one
 // alert: in the clear in place of the flight, and sealed under the
 // handshake write key the ServerHello gave it, which the server reads with.
-static void client_reads_handshake_alert(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void client_reads_handshake_alert(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                          const ch_cfg *scfg, int keyed, const uint8_t *alert,
                                          size_t n) {
     start_pair(client, server, ccfg, scfg);
@@ -66,7 +66,7 @@ static void client_reads_handshake_alert(ch_record *client, ch_record *server, c
     }
     len += alert_record(wire + len, sizeof wire - len, alert, n, keyed ? server->hs.s_hs : NULL);
     size_t consumed = 0;
-    check_handshake_alert(client, ch_record_in(client, wire, len, &consumed), alert, n);
+    check_handshake_alert(client, ch_tcp_in(client, wire, len, &consumed), alert, n);
     uint8_t staged[64];
     size_t staged_len = take_client_alert(client, staged, sizeof staged);
     if (n == 2) {
@@ -82,7 +82,7 @@ static void client_reads_handshake_alert(ch_record *client, ch_record *server, c
 // decode_error after a record that is not one alert: in the clear in
 // place of the ClientHello, and sealed under the write key its flight
 // left it after that flight.
-static void server_reads_handshake_alert(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void server_reads_handshake_alert(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                          const ch_cfg *scfg, int answer, const uint8_t *alert,
                                          size_t n) {
     start_pair(client, server, ccfg, scfg);
@@ -95,7 +95,7 @@ static void server_reads_handshake_alert(ch_record *client, ch_record *server, c
     uint8_t wire[64];
     size_t len = alert_record(wire, sizeof wire, alert, n, answer == 2 ? server->hs.c_hs : NULL);
     size_t consumed = 0;
-    check_handshake_alert(server, ch_srv_record_in(server, wire, len, &consumed), alert, n);
+    check_handshake_alert(server, ch_srv_tcp_in(server, wire, len, &consumed), alert, n);
     if (n == 2) {
         CHECK(records_pushed == pushed);
         return;
@@ -108,12 +108,12 @@ static void server_reads_handshake_alert(ch_record *client, ch_record *server, c
 // A connected pair whose records go through tcp_nonblocking_close_tests.h's
 // wires, with every send counted: the client's into to_server, the
 // server's into held.
-static void connect_pair_on_wires(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void connect_pair_on_wires(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                   const ch_cfg *scfg) {
     io_calls = 0;
     (void)run_handshake(client, server, ccfg, scfg);
-    CHECK(ch_record_state(client) == CH_ST_CONNECTED);
-    CHECK(ch_record_state(server) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(server) == CH_ST_CONNECTED);
     memset(&held, 0, sizeof held);
     memset(&to_server, 0, sizeof to_server);
     client_sends = 0;
@@ -127,12 +127,12 @@ static void connect_pair_on_wires(ch_record *client, ch_record *server, const ch
 // After the handshake: the peer's alert under its application write key,
 // read by the other end's ch_read. A fatal one calls no cfg.send, and a
 // 3-byte one sends decode_error through cfg.send, once. Neither leaves the
-// client a record for ch_record_out, which answers CH_EINVAL at once.
-static void read_alert_after_handshake(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+// client a record for ch_tcp_out, which answers CH_EINVAL at once.
+static void read_alert_after_handshake(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                        const ch_cfg *scfg, int server_reads, const uint8_t *alert,
                                        size_t n) {
     connect_pair_on_wires(client, server, ccfg, scfg);
-    ch_record *reader = server_reads ? server : client;
+    ch_tcp *reader = server_reads ? server : client;
     size_t len = 0;
     if (server_reads) {
         CHECK(rec_seal(&client->t.wr, REC_ALERT, alert, n, to_server.bytes, WIRE_MAX, &len) == 0);
@@ -142,7 +142,7 @@ static void read_alert_after_handshake(ch_record *client, ch_record *server, con
     }
     uint8_t got[16];
     CHECK(ch_read(&reader->t, got, sizeof got) == CH_EPROTO);
-    CHECK(ch_record_state(reader) == CH_ST_FAILED);
+    CHECK(ch_tcp_state(reader) == CH_ST_FAILED);
     uint8_t staged[64];
     CHECK(server_reads || take_client_alert(client, staged, sizeof staged) == 0);
     size_t sends = server_reads ? server_sends : client_sends;
@@ -153,8 +153,8 @@ static void read_alert_after_handshake(ch_record *client, ch_record *server, con
         CHECK(ch_alert_received(&reader->t) == 0);
         CHECK(ch_alert_sent(&reader->t) == ALERT_DECODE_ERROR && sends == 1);
     }
-    ch_record_close(client);
-    ch_record_close(server);
+    ch_tcp_close(client);
+    ch_tcp_close(server);
     CHECK(io_calls == 0);
 }
 
@@ -164,7 +164,7 @@ static void read_alert_after_handshake(ch_record *client, ch_record *server, con
 // unexpected_message (rfc9846.txt:1054-1058), where a client takes the
 // server's (tcp_nonblocking_read_tests.h). The server's on_ticket, set here
 // on purpose, sees nothing.
-static void server_reads_client_ticket(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void server_reads_client_ticket(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                        const ch_cfg *scfg) {
     connect_pair_on_wires(client, server, ccfg, scfg);
     uint8_t ticket[32];
@@ -177,11 +177,11 @@ static void server_reads_client_ticket(ch_record *client, ch_record *server, con
     server->t.cfg.on_ticket = count_ticket;
     uint8_t got[16];
     CHECK(ch_read(&server->t, got, sizeof got) == CH_EPROTO);
-    CHECK(tickets_seen == 0 && ch_record_state(server) == CH_ST_FAILED);
+    CHECK(tickets_seen == 0 && ch_tcp_state(server) == CH_ST_FAILED);
     CHECK(ch_alert_sent(&server->t) == ALERT_UNEXPECTED_MESSAGE && server_sends == 1);
     CHECK(held.len == CH_ALERT_RECORD_LEN);
-    ch_record_close(client);
-    ch_record_close(server);
+    ch_tcp_close(client);
+    ch_tcp_close(server);
     CHECK(io_calls == 0);
 }
 
@@ -199,41 +199,39 @@ static int refusing_send(void *io, const uint8_t *p, size_t n) {
 // the other end's ch_read reads as the peer's fatal alert. A second call
 // on the failed session returns CH_EPROTO and sends nothing. A send that
 // takes nothing gives CH_EIO, and the session fails all the same.
-static void fail_after_handshake(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void fail_after_handshake(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                  const ch_cfg *scfg, int server_fails) {
     connect_pair_on_wires(client, server, ccfg, scfg);
-    ch_record *failer = server_fails ? server : client;
-    ch_record *reader = server_fails ? client : server;
+    ch_tcp *failer = server_fails ? server : client;
+    ch_tcp *reader = server_fails ? client : server;
     const size_t *sends = server_fails ? &server_sends : &client_sends;
     static const uint8_t refused[] = {ALERT_CLOSE_NOTIFY, ALERT_USER_CANCELED, 1, 255};
     for (size_t i = 0; i < sizeof refused; i++) {
         CHECK(ch_fail(&failer->t, refused[i]) == CH_EINVAL);
     }
-    CHECK(ch_record_state(failer) == CH_ST_CONNECTED && ch_alert_sent(&failer->t) == 0);
+    CHECK(ch_tcp_state(failer) == CH_ST_CONNECTED && ch_alert_sent(&failer->t) == 0);
     CHECK(*sends == 0);
     CHECK(ch_fail(&failer->t, ALERT_RECORD_OVERFLOW) == CH_OK);
-    CHECK(ch_record_state(failer) == CH_ST_FAILED && *sends == 1);
+    CHECK(ch_tcp_state(failer) == CH_ST_FAILED && *sends == 1);
     CHECK(ch_alert_sent(&failer->t) == ALERT_RECORD_OVERFLOW && ch_alert_received(&failer->t) == 0);
     CHECK(ch_fail(&failer->t, ALERT_RECORD_OVERFLOW) == CH_EPROTO && *sends == 1);
     uint8_t got[16];
     CHECK(ch_read(&reader->t, got, sizeof got) == CH_EPROTO);
     CHECK(ch_alert_received(&reader->t) == ALERT_RECORD_OVERFLOW);
     CHECK(ch_alert_sent(&reader->t) == 0);
-    ch_record_close(client);
-    ch_record_close(server);
+    ch_tcp_close(client);
+    ch_tcp_close(server);
 
     connect_pair_on_wires(client, server, ccfg, scfg);
     failer->t.cfg.send = refusing_send;
     CHECK(ch_fail(&failer->t, ALERT_DECODE_ERROR) == CH_EIO);
-    CHECK(ch_record_state(failer) == CH_ST_FAILED &&
-          ch_alert_sent(&failer->t) == ALERT_DECODE_ERROR);
-    ch_record_close(client);
-    ch_record_close(server);
+    CHECK(ch_tcp_state(failer) == CH_ST_FAILED && ch_alert_sent(&failer->t) == ALERT_DECODE_ERROR);
+    ch_tcp_close(client);
+    ch_tcp_close(server);
     CHECK(io_calls == 0);
 }
 
-static void test_alerts(ch_record *client, ch_record *server, const ch_cfg *ccfg,
-                        const ch_cfg *scfg) {
+static void test_alerts(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg, const ch_cfg *scfg) {
     static const uint8_t alert[3] = {2, ALERT_BAD_CERTIFICATE, 0};
     expect_refusal = 1;
     for (size_t n = 2; n <= 3; n++) {

@@ -192,14 +192,14 @@ static int take_record(void *io, const uint8_t *p, size_t n) {
     return 0;
 }
 
-static ch_record server;
+static ch_tcp server;
 
 static int start_server(ch_cfg *cfg) {
     cfg->srv.on_record_out = take_record;
-    int rc = ch_srv_record_init(&server, cfg);
-    uint8_t state = ch_record_state(&server);
-    ch_record_close(&server);
-    return rc == CH_OK && state == CH_ST_START ? 0 : failed("ch_srv_record_init refused a server");
+    int rc = ch_srv_tcp_init(&server, cfg);
+    uint8_t state = ch_tcp_state(&server);
+    ch_tcp_close(&server);
+    return rc == CH_OK && state == CH_ST_START ? 0 : failed("ch_srv_tcp_init refused a server");
 }
 #else
 #error "no pair in test/lib-pair-check.sh links a TRANSPORT=tcp-blocking server"
@@ -281,20 +281,20 @@ static int start_session(void) {
                : failed("ch_quic_crypto_out handed out no ClientHello");
 }
 #elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
-static ch_record client;
+static ch_tcp client;
 
 static int start_session(void) {
     ch_cfg cfg;
     client_config(&cfg);
-    if (ch_record_init(&client, &cfg) != CH_OK) {
-        return failed("ch_record_init refused a client");
+    if (ch_tcp_init(&client, &cfg) != CH_OK) {
+        return failed("ch_tcp_init refused a client");
     }
     size_t n = 0;
-    int rc = ch_record_out(&client, flight, sizeof flight, &n);
-    ch_record_close(&client);
+    int rc = ch_tcp_out(&client, flight, sizeof flight, &n);
+    ch_tcp_close(&client);
     return rc == CH_OK && n > 0 && flight[0] == LIB_PAIR_HANDSHAKE_RECORD
                ? 0
-               : failed("ch_record_out handed out no handshake record");
+               : failed("ch_tcp_out handed out no handshake record");
 }
 #else
 static ch_tls client;

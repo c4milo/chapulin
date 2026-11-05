@@ -1,7 +1,7 @@
 invariant: INV-14
 file: src/tcp_nonblocking.c
 catches: webpki_resume_tcp_nonblocking
-reason: ch_record_init never writes ch_tls.ticket_config_hash in a webpki
+reason: ch_tcp_init never writes ch_tls.ticket_config_hash in a webpki
   build, so the tickets a tcp-nonblocking session receives are bound to an
   all-zero hash and none resumes the configuration that received it.
   The received-ticket rows object.

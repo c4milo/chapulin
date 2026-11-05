@@ -6,7 +6,7 @@
 //
 // The order is the one a completion-loop caller meets: a record that
 // carries no application data, then nothing, then a data record. Before
-// CH_RECORD_AGAIN existed the "then nothing" step killed the session, and
+// CH_TCP_AGAIN existed the "then nothing" step killed the session, and
 // the only way around it was to hold every ticket-only record back until
 // a data record followed it.
 #ifndef CH_TEST_TCP_NONBLOCKING_READ_TESTS_H
@@ -39,7 +39,7 @@ static void count_ticket(void *io, const ch_ticket *ticket) {
 
 // Seals pt as one record under the server's write key and appends it to
 // what the caller holds; with cut set, only the record's first cut bytes.
-static void hold_record(ch_record *server, uint8_t type, const uint8_t *pt, size_t n, size_t cut) {
+static void hold_record(ch_tcp *server, uint8_t type, const uint8_t *pt, size_t n, size_t cut) {
     size_t out_len = 0;
     uint8_t *out = held.bytes + held.len;
     CHECK(rec_seal(&server->t.wr, type, pt, n, out, sizeof held.bytes - held.len, &out_len) == 0);
@@ -68,7 +68,7 @@ static size_t build_ticket(uint8_t *out, size_t cap) {
     return w.len;
 }
 
-static void test_read_waits_for_records(ch_record *client, ch_record *server) {
+static void test_read_waits_for_records(ch_tcp *client, ch_tcp *server) {
     memset(&held, 0, sizeof held);
     tickets_seen = 0;
     client->t.cfg.recv = held_recv;
@@ -80,9 +80,9 @@ static void test_read_waits_for_records(ch_record *client, ch_record *server) {
     // A ticket-only record, then nothing: the ticket is taken and the
     // session waits, connected.
     hold_record(server, REC_HANDSHAKE, ticket_msg, ticket_len, 0);
-    CHECK(ch_read(&client->t, got, sizeof got) == CH_RECORD_AGAIN);
+    CHECK(ch_read(&client->t, got, sizeof got) == CH_TCP_AGAIN);
     CHECK(tickets_seen == 1);
-    CHECK(ch_record_state(client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(client) == CH_ST_CONNECTED);
 
     // Then a data record, read by the same session.
     static const uint8_t hola[4] = {'h', 'o', 'l', 'a'};
@@ -95,7 +95,7 @@ static void test_read_waits_for_records(ch_record *client, ch_record *server) {
     // the data record after it is read.
     size_t half = ticket_len / 2;
     hold_record(server, REC_HANDSHAKE, ticket_msg, half, 0);
-    CHECK(ch_read(&client->t, got, sizeof got) == CH_RECORD_AGAIN);
+    CHECK(ch_read(&client->t, got, sizeof got) == CH_TCP_AGAIN);
     CHECK(tickets_seen == 1 && client->t.post_fill == half);
     static const uint8_t chau[4] = {'c', 'h', 'a', 'u'};
     hold_record(server, REC_HANDSHAKE, ticket_msg + half, ticket_len - half, 0);
@@ -108,7 +108,7 @@ static void test_read_waits_for_records(ch_record *client, ch_record *server) {
     // promise: that is a dead session, not a wait.
     hold_record(server, REC_APPDATA, hola, sizeof hola, 3);
     CHECK(ch_read(&client->t, got, sizeof got) == CH_EIO);
-    CHECK(ch_record_state(client) == CH_ST_FAILED);
+    CHECK(ch_tcp_state(client) == CH_ST_FAILED);
 }
 
 #endif

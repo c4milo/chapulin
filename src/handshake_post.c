@@ -416,7 +416,7 @@ static int drain_run(ch_tls *t, size_t pt_len, uint8_t *alert) {
         size_t record_len = 0;
         rc = io_read_record(t, buf + fill, t->cfg.buf_len - fill, &outer, &record_len, alert);
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-        if (rc == CH_RECORD_AGAIN) {
+        if (rc == CH_TCP_AGAIN) {
             // The next fragment has not arrived. The fill bytes stay at
             // the front of cfg.buf, and the next ch_read continues from
             // them (session.h, post_fill).
@@ -443,7 +443,7 @@ static int drain_run(ch_tls *t, size_t pt_len, uint8_t *alert) {
 int hspost_read(ch_tls *t, size_t pt_len) {
     uint8_t alert = ALERT_UNEXPECTED_MESSAGE;
     int rc = drain_run(t, pt_len, &alert);
-    if (rc != CH_OK && rc != CH_RECORD_AGAIN) {
+    if (rc != CH_OK && rc != CH_TCP_AGAIN) {
         tlsi_fail(t, alert);
     }
     return rc;

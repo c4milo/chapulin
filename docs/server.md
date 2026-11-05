@@ -2007,16 +2007,16 @@ given back to the caller.
 // srv_tcp_nonblocking.h — the same TLS 1.3 server, driven by a caller that owns the socket.
 
 // Prepares a server session. It reads the configuration and waits: unlike
-// ch_record_init it stages no message, because a server speaks second.
-int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
+// ch_tcp_init it stages no message, because a server speaks second.
+int ch_srv_tcp_init(ch_tcp *r, const ch_cfg *cfg);
 
 // Delivers n bytes the caller read from its socket and reports how many it
 // consumed. The server's own records leave through cfg.srv.on_record_out
 // during this call.
-int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
+int ch_srv_tcp_in(ch_tcp *r, uint8_t *p, size_t n, size_t *consumed);
 ```
 
-`ch_record_state` and `ch_record_close` are
+`ch_tcp_state` and `ch_tcp_close` are
 `tcp_nonblocking.h`'s and are not repeated: they read no side, so
 `tcp_nonblocking.c` compiles them in either role and the client driver
 above them is what a `ROLE=server` object guards out
@@ -2024,7 +2024,7 @@ above them is what a `ROLE=server` object guards out
 record-layer calls a client uses, for the reason this section already
 gives.
 
-**Output is a push, not a pull.** There is no `ch_srv_record_out`, and the
+**Output is a push, not a pull.** There is no `ch_srv_tcp_out`, and the
 certificate chain is why. `srv_flight.c` stages a protected message on the
 handler's own stack frame and streams the Certificate straight out of
 `cfg.srv.identity` through `srv_frag` (`srv_flight.c:6-8`), because one
@@ -2042,7 +2042,7 @@ That still answers the problem the mode exists for. The callback copies each
 record into a buffer the caller owns and returns; it never waits on a socket, so
 nothing blocks the loop.
 
-The whole flight leaves inside one `ch_srv_record_in`, because every send sits
+The whole flight leaves inside one `ch_srv_tcp_in`, because every send sits
 in the step that read the message it answers. `bin/srv_tcp_nonblocking_test`
 measures it: one ClientHello in, five records out — the ServerHello in the
 clear, then the EncryptedExtensions, the Certificate, the CertificateVerify and
@@ -2051,7 +2051,7 @@ driver ever calls them, which is how the mode's claim is checked rather than
 argued.
 
 A failure pushes one more record the same way: the alert it chose, pushed
-through `on_record_out` before `ch_srv_record_in` returns. The caller holds no
+through `on_record_out` before `ch_srv_tcp_in` returns. The caller holds no
 key, so `tcp_nonblocking_fail` seals the alert under the server's write key
 once the server has one, which it installs right after it has sent its
 ServerHello, and writes it in the clear before that (`docs/decisions.md` 76).
@@ -2087,8 +2087,8 @@ make RAND=drbg TRUST=none TRANSPORT=tcp-nonblocking ROLE=server lib
 
 `TRUST=none` is required, as it is for any `ROLE=server` build: a server judges
 no peer certificate. `ROLE=both` takes the tcp-nonblocking transport too, with a real
-`TRUST` value, and carries both drivers in one object — `ch_record_init` and
-`ch_srv_record_init` are different names for that reason.
+`TRUST` value, and carries both drivers in one object — `ch_tcp_init` and
+`ch_srv_tcp_init` are different names for that reason.
 
 `make lint-trust-separation` carries a row for this build: it requires
 `srv_tcp_nonblocking.c`, `tcp_nonblocking.c` and `tcp_nonblocking_frame.c`, and
@@ -2102,9 +2102,9 @@ public-PKI host client wants. It did not until the webpki `ch_connect` gained
 the `#ifndef CH_TRANSPORT_TCP_NONBLOCKING` guard the pinned one always had, and until
 that mode defined the `tlsi_config_ok` `session.h` declares for every trust
 mode: the webpki arm checked the receive floor and `require_pq` inside
-`ch_connect` and left the call undefined, so an object with `ch_record_init`
+`ch_connect` and left the call undefined, so an object with `ch_tcp_init`
 and no `ch_connect` imported both it and `ch_handshake`. Folding those two
-checks into `tlsi_config_ok` is what gives `ch_record_init` the webpki floor
+checks into `tlsi_config_ok` is what gives `ch_tcp_init` the webpki floor
 and the `require_pq` refusal, which it did not have in this mode
 ([171](https://github.com/c4milo/chapulin/issues/171)).
 
@@ -2179,7 +2179,7 @@ and buy nothing, because the original outlives every wipe. This is INV-31.
 
 On an arm64 or x86-64 host a server object is a host object
 (`docs/decisions.md` 89), and its `ch_cfg` also holds `cpu`, the caller's
-description of its CPU (`cpu_cfg.h`). `ch_srv_accept`, `ch_srv_record_init`,
+description of its CPU (`cpu_cfg.h`). `ch_srv_accept`, `ch_srv_tcp_init`,
 `ch_srv_quic_init` and `ch_srv_check` return `CH_EINVAL` for a value without
 `CH_CPU_PROBED`, or with a bit the object does not define for its architecture.
 A server built for any other target has no such field.
@@ -2930,7 +2930,7 @@ key of all zero bytes, and one with the cookie key's bytes, with `CH_EINVAL`
 (docs/decisions.md 139). And
 `ch_cfg.now_seconds` with `ch_cfg.clock_io`, its clock: a function that
 answers seconds from one epoch on every server that shares the key. Each of
-`ch_srv_accept`, `ch_srv_record_init` and `ch_srv_quic_init` calls it once
+`ch_srv_accept`, `ch_srv_tcp_init` and `ch_srv_quic_init` calls it once
 and keeps the answer in `ch_tls.now_seconds`, which every ticket rule of
 the connection reads. NULL, or a clock that answers 0, means no clock. A
 server with no clock issues no ticket and accepts none, because it could

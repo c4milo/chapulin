@@ -8,7 +8,7 @@ reason: a host object's server whose caller did not set
   stated. The ruling refuses such a list at init (docs/decisions.md 81
   and 89).
   test/webpki_loop_runtime.h's check_runtime_lists requires
-  ch_srv_record_init to refuse each list the client refuses.
+  ch_srv_tcp_init to refuse each list the client refuses.
 
 --- old
 static int suites_run_here(const ch_cfg *cfg) {

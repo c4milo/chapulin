@@ -290,7 +290,7 @@ typedef struct {
     // (rfc9846.txt:6401-6403). sni_len is how many bytes of server_name the handshake
     // copied into cfg.sni_buf, and 0 when the client sent none or the name did not fit.
     // The server also writes psk_selected, which every build declares above. server, which a
-    // TCP build declares, is 1 in a session ch_srv_accept or ch_srv_record_init started and 0
+    // TCP build declares, is 1 in a session ch_srv_accept or ch_srv_tcp_init started and 0
     // in a ROLE=both object's client sessions; ch_read reads it (handshake_post.c).
     uint8_t session_id[32];
     uint8_t session_id_len;
@@ -407,7 +407,7 @@ typedef struct {
     size_t pt_len;
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
     // The bytes of a post-handshake message that arrived in part when
-    // ch_read returned CH_RECORD_AGAIN: they sit at the front of cfg.buf,
+    // ch_read returned CH_TCP_AGAIN: they sit at the front of cfg.buf,
     // and the next ch_read continues the message with the next record
     // before it reads anything else (hspost_read). 0 when no message is
     // in part.
@@ -475,7 +475,7 @@ int tlsi_fail(ch_tls *t, uint8_t description);
 
 // Whether a client configuration keeps every rule that does not depend on
 // which driver runs it. tls.c holds the predicates; ch_connect and
-// ch_record_init both ask, and each checks the I/O callbacks itself.
+// ch_tcp_init both ask, and each checks the I/O callbacks itself.
 int tlsi_config_ok(const ch_cfg *cfg);
 
 // Loads the stored epoch and checks a resuming ticket against it, the step a CA build owes

@@ -1,6 +1,6 @@
 // The alert record each tcp-nonblocking driver emits when its handshake
 // fails, between this tree's two drivers (tcp_nonblocking.h). The client
-// stages it for ch_record_out and the server pushes it through
+// stages it for ch_tcp_out and the server pushes it through
 // cfg.srv.on_record_out. The caller holds no key, so the driver seals the
 // record under its write key once it has one, as RFC 9846 §6 requires, and
 // writes it in the clear before that: REC_HDR + 2 bytes in the clear, and
@@ -95,15 +95,15 @@ static void zero_x25519_share(uint8_t *wire) {
 // fatal alert and push nothing back. sealed says the record is sealed
 // under the client's handshake write key, which the server's read key
 // opens.
-static void server_reads_client_alert(ch_record *client, ch_record *server, int sealed,
-                                      uint8_t alert, size_t step) {
-    CHECK(ch_record_state(client) == CH_ST_FAILED && ch_alert_sent(&client->t) == alert);
+static void server_reads_client_alert(ch_tcp *client, ch_tcp *server, int sealed, uint8_t alert,
+                                      size_t step) {
+    CHECK(ch_tcp_state(client) == CH_ST_FAILED && ch_alert_sent(&client->t) == alert);
     uint8_t rec[64];
     size_t len = take_client_alert(client, rec, step);
     check_alert_record(rec, len, sealed ? &server->t.rd : NULL, alert);
     size_t pushed = records_pushed;
     size_t consumed = 0;
-    CHECK(ch_srv_record_in(server, rec, len, &consumed) == CH_EPROTO);
+    CHECK(ch_srv_tcp_in(server, rec, len, &consumed) == CH_EPROTO);
     CHECK(ch_alert_received(&server->t) == alert && ch_alert_sent(&server->t) == 0);
     CHECK(records_pushed == pushed);
 }
@@ -111,9 +111,9 @@ static void server_reads_client_alert(ch_record *client, ch_record *server, int 
 // Hands what the failed server pushed, to_client from off on, to the
 // client in its handshake. The client must read the alert at its end as
 // the server's fatal alert and stage nothing.
-static void client_reads_server_alert(ch_record *client, size_t off, uint8_t alert) {
+static void client_reads_server_alert(ch_tcp *client, size_t off, uint8_t alert) {
     size_t consumed = 0;
-    CHECK(ch_record_in(client, to_client.bytes + off, to_client.len - off, &consumed) == CH_EPROTO);
+    CHECK(ch_tcp_in(client, to_client.bytes + off, to_client.len - off, &consumed) == CH_EPROTO);
     CHECK(ch_alert_received(&client->t) == alert && ch_alert_sent(&client->t) == 0);
     uint8_t staged[64];
     CHECK(take_client_alert(client, staged, sizeof staged) == 0);
@@ -122,13 +122,13 @@ static void client_reads_server_alert(ch_record *client, size_t off, uint8_t ale
 // The client's last check before its write key: hsf_derive_handshake_secrets
 // refuses the all-zero x25519 secret of the ServerHello's share with
 // illegal_parameter, just before it installs the key.
-static void client_refuses_server_share(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void client_refuses_server_share(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                         const ch_cfg *scfg) {
     start_pair(client, server, ccfg, scfg);
     CHECK(client_to_server(client, server));
     zero_x25519_share(to_client.bytes);
     size_t consumed = 0;
-    CHECK(ch_record_in(client, to_client.bytes, to_client.len, &consumed) == CH_EPROTO);
+    CHECK(ch_tcp_in(client, to_client.bytes, to_client.len, &consumed) == CH_EPROTO);
     server_reads_client_alert(client, server, 0, ALERT_ILLEGAL_PARAMETER, 64);
 }
 
@@ -136,7 +136,7 @@ static void client_refuses_server_share(ch_record *client, ch_record *server, co
 // ServerHello, the EncryptedExtensions, arrives with one bit of its tag
 // flipped. The client refuses it with bad_record_mac, sealed under the key
 // it has just installed, and hands the record over five bytes at a time.
-static void client_refuses_first_protected_record(ch_record *client, ch_record *server,
+static void client_refuses_first_protected_record(ch_tcp *client, ch_tcp *server,
                                                   const ch_cfg *ccfg, const ch_cfg *scfg) {
     start_pair(client, server, ccfg, scfg);
     CHECK(client_to_server(client, server));
@@ -147,7 +147,7 @@ static void client_refuses_first_protected_record(ch_record *client, ch_record *
     }
     to_client.bytes[hello_len + record_at(to_client.bytes, hello_len) - 1] ^= 1;
     size_t consumed = 0;
-    CHECK(ch_record_in(client, to_client.bytes, to_client.len, &consumed) == CH_EPROTO);
+    CHECK(ch_tcp_in(client, to_client.bytes, to_client.len, &consumed) == CH_EPROTO);
     server_reads_client_alert(client, server, 1, ALERT_BAD_RECORD_MAC, 5);
 }
 
@@ -157,7 +157,7 @@ static void client_refuses_first_protected_record(ch_record *client, ch_record *
 // cheap outcome. One flipped bit in the modulus makes rsa_pss_verify refuse
 // the CertificateVerify, and the client must end dead with decrypt_error,
 // sealed under its handshake write key, rather than connected.
-static void client_refuses_wrong_pin(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void client_refuses_wrong_pin(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                      const ch_cfg *scfg) {
     static uint8_t wrong_pin[sizeof rsa_sign_2048_n];
     memcpy(wrong_pin, rsa_sign_2048_n, sizeof wrong_pin);
@@ -183,14 +183,14 @@ static void client_refuses_wrong_pin(ch_record *client, ch_record *server, const
 
 // A server refusal before any key: the first message is a ServerHello's
 // type. The alert goes out alone, in the clear.
-static void server_refuses_first_message(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void server_refuses_first_message(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                          const ch_cfg *scfg) {
     static uint8_t wire[WIRE_MAX];
     start_pair(client, server, ccfg, scfg);
     size_t total = take_client_bytes(client, wire);
     wire[REC_HDR] = HS_SERVER_HELLO;
     size_t consumed = 0;
-    CHECK(ch_srv_record_in(server, wire, total, &consumed) == CH_EPROTO);
+    CHECK(ch_srv_tcp_in(server, wire, total, &consumed) == CH_EPROTO);
     CHECK(ch_alert_sent(&server->t) == ALERT_UNEXPECTED_MESSAGE && records_pushed == 1);
     check_alert_record(to_client.bytes, to_client.len, NULL, ALERT_UNEXPECTED_MESSAGE);
     client_reads_server_alert(client, 0, ALERT_UNEXPECTED_MESSAGE);
@@ -201,14 +201,14 @@ static void server_refuses_first_message(ch_record *client, ch_record *server, c
 // illegal_parameter. The ServerHello went out before it, so the alert
 // follows it in the clear, and the client reads that alert with its own
 // keys installed.
-static void server_refuses_client_share(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void server_refuses_client_share(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                         const ch_cfg *scfg) {
     static uint8_t wire[WIRE_MAX];
     start_pair(client, server, ccfg, scfg);
     size_t total = take_client_bytes(client, wire);
     zero_x25519_share(wire);
     size_t consumed = 0;
-    CHECK(ch_srv_record_in(server, wire, total, &consumed) == CH_EPROTO);
+    CHECK(ch_srv_tcp_in(server, wire, total, &consumed) == CH_EPROTO);
     CHECK(ch_alert_sent(&server->t) == ALERT_ILLEGAL_PARAMETER && records_pushed == 2);
     size_t hello_len = record_at(to_client.bytes, 0);
     CHECK(to_client.bytes[0] == REC_HANDSHAKE && to_client.len > hello_len);
@@ -237,7 +237,7 @@ static int failing_sink(void *io, const uint8_t *p, size_t n) {
 // internal_error (RFC 9846 §6.2, rfc9846.txt:3979-3981). The alert goes
 // through the same sink right after it, sealed under that key, and the
 // client opens it with the read key the ServerHello gave it.
-static void server_sink_fails_first_protected_record(ch_record *client, ch_record *server,
+static void server_sink_fails_first_protected_record(ch_tcp *client, ch_tcp *server,
                                                      const ch_cfg *ccfg, const ch_cfg *scfg) {
     start_pair(client, server, ccfg, scfg);
     server->t.cfg.srv.on_record_out = failing_sink;
@@ -249,7 +249,7 @@ static void server_sink_fails_first_protected_record(ch_record *client, ch_recor
     size_t hello_len = record_at(to_client.bytes, 0);
     size_t flight_len = hello_len + record_at(to_client.bytes, hello_len);
     size_t consumed = 0;
-    CHECK(ch_record_in(client, to_client.bytes, flight_len, &consumed) == CH_OK);
+    CHECK(ch_tcp_in(client, to_client.bytes, flight_len, &consumed) == CH_OK);
     check_alert_record(to_client.bytes + flight_len, to_client.len - flight_len, &client->t.rd,
                        sent);
     client_reads_server_alert(client, flight_len, sent);
@@ -261,7 +261,7 @@ static const uint8_t failure_ticket_key[CH_SRV_TICKET_KEY_LEN] = {0x5a};
 
 // Hands what the server pushed to the connected client through ch_read,
 // which must read the server's fatal alert at the end and send nothing.
-static void connected_client_reads_alert(ch_record *client, uint8_t alert) {
+static void connected_client_reads_alert(ch_tcp *client, uint8_t alert) {
     memset(&held, 0, sizeof held);
     memcpy(held.bytes, to_client.bytes, to_client.len);
     held.len = to_client.len;
@@ -280,7 +280,7 @@ static void connected_client_reads_alert(ch_record *client, uint8_t alert) {
 // record does, and the alert goes through the same sink right after the
 // ticket, sealed under the application write key. The connected client
 // reads the ticket and then the alert.
-static void server_sink_fails_ticket(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void server_sink_fails_ticket(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                      const ch_cfg *scfg) {
     ch_cfg tickets = *scfg;
     tickets.srv.ticket_key = failure_ticket_key;
@@ -292,8 +292,8 @@ static void server_sink_fails_ticket(ch_record *client, ch_record *server, const
     failed_push = 1;
     pushes_seen = 0;
     CHECK(!client_to_server(client, server));
-    CHECK(ch_record_state(client) == CH_ST_CONNECTED);
-    CHECK(ch_record_state(server) == CH_ST_FAILED && pushes_seen == 2);
+    CHECK(ch_tcp_state(client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(server) == CH_ST_FAILED && pushes_seen == 2);
     CHECK(ch_alert_sent(&server->t) == ALERT_INTERNAL_ERROR);
     connected_client_reads_alert(client, ALERT_INTERNAL_ERROR);
 }
@@ -302,27 +302,27 @@ static void server_sink_fails_ticket(ch_record *client, ch_record *server, const
 // arrives with one bit of its tag flipped. The client is connected by then,
 // reads the server's bad_record_mac with ch_read under the application read
 // key it installed with its Finished, and sends nothing back.
-static void server_refuses_client_finished(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void server_refuses_client_finished(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                            const ch_cfg *scfg) {
     static uint8_t wire[WIRE_MAX];
     start_pair(client, server, ccfg, scfg);
     CHECK(client_to_server(client, server));
     CHECK(server_to_client(client));
     size_t total = take_client_bytes(client, wire);
-    CHECK(ch_record_state(client) == CH_ST_CONNECTED && total > 0);
+    CHECK(ch_tcp_state(client) == CH_ST_CONNECTED && total > 0);
     if (total == 0) {
         return;
     }
     wire[total - 1] ^= 1;
     size_t pushed = records_pushed;
     size_t consumed = 0;
-    CHECK(ch_srv_record_in(server, wire, total, &consumed) == CH_EPROTO);
+    CHECK(ch_srv_tcp_in(server, wire, total, &consumed) == CH_EPROTO);
     CHECK(ch_alert_sent(&server->t) == ALERT_BAD_RECORD_MAC && records_pushed == pushed + 1);
     check_alert_record(to_client.bytes, to_client.len, &client->t.rd, ALERT_BAD_RECORD_MAC);
     connected_client_reads_alert(client, ALERT_BAD_RECORD_MAC);
 }
 
-static void test_failure_alerts(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void test_failure_alerts(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                 const ch_cfg *scfg) {
     io_calls = 0;
     expect_refusal = 1;

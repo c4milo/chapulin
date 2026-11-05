@@ -49,7 +49,7 @@
         "chapulin_dnssec.zig",
         "chapulin_pem.zig",
         "chapulin_quic.zig",
-        "chapulin_record.zig",
+        "chapulin_tcp.zig",
         "chapulin_ticket.zig",
         "src/cpu.h",
         "src/cpu_cfg.h",

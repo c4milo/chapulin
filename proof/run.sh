@@ -1076,7 +1076,7 @@ launch slow:4 full io 24 ""
 # the tail is reached.
 launch fast full io_send 17 ""
 # record_whole_len: where a TRANSPORT=tcp-nonblocking caller's record ends,
-# ch_record_whole_len over every n up to 2^20 and every byte, in a heap
+# ch_tcp_whole_len over every n up to 2^20 and every byte, in a heap
 # object CBMC allocates exactly n bytes long, so a read on either side of
 # p[0..n) fails. buf.c is real. The call has no loop, so the global unwind
 # bounds nothing. Measured under this script's flags (arm64 macOS, cbmc
@@ -2628,9 +2628,9 @@ launch fast:2 full srv_tcp_nonblocking 4 "fill_nondet.0:33,no_secret_left.0:33" 
 launch fast:2 full srv_quic 5 "fill_nondet.0:257,drive.0:5,zero_bytes.0:133" -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 src/handshake_record.c src/ct.c
 # The client's tcp-nonblocking driver, in two formulas with the
 # quic_step and quic_driver layering. tcp_nonblocking runs init, the
-# real step table, ch_record_out and ch_record_close, with the
+# real step table, ch_tcp_out and ch_tcp_close, with the
 # handshake_flight.h and handshake_auth.h handlers as contract stubs.
-# tcp_nonblocking_in runs ch_record_in over a stub of
+# tcp_nonblocking_in runs ch_tcp_in over a stub of
 # tcp_nonblocking_advance that states the contract the first proves. In
 # one formula the record loop around the real table took 292 s, near the
 # fast tier's five minutes. Measured on 2026-10-31 in the pinned amd64

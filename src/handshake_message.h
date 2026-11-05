@@ -303,7 +303,7 @@ static inline size_t hs_psk_hash_len(const ch_cfg *cfg) {
 // number in *count: cfg->cipher_suites when the caller named a list, and
 // suite_session_default (suite.h) when it named none, which is
 // suite_default_order unless a host object's caller did not set
-// CH_CPU_CONSTANT_TIME_AES. ch_connect, ch_record_init and ch_quic_init
+// CH_CPU_CONSTANT_TIME_AES. ch_connect, ch_tcp_init and ch_quic_init
 // hold a list to 1 to SUITE_HELD_COUNT suites this build holds, none
 // repeated and, in that host session, none AES-GCM (webpki_cfg.h). The
 // hello writes these and the handshake takes no other suite back (RFC

@@ -2,7 +2,7 @@
 // process: this tree's server issues a ticket after a full handshake, this
 // tree's client takes it through ch_read and on_ticket, and a second
 // connection resumes with it and no certificate. It also holds the bound
-// ch_record_init puts on any PSK identity. Included by
+// ch_tcp_init puts on any PSK identity. Included by
 // test/tcp_nonblocking_loop_test.c after test/tcp_nonblocking_read_tests.h,
 // whose held records and held_recv it reads.
 //
@@ -60,7 +60,7 @@ static void keep_ticket(void *io, const ch_ticket *ticket) {
 // Hands what the server pushed after the handshake to the connected client
 // through ch_read, as a caller's recv would. The records carry the ticket
 // and no application data, so the read waits.
-static void take_post_handshake(ch_record *client) {
+static void take_post_handshake(ch_tcp *client) {
     memset(&held, 0, sizeof held);
     memcpy(held.bytes, to_client.bytes, to_client.len);
     held.len = to_client.len;
@@ -68,7 +68,7 @@ static void take_post_handshake(ch_record *client) {
     client->t.cfg.recv = held_recv;
     client->t.cfg.on_ticket = keep_ticket;
     uint8_t got[16];
-    CHECK(ch_read(&client->t, got, sizeof got) == CH_RECORD_AGAIN);
+    CHECK(ch_read(&client->t, got, sizeof got) == CH_TCP_AGAIN);
     CHECK(held.off == held.len);
 }
 
@@ -91,19 +91,18 @@ static void resume_config(ch_cfg *cfg, const kept_ticket *t) {
 }
 
 // Runs one handshake the server must refuse, and returns the alert it chose.
-static uint8_t refused(ch_record *client, ch_record *server, const ch_cfg *ccfg,
-                       const ch_cfg *scfg) {
+static uint8_t refused(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg, const ch_cfg *scfg) {
     expect_refusal = 1;
     (void)run_handshake(client, server, ccfg, scfg);
     expect_refusal = 0;
-    CHECK(ch_record_state(server) == CH_ST_FAILED);
-    CHECK(ch_record_state(client) != CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(server) == CH_ST_FAILED);
+    CHECK(ch_tcp_state(client) != CH_ST_CONNECTED);
     return ch_alert_sent(&server->t);
 }
 
 static void test_resumption(void) {
-    static ch_record client;
-    static ch_record server;
+    static ch_tcp client;
+    static ch_tcp server;
     ch_cfg scfg;
     ch_cfg ccfg;
 
@@ -116,8 +115,8 @@ static void test_resumption(void) {
     io_calls = 0;
     tickets_kept = 0;
     (void)run_handshake(&client, &server, &ccfg, &scfg);
-    CHECK(ch_record_state(&client) == CH_ST_CONNECTED);
-    CHECK(ch_record_state(&server) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(&client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(&server) == CH_ST_CONNECTED);
     CHECK(server.t.psk_selected == 0 && server.t.sigalg == SIGALG_RSA_PSS_RSAE_SHA256);
     // ServerHello, EncryptedExtensions, Certificate, CertificateVerify,
     // Finished, then the ticket.
@@ -134,8 +133,8 @@ static void test_resumption(void) {
     resume_config(&ccfg, &first);
     test_clock_set(&scfg, test_server_seconds(), LOOP_NOW + 5);
     (void)run_handshake(&client, &server, &ccfg, &scfg);
-    CHECK(ch_record_state(&client) == CH_ST_CONNECTED);
-    CHECK(ch_record_state(&server) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(&client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(&server) == CH_ST_CONNECTED);
     CHECK(server.t.psk_selected == 1 && server.t.sigalg == 0);
     // psk_dhe_ke runs the key exchange again, over the same group.
     CHECK(client.t.group == LOOP_GROUP && server.t.group == LOOP_GROUP);
@@ -159,14 +158,14 @@ static void test_resumption(void) {
     resume_config(&ccfg, &second);
     test_clock_set(&scfg, test_server_seconds(), LOOP_NOW + 10);
     (void)run_handshake(&client, &server, &ccfg, &scfg);
-    CHECK(server.t.psk_selected == 1 && ch_record_state(&client) == CH_ST_CONNECTED);
+    CHECK(server.t.psk_selected == 1 && ch_tcp_state(&client) == CH_ST_CONNECTED);
 
     // The lifetime's exact boundary on the server's clock: the first
     // ticket resumes at the last valid second and not one second later.
     resume_config(&ccfg, &first);
     test_clock_set(&scfg, test_server_seconds(), (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME);
     (void)run_handshake(&client, &server, &ccfg, &scfg);
-    CHECK(server.t.psk_selected == 1 && ch_record_state(&client) == CH_ST_CONNECTED);
+    CHECK(server.t.psk_selected == 1 && ch_tcp_state(&client) == CH_ST_CONNECTED);
     // At the end of its lifetime the chain has nothing left to give.
     CHECK(to_client.len == 0 && records_pushed == 3);
     test_clock_set(&scfg, test_server_seconds(), (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME + 1);
@@ -175,18 +174,18 @@ static void test_resumption(void) {
     // The same boundary on the client's side, which judges the ticket's
     // age before it stages a byte (handshake_post.h): an age equal to the
     // ticket's lifetime is offered and resumes, and one millisecond more
-    // is refused by ch_record_init, which leaves nothing to collect.
+    // is refused by ch_tcp_init, which leaves nothing to collect.
     resume_config(&ccfg, &first);
     ccfg.ticket_age_ms = (uint64_t)first.lifetime_s * 1000U;
     test_clock_set(&scfg, test_server_seconds(), (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME);
     (void)run_handshake(&client, &server, &ccfg, &scfg);
-    CHECK(server.t.psk_selected == 1 && ch_record_state(&client) == CH_ST_CONNECTED);
+    CHECK(server.t.psk_selected == 1 && ch_tcp_state(&client) == CH_ST_CONNECTED);
     ccfg.ticket_age_ms += 1;
-    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL);
-    CHECK(ch_record_state(&client) == CH_ST_FAILED);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_state(&client) == CH_ST_FAILED);
     uint8_t staged[8];
     size_t staged_len = 0;
-    CHECK(ch_record_out(&client, staged, sizeof staged, &staged_len) == CH_EINVAL);
+    CHECK(ch_tcp_out(&client, staged, sizeof staged, &staged_len) == CH_EINVAL);
     CHECK(staged_len == 0);
     resume_config(&ccfg, &first);
 
@@ -219,17 +218,17 @@ static void test_resumption(void) {
     client_config(&ccfg);
     test_clock_set(&scfg, test_server_seconds(), 0);
     (void)run_handshake(&client, &server, &ccfg, &scfg);
-    CHECK(ch_record_state(&server) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(&server) == CH_ST_CONNECTED);
     CHECK(records_pushed == 5 && to_client.len == 0);
     resume_config(&ccfg, &first);
     CHECK(refused(&client, &server, &ccfg, &scfg) == ALERT_MISSING_EXTENSION);
 }
 
-// ch_record_init's PSK identity bound, tlsi_config_ok's as for ch_connect:
+// ch_tcp_init's PSK identity bound, tlsi_config_ok's as for ch_connect:
 // an identity of CH_TICKET_ID_MAX bytes stages its hello, and one byte
 // more or none at all is refused with nothing staged.
 static void test_psk_identity_bounds(void) {
-    static ch_record client;
+    static ch_tcp client;
     static uint8_t identity[CH_TICKET_ID_MAX + 1];
     static const uint8_t psk[SHA256_LEN] = {1};
     ch_cfg ccfg;
@@ -240,12 +239,12 @@ static void test_psk_identity_bounds(void) {
     ccfg.psk_len = sizeof psk;
     ccfg.psk_id = identity;
     ccfg.psk_id_len = CH_TICKET_ID_MAX;
-    CHECK(ch_record_init(&client, &ccfg) == CH_OK && client.tx_len > 0);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_OK && client.tx_len > 0);
     ccfg.psk_id_len = CH_TICKET_ID_MAX + 1;
-    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL && client.tx_len == 0);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL && client.tx_len == 0);
     ccfg.psk_id_len = 0;
-    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL && client.tx_len == 0);
-    CHECK(ch_record_state(&client) == CH_ST_FAILED);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL && client.tx_len == 0);
+    CHECK(ch_tcp_state(&client) == CH_ST_FAILED);
 }
 
 #endif

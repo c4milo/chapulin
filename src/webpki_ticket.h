@@ -6,7 +6,7 @@
 // new server_name is valid for the certificate of the original session
 // (rfc9846.txt:3222-3224). These calls hold that rule. Each ticket
 // carries a binding to the hostname, the anchors and the SPKI pins of the
-// session that received it, and ch_connect, ch_record_init and
+// session that received it, and ch_connect, ch_tcp_init and
 // ch_quic_init refuse a ticket whose binding does not match the
 // configuration presenting it.
 //

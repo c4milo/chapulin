@@ -11,14 +11,14 @@
 // on the handshake path.
 //
 // What it covers and what it does not. It drives the handshake alone. On
-// CH_OK from ch_record_state the session is connected and the caller moves
+// CH_OK from ch_tcp_state the session is connected and the caller moves
 // to ch_read, ch_write and ch_close, whose callbacks no longer block: by
 // then the caller holds the bytes and its send and recv are buffer copies.
 // The record protection after the handshake is the same record.[ch] a
 // TRANSPORT=tcp-blocking build uses, keyed the same way.
 //
 // After the handshake the caller's recv hands over whole records, and it
-// returns 0 when it holds no record: ch_read then returns CH_RECORD_AGAIN
+// returns 0 when it holds no record: ch_read then returns CH_TCP_AGAIN
 // (cfg.h) and the session stays connected. A record that carries no
 // application data, a NewSessionTicket or a KeyUpdate, is handled before
 // that answer, so a caller learns of it by its effect and calls ch_read
@@ -32,28 +32,28 @@
 // closes the peer's direction alone (RFC 9846 §6.1): the ch_read that
 // reads it returns 0, wipes the read key and does not call cfg.send, and
 // every later ch_read returns 0 without calling cfg.recv. The write
-// direction stays open, so ch_record_state still reports
+// direction stays open, so ch_tcp_state still reports
 // CH_ST_CONNECTED and ch_write still sends. The caller closes its own
 // direction with ch_close, which sends this side's close_notify through
 // cfg.send as one record and leaves the session CH_ST_CLOSED, whichever
-// side closed first. ch_record_close after it is safe. ch_read calls cfg.send
+// side closed first. ch_tcp_close after it is safe. ch_read calls cfg.send
 // in one case alone: to send the alert of a failure. A KeyUpdate whose
 // sender asked for an answer gets it from the next ch_write, before that
 // call's data (RFC 9846 §4.7.3, docs/decisions.md 138).
 //
 // Result codes match quic.h's meanings. CH_OK means the call did what it
-// says. CH_EINVAL from ch_record_init means it refused the configuration,
+// says. CH_EINVAL from ch_tcp_init means it refused the configuration,
 // staged nothing and left the session failed until the next init; from
 // every other call, that the caller called out of order and nothing
-// changed. CH_ECAP from ch_record_out means the caller's buffer was short,
+// changed. CH_ECAP from ch_tcp_out means the caller's buffer was short,
 // nothing was consumed, and the same call may run again with a larger
 // one. CH_EPROTO from a call on a session that failed or closed, and from
 // ch_read or ch_write before the handshake completes, changes nothing
 // either (tls.h). Every other code leaves the session dead.
 //
 // The call that fails emits its failure's alert the way it emits its
-// other records. ch_record_in stages it as one record, which ch_record_out
-// hands over on the failed session. ch_srv_record_in pushes it through
+// other records. ch_tcp_in stages it as one record, which ch_tcp_out
+// hands over on the failed session. ch_srv_tcp_in pushes it through
 // cfg.srv.on_record_out before it returns (srv_tcp_nonblocking.h). ch_read
 // and ch_write send it through cfg.send. The caller holds no key, so the
 // driver seals the record itself: under this side's write key once there
@@ -84,17 +84,17 @@
 // It is not copyable: hs.t points at t, and every entry rewrites that
 // pointer to its own &r->t, so a copy cannot leave a dangling pointer
 // inside a step.
-typedef struct ch_record {
+typedef struct ch_tcp {
     ch_tls t;
     handshake_state hs;
     uint8_t step; // TCP_NONBLOCKING_STEP_*, tcp_nonblocking_step.h
     // Bytes of one finished record staged in t.tx and not yet collected,
-    // and how many of them ch_record_out has already handed over: a
+    // and how many of them ch_tcp_out has already handed over: a
     // handshake message, or the alert record of a failure. A partial
     // collection is what lets a caller with a small buffer make progress.
     size_t tx_len;
     size_t tx_off;
-} ch_record;
+} ch_tcp;
 
 // The client's driver, the three calls below, is declared only in an
 // object with a client, which alone defines it (tcp_nonblocking.c). A
@@ -103,7 +103,7 @@ typedef struct ch_record {
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 // Prepares a session and stages its ClientHello. It reads the
 // configuration and draws this connection's key share, and it sends
-// nothing: the caller collects the hello with ch_record_out.
+// nothing: the caller collects the hello with ch_tcp_out.
 //
 // Returns CH_EINVAL for every configuration ch_connect refuses (tls.h),
 // cfg.send and cfg.recv among them. This mode calls neither while the
@@ -114,14 +114,14 @@ typedef struct ch_record {
 // by then it holds the bytes.
 //
 // A refusal zeroes r, so nothing is staged, and sets r->t.state to
-// CH_ST_FAILED until the next ch_record_init. It keeps ch_tls.epoch,
+// CH_ST_FAILED until the next ch_tcp_init. It keeps ch_tls.epoch,
 // epoch_seen and epoch_status as a CA build's epoch check wrote them,
 // the three fields ch_connect leaves (docs/ca.md): a ticket that the
 // stored epoch retired is one of those refusals, and epoch_status then
 // reads CH_EPOCH_REVOKED, as it does after ch_connect.
 //
 // Requires: r and cfg are not NULL, and cfg outlives the session.
-int CH_MUST_USE ch_record_init(ch_record *r, const ch_cfg *cfg);
+int CH_MUST_USE ch_tcp_init(ch_tcp *r, const ch_cfg *cfg);
 
 // Delivers n bytes the caller read from its socket and reports how many
 // it consumed. It takes whole records only and runs the handshake as far
@@ -135,21 +135,21 @@ int CH_MUST_USE ch_record_init(ch_record *r, const ch_cfg *cfg);
 //
 // Returns CH_OK when the bytes were taken, whether or not they completed
 // a record or a message. Returns CH_EINVAL, and consumes and changes
-// nothing, while a record ch_record_out has not handed over yet is
+// nothing, while a record ch_tcp_out has not handed over yet is
 // staged: the peer cannot have answered it. Returns CH_EPROTO without
 // reading a byte on a session that failed or closed. Every other code
 // leaves the session dead, with the alert its failure chose staged for
-// ch_record_out unless the failure was the peer's fatal alert (above). A
-// record delivered here once ch_record_state reports CH_ST_CONNECTED
+// ch_tcp_out unless the failure was the peer's fatal alert (above). A
+// record delivered here once ch_tcp_state reports CH_ST_CONNECTED
 // fails the session too: that record is ch_read's.
-int CH_MUST_USE ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
+int CH_MUST_USE ch_tcp_in(ch_tcp *r, uint8_t *p, size_t n, size_t *consumed);
 
 // Collects bytes the caller must send. out_len is 0 when nothing is
 // owed, which is the normal answer while waiting for the peer. A caller
 // whose buffer is smaller than the staged record gets what fits and
 // calls again; the record is finished when out_len is 0.
 //
-// After a failure in ch_record_in the staged record is that failure's
+// After a failure in ch_tcp_in the staged record is that failure's
 // alert, and this call hands it over on the failed session the same way,
 // in as many calls as the caller's buffer needs. Once its last byte is
 // out, the next call returns CH_EINVAL. The caller sends those bytes and
@@ -159,21 +159,21 @@ int CH_MUST_USE ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consume
 // progress. Returns CH_EINVAL on a session that failed or closed and
 // holds no staged byte. Neither changes the session, and neither writes
 // *out_len.
-int CH_MUST_USE ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len);
+int CH_MUST_USE ch_tcp_out(ch_tcp *r, uint8_t *out, size_t cap, size_t *out_len);
 #endif
 
 // CH_ST_START while the handshake runs, CH_ST_CONNECTED once it is done
 // and the session is ready for ch_read and ch_write, CH_ST_FAILED after
-// an error, and CH_ST_CLOSED after ch_close or ch_record_close
+// an error, and CH_ST_CLOSED after ch_close or ch_tcp_close
 // (session.h). The peer's close_notify leaves it at CH_ST_CONNECTED,
 // because ch_write still works; r->t.read_closed says it arrived.
-uint8_t ch_record_state(const ch_record *r);
+uint8_t ch_tcp_state(const ch_tcp *r);
 
 // Wipes every secret and marks the session dead. Safe on a session that
-// already failed, where it also drops an alert record ch_record_out has
+// already failed, where it also drops an alert record ch_tcp_out has
 // not handed over. It sends nothing, so a connected caller calls ch_close
 // on &r->t first, which sends this side's close_notify.
-void ch_record_close(ch_record *r);
+void ch_tcp_close(ch_tcp *r);
 
 // The length of the TLS record at the front of p, its 5-byte header
 // included, or 0 while p holds less than that whole record. It reads the
@@ -192,7 +192,7 @@ void ch_record_close(ch_record *r);
 // cfg.buf_len cannot hold is ch_read's to refuse once it is whole; a peer
 // that keeps to this endpoint's record_size_limit sends records of at most
 // cfg.buf_len bytes.
-size_t ch_record_whole_len(const uint8_t *p, size_t n);
+size_t ch_tcp_whole_len(const uint8_t *p, size_t n);
 
 #endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif

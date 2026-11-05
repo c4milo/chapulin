@@ -1,5 +1,5 @@
 // The CA build's ticket epoch rule at the two non-blocking client
-// entries: ch_record_init under TRANSPORT=tcp-nonblocking and
+// entries: ch_tcp_init under TRANSPORT=tcp-nonblocking and
 // ch_quic_init under TRANSPORT=quic-nonblocking. A resumed session
 // presents no certificate, so the ticket's epoch, the stored epoch when the
 // ticket arrived, is the only revocation check it gets (docs/ca.md). Each
@@ -94,9 +94,9 @@ static int client_out(uint8_t *out, size_t cap, size_t *out_len) {
     return ch_quic_crypto_out(&session, CH_LEVEL_INITIAL, out, cap, out_len);
 }
 #else
-static ch_record session;
+static ch_tcp session;
 
-// ch_record_init requires both callbacks and calls neither, so each
+// ch_tcp_init requires both callbacks and calls neither, so each
 // counts its calls and fails.
 static int io_calls;
 
@@ -116,16 +116,16 @@ static int fail_recv(void *io, uint8_t *p, size_t n) {
 }
 
 static int client_init(const ch_cfg *cfg) {
-    return ch_record_init(&session, cfg);
+    return ch_tcp_init(&session, cfg);
 }
 
 static uint8_t client_state(void) {
-    return ch_record_state(&session);
+    return ch_tcp_state(&session);
 }
 
 // The bytes the entry staged: the ClientHello record.
 static int client_out(uint8_t *out, size_t cap, size_t *out_len) {
-    return ch_record_out(&session, out, cap, out_len);
+    return ch_tcp_out(&session, out, cap, out_len);
 }
 #endif
 

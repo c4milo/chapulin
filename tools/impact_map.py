@@ -360,7 +360,7 @@ def known(path):
                ("spec/", "test/", "proof/", "docs/", "bench/", "examples/",
                 "fuzz/", "tools/", ".githooks/")) or path in (
         "README.md", "SECURITY.md", "CONTRIBUTING.md", "CLAUDE.md",
-        "build.zig", "build.zig.zon", "chapulin.zig", "chapulin_record.zig",
+        "build.zig", "build.zig.zon", "chapulin.zig", "chapulin_tcp.zig",
         "chapulin_quic.zig", "chapulin_ticket.zig", "chapulin_cpu.zig", "chapulin_cfg.zig")
 
 

@@ -87,7 +87,7 @@ ALLOWED = {
         "checked (srv_resume.h), and a framing failure breaks the walk and "
         "selects nothing"
     ),
-    ("tcp_nonblocking_frame.c", "ch_record_whole_len", "r"): (
+    ("tcp_nonblocking_frame.c", "ch_tcp_whole_len", "r"): (
         "its reader runs over the caller's received bytes, not over one "
         "record: it reads the first record's header and answers where that "
         "record ends, and the bytes after it are the next record on "

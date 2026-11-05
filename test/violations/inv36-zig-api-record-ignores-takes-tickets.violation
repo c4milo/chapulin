@@ -1,5 +1,5 @@
 invariant: INV-36
-file: chapulin_record.zig
+file: chapulin_tcp.zig
 catches: test/zig-build-check.sh
 reason: record.Client.init sets on_ticket whatever the values'
   takes_tickets says. A client that asked for no tickets then hashes its

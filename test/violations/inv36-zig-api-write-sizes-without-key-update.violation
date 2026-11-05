@@ -1,5 +1,5 @@
 invariant: INV-36
-file: chapulin_record.zig
+file: chapulin_tcp.zig
 catches: test/zig-build-check.sh
 reason: write sizes its output in Zig, at records of the smaller of
   CH_TX_PT and peerLimit, each REC_OVERHEAD bytes longer, where it must

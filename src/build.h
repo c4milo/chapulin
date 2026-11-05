@@ -44,20 +44,20 @@
 // right column says what the define changes.
 //
 //   CH_TRUST_CA            CH_MIN_RXBUF, the handshake state that
-//                          ch_record and ch_quic hold, and adds
+//                          ch_tcp and ch_quic hold, and adds
 //                          ch_pubkey_from_pem's CH_X509_MAX-byte buffer
-//   CH_TRUST_WEBPKI        ch_cfg, ch_tls, ch_ticket, ch_record, ch_quic,
+//   CH_TRUST_WEBPKI        ch_cfg, ch_tls, ch_ticket, ch_tcp, ch_quic,
 //                          CH_TX_STAGE and CH_MIN_RXBUF
 //   CH_PIN_ECDSA           CH_X509_MAX, and with it a CA mode's
 //                          CH_MIN_RXBUF, and the length of a pinned key
-//   CH_KEX_PQ              ch_tls, ch_record, ch_quic, CH_TX_STAGE and
+//   CH_KEX_PQ              ch_tls, ch_tcp, ch_quic, CH_TX_STAGE and
 //                          CH_MIN_RXBUF
 //   CH_TRANSPORT_QUIC_NONBLOCKING
 //                          ch_cfg, ch_tls, CH_TX_STAGE and CH_MIN_RXBUF,
 //                          and adds ch_quic
 //   CH_TRANSPORT_TCP_NONBLOCKING
-//                          ch_tls, and adds ch_record
-//   CH_SUITE_AES_GCM       ch_cfg, ch_tls, ch_ticket, ch_record, ch_quic
+//                          ch_tls, and adds ch_tcp
+//   CH_SUITE_AES_GCM       ch_cfg, ch_tls, ch_ticket, ch_tcp, ch_quic
 //                          and CH_TX_STAGE: a server's and a webpki
 //                          client's suite order, SHA-384's secrets and
 //                          PSK, a webpki hello's two more suites and
@@ -65,22 +65,22 @@
 //   CH_ROLE_SERVER         ch_cfg, ch_tls and CH_TX_STAGE, and adds
 //                          ch_rsa_priv
 //   CH_EXPORTER            ch_tls
-//   CH_KEYLOG              the handshake state that ch_record and ch_quic
+//   CH_KEYLOG              the handshake state that ch_tcp and ch_quic
 //                          hold
-//   CH_RAND_SESSION        ch_cfg, and with it ch_tls, ch_record and
+//   CH_RAND_SESSION        ch_cfg, and with it ch_tls, ch_tcp and
 //                          ch_quic, whose ch_cfg copy holds the
 //                          session's rand_bytes and rand_io
-//   CH_CPU_RUNTIME         ch_cfg, and with it ch_tls, ch_record and
+//   CH_CPU_RUNTIME         ch_cfg, and with it ch_tls, ch_tcp and
 //                          ch_quic, whose ch_cfg copy holds the caller's
 //                          cpu, and whose record directions record it:
 //                          the define of a host object
-//   CH_PROFILE_CNSA2       ch_tls, ch_record, ch_quic, CH_TX_STAGE and
+//   CH_PROFILE_CNSA2       ch_tls, ch_tcp, ch_quic, CH_TX_STAGE and
 //                          CH_MIN_RXBUF: the ML-KEM-1024 seed and share,
 //                          and the SHA-384 binder (docs/decisions.md 151).
 //                          Its CH_MLKEM_1024 takes no bit, because cfg.h
 //                          refuses the profile without it
 //   CH_PIN_MLDSA           CH_X509_MAX, CH_MIN_RXBUF, the handshake state
-//                          that ch_record and ch_quic hold in a CA mode,
+//                          that ch_tcp and ch_quic hold in a CA mode,
 //                          and the length of a pinned key
 //                          (docs/decisions.md 157)
 //
@@ -193,13 +193,13 @@
 
 // The sizes of the public structs a consumer declares or reads, in
 // bytes, and 0 for a struct this build does not declare. A server role
-// uses ch_tls, ch_record and ch_quic like a client does, and adds
+// uses ch_tls, ch_tcp and ch_quic like a client does, and adds
 // ch_rsa_priv, the RSA-PSS private key its ch_identity points at.
 #define CH_BUILD_SIZEOF_CH_CFG ((uint32_t)sizeof(ch_cfg))
 #define CH_BUILD_SIZEOF_CH_TLS ((uint32_t)sizeof(ch_tls))
 #define CH_BUILD_SIZEOF_CH_TICKET ((uint32_t)sizeof(ch_ticket))
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-#define CH_BUILD_SIZEOF_CH_RECORD ((uint32_t)sizeof(ch_record))
+#define CH_BUILD_SIZEOF_CH_RECORD ((uint32_t)sizeof(ch_tcp))
 #else
 #define CH_BUILD_SIZEOF_CH_RECORD 0U
 #endif

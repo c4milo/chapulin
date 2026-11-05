@@ -1,7 +1,7 @@
 invariant: INV-38
 file: src/tcp_nonblocking_frame.c
 catches: proof/prove-one.sh record_whole_len
-reason: ch_record_whole_len calls a record whole one byte before its body
+reason: ch_tcp_whole_len calls a record whole one byte before its body
   has arrived, so its answer is one byte more than the caller holds, and
   a caller that passes that many bytes to ch_read reads one byte past its
   data. The record_whole_len harness requires every answer to lie within

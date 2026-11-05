@@ -26,12 +26,12 @@
 // refused, and ch_connect leaves them the same way (docs/ca.md). They
 // hold no secret, and they are zero in every other build and in a
 // server. Returns CH_EINVAL, the code of every refusal on entry (INV-13).
-int tcp_nonblocking_refuse_init(ch_record *r);
+int tcp_nonblocking_refuse_init(ch_tcp *r);
 
 // Wipes every secret and clears the fields that say how much is staged
 // or unread. session.h lists the same names beside the invariant they
 // serve.
-void tcp_nonblocking_wipe(ch_record *r);
+void tcp_nonblocking_wipe(ch_tcp *r);
 
 // What tlsi_fail is on the blocking transport, minus the send. It writes
 // the alert the failure chose into rec as one record, then wipes every
@@ -46,11 +46,11 @@ void tcp_nonblocking_wipe(ch_record *r);
 // the clear, and 0 when no alert is owed, which is the case after the
 // peer's fatal alert (RFC 9846 §6.2). The caller emits the record the way
 // its driver emits every other one: the client stages it for
-// ch_record_out, and the server pushes it through cfg.srv.on_record_out.
-size_t tcp_nonblocking_fail(ch_record *r, uint8_t rec[CH_ALERT_RECORD_LEN]);
+// ch_tcp_out, and the server pushes it through cfg.srv.on_record_out.
+size_t tcp_nonblocking_fail(ch_tcp *r, uint8_t rec[CH_ALERT_RECORD_LEN]);
 
 // Whether the session has stopped, by either door.
-int tcp_nonblocking_session_dead(const ch_record *r);
+int tcp_nonblocking_session_dead(const ch_tcp *r);
 
 // Takes one record's plaintext into the handshake buffer. A record that
 // arrives before the handshake keys is already plaintext; one after them
@@ -58,7 +58,7 @@ int tcp_nonblocking_session_dead(const ch_record *r);
 //
 // Requires: REC_HDR + body_len bytes readable and writable at rec, and
 // outer is that record's own type byte.
-int tcp_nonblocking_take_record(ch_record *r, uint8_t *rec, size_t body_len, uint8_t outer);
+int tcp_nonblocking_take_record(ch_tcp *r, uint8_t *rec, size_t body_len, uint8_t outer);
 
 #endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif

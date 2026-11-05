@@ -276,7 +276,7 @@ typedef struct {
     // other value to fail the handshake with CH_EIO and internal_error,
     // this side's failure and not the peer's (srv_out.h).
     //
-    // A push, where the client's ch_record_out is a pull, and the same
+    // A push, where the client's ch_tcp_out is a pull, and the same
     // certificate chain forces the difference here that forces it over
     // QUIC. srv_flight.c stages a protected message on the handler's own
     // frame and streams the Certificate straight from cfg.srv.identity,
@@ -285,7 +285,7 @@ typedef struct {
     // a resume point inside srv_out_sealed's record loop, which is the
     // one thing tcp_nonblocking_step.h's "nothing inside it waits" rules out.
     //
-    // Several calls arrive inside one ch_srv_record_in, because one
+    // Several calls arrive inside one ch_srv_tcp_in, because one
     // ClientHello produces the whole flight; the caller writes them in
     // the order they come. Each call carries one record, so a caller that
     // writes them separately still sends a legal stream. With ticket_key

@@ -1,7 +1,7 @@
 invariant: INV-4
 file: src/tls.c
 catches: tcp_nonblocking_loop_session
-reason: tlsi_config_ok stops asking rand_source_ok, so ch_record_init and
+reason: tlsi_config_ok stops asking rand_source_ok, so ch_tcp_init and
   ch_connect accept a RAND=session configuration whose rand_bytes is NULL.
   The init call then draws the key share through a NULL function pointer
   instead of returning CH_EINVAL before it draws or sends anything. The

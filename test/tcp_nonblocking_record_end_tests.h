@@ -22,28 +22,28 @@
 #include "tcp_nonblocking_close_tests.h"
 
 // Everything the client owes, taken out of its staging array.
-static size_t take_client_bytes(ch_record *client, uint8_t *wire) {
+static size_t take_client_bytes(ch_tcp *client, uint8_t *wire) {
     size_t total = 0;
     size_t n = 0;
     do {
-        CHECK(ch_record_out(client, wire + total, WIRE_MAX - total, &n) == CH_OK);
+        CHECK(ch_tcp_out(client, wire + total, WIRE_MAX - total, &n) == CH_OK);
         total += n;
     } while (n > 0);
     return total;
 }
 
 // What a failed client staged, collected into out in calls of at most
-// step bytes until ch_record_out answers CH_EINVAL, which it must do on
+// step bytes until ch_tcp_out answers CH_EINVAL, which it must do on
 // the call after the last byte and on no call before. Returns the bytes
 // collected, 0 when the client staged nothing.
-static size_t take_client_alert(ch_record *client, uint8_t out[64], size_t step) {
+static size_t take_client_alert(ch_tcp *client, uint8_t out[64], size_t step) {
     size_t total = 0;
     size_t calls = 0;
     int rc = CH_OK;
     while (rc == CH_OK && calls < 64) {
         size_t room = 64 - total < step ? 64 - total : step;
         size_t n = 0;
-        rc = ch_record_out(client, out + total, room, &n);
+        rc = ch_tcp_out(client, out + total, room, &n);
         calls++;
         CHECK(rc != CH_OK || (n > 0 && n <= room));
         total += rc == CH_OK ? n : 0;
@@ -75,27 +75,26 @@ static void check_alert_record(const uint8_t *rec, size_t len, const rec_dir *re
 }
 
 // Two fresh sessions with the ClientHello not yet taken.
-static void start_pair(ch_record *client, ch_record *server, const ch_cfg *ccfg,
-                       const ch_cfg *scfg) {
+static void start_pair(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg, const ch_cfg *scfg) {
     to_client.len = 0;
     records_pushed = 0;
     logged_count = 0;
-    CHECK(ch_srv_record_init(server, scfg) == CH_OK);
-    CHECK(ch_record_init(client, ccfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(server, scfg) == CH_OK);
+    CHECK(ch_tcp_init(client, ccfg) == CH_OK);
 }
 
 // What a refusal leaves: the call's result, the alert it chose, and a
 // dead session.
-static void check_refused_with(const ch_record *r, int rc) {
+static void check_refused_with(const ch_tcp *r, int rc) {
     CHECK(rc == CH_EPROTO);
     CHECK(ch_alert_sent(&r->t) == ALERT_UNEXPECTED_MESSAGE);
-    CHECK(ch_record_state(r) == CH_ST_FAILED);
+    CHECK(ch_tcp_state(r) == CH_ST_FAILED);
 }
 
 // The client reads the ServerHello, and then, after its key change, the
 // server's Finished. The one after_finished names has extra zero bytes
 // after it in its record.
-static void client_reads_flight(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void client_reads_flight(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                 const ch_cfg *scfg, int after_finished, size_t extra) {
     start_pair(client, server, ccfg, scfg);
     CHECK(client_to_server(client, server));
@@ -105,7 +104,7 @@ static void client_reads_flight(ch_record *client, ch_record *server, const ch_c
         grow_first_record(to_client.bytes, &to_client.len, WIRE_MAX, extra);
     }
     size_t consumed = 0;
-    int rc = ch_record_in(client, to_client.bytes, to_client.len, &consumed);
+    int rc = ch_tcp_in(client, to_client.bytes, to_client.len, &consumed);
     if (extra > 0) {
         check_refused_with(client, rc);
         // A ServerHello is refused before the client's write key, so its
@@ -120,14 +119,14 @@ static void client_reads_flight(ch_record *client, ch_record *server, const ch_c
     CHECK(rc == CH_OK && consumed == to_client.len);
     to_client.len = 0;
     CHECK(client_to_server(client, server));
-    CHECK(ch_record_state(client) == CH_ST_CONNECTED);
-    CHECK(ch_record_state(server) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(server) == CH_ST_CONNECTED);
 }
 
 // The server reads the ClientHello, and then, after its key change, the
 // client Finished. The one after_finished names has extra zero bytes
 // after it in its record.
-static void server_reads_client(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void server_reads_client(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                 const ch_cfg *scfg, int after_finished, size_t extra) {
     static uint8_t wire[WIRE_MAX];
     start_pair(client, server, ccfg, scfg);
@@ -144,7 +143,7 @@ static void server_reads_client(ch_record *client, ch_record *server, const ch_c
     size_t pushed = records_pushed;
     size_t before = to_client.len;
     size_t consumed = 0;
-    int rc = ch_srv_record_in(server, wire, total, &consumed);
+    int rc = ch_srv_tcp_in(server, wire, total, &consumed);
     if (extra > 0) {
         check_refused_with(server, rc);
         // A refused ClientHello gets no ServerHello, and a refused client
@@ -159,7 +158,7 @@ static void server_reads_client(ch_record *client, ch_record *server, const ch_c
     }
     CHECK(rc == CH_OK && consumed == total);
     if (after_finished) {
-        CHECK(ch_record_state(server) == CH_ST_CONNECTED);
+        CHECK(ch_tcp_state(server) == CH_ST_CONNECTED);
     } else {
         CHECK(records_pushed > pushed);
     }
@@ -169,8 +168,8 @@ static void server_reads_client(ch_record *client, ch_record *server, const ch_c
 // and hands it to the connected server's ch_read, which reads it through
 // server_recv, one record a call, as colibri's server reads. Returns the
 // result. What the server sends goes to held, through server_send.
-static int server_reads_record(ch_record *client, ch_record *server, uint8_t type,
-                               const uint8_t *pt, size_t n) {
+static int server_reads_record(ch_tcp *client, ch_tcp *server, uint8_t type, const uint8_t *pt,
+                               size_t n) {
     memset(&to_server, 0, sizeof to_server);
     server->t.cfg.send = server_send;
     server->t.cfg.recv = server_recv;
@@ -194,10 +193,10 @@ static size_t open_held(rec_dir *reader, size_t at, uint8_t *type, uint8_t sent[
 
 // A connected pair whose server sends into held, and a copy of the
 // server's write key, which opens what it sends.
-static rec_dir start_held_server(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static rec_dir start_held_server(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                  const ch_cfg *scfg) {
     (void)run_handshake(client, server, ccfg, scfg);
-    CHECK(ch_record_state(server) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(server) == CH_ST_CONNECTED);
     memset(&held, 0, sizeof held);
     server_sends = 0;
     return server->t.wr;
@@ -206,8 +205,7 @@ static rec_dir start_held_server(ch_record *client, ch_record *server, const ch_
 // The server's next write, after it read a request: the answer under the
 // write key reader holds, then the write's data under the next key, which
 // reader moves to with secret, the server's write secret before the write.
-static size_t check_answer_then_data(ch_record *server, rec_dir *reader, uint8_t *secret,
-                                     size_t at) {
+static size_t check_answer_then_data(ch_tcp *server, rec_dir *reader, uint8_t *secret, size_t at) {
     static const uint8_t answer[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
     size_t sends = server_sends;
     CHECK(ch_write(&server->t, (const uint8_t *)"ok", 2) == CH_OK && server_sends == sends + 2);
@@ -227,8 +225,8 @@ static size_t check_answer_then_data(ch_record *server, rec_dir *reader, uint8_t
 // ask for an answer, in one record. One of them in its own record is the
 // last valid shape: the read sends nothing, and the server's next write
 // sends its one answer before the data.
-static void test_server_key_update_ends_record(ch_record *client, ch_record *server,
-                                               const ch_cfg *ccfg, const ch_cfg *scfg) {
+static void test_server_key_update_ends_record(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
+                                               const ch_cfg *scfg) {
     static const uint8_t two_requested[10] = {HS_KEY_UPDATE, 0, 0, 1, 1, HS_KEY_UPDATE, 0, 0, 1, 1};
     uint8_t type = 0;
     uint8_t sent[16];
@@ -238,26 +236,26 @@ static void test_server_key_update_ends_record(ch_record *client, ch_record *ser
     uint8_t secret[SHA256_LEN];
     memcpy(secret, server->t.wr_secret, sizeof secret);
     int rc = server_reads_record(client, server, REC_HANDSHAKE, two_requested, 5);
-    CHECK(rc == CH_RECORD_AGAIN && ch_record_state(server) == CH_ST_CONNECTED);
+    CHECK(rc == CH_TCP_AGAIN && ch_tcp_state(server) == CH_ST_CONNECTED);
     CHECK(server_sends == 0 && server->t.key_update_owed == 1);
     (void)check_answer_then_data(server, &reader, secret, 0);
 
     reader = start_held_server(client, server, ccfg, scfg);
     rc = server_reads_record(client, server, REC_HANDSHAKE, two_requested, sizeof two_requested);
-    CHECK(rc == CH_EPROTO && ch_record_state(server) == CH_ST_FAILED && server_sends == 1);
+    CHECK(rc == CH_EPROTO && ch_tcp_state(server) == CH_ST_FAILED && server_sends == 1);
     CHECK(open_held(&reader, 0, &type, sent, &sent_len) == held.len);
     CHECK(type == REC_ALERT && sent_len == 2 && sent[0] == 2);
     CHECK(sent[1] == ALERT_UNEXPECTED_MESSAGE && held.len == CH_ALERT_RECORD_LEN);
 }
 
 // Reads count KeyUpdates that each ask for an answer, one a call, as
-// colibri's server reads them. Each read returns CH_RECORD_AGAIN, and the
+// colibri's server reads them. Each read returns CH_TCP_AGAIN, and the
 // client's write key follows each KeyUpdate it sealed.
-static void server_reads_requests(ch_record *client, ch_record *server, size_t count) {
+static void server_reads_requests(ch_tcp *client, ch_tcp *server, size_t count) {
     static const uint8_t requested[5] = {HS_KEY_UPDATE, 0, 0, 1, 1};
     for (size_t i = 0; i < count; i++) {
         CHECK(server_reads_record(client, server, REC_HANDSHAKE, requested, sizeof requested) ==
-              CH_RECORD_AGAIN);
+              CH_TCP_AGAIN);
         rec_dir_update(client->t.wr_secret, &client->t.wr);
     }
 }
@@ -269,7 +267,7 @@ static void server_reads_requests(ch_record *client, ch_record *server, size_t c
 // The server's own KeyUpdate ends no run, so one more KeyUpdate from the
 // client fails the session with CH_KEY_UPDATE_LIMIT and an
 // unexpected_message alert.
-static void test_server_key_update_run(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void test_server_key_update_run(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                        const ch_cfg *scfg) {
     rec_dir reader = start_held_server(client, server, ccfg, scfg);
     uint8_t secret[SHA256_LEN];
@@ -287,7 +285,7 @@ static void test_server_key_update_run(ch_record *client, ch_record *server, con
     CHECK(server->t.key_update_run == CH_KEY_UPDATE_RUN_MAX);
     static const uint8_t update[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
     int rc = server_reads_record(client, server, REC_HANDSHAKE, update, sizeof update);
-    CHECK(rc == CH_KEY_UPDATE_LIMIT && ch_record_state(server) == CH_ST_FAILED);
+    CHECK(rc == CH_KEY_UPDATE_LIMIT && ch_tcp_state(server) == CH_ST_FAILED);
     CHECK(ch_alert_sent(&server->t) == ALERT_UNEXPECTED_MESSAGE);
     uint8_t type = 0;
     uint8_t sent[16];
@@ -296,7 +294,7 @@ static void test_server_key_update_run(ch_record *client, ch_record *server, con
     CHECK(type == REC_ALERT && sent_len == 2 && sent[1] == ALERT_UNEXPECTED_MESSAGE);
 }
 
-static void test_record_end(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void test_record_end(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                             const ch_cfg *scfg) {
     for (size_t extra = 0; extra <= 1; extra++) {
         client_reads_flight(client, server, ccfg, scfg, 0, extra);

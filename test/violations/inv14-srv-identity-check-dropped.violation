@@ -5,7 +5,7 @@ reason: srv_config_ok stops asking srv_identities_usable, so a server
   starts a session with an identity its flight cannot sign with or send,
   and the flight fails after the ServerHello went out, where CH_EINVAL
   would say nothing was sent. The RSA modulus one byte past SRV_SIG_MAX
-  is then taken at ch_srv_record_init, which
+  is then taken at ch_srv_tcp_init, which
   test_init_refuses_an_rsa_modulus_past_the_buffer requires to refuse
   with nothing sent.
 

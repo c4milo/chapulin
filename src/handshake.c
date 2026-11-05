@@ -211,7 +211,7 @@ int ch_handshake(ch_tls *t) {
         // ch_tls.tx holds, fits every hello whose PSK identity is at most
         // CH_TICKET_ID_MAX bytes, and the configuration check refuses a
         // longer one (psk_id_len_ok in tls.c, webpki_cfg_ok under
-        // TRUST=webpki). It refuses anyway, the way ch_record_init and
+        // TRUST=webpki). It refuses anyway, the way ch_tcp_init and
         // ch_quic_init refuse the same hello: CH_EINVAL, nothing sent and
         // no alert recorded (INV-13). No test reaches this branch, because
         // no configuration ch_connect accepts does.

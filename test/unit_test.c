@@ -395,8 +395,8 @@ static void test_rsa_device_bound(void) {
 // ch_result_text (result.h): each code a TCP build defines has a text of its own, and a code
 // no header defines answers the text for an unknown code.
 static void test_result_text(void) {
-    static const int codes[] = {CH_OK,      CH_EIO,    CH_EPROTO,       CH_EAUTH,           CH_ECAP,
-                                CH_ECLOSED, CH_EINVAL, CH_RECORD_AGAIN, CH_KEY_UPDATE_LIMIT};
+    static const int codes[] = {CH_OK,      CH_EIO,    CH_EPROTO,    CH_EAUTH,           CH_ECAP,
+                                CH_ECLOSED, CH_EINVAL, CH_TCP_AGAIN, CH_KEY_UPDATE_LIMIT};
     const char *unknown = ch_result_text(-100);
     CHECK(strcmp(unknown, "unknown result code") == 0);
     CHECK(strcmp(ch_result_text(CH_OK), "success") == 0);

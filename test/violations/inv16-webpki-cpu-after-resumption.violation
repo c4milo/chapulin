@@ -4,7 +4,7 @@ catches: webpki_session_host
 reason: the webpki tlsi_config_ok checks ch_cfg.cpu after the web PKI rules.
   So the check of a presented ticket hashes on the path of a value that
   the cpu rule then refuses, and it can run instructions the CPU lacks.
-  ch_connect and ch_record_init share the order. test/webpki_ticket_rows.h
+  ch_connect and ch_tcp_init share the order. test/webpki_ticket_rows.h
   presents a ticket under CH_CPU_CONSTANT_TIME_SHA256 alone and requires
   CH_EINVAL with no hash.
 

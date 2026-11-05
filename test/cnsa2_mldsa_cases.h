@@ -168,7 +168,7 @@ static void test_mldsa_certificate_verify(void) {
 // a raw build, and two in a CA build. In a raw build a certificate one
 // byte larger does not fit and fails with CH_ECAP. The blocking driver
 // reads each record into the buffer whole, and the floor's 22 bytes pay
-// for the last one's header, type and tag. ch_record_in opens a record
+// for the last one's header, type and tag. ch_tcp_in opens a record
 // from the caller's bytes, so there the first certificate that does not
 // fit is 22 bytes larger. In a CA build x509.c refuses a certificate over
 // CH_X509_MAX with bad_certificate.

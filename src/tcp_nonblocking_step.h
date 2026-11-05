@@ -1,4 +1,4 @@
-// The tcp-nonblocking driver's step table: the step numbers ch_record.step
+// The tcp-nonblocking driver's step table: the step numbers ch_tcp.step
 // stores and the one function that runs a step.
 //
 // It is quic_step.h's table for the other transport, and the steps are
@@ -25,7 +25,7 @@
 // here rather than included so the dependency keeps pointing down, the
 // way quic_step.h repeats ch_quic. C11 allows a typedef name to be
 // declared twice for the same type.
-typedef struct ch_record ch_record;
+typedef struct ch_tcp ch_tcp;
 
 // The step numbers, mirroring quic_step.h's constructor for constructor so
 // one Lean oracle judges every transport. Consecutive from 0, with
@@ -46,13 +46,13 @@ typedef struct ch_record ch_record;
 //
 // Requires: r is not NULL and r->hs.t is &r->t, which every public entry
 // writes before it calls.
-int tcp_nonblocking_advance(ch_record *r);
+int tcp_nonblocking_advance(ch_tcp *r);
 
 // Stages one handshake message as a plaintext record, the shape a
 // ClientHello goes out in. The message is already at t->tx + REC_HDR,
-// where the builder wrote it. ch_record_init stages the first hello and a
+// where the builder wrote it. ch_tcp_init stages the first hello and a
 // HelloRetryRequest step stages the second.
-void tcp_nonblocking_stage_plain(ch_record *r, size_t n);
+void tcp_nonblocking_stage_plain(ch_tcp *r, size_t n);
 
 #endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif

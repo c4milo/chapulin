@@ -75,16 +75,16 @@ fn ticketAgeAdds(comptime api: type) bool {
 // record, content type 22 (RFC 9846 section 5.1).
 const handshake_record = 22;
 var h2_flight: [h2.c.CH_TX_STAGE]u8 = undefined;
-var h2_client: h2.record.Client(h2.c.CH_MIN_RXBUF, .{}) = undefined;
+var h2_client: h2.tcp.Client(h2.c.CH_MIN_RXBUF, .{}) = undefined;
 
 fn startH2() u8 {
     if (h2.c.ch_build_matches(hooks.record(h2.c)) != 1 or !h2.buildMatches()) {
         return failed("h2", "ch_build_matches read a record that is not this object's");
     }
     if (!ticketAgeAdds(h2)) return failed("h2", "ch_ticket_obfuscated_age did not add age_add modulo 2^32");
-    h2_client.init(clientValues(h2)) catch return failed("h2", "record.Client.init refused a client");
+    h2_client.init(clientValues(h2)) catch return failed("h2", "tcp.Client.init refused a client");
     const n = h2_client.recordOut(&h2_flight) catch 0;
-    h2_client.recordClose();
+    h2_client.tcpClose();
     if (n == 0 or h2_flight[0] != handshake_record) {
         return failed("h2", "recordOut handed out no handshake record");
     }

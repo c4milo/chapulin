@@ -53,7 +53,7 @@ int hspost_trust_holds(const ch_cfg *cfg, const ch_ticket *ticket);
 // session's own copy of the caller's configuration, so every later step
 // reads the ticket's PSK and identity as the PSK it offers. Every client
 // entry calls it on that copy before any other rule: ch_connect and
-// ch_record_init, and ch_quic_init through quic_config_ok. A raw or ca
+// ch_tcp_init, and ch_quic_init through quic_config_ok. A raw or ca
 // build offers the ticket alone, so the copy drops the pins too, which
 // the resumed handshake never reads. A TRUST=webpki build takes no
 // external PSK, so a ticket beside one is refused.
@@ -102,7 +102,7 @@ static inline int hspost_present_ticket(ch_cfg *cfg) {
 }
 
 // Whether cfg may offer its ticket, which every client entry asks before
-// it sends a byte: ch_connect and ch_record_init through tls.c's
+// it sends a byte: ch_connect and ch_tcp_init through tls.c's
 // tlsi_config_ok, and ch_quic_init through quic_config_ok. RFC 9846
 // §4.3.11.1 says a client MUST NOT use a ticket older than its
 // ticket_lifetime (rfc9846.txt:2572-2574), and §4.7.1 that it MUST NOT use
@@ -152,7 +152,7 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 // fatal alert and is answered with nothing. It sends no record but that
 // alert: a KeyUpdate that asks for an answer sets ch_tls.key_update_owed,
 // and ch_write sends the answer. A TRANSPORT=tcp-nonblocking
-// build also returns CH_RECORD_AGAIN when the next fragment has not
+// build also returns CH_TCP_AGAIN when the next fragment has not
 // arrived: the fragment bytes so far stay at the front of cfg.buf,
 // t->post_fill counts them, and the caller passes that count back here
 // on its next read. It is not an error, and nothing fails.

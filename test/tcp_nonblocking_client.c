@@ -45,7 +45,7 @@ static int sock_send(void *io, const uint8_t *p, size_t n) {
     return w > 0 ? (int)w : -1;
 }
 
-// Writes all n bytes that ch_record_out staged, and returns 0, or -1 when
+// Writes all n bytes that ch_tcp_out staged, and returns 0, or -1 when
 // the socket refuses them.
 static int sock_write_all(int fd, const uint8_t *p, size_t n) {
     while (n > 0) {
@@ -99,14 +99,14 @@ static int from_hex(const char *hex, uint8_t *out, size_t cap, size_t *len) {
     return 0;
 }
 
-// Sends everything chapulin has staged. It returns 0 once ch_record_out
+// Sends everything chapulin has staged. It returns 0 once ch_tcp_out
 // answers that nothing is owed, and 1 when it answers anything else, which
 // after a failure comes right after the alert record has gone out.
-static int send_staged(ch_record *r, int fd) {
+static int send_staged(ch_tcp *r, int fd) {
     uint8_t out_buf[4096];
     for (;;) {
         size_t n = 0;
-        if (ch_record_out(r, out_buf, sizeof out_buf, &n) != CH_OK) {
+        if (ch_tcp_out(r, out_buf, sizeof out_buf, &n) != CH_OK) {
             return 1;
         }
         if (n == 0) {
@@ -121,15 +121,15 @@ static int send_staged(ch_record *r, int fd) {
 // Drives the handshake to connected. Everything chapulin wants to say
 // leaves through send_staged, and everything the peer says arrives through
 // in_buf; leftover_len holds the bytes of a record that has not all
-// arrived, which ch_record_in leaves for the next call.
-static int run_handshake(ch_record *r, int fd) {
+// arrived, which ch_tcp_in leaves for the next call.
+static int run_handshake(ch_tcp *r, int fd) {
     uint8_t in_buf[16384];
     size_t leftover = 0;
     for (;;) {
         if (send_staged(r, fd) != 0) {
             return 1;
         }
-        if (ch_record_state(r) == CH_ST_CONNECTED) {
+        if (ch_tcp_state(r) == CH_ST_CONNECTED) {
             return 0;
         }
         ssize_t got = recv(fd, in_buf + leftover, sizeof in_buf - leftover, 0);
@@ -139,7 +139,7 @@ static int run_handshake(ch_record *r, int fd) {
         }
         size_t have = leftover + (size_t)got;
         size_t used = 0;
-        int rc = ch_record_in(r, in_buf, have, &used);
+        int rc = ch_tcp_in(r, in_buf, have, &used);
         if (rc != CH_OK) {
             // The failure staged its alert record, which goes to the
             // server before the connection closes.
@@ -181,8 +181,8 @@ int main(int argc, char **argv) {
     cfg.recv = sock_recv;
     cfg.io = &fd;
 
-    static ch_record r;
-    int rc = ch_record_init(&r, &cfg);
+    static ch_tcp r;
+    int rc = ch_tcp_init(&r, &cfg);
     if (rc != CH_OK) {
         (void)fprintf(stderr, "rec_init: %d\n", rc);
         return 1;

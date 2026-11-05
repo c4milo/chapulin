@@ -5,7 +5,7 @@
 #define CH_TEST_WEBPKI_RESUME_SESSION_H
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-static ch_record session;
+static ch_tcp session;
 
 static ch_tls *session_tls(void) {
     return &session.t;
@@ -16,19 +16,19 @@ static ch_tls *session_tls(void) {
 static void drain_out(mock_server *s) {
     uint8_t out[REC_HDR + CH_TX_STAGE];
     size_t out_len = 0;
-    while (ch_record_out(&session, out, sizeof out, &out_len) == CH_OK && out_len > 0) {
+    while (ch_tcp_out(&session, out, sizeof out, &out_len) == CH_OK && out_len > 0) {
         (void)mock_send(s, out, out_len);
     }
 }
 
-// ch_record_init, then the mock's answer through ch_record_in, handing
+// ch_tcp_init, then the mock's answer through ch_tcp_in, handing
 // the mock what the client staged after each call: a retry hello after a
 // HelloRetryRequest, which the mock answers onto the same queue, and the
 // client's Finished at the end. A failure's alert record goes to the mock
 // the same way, as cfg.send carries the tcp-blocking client's. Returns
 // CH_OK once connected, or the first error.
 static int connect_session(const ch_cfg *cfg) {
-    int rc = ch_record_init(&session, cfg);
+    int rc = ch_tcp_init(&session, cfg);
     if (rc != CH_OK) {
         return rc;
     }
@@ -37,7 +37,7 @@ static int connect_session(const ch_cfg *cfg) {
     size_t off = 0;
     while (off < s->queue_len) {
         size_t consumed = 0;
-        rc = ch_record_in(&session, s->queue + off, s->queue_len - off, &consumed);
+        rc = ch_tcp_in(&session, s->queue + off, s->queue_len - off, &consumed);
         if (rc != CH_OK) {
             drain_out(s);
             return rc;
@@ -49,7 +49,7 @@ static int connect_session(const ch_cfg *cfg) {
         drain_out(s);
     }
     s->queue_off = off;
-    return ch_record_state(&session) == CH_ST_CONNECTED ? CH_OK : CH_EPROTO;
+    return ch_tcp_state(&session) == CH_ST_CONNECTED ? CH_OK : CH_EPROTO;
 }
 #else
 static ch_tls session;

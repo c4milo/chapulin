@@ -1600,8 +1600,8 @@ The figures were taken this way:
   and `CH_NATIVE_AES`, built by `build.zig` with Zig 0.16.0 for aarch64-linux-gnu. colibri builds
   for the CPU it runs on, so the N2 columns pass `-Dcpu=neoverse_n2`, and one column builds for
   the base armv8-a instead.
-- A test server calls the object as colibri's server does (`ch_srv_record_init`,
-  `ch_srv_record_in`, `ch_read`, `ch_write`, `ch_close`). An OpenSSL 3.0.13 client offers what
+- A test server calls the object as colibri's server does (`ch_srv_tcp_init`,
+  `ch_srv_tcp_in`, `ch_read`, `ch_write`, `ch_close`). An OpenSSL 3.0.13 client offers what
   h2load 1.59.0 offers there: the one suite, h2load's default groups X25519, P-256, P-384 and
   P-521 with an X25519 share, and ALPN h2. Both run in an arm64 Ubuntu 24.04 container in OrbStack
   on an Apple M1 Pro.

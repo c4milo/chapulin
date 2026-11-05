@@ -68,12 +68,12 @@ static int server_send(void *io, const uint8_t *p, size_t n) {
 // and closes. chapulin has no call that sends a close_notify and keeps
 // the session, so the server's first close_notify is sealed here under
 // its write key, as a peer that closes one direction sends it.
-static void test_close_one_direction(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+static void test_close_one_direction(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg,
                                      const ch_cfg *scfg) {
     io_calls = 0;
     (void)run_handshake(client, server, ccfg, scfg);
-    CHECK(ch_record_state(client) == CH_ST_CONNECTED);
-    CHECK(ch_record_state(server) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(server) == CH_ST_CONNECTED);
     memset(&held, 0, sizeof held);
     memset(&to_server, 0, sizeof to_server);
     client_sends = 0;
@@ -95,7 +95,7 @@ static void test_close_one_direction(ch_record *client, ch_record *server, const
     CHECK(ch_read(&client->t, got, sizeof got) == 0);
     CHECK(client_sends == 0);
     CHECK(held.off == close_end);
-    CHECK(ch_record_state(client) == CH_ST_CONNECTED && client->t.read_closed == 1);
+    CHECK(ch_tcp_state(client) == CH_ST_CONNECTED && client->t.read_closed == 1);
     CHECK(ch_read(&client->t, got, sizeof got) == 0);
     CHECK(client_sends == 0 && held.off == close_end);
     // The exporter secret is not a read key, so it lives until ch_close.
@@ -117,13 +117,13 @@ static void test_close_one_direction(ch_record *client, ch_record *server, const
     ch_close(&client->t);
     CHECK(client_sends == 2);
     CHECK(to_server.len - before_close == CH_ALERT_RECORD_LEN);
-    CHECK(ch_record_state(client) == CH_ST_CLOSED);
+    CHECK(ch_tcp_state(client) == CH_ST_CLOSED);
     CHECK(ch_export(&client->t, "EXPORTER-Channel-Binding", NULL, 0, exported, sizeof exported) ==
           CH_EINVAL);
     CHECK(ch_read(&server->t, got, sizeof got) == 0);
     CHECK(server_sends == 0);
     CHECK(to_server.off == to_server.len);
-    CHECK(ch_record_state(server) == CH_ST_CONNECTED && server->t.read_closed == 1);
+    CHECK(ch_tcp_state(server) == CH_ST_CONNECTED && server->t.read_closed == 1);
 
     // The server's own direction is still open until its ch_close.
     static const uint8_t tail[4] = {'c', 'h', 'a', 'u'};
@@ -133,10 +133,10 @@ static void test_close_one_direction(ch_record *client, ch_record *server, const
     ch_close(&server->t);
     CHECK(server_sends == 2);
     CHECK(held.len - before_close == CH_ALERT_RECORD_LEN);
-    CHECK(ch_record_state(server) == CH_ST_CLOSED);
+    CHECK(ch_tcp_state(server) == CH_ST_CLOSED);
     CHECK(ch_write(&server->t, tail, sizeof tail) == CH_EPROTO);
-    ch_record_close(client);
-    ch_record_close(server);
+    ch_tcp_close(client);
+    ch_tcp_close(server);
     CHECK(io_calls == 0);
 }
 

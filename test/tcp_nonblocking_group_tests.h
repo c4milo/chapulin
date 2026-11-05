@@ -120,16 +120,16 @@ static uint16_t first_record_group(int *hrr, const uint8_t **share, size_t *shar
 // its first record names, with the share and whether it was a retry.
 static uint16_t server_answers(const uint16_t *groups, size_t count, unsigned shared, int *hrr,
                                const uint8_t **share, size_t *share_len) {
-    static ch_record server;
+    static ch_tcp server;
     ch_cfg scfg;
     server_config(&scfg);
     to_client.len = 0;
     logged_count = 0; // the server logs its handshake secrets per hello
-    CHECK(ch_srv_record_init(&server, &scfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_OK);
     uint8_t hello[512];
     size_t n = group_hello(hello, sizeof hello, groups, count, shared);
     size_t consumed = 0;
-    CHECK(n > 0 && ch_srv_record_in(&server, hello, n, &consumed) == CH_OK && consumed == n);
+    CHECK(n > 0 && ch_srv_tcp_in(&server, hello, n, &consumed) == CH_OK && consumed == n);
     return first_record_group(hrr, share, share_len);
 }
 

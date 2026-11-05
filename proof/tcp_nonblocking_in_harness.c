@@ -1,4 +1,4 @@
-// The tcp_nonblocking harness's ch_record_in part, over a stub of
+// The tcp_nonblocking harness's ch_tcp_in part, over a stub of
 // tcp_nonblocking_advance. The record loop around the real step table
 // took most of that formula's 292 s, so the step table and the input loop
 // are proved apart, the way quic_step and quic_driver are: the stub

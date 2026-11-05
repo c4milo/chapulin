@@ -1,4 +1,4 @@
-//! Each side of a record-mode pair writing across its AES-GCM write key's
+//! Each side of a tcp-nonblocking pair writing across its AES-GCM write key's
 //! ceiling, in a SUITE=aesgcm object (docs/decisions.md 78). An AES-GCM
 //! write key seals at most REC_AES_GCM_RECORDS_MAX records (record.h), and
 //! ch_write sends the KeyUpdate that retires the key as the last of them.
@@ -26,7 +26,7 @@ const fixture = @import("fixture.zig");
 const loop = @import("loop_record.zig");
 const c = chapulin.c;
 const check = fixture.check;
-const record = chapulin.record;
+const tcp = chapulin.tcp;
 
 /// Whether the object seals records under AES-GCM: only a SUITE=aesgcm
 /// object holds the AES-GCM suites, and only its server takes a suite
@@ -49,7 +49,7 @@ const overhead: usize = c.REC_OVERHEAD;
 var data: [per_record + 100]u8 = undefined;
 var got: [data.len]u8 = undefined;
 /// Room for everything one read may send: the alert of a read that fails.
-var reply: [record.alert_record_len]u8 = undefined;
+var reply: [tcp.alert_record_len]u8 = undefined;
 
 /// Each server selects the one suite its list names.
 const aes_128 = [_]chapulin.Suite{.aes_128_gcm_sha256};
@@ -70,8 +70,8 @@ pub fn run() !void {
         _ = try loop.drain(&loop.client, &loop.to_client);
         try crossCeiling(&loop.client, &loop.server, &loop.to_server);
         try crossCeiling(&loop.server, &loop.client, &loop.to_client);
-        loop.client.recordClose();
-        loop.server.recordClose();
+        loop.client.tcpClose();
+        loop.server.tcpClose();
     }
 }
 
@@ -84,15 +84,15 @@ fn crossCeiling(writer: anytype, reader: anytype, wire: *loop.Pipe) !void {
     // test writes the two fields, as test/key_limit_cases.h does in C, with
     // the values those records would leave. The API promises nothing about
     // a session's fields (docs/zig.md, "What stays out").
-    writer.record.t.wr.seq = ceiling - 2;
-    reader.record.t.rd.seq = ceiling - 2;
+    writer.tcp.t.wr.seq = ceiling - 2;
+    reader.tcp.t.rd.seq = ceiling - 2;
 
     // The key has one data record left, so a write of one record sends no
     // KeyUpdate. A second record goes out after the KeyUpdate record: it
     // fits once the KeyUpdate record and its own overhead fit beside the
     // first record, and not one byte sooner.
     const whole = per_record + overhead;
-    const key_update = record.key_update_record_len;
+    const key_update = tcp.key_update_record_len;
     try check(writer.writableLen(whole) == per_record, "writableLen counted a KeyUpdate record one record before the ceiling");
     const second = whole + key_update + overhead;
     try check(writer.writableLen(second) == per_record and writer.writableLen(second + 1) == per_record + 1, "writableLen did not count the KeyUpdate record at the ceiling");
@@ -137,7 +137,7 @@ fn crossCeiling(writer: anytype, reader: anytype, wire: *loop.Pipe) !void {
 /// Both sessions still connected, and neither has sent or received an
 /// alert.
 fn checkNoAlerts(a: anytype, b: anytype) !void {
-    try check(a.recordState() == .connected and b.recordState() == .connected, "a session left the connected state across the ceiling");
+    try check(a.tcpState() == .connected and b.tcpState() == .connected, "a session left the connected state across the ceiling");
     try check(a.alertSent() == null and a.alertReceived() == null, "the writer reported an alert across the ceiling");
     try check(b.alertSent() == null and b.alertReceived() == null, "the reader reported an alert across the ceiling");
 }

@@ -1,7 +1,7 @@
 invariant: INV-38
 file: src/tcp_nonblocking_frame.c
 catches: tcp_nonblocking_loop_test
-reason: ch_record_whole_len answers 0 for a header whose length is above
+reason: ch_tcp_whole_len answers 0 for a header whose length is above
   2^14 + 256, so a caller waits for a body no peer may send. A caller
   whose buffer is smaller than that length waits until its own timeout,
   where the header alone lets ch_read refuse the record at once. The

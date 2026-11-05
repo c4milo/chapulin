@@ -2,7 +2,7 @@
 // webpki_ticket.c runs (docs/decisions.md 132). Four test binaries link
 // test/webpki_ticket_count.c in place of webpki_ticket.c:
 //   - bin/webpki_session_test and bin/webpki_session_host, for ch_connect;
-//   - bin/webpki_loop_aes, for ch_record_init and a received ticket;
+//   - bin/webpki_loop_aes, for ch_tcp_init and a received ticket;
 //   - bin/quic_loop_aes, for ch_quic_init and a received ticket.
 // That file counts the last call of each hash and the one call of each
 // binding. So a count holds every hash and every binding: the init

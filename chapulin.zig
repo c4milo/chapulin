@@ -1,5 +1,5 @@
 //! chapulin's Zig API: the values a session is configured from, the error each result code maps to,
-//! and the build record check. The record-mode sessions are in chapulin_record.zig and the QUIC
+//! and the build record check. The tcp-nonblocking sessions are in chapulin_tcp.zig and the QUIC
 //! sessions in chapulin_quic.zig. docs/zig.md is the reference.
 //!
 //! Each call forwards to the C call of the same name and adds nothing the C core lacks: it builds
@@ -14,8 +14,8 @@ const std = @import("std");
 /// The object's public headers, translated by translate-c under the defines the object compiled
 /// with (docs/decisions.md 70). What the API leaves out is used through it under its C name.
 pub const c = @import("chapulin_c");
-/// Record-mode sessions (TRANSPORT=tcp-nonblocking).
-pub const record = @import("chapulin_record.zig");
+/// Sessions over TRANSPORT=tcp-nonblocking.
+pub const tcp = @import("chapulin_tcp.zig");
 /// QUIC sessions (TRANSPORT=quic-nonblocking).
 pub const quic = @import("chapulin_quic.zig");
 /// The ch_cfg builder, which no program names (chapulin_cfg.zig).
@@ -26,7 +26,7 @@ pub const testing = if (@import("builtin").is_test) cfg_of else @compileError("c
 
 // A client role: the object's client entry point, whichever its transport.
 // Each header declares a call only in the objects that define it.
-const has_client = @hasDecl(c, "ch_connect") or @hasDecl(c, "ch_record_init") or @hasDecl(c, "ch_quic_init");
+const has_client = @hasDecl(c, "ch_connect") or @hasDecl(c, "ch_tcp_init") or @hasDecl(c, "ch_quic_init");
 const has_server = @hasField(c.ch_cfg, "srv");
 // A PROFILE=cnsa2 server holds one ML-DSA-87 identity in place of the ECDSA
 // and RSA slots (docs/decisions.md 162).
@@ -52,7 +52,7 @@ const has_cpu = @hasField(c.ch_cfg, "cpu");
 const has_clock = @hasField(c.ch_cfg, "clock_io");
 
 /// One error per ch_err code a call returns, named as chapulin.hpp's Status names it. Each call's
-/// error set is the part of this one its C call returns. CH_RECORD_AGAIN and CH_ECLOSED are no
+/// error set is the part of this one its C call returns. CH_TCP_AGAIN and CH_ECLOSED are no
 /// error here: record sessions' read reports the first as pt_len 0, and no call returns the second.
 /// An object's set holds the codes its headers declare: Discard and AeadLimit in a QUIC object's
 /// alone, and KeyUpdateLimit in a TCP object's alone.

@@ -20,14 +20,14 @@
 #include "widemul_runtime_count.h"
 
 // run_handshake, with each end's calls counted around that end's own
-// calls: ch_record_init and ch_record_in for the client, and
-// ch_srv_record_init and ch_srv_record_in for the server.
-// client_to_server calls the client's ch_record_out before the server's
-// ch_srv_record_in, and ch_record_out copies staged bytes alone, so the
+// calls: ch_tcp_init and ch_tcp_in for the client, and
+// ch_srv_tcp_init and ch_srv_tcp_in for the server.
+// client_to_server calls the client's ch_tcp_out before the server's
+// ch_srv_tcp_in, and ch_tcp_out copies staged bytes alone, so the
 // calls counted around client_to_server are the server's.
 static void widemul_counted_handshake(int client_stated, int server_stated) {
-    static ch_record client;
-    static ch_record server;
+    static ch_tcp client;
+    static ch_tcp server;
     ch_cfg ccfg;
     ch_cfg scfg;
     server_config(&scfg);
@@ -41,15 +41,15 @@ static void widemul_counted_handshake(int client_stated, int server_stated) {
     widemul_end_calls server_calls = {0, 0};
     widemul_native_calls = 0;
     widemul_decomposed_calls = 0;
-    CHECK(ch_srv_record_init(&server, &scfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_OK);
     widemul_take_calls(&server_calls);
-    CHECK(ch_record_init(&client, &ccfg) == CH_OK);
+    CHECK(ch_tcp_init(&client, &ccfg) == CH_OK);
     widemul_take_calls(&client_calls);
     for (int rounds = 0; rounds < 4; rounds++) {
         int moved = client_to_server(&client, &server);
         widemul_take_calls(&server_calls);
-        if (!moved || (ch_record_state(&client) == CH_ST_CONNECTED &&
-                       ch_record_state(&server) == CH_ST_CONNECTED)) {
+        if (!moved || (ch_tcp_state(&client) == CH_ST_CONNECTED &&
+                       ch_tcp_state(&server) == CH_ST_CONNECTED)) {
             break;
         }
         moved = server_to_client(&client);
@@ -58,8 +58,8 @@ static void widemul_counted_handshake(int client_stated, int server_stated) {
             break;
         }
     }
-    CHECK(ch_record_state(&client) == CH_ST_CONNECTED);
-    CHECK(ch_record_state(&server) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(&client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(&server) == CH_ST_CONNECTED);
     CHECK(widemul_ran_own_copy(&client_calls, ccfg.cpu));
     CHECK(widemul_ran_own_copy(&server_calls, scfg.cpu));
 }

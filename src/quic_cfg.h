@@ -24,7 +24,7 @@
 // CH_QUIC_ prefix says neither has a meaning on the TCP transports, and ch_quic_open alone
 // returns either.
 //
-// CH_QUIC_DISCARD leaves the session live, as cfg.h's CH_RECORD_AGAIN does, for a packet the
+// CH_QUIC_DISCARD leaves the session live, as cfg.h's CH_TCP_AGAIN does, for a packet the
 // caller drops: one that failed to authenticate, which RFC 9001 §5.5
 // says does not necessarily indicate a protocol error or an attack (rfc9001.txt:1373-1376),
 // or one too short to hold a header protection sample, which §5.4.2 discards

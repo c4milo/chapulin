@@ -2,7 +2,7 @@ invariant: INV-14
 file: src/tls.c
 catches: webpki_resume_test
 reason: the TRUST=webpki tlsi_config_ok stops asking hspost_ticket_age_ok,
-  so ch_connect and ch_record_init in that mode offer a stale ticket that
+  so ch_connect and ch_tcp_init in that mode offer a stale ticket that
   the raw and ca definition refuses. The two definitions are separate
   functions, so the raw rows do not cover this one; the webpki resume
   rows at each boundary object.

@@ -1,4 +1,4 @@
-// Proves: ch_record_init, ch_record_in, ch_record_out and ch_record_close
+// Proves: ch_tcp_init, ch_tcp_in, ch_tcp_out and ch_tcp_close
 // (tcp_nonblocking.c), the step table under them (tcp_nonblocking_step.c)
 // and the framing and death path both tcp-nonblocking drivers share
 // (tcp_nonblocking_frame.c) are memory safe and free of UB over an
@@ -11,13 +11,13 @@
 //   unexpected_message, and a second HelloRetryRequest does too;
 // - the Finished step stages the client Finished, wipes the handshake
 //   state and writes the back pointer again (INV-17);
-// - ch_record_in never reports more bytes than it was handed, refuses
+// - ch_tcp_in never reports more bytes than it was handed, refuses
 //   input while a record is staged, and leaves a failed session dead,
 //   with no secret and at most its alert record staged (INV-13, INV-17);
-// - ch_record_out hands over at most cap bytes, and the session is
+// - ch_tcp_out hands over at most cap bytes, and the session is
 //   connected only after the last byte of the client Finished;
-// - ch_record_close leaves a closed session with no secret and nothing
-//   staged, which ch_record_state reports.
+// - ch_tcp_close leaves a closed session with no secret and nothing
+//   staged, which ch_tcp_state reports.
 //
 // What is real and what is a stub. The three driver files and ct.c are
 // real. The handshake_flight.h and handshake_auth.h handlers are stubs,
@@ -60,7 +60,7 @@ uint16_t nondet_u16(void);
 static uint8_t buf[CH_PROOF_RXBUF];
 static uint8_t in[CH_PROOF_INBUF];
 static uint8_t out[CH_PROOF_INBUF];
-static ch_record r;
+static ch_tcp r;
 static ch_cfg cfg;
 static ch_saved_ticket saved;
 
@@ -175,7 +175,7 @@ int hsa_read_certificate_verify(handshake_state *h) {
 // real table: one whole message consumed, or the window emptied by the
 // last step, and at most one record staged from its start; or a failure
 // with the alert chosen.
-int tcp_nonblocking_advance(ch_record *s) {
+int tcp_nonblocking_advance(ch_tcp *s) {
     __CPROVER_assert(s == &r && s->hs.t == &s->t, "advance: the session, back pointer set");
     __CPROVER_assert(s->t.pt_len >= 4 && s->t.pt_off <= s->t.pt_len - 4,
                      "advance: a whole message is unread");
@@ -274,7 +274,7 @@ static int recv_cb(void *io, uint8_t *p, size_t n) {
 
 // Whether the session holds any secret, tcp_nonblocking_frame.h's list
 // read back.
-static int no_secret_left(const ch_record *s) {
+static int no_secret_left(const ch_tcp *s) {
     for (size_t i = 0; i < sizeof s->t.rd_secret; i++) {
         if (s->t.rd_secret[i] != 0 || s->t.wr_secret[i] != 0 || s->t.res_master[i] != 0) {
             return 0;
@@ -318,7 +318,7 @@ static void prove_init(void) {
         saved.ticket.lifetime_s = nondet_u32();
         cfg.ticket = &saved;
     }
-    int rc = ch_record_init(&r, &cfg);
+    int rc = ch_tcp_init(&r, &cfg);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "init answers one of its two codes");
     if (rc == CH_EINVAL) {
         __CPROVER_assert(r.t.state == CH_ST_FAILED && r.tx_len == 0 && no_secret_left(&r),
@@ -377,7 +377,7 @@ static void prove_in(void) {
     size_t n = nondet_size_t();
     __CPROVER_assume(n <= sizeof in);
     size_t consumed = nondet_size_t();
-    int rc = ch_record_in(&r, in, n, &consumed);
+    int rc = ch_tcp_in(&r, in, n, &consumed);
     __CPROVER_assert(consumed <= n, "it never reports more bytes than it was handed");
     __CPROVER_assert(r.t.pt_off <= r.t.pt_len && r.t.pt_len <= r.t.cfg.buf_len,
                      "and leaves the window inside the buffer");
@@ -406,7 +406,7 @@ static void prove_out(void) {
     __CPROVER_assume(cap <= sizeof out);
     uint8_t was_state = r.t.state;
     size_t out_len = nondet_size_t();
-    int rc = ch_record_out(&r, out, cap, &out_len);
+    int rc = ch_tcp_out(&r, out, cap, &out_len);
     if (rc == CH_OK && len > off) {
         size_t want = len - off < cap ? len - off : cap;
         __CPROVER_assert(out_len == want, "it hands over the next staged bytes, at most cap");
@@ -426,10 +426,10 @@ int main(void) {
     prove_advance();
     prove_out();
     havoc_state();
-    ch_record_close(&r);
+    ch_tcp_close(&r);
     __CPROVER_assert(r.t.state == CH_ST_CLOSED && r.tx_len == 0 && no_secret_left(&r),
                      "a closed session holds no secret and stages nothing");
-    __CPROVER_assert(ch_record_state(&r) == CH_ST_CLOSED, "and reports itself closed");
+    __CPROVER_assert(ch_tcp_state(&r) == CH_ST_CLOSED, "and reports itself closed");
 #endif
     return 0;
 }

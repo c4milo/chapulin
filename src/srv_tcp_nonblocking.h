@@ -13,7 +13,7 @@
 // server.
 //
 // The post-handshake calls are tcp_nonblocking.h's and are not repeated here.
-// ch_record_state and ch_record_close read no side, and ch_read, ch_write
+// ch_tcp_state and ch_tcp_close read no side, and ch_read, ch_write
 // and ch_close are the same record-layer calls a client uses, because
 // record.[ch] names no side either. So tcp_nonblocking.h's account of
 // closing holds for a server as written: the client's close_notify makes
@@ -21,7 +21,7 @@
 // sends the server's close_notify. So does its account of alerts, and
 // alert.h's two calls report them on either side.
 //
-// Output is a push, not a pull. A server has no ch_srv_record_out: one
+// Output is a push, not a pull. A server has no ch_srv_tcp_out: one
 // Certificate message is larger than ch_tls.tx, so there is nothing to
 // stage and pull from, and the flight goes out through
 // ch_srv_cfg.on_record_out as it is produced. srv_cfg.h states that
@@ -36,7 +36,7 @@
 #include "cfg.h"
 #include "tcp_nonblocking.h"
 
-// The step numbers ch_record.step holds in a server build. A server reads
+// The step numbers ch_tcp.step holds in a server build. A server reads
 // three messages and writes the rest, so the table is shorter than the
 // client's: every send happens inside the step that read the message it
 // answers, and no send has a step of its own.
@@ -50,7 +50,7 @@
 #define SRV_TCP_NONBLOCKING_STEP_COMPLETE 3
 
 // Prepares a server session. It reads the configuration and waits:
-// unlike ch_record_init it stages no message, because a server speaks
+// unlike ch_tcp_init it stages no message, because a server speaks
 // second.
 //
 // Returns CH_EINVAL for every configuration ch_srv_accept refuses
@@ -59,7 +59,7 @@
 // was sent and the session is dead.
 //
 // Requires: r and cfg are not NULL, and cfg outlives the session.
-int CH_MUST_USE ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
+int CH_MUST_USE ch_srv_tcp_init(ch_tcp *r, const ch_cfg *cfg);
 
 // Delivers n bytes the caller read from its socket and reports how many
 // it consumed. It takes whole records only and runs the handshake as far
@@ -78,13 +78,13 @@ int CH_MUST_USE ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 // The call stops after the record that completes the handshake, with
 // *consumed covering it and nothing past it: a client may send its first
 // application record in the same segment as its Finished, and those
-// bytes belong to ch_read once ch_record_state reports CH_ST_CONNECTED.
+// bytes belong to ch_read once ch_tcp_state reports CH_ST_CONNECTED.
 // A record delivered here after that fails the session.
 //
 // Returns CH_OK when the bytes were taken, whether or not they completed
 // a record or a message. Returns CH_EPROTO without reading a byte on a
 // session that failed or closed. It never returns CH_EINVAL:
-// ch_srv_record_init refused every configuration the flight could fail
+// ch_srv_tcp_init refused every configuration the flight could fail
 // on (srv_identities_usable, srv_auth.h). Every other code leaves the
 // session dead, and before the call returns it pushes the alert its
 // failure chose through cfg.srv.on_record_out as one more record, which
@@ -101,7 +101,7 @@ int CH_MUST_USE ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 // fatal alert, in the clear or protected, is the exception: the call
 // returns CH_EPROTO and pushes nothing, ch_alert_received names the
 // alert, and ch_alert_sent reads 0 (RFC 9846 §6.2).
-int CH_MUST_USE ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
+int CH_MUST_USE ch_srv_tcp_in(ch_tcp *r, uint8_t *p, size_t n, size_t *consumed);
 
 #endif // CH_ROLE_SERVER && CH_TRANSPORT_TCP_NONBLOCKING
 #endif

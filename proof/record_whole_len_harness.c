@@ -1,4 +1,4 @@
-// Proves: ch_record_whole_len (tcp_nonblocking_frame.c) reads no byte
+// Proves: ch_tcp_whole_len (tcp_nonblocking_frame.c) reads no byte
 // outside p[0..n) and answers exactly what tcp_nonblocking.h states, for
 // every n up to 2^20 and every byte p holds:
 //
@@ -47,7 +47,7 @@ int main(void) {
     uint8_t *p = malloc(n);
     __CPROVER_assume(p != NULL);
 
-    size_t whole = ch_record_whole_len(p, n);
+    size_t whole = ch_tcp_whole_len(p, n);
 
     __CPROVER_assert(whole == 0 || (whole >= REC_HDR && whole <= n),
                      "whole_len: the answer is 0 or a length from REC_HDR to n");

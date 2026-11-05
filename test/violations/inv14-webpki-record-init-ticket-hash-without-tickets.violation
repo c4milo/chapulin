@@ -1,7 +1,7 @@
 invariant: INV-14
 file: src/tcp_nonblocking.c
 catches: webpki_loop_aes
-reason: the webpki ch_record_init hashes the anchors whether or not the
+reason: the webpki ch_tcp_init hashes the anchors whether or not the
   session takes tickets (docs/decisions.md 132). test/webpki_ticket_rows.h's
   row without on_ticket counts one hash where it requires none.
 

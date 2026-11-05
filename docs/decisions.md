@@ -15917,3 +15917,46 @@ does nothing more.
       alone**, which leaves a wrong d to `ch_srv_check`. **A device
       object without the call**, which leaves device firmware to fill
       `ch_rsa_priv` by hand.
+
+185. **The public headers stop holding the library's state, and
+    `ch_record` becomes `ch_tcp`.** The goal is an `include/chapulin/`
+    that holds the API and nothing else. On 2026-11-04 the 18 public
+    headers pulled in 40 internal ones, for four reasons: session structs
+    held by value (`ch_tls`, `ch_record`, `ch_quic`, `ch_dnssec_hash`),
+    size constants, caller-held types (`ch_rsa_priv`) and `cfg.h`'s own
+    includes. No consumer reads a session field: colibri and cocuyo call
+    the Zig API, and `session_report.h` already gives each field a caller
+    reads a call. Camilo ruled on 2026-11-04.
+
+    - **Steps.** First, `public_sizes.h`, `aes_extern.h` and `rsa_key.h`
+      give the public headers their sizes, `ch_aes_block` and
+      `ch_rsa_priv`, and the internal headers include them, so each name
+      keeps one definition. Second, `ch_record` becomes `ch_tcp`. Third,
+      each session struct becomes storage of its size and alignment, and
+      the real struct in `src/` takes the `_priv` suffix (`ch_tls_priv`),
+      the most common C name for the body behind a public handle. Fourth,
+      calls replace the Zig API's three direct uses of a field. After a
+      release, the API headers move into `include/chapulin/`.
+    - **The sizes.** A struct's size changes with TRUST, ROLE, KEX, SUITE,
+      TRANSPORT, `CH_TX_PT` and the host or device layout. `make lib` and
+      `build.zig` measure each size and alignment for the target and write
+      them into the generated `chapulin.h`. A firmware tree that skips
+      make adds `-Isrc` and keeps the full layout.
+    - **The rename.** `ch_record` read as one TLS record, not a session.
+      `ch_tcp` names it for its transport, beside `ch_quic`: `ch_tcp_init`,
+      `ch_tcp_in`, `ch_tcp_out`, `ch_tcp_close`, `ch_tcp_state`,
+      `ch_tcp_whole_len`, `ch_srv_tcp_init`, `ch_srv_tcp_in`,
+      `ch_srv_tcp_out` and `CH_TCP_AGAIN`. The Zig module
+      `chapulin_record.zig` becomes `chapulin_tcp.zig`, `chapulin.record`
+      becomes `chapulin.tcp`, and `recordState` and `recordClose` become
+      `tcpState` and `tcpClose`. `record.[ch]` and its `rec_` names stay,
+      because they are the TLS record layer. The prose term "record mode"
+      becomes "tcp-nonblocking". Entries above this one keep the names of
+      their time.
+    - **Rejected:** **one maximum size for every build**, which would give
+      a device a host build's SRAM. **Two shapes of each public header**,
+      opaque or not, which doubles what an auditor reads. **Fields marked
+      private in a public struct**, as mbedTLS 3 does, which keeps the
+      internal headers in the include path. **One `ch_tcp` over the
+      blocking and non-blocking calls** for now: it is a redesign whose
+      code size and SRAM have to be measured first.

@@ -26,7 +26,7 @@
 // before the handshake completes, answers CH_EPROTO, or CH_EINVAL where its
 // header says so, and changes nothing. Every other code leaves the session
 // dead, but those a header names as leaving it live: CH_ECAP for a caller's
-// own short buffer, CH_RECORD_AGAIN and quic_cfg.h's CH_QUIC_DISCARD.
+// own short buffer, CH_TCP_AGAIN and quic_cfg.h's CH_QUIC_DISCARD.
 #define CH_OK 0
 #define CH_EIO (-1)     // transport failed or closed under us, or a server's sink refused
 #define CH_EPROTO (-2)  // peer broke the protocol, or the session cannot take the call
@@ -36,7 +36,7 @@
 #define CH_EINVAL (-6)  // configuration or call refused on entry; nothing was sent
 // TRANSPORT=tcp-nonblocking's ch_read found no record yet; the session stays
 // live (tcp_nonblocking.h, INV-13).
-#define CH_RECORD_AGAIN (-9)
+#define CH_TCP_AGAIN (-9)
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // The code a TCP build adds, which ch_read alone returns. The peer sent one KeyUpdate more than
 // CH_KEY_UPDATE_RUN_MAX (session.h) in a row, and the session is dead (docs/decisions.md 138).
@@ -67,7 +67,7 @@ static inline const char *ch_result_text(int rc) {
         return "the peer closed the connection";
     case CH_EINVAL:
         return "the configuration or the call was refused, and nothing was sent";
-    case CH_RECORD_AGAIN:
+    case CH_TCP_AGAIN:
         return "no whole record has arrived yet";
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     case CH_KEY_UPDATE_LIMIT:

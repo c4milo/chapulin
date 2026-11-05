@@ -85,7 +85,7 @@ The other 37 sources are in no such harness:
 
 `aes_extern.c` is proved, but only up to the `ch_aes_block` the caller
 writes, which has no body here to prove ([aes_extern](#aes_extern)).
-`tcp_nonblocking_frame.c` is in two harnesses: `ch_record_whole_len` in
+`tcp_nonblocking_frame.c` is in two harnesses: `ch_tcp_whole_len` in
 [record_whole_len](#record_whole_len), and the rest of the file in
 [srv_tcp_nonblocking](#srv_tcp_nonblocking).
 `tls_write.c` holds `ch_write`, `ch_write_parts`, `ch_writable_len` and
@@ -2145,7 +2145,7 @@ The entries are grouped by area:
 
 - **Harness:** `record_whole_len` (fast)
 - **Build:** `TRANSPORT=tcp-nonblocking`.
-- **Proves:** `ch_record_whole_len` reads no byte outside `p[0..n)`, in
+- **Proves:** `ch_tcp_whole_len` reads no byte outside `p[0..n)`, in
   a heap object exactly `n` bytes long, and answers exactly what
   `tcp_nonblocking.h` states for every byte `p` holds: 0 while the
   header or the body it names is not whole, `REC_HDR` for a length field
@@ -2942,7 +2942,7 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 
 - **Harness:** `srv_tcp_nonblocking` (fast)
 - **Build:** `ROLE=server`, `TRANSPORT=tcp-nonblocking`.
-- **Proves:** `ch_srv_record_init`, `advance` and `ch_srv_record_in`
+- **Proves:** `ch_srv_tcp_init`, `advance` and `ch_srv_tcp_in`
   (`srv_tcp_nonblocking.c`), with the framing, the wipe and the death
   path of `tcp_nonblocking_frame.c`, are memory safe and free of UB over
   an unconstrained `ch_cfg`, saved state and caller bytes. Also:
@@ -2950,7 +2950,7 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
     `CH_EINVAL` with a dead one;
   - a step number that no step wrote kills the session with
     unexpected_message, and a step that succeeds consumes its message;
-  - `ch_srv_record_in` never reports more bytes than it was handed;
+  - `ch_srv_tcp_in` never reports more bytes than it was handed;
   - a call on a dead session sends nothing (INV-13);
   - every other failure pushes at most one record, its alert, sealed
     before the wipe and never after the peer's fatal alert (INV-13);
@@ -2962,7 +2962,7 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 - **Not proved:** the fifteen handlers, `rec_open`, `rec_seal`,
   `hsr_feed`, `hsr_peek_message`, `hsr_refuse_alert`, `srv_out_alert`
   and `ct_wipe` are contract stubs. `ct_wipe` writes its zeros with one
-  `memset`, and [ct](#ct) proves the body. `ch_record_whole_len` is in
+  `memset`, and [ct](#ct) proves the body. `ch_tcp_whole_len` is in
   [record_whole_len](#record_whole_len). `bin/srv_tcp_nonblocking_test`,
   `bin/tcp_nonblocking_loop_test` and the `.violation` mutants test the
   rest.
@@ -3005,8 +3005,8 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 
 - **Harnesses:** `tcp_nonblocking` (fast), `tcp_nonblocking_in` (fast)
 - **Build:** the client, `TRANSPORT=tcp-nonblocking`.
-- **Proves:** `ch_record_init`, `ch_record_in`, `ch_record_out` and
-  `ch_record_close` (`tcp_nonblocking.c`), the step table
+- **Proves:** `ch_tcp_init`, `ch_tcp_in`, `ch_tcp_out` and
+  `ch_tcp_close` (`tcp_nonblocking.c`), the step table
   (`tcp_nonblocking_step.c`) and the framing of
   `tcp_nonblocking_frame.c` are memory safe and free of UB over an
   unconstrained `ch_cfg`, saved state and caller bytes. Also:
@@ -3017,15 +3017,15 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
     second HelloRetryRequest fail the session;
   - a step that succeeds consumes its message, and the Finished step
     stages the client Finished and wipes the handshake state (INV-17);
-  - `ch_record_in` never reports more bytes than it was handed, refuses
+  - `ch_tcp_in` never reports more bytes than it was handed, refuses
     input while a record is staged, and leaves a failed session dead,
     with no secret and at most its alert record staged (INV-13,
     INV-17);
-  - `ch_record_out` hands over the next staged bytes, at most `cap`,
+  - `ch_tcp_out` hands over the next staged bytes, at most `cap`,
     and the session is connected only after the last Finished byte;
-  - `ch_record_close` leaves a closed session with no secret.
+  - `ch_tcp_close` leaves a closed session with no secret.
 - **Layers:** `tcp_nonblocking` runs the real step table, and
-  `tcp_nonblocking_in` runs `ch_record_in` over a stub of
+  `tcp_nonblocking_in` runs `ch_tcp_in` over a stub of
   `tcp_nonblocking_advance` that states the contract the first one
   proves, the way [quic_step](#quic_step) and
   [quic_driver](#quic_driver) divide the QUIC driver.

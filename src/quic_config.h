@@ -30,7 +30,7 @@
 //
 // Returns CH_OK when every rule holds, and CH_EINVAL for any refusal. A
 // resuming ticket whose epoch sits below the stored one is a refusal
-// too, with the code ch_connect and ch_record_init return for it.
+// too, with the code ch_connect and ch_tcp_init return for it.
 //
 // It writes t->epoch, t->epoch_seen and t->epoch_status under a CA mode
 // and nothing outside t in any build. ch_quic_init keeps those three

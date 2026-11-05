@@ -531,7 +531,7 @@ def select_script_builds(out, changed):
 # the public headers name, and the corpus the loops take the r2 chain
 # from. The Zig project under test/zig-consumer/ is selected by its
 # prefix below.
-ZIG_API_FILES = {"chapulin.zig", "chapulin_record.zig", "chapulin_quic.zig",
+ZIG_API_FILES = {"chapulin.zig", "chapulin_tcp.zig", "chapulin_quic.zig",
                  "chapulin_ticket.zig", "chapulin_cpu.zig", "chapulin_cfg.zig"}
 ZIG_BUILD_FILES = {"build.zig", "build.zig.zon", "test/zig-build-check.sh",
                    "test/localize-check.sh", "test/build_test.c",

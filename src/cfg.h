@@ -359,7 +359,7 @@ typedef struct {
     void *io;
 
     // Optional; called once per NewSessionTicket. Under TRUST=webpki, set it in the cfg you
-    // pass to ch_connect, ch_record_init or ch_quic_init. Only then does the init call hash
+    // pass to ch_connect, ch_tcp_init or ch_quic_init. Only then does the init call hash
     // the configuration that each ticket is bound to. A session whose init call saw no
     // on_ticket gives no ticket to anyone (docs/webpki.md, "Resumption").
     void (*on_ticket)(void *io, const ch_ticket *ticket);

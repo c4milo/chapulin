@@ -579,7 +579,7 @@ srv_ticket_cnsa2 228
 # srv_tcp_nonblocking took its floor on 2026-10-30, measured by
 # proof/coverage.py in the pinned amd64 container: 78.8% (512/650). The
 # 138 locations no path reaches are mostly the wbuf and rbuf helpers,
-# SHA-256, ct_memeq and ch_record_whole_len, which no stub calls and other
+# SHA-256, ct_memeq and ch_tcp_whole_len, which no stub calls and other
 # harnesses prove. The rest are single branches of the driver,
 # cfg_clock_read, the sink and ch_assert_fail. At 8 bytes of caller input it read
 # 76.0% (494/650): no record held a whole message, so drive never ran a
@@ -610,7 +610,7 @@ srv_quic 586
 # measured by proof/coverage.py in the pinned amd64 container: 57.8%
 # (395/683) and 45.4% (253/557). Each formula leaves out the calls the
 # other proves. In the driver files neither reaches the CH_ASSERT arm,
-# two loop-closing braces or ch_record_whole_len, which record_whole_len
+# two loop-closing braces or ch_tcp_whole_len, which record_whole_len
 # proves. The rest are stub and helper branches, SHA-256 and the buffer
 # helpers.
 tcp_nonblocking 395

@@ -233,19 +233,19 @@ static void present_kept(ch_cfg *cfg) {
     present_with(cfg, kept.binding);
 }
 
-static ch_record client;
-static ch_record server;
+static ch_tcp client;
+static ch_tcp server;
 
 // Moves what the client staged into the server. Returns 0 on a refusal.
 static int client_to_server(void) {
     uint8_t wire[REC_HDR + CH_TX_STAGE + 64];
     size_t n = 0;
-    CHECK(ch_record_out(&client, wire, sizeof wire, &n) == CH_OK);
+    CHECK(ch_tcp_out(&client, wire, sizeof wire, &n) == CH_OK);
     if (n == 0) {
         return 1;
     }
     size_t consumed = 0;
-    return ch_srv_record_in(&server, wire, n, &consumed) == CH_OK && consumed == n;
+    return ch_srv_tcp_in(&server, wire, n, &consumed) == CH_OK && consumed == n;
 }
 
 // Moves what the server pushed into the client. Returns 0 on a refusal.
@@ -255,37 +255,36 @@ static int server_to_client(void) {
         return 1;
     }
     size_t consumed = 0;
-    int rc = ch_record_in(&client, to_client.bytes + to_client.off, left, &consumed);
+    int rc = ch_tcp_in(&client, to_client.bytes + to_client.off, left, &consumed);
     to_client.off += consumed;
     return rc == CH_OK;
 }
 
 // One handshake between fresh sessions, then the ticket the server sent
-// after it, through ch_read. The client is connected once ch_record_out
+// after it, through ch_read. The client is connected once ch_tcp_out
 // has handed its Finished over, and what the server pushes after that is
 // post-handshake, for ch_read. Returns 1 when both ends connected.
 static int run(const ch_cfg *ccfg, const ch_cfg *scfg) {
     memset(&to_client, 0, sizeof to_client);
     records_pushed = 0;
-    CHECK(ch_srv_record_init(&server, scfg) == CH_OK);
-    CHECK(ch_record_init(&client, ccfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(&server, scfg) == CH_OK);
+    CHECK(ch_tcp_init(&client, ccfg) == CH_OK);
     for (int round = 0; round < 4; round++) {
         if (!client_to_server()) {
             return 0;
         }
-        if (ch_record_state(&client) == CH_ST_CONNECTED) {
+        if (ch_tcp_state(&client) == CH_ST_CONNECTED) {
             break;
         }
         if (!server_to_client()) {
             return 0;
         }
     }
-    if (ch_record_state(&client) != CH_ST_CONNECTED ||
-        ch_record_state(&server) != CH_ST_CONNECTED) {
+    if (ch_tcp_state(&client) != CH_ST_CONNECTED || ch_tcp_state(&server) != CH_ST_CONNECTED) {
         return 0;
     }
     uint8_t got[16];
-    CHECK(ch_read(&client.t, got, sizeof got) == CH_RECORD_AGAIN);
+    CHECK(ch_read(&client.t, got, sizeof got) == CH_TCP_AGAIN);
     return 1;
 }
 
@@ -299,7 +298,7 @@ static void check_declined_chain_refused(const uint8_t *key, const webpki_corpus
     server_config(&scfg, key);
     client_config(&ccfg, root, hostname, 1);
     CHECK(!run(&ccfg, &scfg));
-    CHECK(ch_record_state(&client) == CH_ST_FAILED && ch_alert_sent(&client.t) == alert);
+    CHECK(ch_tcp_state(&client) == CH_ST_FAILED && ch_alert_sent(&client.t) == alert);
     CHECK(client.t.psk_selected == 0);
 }
 
@@ -361,11 +360,11 @@ static void test_pins_alone(void) {
     CHECK(client.t.psk_selected == 1 && server.t.psk_selected == 1 && records_pushed == 4);
     CHECK(r2_pin(1));
     pins_alone_config(&ccfg, 1);
-    static ch_record probe;
-    CHECK(ch_record_init(&probe, &ccfg) == CH_EINVAL);
+    static ch_tcp probe;
+    CHECK(ch_tcp_init(&probe, &ccfg) == CH_EINVAL);
     pins_alone_config(&ccfg, 0);
     CHECK(!run(&ccfg, &scfg));
-    CHECK(ch_record_state(&client) == CH_ST_FAILED &&
+    CHECK(ch_tcp_state(&client) == CH_ST_FAILED &&
           ch_alert_sent(&client.t) == ALERT_BAD_CERTIFICATE);
 }
 
@@ -394,8 +393,7 @@ static void test_pins_alone_large_leaf(void) {
     scfg.srv.ecdsa_p256.priv = p256_sign_vectors[0].priv;
     scfg.srv.ecdsa_p256.pub = p256_sign_vectors[0].pub;
     CHECK(!run(&ccfg, &scfg));
-    CHECK(ch_record_state(&client) == CH_ST_FAILED &&
-          ch_alert_sent(&client.t) == ALERT_DECRYPT_ERROR);
+    CHECK(ch_tcp_state(&client) == CH_ST_FAILED && ch_alert_sent(&client.t) == ALERT_DECRYPT_ERROR);
 }
 
 #include "webpki_loop_order.h"

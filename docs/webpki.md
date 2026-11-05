@@ -540,7 +540,7 @@ received it, and refuses to present it under any other.
   binding from another ticket, because the key is that ticket's PSK. A
   PSK that is not 32 bytes, an identity outside 1 to `CH_TICKET_ID_MAX`
   bytes, a ticket of lifetime 0, an external PSK, and an external PSK
-  beside a ticket. `ch_record_init` applies the same rules.
+  beside a ticket. `ch_tcp_init` applies the same rules.
 - **The same name in other capitals resumes.** The chain walk matches
   names without case (RFC 6125 §6.4.1), so `S3.Example.TEST` resumes a
   ticket `s3.example.test` received.

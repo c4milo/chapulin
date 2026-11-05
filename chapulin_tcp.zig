@@ -1,4 +1,4 @@
-//! Record-mode sessions over a TRANSPORT=tcp-nonblocking object: the
+//! Sessions over a TRANSPORT=tcp-nonblocking object: the
 //! handshake through recordIn and recordOut, then read, write and close,
 //! each a C call of tcp_nonblocking.h, srv_tcp_nonblocking.h or tls.h
 //! (docs/zig.md).
@@ -12,23 +12,23 @@ const chapulin = @import("chapulin.zig");
 const cfg_of = @import("chapulin_cfg.zig");
 const c = chapulin.c;
 
-// tcp_nonblocking.h declares ch_record_init only in an object with a client,
+// tcp_nonblocking.h declares ch_tcp_init only in an object with a client,
 // which alone defines it.
-const has_client = @hasDecl(c, "ch_record_init");
-const has_server = @hasDecl(c, "ch_srv_record_init");
-const has_record = @hasDecl(c, "ch_record_whole_len");
+const has_client = @hasDecl(c, "ch_tcp_init");
+const has_server = @hasDecl(c, "ch_srv_tcp_init");
+const has_tcp = @hasDecl(c, "ch_tcp_whole_len");
 
 /// A client whose receive buffer, cfg.buf, holds receive_len bytes, and whose
 /// lists hold the anchors and ALPN names limits allows (chapulin.Limits; pass
 /// .{} for the defaults). Do not move it after init: cfg.io points at its
 /// hook, and cfg's lists at its own arrays.
-pub const Client = if (has_client) clientOf else @compileError("record.Client needs TRANSPORT=tcp-nonblocking with ROLE=client or ROLE=both");
+pub const Client = if (has_client) clientOf else @compileError("tcp.Client needs TRANSPORT=tcp-nonblocking with ROLE=client or ROLE=both");
 fn clientOf(comptime receive_len: usize, comptime limits: chapulin.Limits) type {
     return Session(.client, receive_len, limits);
 }
 
 /// A server with the same storage, less the ticket slot.
-pub const Server = if (has_server) serverOf else @compileError("record.Server needs TRANSPORT=tcp-nonblocking with ROLE=server or ROLE=both");
+pub const Server = if (has_server) serverOf else @compileError("tcp.Server needs TRANSPORT=tcp-nonblocking with ROLE=server or ROLE=both");
 fn serverOf(comptime receive_len: usize, comptime limits: chapulin.Limits) type {
     return Session(.server, receive_len, limits);
 }
@@ -47,13 +47,13 @@ pub const Read = struct { consumed: usize, pt_len: usize, reply_len: usize, peer
 
 /// The wire length of one sealed alert record, 24 bytes: what close
 /// writes, and what a read that fails adds to reply (CH_ALERT_RECORD_LEN).
-pub const alert_record_len: usize = if (has_record) c.CH_ALERT_RECORD_LEN else @compileError("alert_record_len needs TRANSPORT=tcp-nonblocking");
+pub const alert_record_len: usize = if (has_tcp) c.CH_ALERT_RECORD_LEN else @compileError("alert_record_len needs TRANSPORT=tcp-nonblocking");
 
 /// The wire length of one sealed KeyUpdate record, 27 bytes
 /// (CH_KEY_UPDATE_RECORD_LEN). write sends one before its first record
 /// when the peer asked for one, and one as the last record an AES-GCM
 /// write key seals, and writableLen counts it. read sends none.
-pub const key_update_record_len: usize = if (has_record) c.CH_KEY_UPDATE_RECORD_LEN else @compileError("key_update_record_len needs TRANSPORT=tcp-nonblocking");
+pub const key_update_record_len: usize = if (has_tcp) c.CH_KEY_UPDATE_RECORD_LEN else @compileError("key_update_record_len needs TRANSPORT=tcp-nonblocking");
 
 const Side = enum { client, server };
 
@@ -111,7 +111,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         const Self = @This();
 
         /// The C session. The API promises nothing about its fields.
-        record: c.ch_record,
+        tcp: c.ch_tcp,
         /// The receive buffer, cfg.buf.
         receive: [receive_len]u8,
         /// The C arrays init builds from the values' lists, which cfg points at.
@@ -126,23 +126,23 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         /// The latest ticket on_ticket copied. A server has none.
         ticket: if (side == .client) ?chapulin.Ticket else void,
 
-        /// Client: the ch_cfg the values build, then ch_record_init with the API's send,
+        /// Client: the ch_cfg the values build, then ch_tcp_init with the API's send,
         /// recv and, when the values' takes_tickets is true, on_ticket.
         /// Server: the ch_cfg the values build, then
-        /// ch_srv_record_init with the API's send, recv and on_record_out;
+        /// ch_srv_tcp_init with the API's send, recv and on_record_out;
         /// sni_buf is where this connection's server_name is copied
         /// (srv.sni_buf, srv.sni_cap). Under RAND=session each also stores
         /// the values' random and points rand_bytes at it. On
         /// error.Invalid the session is failed until the next init.
         pub const init = if (side == .client) initClient else initServer;
-        /// Client: ch_record_in. Server: ch_srv_record_in, which writes the
+        /// Client: ch_tcp_in. Server: ch_srv_tcp_in, which writes the
         /// server's flight into output, and after a failure the failure's
         /// alert record, which outputLen counts.
-        pub const recordIn = if (side == .client) recordInClient else recordInServer;
-        /// ch_record_out: bytes the client owes, 0 when it owes none. After
+        pub const recordIn = if (side == .client) tcpInClient else tcpInServer;
+        /// ch_tcp_out: bytes the client owes, 0 when it owes none. After
         /// a failed recordIn, the failure's alert record, and error.Invalid
         /// once all of it has been returned.
-        pub const recordOut = if (side == .client) recordOutClient else @compileError("a server writes its flight from recordIn");
+        pub const recordOut = if (side == .client) tcpOutClient else @compileError("a server writes its flight from recordIn");
         /// Bytes the last recordIn wrote into output, which a failed
         /// recordIn also sets: the records of the flight before the
         /// failure, then the failure's alert record
@@ -161,10 +161,10 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         pub const suite = if (@hasField(c.ch_tls, "suite")) suiteOf else @compileError("suite needs SUITE=aesgcm or a server role");
         /// ch_tls.server_cert_type.
         pub const serverCertType = if (@hasField(c.ch_tls, "server_cert_type")) serverCertTypeOf else @compileError("serverCertType needs TRUST=webpki");
-        /// Reserved. No C call starts a record-mode KeyUpdate: write sends
+        /// Reserved. No C call starts a tcp-nonblocking KeyUpdate: write sends
         /// one inside ch_write, as the answer the peer's request owes or as
         /// the last record an AES-GCM write key seals.
-        pub const keyUpdate = @compileError("chapulin has no call that starts a record-mode KeyUpdate");
+        pub const keyUpdate = @compileError("chapulin has no call that starts a tcp-nonblocking KeyUpdate");
 
         fn initClient(self: *Self, values: chapulin.Client) error{Invalid}!void {
             self.prepare();
@@ -175,7 +175,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
             self.setCallbacks(&cfg);
             if (values.takes_tickets) cfg.on_ticket = onTicket;
             chapulin.attachRandom(&cfg, &self.random, values.random);
-            return chapulin.fromCode(error{Invalid}, c.ch_record_init(&self.record, &cfg));
+            return chapulin.fromCode(error{Invalid}, c.ch_tcp_init(&self.tcp, &cfg));
         }
 
         fn initServer(self: *Self, values: chapulin.Server, sni_buf: []u8) error{Invalid}!void {
@@ -185,17 +185,17 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
                 return err;
             };
             self.setCallbacks(&cfg);
-            cfg.srv.on_record_out = onRecordOut;
+            cfg.srv.on_record_out = onTcpOut;
             cfg.srv.sni_buf = if (sni_buf.len == 0) null else sni_buf.ptr;
             cfg.srv.sni_cap = sni_buf.len;
             chapulin.attachRandom(&cfg, &self.random, values.random);
-            return chapulin.fromCode(error{Invalid}, c.ch_srv_record_init(&self.record, &cfg));
+            return chapulin.fromCode(error{Invalid}, c.ch_srv_tcp_init(&self.tcp, &cfg));
         }
 
         /// What an init call leaves after a refusal, for a list longer than its Limits cap.
         fn failInit(self: *Self) void {
-            self.record = std.mem.zeroes(c.ch_record);
-            self.record.t.state = c.CH_ST_FAILED;
+            self.tcp = std.mem.zeroes(c.ch_tcp);
+            self.tcp.t.state = c.CH_ST_FAILED;
         }
 
         fn prepare(self: *Self) void {
@@ -212,25 +212,25 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
             cfg.io = &self.hook;
         }
 
-        fn recordInClient(self: *Self, input: []u8) error{ Invalid, Proto, Auth, Cap }!usize {
+        fn tcpInClient(self: *Self, input: []u8) error{ Invalid, Proto, Auth, Cap }!usize {
             var consumed: usize = 0;
-            try chapulin.fromCode(error{ Invalid, Proto, Auth, Cap }, c.ch_record_in(&self.record, input.ptr, input.len, &consumed));
+            try chapulin.fromCode(error{ Invalid, Proto, Auth, Cap }, c.ch_tcp_in(&self.tcp, input.ptr, input.len, &consumed));
             return consumed;
         }
 
-        fn recordInServer(self: *Self, input: []u8, output: []u8) error{ Proto, Auth, Cap, Io }!Progress {
+        fn tcpInServer(self: *Self, input: []u8, output: []u8) error{ Proto, Auth, Cap, Io }!Progress {
             var consumed: usize = 0;
             self.io.begin(&.{}, output);
             defer self.io.end();
-            const rc = c.ch_srv_record_in(&self.record, input.ptr, input.len, &consumed);
+            const rc = c.ch_srv_tcp_in(&self.tcp, input.ptr, input.len, &consumed);
             self.io.output_len = self.io.written;
             try chapulin.fromCode(error{ Proto, Auth, Cap, Io }, rc);
             return .{ .consumed = consumed, .written = self.io.written };
         }
 
-        fn recordOutClient(self: *Self, output: []u8) error{ Invalid, Cap }!usize {
+        fn tcpOutClient(self: *Self, output: []u8) error{ Invalid, Cap }!usize {
             var n: usize = 0;
-            try chapulin.fromCode(error{ Invalid, Cap }, c.ch_record_out(&self.record, output.ptr, output.len, &n));
+            try chapulin.fromCode(error{ Invalid, Cap }, c.ch_tcp_out(&self.tcp, output.ptr, output.len, &n));
             return n;
         }
 
@@ -259,15 +259,15 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         }
 
         fn sniServer(self: *const Self) ?[]const u8 {
-            const t = &self.record.t;
+            const t = &self.tcp.t;
             const len = c.ch_sni_len(t);
             if (len == 0) return null;
             return t.cfg.srv.sni_buf[0..len];
         }
 
-        /// ch_record_state.
-        pub fn recordState(self: *const Self) chapulin.State {
-            return @enumFromInt(c.ch_record_state(&self.record));
+        /// ch_tcp_state.
+        pub fn tcpState(self: *const Self) chapulin.State {
+            return @enumFromInt(c.ch_tcp_state(&self.tcp));
         }
 
         /// ch_alert_sent: the fatal alert this side's failure chose, null
@@ -275,18 +275,18 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         /// stages it for recordOut, a server's recordIn writes it into
         /// output, and read and write send it into their own output.
         pub fn alertSent(self: *const Self) ?u8 {
-            const alert = c.ch_alert_sent(&self.record.t);
+            const alert = c.ch_alert_sent(&self.tcp.t);
             return if (alert == 0) null else alert;
         }
 
         /// ch_alert_received: the fatal alert the peer sent, null when none
         /// arrived. A session that failed on it sent nothing in answer.
         pub fn alertReceived(self: *const Self) ?u8 {
-            const alert = c.ch_alert_received(&self.record.t);
+            const alert = c.ch_alert_received(&self.tcp.t);
             return if (alert == 0) null else alert;
         }
 
-        /// Reads at most one whole record of input: ch_record_whole_len
+        /// Reads at most one whole record of input: ch_tcp_whole_len
         /// says how many bytes that is, and ch_read reads them through the
         /// API's recv. Plaintext pt cannot hold stays in the receive buffer
         /// and comes out of the next read, which takes no input. A caller
@@ -299,17 +299,17 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         /// error.KeyUpdateLimit is CH_KEY_UPDATE_LIMIT: the peer sent one
         /// KeyUpdate past CH_KEY_UPDATE_RUN_MAX in a row (session.h).
         pub fn read(self: *Self, input: []const u8, pt: []u8, reply: []u8) error{ Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit }!Read {
-            const whole = c.ch_record_whole_len(input.ptr, input.len);
+            const whole = c.ch_tcp_whole_len(input.ptr, input.len);
             self.io.begin(input[0..whole], reply);
             defer self.io.end();
-            const rc = c.ch_read(&self.record.t, pt.ptr, pt.len);
+            const rc = c.ch_read(&self.tcp.t, pt.ptr, pt.len);
             self.io.reply_len = self.io.written;
             var out: Read = .{ .consumed = self.io.taken, .pt_len = 0, .reply_len = self.io.written, .peer_closed = false };
             if (rc > 0) {
                 out.pt_len = @intCast(rc);
             } else if (rc == 0) {
                 out.peer_closed = true;
-            } else if (rc != c.CH_RECORD_AGAIN) {
+            } else if (rc != c.CH_TCP_AGAIN) {
                 try chapulin.fromCode(error{ Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit }, rc);
             }
             return out;
@@ -326,7 +326,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
             if (pt.len > self.writableLen(output.len)) return error.Cap;
             self.io.begin(&.{}, output);
             defer self.io.end();
-            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write(&self.record.t, pt.ptr, pt.len));
+            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write(&self.tcp.t, pt.ptr, pt.len));
             return self.io.written;
         }
 
@@ -342,13 +342,13 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
             if (total > self.writableLen(output.len)) return error.Cap;
             self.io.begin(&.{}, output);
             defer self.io.end();
-            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write_parts(&self.record.t, parts.ptr, parts.len));
+            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write_parts(&self.tcp.t, parts.ptr, parts.len));
             return self.io.written;
         }
 
         /// The most plaintext one write seals into cap bytes: ch_writable_len.
         pub fn writableLen(self: *const Self, cap: usize) usize {
-            return c.ch_writable_len(&self.record.t, cap);
+            return c.ch_writable_len(&self.tcp.t, cap);
         }
 
         /// ch_close: sends this side's close_notify into output, at most
@@ -358,7 +358,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         pub fn close(self: *Self, output: []u8) error{Io}!usize {
             self.io.begin(&.{}, output);
             defer self.io.end();
-            c.ch_close(&self.record.t);
+            c.ch_close(&self.tcp.t);
             if (self.io.refused) return error.Io;
             return self.io.written;
         }
@@ -374,23 +374,23 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         pub fn fail(self: *Self, description: u8, output: []u8) error{ Invalid, Proto, Cap, Io }!usize {
             self.io.begin(&.{}, output);
             defer self.io.end();
-            try chapulin.fromCode(error{ Invalid, Proto, Cap, Io }, c.ch_fail(&self.record.t, description));
+            try chapulin.fromCode(error{ Invalid, Proto, Cap, Io }, c.ch_fail(&self.tcp.t, description));
             return self.io.written;
         }
 
-        /// ch_record_close, then the ticket slot zeroed: every secret
+        /// ch_tcp_close, then the ticket slot zeroed: every secret
         /// wiped and the session dead. A connected caller calls close first.
-        pub fn recordClose(self: *Self) void {
-            c.ch_record_close(&self.record);
+        pub fn tcpClose(self: *Self) void {
+            c.ch_tcp_close(&self.tcp);
             self.zeroTicketSlot();
         }
 
         fn exportOf(self: *const Self, label: [:0]const u8, context: []const u8, out: []u8) error{Invalid}!void {
-            return chapulin.fromCode(error{Invalid}, c.ch_export(&self.record.t, label.ptr, context.ptr, context.len, out.ptr, out.len));
+            return chapulin.fromCode(error{Invalid}, c.ch_export(&self.tcp.t, label.ptr, context.ptr, context.len, out.ptr, out.len));
         }
 
         fn alpnSelectedOf(self: *const Self) ?[]const u8 {
-            const t = &self.record.t;
+            const t = &self.tcp.t;
             const index = c.ch_alpn_selected(t);
             if (index == c.CH_ALPN_NONE) return null;
             const entry = t.cfg.alpn_protocols[index];
@@ -399,32 +399,32 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
 
         /// ch_tls.group, null while 0.
         pub fn group(self: *const Self) ?chapulin.Group {
-            const code = c.ch_group(&self.record.t);
+            const code = c.ch_group(&self.tcp.t);
             return if (code == 0) null else @enumFromInt(code);
         }
 
         fn suiteOf(self: *const Self) ?chapulin.Suite {
-            const code = c.ch_suite(&self.record.t);
+            const code = c.ch_suite(&self.tcp.t);
             return if (code == 0) null else @enumFromInt(code);
         }
 
         /// ch_tls.psk_selected: a PSK authenticated the handshake.
         pub fn pskSelected(self: *const Self) bool {
-            return c.ch_psk_selected(&self.record.t) != 0;
+            return c.ch_psk_selected(&self.tcp.t) != 0;
         }
 
         fn serverCertTypeOf(self: *const Self) chapulin.CertType {
-            return @enumFromInt(c.ch_server_cert_type(&self.record.t));
+            return @enumFromInt(c.ch_server_cert_type(&self.tcp.t));
         }
 
         /// ch_tls.peer_limit: the most plaintext per record the peer takes.
         pub fn peerLimit(self: *const Self) u16 {
-            return c.ch_peer_limit(&self.record.t);
+            return c.ch_peer_limit(&self.tcp.t);
         }
 
         /// ch_tls.read_closed: the peer's close_notify arrived.
         pub fn readClosed(self: *const Self) bool {
-            return c.ch_read_closed(&self.record.t) != 0;
+            return c.ch_read_closed(&self.tcp.t) != 0;
         }
 
         /// Bytes the last read wrote into reply, which a failed read also sets.
@@ -447,7 +447,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         }
 
         /// cfg.srv.on_record_out's rule: 0 for a whole record taken.
-        fn onRecordOut(io: ?*anyopaque, p: [*c]const u8, n: usize) callconv(.c) c_int {
+        fn onTcpOut(io: ?*anyopaque, p: [*c]const u8, n: usize) callconv(.c) c_int {
             return if (fromHook(io).io.put(p[0..n])) 0 else -1;
         }
 

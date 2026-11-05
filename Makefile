@@ -1016,8 +1016,8 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 TRANSPORT_DEF := -DCH_TRANSPORT_TCP_NONBLOCKING
 TRANSPORT_FILTER := src/handshake.c
 TRANSPORT_ADD := src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c
-PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_close \
-                    ch_record_whole_len ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_ticket_obfuscated_age \
+PUBLIC_TRANSPORT := ch_tcp_init ch_tcp_in ch_tcp_out ch_tcp_state ch_tcp_close \
+                    ch_tcp_whole_len ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_ticket_obfuscated_age \
                     ch_alert_sent ch_alert_received
 else ifeq ($(TRANSPORT),tcp-blocking)
 TRANSPORT_DEF :=
@@ -1126,8 +1126,8 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 # The server's driver replaces the client's, source for source:
 # srv_tcp_nonblocking.c is the step table tcp_nonblocking_step.c is for
 # a client, and srv_handshake.c is the blocking driver this transport
-# exists to avoid. tcp_nonblocking.c stays, because ch_record_state and
-# ch_record_close read no side; its own client driver is guarded out
+# exists to avoid. tcp_nonblocking.c stays, because ch_tcp_state and
+# ch_tcp_close read no side; its own client driver is guarded out
 # there. tcp_nonblocking_frame.c stays for the same reason: one inbound
 # record reads the same from either side, and a failure's alert record
 # is sealed the same way on either side.
@@ -1137,11 +1137,11 @@ ROLE_ADD    := $(filter-out src/srv_handshake.c,$(ROLE_ADD)) src/srv_tcp_nonbloc
 # the two session calls either role uses, the record framing call either
 # role uses, the record-layer calls a connected session needs, and
 # alert.h's two calls. Not
-# ch_record_init, ch_record_in or ch_record_out, which are the client's
+# ch_tcp_init, ch_tcp_in or ch_tcp_out, which are the client's
 # driver, not ch_ticket_obfuscated_age, which only a client presents, and
 # not ch_srv_accept, which is the blocking one.
-PUBLIC_ROLE := ch_srv_record_init ch_srv_record_in ch_srv_check \
-               ch_record_state ch_record_close ch_record_whole_len \
+PUBLIC_ROLE := ch_srv_tcp_init ch_srv_tcp_in ch_srv_check \
+               ch_tcp_state ch_tcp_close ch_tcp_whole_len \
                ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_alert_sent ch_alert_received
 else
 PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail \
@@ -1198,7 +1198,7 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 # stays, unlike the ROLE=server arm: this object keeps the client half, so
 # both step tables compile and each driver calls its own.
 ROLE_ADD    := $(filter-out src/srv_handshake.c,$(ROLE_ADD)) src/srv_tcp_nonblocking.c
-PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_record_init ch_srv_record_in ch_srv_check
+PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_tcp_init ch_srv_tcp_in ch_srv_check
 else
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_accept ch_srv_check
 endif
@@ -1620,7 +1620,7 @@ endif
 # an RRSIG's signature for algorithms 8, 10, 13, 14 and 15. The checks
 # run on rsa_pkcs1.c, rsa_mont64.c and p256.c, which a host TRUST=webpki
 # object alone packages, so the axis refuses every other build. Each call
-# carries the transport in its symbol name, so the record-mode and QUIC
+# carries the transport in its symbol name, so the tcp-nonblocking and QUIC
 # objects of one image both take the axis.
 DNSSEC ?= off
 ifeq ($(DNSSEC),on)
@@ -2622,15 +2622,15 @@ LIB_HOOKS = ch_assert_fail $(if $(filter extern,$(RAND)),ch_rand_bytes) \
 # both builds name the same headers (lint-zig-build). DECLARES_<header>
 # lists the names one header declares, under their declared names.
 DECLARES_tls.h := ch_connect ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_export
-DECLARES_tcp_nonblocking.h := ch_record_init ch_record_in ch_record_out ch_record_state \
-                              ch_record_close ch_record_whole_len
+DECLARES_tcp_nonblocking.h := ch_tcp_init ch_tcp_in ch_tcp_out ch_tcp_state \
+                              ch_tcp_close ch_tcp_whole_len
 DECLARES_quic.h := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_crypto_out \
                    ch_quic_switch_version ch_quic_negotiated_version ch_quic_seal \
                    ch_quic_seal_close ch_quic_open ch_quic_retry_ok ch_quic_key_update \
                    ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard ch_quic_state \
                    ch_quic_alert ch_quic_error_code ch_quic_close
 DECLARES_srv.h := ch_srv_accept ch_srv_check
-DECLARES_srv_tcp_nonblocking.h := ch_srv_record_init ch_srv_record_in
+DECLARES_srv_tcp_nonblocking.h := ch_srv_tcp_init ch_srv_tcp_in
 DECLARES_srv_quic.h := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag
 DECLARES_quic_token.h := ch_srv_quic_token_mint ch_srv_quic_token_check
 DECLARES_x509_ca.h := ch_pubkey_from_pem
@@ -4173,7 +4173,7 @@ tx-record-check: bin/webpki_loop_tx_record
 # TCP host object holds no table, so the bit chooses the suites alone.
 # It links test/webpki_ticket_count.c in place of webpki_ticket.c
 # (docs/decisions.md 132). The rows of test/webpki_ticket_rows.h then
-# count the hashes of each ch_record_init. The count also records the cpu
+# count the hashes of each ch_tcp_init. The count also records the cpu
 # value of each received ticket's binding.
 WEBPKI_LOOP_AES_SRCS = $(call host_srcs,$(WEBPKI_LOOP_SRCS) src/aes.c $(AES_HW_SRCS) src/gcm.c)
 bin/webpki_loop_aes: test/webpki_loop_test.c test/webpki_loop_suites.h test/webpki_loop_runtime.h \
@@ -4734,8 +4734,8 @@ bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count
 # ran. Every case of each runs with both ends
 # describing the CPU as TEST_CPU (test/test_cpu.h), which holds
 # CH_CPU_CONSTANT_TIME_MULTIPLY. Its test/*_cpu.h rows hold ch_cfg.cpu's
-# refusals at ch_connect, ch_record_init, ch_quic_init, ch_srv_accept,
-# ch_srv_record_init, ch_srv_quic_init and ch_srv_check, and its
+# refusals at ch_connect, ch_tcp_init, ch_quic_init, ch_srv_accept,
+# ch_srv_tcp_init, ch_srv_quic_init and ch_srv_check, and its
 # test/*_widemul.h rows set each end's multiply bit. cpu_cfg.h refuses the
 # define on a compiler that fails the host test, so the binaries are named
 # only where HOST_TARGET found one, and check-skips says when it did not.
@@ -4841,7 +4841,7 @@ bin/tlsclient_tcp_nonblocking: test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_S
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -I. -o $@ test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_SRCS)
 
 # The CA build's ticket epoch rule at the two non-blocking client entries,
-# ch_record_init and ch_quic_init, from one main. No other test binary
+# ch_tcp_init and ch_quic_init, from one main. No other test binary
 # builds either transport under -DCH_TRUST_CA, and bin/unit_ca holds
 # ch_connect to the same boundary. The QUIC one adds x509.c and
 # x509_der.c, the CA chain verifier handshake_auth.c calls in that mode,
@@ -5280,7 +5280,7 @@ check-lib-webpki: bin/srv_flight_test
 # host client on an event loop builds. It is the build that checks the
 # tcp-nonblocking export list on the client side at all, and the one that
 # catches an unguarded ch_connect: this transport compiles
-# ch_record_init and no ch_connect, so a trust mode whose ch_connect
+# ch_tcp_init and no ch_connect, so a trust mode whose ch_connect
 # is not guarded imports the ch_handshake nothing compiled
 # (https://github.com/c4milo/chapulin/issues/171). It took 2.4 s cold.
 check-lib-webpki-tcp-nonblocking:
@@ -5406,7 +5406,7 @@ endif
 check-lib-exporter:
 	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern EXPORTER=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # The DNSSEC axis (https://github.com/c4milo/chapulin/issues/189), on
-# both objects cocuyo reaches through colibri: the record-mode client and
+# both objects cocuyo reaches through colibri: the tcp-nonblocking client and
 # the QUIC one. Each proves the object exports the five DNSSEC calls under
 # its transport's names. A host object alone takes the axis.
 check-lib-dnssec:
@@ -5630,7 +5630,7 @@ ci-slow: check-skips $(CHECK_BUILDS) bin/handshake_sequence_pq bin/pemkey bin/pe
 	$(MAKE) ct-widemul-check
 	# check's lint-zig-build holds build.zig to make over the default
 	# object, the four colibri links, stompy's and a SUITE=aesgcm
-	# record-mode object. This holds it over every lib-check build's
+	# tcp-nonblocking object. This holds it over every lib-check build's
 	# configuration too, so every value of every axis meets build.zig.
 	# It took 29 s with only those seven objects built.
 	+ZIG='$(ZIG)' CC='$(CC)' ./test/zig-build-check.sh --roster
@@ -6918,7 +6918,7 @@ lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-chec
 # tests, test/localize-check.sh compares the localizer with llvm-objcopy
 # -G and nmedit -s over objects of both formats, and
 # test/zig-build-check.sh builds the default object, the four colibri
-# links, stompy's and a SUITE=aesgcm record-mode object both ways and
+# links, stompy's and a SUITE=aesgcm tcp-nonblocking object both ways and
 # requires the same sources, defines, exports and build record, builds
 # test/zig-consumer against each object through the module the package
 # exports for it and runs the API's unit tests and, for each ROLE=both

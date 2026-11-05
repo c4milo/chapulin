@@ -27,7 +27,7 @@
 //
 // It is declared only where it is defined, in a TRANSPORT=tcp-blocking
 // object with a client. A ROLE=server object exports ch_srv_accept in
-// its place (srv.h), and a TRANSPORT=tcp-nonblocking one ch_record_init
+// its place (srv.h), and a TRANSPORT=tcp-nonblocking one ch_tcp_init
 // (tcp_nonblocking.h), so a firmware that calls ch_connect against
 // either fails to compile rather than to link. A
 // TRANSPORT=quic-nonblocking object defines no call in this header, and
@@ -118,7 +118,7 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 // one, and a ch_read that fails sends one, unless the peer's fatal alert
 // is what failed it: that one it answers with nothing. A tcp-nonblocking
 // handshake that fails after this side's write key is installed emits one
-// through ch_record_out or cfg.srv.on_record_out, and one that fails
+// through ch_tcp_out or cfg.srv.on_record_out, and one that fails
 // before it emits the alert in the clear, REC_HDR + 2 bytes
 // (tcp_nonblocking.h).
 #define CH_ALERT_RECORD_LEN (REC_OVERHEAD + 2)
@@ -166,7 +166,7 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 // its close_notify is never read, which is how §6.1's rule to ignore it
 // is kept. ch_read returns 0 after ch_close as well.
 //
-// A TRANSPORT=tcp-nonblocking build may also return CH_RECORD_AGAIN (cfg.h): the
+// A TRANSPORT=tcp-nonblocking build may also return CH_TCP_AGAIN (cfg.h): the
 // caller's recv returned 0 at a record boundary, so no record has arrived
 // yet. The session stays connected and every record already read has
 // been handled, a ticket or a KeyUpdate among them; the caller calls

@@ -1,7 +1,7 @@
 invariant: INV-14
 file: src/tcp_nonblocking.c
 catches: webpki_loop_tcp_nonblocking
-reason: the webpki ch_record_init hashes the configuration for a session
+reason: the webpki ch_tcp_init hashes the configuration for a session
   that takes tickets but leaves ch_tls.takes_tickets at 0. So
   handshake_post.c gives no ticket to on_ticket, and no session can
   resume. The loop's full handshake requires one ticket.

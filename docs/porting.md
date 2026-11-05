@@ -742,13 +742,13 @@ chapulin through colibri:
 The library draws at these points and no others, from `ch_rand_bytes` or,
 under `RAND=session`, from the session's own `cfg.rand_bytes`:
 
-- **A client:** in `ch_connect`, `ch_record_init` and `ch_quic_init`, for its
+- **A client:** in `ch_connect`, `ch_tcp_init` and `ch_quic_init`, for its
   key share, its ClientHello random and, where it offers X25519MLKEM768, the
   ML-KEM seed. A `TRUST=webpki` client also draws in the call that delivers a
   HelloRetryRequest naming secp256r1, for its P-256 key share
   (`docs/decisions.md` 63).
 - **A server:** in `ch_srv_check` when an RSA-PSS identity is provisioned,
-  for the signature's salt; in `ch_srv_record_init`, `ch_srv_quic_init` and
+  for the signature's salt; in `ch_srv_tcp_init`, `ch_srv_quic_init` and
   `ch_srv_accept`, for its x25519 key share; in the call that delivers the
   ClientHello, for the ServerHello random, the ML-KEM encapsulation where it
   selects X25519MLKEM768, the P-256 key share where it selects secp256r1 and

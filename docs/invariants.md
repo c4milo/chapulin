@@ -136,7 +136,7 @@ last `ROLE=server` stub, as the entry said it would.
   - `hsf_begin` in `handshake_flight.c` draws the x25519 key-share
     scalar and the ClientHello random, and in the `KEX=pq` and
     `TRUST=webpki` builds the ML-KEM (d, z) seed: three calls.
-    `ch_connect`, `ch_record_init` and `ch_quic_init` call it.
+    `ch_connect`, `ch_tcp_init` and `ch_quic_init` call it.
   - `draw_p256_key` in `handshake_groups.c` draws the `TRUST=webpki`
     client's P-256 scalar, only when a HelloRetryRequest names
     secp256r1 (decisions.md 63).
@@ -145,7 +145,7 @@ last `ROLE=server` stub, as the entry said it would.
   - `srv_kex_begin` in `srv_kex.c` draws the x25519 key-share scalar,
     in every server build but `PROFILE=cnsa2`, which runs no x25519.
     `srv_begin` in `srv_flight.c` calls it, and `ch_srv_accept`,
-    `ch_srv_record_init` and `ch_srv_quic_init` call `srv_begin`.
+    `ch_srv_tcp_init` and `ch_srv_quic_init` call `srv_begin`.
   - `srv_send_server_hello` in `srv_flight.c` draws the ServerHello
     random. These two sites draw the values `hsf_begin` draws for a
     client, for the same reasons, so they take the same audit.
@@ -583,8 +583,8 @@ last `ROLE=server` stub, as the entry said it would.
 
 - **Claim.** A `TRANSPORT=tcp-nonblocking` build runs its whole handshake without
   calling `ch_cfg.send` or `ch_cfg.recv`. The caller feeds bytes in and
-  takes bytes out: a client through `ch_record_in` and `ch_record_out`,
-  a server through `ch_srv_record_in` and `ch_srv_cfg.on_record_out`.
+  takes bytes out: a client through `ch_tcp_in` and `ch_tcp_out`,
+  a server through `ch_srv_tcp_in` and `ch_srv_cfg.on_record_out`.
   The alert of a handshake failure leaves the same way (INV-13).
   Both callbacks are still required at configuration time, because
   `ch_read` and `ch_write` call them once the session is connected, and
@@ -626,7 +626,7 @@ last `ROLE=server` stub, as the entry said it would.
   never hands them to a client -- so a server flight the client refuses
   fails in `check` rather than in an interop run.
   `test/violations/record-in-waits-for-the-rest.violation` is the client's
-  mirror of the server mutant above: it makes `ch_record_in` call
+  mirror of the server mutant above: it makes `ch_tcp_in` call
   `cfg.recv` to wait for the rest of a message, which still completes
   the handshake, and requires that binary to fail.
   `bin/tlsclient_tcp_nonblocking` still covers the client against a real
@@ -650,7 +650,7 @@ last `ROLE=server` stub, as the entry said it would.
   `test/lib-check-webpki-tcp-nonblocking.sh` to fail, because the compiled call
   imports the `ch_handshake` this variant does not compile
   ([171](https://github.com/c4milo/chapulin/issues/171)). That build is
-  the only client object with `ch_record_init` and no `ch_connect`, so
+  the only client object with `ch_tcp_init` and no `ch_connect`, so
   no other build reports it.
 - **Violation.** A PR adds a `recv` call to a tcp-nonblocking step so the
   driver can wait for the rest of a message, or routes one message of
@@ -1084,7 +1084,7 @@ last `ROLE=server` stub, as the entry said it would.
   `ch_writable_len` returns the most plaintext one `ch_write` sends in
   `cap` bytes of records, the KeyUpdate record `ch_write` sends at an
   AES-GCM write key's ceiling or for an owed answer included (INV-10,
-  INV-55); `ch_record_whole_len`
+  INV-55); `ch_tcp_whole_len`
   answers where the record at the front of the caller's bytes ends, and
   `REC_HDR` for a length field above 2^14 + 256, which no peer may send;
   and
@@ -1121,7 +1121,7 @@ last `ROLE=server` stub, as the entry said it would.
     it sizes sends a KeyUpdate; it counts no second KeyUpdate, so under
     AES-GCM the value it returns stops at the records the key has left and
     `REC_AES_GCM_RECORDS_MAX - 1` more (`records_per_key`, tls.h).
-    `ch_record_whole_len` (`tcp_nonblocking_frame.c`) reads the length
+    `ch_tcp_whole_len` (`tcp_nonblocking_frame.c`) reads the length
     field through the `rbuf` reader. `tls_write.c` asserts the two record
     lengths are 24 and 27.
   - The receive limit: each role advertises its buffer's room after the
@@ -1184,7 +1184,7 @@ last `ROLE=server` stub, as the entry said it would.
     and `srv-parser-record-size-limit-floor` require it to fail.
   - CBMC: `srv_accept` proves that the server's `peer_limit` never
     exceeds `CH_TX_PT` after the client's limit is stored.
-  - CBMC: `record_whole_len` proves `ch_record_whole_len`'s whole
+  - CBMC: `record_whole_len` proves `ch_tcp_whole_len`'s whole
     contract for every `n` up to 2^20, and `writable_len` runs the value
     `ch_writable_len` returns through the real `ch_write` for every
     `cap` up to 1,630 bytes and every `peer_limit` from 63, with an
@@ -1212,7 +1212,7 @@ last `ROLE=server` stub, as the entry said it would.
     checks that `ch_close` and a KeyUpdate answer send 24 and 27 bytes.
     `inv38-writable-len-skips-owed-answer` counts no KeyUpdate record
     while an answer is owed, and `bin/unit` fails;
-    `bin/tcp_nonblocking_loop_test` holds `ch_record_whole_len` to
+    `bin/tcp_nonblocking_loop_test` holds `ch_tcp_whole_len` to
     a record one byte short, a whole one, the largest the RFC allows and
     the first length past it. `inv38-writable-len-ignores-peer-limit` and
     `inv38-whole-len-oversize-waits` require them to fail.
@@ -2843,7 +2843,7 @@ last `ROLE=server` stub, as the entry said it would.
   `ch_build_info_tcp_nonblocking` or `ch_build_info_quic_nonblocking`, and each of its fields holds what
   `build.h` computes under that object's defines: the record format, one
   bit per build define that changes a public layout or bound, the sizes
-  of `ch_cfg`, `ch_tls`, `ch_ticket`, `ch_record`, `ch_quic` and
+  of `ch_cfg`, `ch_tls`, `ch_ticket`, `ch_tcp`, `ch_quic` and
   `ch_rsa_priv`, and five bounds, the last of them
   `CH_KEY_UPDATE_RUN_MAX` in a TCP object (INV-55). A consumer that
   computes the same values under its own defines, through
@@ -2957,7 +2957,7 @@ last `ROLE=server` stub, as the entry said it would.
   `CH_ROLE_SERVER` and its bundle call under `CH_TRUST_WEBPKI`. A test
   binary that runs the provisioning walk outside a
   CA build defines `CH_X509_CA_TEST`, which no object's defines include.
-  `build.zig` copies `chapulin.zig`, `chapulin_record.zig`,
+  `build.zig` copies `chapulin.zig`, `chapulin_tcp.zig`,
   `chapulin_quic.zig`, `chapulin_ticket.zig`, `chapulin_pem.zig` and
   `chapulin_cpu.zig` into a directory of the configuration's own, roots
   the module there, and adds the object to it with `addObjectFile`. The
@@ -2969,7 +2969,7 @@ last `ROLE=server` stub, as the entry said it would.
   product on a host.
 - **Check.** `make lint-zig-build` runs `test/zig-build-check.sh`, which
   builds the default object, the four colibri links, stompy's
-  `TX_RECORD=16384` object and a `SUITE=aesgcm` record-mode object both
+  `TX_RECORD=16384` object and a `SUITE=aesgcm` tcp-nonblocking object both
   ways and compares their sources, defines
   and exports, links `test/build_test.c` against each Zig object under
   make's defines, and links two Zig objects of different transports into
@@ -2983,7 +2983,7 @@ last `ROLE=server` stub, as the entry said it would.
   error of every code, and compiles every declaration the object has;
   `loop.zig` runs a client and a server
   of each `ROLE=both` object against each other through the API alone,
-  in record mode and over QUIC (`docs/zig.md`, "How it is checked"), and
+  over tcp-nonblocking and over QUIC (`docs/zig.md`, "How it is checked"), and
   under `SUITE=aesgcm` has each side write across its AES-GCM write key's
   ceiling, where `writableLen` must count the KeyUpdate record to the
   byte and `write` must refuse whole an output one byte short of the
@@ -3040,7 +3040,7 @@ last `ROLE=server` stub, as the entry said it would.
   so it no longer resumes; `inv36-zig-api-ticket-drops-quic-version`
   zeroes a copied ticket's QUIC version, so `ch_quic_init` refuses it;
   `inv36-zig-api-ticket-slot-kept` leaves
-  the resumption PSK in the slot after `takeTicket` and `recordClose`;
+  the resumption PSK in the slot after `takeTicket` and `tcpClose`;
   `inv36-zig-api-record-ignores-takes-tickets` and
   `inv36-zig-api-quic-ignores-takes-tickets` set `on_ticket` in a client
   whose `takes_tickets` is false;
@@ -3537,15 +3537,15 @@ last `ROLE=server` stub, as the entry said it would.
   errors in that sense, and each public header says which of its codes
   are which, call by call; cfg.h states the rule beside the codes:
   - A refusal on entry, `CH_EINVAL`, which sent nothing. An init call,
-    `ch_connect`, `ch_record_init`, `ch_quic_init`, `ch_srv_accept`,
-    `ch_srv_record_init` or `ch_srv_quic_init`, leaves its session failed
+    `ch_connect`, `ch_tcp_init`, `ch_quic_init`, `ch_srv_accept`,
+    `ch_srv_tcp_init` or `ch_srv_quic_init`, leaves its session failed
     until the next init; every other call leaves the session as it was.
     No call returns `CH_EINVAL` after it has sent a byte: a server
     checks at init every identity fact its flight would otherwise meet
     (INV-14), and its flight answers its own refusals with `CH_EAUTH`
     (docs/decisions.md 74). A CA build's presented ticket whose
     `epoch` is below the stored epoch is a refusal on entry too
-    (docs/ca.md): `ch_connect`, `ch_record_init` and `ch_quic_init` each
+    (docs/ca.md): `ch_connect`, `ch_tcp_init` and `ch_quic_init` each
     return `CH_EINVAL` for it and leave `CH_EPOCH_REVOKED` in the
     session, where `ch_epoch_status` reads it. A first ClientHello too long for `ch_tls.tx`
     would be one too, because each client entry builds that hello before
@@ -3564,11 +3564,11 @@ last `ROLE=server` stub, as the entry said it would.
   - The non-blocking transports' results that leave the session live:
     `CH_ECAP` from a call whose own output buffer was short, a packet
     dropped (`CH_QUIC_DISCARD`, RFC 9001 §5.5), and no record yet
-    (`CH_RECORD_AGAIN`).
+    (`CH_TCP_AGAIN`).
 
   A failed QUIC session stays dead: it keeps only the write keys INV-17
   names, for one CONNECTION_CLOSE per level, and no call revives it.
-- `CH_RECORD_AGAIN` is the one returned after work was done, so its
+- `CH_TCP_AGAIN` is the one returned after work was done, so its
   terms are exact. `ch_read` returns it only when `cfg.recv` returns 0
   before a record's first byte. Every record read before that has been
   opened and handled: a NewSessionTicket went to `on_ticket`, a
@@ -3586,7 +3586,7 @@ last `ROLE=server` stub, as the entry said it would.
   wipe, sealed under `ch_tls.wr` when `ch_tls.keys` is set and in the
   clear otherwise, and the driver that called it emits the record the
   way it emits its others: the client stages it in `ch_tls.tx` for
-  `ch_record_out`, and the server pushes it through
+  `ch_tcp_out`, and the server pushes it through
   `cfg.srv.on_record_out`. `tlsi_fail` and `tcp_nonblocking_fail` write
   and send nothing once `ch_tls.alert_received` is set. `ch_fail` runs
   `tlsi_fail` for an alert the caller names and returns what its send
@@ -3599,7 +3599,7 @@ last `ROLE=server` stub, as the entry said it would.
   `quic_fail` read its alert. Each entry
   checks its configuration or its arguments before it sends a byte, and
   returns early, changing nothing, when the session cannot take the
-  call. `io_read_record` is the only source of `CH_RECORD_AGAIN`, and
+  call. `io_read_record` is the only source of `CH_TCP_AGAIN`, and
   `dispatch_one_record` in `tls.c` and `hspost_read` in
   `handshake_post.c` are the only places that return it without calling
   `tlsi_fail`.
@@ -3630,7 +3630,7 @@ last `ROLE=server` stub, as the entry said it would.
   `CH_EPOCH_REVOKED` in `epoch_status`.
   `bin/unit_ca` (`test/session_cfg_tests.h`) holds `ch_connect` to it,
   and `bin/ticket_epoch_tcp_nonblocking` and `bin/ticket_epoch_quic`
-  (`test/ticket_epoch_test.c`) hold `ch_record_init` and `ch_quic_init`.
+  (`test/ticket_epoch_test.c`) hold `ch_tcp_init` and `ch_quic_init`.
   `inv13-ticket-epoch-refusal-eauth` returns `CH_EAUTH` from
   `ch_connect` for that ticket again, and `bin/unit_ca` fails.
   `inv13-tcp-nonblocking-refusal-zeroes-epoch` and
@@ -3679,7 +3679,7 @@ last `ROLE=server` stub, as the entry said it would.
   wrong pin, a client Finished and a refused ticket push after it. Each
   failure emits one record: `REC_HDR + 2` bytes in the clear before the
   key, and `CH_ALERT_RECORD_LEN` bytes after it that open to 2 bytes of
-  plaintext under a copy of the peer's read key. `ch_record_out` hands the client's
+  plaintext under a copy of the peer's read key. `ch_tcp_out` hands the client's
   record over once and then answers `CH_EINVAL`, and the other side reads
   each record through `ch_alert_received`. `test/zig-consumer/loop_record.zig`
   runs failures on both sides of each key through the Zig API and
@@ -3773,7 +3773,7 @@ last `ROLE=server` stub, as the entry said it would.
   extensions with illegal_parameter, on a first hello and a retried one
   and on every server path, before the duplicate check runs
   (docs/decisions.md 59). Every client entry, `ch_connect`,
-  `ch_record_init` and `ch_quic_init`, refuses with `CH_EINVAL` and
+  `ch_tcp_init` and `ch_quic_init`, refuses with `CH_EINVAL` and
   sends nothing a configuration whose presented `ticket` has a lifetime
   of 0 or a PSK of no hash length the build holds, or, in a raw or ca
   build, a `trust_hash` that neither pin slot nor the external PSK of the
@@ -3818,13 +3818,13 @@ last `ROLE=server` stub, as the entry said it would.
   refuses one out of order (rfc9846.txt:1054-1058); each server entry
   sets `ch_tls.server`, so a `ROLE=both` object tells its sessions apart.
   `bin/tcp_blocking_loop_test` and `bin/tcp_nonblocking_loop_test` send
-  one to `ch_srv_accept`'s and `ch_srv_record_init`'s sessions and require
+  one to `ch_srv_accept`'s and `ch_srv_tcp_init`'s sessions and require
   unexpected_message and no `on_ticket` call, and
   `inv14-server-takes-client-ticket`,
   `inv14-srv-accept-leaves-session-unmarked` and
   `inv14-srv-record-init-leaves-session-unmarked` each require one of
   them to fail. Every server entry,
-  `ch_srv_accept`, `ch_srv_record_init` and `ch_srv_quic_init`, and the
+  `ch_srv_accept`, `ch_srv_tcp_init` and `ch_srv_quic_init`, and the
   boot check `ch_srv_check`, refuses with `CH_EINVAL` and sends nothing a
   configuration with a provisioned identity its flight could not sign
   with or send (`srv_identities_usable`, srv_auth.h): key lengths other
@@ -3864,7 +3864,7 @@ last `ROLE=server` stub, as the entry said it would.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
   branches memory-safe. The ticket age rule has boundary rows at each
   client entry: `bin/unit` for `ch_connect`,
-  `bin/tcp_nonblocking_loop_test` for `ch_record_init`,
+  `bin/tcp_nonblocking_loop_test` for `ch_tcp_init`,
   `bin/webpki_resume_test` and `bin/webpki_resume_tcp_nonblocking` for
   the webpki definition over both TCP drivers, and `bin/quic_loop_test`
   and `bin/quic_loop_webpki` for `ch_quic_init`. `bin/unit` also holds
@@ -3881,7 +3881,7 @@ last `ROLE=server` stub, as the entry said it would.
   `CH_TICKET_ID_MAX` bytes is taken and one of `CH_TICKET_ID_MAX + 1` or
   0 bytes is refused: `bin/unit`, `bin/unit_ca` and `bin/unit_pq`
   (`test/session_hello_tests.h`) for `ch_connect`,
-  `bin/tcp_nonblocking_loop_test` for `ch_record_init` and
+  `bin/tcp_nonblocking_loop_test` for `ch_tcp_init` and
   `bin/quic_driver_test` for `ch_quic_init`. Four violations move one
   bound each: inv14-psk-identity-over-cap-tcp,
   inv14-psk-identity-empty-tcp, inv14-psk-identity-over-cap-quic and
@@ -4121,7 +4121,7 @@ last `ROLE=server` stub, as the entry said it would.
   byte more refused, and every refused one refused by `ch_srv_check`
   and by `ch_srv_accept` before either callback runs.
   bin/srv_tcp_nonblocking_test signs its flight at an RSA `pub_len` of
-  `SRV_SIG_MAX` and refuses one byte more at `ch_srv_record_init`, and
+  `SRV_SIG_MAX` and refuses one byte more at `ch_srv_tcp_init`, and
   bin/srv_quic_test sends a one-byte certificate and refuses an empty
   one at `ch_srv_quic_init`, each with nothing sent. bin/p256_sign_test
   and bin/rsa_sign_test hold each key test to its signer's answer at
@@ -4137,8 +4137,8 @@ last `ROLE=server` stub, as the entry said it would.
   The host object's `ch_cfg.cpu` has rows at every init call and
   `ch_srv_check` in the host binaries: test/tcp_blocking_loop_cpu.h for
   `ch_connect`, `ch_srv_accept` and `ch_srv_check`,
-  test/tcp_nonblocking_loop_cpu.h for `ch_record_init` and
-  `ch_srv_record_init`, test/quic_loop_cpu.h for `ch_quic_init`,
+  test/tcp_nonblocking_loop_cpu.h for `ch_tcp_init` and
+  `ch_srv_tcp_init`, test/quic_loop_cpu.h for `ch_quic_init`,
   `ch_srv_quic_init` and `ch_srv_check`, and test/webpki_session_cpu.h for
   the webpki `ch_connect`. Each refuses 0, every defined bit but
   `CH_CPU_PROBED`, the first bit past `CH_CPU_AVX512_IFMA`, the top
@@ -6014,7 +6014,7 @@ last `ROLE=server` stub, as the entry said it would.
   the client sends in the same delivery as its Finished is left for
   `ch_read` rather than read by the finished handshake.
   `test/tcp_nonblocking_coalesced_tests.h` delivers the Finished and one
-  application record in one `ch_srv_record_in` call, and
+  application record in one `ch_srv_tcp_in` call, and
   `test/violations/inv22-srv-record-in-reads-past-finished.violation`
   keeps the loop going past the Finished and requires
   `bin/tcp_nonblocking_loop_test` to fail. A QUIC server refuses what the
@@ -6511,9 +6511,9 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-18 — no library-global mutable state
 
 - **Claim.** All state lives in the session struct the caller passes:
-  `ch_tls` under `TRANSPORT=tcp-blocking`, `ch_record` under
+  `ch_tls` under `TRANSPORT=tcp-blocking`, `ch_tcp` under
   `TRANSPORT=tcp-nonblocking` and `ch_quic` under
-  `TRANSPORT=quic-nonblocking`, in either role. `ch_record` and
+  `TRANSPORT=quic-nonblocking`, in either role. `ch_tcp` and
   `ch_quic` each hold a `ch_tls` beside the driver state that survives
   a return (`tcp_nonblocking.h`, `quic_session.h`), and a call that
   takes no session, such as `ch_srv_check` or the Retry token calls,

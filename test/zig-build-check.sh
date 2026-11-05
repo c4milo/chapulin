@@ -2,7 +2,7 @@
 # Builds the packaged object both ways, with make and with build.zig, and
 # requires the two to agree (docs/decisions.md 69). make lint-zig-build
 # runs it in check with no argument, over the default object, the four
-# colibri links, stompy's, a SUITE=aesgcm record-mode object and colibri's
+# colibri links, stompy's, a SUITE=aesgcm tcp-nonblocking object and colibri's
 # QUIC object holding both widening multiplies. check-slow
 # runs it with --roster, which adds the configuration of every lib-check
 # build in check. Both runs also build colibri's HTTP/2 object with
@@ -59,7 +59,7 @@
 #     values. A client whose takes_tickets is false must set no
 #     on_ticket, store no configuration hash and keep no ticket, and its
 #     ticket must still resume (docs/decisions.md 132). Under
-#     SUITE=aesgcm its record-mode loop also has each side write across
+#     SUITE=aesgcm its tcp-nonblocking loop also has each side write across
 #     its AES-GCM write key's ceiling (loop_key_limit.zig). In every
 #     object it has the server read one KeyUpdate past the run limit,
 #     which read must return as error.KeyUpdateLimit
@@ -117,7 +117,7 @@ link_flags=()
 # links: its HTTP/2 client and server objects, and its QUIC object under
 # the two trust modes its checks and its interop runner use. Then comes
 # stompy's, colibri's TCP object at TX_RECORD=16384 (docs/decisions.md 71
-# and 73). Then comes a record-mode ROLE=both object under SUITE=aesgcm,
+# and 73). Then comes a tcp-nonblocking ROLE=both object under SUITE=aesgcm,
 # whose loop writes across each AES-GCM write key's ceiling
 # (docs/decisions.md 78). It and the QUIC rows are host objects on the
 # M-series Macs and CI's x86_64 runner, which hold the AES instructions,

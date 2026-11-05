@@ -96,7 +96,7 @@ static void test_epoch_cfg(void) {
     // the only revocation check left: a ticket below the stored epoch
     // was retired by the bump that raised it, and one at or above it
     // still resumes. The refusal comes before a byte is sent, so its
-    // code is CH_EINVAL, as ch_record_init and ch_quic_init answer it
+    // code is CH_EINVAL, as ch_tcp_init and ch_quic_init answer it
     // (test/ticket_epoch_test.c), and no alert goes out. The pin stays
     // set: the hello offers the ticket in its place.
     static uint8_t psk[32] = {1};

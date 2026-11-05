@@ -4,7 +4,7 @@
 // that keeps its records, and
 // it holds no protocol rule beyond what one record is allowed to be and
 // which key protects the alert a failure owes. It also holds
-// ch_record_whole_len, the public call that tells a caller of either role
+// ch_tcp_whole_len, the public call that tells a caller of either role
 // where one inbound record ends (tcp_nonblocking.h).
 #include "tcp_nonblocking_frame.h"
 
@@ -25,7 +25,7 @@
 // tcp_nonblocking.h states the contract. The reader refuses a header p
 // does not yet hold whole, and the length it reads is compared with the
 // bytes after the header, so no sum here can wrap.
-size_t ch_record_whole_len(const uint8_t *p, size_t n) {
+size_t ch_tcp_whole_len(const uint8_t *p, size_t n) {
     rbuf r;
     rb_init(&r, p, n);
     rb_skip(&r, 3); // the content type and legacy_record_version
@@ -39,7 +39,7 @@ size_t ch_record_whole_len(const uint8_t *p, size_t n) {
     return rb_left(&r) < body_len ? 0 : REC_HDR + body_len;
 }
 
-int tcp_nonblocking_refuse_init(ch_record *r) {
+int tcp_nonblocking_refuse_init(ch_tcp *r) {
     uint32_t epoch = r->t.epoch;
     uint32_t epoch_seen = r->t.epoch_seen;
     uint8_t epoch_status = r->t.epoch_status;
@@ -51,7 +51,7 @@ int tcp_nonblocking_refuse_init(ch_record *r) {
     return CH_EINVAL;
 }
 
-void tcp_nonblocking_wipe(ch_record *r) {
+void tcp_nonblocking_wipe(ch_tcp *r) {
     ct_wipe(&r->hs, sizeof r->hs);
     ct_wipe(&r->t.rd, sizeof r->t.rd);
     ct_wipe(&r->t.wr, sizeof r->t.wr);
@@ -78,7 +78,7 @@ void tcp_nonblocking_wipe(ch_record *r) {
 // CH_ST_START or CH_ST_CONNECTED, and a connected session holds its keys.
 // Returns the record's length, or 0 when the seal refused, which it does
 // only at the last sequence number (RFC 9846 §5.3).
-static size_t alert_record(ch_record *r, uint8_t description, uint8_t rec[CH_ALERT_RECORD_LEN]) {
+static size_t alert_record(ch_tcp *r, uint8_t description, uint8_t rec[CH_ALERT_RECORD_LEN]) {
     // Level 2 is fatal (RFC 9846 §6), the level tlsi_fail sends.
     const uint8_t body[2] = {2, description};
     if (r->t.keys) {
@@ -99,7 +99,7 @@ static size_t alert_record(ch_record *r, uint8_t description, uint8_t rec[CH_ALE
 // nothing, as tlsi_fail does on the record layer. The seal runs before
 // the wipe because it needs the write key, and the wipe then clears that
 // key with every other secret.
-size_t tcp_nonblocking_fail(ch_record *r, uint8_t rec[CH_ALERT_RECORD_LEN]) {
+size_t tcp_nonblocking_fail(ch_tcp *r, uint8_t rec[CH_ALERT_RECORD_LEN]) {
     uint8_t alert = r->t.alert_received == 0 ? r->hs.alert : 0;
     size_t rec_len = alert != 0 ? alert_record(r, alert, rec) : 0;
     r->t.alert_sent = alert;
@@ -108,11 +108,11 @@ size_t tcp_nonblocking_fail(ch_record *r, uint8_t rec[CH_ALERT_RECORD_LEN]) {
     return rec_len;
 }
 
-int tcp_nonblocking_session_dead(const ch_record *r) {
+int tcp_nonblocking_session_dead(const ch_tcp *r) {
     return r->t.state == CH_ST_CLOSED || r->t.state == CH_ST_FAILED;
 }
 
-int tcp_nonblocking_take_record(ch_record *r, uint8_t *rec, size_t body_len, uint8_t outer) {
+int tcp_nonblocking_take_record(ch_tcp *r, uint8_t *rec, size_t body_len, uint8_t outer) {
     const uint8_t *pt = rec + REC_HDR;
     size_t pt_len = body_len;
     if (outer == REC_CCS) {

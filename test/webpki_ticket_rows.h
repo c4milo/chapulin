@@ -2,7 +2,7 @@
 // client: which configurations hash their anchors, and on which path.
 // Every build of test/webpki_session_test.c runs them over ch_connect,
 // the coverage build too. bin/webpki_loop_aes runs them over
-// ch_record_init, and bin/quic_loop_aes over ch_quic_init. Each row reads
+// ch_tcp_init, and bin/quic_loop_aes over ch_quic_init. Each row reads
 // the session's ch_tls.ticket_config_hash. Where the Makefile defines
 // TEST_WEBPKI_TICKET_COUNTED, the binary links test/webpki_ticket_count.c,
 // and the rows also read its count of the configuration hashes.

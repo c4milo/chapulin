@@ -1,4 +1,4 @@
-// Proves: ch_srv_record_init, ch_srv_record_in and the step table under
+// Proves: ch_srv_tcp_init, ch_srv_tcp_in and the step table under
 // them (srv_tcp_nonblocking.c), together with the inbound framing and the
 // death path both tcp-nonblocking drivers share
 // (tcp_nonblocking_frame.c), are memory safe and free of UB over an
@@ -32,7 +32,7 @@
 // Bounds. CH_PROOF_RXBUF is 8: two smallest messages. CH_PROOF_INBUF is
 // 13: one record of a 5-byte header and two 4-byte messages, or two empty
 // records and a partial third. At 8 bytes no record held a whole message,
-// so ch_srv_record_in never reached the step table, and a cover run
+// so ch_srv_tcp_in never reached the step table, and a cover run
 // showed it. The record loop and the message loop each run at most 3
 // times, so unwind 4 covers both.
 #define CH_PROOF_STUB_SHA256
@@ -66,7 +66,7 @@ uint16_t nondet_u16(void);
 
 static uint8_t buf[CH_PROOF_RXBUF];
 static uint8_t in[CH_PROOF_INBUF];
-static ch_record r;
+static ch_tcp r;
 static ch_cfg cfg;
 static size_t records_pushed; // srv_out_alert's calls, all a failure's
 
@@ -120,7 +120,7 @@ void ct_wipe(void *p, size_t n) {
 
 // Whether the session holds any secret. tcp_nonblocking_frame.h says a failure
 // clears every one of them, and this is that list read back.
-static int no_secret_left(const ch_record *s) {
+static int no_secret_left(const ch_tcp *s) {
     for (size_t i = 0; i < sizeof s->t.rd_secret; i++) {
         if (s->t.rd_secret[i] != 0 || s->t.wr_secret[i] != 0 || s->t.res_master[i] != 0) {
             return 0;
@@ -131,13 +131,13 @@ static int no_secret_left(const ch_record *s) {
 
 int main(void) {
     // The configuration, unconstrained but for the sink srv_config_ok
-    // promises. ch_srv_record_init reads it and nothing else.
+    // promises. ch_srv_tcp_init reads it and nothing else.
     memset(&cfg, 0, sizeof cfg);
     cfg.buf = (nondet_u8() & 1) ? buf : NULL;
     cfg.buf_len = nondet_size_t();
     cfg.srv.on_record_out = (nondet_u8() & 1) ? sink : NULL;
 
-    int rc = ch_srv_record_init(&r, &cfg);
+    int rc = ch_srv_tcp_init(&r, &cfg);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "init answers one of its two codes");
     if (rc == CH_EINVAL) {
         // srv_tcp_nonblocking.h: nothing was sent and the session
@@ -166,7 +166,7 @@ int main(void) {
     r.step = nondet_u8();
     r.hs.alert = nondet_u8();
     r.hs.encrypted = nondet_int();
-    // ch_srv_record_init writes CH_TX_PT and only srv_store_selection
+    // ch_srv_tcp_init writes CH_TX_PT and only srv_store_selection
     // writes it after that, never higher, so no saved state holds more.
     r.t.peer_limit = nondet_u16();
     __CPROVER_assume(r.t.peer_limit <= CH_TX_PT);
@@ -229,7 +229,7 @@ int main(void) {
     __CPROVER_assume(n <= sizeof in);
     size_t consumed = nondet_size_t();
 
-    rc = ch_srv_record_in(&r, in, n, &consumed);
+    rc = ch_srv_tcp_in(&r, in, n, &consumed);
 
     __CPROVER_assert(consumed <= n, "it never reports more bytes than it was handed");
     __CPROVER_assert(r.t.pt_off <= r.t.pt_len && r.t.pt_len <= r.t.cfg.buf_len,

@@ -54,7 +54,7 @@ enum class [[nodiscard]] Status : int {
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
     // The code a TRANSPORT=tcp-nonblocking read adds (cfg.h): no record has arrived
     // yet, and the session stays connected (tcp_nonblocking.h, INV-13).
-    again = CH_RECORD_AGAIN,
+    again = CH_TCP_AGAIN,
 #endif
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     // The code a TCP read adds (result.h): the peer sent one KeyUpdate past

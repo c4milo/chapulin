@@ -33,8 +33,8 @@
 // - ch_connect, ch_srv_accept, ch_read and ch_write send it themselves,
 //   through cfg.send, in the clear before any key and protected after.
 //   The send is best effort: a transport that failed may not carry it.
-// - ch_record_in stages it as one record, which ch_record_out hands over
-//   on the failed session, and ch_srv_record_in pushes that record
+// - ch_tcp_in stages it as one record, which ch_tcp_out hands over
+//   on the failed session, and ch_srv_tcp_in pushes that record
 //   through cfg.srv.on_record_out before it returns. Either record is in
 //   the clear before this side's write key and protected after
 //   (tcp_nonblocking.h), and the push is best effort as the send is.
@@ -48,7 +48,7 @@
 // ch_close, because a close_notify is not a fatal alert.
 //
 // It reads one field of t and changes nothing, so a caller may ask in any
-// state, and after ch_close, ch_record_close or ch_quic_close, which keep
+// state, and after ch_close, ch_tcp_close or ch_quic_close, which keep
 // the field.
 uint8_t ch_alert_sent(const ch_tls *t);
 

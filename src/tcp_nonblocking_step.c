@@ -20,7 +20,7 @@
 
 // tcp_nonblocking_step.h states the contract. RFC 9846 section 5.1 fixes
 // legacy_record_version at 0x0303 here.
-void tcp_nonblocking_stage_plain(ch_record *r, size_t n) {
+void tcp_nonblocking_stage_plain(ch_tcp *r, size_t n) {
     ch_tls *t = &r->t;
     t->tx[0] = REC_HANDSHAKE;
     t->tx[1] = 0x03;
@@ -35,7 +35,7 @@ void tcp_nonblocking_stage_plain(ch_record *r, size_t n) {
 // Finished is the only message this mode seals, and it seals under the
 // handshake write key, before step_finished switches to the application
 // key.
-static int stage_sealed(ch_record *r, const uint8_t *pt, size_t n) {
+static int stage_sealed(ch_tcp *r, const uint8_t *pt, size_t n) {
     ch_tls *t = &r->t;
     size_t out_len = 0;
     if (rec_seal(&t->wr, REC_HANDSHAKE, pt, n, t->tx, sizeof t->tx, &out_len) != 0) {
@@ -56,7 +56,7 @@ static int stage_sealed(ch_record *r, const uint8_t *pt, size_t n) {
 // The derivation runs in this same call because info.server_ct points
 // into cfg.buf under CH_KEX_HYBRID and the decapsulation reads those bytes, so
 // nothing may read a further message in between.
-static int step_server_hello(ch_record *r) {
+static int step_server_hello(ch_tcp *r) {
     ch_tls *t = &r->t;
     server_hello_info info;
     int rc = hsf_read_server_hello(&r->hs, &info);
@@ -68,7 +68,7 @@ static int step_server_hello(ch_record *r) {
             r->hs.alert = ALERT_UNEXPECTED_MESSAGE;
             return CH_EPROTO;
         }
-        // t.tx is free here because ch_record_in refuses input while a
+        // t.tx is free here because ch_tcp_in refuses input while a
         // staged record is uncollected.
         size_t n = hsf_build_client_hello(&r->hs, t->tx + REC_HDR, sizeof t->tx - REC_HDR);
         if (n == 0) {
@@ -104,7 +104,7 @@ static int step_server_hello(ch_record *r) {
     return CH_OK;
 }
 
-static int step_encrypted_extensions(ch_record *r) {
+static int step_encrypted_extensions(ch_tcp *r) {
     int rc = hsf_read_encrypted_extensions(&r->hs);
     if (rc != CH_OK) {
         return rc;
@@ -117,7 +117,7 @@ static int step_encrypted_extensions(ch_record *r) {
     return CH_OK;
 }
 
-static int step_certificate(ch_record *r) {
+static int step_certificate(ch_tcp *r) {
     int rc = hsa_server_auth(&r->hs);
     if (rc != CH_OK) {
         return rc;
@@ -126,7 +126,7 @@ static int step_certificate(ch_record *r) {
     return CH_OK;
 }
 
-static int step_certificate_verify(ch_record *r) {
+static int step_certificate_verify(ch_tcp *r) {
     int rc = hsa_read_certificate_verify(&r->hs);
     if (rc != CH_OK) {
         return rc;
@@ -141,10 +141,10 @@ static int step_certificate_verify(ch_record *r) {
 // rule that handshake secrets die at CONNECTED. It clears hs.t with the
 // rest, so this step writes the back pointer again.
 //
-// It does not raise r->t.state. ch_record_out does that in the call that
+// It does not raise r->t.state. ch_tcp_out does that in the call that
 // hands the last Finished byte over, because until then this endpoint
 // has not sent it.
-static int step_finished(ch_record *r) {
+static int step_finished(ch_tcp *r) {
     ch_tls *t = &r->t;
     int rc = hsf_read_finished(&r->hs);
     if (rc != CH_OK) {
@@ -179,16 +179,16 @@ static int step_finished(ch_record *r) {
 }
 
 // Nothing is legal here. The caller moves to ch_read the moment
-// ch_record_state answers CH_ST_CONNECTED, and ch_read handles every
+// ch_tcp_state answers CH_ST_CONNECTED, and ch_read handles every
 // post-handshake message this tree accepts, a NewSessionTicket among
 // them (handshake_post.h). Bytes fed to this driver after the handshake
 // are a caller that did not move on.
-static int step_complete(ch_record *r) {
+static int step_complete(ch_tcp *r) {
     r->hs.alert = ALERT_UNEXPECTED_MESSAGE;
     return CH_EPROTO;
 }
 
-int tcp_nonblocking_advance(ch_record *r) {
+int tcp_nonblocking_advance(ch_tcp *r) {
     switch (r->step) {
     case TCP_NONBLOCKING_STEP_AWAIT_SERVER_HELLO:
     case TCP_NONBLOCKING_STEP_AWAIT_RETRY_HELLO:

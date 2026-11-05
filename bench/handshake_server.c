@@ -4,8 +4,8 @@
 // against the object build.zig makes with colibri's options, and counts
 // it beside bench/handshake_openssl_server.c.
 //
-// It calls the object as colibri's server does: ch_srv_record_init and
-// ch_srv_record_in until the handshake is complete, then ch_read,
+// It calls the object as colibri's server does: ch_srv_tcp_init and
+// ch_srv_tcp_in until the handshake is complete, then ch_read,
 // ch_write and ch_close. Its identity is a P-256 leaf and the root that
 // signed it, read from PEM files through ch_chain_from_pem and
 // ch_p256_key_from_pem. It offers ALPN h2 and http/1.1, holds a cookie
@@ -51,7 +51,7 @@ static const ch_alpn_protocol alpn[2] = {
     {(const uint8_t *)"http/1.1", 8},
 };
 static ch_cfg cfg;
-static ch_record session;
+static ch_tcp session;
 
 // The socket of the connection in progress, and the bytes read from it
 // that no call has consumed yet.
@@ -118,19 +118,19 @@ static int recv_bytes(void *io, uint8_t *p, size_t n) {
 }
 
 __attribute__((noinline)) void bench_handshake(void) {
-    if (ch_srv_record_init(&session, &cfg) != CH_OK) {
-        fail("ch_srv_record_init refused the configuration");
+    if (ch_srv_tcp_init(&session, &cfg) != CH_OK) {
+        fail("ch_srv_tcp_init refused the configuration");
     }
     wire.len = 0;
-    while (ch_record_state(&session) != CH_ST_CONNECTED) {
+    while (ch_tcp_state(&session) != CH_ST_CONNECTED) {
         ssize_t got = read(wire.fd, wire.bytes + wire.len, sizeof wire.bytes - wire.len);
         if (got <= 0) {
             fail("the client closed during the handshake");
         }
         wire.len += (size_t)got;
         size_t consumed = 0;
-        if (ch_srv_record_in(&session, wire.bytes, wire.len, &consumed) != CH_OK) {
-            fail("ch_srv_record_in failed");
+        if (ch_srv_tcp_in(&session, wire.bytes, wire.len, &consumed) != CH_OK) {
+            fail("ch_srv_tcp_in failed");
         }
         memmove(wire.bytes, wire.bytes + consumed, wire.len - consumed);
         wire.len -= consumed;

@@ -291,12 +291,12 @@ static void client_config(ch_cfg *cfg) {
 
 // Moves everything the client owes into the server, and everything the
 // server pushes back into to_client. Returns 0 on the first driver error.
-static int client_to_server(ch_record *client, ch_record *server) {
+static int client_to_server(ch_tcp *client, ch_tcp *server) {
     uint8_t wire[WIRE_MAX];
     size_t total = 0;
     for (;;) {
         size_t n = 0;
-        int rc = ch_record_out(client, wire + total, sizeof wire - total, &n);
+        int rc = ch_tcp_out(client, wire + total, sizeof wire - total, &n);
         CHECK(rc == CH_OK);
         if (rc != CH_OK) {
             return 0;
@@ -310,7 +310,7 @@ static int client_to_server(ch_record *client, ch_record *server) {
         return 1;
     }
     size_t consumed = 0;
-    int rc = ch_srv_record_in(server, wire, total, &consumed);
+    int rc = ch_srv_tcp_in(server, wire, total, &consumed);
     if (rc != CH_OK) {
         if (!expect_refusal) {
             (void)fprintf(stderr, "server refused the client's bytes: rc=%d alert=%u\n", rc,
@@ -323,12 +323,12 @@ static int client_to_server(ch_record *client, ch_record *server) {
 }
 
 // Moves everything the server pushed into the client.
-static int server_to_client(ch_record *client) {
+static int server_to_client(ch_tcp *client) {
     if (to_client.len == 0) {
         return 1;
     }
     size_t consumed = 0;
-    int rc = ch_record_in(client, to_client.bytes, to_client.len, &consumed);
+    int rc = ch_tcp_in(client, to_client.bytes, to_client.len, &consumed);
     if (rc != CH_OK) {
         if (!expect_refusal) {
             (void)fprintf(stderr, "client refused the server's flight: rc=%d alert=%u\n", rc,
@@ -343,30 +343,28 @@ static int server_to_client(ch_record *client) {
 
 // The handshake, from two fresh sessions to whatever state the rounds
 // reach. Returns the number of rounds it took.
-static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccfg,
-                         const ch_cfg *scfg) {
+static int run_handshake(ch_tcp *client, ch_tcp *server, const ch_cfg *ccfg, const ch_cfg *scfg) {
     to_client.len = 0;
     records_pushed = 0;
     logged_count = 0;
     client_io = 0;
     server_io = 0;
-    CHECK(ch_srv_record_init(server, scfg) == CH_OK);
-    CHECK(ch_record_init(client, ccfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(server, scfg) == CH_OK);
+    CHECK(ch_tcp_init(client, ccfg) == CH_OK);
     // Four rounds is more than the handshake needs and fewer than a loop
     // that never ends: one round trip completes it without a
     // HelloRetryRequest, and the client Finished takes a second pass
     // through client_to_server.
     int rounds = 0;
-    while (rounds < 4 && (ch_record_state(client) != CH_ST_CONNECTED ||
-                          ch_record_state(server) != CH_ST_CONNECTED)) {
+    while (rounds < 4 &&
+           (ch_tcp_state(client) != CH_ST_CONNECTED || ch_tcp_state(server) != CH_ST_CONNECTED)) {
         if (!client_to_server(client, server)) {
             break;
         }
         // Once both ends are connected, what the server pushed after the
         // client Finished is post-handshake and belongs to ch_read, which
         // the ticket cases hand it to.
-        if (ch_record_state(client) == CH_ST_CONNECTED &&
-            ch_record_state(server) == CH_ST_CONNECTED) {
+        if (ch_tcp_state(client) == CH_ST_CONNECTED && ch_tcp_state(server) == CH_ST_CONNECTED) {
             rounds++;
             break;
         }
@@ -394,8 +392,8 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
 #endif
 
 int main(void) {
-    static ch_record client;
-    static ch_record server;
+    static ch_tcp client;
+    static ch_tcp server;
     ch_cfg ccfg;
     ch_cfg scfg;
 
@@ -403,8 +401,8 @@ int main(void) {
     client_config(&ccfg);
 
     int rounds = run_handshake(&client, &server, &ccfg, &scfg);
-    CHECK(ch_record_state(&client) == CH_ST_CONNECTED);
-    CHECK(ch_record_state(&server) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(&client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(&server) == CH_ST_CONNECTED);
     // The claim this binary exists for.
     CHECK(io_calls == 0);
     // Both ends report the group the client's build offers, which the
@@ -478,7 +476,7 @@ int main(void) {
     if (failures == 0) {
         (void)printf("tcp_nonblocking_loop: a whole handshake over group 0x%04x in %d rounds,"
                      " 0 socket calls; both ends export one secret and log the same four;"
-                     " ch_read waits between records; ch_record_whole_len frames each record;"
+                     " ch_read waits between records; ch_tcp_whole_len frames each record;"
                      " a wrong pin refused; a ticket resumes with no certificate, and a"
                      " stale one is refused; a close_notify closes one direction and ch_read"
                      " sends nothing; the server takes secp256r1 only when x25519 is not"

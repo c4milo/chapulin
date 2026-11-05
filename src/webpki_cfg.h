@@ -53,7 +53,7 @@
 // rules fails, when a configuration with anchors has no clock or its
 // clock answers 0, and for any other PSK, a pin slot (server_pubkey) or
 // an epoch callback.
-// ch_record_init and ch_quic_init apply the same rules, so each field
+// ch_tcp_init and ch_quic_init apply the same rules, so each field
 // means the same thing on every transport (docs/decisions.md 64).
 #ifndef CH_WEBPKI_CFG_H
 #define CH_WEBPKI_CFG_H
