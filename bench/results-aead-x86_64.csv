@@ -1,65 +1,65 @@
-# bench/aead.sh on AMD EPYC 7763 64-Core Processor (x86_64), Linux 7.0.0-1017-azure, 2026-11-01, tree 401cb38
-# gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0; -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -Ibench; the host row adds -DCH_CPU_RUNTIME
-# load average (1, 5, 15 min) before: 0.36 0.08 0.03; after: 0.54 0.14 0.05
+# bench/aead.sh on AMD EPYC 7763 64-Core Processor (x86_64), Linux 7.0.0-1017-azure, 2026-11-05, tree 4da5b22
+# gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0; -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I. -Ibench; the host row adds -DCH_CPU_RUNTIME
+# load average (1, 5, 15 min) before: 0.46 0.15 0.05; after: 0.62 0.21 0.07
 # ns_per_byte: median of 101 samples of 2 to 4 ms each; mb_per_s: 10^6 bytes per second at that median; iqr_pct: 25th to 75th percentile spread, percent of the median
 primitive,build,bytes,ns_per_byte,mb_per_s,iqr_pct
-chacha20,AES=soft,64,2.5877,386.4,0.6
-chacha20,AES=soft,1200,2.4568,407.0,0.3
-chacha20,AES=soft,1350,2.5099,398.4,0.4
-chacha20,AES=soft,16384,2.4182,413.5,0.3
-chacha20_poly1305_seal,AES=soft,64,11.2378,89.0,0.3
-chacha20_poly1305_seal,AES=soft,1200,6.1232,163.3,0.3
-chacha20_poly1305_seal,AES=soft,1350,6.1768,161.9,0.3
-chacha20_poly1305_seal,AES=soft,16384,5.8319,171.5,0.3
-chacha20_poly1305_open,AES=soft,64,10.8698,92.0,0.6
-chacha20_poly1305_open,AES=soft,1200,6.1079,163.7,0.4
-chacha20_poly1305_open,AES=soft,1350,6.1653,162.2,0.9
-chacha20_poly1305_open,AES=soft,16384,5.8284,171.6,0.2
-poly1305,AES=soft,64,4.4497,224.7,0.7
-poly1305,AES=soft,1200,3.4739,287.9,0.3
-poly1305,AES=soft,1350,3.5013,285.6,0.9
-poly1305,AES=soft,16384,3.4169,292.7,0.3
-aes128_gcm_seal,AES=soft,64,198.4645,5.0,0.3
-aes128_gcm_seal,AES=soft,1200,135.4509,7.4,0.4
-aes128_gcm_seal,AES=soft,1350,135.9706,7.4,0.6
-aes128_gcm_seal,AES=soft,16384,132.0514,7.6,0.6
-aes128_gcm_open,AES=soft,64,197.9545,5.1,0.7
-aes128_gcm_open,AES=soft,1200,135.4358,7.4,0.3
-aes128_gcm_open,AES=soft,1350,136.0040,7.4,0.2
-aes128_gcm_open,AES=soft,16384,132.0997,7.6,0.3
-aes128_ctr,AES=soft,64,28.5572,35.0,0.5
-aes128_ctr,AES=soft,1200,28.4637,35.1,0.9
-aes128_ctr,AES=soft,1350,28.6410,34.9,0.6
-aes128_ctr,AES=soft,16384,28.4427,35.2,0.4
-ghash,AES=soft,64,162.4011,6.2,0.3
-ghash,AES=soft,1200,106.0591,9.4,0.2
-ghash,AES=soft,1350,106.4581,9.4,0.4
-ghash,AES=soft,16384,103.2174,9.7,0.3
-chacha20_poly1305_seal,AES=soft CH_NATIVE_WIDEMUL,64,7.0118,142.6,0.4
-chacha20_poly1305_seal,AES=soft CH_NATIVE_WIDEMUL,1200,3.3639,297.3,0.2
-chacha20_poly1305_seal,AES=soft CH_NATIVE_WIDEMUL,1350,3.4169,292.7,0.5
-chacha20_poly1305_seal,AES=soft CH_NATIVE_WIDEMUL,16384,3.1436,318.1,0.3
-chacha20_poly1305_open,AES=soft CH_NATIVE_WIDEMUL,64,6.6236,151.0,0.6
-chacha20_poly1305_open,AES=soft CH_NATIVE_WIDEMUL,1200,3.3427,299.2,0.2
-chacha20_poly1305_open,AES=soft CH_NATIVE_WIDEMUL,1350,3.3998,294.1,0.4
-chacha20_poly1305_open,AES=soft CH_NATIVE_WIDEMUL,16384,3.1442,318.0,0.3
-poly1305,AES=soft CH_NATIVE_WIDEMUL,64,1.5985,625.6,0.7
-poly1305,AES=soft CH_NATIVE_WIDEMUL,1200,0.7651,1307.0,0.3
-poly1305,AES=soft CH_NATIVE_WIDEMUL,1350,0.7792,1283.3,0.4
-poly1305,AES=soft CH_NATIVE_WIDEMUL,16384,0.7223,1384.4,0.3
-aes128_gcm_seal,host,64,2.6665,375.0,0.7
-aes128_gcm_seal,host,1200,0.4816,2076.3,0.4
-aes128_gcm_seal,host,1350,0.4872,2052.6,0.4
-aes128_gcm_seal,host,16384,0.3225,3100.5,0.2
-aes128_gcm_open,host,64,2.4775,403.6,0.8
-aes128_gcm_open,host,1200,0.4820,2074.8,0.5
-aes128_gcm_open,host,1350,0.4908,2037.6,0.3
-aes128_gcm_open,host,16384,0.3315,3016.7,0.3
-aes128_ctr,host,64,0.5330,1876.3,0.9
-aes128_ctr,host,1200,0.1366,7318.9,0.5
-aes128_ctr,host,1350,0.1508,6633.1,0.5
-aes128_ctr,host,16384,0.1152,8679.3,0.4
-ghash,host,64,1.9139,522.5,1.9
-ghash,host,1200,0.2730,3662.3,17.5
-ghash,host,1350,0.2614,3825.6,0.5
-ghash,host,16384,0.1614,6195.3,0.5
+chacha20,AES=soft,64,2.5838,387.0,0.4
+chacha20,AES=soft,1200,2.4462,408.8,0.2
+chacha20,AES=soft,1350,2.5019,399.7,0.4
+chacha20,AES=soft,16384,2.4120,414.6,0.4
+chacha20_poly1305_seal,AES=soft,64,11.2321,89.0,0.3
+chacha20_poly1305_seal,AES=soft,1200,6.1339,163.0,0.3
+chacha20_poly1305_seal,AES=soft,1350,6.1769,161.9,0.5
+chacha20_poly1305_seal,AES=soft,16384,5.8407,171.2,0.3
+chacha20_poly1305_open,AES=soft,64,10.8825,91.9,0.4
+chacha20_poly1305_open,AES=soft,1200,6.1094,163.7,0.4
+chacha20_poly1305_open,AES=soft,1350,6.1620,162.3,0.4
+chacha20_poly1305_open,AES=soft,16384,5.8444,171.1,0.4
+poly1305,AES=soft,64,4.4549,224.5,0.4
+poly1305,AES=soft,1200,3.4576,289.2,0.2
+poly1305,AES=soft,1350,3.4764,287.7,0.5
+poly1305,AES=soft,16384,3.4156,292.8,0.3
+aes128_gcm_seal,AES=soft,64,198.2255,5.0,0.3
+aes128_gcm_seal,AES=soft,1200,135.0168,7.4,0.4
+aes128_gcm_seal,AES=soft,1350,135.6056,7.4,0.4
+aes128_gcm_seal,AES=soft,16384,131.6791,7.6,0.4
+aes128_gcm_open,AES=soft,64,197.8322,5.1,0.3
+aes128_gcm_open,AES=soft,1200,135.1649,7.4,0.4
+aes128_gcm_open,AES=soft,1350,135.6357,7.4,0.3
+aes128_gcm_open,AES=soft,16384,131.7506,7.6,0.4
+aes128_ctr,AES=soft,64,28.7520,34.8,0.8
+aes128_ctr,AES=soft,1200,28.5533,35.0,0.8
+aes128_ctr,AES=soft,1350,28.7636,34.8,0.8
+aes128_ctr,AES=soft,16384,28.5429,35.0,0.8
+ghash,AES=soft,64,162.3039,6.2,0.2
+ghash,AES=soft,1200,106.0585,9.4,0.3
+ghash,AES=soft,1350,106.4233,9.4,0.4
+ghash,AES=soft,16384,103.1883,9.7,0.3
+chacha20_poly1305_seal,AES=soft CH_NATIVE_WIDEMUL,64,7.0082,142.7,0.4
+chacha20_poly1305_seal,AES=soft CH_NATIVE_WIDEMUL,1200,3.3665,297.0,0.3
+chacha20_poly1305_seal,AES=soft CH_NATIVE_WIDEMUL,1350,3.4165,292.7,0.3
+chacha20_poly1305_seal,AES=soft CH_NATIVE_WIDEMUL,16384,3.1478,317.7,0.3
+chacha20_poly1305_open,AES=soft CH_NATIVE_WIDEMUL,64,6.6314,150.8,0.4
+chacha20_poly1305_open,AES=soft CH_NATIVE_WIDEMUL,1200,3.3503,298.5,0.3
+chacha20_poly1305_open,AES=soft CH_NATIVE_WIDEMUL,1350,3.4040,293.8,0.5
+chacha20_poly1305_open,AES=soft CH_NATIVE_WIDEMUL,16384,3.1489,317.6,0.3
+poly1305,AES=soft CH_NATIVE_WIDEMUL,64,1.5752,634.8,0.5
+poly1305,AES=soft CH_NATIVE_WIDEMUL,1200,0.7651,1307.0,0.2
+poly1305,AES=soft CH_NATIVE_WIDEMUL,1350,0.7749,1290.4,0.3
+poly1305,AES=soft CH_NATIVE_WIDEMUL,16384,0.7224,1384.3,0.2
+aes128_gcm_seal,host,64,3.1380,318.7,0.4
+aes128_gcm_seal,host,1200,0.4964,2014.6,0.4
+aes128_gcm_seal,host,1350,0.4989,2004.3,0.3
+aes128_gcm_seal,host,16384,0.3183,3141.3,0.2
+aes128_gcm_open,host,64,2.9648,337.3,0.6
+aes128_gcm_open,host,1200,0.4932,2027.7,0.4
+aes128_gcm_open,host,1350,0.5019,1992.6,0.4
+aes128_gcm_open,host,16384,0.3257,3070.0,0.2
+aes128_ctr,host,64,0.5277,1895.1,0.3
+aes128_ctr,host,1200,0.1387,7207.8,0.3
+aes128_ctr,host,1350,0.1501,6660.8,0.4
+aes128_ctr,host,16384,0.1154,8667.2,0.3
+ghash,host,64,1.8928,528.3,0.7
+ghash,host,1200,0.2662,3756.2,0.9
+ghash,host,1350,0.2632,3799.2,0.6
+ghash,host,16384,0.1616,6188.6,0.4
