@@ -60,7 +60,7 @@ uint16_t nondet_u16(void);
 static uint8_t buf[CH_PROOF_RXBUF];
 static uint8_t in[CH_PROOF_INBUF];
 static uint8_t out[CH_PROOF_INBUF];
-static ch_tcp r;
+static ch_tcp_priv r;
 static ch_cfg cfg;
 static ch_saved_ticket saved;
 
@@ -175,7 +175,7 @@ int hsa_read_certificate_verify(handshake_state *h) {
 // real table: one whole message consumed, or the window emptied by the
 // last step, and at most one record staged from its start; or a failure
 // with the alert chosen.
-int tcp_nonblocking_advance(ch_tcp *s) {
+int tcp_nonblocking_advance(ch_tcp_priv *s) {
     __CPROVER_assert(s == &r && s->hs.t == &s->t, "advance: the session, back pointer set");
     __CPROVER_assert(s->t.pt_len >= 4 && s->t.pt_off <= s->t.pt_len - 4,
                      "advance: a whole message is unread");
@@ -247,7 +247,7 @@ int tlsi_config_ok(const ch_cfg *c) {
     return 1;
 }
 
-int tlsi_epoch_init(ch_tls *t, const ch_cfg *c, int psk_ok) {
+int tlsi_epoch_init(ch_tls_priv *t, const ch_cfg *c, int psk_ok) {
     __CPROVER_assert(t == &r.t && c == &r.t.cfg, "epoch: the session's own copy");
     (void)psk_ok;
     return (nondet_u8() & 1) ? CH_OK : CH_EINVAL;
@@ -274,7 +274,7 @@ static int recv_cb(void *io, uint8_t *p, size_t n) {
 
 // Whether the session holds any secret, tcp_nonblocking_frame.h's list
 // read back.
-static int no_secret_left(const ch_tcp *s) {
+static int no_secret_left(const ch_tcp_priv *s) {
     for (size_t i = 0; i < sizeof s->t.rd_secret; i++) {
         if (s->t.rd_secret[i] != 0 || s->t.wr_secret[i] != 0 || s->t.res_master[i] != 0) {
             return 0;
@@ -318,7 +318,7 @@ static void prove_init(void) {
         saved.ticket.lifetime_s = nondet_u32();
         cfg.ticket = &saved;
     }
-    int rc = ch_tcp_init(&r, &cfg);
+    int rc = ch_tcp_init(tcp_public(&r), &cfg);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "init answers one of its two codes");
     if (rc == CH_EINVAL) {
         __CPROVER_assert(r.t.state == CH_ST_FAILED && r.tx_len == 0 && no_secret_left(&r),
@@ -377,7 +377,7 @@ static void prove_in(void) {
     size_t n = nondet_size_t();
     __CPROVER_assume(n <= sizeof in);
     size_t consumed = nondet_size_t();
-    int rc = ch_tcp_in(&r, in, n, &consumed);
+    int rc = ch_tcp_in(tcp_public(&r), in, n, &consumed);
     __CPROVER_assert(consumed <= n, "it never reports more bytes than it was handed");
     __CPROVER_assert(r.t.pt_off <= r.t.pt_len && r.t.pt_len <= r.t.cfg.buf_len,
                      "and leaves the window inside the buffer");
@@ -406,7 +406,7 @@ static void prove_out(void) {
     __CPROVER_assume(cap <= sizeof out);
     uint8_t was_state = r.t.state;
     size_t out_len = nondet_size_t();
-    int rc = ch_tcp_out(&r, out, cap, &out_len);
+    int rc = ch_tcp_out(tcp_public(&r), out, cap, &out_len);
     if (rc == CH_OK && len > off) {
         size_t want = len - off < cap ? len - off : cap;
         __CPROVER_assert(out_len == want, "it hands over the next staged bytes, at most cap");
@@ -426,10 +426,10 @@ int main(void) {
     prove_advance();
     prove_out();
     havoc_state();
-    ch_tcp_close(&r);
+    ch_tcp_close(tcp_public(&r));
     __CPROVER_assert(r.t.state == CH_ST_CLOSED && r.tx_len == 0 && no_secret_left(&r),
                      "a closed session holds no secret and stages nothing");
-    __CPROVER_assert(ch_tcp_state(&r) == CH_ST_CLOSED, "and reports itself closed");
+    __CPROVER_assert(ch_tcp_state(tcp_public(&r)) == CH_ST_CLOSED, "and reports itself closed");
 #endif
     return 0;
 }

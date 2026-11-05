@@ -140,7 +140,7 @@ static void client_task(void *arg) {
     }
 
     static uint8_t rxbuf[2048];
-    static ch_tls tls;
+    static ch_tls_priv tls;
     ch_cfg cfg = {0};
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;

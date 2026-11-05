@@ -24,6 +24,7 @@
 #include "handshake_record.h"
 #include "rand.h"
 #include "record.h"
+#include "session_convert.h"
 #include "srv_flight.h"
 #include "tls.h"
 
@@ -110,7 +111,7 @@ static uint8_t cli_buf[CH_MIN_RXBUF];
 
 // The server's session and handshake state, the one suite its order names,
 // and whether its flight has gone out.
-static ch_tls srv_t;
+static ch_tls_priv srv_t;
 static handshake_state srv_h;
 static uint16_t srv_order[1];
 static int served;
@@ -189,13 +190,13 @@ static void server_start(uint16_t suite) {
     srv_h.record_size_limit = room > 0x4001 ? 0x4001 : (uint16_t)room;
 }
 
-static ch_tls client;
+static ch_tls_priv client;
 
 // One handshake whose ServerHello selects suite, for
 // test/key_limit_cases.h: ch_connect, then the server's read of the client
 // Finished and srv_complete, which srv_handshake.c's auth_flight and run
 // end with. The server sends no ticket, so nothing waits on either wire.
-static int key_limit_connect(uint16_t suite, ch_tls **client_out, ch_tls **server_out) {
+static int key_limit_connect(uint16_t suite, ch_tls_priv **client_out, ch_tls_priv **server_out) {
     memset(&to_server, 0, sizeof to_server);
     memset(&to_client, 0, sizeof to_client);
     served = 0;
@@ -207,7 +208,7 @@ static int key_limit_connect(uint16_t suite, ch_tls **client_out, ch_tls **serve
     ccfg.send = send_to_server;
     ccfg.recv = client_recv;
     r2_trust(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
-    if (ch_connect(&client, &ccfg) != CH_OK) {
+    if (ch_connect(tls_public(&client), &ccfg) != CH_OK) {
         return 0;
     }
     if (srv_read_client_finished(&srv_h) != CH_OK || hsr_check_record_end(&srv_h) != CH_OK) {

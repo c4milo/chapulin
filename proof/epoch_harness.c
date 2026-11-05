@@ -30,7 +30,7 @@ static int epoch_load_nondet(void *io, uint32_t *out) {
 }
 
 int main(void) {
-    ch_tls t;
+    ch_tls_priv t;
     handshake_state h;
     memset(&t, 0, sizeof t);
     memset(&h, 0, sizeof h);

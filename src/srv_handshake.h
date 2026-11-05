@@ -36,7 +36,7 @@
 // Returns CH_OK with the session connected and ready for ch_read and
 // ch_write, or the code the failing handler returned. It never leaves
 // the session half-live: every non-CH_OK path wipes.
-int srv_handshake(ch_tls *t);
+int srv_handshake(ch_tls_priv *t);
 
 #endif // CH_ROLE_SERVER
 #endif

@@ -162,17 +162,17 @@ static void test_initial_seal_uses_the_server_labels(void) {
 
     // The side and the versions ch_srv_quic_init gives a session, which a
     // ROLE=both build reads for the side and a ROLE=server build fixes.
-    ch_quic q;
+    ch_quic_priv q;
     memset(&q, 0, sizeof q);
     q.t.state = CH_ST_START;
     q.endpoint = CH_QUIC_ENDPOINT_SERVER;
     q.t.cfg.quic_original_version = CH_QUIC_VERSION_1;
     q.t.quic_negotiated_version = CH_QUIC_VERSION_1;
-    CHECK(ch_quic_initial_keys(&q, APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
+    CHECK(ch_quic_initial_keys(quic_public(&q), APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
 
     static uint8_t out[A3_PACKET];
     size_t out_len = 0;
-    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, A3_PN, A3_PN_LEN, hdr, sizeof hdr,
+    CHECK(ch_quic_seal(quic_public(&q), CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, A3_PN, A3_PN_LEN, hdr, sizeof hdr,
                        pt, sizeof pt, out, sizeof out, &out_len) == CH_OK);
     CHECK(out_len == sizeof out);
     CHECK(memcmp(out, want, sizeof want) == 0);
@@ -243,28 +243,28 @@ static void test_both_roles_take_their_own_labels(const ch_cfg *server_cfg) {
     client_cfg.on_level_ready = level_ready;
     client_cfg.server_pubkey = rsa_sign_2048_n;
     client_cfg.server_pubkey_len = sizeof rsa_sign_2048_n;
-    static ch_quic client;
-    static ch_quic server;
-    CHECK(ch_quic_init(&client, &client_cfg) == CH_OK);
-    CHECK(ch_srv_quic_init(&server, server_cfg) == CH_OK);
-    CHECK(ch_quic_initial_keys(&client, APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
-    CHECK(ch_quic_initial_keys(&server, APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
+    static ch_quic_priv client;
+    static ch_quic_priv server;
+    CHECK(ch_quic_init(quic_public(&client), &client_cfg) == CH_OK);
+    CHECK(ch_srv_quic_init(quic_public(&server), server_cfg) == CH_OK);
+    CHECK(ch_quic_initial_keys(quic_public(&client), APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
+    CHECK(ch_quic_initial_keys(quic_public(&server), APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
 
     static uint8_t pkt[A3_PACKET];
     size_t pkt_len = 0;
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(ch_quic_seal(&server, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, A3_PN, A3_PN_LEN, hdr,
+    CHECK(ch_quic_seal(quic_public(&server), CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, A3_PN, A3_PN_LEN, hdr,
                        sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(pkt_len == sizeof want && memcmp(pkt, want, sizeof want) == 0);
-    CHECK(ch_quic_open(&client, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len,
+    CHECK(ch_quic_open(quic_public(&client), CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len,
                        A3_HDR_LEN - A3_PN_LEN, 0, 0, &key_set, &pn, &pt_len) == CH_OK);
     CHECK(pn == A3_PN && pt_len == sizeof pt);
 
-    CHECK(ch_quic_seal(&client, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, A3_PN, A3_PN_LEN, hdr,
+    CHECK(ch_quic_seal(quic_public(&client), CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, A3_PN, A3_PN_LEN, hdr,
                        sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
-    CHECK(ch_quic_open(&server, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len,
+    CHECK(ch_quic_open(quic_public(&server), CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len,
                        A3_HDR_LEN - A3_PN_LEN, 0, 0, &key_set, &pn, &pt_len) == CH_OK);
     CHECK(pn == A3_PN && pt_len == sizeof pt);
 }
@@ -282,17 +282,17 @@ static void test_init_refuses_an_empty_certificate(const ch_cfg *base, const uin
     ch_cfg cfg = *base;
     cfg.srv.ecdsa_p256.chain = one_byte;
     cfg.srv.rsa_pss.chain = one_byte;
-    static ch_quic q;
+    static ch_quic_priv q;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_quic_init(&q, &cfg) == CH_OK);
-    CHECK(ch_srv_quic_crypto_in(&q, CH_LEVEL_INITIAL, hello, hello_len) == CH_OK);
+    CHECK(ch_srv_quic_init(quic_public(&q), &cfg) == CH_OK);
+    CHECK(ch_srv_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, hello, hello_len) == CH_OK);
     CHECK(seen.total[CH_LEVEL_HANDSHAKE] > 0);
-    ch_quic_close(&q);
+    ch_quic_close(quic_public(&q));
 
     one_byte[0].len = 0;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_quic_init(&q, &cfg) == CH_EINVAL);
-    CHECK(ch_quic_state(&q) == CH_ST_FAILED);
+    CHECK(ch_srv_quic_init(quic_public(&q), &cfg) == CH_EINVAL);
+    CHECK(ch_quic_state(quic_public(&q)) == CH_ST_FAILED);
     CHECK(seen.count == 0);
 }
 
@@ -320,7 +320,7 @@ static void drop_level(void *io, uint8_t level, uint8_t direction) {
 static void test_client_hello_ends_level(const ch_cfg *cfg, const uint8_t *hello,
                                          size_t hello_len) {
     static uint8_t more[CH_HELLO_MAX + 1];
-    static ch_quic server;
+    static ch_quic_priv server;
     ch_cfg quiet = *cfg;
     quiet.srv.on_crypto_out = drop_crypto;
     quiet.on_level_ready = drop_level;
@@ -329,16 +329,16 @@ static void test_client_hello_ends_level(const ch_cfg *cfg, const uint8_t *hello
     memcpy(more, hello, hello_len);
     more[hello_len] = 0;
     for (size_t extra = 0; extra <= 1; extra++) {
-        CHECK(ch_srv_quic_init(&server, &quiet) == CH_OK);
-        int rc = ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, more, hello_len + extra);
+        CHECK(ch_srv_quic_init(quic_public(&server), &quiet) == CH_OK);
+        int rc = ch_srv_quic_crypto_in(quic_public(&server), CH_LEVEL_INITIAL, more, hello_len + extra);
         if (extra == 0) {
-            CHECK(rc == CH_OK && ch_quic_state(&server) == CH_ST_START);
+            CHECK(rc == CH_OK && ch_quic_state(quic_public(&server)) == CH_ST_START);
         } else {
-            CHECK(rc == CH_EPROTO && ch_quic_state(&server) == CH_ST_FAILED);
-            CHECK(ch_quic_error_code(&server) == 0x0a);
-            CHECK(ch_quic_alert(&server) == ALERT_UNEXPECTED_MESSAGE);
+            CHECK(rc == CH_EPROTO && ch_quic_state(quic_public(&server)) == CH_ST_FAILED);
+            CHECK(ch_quic_error_code(quic_public(&server)) == 0x0a);
+            CHECK(ch_quic_alert(quic_public(&server)) == ALERT_UNEXPECTED_MESSAGE);
         }
-        ch_quic_close(&server);
+        ch_quic_close(quic_public(&server));
     }
 }
 
@@ -388,14 +388,14 @@ int main(void) {
     cfg.srv.on_crypto_out = sink;
     provision(&cfg);
 
-    ch_quic q;
+    ch_quic_priv q;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_quic_init(&q, &cfg) == CH_OK);
-    CHECK(ch_quic_state(&q) == CH_ST_START);
+    CHECK(ch_srv_quic_init(quic_public(&q), &cfg) == CH_OK);
+    CHECK(ch_quic_state(quic_public(&q)) == CH_ST_START);
 
-    int rc = ch_srv_quic_crypto_in(&q, CH_LEVEL_INITIAL, hello, hello_len);
+    int rc = ch_srv_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, hello, hello_len);
     if (rc != CH_OK) {
-        (void)fprintf(stderr, "crypto_in rc=%d alert=%u\n", rc, ch_quic_alert(&q));
+        (void)fprintf(stderr, "crypto_in rc=%d alert=%u\n", rc, ch_quic_alert(quic_public(&q)));
     }
     CHECK(rc == CH_OK);
 

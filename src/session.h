@@ -443,7 +443,7 @@ typedef struct {
 #else
     uint8_t tx[REC_HDR + CH_TX_STAGE];
 #endif
-} ch_tls;
+} ch_tls_priv;
 
 // The hash length of the session's cipher suite (rfc9846.txt:4055-4056),
 // the length of every secret above. A build that holds one hash answers
@@ -451,7 +451,7 @@ typedef struct {
 // t->suite, which is 0 until the handshake has named a suite, so a caller
 // reads it after the ServerHello, or after a HelloRetryRequest for a
 // client. suite is public, like group.
-static inline size_t tls_hash_len(const ch_tls *t) {
+static inline size_t tls_hash_len(const ch_tls_priv *t) {
 #ifdef CH_SUITE_AES_GCM
     return suite_hash_len(t->suite);
 #else
@@ -467,11 +467,11 @@ static inline size_t tls_hash_len(const ch_tls *t) {
 
 // Sends an alert — encrypted iff keys are live, plaintext only before any
 // keys exist, nothing at all once they are wiped.
-int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description);
+int tlsi_send_alert(ch_tls_priv *t, uint8_t level, uint8_t description);
 
 // Alert (best effort), wipe every key, mark the session failed, return the send's result. It
 // writes alert_sent; after the peer's fatal alert, alert_received, it sends and writes none (§6.2).
-int tlsi_fail(ch_tls *t, uint8_t description);
+int tlsi_fail(ch_tls_priv *t, uint8_t description);
 
 // Whether a client configuration keeps every rule that does not depend on
 // which driver runs it. tls.c holds the predicates; ch_connect and
@@ -481,16 +481,16 @@ int tlsi_config_ok(const ch_cfg *cfg);
 // Loads the stored epoch and checks a resuming ticket against it, the step a CA build owes
 // before its first handshake message. Returns CH_OK when no epoch is configured, and CH_EINVAL
 // for every refusal, a ticket the stored epoch retired among them. Both client drivers call it.
-int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok);
+int tlsi_epoch_init(ch_tls_priv *t, const ch_cfg *cfg, int psk_ok);
 
 // Wipe all key material and buffered plaintext; keys go dead.
-void tlsi_wipe(ch_tls *t);
+void tlsi_wipe(ch_tls_priv *t);
 
 #ifdef CH_CPU_RUNTIME
 // Writes the session's ch_cfg.cpu, the caller's description of its CPU, into both record
 // directions, which read each record's paths from it (record.h). Each TCP init call runs it once
 // it has accepted the configuration, so no record is sealed or opened before it.
-void tlsi_record_cpu(ch_tls *t);
+void tlsi_record_cpu(ch_tls_priv *t);
 #endif
 #endif
 

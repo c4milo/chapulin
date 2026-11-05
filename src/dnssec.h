@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include "result.h"
+#include "session_storage.h"
 #include "sha1.h"
 #include "sha256.h"
 #include "sha512.h"
@@ -78,19 +79,16 @@
 #define ch_dnssec_verify ch_dnssec_verify_tcp_blocking
 #endif
 
-// The hash of an RRSIG's signed data (RFC 4034 section 3.1.8.1), under
-// the algorithm the RRSIG names: SHA-256 for algorithms 8 and 13, SHA-384
-// for 14, and SHA-512 for 10 and 15. ch_dnssec_digest_init starts it as a
-// plain SHA-1, SHA-256 or SHA-384 instead. For 15 it is RFC 8032's hash: SHA-512 of R,
-// the key A, and then the signed data. The caller owns it and writes it through the calls below
-// alone.
-typedef struct {
-    uint8_t algorithm;
-    union {
-        sha1 sha1_state;
-        sha256 sha256_state;
-        sha512 sha512_state;
-    } state;
+// The storage a caller declares for a ch_dnssec_hash, as session_storage.h declares a session's
+// (docs/decisions.md 185). ch_dnssec_hash_priv in dnssec_hash.h is the struct the calls below
+// write into it, and the caller writes it through them alone.
+#ifndef CH_DNSSEC_HASH_SIZE
+#include "dnssec_hash.h"
+#define CH_DNSSEC_HASH_SIZE sizeof(ch_dnssec_hash_priv)
+#define CH_DNSSEC_HASH_ALIGN CH_ALIGNOF(ch_dnssec_hash_priv)
+#endif
+typedef struct ch_dnssec_hash {
+    CH_ALIGNAS(CH_DNSSEC_HASH_ALIGN) unsigned char opaque[CH_DNSSEC_HASH_SIZE];
 } ch_dnssec_hash;
 
 // Starts h for algorithm, with the DNSKEY's key field and the RRSIG's

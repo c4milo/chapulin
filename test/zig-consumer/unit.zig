@@ -6,6 +6,9 @@
 const std = @import("std");
 const chapulin = @import("chapulin");
 const c = chapulin.c;
+/// Whether a session reports a suite of its own: ch_tls_priv holds suite under SUITE=aesgcm, whose
+/// ch_cfg takes cipher_suites, and in a server role, whose ch_cfg takes srv (session.h).
+const has_suite = @hasField(c.ch_cfg, "cipher_suites") or @hasField(c.ch_cfg, "srv");
 const hooks = @import("hooks.zig");
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -461,7 +464,7 @@ test "RAND=session: init refuses a value with no random, and a session draws fro
     try session.init(values);
     // The session holds its own copy, which rand_io names, and every
     // draw was a fill of it: the x25519 scalar first, then the random.
-    try expect(session.tcp.t.cfg.rand_io == @as(?*anyopaque, @ptrCast(&session.random)));
+    try expect(@as(*c.ch_tcp_priv, @ptrCast(@alignCast(&session.tcp))).t.cfg.rand_io == @as(?*anyopaque, @ptrCast(&session.random)));
     try expect(counting.fills >= 2);
     var hello: [c.CH_TX_STAGE]u8 = undefined;
     const n = try session.recordOut(&hello);
@@ -622,8 +625,8 @@ test "every declaration this object has compiles" {
 /// object has what they read.
 fn compileSession(comptime T: type, comptime names: []const []const u8) void {
     compile(T, names);
-    if (@hasField(c.ch_tls, "alpn_selected")) compile(T, &.{"alpnSelected"});
-    if (@hasField(c.ch_tls, "suite")) compile(T, &.{"suite"});
-    if (@hasField(c.ch_tls, "server_cert_type")) compile(T, &.{"serverCertType"});
+    if (@hasDecl(c, "ch_alpn_selected")) compile(T, &.{"alpnSelected"});
+    if (has_suite) compile(T, &.{"suite"});
+    if (@hasDecl(c, "ch_server_cert_type")) compile(T, &.{"serverCertType"});
     if (@hasDecl(c, "ch_export") and @hasDecl(T, "exportKeyingMaterial")) compile(T, &.{"exportKeyingMaterial"});
 }

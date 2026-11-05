@@ -29,9 +29,9 @@ static int run_seeded(uint64_t client_seed, uint64_t server_seed, crossed *out) 
     edit_finished = 0;
     flight_extra = 0;
     served = 0;
-    static ch_tls client;
-    int connected =
-        ch_connect(&client, &ccfg) == CH_OK && srv_read_client_finished(&srv_h) == CH_OK;
+    static ch_tls_priv client;
+    int connected = ch_connect(tls_public(&client), &ccfg) == CH_OK &&
+                    srv_read_client_finished(&srv_h) == CH_OK;
     memset(out, 0, sizeof *out);
     return connected &&
            cross(out->to_server, &out->to_server_len, to_server.bytes, to_server.len) &&
@@ -40,6 +40,7 @@ static int run_seeded(uint64_t client_seed, uint64_t server_seed, crossed *out) 
 
 #include "rand_draw.h"
 #include "rand_session_cases.h"
+#include "session_convert.h"
 
 // Each init call refuses a configuration with no source, with CH_EINVAL,
 // before it draws or sends anything. A rand_io with no rand_bytes is no
@@ -59,22 +60,22 @@ static void check_session_refusals(void) {
     seed_source(&client_source, 1);
     seed_source(&server_source, 2);
     hook_draws = 0;
-    static ch_tls client;
-    static ch_tls server;
-    CHECK(ch_connect(&client, &ccfg) == CH_EINVAL && client.state == CH_ST_FAILED);
-    CHECK(ch_srv_accept(&server, &scfg) == CH_EINVAL && server.state == CH_ST_FAILED);
+    static ch_tls_priv client;
+    static ch_tls_priv server;
+    CHECK(ch_connect(tls_public(&client), &ccfg) == CH_EINVAL && client.state == CH_ST_FAILED);
+    CHECK(ch_srv_accept(tls_public(&server), &scfg) == CH_EINVAL && server.state == CH_ST_FAILED);
     CHECK(to_server.len == 0 && to_client.len == 0);
     CHECK(client_source.calls == 0 && server_source.calls == 0 && hook_draws == 0);
 
     ccfg.rand_bytes = contextless_draw;
     ccfg.rand_io = NULL;
     contextless_calls = 0;
-    CHECK(ch_connect(&client, &ccfg) == CH_EIO && to_server.len > 0);
+    CHECK(ch_connect(tls_public(&client), &ccfg) == CH_EIO && to_server.len > 0);
     CHECK(contextless_calls == SESSION_CLIENT_DRAWS);
     memset(&to_server, 0, sizeof to_server);
     scfg.rand_bytes = contextless_draw;
     scfg.rand_io = NULL;
-    CHECK(ch_srv_accept(&server, &scfg) != CH_EINVAL);
+    CHECK(ch_srv_accept(tls_public(&server), &scfg) != CH_EINVAL);
     CHECK(contextless_calls == SESSION_CLIENT_DRAWS + 1 && stray_draws == 0 && hook_draws == 0);
 }
 

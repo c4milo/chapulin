@@ -49,8 +49,8 @@ static void test_raw_resumption(void) {
     client_config(&ccfg, &server_alpn[1]);
     present_ticket(&ccfg);
     CHECK(!run_quic(&ccfg, &scfg));
-    CHECK(ch_quic_state(&server) == CH_ST_FAILED);
-    CHECK(ch_quic_alert(&server) == ALERT_MISSING_EXTENSION);
+    CHECK(ch_quic_state(quic_public(&server)) == CH_ST_FAILED);
+    CHECK(ch_quic_alert(quic_public(&server)) == ALERT_MISSING_EXTENSION);
 
     // No clock: the full handshake completes and no ticket follows.
     test_clock_set(&scfg, test_server_seconds(), 0);

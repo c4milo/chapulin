@@ -36,6 +36,7 @@
 // from 100 seconds to 233 beside this one, so the harness leaves it out
 // and bin/unit checks the answer at SIZE_MAX.
 #include "harness.h"
+#include "session_convert.h"
 
 #include <string.h>
 
@@ -49,7 +50,7 @@
 static size_t sent_bytes;
 
 // The session the ch_write half writes from, which the stubs read.
-static ch_tls t;
+static ch_tls_priv t;
 
 int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     (void)cfg;
@@ -76,7 +77,7 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
 // handshake_post.h's contract: one KeyUpdate record sent, one more
 // KeyUpdate counted, and key_update_owed clear. This build has no AES-GCM
 // ceiling, so key_update_owed is the one cause of a KeyUpdate here.
-int hspost_send_key_update(ch_tls *session) {
+int hspost_send_key_update(ch_tls_priv *session) {
     __CPROVER_assert(session == &t, "key update: the session written from");
     __CPROVER_assert(session->key_update_owed == 1, "key update: key_update_owed is set");
     __CPROVER_assert(session->send_epochs < HSPOST_SEND_EPOCHS_MAX,
@@ -87,13 +88,14 @@ int hspost_send_key_update(ch_tls *session) {
     return CH_OK;
 }
 
-int tlsi_fail(ch_tls *t, uint8_t description) {
+int tlsi_fail(ch_tls_priv *t, uint8_t description) {
     (void)t;
     (void)description;
     __CPROVER_assert(0, "tlsi_fail unreachable: every seal and send succeeds");
     return CH_EIO;
 }
 
+#include "tls_entry.c"
 #include "tls_write.c"
 
 // The largest cap the ch_write half takes: three whole records at
@@ -106,7 +108,7 @@ _Static_assert(WRITE_CAP_MAX < (1 << WRITE_CAP_BITS), "the cap's bits hold the l
 // The least peer_limit a connected session holds.
 #define WRITE_LIMIT_MIN 63
 
-static ch_tls any;
+static ch_tls_priv any;
 static uint8_t plaintext[WRITE_CAP_MAX + 1];
 
 // The bytes ch_write hands cfg.send for n bytes of plaintext, from the
@@ -116,7 +118,7 @@ static size_t written(size_t n) {
     uint8_t owed = t.key_update_owed;
     uint64_t epochs = t.send_epochs;
     sent_bytes = 0;
-    int rc = ch_write(&t, plaintext, n);
+    int rc = ch_write(tls_public(&t), plaintext, n);
     __CPROVER_assert(rc == CH_OK, "write: every record goes out");
     __CPROVER_assert(n == 0 || t.key_update_owed == 0, "write: key_update_owed clear after it");
     t.key_update_owed = owed;
@@ -128,7 +130,7 @@ int main(void) {
     // Any session and any cap.
     any.peer_limit = (uint16_t)nondet_u32();
     any.key_update_owed = nondet_u8();
-    (void)ch_writable_len(&any, nondet_size_t());
+    (void)ch_writable_len(tls_public(&any), nondet_size_t());
 
     // A connected session, through the real ch_write.
     t.state = CH_ST_CONNECTED;
@@ -137,7 +139,7 @@ int main(void) {
     t.key_update_owed = nondet_u8() & 1;
     size_t write_cap = nondet_size_t() & (((size_t)1 << WRITE_CAP_BITS) - 1);
     __CPROVER_assume(write_cap <= WRITE_CAP_MAX);
-    size_t n = ch_writable_len(&t, write_cap);
+    size_t n = ch_writable_len(tls_public(&t), write_cap);
     __CPROVER_assert(written(n) <= write_cap, "writable_len: the answer's records fit cap");
     __CPROVER_assert(written(n + 1) > write_cap, "writable_len: one byte more does not fit");
     return 0;

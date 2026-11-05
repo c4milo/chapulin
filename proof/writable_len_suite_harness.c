@@ -44,6 +44,7 @@
 // low bits and the sequence number as its 24 low bits, a power-of-two
 // bound as bit structure rather than as a comparison (docs/proofs.md).
 #include "harness.h"
+#include "session_convert.h"
 
 #include <string.h>
 
@@ -63,7 +64,7 @@ uint64_t nondet_u64(void);
 static size_t sent_bytes;
 
 // The session ch_write writes from, which the stubs read.
-static ch_tls t;
+static ch_tls_priv t;
 
 int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     (void)cfg;
@@ -93,7 +94,7 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
 // handshake_post.h's contract: one KeyUpdate record sent under the current
 // key, then the next key at sequence number 0, one more counted and
 // key_update_owed clear.
-int hspost_send_key_update(ch_tls *session) {
+int hspost_send_key_update(ch_tls_priv *session) {
     __CPROVER_assert(session == &t, "key update: the session written from");
     __CPROVER_assert(session->key_update_owed == 1 ||
                          (suite_runs_aes_gcm(session->wr.suite) &&
@@ -108,13 +109,14 @@ int hspost_send_key_update(ch_tls *session) {
     return CH_OK;
 }
 
-int tlsi_fail(ch_tls *t, uint8_t description) {
+int tlsi_fail(ch_tls_priv *t, uint8_t description) {
     (void)t;
     (void)description;
     __CPROVER_assert(0, "tlsi_fail unreachable: every seal and send succeeds, below the cap");
     return CH_EIO;
 }
 
+#include "tls_entry.c"
 #include "tls_write.c"
 
 // The largest cap: three whole records at CH_TX_PT, a KeyUpdate record and
@@ -143,7 +145,7 @@ static size_t written(size_t n) {
     uint64_t epochs = t.send_epochs;
     uint8_t owed = t.key_update_owed;
     sent_bytes = 0;
-    int rc = ch_write(&t, plaintext, n);
+    int rc = ch_write(tls_public(&t), plaintext, n);
     __CPROVER_assert(rc == CH_OK, "write: every record goes out");
     __CPROVER_assert(!suite_runs_aes_gcm(t.wr.suite) || t.wr.seq < REC_AES_GCM_RECORDS_MAX,
                      "write: an AES-GCM key keeps its last sequence number free");
@@ -177,7 +179,7 @@ int main(void) {
     size_t write_cap = nondet_size_t() & (((size_t)1 << WRITE_CAP_BITS) - 1);
     size_t limit = t.peer_limit < CH_TX_PT ? t.peer_limit : CH_TX_PT;
     __CPROVER_assume(write_cap <= 3 * (limit + REC_OVERHEAD) + CH_KEY_UPDATE_RECORD_LEN + 1);
-    size_t n = ch_writable_len(&t, write_cap);
+    size_t n = ch_writable_len(tls_public(&t), write_cap);
     __CPROVER_assert(written(n) <= write_cap, "writable_len: the answer's records fit cap");
     __CPROVER_assert(written(n + 1) > write_cap, "writable_len: one byte more does not fit");
     return 0;

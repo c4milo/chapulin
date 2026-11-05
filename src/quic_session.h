@@ -105,8 +105,8 @@
 // key set each names: t.wr_secret is the traffic secret of app_tx, and t.rd_secret that of
 // app_rx[CH_QUIC_KEY_NEXT], not of app_rx[CH_QUIC_KEY_CURRENT]. The comment above states why,
 // with what a build that kept the current phase's secret would get wrong.
-typedef struct ch_quic {
-    ch_tls t;
+typedef struct ch_quic_priv {
+    ch_tls_priv t;
     // The flight handlers' working state, wiped at HSQ_STEP_COMPLETE, one round trip
     // earlier than the tcp-blocking driver wipes its frame, which is INV-17's rule that handshake
     // secrets die at CONNECTED.
@@ -160,7 +160,49 @@ typedef struct ch_quic {
     // An AES-GCM suite's key sets count their own packets, in quic_keys.sealed.
     uint64_t open_failures;
     uint64_t initial_sealed;
-} ch_quic;
+} ch_quic_priv;
+
+// The struct in a caller's ch_quic storage (session_storage.h), converted once in each public call.
+typedef struct ch_quic ch_quic;
+static inline ch_quic_priv *quic_priv(ch_quic *q) {
+    return (ch_quic_priv *)(void *)q;
+}
+static inline const ch_quic_priv *quic_priv_const(const ch_quic *q) {
+    return (const ch_quic_priv *)(const void *)q;
+}
+static inline ch_quic *quic_public(ch_quic_priv *q) {
+    return (ch_quic *)(void *)q;
+}
+static inline const ch_quic *quic_public_const(const ch_quic_priv *q) {
+    return (const ch_quic *)(const void *)q;
+}
+
+// The bodies of the public calls on a ch_quic, each on the ch_quic_priv in the caller's storage.
+// quic_entry.c defines the public calls, which convert the pointer once and call these; quic.h
+// and srv_quic.h state each contract.
+int quic_init(ch_quic_priv *q, const ch_cfg *cfg);
+int quic_initial_keys(ch_quic_priv *q, const uint8_t *dcid, size_t dcid_len);
+int quic_crypto_in(ch_quic_priv *q, uint8_t level, const uint8_t *p, size_t n);
+int quic_crypto_out(ch_quic_priv *q, uint8_t level, uint8_t *out, size_t cap, size_t *out_len);
+int quic_switch_version(ch_quic_priv *q, uint32_t version);
+int quic_seal(ch_quic_priv *q, uint8_t level, uint32_t version, uint64_t pn, size_t pn_len,
+              const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out,
+              size_t cap, size_t *out_len);
+int quic_seal_close(ch_quic_priv *q, uint8_t level, uint32_t version, uint64_t pn, size_t pn_len,
+                    const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
+                    uint8_t *out, size_t cap, size_t *out_len);
+int quic_open(ch_quic_priv *q, uint8_t level, uint32_t version, uint8_t *pkt, size_t pkt_len,
+              size_t pn_off, uint64_t largest_pn, uint64_t current_phase_lowest_pn,
+              uint8_t *key_set, uint64_t *pn, size_t *pt_len);
+uint8_t quic_session_retry_ok(const ch_quic_priv *q, uint32_t version, const uint8_t *pseudo,
+                              size_t n, const uint8_t tag[CH_QUIC_RETRY_TAG_LEN]);
+int quic_key_update(ch_quic_priv *q);
+void quic_drop_previous_keys(ch_quic_priv *q);
+int quic_discard(ch_quic_priv *q, uint8_t level);
+uint64_t quic_error_code(const ch_quic_priv *q);
+void quic_close(ch_quic_priv *q);
+int srv_quic_init(ch_quic_priv *q, const ch_cfg *cfg);
+int srv_quic_crypto_in(ch_quic_priv *q, uint8_t level, const uint8_t *p, size_t n);
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

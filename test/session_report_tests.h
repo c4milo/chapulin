@@ -8,10 +8,11 @@
 
 #include <string.h>
 
+#include "session_convert.h"
 #include "session_report.h"
 
 static void test_session_report(void) {
-    static ch_tls t;
+    static ch_tls_priv t;
     memset(&t, 0, sizeof t);
     t.state = CH_ST_CONNECTED;
     t.group = CH_GROUP_X25519MLKEM768;
@@ -21,37 +22,37 @@ static void test_session_report(void) {
     t.epoch_seen = 102;
     t.epoch_status = CH_EPOCH_AHEAD;
     t.epoch_store_failed = 1;
-    CHECK(ch_state(&t) == CH_ST_CONNECTED);
-    CHECK(ch_group(&t) == CH_GROUP_X25519MLKEM768);
-    CHECK(ch_psk_selected(&t) == 1);
-    CHECK(ch_pin_slot(&t) == 2);
-    CHECK(ch_epoch(&t) == 101);
-    CHECK(ch_epoch_seen(&t) == 102);
-    CHECK(ch_epoch_status(&t) == CH_EPOCH_AHEAD);
-    CHECK(ch_epoch_store_failed(&t) == 1);
+    CHECK(ch_state(tls_public(&t)) == CH_ST_CONNECTED);
+    CHECK(ch_group(tls_public(&t)) == CH_GROUP_X25519MLKEM768);
+    CHECK(ch_psk_selected(tls_public(&t)) == 1);
+    CHECK(ch_pin_slot(tls_public(&t)) == 2);
+    CHECK(ch_epoch(tls_public(&t)) == 101);
+    CHECK(ch_epoch_seen(tls_public(&t)) == 102);
+    CHECK(ch_epoch_status(tls_public(&t)) == CH_EPOCH_AHEAD);
+    CHECK(ch_epoch_store_failed(tls_public(&t)) == 1);
 #ifdef CH_SUITE_AES_GCM
     t.suite = CH_TLS_AES_256_GCM_SHA384;
-    CHECK(ch_suite(&t) == CH_TLS_AES_256_GCM_SHA384);
+    CHECK(ch_suite(tls_public(&t)) == CH_TLS_AES_256_GCM_SHA384);
 #else
-    CHECK(ch_suite(&t) == CH_TLS_CHACHA20_POLY1305_SHA256);
+    CHECK(ch_suite(tls_public(&t)) == CH_TLS_CHACHA20_POLY1305_SHA256);
 #endif
 #if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_ROLE_SERVER)
     t.alpn_selected = 3;
-    CHECK(ch_alpn_selected(&t) == 3);
+    CHECK(ch_alpn_selected(tls_public(&t)) == 3);
 #endif
 #ifdef CH_TRUST_WEBPKI
     t.server_cert_type = CH_CERT_TYPE_RAW_PUBLIC_KEY;
-    CHECK(ch_server_cert_type(&t) == CH_CERT_TYPE_RAW_PUBLIC_KEY);
+    CHECK(ch_server_cert_type(tls_public(&t)) == CH_CERT_TYPE_RAW_PUBLIC_KEY);
 #endif
 #ifdef CH_ROLE_SERVER
     t.sni_len = 17;
-    CHECK(ch_sni_len(&t) == 17);
+    CHECK(ch_sni_len(tls_public(&t)) == 17);
 #endif
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     t.read_closed = 1;
     t.peer_limit = 1000;
-    CHECK(ch_read_closed(&t) == 1);
-    CHECK(ch_peer_limit(&t) == 1000);
+    CHECK(ch_read_closed(tls_public(&t)) == 1);
+    CHECK(ch_peer_limit(tls_public(&t)) == 1000);
 #endif
 }
 

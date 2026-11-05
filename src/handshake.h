@@ -10,6 +10,6 @@
 
 #include "session.h"
 
-int ch_handshake(ch_tls *t);
+int ch_handshake(ch_tls_priv *t);
 
 #endif

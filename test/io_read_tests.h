@@ -44,7 +44,7 @@ static uint8_t io_read_buf[REC_HDR + 0x4000 + 256];
 // the call read the header and no byte of the body.
 static int io_read_one(uint8_t outer, size_t body_len, size_t buf_len, size_t cap, int limit_sent,
                        uint8_t *alert_out, int *header_only) {
-    static ch_tls t;
+    static ch_tls_priv t;
     static io_read_wire wire;
     memset(&t, 0, sizeof t);
     wire = (io_read_wire){.outer = outer, .body_len = body_len};

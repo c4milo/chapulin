@@ -29,6 +29,7 @@
 // refusing every configuration before the ALPN rules ran and leaving
 // this formula proving one branch.
 #include "harness.h"
+#include "session_convert.h"
 
 #include <string.h>
 
@@ -353,7 +354,7 @@ static int recv_cb(void *io, uint8_t *p, size_t n) {
 }
 
 int main(void) {
-    static ch_tls t;
+    static ch_tls_priv t;
     static ch_cfg cfg;
     static ch_alpn_protocol protocols[CH_ALPN_MAX];
     static uint8_t names[CH_ALPN_MAX * CH_ALPN_NAME_MAX];
@@ -377,7 +378,7 @@ int main(void) {
     }
 
     flight_calls = 0;
-    rc = ch_srv_accept(&t, &cfg);
+    rc = ch_srv_accept(tls_public(&t), &cfg);
     if (flight_calls != 0) {
         __CPROVER_assert(keys_meet_rules(&cfg.srv),
                          "a flight runs only under keys that meet their rules");

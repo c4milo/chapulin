@@ -24,7 +24,7 @@
 #define TRANSCRIPT_MSG_MAX 64
 
 int main(void) {
-    ch_tls t;
+    ch_tls_priv t;
     handshake_state h;
     memset(&h, 0, sizeof h);
     h.t = &t;

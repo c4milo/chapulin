@@ -62,7 +62,7 @@ int hsr_peek_message(const handshake_state *h, size_t *raw_len, uint8_t *alert) 
 // The refusal of an alert record, to the contract handshake_record.h
 // states: a record that is not one 2-byte alert writes decode_error, an
 // error alert is written to alert_received, and the answer is CH_EPROTO.
-int hsr_refuse_alert(ch_tls *t, const uint8_t *pt, size_t n, uint8_t *alert) {
+int hsr_refuse_alert(ch_tls_priv *t, const uint8_t *pt, size_t n, uint8_t *alert) {
     __CPROVER_assert(t != NULL && alert != NULL, "refuse alert: outputs valid");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(pt, n), "refuse alert: plaintext readable");
     if (n != 2) {

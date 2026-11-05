@@ -141,7 +141,7 @@ static int read_row(cfg_shape shape, const uint8_t *exts, size_t n, uint8_t befo
     CHECK(!w.err);
     source.len = w.len;
 
-    static ch_tls t;
+    static ch_tls_priv t;
     memset(&t, 0, sizeof t);
     shape_cfg(&t.cfg, shape);
     t.peer_limit = CH_TX_PT;

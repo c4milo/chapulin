@@ -49,7 +49,7 @@ static unsigned long ifma_calls_of_flight(const char *name, uint32_t bits) {
         return 0;
     }
     ch_trust_anchor anchors[CORPUS_ROW_ANCHORS];
-    ch_tls t;
+    ch_tls_priv t;
     memset(&t, 0, sizeof t);
     row_session(row, anchors, &t);
     t.cfg.cpu = TEST_CPU | bits;

@@ -21,6 +21,7 @@
 #include "handshake_parser.h"
 #include "keysched.h"
 #include "record.h"
+#include "session_convert.h"
 #include "test_clock.h"
 #include "test_cpu.h"
 #include "test_random.h"
@@ -413,9 +414,9 @@ static ch_cfg valid_cfg(mock_server *s) {
 // Runs ch_connect on cfg and reports whether it was refused before a
 // byte left: CH_EINVAL with no send.
 static int refused(const ch_cfg *cfg) {
-    ch_tls t;
+    ch_tls_priv t;
     const mock_server *s = cfg->io;
-    int rc = ch_connect(&t, cfg);
+    int rc = ch_connect(tls_public(&t), cfg);
     return rc == CH_EINVAL && s->sends == 0;
 }
 
@@ -423,9 +424,9 @@ static int refused(const ch_cfg *cfg) {
 // the client sent its ClientHello, and recv's failure then returned
 // CH_EIO.
 static int sends_client_hello(const ch_cfg *cfg) {
-    ch_tls t;
+    ch_tls_priv t;
     const mock_server *s = cfg->io;
-    int rc = ch_connect(&t, cfg);
+    int rc = ch_connect(tls_public(&t), cfg);
     return rc == CH_EIO && s->hello_len > 0;
 }
 

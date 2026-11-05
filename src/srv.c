@@ -7,6 +7,8 @@
 // CH_EINVAL before a byte goes out, and the session is left dead rather
 // than half-live.
 #include "srv.h"
+#include "session_convert.h"
+#include "tls_calls.h"
 
 #ifdef CH_ROLE_SERVER
 
@@ -241,7 +243,7 @@ int srv_config_ok(const ch_cfg *cfg) {
 // to their caller between messages, and srv_handshake.c is not in either
 // object for this to call.
 #if !defined(CH_TRANSPORT_QUIC_NONBLOCKING) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
-int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
+int srv_accept(ch_tls_priv *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
     t->server = 1; // what ch_read refuses a NewSessionTicket on (handshake_post.c)
@@ -254,6 +256,11 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
     tlsi_record_cpu(t);
 #endif
     return srv_handshake(t);
+}
+
+// srv.h's call: it converts the caller's storage once (docs/decisions.md 185).
+int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
+    return srv_accept(tls_priv(t), cfg);
 }
 #endif
 

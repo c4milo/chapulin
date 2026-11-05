@@ -32,7 +32,7 @@
 // above this pair in the chain CLAUDE.md states, quic_step.c
 // includes quic.h, and quic.h includes this file for the step numbers.
 // C11 allows a typedef name to be declared twice for the same type.
-typedef struct ch_quic ch_quic;
+typedef struct ch_quic_priv ch_quic_priv;
 
 // The step numbers. Each names the handshake message the driver waits
 // for, and they mirror the client states spec/lean/Spec/Handshake.lean's
@@ -117,7 +117,7 @@ typedef struct ch_quic ch_quic;
 // is data a fault can reach and CH_ASSERT is for programmer error
 // alone. A step value inside the table always has a handler, so the
 // default arm answers nothing else.
-int hsq_advance(ch_quic *q);
+int hsq_advance(ch_quic_priv *q);
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

@@ -162,7 +162,7 @@ void hsa_epoch_commit(handshake_state *h) {
 }
 #endif
 
-int hspost_take_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *alert,
+int hspost_take_ticket(ch_tls_priv *t, const uint8_t *body, size_t n, uint8_t *alert,
                        uint64_t *error_code) {
     __CPROVER_assert(t != NULL, "ticket: session valid");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(body, n), "ticket: body readable");
@@ -180,7 +180,7 @@ int hspost_take_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *alert,
 
 // The session the step runs over, declared here so the key stubs below
 // can read the version it negotiated.
-static ch_quic q;
+static ch_quic_priv q;
 
 // quic_keys.c's three derivations. Each writes the one set it is handed
 // and nothing else; quic_keys_update also advances the secret in place,

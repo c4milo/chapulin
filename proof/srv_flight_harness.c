@@ -47,7 +47,7 @@ uint16_t nondet_u16(void);
 #define CHAIN_MAX 2  // the longest chain an identity holds here
 #define LIMIT_MAX 16 // the largest record limit the peer asks for
 
-static ch_tls t;
+static ch_tls_priv t;
 static handshake_state h;
 static client_hello hello;
 static selection sel;

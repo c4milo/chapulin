@@ -75,8 +75,8 @@ static void fill_buf_nondet(uint8_t *p, size_t n) {
 // REC_HDR <= record_len <= cap (io.c:23-35). handshake_record.c never
 // re-checks it, and the memmove at accept_record, the rec_open call and
 // the CCS payload byte all read within it.
-int io_read_record(const ch_tls *t, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
-                   uint8_t *alert) {
+int io_read_record(const ch_tls_priv *t, uint8_t *buf, size_t cap, uint8_t *outer,
+                   size_t *record_len, uint8_t *alert) {
     __CPROVER_assert(t != NULL, "read: session valid");
     uint8_t choice = nondet_u8();
     if (choice == 0) {
@@ -159,7 +159,7 @@ static void assert_transcript_kept(const sha256 *a, const sha256 *b) {
 }
 
 int main(void) {
-    ch_tls t;
+    ch_tls_priv t;
     handshake_state h;
     uint8_t buf[CH_PROOF_RXBUF];
 

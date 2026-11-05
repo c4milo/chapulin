@@ -26,6 +26,7 @@
 // make up to nine records. writable_len and writable_len_suite prove the
 // lengths at the real limits.
 #include "harness.h"
+#include "session_convert.h"
 
 #include <string.h>
 
@@ -38,7 +39,7 @@
 #define WRITE_PARTS_MAX 9
 #define WRITE_LIMIT_MAX 4
 
-static ch_tls t;
+static ch_tls_priv t;
 static uint8_t plaintext[WRITE_PARTS_MAX];
 
 // The records' plaintexts, joined, and the shape of the records.
@@ -75,7 +76,7 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     return 0;
 }
 
-int hspost_send_key_update(ch_tls *session) {
+int hspost_send_key_update(ch_tls_priv *session) {
     __CPROVER_assert(session == &t, "key update: the session written from");
     __CPROVER_assert(session->key_update_owed == 1, "key update: key_update_owed is set");
     __CPROVER_assert(records == 0, "key update: before the first data record");
@@ -84,13 +85,14 @@ int hspost_send_key_update(ch_tls *session) {
     return CH_OK;
 }
 
-int tlsi_fail(ch_tls *session, uint8_t description) {
+int tlsi_fail(ch_tls_priv *session, uint8_t description) {
     (void)session;
     (void)description;
     __CPROVER_assert(0, "tlsi_fail unreachable: every seal and send succeeds");
     return CH_EIO;
 }
 
+#include "tls_entry.c"
 #include "tls_write.c"
 
 // A part of len bytes at plaintext[at], or no pointer at all when it is
@@ -123,7 +125,8 @@ int main(void) {
     };
     uint8_t owed = t.key_update_owed;
 
-    __CPROVER_assert(ch_write_parts(&t, parts, 3) == CH_OK, "write: every record goes out");
+    __CPROVER_assert(ch_write_parts(tls_public(&t), parts, 3) == CH_OK,
+                     "write: every record goes out");
     __CPROVER_assert(sealed_len == n, "write: the records hold every byte of the parts");
     for (size_t i = 0; i < n; i++) {
         __CPROVER_assert(sealed[i] == plaintext[i], "write: the records hold the parts joined");

@@ -220,13 +220,24 @@ pub fn zeroed(value: anytype) bool {
     return std.mem.allEqual(u8, std.mem.asBytes(value), 0);
 }
 
+/// The ch_tcp_priv in a session's ch_tcp storage, for a test that reads or writes a field no
+/// call reports. The API promises nothing about these fields (docs/zig.md, "What stays out").
+pub fn tcpPriv(storage: *c.ch_tcp) *c.ch_tcp_priv {
+    return @ptrCast(@alignCast(storage));
+}
+
+/// The ch_quic_priv in a session's ch_quic storage, as tcpPriv.
+pub fn quicPriv(storage: *c.ch_quic) *c.ch_quic_priv {
+    return @ptrCast(@alignCast(storage));
+}
+
 /// Whether a client's init set on_ticket as its values' takes_tickets
 /// says, and under TRUST=webpki whether it wrote ch_tls.takes_tickets and
 /// stored a configuration hash to match. The Zig object exports no hash
 /// call to count. bin/webpki_session_test counts the calls, and requires
 /// one hash at init exactly when on_ticket is set
 /// (test/webpki_ticket_rows.h).
-pub fn clientTakesTickets(t: *const c.ch_tls, takes: bool) !void {
+pub fn clientTakesTickets(t: *const c.ch_tls_priv, takes: bool) !void {
     try check((t.cfg.on_ticket != null) == takes, "on_ticket does not follow takes_tickets");
     if (!has_webpki) return;
     try check(t.takes_tickets == @intFromBool(takes), "ch_tls.takes_tickets does not follow takes_tickets");

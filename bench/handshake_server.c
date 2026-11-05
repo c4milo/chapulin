@@ -28,6 +28,7 @@
 #include "ch_assert.h"
 #include "handshake_window.h"
 #include "pem_files.h"
+#include "session_convert.h"
 #include "srv_tcp_nonblocking.h"
 #include "tcp_nonblocking.h"
 #include "tls.h"
@@ -51,7 +52,7 @@ static const ch_alpn_protocol alpn[2] = {
     {(const uint8_t *)"http/1.1", 8},
 };
 static ch_cfg cfg;
-static ch_tcp session;
+static ch_tcp_priv session;
 
 // The socket of the connection in progress, and the bytes read from it
 // that no call has consumed yet.
@@ -118,18 +119,18 @@ static int recv_bytes(void *io, uint8_t *p, size_t n) {
 }
 
 __attribute__((noinline)) void bench_handshake(void) {
-    if (ch_srv_tcp_init(&session, &cfg) != CH_OK) {
+    if (ch_srv_tcp_init(tcp_public(&session), &cfg) != CH_OK) {
         fail("ch_srv_tcp_init refused the configuration");
     }
     wire.len = 0;
-    while (ch_tcp_state(&session) != CH_ST_CONNECTED) {
+    while (ch_tcp_state(tcp_public(&session)) != CH_ST_CONNECTED) {
         ssize_t got = read(wire.fd, wire.bytes + wire.len, sizeof wire.bytes - wire.len);
         if (got <= 0) {
             fail("the client closed during the handshake");
         }
         wire.len += (size_t)got;
         size_t consumed = 0;
-        if (ch_srv_tcp_in(&session, wire.bytes, wire.len, &consumed) != CH_OK) {
+        if (ch_srv_tcp_in(tcp_public(&session), wire.bytes, wire.len, &consumed) != CH_OK) {
             fail("ch_srv_tcp_in failed");
         }
         memmove(wire.bytes, wire.bytes + consumed, wire.len - consumed);
@@ -145,7 +146,7 @@ __attribute__((noinline)) void bench_exchange(void) {
     uint8_t request[REQUEST_LEN];
     size_t have = 0;
     while (have < sizeof request) {
-        int got = ch_read(&session.t, request + have, sizeof request - have);
+        int got = ch_read(ch_tcp_tls(tcp_public(&session)), request + have, sizeof request - have);
         if (got <= 0) {
             fail("ch_read did not return the request");
         }
@@ -153,13 +154,13 @@ __attribute__((noinline)) void bench_exchange(void) {
     }
     uint8_t response[RESPONSE_LEN];
     memset(response, 'r', sizeof response);
-    if (ch_write(&session.t, response, sizeof response) != CH_OK) {
+    if (ch_write(ch_tcp_tls(tcp_public(&session)), response, sizeof response) != CH_OK) {
         fail("ch_write failed");
     }
-    if (ch_read(&session.t, request, sizeof request) != 0) {
+    if (ch_read(ch_tcp_tls(tcp_public(&session)), request, sizeof request) != 0) {
         fail("ch_read did not return the client's close_notify");
     }
-    ch_close(&session.t);
+    ch_close(ch_tcp_tls(tcp_public(&session)));
     close(wire.fd);
 }
 

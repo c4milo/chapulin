@@ -41,7 +41,7 @@
 // messages, and the wipe comes one round trip earlier, at the step that
 // reaches HSQ_STEP_COMPLETE.
 typedef struct {
-    ch_tls *t;
+    ch_tls_priv *t;
     uint8_t priv[X25519_LEN];
     uint8_t pub[X25519_LEN];
 #ifdef CH_KEX_MLKEM
@@ -319,7 +319,7 @@ int hsr_check_record_end(handshake_state *h);
 //   the answer that reader gives a record it cannot use.
 //
 // Returns CH_EPROTO, and the caller fails the session.
-int hsr_refuse_alert(ch_tls *t, const uint8_t *pt, size_t n, uint8_t *alert);
+int hsr_refuse_alert(ch_tls_priv *t, const uint8_t *pt, size_t n, uint8_t *alert);
 #endif
 
 // The hash length of the suite the server named, which every client

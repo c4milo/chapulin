@@ -22,6 +22,7 @@
 #include "rand.h"
 #include "rsa.h"
 #include "rsa_sign.h"
+#include "session_convert.h"
 #include "srv.h"
 #include "srv_flight.h"
 #include "srv_handshake.h"

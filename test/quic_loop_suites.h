@@ -37,17 +37,17 @@ static void webpki_server_suite(ch_cfg *cfg, uint16_t suite) {
 // client opens the packet with its next receive set, which
 // ch_quic_key_update derived at the suite's hash for the suite's AEAD.
 static void check_keys_agree_after_update(void) {
-    CHECK(ch_quic_key_update(&server) == CH_OK);
+    CHECK(ch_quic_key_update(quic_public(&server)) == CH_OK);
     static const uint8_t hdr[3] = {0x41, 0x00, 0x06};
     static const uint8_t pt[24] = {'u', 'p', 'd', 'a', 't', 'e'};
     uint8_t pkt[64];
     size_t pkt_len = 0;
-    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, 6, 2, hdr, sizeof hdr, pt,
+    CHECK(ch_quic_seal(quic_public(&server), CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, 6, 2, hdr, sizeof hdr, pt,
                        sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, pkt, pkt_len, 1, 5, 0,
+    CHECK(ch_quic_open(quic_public(&client), CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, pkt, pkt_len, 1, 5, 0,
                        &key_set, &pn, &pt_len) == CH_OK);
     CHECK(key_set == CH_QUIC_KEY_NEXT && pn == 6 && pt_len == sizeof pt);
 }

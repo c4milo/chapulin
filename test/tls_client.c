@@ -13,6 +13,7 @@
 
 #include "ch_assert.h"
 #include "rand.h"
+#include "session_convert.h"
 #include "test_clock.h"
 #include "test_random.h"
 #include "tls.h"
@@ -316,18 +317,18 @@ static int dial_host(const char *host, const char *port) {
 // server's direction alone (RFC 9846 §6.1); e2e's go-half-close test
 // checks the server read them. Returns the process exit code, or -1 once
 // stdin ends and the caller should close.
-static int echo_lines(ch_tls *tls) {
+static int echo_lines(ch_tls_priv *tls) {
     char line[512];
     int server_closed = 0;
     while (fgets(line, sizeof line, stdin) != NULL) {
-        if (ch_write(tls, (const uint8_t *)line, strlen(line)) != CH_OK) {
+        if (ch_write(tls_public(tls), (const uint8_t *)line, strlen(line)) != CH_OK) {
             return 1;
         }
         if (server_closed) {
             continue;
         }
         uint8_t reply[512];
-        int got = ch_read(tls, reply, sizeof reply);
+        int got = ch_read(tls_public(tls), reply, sizeof reply);
         if (got < 0) {
             (void)fprintf(stderr, "read: %d\n", got);
             return 1;
@@ -411,34 +412,34 @@ int main(int argc, char **argv) {
     }
 #endif
 
-    static ch_tls tls;
-    int rc = ch_connect(&tls, &cfg);
+    static ch_tls_priv tls;
+    int rc = ch_connect(tls_public(&tls), &cfg);
     if (rc != CH_OK) {
         (void)fprintf(stderr, "handshake failed: %d\n", rc);
 #ifdef CH_TRUST_CA
         // e2e asserts on this line. A ticket the stored epoch retired
         // returns CH_EINVAL, the code of every refused configuration, and
         // the epoch status, CH_EPOCH_REVOKED, is what names it.
-        (void)fprintf(stderr, "epoch status %u\n", (unsigned)ch_epoch_status(&tls));
+        (void)fprintf(stderr, "epoch status %u\n", (unsigned)ch_epoch_status(tls_public(&tls)));
 #endif
         return 1;
     }
     (void)fprintf(stderr, "connected\n");
     // e2e asserts on this line: the group the ServerHello selected.
-    (void)fprintf(stderr, "group 0x%04x\n", (unsigned)ch_group(&tls));
+    (void)fprintf(stderr, "group 0x%04x\n", (unsigned)ch_group(tls_public(&tls)));
     // And on this one: whether the ticket authenticated the handshake or
     // the server declined it and sent a certificate (ch_psk_selected).
-    (void)fprintf(stderr, "psk selected %u\n", (unsigned)ch_psk_selected(&tls));
+    (void)fprintf(stderr, "psk selected %u\n", (unsigned)ch_psk_selected(tls_public(&tls)));
 #ifdef CH_SUITE_AES_GCM
     // And the cipher suite, in a build that can negotiate one.
-    (void)fprintf(stderr, "suite 0x%04x\n", (unsigned)ch_suite(&tls));
+    (void)fprintf(stderr, "suite 0x%04x\n", (unsigned)ch_suite(tls_public(&tls)));
 #endif
 #ifdef CH_TRUST_WEBPKI
     report_webpki(&cfg, &tls);
 #endif
     if (cfg.server_pubkey != NULL) {
         // e2e asserts on this line to watch rotation: 2 = the staged pin.
-        (void)fprintf(stderr, "pin slot %u\n", ch_pin_slot(&tls));
+        (void)fprintf(stderr, "pin slot %u\n", ch_pin_slot(tls_public(&tls)));
     }
 #ifdef CH_TRUST_CA
     if (cfg.epoch_load != NULL) {
@@ -451,7 +452,7 @@ int main(int argc, char **argv) {
     if (exit_code >= 0) {
         return exit_code;
     }
-    ch_close(&tls);
+    ch_close(tls_public(&tls));
     (void)close(fd);
     return 0;
 }

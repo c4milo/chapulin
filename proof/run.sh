@@ -1089,19 +1089,19 @@ launch fast full record_whole_len 2 "" -DCH_TRANSPORT_TCP_NONBLOCKING src/buf.c
 # at record limits of 1 to 4, with wb_bytes as a byte loop: the
 # records hold the parts joined, every record but the last is full, and
 # the owed KeyUpdate goes first (the harness states why those bounds).
-# ch_write_parts.1 turns once a record, nine times at most, and
+# tls_write_parts.1 turns once a record, nine times at most, and
 # parts_copy_record.0 and parts_skip_empty.0 three times at most, and
-# wb_bytes.0 four. ch_write_parts.0 is CH_ASSERT's do-while.
+# wb_bytes.0 four. tls_write_parts.0 is CH_ASSERT's do-while.
 # Measured on 2026-10-31 on an ubuntu-24.04 runner (PROVE_ONLY=write_parts
 # PROVE_NO_CACHE=1 /usr/bin/time -v, cbmc 6.11.0, kissat): 386
 # properties, 125 s, 1.8 GB peak. With buf.c's memcpy in place of
 # proof/wbuf_byte_stub.c the formula passed 6 GB in 19 s.
-launch fast full write_parts 2 "ch_write_parts.1:10,parts_copy_record.0:4,parts_skip_empty.0:4,rec_seal.0:5,main.0:10,fill_nondet.0:10,wb_bytes.0:5" proof/wbuf_byte_stub.c
+launch fast full write_parts 2 "tls_write_parts.1:10,parts_copy_record.0:4,parts_skip_empty.0:4,rec_seal.0:5,main.0:10,fill_nondet.0:10,wb_bytes.0:5" proof/wbuf_byte_stub.c
 # writable_len: ch_writable_len over any peer_limit and any cap, then its
 # answer written through the real ch_write at caps up to 1,630 bytes and a
 # peer_limit from 63, with and without an owed KeyUpdate answer, with
 # rec_seal, hspost_send_key_update and io_send_all stubbed to their
-# contracts. Its record loop, ch_write.1 then and ch_write_parts.1 now,
+# contracts. Its record loop, ch_write.1 then and tls_write_parts.1 now,
 # turns at most 20 times there. Measured the same way (PROVE_ONLY=writable_len PROVE_NO_CACHE=1):
 # 420 properties, 58 s, 185 MB. The harness records the forms that took
 # longer. With the send path in tls_write.c, which the harness includes in
@@ -1115,14 +1115,14 @@ launch fast full write_parts 2 "ch_write_parts.1:10,parts_copy_record.0:4,parts_
 # the same way: 342 properties, 271 s, 0.28 GB peak. The same formula over
 # three parts of any lengths returned no verdict in 120 minutes;
 # write_parts proves the loop over parts at its own bound.
-launch fast full writable_len 2 "ch_write_parts.1:21" proof/wbuf_length_stub.c
+launch fast full writable_len 2 "tls_write_parts.1:21" proof/wbuf_length_stub.c
 # writable_len_suite: the answer through the real ch_write in the
 # -DCH_SUITE_AES_GCM build, where ch_write sends a KeyUpdate at an AES-GCM
 # write key's ceiling and ch_writable_len counts it, over each of the three
 # suites and every write sequence number below the ceiling, with
 # hspost_send_key_update stubbed to its contract beside rec_seal and
 # io_send_all. Its cap holds three records of the session's own limit, so
-# ch_write.1 turns at most four times. writable_len_suite_any proves the
+# tls_write.1 turns at most four times. writable_len_suite_any proves the
 # call safe over any input in that build. Beside each other in one
 # formula, the two returned no verdict in 14 minutes, 11.5 of them in
 # kissat, at a load average near 20. Measured apart (PROVE_ONLY=<name>
@@ -1138,7 +1138,7 @@ launch fast full writable_len 2 "ch_write_parts.1:21" proof/wbuf_length_stub.c
 # 169 properties, 45 s, 0.04 GB peak. With ch_write as ch_write_parts and
 # wb_bytes as proof/wbuf_length_stub.c (docs/decisions.md 167), measured
 # on 2026-10-31 the same way: 393 properties, 62 s, 0.11 GB peak.
-launch fast full writable_len_suite 2 "ch_write_parts.1:5" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME proof/wbuf_length_stub.c
+launch fast full writable_len_suite 2 "tls_write_parts.1:5" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME proof/wbuf_length_stub.c
 # In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=writable_len_suite_any PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
@@ -2636,8 +2636,8 @@ launch fast:2 full srv_quic 5 "fill_nondet.0:257,drive.0:5,zero_bytes.0:133" -DC
 # fast tier's five minutes. Measured on 2026-10-31 in the pinned amd64
 # container: tcp_nonblocking 1755 properties, 7 s to 11 s, 80 MB resident;
 # tcp_nonblocking_in 1628, 72 s, 1.32 GB.
-launch fast full tcp_nonblocking 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_nonblocking.c src/tcp_nonblocking_step.c src/tcp_nonblocking_frame.c src/ct.c src/buf.c
-launch fast:2 full tcp_nonblocking_in 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_nonblocking.c src/tcp_nonblocking_frame.c src/ct.c src/buf.c
+launch fast full tcp_nonblocking 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_step.c src/tcp_nonblocking_frame.c src/ct.c src/buf.c
+launch fast:2 full tcp_nonblocking_in 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/ct.c src/buf.c
 # The ROLE=server flight handlers, with srv_accept's layering turned
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the

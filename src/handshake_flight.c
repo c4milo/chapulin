@@ -30,7 +30,7 @@ static void early_secret_without_psk(handshake_state *h) {
 }
 
 void hsf_begin(handshake_state *h) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     // The caller zeroed h, so a source that returned without writing
     // leaves each draw below zero, and nothing downstream would notice:
     // the handshake completes and the peer can predict the key. A real
@@ -67,7 +67,7 @@ void hsf_begin(handshake_state *h) {
 // classic build and in the retry hello that carries the P-256 share.
 static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap,
                                     const uint8_t *ek) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // RFC 9001 §4.1.3 removes the record layer this extension sizes
     // (rfc9001.txt:462-464), so a QUIC hello sends none and this passes 0.
@@ -361,7 +361,7 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
 }
 
 int hsf_read_encrypted_extensions(handshake_state *h) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
@@ -467,7 +467,7 @@ int hsf_read_finished(handshake_state *h) {
 }
 
 size_t hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_MAX]) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     // Running the client Finished before the server proved it holds the keys would answer an
     // unauthenticated peer, which is programmer error rather than peer input.
     CH_ASSERT(h->server_finished_ok);

@@ -227,7 +227,7 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel);
 // stubbed still prove the peer_limit rule over the real code.
 static inline void srv_store_selection(handshake_state *h, const client_hello *ch,
                                        const selection *sel) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     t->suite = sel->suite;
     t->hash_len = sel->hash_len;
     t->group = sel->group;

@@ -19,6 +19,7 @@
 #include "alert.h"
 #include "cfg.h"
 #include "ch_assert.h"
+#include "session_convert.h"
 #include "test_random.h"
 #include "test_ticket.h"
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -73,7 +74,7 @@ static const uint8_t identity[1] = {'d'};
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 static const uint8_t params[4] = {0x04, 0x01, 0x40, 0x00}; // copied into the hello, never read
 static const ch_alpn_protocol alpn = {(const uint8_t *)"h3", 2};
-static ch_quic session;
+static ch_quic_priv session;
 
 static void level_ready(void *io, uint8_t level, uint8_t direction) {
     (void)io;
@@ -82,19 +83,19 @@ static void level_ready(void *io, uint8_t level, uint8_t direction) {
 }
 
 static int client_init(const ch_cfg *cfg) {
-    return ch_quic_init(&session, cfg);
+    return ch_quic_init(quic_public(&session), cfg);
 }
 
 static uint8_t client_state(void) {
-    return ch_quic_state(&session);
+    return ch_quic_state(quic_public(&session));
 }
 
 // The bytes the entry staged: the ClientHello, at the Initial level.
 static int client_out(uint8_t *out, size_t cap, size_t *out_len) {
-    return ch_quic_crypto_out(&session, CH_LEVEL_INITIAL, out, cap, out_len);
+    return ch_quic_crypto_out(quic_public(&session), CH_LEVEL_INITIAL, out, cap, out_len);
 }
 #else
-static ch_tcp session;
+static ch_tcp_priv session;
 
 // ch_tcp_init requires both callbacks and calls neither, so each
 // counts its calls and fails.
@@ -116,16 +117,16 @@ static int fail_recv(void *io, uint8_t *p, size_t n) {
 }
 
 static int client_init(const ch_cfg *cfg) {
-    return ch_tcp_init(&session, cfg);
+    return ch_tcp_init(tcp_public(&session), cfg);
 }
 
 static uint8_t client_state(void) {
-    return ch_tcp_state(&session);
+    return ch_tcp_state(tcp_public(&session));
 }
 
 // The bytes the entry staged: the ClientHello record.
 static int client_out(uint8_t *out, size_t cap, size_t *out_len) {
-    return ch_tcp_out(&session, out, cap, out_len);
+    return ch_tcp_out(tcp_public(&session), out, cap, out_len);
 }
 #endif
 
@@ -192,7 +193,7 @@ static void test_ticket_epoch_boundary(void) {
     CHECK(session.t.epoch_status == CH_EPOCH_REVOKED);
     out_len = 0;
     CHECK(client_out(out, sizeof out, &out_len) == CH_EINVAL && out_len == 0);
-    CHECK(ch_alert_sent(&session.t) == 0);
+    CHECK(ch_alert_sent(tls_public(&session.t)) == 0);
 
     configure(&cfg, 11);
     CHECK(client_init(&cfg) == CH_OK);

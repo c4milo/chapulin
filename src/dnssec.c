@@ -9,6 +9,7 @@
 
 #include "buf.h"
 #include "ct.h"
+#include "dnssec_hash.h"
 #include "ed25519_verify.h"
 #include "p256.h"
 #include "p384.h"
@@ -82,7 +83,7 @@ static int hashes_sha512(uint8_t algorithm) {
            algorithm == CH_DNSSEC_ALG_ECDSAP384SHA384;
 }
 
-int ch_dnssec_hash_init(ch_dnssec_hash *h, uint8_t algorithm, const uint8_t *key, size_t key_len,
+static int dnssec_hash_init(ch_dnssec_hash_priv *h, uint8_t algorithm, const uint8_t *key, size_t key_len,
                         const uint8_t *sig, size_t sig_len) {
     h->algorithm = algorithm;
     switch (algorithm) {
@@ -111,23 +112,23 @@ int ch_dnssec_hash_init(ch_dnssec_hash *h, uint8_t algorithm, const uint8_t *key
 
 // Type 1 is SHA-1 under HASH_SHA1. Types 2 and 4 are the hashes of
 // algorithms 8 and 14, whose init reads no key and no signature.
-int ch_dnssec_digest_init(ch_dnssec_hash *h, uint8_t digest_type) {
+static int dnssec_digest_init(ch_dnssec_hash_priv *h, uint8_t digest_type) {
     switch (digest_type) {
     case CH_DNSSEC_DIGEST_SHA1:
         h->algorithm = HASH_SHA1;
         sha1_init(&h->state.sha1_state);
         return CH_OK;
     case CH_DNSSEC_DIGEST_SHA256:
-        return ch_dnssec_hash_init(h, CH_DNSSEC_ALG_RSASHA256, NULL, 0, NULL, 0);
+        return dnssec_hash_init(h, CH_DNSSEC_ALG_RSASHA256, NULL, 0, NULL, 0);
     case CH_DNSSEC_DIGEST_SHA384:
-        return ch_dnssec_hash_init(h, CH_DNSSEC_ALG_ECDSAP384SHA384, NULL, 0, NULL, 0);
+        return dnssec_hash_init(h, CH_DNSSEC_ALG_ECDSAP384SHA384, NULL, 0, NULL, 0);
     default:
         h->algorithm = 0;
         return CH_EINVAL;
     }
 }
 
-void ch_dnssec_hash_update(ch_dnssec_hash *h, const uint8_t *p, size_t n) {
+static void dnssec_hash_update(ch_dnssec_hash_priv *h, const uint8_t *p, size_t n) {
     if (hashes_sha1(h->algorithm)) {
         sha1_update(&h->state.sha1_state, p, n);
     } else if (hashes_sha512(h->algorithm)) {
@@ -137,7 +138,7 @@ void ch_dnssec_hash_update(ch_dnssec_hash *h, const uint8_t *p, size_t n) {
     }
 }
 
-size_t ch_dnssec_hash_final(ch_dnssec_hash *h, uint8_t digest[CH_DNSSEC_DIGEST_MAX]) {
+static size_t dnssec_hash_final(ch_dnssec_hash_priv *h, uint8_t digest[CH_DNSSEC_DIGEST_MAX]) {
     size_t n = SHA256_LEN;
     if (hashes_sha1(h->algorithm)) {
         sha1_final(&h->state.sha1_state, digest);
@@ -195,6 +196,24 @@ int ch_dnssec_verify(uint8_t algorithm, const uint8_t *key, size_t key_len, cons
     default:
         return CH_EINVAL;
     }
+}
+
+// The public calls: each converts the caller's storage once (dnssec_hash.h).
+int ch_dnssec_hash_init(ch_dnssec_hash *h, uint8_t algorithm, const uint8_t *key, size_t key_len,
+                        const uint8_t *sig, size_t sig_len) {
+    return dnssec_hash_init(dnssec_hash_priv(h), algorithm, key, key_len, sig, sig_len);
+}
+
+int ch_dnssec_digest_init(ch_dnssec_hash *h, uint8_t digest_type) {
+    return dnssec_digest_init(dnssec_hash_priv(h), digest_type);
+}
+
+void ch_dnssec_hash_update(ch_dnssec_hash *h, const uint8_t *p, size_t n) {
+    dnssec_hash_update(dnssec_hash_priv(h), p, n);
+}
+
+size_t ch_dnssec_hash_final(ch_dnssec_hash *h, uint8_t digest[CH_DNSSEC_DIGEST_MAX]) {
+    return dnssec_hash_final(dnssec_hash_priv(h), digest);
 }
 
 #endif // CH_DNSSEC

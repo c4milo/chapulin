@@ -9,6 +9,7 @@
 #define CH_TEST_WEBPKI_DECLINE_CASES_H
 
 #include "psk_decline_tests.h"
+#include "session_convert.h"
 
 // The binding webpki_ticket.h gives psk under cfg's hostname, anchors and
 // pins, as on_ticket would have handed it over.
@@ -71,7 +72,7 @@ static void test_server_declines_ticket(void) {
     CHECK(certificate_path_then_ticket(mock.hello, mock.hello_len, 0));
     push_ticket(&mock);
     uint8_t got[8];
-    CHECK(ch_read(session_tls(), got, sizeof got) == 2 && memcmp(got, "ok", 2) == 0);
+    CHECK(ch_read(tls_public(session_tls()), got, sizeof got) == 2 && memcmp(got, "ok", 2) == 0);
     uint8_t want[SHA256_LEN];
     bind_ticket(&cfg, received.psk, want);
     CHECK(received.count == 1 && memcmp(received.binding, want, SHA256_LEN) == 0);

@@ -15,6 +15,7 @@
 
 #include "handshake_groups.h"
 #include "p256_ecdh.h"
+#include "session_convert.h"
 #include "test_widemul.h"
 
 // The retry hello a HelloRetryRequest naming secp256r1 asks for: its
@@ -59,9 +60,9 @@ static ch_cfg p256_retry_cfg(mock_server *s, int cookie) {
 static void test_webpki_p256_retry(void) {
     for (int cookie = 0; cookie <= 1; cookie++) {
         mock_server s;
-        ch_tls t;
+        ch_tls_priv t;
         ch_cfg cfg = p256_retry_cfg(&s, cookie);
-        CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+        CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
         CHECK(s.alert == ALERT_BAD_CERTIFICATE);
         CHECK(t.group == CH_GROUP_SECP256R1);
         CHECK(s.retry_hello_len > 0 && s.retry_record_version == 0x03);
@@ -95,10 +96,10 @@ static void test_webpki_p256_retry(void) {
 static void test_webpki_p256_share_refusals(void) {
     for (int mode = MOCK_P256_VALID + 1; mode < MOCK_P256_MODES; mode++) {
         mock_server s;
-        ch_tls t;
+        ch_tls_priv t;
         ch_cfg cfg = p256_retry_cfg(&s, 0);
         s.p256_mode = mode;
-        CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+        CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
         CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
         int length_ok =
             mode != MOCK_P256_LEN_64 && mode != MOCK_P256_LEN_66 && mode != MOCK_P256_INFINITY;
@@ -116,25 +117,25 @@ static void test_webpki_p256_share_refusals(void) {
 // illegal_parameter.
 static void test_webpki_p256_group_rules(void) {
     mock_server s;
-    ch_tls t;
+    ch_tls_priv t;
     ch_cfg cfg = valid_cfg(&s);
     s.answer = 1;
     s.sh_group = CH_GROUP_SECP256R1;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.retry_hello_len == 0);
 
     static const uint16_t others[] = {CH_GROUP_X25519MLKEM768, CH_GROUP_X25519};
     for (size_t i = 0; i < sizeof others / sizeof others[0]; i++) {
         cfg = p256_retry_cfg(&s, 1);
         s.sh_group = others[i];
-        CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+        CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
         CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.retry_hello_len > 0);
     }
 
     for (int cookie = 0; cookie <= 1; cookie++) {
         cfg = p256_retry_cfg(&s, cookie);
         cfg.require_pq = 1;
-        CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+        CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
         CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.retry_hello_len == 0);
     }
 }
@@ -160,7 +161,7 @@ static void test_webpki_p256_wipes(void) {
     CHECK(p256_ecdh_keygen(TEST_WIDEMUL, server_p256_draw, server_priv, server_point) == 1);
     for (int refuse = 0; refuse <= 1; refuse++) {
         mock_server s;
-        ch_tls t;
+        ch_tls_priv t;
         memset(&t, 0, sizeof t);
         t.cfg = valid_cfg(&s);
         handshake_state h;

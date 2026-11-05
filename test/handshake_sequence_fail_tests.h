@@ -11,19 +11,19 @@
 // CH_EPROTO and send nothing.
 static void test_caller_failure(void) {
     CHECK(run_case("SEF", 3, 1) == 1 && client_session.state == CH_ST_CONNECTED);
-    CHECK(ch_fail(&client_session, ALERT_CLOSE_NOTIFY) == CH_EINVAL);
-    CHECK(ch_fail(&client_session, ALERT_USER_CANCELED) == CH_EINVAL);
+    CHECK(ch_fail(tls_public(&client_session), ALERT_CLOSE_NOTIFY) == CH_EINVAL);
+    CHECK(ch_fail(tls_public(&client_session), ALERT_USER_CANCELED) == CH_EINVAL);
     CHECK(srv.alerts == 0 && client_session.state == CH_ST_CONNECTED);
-    CHECK(ch_fail(&client_session, ALERT_RECORD_OVERFLOW) == CH_OK);
+    CHECK(ch_fail(tls_public(&client_session), ALERT_RECORD_OVERFLOW) == CH_OK);
     CHECK(srv.alerts == 1 && srv.last_alert == ALERT_RECORD_OVERFLOW);
     CHECK(client_session.state == CH_ST_FAILED);
-    CHECK(ch_alert_sent(&client_session) == ALERT_RECORD_OVERFLOW);
-    CHECK(ch_fail(&client_session, ALERT_RECORD_OVERFLOW) == CH_EPROTO && srv.alerts == 1);
+    CHECK(ch_alert_sent(tls_public(&client_session)) == ALERT_RECORD_OVERFLOW);
+    CHECK(ch_fail(tls_public(&client_session), ALERT_RECORD_OVERFLOW) == CH_EPROTO && srv.alerts == 1);
 
     CHECK(run_case("SEF", 3, 1) == 1);
-    ch_close(&client_session);
-    CHECK(ch_fail(&client_session, ALERT_DECODE_ERROR) == CH_EPROTO && srv.alerts == 0);
-    CHECK(ch_alert_sent(&client_session) == 0);
+    ch_close(tls_public(&client_session));
+    CHECK(ch_fail(tls_public(&client_session), ALERT_DECODE_ERROR) == CH_EPROTO && srv.alerts == 0);
+    CHECK(ch_alert_sent(tls_public(&client_session)) == 0);
 }
 
 #endif

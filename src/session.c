@@ -6,7 +6,7 @@
 // A protected record can only be sealed with live keys; before any keys
 // exist the alert goes out in plaintext, and once keys are wiped there is
 // nothing legal left to say, so nothing is sent.
-int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description) {
+int tlsi_send_alert(ch_tls_priv *t, uint8_t level, uint8_t description) {
     const uint8_t body[2] = {level, description};
     if (t->keys) {
         size_t n = 0;
@@ -23,13 +23,13 @@ int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description) {
 }
 
 #ifdef CH_CPU_RUNTIME
-void tlsi_record_cpu(ch_tls *t) {
+void tlsi_record_cpu(ch_tls_priv *t) {
     t->rd.cpu = t->cfg.cpu;
     t->wr.cpu = t->cfg.cpu;
 }
 #endif
 
-void tlsi_wipe(ch_tls *t) {
+void tlsi_wipe(ch_tls_priv *t) {
     ct_wipe(&t->rd, sizeof t->rd);
     ct_wipe(&t->wr, sizeof t->wr);
     ct_wipe(t->rd_secret, sizeof t->rd_secret);
@@ -52,7 +52,7 @@ void tlsi_wipe(ch_tls *t) {
 // this side's is recorded. It returns what tlsi_send_alert returned, CH_OK
 // when nothing was sent, which ch_fail reports and every other caller
 // discards.
-int tlsi_fail(ch_tls *t, uint8_t description) {
+int tlsi_fail(ch_tls_priv *t, uint8_t description) {
     int rc = CH_OK;
     if (t->alert_received == 0) {
         t->alert_sent = description;

@@ -1,0 +1,13 @@
+invariant: INV-35
+file: Makefile
+catches: test/lib-check-webpki-tcp-nonblocking.sh
+reason: The object compiles with C11's strict aliasing rule on. Each public
+  call reads a caller's ch_tls, ch_tcp, ch_quic or ch_dnssec_hash storage as
+  the _priv struct in it, so an optimizer may then reorder a read and a write
+  of one object as two (docs/decisions.md 185). lib-check reads the flag in
+  the object's compile line and refuses the object.
+
+--- old
+CFLAGS += -fno-strict-aliasing
+--- new
+CFLAGS +=

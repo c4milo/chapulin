@@ -34,7 +34,7 @@ static int read_exact(const ch_cfg *cfg, uint8_t *p, size_t n) {
 // The length check of the header in buf, against rec_body_max and the
 // two buffers io.h names: CH_OK for a body io_read_record reads, or the
 // result it returns, with the alert io.h states.
-static int check_body(const ch_tls *t, const uint8_t *buf, size_t body, size_t cap,
+static int check_body(const ch_tls_priv *t, const uint8_t *buf, size_t body, size_t cap,
                       uint8_t *alert) {
     if (body > rec_body_max(buf[0])) {
         *alert = ALERT_RECORD_OVERFLOW;
@@ -53,8 +53,8 @@ static int check_body(const ch_tls *t, const uint8_t *buf, size_t body, size_t c
     return CH_OK;
 }
 
-int io_read_record(const ch_tls *t, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
-                   uint8_t *alert) {
+int io_read_record(const ch_tls_priv *t, uint8_t *buf, size_t cap, uint8_t *outer,
+                   size_t *record_len, uint8_t *alert) {
     const ch_cfg *cfg = &t->cfg;
     if (cap < REC_HDR) {
         return CH_ECAP;

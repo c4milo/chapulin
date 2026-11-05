@@ -11,6 +11,9 @@ const std = @import("std");
 const chapulin = @import("chapulin.zig");
 const cfg_of = @import("chapulin_cfg.zig");
 const c = chapulin.c;
+/// Whether a session reports a suite of its own: ch_tls_priv holds suite under SUITE=aesgcm, whose
+/// ch_cfg takes cipher_suites, and in a server role, whose ch_cfg takes srv (session.h).
+const has_suite = @hasField(c.ch_cfg, "cipher_suites") or @hasField(c.ch_cfg, "srv");
 
 // tcp_nonblocking.h declares ch_tcp_init only in an object with a client,
 // which alone defines it.
@@ -158,12 +161,12 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         /// ch_export (EXPORTER=on).
         pub const exportKeyingMaterial = if (@hasDecl(c, "ch_export")) exportOf else @compileError("exportKeyingMaterial needs EXPORTER=on");
         /// The protocol ALPN selected, null for CH_ALPN_NONE.
-        pub const alpnSelected = if (@hasField(c.ch_tls, "alpn_selected")) alpnSelectedOf else @compileError("alpnSelected needs TRUST=webpki or a server role");
+        pub const alpnSelected = if (@hasDecl(c, "ch_alpn_selected")) alpnSelectedOf else @compileError("alpnSelected needs TRUST=webpki or a server role");
         /// ch_tls.suite, null while 0. A client offers ChaCha20 alone
         /// outside SUITE=aesgcm and writes no suite there.
-        pub const suite = if (@hasField(c.ch_tls, "suite")) suiteOf else @compileError("suite needs SUITE=aesgcm or a server role");
+        pub const suite = if (has_suite) suiteOf else @compileError("suite needs SUITE=aesgcm or a server role");
         /// ch_tls.server_cert_type.
-        pub const serverCertType = if (@hasField(c.ch_tls, "server_cert_type")) serverCertTypeOf else @compileError("serverCertType needs TRUST=webpki");
+        pub const serverCertType = if (@hasDecl(c, "ch_server_cert_type")) serverCertTypeOf else @compileError("serverCertType needs TRUST=webpki");
         /// Reserved. No C call starts a tcp-nonblocking KeyUpdate: write sends
         /// one inside ch_write, as the answer the peer's request owes or as
         /// the last record an AES-GCM write key seals.

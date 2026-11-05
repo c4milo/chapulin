@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "session.h"
+#include "session_storage.h"
 
 // Every object exports both calls, so their symbol names carry the
 // object's transport, as ch_ticket_obfuscated_age's do (ticket.h): an

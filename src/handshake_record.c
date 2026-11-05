@@ -20,7 +20,7 @@
 // Appends one record's handshake bytes at buf[part..]. Plaintext records
 // shed their header in place; protected ones decrypt in place.
 static int accept_record(handshake_state *h, size_t part, uint8_t outer, size_t record_len) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     uint8_t *buf = t->cfg.buf;
     if (!h->encrypted) {
         if (outer != REC_HANDSHAKE) {
@@ -76,7 +76,7 @@ static int quiet_stream_capped(handshake_state *h, size_t part) {
 }
 
 int hsr_fetch_record(handshake_state *h) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     if (t->pt_off > 0) {
         memmove(t->cfg.buf, t->cfg.buf + t->pt_off, t->pt_len - t->pt_off);
         t->pt_len -= t->pt_off;
@@ -123,7 +123,7 @@ int hsr_fetch_record(handshake_state *h) {
 // Yields the next complete handshake message, raw (header included) for
 // the transcript. Pointers land in cfg.buf and die at the next call.
 int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t *raw_len) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     for (;;) {
         const uint8_t *p = t->cfg.buf + t->pt_off;
         size_t avail = t->pt_len - t->pt_off;
@@ -151,7 +151,7 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
 size_t hsr_feed(handshake_state *h, const uint8_t *p, size_t n) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     // Compact first, the way the TLS reader compacts before it reads a
     // record, so the unread bytes start at cfg.buf and the room is one
     // subtraction.
@@ -168,7 +168,7 @@ size_t hsr_feed(handshake_state *h, const uint8_t *p, size_t n) {
 }
 
 int hsr_peek_message(const handshake_state *h, size_t *raw_len, uint8_t *alert) {
-    const ch_tls *t = h->t;
+    const ch_tls_priv *t = h->t;
     size_t avail = t->pt_len - t->pt_off;
     if (avail < 4) {
         return HSR_INCOMPLETE;
@@ -199,7 +199,7 @@ int hsr_peek_message(const handshake_state *h, size_t *raw_len, uint8_t *alert) 
 // hsr_peek_message can answer is never returned to a caller here; this call
 // passes it on rather than hiding it.
 int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t *raw_len) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     size_t whole = 0;
     uint8_t alert = 0;
     int rc = hsr_peek_message(h, &whole, &alert);
@@ -221,7 +221,7 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
 
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 int hsr_check_record_end(handshake_state *h) {
-    const ch_tls *t = h->t;
+    const ch_tls_priv *t = h->t;
     if (t->pt_off != t->pt_len) {
         h->alert = ALERT_UNEXPECTED_MESSAGE;
         return CH_EPROTO;
@@ -231,7 +231,7 @@ int hsr_check_record_end(handshake_state *h) {
 
 // handshake_record.h states the rules. The level byte, pt[0], is read by
 // nothing: §6 lets a receiver ignore it.
-int hsr_refuse_alert(ch_tls *t, const uint8_t *pt, size_t n, uint8_t *alert) {
+int hsr_refuse_alert(ch_tls_priv *t, const uint8_t *pt, size_t n, uint8_t *alert) {
     if (n != 2) {
         *alert = ALERT_DECODE_ERROR;
         return CH_EPROTO;
@@ -245,7 +245,7 @@ int hsr_refuse_alert(ch_tls *t, const uint8_t *pt, size_t n, uint8_t *alert) {
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 int hsr_peek_type(const handshake_state *h, uint8_t *type) {
-    const ch_tls *t = h->t;
+    const ch_tls_priv *t = h->t;
     if (t->pt_off == t->pt_len) {
         return HSR_INCOMPLETE;
     }

@@ -21,29 +21,29 @@
 
 // Everything the client owes, into out's client-to-server direction and
 // then into the server.
-static int session_client_turn(ch_tcp *client, ch_tcp *server, crossed *out) {
+static int session_client_turn(ch_tcp_priv *client, ch_tcp_priv *server, crossed *out) {
     uint8_t wire[WIRE_MAX];
     size_t total = 0;
     size_t n = 0;
     do {
         n = 0;
-        if (ch_tcp_out(client, wire + total, sizeof wire - total, &n) != CH_OK) {
+        if (ch_tcp_out(tcp_public(client), wire + total, sizeof wire - total, &n) != CH_OK) {
             return 0;
         }
         total += n;
     } while (n != 0);
     size_t consumed = 0;
     return total == 0 || (cross(out->to_server, &out->to_server_len, wire, total) &&
-                          ch_srv_tcp_in(server, wire, total, &consumed) == CH_OK);
+                          ch_srv_tcp_in(tcp_public(server), wire, total, &consumed) == CH_OK);
 }
 
 // Everything the server pushed, into out's server-to-client direction and
 // then into the client.
-static int session_server_turn(ch_tcp *client, crossed *out) {
+static int session_server_turn(ch_tcp_priv *client, crossed *out) {
     size_t consumed = 0;
     int ok = to_client.len == 0 ||
              (cross(out->to_client, &out->to_client_len, to_client.bytes, to_client.len) &&
-              ch_tcp_in(client, to_client.bytes, to_client.len, &consumed) == CH_OK);
+              ch_tcp_in(tcp_public(client), to_client.bytes, to_client.len, &consumed) == CH_OK);
     to_client.len = 0;
     return ok;
 }
@@ -51,8 +51,8 @@ static int session_server_turn(ch_tcp *client, crossed *out) {
 // test/rand_session_cases.h's handshake: the ClientHello and the
 // server's flight, then the client Finished.
 static int run_seeded(uint64_t client_seed, uint64_t server_seed, crossed *out) {
-    static ch_tcp client;
-    static ch_tcp server;
+    static ch_tcp_priv client;
+    static ch_tcp_priv server;
     ch_cfg ccfg;
     ch_cfg scfg;
     client_config(&ccfg);
@@ -64,7 +64,8 @@ static int run_seeded(uint64_t client_seed, uint64_t server_seed, crossed *out) 
     to_client.len = 0;
     records_pushed = 0;
     logged_count = 0;
-    if (ch_srv_tcp_init(&server, &scfg) != CH_OK || ch_tcp_init(&client, &ccfg) != CH_OK) {
+    if (ch_srv_tcp_init(tcp_public(&server), &scfg) != CH_OK ||
+        ch_tcp_init(tcp_public(&client), &ccfg) != CH_OK) {
         return 0;
     }
     for (int round = 0; round < 2; round++) {
@@ -72,7 +73,8 @@ static int run_seeded(uint64_t client_seed, uint64_t server_seed, crossed *out) 
             return 0;
         }
     }
-    return ch_tcp_state(&client) == CH_ST_CONNECTED && ch_tcp_state(&server) == CH_ST_CONNECTED;
+    return ch_tcp_state(tcp_public(&client)) == CH_ST_CONNECTED &&
+           ch_tcp_state(tcp_public(&server)) == CH_ST_CONNECTED;
 }
 
 #include "rand_session_cases.h"
@@ -83,8 +85,8 @@ static int run_seeded(uint64_t client_seed, uint64_t server_seed, crossed *out) 
 // no source. On the other side of the boundary, a rand_bytes with a NULL
 // rand_io is a source, and both calls take it.
 static void check_session_refusals(void) {
-    static ch_tcp client;
-    static ch_tcp server;
+    static ch_tcp_priv client;
+    static ch_tcp_priv server;
     ch_cfg ccfg;
     ch_cfg scfg;
     client_config(&ccfg);
@@ -96,13 +98,13 @@ static void check_session_refusals(void) {
     hook_draws = 0;
     to_client.len = 0;
     records_pushed = 0;
-    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
-    CHECK(ch_tcp_state(&client) == CH_ST_FAILED);
+    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_state(tcp_public(&client)) == CH_ST_FAILED);
     uint8_t out[64];
     size_t n = 0;
-    CHECK(ch_tcp_out(&client, out, sizeof out, &n) == CH_EINVAL && n == 0);
-    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_EINVAL);
-    CHECK(ch_tcp_state(&server) == CH_ST_FAILED);
+    CHECK(ch_tcp_out(tcp_public(&client), out, sizeof out, &n) == CH_EINVAL && n == 0);
+    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_EINVAL);
+    CHECK(ch_tcp_state(tcp_public(&server)) == CH_ST_FAILED);
     CHECK(records_pushed == 0 && to_client.len == 0);
     CHECK(client_source.calls == 0 && server_source.calls == 0 && hook_draws == 0);
 
@@ -111,11 +113,11 @@ static void check_session_refusals(void) {
     scfg.rand_bytes = contextless_draw;
     scfg.rand_io = NULL;
     contextless_calls = 0;
-    CHECK(ch_tcp_init(&client, &ccfg) == CH_OK);
-    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_OK);
+    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_OK);
     CHECK(contextless_calls == SESSION_CLIENT_DRAWS + 1 && stray_draws == 0 && hook_draws == 0);
-    ch_tcp_close(&client);
-    ch_tcp_close(&server);
+    ch_tcp_close(tcp_public(&client));
+    ch_tcp_close(tcp_public(&server));
 }
 
 static void test_session(void) {

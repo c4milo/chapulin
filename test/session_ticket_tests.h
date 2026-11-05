@@ -18,7 +18,7 @@ static void test_ticket_age_cfg(void) {
     mock_io m = {0};
     ch_cfg cfg = {0};
     TEST_CPU_CFG(cfg);
-    ch_tls t;
+    ch_tls_priv t;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = mock_send;
@@ -35,15 +35,15 @@ static void test_ticket_age_cfg(void) {
     cfg.ticket = &saved;
 
     // A ticket that arrived this millisecond.
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
 
     // A lifetime of an hour: 3,600,000 ms is offered, one more is not,
     // and the refusal sends nothing.
     cfg.ticket_age_ms = 3600000U;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     int sends_before = m.sends;
     cfg.ticket_age_ms = 3600001U;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     CHECK(m.sends == sends_before);
     CHECK(t.state == CH_ST_FAILED);
 
@@ -51,34 +51,34 @@ static void test_ticket_age_cfg(void) {
     // refused at every age.
     saved.ticket.lifetime_s = 0;
     cfg.ticket_age_ms = 0;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
 
     // A lifetime past 7 days, which a server must not send, keeps the
     // 7 days all the same.
     saved.ticket.lifetime_s = CH_TICKET_LIFETIME_MAX + 1;
     cfg.ticket_age_ms = (uint64_t)CH_TICKET_LIFETIME_MAX * 1000U;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     cfg.ticket_age_ms += 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
 
     // An age past 2^32 ms, which reads as 5 ms if anything keeps its low
     // 32 bits alone.
     saved.ticket.lifetime_s = 3600;
     cfg.ticket_age_ms = 0x100000005ULL;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
 
     // An identity of 0 bytes, or of more than CH_TICKET_ID_MAX, and a PSK of
     // no hash length are refused before a byte is sent.
     cfg.ticket_age_ms = 0;
     saved.ticket.identity_len = 0;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     saved.ticket.identity_len = CH_TICKET_ID_MAX + 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     saved.ticket.identity_len = 6;
     saved.ticket.psk_len = 31;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     saved.ticket.psk_len = sizeof psk;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
 
     // An external PSK carries no ticket, so no age is judged.
     cfg.ticket = NULL;
@@ -89,7 +89,7 @@ static void test_ticket_age_cfg(void) {
     cfg.psk_len = sizeof psk;
     cfg.psk_id = (const uint8_t *)"ticket";
     cfg.psk_id_len = 6;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
 }
 
 // A kept ticket resumes only under the trust of the last full handshake
@@ -105,7 +105,7 @@ static void test_ticket_trust_cfg(void) {
     mock_io m = {0};
     ch_cfg cfg = {0};
     TEST_CPU_CFG(cfg);
-    ch_tls t;
+    ch_tls_priv t;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = mock_send;
@@ -118,17 +118,17 @@ static void test_ticket_trust_cfg(void) {
 
     cfg.server_pubkey = issuer;
     cfg.server_pubkey_len = sizeof issuer;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     cfg.server_pubkey = other;
     cfg.server_pubkey2 = issuer;
     cfg.server_pubkey2_len = sizeof issuer;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     int sends_before = m.sends;
     cfg.server_pubkey2 = other;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL && m.sends == sends_before);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL && m.sends == sends_before);
     cfg.server_pubkey2 = NULL;
     cfg.server_pubkey2_len = 0;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL && m.sends == sends_before);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL && m.sends == sends_before);
 
     // The external PSK as the trust.
     static const uint8_t external[32] = {9};
@@ -139,12 +139,12 @@ static void test_ticket_trust_cfg(void) {
     cfg.psk_id = (const uint8_t *)"device";
     cfg.psk_id_len = 6;
     test_ticket_trust_psk(&saved, external, sizeof external);
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     test_ticket_trust_psk(&saved, psk, sizeof psk);
     int sends_after_psk = m.sends;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL && m.sends == sends_after_psk);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL && m.sends == sends_after_psk);
     test_ticket_trust_pin(&saved, external, sizeof external);
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL && m.sends == sends_after_psk);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL && m.sends == sends_after_psk);
 }
 
 // The trust_hash of a ticket this session receives, after a handshake
@@ -158,7 +158,7 @@ static void trust_after_slot(uint8_t slot, const uint8_t *key_a, const uint8_t *
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
     t.cfg.server_pubkey = key_a;
     t.cfg.server_pubkey_len = key_len;
@@ -171,7 +171,7 @@ static void trust_after_slot(uint8_t slot, const uint8_t *key_a, const uint8_t *
     mock_push(&m, &server, REC_HANDSHAKE, msg, msg_len);
     mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
     uint8_t got[16];
-    CHECK(ch_read(&t, got, sizeof got) == 4 && m.tickets == 1);
+    CHECK(ch_read(tls_public(&t), got, sizeof got) == 4 && m.tickets == 1);
     memcpy(out, m.trust_hash, SHA256_LEN);
 }
 

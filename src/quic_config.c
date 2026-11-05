@@ -166,7 +166,7 @@ static int ticket_version_ok(const ch_cfg *cfg) {
 // the stored epoch among them. Outside a CA-mode build nothing enforces
 // an epoch, so a config that sets the callbacks is refused rather than
 // silently ignored.
-static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
+static int epoch_init(ch_tls_priv *t, const ch_cfg *cfg) {
 #ifdef CH_TRUST_CA
     if ((cfg->epoch_load == NULL) != (cfg->epoch_store == NULL)) {
         return CH_EINVAL;
@@ -199,7 +199,7 @@ static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
 #endif
 }
 
-int quic_config_ok(ch_tls *t) {
+int quic_config_ok(ch_tls_priv *t) {
     if (!hspost_present_ticket(&t->cfg)) {
         return CH_EINVAL;
     }

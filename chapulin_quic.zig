@@ -5,6 +5,9 @@ const std = @import("std");
 const chapulin = @import("chapulin.zig");
 const cfg_of = @import("chapulin_cfg.zig");
 const c = chapulin.c;
+/// Whether a session reports a suite of its own: ch_tls_priv holds suite under SUITE=aesgcm, whose
+/// ch_cfg takes cipher_suites, and in a server role, whose ch_cfg takes srv (session.h).
+const has_suite = @hasField(c.ch_cfg, "cipher_suites") or @hasField(c.ch_cfg, "srv");
 
 const has_quic = @hasDecl(c, "ch_quic_initial_keys");
 // quic.h declares ch_quic_init only in an object with a client, which alone
@@ -182,9 +185,9 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         /// The server_name the client sent: sni_buf[0..ch_tls.sni_len], null when 0.
         pub const sni = if (side == .server) sniServer else @compileError("a client sends server_name and reports none");
         /// ch_tls.suite, null while 0.
-        pub const suite = if (@hasField(c.ch_tls, "suite")) suiteOf else @compileError("suite needs SUITE=aesgcm or a server role");
+        pub const suite = if (has_suite) suiteOf else @compileError("suite needs SUITE=aesgcm or a server role");
         /// ch_tls.server_cert_type.
-        pub const serverCertType = if (@hasField(c.ch_tls, "server_cert_type")) serverCertTypeOf else @compileError("serverCertType needs TRUST=webpki");
+        pub const serverCertType = if (@hasDecl(c, "ch_server_cert_type")) serverCertTypeOf else @compileError("serverCertType needs TRUST=webpki");
 
         fn initClient(self: *Self, values: chapulin.Client, transport_params: []const u8, peer_params: []u8) error{Invalid}!void {
             self.prepare(peer_params);

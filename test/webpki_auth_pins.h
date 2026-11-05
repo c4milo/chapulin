@@ -137,7 +137,7 @@ static int entry_pin(const uint8_t *message, size_t message_len, size_t index,
 
 // A session that selected cert_type and carries pins, and anchors only
 // when row is not NULL.
-static void pinned_session(ch_tls *t, ch_trust_anchor *anchors, const webpki_corpus_chain *row,
+static void pinned_session(ch_tls_priv *t, ch_trust_anchor *anchors, const webpki_corpus_chain *row,
                            uint8_t cert_type, pin_set pins, size_t pin_count) {
     memset(t, 0, sizeof *t);
     if (row != NULL) {
@@ -158,7 +158,7 @@ static int pinned_flight(uint8_t cert_type, const webpki_corpus_chain *row, uint
                          const uint8_t *sig, size_t sig_len, const uint8_t *message,
                          size_t message_len, pin_set pins, size_t pin_count, handshake_state *h) {
     ch_trust_anchor anchors[CORPUS_ROW_ANCHORS];
-    ch_tls t;
+    ch_tls_priv t;
     pinned_session(&t, anchors, row, cert_type, pins, pin_count);
     uint8_t verify_msg[VERIFY_MSG_MAX];
     size_t verify_len = 0;

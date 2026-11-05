@@ -41,8 +41,8 @@ static void drive_packets(void) {
     __CPROVER_assume(cap <= sizeof out);
     uint64_t was_sealed = q.initial_sealed;
     int live = q.t.state != CH_ST_CLOSED && q.t.state != CH_ST_FAILED;
-    int rc = ch_quic_seal(&q, level, version, nondet_u64(), nondet_size_t(), hdr, sizeof hdr, pkt,
-                          sizeof pkt, out, cap, &out_len);
+    int rc = ch_quic_seal(quic_public(&q), level, version, nondet_u64(), nondet_size_t(), hdr,
+                          sizeof hdr, pkt, sizeof pkt, out, cap, &out_len);
     __CPROVER_assert(rc == CH_OK || q.initial_sealed == was_sealed,
                      "RFC 9001 6.6: a seal that did not happen counts nowhere");
     __CPROVER_assert(rc == CH_EINVAL || live,
@@ -59,8 +59,8 @@ static void drive_packets(void) {
     uint64_t was_failures = q.open_failures;
     uint8_t was_ready = q.levels_ready;
     int admitted = version_admitted(level, version);
-    rc = ch_quic_open(&q, level, version, packet, pkt_len, pn_off, nondet_u64(), nondet_u64(),
-                      &key_set, &pn, &pt_len);
+    rc = ch_quic_open(quic_public(&q), level, version, packet, pkt_len, pn_off, nondet_u64(),
+                      nondet_u64(), &key_set, &pn, &pt_len);
     __CPROVER_assert(rc == CH_EINVAL || live, "a dead session opens no packet");
     if (!admitted) {
         __CPROVER_assert(rc == CH_EINVAL && q.open_failures == was_failures &&
@@ -85,18 +85,18 @@ static void drive_packets(void) {
                          "RFC 9001 5.4.2: a packet too short to sample counts nowhere");
     }
     uint32_t retry_version = nondet_u32();
-    __CPROVER_assert(ch_quic_retry_ok(&q, retry_version, pkt, sizeof pkt, tag) == 0 ||
+    __CPROVER_assert(ch_quic_retry_ok(quic_public(&q), retry_version, pkt, sizeof pkt, tag) == 0 ||
                          retry_version == q.t.cfg.quic_original_version,
                      "RFC 9369 4.1: a Retry in any version but the original fails");
-    __CPROVER_assert(ch_quic_negotiated_version(&q) == q.t.quic_negotiated_version,
+    __CPROVER_assert(ch_quic_negotiated_version(quic_public(&q)) == q.t.quic_negotiated_version,
                      "the negotiated version is the field's");
-    (void)ch_quic_key_update(&q);
-    ch_quic_drop_previous_keys(&q);
-    (void)ch_quic_discard(&q, nondet_u8());
-    (void)ch_quic_key_phase(&q);
-    (void)ch_quic_alert(&q);
-    (void)ch_quic_state(&q);
-    (void)ch_quic_error_code(&q);
+    (void)ch_quic_key_update(quic_public(&q));
+    ch_quic_drop_previous_keys(quic_public(&q));
+    (void)ch_quic_discard(quic_public(&q), nondet_u8());
+    (void)ch_quic_key_phase(quic_public(&q));
+    (void)ch_quic_alert(quic_public(&q));
+    (void)ch_quic_state(quic_public(&q));
+    (void)ch_quic_error_code(quic_public(&q));
 }
 
 // ch_quic_seal_close over any saved state. It seals only for a failed
@@ -118,8 +118,8 @@ static void drive_close(void) {
     uint8_t was_ready = q.levels_ready;
     uint32_t version = nondet_u32();
     int admitted = version_admitted(level, version);
-    int rc = ch_quic_seal_close(&q, level, version, nondet_u64(), nondet_size_t(), hdr, sizeof hdr,
-                                pt, pt_len, out, cap, &out_len);
+    int rc = ch_quic_seal_close(quic_public(&q), level, version, nondet_u64(), nondet_size_t(), hdr,
+                                sizeof hdr, pt, pt_len, out, cap, &out_len);
     __CPROVER_assert(q.t.state == was_state, "a close changes no session state");
     if (rc != CH_OK) {
         __CPROVER_assert(rc == CH_EINVAL || rc == CH_ECAP, "a refused close has two codes");
@@ -141,8 +141,8 @@ static void drive_close(void) {
     cap = nondet_size_t();
     pt_len = nondet_size_t();
     __CPROVER_assume(cap <= sizeof out && pt_len <= sizeof pt);
-    rc = ch_quic_seal_close(&q, level, nondet_u32(), nondet_u64(), nondet_size_t(), hdr, sizeof hdr,
-                            pt, pt_len, out, cap, &out_len);
+    rc = ch_quic_seal_close(quic_public(&q), level, nondet_u32(), nondet_u64(), nondet_size_t(),
+                            hdr, sizeof hdr, pt, pt_len, out, cap, &out_len);
     __CPROVER_assert(rc == CH_EINVAL, "a second close at the same level is refused");
 }
 

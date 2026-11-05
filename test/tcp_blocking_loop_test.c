@@ -39,6 +39,7 @@
 #include "record.h"
 #include "rsa_sign.h"
 #include "rsa_sign_key.h"
+#include "session_convert.h"
 #include "srv.h"
 #include "srv_flight.h"
 #include "test_cpu.h"
@@ -197,7 +198,7 @@ static uint16_t own_record_size_limit(size_t buf_len) {
 
 // A session and handshake state set up as the blocking driver of that
 // role sets up its own before the first handler runs.
-static void peer_state(ch_tls *t, handshake_state *h, const ch_cfg *cfg) {
+static void peer_state(ch_tls_priv *t, handshake_state *h, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     memset(h, 0, sizeof *h);
     t->cfg = *cfg;
@@ -214,7 +215,7 @@ static void peer_state(ch_tls *t, handshake_state *h, const ch_cfg *cfg) {
 // ch_connect against the server's handlers. The server's session and
 // state, which record of its flight gets flight_extra zero bytes added,
 // and whether the flight has gone out.
-static ch_tls srv_t;
+static ch_tls_priv srv_t;
 static handshake_state srv_h;
 static int edit_finished;
 static size_t flight_extra;
@@ -309,8 +310,8 @@ static void client_reads_flight(int after_finished, size_t bytes) {
     served = 0;
     ch_cfg ccfg;
     client_config(&ccfg, client_recv);
-    static ch_tls client;
-    int rc = ch_connect(&client, &ccfg);
+    static ch_tls_priv client;
+    int rc = ch_connect(tls_public(&client), &ccfg);
     if (bytes == 0) {
         CHECK(rc == CH_OK && client.state == CH_ST_CONNECTED);
         // The server verifies the Finished the client answered with.
@@ -318,13 +319,14 @@ static void client_reads_flight(int after_finished, size_t bytes) {
         return;
     }
     CHECK(rc == CH_EPROTO && client.state == CH_ST_FAILED);
-    CHECK(ch_alert_sent(&client) == ALERT_UNEXPECTED_MESSAGE && ch_alert_received(&client) == 0);
+    CHECK(ch_alert_sent(tls_public(&client)) == ALERT_UNEXPECTED_MESSAGE &&
+          ch_alert_received(tls_public(&client)) == 0);
     check_client_alert(after_finished);
 }
 
 // ch_srv_accept against the client's handlers. The client's session and
 // state, the bytes after its Finished, and whether it has answered.
-static ch_tls cli_t;
+static ch_tls_priv cli_t;
 static handshake_state cli_h;
 static size_t finished_extra;
 static int answered;
@@ -408,14 +410,15 @@ static void server_reads_client(int after_finished, size_t bytes) {
     queue_client_hello(after_finished ? 0 : bytes);
     ch_cfg scfg;
     server_config(&scfg, server_recv);
-    static ch_tls server;
-    int rc = ch_srv_accept(&server, &scfg);
+    static ch_tls_priv server;
+    int rc = ch_srv_accept(tls_public(&server), &scfg);
     if (bytes == 0) {
         CHECK(rc == CH_OK && server.state == CH_ST_CONNECTED);
         return;
     }
     CHECK(rc == CH_EPROTO && server.state == CH_ST_FAILED);
-    CHECK(ch_alert_sent(&server) == ALERT_UNEXPECTED_MESSAGE && ch_alert_received(&server) == 0);
+    CHECK(ch_alert_sent(tls_public(&server)) == ALERT_UNEXPECTED_MESSAGE &&
+          ch_alert_received(tls_public(&server)) == 0);
     if (!after_finished) {
         // Refused before any ServerHello: the alert, in the clear, is all
         // that went out.

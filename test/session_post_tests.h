@@ -6,6 +6,7 @@
 #ifndef CH_SESSION_POST_TESTS_H
 #define CH_SESSION_POST_TESTS_H
 
+#include "session_convert.h"
 #include "test_widemul.h"
 
 // Post-handshake behavior the e2e cannot reach: a NewSessionTicket
@@ -20,7 +21,7 @@ static void test_post_handshake(void) {
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     // Keep the write secret so the answer can be opened, not just counted.
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
@@ -60,7 +61,7 @@ static void test_post_handshake(void) {
     mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
 
     uint8_t out[16];
-    int got = ch_read(&t, out, sizeof out);
+    int got = ch_read(tls_public(&t), out, sizeof out);
     CHECK(got == 4 && memcmp(out, "hola", 4) == 0);
     CHECK(m.tickets == 1);
     CHECK(t.state == CH_ST_CONNECTED);
@@ -72,7 +73,7 @@ static void test_post_handshake(void) {
     // its own write direction straight after sending it. Counting alone
     // passes even when that second rekey is missing, which would leave
     // every later record sealed under the retired key.
-    CHECK(ch_write(&t, (const uint8_t *)"si", 2) == CH_OK);
+    CHECK(ch_write(tls_public(&t), (const uint8_t *)"si", 2) == CH_OK);
     CHECK(m.sends == 2 && t.key_update_owed == 0);
     uint8_t sent[16];
     size_t sent_len = 0;
@@ -90,7 +91,7 @@ static void test_post_handshake(void) {
     CHECK(sent_type == REC_APPDATA && sent_len == 2 && memcmp(sent, "si", 2) == 0);
 
     // Zero-length reads are a caller bug, never the close sentinel.
-    CHECK(ch_read(&t, out, 0) == CH_EINVAL);
+    CHECK(ch_read(tls_public(&t), out, 0) == CH_EINVAL);
 
     // The peer's close_notify: the read returns 0 and sends nothing
     // (test_peer_close_notify covers the rest of that rule). ch_close
@@ -99,9 +100,9 @@ static void test_post_handshake(void) {
     const uint8_t close_notify[2] = {1, 0};
     mock_push(&m, &server, REC_ALERT, close_notify, 2);
     size_t before_close = m.sent;
-    CHECK(ch_read(&t, out, sizeof out) == 0);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == 0);
     CHECK(m.sent == before_close);
-    ch_close(&t);
+    ch_close(tls_public(&t));
     // It opens only if the client rekeyed its write direction above, and
     // it takes the length tls.h names.
     size_t close_at = at;
@@ -111,9 +112,9 @@ static void test_post_handshake(void) {
     CHECK(sent[0] == 1 && sent[1] == 0);
     CHECK(at == m.tx_len); // the answer, the data and the close_notify, nothing else
     size_t after_close = m.sent;
-    ch_close(&t);
+    ch_close(tls_public(&t));
     CHECK(m.sent == after_close); // keys wiped: nothing more on the wire
-    CHECK(ch_read(&t, out, sizeof out) == 0);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == 0);
 }
 
 // The peer's close_notify closes the peer's direction and no other (RFC
@@ -130,7 +131,7 @@ static void test_peer_close_notify(void) {
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     ch_rand_bytes(t.res_master, sizeof t.res_master);
@@ -149,8 +150,8 @@ static void test_peer_close_notify(void) {
     mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"tarde", 5);
 
     uint8_t out[16];
-    CHECK(ch_read(&t, out, sizeof out) == 4);
-    CHECK(ch_read(&t, out, sizeof out) == 0);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == 4);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == 0);
     CHECK(m.sends == 0);
     CHECK(m.off == close_end);
     CHECK(t.state == CH_ST_CONNECTED && t.read_closed == 1 && t.keys == 1);
@@ -166,13 +167,13 @@ static void test_peer_close_notify(void) {
 
     // The record after the close_notify is never read, however often
     // the caller asks.
-    CHECK(ch_read(&t, out, sizeof out) == 0);
-    CHECK(ch_read(&t, out, sizeof out) == 0);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == 0);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == 0);
     CHECK(m.off == close_end && m.sends == 0);
     CHECK(t.state == CH_ST_CONNECTED);
 
     // This side still writes, under the write key it had.
-    CHECK(ch_write(&t, (const uint8_t *)"chau", 4) == CH_OK);
+    CHECK(ch_write(tls_public(&t), (const uint8_t *)"chau", 4) == CH_OK);
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;
@@ -180,13 +181,13 @@ static void test_peer_close_notify(void) {
     CHECK(type == REC_APPDATA && pt_len == 4 && memcmp(pt, "chau", 4) == 0);
 
     // ch_close sends this side's close_notify, and the session is closed.
-    ch_close(&t);
+    ch_close(tls_public(&t));
     at = mock_pop_client_record(&m, at, &reader, pt, sizeof pt, &pt_len, &type);
     CHECK(type == REC_ALERT && pt_len == 2 && pt[0] == 1 && pt[1] == ALERT_CLOSE_NOTIFY);
     CHECK(at == m.tx_len && m.sends == 2);
     CHECK(t.state == CH_ST_CLOSED);
-    CHECK(ch_write(&t, (const uint8_t *)"x", 1) == CH_EPROTO);
-    CHECK(ch_read(&t, out, sizeof out) == 0);
+    CHECK(ch_write(tls_public(&t), (const uint8_t *)"x", 1) == CH_EPROTO);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == 0);
     CHECK(m.sends == 2);
 }
 
@@ -232,7 +233,7 @@ static int read_ticket_with_lifetime(uint32_t lifetime, size_t nonce_len, const 
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
 
     uint8_t msg[96];
@@ -240,10 +241,10 @@ static int read_ticket_with_lifetime(uint32_t lifetime, size_t nonce_len, const 
     mock_push(&m, &server, REC_HANDSHAKE, msg, msg_len);
     mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
     uint8_t out[16];
-    int rc = ch_read(&t, out, sizeof out);
+    int rc = ch_read(tls_public(&t), out, sizeof out);
     *tickets = m.tickets;
     *state = t.state;
-    *alert = ch_alert_sent(&t);
+    *alert = ch_alert_sent(tls_public(&t));
     return rc;
 }
 
@@ -326,7 +327,7 @@ static void test_ch_write(void) {
     ch_rand_bytes(secret, sizeof secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     t.peer_limit = 64; // a small limit makes the boundary cheap to cross
@@ -343,14 +344,14 @@ static void test_ch_write(void) {
     uint8_t type = 0;
 
     // Exactly peer_limit: one record, no remainder record after it.
-    CHECK(ch_write(&t, msg, 64) == CH_OK);
+    CHECK(ch_write(tls_public(&t), msg, 64) == CH_OK);
     CHECK(m.sends == 1);
     size_t at = mock_pop_client_record(&m, 0, &reader, pt, sizeof pt, &pt_len, &type);
     CHECK(type == REC_APPDATA && pt_len == 64 && memcmp(pt, msg, 64) == 0);
     CHECK(at == m.tx_len);
 
     // peer_limit + 1: exactly two records, 64 bytes then 1.
-    CHECK(ch_write(&t, msg, 65) == CH_OK);
+    CHECK(ch_write(tls_public(&t), msg, 65) == CH_OK);
     CHECK(m.sends == 3);
     at = mock_pop_client_record(&m, at, &reader, pt, sizeof pt, &pt_len, &type);
     CHECK(type == REC_APPDATA && pt_len == 64 && memcmp(pt, msg, 64) == 0);
@@ -362,16 +363,16 @@ static void test_ch_write(void) {
     // fails. The session dies — keys wiped, no further bytes ever leave.
     mock_io m2 = {0};
     m2.fail_after = 2;
-    ch_tls t2;
+    ch_tls_priv t2;
     mock_session(&t2, &m2, rxbuf, sizeof rxbuf, secret, NULL);
     t2.peer_limit = 64;
-    CHECK(ch_write(&t2, msg, 65) == CH_EIO);
+    CHECK(ch_write(tls_public(&t2), msg, 65) == CH_EIO);
     CHECK(t2.state == CH_ST_FAILED && t2.keys == 0);
-    CHECK(ch_write(&t2, msg, 1) == CH_EPROTO); // dead sessions refuse writes
+    CHECK(ch_write(tls_public(&t2), msg, 1) == CH_EPROTO); // dead sessions refuse writes
     // Count attempts, not bytes: the armed failure knob keeps sent from
     // growing even if close wrongly transmitted, so bytes cannot fail.
     int sends_after_fail = m2.sends;
-    ch_close(&t2);
+    ch_close(tls_public(&t2));
     CHECK(m2.sends == sends_after_fail); // wiped keys: close attempts nothing
 }
 
@@ -462,7 +463,7 @@ static void test_alerts_and_epochs(void) {
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
 
     // user_canceled, then close_notify: a clean close, not an error.
@@ -471,7 +472,7 @@ static void test_alerts_and_epochs(void) {
     mock_push(&m, &server, REC_ALERT, user_canceled, 2);
     mock_push(&m, &server, REC_ALERT, close_notify, 2);
     uint8_t out[16];
-    CHECK(ch_read(&t, out, sizeof out) == 0);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == 0);
 }
 
 #endif

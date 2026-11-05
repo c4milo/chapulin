@@ -66,8 +66,8 @@ int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
 
 // The hostile input source: any outer type, any body bytes, any length
 // the io contract admits (1..2^14+256 body, within cap), or any error.
-int io_read_record(const ch_tls *t, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
-                   uint8_t *alert) {
+int io_read_record(const ch_tls_priv *t, uint8_t *buf, size_t cap, uint8_t *outer,
+                   size_t *record_len, uint8_t *alert) {
     __CPROVER_assert(t != NULL, "read: session valid");
     uint8_t choice = nondet_u8();
     if (choice == 0) {
@@ -297,14 +297,14 @@ int hsp_parse_certificate_verify(const uint8_t *body, size_t n, const uint8_t **
     return CH_OK;
 }
 
-int tlsi_fail(ch_tls *t, uint8_t description) {
+int tlsi_fail(ch_tls_priv *t, uint8_t description) {
     (void)description;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "fail: session writable");
     t->state = CH_ST_FAILED;
     return CH_OK;
 }
 
-int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description) {
+int tlsi_send_alert(ch_tls_priv *t, uint8_t level, uint8_t description) {
     (void)level;
     (void)description;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "alert: session writable");
@@ -327,7 +327,7 @@ int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description) {
 // to a parser without underflowing.
 int hsr_fetch_record(handshake_state *h) {
     __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "fetch: state writable");
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     __CPROVER_assert(t->pt_off <= t->pt_len && t->pt_len <= t->cfg.buf_len,
                      "fetch: caller keeps the unread window inside the buffer");
     uint8_t pick = nondet_u8();
@@ -360,7 +360,7 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
     __CPROVER_assert(__CPROVER_w_ok(type, 1), "next: type writable");
     __CPROVER_assert(__CPROVER_w_ok(raw, sizeof *raw), "next: raw writable");
     __CPROVER_assert(__CPROVER_w_ok(raw_len, sizeof *raw_len), "next: raw_len writable");
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     int rc = hsr_fetch_record(h);
     if (rc != CH_OK) {
         return rc;
@@ -422,7 +422,7 @@ void hsr_restart_transcript(handshake_state *h, size_t hash_len, const uint8_t *
 #endif
 
 int main(void) {
-    static ch_tls t;
+    static ch_tls_priv t;
     memset(&t, 0, sizeof t);
     uint8_t buf[96];
     uint8_t psk[32];

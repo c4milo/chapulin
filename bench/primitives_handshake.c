@@ -96,8 +96,8 @@ static const ch_cert chain[1] = {
 static uint8_t cookie_key[32];
 static uint8_t client_buf[CH_MIN_RXBUF];
 static uint8_t server_buf[SERVER_BUF_LEN];
-static ch_tcp client;
-static ch_tcp server;
+static ch_tcp_priv client;
+static ch_tcp_priv server;
 static ch_cfg client_cfg;
 static ch_cfg server_cfg;
 
@@ -232,7 +232,7 @@ static int client_to_server(void) {
     for (;;) {
         size_t n = 0;
         enter(CLIENT);
-        int rc = ch_tcp_out(&client, wire + total, sizeof wire - total, &n);
+        int rc = ch_tcp_out(tcp_public(&client), wire + total, sizeof wire - total, &n);
         leave(CLIENT);
         if (rc != CH_OK) {
             return 0;
@@ -247,7 +247,7 @@ static int client_to_server(void) {
     }
     size_t consumed = 0;
     enter(SERVER);
-    int rc = ch_srv_tcp_in(&server, wire, total, &consumed);
+    int rc = ch_srv_tcp_in(tcp_public(&server), wire, total, &consumed);
     leave(SERVER);
     return rc == CH_OK && consumed == total;
 }
@@ -259,7 +259,7 @@ static int server_to_client(void) {
     }
     size_t consumed = 0;
     enter(CLIENT);
-    int rc = ch_tcp_in(&client, to_client.bytes, to_client.len, &consumed);
+    int rc = ch_tcp_in(tcp_public(&client), to_client.bytes, to_client.len, &consumed);
     leave(CLIENT);
     int ok = rc == CH_OK && consumed == to_client.len;
     to_client.len = 0;
@@ -273,16 +273,17 @@ static void handshake_once(void) {
     side_ns[CLIENT] = 0.0;
     side_ns[SERVER] = 0.0;
     enter(SERVER);
-    int server_rc = ch_srv_tcp_init(&server, &server_cfg);
+    int server_rc = ch_srv_tcp_init(tcp_public(&server), &server_cfg);
     leave(SERVER);
     enter(CLIENT);
-    int client_rc = ch_tcp_init(&client, &client_cfg);
+    int client_rc = ch_tcp_init(tcp_public(&client), &client_cfg);
     leave(CLIENT);
     if (server_rc != CH_OK || client_rc != CH_OK) {
         bench_fail("a tcp-nonblocking driver refused its configuration");
     }
     for (int round = 0; round < ROUNDS_MAX; round++) {
-        if (ch_tcp_state(&client) == CH_ST_CONNECTED && ch_tcp_state(&server) == CH_ST_CONNECTED) {
+        if (ch_tcp_state(tcp_public(&client)) == CH_ST_CONNECTED &&
+            ch_tcp_state(tcp_public(&server)) == CH_ST_CONNECTED) {
             if (client.t.group != BENCH_GROUP || server.t.group != BENCH_GROUP) {
                 bench_fail("the handshake connected on a group this build does not time");
             }
@@ -292,7 +293,8 @@ static void handshake_once(void) {
             break;
         }
     }
-    if (ch_tcp_state(&client) != CH_ST_CONNECTED || ch_tcp_state(&server) != CH_ST_CONNECTED) {
+    if (ch_tcp_state(tcp_public(&client)) != CH_ST_CONNECTED ||
+        ch_tcp_state(tcp_public(&server)) != CH_ST_CONNECTED) {
         bench_fail("the handshake did not connect both ends");
     }
 }

@@ -16,7 +16,7 @@
 // KeyUpdates.
 typedef struct {
     mock_io m;
-    ch_tls t;
+    ch_tls_priv t;
     rec_dir peer;
     uint8_t peer_secret[SHA256_LEN];
     rec_dir reader;
@@ -49,8 +49,8 @@ static void update_run_push(update_run_case *c, size_t count, uint8_t request) {
 // alert under the write key the session started with.
 static void check_run_read_fails(update_run_case *c, int rc, uint8_t alert) {
     uint8_t out[16];
-    CHECK(ch_read(&c->t, out, sizeof out) == rc);
-    CHECK(c->t.state == CH_ST_FAILED && ch_alert_sent(&c->t) == alert);
+    CHECK(ch_read(tls_public(&c->t), out, sizeof out) == rc);
+    CHECK(c->t.state == CH_ST_FAILED && ch_alert_sent(tls_public(&c->t)) == alert);
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;
@@ -75,10 +75,10 @@ static void test_key_update_one_answer(void) {
     update_run_push(&c, CH_KEY_UPDATE_RUN_MAX, 1);
     mock_push(&c.m, &c.peer, REC_APPDATA, (const uint8_t *)"hola", 4);
     uint8_t out[16];
-    CHECK(ch_read(&c.t, out, sizeof out) == 4 && memcmp(out, "hola", 4) == 0);
+    CHECK(ch_read(tls_public(&c.t), out, sizeof out) == 4 && memcmp(out, "hola", 4) == 0);
     CHECK(c.m.sends == 0 && c.t.key_update_owed == 1 && c.t.key_update_run == 0);
 
-    CHECK(ch_write(&c.t, (const uint8_t *)"si", 2) == CH_OK);
+    CHECK(ch_write(tls_public(&c.t), (const uint8_t *)"si", 2) == CH_OK);
     CHECK(c.m.sends == 2 && c.t.send_epochs == 1 && c.t.key_update_owed == 0);
     uint8_t pt[16];
     size_t pt_len = 0;
@@ -90,7 +90,7 @@ static void test_key_update_one_answer(void) {
     at = mock_pop_client_record(&c.m, at, &c.reader, pt, sizeof pt, &pt_len, &type);
     CHECK(type == REC_APPDATA && pt_len == 2 && memcmp(pt, "si", 2) == 0);
 
-    CHECK(ch_write(&c.t, (const uint8_t *)"no", 2) == CH_OK);
+    CHECK(ch_write(tls_public(&c.t), (const uint8_t *)"no", 2) == CH_OK);
     CHECK(c.m.sends == 3 && c.t.send_epochs == 1);
     at = mock_pop_client_record(&c.m, at, &c.reader, pt, sizeof pt, &pt_len, &type);
     CHECK(type == REC_APPDATA && pt_len == 2 && at == c.m.tx_len);
@@ -105,8 +105,8 @@ static void test_key_update_owed_at_close(void) {
     update_run_push(&c, 1, 1);
     mock_push(&c.m, &c.peer, REC_APPDATA, (const uint8_t *)"x", 1);
     uint8_t out[16];
-    CHECK(ch_read(&c.t, out, sizeof out) == 1 && c.t.key_update_owed == 1);
-    ch_close(&c.t);
+    CHECK(ch_read(tls_public(&c.t), out, sizeof out) == 1 && c.t.key_update_owed == 1);
+    ch_close(tls_public(&c.t));
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;
@@ -127,9 +127,9 @@ static void test_key_update_at_epoch_cap(void) {
     update_run_push(&c, 1, 1);
     mock_push(&c.m, &c.peer, REC_APPDATA, (const uint8_t *)"hola", 4);
     uint8_t out[16];
-    CHECK(ch_read(&c.t, out, sizeof out) == 4 && memcmp(out, "hola", 4) == 0);
+    CHECK(ch_read(tls_public(&c.t), out, sizeof out) == 4 && memcmp(out, "hola", 4) == 0);
     CHECK(c.m.sends == 0 && c.t.key_update_owed == 0);
-    CHECK(ch_write(&c.t, (const uint8_t *)"x", 1) == CH_OK);
+    CHECK(ch_write(tls_public(&c.t), (const uint8_t *)"x", 1) == CH_OK);
     CHECK(c.m.sends == 1 && c.m.sent == REC_OVERHEAD + 1);
     CHECK(c.t.send_epochs == 0xffffffffffffULL);
 }
@@ -146,10 +146,10 @@ static void test_key_update_run(void) {
     update_run_start(&c);
     update_run_push(&c, CH_KEY_UPDATE_RUN_MAX, 0);
     mock_push(&c.m, &c.peer, REC_APPDATA, (const uint8_t *)"a", 1);
-    CHECK(ch_read(&c.t, out, sizeof out) == 1 && c.t.key_update_run == 0);
+    CHECK(ch_read(tls_public(&c.t), out, sizeof out) == 1 && c.t.key_update_run == 0);
     update_run_push(&c, CH_KEY_UPDATE_RUN_MAX, 0);
     mock_push(&c.m, &c.peer, REC_APPDATA, (const uint8_t *)"b", 1);
-    CHECK(ch_read(&c.t, out, sizeof out) == 1 && out[0] == 'b');
+    CHECK(ch_read(tls_public(&c.t), out, sizeof out) == 1 && out[0] == 'b');
     CHECK(c.t.state == CH_ST_CONNECTED && c.m.sends == 0);
 
     update_run_start(&c);

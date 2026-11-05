@@ -19,7 +19,7 @@ static void read_key_update_request(uint8_t request) {
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     rec_dir reader;
@@ -31,12 +31,12 @@ static void read_key_update_request(uint8_t request) {
     if (request <= 1) {
         rec_dir_update(secret, &server);
         mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
-        CHECK(ch_read(&t, out, sizeof out) == 4);
-        CHECK(ch_alert_sent(&t) == 0 && m.sends == 0 && t.key_update_owed == request);
+        CHECK(ch_read(tls_public(&t), out, sizeof out) == 4);
+        CHECK(ch_alert_sent(tls_public(&t)) == 0 && m.sends == 0 && t.key_update_owed == request);
         return;
     }
-    CHECK(ch_read(&t, out, sizeof out) == CH_EPROTO);
-    CHECK(ch_alert_sent(&t) == ALERT_ILLEGAL_PARAMETER);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == CH_EPROTO);
+    CHECK(ch_alert_sent(tls_public(&t)) == ALERT_ILLEGAL_PARAMETER);
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;
@@ -58,7 +58,7 @@ static void read_key_update_body(size_t body_len) {
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     rec_dir reader;
@@ -67,8 +67,8 @@ static void read_key_update_body(size_t body_len) {
     const uint8_t key_update[6] = {HS_KEY_UPDATE, 0, 0, (uint8_t)body_len, 1, 0};
     mock_push(&m, &server, REC_HANDSHAKE, key_update, 4 + body_len);
     uint8_t out[16];
-    CHECK(ch_read(&t, out, sizeof out) == CH_EPROTO);
-    CHECK(ch_alert_sent(&t) == ALERT_DECODE_ERROR);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == CH_EPROTO);
+    CHECK(ch_alert_sent(tls_public(&t)) == ALERT_DECODE_ERROR);
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;
@@ -88,17 +88,17 @@ static void test_key_update_request(void) {
 
 // The bytes one ch_write of n bytes hands the session's mock_send, read
 // through the session's own cfg.io.
-static size_t sent_by_write(ch_tls *t, const uint8_t *p, size_t n) {
+static size_t sent_by_write(ch_tls_priv *t, const uint8_t *p, size_t n) {
     const mock_io *m = t->cfg.io;
     size_t before = m->sent;
-    CHECK(ch_write(t, p, n) == CH_OK);
+    CHECK(ch_write(tls_public(t), p, n) == CH_OK);
     return m->sent - before;
 }
 
 // The same while the peer's request is owed an answer: a write of a byte
 // or more sends the KeyUpdate record first, and a write of none sends
 // nothing and still owes it.
-static size_t sent_by_write_owed(ch_tls *t, const uint8_t *p, size_t n) {
+static size_t sent_by_write_owed(ch_tls_priv *t, const uint8_t *p, size_t n) {
     t->key_update_owed = 1;
     size_t sent = sent_by_write(t, p, n);
     CHECK(t->key_update_owed == (n == 0));
@@ -120,16 +120,16 @@ static void test_writable_len(void) {
     const uint16_t limits[3] = {63, 200, CH_TX_PT};
     for (size_t i = 0; i < sizeof limits / sizeof limits[0]; i++) {
         mock_io m = {0};
-        ch_tls t;
+        ch_tls_priv t;
         mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
         t.peer_limit = limits[i];
         size_t record_max = (size_t)limits[i] + REC_OVERHEAD;
         for (size_t cap = 0; cap <= 3 * record_max + CH_KEY_UPDATE_RECORD_LEN + 1; cap++) {
-            size_t n = ch_writable_len(&t, cap);
+            size_t n = ch_writable_len(tls_public(&t), cap);
             CHECK(sent_by_write(&t, msg, n) <= cap);
             CHECK(sent_by_write(&t, msg, n + 1) > cap);
             t.key_update_owed = 1;
-            n = ch_writable_len(&t, cap);
+            n = ch_writable_len(tls_public(&t), cap);
             CHECK(sent_by_write_owed(&t, msg, n) <= cap);
             CHECK(sent_by_write_owed(&t, msg, n + 1) > cap);
         }
@@ -137,57 +137,58 @@ static void test_writable_len(void) {
 
     // The rows tls.h states, at the build's own limit.
     mock_io m = {0};
-    ch_tls t;
+    ch_tls_priv t;
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
     t.peer_limit = CH_TX_PT;
-    CHECK(ch_writable_len(&t, REC_OVERHEAD) == 0);     // a record with no byte
-    CHECK(ch_writable_len(&t, REC_OVERHEAD + 1) == 1); // a record of one byte
-    CHECK(ch_writable_len(&t, CH_TX_PT + REC_OVERHEAD) == CH_TX_PT);
-    CHECK(ch_writable_len(&t, CH_TX_PT + 2 * REC_OVERHEAD) == CH_TX_PT);
-    CHECK(ch_writable_len(&t, CH_TX_PT + 2 * REC_OVERHEAD + 1) == CH_TX_PT + 1);
+    CHECK(ch_writable_len(tls_public(&t), REC_OVERHEAD) == 0);     // a record with no byte
+    CHECK(ch_writable_len(tls_public(&t), REC_OVERHEAD + 1) == 1); // a record of one byte
+    CHECK(ch_writable_len(tls_public(&t), CH_TX_PT + REC_OVERHEAD) == CH_TX_PT);
+    CHECK(ch_writable_len(tls_public(&t), CH_TX_PT + 2 * REC_OVERHEAD) == CH_TX_PT);
+    CHECK(ch_writable_len(tls_public(&t), CH_TX_PT + 2 * REC_OVERHEAD + 1) == CH_TX_PT + 1);
     // A peer limit above CH_TX_PT still leaves CH_TX_PT, as in ch_write.
     t.peer_limit = CH_TX_PT + 100;
-    CHECK(ch_writable_len(&t, CH_TX_PT + 2 * REC_OVERHEAD + 1) == CH_TX_PT + 1);
+    CHECK(ch_writable_len(tls_public(&t), CH_TX_PT + 2 * REC_OVERHEAD + 1) == CH_TX_PT + 1);
     // The largest cap there is: whole records all the way.
     size_t whole = SIZE_MAX / (CH_TX_PT + REC_OVERHEAD);
     size_t rest = SIZE_MAX - whole * (CH_TX_PT + REC_OVERHEAD);
-    CHECK(ch_writable_len(&t, SIZE_MAX) ==
+    CHECK(ch_writable_len(tls_public(&t), SIZE_MAX) ==
           whole * CH_TX_PT + (rest > REC_OVERHEAD ? rest - REC_OVERHEAD : 0));
     // An answer owed: its KeyUpdate record comes first, then the rows above
     // shifted by its 27 bytes, and at SIZE_MAX whole records after it.
     t.peer_limit = CH_TX_PT;
     t.key_update_owed = 1;
     size_t key_update = CH_KEY_UPDATE_RECORD_LEN;
-    CHECK(ch_writable_len(&t, 0) == 0);
-    CHECK(ch_writable_len(&t, key_update + REC_OVERHEAD) == 0);
-    CHECK(ch_writable_len(&t, key_update + REC_OVERHEAD + 1) == 1);
-    CHECK(ch_writable_len(&t, key_update + CH_TX_PT + 2 * (size_t)REC_OVERHEAD) == CH_TX_PT);
-    CHECK(ch_writable_len(&t, key_update + CH_TX_PT + 2 * (size_t)REC_OVERHEAD + 1) ==
+    CHECK(ch_writable_len(tls_public(&t), 0) == 0);
+    CHECK(ch_writable_len(tls_public(&t), key_update + REC_OVERHEAD) == 0);
+    CHECK(ch_writable_len(tls_public(&t), key_update + REC_OVERHEAD + 1) == 1);
+    CHECK(ch_writable_len(tls_public(&t), key_update + CH_TX_PT + 2 * (size_t)REC_OVERHEAD) ==
+          CH_TX_PT);
+    CHECK(ch_writable_len(tls_public(&t), key_update + CH_TX_PT + 2 * (size_t)REC_OVERHEAD + 1) ==
           CH_TX_PT + 1);
     whole = (SIZE_MAX - key_update) / (CH_TX_PT + REC_OVERHEAD);
     rest = SIZE_MAX - key_update - whole * (CH_TX_PT + REC_OVERHEAD);
-    CHECK(ch_writable_len(&t, SIZE_MAX) ==
+    CHECK(ch_writable_len(tls_public(&t), SIZE_MAX) ==
           whole * CH_TX_PT + (rest > REC_OVERHEAD ? rest - REC_OVERHEAD : 0));
     t.key_update_owed = 0;
     // A session with no limit, as a zeroed one has: nothing.
     t.peer_limit = 0;
-    CHECK(ch_writable_len(&t, 4096) == 0);
+    CHECK(ch_writable_len(tls_public(&t), 4096) == 0);
 }
 
 // The wire bytes one write sends from a copy of start: ch_write over all
 // of msg when part_count is 0, ch_write_parts over the parts otherwise.
 // Each run starts from the same keys and sequence numbers, so two runs
 // that seal the same records send the same bytes.
-static size_t wire_of_write(const ch_tls *start, mock_io *m, const uint8_t *msg, size_t n,
+static size_t wire_of_write(const ch_tls_priv *start, mock_io *m, const uint8_t *msg, size_t n,
                             const ch_part *parts, size_t part_count, uint8_t *wire, size_t cap) {
-    static ch_tls t;
+    static ch_tls_priv t;
     t = *start;
     memset(m, 0, sizeof *m);
     t.cfg.io = m;
     if (part_count == 0) {
-        CHECK(ch_write(&t, msg, n) == CH_OK);
+        CHECK(ch_write(tls_public(&t), msg, n) == CH_OK);
     } else {
-        CHECK(ch_write_parts(&t, parts, part_count) == CH_OK);
+        CHECK(ch_write_parts(tls_public(&t), parts, part_count) == CH_OK);
     }
     CHECK(m->tx_len <= cap);
     memcpy(wire, m->tx, m->tx_len);
@@ -220,7 +221,7 @@ static void test_write_parts(void) {
         {200, 0,   0,  0,   0},
     };
     static mock_io m;
-    static ch_tls start;
+    static ch_tls_priv start;
     static uint8_t want[2048];
     static uint8_t got[2048];
     for (int owed = 0; owed <= 1; owed++) {
@@ -254,10 +255,10 @@ static void test_write_parts(void) {
     // No parts at all, and a session that is not connected, which sends
     // nothing and returns CH_EPROTO as ch_write does.
     mock_session(&start, &m, rxbuf, sizeof rxbuf, secret, NULL);
-    CHECK(ch_write_parts(&start, NULL, 0) == CH_OK && m.sends == 0);
+    CHECK(ch_write_parts(tls_public(&start), NULL, 0) == CH_OK && m.sends == 0);
     start.state = CH_ST_FAILED;
     const ch_part one = {msg, 1};
-    CHECK(ch_write_parts(&start, &one, 1) == CH_EPROTO && m.sends == 0);
+    CHECK(ch_write_parts(tls_public(&start), &one, 1) == CH_EPROTO && m.sends == 0);
 }
 
 #endif

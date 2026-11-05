@@ -29,29 +29,29 @@ static void test_connect_psk_identity_bounds(void) {
     cfg.psk = psk;
     cfg.psk_len = sizeof psk;
     cfg.psk_id = identity;
-    static ch_tls t;
+    static ch_tls_priv t;
     cfg.psk_id_len = CH_TICKET_ID_MAX;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     CHECK(m.sends == 2); // the hello, then the alert of the failed read
     m.sends = 0;
     cfg.psk_id_len = CH_TICKET_ID_MAX + 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
-    CHECK(m.sends == 0 && ch_alert_sent(&t) == 0);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
+    CHECK(m.sends == 0 && ch_alert_sent(tls_public(&t)) == 0);
     CHECK(t.state == CH_ST_FAILED && t.keys == 0);
     cfg.psk_id_len = 0;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
-    CHECK(m.sends == 0 && ch_alert_sent(&t) == 0);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
+    CHECK(m.sends == 0 && ch_alert_sent(tls_public(&t)) == 0);
 
     // The external PSK's length floor (rfc9846.txt:711-720): CH_PSK_LEN_MIN
     // bytes stage the hello, and one byte fewer is refused before a byte
     // is sent.
     cfg.psk_id_len = 9;
     cfg.psk_len = CH_PSK_LEN_MIN;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO && m.sends == 2);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO && m.sends == 2);
     m.sends = 0;
     cfg.psk_len = CH_PSK_LEN_MIN - 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
-    CHECK(m.sends == 0 && ch_alert_sent(&t) == 0);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
+    CHECK(m.sends == 0 && ch_alert_sent(tls_public(&t)) == 0);
 }
 
 // A first ClientHello whose send fails. The failure is this side's
@@ -74,9 +74,10 @@ static void test_connect_hello_send_fails(void) {
     cfg.psk_len = sizeof psk;
     cfg.psk_id = (const uint8_t *)"d";
     cfg.psk_id_len = 1;
-    static ch_tls t;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
-    CHECK(ch_alert_sent(&t) == ALERT_INTERNAL_ERROR && ch_alert_received(&t) == 0);
+    static ch_tls_priv t;
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
+    CHECK(ch_alert_sent(tls_public(&t)) == ALERT_INTERNAL_ERROR &&
+          ch_alert_received(tls_public(&t)) == 0);
     CHECK(m.sends == 2 && t.state == CH_ST_FAILED);
 }
 

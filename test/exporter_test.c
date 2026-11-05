@@ -23,6 +23,7 @@
 #include "ch_assert.h"
 #include "keysched.h"
 #include "rand.h"
+#include "session_convert.h"
 #include "tls.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -133,7 +134,7 @@ static void test_label_separation(void) {
 // session is built by hand because this binary runs no handshake: the
 // call reads t.state and t.exp_master and nothing else.
 static void test_public_refusals(void) {
-    ch_tls t;
+    ch_tls_priv t;
     memset(&t, 0, sizeof t);
     uint8_t transcript[SHA256_LEN];
     uint8_t master[SHA256_LEN];
@@ -145,43 +146,44 @@ static void test_public_refusals(void) {
 
     // Before CONNECTED the secret is not derived, whatever the struct holds.
     t.state = CH_ST_START;
-    CHECK(ch_export(&t, "label", NULL, 0, out, sizeof out) == CH_EINVAL);
+    CHECK(ch_export(tls_public(&t), "label", NULL, 0, out, sizeof out) == CH_EINVAL);
     t.state = CH_ST_CLOSED;
-    CHECK(ch_export(&t, "label", NULL, 0, out, sizeof out) == CH_EINVAL);
+    CHECK(ch_export(tls_public(&t), "label", NULL, 0, out, sizeof out) == CH_EINVAL);
     t.state = CH_ST_FAILED;
-    CHECK(ch_export(&t, "label", NULL, 0, out, sizeof out) == CH_EINVAL);
+    CHECK(ch_export(tls_public(&t), "label", NULL, 0, out, sizeof out) == CH_EINVAL);
 
     t.state = CH_ST_CONNECTED;
-    CHECK(ch_export(&t, "label", NULL, 0, out, sizeof out) == CH_OK);
+    CHECK(ch_export(tls_public(&t), "label", NULL, 0, out, sizeof out) == CH_OK);
 
     // The argument rules, each one alone.
-    CHECK(ch_export(&t, NULL, NULL, 0, out, sizeof out) == CH_EINVAL);
-    CHECK(ch_export(&t, "", NULL, 0, out, sizeof out) == CH_EINVAL);
-    CHECK(ch_export(&t, "label", NULL, 0, NULL, sizeof out) == CH_EINVAL);
-    CHECK(ch_export(&t, "label", NULL, 0, out, 0) == CH_EINVAL);
-    CHECK(ch_export(&t, "label", NULL, 3, out, sizeof out) == CH_EINVAL);
-    CHECK(ch_export(&t, "label", context, sizeof context, out, sizeof out) == CH_OK);
+    CHECK(ch_export(tls_public(&t), NULL, NULL, 0, out, sizeof out) == CH_EINVAL);
+    CHECK(ch_export(tls_public(&t), "", NULL, 0, out, sizeof out) == CH_EINVAL);
+    CHECK(ch_export(tls_public(&t), "label", NULL, 0, NULL, sizeof out) == CH_EINVAL);
+    CHECK(ch_export(tls_public(&t), "label", NULL, 0, out, 0) == CH_EINVAL);
+    CHECK(ch_export(tls_public(&t), "label", NULL, 3, out, sizeof out) == CH_EINVAL);
+    CHECK(ch_export(tls_public(&t), "label", context, sizeof context, out, sizeof out) == CH_OK);
 
     // The label boundary, both sides of it.
     char label[CH_EXPORT_LABEL_MAX + 2];
     memset(label, 'x', sizeof label);
     label[CH_EXPORT_LABEL_MAX] = '\0';
-    CHECK(ch_export(&t, label, NULL, 0, out, sizeof out) == CH_OK);
+    CHECK(ch_export(tls_public(&t), label, NULL, 0, out, sizeof out) == CH_OK);
     label[CH_EXPORT_LABEL_MAX] = 'x';
     label[CH_EXPORT_LABEL_MAX + 1] = '\0';
-    CHECK(ch_export(&t, label, NULL, 0, out, sizeof out) == CH_EINVAL);
+    CHECK(ch_export(tls_public(&t), label, NULL, 0, out, sizeof out) == CH_EINVAL);
 
     // The output boundary, both sides of it.
     static uint8_t big[CH_EXPORT_MAX + 1];
-    CHECK(ch_export(&t, "label", NULL, 0, big, CH_EXPORT_MAX) == CH_OK);
-    CHECK(ch_export(&t, "label", NULL, 0, big, CH_EXPORT_MAX + 1) == CH_EINVAL);
+    CHECK(ch_export(tls_public(&t), "label", NULL, 0, big, CH_EXPORT_MAX) == CH_OK);
+    CHECK(ch_export(tls_public(&t), "label", NULL, 0, big, CH_EXPORT_MAX + 1) == CH_EINVAL);
 
     // ch_export answers the same bytes ks_exporter does, so the public
     // call adds validation and nothing else.
     uint8_t direct[SHA256_LEN];
     uint8_t viapublic[SHA256_LEN];
     ks_exporter(SHA256_LEN, t.exp_master, "label", context, sizeof context, direct, sizeof direct);
-    CHECK(ch_export(&t, "label", context, sizeof context, viapublic, sizeof viapublic) == CH_OK);
+    CHECK(ch_export(tls_public(&t), "label", context, sizeof context, viapublic,
+                    sizeof viapublic) == CH_OK);
     CHECK(memcmp(direct, viapublic, sizeof direct) == 0);
 }
 

@@ -196,10 +196,10 @@ static void test_init_refuses_a_missing_sink(void) {
     server_config(&cfg);
     cfg.srv.on_record_out = NULL;
 
-    ch_tcp r;
+    ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(&r, &cfg) == CH_EINVAL);
-    CHECK(ch_tcp_state(&r) == CH_ST_FAILED);
+    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_EINVAL);
+    CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_FAILED);
     CHECK(seen.count == 0);
 }
 
@@ -217,18 +217,18 @@ static void test_init_refuses_an_rsa_modulus_past_the_buffer(void) {
     ch_cfg cfg;
     server_config(&cfg);
     cfg.srv.rsa_pss.pub_len = SRV_SIG_MAX;
-    ch_tcp r;
+    ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(&r, &cfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
     size_t consumed = 0;
-    CHECK(ch_srv_tcp_in(&r, rec, rec_len, &consumed) == CH_OK);
+    CHECK(ch_srv_tcp_in(tcp_public(&r), rec, rec_len, &consumed) == CH_OK);
     CHECK(seen.count >= 5);
-    ch_tcp_close(&r);
+    ch_tcp_close(tcp_public(&r));
 
     cfg.srv.rsa_pss.pub_len = SRV_SIG_MAX + 1;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(&r, &cfg) == CH_EINVAL);
-    CHECK(ch_tcp_state(&r) == CH_ST_FAILED);
+    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_EINVAL);
+    CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_FAILED);
     CHECK(seen.count == 0 && seen.io_calls == 0);
 }
 
@@ -243,17 +243,17 @@ static void test_a_partial_record_is_not_consumed(void) {
 
     ch_cfg cfg;
     server_config(&cfg);
-    ch_tcp r;
+    ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(&r, &cfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
 
     size_t consumed = 1;
-    CHECK(ch_srv_tcp_in(&r, rec, rec_len - 1, &consumed) == CH_OK);
+    CHECK(ch_srv_tcp_in(tcp_public(&r), rec, rec_len - 1, &consumed) == CH_OK);
     CHECK(consumed == 0);
     CHECK(seen.count == 0);
     CHECK(seen.io_calls == 0);
-    CHECK(ch_tcp_state(&r) == CH_ST_START);
-    ch_tcp_close(&r);
+    CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_START);
+    ch_tcp_close(tcp_public(&r));
 }
 
 // A sink that refuses fails the handshake rather than losing the record,
@@ -266,14 +266,14 @@ static void test_a_refusing_sink_kills_the_session(void) {
 
     ch_cfg cfg;
     server_config(&cfg);
-    ch_tcp r;
+    ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
     seen.refuse = 1;
-    CHECK(ch_srv_tcp_init(&r, &cfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
 
     size_t consumed = 0;
-    CHECK(ch_srv_tcp_in(&r, rec, rec_len, &consumed) != CH_OK);
-    CHECK(ch_tcp_state(&r) == CH_ST_FAILED);
+    CHECK(ch_srv_tcp_in(tcp_public(&r), rec, rec_len, &consumed) != CH_OK);
+    CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_FAILED);
     CHECK(r.t.alert_sent == ALERT_INTERNAL_ERROR); // what ch_alert_sent reads
     CHECK(seen.io_calls == 0);
 }
@@ -311,12 +311,12 @@ static void test_a_session_id_draws_the_change_cipher_spec_through_the_sink(void
 
     ch_cfg cfg;
     server_config(&cfg);
-    ch_tcp r;
+    ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(&r, &cfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
 
     size_t consumed = 0;
-    int rc = ch_srv_tcp_in(&r, rec, rec_len, &consumed);
+    int rc = ch_srv_tcp_in(tcp_public(&r), rec, rec_len, &consumed);
     CHECK(rc == CH_OK);
     CHECK(consumed == rec_len);
     // The ServerHello, then the change_cipher_spec, then the protected
@@ -330,7 +330,7 @@ static void test_a_session_id_draws_the_change_cipher_spec_through_the_sink(void
     }
     // INV-28: not one byte through cfg.send.
     CHECK(seen.io_calls == 0);
-    ch_tcp_close(&r);
+    ch_tcp_close(tcp_public(&r));
 }
 
 // The count bound, SRV_CLIENT_HELLO_EXT_MAX, on the record path. This
@@ -389,11 +389,11 @@ static void test_extension_count_bound(void) {
         server_config(&cfg);
         cfg.buf = padded_buf;
         cfg.buf_len = sizeof padded_buf;
-        ch_tcp r;
+        ch_tcp_priv r;
         memset(&seen, 0, sizeof seen);
-        CHECK(ch_srv_tcp_init(&r, &cfg) == CH_OK);
+        CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
         size_t consumed = 0;
-        int rc = ch_srv_tcp_in(&r, rec, rec_len, &consumed);
+        int rc = ch_srv_tcp_in(tcp_public(&r), rec, rec_len, &consumed);
         if (count <= SRV_CLIENT_HELLO_EXT_MAX) {
             CHECK(rc == CH_OK && seen.count >= 5);
         } else {
@@ -402,7 +402,7 @@ static void test_extension_count_bound(void) {
             CHECK(rc == CH_EPROTO && r.t.alert_sent == ALERT_ILLEGAL_PARAMETER);
             CHECK(seen.count == 1 && seen.type[0] == REC_ALERT && seen.len[0] == REC_HDR + 2);
         }
-        ch_tcp_close(&r);
+        ch_tcp_close(tcp_public(&r));
     }
 }
 
@@ -416,15 +416,15 @@ int main(void) {
     ch_cfg cfg;
     server_config(&cfg);
 
-    ch_tcp r;
+    ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(&r, &cfg) == CH_OK);
-    CHECK(ch_tcp_state(&r) == CH_ST_START);
+    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
+    CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_START);
     // A server speaks second: nothing is owed before the hello arrives.
     CHECK(seen.count == 0);
 
     size_t consumed = 0;
-    int rc = ch_srv_tcp_in(&r, rec, rec_len, &consumed);
+    int rc = ch_srv_tcp_in(tcp_public(&r), rec, rec_len, &consumed);
     if (rc != CH_OK) {
         (void)fprintf(stderr, "record_in rc=%d alert=%u\n", rc, r.t.alert_sent);
     }
@@ -456,7 +456,7 @@ int main(void) {
 
     // The handshake is not done: the client Finished has not arrived, so
     // the session is still CH_ST_START and the caller keeps feeding.
-    CHECK(ch_tcp_state(&r) == CH_ST_START);
+    CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_START);
     CHECK(r.t.alert_sent == 0);
 
     // INV-28: the whole flight ran without the driver touching the

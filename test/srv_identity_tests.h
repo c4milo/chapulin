@@ -185,8 +185,8 @@ static int accept_case(const identity_case *c) {
     cfg.srv.cookie_key = accept_cookie_key;
     send_calls = 0;
     recv_calls = 0;
-    ch_tls t;
-    int rc = ch_srv_accept(&t, &cfg);
+    ch_tls_priv t;
+    int rc = ch_srv_accept(tls_public(&t), &cfg);
     CHECK(t.state == CH_ST_FAILED);
     return rc;
 }
@@ -242,8 +242,8 @@ static int keys_case(const uint8_t *cookie_key, const uint8_t *ticket_key) {
     cfg.srv.ticket_key = ticket_key;
     send_calls = 0;
     recv_calls = 0;
-    ch_tls t;
-    return ch_srv_accept(&t, &cfg);
+    ch_tls_priv t;
+    return ch_srv_accept(tls_public(&t), &cfg);
 }
 
 // ch_srv_check under one pair of keys and a usable identity.

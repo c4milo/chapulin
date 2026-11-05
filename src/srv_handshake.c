@@ -159,7 +159,7 @@ static int run(handshake_state *h) {
     return srv_send_new_session_ticket(h);
 }
 
-int srv_handshake(ch_tls *t) {
+int srv_handshake(ch_tls_priv *t) {
     handshake_state h;
     memset(&h, 0, sizeof h);
     h.t = t;

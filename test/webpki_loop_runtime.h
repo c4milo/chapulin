@@ -33,6 +33,7 @@
 #if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
 
 #include "rsa_sign_key.h"
+#include "session_convert.h"
 #include "srv.h"
 #ifdef TEST_WEBPKI_TICKET_COUNTED
 #include "webpki_ticket_count.h"
@@ -45,20 +46,22 @@
 
 // Both init calls over test/test_cpu.h's values, in the suite object.
 static void check_runtime_edges(void) {
-    static ch_tcp probe;
+    static ch_tcp_priv probe;
     for (size_t i = 0; i < TEST_CPU_VALUES; i++) {
         int taken = test_cpu_taken(i);
         ch_cfg cfg;
         client_config(&cfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
         cfg.cpu = test_cpu_value(i);
-        int rc = ch_tcp_init(&probe, &cfg);
-        CHECK(taken ? rc == CH_OK : rc == CH_EINVAL && ch_tcp_state(&probe) == CH_ST_FAILED);
-        ch_tcp_close(&probe);
+        int rc = ch_tcp_init(tcp_public(&probe), &cfg);
+        CHECK(taken ? rc == CH_OK
+                    : rc == CH_EINVAL && ch_tcp_state(tcp_public(&probe)) == CH_ST_FAILED);
+        ch_tcp_close(tcp_public(&probe));
         server_config(&cfg, ticket_key);
         cfg.cpu = test_cpu_value(i);
-        rc = ch_srv_tcp_init(&probe, &cfg);
-        CHECK(taken ? rc == CH_OK : rc == CH_EINVAL && ch_tcp_state(&probe) == CH_ST_FAILED);
-        ch_tcp_close(&probe);
+        rc = ch_srv_tcp_init(tcp_public(&probe), &cfg);
+        CHECK(taken ? rc == CH_OK
+                    : rc == CH_EINVAL && ch_tcp_state(tcp_public(&probe)) == CH_ST_FAILED);
+        ch_tcp_close(tcp_public(&probe));
     }
 }
 
@@ -88,8 +91,8 @@ static void check_runtime_server_without_aes(void) {
     ccfg.cipher_suites = aes128;
     ccfg.cipher_suite_count = 1;
     CHECK(!run(&ccfg, &scfg));
-    CHECK(ch_tcp_state(&server) == CH_ST_FAILED &&
-          ch_alert_sent(&server.t) == ALERT_HANDSHAKE_FAILURE);
+    CHECK(ch_tcp_state(tcp_public(&server)) == CH_ST_FAILED &&
+          ch_alert_sent(tls_public(&server.t)) == ALERT_HANDSHAKE_FAILURE);
     server_cpu = TEST_CPU;
 }
 
@@ -97,20 +100,20 @@ static void check_runtime_server_without_aes(void) {
 // ch_cfg.cipher_suites and the server's ch_srv_cfg.cipher_suites, each
 // refused or taken alike.
 static int runtime_list_taken(uint32_t bits, const uint16_t *list, size_t count) {
-    static ch_tcp probe;
+    static ch_tcp_priv probe;
     ch_cfg cfg;
     client_cpu = bits;
     server_cpu = bits;
     client_config(&cfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
     cfg.cipher_suites = list;
     cfg.cipher_suite_count = count;
-    int client_rc = ch_tcp_init(&probe, &cfg);
-    ch_tcp_close(&probe);
+    int client_rc = ch_tcp_init(tcp_public(&probe), &cfg);
+    ch_tcp_close(tcp_public(&probe));
     server_config(&cfg, ticket_key);
     cfg.srv.cipher_suites = list;
     cfg.srv.cipher_suite_count = count;
-    int server_rc = ch_srv_tcp_init(&probe, &cfg);
-    ch_tcp_close(&probe);
+    int server_rc = ch_srv_tcp_init(tcp_public(&probe), &cfg);
+    ch_tcp_close(tcp_public(&probe));
     client_cpu = TEST_CPU;
     server_cpu = TEST_CPU;
     CHECK(client_rc == server_rc);
@@ -275,10 +278,10 @@ static void check_runtime_tickets_across(void) {
 #ifdef TEST_WEBPKI_TICKET_COUNTED
 // ch_tcp_init under test/webpki_ticket_rows.h's rows.
 static int ticket_rows_init(const ch_cfg *cfg, uint8_t stored[SHA256_LEN]) {
-    static ch_tcp probe;
-    int rc = ch_tcp_init(&probe, cfg);
+    static ch_tcp_priv probe;
+    int rc = ch_tcp_init(tcp_public(&probe), cfg);
     memcpy(stored, probe.t.ticket_config_hash, SHA256_LEN);
-    ch_tcp_close(&probe);
+    ch_tcp_close(tcp_public(&probe));
     return rc == CH_OK;
 }
 

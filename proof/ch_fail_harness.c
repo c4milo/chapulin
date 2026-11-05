@@ -13,6 +13,7 @@
 // harnesses. ch_write and ch_writable_len are not called, so their
 // callees are stubs that fail the proof if they ever were.
 #include "harness.h"
+#include "session_convert.h"
 
 #include "handshake_post.h"
 #include "io.h"
@@ -43,7 +44,7 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     return -1;
 }
 
-int hspost_send_key_update(ch_tls *t) {
+int hspost_send_key_update(ch_tls_priv *t) {
     (void)t;
     __CPROVER_assert(0, "hspost_send_key_update unreachable: ch_fail sends no KeyUpdate");
     return CH_EIO;
@@ -53,7 +54,7 @@ static int fail_calls;
 static uint8_t fail_description;
 static int fail_result;
 
-int tlsi_fail(ch_tls *t, uint8_t description) {
+int tlsi_fail(ch_tls_priv *t, uint8_t description) {
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "fail: session writable");
     fail_calls++;
     fail_description = description;
@@ -61,6 +62,7 @@ int tlsi_fail(ch_tls *t, uint8_t description) {
     return fail_result;
 }
 
+#include "tls_entry.c"
 #include "tls_write.c"
 
 static int spec_error_alert(uint8_t d) {
@@ -70,7 +72,7 @@ static int spec_error_alert(uint8_t d) {
            d == 116 || d == 117 || d == 120;
 }
 
-static ch_tls session;
+static ch_tls_priv session;
 
 int main(void) {
     uint8_t state = nondet_u8();
@@ -81,7 +83,7 @@ int main(void) {
     __CPROVER_assume(result == CH_OK || result == CH_EIO || result == CH_ECAP);
     fail_result = result;
 
-    int rc = ch_fail(&session, description);
+    int rc = ch_fail(tls_public(&session), description);
 
     if (!spec_error_alert(description)) {
         __CPROVER_assert(rc == CH_EINVAL && fail_calls == 0 && session.state == state,

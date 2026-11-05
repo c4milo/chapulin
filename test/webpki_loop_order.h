@@ -72,7 +72,7 @@ static size_t offer_body(uint8_t *out, size_t cap, const uint8_t share[X25519_LE
 // srv_select over ch on a fresh session that names no suite order, so
 // the server walks its default one.
 static int select_by_default_order(const client_hello *ch, selection *sel) {
-    static ch_tls t;
+    static ch_tls_priv t;
     handshake_state h;
     memset(&t, 0, sizeof t);
     server_config(&t.cfg, ticket_key);

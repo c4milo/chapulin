@@ -115,7 +115,7 @@ static size_t h3spec_offer(uint8_t *out, size_t cap, const uint8_t share[X25519_
 // the alert the call left.
 static int select_under(const client_hello *ch, const uint16_t *order, size_t count, selection *sel,
                         uint8_t *alert) {
-    static ch_tls t;
+    static ch_tls_priv t;
     handshake_state h;
     memset(&t, 0, sizeof t);
     server_config(&t.cfg, ticket_key);
@@ -179,18 +179,18 @@ static void check_suite_order_rules(void) {
     server_config(&scfg, ticket_key);
     scfg.srv.cipher_suites = unheld;
     scfg.srv.cipher_suite_count = 1;
-    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_EINVAL);
+    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_EINVAL);
     scfg.srv.cipher_suites = NULL;
-    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_EINVAL);
+    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_EINVAL);
     scfg.srv.cipher_suites = all;
     scfg.srv.cipher_suite_count = 0;
-    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_EINVAL);
+    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_EINVAL);
     scfg.srv.cipher_suites = four;
     scfg.srv.cipher_suite_count = 4;
-    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_EINVAL);
+    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_EINVAL);
     scfg.srv.cipher_suites = all;
     scfg.srv.cipher_suite_count = 3;
-    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_OK);
 }
 
 // The client's order for one row, in static storage because the config
@@ -239,25 +239,25 @@ static void check_client_suite_rules(void) {
     client_config(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
     ccfg.cipher_suites = unheld;
     ccfg.cipher_suite_count = 1;
-    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_EINVAL);
     ccfg.cipher_suites = repeat;
     ccfg.cipher_suite_count = 2;
-    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_EINVAL);
     ccfg.cipher_suites = NULL;
-    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_EINVAL);
     ccfg.cipher_suites = four;
     ccfg.cipher_suite_count = 0;
-    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_EINVAL);
     ccfg.cipher_suite_count = 4;
-    CHECK(ch_tcp_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_EINVAL);
     ccfg.cipher_suite_count = 3;
-    CHECK(ch_tcp_init(&client, &ccfg) == CH_OK);
+    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_OK);
 }
 
 // One handshake whose ServerHello selects suite, for
 // test/key_limit_cases.h. run leaves the ticket the server sent read, so
 // both ends are connected and nothing waits on either pipe.
-static int key_limit_connect(uint16_t suite, ch_tls **client_out, ch_tls **server_out) {
+static int key_limit_connect(uint16_t suite, ch_tls_priv **client_out, ch_tls_priv **server_out) {
     ch_cfg scfg;
     ch_cfg ccfg;
     server_config_suites(&scfg, ticket_key, &suite, 1);

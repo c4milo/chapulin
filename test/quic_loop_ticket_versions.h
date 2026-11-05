@@ -142,8 +142,8 @@ static void test_ticket_versions(void) {
     // A raw hello offered the ticket alone, so nothing is left to
     // authenticate the server with, and the handshake fails closed.
     CHECK(!run_quic(&ccfg, &scfg));
-    CHECK(ch_quic_state(&server) == CH_ST_FAILED);
-    CHECK(ch_quic_alert(&server) == ALERT_MISSING_EXTENSION);
+    CHECK(ch_quic_state(quic_public(&server)) == CH_ST_FAILED);
+    CHECK(ch_quic_alert(quic_public(&server)) == ALERT_MISSING_EXTENSION);
 #endif
     CHECK(choose_calls == 1);
 

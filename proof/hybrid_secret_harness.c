@@ -77,7 +77,7 @@ int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN], const uint
 
 int main(void) {
     static handshake_state h;
-    static ch_tls t;
+    static ch_tls_priv t;
     memset(&h, 0, sizeof h);
     memset(&t, 0, sizeof t);
     h.t = &t;

@@ -11,6 +11,7 @@
 #define CH_TEST_TCP_BLOCKING_LOOP_CPU_H
 #ifdef CH_CPU_RUNTIME
 
+#include "session_convert.h"
 #include "test_cpu.h"
 
 static void test_cpu_values_at_init(void) {
@@ -21,8 +22,8 @@ static void test_cpu_values_at_init(void) {
         ch_cfg cfg;
         client_config(&cfg, read_to_client);
         cfg.cpu = test_cpu_value(i);
-        static ch_tls probe;
-        int rc = ch_connect(&probe, &cfg);
+        static ch_tls_priv probe;
+        int rc = ch_connect(tls_public(&probe), &cfg);
         if (taken) {
             CHECK(rc != CH_EINVAL && to_server.len > 0);
         } else {
@@ -31,7 +32,7 @@ static void test_cpu_values_at_init(void) {
         server_config(&cfg, read_to_server);
         cfg.cpu = test_cpu_value(i);
         CHECK((ch_srv_check(&cfg) == CH_OK) == taken);
-        rc = ch_srv_accept(&probe, &cfg);
+        rc = ch_srv_accept(tls_public(&probe), &cfg);
         CHECK(taken ? rc != CH_EINVAL : rc == CH_EINVAL && probe.state == CH_ST_FAILED);
         CHECK(taken || to_client.len == 0);
     }

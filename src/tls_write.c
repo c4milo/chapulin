@@ -4,6 +4,7 @@
 // peer's request owes or as the last record an AES-GCM write key seals
 // (record.h). tls.c holds the other public calls tls.h declares.
 #include "tls.h"
+#include "tls_calls.h"
 
 #include "buf.h"
 #include "ch_assert.h"
@@ -14,7 +15,7 @@
 // The most plaintext one outgoing record carries: CH_TX_PT, or the peer's
 // record_size_limit when that is lower (INV-38). ch_write cuts records at
 // it and ch_writable_len counts in it, so the two read one limit.
-static size_t record_plaintext_max(const ch_tls *t) {
+static size_t record_plaintext_max(const ch_tls_priv *t) {
     return t->peer_limit < CH_TX_PT ? t->peer_limit : CH_TX_PT;
 }
 
@@ -27,7 +28,7 @@ static size_t record_plaintext_max(const ch_tls *t) {
 // SIZE_MAX. A build without -DCH_SUITE_AES_GCM runs ChaCha20-Poly1305
 // alone. A KeyUpdate keeps the direction's suite (record.h), so the key
 // after one seals as many as the key before it.
-static size_t records_per_key(const ch_tls *t) {
+static size_t records_per_key(const ch_tls_priv *t) {
 #ifdef CH_SUITE_AES_GCM
     if (suite_runs_aes_gcm(t->wr.suite)) {
         return REC_AES_GCM_RECORDS_MAX - 1;
@@ -45,7 +46,7 @@ static size_t records_per_key(const ch_tls *t) {
 // record takes a sequence number below REC_AES_GCM_RECORDS_MAX - 1.
 // ch_write and ch_writable_len both read it, as they both read the record
 // limit through record_plaintext_max.
-static size_t records_before_key_update(const ch_tls *t) {
+static size_t records_before_key_update(const ch_tls_priv *t) {
     if (t->key_update_owed) {
         return 0;
     }
@@ -92,7 +93,7 @@ static size_t records_before_key_update(const ch_tls *t) {
 // sequence number left, and each of those two takes at most that one.
 // Neither sends an owed answer first, because §4.7.3 owes it before
 // application data alone, and no data record follows either of them.
-static int key_update_before_record(ch_tls *t) {
+static int key_update_before_record(ch_tls_priv *t) {
     if (records_before_key_update(t) != 0) {
         return CH_OK;
     }
@@ -146,7 +147,7 @@ static void parts_copy_record(parts_cursor *c, wbuf *w, size_t limit) {
 // KeyUpdate that may go first, because that KeyUpdate is sealed in
 // ch_tls.tx too. So each byte is copied once, as rec_seal copied the one
 // buffer ch_write took before this call existed.
-int ch_write_parts(ch_tls *t, const ch_part *parts, size_t part_count) {
+int tls_write_parts(ch_tls_priv *t, const ch_part *parts, size_t part_count) {
     CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states (tls.c)
 
     if (t->state != CH_ST_CONNECTED) {
@@ -178,9 +179,9 @@ int ch_write_parts(ch_tls *t, const ch_part *parts, size_t part_count) {
     return CH_OK;
 }
 
-int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
+int tls_write(ch_tls_priv *t, const uint8_t *p, size_t n) {
     const ch_part part = {p, n};
-    return ch_write_parts(t, &part, 1);
+    return tls_write_parts(t, &part, 1);
 }
 
 // What cap bytes of records carry at limit bytes of plaintext per record:
@@ -242,7 +243,7 @@ static size_t fill_across_key_update(size_t cap, size_t limit, size_t room, size
 // function and its two helpers, writableLen_le_cap proves that the value
 // it returns is at most cap, and test/diff_writable_len.h compares the
 // model with this code.
-size_t ch_writable_len(const ch_tls *t, size_t cap) {
+size_t tls_writable_len(const ch_tls_priv *t, size_t cap) {
     size_t limit = record_plaintext_max(t);
     if (limit == 0) {
         return 0;
@@ -307,7 +308,7 @@ static int is_error_alert(uint8_t description) {
 // tls.h states the contract. tlsi_fail is the failure funnel ch_read's
 // failures run through too, so this call writes alert_sent, wipes and
 // marks the session failed the same way.
-int ch_fail(ch_tls *t, uint8_t description) {
+int tls_fail(ch_tls_priv *t, uint8_t description) {
     CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states (tls.c)
     if (!is_error_alert(description)) {
         return CH_EINVAL;

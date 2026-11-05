@@ -37,7 +37,7 @@ static size_t feed_len;
 static size_t feed_off;
 static int send_rc; // nonzero makes the next send fail
 
-static ch_tls sess;
+static ch_tls_priv sess;
 static handshake_state hs;
 
 // The message a handler is handed, what the stand-in parser reports, and the result it

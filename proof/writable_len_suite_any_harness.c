@@ -18,6 +18,7 @@
 // ch_write is not called, so its callees are stubs that fail the proof if
 // it ever were.
 #include "harness.h"
+#include "session_convert.h"
 
 #include "handshake_post.h"
 #include "io.h"
@@ -52,28 +53,29 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     return -1;
 }
 
-int hspost_send_key_update(ch_tls *t) {
+int hspost_send_key_update(ch_tls_priv *t) {
     (void)t;
     __CPROVER_assert(0, "hspost_send_key_update unreachable: ch_writable_len sends nothing");
     return CH_EIO;
 }
 
-int tlsi_fail(ch_tls *t, uint8_t description) {
+int tlsi_fail(ch_tls_priv *t, uint8_t description) {
     (void)t;
     (void)description;
     __CPROVER_assert(0, "tlsi_fail unreachable: ch_writable_len fails nothing");
     return CH_EIO;
 }
 
+#include "tls_entry.c"
 #include "tls_write.c"
 
-static ch_tls any;
+static ch_tls_priv any;
 
 int main(void) {
     any.peer_limit = (uint16_t)nondet_u32();
     any.wr.suite = (uint16_t)nondet_u32();
     any.wr.seq = nondet_u64();
     any.key_update_owed = nondet_u8();
-    (void)ch_writable_len(&any, nondet_size_t());
+    (void)ch_writable_len(tls_public(&any), nondet_size_t());
     return 0;
 }

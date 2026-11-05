@@ -32,7 +32,7 @@
 // Reports one direction of one level as usable and records it. The bit
 // and the callback move together, so the caller's view and
 // q->levels_ready cannot disagree.
-static void announce(ch_quic *q, uint8_t level, uint8_t direction) {
+static void announce(ch_quic_priv *q, uint8_t level, uint8_t direction) {
     q->levels_ready |= CH_QUIC_LEVEL_BIT(level, direction);
     q->t.cfg.on_level_ready(q->t.cfg.io, level, direction);
 }
@@ -42,7 +42,7 @@ static void announce(ch_quic *q, uint8_t level, uint8_t direction) {
 // labels. A server reads under the client's secret and writes under its
 // own, the mirror of quic_step.c's install_handshake_keys, and both
 // directions exist at once because one derivation wrote both.
-static void install_handshake_keys(ch_quic *q) {
+static void install_handshake_keys(ch_quic_priv *q) {
     uint32_t cpu = CH_CFG_CPU(q->t.cfg);
     uint32_t version = q->t.quic_negotiated_version;
     QUIC_KEYS_INIT_SUITE(cpu, &q->handshake_rx, version, q->hs.c_hs, q->t.suite);
@@ -63,7 +63,7 @@ static void install_handshake_keys(ch_quic *q) {
 // t.rd_secret afterwards names app_rx[CH_QUIC_KEY_NEXT], not the current
 // set, which is the invariant quic_session.h states and ch_quic_key_update
 // depends on.
-static void install_application_keys(ch_quic *q) {
+static void install_application_keys(ch_quic_priv *q) {
     uint32_t cpu = CH_CFG_CPU(q->t.cfg);
     uint32_t version = q->t.quic_negotiated_version;
     QUIC_KEYS_INIT_SUITE(cpu, &q->app_tx, version, q->t.wr_secret, q->t.suite);
@@ -87,7 +87,7 @@ static void install_application_keys(ch_quic *q) {
 // extension, so srv_check_retry_hello refuses a second hello whose body
 // differs from the first's (docs/decisions.md 59), and the caller has
 // those bytes already.
-static int take_transport_params(ch_quic *q, const client_hello *ch) {
+static int take_transport_params(ch_quic_priv *q, const client_hello *ch) {
     if (ch->transport_params == NULL) {
         q->hs.alert = ALERT_MISSING_EXTENSION;
         return CH_EPROTO;
@@ -108,7 +108,7 @@ static int take_transport_params(ch_quic *q, const client_hello *ch) {
 // An answer quic_version_derived refuses is the caller's failure, not the
 // peer's: CH_EIO, the code a refused on_crypto_out returns (srv_out.c),
 // with internal_error, before any byte goes out.
-static int choose_version(ch_quic *q) {
+static int choose_version(ch_quic_priv *q) {
     if (q->t.cfg.srv.choose_version == NULL) {
         return CH_OK;
     }
@@ -125,7 +125,7 @@ static int choose_version(ch_quic *q) {
 // first or the one that answered a HelloRetryRequest. The ServerHello
 // goes out at the Initial level and the rest at the Handshake level,
 // which is why h->level is written twice.
-static int server_flight(ch_quic *q, const client_hello *ch, const selection *sel) {
+static int server_flight(ch_quic_priv *q, const client_hello *ch, const selection *sel) {
     handshake_state *h = &q->hs;
     h->level = CH_LEVEL_INITIAL;
     int rc = srv_send_server_hello(h, ch, sel);
@@ -173,7 +173,7 @@ static int server_flight(ch_quic *q, const client_hello *ch, const selection *se
 // This is srv_send_hello_retry_request's one call site, so a second
 // HelloRetryRequest is unreachable by call position rather than by a
 // counter, exactly as srv_handshake.c arranges it.
-static int step_client_hello(ch_quic *q) {
+static int step_client_hello(ch_quic_priv *q) {
     handshake_state *h = &q->hs;
     client_hello ch;
     selection sel;
@@ -212,7 +212,7 @@ static int step_client_hello(ch_quic *q) {
 // cookie and never sets need_retry, which is what keeps a second retry
 // unreachable. The first hello handed over the transport parameters and
 // fixed the negotiated version, so this step does neither.
-static int step_retry_hello(ch_quic *q) {
+static int step_retry_hello(ch_quic_priv *q) {
     handshake_state *h = &q->hs;
     client_hello ch;
     selection sel;
@@ -233,7 +233,7 @@ static int step_retry_hello(ch_quic *q) {
 // The client Finished, which is the last message of the handshake. The
 // read direction of the application level becomes usable here and not
 // before, because this is what authenticates the client's half.
-static int step_client_finished(ch_quic *q) {
+static int step_client_finished(ch_quic_priv *q) {
     int rc = srv_read_client_finished(&q->hs);
     if (rc != CH_OK) {
         return rc;
@@ -271,7 +271,7 @@ static int step_client_finished(ch_quic *q) {
 // that already sits in cfg.buf. The only switch in the mode: it dispatches
 // and does nothing else, so every path into a handler runs through a step
 // number a step wrote.
-static int advance(ch_quic *q) {
+static int advance(ch_quic_priv *q) {
     switch (q->step) {
     case SQ_STEP_AWAIT_CLIENT_HELLO:
         return step_client_hello(q);
@@ -288,7 +288,7 @@ static int advance(ch_quic *q) {
     }
 }
 
-static int session_dead(const ch_quic *q) {
+static int session_dead(const ch_quic_priv *q) {
     return q->t.state == CH_ST_CLOSED || q->t.state == CH_ST_FAILED;
 }
 
@@ -301,7 +301,7 @@ static int session_dead(const ch_quic *q) {
 // CH_MIN_RXBUF bytes, and hsr_peek_message therefore always reads its
 // 4-byte header rather than answering HSR_INCOMPLETE. Each iteration then
 // either returns or runs a step, and a step consumes a whole message.
-static int drive(ch_quic *q, const uint8_t *p, size_t n) {
+static int drive(ch_quic_priv *q, const uint8_t *p, size_t n) {
     size_t off = 0;
     for (;;) {
         off += hsr_feed(&q->hs, p + off, n - off);
@@ -329,7 +329,7 @@ static int drive(ch_quic *q, const uint8_t *p, size_t n) {
     }
 }
 
-int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg) {
+int srv_quic_init(ch_quic_priv *q, const ch_cfg *cfg) {
     memset(q, 0, sizeof *q);
     q->t.cfg = *cfg;
     // The version rule is quic_version.h's, which ch_quic_init applies
@@ -362,7 +362,7 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg) {
     return CH_OK;
 }
 
-int ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n) {
+int srv_quic_crypto_in(ch_quic_priv *q, uint8_t level, const uint8_t *p, size_t n) {
     CH_ASSERT(q->t.state <= CH_ST_FAILED);
     q->hs.t = &q->t;
     if (session_dead(q)) {

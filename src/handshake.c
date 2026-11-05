@@ -36,7 +36,7 @@ static size_t build_client_hello(handshake_state *h) {
 // fails with internal_error (RFC 9846 §6.2, rfc9846.txt:3979-3981), the
 // alert ch_write names for a failed send.
 static int send_staged(handshake_state *h, size_t n) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     int rc = io_send_all(&t->cfg, t->tx, n);
     if (rc != CH_OK) {
         h->alert = ALERT_INTERNAL_ERROR;
@@ -48,7 +48,7 @@ static int send_staged(handshake_state *h, size_t n) {
 // plaintext handshake record. retry is 1 for the hello a
 // HelloRetryRequest asked for, which the caller knows by position.
 static int send_client_hello(handshake_state *h, size_t n, int retry) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     t->tx[0] = REC_HANDSHAKE;
     t->tx[1] = 0x03;
     // The very first record may carry 0x0301 for old middleboxes; every
@@ -65,7 +65,7 @@ static int send_client_hello(handshake_state *h, size_t n, int retry) {
 // A seal that refuses is this side's failure too, so it names
 // internal_error, as stage_sealed in tcp_nonblocking_step.c does.
 static int send_client_finished(handshake_state *h, const uint8_t *msg, size_t n) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     size_t out_len = 0;
     if (rec_seal(&t->wr, REC_HANDSHAKE, msg, n, t->tx, sizeof t->tx, &out_len) != 0) {
         h->alert = ALERT_INTERNAL_ERROR;
@@ -119,7 +119,7 @@ static int hello_exchange(handshake_state *h, size_t hello_len, server_hello_inf
 }
 
 static int run(handshake_state *h, size_t hello_len) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     server_hello_info info;
     int rc = hello_exchange(h, hello_len, &info);
     if (rc != CH_OK) {
@@ -185,7 +185,7 @@ static int run(handshake_state *h, size_t hello_len) {
     return CH_OK;
 }
 
-int ch_handshake(ch_tls *t) {
+int ch_handshake(ch_tls_priv *t) {
     handshake_state h;
     memset(&h, 0, sizeof h);
     h.t = t;

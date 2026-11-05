@@ -25,7 +25,7 @@ static void frame_header(size_t body_len) {
     frame_bytes[4] = (uint8_t)body_len;
 }
 
-static void test_record_whole_len(ch_tcp *server) {
+static void test_record_whole_len(ch_tcp_priv *server) {
     // Every cut of the header is less than a record.
     CHECK(ch_tcp_whole_len(NULL, 0) == 0);
     frame_header(3);

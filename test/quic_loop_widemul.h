@@ -25,8 +25,8 @@
 // calls counted around its own call: a short header at the 1-RTT level and
 // a long one at the Handshake level, each with empty connection IDs and a
 // two-byte packet number.
-static void quic_widemul_packet(uint8_t level, ch_quic *from, widemul_end_calls *from_calls,
-                                ch_quic *to, widemul_end_calls *to_calls) {
+static void quic_widemul_packet(uint8_t level, ch_quic_priv *from, widemul_end_calls *from_calls,
+                                ch_quic_priv *to, widemul_end_calls *to_calls) {
     static const uint8_t short_hdr[3] = {0x41, 0x00, 0x05};
     static const uint8_t long_hdr[11] = {0xe1, 0x00, 0x00, 0x00, 0x01, 0x00,
                                          0x00, 0x40, 0x1a, 0x00, 0x05};
@@ -35,14 +35,14 @@ static void quic_widemul_packet(uint8_t level, ch_quic *from, widemul_end_calls 
     size_t hdr_len = level == CH_LEVEL_APPLICATION ? sizeof short_hdr : sizeof long_hdr;
     uint8_t pkt[64];
     size_t pkt_len = 0;
-    CHECK(ch_quic_seal(from, level, CH_QUIC_VERSION_1, 5, 2, hdr, hdr_len, pt, sizeof pt, pkt,
-                       sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_seal(quic_public(from), level, CH_QUIC_VERSION_1, 5, 2, hdr, hdr_len, pt,
+                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     widemul_take_calls(from_calls);
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(ch_quic_open(to, level, CH_QUIC_VERSION_1, pkt, pkt_len, hdr_len - 2, 0, 0, &key_set, &pn,
-                       &pt_len) == CH_OK);
+    CHECK(ch_quic_open(quic_public(to), level, CH_QUIC_VERSION_1, pkt, pkt_len, hdr_len - 2, 0, 0,
+                       &key_set, &pn, &pt_len) == CH_OK);
     widemul_take_calls(to_calls);
     CHECK(pn == 5 && pt_len == sizeof pt && memcmp(pkt + hdr_len, pt, sizeof pt) == 0);
 }
@@ -64,21 +64,25 @@ static void check_quic_multiply_bit(int client_stated, int server_stated) {
     widemul_end_calls server_calls = {0, 0};
     widemul_native_calls = 0;
     widemul_decomposed_calls = 0;
-    CHECK(ch_quic_init(&client, &ccfg) == CH_OK);
-    CHECK(ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, buf, sizeof buf, &n) == CH_OK);
+    CHECK(ch_quic_init(quic_public(&client), &ccfg) == CH_OK);
+    CHECK(ch_quic_crypto_out(quic_public(&client), CH_LEVEL_INITIAL, buf, sizeof buf, &n) == CH_OK);
     widemul_take_calls(&client_calls);
-    CHECK(ch_srv_quic_init(&server, &scfg) == CH_OK);
-    CHECK(ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, buf, n) == CH_OK);
+    CHECK(ch_srv_quic_init(quic_public(&server), &scfg) == CH_OK);
+    CHECK(ch_srv_quic_crypto_in(quic_public(&server), CH_LEVEL_INITIAL, buf, n) == CH_OK);
     widemul_take_calls(&server_calls);
-    CHECK(ch_quic_crypto_in(&client, CH_LEVEL_INITIAL, from_server.bytes[CH_LEVEL_INITIAL],
+    CHECK(ch_quic_crypto_in(quic_public(&client), CH_LEVEL_INITIAL,
+                            from_server.bytes[CH_LEVEL_INITIAL],
                             from_server.len[CH_LEVEL_INITIAL]) == CH_OK);
-    CHECK(ch_quic_crypto_in(&client, CH_LEVEL_HANDSHAKE, from_server.bytes[CH_LEVEL_HANDSHAKE],
+    CHECK(ch_quic_crypto_in(quic_public(&client), CH_LEVEL_HANDSHAKE,
+                            from_server.bytes[CH_LEVEL_HANDSHAKE],
                             from_server.len[CH_LEVEL_HANDSHAKE]) == CH_OK);
-    CHECK(ch_quic_crypto_out(&client, CH_LEVEL_HANDSHAKE, buf, sizeof buf, &n) == CH_OK);
+    CHECK(ch_quic_crypto_out(quic_public(&client), CH_LEVEL_HANDSHAKE, buf, sizeof buf, &n) ==
+          CH_OK);
     widemul_take_calls(&client_calls);
-    CHECK(ch_srv_quic_crypto_in(&server, CH_LEVEL_HANDSHAKE, buf, n) == CH_OK);
+    CHECK(ch_srv_quic_crypto_in(quic_public(&server), CH_LEVEL_HANDSHAKE, buf, n) == CH_OK);
     widemul_take_calls(&server_calls);
-    CHECK(ch_quic_state(&client) == CH_ST_CONNECTED && ch_quic_state(&server) == CH_ST_CONNECTED);
+    CHECK(ch_quic_state(quic_public(&client)) == CH_ST_CONNECTED &&
+          ch_quic_state(quic_public(&server)) == CH_ST_CONNECTED);
     static const uint8_t levels[2] = {CH_LEVEL_HANDSHAKE, CH_LEVEL_APPLICATION};
     for (size_t i = 0; i < sizeof levels; i++) {
         quic_widemul_packet(levels[i], &server, &server_calls, &client, &client_calls);

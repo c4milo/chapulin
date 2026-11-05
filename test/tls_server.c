@@ -38,6 +38,7 @@
 
 #include "ch_assert.h"
 #include "rand.h"
+#include "session_convert.h"
 #include "srv.h"
 #include "srv_ticket.h"
 #include "test_random.h"
@@ -209,9 +210,9 @@ static void set_identity(ch_cfg *cfg, const ch_cert *chain) {
 
 // Reads one line, answers it reversed with its newline kept last, and
 // closes. A client that closes first gets nothing.
-static void echo_reversed(ch_tls *t) {
+static void echo_reversed(ch_tls_priv *t) {
     uint8_t line[512];
-    int n = ch_read(t, line, sizeof line);
+    int n = ch_read(tls_public(t), line, sizeof line);
     if (n > 0) {
         size_t len = (size_t)n;
         size_t body = line[len - 1] == '\n' ? len - 1 : len;
@@ -223,10 +224,10 @@ static void echo_reversed(ch_tls *t) {
         // The server closes after the reply whether or not it went out, so
         // the result changes nothing. gcc warns on a (void) cast of a
         // CH_MUST_USE call (result.h), so the result goes to a variable.
-        int rc = ch_write(t, line, len);
+        int rc = ch_write(tls_public(t), line, len);
         (void)rc;
     }
-    ch_close(t);
+    ch_close(tls_public(t));
 }
 
 static int listen_any(void) {
@@ -311,8 +312,8 @@ int main(int argc, char **argv) {
         // instructions, and e2e drives its AES-GCM suites (cpu_cfg.h).
         cfg.cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
 #endif
-        static ch_tls t;
-        int rc = ch_srv_accept(&t, &cfg);
+        static ch_tls_priv t;
+        int rc = ch_srv_accept(tls_public(&t), &cfg);
         if (rc == CH_OK) {
             (void)printf("handshake: %s\n", t.psk_selected ? "resumed" : "full");
             (void)printf("group: 0x%04x\n", (unsigned)t.group);

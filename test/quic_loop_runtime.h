@@ -54,22 +54,22 @@ static void check_initial_agree(void) {
     static const uint8_t hdr[20] = {0xc1, 0x00, 0x00, 0x00, 0x01, 0x08, 0x83, 0x94, 0xc8, 0xf0,
                                     0x3e, 0x51, 0x57, 0x08, 0x00, 0x00, 0x40, 0x2a, 0x00, 0x07};
     static const uint8_t pt[24] = {'i', 'n', 'i', 't', 'i', 'a', 'l'};
-    ch_quic *ends[2][2] = {
+    ch_quic_priv *ends[2][2] = {
         {&client, &server},
         {&server, &client}
     };
-    CHECK(ch_quic_initial_keys(&client, dcid, sizeof dcid) == CH_OK);
-    CHECK(ch_quic_initial_keys(&server, dcid, sizeof dcid) == CH_OK);
+    CHECK(ch_quic_initial_keys(quic_public(&client), dcid, sizeof dcid) == CH_OK);
+    CHECK(ch_quic_initial_keys(quic_public(&server), dcid, sizeof dcid) == CH_OK);
     for (size_t i = 0; i < 2; i++) {
         uint8_t pkt[sizeof hdr + sizeof pt + GCM_TAG];
         size_t pkt_len = 0;
-        CHECK(ch_quic_seal(ends[i][0], CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, 7, 2, hdr, sizeof hdr,
-                           pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+        CHECK(ch_quic_seal(quic_public(ends[i][0]), CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, 7, 2, hdr,
+                           sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
         uint8_t key_set = 0;
         uint64_t pn = 0;
         size_t pt_len = 0;
-        CHECK(ch_quic_open(ends[i][1], CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len,
-                           sizeof hdr - 2, 0, 0, &key_set, &pn, &pt_len) == CH_OK);
+        CHECK(ch_quic_open(quic_public(ends[i][1]), CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt,
+                           pkt_len, sizeof hdr - 2, 0, 0, &key_set, &pn, &pt_len) == CH_OK);
         CHECK(pn == 7 && pt_len == sizeof pt && memcmp(&pkt[sizeof hdr], pt, sizeof pt) == 0);
     }
 }
@@ -105,27 +105,27 @@ static void check_quic_server_without_aes(void) {
     ccfg.cipher_suites = aes128;
     ccfg.cipher_suite_count = 1;
     CHECK(!run_quic(&ccfg, &scfg));
-    CHECK(ch_quic_error_code(&server) == 0x0100U + ALERT_HANDSHAKE_FAILURE);
+    CHECK(ch_quic_error_code(quic_public(&server)) == 0x0100U + ALERT_HANDSHAKE_FAILURE);
     server_cpu = TEST_CPU;
 }
 
 // Whether each end takes a suite list under bits: the client's
 // ch_cfg.cipher_suites and the server's ch_srv_cfg.cipher_suites.
 static int quic_list_taken(uint32_t bits, const uint16_t *list, size_t count) {
-    static ch_quic probe;
+    static ch_quic_priv probe;
     ch_cfg cfg;
     client_cpu = bits;
     server_cpu = bits;
     webpki_client(&cfg, webpki_corpus_anchors_root_p384, "s3.example.test");
     cfg.cipher_suites = list;
     cfg.cipher_suite_count = count;
-    int client_rc = ch_quic_init(&probe, &cfg);
-    ch_quic_close(&probe);
+    int client_rc = ch_quic_init(quic_public(&probe), &cfg);
+    ch_quic_close(quic_public(&probe));
     webpki_server(&cfg, ticket_key);
     cfg.srv.cipher_suites = list;
     cfg.srv.cipher_suite_count = count;
-    int server_rc = ch_srv_quic_init(&probe, &cfg);
-    ch_quic_close(&probe);
+    int server_rc = ch_srv_quic_init(quic_public(&probe), &cfg);
+    ch_quic_close(quic_public(&probe));
     client_cpu = TEST_CPU;
     server_cpu = TEST_CPU;
     CHECK(client_rc == server_rc);
@@ -250,10 +250,10 @@ static void check_quic_tickets_across(void) {
 #ifdef TEST_WEBPKI_TICKET_COUNTED
 // ch_quic_init under test/webpki_ticket_rows.h's rows.
 static int ticket_rows_init(const ch_cfg *cfg, uint8_t stored[SHA256_LEN]) {
-    static ch_quic probe;
-    int rc = ch_quic_init(&probe, cfg);
+    static ch_quic_priv probe;
+    int rc = ch_quic_init(quic_public(&probe), cfg);
     memcpy(stored, probe.t.ticket_config_hash, SHA256_LEN);
-    ch_quic_close(&probe);
+    ch_quic_close(quic_public(&probe));
     return rc == CH_OK;
 }
 

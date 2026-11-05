@@ -149,12 +149,12 @@ static void test_webpki_suite_parser(void) {
 static void test_webpki_suite_list_takes_back(void) {
     static const uint16_t aes128[] = {SUITE_AES_128_GCM_SHA256};
     mock_server s;
-    ch_tls t;
+    ch_tls_priv t;
     ch_cfg cfg = valid_cfg(&s);
     cfg.cipher_suites = aes128;
     cfg.cipher_suite_count = 1;
     s.answer = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
 
     cfg = valid_cfg(&s);
@@ -162,7 +162,7 @@ static void test_webpki_suite_list_takes_back(void) {
     cfg.cipher_suite_count = 1;
     s.answer = 1;
     s.suite = SUITE_AES_256_GCM_SHA384;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
 
     cfg = valid_cfg(&s);
@@ -171,7 +171,7 @@ static void test_webpki_suite_list_takes_back(void) {
     s.answer = 1;
     s.retry = 1;
     s.retry_cookie = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.hrr_len > 0 && s.retry_hello_len == 0);
 
     cfg = valid_cfg(&s);
@@ -179,7 +179,7 @@ static void test_webpki_suite_list_takes_back(void) {
     cfg.cipher_suite_count = 1;
     s.answer = 1;
     s.suite = SUITE_AES_128_GCM_SHA256;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_BAD_CERTIFICATE && t.suite == SUITE_AES_128_GCM_SHA256);
 }
 
@@ -188,11 +188,11 @@ static void test_webpki_suite_list_takes_back(void) {
 // The same row with ChaCha20 still reports ChaCha20.
 static void test_webpki_suite_aes(void) {
     mock_server s;
-    ch_tls t;
+    ch_tls_priv t;
     ch_cfg cfg = valid_cfg(&s);
     s.answer = 1;
     s.suite = SUITE_AES_128_GCM_SHA256;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_BAD_CERTIFICATE);
     CHECK(t.suite == SUITE_AES_128_GCM_SHA256);
 
@@ -202,13 +202,13 @@ static void test_webpki_suite_aes(void) {
     cfg = valid_cfg(&s);
     s.answer = 1;
     s.suite = SUITE_AES_256_GCM_SHA384;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_BAD_CERTIFICATE);
     CHECK(t.suite == SUITE_AES_256_GCM_SHA384);
 
     cfg = valid_cfg(&s);
     s.answer = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_BAD_CERTIFICATE);
     CHECK(t.suite == SUITE_CHACHA20_POLY1305_SHA256);
 }
@@ -222,11 +222,11 @@ static void test_webpki_suite_aes(void) {
 // message_hash is a SHA-384 one.
 static void test_webpki_suite_refusals(void) {
     mock_server s;
-    ch_tls t;
+    ch_tls_priv t;
     ch_cfg cfg = valid_cfg(&s);
     s.answer = 1;
     s.suite = 0x1304;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
 
     cfg = valid_cfg(&s);
@@ -234,7 +234,7 @@ static void test_webpki_suite_refusals(void) {
     s.retry = 1;
     s.retry_cookie = 1;
     s.retry_suite = SUITE_AES_128_GCM_SHA256;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.retry_hello_len > 0);
 
     cfg = valid_cfg(&s);
@@ -243,7 +243,7 @@ static void test_webpki_suite_refusals(void) {
     s.retry_cookie = 1;
     s.retry_suite = SUITE_AES_128_GCM_SHA256;
     s.suite = SUITE_AES_128_GCM_SHA256;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_BAD_CERTIFICATE);
     CHECK(t.suite == SUITE_AES_128_GCM_SHA256);
 
@@ -253,7 +253,7 @@ static void test_webpki_suite_refusals(void) {
     s.retry_cookie = 1;
     s.retry_suite = SUITE_AES_256_GCM_SHA384;
     s.suite = SUITE_AES_256_GCM_SHA384;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_BAD_CERTIFICATE);
     CHECK(t.suite == SUITE_AES_256_GCM_SHA384);
 
@@ -265,7 +265,7 @@ static void test_webpki_suite_refusals(void) {
     s.retry_cookie = 1;
     s.retry_suite = SUITE_AES_256_GCM_SHA384;
     s.suite = SUITE_AES_128_GCM_SHA256;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
 }
 
@@ -277,7 +277,7 @@ static void test_webpki_suite_refusals(void) {
 // its own suite's hash is accepted.
 static int accept_selected_psk(size_t psk_len, uint16_t suite, uint8_t *alert) {
     static const uint8_t psk[SHA384_LEN] = {0x5a};
-    static ch_tls session;
+    static ch_tls_priv session;
     handshake_state h;
     server_hello_info info;
     memset(&session, 0, sizeof session);
@@ -349,7 +349,7 @@ static void test_webpki_runtime_without_aes(void) {
     static const uint16_t chacha[] = {SUITE_CHACHA20_POLY1305_SHA256};
     static const uint8_t chacha_alone[] = {0x00, 0x02, 0x13, 0x03};
     mock_server s;
-    ch_tls t;
+    ch_tls_priv t;
     ch_cfg cfg = valid_cfg(&s);
     cfg.cpu = CH_CPU_PROBED;
     cfg.cipher_suites = aes128;
@@ -366,7 +366,7 @@ static void test_webpki_runtime_without_aes(void) {
     cfg.cpu = CH_CPU_PROBED;
     s.answer = 1;
     s.suite = SUITE_AES_128_GCM_SHA256;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
 
     cfg = valid_cfg(&s);
@@ -375,7 +375,7 @@ static void test_webpki_runtime_without_aes(void) {
     s.retry = 1;
     s.retry_cookie = 1;
     s.retry_suite = SUITE_AES_128_GCM_SHA256;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.retry_hello_len == 0);
 }
 #endif

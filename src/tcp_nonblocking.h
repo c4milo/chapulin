@@ -75,26 +75,7 @@
 #include "handshake_record.h"
 #include "session.h"
 #include "session_report.h"
-
-// One handshake in progress. It holds everything that survives a return,
-// because the driver returns to its caller between messages: the ch_tls a
-// blocking build keeps alone, the handshake_state that build holds on
-// ch_handshake's stack frame, and the driver's own three fields.
-//
-// It is not copyable: hs.t points at t, and every entry rewrites that
-// pointer to its own &r->t, so a copy cannot leave a dangling pointer
-// inside a step.
-typedef struct ch_tcp {
-    ch_tls t;
-    handshake_state hs;
-    uint8_t step; // TCP_NONBLOCKING_STEP_*, tcp_nonblocking_step.h
-    // Bytes of one finished record staged in t.tx and not yet collected,
-    // and how many of them ch_tcp_out has already handed over: a
-    // handshake message, or the alert record of a failure. A partial
-    // collection is what lets a caller with a small buffer make progress.
-    size_t tx_len;
-    size_t tx_off;
-} ch_tcp;
+#include "session_storage.h"
 
 // The client's driver, the three calls below, is declared only in an
 // object with a client, which alone defines it (tcp_nonblocking.c). A

@@ -48,6 +48,7 @@
 #include "handshake_message.h"
 #include "rand.h"
 #include "record.h"
+#include "session_convert.h"
 #include "srv_tcp_nonblocking.h"
 #include "srv_ticket.h"
 #include "tcp_nonblocking.h"
@@ -95,9 +96,8 @@ static const uint8_t other_ticket_key[CH_SRV_TICKET_KEY_LEN] = {
 // The server's clock when it issues and judges tickets.
 #define LOOP_NOW 1700000000U
 
-// The server's buffer holds the client's hello, which carries the
-// 1216-byte hybrid share and the ticket, and this build's floor is larger
-// than that hello.
+// The server's buffer holds the client's hello, which carries the 1216-byte hybrid share and the
+// ticket, and this build's floor is larger than that hello.
 _Static_assert(CH_MIN_RXBUF >= REC_HDR + CH_HELLO_MAX, "the server buffer holds any hello");
 static uint8_t srv_buf[CH_MIN_RXBUF];
 static uint8_t cli_buf[CH_MIN_RXBUF];
@@ -233,19 +233,19 @@ static void present_kept(ch_cfg *cfg) {
     present_with(cfg, kept.binding);
 }
 
-static ch_tcp client;
-static ch_tcp server;
+static ch_tcp_priv client;
+static ch_tcp_priv server;
 
 // Moves what the client staged into the server. Returns 0 on a refusal.
 static int client_to_server(void) {
     uint8_t wire[REC_HDR + CH_TX_STAGE + 64];
     size_t n = 0;
-    CHECK(ch_tcp_out(&client, wire, sizeof wire, &n) == CH_OK);
+    CHECK(ch_tcp_out(tcp_public(&client), wire, sizeof wire, &n) == CH_OK);
     if (n == 0) {
         return 1;
     }
     size_t consumed = 0;
-    return ch_srv_tcp_in(&server, wire, n, &consumed) == CH_OK && consumed == n;
+    return ch_srv_tcp_in(tcp_public(&server), wire, n, &consumed) == CH_OK && consumed == n;
 }
 
 // Moves what the server pushed into the client. Returns 0 on a refusal.
@@ -255,7 +255,7 @@ static int server_to_client(void) {
         return 1;
     }
     size_t consumed = 0;
-    int rc = ch_tcp_in(&client, to_client.bytes + to_client.off, left, &consumed);
+    int rc = ch_tcp_in(tcp_public(&client), to_client.bytes + to_client.off, left, &consumed);
     to_client.off += consumed;
     return rc == CH_OK;
 }
@@ -267,24 +267,25 @@ static int server_to_client(void) {
 static int run(const ch_cfg *ccfg, const ch_cfg *scfg) {
     memset(&to_client, 0, sizeof to_client);
     records_pushed = 0;
-    CHECK(ch_srv_tcp_init(&server, scfg) == CH_OK);
-    CHECK(ch_tcp_init(&client, ccfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(tcp_public(&server), scfg) == CH_OK);
+    CHECK(ch_tcp_init(tcp_public(&client), ccfg) == CH_OK);
     for (int round = 0; round < 4; round++) {
         if (!client_to_server()) {
             return 0;
         }
-        if (ch_tcp_state(&client) == CH_ST_CONNECTED) {
+        if (ch_tcp_state(tcp_public(&client)) == CH_ST_CONNECTED) {
             break;
         }
         if (!server_to_client()) {
             return 0;
         }
     }
-    if (ch_tcp_state(&client) != CH_ST_CONNECTED || ch_tcp_state(&server) != CH_ST_CONNECTED) {
+    if (ch_tcp_state(tcp_public(&client)) != CH_ST_CONNECTED ||
+        ch_tcp_state(tcp_public(&server)) != CH_ST_CONNECTED) {
         return 0;
     }
     uint8_t got[16];
-    CHECK(ch_read(&client.t, got, sizeof got) == CH_TCP_AGAIN);
+    CHECK(ch_read(ch_tcp_tls(tcp_public(&client)), got, sizeof got) == CH_TCP_AGAIN);
     return 1;
 }
 
@@ -298,7 +299,8 @@ static void check_declined_chain_refused(const uint8_t *key, const webpki_corpus
     server_config(&scfg, key);
     client_config(&ccfg, root, hostname, 1);
     CHECK(!run(&ccfg, &scfg));
-    CHECK(ch_tcp_state(&client) == CH_ST_FAILED && ch_alert_sent(&client.t) == alert);
+    CHECK(ch_tcp_state(tcp_public(&client)) == CH_ST_FAILED &&
+          ch_alert_sent(ch_tcp_tls(tcp_public(&client))) == alert);
     CHECK(client.t.psk_selected == 0);
 }
 
@@ -364,8 +366,8 @@ static void test_pins_alone(void) {
     CHECK(ch_tcp_init(&probe, &ccfg) == CH_EINVAL);
     pins_alone_config(&ccfg, 0);
     CHECK(!run(&ccfg, &scfg));
-    CHECK(ch_tcp_state(&client) == CH_ST_FAILED &&
-          ch_alert_sent(&client.t) == ALERT_BAD_CERTIFICATE);
+    CHECK(ch_tcp_state(tcp_public(&client)) == CH_ST_FAILED &&
+          ch_alert_sent(ch_tcp_tls(tcp_public(&client))) == ALERT_BAD_CERTIFICATE);
 }
 
 // The client's buffer holds the leaf_over_cert_max Certificate whole,
@@ -374,12 +376,11 @@ static void test_pins_alone(void) {
 _Static_assert(sizeof webpki_corpus_message_leaf_over_cert_max + REC_OVERHEAD <= sizeof cli_buf,
                "the client buffer holds the large-leaf Certificate");
 
-// Pins alone against the leaf_over_cert_max chain, whose 5,558-byte leaf
-// the walk refuses for its size. A pin on the leaf's key passes, and the
-// client reassembles the 6,106-byte Certificate from twelve records of at
-// most 512 bytes. The server signs CertificateVerify with the leaf's key;
-// a server that presents the same chain and signs with another key is
-// refused with decrypt_error, so the leaf's key is what verifies it.
+// Pins alone against the leaf_over_cert_max chain, whose 5,558-byte leaf the walk refuses for its
+// size. A pin on the leaf's key passes, and the client reassembles the 6,106-byte Certificate from
+// twelve records of at most 512 bytes. The server signs CertificateVerify with the leaf's key; a
+// server that presents the same chain and signs with another key is refused with decrypt_error, so
+// the leaf's key is what verifies it.
 static void test_pins_alone_large_leaf(void) {
     ch_cfg scfg;
     ch_cfg ccfg;
@@ -393,7 +394,8 @@ static void test_pins_alone_large_leaf(void) {
     scfg.srv.ecdsa_p256.priv = p256_sign_vectors[0].priv;
     scfg.srv.ecdsa_p256.pub = p256_sign_vectors[0].pub;
     CHECK(!run(&ccfg, &scfg));
-    CHECK(ch_tcp_state(&client) == CH_ST_FAILED && ch_alert_sent(&client.t) == ALERT_DECRYPT_ERROR);
+    CHECK(ch_tcp_state(tcp_public(&client)) == CH_ST_FAILED &&
+          ch_alert_sent(ch_tcp_tls(tcp_public(&client))) == ALERT_DECRYPT_ERROR);
 }
 
 #include "webpki_loop_order.h"

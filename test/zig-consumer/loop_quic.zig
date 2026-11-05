@@ -205,7 +205,7 @@ fn ticketsOff(ticket: *const chapulin.Ticket) !void {
         try handshake(values, null);
         const resumed = presented != null;
         try check(client.pskSelected() == resumed and server.pskSelected() == resumed, "the PSK selection of a client whose takes_tickets is false does not match its ticket");
-        try fixture.clientTakesTickets(&client.quic.t, false);
+        try fixture.clientTakesTickets(&fixture.quicPriv(&client.quic).t, false);
         try check(sent(.application).len > 0, "the server wrote no ticket");
         try client.cryptoIn(.application, sent(.application));
         try check(client.takeTicket() == null, "a client whose takes_tickets is false kept a ticket");
@@ -216,7 +216,7 @@ fn ticketsOff(ticket: *const chapulin.Ticket) !void {
 
 pub fn run() !void {
     try handshake(clientValues(), null);
-    try fixture.clientTakesTickets(&client.quic.t, true);
+    try fixture.clientTakesTickets(&fixture.quicPriv(&client.quic).t, true);
     try check(std.mem.eql(u8, client.alpnSelected() orelse "", "h3") and std.mem.eql(u8, server.alpnSelected() orelse "", "h3"), "ALPN did not select h3 on both ends");
     const client_saw = (try client.peerTransportParams()) orelse "";
     const server_saw = (try server.peerTransportParams()) orelse "";

@@ -36,7 +36,7 @@ void srv_begin(handshake_state *h) {
 }
 
 // Copies the two values the session keeps past the hello, which the next record overwrites.
-static void copy_hello_fields(ch_tls *t, const client_hello *ch) {
+static void copy_hello_fields(ch_tls_priv *t, const client_hello *ch) {
     t->session_id_len = ch->session_id_len;
     memcpy(t->session_id, ch->session_id, ch->session_id_len);
     t->sni_len = 0;
@@ -49,7 +49,7 @@ static void copy_hello_fields(ch_tls *t, const client_hello *ch) {
 }
 
 int srv_read_client_hello(handshake_state *h, client_hello *ch) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
@@ -148,7 +148,7 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
 }
 
 int srv_send_hello_retry_request(handshake_state *h, const client_hello *ch, const selection *sel) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     uint8_t ch1[SRV_COOKIE_HASH_MAX];
     (void)hsr_transcript_hash(h, sel->hash_len, ch1);
     size_t cookie_len = srv_cookie_mint(t->cfg.srv.cookie_key, sel->suite, sel->group, ch1,
@@ -244,7 +244,7 @@ int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection 
 }
 
 int srv_send_server_hello(handshake_state *h, const client_hello *ch, const selection *sel) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     // The share first: it refuses a hybrid encapsulation key FIPS 203 §7.2
     // rejects and a P-256 point off the curve, and a refused hello needs
     // no random value.
@@ -270,7 +270,7 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
 }
 
 int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, const selection *sel) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     // srv_kex_secret wipes the key exchange's inputs on both exits, and
     // ikm itself on the refusal.
     uint8_t ikm[SRV_KEX_SECRET_MAX];
@@ -320,7 +320,7 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
 }
 
 int srv_send_encrypted_extensions(handshake_state *h, const selection *sel) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     // The protocol the parser selected out of the caller's list, which
     // srv_handshake.c copied onto the session before this call, or none.
     const ch_alpn_protocol *selected = NULL;
@@ -420,7 +420,7 @@ int srv_send_certificate_verify(handshake_state *h, const selection *sel) {
 }
 
 int srv_send_finished(handshake_state *h) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     size_t hash_len = t->hash_len;
     uint8_t hash[HKDF_HASH_MAX];
     (void)hsr_transcript_hash(h, hash_len, hash);
@@ -457,7 +457,7 @@ int srv_send_finished(handshake_state *h) {
 }
 
 int srv_read_client_finished(handshake_state *h) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     size_t hash_len = t->hash_len;
     uint8_t hash[HKDF_HASH_MAX];
     (void)hsr_transcript_hash(h, hash_len, hash);
@@ -486,7 +486,7 @@ int srv_read_client_finished(handshake_state *h) {
 }
 
 void srv_complete(handshake_state *h) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     // Over QUIC the read direction becomes a 1-RTT packet key set, which
     // the driver installs from t->rd_secret with the other three.

@@ -94,9 +94,9 @@ static int offered_cert_types(const uint8_t *hello, size_t n, uint8_t types[2]) 
 // which RFC 9001 §4.8 carries as 0x0100 plus the alert.
 static void check_refused_at_certificate(const ch_cfg *ccfg, const ch_cfg *scfg, uint8_t alert) {
     CHECK(!run_quic(ccfg, scfg));
-    CHECK(ch_quic_state(&client) == CH_ST_FAILED);
-    CHECK(ch_quic_alert(&client) == alert);
-    CHECK(ch_quic_error_code(&client) == 0x0100U + alert);
+    CHECK(ch_quic_state(quic_public(&client)) == CH_ST_FAILED);
+    CHECK(ch_quic_alert(quic_public(&client)) == alert);
+    CHECK(ch_quic_error_code(quic_public(&client)) == 0x0100U + alert);
 }
 
 // Configuration 3's offer: the raw public key first, then X.509, beside
@@ -169,10 +169,9 @@ static void test_pin_count_boundary(void) {
     CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
 }
 
-// A pin on a key the walk did not verify is refused with bad_certificate.
-// Under the impostor anchor, which carries the root's Name over another
-// key, then the root, the chain ends at the root: a pin on the root
-// passes and a pin on the impostor, which named the issuer and verified
+// A pin on a key the walk did not verify is refused with bad_certificate. Under the impostor
+// anchor, which carries the root's Name over another key, then the root, the chain ends at the
+// root: a pin on the root passes and a pin on the impostor, which named the issuer and verified
 // nothing, does not.
 static void test_pin_on_unused_anchor(void) {
     static ch_trust_anchor both[2];
@@ -336,7 +335,8 @@ static void test_pins_alone_large_leaf(void) {
     scfg.srv.ecdsa_p256.priv = p256_sign_vectors[0].priv;
     scfg.srv.ecdsa_p256.pub = p256_sign_vectors[0].pub;
     CHECK(!run_quic(&ccfg, &scfg));
-    CHECK(ch_quic_state(&client) == CH_ST_FAILED && ch_quic_alert(&client) == ALERT_DECRYPT_ERROR);
+    CHECK(ch_quic_state(quic_public(&client)) == CH_ST_FAILED &&
+          ch_quic_alert(quic_public(&client)) == ALERT_DECRYPT_ERROR);
 }
 
 // What ch_quic_init refuses in configuration 2, with the webpki_cfg.c

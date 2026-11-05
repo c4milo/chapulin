@@ -14,7 +14,7 @@
 // A session that offered psk as a resumption PSK, with the early secret
 // and binder key hsf_begin derives from it, and a ServerHello whose one
 // key share was accepted.
-static ch_tls decline_session;
+static ch_tls_priv decline_session;
 
 static void offer_psk(handshake_state *h, server_hello_info *info, const uint8_t psk[SHA256_LEN]) {
     memset(&decline_session, 0, sizeof decline_session);

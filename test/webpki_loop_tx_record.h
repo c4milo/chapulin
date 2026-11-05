@@ -112,10 +112,10 @@ static int tx_connect(uint8_t *cli, size_t cli_len) {
 
 // Reads n bytes through ch_read into got and requires them to equal want.
 // ch_read hands over at most one record's plaintext per call.
-static int read_all(ch_tls *t, uint8_t *got, const uint8_t *want, size_t n) {
+static int read_all(ch_tls_priv *t, uint8_t *got, const uint8_t *want, size_t n) {
     size_t at = 0;
     while (at < n) {
-        int rc = ch_read(t, got + at, n - at);
+        int rc = ch_read(tls_public(t), got + at, n - at);
         if (rc <= 0) {
             return 0;
         }
@@ -133,10 +133,10 @@ static uint8_t tx_got[TX_TRANSFER];
 static void check_tx_record_boundary(void) {
     CHECK(tx_connect(tx_cli_buf, sizeof tx_cli_buf));
     CHECK(client.t.peer_limit == CH_TX_PT && server.t.peer_limit == CH_TX_PT);
-    CHECK(ch_write(&client.t, tx_data, CH_TX_PT) == CH_OK);
+    CHECK(ch_write(tls_public(&client.t), tx_data, CH_TX_PT) == CH_OK);
     CHECK(up.send_calls == 1 && up.last_len == REC_OVERHEAD + CH_TX_PT);
     CHECK(read_all(&server.t, tx_got, tx_data, CH_TX_PT));
-    CHECK(ch_write(&client.t, tx_data, CH_TX_PT + 1) == CH_OK);
+    CHECK(ch_write(tls_public(&client.t), tx_data, CH_TX_PT + 1) == CH_OK);
     CHECK(up.send_calls == 3 && up.last_len == REC_OVERHEAD + 1);
     CHECK(read_all(&server.t, tx_got, tx_data, CH_TX_PT + 1));
 }
@@ -145,10 +145,10 @@ static void check_tx_record_boundary(void) {
 // the server, then three records down, read by the client.
 static void check_tx_transfer(void) {
     CHECK(tx_connect(tx_cli_buf, sizeof tx_cli_buf));
-    CHECK(ch_write(&client.t, tx_data, sizeof tx_data) == CH_OK);
+    CHECK(ch_write(tls_public(&client.t), tx_data, sizeof tx_data) == CH_OK);
     CHECK(up.send_calls == 3 && up.last_len == REC_OVERHEAD + 100);
     CHECK(read_all(&server.t, tx_got, tx_data, sizeof tx_data));
-    CHECK(ch_write(&server.t, tx_data, sizeof tx_data) == CH_OK);
+    CHECK(ch_write(tls_public(&server.t), tx_data, sizeof tx_data) == CH_OK);
     CHECK(down.send_calls == 3 && down.last_len == REC_OVERHEAD + 100);
     CHECK(read_all(&client.t, tx_got, tx_data, sizeof tx_data));
 }
@@ -161,10 +161,10 @@ static void check_tx_peer_limit_wins(void) {
     CHECK(limit < CH_TX_PT);
     CHECK(tx_connect(cli_buf, sizeof cli_buf));
     CHECK(server.t.peer_limit == limit && client.t.peer_limit == CH_TX_PT);
-    CHECK(ch_write(&server.t, tx_data, limit) == CH_OK);
+    CHECK(ch_write(tls_public(&server.t), tx_data, limit) == CH_OK);
     CHECK(down.send_calls == 1 && down.last_len == REC_OVERHEAD + limit);
     CHECK(read_all(&client.t, tx_got, tx_data, limit));
-    CHECK(ch_write(&server.t, tx_data, limit + 1) == CH_OK);
+    CHECK(ch_write(tls_public(&server.t), tx_data, limit + 1) == CH_OK);
     CHECK(down.send_calls == 3 && down.last_len == REC_OVERHEAD + 1);
     CHECK(read_all(&client.t, tx_got, tx_data, limit + 1));
 }

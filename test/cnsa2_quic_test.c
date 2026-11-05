@@ -50,7 +50,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 static uint8_t rxbuf[CH_MIN_RXBUF];
 static const uint8_t params[4] = {0x04, 0x01, 0x40, 0x00}; // copied into the hello, never read
 static const ch_alpn_protocol alpn = {(const uint8_t *)"h3", 2};
-static ch_quic q;
+static ch_quic_priv q;
 static ch_saved_ticket saved;
 static int tickets;
 
@@ -99,15 +99,15 @@ static void test_cnsa2_quic_cfg(void) {
     pin[sizeof pin - 1] = 1;
     ch_cfg cfg;
     configure(&cfg);
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK && q.tx_len > 0);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK && q.tx_len > 0);
     cfg.server_pubkey = pin;
     cfg.server_pubkey_len = sizeof pin;
-    CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && q.tx_len == 0);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_EINVAL && q.tx_len == 0);
     cfg.psk = NULL;
     cfg.psk_len = 0;
     cfg.psk_id = NULL;
     cfg.psk_id_len = 0;
-    CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && q.tx_len == 0);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_EINVAL && q.tx_len == 0);
 }
 
 // One handshake: the hello out at Initial, the ServerHello in at Initial,
@@ -123,8 +123,9 @@ static void run_handshake(int resume) {
     }
     ready = 0;
     tickets = 0;
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK);
-    CHECK(ch_quic_crypto_out(&q, CH_LEVEL_INITIAL, m.hello, sizeof m.hello, &m.hello_len) == CH_OK);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK);
+    CHECK(ch_quic_crypto_out(quic_public(&q), CH_LEVEL_INITIAL, m.hello, sizeof m.hello,
+                             &m.hello_len) == CH_OK);
     // The QUIC hello opens with the ALPN offer RFC 9001 §8.1 requires,
     // offers no signature scheme and ends in the pre_shared_key.
     CHECK(hello_first_ext(m.hello, m.hello_len) == EXT_ALPN);
@@ -134,22 +135,22 @@ static void run_handshake(int resume) {
     static uint8_t msg[128 + MLKEM_CT_LEN];
     size_t n = mock_server_hello(&m, msg, sizeof msg);
     CHECK(m.binder_ok && m.resumed == resume);
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, msg, n) == CH_OK);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, msg, n) == CH_OK);
     CHECK(ready == (CH_QUIC_LEVEL_BIT(CH_LEVEL_HANDSHAKE, CH_KEY_READ) |
                     CH_QUIC_LEVEL_BIT(CH_LEVEL_HANDSHAKE, CH_KEY_WRITE)));
     CHECK(q.t.group == CH_GROUP_MLKEM1024 && q.t.suite == SUITE_AES_256_GCM_SHA384);
     n = mock_server_flight(&m, ee_exts, sizeof ee_exts, msg, sizeof msg);
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_HANDSHAKE, msg, n) == CH_OK);
-    CHECK(ch_quic_state(&q) == CH_ST_START);
-    CHECK(ch_quic_crypto_out(&q, CH_LEVEL_HANDSHAKE, msg, sizeof msg, &n) == CH_OK);
-    CHECK(ch_quic_state(&q) == CH_ST_CONNECTED);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_HANDSHAKE, msg, n) == CH_OK);
+    CHECK(ch_quic_state(quic_public(&q)) == CH_ST_START);
+    CHECK(ch_quic_crypto_out(quic_public(&q), CH_LEVEL_HANDSHAKE, msg, sizeof msg, &n) == CH_OK);
+    CHECK(ch_quic_state(quic_public(&q)) == CH_ST_CONNECTED);
     mock_client_finished(&m, msg, n);
     CHECK(m.client_finished_ok);
     CHECK(q.t.psk_selected == 1);
     n = mock_ticket(msg, sizeof msg);
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_APPLICATION, msg, n) == CH_OK);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_APPLICATION, msg, n) == CH_OK);
     CHECK(tickets == 1);
-    ch_quic_close(&q);
+    ch_quic_close(quic_public(&q));
 }
 
 #ifdef CH_PIN_MLDSA
@@ -167,7 +168,7 @@ static int feed_messages(const uint8_t *msg, size_t n) {
         if (m == NULL) {
             return CH_EPROTO;
         }
-        int rc = ch_quic_crypto_in(&q, CH_LEVEL_HANDSHAKE, m, len);
+        int rc = ch_quic_crypto_in(quic_public(&q), CH_LEVEL_HANDSHAKE, m, len);
         if (rc != CH_OK) {
             return rc;
         }
@@ -196,26 +197,27 @@ static int run_pinned(const cert_list *served, const mldsa_test_key *signer, int
     cfg.server_pubkey = server_key.pk;
 #endif
     cfg.server_pubkey_len = MLDSA87_PK_LEN;
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK);
-    CHECK(ch_quic_crypto_out(&q, CH_LEVEL_INITIAL, m.hello, sizeof m.hello, &m.hello_len) == CH_OK);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK);
+    CHECK(ch_quic_crypto_out(quic_public(&q), CH_LEVEL_INITIAL, m.hello, sizeof m.hello,
+                             &m.hello_len) == CH_OK);
     uint16_t schemes[2] = {0};
     CHECK(hello_sigalgs(m.hello, m.hello_len, schemes, 2) == 1 && schemes[0] == SIGALG_MLDSA87);
     static uint8_t msg[3 * (CH_X509_MAX + 5) + 8 + 8192];
     size_t n = mock_server_hello(&m, msg, sizeof msg);
     CHECK(m.pinned);
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, msg, n) == CH_OK);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, msg, n) == CH_OK);
     n = mock_server_flight(&m, ee_exts, sizeof ee_exts, msg, sizeof msg);
     int rc = feed_messages(msg, n);
     if (rc != CH_OK) {
-        ch_quic_close(&q);
+        ch_quic_close(quic_public(&q));
         return rc;
     }
-    CHECK(ch_quic_crypto_out(&q, CH_LEVEL_HANDSHAKE, msg, sizeof msg, &n) == CH_OK);
-    CHECK(ch_quic_state(&q) == CH_ST_CONNECTED);
+    CHECK(ch_quic_crypto_out(quic_public(&q), CH_LEVEL_HANDSHAKE, msg, sizeof msg, &n) == CH_OK);
+    CHECK(ch_quic_state(quic_public(&q)) == CH_ST_CONNECTED);
     mock_client_finished(&m, msg, n);
     CHECK(m.client_finished_ok);
     CHECK(q.t.psk_selected == 0 && q.t.pin_slot == pin_slot);
-    ch_quic_close(&q);
+    ch_quic_close(quic_public(&q));
     return CH_OK;
 }
 
@@ -231,15 +233,15 @@ static void test_cnsa2_quic_mldsa_cfg(void) {
     cfg.psk_id_len = 0;
     cfg.server_pubkey = long_pin;
     cfg.server_pubkey_len = MLDSA87_PK_LEN;
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK && q.tx_len > 0);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK && q.tx_len > 0);
     cfg.server_pubkey_len = MLDSA87_PK_LEN - 1;
-    CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && q.tx_len == 0);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_EINVAL && q.tx_len == 0);
     cfg.server_pubkey_len = MLDSA87_PK_LEN + 1;
-    CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && q.tx_len == 0);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_EINVAL && q.tx_len == 0);
     cfg.server_pubkey_len = MLDSA87_PK_LEN;
     cfg.server_pubkey2 = long_pin;
     cfg.server_pubkey2_len = MLDSA87_PK_LEN + 1;
-    CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && q.tx_len == 0);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_EINVAL && q.tx_len == 0);
 }
 
 static void test_cnsa2_quic_mldsa(void) {

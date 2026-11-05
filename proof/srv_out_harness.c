@@ -56,7 +56,7 @@ void *memcpy(void *dst, const void *src, size_t n) {
     return dst;
 }
 
-static ch_tls t;
+static ch_tls_priv t;
 static handshake_state h;
 // No property reads a message byte, so both stay zero.
 static uint8_t msg[MSG_MAX];

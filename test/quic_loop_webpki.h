@@ -65,8 +65,8 @@ static void check_declined_chain_refused(const webpki_corpus_anchor *root, const
     webpki_ticket_binding(0, kept.psk, kept.psk_len, config_hash, kept.binding);
     memcpy(presented.ticket.binding, kept.binding, SHA256_LEN);
     CHECK(!run_quic(&ccfg, &scfg));
-    CHECK(ch_quic_state(&client) == CH_ST_FAILED);
-    CHECK(ch_quic_error_code(&client) == 0x0100U + alert);
+    CHECK(ch_quic_state(quic_public(&client)) == CH_ST_FAILED);
+    CHECK(ch_quic_error_code(quic_public(&client)) == 0x0100U + alert);
     CHECK(client.t.psk_selected == 0);
     memcpy(kept.binding, binding, sizeof binding);
 }

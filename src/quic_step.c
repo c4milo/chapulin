@@ -19,7 +19,7 @@
 // cfg.on_level_ready once per direction, which RFC 9001 §4.1.4 requires
 // of a TLS stack (rfc9001.txt:526-528). Both happen in one place so the
 // caller's view and q->levels_ready cannot disagree.
-static void announce_level(ch_quic *q, uint8_t level) {
+static void announce_level(ch_quic_priv *q, uint8_t level) {
     q->levels_ready |= CH_QUIC_LEVEL_BIT(level, CH_KEY_READ);
     q->levels_ready |= CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE);
     q->t.cfg.on_level_ready(q->t.cfg.io, level, CH_KEY_READ);
@@ -32,7 +32,7 @@ static void announce_level(ch_quic *q, uint8_t level) {
 // (ch_quic_switch_version). The header protection key of each direction
 // is written once here and never again, which is §5.4's rule
 // (rfc9001.txt:1172-1174).
-static void install_handshake_keys(ch_quic *q) {
+static void install_handshake_keys(ch_quic_priv *q) {
     uint32_t cpu = CH_CFG_CPU(q->t.cfg);
     uint32_t version = q->t.quic_negotiated_version;
     QUIC_KEYS_INIT_SUITE(cpu, &q->handshake_rx, version, q->hs.s_hs, q->t.suite);
@@ -50,7 +50,7 @@ static void install_handshake_keys(ch_quic *q) {
 // quic_session.h states and ch_quic_key_update depends on.
 // app_rx[CH_QUIC_KEY_PREVIOUS] stays zero until the first
 // ch_quic_key_update.
-static void install_application_keys(ch_quic *q) {
+static void install_application_keys(ch_quic_priv *q) {
     uint32_t cpu = CH_CFG_CPU(q->t.cfg);
     uint32_t version = q->t.quic_negotiated_version;
     QUIC_KEYS_INIT_SUITE(cpu, &q->app_tx, version, q->t.wr_secret, q->t.suite);
@@ -72,7 +72,7 @@ static void install_application_keys(ch_quic *q) {
 // The derivation runs in this same call because info.server_ct points
 // into cfg.buf under CH_KEX_HYBRID and the decapsulation reads those bytes, so
 // nothing may read a further message in between.
-static int step_server_hello(ch_quic *q) {
+static int step_server_hello(ch_quic_priv *q) {
     server_hello_info info;
     int rc = hsf_read_server_hello(&q->hs, &info);
     if (rc != CH_OK) {
@@ -110,7 +110,7 @@ static int step_server_hello(ch_quic *q) {
     return CH_OK;
 }
 
-static int step_encrypted_extensions(ch_quic *q) {
+static int step_encrypted_extensions(ch_quic_priv *q) {
     int rc = hsf_read_encrypted_extensions(&q->hs);
     if (rc != CH_OK) {
         return rc;
@@ -122,7 +122,7 @@ static int step_encrypted_extensions(ch_quic *q) {
     return CH_OK;
 }
 
-static int step_certificate(ch_quic *q) {
+static int step_certificate(ch_quic_priv *q) {
     int rc = hsa_server_auth(&q->hs);
     if (rc != CH_OK) {
         return rc;
@@ -131,7 +131,7 @@ static int step_certificate(ch_quic *q) {
     return CH_OK;
 }
 
-static int step_certificate_verify(ch_quic *q) {
+static int step_certificate_verify(ch_quic_priv *q) {
     int rc = hsa_read_certificate_verify(&q->hs);
     if (rc != CH_OK) {
         return rc;
@@ -149,7 +149,7 @@ static int step_certificate_verify(ch_quic *q) {
 //
 // It does not raise q->t.state. ch_quic_crypto_out does that in the
 // call that hands these bytes out, the moment RFC 9001 §4.1.1 names.
-static int step_finished(ch_quic *q) {
+static int step_finished(ch_quic_priv *q) {
     int rc = hsf_read_finished(&q->hs);
     if (rc != CH_OK) {
         return rc;
@@ -173,7 +173,7 @@ static int step_finished(ch_quic *q) {
 // q->error_code; every other type, a TLS KeyUpdate among them, leaves
 // it 0 and ch_quic_error_code reports 0x0100 plus the alert, which is
 // 0x010a for a KeyUpdate (§6, rfc9001.txt:1566-1568).
-static int step_complete(ch_quic *q) {
+static int step_complete(ch_quic_priv *q) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
@@ -191,7 +191,7 @@ static int step_complete(ch_quic *q) {
     return CH_EPROTO;
 }
 
-int hsq_advance(ch_quic *q) {
+int hsq_advance(ch_quic_priv *q) {
     switch (q->step) {
     case HSQ_STEP_AWAIT_SERVER_HELLO:
     case HSQ_STEP_AWAIT_RETRY_HELLO:

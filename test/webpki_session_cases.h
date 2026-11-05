@@ -415,10 +415,10 @@ static void test_webpki_hello_boundary(void) {
 // acknowledgement is refused there instead.
 static void test_webpki_handshake_fails_closed(void) {
     mock_server s;
-    ch_tls t;
+    ch_tls_priv t;
     ch_cfg cfg = valid_cfg(&s);
     s.answer = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_BAD_CERTIFICATE);
     CHECK(s.rendered && s.queue_off == s.queue_len);
     CHECK(t.state == CH_ST_FAILED);
@@ -429,7 +429,7 @@ static void test_webpki_handshake_fails_closed(void) {
     cfg = valid_cfg(&s);
     s.answer = 1;
     s.sni_data = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_DECODE_ERROR);
     CHECK(s.queue_off < s.queue_len); // the Certificate record stayed unread
 }
@@ -441,14 +441,14 @@ static void test_webpki_handshake_fails_closed(void) {
 // EncryptedExtensions, and the failure path does not wipe it.
 static void test_webpki_handshake_reports_alpn(void) {
     mock_server s;
-    ch_tls t;
+    ch_tls_priv t;
     ch_cfg cfg = valid_cfg(&s);
     cfg.alpn_protocols = alpn;
     cfg.alpn_count = 2;
     s.answer = 1;
     s.alpn_pick = alpn_h2;
     s.alpn_pick_len = sizeof alpn_h2;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(t.alpn_selected == 0);
     CHECK(s.alert == ALERT_BAD_CERTIFICATE); // the walk, not the parser
 
@@ -460,7 +460,7 @@ static void test_webpki_handshake_reports_alpn(void) {
     s.answer = 1;
     s.alpn_pick = alpn_http11;
     s.alpn_pick_len = sizeof alpn_http11;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(t.alpn_selected == 1);
 
     // A server that sends no ALPN extension: the handshake goes on and
@@ -469,7 +469,7 @@ static void test_webpki_handshake_reports_alpn(void) {
     cfg.alpn_protocols = alpn;
     cfg.alpn_count = 2;
     s.answer = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(t.alpn_selected == CH_ALPN_NONE);
     CHECK(s.alert == ALERT_BAD_CERTIFICATE);
 
@@ -481,7 +481,7 @@ static void test_webpki_handshake_reports_alpn(void) {
     s.answer = 1;
     s.alpn_pick = alpn_http11;
     s.alpn_pick_len = sizeof alpn_http11;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(t.alpn_selected == CH_ALPN_NONE);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
     CHECK(s.queue_off < s.queue_len);
@@ -492,7 +492,7 @@ static void test_webpki_handshake_reports_alpn(void) {
     s.answer = 1;
     s.alpn_pick = alpn_h2;
     s.alpn_pick_len = sizeof alpn_h2;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(t.alpn_selected == CH_ALPN_NONE);
     CHECK(s.alert == ALERT_UNSUPPORTED_EXTENSION);
 }

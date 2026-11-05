@@ -54,6 +54,16 @@ AUDITED = {
         "test/build_test.c against every object it checks and reads each "
         "field back. Delete this entry if the file ever gains a function."
     ),
+    "session_report.c": (
+        "session_report.h's fourteen read calls (docs/decisions.md 185). "
+        "Each converts the caller's ch_tls storage with tls_priv_const and "
+        "returns one field of it, and ch_suite returns the constant "
+        "CH_TLS_CHACHA20_POLY1305_SHA256 outside SUITE=aesgcm. No call "
+        "branches, indexes or computes, so there is no arithmetic for "
+        "bugprone-signed-bitwise to judge and no bound for a harness to "
+        "prove. The loop tests read each call against the field after a "
+        "handshake. Delete this entry if a call ever does more than read."
+    ),
     "tls.c": (
         "the public calls tls.h declares beside the send path: ch_connect and "
         "the client configuration rules, ch_read, ch_close, ch_export and the "

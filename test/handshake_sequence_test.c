@@ -41,6 +41,7 @@
 #include "p256.h"
 #include "record.h"
 #include "rsa.h"
+#include "session_convert.h"
 #include "test_random.h"
 #include "tls.h"
 #include "x25519.h"
@@ -124,7 +125,7 @@ static const char *reject_why;
 // succeeds and the tail drains with every letter consumed; queue
 // exhaustion after full consumption is the normal end, not an error.
 static mock_server srv;                 // file scope so tests can read captured alerts
-static ch_tls client_session;           // and the accepted pin slot
+static ch_tls_priv client_session;      // and the accepted pin slot
 static uint8_t test_pin2[TEST_PIN_LEN]; // slot B, wired when use_pin2 is set
 static int use_pin2;
 static int use_require_pq; // sets cfg.require_pq on every case while set
@@ -166,7 +167,7 @@ static int drain_tail(void) {
             return 1; // every letter consumed, session still alive
         }
         uint8_t out[64];
-        int got = ch_read(&client_session, out, sizeof out);
+        int got = ch_read(tls_public(&client_session), out, sizeof out);
         if (got > 0) {
             continue;
         }
@@ -197,7 +198,7 @@ static int run_case(const char *letters, size_t n, int psk) {
     case_config(&cfg, rxbuf, sizeof rxbuf, psk);
 
     reject_why = "accepted";
-    int rc = ch_connect(&client_session, &cfg);
+    int rc = ch_connect(tls_public(&client_session), &cfg);
     if (rc == CH_EINVAL) {
         reject_why = "config refused before a byte was sent";
         return 0;

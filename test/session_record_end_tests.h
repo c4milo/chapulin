@@ -15,7 +15,7 @@
 // session's own.
 typedef struct {
     mock_io m;
-    ch_tls t;
+    ch_tls_priv t;
     rec_dir peer;
     uint8_t peer_secret[SHA256_LEN];
     rec_dir reader;
@@ -52,7 +52,7 @@ static void check_refused(record_end_case *c, int rc) {
 // before the write's one data record under the next key.
 static void check_one_answer(record_end_case *c) {
     CHECK(c->m.tx_len == 0 && c->t.key_update_owed == 1);
-    CHECK(ch_write(&c->t, (const uint8_t *)"ok", 2) == CH_OK);
+    CHECK(ch_write(tls_public(&c->t), (const uint8_t *)"ok", 2) == CH_OK);
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;
@@ -80,7 +80,7 @@ static void test_key_update_ends_record(void) {
     mock_push(&c.m, &c.peer, REC_HANDSHAKE, requested, 5);
     rec_dir_update(c.peer_secret, &c.peer);
     mock_push(&c.m, &c.peer, REC_APPDATA, hola, sizeof hola);
-    CHECK(ch_read(&c.t, out, sizeof out) == 4 && memcmp(out, hola, 4) == 0);
+    CHECK(ch_read(tls_public(&c.t), out, sizeof out) == 4 && memcmp(out, hola, 4) == 0);
     CHECK(c.t.state == CH_ST_CONNECTED);
     check_one_answer(&c);
 
@@ -88,13 +88,13 @@ static void test_key_update_ends_record(void) {
     // session refuses before it rekeys or answers.
     record_end_start(&c);
     mock_push(&c.m, &c.peer, REC_HANDSHAKE, requested, sizeof requested);
-    check_refused(&c, ch_read(&c.t, out, sizeof out));
+    check_refused(&c, ch_read(tls_public(&c.t), out, sizeof out));
 
     // The record colibri sent: two KeyUpdates that each ask for an
     // answer. Neither is answered.
     record_end_start(&c);
     mock_push(&c.m, &c.peer, REC_HANDSHAKE, two_requested, sizeof two_requested);
-    check_refused(&c, ch_read(&c.t, out, sizeof out));
+    check_refused(&c, ch_read(tls_public(&c.t), out, sizeof out));
 
     // A KeyUpdate and then the first byte of a ticket, whose other bytes
     // come under the next key. Read on, the ticket would span the key
@@ -110,7 +110,7 @@ static void test_key_update_ends_record(void) {
     rec_dir_update(c.peer_secret, &c.peer);
     mock_push(&c.m, &c.peer, REC_HANDSHAKE, ticket + 1, ticket_len - 1);
     mock_push(&c.m, &c.peer, REC_APPDATA, hola, sizeof hola);
-    check_refused(&c, ch_read(&c.t, out, sizeof out));
+    check_refused(&c, ch_read(tls_public(&c.t), out, sizeof out));
     CHECK(c.m.tickets == 0);
 
     // A KeyUpdate split across two records under one key ends the second
@@ -120,7 +120,7 @@ static void test_key_update_ends_record(void) {
     mock_push(&c.m, &c.peer, REC_HANDSHAKE, requested + 2, 3);
     rec_dir_update(c.peer_secret, &c.peer);
     mock_push(&c.m, &c.peer, REC_APPDATA, hola, sizeof hola);
-    CHECK(ch_read(&c.t, out, sizeof out) == 4 && c.t.state == CH_ST_CONNECTED);
+    CHECK(ch_read(tls_public(&c.t), out, sizeof out) == 4 && c.t.state == CH_ST_CONNECTED);
     check_one_answer(&c);
 
     // So is a ticket and then a KeyUpdate that ends the record.
@@ -131,7 +131,7 @@ static void test_key_update_ends_record(void) {
     mock_push(&c.m, &c.peer, REC_HANDSHAKE, both, ticket_len + 5);
     rec_dir_update(c.peer_secret, &c.peer);
     mock_push(&c.m, &c.peer, REC_APPDATA, hola, sizeof hola);
-    CHECK(ch_read(&c.t, out, sizeof out) == 4 && c.t.state == CH_ST_CONNECTED);
+    CHECK(ch_read(tls_public(&c.t), out, sizeof out) == 4 && c.t.state == CH_ST_CONNECTED);
     CHECK(c.m.tickets == 1);
     check_one_answer(&c);
 }

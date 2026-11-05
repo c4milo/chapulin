@@ -26,9 +26,9 @@
 static int session_to_server(uint8_t level, crossed *out) {
     static uint8_t message[4096];
     size_t n = 0;
-    return ch_quic_crypto_out(&client, level, message, sizeof message, &n) == CH_OK &&
+    return ch_quic_crypto_out(quic_public(&client), level, message, sizeof message, &n) == CH_OK &&
            cross(out->to_server, &out->to_server_len, message, n) &&
-           ch_srv_quic_crypto_in(&server, level, message, n) == CH_OK;
+           ch_srv_quic_crypto_in(quic_public(&server), level, message, n) == CH_OK;
 }
 
 // What the server wrote at level, into out's server-to-client direction
@@ -36,8 +36,8 @@ static int session_to_server(uint8_t level, crossed *out) {
 static int session_to_client(uint8_t level, crossed *out) {
     return cross(out->to_client, &out->to_client_len, from_server.bytes[level],
                  from_server.len[level]) &&
-           ch_quic_crypto_in(&client, level, from_server.bytes[level], from_server.len[level]) ==
-               CH_OK;
+           ch_quic_crypto_in(quic_public(&client), level, from_server.bytes[level],
+                             from_server.len[level]) == CH_OK;
 }
 
 // test/rand_session_cases.h's handshake, run_quic's with every CRYPTO
@@ -52,15 +52,16 @@ static int run_seeded(uint64_t client_seed, uint64_t server_seed, crossed *out) 
     seed_source(&server_source, server_seed);
     memset(out, 0, sizeof *out);
     memset(&from_server, 0, sizeof from_server);
-    if (ch_quic_init(&client, &ccfg) != CH_OK || ch_srv_quic_init(&server, &scfg) != CH_OK) {
+    if (ch_quic_init(quic_public(&client), &ccfg) != CH_OK ||
+        ch_srv_quic_init(quic_public(&server), &scfg) != CH_OK) {
         return 0;
     }
     int ok = session_to_server(CH_LEVEL_INITIAL, out) && session_to_client(CH_LEVEL_INITIAL, out) &&
              session_to_client(CH_LEVEL_HANDSHAKE, out) &&
              session_to_server(CH_LEVEL_HANDSHAKE, out) &&
              session_to_client(CH_LEVEL_APPLICATION, out);
-    return ok && ch_quic_state(&client) == CH_ST_CONNECTED &&
-           ch_quic_state(&server) == CH_ST_CONNECTED;
+    return ok && ch_quic_state(quic_public(&client)) == CH_ST_CONNECTED &&
+           ch_quic_state(quic_public(&server)) == CH_ST_CONNECTED;
 }
 
 #include "rand_session_cases.h"
@@ -81,12 +82,15 @@ static void check_session_refusals(void) {
     seed_source(&server_source, 2);
     hook_draws = 0;
     memset(&from_server, 0, sizeof from_server);
-    CHECK(ch_quic_init(&client, &ccfg) == CH_EINVAL && ch_quic_state(&client) == CH_ST_FAILED);
+    CHECK(ch_quic_init(quic_public(&client), &ccfg) == CH_EINVAL &&
+          ch_quic_state(quic_public(&client)) == CH_ST_FAILED);
     uint8_t out[64];
     size_t n = 0;
-    CHECK(ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, out, sizeof out, &n) == CH_EINVAL &&
+    CHECK(ch_quic_crypto_out(quic_public(&client), CH_LEVEL_INITIAL, out, sizeof out, &n) ==
+              CH_EINVAL &&
           n == 0);
-    CHECK(ch_srv_quic_init(&server, &scfg) == CH_EINVAL && ch_quic_state(&server) == CH_ST_FAILED);
+    CHECK(ch_srv_quic_init(quic_public(&server), &scfg) == CH_EINVAL &&
+          ch_quic_state(quic_public(&server)) == CH_ST_FAILED);
     CHECK(from_server.len[CH_LEVEL_INITIAL] == 0 && from_server.len[CH_LEVEL_HANDSHAKE] == 0 &&
           from_server.len[CH_LEVEL_APPLICATION] == 0);
     CHECK(client_source.calls == 0 && server_source.calls == 0 && hook_draws == 0);
@@ -96,11 +100,11 @@ static void check_session_refusals(void) {
     scfg.rand_bytes = contextless_draw;
     scfg.rand_io = NULL;
     contextless_calls = 0;
-    CHECK(ch_quic_init(&client, &ccfg) == CH_OK);
-    CHECK(ch_srv_quic_init(&server, &scfg) == CH_OK);
+    CHECK(ch_quic_init(quic_public(&client), &ccfg) == CH_OK);
+    CHECK(ch_srv_quic_init(quic_public(&server), &scfg) == CH_OK);
     CHECK(contextless_calls == SESSION_CLIENT_DRAWS + 1 && stray_draws == 0 && hook_draws == 0);
-    ch_quic_close(&client);
-    ch_quic_close(&server);
+    ch_quic_close(quic_public(&client));
+    ch_quic_close(quic_public(&server));
 }
 
 static void test_session(void) {

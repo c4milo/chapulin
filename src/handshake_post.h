@@ -163,7 +163,7 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 // transport (RFC 9001 §6, rfc9001.txt:1566-1568), so the only
 // post-handshake message it accepts is a NewSessionTicket and
 // hspost_take_ticket is the one way in.
-int hspost_read(ch_tls *t, size_t pt_len);
+int hspost_read(ch_tls_priv *t, size_t pt_len);
 
 // The most KeyUpdates one session sends. RFC 9846 §4.7.3 forbids a sender
 // to let the epoch, and with it the number of key updates, pass 2^48 - 1
@@ -191,7 +191,7 @@ int hspost_read(ch_tls *t, size_t pt_len);
 // Returns CH_OK, or CH_EIO when the record could not be sealed or sent.
 // The write key is still the old one then, and the caller fails the
 // session.
-int hspost_send_key_update(ch_tls *t);
+int hspost_send_key_update(ch_tls_priv *t);
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -232,7 +232,7 @@ int hspost_send_key_update(ch_tls *t);
 // *error_code alone, for a body that does not parse or does not fill
 // exactly. ch_quic_error_code then reports 0x0100 plus that alert,
 // which is how RFC 9001 §4.8 carries a TLS alert.
-int hspost_take_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *alert,
+int hspost_take_ticket(ch_tls_priv *t, const uint8_t *body, size_t n, uint8_t *alert,
                        uint64_t *error_code);
 #endif
 

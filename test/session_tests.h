@@ -9,6 +9,7 @@
 #ifndef CH_SESSION_TESTS_H
 #define CH_SESSION_TESTS_H
 
+#include "session_convert.h"
 #include "test_ticket.h"
 #include "test_widemul.h"
 
@@ -67,7 +68,7 @@ static void mock_on_ticket(void *io, const ch_ticket *ticket) {
 }
 
 // Builds a connected session whose read keys mirror server, fed by m.
-static void mock_session(ch_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
+static void mock_session(ch_tls_priv *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
                          const uint8_t secret[SHA256_LEN], uint8_t wr_secret_out[SHA256_LEN]) {
     memset(t, 0, sizeof *t);
     t->cfg.buf = rxbuf;

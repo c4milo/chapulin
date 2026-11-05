@@ -40,10 +40,10 @@ pub fn run() !void {
     // The server's ticket, read before the run starts.
     _ = try loop.drain(&loop.client, &loop.to_client);
     for (0..run_max + 1) |i| {
-        loop.client.tcp.t.key_update_owed = 1;
+        fixture.tcpPriv(&loop.client.tcp).t.key_update_owed = 1;
         const sent = try loop.client.write("k", &wire);
         try check(sent == write_len, "a write that owes an answer did not send a KeyUpdate record and a record of one byte");
-        if (i > 0) loop.server.tcp.t.rd.seq = 1;
+        if (i > 0) fixture.tcpPriv(&loop.server.tcp).t.rd.seq = 1;
         const update = wire[0..tcp.key_update_record_len];
         if (i < run_max) {
             const r = try loop.server.read(update, &got, &reply);

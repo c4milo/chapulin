@@ -87,17 +87,19 @@ static void client_reads_alert(int after_server_hello, const uint8_t *alert, siz
     alert_after_server_hello = after_server_hello;
     ch_cfg ccfg;
     client_config(&ccfg, alert_client_recv);
-    static ch_tls client;
-    CHECK(ch_connect(&client, &ccfg) == CH_EPROTO);
+    static ch_tls_priv client;
+    CHECK(ch_connect(tls_public(&client), &ccfg) == CH_EPROTO);
     CHECK(client.state == CH_ST_FAILED && client.keys == 0);
     if (n == 2) {
-        CHECK(ch_alert_received(&client) == alert[1] && ch_alert_sent(&client) == 0);
+        CHECK(ch_alert_received(tls_public(&client)) == alert[1] &&
+              ch_alert_sent(tls_public(&client)) == 0);
         CHECK(to_server.len == sent_before_alert);
         return;
     }
     // decode_error, in the clear before the client's keys and protected
     // after them.
-    CHECK(ch_alert_received(&client) == 0 && ch_alert_sent(&client) == ALERT_DECODE_ERROR);
+    CHECK(ch_alert_received(tls_public(&client)) == 0 &&
+          ch_alert_sent(tls_public(&client)) == ALERT_DECODE_ERROR);
     size_t want = after_server_hello ? CH_ALERT_RECORD_LEN : REC_HDR + 2;
     CHECK(to_server.len - sent_before_alert == want);
 }
@@ -148,15 +150,17 @@ static void server_reads_alert(int answer, const uint8_t *alert, size_t n) {
     }
     ch_cfg scfg;
     server_config(&scfg, alert_server_recv);
-    static ch_tls server;
-    CHECK(ch_srv_accept(&server, &scfg) == CH_EPROTO);
+    static ch_tls_priv server;
+    CHECK(ch_srv_accept(tls_public(&server), &scfg) == CH_EPROTO);
     CHECK(server.state == CH_ST_FAILED && server.keys == 0);
     if (n == 2) {
-        CHECK(ch_alert_received(&server) == alert[1] && ch_alert_sent(&server) == 0);
+        CHECK(ch_alert_received(tls_public(&server)) == alert[1] &&
+              ch_alert_sent(tls_public(&server)) == 0);
         CHECK(to_client.len == sent_before_alert);
         return;
     }
-    CHECK(ch_alert_received(&server) == 0 && ch_alert_sent(&server) == ALERT_DECODE_ERROR);
+    CHECK(ch_alert_received(tls_public(&server)) == 0 &&
+          ch_alert_sent(tls_public(&server)) == ALERT_DECODE_ERROR);
     size_t want = answer == 0 ? REC_HDR + 2 : CH_ALERT_RECORD_LEN;
     CHECK(to_client.len - sent_before_alert == want);
 }
@@ -175,8 +179,8 @@ static void server_reads_client_ticket(void) {
     queue_client_hello(0);
     ch_cfg scfg;
     server_config(&scfg, server_recv);
-    static ch_tls server;
-    CHECK(ch_srv_accept(&server, &scfg) == CH_OK);
+    static ch_tls_priv server;
+    CHECK(ch_srv_accept(tls_public(&server), &scfg) == CH_OK);
     // ticket_lifetime 3600, ticket_age_add 7, no nonce, a one-byte ticket
     // and no extensions: a NewSessionTicket a client would take.
     static const uint8_t ticket[18] = {
@@ -190,9 +194,10 @@ static void server_reads_client_ticket(void) {
     CHECK(put(&to_server, rec, len) == 0);
     size_t before = to_client.len;
     uint8_t out[16];
-    CHECK(ch_read(&server, out, sizeof out) == CH_EPROTO);
+    CHECK(ch_read(tls_public(&server), out, sizeof out) == CH_EPROTO);
     CHECK(server.state == CH_ST_FAILED);
-    CHECK(ch_alert_sent(&server) == ALERT_UNEXPECTED_MESSAGE && ch_alert_received(&server) == 0);
+    CHECK(ch_alert_sent(tls_public(&server)) == ALERT_UNEXPECTED_MESSAGE &&
+          ch_alert_received(tls_public(&server)) == 0);
     CHECK(to_client.len - before == CH_ALERT_RECORD_LEN);
 }
 

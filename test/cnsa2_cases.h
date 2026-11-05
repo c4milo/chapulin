@@ -6,7 +6,7 @@
 // Runs test_connect on cfg and reports whether it was refused before a
 // byte left: CH_EINVAL with no send.
 static int refused(const ch_cfg *cfg) {
-    ch_tls *t = NULL;
+    ch_tls_priv *t = NULL;
     const mock_server *s = cfg->io;
     return test_connect(&t, cfg) == CH_EINVAL && s->sends == 0;
 }
@@ -15,7 +15,7 @@ static int refused(const ch_cfg *cfg) {
 // the client sent its ClientHello, and recv's failure then returned
 // CH_EIO.
 static int sends_client_hello(const ch_cfg *cfg) {
-    ch_tls *t = NULL;
+    ch_tls_priv *t = NULL;
     const mock_server *s = cfg->io;
     return test_connect(&t, cfg) == CH_EIO && s->m.hello_len > 0;
 }
@@ -130,7 +130,7 @@ static void test_cnsa2_handshake(void) {
             cfg.require_pq = 1;
         }
         tickets = 0;
-        ch_tls *t = NULL;
+        ch_tls_priv *t = NULL;
         CHECK(test_connect(&t, &cfg) == CH_OK);
         CHECK(s.m.binder_ok);
         CHECK(s.m.resumed == resume);
@@ -138,13 +138,13 @@ static void test_cnsa2_handshake(void) {
         CHECK(t->group == CH_GROUP_MLKEM1024);
         CHECK(t->suite == SUITE_AES_256_GCM_SHA384);
         CHECK(t->psk_selected == 1);
-        CHECK(ch_write(t, ping, sizeof ping) == CH_OK);
+        CHECK(ch_write(tls_public(t), ping, sizeof ping) == CH_OK);
         CHECK(s.echo_len == sizeof ping && memcmp(s.echo, ping, sizeof ping) == 0);
         uint8_t got[16];
-        CHECK(ch_read(t, got, sizeof got) == (int)sizeof ping);
+        CHECK(ch_read(tls_public(t), got, sizeof got) == (int)sizeof ping);
         CHECK(memcmp(got, ping, sizeof ping) == 0);
         CHECK(tickets == 1);
-        ch_close(t);
+        ch_close(tls_public(t));
     }
 }
 
@@ -159,9 +159,9 @@ static void test_cnsa2_server_hello_refusals(void) {
         ch_cfg cfg = valid_cfg(&s);
         s.answer = 1;
         s.m.sh_suite = suites[i];
-        ch_tls *t = NULL;
+        ch_tls_priv *t = NULL;
         CHECK(test_connect(&t, &cfg) == CH_EPROTO);
-        CHECK(ch_alert_sent(t) == ALERT_ILLEGAL_PARAMETER);
+        CHECK(ch_alert_sent(tls_public(t)) == ALERT_ILLEGAL_PARAMETER);
     }
     static const uint16_t groups[] = {CH_GROUP_X25519, CH_GROUP_X25519MLKEM768, 0x0201};
     for (size_t i = 0; i < sizeof groups / sizeof groups[0]; i++) {
@@ -169,17 +169,17 @@ static void test_cnsa2_server_hello_refusals(void) {
         ch_cfg cfg = valid_cfg(&s);
         s.answer = 1;
         s.m.sh_group = groups[i];
-        ch_tls *t = NULL;
+        ch_tls_priv *t = NULL;
         CHECK(test_connect(&t, &cfg) == CH_EPROTO);
-        CHECK(ch_alert_sent(t) == ALERT_ILLEGAL_PARAMETER);
+        CHECK(ch_alert_sent(tls_public(t)) == ALERT_ILLEGAL_PARAMETER);
     }
     mock_server s;
     ch_cfg cfg = valid_cfg(&s);
     s.answer = 1;
     s.m.ct_trim = 1;
-    ch_tls *t = NULL;
+    ch_tls_priv *t = NULL;
     CHECK(test_connect(&t, &cfg) == CH_EPROTO);
-    CHECK(ch_alert_sent(t) == ALERT_ILLEGAL_PARAMETER);
+    CHECK(ch_alert_sent(tls_public(t)) == ALERT_ILLEGAL_PARAMETER);
 }
 
 #endif

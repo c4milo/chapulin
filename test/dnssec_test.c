@@ -194,30 +194,30 @@ static void hashes(void) {
     static const uint8_t algorithms[3] = {CH_DNSSEC_ALG_RSASHA256, CH_DNSSEC_ALG_ECDSAP256SHA256,
                                           CH_DNSSEC_ALG_RSASHA512};
     for (size_t i = 0; i < 3; i++) {
-        ch_dnssec_hash h;
+        ch_dnssec_hash_priv h;
         uint8_t digest[CH_DNSSEC_DIGEST_MAX];
-        expect(ch_dnssec_hash_init(&h, algorithms[i], NULL, 0, NULL, 0), CH_OK, "the hash starts");
-        ch_dnssec_hash_update(&h, abc, 1);
-        ch_dnssec_hash_update(&h, abc + 1, 2);
-        size_t n = ch_dnssec_hash_final(&h, digest);
+        expect(ch_dnssec_hash_init(dnssec_hash_public(&h), algorithms[i], NULL, 0, NULL, 0), CH_OK, "the hash starts");
+        ch_dnssec_hash_update(dnssec_hash_public(&h), abc, 1);
+        ch_dnssec_hash_update(dnssec_hash_public(&h), abc + 1, 2);
+        size_t n = ch_dnssec_hash_final(dnssec_hash_public(&h), digest);
         const uint8_t *want = n == 64 ? sha512_abc : sha256_abc;
         expect((int)n, algorithms[i] == CH_DNSSEC_ALG_RSASHA512 ? 64 : 32, "the digest length");
         expect(memcmp(digest, want, n) == 0, 1, "the digest of abc");
         expect(h.algorithm, 0, "final wipes the context");
     }
-    ch_dnssec_hash h;
+    ch_dnssec_hash_priv h;
     static const uint8_t sha384_abc[48] = {
         0xcb, 0x00, 0x75, 0x3f, 0x45, 0xa3, 0x5e, 0x8b, 0xb5, 0xa0, 0x3d, 0x69,
         0x9a, 0xc6, 0x50, 0x07, 0x27, 0x2c, 0x32, 0xab, 0x0e, 0xde, 0xd1, 0x63,
         0x1a, 0x8b, 0x60, 0x5a, 0x43, 0xff, 0x5b, 0xed, 0x80, 0x86, 0x07, 0x2b,
         0xa1, 0xe7, 0xcc, 0x23, 0x58, 0xba, 0xec, 0xa1, 0x34, 0xc8, 0x25, 0xa7};
     uint8_t digest384[CH_DNSSEC_DIGEST_MAX];
-    expect(ch_dnssec_hash_init(&h, CH_DNSSEC_ALG_ECDSAP384SHA384, NULL, 0, NULL, 0), CH_OK,
+    expect(ch_dnssec_hash_init(dnssec_hash_public(&h), CH_DNSSEC_ALG_ECDSAP384SHA384, NULL, 0, NULL, 0), CH_OK,
            "algorithm 14 starts SHA-384");
-    ch_dnssec_hash_update(&h, abc, 3);
-    expect((int)ch_dnssec_hash_final(&h, digest384), 48, "algorithm 14's digest is SHA-384's");
+    ch_dnssec_hash_update(dnssec_hash_public(&h), abc, 3);
+    expect((int)ch_dnssec_hash_final(dnssec_hash_public(&h), digest384), 48, "algorithm 14's digest is SHA-384's");
     expect(memcmp(digest384, sha384_abc, 48) == 0, 1, "the SHA-384 of abc");
-    expect(ch_dnssec_hash_init(&h, 5, NULL, 0, NULL, 0), CH_EINVAL, "algorithm 5 has no hash here");
+    expect(ch_dnssec_hash_init(dnssec_hash_public(&h), 5, NULL, 0, NULL, 0), CH_EINVAL, "algorithm 5 has no hash here");
 
     // The digest types: FIPS 180-4's examples for SHA-1, and type 2 and 4
     // as SHA-256 and SHA-384 again.
@@ -229,29 +229,29 @@ static void hashes(void) {
                                                 0x29, 0xe5, 0xe5, 0x46, 0x70, 0xf1};
     static const char two_blocks[] = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
     uint8_t d[CH_DNSSEC_DIGEST_MAX];
-    expect(ch_dnssec_digest_init(&h, CH_DNSSEC_DIGEST_SHA1), CH_OK, "digest type 1 starts");
-    ch_dnssec_hash_update(&h, abc, 3);
-    expect((int)ch_dnssec_hash_final(&h, d), 20, "type 1 is SHA-1's length");
+    expect(ch_dnssec_digest_init(dnssec_hash_public(&h), CH_DNSSEC_DIGEST_SHA1), CH_OK, "digest type 1 starts");
+    ch_dnssec_hash_update(dnssec_hash_public(&h), abc, 3);
+    expect((int)ch_dnssec_hash_final(dnssec_hash_public(&h), d), 20, "type 1 is SHA-1's length");
     expect(memcmp(d, sha1_abc, 20) == 0, 1, "the SHA-1 of abc");
-    expect(ch_dnssec_digest_init(&h, CH_DNSSEC_DIGEST_SHA1), CH_OK, "digest type 1 starts");
-    ch_dnssec_hash_update(&h, (const uint8_t *)two_blocks, sizeof two_blocks - 1);
-    ch_dnssec_hash_final(&h, d);
+    expect(ch_dnssec_digest_init(dnssec_hash_public(&h), CH_DNSSEC_DIGEST_SHA1), CH_OK, "digest type 1 starts");
+    ch_dnssec_hash_update(dnssec_hash_public(&h), (const uint8_t *)two_blocks, sizeof two_blocks - 1);
+    ch_dnssec_hash_final(dnssec_hash_public(&h), d);
     expect(memcmp(d, sha1_two_blocks, 20) == 0, 1, "the SHA-1 of FIPS 180-4's two-block message");
-    expect(ch_dnssec_digest_init(&h, CH_DNSSEC_DIGEST_SHA256), CH_OK, "digest type 2 starts");
-    ch_dnssec_hash_update(&h, abc, 3);
-    expect((int)ch_dnssec_hash_final(&h, d), 32, "type 2 is SHA-256's length");
+    expect(ch_dnssec_digest_init(dnssec_hash_public(&h), CH_DNSSEC_DIGEST_SHA256), CH_OK, "digest type 2 starts");
+    ch_dnssec_hash_update(dnssec_hash_public(&h), abc, 3);
+    expect((int)ch_dnssec_hash_final(dnssec_hash_public(&h), d), 32, "type 2 is SHA-256's length");
     expect(memcmp(d, sha256_abc, 32) == 0, 1, "type 2 is SHA-256");
-    expect(ch_dnssec_digest_init(&h, CH_DNSSEC_DIGEST_SHA384), CH_OK, "digest type 4 starts");
-    ch_dnssec_hash_update(&h, abc, 3);
-    expect((int)ch_dnssec_hash_final(&h, d), 48, "type 4 is SHA-384's length");
+    expect(ch_dnssec_digest_init(dnssec_hash_public(&h), CH_DNSSEC_DIGEST_SHA384), CH_OK, "digest type 4 starts");
+    ch_dnssec_hash_update(dnssec_hash_public(&h), abc, 3);
+    expect((int)ch_dnssec_hash_final(dnssec_hash_public(&h), d), 48, "type 4 is SHA-384's length");
     expect(memcmp(d, sha384_abc, 48) == 0, 1, "type 4 is SHA-384");
-    expect(ch_dnssec_digest_init(&h, 3), CH_EINVAL, "digest type 3 (GOST) is not taken");
+    expect(ch_dnssec_digest_init(dnssec_hash_public(&h), 3), CH_EINVAL, "digest type 3 (GOST) is not taken");
     // Algorithm 15 hashes R and A first, so it takes them at init.
     static const uint8_t key32[32] = {0};
     static const uint8_t sig64[64] = {0};
-    expect(ch_dnssec_hash_init(&h, CH_DNSSEC_ALG_ED25519, key32, 31, sig64, 64), CH_EINVAL,
+    expect(ch_dnssec_hash_init(dnssec_hash_public(&h), CH_DNSSEC_ALG_ED25519, key32, 31, sig64, 64), CH_EINVAL,
            "algorithm 15 takes a 32-byte key alone");
-    expect(ch_dnssec_hash_init(&h, CH_DNSSEC_ALG_ED25519, key32, 32, sig64, 63), CH_EINVAL,
+    expect(ch_dnssec_hash_init(dnssec_hash_public(&h), CH_DNSSEC_ALG_ED25519, key32, 32, sig64, 63), CH_EINVAL,
            "algorithm 15 takes a 64-byte signature alone");
     uint8_t digest[CH_DNSSEC_DIGEST_MAX];
     uint8_t want[64];
@@ -259,10 +259,10 @@ static void hashes(void) {
     memcpy(prefix, sig64, 32);
     memcpy(prefix + 32, key32, 32);
     memcpy(prefix + 64, abc, 3);
-    expect(ch_dnssec_hash_init(&h, CH_DNSSEC_ALG_ED25519, key32, 32, sig64, 64), CH_OK,
+    expect(ch_dnssec_hash_init(dnssec_hash_public(&h), CH_DNSSEC_ALG_ED25519, key32, 32, sig64, 64), CH_OK,
            "algorithm 15 starts with R and A");
-    ch_dnssec_hash_update(&h, abc, 3);
-    expect((int)ch_dnssec_hash_final(&h, digest), 64, "algorithm 15's digest is SHA-512's");
+    ch_dnssec_hash_update(dnssec_hash_public(&h), abc, 3);
+    expect((int)ch_dnssec_hash_final(dnssec_hash_public(&h), digest), 64, "algorithm 15's digest is SHA-512's");
     sha512 ref;
     sha512_init(&ref);
     sha512_update(&ref, prefix, sizeof prefix);

@@ -193,7 +193,7 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 
 #include "srv_resume.c"
 
-static ch_tls t;
+static ch_tls_priv t;
 static handshake_state h;
 static client_hello ch;
 static selection sel;

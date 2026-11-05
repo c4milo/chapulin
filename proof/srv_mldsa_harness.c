@@ -140,7 +140,7 @@ static void make_identity(ch_cfg *cfg) {
 }
 
 int main(void) {
-    static ch_tls t;
+    static ch_tls_priv t;
     handshake_state h;
     selection sel;
 

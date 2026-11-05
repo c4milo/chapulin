@@ -211,7 +211,7 @@ static int select_for(uint16_t suite, uint16_t group, uint16_t sigalg, int share
     if (srv_parse_client_hello(CPU_WITH_AES, body, n, &ch, NULL, 0, &alert) != CH_OK) {
         return -1;
     }
-    static ch_tls t;
+    static ch_tls_priv t;
     memset(&t, 0, sizeof t);
     base_cfg(&t.cfg);
     handshake_state h;

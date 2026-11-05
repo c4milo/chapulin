@@ -34,15 +34,16 @@ static void test_webpki_cpu_values(void) {
 // mock fails recv at once. So ch_connect accepts a configuration when it
 // sends a ClientHello and then answers CH_EIO.
 static int ticket_rows_init(const ch_cfg *cfg, uint8_t stored[SHA256_LEN]) {
-    static ch_tls t;
+    static ch_tls_priv t;
     mock_server *s = cfg->io;
     s->hello_len = 0;
     s->sends = 0;
-    int rc = ch_connect(&t, cfg);
+    int rc = ch_connect(tls_public(&t), cfg);
     memcpy(stored, t.ticket_config_hash, SHA256_LEN);
     return rc == CH_EIO && s->hello_len > 0;
 }
 
+#include "session_convert.h"
 #include "webpki_ticket_rows.h"
 
 static void ignore_ticket(void *io, const ch_ticket *ticket) {

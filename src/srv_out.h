@@ -27,7 +27,7 @@
 // The largest plaintext one call carries. Over TLS it is this build's cap
 // lowered to the client's record_size_limit; over QUIC no record bounds it
 // and the cap alone applies.
-size_t srv_out_limit(const ch_tls *t);
+size_t srv_out_limit(const ch_tls_priv *t);
 
 // Where a message sent in the clear is staged inside ch_tls.tx. A TLS
 // build leaves room for the record header it writes in front; a QUIC build
@@ -70,7 +70,7 @@ int srv_out_sealed(handshake_state *h, const uint8_t *pt, size_t n);
 // cfg.srv.on_record_out, the way every other record leaves this server.
 // The failure it reports has already been recorded, so the push is best
 // effort, as tlsi_fail's send is, and a refusal changes nothing.
-void srv_out_alert(ch_tls *t, const uint8_t *rec, size_t n);
+void srv_out_alert(ch_tls_priv *t, const uint8_t *rec, size_t n);
 #endif
 
 // The most bytes one srv_frag holds, and so the most plaintext of one

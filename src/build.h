@@ -24,6 +24,7 @@
 
 #include "cfg.h"
 #include "session.h"
+#include "session_storage.h"
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
 #include "tcp_nonblocking.h"
 #endif

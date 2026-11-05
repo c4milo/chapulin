@@ -32,7 +32,7 @@ static int recv_hostile(void *io, uint8_t *p, size_t n) {
     return got;
 }
 
-static ch_tls session;
+static ch_tls_priv session;
 
 int main(void) {
     session.cfg.recv = recv_hostile;

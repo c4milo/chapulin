@@ -229,7 +229,7 @@ static int check_certificate_verify(handshake_state *h, const uint8_t *hash, siz
 // CH_EPOCH_BOUND steps ahead, means a bad issuance or a poisoning
 // attempt.
 static int epoch_check(handshake_state *h) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     if (t->cfg.epoch_load == NULL) {
         return CH_OK;
     }
@@ -259,7 +259,7 @@ static int epoch_check(handshake_state *h) {
 // keeps the session and reports through epoch_store_failed, because
 // the connection is authenticated either way.
 void hsa_epoch_commit(handshake_state *h) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     // run() calls this once, after expect_finished returned CH_OK. An
     // earlier call is a programmer error, not bad peer input: it would
     // raise state that outlives the session on a certificate anyone can

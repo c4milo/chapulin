@@ -1,4 +1,4 @@
-#include "tls.h"
+#include "tls_calls.h"
 
 #include "ch_assert.h"
 
@@ -30,7 +30,7 @@
 // the connection at config time, not mid-handshake, so revocation
 // state stays out of any path a peer can influence. Returns CH_OK
 // when no epoch is configured.
-int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok) {
+int tlsi_epoch_init(ch_tls_priv *t, const ch_cfg *cfg, int psk_ok) {
 #ifdef CH_TRUST_CA
     // The callbacks come as a pair; one alone is a provisioning
     // mistake, and store is the only way to write the epoch back.
@@ -167,7 +167,7 @@ int tlsi_config_ok(const ch_cfg *cfg) {
 }
 
 #ifndef CH_TRANSPORT_TCP_NONBLOCKING
-int ch_connect(ch_tls *t, const ch_cfg *cfg) {
+int tls_connect(ch_tls_priv *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
     // A presented ticket becomes the session copy's PSK, which every rule
@@ -203,7 +203,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 // that key. Nothing is sent here. TLS 1.2 answered a close_notify at
 // once with one of its own, and TLS 1.3 dropped that rule
 // (rfc9846.txt:3860-3864).
-static void close_read_side(ch_tls *t) {
+static void close_read_side(ch_tls_priv *t) {
     ct_wipe(&t->rd, sizeof t->rd);
     ct_wipe(t->rd_secret, sizeof t->rd_secret);
     ct_wipe(t->res_master, sizeof t->res_master);
@@ -219,7 +219,7 @@ static void close_read_side(ch_tls *t) {
 // record goes to hsr_refuse_alert: one that is not a single 2-byte alert
 // fails the session with decode_error, and an error alert fails it with
 // nothing sent, because the peer has closed the connection (§6.2).
-static int read_alert(ch_tls *t, size_t pt_len) {
+static int read_alert(ch_tls_priv *t, size_t pt_len) {
     const uint8_t *pt = t->cfg.buf;
     if (pt_len == 2 && pt[1] == ALERT_CLOSE_NOTIFY) {
         close_read_side(t);
@@ -242,7 +242,7 @@ static int read_alert(ch_tls *t, size_t pt_len) {
 // or more ends the run of KeyUpdates CH_KEY_UPDATE_RUN_MAX bounds
 // (session.h). An empty one ends no run, so the caller receives a byte of
 // data for each CH_KEY_UPDATE_RUN_MAX KeyUpdates (docs/decisions.md 138).
-static int dispatch_one_record(ch_tls *t) {
+static int dispatch_one_record(ch_tls_priv *t) {
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
     if (t->post_fill > 0) { // the next record continues a message (session.h)
         size_t fill = t->post_fill;
@@ -294,7 +294,7 @@ static int dispatch_one_record(ch_tls *t) {
 // after it, so the run limit can refuse that KeyUpdate (session.h).
 _Static_assert(CH_KEY_UPDATE_RUN_MAX < CH_QUIET_CAP, "a run and one more fit under the quiet cap");
 
-int ch_read(ch_tls *t, uint8_t *p, size_t n) {
+int tls_read(ch_tls_priv *t, uint8_t *p, size_t n) {
     // Contract-point guard: no input can set an undefined state; only
     // programmer error or corrupted memory can. TigerStyle-class
     // defense priced at zero per-byte cost (docs/decisions.md).
@@ -337,7 +337,7 @@ int ch_read(ch_tls *t, uint8_t *p, size_t n) {
     return CH_EPROTO;
 }
 
-void ch_close(ch_tls *t) {
+void tls_close(ch_tls_priv *t) {
     CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states
 
     if (t->keys) {
@@ -401,7 +401,7 @@ int tlsi_config_ok(const ch_cfg *cfg) {
 // handshake.c out, so a compiled ch_connect leaves ch_handshake
 // undefined.
 #ifndef CH_TRANSPORT_TCP_NONBLOCKING
-int ch_connect(ch_tls *t, const ch_cfg *cfg) {
+int tls_connect(ch_tls_priv *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
     // A presented ticket becomes the session copy's PSK, which every rule
@@ -460,8 +460,8 @@ _Static_assert(
 _Static_assert(CH_EXPORT_LABEL_MAX == HKDF_LABEL_MAX,
                "the public label cap and the one hkdf.c serializes must be the same number");
 
-int ch_export(const ch_tls *t, const char *label, const uint8_t *context, size_t context_len,
-              uint8_t *out, size_t out_len) {
+int tls_export(const ch_tls_priv *t, const char *label, const uint8_t *context, size_t context_len,
+               uint8_t *out, size_t out_len) {
     // Every refusal below is a caller's argument rather than a peer's
     // input, and each one returns instead of asserting, because a label
     // is data a caller may compute. hkdf_expand_label's CH_ASSERT on the
@@ -491,10 +491,10 @@ int ch_export(const ch_tls *t, const char *label, const uint8_t *context, size_t
 // alert.h states both contracts. Every TCP object compiles this file, in
 // either role, so both calls are defined here, below every CH_ASSERT;
 // quic.c defines the QUIC object's.
-uint8_t ch_alert_sent(const ch_tls *t) {
+uint8_t tls_alert_sent(const ch_tls_priv *t) {
     return t->alert_sent;
 }
 
-uint8_t ch_alert_received(const ch_tls *t) {
+uint8_t tls_alert_received(const ch_tls_priv *t) {
     return t->alert_received;
 }

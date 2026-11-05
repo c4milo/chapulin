@@ -72,11 +72,11 @@ static void test_webpki_selects_either_group(void) {
     static const uint16_t groups[] = {CH_GROUP_X25519MLKEM768, CH_GROUP_X25519};
     for (size_t i = 0; i < sizeof groups / sizeof groups[0]; i++) {
         mock_server s;
-        ch_tls t;
+        ch_tls_priv t;
         ch_cfg cfg = valid_cfg(&s);
         s.answer = 1;
         s.sh_group = groups[i];
-        CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+        CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
         CHECK(s.alert == ALERT_BAD_CERTIFICATE);
         CHECK(t.group == groups[i]);
         CHECK(s.retry_hello_len == 0);
@@ -89,19 +89,19 @@ static void test_webpki_selects_either_group(void) {
 // hybrid completes as it does without the flag.
 static void test_webpki_require_pq_refuses_x25519(void) {
     mock_server s;
-    ch_tls t;
+    ch_tls_priv t;
     ch_cfg cfg = valid_cfg(&s);
     cfg.require_pq = 1;
     s.answer = 1;
     s.sh_group = CH_GROUP_X25519;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
     CHECK(t.group == CH_GROUP_X25519);
 
     cfg = valid_cfg(&s);
     cfg.require_pq = 1;
     s.answer = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_BAD_CERTIFICATE);
     CHECK(t.group == CH_GROUP_X25519MLKEM768);
 }
@@ -114,13 +114,13 @@ static void test_webpki_cookie_retry(void) {
     static const uint16_t groups[] = {CH_GROUP_X25519MLKEM768, CH_GROUP_X25519};
     for (size_t i = 0; i < sizeof groups / sizeof groups[0]; i++) {
         mock_server s;
-        ch_tls t;
+        ch_tls_priv t;
         ch_cfg cfg = valid_cfg(&s);
         s.answer = 1;
         s.retry = 1;
         s.retry_cookie = 1;
         s.sh_group = groups[i];
-        CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+        CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
         CHECK(s.alert == ALERT_BAD_CERTIFICATE);
         CHECK(t.group == groups[i]);
         CHECK(s.retry_hello_len > 0 && s.retry_record_version == 0x03);
@@ -151,30 +151,30 @@ static void test_webpki_retry_names_a_group(void) {
     static const uint16_t groups[] = {CH_GROUP_X25519MLKEM768, CH_GROUP_X25519};
     for (size_t i = 0; i < 2 * sizeof groups / sizeof groups[0]; i++) {
         mock_server s;
-        ch_tls t;
+        ch_tls_priv t;
         ch_cfg cfg = valid_cfg(&s);
         s.answer = 1;
         s.retry = 1;
         s.retry_group = groups[i / 2];
         s.retry_cookie = (int)(i % 2);
-        CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+        CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
         CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.retry_hello_len == 0);
     }
 
     mock_server s;
-    ch_tls t;
+    ch_tls_priv t;
     ch_cfg cfg = valid_cfg(&s);
     cfg.require_pq = 1;
     s.answer = 1;
     s.retry = 1;
     s.retry_group = CH_GROUP_X25519;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.retry_hello_len == 0);
 
     cfg = valid_cfg(&s);
     s.answer = 1;
     s.retry = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EPROTO);
     CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.retry_hello_len == 0);
 }
 
@@ -194,7 +194,7 @@ static void test_webpki_x25519_wipes_the_seed(void) {
     static const uint16_t groups[] = {CH_GROUP_X25519, CH_GROUP_X25519MLKEM768};
     for (size_t i = 0; i < sizeof groups / sizeof groups[0]; i++) {
         mock_server s;
-        ch_tls t;
+        ch_tls_priv t;
         memset(&t, 0, sizeof t);
         t.cfg = valid_cfg(&s);
         handshake_state h;

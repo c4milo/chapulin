@@ -9,6 +9,7 @@
 // two entry points beside them. The client driver above them is what that
 // build has no use for, the way tls.c guards ch_connect.
 #include "tcp_nonblocking.h"
+#include "tcp_nonblocking_session.h"
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
@@ -30,7 +31,7 @@
 
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 
-int ch_tcp_init(ch_tcp *r, const ch_cfg *cfg) {
+int tcp_init(ch_tcp_priv *r, const ch_cfg *cfg) {
     // Neither pointer is checked, as ch_connect does not check its own:
     // tcp_nonblocking.h makes "r and cfg are not NULL" a caller requirement.
     memset(r, 0, sizeof *r);
@@ -98,7 +99,7 @@ int ch_tcp_init(ch_tcp *r, const ch_cfg *cfg) {
 // t.tx, where this driver stages every record it writes. ch_tcp_out
 // hands it over on the failed session and then answers CH_EINVAL
 // (tcp_nonblocking.h). Returns rc, so a caller can tail-call it.
-static int fail(ch_tcp *r, int rc) {
+static int fail(ch_tcp_priv *r, int rc) {
     uint8_t rec[CH_ALERT_RECORD_LEN] = {0};
     size_t rec_len = tcp_nonblocking_fail(r, rec);
     memcpy(r->t.tx, rec, rec_len);
@@ -111,7 +112,7 @@ static int fail(ch_tcp *r, int rc) {
 // quic.c's drive loop without the level checks, and it terminates for the
 // same reason: a copy that leaves bytes over means the buffer is full,
 // and a full buffer always holds hsr_peek_message's 4-byte header.
-static int drive(ch_tcp *r) {
+static int drive(ch_tcp_priv *r) {
     for (;;) {
         size_t raw_len = 0;
         int rc = hsr_peek_message(&r->hs, &raw_len, &r->hs.alert);
@@ -133,7 +134,7 @@ static int drive(ch_tcp *r) {
     }
 }
 
-int ch_tcp_in(ch_tcp *r, uint8_t *p, size_t n, size_t *consumed) {
+int tcp_in(ch_tcp_priv *r, uint8_t *p, size_t n, size_t *consumed) {
     CH_ASSERT(r->t.state <= CH_ST_FAILED);
     r->hs.t = &r->t;
     *consumed = 0;
@@ -177,7 +178,7 @@ int ch_tcp_in(ch_tcp *r, uint8_t *p, size_t n, size_t *consumed) {
     }
 }
 
-int ch_tcp_out(ch_tcp *r, uint8_t *out, size_t cap, size_t *out_len) {
+int tcp_out(ch_tcp_priv *r, uint8_t *out, size_t cap, size_t *out_len) {
     // A failed session holds the alert record its failure staged until the
     // last byte of it is handed over, and nothing after that. A closed one
     // holds none: ch_tcp_close empties the staging array.
@@ -211,15 +212,7 @@ int ch_tcp_out(ch_tcp *r, uint8_t *out, size_t cap, size_t *out_len) {
 
 #endif // CH_ROLE_SERVER
 
-uint8_t ch_tcp_state(const ch_tcp *r) {
-    return r->t.state;
-}
-
-ch_tls *ch_tcp_tls(ch_tcp *r) {
-    return &r->t;
-}
-
-void ch_tcp_close(ch_tcp *r) {
+void tcp_close(ch_tcp_priv *r) {
     tcp_nonblocking_wipe(r);
     r->t.state = CH_ST_CLOSED;
 }

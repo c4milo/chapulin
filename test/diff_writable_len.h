@@ -43,6 +43,7 @@
 #define CH_DIFF_WRITABLE_LEN_H
 
 #include "record.h"
+#include "session_convert.h"
 #include "suite.h"
 #include "tls.h"
 
@@ -55,7 +56,7 @@
 static long diff_writable_rows;
 
 // The session every row asks about.
-static ch_tls diff_writable_session;
+static ch_tls_priv diff_writable_session;
 
 // The records per key the session's write key seals (records_per_key).
 static size_t diff_writable_per_key(void) {
@@ -70,7 +71,7 @@ static size_t diff_writable_per_key(void) {
 // Compares ch_writable_len's answer for cap with the spec's, at the limit,
 // room and records per key the session's fields give. Returns the answer.
 static size_t diff_writable_row(size_t cap, size_t limit, size_t room) {
-    size_t answer = ch_writable_len(&diff_writable_session, cap);
+    size_t answer = ch_writable_len(tls_public(&diff_writable_session), cap);
     char cmd[128];
     (void)snprintf(cmd, sizeof cmd, "writable_len %zu %zu %zu %zu", cap, limit, room,
                    diff_writable_per_key());
@@ -151,7 +152,7 @@ static void diff_writable_aes_row(size_t cap, size_t limit, size_t room) {
     size_t answer = diff_writable_row(cap, limit, room);
     uint16_t suite = diff_writable_session.wr.suite;
     diff_writable_session.wr.suite = SUITE_CHACHA20_POLY1305_SHA256;
-    size_t chacha_answer = ch_writable_len(&diff_writable_session, cap);
+    size_t chacha_answer = ch_writable_len(tls_public(&diff_writable_session), cap);
     diff_writable_session.wr.suite = suite;
     diff_writable_aes_rows++;
     diff_writable_key_update_rows += answer != chacha_answer;

@@ -208,7 +208,7 @@ fn ticketsOff(taken: *const chapulin.Ticket) !void {
         try handshake(serverValues(), values);
         const resumed = presented != null;
         try check(client.pskSelected() == resumed and server.pskSelected() == resumed, "the PSK selection of a client whose takes_tickets is false does not match its ticket");
-        try fixture.clientTakesTickets(&client.tcp.t, false);
+        try fixture.clientTakesTickets(&fixture.tcpPriv(&client.tcp).t, false);
         try check(to_client.pending().len > 0, "the server wrote no ticket");
         _ = try drain(&client, &to_client);
         try check(to_client.pending().len == 0 and client.takeTicket() == null, "a client whose takes_tickets is false kept a ticket");
@@ -426,7 +426,7 @@ pub fn run() !void {
     try check(std.mem.eql(u8, server.sni() orelse "", fixture.hostname()), "the server did not report the hostname");
     try check(client.group() == .x25519mlkem768 and server.group() == .x25519mlkem768, "the group is not X25519MLKEM768");
     try check(!client.pskSelected() and client.serverCertType() == .x509, "the full handshake reports a PSK or a raw key");
-    try fixture.clientTakesTickets(&client.tcp.t, true);
+    try fixture.clientTakesTickets(&fixture.tcpPriv(&client.tcp).t, true);
     const taken = try takeTicket();
     try exchange();
     try exporter();

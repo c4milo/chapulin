@@ -27,7 +27,7 @@
 // Whether this session can judge a ticket: a key to open it with, and the
 // instant its init call read from the caller's clock to date it by. Both
 // issuing and accepting ask it.
-static int tickets_on(const ch_tls *t) {
+static int tickets_on(const ch_tls_priv *t) {
     return t->cfg.srv.ticket_key != NULL && t->now_seconds != 0;
 }
 
@@ -75,7 +75,7 @@ static int ticket_alpn_matches(const srv_ticket_contents *c, const ch_cfg *cfg,
 // ticket specific to the QUIC version of the connection that issued it,
 // the negotiated one after compatible negotiation (rfc9369.txt:268-284),
 // and 0 keeps a TCP server's tickets and a QUIC server's apart.
-static uint32_t session_quic_version(const ch_tls *t) {
+static uint32_t session_quic_version(const ch_tls_priv *t) {
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     return t->quic_negotiated_version;
 #else
@@ -97,7 +97,7 @@ static int ticket_holds(const srv_ticket_contents *c, const ch_cfg *cfg, const c
 // ticket that opens and holds, writing its index and what it carried.
 // The parser held the list to its syntax, so the walk only reads it.
 // Returns 1 when one was found, and 0 with *c wiped when none was.
-static int find_ticket(const ch_tls *t, const client_hello *ch, const selection *sel,
+static int find_ticket(const ch_tls_priv *t, const client_hello *ch, const selection *sel,
                        uint16_t *index, srv_ticket_contents *c) {
     const ch_cfg *cfg = &t->cfg;
     rbuf r;
@@ -224,7 +224,7 @@ int srv_select_auth(handshake_state *h, const client_hello *ch, selection *sel) 
 
 // The ALPN protocol this connection negotiated, copied into the ticket
 // contents: the name at t->alpn_selected, or none.
-static void ticket_alpn(const ch_tls *t, srv_ticket_contents *c) {
+static void ticket_alpn(const ch_tls_priv *t, srv_ticket_contents *c) {
     c->alpn_len = 0;
     if (t->alpn_selected == CH_ALPN_NONE) {
         return;
@@ -245,7 +245,7 @@ static void ticket_alpn(const ch_tls *t, srv_ticket_contents *c) {
 // above. Returns the message length, or 0 when a builder refused.
 static size_t build_ticket_message(handshake_state *h, uint64_t auth_seconds, uint32_t lifetime,
                                    const uint8_t drawn[TICKET_DRAW_LEN], uint8_t *msg, size_t cap) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     rbuf r;
     rb_init(&r, drawn, TICKET_DRAW_LEN);
     const uint8_t *nonce = rb_bytes(&r, AEAD_NONCE);
@@ -282,7 +282,7 @@ static size_t build_ticket_message(handshake_state *h, uint64_t auth_seconds, ui
 }
 
 int srv_send_new_session_ticket(handshake_state *h) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     if (!tickets_on(t)) {
         return CH_OK;
     }

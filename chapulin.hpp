@@ -878,11 +878,12 @@ class Quic {
     // reads one pair across its Session and Quic objects: alert_sent()
     // answers what alert() answers, and alert_received() is 0, because
     // QUIC carries no alert record.
+    // ch_quic_tls takes no const: the two calls read and change nothing.
     uint8_t alert_sent() const {
-        return ch_alert_sent(&quic_.t);
+        return ch_alert_sent(ch_quic_tls(const_cast<ch_quic *>(&quic_)));
     }
     uint8_t alert_received() const {
-        return ch_alert_received(&quic_.t);
+        return ch_alert_received(ch_quic_tls(const_cast<ch_quic *>(&quic_)));
     }
 
     // The transport error code the caller puts in CONNECTION_CLOSE. Read

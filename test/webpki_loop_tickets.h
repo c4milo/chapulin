@@ -30,20 +30,21 @@ static void check_late_on_ticket(void) {
     ccfg.on_ticket = NULL;
     size_t count = kept.count;
     memset(&to_client, 0, sizeof to_client);
-    CHECK(ch_srv_tcp_init(&server, &scfg) == CH_OK);
-    CHECK(ch_tcp_init(&client, &ccfg) == CH_OK);
+    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_OK);
+    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_OK);
     client.t.cfg.on_ticket = keep_ticket;
-    for (int round = 0; round < 4 && ch_tcp_state(&client) != CH_ST_CONNECTED; round++) {
+    for (int round = 0; round < 4 && ch_tcp_state(tcp_public(&client)) != CH_ST_CONNECTED;
+         round++) {
         CHECK(client_to_server());
-        if (ch_tcp_state(&client) != CH_ST_CONNECTED) {
+        if (ch_tcp_state(tcp_public(&client)) != CH_ST_CONNECTED) {
             CHECK(server_to_client());
         }
     }
-    CHECK(ch_tcp_state(&client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(tcp_public(&client)) == CH_ST_CONNECTED);
     // The ticket record arrives after the handshake, and ch_read reads it.
     uint8_t got[16];
     CHECK(to_client.len > to_client.off);
-    CHECK(ch_read(&client.t, got, sizeof got) == CH_TCP_AGAIN);
+    CHECK(ch_read(tls_public(&client.t), got, sizeof got) == CH_TCP_AGAIN);
     CHECK(to_client.off == to_client.len);
     CHECK(client.t.takes_tickets == 0 && kept.count == count);
 }

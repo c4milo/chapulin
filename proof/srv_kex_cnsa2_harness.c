@@ -79,7 +79,7 @@ static int zero(const uint8_t *p, size_t n) {
 }
 
 int main(void) {
-    static ch_tls t;
+    static ch_tls_priv t;
     t.cfg.cpu = nondet_u32();
     handshake_state h;
     memset(&h, 0, sizeof h);

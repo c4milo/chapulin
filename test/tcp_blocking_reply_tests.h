@@ -17,6 +17,7 @@
 #define CH_TEST_TCP_BLOCKING_REPLY_TESTS_H
 
 #include "buf.h"
+#include "session_convert.h"
 #include "srv_message.h"
 #include "tcp_blocking_retry_tests.h"
 
@@ -131,8 +132,8 @@ static int serve_minimal_hello(unsigned flags) {
     server_config(&scfg, read_to_server);
     scfg.alpn_protocols = reply_alpn;
     scfg.alpn_count = 1;
-    static ch_tls server;
-    return ch_srv_accept(&server, &scfg);
+    static ch_tls_priv server;
+    return ch_srv_accept(tls_public(&server), &scfg);
 }
 
 static void test_reply_extensions(void) {

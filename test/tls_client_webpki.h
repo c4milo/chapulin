@@ -163,7 +163,7 @@ static int setup_suites(ch_cfg *cfg) {
 // The lines e2e asserts against: the certificate type the server chose,
 // and the protocol it selected, by name, or "none" when it sent no ALPN
 // extension to an offer.
-static void report_webpki(const ch_cfg *cfg, const ch_tls *tls) {
+static void report_webpki(const ch_cfg *cfg, const ch_tls_priv *tls) {
     (void)fprintf(stderr, "cert type %u\n", (unsigned)tls->server_cert_type);
     if (cfg->alpn_count == 0) {
         return;

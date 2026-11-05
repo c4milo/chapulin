@@ -41,7 +41,7 @@ static int push(handshake_state *h, const uint8_t *p, size_t n) {
 // only limit here. RFC 9001 section 4.1.3 removed record_size_limit with
 // the record layer, and a QUIC build declares no ch_tls.peer_limit for
 // this to read.
-size_t srv_out_limit(const ch_tls *t) {
+size_t srv_out_limit(const ch_tls_priv *t) {
     (void)t;
     return CH_TX_PT;
 }
@@ -62,7 +62,7 @@ int srv_out_sealed(handshake_state *h, const uint8_t *pt, size_t n) {
 
 // The largest plaintext one record carries: this build's cap, lowered to
 // the client's record_size_limit.
-size_t srv_out_limit(const ch_tls *t) {
+size_t srv_out_limit(const ch_tls_priv *t) {
     return t->peer_limit < CH_TX_PT ? t->peer_limit : CH_TX_PT;
 }
 
@@ -74,7 +74,7 @@ size_t srv_out_limit(const ch_tls *t) {
 //
 // ch_srv_tcp_init refuses a configuration whose on_record_out is
 // NULL, so this call needs no NULL test, the same way push does.
-static int emit(ch_tls *t, const uint8_t *p, size_t n) {
+static int emit(ch_tls_priv *t, const uint8_t *p, size_t n) {
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
     const ch_cfg *cfg = &t->cfg;
     return cfg->srv.on_record_out(cfg->io, p, n) == 0 ? CH_OK : CH_EIO;
@@ -98,7 +98,7 @@ int srv_out_record(handshake_state *h, const uint8_t *rec, size_t n) {
 }
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-void srv_out_alert(ch_tls *t, const uint8_t *rec, size_t n) {
+void srv_out_alert(ch_tls_priv *t, const uint8_t *rec, size_t n) {
     (void)emit(t, rec, n);
 }
 #endif
@@ -106,7 +106,7 @@ void srv_out_alert(ch_tls *t, const uint8_t *rec, size_t n) {
 // Sends the n bytes staged at t->tx + REC_HDR as one plaintext handshake
 // record. RFC 9846 §5.1 fixes legacy_record_version at 0x0303 here.
 int srv_out_plain(handshake_state *h, size_t n) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     t->tx[0] = REC_HANDSHAKE;
     t->tx[1] = 0x03;
     t->tx[2] = 0x03;
@@ -121,7 +121,7 @@ int srv_out_plain(handshake_state *h, size_t n) {
 // straight-line writer cannot do. pt lies outside t->tx, where rec_seal
 // writes.
 int srv_out_sealed(handshake_state *h, const uint8_t *pt, size_t n) {
-    ch_tls *t = h->t;
+    ch_tls_priv *t = h->t;
     size_t limit = srv_out_limit(t);
     while (n > 0) {
         size_t take = n < limit ? n : limit;

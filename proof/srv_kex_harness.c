@@ -272,7 +272,7 @@ static int prove_p256_share(handshake_state *h, const client_hello *ch, uint8_t 
 }
 
 int main(void) {
-    static ch_tls t;
+    static ch_tls_priv t;
     static handshake_state h;
     memset(&t, 0, sizeof t);
     memset(&h, 0, sizeof h);

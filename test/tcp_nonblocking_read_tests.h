@@ -39,7 +39,8 @@ static void count_ticket(void *io, const ch_ticket *ticket) {
 
 // Seals pt as one record under the server's write key and appends it to
 // what the caller holds; with cut set, only the record's first cut bytes.
-static void hold_record(ch_tcp *server, uint8_t type, const uint8_t *pt, size_t n, size_t cut) {
+static void hold_record(ch_tcp_priv *server, uint8_t type, const uint8_t *pt, size_t n,
+                        size_t cut) {
     size_t out_len = 0;
     uint8_t *out = held.bytes + held.len;
     CHECK(rec_seal(&server->t.wr, type, pt, n, out, sizeof held.bytes - held.len, &out_len) == 0);
@@ -68,7 +69,7 @@ static size_t build_ticket(uint8_t *out, size_t cap) {
     return w.len;
 }
 
-static void test_read_waits_for_records(ch_tcp *client, ch_tcp *server) {
+static void test_read_waits_for_records(ch_tcp_priv *client, ch_tcp_priv *server) {
     memset(&held, 0, sizeof held);
     tickets_seen = 0;
     client->t.cfg.recv = held_recv;
@@ -80,14 +81,14 @@ static void test_read_waits_for_records(ch_tcp *client, ch_tcp *server) {
     // A ticket-only record, then nothing: the ticket is taken and the
     // session waits, connected.
     hold_record(server, REC_HANDSHAKE, ticket_msg, ticket_len, 0);
-    CHECK(ch_read(&client->t, got, sizeof got) == CH_TCP_AGAIN);
+    CHECK(ch_read(tls_public(&client->t), got, sizeof got) == CH_TCP_AGAIN);
     CHECK(tickets_seen == 1);
-    CHECK(ch_tcp_state(client) == CH_ST_CONNECTED);
+    CHECK(ch_tcp_state(tcp_public(client)) == CH_ST_CONNECTED);
 
     // Then a data record, read by the same session.
     static const uint8_t hola[4] = {'h', 'o', 'l', 'a'};
     hold_record(server, REC_APPDATA, hola, sizeof hola, 0);
-    CHECK(ch_read(&client->t, got, sizeof got) == (int)sizeof hola);
+    CHECK(ch_read(tls_public(&client->t), got, sizeof got) == (int)sizeof hola);
     CHECK(memcmp(got, hola, sizeof hola) == 0);
 
     // A ticket split across two records, with nothing between them: the
@@ -95,20 +96,20 @@ static void test_read_waits_for_records(ch_tcp *client, ch_tcp *server) {
     // the data record after it is read.
     size_t half = ticket_len / 2;
     hold_record(server, REC_HANDSHAKE, ticket_msg, half, 0);
-    CHECK(ch_read(&client->t, got, sizeof got) == CH_TCP_AGAIN);
+    CHECK(ch_read(tls_public(&client->t), got, sizeof got) == CH_TCP_AGAIN);
     CHECK(tickets_seen == 1 && client->t.post_fill == half);
     static const uint8_t chau[4] = {'c', 'h', 'a', 'u'};
     hold_record(server, REC_HANDSHAKE, ticket_msg + half, ticket_len - half, 0);
     hold_record(server, REC_APPDATA, chau, sizeof chau, 0);
-    CHECK(ch_read(&client->t, got, sizeof got) == (int)sizeof chau);
+    CHECK(ch_read(tls_public(&client->t), got, sizeof got) == (int)sizeof chau);
     CHECK(memcmp(got, chau, sizeof chau) == 0);
     CHECK(tickets_seen == 2 && client->t.post_fill == 0);
 
     // A record that stops after its third byte breaks the whole-record
     // promise: that is a dead session, not a wait.
     hold_record(server, REC_APPDATA, hola, sizeof hola, 3);
-    CHECK(ch_read(&client->t, got, sizeof got) == CH_EIO);
-    CHECK(ch_tcp_state(client) == CH_ST_FAILED);
+    CHECK(ch_read(tls_public(&client->t), got, sizeof got) == CH_EIO);
+    CHECK(ch_tcp_state(tcp_public(client)) == CH_ST_FAILED);
 }
 
 #endif

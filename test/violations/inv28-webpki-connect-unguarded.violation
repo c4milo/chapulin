@@ -15,7 +15,7 @@ reason: the webpki ch_connect loses the #ifndef CH_TRANSPORT_TCP_NONBLOCKING gua
 // handshake.c out, so a compiled ch_connect leaves ch_handshake
 // undefined.
 #ifndef CH_TRANSPORT_TCP_NONBLOCKING
-int ch_connect(ch_tls *t, const ch_cfg *cfg) {
+int tls_connect(ch_tls_priv *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
     // A presented ticket becomes the session copy's PSK, which every rule
@@ -51,7 +51,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 }
 #endif // CH_TRANSPORT_TCP_NONBLOCKING
 --- new
-int ch_connect(ch_tls *t, const ch_cfg *cfg) {
+int tls_connect(ch_tls_priv *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
     // A presented ticket becomes the session copy's PSK, which every rule

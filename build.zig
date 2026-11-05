@@ -83,8 +83,8 @@ const srcs = [_][]const u8{
     "buf.c",               "record.c",           "keysched.c",            "io.c",
     "handshake_message.c", "handshake_parser.c", "handshake_parser_ee.c", "handshake_record.c",
     "session.c",           "handshake_auth.c",   "handshake_flight.c",    "handshake.c",
-    "handshake_post.c",    "tls.c",              "tls_write.c",           "softmul.c",
-    "build.c",
+    "handshake_post.c",    "tls.c",              "tls_entry.c",           "session_report.c",
+    "tls_write.c",         "softmul.c",          "build.c",
 };
 
 // The Makefile's named lists, each under its Makefile name.
@@ -93,7 +93,7 @@ const aes_hw_srcs = [_][]const u8{
 };
 const quic_srcs_after_aes = [_][]const u8{
     "gcm.c",         "quic_keys.c", "quic_packet.c", "quic_initial.c", "quic_retry.c",
-    "quic_config.c", "quic_fail.c", "quic_step.c",   "quic.c",
+    "quic_config.c", "quic_fail.c", "quic_step.c",   "quic.c",         "quic_entry.c",
 };
 const srv_srcs = [_][]const u8{
     "srv_ticket.c", "srv_parser.c", "srv_parser_ext.c", "srv_message.c",
@@ -112,7 +112,7 @@ const webpki_srcs = [_][]const u8{
 const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c", "dnssec.c", "sha1.c" };
 const p256_ecdh_srcs = [_][]const u8{ "p256_ecdh.c", "p256_point.c", "p256_scalar.c", "p256_field.c" };
 const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
-const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_write.c" };
+const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_entry.c", "tls_write.c" };
 const kex_hybrid_srcs = [_][]const u8{ "sha3.c", "mlkem.c", "mlkem_poly.c" };
 /// MLDSA_SRCS: ML-DSA-87's verifier, which TRUST=raw-mldsa and
 /// TRUST=ca-mldsa add (docs/decisions.md 157).
@@ -167,6 +167,13 @@ const public_quic = [_][]const u8{
 /// The client's ticket age call, which every client object exports over
 /// every transport.
 const public_ticket = [_][]const u8{"ch_ticket_obfuscated_age"};
+/// The read calls session_report.h declares in every object, and every one it can declare
+/// (docs/decisions.md 185).
+const public_report_always = [_][]const u8{
+    "ch_state", "ch_group",      "ch_suite",        "ch_psk_selected",       "ch_pin_slot",
+    "ch_epoch", "ch_epoch_seen", "ch_epoch_status", "ch_epoch_store_failed",
+};
+const public_report = public_report_always ++ [_][]const u8{ "ch_alpn_selected", "ch_server_cert_type", "ch_sni_len", "ch_read_closed", "ch_peer_limit" };
 /// The two calls alert.h declares, which every object exports, whatever
 /// its transport and role.
 const public_alert = [_][]const u8{ "ch_alert_sent", "ch_alert_received" };
@@ -232,6 +239,7 @@ const declarations = [_]Declaration{
     .{ .header = "pem_files.h", .names = &(public_pem_server ++ [_][]const u8{"ch_mldsa_key_from_pem"} ++ public_pem_webpki) },
     .{ .header = "ticket.h", .names = &public_ticket },
     .{ .header = "alert.h", .names = &public_alert },
+    .{ .header = "session_report.h", .names = &public_report },
     .{ .header = "dnssec.h", .names = &public_dnssec },
     .{ .header = "drbg.h", .names = &.{"ch_drbg_seed"} },
     .{ .header = "rand.h", .names = &.{"ch_rand_bytes"} },
@@ -265,7 +273,7 @@ const declarations = [_]Declaration{
 ///   with evex512 added for an x86-64 host object (withEvex512), and make
 ///   compiles for its cc's default CPU.
 const cflags = [_][]const u8{
-    "-std=c11", "-D_DEFAULT_SOURCE", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-Wvla",
+    "-std=c11", "-D_DEFAULT_SOURCE", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-Wvla", "-fno-strict-aliasing",
 };
 
 pub fn build(b: *std.Build) void {
@@ -736,7 +744,16 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
         if (config.trust == .webpki) &public_pem_webpki else &.{},
     });
     const public_dnssec_names: Names = if (config.dnssec == .on) &public_dnssec else &.{};
-    const names = concat(b, &.{ role.public, public_rand, public_ca, public_pem, public_export, &.{"ch_build"}, public_dnssec_names });
+    // PUBLIC_REPORT: session_report.h's read calls, each under the defines of the field it reads.
+    const quic = config.transport == .@"quic-nonblocking";
+    const public_report_names = concat(b, &.{
+        &public_report_always,
+        if (config.trust == .webpki or quic or config.role != .client) &.{"ch_alpn_selected"} else &.{},
+        if (config.trust == .webpki) &.{"ch_server_cert_type"} else &.{},
+        if (config.role != .client) &.{"ch_sni_len"} else &.{},
+        if (quic) &.{} else &.{ "ch_read_closed", "ch_peer_limit" },
+    });
+    const names = concat(b, &.{ role.public, public_rand, public_ca, public_pem, public_export, &.{"ch_build"}, public_dnssec_names, public_report_names });
 
     // The hooks the object imports, which the image defines
     // (docs/porting.md) and lib-check admits as undefined. An AES=extern
@@ -835,7 +852,7 @@ fn transportAxis(b: *std.Build, transport: Transport, aes_impl: Names) Axis {
         .@"tcp-nonblocking" => .{
             .defs = &.{"-DCH_TRANSPORT_TCP_NONBLOCKING"},
             .filter = &.{"handshake.c"},
-            .add = &.{ "tcp_nonblocking.c", "tcp_nonblocking_frame.c", "tcp_nonblocking_step.c" },
+            .add = &.{ "tcp_nonblocking.c", "tcp_entry.c", "tcp_nonblocking_frame.c", "tcp_nonblocking_step.c" },
             .public = &public_tcp_nonblocking,
         },
         .@"tcp-blocking" => .{ .public = &public_tcp_blocking },
@@ -892,7 +909,7 @@ fn roleAxis(b: *std.Build, config: Config, transport: *Axis) Axis {
 }
 
 /// PUBLIC in the Makefile: each of the nine exports that objects of more
-/// than one transport carry takes the transport into its symbol name, and
+/// than one transport carry, and each report call, takes the transport into its symbol name, and
 /// the build record's symbol is named for its type (docs/decisions.md 61,
 /// 72, 75 and 131).
 fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
@@ -905,7 +922,7 @@ fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
         } else if (std.mem.eql(u8, name, "ch_srv_check") or std.mem.eql(u8, name, "ch_pubkey_from_pem") or
             std.mem.eql(u8, name, "ch_ticket_obfuscated_age") or contains(&public_alert, name) or
             contains(&public_pem_server, name) or contains(&public_pem_server_cnsa2, name) or contains(&public_pem_webpki, name) or
-            contains(&public_dnssec, name))
+            contains(&public_dnssec, name) or contains(&public_report, name))
         {
             symbol.* = b.fmt("{s}_{s}", .{ name, suffix });
         } else {

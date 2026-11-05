@@ -15953,6 +15953,29 @@ does nothing more.
       because they are the TLS record layer. The prose term "record mode"
       becomes "tcp-nonblocking". Entries above this one keep the names of
       their time.
+    - **The calls for the Zig API.** `ch_tcp_tls` and `ch_quic_tls`
+      return the `ch_tls` inside a session, and `ch_quic_levels_ready`
+      reports `levels_ready`. A refused Zig init calls the C init on a
+      zero `ch_cfg`, which leaves the session failed.
+    - **The storage.** `session_storage.h` declares `ch_tls`, `ch_tcp`
+      and `ch_quic` as byte arrays of the size and alignment of
+      `ch_tls_priv`, `ch_tcp_priv` and `ch_quic_priv`. `dnssec.h` does
+      the same for `ch_dnssec_hash`. Until step 4, those numbers come from
+      the internal headers through `-Isrc`.
+    - **The conversion.** A caller declares `ch_tls` and the library reads
+      `ch_tls_priv` in its bytes. C11 6.5p7 lets an optimizer assume two
+      such types never alias, so every compile adds
+      `-fno-strict-aliasing`, and `lib-check` refuses an object without
+      it. Each public call is a one-line wrapper in an entry file:
+      `tls_entry.c`, `tcp_entry.c` and `quic_entry.c`, and `srv.c` and
+      `dnssec.c` for their own calls. The wrapper converts the pointer
+      once and calls the body, which keeps its code, drops `ch_` and
+      takes the `_priv` type. A wrapper keeps the header's parameter
+      names, as clang-tidy requires, so no header prose changes. A call
+      that reads one field reads it in the entry file.
+    - **The read calls.** `session_report.h`'s calls move out of line into
+      `session_report.c`. Every object exports them, so each symbol name
+      carries the transport, as `alert.h`'s do (decision 61).
     - **Rejected:** **one maximum size for every build**, which would give
       a device a host build's SRAM. **Two shapes of each public header**,
       opaque or not, which doubles what an auditor reads. **Fields marked

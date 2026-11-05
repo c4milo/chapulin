@@ -92,7 +92,7 @@ int nondet_int(void);
 // not the four quic_step.h lists: the driver runs a step only after
 // hsr_peek_message answered CH_OK, and the CH_EINVAL a step can return
 // is hsr_next_msg's answer to no whole message.
-int hsq_advance(ch_quic *q) {
+int hsq_advance(ch_quic_priv *q) {
     __CPROVER_assert(q != NULL, "advance: session valid");
     __CPROVER_assert(q->hs.t == &q->t, "advance: back pointer written");
     __CPROVER_assert(q->t.state == CH_ST_START || q->t.state == CH_ST_CONNECTED,
@@ -123,11 +123,12 @@ int hsq_advance(ch_quic *q) {
 // in quic.c. They are the same code in the same formula, so this harness
 // still proves what it did: one translation unit, both files.
 #include "quic.c"
+#include "quic_entry.c"
 #include "quic_fail.c"
 
 static uint8_t buf[CH_PROOF_RXBUF];
 static uint8_t init_buf[CH_MIN_RXBUF];
-static ch_quic q;
+static ch_quic_priv q;
 static ch_cfg cfg;
 static ch_alpn_protocol alpn;
 static uint8_t alpn_name[2];
@@ -282,7 +283,7 @@ static void drive_crypto_in(void) {
     size_t was_off = q.t.pt_off;
     size_t was_len = q.t.pt_len;
     int live = was_state != CH_ST_CLOSED && was_state != CH_ST_FAILED;
-    int rc = ch_quic_crypto_in(&q, level, in, n);
+    int rc = ch_quic_crypto_in(quic_public(&q), level, in, n);
     assert_window();
     if (rc == CH_EINVAL) {
         __CPROVER_assert(live, "CH_EINVAL means the session was live");
@@ -295,12 +296,13 @@ static void drive_crypto_in(void) {
     }
     if (rc != CH_OK && rc != CH_EINVAL && live) {
         assert_dead();
-        __CPROVER_assert(ch_quic_error_code(&q) != 0, "a failed session reports a code");
+        __CPROVER_assert(ch_quic_error_code(quic_public(&q)) != 0,
+                         "a failed session reports a code");
     }
     if (live && was_tx == 0 && level <= CH_LEVEL_APPLICATION &&
         (level < was_level || (level > was_level && was_off != was_len))) {
         __CPROVER_assert(rc == CH_EPROTO, "a level out of order is a protocol error");
-        __CPROVER_assert(ch_quic_error_code(&q) == QUIC_PROTOCOL_VIOLATION,
+        __CPROVER_assert(ch_quic_error_code(quic_public(&q)) == QUIC_PROTOCOL_VIOLATION,
                          "RFC 9001 4.1.3: that error is PROTOCOL_VIOLATION");
     }
 }
@@ -313,7 +315,7 @@ static void drive_crypto_out(void) {
     __CPROVER_assume(cap <= sizeof out);
     size_t was_tx = q.tx_len;
     uint8_t was_state = q.t.state;
-    int rc = ch_quic_crypto_out(&q, level, out, cap, &out_len);
+    int rc = ch_quic_crypto_out(quic_public(&q), level, out, cap, &out_len);
     if (rc == CH_ECAP) {
         __CPROVER_assert(q.tx_len == was_tx && q.t.state == was_state,
                          "a short buffer consumes nothing");
@@ -339,7 +341,7 @@ static void drive_switch(void) {
     uint8_t was_step = q.step;
     uint8_t was_ready = q.levels_ready;
     size_t was_len = q.t.pt_len;
-    int rc = ch_quic_switch_version(&q, version);
+    int rc = ch_quic_switch_version(quic_public(&q), version);
     __CPROVER_assert(q.t.state == was_state && q.step == was_step && q.levels_ready == was_ready &&
                          q.t.pt_len == was_len,
                      "a switch changes no field but the negotiated version");
@@ -355,7 +357,7 @@ static void drive_switch(void) {
                          quic_version_derived(version),
                      "once, to a different version this build derives");
     __CPROVER_assert(q.t.quic_negotiated_version == version, "the switch writes the version");
-    __CPROVER_assert(ch_quic_switch_version(&q, nondet_u32()) == CH_EINVAL,
+    __CPROVER_assert(ch_quic_switch_version(quic_public(&q), nondet_u32()) == CH_EINVAL,
                      "a second switch is refused");
 }
 
@@ -397,7 +399,7 @@ int main(void) {
     havoc_ticket();
     cfg.ticket = (nondet_u8() & 1) ? &saved : NULL;
     cfg.ticket_age_ms = nondet_u64();
-    int rc = ch_quic_init(&q, &cfg);
+    int rc = ch_quic_init(quic_public(&q), &cfg);
     if (rc != CH_OK) {
         __CPROVER_assert(rc == CH_EINVAL, "ch_quic_init has one refusal code");
         __CPROVER_assert(q.t.state == CH_ST_FAILED, "a refused config leaves a dead session");
@@ -428,7 +430,7 @@ int main(void) {
     uint8_t was_ready = q.levels_ready;
     uint8_t was_dcid_len = q.initial_dcid_len;
     int live = q.t.state != CH_ST_CLOSED && q.t.state != CH_ST_FAILED;
-    rc = ch_quic_initial_keys(&q, dcid, dcid_len);
+    rc = ch_quic_initial_keys(quic_public(&q), dcid, dcid_len);
     if (rc == CH_OK) {
         __CPROVER_assert(live && dcid_len <= CH_QUIC_DCID_MAX,
                          "the connection ID fits and the session was live");
@@ -463,9 +465,9 @@ int main(void) {
     havoc_session();
     drive_switch();
 
-    ch_quic_close(&q);
+    ch_quic_close(quic_public(&q));
     __CPROVER_assert(q.t.state == CH_ST_CLOSED, "close ends the session");
     __CPROVER_assert(q.levels_ready == 0, "close protects no packet");
-    __CPROVER_assert(ch_quic_error_code(&q) == 0, "a closed session reports NO_ERROR");
+    __CPROVER_assert(ch_quic_error_code(quic_public(&q)) == 0, "a closed session reports NO_ERROR");
     return 0;
 }

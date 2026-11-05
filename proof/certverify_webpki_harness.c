@@ -136,7 +136,7 @@ int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
 }
 
 int main(void) {
-    ch_tls t;
+    ch_tls_priv t;
     handshake_state h;
     memset(&t, 0, sizeof t);
     memset(&h, 0, sizeof h);

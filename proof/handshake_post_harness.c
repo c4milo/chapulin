@@ -55,8 +55,8 @@ int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     return CH_EIO;
 }
 
-int io_read_record(const ch_tls *t, uint8_t *buf, size_t cap, uint8_t *outer, size_t *record_len,
-                   uint8_t *alert) {
+int io_read_record(const ch_tls_priv *t, uint8_t *buf, size_t cap, uint8_t *outer,
+                   size_t *record_len, uint8_t *alert) {
     (void)alert;
     (void)t;
     (void)buf;
@@ -81,7 +81,7 @@ static void fill_rec_dir_nondet(rec_dir *d) {
 }
 
 // The session under proof, which the rekey stub compares a direction with.
-static ch_tls session;
+static ch_tls_priv session;
 
 // How many directions a KeyUpdate rekeyed, so main can tell whether one
 // ran. The harness's own counter; it models nothing in the code.
@@ -155,7 +155,7 @@ int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, 
     __CPROVER_assert(0, "rec_open unreachable");
     return -1;
 }
-int ch_handshake(ch_tls *t) {
+int ch_handshake(ch_tls_priv *t) {
     (void)t;
     __CPROVER_assert(0, "ch_handshake unreachable");
     return CH_EPROTO;

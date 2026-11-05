@@ -84,8 +84,8 @@ fn crossCeiling(writer: anytype, reader: anytype, wire: *loop.Pipe) !void {
     // test writes the two fields, as test/key_limit_cases.h does in C, with
     // the values those records would leave. The API promises nothing about
     // a session's fields (docs/zig.md, "What stays out").
-    writer.tcp.t.wr.seq = ceiling - 2;
-    reader.tcp.t.rd.seq = ceiling - 2;
+    fixture.tcpPriv(&writer.tcp).t.wr.seq = ceiling - 2;
+    fixture.tcpPriv(&reader.tcp).t.rd.seq = ceiling - 2;
 
     // The key has one data record left, so a write of one record sends no
     // KeyUpdate. A second record goes out after the KeyUpdate record: it

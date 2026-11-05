@@ -47,17 +47,18 @@ static void test_init_versions(void) {
     for (size_t i = 0; i < UNDERIVED_COUNT; i++) {
         configure(&cfg);
         cfg.quic_original_version = underived[i];
-        CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && ch_quic_state(&q) == CH_ST_FAILED);
-        CHECK(ch_quic_negotiated_version(&q) == 0);
+        CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_EINVAL &&
+              ch_quic_state(quic_public(&q)) == CH_ST_FAILED);
+        CHECK(ch_quic_negotiated_version(quic_public(&q)) == 0);
     }
     configure(&cfg);
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK);
-    CHECK(ch_quic_negotiated_version(&q) == CH_QUIC_VERSION_1);
-    ch_quic_close(&q);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK);
+    CHECK(ch_quic_negotiated_version(quic_public(&q)) == CH_QUIC_VERSION_1);
+    ch_quic_close(quic_public(&q));
     cfg.quic_original_version = CH_QUIC_VERSION_2;
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK);
-    CHECK(ch_quic_negotiated_version(&q) == CH_QUIC_VERSION_2);
-    ch_quic_close(&q);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK);
+    CHECK(ch_quic_negotiated_version(quic_public(&q)) == CH_QUIC_VERSION_2);
+    ch_quic_close(quic_public(&q));
 }
 
 // ch_quic_switch_version refuses a switch to the negotiated version and
@@ -71,23 +72,24 @@ static void test_switch_versions(void) {
     uint8_t sh[128];
     size_t n = 0;
     configure(&cfg);
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK);
-    CHECK(ch_quic_switch_version(&q, CH_QUIC_VERSION_1) == CH_EINVAL);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK);
+    CHECK(ch_quic_switch_version(quic_public(&q), CH_QUIC_VERSION_1) == CH_EINVAL);
     for (size_t i = 0; i < UNDERIVED_COUNT; i++) {
-        CHECK(ch_quic_switch_version(&q, underived[i]) == CH_EINVAL);
+        CHECK(ch_quic_switch_version(quic_public(&q), underived[i]) == CH_EINVAL);
     }
-    CHECK(ch_quic_negotiated_version(&q) == CH_QUIC_VERSION_1 && ch_quic_state(&q) == CH_ST_START);
+    CHECK(ch_quic_negotiated_version(quic_public(&q)) == CH_QUIC_VERSION_1 &&
+          ch_quic_state(quic_public(&q)) == CH_ST_START);
 
     // A ServerHello naming a suite this client never offered fails the
     // session, which keeps its version and switches no more.
-    CHECK(ch_quic_crypto_out(&q, CH_LEVEL_INITIAL, out, sizeof out, &n) == CH_OK);
+    CHECK(ch_quic_crypto_out(quic_public(&q), CH_LEVEL_INITIAL, out, sizeof out, &n) == CH_OK);
     size_t sh_len = build_server_hello(sh, sizeof sh, 0x1301);
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len) == CH_EPROTO);
-    CHECK(ch_quic_state(&q) == CH_ST_FAILED);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, sh, sh_len) == CH_EPROTO);
+    CHECK(ch_quic_state(quic_public(&q)) == CH_ST_FAILED);
     CHECK(q.step == HSQ_STEP_AWAIT_SERVER_HELLO && q.t.pt_len == 0);
-    CHECK(ch_quic_switch_version(&q, CH_QUIC_VERSION_2) == CH_EINVAL);
-    CHECK(ch_quic_negotiated_version(&q) == CH_QUIC_VERSION_1);
-    ch_quic_close(&q);
+    CHECK(ch_quic_switch_version(quic_public(&q), CH_QUIC_VERSION_2) == CH_EINVAL);
+    CHECK(ch_quic_negotiated_version(quic_public(&q)) == CH_QUIC_VERSION_1);
+    ch_quic_close(quic_public(&q));
 }
 
 // A version 1 session with its hello taken and its Initial keys
@@ -97,9 +99,10 @@ static void start_version_1(void) {
     uint8_t out[CH_TX_STAGE];
     size_t n = 0;
     configure(&cfg);
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK);
-    CHECK(ch_quic_crypto_out(&q, CH_LEVEL_INITIAL, out, sizeof out, &n) == CH_OK && n > 0);
-    CHECK(ch_quic_initial_keys(&q, v2_dcid, sizeof v2_dcid) == CH_OK);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK);
+    CHECK(ch_quic_crypto_out(quic_public(&q), CH_LEVEL_INITIAL, out, sizeof out, &n) == CH_OK &&
+          n > 0);
+    CHECK(ch_quic_initial_keys(quic_public(&q), v2_dcid, sizeof v2_dcid) == CH_OK);
 }
 
 // The one switch: a version 1 client switches to version 2 before any
@@ -114,19 +117,20 @@ static void test_switch_to_version_2(void) {
     uint64_t pn = 0;
     size_t pt_len = 0;
     start_version_1();
-    CHECK(ch_quic_switch_version(&q, CH_QUIC_VERSION_2) == CH_OK);
-    CHECK(ch_quic_negotiated_version(&q) == CH_QUIC_VERSION_2);
-    CHECK(q.t.cfg.quic_original_version == CH_QUIC_VERSION_1 && ch_quic_state(&q) == CH_ST_START);
-    CHECK(ch_quic_switch_version(&q, CH_QUIC_VERSION_1) == CH_EINVAL);
-    CHECK(ch_quic_switch_version(&q, CH_QUIC_VERSION_2) == CH_EINVAL);
-    CHECK(ch_quic_negotiated_version(&q) == CH_QUIC_VERSION_2);
+    CHECK(ch_quic_switch_version(quic_public(&q), CH_QUIC_VERSION_2) == CH_OK);
+    CHECK(ch_quic_negotiated_version(quic_public(&q)) == CH_QUIC_VERSION_2);
+    CHECK(q.t.cfg.quic_original_version == CH_QUIC_VERSION_1 &&
+          ch_quic_state(quic_public(&q)) == CH_ST_START);
+    CHECK(ch_quic_switch_version(quic_public(&q), CH_QUIC_VERSION_1) == CH_EINVAL);
+    CHECK(ch_quic_switch_version(quic_public(&q), CH_QUIC_VERSION_2) == CH_EINVAL);
+    CHECK(ch_quic_negotiated_version(quic_public(&q)) == CH_QUIC_VERSION_2);
 
     size_t pkt_len = version_unhex(V2_A3_PACKET, pkt);
     size_t payload_len = version_unhex(V2_A3_PAYLOAD, payload);
-    CHECK(ch_quic_open(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_2, pkt, pkt_len, 18, 0, 0, &key_set,
-                       &pn, &pt_len) == CH_OK);
+    CHECK(ch_quic_open(quic_public(&q), CH_LEVEL_INITIAL, CH_QUIC_VERSION_2, pkt, pkt_len, 18, 0, 0,
+                       &key_set, &pn, &pt_len) == CH_OK);
     CHECK(pn == 1 && pt_len == payload_len && memcmp(pkt + 20, payload, payload_len) == 0);
-    ch_quic_close(&q);
+    ch_quic_close(quic_public(&q));
 }
 
 // After a switch the Initial level admits the original version beside the
@@ -143,30 +147,30 @@ static void test_initial_level_after_switch(void) {
     uint64_t pn = 0;
     size_t pt_len = 0;
     start_version_1();
-    CHECK(ch_quic_switch_version(&q, CH_QUIC_VERSION_2) == CH_OK);
+    CHECK(ch_quic_switch_version(quic_public(&q), CH_QUIC_VERSION_2) == CH_OK);
     const uint32_t both[2] = {CH_QUIC_VERSION_1, CH_QUIC_VERSION_2};
     for (size_t i = 0; i < 2; i++) {
         CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_SERVER, both[i], v2_dcid, sizeof v2_dcid, 1, 1,
                                 hdr, sizeof hdr, pt, sizeof pt, pkt, sizeof pkt,
                                 &pkt_len) == CH_OK);
-        CHECK(ch_quic_open(&q, CH_LEVEL_INITIAL, both[i], pkt, pkt_len, sizeof hdr - 1, 0, 0,
-                           &key_set, &pn, &pt_len) == CH_OK);
+        CHECK(ch_quic_open(quic_public(&q), CH_LEVEL_INITIAL, both[i], pkt, pkt_len, sizeof hdr - 1,
+                           0, 0, &key_set, &pn, &pt_len) == CH_OK);
         CHECK(pn == 1 && pt_len == sizeof pt && pkt[sizeof hdr] == 0x01);
         // The client's own Initial packet in the same version, which the
         // server's entry opens. The header carries packet number 1 in its
         // last byte, and each direction has its own key.
-        CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, both[i], 1, 1, hdr, sizeof hdr, pt, sizeof pt, pkt,
-                           sizeof pkt, &pkt_len) == CH_OK);
+        CHECK(ch_quic_seal(quic_public(&q), CH_LEVEL_INITIAL, both[i], 1, 1, hdr, sizeof hdr, pt,
+                           sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
         CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER, both[i], v2_dcid, sizeof v2_dcid, pkt,
                                 pkt_len, sizeof hdr - 1, 0, &pn, &pt_len) == CH_OK);
         CHECK(pn == 1 && pt_len == sizeof pt && pkt[sizeof hdr] == 0x01);
     }
     for (size_t i = 0; i < UNDERIVED_COUNT; i++) {
-        CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, underived[i], 3, 1, hdr, sizeof hdr, pt, sizeof pt,
-                           pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
+        CHECK(ch_quic_seal(quic_public(&q), CH_LEVEL_INITIAL, underived[i], 3, 1, hdr, sizeof hdr,
+                           pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
     }
     CHECK(q.initial_sealed == 2 && q.open_failures == 0);
-    ch_quic_close(&q);
+    ch_quic_close(quic_public(&q));
 }
 
 // After a switch the ServerHello installs the Handshake keys under
@@ -186,9 +190,9 @@ static void test_handshake_level_after_switch(void) {
     uint64_t pn = 0;
     size_t pt_len = 0;
     start_version_1();
-    CHECK(ch_quic_switch_version(&q, CH_QUIC_VERSION_2) == CH_OK);
+    CHECK(ch_quic_switch_version(quic_public(&q), CH_QUIC_VERSION_2) == CH_OK);
     size_t sh_len = build_server_hello(sh, sizeof sh, SUITE_CHACHA20_POLY1305_SHA256);
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len) == CH_OK);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, sh, sh_len) == CH_OK);
 
     quic_keys v2_rx;
     quic_keys v1_rx;
@@ -208,26 +212,26 @@ static void test_handshake_level_after_switch(void) {
 
     memset(pkt, 0xa5, sizeof pkt);
     pkt_len = 7;
-    CHECK(ch_quic_seal(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 1, 1, hdr, sizeof hdr, pt,
-                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal(quic_public(&q), CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 1, 1, hdr,
+                       sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
     CHECK(pkt_len == 7 && pkt[0] == 0xa5);
-    CHECK(ch_quic_seal(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_2, 1, 1, hdr, sizeof hdr, pt,
-                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_seal(quic_public(&q), CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_2, 1, 1, hdr,
+                       sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
 
     // The server's Handshake packet, sealed under this client's receive
     // keys, which are the server's send keys.
     CHECK(quic_packet_seal(TEST_SESSION_CPU, &v2_rx, &v2_hp_rx, CH_LEVEL_HANDSHAKE, 0, 1, 1, hdr,
                            sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     memcpy(copy, pkt, pkt_len);
-    CHECK(ch_quic_open(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, pkt, pkt_len, sizeof hdr - 1, 0,
-                       0, &key_set, &pn, &pt_len) == CH_EINVAL);
+    CHECK(ch_quic_open(quic_public(&q), CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, pkt, pkt_len,
+                       sizeof hdr - 1, 0, 0, &key_set, &pn, &pt_len) == CH_EINVAL);
     CHECK(memcmp(pkt, copy, pkt_len) == 0 && q.open_failures == 0 && pn == 0);
-    CHECK(ch_quic_open(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_2, pkt, pkt_len, sizeof hdr - 1, 0,
-                       0, &key_set, &pn, &pt_len) == CH_OK);
+    CHECK(ch_quic_open(quic_public(&q), CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_2, pkt, pkt_len,
+                       sizeof hdr - 1, 0, 0, &key_set, &pn, &pt_len) == CH_OK);
     CHECK(pn == 1 && pt_len == sizeof pt && pkt[sizeof hdr] == 0x02);
     // The switch was the one switch, and the ServerHello ended its window.
-    CHECK(ch_quic_switch_version(&q, CH_QUIC_VERSION_1) == CH_EINVAL);
-    ch_quic_close(&q);
+    CHECK(ch_quic_switch_version(quic_public(&q), CH_QUIC_VERSION_1) == CH_EINVAL);
+    ch_quic_close(quic_public(&q));
 }
 
 // The switch's two server-byte conditions, each on its own. One byte of
@@ -241,23 +245,24 @@ static void test_switch_after_server_bytes(void) {
     uint8_t sh[128];
     size_t sh_len = build_server_hello(sh, sizeof sh, SUITE_CHACHA20_POLY1305_SHA256);
     start_version_1();
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, 1) == CH_OK);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, sh, 1) == CH_OK);
     CHECK(q.t.pt_len == 1 && q.step == HSQ_STEP_AWAIT_SERVER_HELLO);
-    CHECK(ch_quic_switch_version(&q, CH_QUIC_VERSION_2) == CH_EINVAL);
-    CHECK(ch_quic_negotiated_version(&q) == CH_QUIC_VERSION_1);
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh + 1, sh_len - 1) == CH_OK);
+    CHECK(ch_quic_switch_version(quic_public(&q), CH_QUIC_VERSION_2) == CH_EINVAL);
+    CHECK(ch_quic_negotiated_version(quic_public(&q)) == CH_QUIC_VERSION_1);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, sh + 1, sh_len - 1) == CH_OK);
     quic_keys v1_rx;
     quic_keys_init(TEST_SESSION_CPU, &v1_rx, CH_QUIC_VERSION_1, q.hs.s_hs);
     CHECK(memcmp(&q.handshake_rx, &v1_rx, sizeof v1_rx) == 0);
-    ch_quic_close(&q);
+    ch_quic_close(quic_public(&q));
 
     start_version_1();
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len) == CH_OK);
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_HANDSHAKE, sh, 0) == CH_OK);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, sh, sh_len) == CH_OK);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_HANDSHAKE, sh, 0) == CH_OK);
     CHECK(q.t.pt_len == 0 && q.step == HSQ_STEP_AWAIT_ENCRYPTED_EXTENSIONS);
-    CHECK(ch_quic_switch_version(&q, CH_QUIC_VERSION_2) == CH_EINVAL);
-    CHECK(ch_quic_negotiated_version(&q) == CH_QUIC_VERSION_1 && ch_quic_state(&q) == CH_ST_START);
-    ch_quic_close(&q);
+    CHECK(ch_quic_switch_version(quic_public(&q), CH_QUIC_VERSION_2) == CH_EINVAL);
+    CHECK(ch_quic_negotiated_version(quic_public(&q)) == CH_QUIC_VERSION_1 &&
+          ch_quic_state(quic_public(&q)) == CH_ST_START);
+    ch_quic_close(quic_public(&q));
 }
 
 // ch_quic_seal and ch_quic_open refuse a packet in a version its level
@@ -280,9 +285,9 @@ static void test_packet_versions(void) {
     size_t pt_len = 0;
     uint8_t key_set = 0;
     configure(&cfg);
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK);
-    CHECK(ch_quic_crypto_out(&q, CH_LEVEL_INITIAL, out, sizeof out, &n) == CH_OK);
-    CHECK(ch_quic_initial_keys(&q, dcid, sizeof dcid) == CH_OK);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK);
+    CHECK(ch_quic_crypto_out(quic_public(&q), CH_LEVEL_INITIAL, out, sizeof out, &n) == CH_OK);
+    CHECK(ch_quic_initial_keys(quic_public(&q), dcid, sizeof dcid) == CH_OK);
 
     // underived's versions and version 2, which this build derives and
     // this session never switched to, so neither level admits it.
@@ -293,8 +298,8 @@ static void test_packet_versions(void) {
     for (size_t i = 0; i < refused_count; i++) {
         memset(pkt, 0xa5, sizeof pkt);
         pkt_len = 7;
-        CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, refused[i], 1, 1, hdr, sizeof hdr, pt, sizeof pt,
-                           pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
+        CHECK(ch_quic_seal(quic_public(&q), CH_LEVEL_INITIAL, refused[i], 1, 1, hdr, sizeof hdr, pt,
+                           sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
         CHECK(pkt_len == 7 && pkt[0] == 0xa5 && q.initial_sealed == 0);
     }
 
@@ -303,44 +308,44 @@ static void test_packet_versions(void) {
                             hdr, sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     memcpy(copy, pkt, pkt_len);
     for (size_t i = 0; i < refused_count; i++) {
-        CHECK(ch_quic_open(&q, CH_LEVEL_INITIAL, refused[i], pkt, pkt_len, sizeof hdr - 1, 0, 0,
-                           &key_set, &pn, &pt_len) == CH_EINVAL);
+        CHECK(ch_quic_open(quic_public(&q), CH_LEVEL_INITIAL, refused[i], pkt, pkt_len,
+                           sizeof hdr - 1, 0, 0, &key_set, &pn, &pt_len) == CH_EINVAL);
         CHECK(memcmp(pkt, copy, pkt_len) == 0 && q.open_failures == 0 && pn == 0);
     }
-    CHECK(ch_quic_open(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len, sizeof hdr - 1, 0, 0,
-                       &key_set, &pn, &pt_len) == CH_OK);
+    CHECK(ch_quic_open(quic_public(&q), CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len,
+                       sizeof hdr - 1, 0, 0, &key_set, &pn, &pt_len) == CH_OK);
     CHECK(pn == 1 && pt_len == sizeof pt);
 
     // The ServerHello installs the Handshake keys. The server's send keys
     // are this client's receive keys, so a copy of them seals the
     // server's Handshake packet.
     size_t sh_len = build_server_hello(sh, sizeof sh, SUITE_CHACHA20_POLY1305_SHA256);
-    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len) == CH_OK);
+    CHECK(ch_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, sh, sh_len) == CH_OK);
     quic_keys server_tx = q.handshake_rx;
     quic_hp_key server_hp = q.handshake_hp_rx;
     for (size_t i = 0; i < refused_count; i++) {
         memset(pkt, 0xa5, sizeof pkt);
         pkt_len = 7;
-        CHECK(ch_quic_seal(&q, CH_LEVEL_HANDSHAKE, refused[i], 1, 1, hdr, sizeof hdr, pt, sizeof pt,
-                           pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
+        CHECK(ch_quic_seal(quic_public(&q), CH_LEVEL_HANDSHAKE, refused[i], 1, 1, hdr, sizeof hdr,
+                           pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
         CHECK(pkt_len == 7 && pkt[0] == 0xa5);
     }
-    CHECK(ch_quic_seal(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 1, 1, hdr, sizeof hdr, pt,
-                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_seal(quic_public(&q), CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 1, 1, hdr,
+                       sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
 
     CHECK(quic_packet_seal(TEST_SESSION_CPU, &server_tx, &server_hp, CH_LEVEL_HANDSHAKE, 0, 1, 1,
                            hdr, sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     memcpy(copy, pkt, pkt_len);
     pn = 0;
     for (size_t i = 0; i < refused_count; i++) {
-        CHECK(ch_quic_open(&q, CH_LEVEL_HANDSHAKE, refused[i], pkt, pkt_len, sizeof hdr - 1, 0, 0,
-                           &key_set, &pn, &pt_len) == CH_EINVAL);
+        CHECK(ch_quic_open(quic_public(&q), CH_LEVEL_HANDSHAKE, refused[i], pkt, pkt_len,
+                           sizeof hdr - 1, 0, 0, &key_set, &pn, &pt_len) == CH_EINVAL);
         CHECK(memcmp(pkt, copy, pkt_len) == 0 && q.open_failures == 0 && pn == 0);
     }
-    CHECK(ch_quic_open(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, pkt, pkt_len, sizeof hdr - 1, 0,
-                       0, &key_set, &pn, &pt_len) == CH_OK);
+    CHECK(ch_quic_open(quic_public(&q), CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, pkt, pkt_len,
+                       sizeof hdr - 1, 0, 0, &key_set, &pn, &pt_len) == CH_OK);
     CHECK(pn == 1 && pt_len == sizeof pt);
-    ch_quic_close(&q);
+    ch_quic_close(quic_public(&q));
 }
 
 // ch_quic_retry_ok checks a Retry in the original version alone: a tag
@@ -354,21 +359,21 @@ static void test_retry_versions(void) {
     uint8_t tag[GCM_TAG];
     memset(pseudo, 0x3c, sizeof pseudo);
     configure(&cfg);
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK);
     CHECK(quic_retry_tag(CH_QUIC_VERSION_1, pseudo, sizeof pseudo, tag) == CH_OK);
-    CHECK(ch_quic_retry_ok(&q, CH_QUIC_VERSION_1, pseudo, sizeof pseudo, tag) == 1);
-    CHECK(ch_quic_retry_ok(&q, CH_QUIC_VERSION_2, pseudo, sizeof pseudo, tag) == 0);
+    CHECK(ch_quic_retry_ok(quic_public(&q), CH_QUIC_VERSION_1, pseudo, sizeof pseudo, tag) == 1);
+    CHECK(ch_quic_retry_ok(quic_public(&q), CH_QUIC_VERSION_2, pseudo, sizeof pseudo, tag) == 0);
     for (size_t i = 0; i < UNDERIVED_COUNT; i++) {
-        CHECK(ch_quic_retry_ok(&q, underived[i], pseudo, sizeof pseudo, tag) == 0);
+        CHECK(ch_quic_retry_ok(quic_public(&q), underived[i], pseudo, sizeof pseudo, tag) == 0);
     }
-    ch_quic_close(&q);
+    ch_quic_close(quic_public(&q));
 
     cfg.quic_original_version = CH_QUIC_VERSION_2;
-    CHECK(ch_quic_init(&q, &cfg) == CH_OK);
+    CHECK(ch_quic_init(quic_public(&q), &cfg) == CH_OK);
     CHECK(quic_retry_tag(CH_QUIC_VERSION_2, pseudo, sizeof pseudo, tag) == CH_OK);
-    CHECK(ch_quic_retry_ok(&q, CH_QUIC_VERSION_2, pseudo, sizeof pseudo, tag) == 1);
-    CHECK(ch_quic_retry_ok(&q, CH_QUIC_VERSION_1, pseudo, sizeof pseudo, tag) == 0);
-    ch_quic_close(&q);
+    CHECK(ch_quic_retry_ok(quic_public(&q), CH_QUIC_VERSION_2, pseudo, sizeof pseudo, tag) == 1);
+    CHECK(ch_quic_retry_ok(quic_public(&q), CH_QUIC_VERSION_1, pseudo, sizeof pseudo, tag) == 0);
+    ch_quic_close(quic_public(&q));
 }
 
 static void test_versions(void) {

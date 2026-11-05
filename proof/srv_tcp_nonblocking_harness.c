@@ -63,10 +63,11 @@ uint16_t nondet_u16(void);
 #include "tcp_nonblocking_record_stubs.h"
 
 #include "srv_tcp_nonblocking.c"
+#include "tcp_entry.c"
 
 static uint8_t buf[CH_PROOF_RXBUF];
 static uint8_t in[CH_PROOF_INBUF];
-static ch_tcp r;
+static ch_tcp_priv r;
 static ch_cfg cfg;
 static size_t records_pushed; // srv_out_alert's calls, all a failure's
 
@@ -88,7 +89,7 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
 
 // srv_out.h's best-effort push of a failure's alert record to
 // cfg.srv.on_record_out, which reports nothing back.
-void srv_out_alert(ch_tls *t, const uint8_t *rec, size_t n) {
+void srv_out_alert(ch_tls_priv *t, const uint8_t *rec, size_t n) {
     __CPROVER_assert(t == &r.t && n >= REC_HDR && n <= CH_ALERT_RECORD_LEN &&
                          __CPROVER_r_ok(rec, n),
                      "push: one alert record of the session under proof");
@@ -120,7 +121,7 @@ void ct_wipe(void *p, size_t n) {
 
 // Whether the session holds any secret. tcp_nonblocking_frame.h says a failure
 // clears every one of them, and this is that list read back.
-static int no_secret_left(const ch_tcp *s) {
+static int no_secret_left(const ch_tcp_priv *s) {
     for (size_t i = 0; i < sizeof s->t.rd_secret; i++) {
         if (s->t.rd_secret[i] != 0 || s->t.wr_secret[i] != 0 || s->t.res_master[i] != 0) {
             return 0;
@@ -137,7 +138,7 @@ int main(void) {
     cfg.buf_len = nondet_size_t();
     cfg.srv.on_record_out = (nondet_u8() & 1) ? sink : NULL;
 
-    int rc = ch_srv_tcp_init(&r, &cfg);
+    int rc = ch_srv_tcp_init(tcp_public(&r), &cfg);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "init answers one of its two codes");
     if (rc == CH_EINVAL) {
         // srv_tcp_nonblocking.h: nothing was sent and the session
@@ -229,7 +230,7 @@ int main(void) {
     __CPROVER_assume(n <= sizeof in);
     size_t consumed = nondet_size_t();
 
-    rc = ch_srv_tcp_in(&r, in, n, &consumed);
+    rc = ch_srv_tcp_in(tcp_public(&r), in, n, &consumed);
 
     __CPROVER_assert(consumed <= n, "it never reports more bytes than it was handed");
     __CPROVER_assert(r.t.pt_off <= r.t.pt_len && r.t.pt_len <= r.t.cfg.buf_len,

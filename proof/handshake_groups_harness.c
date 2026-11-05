@@ -189,7 +189,7 @@ static void prove_x25519(handshake_state *h) {
 }
 
 int main(void) {
-    static ch_tls t;
+    static ch_tls_priv t;
     static handshake_state h;
     memset(&t, 0, sizeof t);
     memset(&h, 0, sizeof h);

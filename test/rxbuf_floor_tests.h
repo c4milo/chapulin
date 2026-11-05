@@ -86,7 +86,7 @@ static int floor_reassemble(size_t buf_len) {
     rec_dir_init(&server_write, secret);
     floor_seal(&server_write, buf_len);
 
-    static ch_tls t;
+    static ch_tls_priv t;
     memset(&t, 0, sizeof t);
     t.cfg.buf = floor_rxbuf;
     t.cfg.buf_len = buf_len;

@@ -14,6 +14,7 @@
 #define CH_TEST_TCP_BLOCKING_RETRY_TESTS_H
 
 #include "buf.h"
+#include "session_convert.h"
 #include "x25519.h"
 
 static uint8_t retry_share[X25519_LEN];
@@ -124,8 +125,8 @@ static void server_reads_retry_hello(size_t bytes) {
     CHECK(to_server.len > 0);
     ch_cfg scfg;
     server_config(&scfg, retry_recv);
-    static ch_tls server;
-    int rc = ch_srv_accept(&server, &scfg);
+    static ch_tls_priv server;
+    int rc = ch_srv_accept(tls_public(&server), &scfg);
     CHECK(retried == 1);
     size_t second = record_at(to_client.bytes, 0);
     if (bytes == 0) {

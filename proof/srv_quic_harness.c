@@ -55,7 +55,7 @@ uint64_t nondet_u64(void);
 
 #include "srv_flight_stubs.h"
 
-static ch_quic q;
+static ch_quic_priv q;
 static ch_cfg cfg;
 static uint8_t buf[CH_PROOF_RXBUF];
 static uint8_t init_buf[CH_MIN_RXBUF];
@@ -107,6 +107,7 @@ void ct_wipe(void *p, size_t n) {
     }
 }
 
+#include "quic_entry.c"
 #include "quic_fail.c"
 #include "srv_quic.c"
 
@@ -187,7 +188,7 @@ static void havoc_session(void) {
 }
 
 static void prove_init(void) {
-    int rc = ch_srv_quic_init(&q, &cfg);
+    int rc = ch_srv_quic_init(quic_public(&q), &cfg);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "init answers one of its two codes");
     if (rc != CH_OK) {
         __CPROVER_assert(q.t.state == CH_ST_FAILED && q.levels_ready == 0,
@@ -259,7 +260,7 @@ static void prove_crypto_in(void) {
     __CPROVER_assume(n <= sizeof in);
     uint8_t level = nondet_u8();
     int was_dead = session_dead(&q);
-    int rc = ch_srv_quic_crypto_in(&q, level, in, n);
+    int rc = ch_srv_quic_crypto_in(quic_public(&q), level, in, n);
     __CPROVER_assert(q.t.pt_off <= q.t.pt_len && q.t.pt_len <= q.t.cfg.buf_len,
                      "the window stays inside the buffer");
     if (was_dead) {

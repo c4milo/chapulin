@@ -18,6 +18,7 @@
 // staging it for a caller to collect, so no send needs a step of its own
 // and no flight suspends half-written.
 #include "srv_tcp_nonblocking.h"
+#include "tcp_nonblocking_session.h"
 
 #if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_TCP_NONBLOCKING)
 
@@ -38,7 +39,7 @@
 // leaves through cfg.srv.on_record_out before this call returns. The
 // read key changes after the ServerHello, so the hello must end its
 // record before anything goes out (hsr_check_record_end).
-static int server_flight(ch_tcp *r, const client_hello *ch, const selection *sel) {
+static int server_flight(ch_tcp_priv *r, const client_hello *ch, const selection *sel) {
     handshake_state *h = &r->hs;
     int rc = hsr_check_record_end(h);
     if (rc != CH_OK) {
@@ -87,7 +88,7 @@ static int server_flight(ch_tcp *r, const client_hello *ch, const selection *sel
 // This is srv_send_hello_retry_request's one call site, so a second
 // HelloRetryRequest is unreachable by call position rather than by a
 // counter, exactly as srv_handshake.c arranges it.
-static int step_client_hello(ch_tcp *r) {
+static int step_client_hello(ch_tcp_priv *r) {
     handshake_state *h = &r->hs;
     client_hello ch;
     selection sel;
@@ -125,7 +126,7 @@ static int step_client_hello(ch_tcp *r) {
 // The second ClientHello. srv_check_retry_hello writes sel from the
 // cookie and never sets need_retry, which is what keeps a second retry
 // unreachable.
-static int step_retry_hello(ch_tcp *r) {
+static int step_retry_hello(ch_tcp_priv *r) {
     handshake_state *h = &r->hs;
     client_hello ch;
     selection sel;
@@ -148,7 +149,7 @@ static int step_retry_hello(ch_tcp *r) {
 // to CH_ST_CONNECTED; the write key went in with srv_send_finished, one
 // round trip earlier, because RFC 9846 section 4.5.3 lets a server write
 // application data before it has read the client's Finished.
-static int step_client_finished(ch_tcp *r) {
+static int step_client_finished(ch_tcp_priv *r) {
     int rc = srv_read_client_finished(&r->hs);
     if (rc != CH_OK) {
         return rc;
@@ -182,7 +183,7 @@ static int step_client_finished(ch_tcp *r) {
 // ch_tcp_state answers CH_ST_CONNECTED, and ch_read handles every
 // post-handshake message this build accepts. Bytes fed to this driver
 // after the handshake are a caller that did not move on.
-static int step_complete(ch_tcp *r) {
+static int step_complete(ch_tcp_priv *r) {
     r->hs.alert = ALERT_UNEXPECTED_MESSAGE;
     return CH_EPROTO;
 }
@@ -191,7 +192,7 @@ static int step_complete(ch_tcp *r) {
 // hsr_peek_message has found. It is the only switch in the mode: it
 // dispatches and does nothing else, so every path into a handler runs
 // through a step number a step wrote.
-static int advance(ch_tcp *r) {
+static int advance(ch_tcp_priv *r) {
     switch (r->step) {
     case SRV_TCP_NONBLOCKING_STEP_AWAIT_CLIENT_HELLO:
         return step_client_hello(r);
@@ -216,7 +217,7 @@ static int advance(ch_tcp *r) {
 // leaves (srv_out_alert). The push is best effort, as tlsi_fail's send
 // is: a sink that refused a record of the flight may refuse this one
 // too, and the call returns rc either way.
-static int fail(ch_tcp *r, int rc) {
+static int fail(ch_tcp_priv *r, int rc) {
     uint8_t rec[CH_ALERT_RECORD_LEN] = {0};
     size_t rec_len = tcp_nonblocking_fail(r, rec);
     if (rec_len != 0) {
@@ -229,7 +230,7 @@ static int fail(ch_tcp *r, int rc) {
 // tcp_nonblocking.c's drive loop without the staging test, because a
 // server pushes its flight instead of leaving it for the caller to
 // collect.
-static int drive(ch_tcp *r) {
+static int drive(ch_tcp_priv *r) {
     for (;;) {
         size_t raw_len = 0;
         int rc = hsr_peek_message(&r->hs, &raw_len, &r->hs.alert);
@@ -246,7 +247,7 @@ static int drive(ch_tcp *r) {
     }
 }
 
-int ch_srv_tcp_init(ch_tcp *r, const ch_cfg *cfg) {
+int srv_tcp_init(ch_tcp_priv *r, const ch_cfg *cfg) {
     // Neither pointer is checked, as ch_srv_accept does not check its
     // own: srv_tcp_nonblocking.h makes "r and cfg are not NULL" a
     // caller requirement.
@@ -287,7 +288,7 @@ int ch_srv_tcp_init(ch_tcp *r, const ch_cfg *cfg) {
     return CH_OK;
 }
 
-int ch_srv_tcp_in(ch_tcp *r, uint8_t *p, size_t n, size_t *consumed) {
+int srv_tcp_in(ch_tcp_priv *r, uint8_t *p, size_t n, size_t *consumed) {
     CH_ASSERT(r->t.state <= CH_ST_FAILED);
     r->hs.t = &r->t;
     *consumed = 0;

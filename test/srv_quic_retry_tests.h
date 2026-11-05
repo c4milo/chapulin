@@ -189,7 +189,7 @@ static uint32_t (*retry_choose)(void *io);
 
 // A server as colibri's interop image configures one, with this binary's
 // identities and cookie key, and nothing written yet.
-static void retry_session(ch_quic *q) {
+static void retry_session(ch_quic_priv *q) {
     ch_cfg cfg;
     memset(&cfg, 0, sizeof cfg);
     cfg.buf = retry_rxbuf;
@@ -205,7 +205,7 @@ static void retry_session(ch_quic *q) {
     cfg.srv.choose_version = retry_choose;
     provision(&cfg);
     memset(&retry_out, 0, sizeof retry_out);
-    CHECK(ch_srv_quic_init(q, &cfg) == CH_OK);
+    CHECK(ch_srv_quic_init(quic_public(q), &cfg) == CH_OK);
 }
 
 // The recorded first hello into a fresh server. The answer is a
@@ -213,15 +213,16 @@ static void retry_session(ch_quic *q) {
 // server's byte for byte up to the frozen digest in its cookie, so the
 // replay reproduces the round colibri recorded. The cookie it carries is
 // written to cookie.
-static void first_round(ch_quic *q, uint8_t cookie[SRV_COOKIE_MAX], size_t *cookie_len) {
+static void first_round(ch_quic_priv *q, uint8_t cookie[SRV_COOKIE_MAX], size_t *cookie_len) {
     retry_session(q);
     retry_msg hello1;
     retry_msg colibri;
     from_hex(&hello1, ngtcp2_hello1_hex);
     from_hex(&colibri, colibri_retry_hex);
     CHECK(hello1.len == 275 && colibri.len == 163);
-    CHECK(ch_srv_quic_crypto_in(q, CH_LEVEL_INITIAL, hello1.bytes, hello1.len) == CH_OK);
-    CHECK(ch_quic_state(q) == CH_ST_START);
+    CHECK(ch_srv_quic_crypto_in(quic_public(q), CH_LEVEL_INITIAL, hello1.bytes, hello1.len) ==
+          CH_OK);
+    CHECK(ch_quic_state(quic_public(q)) == CH_ST_START);
     const uint8_t *hrr = retry_out.bytes[CH_LEVEL_INITIAL];
     CHECK(retry_out.len[CH_LEVEL_INITIAL] == colibri.len);
     CHECK(memcmp(hrr, colibri.bytes, RETRY_BEFORE_FROZEN) == 0);
@@ -260,12 +261,12 @@ static void recorded_second(retry_msg *m, const uint8_t *cookie, size_t cookie_l
 // One retry round against a fresh server, reporting what the server
 // answered the second hello with and the alert it left.
 static int retry_answer(const retry_msg *hello2, uint8_t *alert) {
-    static ch_quic q;
+    static ch_quic_priv q;
     uint8_t cookie[SRV_COOKIE_MAX];
     size_t cookie_len = 0;
     first_round(&q, cookie, &cookie_len);
-    int rc = ch_srv_quic_crypto_in(&q, CH_LEVEL_INITIAL, hello2->bytes, hello2->len);
-    *alert = ch_quic_alert(&q);
+    int rc = ch_srv_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, hello2->bytes, hello2->len);
+    *alert = ch_quic_alert(quic_public(&q));
     return rc;
 }
 
@@ -391,7 +392,7 @@ static void test_retry_completes(const uint8_t *cookie, size_t cookie_len) {
     mlkem_keygen_derand(share, dk, d, z);
     x25519_base(share + MLKEM_EK_LEN, x25519_priv);
 
-    static ch_quic q;
+    static ch_quic_priv q;
     uint8_t minted[SRV_COOKIE_MAX];
     size_t minted_len = 0;
     first_round(&q, minted, &minted_len);
@@ -400,7 +401,7 @@ static void test_retry_completes(const uint8_t *cookie, size_t cookie_len) {
     retry_msg hello2;
     from_hex(&hello1, ngtcp2_hello1_hex);
     recorded_second(&hello2, cookie, cookie_len, share);
-    int rc = ch_srv_quic_crypto_in(&q, CH_LEVEL_INITIAL, hello2.bytes, hello2.len);
+    int rc = ch_srv_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, hello2.bytes, hello2.len);
     CHECK(rc == CH_OK);
     if (rc != CH_OK) {
         return;
@@ -463,12 +464,13 @@ static void test_retry_completes(const uint8_t *cookie, size_t cookie_len) {
     retry_transcript(&hello1, exchanged, w.len, hash);
     uint8_t finished[4 + SHA256_LEN] = {HS_FINISHED, 0, 0, SHA256_LEN};
     ks_verify_data(SHA256_LEN, c_hs, hash, finished + 4);
-    CHECK(ch_srv_quic_crypto_in(&q, CH_LEVEL_HANDSHAKE, finished, sizeof finished) == CH_OK);
-    CHECK(ch_quic_state(&q) == CH_ST_CONNECTED);
+    CHECK(ch_srv_quic_crypto_in(quic_public(&q), CH_LEVEL_HANDSHAKE, finished, sizeof finished) ==
+          CH_OK);
+    CHECK(ch_quic_state(quic_public(&q)) == CH_ST_CONNECTED);
 }
 
 static void test_ngtcp2_retry(void) {
-    static ch_quic q;
+    static ch_quic_priv q;
     uint8_t cookie[SRV_COOKIE_MAX];
     size_t cookie_len = 0;
     first_round(&q, cookie, &cookie_len);

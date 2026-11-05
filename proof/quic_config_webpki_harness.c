@@ -71,7 +71,7 @@
 // for any count a caller's array holds.
 #define PROOF_ANCHORS 12
 
-static ch_tls t;
+static ch_tls_priv t;
 static ch_cfg cfg;
 static uint8_t hostname[CH_HOSTNAME_MAX + 1];
 static uint8_t names[PROOF_ANCHORS][ANCHOR_FIELD_MAX];

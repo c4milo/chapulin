@@ -9,6 +9,7 @@
 #define CH_CNSA2_MLDSA_CASES_H
 
 #include "cnsa2_mldsa_fixture.h"
+#include "session_convert.h"
 
 static cert_list served;
 
@@ -85,7 +86,7 @@ static void test_mldsa_hello(void) {
 
 // One pinned handshake under cfg and one echoed record. Returns what
 // test_connect returned.
-static int pinned_handshake(mock_server *s, const ch_cfg *cfg, ch_tls **t) {
+static int pinned_handshake(mock_server *s, const ch_cfg *cfg, ch_tls_priv **t) {
     static const uint8_t ping[] = {'p', 'i', 'n', 'g'};
     s->answer = 1;
     tickets = 0;
@@ -96,10 +97,10 @@ static int pinned_handshake(mock_server *s, const ch_cfg *cfg, ch_tls **t) {
     CHECK(s->m.pinned && !s->m.resumed && s->m.client_finished_ok);
     CHECK((*t)->group == CH_GROUP_MLKEM1024 && (*t)->suite == SUITE_AES_256_GCM_SHA384);
     CHECK((*t)->psk_selected == 0);
-    CHECK(ch_write(*t, ping, sizeof ping) == CH_OK);
+    CHECK(ch_write(tls_public(*t), ping, sizeof ping) == CH_OK);
     CHECK(s->echo_len == sizeof ping && memcmp(s->echo, ping, sizeof ping) == 0);
     uint8_t got[16];
-    CHECK(ch_read(*t, got, sizeof got) == (int)sizeof ping);
+    CHECK(ch_read(tls_public(*t), got, sizeof got) == (int)sizeof ping);
     CHECK(tickets == 1);
     return rc;
 }
@@ -109,17 +110,17 @@ static int pinned_handshake(mock_server *s, const ch_cfg *cfg, ch_tls **t) {
 static void test_mldsa_handshake(void) {
     mock_server s;
     ch_cfg cfg = pinned_cfg(&s);
-    ch_tls *t = NULL;
+    ch_tls_priv *t = NULL;
     CHECK(pinned_handshake(&s, &cfg, &t) == CH_OK);
     CHECK(t->pin_slot == 1);
-    ch_close(t);
+    ch_close(tls_public(t));
 
     cfg = pinned_cfg(&s);
     cfg.ticket = &saved;
     s.answer = 1;
     CHECK(test_connect(&t, &cfg) == CH_OK);
     CHECK(s.m.resumed && s.m.binder_ok && t->psk_selected == 1);
-    ch_close(t);
+    ch_close(tls_public(t));
 
     cfg = pinned_cfg(&s);
     cfg.server_pubkey = stranger_key.pk;
@@ -127,7 +128,7 @@ static void test_mldsa_handshake(void) {
     cfg.server_pubkey2_len = MLDSA87_PK_LEN;
     CHECK(pinned_handshake(&s, &cfg, &t) == CH_OK);
     CHECK(t->pin_slot == 2);
-    ch_close(t);
+    ch_close(tls_public(t));
 }
 
 // Each bad CertificateVerify fails the handshake with CH_EAUTH: another
@@ -157,9 +158,9 @@ static void test_mldsa_certificate_verify(void) {
         if (cases[i].stranger) {
             s.m.signer = &stranger_key;
         }
-        ch_tls *t = NULL;
+        ch_tls_priv *t = NULL;
         CHECK(pinned_handshake(&s, &cfg, &t) == CH_EAUTH);
-        CHECK(ch_alert_sent(t) == cases[i].alert);
+        CHECK(ch_alert_sent(tls_public(t)) == cases[i].alert);
     }
 }
 
@@ -191,15 +192,15 @@ static void test_mldsa_floor(void) {
         mock_server s;
         ch_cfg cfg = pinned_cfg(&s);
         CHECK(cfg.buf_len == CH_MIN_RXBUF);
-        ch_tls *t = NULL;
+        ch_tls_priv *t = NULL;
         int rc = pinned_handshake(&s, &cfg, &t);
         if (!over) {
             CHECK(rc == CH_OK);
-            ch_close(t);
+            ch_close(tls_public(t));
             continue;
         }
 #ifdef CH_TRUST_CA
-        CHECK(rc == CH_EPROTO && ch_alert_sent(t) == ALERT_BAD_CERTIFICATE);
+        CHECK(rc == CH_EPROTO && ch_alert_sent(tls_public(t)) == ALERT_BAD_CERTIFICATE);
 #else
         CHECK(rc == CH_ECAP);
 #endif
@@ -214,28 +215,28 @@ static void test_mldsa_chains(void) {
     list_chain(&served, 0, 0);
     mock_server s;
     ch_cfg cfg = pinned_cfg(&s);
-    ch_tls *t = NULL;
+    ch_tls_priv *t = NULL;
     CHECK(pinned_handshake(&s, &cfg, &t) == CH_OK);
     CHECK(t->pin_slot == 1);
-    ch_close(t);
+    ch_close(tls_public(t));
 
     list_chain(&served, 0, 1);
     cfg = pinned_cfg(&s);
     CHECK(pinned_handshake(&s, &cfg, &t) == CH_EPROTO);
-    CHECK(ch_alert_sent(t) == ALERT_UNSUPPORTED_CERTIFICATE);
+    CHECK(ch_alert_sent(tls_public(t)) == ALERT_UNSUPPORTED_CERTIFICATE);
 
     list_chain(&served, 0, 0);
     cfg = pinned_cfg(&s);
     cfg.server_pubkey = stranger_key.pk;
     CHECK(pinned_handshake(&s, &cfg, &t) == CH_EAUTH);
-    CHECK(ch_alert_sent(t) == ALERT_UNKNOWN_CA);
+    CHECK(ch_alert_sent(tls_public(t)) == ALERT_UNKNOWN_CA);
 
     // The leaf signs with a key other than the one its certificate names.
     list_flat(&served, 0);
     cfg = pinned_cfg(&s);
     s.m.signer = &int_key;
     CHECK(pinned_handshake(&s, &cfg, &t) == CH_EAUTH);
-    CHECK(ch_alert_sent(t) == ALERT_DECRYPT_ERROR);
+    CHECK(ch_alert_sent(tls_public(t)) == ALERT_DECRYPT_ERROR);
 }
 #endif
 

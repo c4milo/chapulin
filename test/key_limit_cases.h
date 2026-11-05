@@ -45,6 +45,7 @@
 #define CH_TEST_KEY_LIMIT_CASES_H
 
 #include "handshake_post.h"
+#include "session_convert.h"
 
 // One direction's records once connected: the bytes one session sent and
 // the other has not read. io_send_all hands cfg.send one whole record,
@@ -108,8 +109,8 @@ static int key_limit_server_recv(void *io, uint8_t *p, size_t n) {
 // that reads, the pipe between them, and the pipe the reader would answer
 // on.
 typedef struct {
-    ch_tls *writer;
-    ch_tls *reader;
+    ch_tls_priv *writer;
+    ch_tls_priv *reader;
     key_limit_pipe *wire;
     key_limit_pipe *back;
 } key_limit_pair;
@@ -117,8 +118,8 @@ typedef struct {
 // One handshake under suite, both ends then on this file's pipes, and the
 // direction server_writes names. Returns 0 when the handshake failed.
 static int key_limit_open_pair(uint16_t suite, int server_writes, key_limit_pair *pair) {
-    ch_tls *client_session = NULL;
-    ch_tls *server_session = NULL;
+    ch_tls_priv *client_session = NULL;
+    ch_tls_priv *server_session = NULL;
     if (!key_limit_connect(suite, &client_session, &server_session)) {
         return 0;
     }
@@ -161,10 +162,10 @@ static size_t key_limit_open(const key_limit_pipe *pipe, size_t at, rec_dir *rea
 
 // Reads n bytes through ch_read into got and requires them to equal want.
 // ch_read hands over at most one record's plaintext per call.
-static int key_limit_read_all(ch_tls *t, uint8_t *got, const uint8_t *want, size_t n) {
+static int key_limit_read_all(ch_tls_priv *t, uint8_t *got, const uint8_t *want, size_t n) {
     size_t at = 0;
     while (at < n) {
-        int rc = ch_read(t, got + at, n - at);
+        int rc = ch_read(tls_public(t), got + at, n - at);
         if (rc <= 0) {
             return 0;
         }
@@ -197,13 +198,13 @@ static void key_limit_check_boundary(uint16_t suite, int server_writes) {
     uint8_t type = 0;
     uint8_t got[8];
 
-    CHECK(ch_write(pair.writer, (const uint8_t *)"a", 1) == CH_OK);
+    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"a", 1) == CH_OK);
     CHECK(pair.wire->sends == 1 && pair.wire->send_len[0] == REC_OVERHEAD + 1);
     size_t at = key_limit_open(pair.wire, 0, &peek, pt, sizeof pt, &pt_len, &type);
     CHECK(at != 0 && type == REC_APPDATA && pt_len == 1 && pt[0] == 'a');
-    CHECK(ch_read(pair.reader, got, sizeof got) == 1 && got[0] == 'a');
+    CHECK(ch_read(tls_public(pair.reader), got, sizeof got) == 1 && got[0] == 'a');
 
-    CHECK(ch_write(pair.writer, (const uint8_t *)"b", 1) == CH_OK);
+    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"b", 1) == CH_OK);
     CHECK(pair.wire->sends == 3 && pair.wire->send_len[1] == CH_KEY_UPDATE_RECORD_LEN);
     CHECK(pair.wire->send_len[2] == REC_OVERHEAD + 1);
     CHECK(pair.writer->send_epochs == epochs + 1 && pair.writer->wr.seq == 1);
@@ -215,7 +216,7 @@ static void key_limit_check_boundary(uint16_t suite, int server_writes) {
     at = key_limit_open(pair.wire, at, &peek, pt, sizeof pt, &pt_len, &type);
     CHECK(at == pair.wire->len && type == REC_APPDATA && pt_len == 1 && pt[0] == 'b');
 
-    CHECK(ch_read(pair.reader, got, sizeof got) == 1 && got[0] == 'b');
+    CHECK(ch_read(tls_public(pair.reader), got, sizeof got) == 1 && got[0] == 'b');
     CHECK(pair.reader->rd.seq == 1);
     CHECK(memcmp(pair.reader->rd_secret, secret, sizeof secret) == 0);
     CHECK(pair.back->sends == 0 && pair.reader->state == CH_ST_CONNECTED);
@@ -237,7 +238,7 @@ static void key_limit_check_one_write(uint16_t suite, int server_writes) {
     pair.writer->peer_limit = KEY_LIMIT_RECORD;
     const size_t three_records = 3 * (size_t)KEY_LIMIT_RECORD;
     uint64_t epochs = pair.writer->send_epochs;
-    CHECK(ch_write(pair.writer, key_limit_data, three_records) == CH_OK);
+    CHECK(ch_write(tls_public(pair.writer), key_limit_data, three_records) == CH_OK);
     CHECK(pair.wire->sends == 4 && pair.wire->send_len[1] == CH_KEY_UPDATE_RECORD_LEN);
     CHECK(pair.wire->send_len[0] == REC_OVERHEAD + KEY_LIMIT_RECORD &&
           pair.wire->send_len[2] == REC_OVERHEAD + KEY_LIMIT_RECORD &&
@@ -258,17 +259,17 @@ static void key_limit_check_sender_cap(uint16_t suite, int server_writes) {
     CHECK(key_limit_open_pair(suite, server_writes, &pair));
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
     pair.writer->send_epochs = HSPOST_SEND_EPOCHS_MAX - 1;
-    CHECK(ch_write(pair.writer, (const uint8_t *)"c", 1) == CH_OK);
+    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"c", 1) == CH_OK);
     CHECK(pair.writer->send_epochs == HSPOST_SEND_EPOCHS_MAX && pair.wire->sends == 2);
-    CHECK(ch_read(pair.reader, got, sizeof got) == 1 && got[0] == 'c');
+    CHECK(ch_read(tls_public(pair.reader), got, sizeof got) == 1 && got[0] == 'c');
 
     CHECK(key_limit_open_pair(suite, server_writes, &pair));
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
     pair.writer->send_epochs = HSPOST_SEND_EPOCHS_MAX;
     rec_dir peek = pair.reader->rd;
-    CHECK(ch_write(pair.writer, (const uint8_t *)"d", 1) == CH_ECAP);
+    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"d", 1) == CH_ECAP);
     CHECK(pair.writer->state == CH_ST_FAILED);
-    CHECK(ch_alert_sent(pair.writer) == ALERT_INTERNAL_ERROR);
+    CHECK(ch_alert_sent(tls_public(pair.writer)) == ALERT_INTERNAL_ERROR);
     CHECK(pair.wire->sends == 1 && pair.wire->send_len[0] == CH_ALERT_RECORD_LEN);
     uint8_t pt[16];
     size_t pt_len = 0;
@@ -276,8 +277,8 @@ static void key_limit_check_sender_cap(uint16_t suite, int server_writes) {
     size_t at = key_limit_open(pair.wire, 0, &peek, pt, sizeof pt, &pt_len, &type);
     CHECK(at == pair.wire->len && type == REC_ALERT && pt_len == 2 && pt[0] == 2 &&
           pt[1] == ALERT_INTERNAL_ERROR);
-    CHECK(ch_read(pair.reader, got, sizeof got) == CH_EPROTO);
-    CHECK(ch_alert_received(pair.reader) == ALERT_INTERNAL_ERROR);
+    CHECK(ch_read(tls_public(pair.reader), got, sizeof got) == CH_EPROTO);
+    CHECK(ch_alert_received(tls_public(pair.reader)) == ALERT_INTERNAL_ERROR);
 }
 
 // The reader asks the writer for a KeyUpdate, as a peer does: it seals a
@@ -298,7 +299,7 @@ static void key_limit_request_answer(const key_limit_pair *pair) {
     pair->back->len += n;
     uint8_t got[8];
     size_t sends = pair->wire->sends;
-    CHECK(ch_read(pair->writer, got, sizeof got) == 1 && got[0] == 'r');
+    CHECK(ch_read(tls_public(pair->writer), got, sizeof got) == 1 && got[0] == 'r');
     CHECK(pair->wire->sends == sends && pair->writer->key_update_owed == 1);
 }
 
@@ -314,11 +315,11 @@ static void key_limit_check_owed_answer(uint16_t suite, int server_writes) {
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
     uint64_t epochs = pair.writer->send_epochs;
     uint8_t got[8];
-    CHECK(ch_write(pair.writer, (const uint8_t *)"g", 1) == CH_OK);
+    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"g", 1) == CH_OK);
     CHECK(pair.wire->sends == 2 && pair.wire->send_len[0] == CH_KEY_UPDATE_RECORD_LEN);
     CHECK(pair.writer->send_epochs == epochs + 1 && pair.writer->key_update_owed == 0);
     CHECK(pair.writer->wr.seq == 1);
-    CHECK(ch_read(pair.reader, got, sizeof got) == 1 && got[0] == 'g');
+    CHECK(ch_read(tls_public(pair.reader), got, sizeof got) == 1 && got[0] == 'g');
 
     CHECK(key_limit_open_pair(suite, server_writes, &pair));
     key_limit_request_answer(&pair);
@@ -326,7 +327,7 @@ static void key_limit_check_owed_answer(uint16_t suite, int server_writes) {
     pair.writer->peer_limit = KEY_LIMIT_RECORD;
     epochs = pair.writer->send_epochs;
     const size_t three_records = 3 * (size_t)KEY_LIMIT_RECORD;
-    CHECK(ch_write(pair.writer, key_limit_data, three_records) == CH_OK);
+    CHECK(ch_write(tls_public(pair.writer), key_limit_data, three_records) == CH_OK);
     CHECK(pair.wire->sends == 4 && pair.wire->send_len[0] == CH_KEY_UPDATE_RECORD_LEN);
     CHECK(pair.writer->send_epochs == epochs + 1 && pair.writer->wr.seq == 3);
     CHECK(key_limit_read_all(pair.reader, key_limit_got, key_limit_data, three_records));
@@ -336,10 +337,10 @@ static void key_limit_check_owed_answer(uint16_t suite, int server_writes) {
 // The writer and the pipe are put back afterwards, so each call starts
 // from the same sequence number.
 static size_t key_limit_sent_by_write(const key_limit_pair *pair, size_t n) {
-    static ch_tls saved;
+    static ch_tls_priv saved;
     saved = *pair->writer;
     size_t before = pair->wire->len;
-    CHECK(ch_write(pair->writer, key_limit_data, n) == CH_OK);
+    CHECK(ch_write(tls_public(pair->writer), key_limit_data, n) == CH_OK);
     size_t sent = pair->wire->len - before;
     *pair->writer = saved;
     pair->wire->len = before;
@@ -364,7 +365,7 @@ static void key_limit_check_writable_len(uint16_t suite) {
         for (uint64_t back = 1; back <= 3; back++) {
             key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - back);
             for (size_t cap = 0; cap <= 3 * record + CH_KEY_UPDATE_RECORD_LEN + 1; cap++) {
-                size_t n = ch_writable_len(pair.writer, cap);
+                size_t n = ch_writable_len(tls_public(pair.writer), cap);
                 CHECK(key_limit_sent_by_write(&pair, n) <= cap);
                 CHECK(key_limit_sent_by_write(&pair, n + 1) > cap);
             }
@@ -374,20 +375,23 @@ static void key_limit_check_writable_len(uint16_t suite) {
     // first, and the next key carries REC_AES_GCM_RECORDS_MAX - 1 records.
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 2);
     const size_t key_update_and_byte = CH_KEY_UPDATE_RECORD_LEN + REC_OVERHEAD + 1;
-    CHECK(ch_writable_len(pair.writer, key_update_and_byte - 1) == 0);
-    CHECK(ch_writable_len(pair.writer, key_update_and_byte) == 1);
-    CHECK(ch_writable_len(pair.writer, SIZE_MAX) == (size_t)(REC_AES_GCM_RECORDS_MAX - 1) * 63);
+    CHECK(ch_writable_len(tls_public(pair.writer), key_update_and_byte - 1) == 0);
+    CHECK(ch_writable_len(tls_public(pair.writer), key_update_and_byte) == 1);
+    CHECK(ch_writable_len(tls_public(pair.writer), SIZE_MAX) ==
+          (size_t)(REC_AES_GCM_RECORDS_MAX - 1) * 63);
     pair.writer->key_update_owed = 0;
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
-    CHECK(ch_writable_len(pair.writer, key_update_and_byte - 1) == 0);
-    CHECK(ch_writable_len(pair.writer, key_update_and_byte) == 1);
-    CHECK(ch_writable_len(pair.writer, SIZE_MAX) == (size_t)(REC_AES_GCM_RECORDS_MAX - 1) * 63);
+    CHECK(ch_writable_len(tls_public(pair.writer), key_update_and_byte - 1) == 0);
+    CHECK(ch_writable_len(tls_public(pair.writer), key_update_and_byte) == 1);
+    CHECK(ch_writable_len(tls_public(pair.writer), SIZE_MAX) ==
+          (size_t)(REC_AES_GCM_RECORDS_MAX - 1) * 63);
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 2);
-    CHECK(ch_writable_len(pair.writer, REC_OVERHEAD + 1) == 1);
-    CHECK(ch_writable_len(pair.writer, record) == 63);
-    CHECK(ch_writable_len(pair.writer, record + key_update_and_byte - 1) == 63);
-    CHECK(ch_writable_len(pair.writer, record + key_update_and_byte) == 64);
-    CHECK(ch_writable_len(pair.writer, SIZE_MAX) == (size_t)REC_AES_GCM_RECORDS_MAX * 63);
+    CHECK(ch_writable_len(tls_public(pair.writer), REC_OVERHEAD + 1) == 1);
+    CHECK(ch_writable_len(tls_public(pair.writer), record) == 63);
+    CHECK(ch_writable_len(tls_public(pair.writer), record + key_update_and_byte - 1) == 63);
+    CHECK(ch_writable_len(tls_public(pair.writer), record + key_update_and_byte) == 64);
+    CHECK(ch_writable_len(tls_public(pair.writer), SIZE_MAX) ==
+          (size_t)REC_AES_GCM_RECORDS_MAX * 63);
 }
 
 // ChaCha20-Poly1305 has no ceiling but the wrap (rfc9846.txt:3752-3754):
@@ -399,9 +403,9 @@ static void key_limit_check_chacha(int server_writes) {
     CHECK(key_limit_open_pair(SUITE_CHACHA20_POLY1305_SHA256, server_writes, &pair));
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
     uint64_t epochs = pair.writer->send_epochs;
-    CHECK(ch_writable_len(pair.writer, REC_OVERHEAD + 1) == 1);
-    CHECK(ch_write(pair.writer, (const uint8_t *)"e", 1) == CH_OK);
-    CHECK(ch_write(pair.writer, (const uint8_t *)"f", 1) == CH_OK);
+    CHECK(ch_writable_len(tls_public(pair.writer), REC_OVERHEAD + 1) == 1);
+    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"e", 1) == CH_OK);
+    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"f", 1) == CH_OK);
     CHECK(pair.wire->sends == 2 && pair.wire->send_len[0] == REC_OVERHEAD + 1 &&
           pair.wire->send_len[1] == REC_OVERHEAD + 1);
     CHECK(pair.writer->send_epochs == epochs &&

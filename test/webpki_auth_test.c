@@ -133,7 +133,7 @@ static const webpki_corpus_chain *chain_named(const char *name) {
 // A row's session: its anchors and its hostname in the session's
 // configuration, as test/webpki_chain_test.c builds them, and in a host
 // object TEST_CPU; and its clock's instant, which an init call reads.
-static void row_session(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch_tls *t) {
+static void row_session(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch_tls_priv *t) {
     ch_cfg *cfg = &t->cfg;
     test_cfg_clear(cfg);
     t->now_seconds = row->now_seconds;
@@ -200,9 +200,9 @@ static mock_source source;
 // adds the buffer and the mock transport. Returns what hsa_server_auth
 // returns, with the handshake state left in h and the CertificateVerify
 // message in verify_msg.
-static int run_flight(ch_tls *t, handshake_state *h, const uint8_t *message, size_t message_len,
-                      uint16_t scheme, const uint8_t *sig, size_t sig_len, uint8_t *verify_msg,
-                      size_t *verify_len) {
+static int run_flight(ch_tls_priv *t, handshake_state *h, const uint8_t *message,
+                      size_t message_len, uint16_t scheme, const uint8_t *sig, size_t sig_len,
+                      uint8_t *verify_msg, size_t *verify_len) {
     *verify_len = build_certificate_verify(verify_msg, VERIFY_MSG_MAX, scheme, sig, sig_len);
     memset(&source, 0, sizeof source);
     push_message(&source, message, message_len);
@@ -221,7 +221,7 @@ static int run_flight(ch_tls *t, handshake_state *h, const uint8_t *message, siz
 // An accepted CertificateVerify joins the transcript, so the Finished
 // that follows covers it: the running hash must be SHA-256 of the two
 // messages.
-static void check_transcript(const ch_tls *t, const uint8_t *message, size_t message_len,
+static void check_transcript(const ch_tls_priv *t, const uint8_t *message, size_t message_len,
                              const uint8_t *verify_msg, size_t verify_len) {
     uint8_t after[SHA256_LEN];
     transcript_hash_after(&t->transcript, SHA256_LEN, NULL, 0, after);
@@ -253,7 +253,7 @@ static void check_vector(const webpki_auth_vector *v) {
     }
 
     ch_trust_anchor anchors[CORPUS_ROW_ANCHORS];
-    ch_tls t;
+    ch_tls_priv t;
     memset(&t, 0, sizeof t);
     row_session(row, anchors, &t);
     handshake_state h;

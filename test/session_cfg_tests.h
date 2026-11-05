@@ -6,6 +6,7 @@
 #define CH_SESSION_CFG_TESTS_H
 
 #include "hello_exts.h"
+#include "session_convert.h"
 
 // ch_connect's config validation: exactly one auth mode, sane buffer. A
 // case that passes validation reaches I/O and dies there (empty queue
@@ -45,7 +46,7 @@ static void test_epoch_cfg(void) {
     mock_io m = {0};
     ch_cfg cfg = {0};
     TEST_CPU_CFG(cfg);
-    ch_tls t;
+    ch_tls_priv t;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = mock_send;
@@ -60,17 +61,17 @@ static void test_epoch_cfg(void) {
 
     // One callback alone is a provisioning mistake either way round.
     cfg.epoch_load = test_epoch_load;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     cfg.epoch_load = NULL;
     cfg.epoch_store = test_epoch_store;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     cfg.epoch_load = test_epoch_load;
 
 #ifdef CH_TRUST_CA
     // The pair configured: storage that answers in range lets
     // the connect through to I/O, and the session holds the epoch.
     epoch_mark = 12;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     CHECK(t.epoch == 12);
     CHECK(t.epoch_store_failed == 0);
     CHECK(epoch_stores == 0); // only an authenticated handshake writes
@@ -80,16 +81,16 @@ static void test_epoch_cfg(void) {
 
     // The last in-range value passes; the first one past it does not.
     epoch_mark = CH_EPOCH_MAX;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     epoch_mark = CH_EPOCH_MAX + 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     epoch_mark = 0xffffffff; // an erased flash word
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
 
     // Storage that cannot answer fails closed.
     epoch_mark = 3;
     epoch_load_rc = -1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     epoch_load_rc = 0;
 
     // Resumption carries no certificate, so the ticket's own epoch is
@@ -107,21 +108,21 @@ static void test_epoch_cfg(void) {
     epoch_mark = 10;
     saved.ticket.epoch = 9;
     int sends = m.sends;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     CHECK(m.sends == sends);
-    CHECK(ch_alert_sent(&t) == 0);
+    CHECK(ch_alert_sent(tls_public(&t)) == 0);
     // The caller sees the verdict on the failing path too.
     CHECK(t.epoch_status == CH_EPOCH_REVOKED);
     CHECK(t.epoch_seen == 9);
     saved.ticket.epoch = 10;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     CHECK(t.epoch_status == CH_EPOCH_MATCHED);
     // A ticket above the stored epoch says that epoch went backwards.
     saved.ticket.epoch = 11;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     CHECK(t.epoch_status == CH_EPOCH_AHEAD);
     saved.ticket.epoch = CH_EPOCH_MAX + 1; // corrupt ticket storage
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
 
     // A fresh external PSK carries no ticket epoch to screen.
     cfg.ticket = NULL;
@@ -131,11 +132,11 @@ static void test_epoch_cfg(void) {
     cfg.psk_len = sizeof psk;
     cfg.psk_id = (const uint8_t *)"d";
     cfg.psk_id_len = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
 #else
     // Without CA mode there is no epoch to enforce, so a config that
     // asks for one is refused rather than quietly ignored.
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
 #endif
 }
 
@@ -213,25 +214,25 @@ static void test_connect_cfg(void) {
     cfg.send = mock_send;
     cfg.recv = mock_recv;
     cfg.io = &m;
-    ch_tls t;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // no auth mode at all
+    ch_tls_priv t;
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // no auth mode at all
     cfg.psk = psk;
     cfg.psk_len = sizeof psk;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // psk without identity
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // psk without identity
     cfg.psk_id = (const uint8_t *)"d";
     cfg.psk_id_len = 1;
     cfg.server_pubkey = pin;
     cfg.server_pubkey_len = sizeof pin;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // both modes set
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // both modes set
     cfg.server_pubkey = NULL;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO); // valid PSK config reaches I/O
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO); // valid PSK config reaches I/O
     cfg.psk = NULL;
     cfg.psk_len = 0;
     cfg.psk_id = NULL;
     cfg.psk_id_len = 0;
     cfg.server_pubkey = pin;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO); // valid pinned config reaches I/O
-    CHECK(t.group == 0);                   // no ServerHello arrived, so no group
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO); // valid pinned config reaches I/O
+    CHECK(t.group == 0);                               // no ServerHello arrived, so no group
 #ifdef CH_PIN_ECDSA
     cfg.server_pubkey_len = 63;
     CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // P-256 pin must be exactly 64
@@ -240,19 +241,19 @@ static void test_connect_cfg(void) {
 #else
     cfg.server_pubkey_len = 256;
     pin[255] = 1; // the low byte the shorter length exposes must be odd too
-    CHECK(ch_connect(&t, &cfg) == CH_EIO); // RSA-2048, the smallest pin
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO); // RSA-2048, the smallest pin
     cfg.server_pubkey_len = 248;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // below the floor
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // below the floor
     cfg.server_pubkey_len = 392;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // above RSA-3072
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // above RSA-3072
     cfg.server_pubkey_len = 260;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // not a multiple of 8 bytes
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // not a multiple of 8 bytes
 #endif
     cfg.server_pubkey_len = sizeof pin;
     cfg.buf_len = CH_MIN_RXBUF - 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // first size below the floor
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // first size below the floor
     cfg.buf_len = CH_MIN_RXBUF;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO); // the floor itself reaches I/O
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO); // the floor itself reaches I/O
     cfg.buf_len = sizeof rxbuf;
 #ifdef CH_TRUST_CA
     // CA builds reuse both key slots as CA keys, and ch_connect applies
@@ -289,10 +290,10 @@ static void test_connect_cfg(void) {
     // reported group stays 0.
     cfg.require_pq = 1;
 #ifdef CH_KEX_PQ
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
 #else
     int sends_before = m.sends;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     CHECK(m.sends == sends_before); // refused at config time: nothing left the client
 #endif
     CHECK(t.group == 0);
@@ -301,18 +302,18 @@ static void test_connect_cfg(void) {
     // Slot B (key rotation): optional, but bound to every slot-A rule.
     cfg.server_pubkey2 = pin2;
     cfg.server_pubkey2_len = sizeof pin2;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO); // both slots valid reaches I/O
-    CHECK(t.pin_slot == 0);                // no pin matched anything yet
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO); // both slots valid reaches I/O
+    CHECK(t.pin_slot == 0);                            // no pin matched anything yet
     cfg.server_pubkey2_len = TEST_PIN_LEN - 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // bad slot-B length
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // bad slot-B length
     cfg.server_pubkey2_len = sizeof pin2;
     cfg.server_pubkey = NULL;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // slot B never stands alone
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // slot B never stands alone
     cfg.psk = psk;
     cfg.psk_len = sizeof psk;
     cfg.psk_id = (const uint8_t *)"d";
     cfg.psk_id_len = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // ... not even beside a PSK
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL); // ... not even beside a PSK
     cfg.psk = NULL;
     cfg.psk_len = 0;
     cfg.psk_id = NULL;
@@ -320,11 +321,11 @@ static void test_connect_cfg(void) {
     cfg.server_pubkey = pin;
 #ifndef CH_PIN_ECDSA
     pin2[TEST_PIN_LEN - 1] = 2; // even slot B: same corruption check as A
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
     cfg.server_pubkey2 = NULL;
     cfg.server_pubkey2_len = 0;
     pin[TEST_PIN_LEN - 1] = 2; // even low byte: provisioning corruption
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EINVAL);
 #endif
 }
 
@@ -341,7 +342,7 @@ static void test_pinned_hello_extensions(void) {
     mock_io m = {0};
     ch_cfg cfg = {0};
     TEST_CPU_CFG(cfg);
-    ch_tls t;
+    ch_tls_priv t;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = mock_send;
@@ -352,7 +353,7 @@ static void test_pinned_hello_extensions(void) {
 
     // The first record the client sent is the plaintext hello; the
     // alert that follows it when recv fails is not read.
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(ch_connect(tls_public(&t), &cfg) == CH_EIO);
     CHECK(m.sends >= 1 && m.tx_len > REC_HDR && m.tx[0] == REC_HANDSHAKE);
     const uint8_t *hello = m.tx + REC_HDR;
     size_t hello_len = ((size_t)m.tx[3] << 8) | m.tx[4];

@@ -43,7 +43,7 @@ static void padded_hello(retry_msg *out, const retry_msg *in, size_t extra) {
 // refused with illegal_parameter. A first hello one past the bound is
 // refused before any HelloRetryRequest.
 static void test_retry_extension_count(void) {
-    static ch_quic q;
+    static ch_quic_priv q;
     static retry_msg recorded1;
     static retry_msg recorded2;
     static retry_msg hello;
@@ -52,7 +52,8 @@ static void test_retry_extension_count(void) {
          extra <= SRV_CLIENT_HELLO_EXT_MAX - FIRST_EXT_COUNT; extra++) {
         retry_session(&q);
         padded_hello(&hello, &recorded1, extra);
-        CHECK(ch_srv_quic_crypto_in(&q, CH_LEVEL_INITIAL, hello.bytes, hello.len) == CH_OK);
+        CHECK(ch_srv_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, hello.bytes, hello.len) ==
+              CH_OK);
         size_t body_len = 0;
         const uint8_t *body = server_ext(retry_out.bytes[CH_LEVEL_INITIAL],
                                          retry_out.len[CH_LEVEL_INITIAL], EXT_COOKIE, &body_len);
@@ -62,18 +63,19 @@ static void test_retry_extension_count(void) {
         }
         recorded_second(&recorded2, body + 2, body_len - 2, NULL);
         padded_hello(&hello, &recorded2, extra);
-        int rc = ch_srv_quic_crypto_in(&q, CH_LEVEL_INITIAL, hello.bytes, hello.len);
+        int rc = ch_srv_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, hello.bytes, hello.len);
         if (SECOND_EXT_COUNT + extra <= SRV_CLIENT_HELLO_EXT_MAX) {
             CHECK(rc == CH_OK && retry_out.len[CH_LEVEL_HANDSHAKE] > 0);
         } else {
-            CHECK(rc == CH_EPROTO && ch_quic_alert(&q) == ALERT_ILLEGAL_PARAMETER);
+            CHECK(rc == CH_EPROTO && ch_quic_alert(quic_public(&q)) == ALERT_ILLEGAL_PARAMETER);
             CHECK(retry_out.len[CH_LEVEL_HANDSHAKE] == 0);
         }
     }
     retry_session(&q);
     padded_hello(&hello, &recorded1, SRV_CLIENT_HELLO_EXT_MAX + 1 - FIRST_EXT_COUNT);
-    CHECK(ch_srv_quic_crypto_in(&q, CH_LEVEL_INITIAL, hello.bytes, hello.len) == CH_EPROTO);
-    CHECK(ch_quic_alert(&q) == ALERT_ILLEGAL_PARAMETER);
+    CHECK(ch_srv_quic_crypto_in(quic_public(&q), CH_LEVEL_INITIAL, hello.bytes, hello.len) ==
+          CH_EPROTO);
+    CHECK(ch_quic_alert(quic_public(&q)) == ALERT_ILLEGAL_PARAMETER);
     CHECK(retry_out.len[CH_LEVEL_INITIAL] == 0);
 }
 

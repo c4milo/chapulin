@@ -14,7 +14,7 @@
 
 // Whether every key the session held is gone. rec_dir has padding, so its
 // members compare one at a time.
-static int session_keys_wiped(const ch_tls *t) {
+static int session_keys_wiped(const ch_tls_priv *t) {
     // At least as long as a rec_dir key and IV, and as a secret.
     static const uint8_t zero[SHA256_LEN] = {0};
     return t->keys == 0 && memcmp(t->rd.key, zero, sizeof t->rd.key) == 0 &&
@@ -36,24 +36,24 @@ static void read_peer_alert(uint8_t level, uint8_t description) {
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
     const uint8_t alert[2] = {level, description};
     mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
     mock_push(&m, &server, REC_ALERT, alert, sizeof alert);
 
     uint8_t out[16];
-    CHECK(ch_read(&t, out, sizeof out) == 4);
-    CHECK(ch_alert_sent(&t) == 0 && ch_alert_received(&t) == 0);
-    CHECK(ch_read(&t, out, sizeof out) == CH_EPROTO);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == 4);
+    CHECK(ch_alert_sent(tls_public(&t)) == 0 && ch_alert_received(tls_public(&t)) == 0);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == CH_EPROTO);
     CHECK(m.sends == 0);
     CHECK(t.state == CH_ST_FAILED && session_keys_wiped(&t));
-    CHECK(ch_alert_received(&t) == description && ch_alert_sent(&t) == 0);
-    CHECK(ch_read(&t, out, sizeof out) == CH_EPROTO);
-    CHECK(ch_write(&t, out, 1) == CH_EPROTO);
-    ch_close(&t);
+    CHECK(ch_alert_received(tls_public(&t)) == description && ch_alert_sent(tls_public(&t)) == 0);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == CH_EPROTO);
+    CHECK(ch_write(tls_public(&t), out, 1) == CH_EPROTO);
+    ch_close(tls_public(&t));
     CHECK(m.sends == 0);
-    CHECK(ch_alert_received(&t) == description && ch_alert_sent(&t) == 0);
+    CHECK(ch_alert_received(tls_public(&t)) == description && ch_alert_sent(tls_public(&t)) == 0);
 }
 
 // RFC 9846 §6 treats every description but close_notify and user_canceled
@@ -79,7 +79,7 @@ static void read_alert_of_length(size_t n) {
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     rec_dir reader;
@@ -89,9 +89,10 @@ static void read_alert_of_length(size_t n) {
     mock_push(&m, &server, REC_ALERT, body, n);
 
     uint8_t out[16];
-    CHECK(ch_read(&t, out, sizeof out) == CH_EPROTO);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == CH_EPROTO);
     CHECK(t.state == CH_ST_FAILED && session_keys_wiped(&t));
-    CHECK(ch_alert_sent(&t) == ALERT_DECODE_ERROR && ch_alert_received(&t) == 0);
+    CHECK(ch_alert_sent(tls_public(&t)) == ALERT_DECODE_ERROR &&
+          ch_alert_received(tls_public(&t)) == 0);
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;
@@ -117,7 +118,7 @@ static void read_alert_inside_message(const uint8_t *alert, size_t n) {
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
     // The first ten bytes of a 100-byte NewSessionTicket: the message is
     // incomplete, so the read asks for the next record.
@@ -126,13 +127,14 @@ static void read_alert_inside_message(const uint8_t *alert, size_t n) {
     mock_push(&m, &server, REC_ALERT, alert, n);
 
     uint8_t out[16];
-    CHECK(ch_read(&t, out, sizeof out) == CH_EPROTO);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == CH_EPROTO);
     CHECK(t.state == CH_ST_FAILED && session_keys_wiped(&t));
     if (n == 2) {
-        CHECK(ch_alert_received(&t) == alert[1] && ch_alert_sent(&t) == 0);
+        CHECK(ch_alert_received(tls_public(&t)) == alert[1] && ch_alert_sent(tls_public(&t)) == 0);
         CHECK(m.sends == 0);
     } else {
-        CHECK(ch_alert_received(&t) == 0 && ch_alert_sent(&t) == ALERT_DECODE_ERROR);
+        CHECK(ch_alert_received(tls_public(&t)) == 0 &&
+              ch_alert_sent(tls_public(&t)) == ALERT_DECODE_ERROR);
         CHECK(m.sends == 1 && m.tx_len == CH_ALERT_RECORD_LEN);
     }
 }
@@ -158,7 +160,7 @@ static void test_failure_alert_recorded(void) {
     rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ch_tls t;
+    ch_tls_priv t;
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     rec_dir reader;
@@ -167,8 +169,9 @@ static void test_failure_alert_recorded(void) {
     const uint8_t ccs[1] = {1};
     mock_push(&m, &server, REC_CCS, ccs, sizeof ccs);
     uint8_t out[16];
-    CHECK(ch_read(&t, out, sizeof out) == CH_EPROTO);
-    CHECK(ch_alert_sent(&t) == ALERT_UNEXPECTED_MESSAGE && ch_alert_received(&t) == 0);
+    CHECK(ch_read(tls_public(&t), out, sizeof out) == CH_EPROTO);
+    CHECK(ch_alert_sent(tls_public(&t)) == ALERT_UNEXPECTED_MESSAGE &&
+          ch_alert_received(tls_public(&t)) == 0);
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;
@@ -176,15 +179,16 @@ static void test_failure_alert_recorded(void) {
     CHECK(type == REC_ALERT && pt_len == 2 && pt[1] == ALERT_UNEXPECTED_MESSAGE);
 
     mock_io m2 = {0};
-    ch_tls t2;
+    ch_tls_priv t2;
     mock_session(&t2, &m2, rxbuf, sizeof rxbuf, secret, NULL);
     m2.fail_after = 1;
-    CHECK(ch_write(&t2, (const uint8_t *)"x", 1) == CH_EIO);
-    CHECK(ch_alert_sent(&t2) == ALERT_INTERNAL_ERROR && ch_alert_received(&t2) == 0);
+    CHECK(ch_write(tls_public(&t2), (const uint8_t *)"x", 1) == CH_EIO);
+    CHECK(ch_alert_sent(tls_public(&t2)) == ALERT_INTERNAL_ERROR &&
+          ch_alert_received(tls_public(&t2)) == 0);
 
     static const uint8_t update_requested[5] = {HS_KEY_UPDATE, 0, 0, 1, 1};
     mock_io m3 = {0};
-    ch_tls t3;
+    ch_tls_priv t3;
     rec_dir peer;
     TEST_CPU_DIR(peer);
     rec_dir_init(&peer, secret);
@@ -192,10 +196,11 @@ static void test_failure_alert_recorded(void) {
     mock_push(&m3, &peer, REC_HANDSHAKE, update_requested, sizeof update_requested);
     rec_dir_update(secret, &peer);
     mock_push(&m3, &peer, REC_APPDATA, (const uint8_t *)"x", 1);
-    CHECK(ch_read(&t3, out, sizeof out) == 1 && m3.sends == 0);
+    CHECK(ch_read(tls_public(&t3), out, sizeof out) == 1 && m3.sends == 0);
     m3.fail_after = 1;
-    CHECK(ch_write(&t3, (const uint8_t *)"x", 1) == CH_EIO);
-    CHECK(ch_alert_sent(&t3) == ALERT_INTERNAL_ERROR && ch_alert_received(&t3) == 0);
+    CHECK(ch_write(tls_public(&t3), (const uint8_t *)"x", 1) == CH_EIO);
+    CHECK(ch_alert_sent(tls_public(&t3)) == ALERT_INTERNAL_ERROR &&
+          ch_alert_received(tls_public(&t3)) == 0);
     CHECK(t3.state == CH_ST_FAILED && t3.send_epochs == 0);
 }
 

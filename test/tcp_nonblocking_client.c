@@ -21,6 +21,7 @@
 
 #include "ch_assert.h"
 #include "rand.h"
+#include "session_convert.h"
 #include "tcp_nonblocking.h"
 #include "tls.h"
 
@@ -102,11 +103,11 @@ static int from_hex(const char *hex, uint8_t *out, size_t cap, size_t *len) {
 // Sends everything chapulin has staged. It returns 0 once ch_tcp_out
 // answers that nothing is owed, and 1 when it answers anything else, which
 // after a failure comes right after the alert record has gone out.
-static int send_staged(ch_tcp *r, int fd) {
+static int send_staged(ch_tcp_priv *r, int fd) {
     uint8_t out_buf[4096];
     for (;;) {
         size_t n = 0;
-        if (ch_tcp_out(r, out_buf, sizeof out_buf, &n) != CH_OK) {
+        if (ch_tcp_out(tcp_public(r), out_buf, sizeof out_buf, &n) != CH_OK) {
             return 1;
         }
         if (n == 0) {
@@ -122,14 +123,14 @@ static int send_staged(ch_tcp *r, int fd) {
 // leaves through send_staged, and everything the peer says arrives through
 // in_buf; leftover_len holds the bytes of a record that has not all
 // arrived, which ch_tcp_in leaves for the next call.
-static int run_handshake(ch_tcp *r, int fd) {
+static int run_handshake(ch_tcp_priv *r, int fd) {
     uint8_t in_buf[16384];
     size_t leftover = 0;
     for (;;) {
         if (send_staged(r, fd) != 0) {
             return 1;
         }
-        if (ch_tcp_state(r) == CH_ST_CONNECTED) {
+        if (ch_tcp_state(tcp_public(r)) == CH_ST_CONNECTED) {
             return 0;
         }
         ssize_t got = recv(fd, in_buf + leftover, sizeof in_buf - leftover, 0);
@@ -139,11 +140,11 @@ static int run_handshake(ch_tcp *r, int fd) {
         }
         size_t have = leftover + (size_t)got;
         size_t used = 0;
-        int rc = ch_tcp_in(r, in_buf, have, &used);
+        int rc = ch_tcp_in(tcp_public(r), in_buf, have, &used);
         if (rc != CH_OK) {
             // The failure staged its alert record, which goes to the
             // server before the connection closes.
-            (void)fprintf(stderr, "rec_in: %d alert=%u\n", rc, ch_alert_sent(&r->t));
+            (void)fprintf(stderr, "rec_in: %d alert=%u\n", rc, ch_alert_sent(tls_public(&r->t)));
             (void)send_staged(r, fd);
             return 1;
         }
@@ -181,8 +182,8 @@ int main(int argc, char **argv) {
     cfg.recv = sock_recv;
     cfg.io = &fd;
 
-    static ch_tcp r;
-    int rc = ch_tcp_init(&r, &cfg);
+    static ch_tcp_priv r;
+    int rc = ch_tcp_init(tcp_public(&r), &cfg);
     if (rc != CH_OK) {
         (void)fprintf(stderr, "rec_init: %d\n", rc);
         return 1;
@@ -197,11 +198,11 @@ int main(int argc, char **argv) {
     // clean close, which is what proves the handoff works.
     char line[512];
     if (fgets(line, sizeof line, stdin) != NULL) {
-        if (ch_write(&r.t, (const uint8_t *)line, strlen(line)) != CH_OK) {
+        if (ch_write(ch_tcp_tls(tcp_public(&r)), (const uint8_t *)line, strlen(line)) != CH_OK) {
             return 1;
         }
         uint8_t reply[512];
-        int got = ch_read(&r.t, reply, sizeof reply);
+        int got = ch_read(ch_tcp_tls(tcp_public(&r)), reply, sizeof reply);
         if (got <= 0) {
             (void)fprintf(stderr, "read: %d\n", got);
             return 1;
@@ -209,7 +210,7 @@ int main(int argc, char **argv) {
         (void)fwrite(reply, 1, (size_t)got, stdout);
         (void)fflush(stdout);
     }
-    ch_close(&r.t);
+    ch_close(ch_tcp_tls(tcp_public(&r)));
     (void)close(fd);
     return 0;
 }

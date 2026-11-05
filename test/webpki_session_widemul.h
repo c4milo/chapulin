@@ -19,6 +19,7 @@
 #define CH_TEST_WEBPKI_SESSION_WIDEMUL_H
 #ifdef TEST_WIDEMUL_COUNTED
 
+#include "session_convert.h"
 #include "widemul_runtime_count.h"
 
 // The client's calls over one handshake that fails at its Certificate,

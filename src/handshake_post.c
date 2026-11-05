@@ -63,7 +63,7 @@ int hspost_trust_holds(const ch_cfg *cfg, const ch_ticket *ticket) {
 // that resumed a ticket read no pin, so it passes that ticket's trust on.
 // One keyed by an external PSK names the PSK, and one a pin authenticated
 // names the key in the slot that matched, ch_tls.pin_slot.
-static void ticket_trust(const ch_tls *t, uint8_t out[SHA256_LEN]) {
+static void ticket_trust(const ch_tls_priv *t, uint8_t out[SHA256_LEN]) {
     if (t->cfg.ticket != NULL) {
         memcpy(out, t->cfg.ticket->ticket.trust_hash, SHA256_LEN);
         return;
@@ -157,7 +157,7 @@ static int read_ticket_extensions(const uint8_t *block, size_t n, uint8_t *alert
 // there is early_data, and chapulin sends no 0-RTT. Skipping by that
 // length is what leaves rb_left below at zero for a whole message and
 // above zero for a message that carries anything else.
-static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *alert
+static int handle_ticket(ch_tls_priv *t, const uint8_t *body, size_t n, uint8_t *alert
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
                          ,
                          uint64_t *error_code
@@ -244,14 +244,14 @@ uint32_t ch_ticket_obfuscated_age(const ch_ticket *ticket, uint64_t age_ms) {
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-int hspost_take_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *alert,
+int hspost_take_ticket(ch_tls_priv *t, const uint8_t *body, size_t n, uint8_t *alert,
                        uint64_t *error_code) {
     return handle_ticket(t, body, n, alert, error_code);
 }
 #endif
 
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
-int hspost_send_key_update(ch_tls *t) {
+int hspost_send_key_update(ch_tls_priv *t) {
     uint8_t msg[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
     size_t out_len = 0;
     if (rec_seal(&t->wr, REC_HANDSHAKE, msg, sizeof msg, t->tx, sizeof t->tx, &out_len) != 0 ||
@@ -271,7 +271,7 @@ int hspost_send_key_update(ch_tls *t) {
 // sets the one answer ch_write owes before its next data record
 // (tls_write.c), so a run of requests gets one answer. At this side's own
 // epoch cap §4.7.3 has it ignore the request (rfc9846.txt:3405-3408).
-static void handle_key_update(ch_tls *t, uint8_t request) {
+static void handle_key_update(ch_tls_priv *t, uint8_t request) {
     t->key_update_run++;
     rec_dir_update(t->rd_secret, &t->rd);
     if (request == 1 && t->send_epochs < HSPOST_SEND_EPOCHS_MAX) {
@@ -285,7 +285,7 @@ static void handle_key_update(ch_tls *t, uint8_t request) {
 // unexpected_message the caller set (rfc9846.txt:1054-1058). A ROLE=both
 // object holds sessions of both sides, and each server entry marks its
 // own (session.h).
-static int take_ticket(ch_tls *t, const uint8_t *body, size_t msg_len, uint8_t *alert) {
+static int take_ticket(ch_tls_priv *t, const uint8_t *body, size_t msg_len, uint8_t *alert) {
 #ifdef CH_ROLE_SERVER
     if (t->server != 0) {
         return CH_EPROTO;
@@ -304,7 +304,7 @@ static int take_ticket(ch_tls *t, const uint8_t *body, size_t msg_len, uint8_t *
 // unexpected_message the caller set. So does a KeyUpdate after a run of
 // CH_KEY_UPDATE_RUN_MAX, which returns CH_KEY_UPDATE_LIMIT (session.h).
 // Each refusal comes before the rekey, and this call sends nothing.
-static int take_key_update(ch_tls *t, const uint8_t *body, size_t msg_len, int ends_input,
+static int take_key_update(ch_tls_priv *t, const uint8_t *body, size_t msg_len, int ends_input,
                            uint8_t *alert) {
     if (msg_len != 1) {
         *alert = ALERT_DECODE_ERROR;
@@ -338,7 +338,7 @@ static int take_key_update(ch_tls *t, const uint8_t *body, size_t msg_len, int e
 // message, so every byte after a whole message came from the record that
 // holds that message's last byte. A KeyUpdate split across two records
 // under one key ends the second, which is legal.
-static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t *used,
+static int handle_post_handshake(ch_tls_priv *t, const uint8_t *pt, size_t n, size_t *used,
                                  uint8_t *alert) {
     size_t off = 0;
     while (n - off >= 4) {
@@ -374,7 +374,7 @@ static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t 
 // an alert record goes to hsr_refuse_alert, which records the peer's
 // fatal alert, and any other type keeps the unexpected_message the caller
 // set.
-static int open_fragment(ch_tls *t, size_t fill, uint8_t outer, size_t record_len, size_t *n,
+static int open_fragment(ch_tls_priv *t, size_t fill, uint8_t outer, size_t record_len, size_t *n,
                          uint8_t *alert) {
     uint8_t *at = t->cfg.buf + fill;
     uint8_t inner_type = 0;
@@ -396,7 +396,7 @@ static int open_fragment(ch_tls *t, size_t fill, uint8_t outer, size_t record_le
 // of one message cannot be interleaved with other record types
 // (open_fragment). A failure writes the alert it owes to *alert where it
 // owes another than the unexpected_message hspost_read starts with.
-static int drain_run(ch_tls *t, size_t pt_len, uint8_t *alert) {
+static int drain_run(ch_tls_priv *t, size_t pt_len, uint8_t *alert) {
     uint8_t *buf = t->cfg.buf;
     size_t fill = pt_len;
     // Bounded like ch_read's quiet cap: a fragmented message must make
@@ -440,7 +440,7 @@ static int drain_run(ch_tls *t, size_t pt_len, uint8_t *alert) {
     return CH_EPROTO;
 }
 
-int hspost_read(ch_tls *t, size_t pt_len) {
+int hspost_read(ch_tls_priv *t, size_t pt_len) {
     uint8_t alert = ALERT_UNEXPECTED_MESSAGE;
     int rc = drain_run(t, pt_len, &alert);
     if (rc != CH_OK && rc != CH_TCP_AGAIN) {

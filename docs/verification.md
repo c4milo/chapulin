@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-128 of the 165 C sources in the tree root are compiled into a
+131 of the 169 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 37 sources are in no such harness:
+The other 38 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -76,6 +76,7 @@ The other 37 sources are in no such harness:
 | `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, but for the host arms of `mlkem.c`'s three NTT wrappers, each one call into `mlkem_vector.c` ([The vector NTT](#the-vector-ntt)), and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decisions 93 and 128). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
+| `session_report.c` | Each call converts the caller's storage once and reads one field of it, with no branch and no index (decision 185). | The loop tests read the calls against the fields after each handshake, and `lib-check` requires each call in the object's export list. |
 | `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names, but for the arms of `poly1305.c`'s `whole_blocks` that hand whole groups of blocks to the vector paths, and on x86-64 `poly1305_update_avx2` and `poly1305_update_ifma`, which only `poly1305_native.c` compiles ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `p256_adx_point.c`, `p256_adx_mul.c`, `p256_adx_verify_point.c`, `p256_adx_verify.c` | Each is a wide P-256 file compiled once more under the names `p256_adx_names.h` gives, whose products and squares are `p256_adx_field.c`'s (decision 171). It has a body on x86-64 alone. | The wide file's own harnesses prove the same text over the stubs of the field or of the points, and `bin/p256_adx_equiv_test` and `bin/p256_adx_verify_equiv_test` hold the copy to the files under their own names on a CPU with BMI2 and ADX. |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
