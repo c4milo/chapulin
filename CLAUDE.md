@@ -547,8 +547,12 @@ Home: github.com/c4milo.
   X25519's is `x25519_wide.c`, P-256's is the `p256_wide_*` files, and
   RSA signing's is `rsa_sign64.c`, which signs by the Chinese remainder
   theorem, checks each signature with the public exponent before it
-  returns it, and after each private call runs `rsa_sign64_wipe.[ch]`'s
-  wipe of the stack below it (docs/decisions.md 94, 95 and 181).
+  returns it, after each private call runs `rsa_sign64_wipe.[ch]`'s wipe
+  of the stack below it, and walks dp + r_p (p - 1) and dq + r_q (q - 1)
+  for two fresh 64-bit r, which `rsa_sign64_blind.h`, a header it alone
+  includes, writes (docs/decisions.md 94, 95, 181 and 187).
+  `rsa_sign.c`'s ladder, the copy on the decomposition, walks d + r
+  (65537 d - 1) for a fresh 64-bit r (docs/decisions.md 186).
   `widemul.h` runs the native copy for a session whose `ch_cfg.cpu` holds
   `CH_CPU_CONSTANT_TIME_MULTIPLY`: one branch per operation and no
   function pointer. The bit is the caller's statement about every
