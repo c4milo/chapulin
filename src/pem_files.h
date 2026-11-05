@@ -44,7 +44,6 @@
 #include <stdint.h>
 
 #include "cfg.h"
-#include "pem.h"
 
 // A PROFILE=cnsa2 server holds no P-256 or RSA identity and no P-256 or
 // RSA arithmetic, so it defines the chain call and ch_mldsa_key_from_pem

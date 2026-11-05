@@ -1,0 +1,13 @@
+invariant: INV-35
+file: src/alert.h
+catches: test/lib-check-webpki-tcp-nonblocking.sh
+reason: alert.h includes session.h again, an internal header, as it did
+  before the public headers stopped holding the library's state. A caller
+  that compiles against the API headers alone, with no -Isrc, cannot find
+  it, and lib-check's consumer against a copy of API_HEADERS fails.
+
+--- old
+#include "session_storage.h"
+--- new
+#include "session.h"
+#include "session_storage.h"

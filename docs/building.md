@@ -292,10 +292,13 @@ Other targets:
   `-DHOST_TARGET=` for `zig build`.
 - `make lib` also writes `bin/chapulin.h`, the object's header, beside
   the object. It defines what `make print-lib-def` prints for the object,
-  as `-D` defines it, and then includes the object's public headers,
-  the ones `zig build` translates. Include it before any other chapulin
-  header, or pass it to the compiler with `-include`. The program then
-  compiles under the object's own defines and passes none itself:
+  as `-D` defines it. Then it defines the object's layout, which
+  `tools/layout_probe.c` measures under the object's compiler: the size
+  and alignment of each session's storage, and `CH_TX_STAGE`. Then it
+  includes the object's public headers, the ones `zig build` translates.
+  Include it before any other chapulin header, or pass it to the
+  compiler with `-include`. The program then compiles under the object's
+  own defines and passes none itself:
 
   ```sh
   make lib TRUST=webpki RAND=extern
@@ -307,7 +310,12 @@ Other targets:
   `lib-check` compiles `test/build_test.c` under the header alone and
   requires the object's build record, below, and the program compiled
   with a transport define the object lacks must stop at that `#error`.
-  The examples compile this way (decision 133).
+  The examples compile this way (decision 133). Under the header the
+  public headers need no internal one: `lib-check` also compiles that
+  program against a copy of the Makefile's `API_HEADERS` alone, with no
+  `-Isrc`, and requires its record to match (decision 185). A program
+  that skips the header compiles with `-Isrc`, and the storage sizes
+  then come from the internal structs.
 - `ch_build` is the object's build record (`build.h`): the axes it was
   compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
   `ch_tcp`, `ch_quic` and `ch_rsa_priv`, and the bounds a program

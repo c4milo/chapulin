@@ -3,14 +3,16 @@
 // the session struct plus the caller's receive buffer is the entire
 // working set. The caller supplies blocking I/O callbacks (bounded by its
 // own timeouts) and a random source (rand.h). Configuration and result
-// codes live in cfg.h; the session struct in session.h; the two calls
-// that report what alert ended a session in alert.h.
+// codes live in cfg.h; the session's storage in session_storage.h; the
+// two calls that report what alert ended a session in alert.h.
 #ifndef CH_TLS_H
 #define CH_TLS_H
 
 #include "alert.h"
-#include "session.h"
+#include "cfg.h"
+#include "result.h"
 #include "session_report.h"
+#include "session_storage.h"
 
 // Runs the full handshake. On CH_OK the session is ready for read/write.
 // Any error wipes all key material and leaves the session dead. A
@@ -136,7 +138,7 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 // KeyUpdate internally. A KeyUpdate moves the read key, and one that asks
 // for an answer leaves it owed to the next ch_write (above).
 //
-// It reads at most CH_KEY_UPDATE_RUN_MAX KeyUpdates in a row (session.h):
+// It reads at most CH_KEY_UPDATE_RUN_MAX KeyUpdates in a row (public_sizes.h):
 // only a record of application data with one byte or more ends a run, in
 // this call or an earlier one. The next KeyUpdate returns
 // CH_KEY_UPDATE_LIMIT (result.h) and leaves the session dead, after it

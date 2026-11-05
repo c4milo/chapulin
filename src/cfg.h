@@ -10,9 +10,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "hkdf.h"
+#include "public_sizes.h"
 #include "result.h"
-#include "sha256.h"
 #include "srv_cfg.h"
 #include "ticket.h"
 

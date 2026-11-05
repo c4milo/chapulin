@@ -36,6 +36,7 @@
 #define CH_TEST_QUIC_LOOP_RUNTIME_H
 #if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
 
+#include "gcm.h"
 #ifdef TEST_WEBPKI_TICKET_COUNTED
 #include "webpki_ticket_count.h"
 #endif

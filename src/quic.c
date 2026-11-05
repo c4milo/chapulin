@@ -20,6 +20,8 @@
 #include "quic_initial.h"
 #include "quic_packet.h"
 #include "quic_retry.h"
+#include "quic_session.h"
+#include "quic_step.h"
 #include "quic_version.h"
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_ticket.h"

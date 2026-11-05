@@ -18,6 +18,8 @@
 #define CH_QUIC_CFG_H
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
+#include <stdint.h>
+
 #include "result.h"
 
 // The two result codes result.h defines for this build sit beside CH_EINVAL, both int. The
@@ -68,8 +70,14 @@
 #define CH_QUIC_VERSION_1 0x00000001U
 #define CH_QUIC_VERSION_2 0x6B3343CFU
 
-// quic_keys.h holds the three 1-RTT receive key set names and their count
-// CH_QUIC_KEY_SETS, and quic.h includes it, so ch_quic_open's key_set output has a name.
+// public_sizes.h holds the three 1-RTT receive key set names and their count
+// CH_QUIC_KEY_SETS, so ch_quic_open's key_set output has a name.
+
+// The bit ch_quic_levels_ready reports for one direction at one encryption level. level is
+// a CH_LEVEL_ value and direction is CH_KEY_READ or CH_KEY_WRITE (quic_cfg.h), so the six bits
+// of the three levels sit in the low six bits of one byte. Both arguments are the
+// caller's own public values, never a secret, so the shift is an ordinary index.
+#define CH_QUIC_LEVEL_BIT(level, direction) ((uint8_t)(1U << ((level) * 2 + (direction))))
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

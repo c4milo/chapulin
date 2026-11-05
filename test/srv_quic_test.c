@@ -18,7 +18,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "aes.h"
 #include "ch_assert.h"
+#include "gcm.h"
 #include "handshake_message.h"
 #include "p256_sign_vectors.h"
 #include "rand.h"

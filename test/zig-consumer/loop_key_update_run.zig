@@ -20,7 +20,7 @@ const c = chapulin.c;
 const check = fixture.check;
 const tcp = chapulin.tcp;
 
-/// CH_KEY_UPDATE_RUN_MAX (session.h).
+/// CH_KEY_UPDATE_RUN_MAX (public_sizes.h).
 const run_max: usize = c.CH_KEY_UPDATE_RUN_MAX;
 /// The bytes rec_seal adds to each record (record.h).
 const overhead: usize = c.REC_OVERHEAD;

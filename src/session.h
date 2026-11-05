@@ -36,19 +36,6 @@
 #define CH_QUIET_CAP 32
 #endif
 
-#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
-// The most KeyUpdates one run holds. A run is the KeyUpdates a connected
-// TCP session reads with no record of application data of one byte or
-// more between them. ch_read refuses the next KeyUpdate of a full run
-// with unexpected_message and CH_KEY_UPDATE_LIMIT (result.h), before it
-// rekeys. Every build holds 16, and no define changes it: the build
-// record holds the value (build.h), and docs/decisions.md 138 states why
-// 16. tls.c requires it below CH_QUIET_CAP, and tls.h states which of the
-// two limits one ch_read meets first. A TRANSPORT=quic-nonblocking build
-// reads no TLS KeyUpdate.
-#define CH_KEY_UPDATE_RUN_MAX 16
-#endif
-
 // TX staging past the record header. One array serves two lifetimes
 // that never overlap: ClientHello construction, then sealed-record
 // staging. See docs/decisions.md 22 and 71.
@@ -60,84 +47,8 @@
 // hello this build can emit, CH_TX_HELLO. At the default CH_TX_PT of 512
 // the hello wins in every build. A TX_RECORD build raises CH_TX_PT (cfg.h),
 // and where the sealed record then outgrows the hello it wins instead.
-// The CH_TX_HELLO values are CH_HELLO_MAX's value per build, repeated here
-// as literals because handshake_message.h sits above this header and
-// cannot be included from it; handshake.c asserts the two agree, where
-// both constants are visible, so a stale literal fails the build
-// rather than shipping.
-#if defined(CH_SUITE_AES_GCM) && defined(CH_TRUST_WEBPKI)
-#define CH_TX_AES_SUITES (4 + 16)
-#else
-#define CH_TX_AES_SUITES 0
-#endif
-// A server role stages its ServerHello in the same array, in the clear, so the array holds
-// the largest one (SRV_SERVER_HELLO_MAX, which srv_flight.h asserts equal): 1664 bytes with
-// the 1568-byte ML-KEM-1024 ciphertext, which every server can select (docs/decisions.md 162
-// and 179). It raises the classic raw and ca values below.
-#define CH_TX_SERVER_HELLO 1664
-#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-// A QUIC hello differs from the TCP one by three extensions. It drops
-// the 6-byte record_size_limit, because RFC 9001 §4.1.3 removes the
-// record layer that extension sizes (rfc9001.txt:462-464). It adds
-// quic_transport_parameters, 4 framing bytes over a body of at most
-// CH_TRANSPORT_PARAMS_MAX (§8.2). And it adds the 270-byte ALPN offer
-// in every trust mode, because §8.1 makes ALPN mandatory there
-// (rfc9001.txt:1891-1895), where a TCP device build sends none. So each
-// value is the TCP one plus 254, and plus 270 again in the two device
-// modes. These are CH_HELLO_MAX's QUIC values, repeated as literals for
-// the reason the TCP ones are, and quic.c asserts the two agree. The
-// webpki one carries the 23 bytes of CH_HELLO_CERT_PATH_MAX, as the TCP
-// one does: the builder is the same, and ch_quic_init takes SPKI pins, so
-// the 7-byte server_certificate_type offer goes out over QUIC too
-// (docs/decisions.md 64). It takes CH_TX_AES_SUITES on top, as the TCP
-// webpki value does.
-#ifdef CH_TRUST_WEBPKI
-#define CH_TX_HELLO (2650 + CH_TX_AES_SUITES)
-#elif defined(CH_PROFILE_CNSA2) && !defined(CH_ROLE_SERVER)
-#define CH_TX_HELLO 2698
-#elif defined(CH_KEX_PQ)
-#define CH_TX_HELLO 2325
-#elif defined(CH_ROLE_SERVER)
-#define CH_TX_HELLO CH_TX_SERVER_HELLO
-#else
-#define CH_TX_HELLO 1141
-#endif
-#elif defined(CH_TRUST_WEBPKI)
-// The TRUST=webpki value takes CH_TX_AES_SUITES on top: 20 bytes for a
-// SUITE=aesgcm webpki client (CH_CLIENT_AES_SUITES in suite.h), 0 in
-// every other build. That client lists two more cipher suites, 4 bytes,
-// and a ticket from a TLS_AES_256_GCM_SHA384 session carries a SHA-384
-// binder, 16 bytes longer than the SHA-256 one the sum below counts.
-// The pq sum below plus the two extensions a TRUST=webpki hello adds:
-// the 262-byte server_name at the longest hostname (4 type and length,
-// 2 list length, 1 name_type, 2 name length, 253 name) and the 270-byte
-// application_layer_protocol_negotiation at the longest offer (4 type
-// and length, 2 list length, then 8 names of 1 length byte and 32 name
-// bytes). Then the second group every webpki hello offers beside the
-// hybrid (docs/decisions.md 53): x25519 in supported_groups, 2 bytes,
-// and its KeyShareEntry, 36 bytes. Then secp256r1 in supported_groups, 2
-// bytes, which the first hello lists with no share (docs/decisions.md
-// 63); the retry hello that carries its share is shorter than this one.
-// Then the certificate path every webpki hello offers, a resuming one
-// included (docs/decisions.md 55): the 16-byte signature_algorithms of
-// five schemes and the 7-byte server_certificate_type of a config with
-// SPKI pins and anchors: 1801 + 262 + 270 + 2 + 36 + 2 + 16 + 7.
-#define CH_TX_HELLO (2396 + CH_TX_AES_SUITES)
-#elif defined(CH_PROFILE_CNSA2) && !defined(CH_ROLE_SERVER) // pq sum, 1568 key, 133 cookie
-#define CH_TX_HELLO 2174
-#elif defined(CH_KEX_PQ)
-// 137 fixed + 320 ticket identity + 128 cookie with framing + the
-// 1216-byte hybrid share.
-#define CH_TX_HELLO 1801
-#elif defined(CH_ROLE_SERVER)
-#define CH_TX_HELLO CH_TX_SERVER_HELLO
-#else
-// The same sum with a 32-byte x25519 share: 617. Above the 529 a sealed record
-// needs, which is why a maximum ticket identity plus a maximum retry cookie
-// used to fail closed with CH_ECAP
-// (https://github.com/c4milo/chapulin/issues/46).
-#define CH_TX_HELLO 617
-#endif
+// CH_TX_HELLO is in public_sizes.h, because a caller sizes a hello's
+// buffer from it.
 // The array: the hello, or one sealed record where that is larger. The
 // choice is a preprocessor #if rather than a conditional expression, so
 // every build at the default CH_TX_PT keeps the literal it had. A
@@ -173,11 +84,6 @@ _Static_assert(CH_TX_PT == 512, "a QUIC build seals no TLS record, so CH_TX_PT s
 _Static_assert(CH_TX_STAGE >= CH_TX_HELLO, "TX staging must hold the largest hello");
 _Static_assert(CH_TX_HELLO <= 0x4000, "a handshake record body caps at 2^14");
 #endif
-
-#define CH_ST_START 0
-#define CH_ST_CONNECTED 1
-#define CH_ST_CLOSED 2
-#define CH_ST_FAILED 3
 
 // The session. A caller allocates it and reads it through session_report.h's calls and alert.h's,
 // never through a field: every field is the library's (docs/usage.md).

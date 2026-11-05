@@ -9,10 +9,10 @@
 
 #include "chacha20.h"
 #include "poly1305.h"
+#include "public_sizes.h"
 
 #define AEAD_KEY 32
 #define AEAD_NONCE 12
-#define AEAD_TAG 16
 
 // ct gets n bytes of ciphertext; tag is written separately so record-layer
 // callers can place it after the ciphertext. pt == ct allowed (in-place).

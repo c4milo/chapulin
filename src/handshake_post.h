@@ -146,7 +146,7 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 // (§6, rfc9846.txt:3785-3788); illegal_parameter for a KeyUpdate whose
 // request_update is neither 0 nor 1 (§4.7.3, rfc9846.txt:3362-3365);
 // unexpected_message and CH_KEY_UPDATE_LIMIT for a KeyUpdate after a run
-// of CH_KEY_UPDATE_RUN_MAX (session.h); bad_record_mac for a record that
+// of CH_KEY_UPDATE_RUN_MAX (public_sizes.h); bad_record_mac for a record that
 // does not open; and what hsr_refuse_alert chose for an alert record
 // between two records of one message, whose error alert is the peer's
 // fatal alert and is answered with nothing. It sends no record but that

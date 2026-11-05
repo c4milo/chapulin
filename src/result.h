@@ -39,7 +39,7 @@
 #define CH_TCP_AGAIN (-9)
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // The code a TCP build adds, which ch_read alone returns. The peer sent one KeyUpdate more than
-// CH_KEY_UPDATE_RUN_MAX (session.h) in a row, and the session is dead (docs/decisions.md 138).
+// CH_KEY_UPDATE_RUN_MAX (public_sizes.h) in a row, and the session is dead (docs/decisions.md 138).
 #define CH_KEY_UPDATE_LIMIT (-10)
 #endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -83,5 +83,13 @@ static inline const char *ch_result_text(int rc) {
         return "unknown result code";
     }
 }
+
+// The states ch_state reports (session_report.h): a session an init call
+// started, one whose handshake finished, one that closed and one that
+// failed.
+#define CH_ST_START 0
+#define CH_ST_CONNECTED 1
+#define CH_ST_CLOSED 2
+#define CH_ST_FAILED 3
 
 #endif

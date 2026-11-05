@@ -14,7 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "session.h"
+#include "result.h"
 #include "session_storage.h"
 
 // Every object exports these calls, so their symbol names carry the object's transport, as

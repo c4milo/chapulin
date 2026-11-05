@@ -467,6 +467,9 @@ test "RAND=session: init refuses a value with no random, and a session draws fro
     try expect(@as(*c.ch_tcp_priv, @ptrCast(@alignCast(&session.tcp))).t.cfg.rand_io == @as(?*anyopaque, @ptrCast(&session.random)));
     try expect(counting.fills >= 2);
     var hello: [c.CH_TX_STAGE]u8 = undefined;
+    // colibri sizes a hello's buffer from CH_TX_HELLO, which public_sizes.h
+    // states, and the staging array holds the largest hello.
+    try expect(c.CH_TX_HELLO <= c.CH_TX_STAGE);
     const n = try session.recordOut(&hello);
     try expect(n >= 11 + 32);
     for (hello[11..][0..32], 33..) |byte, want| try expectEqual(@as(u8, @intCast(want)), byte);

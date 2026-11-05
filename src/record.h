@@ -9,11 +9,9 @@
 #include <stdint.h>
 
 #include "aead.h"
+#include "public_sizes.h"
 #include "sha256.h"
 #include "suite.h"
-
-#define REC_HDR 5
-#define REC_OVERHEAD (REC_HDR + 1 + AEAD_TAG) // header + inner type + tag
 
 // TLS content types.
 #define REC_CCS 20
@@ -37,18 +35,6 @@ static inline size_t rec_body_max(uint8_t outer) {
 // The most records one AES-GCM write key seals. RFC 9846 §5.5 has a sender
 // close the connection or send a KeyUpdate while a key is still below its
 // AEAD's usage limit (rfc9846.txt:3743-3744), and gives AES-GCM's as up to
-// 2^24.5 full-size records under one set of keys (rfc9846.txt:3750-3753).
-// This is 2^24, the largest power of two at or below that figure, and it
-// counts every record under the key, whatever its size. So an AES-GCM
-// write key seals at sequence numbers 0 to REC_AES_GCM_RECORDS_MAX - 1 and
-// at none above: rec_seal refuses one at or above REC_AES_GCM_RECORDS_MAX,
-// and ch_write (tls_write.c) sends the KeyUpdate that retires the key at
-// its last sequence number, REC_AES_GCM_RECORDS_MAX - 1. ChaCha20-Poly1305
-// has no such limit: its sequence number would wrap first
-// (rfc9846.txt:3752-3754), and rec_seal's wrap guard stops it there. Only
-// a -DCH_SUITE_AES_GCM build runs AES-GCM, and every TCP build defines the
-// number because tls.h's ch_writable_len counts in it.
-#define REC_AES_GCM_RECORDS_MAX 16777216
 
 typedef struct {
     // The longest key a suite fixes. TLS_CHACHA20_POLY1305_SHA256 and

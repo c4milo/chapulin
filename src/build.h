@@ -23,8 +23,14 @@
 #include <stdint.h>
 
 #include "cfg.h"
-#include "session.h"
+#include "public_sizes.h"
 #include "session_storage.h"
+// CH_TX_STAGE comes from the object's header, which make writes with the
+// object's value (docs/decisions.md 185), or from session.h for a build
+// that compiles with -Isrc and the object's defines.
+#ifndef CH_TX_STAGE
+#include "session.h"
+#endif
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
 #include "tcp_nonblocking.h"
 #endif

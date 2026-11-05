@@ -37,13 +37,15 @@ from shipped_sources import shipped_sources
 #   tools/impact*.py             this mapping and its selectors
 #   tools/shipped_sources.py     the builds lib_sources() asks make
 #                                about, so it is part of this mapping too
+#   tools/layout_probe.c         the layout every object's header
+#                                states, which every lib-check reads
 WIDE_PATHS = {
     "Makefile", "test/platforms.mk", "tools/toolchain.env", ".clang-tidy",
     "proof/run.sh", "proof/harness.h", "proof/coverage.py",
     "proof/prove-one.sh", "tools/exact-fill.py",
     "tools/impact.py", "tools/impact_read.py",
     "tools/impact_map.py", "tools/impact_select.py", "test/impact_test.py",
-    "tools/shipped_sources.py", ".clang-format",
+    "tools/shipped_sources.py", ".clang-format", "tools/layout_probe.c",
 }
 WIDE_PREFIXES = (".github/", ".semgrep/")
 

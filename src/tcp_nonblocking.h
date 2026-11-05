@@ -72,8 +72,7 @@
 #include <stdint.h>
 
 #include "cfg.h"
-#include "handshake_record.h"
-#include "session.h"
+#include "result.h"
 #include "session_report.h"
 #include "session_storage.h"
 

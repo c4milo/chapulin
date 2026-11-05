@@ -14,6 +14,7 @@
 #define CH_QUIC_VERSION_TESTS_H
 
 #include "quic_retry.h"
+#include "quic_step.h"
 #include "quic_v2_vectors.h"
 #include "test_cpu.h"
 

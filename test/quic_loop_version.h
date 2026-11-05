@@ -15,6 +15,7 @@
 #ifndef CH_TEST_QUIC_LOOP_VERSION_H
 #define CH_TEST_QUIC_LOOP_VERSION_H
 
+#include "gcm.h"
 #include "quic_packet.h"
 
 // RFC 9369 Appendix A's Destination Connection ID (rfc9369.txt:408-409).

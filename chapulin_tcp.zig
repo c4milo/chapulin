@@ -314,7 +314,7 @@ fn Session(comptime side: Side, comptime receive_len: usize, comptime limits: ch
         /// for an answer gets it from the next write (RFC 9846 §4.7.3). A
         /// reply too short for the alert fails the read with error.Io.
         /// error.KeyUpdateLimit is CH_KEY_UPDATE_LIMIT: the peer sent one
-        /// KeyUpdate past CH_KEY_UPDATE_RUN_MAX in a row (session.h).
+        /// KeyUpdate past CH_KEY_UPDATE_RUN_MAX in a row (public_sizes.h).
         pub fn read(self: *Self, input: []const u8, pt: []u8, reply: []u8) error{ Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit }!Read {
             const whole = c.ch_tcp_whole_len(input.ptr, input.len);
             self.io.begin(input[0..whole], reply);

@@ -87,12 +87,6 @@
 // docs/quic.md, "The state that survives a return", states the whole
 // table and the bound each field's proof harness assumes.
 
-// The bit ch_quic.levels_ready holds for one direction at one encryption level. level is
-// a CH_LEVEL_ value and direction is CH_KEY_READ or CH_KEY_WRITE (quic_cfg.h), so the six bits
-// of the three levels sit in the low six bits of one byte. Both arguments are the
-// caller's own public values, never a secret, so the shift is an ordinary index.
-#define CH_QUIC_LEVEL_BIT(level, direction) ((uint8_t)(1U << ((level) * 2 + (direction))))
-
 // One QUIC session. It holds everything that survives a return, because the driver returns to its
 // caller between handshake messages: the ch_tls a TCP build holds alone, the handshake_state a
 // tcp-blocking build keeps on ch_handshake's stack frame, the driver's own fields, and the packet

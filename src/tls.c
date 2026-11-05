@@ -291,7 +291,7 @@ static int dispatch_one_record(ch_tls_priv *t) {
 }
 
 // One ch_read has room under its quiet cap for a full run and the KeyUpdate
-// after it, so the run limit can refuse that KeyUpdate (session.h).
+// after it, so the run limit can refuse that KeyUpdate (public_sizes.h, session.h).
 _Static_assert(CH_KEY_UPDATE_RUN_MAX < CH_QUIET_CAP, "a run and one more fit under the quiet cap");
 
 int tls_read(ch_tls_priv *t, uint8_t *p, size_t n) {

@@ -16069,3 +16069,48 @@ does nothing more.
       bytes, and its stack runs pass under the blinding.
     - **Rejected:** **one r for both halves**, a smaller change, because a
       fresh r for each exponentiation is the form the literature analyses.
+
+188. **Step 4 of entry 185: the object's header states its layout, and
+    the API headers compile with no `-Isrc`.** Entry 185 left the storage
+    sizes to the internal headers until step 4. Camilo asked on
+    2026-11-05 to finish it.
+
+    - **The measurement.** `tools/layout_probe.c` holds one line for each
+      number: the size and alignment of `ch_tls_priv`, `ch_tcp_priv`,
+      `ch_quic_priv` and `ch_dnssec_hash_priv` where the build has them,
+      and `CH_TX_STAGE`. make compiles it to assembly under the object's
+      compiler, flags and defines. Each value is the immediate operand of
+      an `.ascii` line, as in the Linux kernel's asm-offsets.c, and `sed`
+      writes it into `chapulin.h` as a `#define`. Nothing runs, so a cross
+      compiler measures its own target: the Cortex-M3's `ch_tls` is 1,080
+      bytes where the host's is 1,160 in the same tcp-nonblocking build.
+    - **The headers.** Eight public headers stopped including internal
+      ones: `tls.h`, `tcp_nonblocking.h`, `quic.h`, `pem_files.h`,
+      `alert.h`, `session_report.h`, `dnssec.h` and `cfg.h`. `build.h`
+      includes `session.h` only where no `CH_TX_STAGE` is defined.
+      `quic.c` and five QUIC tests took the includes they had through the
+      public headers.
+    - **The constants callers read.** A caller names constants no public
+      declaration uses, so the C compile above cannot see them, and Zig's
+      translate-c dropped them with the includes. colibri reads
+      `CH_TX_HELLO`, `REC_HDR` and `GCM_TAG`, and the Zig API reads the
+      `CH_ST_` states and `CH_QUIC_LEVEL_BIT`. Each moved into a public
+      header and keeps one definition: the session states into `result.h`,
+      `CH_QUIC_LEVEL_BIT` into `quic_cfg.h`, and into `public_sizes.h`
+      `CH_TX_HELLO` with its cases, `REC_HDR`, `REC_OVERHEAD`,
+      `REC_AES_GCM_RECORDS_MAX`, `AEAD_TAG`, `GCM_TAG`, the three suite
+      codepoints and `CH_KEY_UPDATE_RUN_MAX`. `make lint-zig-build` runs
+      the Zig consumers, which now read each of them.
+    - **What holds it.** The Makefile's `API_HEADERS` names the 29 API
+      headers. `lib-check` copies them alone into a directory and
+      compiles, links and runs `test/build_test.c` there under the
+      object's header with no `-Isrc`. The run compares the object's
+      build record, which holds the real `sizeof` of each struct, with
+      the sizes the header states. Two mutants are caught: a probe that
+      states `ch_tls` 8 bytes larger, and `alert.h` including `session.h`.
+    - **Zig.** `build.zig` translates the public headers with `src/` on
+      the include path for the object's own target, so its sizes come
+      from the structs themselves, and it measures nothing.
+    - **A build without the header.** A firmware tree that skips make
+      compiles with `-Isrc`, and `session_storage.h` takes each size from
+      the internal struct, as entry 185 states.

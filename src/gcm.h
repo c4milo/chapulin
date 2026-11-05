@@ -18,8 +18,7 @@
 #include <stdint.h>
 
 #include "aes.h"
-
-#define GCM_TAG 16 // the 128-bit authentication tag, the only length used
+#include "public_sizes.h"
 
 // The nonce is AES_IV bytes, the 96-bit IV of SP 800-38D §5.2.1.1 and
 // the only length QUIC produces: RFC 9001 §5.3 builds it from the

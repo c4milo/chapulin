@@ -302,7 +302,7 @@ static int take_ticket(ch_tls_priv *t, const uint8_t *body, size_t msg_len, uint
 // other with illegal_parameter (rfc9846.txt:3362-3365). Each writes its
 // alert to *alert. A KeyUpdate with bytes after it keeps the
 // unexpected_message the caller set. So does a KeyUpdate after a run of
-// CH_KEY_UPDATE_RUN_MAX, which returns CH_KEY_UPDATE_LIMIT (session.h).
+// CH_KEY_UPDATE_RUN_MAX (public_sizes.h), which returns CH_KEY_UPDATE_LIMIT.
 // Each refusal comes before the rekey, and this call sends nothing.
 static int take_key_update(ch_tls_priv *t, const uint8_t *body, size_t msg_len, int ends_input,
                            uint8_t *alert) {

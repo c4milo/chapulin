@@ -21,9 +21,6 @@
 
 #include "result.h"
 #include "session_storage.h"
-#include "sha1.h"
-#include "sha256.h"
-#include "sha512.h"
 
 #if defined(CH_DNSSEC) && !defined(CH_CPU_RUNTIME)
 #error "CH_DNSSEC needs a host object: the RSA check runs on rsa_mont64.c"

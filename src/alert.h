@@ -9,7 +9,6 @@
 
 #include <stdint.h>
 
-#include "session.h"
 #include "session_storage.h"
 
 // Every object exports both calls, so their symbol names carry the

@@ -1,0 +1,13 @@
+invariant: INV-35
+file: tools/layout_probe.c
+catches: test/lib-check-webpki-tcp-nonblocking.sh
+reason: The probe reports ch_tls 8 bytes larger than ch_tls_priv, so the
+  object's header states a layout the object does not have. Every caller
+  that declares a ch_tls under that header then disagrees with the object
+  about its size. lib-check's consumer against the API headers alone reads
+  the object's build record and finds sizeof(ch_tls) differs.
+
+--- old
+    LAYOUT(CH_TLS_SIZE, sizeof(ch_tls_priv));
+--- new
+    LAYOUT(CH_TLS_SIZE, sizeof(ch_tls_priv) + 8);

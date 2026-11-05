@@ -58,7 +58,7 @@ enum class [[nodiscard]] Status : int {
 #endif
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     // The code a TCP read adds (result.h): the peer sent one KeyUpdate past
-    // CH_KEY_UPDATE_RUN_MAX in a row (session.h), and the session is dead.
+    // CH_KEY_UPDATE_RUN_MAX in a row (public_sizes.h), and the session is dead.
     key_update_limit = CH_KEY_UPDATE_LIMIT,
 #endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING

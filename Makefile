@@ -2671,6 +2671,12 @@ DECLARES_build.h := ch_build
 LIB_HEADER_ORDER := src/tls.h src/tcp_nonblocking.h src/quic.h src/srv.h src/srv_tcp_nonblocking.h src/srv_quic.h \
                     src/quic_token.h src/x509_ca.h src/pem_files.h src/ticket.h src/alert.h src/session_report.h src/dnssec.h src/drbg.h src/rand.h src/keylog.h \
                     src/aes_extern.h src/ch_assert.h src/build.h
+# The API headers: the ones above and the headers they include. Together
+# they compile with no -Isrc under the object's header, which defines the
+# layout the storage types need (LIB_HEADER below), and lib-check compiles
+# a consumer against a copy of this set alone (docs/decisions.md 185).
+API_HEADERS := $(LIB_HEADER_ORDER) src/cfg.h src/cpu_cfg.h src/profile_cfg.h src/srv_cfg.h src/result.h \
+               src/session_storage.h src/public_sizes.h src/rsa_key.h src/webpki_cfg.h src/quic_cfg.h
 LIB_DECLARED = $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) \
                $(PUBLIC_BUILD) $(PUBLIC_DNSSEC) $(PUBLIC_REPORT) $(LIB_HOOKS)
 LIB_HEADERS = $(foreach h,$(LIB_HEADER_ORDER),$(if $(filter $(DECLARES_$(notdir $(h))),$(LIB_DECLARED)),$(h)))
@@ -2804,15 +2810,22 @@ endif
 # the defines that change a layout or a declaration: build.h's axes,
 # CH_ROLE_BOTH and the two RAND patterns that take no bit there. For each
 # axis the object lacks, the header stops a consumer whose own flags
-# define it. The recipe rewrites the file only when its text changes, so
-# an unchanged header keeps its time.
+# define it. Then it defines the layout tools/layout_probe.c measures under
+# the object's compiler, flags and defines: the size and alignment of each
+# session's storage and CH_TX_STAGE. So the public headers name no internal
+# header for them, and a consumer compiles with no -Isrc (docs/decisions.md
+# 185). The probe is compiled to assembly alone, so a cross compiler
+# measures its own target. The recipe rewrites the file only when its text
+# changes, so an unchanged header keeps its time.
 LIB_HEADER := bin/obj/$(LIB_VARIANT)/chapulin.h
+LIB_LAYOUT := bin/obj/$(LIB_VARIANT)/layout.s
 LIB_HEADER_AXES := CH_TRUST_CA CH_TRUST_WEBPKI CH_PIN_ECDSA CH_PIN_MLDSA CH_KEX_PQ CH_TRANSPORT_QUIC_NONBLOCKING \
                    CH_TRANSPORT_TCP_NONBLOCKING CH_SUITE_AES_GCM CH_ROLE_SERVER CH_ROLE_BOTH \
                    CH_EXPORTER CH_KEYLOG CH_RAND_EXTERN CH_RAND_DRBG CH_RAND_SESSION CH_CPU_RUNTIME \
                    CH_PROFILE_CNSA2 CH_MLKEM_1024 CH_DNSSEC
 $(LIB_HEADER): FORCE
 	@mkdir -p $(@D)
+	@$(CC) $(LIB_CFLAGS) $(LIB_DEF) -Isrc -I. -S tools/layout_probe.c -o $(LIB_LAYOUT)
 	@{ printf '%s\n' '// Written by make: the defines of the chapulin object beside this file, and' \
 	    '// the public headers of that object. Include it before any other chapulin' \
 	    '// header, or pass it to the compiler with -include (docs/building.md).' \
@@ -2824,6 +2837,7 @@ $(LIB_HEADER): FORCE
 	    case "$$d" in *=*) printf '#define %s %s\n' "$${d%%=*}" "$${d#*=}";; \
 	    *) printf '#define %s 1\n' "$$d";; esac; \
 	  done; \
+	  sed -n 's/.*->\([A-Z_0-9]*\) [#$$]*\([0-9][0-9]*\).*/#define \1 \2/p' $(LIB_LAYOUT); \
 	  for h in $(notdir $(LIB_HEADERS)); do printf '#include "%s"\n' "$$h"; done; \
 	  printf '%s\n' '#endif'; } > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
@@ -2977,6 +2991,17 @@ endif
 	@grep -q 'was built without' $(BUILD_TEST)_header.err || { cat $(BUILD_TEST)_header.err; \
 	  echo "lib-check: a consumer with $(BUILD_HEADER_MOVED_DEF) failed under $(LIB_HEADER), but not at its #error"; exit 1; }
 	@echo "lib-check: a consumer under $(LIB_HEADER) alone reads this object's build record, and one with a transport define the object lacks stops at the header"
+# The same consumer against a copy of API_HEADERS alone, with no -Isrc: a
+# public header that includes an internal one fails here with the name of
+# the file it did not find. The build record holds the object's own
+# sizeof of each session struct and its CH_TX_STAGE, so the run also holds
+# the layout the header states to the object's (docs/decisions.md 185).
+	@rm -rf $(LIB_CHECK_DIR)/include && mkdir -p $(LIB_CHECK_DIR)/include
+	@cp $(API_HEADERS) $(LIB_CHECK_DIR)/include/
+	@$(CC) $(LIB_CFLAGS) -I$(LIB_CHECK_DIR)/include -include $(LIB_HEADER) -o $(BUILD_TEST)_api test/build_test.c $(LIB_OBJ) || { \
+	  echo "lib-check: a consumer under $(LIB_HEADER) does not compile against the API headers alone"; exit 1; }
+	@$(BUILD_TEST)_api || { echo "lib-check: the layout $(LIB_HEADER) states differs from the object's build record"; exit 1; }
+	@echo "lib-check: a consumer compiles against the $(words $(API_HEADERS)) API headers alone, with no -Isrc, and the layout its header states is the object's"
 
 # The declaration in cfg.h is the whole feature, so check that it fires.
 # tls.c is enough to drive it: it includes cfg.h, where the guard lives.
