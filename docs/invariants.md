@@ -161,9 +161,10 @@ last `ROLE=server` stub, as the entry said it would.
     and its `ticket_nonce`. It draws only when the caller set
     `cfg.srv.ticket_key` and a clock, `cfg.now_seconds`, that answered
     a nonzero instant.
-  - `sign_rsa_pss` in `srv_auth.c` draws the 32-byte RSA-PSS salt each
-    time the server signs with its RSA identity, and hands it to
-    `rsa_pss_sign`, which draws nothing itself (decisions.md 77).
+  - `sign_rsa_pss` in `srv_auth.c` draws 40 bytes in one call each time
+    the server signs with its RSA identity: the 32-byte RSA-PSS salt, then
+    the 8-byte blind of the ladder's exponent (decisions.md 186). It hands
+    both to `rsa_pss_sign`, which draws nothing itself (decisions.md 77).
     `ch_srv_check` signs once at boot when that identity is
     provisioned, and `srv_sign_certificate_verify` signs once per
     handshake whose CertificateVerify uses rsa_pss_rsae_sha256.

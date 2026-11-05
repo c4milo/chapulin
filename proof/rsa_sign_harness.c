@@ -20,11 +20,12 @@
 // instead of choosing one. Proved over both inputs, and below()'s answer
 // is proved to be the one bit mask_of_bit admits.
 //
-// The exponent index. The ladder reads bit i of d for i over
-// 0..8*n_len-1, and the byte it reads is d[n_len - 1 - (i >> 3)]. The
-// loop itself has 8 * n_len iterations, far past any unwinding bound, so
-// the index is proved here over a nondet i under the loop's own range,
-// which is what the loop establishes for each of its iterations.
+// The exponent index. The ladder reads bit i of the blinded exponent for
+// i over 0..32 * (n_len / 4 + BLIND_WORDS) - 1, and the word it reads is
+// exponent[i >> 5]. The loop itself has that many iterations, far past
+// any unwinding bound, so the index is proved here over a nondet i under
+// the loop's own range, which is what the loop establishes for each of
+// its iterations. proof/rsa_sign_blind_harness.c proves the blinding.
 //
 // The CIOS carry lemma, behind mont_mul. In both passes the uint64
 // accumulation v = x*y + t + c cannot wrap and its carry-out fits back in
@@ -141,15 +142,17 @@ static void prove_key_ok(void) {
                      "an admitted key's n_len is the one the marshalling bound assumes");
 }
 
-// The ladder's read of bit i of d, over the range the loop gives it.
+// The ladder's read of bit i of the blinded exponent, over the range the
+// loop gives it: words + BLIND_WORDS words, words = n_len / 4.
 static void prove_exponent_index(void) {
     size_t n_len = nondet_size_t();
     __CPROVER_assume(n_len >= 256 && n_len <= CH_RSA_MODULUS_MAX && n_len % 8 == 0);
+    size_t exponent_words = n_len / 4 + BLIND_WORDS;
     size_t i = nondet_size_t();
-    __CPROVER_assume(i < 8 * n_len);
-    size_t byte = n_len - 1 - (i >> 3);
-    __CPROVER_assert(byte < n_len, "the exponent byte index stays inside d");
-    __CPROVER_assert((i & 7) < 8, "the shift stays inside a byte");
+    __CPROVER_assume(i < 32 * exponent_words);
+    __CPROVER_assert((i >> 5) < exponent_words && exponent_words <= EXPONENT_WORDS_MAX,
+                     "the exponent word index stays inside the blinded exponent");
+    __CPROVER_assert((i & 31) < 32, "the shift stays inside a word");
 }
 
 // The encoder whole, at the largest encoded message it writes. Every

@@ -79,6 +79,12 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 
 // xorshift64, as test/rsa_equiv_test.c writes it and for its reasons.
 #define RSA_EQUIV_DEFAULT_SEED UINT64_C(0x9e3779b97f4a7c15)
+
+// The ladder's blind for an exponent that is no key's d (rsa_sign.h): r =
+// 0 walks the exponent itself. Any other r gives d + r (65537 d - 1),
+// whose power equals d's only when 65537 d is 1 modulo lambda(n), so the
+// comparisons with the window over arbitrary exponents take this one.
+static const uint8_t unblinded[RSA_BLIND_LEN] = {0};
 static uint64_t rng_state = RSA_EQUIV_DEFAULT_SEED;
 
 static uint64_t rng_seed_from_env(void) {
@@ -190,7 +196,7 @@ static void compare_window(const char *case_name, const uint8_t *em, uint8_t *ou
     uint8_t ladder_out[CH_RSA_MODULUS_MAX];
     memset(ladder_out, 0x55, sizeof ladder_out);
     memset(out, 0xaa, key.n_len);
-    rsa_sp1(&key, em, ladder_out);
+    rsa_sp1(&key, em, unblinded, ladder_out);
     window_power(em, out);
     if (memcmp(ladder_out, out, key.n_len) != 0) {
         report_mismatch(case_name, "the window", em, ladder_out, out);
@@ -278,7 +284,7 @@ static void compare_crt(const char *case_name, const uint8_t *em, const uint8_t 
     uint8_t out[CH_RSA_MODULUS_MAX];
     memset(ladder_out, 0x55, sizeof ladder_out);
     memset(out, 0xaa, sizeof out);
-    rsa_sp1(&key, em, ladder_out);
+    rsa_sp1(&key, em, unblinded, ladder_out);
     if (!rsa_sign64_sp1(equiv_cpu, &key, em, out)) {
         failures++;
         (void)fprintf(stderr, "FAIL %s: the 64-bit signer refused its own signature at %zu bytes\n",

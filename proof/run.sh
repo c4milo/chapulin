@@ -3030,6 +3030,13 @@ launch fast full rsa_mul_webpki 20 "fill_nondet.0:513,from_bytes.0:129,main.0:12
 # harness holds no ch_rand_bytes stub (docs/decisions.md 77), PROVE_ONLY=rsa_sign
 # PROVE_NO_CACHE=1 /usr/bin/time -l: 755 properties, 8 s, 206 MB.
 launch fast full rsa_sign 385 "" src/ct.c proof/ct_wipe_stub.c
+# rsa_sign_blind: the ladder's exponent blinding (docs/decisions.md 186).
+# The helpers at EXPONENT_WORDS_MAX, blinded_exponent at WORDS_MAX, and
+# its two steps' values at one word against 64-bit and 128-bit sums.
+# The bound is 397: ct_wipe writes the exponent's EXPONENT_WORDS_MAX words,
+# 396 bytes, one store a pass. Measured on CI's prove job (cbmc 6.11.0,
+# kissat): 683 properties, 13 s.
+launch fast full rsa_sign_blind 397 "" src/ct.c proof/ct_wipe_stub.c
 # rsa_mont64.c, RSA's Montgomery arithmetic on 64-bit words, which a host
 # object runs for rsa_vp1 (docs/decisions.md 95). Every line compiles the
 # file as a host object does, under -DCH_CPU_RUNTIME, which its body and

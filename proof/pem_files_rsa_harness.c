@@ -183,7 +183,9 @@ static int stub_sign(int signer, const ch_rsa_priv *k, const uint8_t msg_hash[32
 }
 
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len) {
+                 const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                 uint8_t *sig, size_t cap, size_t *sig_len) {
+    __CPROVER_assert(__CPROVER_r_ok(blind, RSA_BLIND_LEN), "sign: blind readable");
     return stub_sign(0, k, msg_hash, salt, sig, cap, sig_len);
 }
 

@@ -207,6 +207,11 @@ int ch_p256_key_from_pem(uint32_t cpu, const uint8_t *pem, size_t pem_len, const
 static const uint8_t rsa_check_digest[32] = {
     0x63, 0x68, 0x5f, 0x72, 0x73, 0x61, 0x5f, 0x6b, 0x65, 0x79, 0x5f, 0x66, 0x72, 0x6f, 0x6d, 0x5f,
     0x70, 0x65, 0x6d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+// The blind of that signature's exponent (rsa_sign.h). The call draws
+// nothing, so it takes a fixed value. The signature is the same bytes for
+// every blind. The call signs once, while the program provisions, and
+// blinding defends against traces of many signatures.
+static const uint8_t rsa_check_blind[RSA_BLIND_LEN] = {0x62, 0x6c, 0x69, 0x6e, 0x64, 0, 0, 1};
 static const uint8_t rsa_check_salt[RSA_PSS_SALT_LEN] = {
     0x73, 0x61, 0x6c, 0x74, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
@@ -268,8 +273,8 @@ static int signs(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *key) {
     }
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    return widemul_rsa_pss_sign_cpu(cpu, widemul, key, rsa_check_digest, rsa_check_salt, sig,
-                                    sizeof sig, &sig_len) &&
+    return widemul_rsa_pss_sign_cpu(cpu, widemul, key, rsa_check_digest, rsa_check_salt,
+                                    rsa_check_blind, sig, sizeof sig, &sig_len) &&
            RSA_PSS_VERIFY_CPU(cpu, key->n, key->n_len, rsa_check_digest, sig, sig_len);
 }
 

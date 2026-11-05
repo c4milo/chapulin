@@ -200,13 +200,13 @@ static void check_rsa_signer(uint32_t cpu) {
     static const uint8_t salt[RSA_PSS_SALT_LEN] = {0xa5, 0x02};
     if (want_len == 0) {
         test_rsa_sign_key_load(&key, &from);
-        CHECK(rsa_pss_sign(&key, digest, salt, want, sizeof want, &want_len) == 1);
+        CHECK(rsa_pss_sign(&key, digest, salt, salt, want, sizeof want, &want_len) == 1);
     }
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
     reset_signer_calls();
-    CHECK(widemul_rsa_pss_sign_cpu(cpu, widemul_of_cpu(cpu), &key, digest, salt, sig, sizeof sig,
-                                   &sig_len) == 1);
+    CHECK(widemul_rsa_pss_sign_cpu(cpu, widemul_of_cpu(cpu), &key, digest, salt, salt, sig,
+                                   sizeof sig, &sig_len) == 1);
     // A signature on rsa_mont64_adx.c runs both exponentiations' every
     // multiplication and square there, and one on any other path runs none.
     CHECK((rsa_mont64_adx_calls != 0) == (names_adx_signer(cpu) != 0));

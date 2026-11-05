@@ -106,10 +106,12 @@ int p256_sign_hedged(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const u
 }
 
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len) {
+                 const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                 uint8_t *sig, size_t cap, size_t *sig_len) {
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "rsa_pss_sign: key readable");
     __CPROVER_assert(__CPROVER_r_ok(msg_hash, SHA256_LEN), "rsa_pss_sign: digest readable");
     __CPROVER_assert(__CPROVER_r_ok(salt, RSA_PSS_SALT_LEN), "rsa_pss_sign: salt readable");
+    __CPROVER_assert(__CPROVER_r_ok(blind, RSA_BLIND_LEN), "rsa_pss_sign: blind readable");
     __CPROVER_assert(__CPROVER_w_ok(sig, cap), "rsa_pss_sign: output writable");
     __CPROVER_assert(__CPROVER_w_ok(sig_len, sizeof *sig_len), "rsa_pss_sign: length writable");
     if (!nondet_u8()) {

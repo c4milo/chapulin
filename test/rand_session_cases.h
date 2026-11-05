@@ -107,13 +107,12 @@ static void rsa_identity_config(ch_cfg *cfg) {
     cfg->srv.rsa_pss.pub_len = sizeof rsa_sign_2048_n;
 }
 
-// An RSA-PSS server signature's salt is its session source's draw. The
-// CertificateVerify signature srv_sign_certificate_verify returns is the
-// one rsa_pss_sign computes over the 32 bytes the server's source handed
-// out, and a second seed gives a second signature that verifies too. A
-// salt from anywhere else signs over other bytes. ch_srv_check's boot
-// signature draws its salt from the same source, and without a source
-// ch_srv_check refuses before it signs.
+// An RSA-PSS server signature's salt and blind are its session source's
+// one draw: 32 bytes of salt, then 8 of blind. The CertificateVerify
+// signature srv_sign_certificate_verify returns is the one rsa_pss_sign
+// computes over the draw's first 32 bytes, and a second seed gives a second signature that verifies
+// too. A salt from anywhere else signs over other bytes. ch_srv_check's boot signature draws its
+// salt from the same source, and without a source ch_srv_check refuses before it signs.
 static void check_pss_salt_from_source(void) {
     ch_cfg cfg;
     rsa_identity_config(&cfg);
@@ -134,10 +133,11 @@ static void check_pss_salt_from_source(void) {
                                           &alert) == CH_OK);
         CHECK(sig_len == sizeof rsa_sign_2048_n);
         CHECK(server_source.calls == 1 && hook_draws == 0 && server_source.logged == 1);
-        CHECK(server_source.draw_len[0] == RSA_PSS_SALT_LEN);
+        CHECK(server_source.draw_len[0] == RSA_PSS_SALT_LEN + RSA_BLIND_LEN);
         uint8_t expected[SRV_SIG_MAX];
         size_t expected_len = 0;
-        CHECK(rsa_pss_sign(&salt_key, digest, server_source.log, expected, sizeof expected,
+        CHECK(rsa_pss_sign(&salt_key, digest, server_source.log,
+                           server_source.log + RSA_PSS_SALT_LEN, expected, sizeof expected,
                            &expected_len) == 1);
         CHECK(expected_len == sig_len && memcmp(expected, sigs[k], sig_len) == 0);
         CHECK(rsa_pss_verify(rsa_sign_2048_n, sizeof rsa_sign_2048_n, digest, sigs[k], sig_len) ==

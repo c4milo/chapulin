@@ -60,10 +60,12 @@ int p256_ecdsa_verify_cpu(uint32_t cpu, const uint8_t pub[64], const uint8_t msg
 }
 
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len) {
+                 const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                 uint8_t *sig, size_t cap, size_t *sig_len) {
     (void)k;
     (void)msg_hash;
     (void)salt;
+    (void)blind;
     (void)sig;
     (void)cap;
     (void)sig_len;

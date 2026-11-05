@@ -3022,9 +3022,13 @@ bin/rsa_test: test/rsa_test.c $(RSA_TEST_SRCS) $(HDRS) $(TESTH)
 # builds it at. It links rsa.c for the verifier the round trip checks
 # against, which is the same pairing bin/rsa_pkcs1_test uses.
 RSA_SIGN_TEST_SRCS := src/rsa_sign.c src/rsa.c src/rsa_mont.c src/sha256.c src/ct.c src/ct_wipe.c
+# bin/rsa_sign_test alone takes -DCH_RSA_SIGN_TEST, which declares the
+# ladder's test entry, so its run_exponent reads the blinded exponent
+# (docs/decisions.md 186). Every other build of the file skips that check.
 bin/rsa_sign_test: test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -Isrc -I. -o $@ test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_RSA_SIGN_TEST -Isrc -I. -o $@ test/rsa_sign_test.c \
+	  $(RSA_SIGN_TEST_SRCS)
 
 # SHA-3 vectors and the SHAKE streaming contract. Its own binary: sha3.c stays
 # out of the packaged object until the ML-KEM build calls it
@@ -7731,6 +7735,11 @@ else
 	# the object that signs, in a server role.
 	@$(call TIDY_EACH,src/mldsa_signer.c test/mldsa_signer_test.c test/diff_mldsa_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_MLDSA_SIGN_TEST -Isrc -I. -Itest)
+	# The ladder's test entry, which CH_RSA_SIGN_TEST declares, and the
+	# test main that reads the blinded exponent through it
+	# (docs/decisions.md 186). bin/rsa_sign_test alone takes the define.
+	@$(call TIDY_EACH,src/rsa_sign.c test/rsa_sign_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_RSA_SIGN_TEST -Isrc -I. -Itest)
 	@$(call TIDY_EACH,src/x509_pem.c src/pem_files.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_SIGN_MLDSA -Isrc -I.)
 	# The QUIC mode: its sources and its three test mains, under every
@@ -9724,6 +9733,23 @@ BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/cha
 # holding an array, here gcm_ghash, which now keeps the gcm_hash state
 # on its own frame. It reads no key, subkey or data byte.
 #
+# rsa_sign.c's clang entries rose when the ladder began to walk a blinded
+# exponent (docs/decisions.md 186): m3 from 29 to 36, mips32r2 from 27 to
+# 34 and rv32imac from 27 to 32, and the host builds' arm64 from 55 to 79
+# and x86-64 from 47 to 67. Every new branch was read, all in rsa_sp1,
+# where blinded_exponent is inlined. On the three 32-bit specs each closes
+# a loop of the blinding over a word count or of its 64 passes. The host
+# builds add the branches of unrolled copies of those loops, which test a
+# word count's low bits or compare it with the unroll width. None reads d
+# or r. A first form of the passes gave clang for the Cortex-M3 an IT
+# block on r's bit, and a widening multiply by 65537: the mask now passes
+# through a volatile object, and 65537 t is a shift and an add. The gcc
+# entries rose the same way: m3-gcc from 26 to 33, mips32r2-gcc from 23 to
+# 29, mips32r2-gcc-O2 from 26 to 31, and rv32imac-gcc and rv32ic-gcc from
+# 27 to 33. The local arm-none-eabi-gcc 16 was read: each new branch closes
+# a loop of the blinding. Its first form of the borrow gave an IT block on
+# a word of 65537 d - 1, and the borrow is now bitwise logic.
+#
 # The entries of the two 64-bit specs -- a host object's vector kernels,
 # its RSA on 64-bit words and in vector registers, and the copies of the
 # files above that it compiles for itself (WIDE64_HOST_COPIES) -- are read
@@ -9733,26 +9759,26 @@ BRANCH_CEILING := \
   m3/src/ct.c:2 m3/src/ct_wipe.c:7 m3/src/sha256.c:17 m3/src/sha3.c:38 m3/src/hkdf.c:19 m3/src/chacha20.c:9 m3/src/poly1305.c:19 \
   m3/src/aead.c:4 m3/src/x25519.c:33 m3/src/p256_field.c:24 m3/src/mlkem.c:16 m3/src/mlkem_poly.c:43 m3/src/drbg.c:9 \
   m3/src/softmul.c:0 m3/src/aes.c:3 m3/src/quic_aes_soft.c:12 m3/src/aes_extern.c:0 \
-  m3/src/gcm.c:22 m3/src/rsa_sign.c:29 mips32r2/src/ct.c:2 mips32r2/src/ct_wipe.c:6 mips32r2/src/sha256.c:16 mips32r2/src/sha3.c:25 \
+  m3/src/gcm.c:22 m3/src/rsa_sign.c:36 mips32r2/src/ct.c:2 mips32r2/src/ct_wipe.c:6 mips32r2/src/sha256.c:16 mips32r2/src/sha3.c:25 \
   mips32r2/src/hkdf.c:16 mips32r2/src/chacha20.c:7 mips32r2/src/poly1305.c:18 mips32r2/src/aead.c:2 \
   mips32r2/src/x25519.c:31 mips32r2/src/p256_field.c:21 mips32r2/src/mlkem.c:13 mips32r2/src/mlkem_poly.c:36 \
   mips32r2/src/drbg.c:8 mips32r2/src/softmul.c:0 mips32r2/src/aes.c:2 mips32r2/src/quic_aes_soft.c:12 \
-  mips32r2/src/aes_extern.c:0 mips32r2/src/gcm.c:16 mips32r2/src/rsa_sign.c:27 rv32imac/src/ct.c:2 rv32imac/src/ct_wipe.c:7 \
+  mips32r2/src/aes_extern.c:0 mips32r2/src/gcm.c:16 mips32r2/src/rsa_sign.c:34 rv32imac/src/ct.c:2 rv32imac/src/ct_wipe.c:7 \
   rv32imac/src/sha256.c:17 rv32imac/src/sha3.c:32 rv32imac/src/hkdf.c:18 rv32imac/src/chacha20.c:8 \
   rv32imac/src/poly1305.c:18 rv32imac/src/aead.c:2 rv32imac/src/x25519.c:31 rv32imac/src/p256_field.c:21 \
   rv32imac/src/mlkem.c:14 rv32imac/src/mlkem_poly.c:36 rv32imac/src/drbg.c:9 rv32imac/src/softmul.c:0 \
   rv32imac/src/aes.c:3 rv32imac/src/quic_aes_soft.c:12 rv32imac/src/aes_extern.c:0 \
-  rv32imac/src/gcm.c:20 rv32imac/src/rsa_sign.c:27 m3-gcc/src/ct.c:1 m3-gcc/src/ct_wipe.c:4 m3-gcc/src/sha256.c:12 \
+  rv32imac/src/gcm.c:20 rv32imac/src/rsa_sign.c:32 m3-gcc/src/ct.c:1 m3-gcc/src/ct_wipe.c:4 m3-gcc/src/sha256.c:12 \
   m3-gcc/src/sha3.c:21 m3-gcc/src/hkdf.c:19 m3-gcc/src/chacha20.c:7 m3-gcc/src/poly1305.c:14 m3-gcc/src/aead.c:2 \
   m3-gcc/src/x25519.c:23 m3-gcc/src/p256_field.c:14 m3-gcc/src/mlkem.c:13 m3-gcc/src/mlkem_poly.c:37 \
   m3-gcc/src/drbg.c:8 m3-gcc/src/softmul.c:0 m3-gcc/src/aes.c:3 m3-gcc/src/quic_aes_soft.c:9 \
-  m3-gcc/src/aes_extern.c:0 m3-gcc/src/gcm.c:15 m3-gcc/src/rsa_sign.c:26 mips32r2-gcc/src/ct.c:1 mips32r2-gcc/src/ct_wipe.c:3 \
+  m3-gcc/src/aes_extern.c:0 m3-gcc/src/gcm.c:15 m3-gcc/src/rsa_sign.c:33 mips32r2-gcc/src/ct.c:1 mips32r2-gcc/src/ct_wipe.c:3 \
   mips32r2-gcc/src/sha256.c:12 mips32r2-gcc/src/sha3.c:17 mips32r2-gcc/src/hkdf.c:18 \
   mips32r2-gcc/src/chacha20.c:6 mips32r2-gcc/src/poly1305.c:14 mips32r2-gcc/src/aead.c:2 \
   mips32r2-gcc/src/x25519.c:20 mips32r2-gcc/src/p256_field.c:13 mips32r2-gcc/src/mlkem.c:13 \
   mips32r2-gcc/src/mlkem_poly.c:41 mips32r2-gcc/src/drbg.c:7 mips32r2-gcc/src/softmul.c:0 \
   mips32r2-gcc/src/aes.c:3 mips32r2-gcc/src/quic_aes_soft.c:9 mips32r2-gcc/src/aes_extern.c:0 \
-  mips32r2-gcc/src/gcm.c:13 mips32r2-gcc/src/rsa_sign.c:23 \
+  mips32r2-gcc/src/gcm.c:13 mips32r2-gcc/src/rsa_sign.c:29 \
   mips32r2-gcc-O2/src/ct.c:2 mips32r2-gcc-O2/src/ct_wipe.c:6 mips32r2-gcc-O2/src/sha256.c:23 mips32r2-gcc-O2/src/sha3.c:32 \
   mips32r2-gcc-O2/src/hkdf.c:23 mips32r2-gcc-O2/src/chacha20.c:7 mips32r2-gcc-O2/src/poly1305.c:21 \
   mips32r2-gcc-O2/src/aead.c:2 mips32r2-gcc-O2/src/x25519.c:28 mips32r2-gcc-O2/src/p256_field.c:24 \
@@ -9763,15 +9789,15 @@ BRANCH_CEILING := \
   rv32imac-gcc/src/x25519.c:24 rv32imac-gcc/src/p256_field.c:20 rv32imac-gcc/src/mlkem.c:19 \
   rv32imac-gcc/src/mlkem_poly.c:39 rv32imac-gcc/src/drbg.c:10 rv32imac-gcc/src/softmul.c:0 \
   rv32imac-gcc/src/aes.c:4 rv32imac-gcc/src/quic_aes_soft.c:12 rv32imac-gcc/src/aes_extern.c:0 \
-  rv32imac-gcc/src/gcm.c:23 rv32imac-gcc/src/rsa_sign.c:27 rv32ic-gcc/src/ct.c:1 rv32ic-gcc/src/ct_wipe.c:4 \
+  rv32imac-gcc/src/gcm.c:23 rv32imac-gcc/src/rsa_sign.c:33 rv32ic-gcc/src/ct.c:1 rv32ic-gcc/src/ct_wipe.c:4 \
   rv32ic-gcc/src/sha256.c:15 rv32ic-gcc/src/sha3.c:22 rv32ic-gcc/src/hkdf.c:23 rv32ic-gcc/src/chacha20.c:10 \
   rv32ic-gcc/src/poly1305.c:15 rv32ic-gcc/src/aead.c:4 rv32ic-gcc/src/x25519.c:24 \
   rv32ic-gcc/src/p256_field.c:20 rv32ic-gcc/src/mlkem.c:19 rv32ic-gcc/src/mlkem_poly.c:39 \
   rv32ic-gcc/src/drbg.c:10 rv32ic-gcc/src/softmul.c:2 rv32ic-gcc/src/aes.c:4 \
   rv32ic-gcc/src/quic_aes_soft.c:12 rv32ic-gcc/src/aes_extern.c:0 rv32ic-gcc/src/gcm.c:23 \
-  rv32ic-gcc/src/rsa_sign.c:27 mips32r2-gcc-O2/src/aes.c:3 mips32r2-gcc-O2/src/quic_aes_soft.c:12 \
+  rv32ic-gcc/src/rsa_sign.c:33 mips32r2-gcc-O2/src/aes.c:3 mips32r2-gcc-O2/src/quic_aes_soft.c:12 \
   mips32r2-gcc-O2/src/aes_extern.c:0 mips32r2-gcc-O2/src/gcm.c:16 \
-  mips32r2-gcc-O2/src/rsa_sign.c:26 \
+  mips32r2-gcc-O2/src/rsa_sign.c:31 \
   m3/src/sha512.c:24 m3/src/sha512_compress.c:4 mips32r2/src/sha512.c:20 mips32r2/src/sha512_compress.c:4 \
   rv32imac/src/sha512.c:23 rv32imac/src/sha512_compress.c:4 m3-gcc/src/sha512.c:12 \
   m3-gcc/src/sha512_compress.c:4 mips32r2-gcc/src/sha512.c:12 mips32r2-gcc/src/sha512_compress.c:4 \
@@ -9809,7 +9835,7 @@ BRANCH_CEILING := \
   arm64/src/sha256.c@host:28 x86-64/src/sha256.c@host:35 arm64/src/sha3.c@host:75 x86-64/src/sha3.c@host:84 \
   arm64/src/hkdf.c@host:19 x86-64/src/hkdf.c@host:19 arm64/src/chacha20.c@host:1 x86-64/src/chacha20.c@host:3 \
   arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:6 \
-  arm64/src/mlkem.c@host:11 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:55 x86-64/src/rsa_sign.c@host:47 \
+  arm64/src/mlkem.c@host:11 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:79 x86-64/src/rsa_sign.c@host:67 \
   arm64/src/drbg.c@host:5 x86-64/src/drbg.c@host:5 \
   arm64/src/aes.c@host:20 x86-64/src/aes.c@host:19 arm64/src/gcm.c@host:22 x86-64/src/gcm.c@host:32 \
   arm64/src/p256_field.c@host:4 x86-64/src/p256_field.c@host:4 \

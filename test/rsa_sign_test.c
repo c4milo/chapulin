@@ -79,8 +79,8 @@ static int key_ok(void) {
 // binary names (test/test_widemul.h, test/test_cpu.h).
 static int sign(const uint8_t msg_hash[SHA256_LEN], const uint8_t *salt, uint8_t *sig, size_t cap,
                 size_t *sig_len) {
-    return widemul_rsa_pss_sign_cpu(TEST_SESSION_CPU, TEST_WIDEMUL, &g_key, msg_hash, salt, sig,
-                                    cap, sig_len);
+    return widemul_rsa_pss_sign_cpu(TEST_SESSION_CPU, TEST_WIDEMUL, &g_key, msg_hash, salt, salt,
+                                    sig, cap, sig_len);
 }
 
 // The known answer, then the round trip: the tree's own verifier accepts
@@ -131,6 +131,101 @@ static void run_vector(const vector *v) {
     CHECK(rsa_pss_verify(v->n, v->n_len, other_hash, sig, sig_len) == 0);
     (void)fprintf(stderr, "ok %s\n", v->name);
 }
+
+// The ladder's blinding (rsa_sign.h, docs/decisions.md 186): the exponent
+// d + r (65537 d - 1) gives m^d mod n for every r, so one message under
+// one salt signs to the vector's bytes whatever the blind holds. r = 0
+// walks d itself, all ones is the largest r, and the other two set the
+// top and the bottom bit alone. The ladder signs here in every build,
+// also where the 64-bit signer is the session's.
+static void run_blinds(const vector *v) {
+    if (v->n_len > CH_RSA_MODULUS_MAX) {
+        return;
+    }
+    static const uint8_t blinds[][RSA_BLIND_LEN] = {
+        {0,    0,    0,    0,    0,    0,    0,    0   },
+        {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+        {0,    0,    0,    0,    0,    0,    0,    0x80},
+        {0x01, 0,    0,    0,    0,    0,    0,    0   },
+        {0x3c, 0x5a, 0x01, 0x80, 0x7f, 0x02, 0xc4, 0x99},
+    };
+    uint8_t msg_hash[SHA256_LEN];
+    sha256 h;
+    sha256_init(&h);
+    sha256_update(&h, v->msg, v->msg_len);
+    sha256_final(&h, msg_hash);
+    load_key(v);
+    for (size_t b = 0; b < sizeof blinds / sizeof blinds[0]; b++) {
+        uint8_t sig[CH_RSA_MODULUS_MAX];
+        size_t sig_len = 0;
+        CHECK(rsa_pss_sign(&g_key, msg_hash, v->salt, blinds[b], sig, sizeof sig, &sig_len) == 1);
+        CHECK(sig_len == v->n_len && memcmp(sig, v->sig, v->n_len) == 0);
+    }
+    (void)fprintf(stderr, "ok %s under five blinds\n", v->name);
+}
+
+#ifdef CH_RSA_SIGN_TEST
+// The exponent the blinding writes (rsa_sign.h's test entry), against
+// d + r (65537 d - 1) computed here on words with plain products. r = 0
+// gives d, and two blinds give two exponents, so the blinding ran.
+static void expected_exponent(uint32_t *want, const uint8_t *d, size_t n_len, uint64_t r) {
+    size_t words = n_len / 4;
+    size_t total = words + RSA_SIGN_BLIND_WORDS;
+    uint32_t dw[CH_RSA_MODULUS_MAX / 4 + RSA_SIGN_BLIND_WORDS] = {0};
+    uint32_t t[CH_RSA_MODULUS_MAX / 4 + RSA_SIGN_BLIND_WORDS] = {0};
+    for (size_t i = 0; i < words; i++) {
+        const uint8_t *p = d + n_len - 4 * (i + 1);
+        dw[i] = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+    }
+    uint64_t carry = 0;
+    for (size_t i = 0; i < total; i++) { // t = 65537 d
+        uint64_t v = (uint64_t)dw[i] * 65537 + carry;
+        t[i] = (uint32_t)v;
+        carry = v >> 32;
+    }
+    for (size_t i = 0; i < total; i++) { // t -= 1
+        if (t[i]-- != 0) {
+            break;
+        }
+    }
+    const uint32_t r_words[2] = {(uint32_t)r, (uint32_t)(r >> 32)};
+    memcpy(want, dw, total * sizeof(uint32_t));
+    for (size_t j = 0; j < 2; j++) { // want += r t
+        carry = 0;
+        for (size_t i = 0; i + j < total; i++) {
+            uint64_t v = (uint64_t)t[i] * r_words[j] + want[i + j] + carry;
+            want[i + j] = (uint32_t)v;
+            carry = v >> 32;
+        }
+    }
+}
+
+static void run_exponent(const vector *v) {
+    if (v->n_len > CH_RSA_MODULUS_MAX) {
+        return;
+    }
+    static const uint8_t blinds[][RSA_BLIND_LEN] = {
+        {0,    0,    0,    0,    0,    0,    0,    0   },
+        {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+        {0x3c, 0x5a, 0x01, 0x80, 0x7f, 0x02, 0xc4, 0x99},
+    };
+    load_key(v);
+    size_t total = v->n_len / 4 + RSA_SIGN_BLIND_WORDS;
+    uint32_t got[3][CH_RSA_MODULUS_MAX / 4 + RSA_SIGN_BLIND_WORDS];
+    for (size_t b = 0; b < 3; b++) {
+        uint64_t r = 0;
+        for (size_t j = RSA_BLIND_LEN; j-- > 0;) {
+            r = (r << 8) | blinds[b][j];
+        }
+        uint32_t want[CH_RSA_MODULUS_MAX / 4 + RSA_SIGN_BLIND_WORDS];
+        expected_exponent(want, g_key.d, v->n_len, r);
+        rsa_sign_blinded_exponent(got[b], g_key.d, v->n_len, blinds[b]);
+        CHECK(memcmp(got[b], want, total * sizeof(uint32_t)) == 0);
+    }
+    CHECK(memcmp(got[1], got[2], total * sizeof(uint32_t)) != 0);
+    CHECK(memcmp(got[0], got[1], total * sizeof(uint32_t)) != 0);
+}
+#endif
 
 // Every input rsa_pss_sign refuses, each one value away from an input it
 // accepts where that is possible: the length bounds and the two shapes a
@@ -243,6 +338,10 @@ int main(int argc, char **argv) {
     const vector vectors[] = {VECTOR(2048), VECTOR(2112), VECTOR(3072), VECTOR(4096)};
     for (size_t i = 0; i < sizeof vectors / sizeof vectors[0]; i++) {
         run_vector(&vectors[i]);
+        run_blinds(&vectors[i]);
+#ifdef CH_RSA_SIGN_TEST
+        run_exponent(&vectors[i]);
+#endif
     }
     run_refusals(&vectors[0]);
 #ifdef CH_CPU_RUNTIME

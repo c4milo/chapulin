@@ -38,9 +38,11 @@ uint32_t p256_point_on_curve_decomposed_counted(const uint8_t x[P256_FE_LEN],
 void p256_scalar_mul_decomposed_counted(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
 void p256_scalar_inverse_decomposed_counted(p256_scalar *o, const p256_scalar *a);
 int rsa_pss_sign_decomposed_counted(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                                    const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
+                                    const uint8_t salt[RSA_PSS_SALT_LEN],
+                                    const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig, size_t cap,
                                     size_t *sig_len);
-void rsa_sp1_decomposed_counted(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
+void rsa_sp1_decomposed_counted(const ch_rsa_priv *k, const uint8_t *em,
+                                const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig);
 
 void poly1305_update_native_counted(poly1305 *p, const uint8_t *in, size_t n);
 void poly1305_final_native_counted(poly1305 *p, uint8_t tag[POLY1305_TAG]);
@@ -155,14 +157,16 @@ void p256_scalar_inverse(p256_scalar *o, const p256_scalar *a) {
 }
 
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len) {
+                 const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                 uint8_t *sig, size_t cap, size_t *sig_len) {
     widemul_decomposed_calls++;
-    return rsa_pss_sign_decomposed_counted(k, msg_hash, salt, sig, cap, sig_len);
+    return rsa_pss_sign_decomposed_counted(k, msg_hash, salt, blind, sig, cap, sig_len);
 }
 
-void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
+void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, const uint8_t blind[RSA_BLIND_LEN],
+             uint8_t *sig) {
     widemul_decomposed_calls++;
-    rsa_sp1_decomposed_counted(k, em, sig);
+    rsa_sp1_decomposed_counted(k, em, blind, sig);
 }
 
 void poly1305_update_native(poly1305 *p, const uint8_t *in, size_t n) {

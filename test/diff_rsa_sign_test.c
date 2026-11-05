@@ -103,7 +103,7 @@ static void diff_key(const test_rsa_sign_key *from) {
         compare("the 64-bit signer", signed_ok, got, got_len, want);
         if (row == 0) {
             got_len = 0;
-            signed_ok = rsa_pss_sign(&key, hash, salt, got, sizeof got, &got_len);
+            signed_ok = rsa_pss_sign(&key, hash, salt, salt, got, sizeof got, &got_len);
             compare("the ladder", signed_ok, got, got_len, want);
         }
     }

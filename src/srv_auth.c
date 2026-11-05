@@ -235,22 +235,28 @@ static size_t signature_bound(const ch_identity *id, uint16_t sigalg) {
     return id->pub_len;
 }
 
-// Signs one digest with the RSA-PSS identity under a salt drawn for this
-// signature alone, from the source cfg names. rsa_pss_sign holds the salt
-// to rand.h's contract: CH_ASSERT fires on an all-zero salt, which a
-// source that returned without writing leaves. The salt goes out inside
-// the signature, so it is not secret; it is wiped because the caller's
-// stack outlives the signature.
+// Signs one digest with the RSA-PSS identity under a salt and a blind
+// drawn for this signature alone, in one draw from the source cfg names:
+// the salt's 32 bytes, then the blind's 8. rsa_pss_sign holds the salt to
+// rand.h's contract: CH_ASSERT fires on an all-zero salt, which a source
+// that returned without writing leaves. The salt goes out inside the
+// signature, so it is not secret. The blind is a secret, the r of the
+// ladder's exponent (rsa_sign.h). The call draws it in every session,
+// also where the 64-bit signer reads none, so each signature draws the
+// same bytes in every build. Both are wiped, because the caller's stack
+// outlives the signature.
 static int sign_rsa_pss(const ch_cfg *cfg, const ch_identity *id, const uint8_t digest[SHA256_LEN],
                         uint8_t *sig, size_t cap, size_t *sig_len) {
-    uint8_t salt[RSA_PSS_SALT_LEN];
-    rand_draw(cfg, salt, sizeof salt);
+    uint8_t drawn[RSA_PSS_SALT_LEN + RSA_BLIND_LEN];
+    rand_draw(cfg, drawn, sizeof drawn);
+    const uint8_t *salt = drawn;
+    const uint8_t *blind = drawn + RSA_PSS_SALT_LEN;
     // The session's ch_cfg.cpu picks the multiply and, on x86-64, whether
     // the 64-bit signer's exponentiations run on AVX-512 IFMA
     // (rsa_sign64.h).
     int signed_ok = widemul_rsa_pss_sign_cpu(CH_CFG_CPU(*cfg), widemul_answer(cfg), id->priv,
-                                             digest, salt, sig, cap, sig_len);
-    ct_wipe(salt, sizeof salt);
+                                             digest, salt, blind, sig, cap, sig_len);
+    ct_wipe(drawn, sizeof drawn);
     return signed_ok;
 }
 

@@ -1,0 +1,15 @@
+invariant: INV-16
+file: src/rsa_sign.c
+catches: rsa_sign_test
+reason: blinded_exponent's passes add t under a zero mask, so the
+  exponent ends at d and the ladder walks d itself in every signature.
+  Power or emission traces of many signatures then line up on one
+  exponent again (docs/decisions.md 186). Every signature is still
+  correct, so no vector sees it. run_exponent reads the exponent through
+  rsa_sign.h's test entry, against d + r (65537 d - 1) computed with
+  plain products.
+
+--- old
+        blind_pass(exponent, t, exponent_words, opaque);
+--- new
+        blind_pass(exponent, t, exponent_words, opaque & 0U);

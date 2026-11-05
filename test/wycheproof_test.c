@@ -382,7 +382,7 @@ static void run_rsa_sign(void) {
         key.n_len = n_len;
         test_rsa_sign_key_load_crt(&key, p + 4 * n_len); // the row's five CRT integers
         int signed_ok =
-            widemul_rsa_sp1_cpu(TEST_SESSION_CPU, TEST_WIDEMUL, &key, p + 2 * n_len, sig);
+            widemul_rsa_sp1_cpu(TEST_SESSION_CPU, TEST_WIDEMUL, &key, p + 2 * n_len, p, sig);
         if (!signed_ok || memcmp(sig, p + 3 * n_len, n_len) != 0) {
             fail("rsa-sign", wp_rsa_sign[i].tc, "signature differs from the vector");
         }

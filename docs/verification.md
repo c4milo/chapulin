@@ -2057,14 +2057,14 @@ The entries are grouped by area:
     server runs on its configuration, reads inside the modulus for any
     `n_len`, and every key it admits has the `n_len` the 96-word bound
     assumes;
-  - the ladder's exponent byte index stays inside `d` for every bit
-    position the loop reads;
+  - the ladder's exponent word index stays inside the blinded exponent
+    for every bit position the loop reads;
   - the PSS encoder writes inside the encoded message at the largest one
     it builds, over any salt its caller hands it but the all-zero one,
     which it asserts against, with SHA-256 stubbed to its contract;
   - a carry lemma covers the CIOS accumulation for any uint32 operands.
 - **Bound:** 384 B modulus (96 words), full-range words, exponent bit
-  positions 0..8*n_len-1, encoded message at `CH_RSA_MODULUS_MAX`.
+  positions 0..32*(n_len/4 + 3)-1, encoded message at `CH_RSA_MODULUS_MAX`.
 - **Not driven:** `mont_mul` whole, `mont_r2`, and `rsa_sp1` above them.
   A symbolic modexp does not leave symbolic execution, and `mont_r2`'s
   shift loop runs 6,144 times, so their arithmetic rests on the carry
@@ -2073,6 +2073,32 @@ The entries are grouped by area:
 - **Not proved:** the timing claim `rsa_sign.h` makes. `make
   lint-wide-multiply` holds that, by counting the wide multiplies and the
   conditional branches the file compiles to.
+
+#### rsa_sign_blind
+
+- **Harness:** `rsa_sign_blind` (fast)
+- **Proves:** the ladder's exponent blinding (decision 186).
+  - `add_masked` and `shift_left_one` stay safe over nondet words and a
+    nondet mask at `EXPONENT_WORDS_MAX`, 99 words.
+  - `blinded_exponent` stays safe at 96 words, over any `d` and any
+    blind.
+  - At one word, `scale_minus_one` writes 65537 d - 1 for every d of 1 or
+    more, and `blind_pass` writes 2 e + t under an all-ones mask and 2 e
+    under a zero one, each checked against 64-bit or 128-bit sums.
+- **Bound:** the helpers at 99 words and the composition at 96; the two
+  steps' values at one word, the same code at every word count.
+- **Not proved here:** that 64 passes write r t, and that the exponent
+  gives m^d mod n. `spec/lean/Spec/RsaBlind.lean` proves both:
+  `passes_eq` and `blinded_exponent_eq` over a model of the loop, and
+  `blinded_pow_mod` for distinct primes and a d of the exponent 65537.
+  `bin/rsa_sign_test` holds the C's exponent to d + r (65537 d - 1)
+  through `rsa_sign.h`'s test entry, and signs each vector under five
+  blinds to the vector's bytes. That the ladder reads the blinded exponent
+  and not d rests on review: no output shows the difference.
+- **Violations:** `bin/rsa_sign_test` catches
+  `inv16-rsa-sign-blind-passes-dropped`, `make lint-wide-multiply`
+  catches `inv16-rsa-sign-blind-mask-not-hidden`, and
+  `bin/tcp_blocking_loop_session` catches `inv04-srv-rsa-blind-not-drawn`.
 
 #### rsa_pkcs1
 

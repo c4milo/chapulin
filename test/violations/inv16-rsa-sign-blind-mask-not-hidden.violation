@@ -1,0 +1,16 @@
+invariant: INV-16
+file: src/rsa_sign.c
+catches: test/lint-wide-multiply.sh
+reason: blinded_exponent builds each pass's mask from r's bit and hands
+  it on directly, not through the volatile object. clang for the
+  Cortex-M3 then knows the mask is all ones or zero and writes the masked
+  add as a conditional move in an IT block on r's bit, and the m3 branch
+  count rises above its ceiling (docs/decisions.md 125 and 186).
+
+--- old
+        opaque = mask_of_bit(((uint32_t)blind[j >> 3] >> (j & 7)) & 1);
+        blind_pass(exponent, t, exponent_words, opaque);
+--- new
+        opaque = 0;
+        blind_pass(exponent, t, exponent_words,
+                   mask_of_bit(((uint32_t)blind[j >> 3] >> (j & 7)) & 1));

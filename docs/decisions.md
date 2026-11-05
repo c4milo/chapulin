@@ -15960,3 +15960,47 @@ does nothing more.
       internal headers in the include path. **One `ch_tcp` over the
       blocking and non-blocking calls** for now: it is a redesign whose
       code size and SRAM have to be measured first.
+
+186. **The RSA ladder walks a blinded exponent, d + r (65537 d - 1), with a
+    fresh 64-bit r per signature.** `rsa_sign.h` listed the missing defense
+    against differential power and emission analysis as the ladder's first
+    gap. An attacker knows each signature's input, em = sig^65537 mod n, so
+    traces of many signatures over one exponent can be correlated with its
+    bits. Device servers can now load RSA keys from PEM files (entry 184),
+    which makes the ladder more common. Camilo ruled on 2026-11-04 for
+    exponent blinding of the ladder alone.
+
+    - **Why this form.** 65537 d - 1 is a multiple of λ(n) for a key of the
+      exponent 65537, so m^(d + r (65537 d - 1)) = m^d mod n for every m,
+      also an m that shares a factor with n. The key needs no p, q or φ(n),
+      which a device key does not hold. Base blinding would need r^-1 mod
+      n in constant time, a new module for a composite modulus.
+    - **The arithmetic.** `scale_minus_one` writes 65537 d - 1 as d + (d <<
+      16) - 1, and 64 passes of `blind_pass`, each a doubling and an add
+      under a mask of one bit of r, write r t. No step runs a multiply, and
+      no branch or index reads d or r. Two first forms failed `make
+      lint-wide-multiply`: a 64-bit sum of t_i 2^16 + t_i became a widening
+      multiply by 65537 under clang, and a mask of r's bit became an IT
+      block on the Cortex-M3. The mask now passes through a volatile
+      object, as entry 125 requires.
+    - **The draw.** `srv_auth.c` draws 40 bytes in one call: the salt, then
+      the 8 bytes of r. One call keeps the function's one draw site, which
+      INV-4's rule counts. It draws them in every session, and the 64-bit
+      CRT signer reads no r, so each signature draws the same bytes in
+      every build.
+      `ch_rsa_key_from_pem`'s one check signature takes a fixed r.
+    - **Cost.** The ladder walks 8 n_len + 96 bit positions, 96 more than
+      before: 4.7% more Montgomery steps at RSA-2048 and 3.1% at RSA-3072.
+      `rsa_sp1`'s frame grows by two arrays of 99 words.
+    - **What holds it.** `spec/lean/Spec/RsaBlind.lean` proves the identity
+      (`blinded_pow_mod`) and that the 64 passes write r t (`passes_eq`).
+      The `rsa_sign_blind` harness proves the two steps' values at one word
+      and the composition's memory safety at the bound. `bin/rsa_sign_test`
+      signs each vector under five blinds to its bytes and reads the
+      exponent through a test entry. The Lean differential's RSA rows hold
+      the blinded ladder to m^d mod n. Three new mutants are caught.
+    - **Not covered.** The 64-bit CRT signer of a host object stays
+      unblinded; its dp and dq could take the same form. A fault check of
+      the ladder's signature, which the CRT signer has, is still missing.
+    - **Rejected:** **base blinding**, for the inverse it needs. **An r
+      derived from the salt**, which the signature publishes.

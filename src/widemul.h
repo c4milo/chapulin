@@ -178,23 +178,29 @@ static inline void widemul_mlk_poly_tomsg(uint8_t widemul, uint8_t msg[32], cons
 // docs/decisions.md 120). The ladder takes no value.
 static inline int widemul_rsa_pss_sign_cpu(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *k,
                                            const uint8_t msg_hash[32],
-                                           const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig,
+                                           const uint8_t salt[RSA_PSS_SALT_LEN],
+                                           const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig,
                                            size_t cap, size_t *sig_len) {
     if (widemul_native(widemul)) {
+        // The 64-bit signer reads no blind: its exponents run by the CRT,
+        // which docs/decisions.md 186 leaves unblinded.
+        (void)blind;
         return rsa_sign64_pss(cpu, k, msg_hash, salt, sig, cap, sig_len);
     }
-    return rsa_pss_sign(k, msg_hash, salt, sig, cap, sig_len);
+    return rsa_pss_sign(k, msg_hash, salt, blind, sig, cap, sig_len);
 }
 
 // The private operation: 1 when sig was written. The 64-bit signer
 // returns 0 for a signature that failed its check (rsa_sign64.h), and the
 // ladder has no check to fail. cpu is read as above.
 static inline int widemul_rsa_sp1_cpu(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *k,
-                                      const uint8_t *em, uint8_t *sig) {
+                                      const uint8_t *em, const uint8_t blind[RSA_BLIND_LEN],
+                                      uint8_t *sig) {
     if (widemul_native(widemul)) {
+        (void)blind;
         return rsa_sign64_sp1(cpu, k, em, sig);
     }
-    rsa_sp1(k, em, sig);
+    rsa_sp1(k, em, blind, sig);
     return 1;
 }
 
@@ -268,18 +274,20 @@ static inline void widemul_mlk_poly_tomsg(uint8_t widemul, uint8_t msg[32], cons
 
 static inline int widemul_rsa_pss_sign_cpu(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *k,
                                            const uint8_t msg_hash[32],
-                                           const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig,
+                                           const uint8_t salt[RSA_PSS_SALT_LEN],
+                                           const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig,
                                            size_t cap, size_t *sig_len) {
     (void)cpu;
     (void)widemul;
-    return rsa_pss_sign(k, msg_hash, salt, sig, cap, sig_len);
+    return rsa_pss_sign(k, msg_hash, salt, blind, sig, cap, sig_len);
 }
 
 static inline int widemul_rsa_sp1_cpu(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *k,
-                                      const uint8_t *em, uint8_t *sig) {
+                                      const uint8_t *em, const uint8_t blind[RSA_BLIND_LEN],
+                                      uint8_t *sig) {
     (void)cpu;
     (void)widemul;
-    rsa_sp1(k, em, sig);
+    rsa_sp1(k, em, blind, sig);
     return 1;
 }
 

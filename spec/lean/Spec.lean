@@ -30,6 +30,7 @@ import Spec.RsaIfma
 import Spec.Poly1305Ifma
 import Spec.RsaAvx2
 import Spec.RsaMont64Adx
+import Spec.RsaBlind
 import Spec.P384
 import Spec.RsaPkcs1
 import Spec.Sha3

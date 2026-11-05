@@ -251,7 +251,7 @@ static void test_signs(uint32_t cpu) {
     size_t sig_len = 0;
     CHECK(key_of(cpu, pem_fixture_rsa2048, sizeof pem_fixture_rsa2048, pem_fixture_rsa2048_leaf,
                  sizeof pem_fixture_rsa2048_leaf) == CH_OK);
-    CHECK(rsa_pss_sign(&key, digest, salt, sig, sizeof sig, &sig_len) == 1 && sig_len == 256);
+    CHECK(rsa_pss_sign(&key, digest, salt, salt, sig, sizeof sig, &sig_len) == 1 && sig_len == 256);
     CHECK(rsa_pss_verify(pem_fixture_rsa2048_n, 256, digest, sig, sig_len) == 1);
 }
 

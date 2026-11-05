@@ -51,27 +51,32 @@ static inline int rsa_pss_sign_key_ok(const ch_rsa_priv *k) {
 // CRT, and rsa_sign64.h holds the claim for that signer.
 //
 // Covered. The exponentiation is a Montgomery ladder whose trip count is
-// exactly 8 * n_len iterations, so neither the value of d nor its bit
-// length changes how long a signature takes. Every iteration runs the
-// same two Montgomery multiplications over the same addresses. The one
-// place a bit of d decides anything selects with mask arithmetic and
-// never an if, the form x25519.c's cswap already uses. No memory index
-// in this file comes from a secret, so there is no table for a cache
-// attacker to watch. Every product goes through ct.h's ct_widemul, so a
-// core whose wide multiply is variable time (the Cortex-M3's umull)
-// does not see one. That covers a remote attacker who times signatures
+// exactly 8 * n_len + 96 iterations, so neither the value of d nor its bit
+// length changes how long a signature takes, and neither does the
+// blinding. Every iteration runs the same two Montgomery multiplications
+// over the same addresses. The one place a bit of the exponent decides
+// anything selects with mask arithmetic and never an if, the form x25519.c's cswap already uses. No
+// memory index in this file comes from a secret, so there is no table for a cache attacker to
+// watch. Every product goes through ct.h's ct_widemul, so a core whose wide multiply is variable
+// time (the Cortex-M3's umull) does not see one. That covers a remote attacker who times signatures
 // and a local attacker who watches the data cache.
 //
-// Not covered, first: this file does not blind the base. Blinding
-// multiplies the input by r^e and the result by r^-1 for a fresh random
-// r, and the inverse is the problem -- computing r^-1 mod a composite
-// modulus in constant time needs a modular inversion this tree does not
-// have, and adding one is a module of its own. Without it, an attacker
-// who measures power or electromagnetic emissions across many
-// signatures, on inputs they choose, can correlate the intermediate
-// values with d. The ladder's fixed pattern of one square and one
-// multiply per bit already denies simple power analysis the shape of d;
-// what is missing is the defense against the differential form.
+// Covered, against power and electromagnetic analysis: the exponent is
+// blinded (docs/decisions.md 186). An attacker who measures power or
+// emissions across many signatures knows each one's input, since em =
+// sig^65537 mod n. Over one fixed exponent they could correlate the
+// traces with its bits. So each signature runs the ladder over d + r
+// (65537 d - 1), for r the RSA_BLIND_LEN bytes its caller drew. 65537 d
+// - 1 is a multiple of lambda(n), so the power is m^d mod n for every m
+// (spec/lean/Spec/RsaBlind.lean). The ladder walks 96 more bits, about 4
+// percent more time at RSA-2048. The key needs no p or q for this.
+//
+// Not covered, first: this file does not blind the base. Base blinding
+// multiplies the input by r^e and the result by r^-1, and computing r^-1
+// mod a composite modulus in constant time needs a modular inversion
+// this tree does not have. The ladder's fixed pattern of one square and
+// one multiply per bit denies simple power analysis the shape of the
+// exponent, and the blinding above changes the exponent each time.
 //
 // Not covered, second: fault injection. The ladder does not verify the
 // signature before returning it, so a fault during the exponentiation
@@ -90,6 +95,10 @@ static inline int rsa_pss_sign_key_ok(const ch_rsa_priv *k) {
 // 8017 9.1.1.
 #define RSA_PSS_SALT_LEN 32
 
+// The bytes of r that blind the ladder's exponent, a 64-bit number. The
+// caller draws them for each signature, as it draws the salt.
+#define RSA_BLIND_LEN 8
+
 // Signs msg_hash, the 32-byte SHA-256 of the content RFC 9846 §4.5.2
 // defines, under the salt the caller drew, and writes n_len bytes to sig.
 // cap is the room sig has; sig_len takes the length written. Returns 1
@@ -106,8 +115,16 @@ static inline int rsa_pss_sign_key_ok(const ch_rsa_priv *k) {
 // An all-zero salt is the one a source that returned without writing
 // leaves, and CH_ASSERT fires on it: every signature over one message
 // would then be the same bytes, and nothing downstream would notice.
+//
+// blind is RSA_BLIND_LEN bytes the caller drew for this signature alone,
+// from the same source as the salt, after it. It is a secret: the caller
+// wipes it. The signature is the same bytes whatever blind holds, so no
+// test can see it; the function tests no value of it either, since a test
+// would branch on a secret. The salt's test covers a source that wrote
+// nothing.
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len);
+                 const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                 uint8_t *sig, size_t cap, size_t *sig_len);
 
 // Internal split boundary: sig = em^d mod n (RSASP1, RFC 8017 5.2.1),
 // with em and sig both n_len big-endian bytes. rsa_pss_sign checks the
@@ -115,6 +132,21 @@ int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
 // encoding gives by construction. Exposed so the Wycheproof suite can
 // drive the exponentiation against third-party vectors, which carry a
 // private key but no PSS signature. Not part of the public API.
-void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
+// blind is the exponent's blinding, as rsa_pss_sign takes it.
+void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, const uint8_t blind[RSA_BLIND_LEN],
+             uint8_t *sig);
+
+#ifdef CH_RSA_SIGN_TEST
+// Test binaries alone. The Makefile passes CH_RSA_SIGN_TEST to no library
+// object, so no packaged object holds this symbol.
+//
+// The words of the blinded exponent rsa_sp1 walks for d, n_len bytes, and
+// blind: n_len / 4 + RSA_SIGN_BLIND_WORDS little-endian words. A signature
+// is the same bytes whatever the blind holds, so a test reads the
+// exponent here to see that the blinding ran.
+#define RSA_SIGN_BLIND_WORDS 3
+void rsa_sign_blinded_exponent(uint32_t *exponent, const uint8_t *d, size_t n_len,
+                               const uint8_t blind[RSA_BLIND_LEN]);
+#endif
 
 #endif

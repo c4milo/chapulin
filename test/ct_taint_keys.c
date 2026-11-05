@@ -149,11 +149,14 @@ static void case_rsa(uint32_t cpu, uint8_t widemul, const test_rsa_sign_key *fro
     CT_SECRET(key.qinv, sizeof key.qinv);
 #endif
     CT_SECRET(salt_copy, sizeof salt_copy);
+    // The blind is the r of the ladder's exponent (rsa_sign.h), a secret.
+    uint8_t blind[RSA_BLIND_LEN] = {0x3c, 0x5a, 0x01, 0x80, 0x7f, 0x02, 0xc4, 0x99};
+    CT_SECRET(blind, sizeof blind);
     int key_ok = widemul_rsa_pss_sign_key_ok(widemul, &key);
     // Public: the key test's verdict is the one the server's configuration check reports.
     CT_PUBLIC(&key_ok, sizeof key_ok);
     check(key_ok == 1, "rsa key test");
-    int signed_ok = widemul_rsa_pss_sign_cpu(cpu, widemul, &key, msg_hash, salt_copy, sig,
+    int signed_ok = widemul_rsa_pss_sign_cpu(cpu, widemul, &key, msg_hash, salt_copy, blind, sig,
                                              sizeof sig, &sig_len);
     // Public: the signature travels in CertificateVerify, and the verdict is the caller's.
     CT_PUBLIC(&signed_ok, sizeof signed_ok);

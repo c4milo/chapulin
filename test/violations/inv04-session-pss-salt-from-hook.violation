@@ -1,7 +1,7 @@
 invariant: INV-4
 file: src/srv_auth.c
 catches: tcp_blocking_loop_session
-reason: sign_rsa_pss draws the RSA-PSS salt from ch_rand_bytes, the
+reason: sign_rsa_pss draws the RSA-PSS salt and blind from ch_rand_bytes, the
   image's one generator, instead of the source the server's configuration
   names. Under RAND=session the signature would then not be a function of
   the session's stream, so a replay could not reproduce it. The session
@@ -9,8 +9,8 @@ reason: sign_rsa_pss draws the RSA-PSS salt from ch_rand_bytes, the
   computes over the server source's draw, and counts that draw.
 
 --- old
-    rand_draw(cfg, salt, sizeof salt);
+    rand_draw(cfg, drawn, sizeof drawn);
 --- new
     (void)cfg;
     void ch_rand_bytes(uint8_t *p, size_t n);
-    ch_rand_bytes(salt, sizeof salt);
+    ch_rand_bytes(drawn, sizeof drawn);

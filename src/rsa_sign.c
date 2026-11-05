@@ -130,6 +130,106 @@ static void cswap_words(uint32_t *a, uint32_t *b, size_t k, uint32_t mask) {
     }
 }
 
+// The words a blinded exponent takes beyond the modulus's. r is 64 bits
+// and 65537 is 17 bits, so d + r (65537 d - 1) is below 2^(32 k + 82),
+// and 3 words more than d hold it.
+#define BLIND_WORDS 3
+#define EXPONENT_WORDS_MAX (WORDS_MAX + BLIND_WORDS)
+
+// a += b over k words when mask is all ones, and a += 0 when it is all
+// zeros. The carry out of the top word is dropped: each caller sizes a so
+// that the sum fits.
+static void add_masked(uint32_t *a, const uint32_t *b, size_t k, uint32_t mask) {
+    uint64_t carry = 0;
+    for (size_t i = 0; i < k; i++) {
+        uint64_t sum = (uint64_t)a[i] + (b[i] & mask) + carry;
+        a[i] = (uint32_t)sum;
+        carry = sum >> 32;
+    }
+}
+
+// a <<= 1 over k words. The top bit is dropped, as add_masked drops its
+// carry.
+static void shift_left_one(uint32_t *a, size_t k) {
+    uint32_t spill = 0;
+    for (size_t i = 0; i < k; i++) {
+        uint32_t next = a[i] >> 31;
+        a[i] = (a[i] << 1) | spill;
+        spill = next;
+    }
+}
+
+// t = 65537 t - 1 over words + 1 words, the top word zero on entry.
+// 65537 t is t + (t << 16). Each word of t << 16 joins the low half of
+// t_i with the high half of t_(i-1), and the sum adds two words and a
+// carry. Written as one 64-bit sum of t_i 2^16 + t_i, the step became a
+// widening multiply by 65537 under clang, which a Cortex-M3 runs in a
+// time its operand decides (lint-wide-multiply). A key's d is 1 or more,
+// so no borrow leaves the top word. The borrow of the subtraction is bit
+// 31 of ~t_i AND the difference, which is set only for t_i = 0 and a borrow
+// of 1. Written as bit 63 of a 64-bit difference, it became an IT block on
+// a word of t under gcc for the Cortex-M3.
+static void scale_minus_one(uint32_t *t, size_t words) {
+    uint32_t previous = 0; // t_(i-1), before this step wrote it
+    uint32_t carry = 0;
+    for (size_t i = 0; i <= words; i++) {
+        uint32_t shifted = (t[i] << 16) | (previous >> 16);
+        previous = t[i];
+        uint64_t sum = (uint64_t)t[i] + shifted + carry;
+        t[i] = (uint32_t)sum;
+        carry = (uint32_t)(sum >> 32);
+    }
+    uint32_t borrow = 1;
+    for (size_t i = 0; i <= words; i++) {
+        uint32_t difference = t[i] - borrow;
+        borrow = (~t[i] & difference) >> 31;
+        t[i] = difference;
+    }
+}
+
+// One pass of the product r t, by one bit of r from the top down:
+// exponent = 2 exponent + bit t, where mask is all ones for a bit of 1 and
+// all zeros for a bit of 0. The mask selects t by AND, never by a choice.
+static void blind_pass(uint32_t *exponent, const uint32_t *t, size_t exponent_words,
+                       uint32_t mask) {
+    shift_left_one(exponent, exponent_words);
+    add_masked(exponent, t, exponent_words, mask);
+}
+
+// exponent = d + r (65537 d - 1) over words + BLIND_WORDS words, with r
+// the RSA_BLIND_LEN bytes of blind read as a little-endian number. 65537 d
+// - 1 is a multiple of lambda(n), so m^exponent = m^d mod n for every m
+// (rsa_sign.h, spec/lean/Spec/RsaBlind.lean). A fresh r for each
+// signature gives the ladder a different exponent each time. No step runs
+// a multiply, and no branch or index depends on d or r.
+static void blinded_exponent(uint32_t *exponent, const uint8_t *d, size_t words,
+                             const uint8_t blind[RSA_BLIND_LEN]) {
+    size_t exponent_words = words + BLIND_WORDS;
+    uint32_t t[EXPONENT_WORDS_MAX] = {0};
+    words_from_bytes(t, d, words);
+    scale_minus_one(t, words);
+
+    // exponent = r t, after 64 passes from r's top bit down. Each pass's
+    // mask is read back from a volatile object. A compiler that knows a
+    // mask is all ones or zero may write the masked add as a choice on r's
+    // bit, and clang for the Cortex-M3 wrote it as a conditional move in an
+    // IT block (docs/decisions.md 125 and 186). What a volatile read returns
+    // the compiler cannot know. The last store leaves no bit of r there.
+    memset(exponent, 0, exponent_words * sizeof(uint32_t));
+    volatile uint32_t opaque = 0;
+    for (size_t j = (size_t)8 * RSA_BLIND_LEN; j-- > 0;) {
+        opaque = mask_of_bit(((uint32_t)blind[j >> 3] >> (j & 7)) & 1);
+        blind_pass(exponent, t, exponent_words, opaque);
+    }
+    opaque = 0;
+
+    // exponent += d.
+    memset(t, 0, sizeof t);
+    words_from_bytes(t, d, words);
+    add_masked(exponent, t, exponent_words, UINT32_MAX);
+    ct_wipe(t, sizeof t);
+}
+
 // -m^-1 mod 2^32 by Newton iteration. m0 is odd, so x doubles its correct
 // low bits each step and five steps cover all 32.
 static uint32_t mont_m0inv(uint32_t m0) {
@@ -197,7 +297,17 @@ static void mont_mul(uint32_t *o, const uint32_t *a, const uint32_t *b, const ui
     ct_wipe(t, (k + 2) * sizeof(uint32_t));
 }
 
-void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
+#ifdef CH_RSA_SIGN_TEST
+_Static_assert(RSA_SIGN_BLIND_WORDS == BLIND_WORDS, "rsa_sign.h's test word count");
+void rsa_sign_blinded_exponent(uint32_t *exponent, const uint8_t *d, size_t n_len,
+                               const uint8_t blind[RSA_BLIND_LEN]) {
+    CH_ASSERT(n_len >= 4 && n_len <= CH_RSA_MODULUS_MAX && n_len % 4 == 0);
+    blinded_exponent(exponent, d, n_len / 4, blind);
+}
+#endif
+
+void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, const uint8_t blind[RSA_BLIND_LEN],
+             uint8_t *sig) {
     CH_ASSERT(k->n_len >= 256 && k->n_len <= CH_RSA_MODULUS_MAX && k->n_len % 4 == 0);
     size_t words = k->n_len / 4;
     // Zeroed at declaration, as rsa_mont.c's are: the words above
@@ -208,6 +318,9 @@ void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     uint32_t r2[WORDS_MAX] = {0};
     uint32_t x1[WORDS_MAX] = {0}; // the running 1 of the ladder
     uint32_t x2[WORDS_MAX] = {0}; // the running base
+    uint32_t exponent[EXPONENT_WORDS_MAX] = {0};
+    size_t exponent_words = words + BLIND_WORDS;
+    blinded_exponent(exponent, k->d, words, blind);
     words_from_bytes(m, k->n, words);
     uint32_t m0inv = mont_m0inv(m[0]);
     mont_r2(r2, m, words);
@@ -221,12 +334,12 @@ void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     mont_mul(x2, x2, r2, m, m0inv, words);
 
     // The ladder (Montgomery powering ladder): one multiplication and one
-    // squaring per exponent bit, over every one of the 8 * n_len bit
-    // positions, leading zeros included. The trip count is a function of
-    // n_len alone, so it carries nothing about d, and the swap that reads
-    // a bit of d selects with a mask.
-    for (size_t i = 8 * k->n_len; i-- > 0;) {
-        uint32_t bit = ((uint32_t)k->d[k->n_len - 1 - (i >> 3)] >> (i & 7)) & 1;
+    // squaring per exponent bit, over every one of the 32 * exponent_words
+    // bit positions of the blinded exponent, leading zeros included. The
+    // trip count is a function of n_len alone, so it carries nothing about
+    // d or r, and the swap that reads a bit selects with a mask.
+    for (size_t i = 32 * exponent_words; i-- > 0;) {
+        uint32_t bit = (exponent[i >> 5] >> (i & 31)) & 1;
         uint32_t mask = mask_of_bit(bit);
         cswap_words(x1, x2, words, mask);
         mont_mul(x2, x1, x2, m, m0inv, words);
@@ -241,6 +354,7 @@ void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     words_to_bytes(sig, x1, words);
     ct_wipe(x1, sizeof x1);
     ct_wipe(x2, sizeof x2);
+    ct_wipe(exponent, sizeof exponent);
 }
 #endif // CH_RSA_SIGN64
 
@@ -324,7 +438,8 @@ int rsa_pss_sign_cpu(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[
                      size_t *sig_len)
 #else
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len)
+                 const uint8_t salt[RSA_PSS_SALT_LEN], const uint8_t blind[RSA_BLIND_LEN],
+                 uint8_t *sig, size_t cap, size_t *sig_len)
 #endif
 {
     // The length bound, an odd modulus and its top bit: rsa_sign.h says
@@ -358,7 +473,7 @@ int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
         return 0;
     }
 #else
-    rsa_sp1(k, em, sig);
+    rsa_sp1(k, em, blind, sig);
     ct_wipe(em, sizeof em);
 #endif
     *sig_len = k->n_len;

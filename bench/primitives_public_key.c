@@ -368,13 +368,17 @@ static void run_rsa_pkcs1_verify_4096(size_t n) {
 // The salt comes from ch_rand_bytes, drbg.c here, as a server draws one
 // per signature (srv_auth.c), so the signature differs from the vector's;
 // prepare checks the verifier takes it.
+// The r of the ladder's exponent (rsa_sign.h). A signature is the same
+// bytes for every r, and the cost of the ladder does not depend on it.
+static const uint8_t bench_blind[RSA_BLIND_LEN] = {0x5a, 0x3c, 0x01, 0x80, 0x7f, 0x02, 0xc4, 0x99};
+
 static void sign_and_check(const ch_rsa_priv *k, const uint8_t hash[SHA256_LEN]) {
     uint8_t salt[RSA_PSS_SALT_LEN];
     ch_rand_bytes(salt, sizeof salt);
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    expect(widemul_rsa_pss_sign_cpu(bench_cpu, BENCH_WIDEMUL, k, hash, salt, sig, sizeof sig,
-                                    &sig_len) == 1,
+    expect(widemul_rsa_pss_sign_cpu(bench_cpu, BENCH_WIDEMUL, k, hash, salt, bench_blind, sig,
+                                    sizeof sig, &sig_len) == 1,
            "rsa_pss_sign failed");
     expect(rsa_pss_verify(k->n, k->n_len, hash, sig, sig_len) == 1,
            "rsa_pss_verify refused rsa_pss_sign's signature");
@@ -399,8 +403,8 @@ static void run_rsa_sign(const ch_rsa_priv *k) {
     ch_rand_bytes(salt, sizeof salt);
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    expect(widemul_rsa_pss_sign_cpu(bench_cpu, BENCH_WIDEMUL, k, rsa_message_hash, salt, sig,
-                                    sizeof sig, &sig_len) == 1,
+    expect(widemul_rsa_pss_sign_cpu(bench_cpu, BENCH_WIDEMUL, k, rsa_message_hash, salt,
+                                    bench_blind, sig, sizeof sig, &sig_len) == 1,
            "rsa_pss_sign failed");
     bench_consume(sig, 1);
 }

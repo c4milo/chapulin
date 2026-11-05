@@ -1,0 +1,17 @@
+invariant: INV-4
+file: src/srv_auth.c
+catches: tcp_blocking_loop_session
+reason: sign_rsa_pss draws the salt alone and passes the salt as the
+  blind. The salt is public, since it travels inside the signature, so
+  every signature's r is known to an attacker who reads the signature.
+  The session loop checks that the server source's one draw is 40 bytes:
+  the salt, then the blind.
+
+--- old
+    rand_draw(cfg, drawn, sizeof drawn);
+    const uint8_t *salt = drawn;
+    const uint8_t *blind = drawn + RSA_PSS_SALT_LEN;
+--- new
+    rand_draw(cfg, drawn, RSA_PSS_SALT_LEN);
+    const uint8_t *salt = drawn;
+    const uint8_t *blind = drawn;
