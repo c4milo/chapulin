@@ -1,5 +1,5 @@
 invariant: INV-36
-file: src/cpu_cfg.h
+file: include/chapulin/cpu_cfg.h
 catches: test/host-builds.sh
 reason: cpu_cfg.h stops refusing -DCH_CPU_RUNTIME for a target that is
   neither arm64 nor x86-64, so a firmware tree's own build for a

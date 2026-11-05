@@ -38,14 +38,14 @@ echo '#include "src/ct.h"' > "$tu"
 cc=${CC:-cc}
 
 # The suite in a host object: it compiles, on this host compiler.
-if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME "$tu"; then
+if ! "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME "$tu"; then
     echo "quic-builds: -DCH_SUITE_AES_GCM in a host object must compile" >&2
     exit 1
 fi
 
 # The suite build that takes the AES=soft table a device object defaults
 # to: it does not.
-if "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_SUITE_AES_GCM "$tu" 2>/dev/null; then
+if "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_SUITE_AES_GCM "$tu" 2>/dev/null; then
     echo "quic-builds: -DCH_SUITE_AES_GCM on AES=soft compiled; src/ct.h must refuse it" >&2
     exit 1
 fi
@@ -54,7 +54,7 @@ fi
 # every build that still writes it, a host suite build among them.
 for defs in "-DCH_NATIVE_AES" "-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_NATIVE_AES"; do
     # shellcheck disable=SC2086 # one define per word
-    if "$cc" -std=c11 -Isrc -I. -fsyntax-only $defs "$tu" 2>/dev/null; then
+    if "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only $defs "$tu" 2>/dev/null; then
         echo "quic-builds: $defs compiled; src/ct.h must refuse CH_NATIVE_AES" >&2
         exit 1
     fi
@@ -65,18 +65,18 @@ done
 # CH_AES_EXTERN_CONSTANT_TIME (docs/decisions.md 68). With it the build
 # compiles. Without it ct.h refuses the build. The extern statement
 # without AES=extern is the AES=soft build, which no statement admits.
-if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only \
+if ! "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only \
     -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME "$tu"; then
     echo "quic-builds: -DCH_SUITE_AES_GCM with AES=extern and CH_AES_EXTERN_CONSTANT_TIME must compile" >&2
     exit 1
 fi
-if "$cc" -std=c11 -Isrc -I. -fsyntax-only \
+if "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only \
     -DCH_SUITE_AES_GCM -DCH_AES_EXTERN "$tu" 2>/dev/null; then
     echo "quic-builds: -DCH_SUITE_AES_GCM on AES=extern without CH_AES_EXTERN_CONSTANT_TIME compiled;" \
         "src/ct.h must refuse it" >&2
     exit 1
 fi
-if "$cc" -std=c11 -Isrc -I. -fsyntax-only \
+if "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only \
     -DCH_SUITE_AES_GCM -DCH_AES_EXTERN_CONSTANT_TIME "$tu" 2>/dev/null; then
     echo "quic-builds: -DCH_SUITE_AES_GCM on AES=soft compiled with CH_AES_EXTERN_CONSTANT_TIME;" \
         "src/ct.h must refuse it" >&2
@@ -89,25 +89,25 @@ fi
 # compiles in a host object, and on the AES=soft table ct.h refuses it, as
 # it refuses every suite build: the file itself, not only ct.h's own
 # translation unit above, is what is checked.
-if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+if ! "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
     -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME src/quic_packet.c; then
     echo "quic-builds: src/quic_packet.c under the suite in a host object must compile" >&2
     exit 1
 fi
-if "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+if "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
     -DCH_SUITE_AES_GCM src/quic_packet.c 2>/dev/null; then
     echo "quic-builds: a QUIC suite build on AES=soft compiled; src/ct.h must refuse it" >&2
     exit 1
 fi
 # The same pair on AES=extern, where the image's ch_aes_block gets those
 # keys.
-if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+if ! "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
     -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME src/quic_packet.c; then
     echo "quic-builds: src/quic_packet.c under the suite with AES=extern and CH_AES_EXTERN_CONSTANT_TIME" \
         "must compile" >&2
     exit 1
 fi
-if "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+if "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
     -DCH_SUITE_AES_GCM -DCH_AES_EXTERN src/quic_packet.c 2>/dev/null; then
     echo "quic-builds: a QUIC suite build on AES=extern without CH_AES_EXTERN_CONSTANT_TIME compiled;" \
         "src/ct.h must refuse it" >&2
@@ -120,12 +120,12 @@ fi
 # this is the one line that stops a tree with its own build system from
 # pairing them. Without the suite the same file compiles, AES-256
 # reference included, so what fails is the refusal and nothing else.
-if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST \
+if ! "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST \
     src/quic_aes_soft.c; then
     echo "quic-builds: src/quic_aes_soft.c with its AES-256 reference must compile" >&2
     exit 1
 fi
-if "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM \
+if "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM \
     src/quic_aes_soft.c 2>/dev/null; then
     echo "quic-builds: src/quic_aes_soft.c under -DCH_SUITE_AES_GCM compiled; it must refuse the suite" >&2
     exit 1
@@ -135,7 +135,7 @@ fi
 # that client offers ChaCha20 alone (docs/decisions.md entry 45). The
 # same flags compile for a TRUST=webpki client, which offers both suites,
 # and for a build with a server role, whose server selects AES.
-suite_flags=(-std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME)
+suite_flags=(-std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME)
 if "$cc" "${suite_flags[@]}" src/handshake_message.c 2>/dev/null; then
     echo "quic-builds: -DCH_SUITE_AES_GCM in a raw client compiled; src/handshake_message.c must refuse it" >&2
     exit 1
@@ -152,9 +152,9 @@ done
 # than compile the table in its place. A host object beside AES=extern is
 # refused there too: aes_hw.c and aes_extern.c define the same entries. A
 # host object compiles over QUIC and under the suite.
-block_tu() { # $@ = defines: compiles one file that reads src/cfg.h and src/aes_block.h
-    printf '#include "src/cfg.h"\n#include "src/aes_block.h"\n' > "$tu"
-    "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN "$@" "$tu"
+block_tu() { # $@ = defines: compiles one file that reads include/chapulin/cfg.h and src/aes_block.h
+    printf '#include "include/chapulin/cfg.h"\n#include "src/aes_block.h"\n' > "$tu"
+    "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_RAND_EXTERN "$@" "$tu"
 }
 for gone in -DCH_AES_HW -DCH_AES_RUNTIME; do
     if block_tu -DCH_TRANSPORT_QUIC_NONBLOCKING "$gone" 2>/dev/null; then
@@ -180,7 +180,7 @@ fi
 for defs in "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME" \
     "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM"; do
     # shellcheck disable=SC2086 # one define per word
-    if ! "$cc" -std=c11 -Isrc -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN $defs src/quic_aes_soft.c; then
+    if ! "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN $defs src/quic_aes_soft.c; then
         echo "quic-builds: src/quic_aes_soft.c in a QUIC host object under $defs must compile" >&2
         exit 1
     fi
@@ -191,7 +191,7 @@ for defs in "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME" \
         exit 1
     fi
 done
-if "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME \
+if "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME \
     src/quic_aes_soft.c 2>/dev/null; then
     echo "quic-builds: src/quic_aes_soft.c in a TCP suite host object compiled; it must refuse the suite" >&2
     exit 1
@@ -218,7 +218,7 @@ fi
 hw_entries='gcm_(multiply_by_subkey|hash_data|counter_blocks|seal_passes|open_passes)_hw$'
 hw_want="gcm_counter_blocks_hw gcm_hash_data_hw gcm_multiply_by_subkey_hw gcm_open_passes_hw gcm_seal_passes_hw "
 ghash_calls() { # $@ = defines: the instruction entries src/gcm.c calls, on one line
-    "$cc" -std=c11 -O2 -Isrc -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN "$@" src/gcm.c || return 1
+    "$cc" -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN "$@" src/gcm.c || return 1
     nm -u "$gcm_obj" | grep -oE "$hw_entries" | sort -u | tr '\n' ' '
 }
 for defs in "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME" \
@@ -270,9 +270,9 @@ if [ -z "$clang_rv" ]; then
 fi
 cross_gcm() { # $1 = target, $2 = source; writes $gcm_obj and $tu.s
     local target=$1 source=$2
-    "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
+    "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. \
         -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -c "$source" -o "$gcm_obj" || exit 1
-    "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
+    "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. \
         -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -S "$source" -o "$tu.s" || exit 1
 }
 vaes_kernels="gcm_counter_blocks_vaes gcm_open_passes_vaes gcm_seal_passes_vaes "
@@ -343,7 +343,7 @@ fi
 budget=$(make -s --no-print-directory print-stack-budget-gcm-avx512)
 for march in -march=x86-64 -march=x86-64-v4; do
     "$clang_rv" -target x86_64-unknown-linux-gnu "$march" -ffreestanding -nostdlibinc -Itools/freestanding \
-        -std=c11 -O2 -Isrc -I. -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME "-Wframe-larger-than=$budget" \
+        -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME "-Wframe-larger-than=$budget" \
         -Werror -c src/gcm_avx512_kernel.c -o "$gcm_obj" || {
         echo "quic-builds: src/gcm_avx512_kernel.c for x86-64 ($march) has a frame over $budget bytes," \
             "the ceiling GCM_AVX512_BELOW_LEN leaves it; the entries' wipe would leave part of it" >&2

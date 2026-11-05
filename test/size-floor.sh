@@ -14,7 +14,7 @@ fail() {
 }
 [ -n "$cc" ] || fail "no clang that targets msp430 and armv7m (CLANG_RV)"
 compile() {
-    "$cc" --target="$1" -ffreestanding -fsyntax-only -std=c11 -Isrc -I. -x c src/ct.h 2>&1
+    "$cc" --target="$1" -ffreestanding -fsyntax-only -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -x c src/ct.h 2>&1
 }
 
 if out=$(compile msp430); then

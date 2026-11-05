@@ -89,7 +89,7 @@ def main():
     with tempfile.NamedTemporaryFile("w", suffix=".c", delete=False) as f:
         f.write("".join('#include "%s"\n' % h for h in headers))
         source = f.name
-    flags = ["-std=c11", "-Isrc", "-I."] + defines
+    flags = ["-std=c11", "-Isrc", "-Iinclude/chapulin", "-Iinclude", "-I."] + defines
     try:
         kept = subprocess.run([cc, "-E", "-C"] + flags + [source],
                               capture_output=True, text=True, check=True).stdout

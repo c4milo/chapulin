@@ -17,7 +17,7 @@
  *
  *   make lib RAND=extern
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *       -Isrc -include bin/chapulin.h examples/psk_client.c bin/chapulin.o -o psk_client
+ *       -Iinclude -include bin/chapulin.h examples/psk_client.c bin/chapulin.o -o psk_client
  *
  * make lib writes bin/chapulin.h beside bin/chapulin.o. It holds the
  * defines the object was built with, so this file compiles under them
@@ -37,10 +37,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "build.h"
-#include "ch_assert.h"
-#include "rand.h"
-#include "tls.h"
+#include "chapulin/build.h"
+#include "chapulin/ch_assert.h"
+#include "chapulin/rand.h"
+#include "chapulin/tls.h"
 
 // Where the demo server listens. argv overrides both, so the same
 // binary can be pointed at a staging box; firmware compiles the real

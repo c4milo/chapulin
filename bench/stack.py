@@ -169,7 +169,8 @@ def build(tmp: Path, srcs: list[str], flags: list[str]) -> None:
     which object_edges reads the volatile function pointers."""
     own = flags_of_its_own()
     for src in srcs:
-        command = ["cc", *CFLAGS, *own.get(src, []), "-I", str(ROOT / "src"), "-I", str(ROOT),
+        command = ["cc", *CFLAGS, *own.get(src, []), "-I", str(ROOT / "src"),
+                   "-I", str(ROOT / "include" / "chapulin"), "-I", str(ROOT / "include"), "-I", str(ROOT),
                    str(ROOT / src), *flags]
         subprocess.run([*command, "-c"], cwd=tmp, check=True, capture_output=True)
         subprocess.run([*command, "-E", "-o", Path(src).with_suffix(".i").name], cwd=tmp,

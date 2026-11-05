@@ -76,7 +76,7 @@ fi
 
 # One compile of the header for a target, syntax only.
 header_builds() { # $1... = target flags
-    "$clang_rv" "$@" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -Isrc -I. \
+    "$clang_rv" "$@" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. \
         -fsyntax-only "$tu" 2>/dev/null
 }
 
@@ -98,7 +98,7 @@ fi
 device_calls() { # $1 = source, $2 = symbol, $3... = extra flags
     local src=$1 symbol=$2
     shift 2
-    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -Isrc -I. "$@" -c "$src" -o "$work/device.o" || exit 1
+    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I. "$@" -c "$src" -o "$work/device.o" || exit 1
     nm -u "$work/device.o" | grep -qE "(^|[[:space:]_])$symbol\$"
 }
 
@@ -118,9 +118,9 @@ done
 # A host object's source, asked of the pinned clang for x86-64 and arm64
 # targets whatever the host, as the header checks above are.
 cross_object() { # $1 = target, $2 = source; writes $work/cross.o and $work/cross.s
-    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
+    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. \
         -DCH_CPU_RUNTIME -c "$2" -o "$work/cross.o" || exit 1
-    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
+    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. \
         -DCH_CPU_RUNTIME -S "$2" -o "$work/cross.s" || exit 1
 }
 
@@ -246,7 +246,7 @@ for target in "$x86" "$arm64"; do
     for build in "src/poly1305.c" "src/poly1305_native.c -DCH_CT_WIDEMUL"; do
         # shellcheck disable=SC2086
         "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 \
-            -Isrc -I. -DCH_CPU_RUNTIME -c $build -o "$work/cross.o" || exit 1
+            -Isrc -Iinclude/chapulin -Iinclude -I. -DCH_CPU_RUNTIME -c $build -o "$work/cross.o" || exit 1
         if nm "$work/cross.o" | grep -qE 'poly1305_avx2|poly1305_ifma'; then
             echo "chacha-builds: $build for $target defines or calls an AVX2 or IFMA Poly1305 entry; only the native copy on x86-64 may" >&2
             exit 1
@@ -278,7 +278,7 @@ if ! nm -u "$work/cross.o" | grep -qE '(^|[[:space:]_])poly1305_ifma_blocks_nati
     exit 1
 fi
 # aead.c reads cfg.h through widemul.h, which needs an entropy pattern.
-"$clang_rv" -target "$x86" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
+"$clang_rv" -target "$x86" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. \
     -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -c src/aead.c -o "$work/cross.o" || exit 1
 for update in poly1305_update_ifma_native poly1305_update_avx2_native; do
     if ! nm -u "$work/cross.o" | grep -qE "(^|[[:space:]_])$update\$"; then

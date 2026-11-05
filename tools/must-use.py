@@ -89,7 +89,7 @@ def main():
         f.write("".join('#include "%s"\n' % h for h in headers))
         source = f.name
     try:
-        text = subprocess.run([cc, "-E", "-P", "-std=c11", "-Isrc", "-I."] + defines + [source],
+        text = subprocess.run([cc, "-E", "-P", "-std=c11", "-Isrc", "-Iinclude/chapulin", "-Iinclude", "-I."] + defines + [source],
                               capture_output=True, text=True, check=True).stdout
     except subprocess.CalledProcessError as e:
         sys.exit("must-use: the headers do not preprocess:\n" + e.stderr)

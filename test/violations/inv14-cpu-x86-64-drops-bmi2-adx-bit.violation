@@ -1,5 +1,5 @@
 invariant: INV-14
-file: src/cpu_cfg.h
+file: include/chapulin/cpu_cfg.h
 catches: test/host-builds.sh
 reason: cpu_cfg.h's x86-64 set loses CH_CPU_BMI2_ADX, so every init refuses
   the value a caller on a CPU with BMI2 and ADX states, and no session runs

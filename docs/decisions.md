@@ -16114,3 +16114,29 @@ does nothing more.
     - **A build without the header.** A firmware tree that skips make
       compiles with `-Isrc`, and `session_storage.h` takes each size from
       the internal struct, as entry 185 states.
+
+189. **The API headers move into `include/chapulin/`, and a program
+    includes them as `<chapulin/tls.h>`.** This is the move entry 185
+    put after a release; v0.3.0 is tagged. Camilo chose the form on
+    2026-11-05.
+
+    - **The form.** A program passes `-I path/to/chapulin/include` and
+      writes `#include <chapulin/tls.h>`. The generated `chapulin.h`
+      includes `"chapulin/tls.h"` and the rest. The names `cfg.h`,
+      `result.h` and `build.h` would collide with a program's own, so
+      they stay under the `chapulin/` directory. The rejected form put
+      `include/chapulin` itself on a program's path.
+    - **The library.** Its sources keep `#include "tls.h"` and compile
+      with `-Isrc -Iinclude/chapulin -Iinclude`. The last one lets a test
+      or an example name a header as a program does. `session_storage.h`
+      and `build.h` still include an internal header when no layout is
+      defined, so a build without the object's header adds `-Isrc` too.
+    - **What holds it.** `lib-check` requires `include/chapulin/` to
+      hold the Makefile's `API_HEADERS`, file for file, and compiles,
+      links and runs `test/build_test.c` with `-Iinclude` and no `-Isrc`.
+      The PSK and pinned examples build the same way. `build.zig` adds
+      `include/chapulin` to the object's compile and to translate-c, and
+      its named path `include` is now `include/`. The tools that listed
+      headers under `src/` read `include/chapulin/` too: the impact map,
+      the QUIC partition and footprint checks, the proof coverage and
+      the stack walk.

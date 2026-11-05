@@ -67,7 +67,7 @@ Your program supplies:
 A client that shares a key with its server:
 
 ```c
-#include "tls.h"
+#include <chapulin/tls.h>
 
 static uint8_t rxbuf[2048];
 static ch_tls tls;
@@ -88,11 +88,12 @@ ch_close(&tls);
 ```
 
 The struct sizes depend on the defines the object was built with.
-`bin/chapulin.h` holds those defines and includes the public headers, so
-compile your program with it and pass no `-D` flag of your own:
+`bin/chapulin.h` holds those defines and the struct sizes, and includes
+the public headers, so compile your program with it and pass no `-D`
+flag of your own. The public headers sit in `include/chapulin/`:
 
 ```sh
-cc -std=c11 -I path/to/chapulin/src -include path/to/chapulin/bin/chapulin.h \
+cc -std=c11 -I path/to/chapulin/include -include path/to/chapulin/bin/chapulin.h \
     app.c path/to/chapulin/bin/chapulin.o -o app
 ```
 

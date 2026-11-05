@@ -76,7 +76,7 @@ W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
 FLAGS=(-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE
-    -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -I. -Ibench)
+    -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench)
 COMMON=(bench/aead.c bench/aead_gcm.c src/aes.c src/hkdf.c src/sha256.c src/ct.c src/ct_wipe.c src/chacha20.c src/poly1305.c
     src/aead.c)
 "$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" src/quic_aes_soft.c

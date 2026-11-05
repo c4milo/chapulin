@@ -1,5 +1,5 @@
 invariant: INV-36
-file: src/srv_cfg.h
+file: include/chapulin/srv_cfg.h
 catches: test/zig-build-check.sh
 reason: srv_cfg.h documents the ECDSA identity's private key by
   P256_PRIV_LEN, which only p256_sign.h defines and no public header

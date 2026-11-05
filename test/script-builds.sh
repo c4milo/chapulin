@@ -71,7 +71,7 @@ EOF
     # srcs and defs each hold a list as one string, which the shell must
     # split.
     # shellcheck disable=SC2086
-    "$cc" -std=c11 -O2 -Isrc -I. -Ibench $defs -DOP_HANDSHAKE_PQ -DITERS=1 -DCH_CT_WIDEMUL \
+    "$cc" -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench $defs -DOP_HANDSHAKE_PQ -DITERS=1 -DCH_CT_WIDEMUL \
         -o "$work/insn_driver" bench/insn_driver.c "$work/insn_runtime.c" $srcs &&
         echo "script-builds: bench/insn_driver.c linked over make print-insn-lists"
 }

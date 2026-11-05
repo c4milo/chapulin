@@ -1,5 +1,5 @@
 invariant: INV-14
-file: src/cpu_cfg.h
+file: include/chapulin/cpu_cfg.h
 catches: test/host-builds.sh
 reason: cpu_cfg.h's arm64 set loses CH_CPU_CONSTANT_TIME_SHA512, so every
   init call of an arm64 object refuses a caller that states the SHA-512

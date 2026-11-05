@@ -1,5 +1,5 @@
 invariant: INV-35
-file: src/build.h
+file: include/chapulin/build.h
 catches: test/lib-check-webpki-tcp-nonblocking.sh
 reason: CH_BUILD_AXES leaves out the CH_TRANSPORT_TCP_NONBLOCKING term. The object
   and every consumer compute the axes from the same header, so the two

@@ -67,7 +67,7 @@ FEWEST_VECTOR = 100
 # tools/frame-align.py's flags: lint-wide-multiply's x86-64 machine,
 # headers, level and hosted compile, under the define of a host object.
 CLANG_FLAGS = ["--target=x86_64-unknown-linux-gnu", "-march=x86-64", "-std=c11", "-O2",
-               "-nostdlibinc", "-Itools/freestanding", "-Isrc", "-I.", "-D_DEFAULT_SOURCE",
+               "-nostdlibinc", "-Itools/freestanding", "-Isrc", "-Iinclude/chapulin", "-Iinclude", "-I.", "-D_DEFAULT_SOURCE",
                "-DCH_RAND_EXTERN", "-DCH_CPU_RUNTIME", "-S", "-o", "-"]
 
 LABEL = re.compile(r"^([A-Za-z_.$][\w.$]*):")

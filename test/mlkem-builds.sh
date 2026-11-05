@@ -48,7 +48,7 @@ undefined() { # $1 = object
 }
 
 # A device object's mlkem.c, on the host's own compiler.
-"$cc" -std=c11 -O2 -DCH_RAND_EXTERN -Isrc -I. -c src/mlkem.c -o "$work/device.o" ||
+"$cc" -std=c11 -O2 -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I. -c src/mlkem.c -o "$work/device.o" ||
     fail "src/mlkem.c does not compile without -DCH_CPU_RUNTIME"
 calls=$(undefined "$work/device.o")
 for symbol in mlk_poly_ntt mlk_poly_invntt mlk_poly_basemul; do
@@ -63,7 +63,7 @@ done
 # A host object's source, asked of the pinned clang for x86-64 and arm64
 # targets whatever the host. It writes $work/cross.o.
 cross_object() { # $1 = target, $2 = source
-    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
+    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. \
         -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -c "$2" -o "$work/cross.o" ||
         fail "$2 does not compile for a host object on $1"
 }

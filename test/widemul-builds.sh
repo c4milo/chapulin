@@ -98,7 +98,7 @@ cc=${CC:-cc}
 
 # One compile of ct.h alone, syntax only.
 ct_builds() { # $1... = extra flags
-    "$cc" -std=c11 -Isrc -I. -fsyntax-only "$@" "$tu" 2>/dev/null
+    "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only "$@" "$tu" 2>/dev/null
 }
 
 if ! ct_builds -DCH_CPU_RUNTIME; then
@@ -120,11 +120,11 @@ fi
 # One compile of a unit that calls ct_mul128, syntax only.
 mul128_tu=$work/mul128.c
 printf '#include "src/ct.h"\nct_u128 product(uint64_t a, uint64_t b) { return ct_mul128(a, b); }\n' > "$mul128_tu"
-if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_CPU_RUNTIME "$mul128_tu" 2>/dev/null; then
+if ! "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_CPU_RUNTIME "$mul128_tu" 2>/dev/null; then
     echo "widemul-builds: ct_mul128 must compile under -DCH_CPU_RUNTIME on $cc" >&2
     exit 1
 fi
-if "$cc" -std=c11 -Isrc -I. -fsyntax-only "$mul128_tu" 2>/dev/null; then
+if "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only "$mul128_tu" 2>/dev/null; then
     echo "widemul-builds: ct_mul128 compiled without CH_CPU_RUNTIME; src/ct.h must define it for a host object alone" >&2
     exit 1
 fi
@@ -135,8 +135,8 @@ fi
 # defines one more inline function under -DCH_CPU_RUNTIME, as ct.h does
 # with ct_mul128, changes the text of a file whose code it does not change.
 for f in src/poly1305.c src/x25519.c src/mlkem_poly.c src/p256_field.c src/p256_scalar.c src/rsa_sign.c; do
-    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -Isrc -I. -c "$f" -o "$work/decomposed.o" || exit 1
-    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -Isrc -I. -c "$f" -o "$work/host.o" || exit 1
+    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I. -c "$f" -o "$work/decomposed.o" || exit 1
+    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -c "$f" -o "$work/host.o" || exit 1
     if ! cmp -s "$work/decomposed.o" "$work/host.o"; then
         echo "widemul-builds: $f compiles to other code under -DCH_CPU_RUNTIME than without it; the copy under its own names must be the decomposed build's" >&2
         exit 1
@@ -148,7 +148,7 @@ done
 calls() { # $1 = source, $2 = symbol, $3... = extra flags
     local src=$1 symbol=$2
     shift 2
-    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -Isrc -I. "$@" -c "$src" -o "$work/object.o" || exit 1
+    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I. "$@" -c "$src" -o "$work/object.o" || exit 1
     nm -u "$work/object.o" | grep -qE "(^|[[:space:]_])$symbol\$"
 }
 
@@ -156,13 +156,13 @@ calls() { # $1 = source, $2 = symbol, $3... = extra flags
 defines() { # $1 = source, $2 = symbol, $3... = extra flags
     local src=$1 symbol=$2
     shift 2
-    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -Isrc -I. "$@" -c "$src" -o "$work/object.o" || exit 1
+    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I. "$@" -c "$src" -o "$work/object.o" || exit 1
     nm "$work/object.o" | grep -qE "[[:space:]][TDRS][[:space:]]_?$symbol\$"
 }
 
 vector_tu=$work/vector.c
 printf '#define CH_CPU_RUNTIME\n#include "src/chacha20_vector.h"\n' > "$vector_tu"
-if ! "$cc" -std=c11 -Isrc -I. -fsyntax-only "$vector_tu" 2>/dev/null; then
+if ! "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only "$vector_tu" 2>/dev/null; then
     echo "widemul-builds: SKIP the vector call check: $cc targets neither NEON nor SSE2 on a little-endian core"
 else
     if ! calls src/poly1305_native.c poly1305_vector_blocks_native -DCH_CPU_RUNTIME; then
@@ -204,9 +204,9 @@ if [ -z "$clang_rv" ]; then
     exit 1
 fi
 cross_object() { # $1 = target, $2 = source, $3 = one more flag or none; writes $work/cross.o and $work/cross.s
-    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
+    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. \
         -DCH_CPU_RUNTIME -DCH_RAND_EXTERN ${3:+"$3"} -c "$2" -o "$work/cross.o" || exit 1
-    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
+    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. \
         -DCH_CPU_RUNTIME -DCH_RAND_EXTERN ${3:+"$3"} -S "$2" -o "$work/cross.s" || exit 1
 }
 # Whether the body of one function in $work/cross.s names a symbol: the

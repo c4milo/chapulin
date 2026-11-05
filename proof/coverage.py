@@ -657,6 +657,7 @@ def reach_command(name, runs, shared_defines, solver=None, object_bits=None):
     cmd = ["cbmc", str(ROOT / "proof" / f"{name}_harness.c")]
     cmd += [str(ROOT / src) for src in sorted(linked)]
     cmd += [*defines, *added_defines(shared_defines, defines), "-I", str(ROOT / "src"),
+            "-I", str(ROOT / "include" / "chapulin"), "-I", str(ROOT / "include"),
             "-I", str(ROOT), "--cover", "location", "--slice-formula", "--unwind", str(unwind)]
     if unwindset:
         cmd += ["--unwindset", unwindset]

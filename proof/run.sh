@@ -189,7 +189,7 @@ cache_key() {
             # expansion below passes each one to cc as its own argument.
             # shellcheck disable=SC2086
             case "$a" in
-            *.c) cc -E -D__CPROVER__ $defs -I src -I . "$a" 2>/dev/null || true ;;
+            *.c) cc -E -D__CPROVER__ $defs -I src -I include/chapulin -I . "$a" 2>/dev/null || true ;;
             esac
         done
     } | $HASHER | awk '{print $1}'
@@ -301,7 +301,7 @@ launch() {
     if [ -n "$widemul_def" ]; then
         args+=("$widemul_def")
     fi
-    args+=(-I src -I . --unwind "$unwind")
+    args+=(-I src -I include/chapulin -I . --unwind "$unwind")
     # bash 3.2 errors on expanding an empty array under set -u, so each
     # arm checks its length before expanding, as the caller below does.
     local solver=()

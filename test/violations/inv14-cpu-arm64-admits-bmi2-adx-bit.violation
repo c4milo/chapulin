@@ -1,5 +1,5 @@
 invariant: INV-14
-file: src/cpu_cfg.h
+file: include/chapulin/cpu_cfg.h
 catches: test/host-builds.sh
 reason: cpu_cfg.h's arm64 set gains CH_CPU_BMI2_ADX, so an arm64 object
   takes a bit that names x86-64 instructions and has no path for it, where

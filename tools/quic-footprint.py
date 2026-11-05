@@ -104,6 +104,19 @@ from quic_source import (DECLARATOR, complete_types, conditional_spans,
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
+API = ROOT / "include" / "chapulin"
+
+
+def tree(name):
+    """The path of a library file by its bare name: src/ holds the sources
+    and the internal headers, and include/chapulin/ the API headers
+    (docs/decisions.md 185)."""
+    return API / name if (API / name).exists() else SRC / name
+
+
+def bare(path):
+    """A listed path's bare name, under either directory."""
+    return path.removeprefix("src/").removeprefix("include/chapulin/")
 
 # The macro the mode's text sits behind, in the files a TCP build
 # compiles as well.
@@ -232,15 +245,15 @@ def shared_files():
     QUIC_SHARED rather than copied here. `make lint-quic-partition`
     reads the same variable, so the exemption has one home and one
     name."""
-    return [p for p in makefile("QUIC_SHARED") if (SRC / p).exists()]
+    return [p for p in makefile("QUIC_SHARED") if (tree(p)).exists()]
 
 
 def quic_files():
     """Every tracked file of the mode: the quic-prefixed ones, then the
     shared pair. `git ls-files` reads the index, so a staged file counts
     and a build artifact does not."""
-    listed = [p.removeprefix("src/") for p in run("git", "ls-files", "src/quic*")
-              if p.count("/") == 1]
+    listed = [bare(p) for p in run("git", "ls-files", "src/quic*", "include/chapulin/quic*")
+              if "/" not in bare(p)]
     return sorted(listed), shared_files()
 
 
@@ -249,14 +262,14 @@ def library_lines():
     other directories are tests, proofs, tools and benches, and none of
     them ships."""
     total = 0
-    for path in run("git", "ls-files", "src/*.c", "src/*.h"):
-        if path.count("/") == 1:
+    for path in run("git", "ls-files", "src/*.c", "src/*.h", "include/chapulin/*.h"):
+        if "/" not in bare(path):
             total += len((ROOT / path).read_text().split("\n")) - 1
     return total
 
 
 def lines_in(path):
-    return len((SRC / path).read_text().split("\n")) - 1
+    return len((tree(path)).read_text().split("\n")) - 1
 
 
 def plural(count, word):
@@ -282,7 +295,7 @@ def role_of(path):
     file that names a `ch_quic_` entry of its own is the public API; a
     comment that merely mentions one is not."""
     read = declared if path.endswith(".h") else defined
-    names = read(SRC / path)
+    names = read(tree(path))
     public = any(n.startswith("ch_quic_") for n in names or [])
     return "quic only, public API" if public else "quic only"
 
@@ -294,11 +307,11 @@ def conditional_rows(quic):
     print, so a reader who takes the Files table for the whole mode
     reads too small a number."""
     rows = []
-    for path in run("git", "ls-files", "src/*.c", "src/*.h"):
-        path = path.removeprefix("src/")
+    for path in run("git", "ls-files", "src/*.c", "src/*.h", "include/chapulin/*.h"):
+        path = bare(path)
         if "/" in path or path in quic:
             continue
-        spans = conditional_spans(SRC / path, TRANSPORT)
+        spans = conditional_spans(tree(path), TRANSPORT)
         if spans:
             rows.append((path, len(spans),
                          sum(last - first - 1 for first, last in spans)))
@@ -368,7 +381,7 @@ def build_sources():
     test/lint-trust-separation.sh reads the same way. The axis values
     default to TRUST=raw-rsa KEX=x25519, so this is the smallest
     build the tree has."""
-    return [s for s in makefile("LIB_SRCS") if (SRC / s).exists()]
+    return [s for s in makefile("LIB_SRCS") if (tree(s)).exists()]
 
 
 def report_share(quic_total, shared_total, count, conditional_total):
@@ -376,7 +389,7 @@ def report_share(quic_total, shared_total, count, conditional_total):
     compiled = build_sources()
     built = sum(lines_in(s) for s in compiled)
     sources = [p.removeprefix("src/") for p in run("git", "ls-files", "src/quic*.c")
-               if p.count("/") == 1]
+               if "/" not in bare(p)]
     print("Share of the library")
     print(f"  {quic_total:5d} lines exist only for QUIC, in {count} files")
     print(f"  {conditional_total:5d} more sit in the {TRANSPORT} arms of "
@@ -428,15 +441,15 @@ def report_progress(quic):
     declared_n, defined_n, stub_n = 0, 0, 0
     for header in headers:
         source = header[:-2] + ".c"
-        names = declared(SRC / header)
-        bodies = defined(SRC / source)
+        names = declared(tree(header))
+        bodies = defined(tree(source))
         declared_n += len(names)
         if bodies is None:
             missing.append(source)
             rows.append((header, len(names), "-", "-", f"no {source} yet"))
             continue
         here = [n for n in names if n in bodies]
-        stubs = [n for n in here if n in (stubbed(SRC / source) or [])]
+        stubs = [n for n in here if n in (stubbed(tree(source)) or [])]
         defined_n += len(here)
         stub_n += len(stubs)
         note = "" if len(here) == len(names) else (
@@ -470,7 +483,7 @@ def surface():
     """The public surface twice over: the `ch_quic_` entries quic.h
     declares, the names docs/quic.md's interface table lists, and the
     sentence each difference deserves."""
-    header = [n for n in declared(SRC / "quic.h") if n.startswith("ch_quic_")]
+    header = [n for n in declared(tree("quic.h")) if n.startswith("ch_quic_")]
     documented = doc_entries()
     apart = [f"quic.h declares {name}, which {DOC} does not list"
              for name in header if name not in documented]
@@ -508,11 +521,11 @@ def key_holders():
     the way the Semgrep rules' exclude lists are: they are tripwires, and
     a name added to one is a diff a reviewer looks for."""
     apart = []
-    for path in run("git", "ls-files", "src/*.c", "src/*.h"):
-        if path.count("/") != 1:
+    for path in run("git", "ls-files", "src/*.c", "src/*.h", "include/chapulin/*.h"):
+        if "/" in bare(path):
             continue
-        path = path.removeprefix("src/")
-        text = (SRC / path).read_text()
+        path = bare(path)
+        text = (tree(path)).read_text()
         for header, struct, holders in KEY_BODIES:
             if path == header or path in holders:
                 continue
@@ -554,7 +567,7 @@ def cipher_surface():
     rule_exists()
     apart = []
     for header in CIPHER_HEADERS:
-        path = SRC / header
+        path = tree(header)
         if not path.exists():
             sys.exit(f"quic-footprint: {header} is missing, so the names "
                      f"{RULE_ID} matches cannot be read")
@@ -599,7 +612,7 @@ def stubs_untested():
     than by a number a reader keeps in step by hand."""
     found = []
     for source in makefile("QUIC_SRCS"):
-        path = SRC / source
+        path = tree(source)
         if not path.exists():
             continue
         for name in stubbed(path) or []:
@@ -678,7 +691,7 @@ def report_cipher_names():
     print("Cipher names INV-26's rule matches")
     functions, macros, types = [], [], []
     for header in CIPHER_HEADERS:
-        path = SRC / header
+        path = tree(header)
         functions += declared(path)
         macros += function_macros(path)
         types += typedefs(path)
@@ -687,7 +700,7 @@ def report_cipher_names():
           f"{' and '.join(CIPHER_HEADERS)}")
     complete = []
     for header in CIPHER_HEADERS:
-        complete += complete_types(SRC / header)
+        complete += complete_types(tree(header))
     print(f"  {plural(len(types), 'type')} declared and "
           f"{len(complete)} given a body, so the compiler refuses a key "
           f"outside {KEY_HEADER}'s {plural(len(KEY_HOLDERS), 'reader')}")
@@ -708,7 +721,7 @@ def report_sections(quic, shared):
     """The standards the headers cite, most cited first, so the RFC the
     mode implements leads the list without being named here."""
     print("Sections cited, by standard")
-    scan = {p: marks_in(SRC / p) for p in quic + shared if p.endswith(".h")}
+    scan = {p: marks_in(tree(p)) for p in quic + shared if p.endswith(".h")}
     by_rule = resolve(scan)
     per_doc = {}
     for rule in ("adjacent", "section", "subject"):

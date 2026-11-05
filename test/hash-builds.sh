@@ -87,7 +87,7 @@ clang_rv=$(make -s --no-print-directory print-clang-rv)
 # hashes' arms of hkdf.c and keysched.c compiled. Mach-O names carry a
 # leading underscore.
 device_symbols() { # $1 = source
-    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_HASH_SHA384 -Isrc -I. -c "$1" -o "$work/device.o" || exit 1
+    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_HASH_SHA384 -Isrc -Iinclude/chapulin -Iinclude -I. -c "$1" -o "$work/device.o" || exit 1
     nm "$work/device.o"
 }
 for src in src/sha256.c src/sha512.c src/hkdf.c src/keysched.c src/sha256_hw.c src/sha512_hw.c src/sha512_avx2.c; do
@@ -105,7 +105,7 @@ for src in src/sha256_hw.c src/sha512_hw.c src/sha512_avx2.c; do
     fi
 done
 for src in src/hkdf_hw.c src/keysched_hw.c; do
-    if "$cc" -std=c11 -DCH_RAND_EXTERN -Isrc -I. -fsyntax-only "$src" 2> /dev/null; then
+    if "$cc" -std=c11 -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only "$src" 2> /dev/null; then
         fail "$src compiled without -DCH_CPU_RUNTIME; src/hash_hw.h must refuse a copy outside a host object"
     fi
 done
@@ -120,7 +120,7 @@ for src in src/sha3_hw.c src/mlkem_hw.c src/mlkem_poly_hw.c; do
         fail "$src without -DCH_CPU_RUNTIME defines a symbol; it has a body in a host object alone"
     fi
 done
-if printf '#include "src/keccak_hw.h"\n' | "$cc" -std=c11 -Isrc -I. -x c -fsyntax-only - 2> /dev/null; then
+if printf '#include "src/keccak_hw.h"\n' | "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -x c -fsyntax-only - 2> /dev/null; then
     fail "src/keccak_hw.h compiled without -DCH_CPU_RUNTIME; it must refuse a copy outside a host object"
 fi
 
@@ -128,10 +128,10 @@ fi
 # targets whatever the host. It writes $work/cross.o and $work/cross.s.
 # ML-KEM's files read cfg.h, which asks for an entropy pattern.
 cross_object() { # $1 = target, $2 = source
-    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
+    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. \
         -DCH_CPU_RUNTIME -DCH_HASH_SHA384 -DCH_RAND_EXTERN -c "$2" -o "$work/cross.o" ||
         fail "$2 does not compile for a host object on $1 with no instruction flag"
-    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -I. \
+    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -Isrc -Iinclude/chapulin -Iinclude -I. \
         -DCH_CPU_RUNTIME -DCH_HASH_SHA384 -DCH_RAND_EXTERN -S "$2" -o "$work/cross.s" || exit 1
 }
 

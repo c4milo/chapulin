@@ -177,7 +177,7 @@ def check_fail_closed(mapping):
     new.parent.mkdir(exist_ok=True)
     new.write_text("int impact_test_new_source(void) { return 0; }\n")
     try:
-        paths = ("Makefile", "src/ct.h", "src/cfg.h", "src/buf.h", "tools/toolchain.env",
+        paths = ("Makefile", "src/ct.h", "include/chapulin/cfg.h", "src/buf.h", "tools/toolchain.env",
                  ".github/workflows/check.yml", "proof/prove-one.sh",
                  "a_file_nobody_added.c", NEW_SOURCE)
         for path in paths:
@@ -250,10 +250,10 @@ def check_root_headers(mapping):
     was outside $(HDRS), so the nightly of 2026-11-01 ran bin/dnssec_test
     built before the edit and reported inv14-ed25519-small-order-key as
     unguarded (https://github.com/c4milo/chapulin/issues/215)."""
-    listed = subprocess.run(["git", "ls-files", "-z", "--", "src/*.h"], cwd=ROOT,
-                            check=True, capture_output=True).stdout
+    listed = subprocess.run(["git", "ls-files", "-z", "--", "src/*.h", "include/chapulin/*.h"],
+                            cwd=ROOT, check=True, capture_output=True).stdout
     headers = sorted({os.fsdecode(p) for p in listed.split(b"\0")
-                      if p and p.count(b"/") == 1})
+                      if p and p.count(b"/") == (2 if p.startswith(b"include/") else 1)})
     hdrs = set(impact_read.expand("$(HDRS)", mapping.variables).split())
     bad = 0
     for path in headers:

@@ -55,7 +55,7 @@ compile_half() {
     read -r -a def_words <<< "$defs"
     read -r -a flag_words <<< "$flags"
     half=${obj%/chapulin.o}/lib_pair_half.o
-    "$cc" "${flag_words[@]}" "${def_words[@]}" -Isrc -I. -Itest -c test/lib_pair_half.c -o "$half"
+    "$cc" "${flag_words[@]}" "${def_words[@]}" -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -c test/lib_pair_half.c -o "$half"
 }
 
 # pair NAME SHARED A-VARIABLES B-VARIABLES
@@ -88,7 +88,7 @@ pair() {
     *" -DCH_KEYLOG "*) main_defs+=(-DLIB_PAIR_KEYLOG) ;;
     esac
     read -r -a flag_words <<< "$flags"
-    "$cc" "${flag_words[@]}" "${main_defs[@]}" -Isrc -I. -Itest -c test/lib_pair_main.c \
+    "$cc" "${flag_words[@]}" "${main_defs[@]}" -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -c test/lib_pair_main.c \
         -o "$out/$name-main.o" || return 1
 
     local image=$out/$name

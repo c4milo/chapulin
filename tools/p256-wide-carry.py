@@ -51,7 +51,7 @@ MACHINES = {
     "arm64": ["--target=aarch64-none-elf", "-march=armv8-a"],
     "x86-64": ["--target=x86_64-unknown-linux-gnu", "-march=x86-64"],
 }
-FLAGS = ["-std=c11", "-ffreestanding", "-nostdlibinc", "-Itools/freestanding", "-Isrc", "-I.",
+FLAGS = ["-std=c11", "-ffreestanding", "-nostdlibinc", "-Itools/freestanding", "-Isrc", "-Iinclude/chapulin", "-Iinclude", "-I.",
          "-DCH_RAND_EXTERN", "-DCH_CPU_RUNTIME", "-E", "-P", "-x", "c", "-"]
 
 # What names each form in the body of a step.

@@ -26,9 +26,9 @@ int main(void) {
     return 0;
 }
 EOF
-cc -std=c11 -DCH_RAND_EXTERN -Isrc -I. -o "$TMP/sz" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz" "$TMP/sz.c"
 SESSION=$("$TMP/sz" | awk '{print $2}')
-cc -std=c11 -DCH_RAND_EXTERN -DCH_KEX_PQ -Isrc -I. -o "$TMP/sz_pq" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_KEX_PQ -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz_pq" "$TMP/sz.c"
 SESSION_PQ=$("$TMP/sz_pq" | awk '{print $2}')
 # TRUST=webpki carries a larger ClientHello, so a larger TX staging array,
 # and it demands a receive buffer of CH_MIN_RXBUF, read from the build
@@ -41,13 +41,13 @@ int main(void) {
     return 0;
 }
 EOF
-cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -Isrc -I. -o "$TMP/sz_webpki" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz_webpki" "$TMP/sz.c"
 SESSION_WEBPKI=$("$TMP/sz_webpki" | awk '{print $2}')
 # ROLE=server stages its ServerHello in the TX array, and a hybrid one
 # carries a 1120-byte share, so its struct is measured on its own.
-cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -Isrc -I. -o "$TMP/sz_server" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz_server" "$TMP/sz.c"
 SESSION_SERVER=$("$TMP/sz_server" | awk '{print $2}')
-cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -Isrc -I. -o "$TMP/floor_webpki" "$TMP/floor.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/floor_webpki" "$TMP/floor.c"
 RXBUF_WEBPKI=$("$TMP/floor_webpki" | awk '{print $2}')
 # SUITE=aesgcm is measured here in the host object, whose ch_cfg holds
 # the caller's description of its CPU (docs/decisions.md 89) and which no
@@ -61,13 +61,13 @@ SUITE_DEFS="-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME"
 # A host server holds the mldsa87 slot beside the other two
 # (docs/decisions.md 180), so its ch_cfg carries the define the Makefile
 # gives a host server object.
-cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -DCH_SIGN_MLDSA $SUITE_DEFS -Isrc -I. -o "$TMP/sz_server_aes" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -DCH_SIGN_MLDSA $SUITE_DEFS -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz_server_aes" "$TMP/sz.c"
 SESSION_SERVER_AES=$("$TMP/sz_server_aes" | awk '{print $2}')
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $SUITE_DEFS -Isrc -I. -o "$TMP/sz_webpki_aes" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $SUITE_DEFS -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz_webpki_aes" "$TMP/sz.c"
 SESSION_WEBPKI_AES=$("$TMP/sz_webpki_aes" | awk '{print $2}')
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $SUITE_DEFS -Isrc -I. -o "$TMP/floor_webpki_aes" "$TMP/floor.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $SUITE_DEFS -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/floor_webpki_aes" "$TMP/floor.c"
 RXBUF_WEBPKI_AES=$("$TMP/floor_webpki_aes" | awk '{print $2}')
 # The TRUST=webpki and ROLE=server builds as host objects, which the
 # Makefile builds for them on arm64 and x86-64. Their ch_cfg holds the
@@ -75,9 +75,9 @@ RXBUF_WEBPKI_AES=$("$TMP/floor_webpki_aes" | awk '{print $2}')
 # about the widening multiply that description gives, in bytes its
 # alignment left unused (docs/decisions.md 87 and 89). A host object runs
 # on those two architectures alone, so these rows are host figures.
-cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME -Isrc -I. -o "$TMP/sz_webpki_host" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz_webpki_host" "$TMP/sz.c"
 SESSION_WEBPKI_HOST=$("$TMP/sz_webpki_host" | awk '{print $2}')
-cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA -Isrc -I. -o "$TMP/sz_server_host" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -DCH_CPU_RUNTIME -DCH_SIGN_MLDSA -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz_server_host" "$TMP/sz.c"
 SESSION_SERVER_HOST=$("$TMP/sz_server_host" | awk '{print $2}')
 # ch_quic in the object colibri links, ROLE=both TRUST=webpki
 # TRANSPORT=quic-nonblocking, without and with the suite: under SUITE=aesgcm each
@@ -93,10 +93,10 @@ int main(void) {
 EOF
 QUIC_DEFS="-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER -DCH_ROLE_BOTH"
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS -Isrc -I. -o "$TMP/szq" "$TMP/szq.c"
+cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/szq" "$TMP/szq.c"
 QUIC_SESSION=$("$TMP/szq" | awk '{print $2}')
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $SUITE_DEFS -Isrc -I. -o "$TMP/szq_aes" "$TMP/szq.c"
+cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $SUITE_DEFS -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/szq_aes" "$TMP/szq.c"
 QUIC_SESSION_AES=$("$TMP/szq_aes" | awk '{print $2}')
 
 # PROFILE=cnsa2 under the two ML-DSA-87 trust modes (docs/decisions.md
@@ -107,16 +107,16 @@ QUIC_SESSION_AES=$("$TMP/szq_aes" | awk '{print $2}')
 CNSA2_MLDSA_DEFS="-DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_AES_EXTERN"
 CNSA2_MLDSA_DEFS="$CNSA2_MLDSA_DEFS -DCH_AES_EXTERN_CONSTANT_TIME -DCH_PIN_MLDSA"
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -Isrc -I. -o "$TMP/sz_mldsa" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz_mldsa" "$TMP/sz.c"
 SESSION_MLDSA=$("$TMP/sz_mldsa" | awk '{print $2}')
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -Isrc -I. -o "$TMP/floor_mldsa" "$TMP/floor.c"
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/floor_mldsa" "$TMP/floor.c"
 RXBUF_MLDSA=$("$TMP/floor_mldsa" | awk '{print $2}')
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -DCH_TRUST_CA -Isrc -I. -o "$TMP/sz_ca_mldsa" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -DCH_TRUST_CA -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz_ca_mldsa" "$TMP/sz.c"
 SESSION_CA_MLDSA=$("$TMP/sz_ca_mldsa" | awk '{print $2}')
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -DCH_TRUST_CA -Isrc -I. -o "$TMP/floor_ca_mldsa" "$TMP/floor.c"
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_MLDSA_DEFS -DCH_TRUST_CA -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/floor_ca_mldsa" "$TMP/floor.c"
 RXBUF_CA_MLDSA=$("$TMP/floor_ca_mldsa" | awk '{print $2}')
 
 # The PROFILE=cnsa2 server (docs/decisions.md 162), a host object alone,
@@ -125,10 +125,10 @@ RXBUF_CA_MLDSA=$("$TMP/floor_ca_mldsa" | awk '{print $2}')
 CNSA2_SERVER_DEFS="-DCH_PROFILE_CNSA2 -DCH_MLKEM_1024 -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME"
 CNSA2_SERVER_DEFS="$CNSA2_SERVER_DEFS -DCH_ROLE_SERVER -DCH_SIGN_MLDSA"
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN $CNSA2_SERVER_DEFS -Isrc -I. -o "$TMP/sz_cnsa2_server" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_SERVER_DEFS -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/sz_cnsa2_server" "$TMP/sz.c"
 SESSION_CNSA2_SERVER=$("$TMP/sz_cnsa2_server" | awk '{print $2}')
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN $CNSA2_SERVER_DEFS -Isrc -I. -o "$TMP/floor_cnsa2_server" "$TMP/floor.c"
+cc -std=c11 -DCH_RAND_EXTERN $CNSA2_SERVER_DEFS -Isrc -Iinclude/chapulin -Iinclude -I. -o "$TMP/floor_cnsa2_server" "$TMP/floor.c"
 RXBUF_CNSA2_SERVER=$("$TMP/floor_cnsa2_server" | awk '{print $2}')
 
 # The same struct on a 32-bit target. The pointer fields are what move, so
@@ -151,7 +151,7 @@ PROBE
     rv32_size() { # $1 = extra defines
         # shellcheck disable=SC2086
         "$RV32_CLANG" -target riscv32-unknown-elf -march=rv32ic -mabi=ilp32 -Os \
-            -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_EXTERN $1 -Isrc -I. -c "$TMP/probe.c" \
+            -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_EXTERN $1 -Isrc -Iinclude/chapulin -Iinclude -I. -c "$TMP/probe.c" \
             -o "$TMP/probe.o" 2>/dev/null || { echo "unmeasured"; return; }
         # llvm-nm prints the size in hex, and macOS awk has no strtonum.
         local hex

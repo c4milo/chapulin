@@ -302,7 +302,7 @@ Other targets:
 
   ```sh
   make lib TRUST=webpki RAND=extern
-  cc -Isrc -include bin/chapulin.h -o app app.c bin/chapulin.o
+  cc -Iinclude -include bin/chapulin.h -o app app.c bin/chapulin.o
   ```
 
   The header holds one `#error` for each layout define the object lacks,
@@ -310,12 +310,14 @@ Other targets:
   `lib-check` compiles `test/build_test.c` under the header alone and
   requires the object's build record, below, and the program compiled
   with a transport define the object lacks must stop at that `#error`.
-  The examples compile this way (decision 133). Under the header the
-  public headers need no internal one: `lib-check` also compiles that
-  program against a copy of the Makefile's `API_HEADERS` alone, with no
-  `-Isrc`, and requires its record to match (decision 185). A program
-  that skips the header compiles with `-Isrc`, and the storage sizes
-  then come from the internal structs.
+  The PSK and pinned examples compile this way, with `-Iinclude` alone
+  (decision 133). The public headers sit in `include/chapulin/`, which
+  holds the Makefile's `API_HEADERS` and nothing else, and a program
+  includes them as `<chapulin/tls.h>`. Under the header they need no
+  internal one: `lib-check` compiles that program with `-Iinclude` and
+  no `-Isrc`, and requires its record to match (decision 185). A program
+  that skips the header compiles with `-Isrc -Iinclude/chapulin`, and the
+  storage sizes then come from the internal structs.
 - `ch_build` is the object's build record (`build.h`): the axes it was
   compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
   `ch_tcp`, `ch_quic` and `ch_rsa_priv`, and the bounds a program

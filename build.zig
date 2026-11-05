@@ -16,7 +16,8 @@
 //! translated by translate-c under the defines the object compiled with
 //! (docs/decisions.md 70 and 73); the named lazy path "chapulin.o", the
 //! localized object, for a program that compiles the headers as C; and
-//! "include", the directory of the headers. It calls
+//! "include", the directory that holds chapulin/ and its API headers, for
+//! #include <chapulin/tls.h> (docs/decisions.md 185). It calls
 //! chapulin.buildMatches once (build.h).
 const std = @import("std");
 
@@ -322,6 +323,7 @@ pub fn build(b: *std.Build) void {
         .stack_check = false,
     });
     module.addIncludePath(b.path("src"));
+    module.addIncludePath(b.path("include/chapulin"));
     module.addCSourceFiles(.{ .root = b.path("src"), .files = plan.srcs, .flags = flags });
     const partial = b.addObject(.{ .name = "chapulin-partial", .root_module = module });
 
@@ -344,8 +346,9 @@ pub fn build(b: *std.Build) void {
     b.addNamedLazyPath("chapulin.o", object);
     b.getInstallStep().dependOn(&b.addInstallFile(object, "lib/chapulin.o").step);
 
-    // make lib compiles with -Isrc, where every header sits.
-    b.addNamedLazyPath("include", b.path("src"));
+    // The API headers sit in include/chapulin, and a program writes
+    // #include <chapulin/tls.h> with this path on its include path.
+    b.addNamedLazyPath("include", b.path("include"));
 
     // The headers of the plan, translated by translate-c for the object's
     // target and optimize mode under the defines in flags, so a dependent's
@@ -359,6 +362,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = .ReleaseFast,
     });
+    translate.addIncludePath(b.path("include"));
+    translate.addIncludePath(b.path("include/chapulin"));
     translate.addIncludePath(b.path("src"));
     for (flags) |flag| {
         if (std.mem.startsWith(u8, flag, "-D")) translate.defineCMacroRaw(flag["-D".len..]);
@@ -399,7 +404,7 @@ pub fn build(b: *std.Build) void {
     const lists_step = b.step("lib-lists", "Install lib-srcs.txt, lib-def.txt and lib-headers.txt, the object's sources, defines and public headers");
     lists_step.dependOn(&b.addInstallFile(lists.add("lib-srcs.txt", sourceLines(b, plan.srcs)), "lib-srcs.txt").step);
     lists_step.dependOn(&b.addInstallFile(lists.add("lib-def.txt", lines(b, plan.defs)), "lib-def.txt").step);
-    lists_step.dependOn(&b.addInstallFile(lists.add("lib-headers.txt", sourceLines(b, plan.headers)), "lib-headers.txt").step);
+    lists_step.dependOn(&b.addInstallFile(lists.add("lib-headers.txt", headerLines(b, plan.headers)), "lib-headers.txt").step);
 }
 
 /// The Makefile's refusals of a SUITE or KEX value beside PROFILE=cnsa2,
@@ -1006,7 +1011,7 @@ fn contains(list: Names, name: []const u8) bool {
 fn includes(b: *std.Build, headers: Names) []const u8 {
     var text: std.ArrayList(u8) = .empty;
     text.appendSlice(b.allocator, "// Written by build.zig: the public headers of one packaged object.\n") catch @panic("OOM");
-    for (headers) |header| text.print(b.allocator, "#include \"{s}\"\n", .{header}) catch @panic("OOM");
+    for (headers) |header| text.print(b.allocator, "#include \"chapulin/{s}\"\n", .{header}) catch @panic("OOM");
     return text.items;
 }
 
@@ -1014,6 +1019,14 @@ fn includes(b: *std.Build, headers: Names) []const u8 {
 fn sourceLines(b: *std.Build, names: Names) []const u8 {
     var text: std.ArrayList(u8) = .empty;
     for (names) |name| text.print(b.allocator, "src/{s}\n", .{name}) catch @panic("OOM");
+    return text.items;
+}
+
+/// One path per line under include/chapulin/, each line ended, as make
+/// prints the API headers' names.
+fn headerLines(b: *std.Build, names: Names) []const u8 {
+    var text: std.ArrayList(u8) = .empty;
+    for (names) |name| text.print(b.allocator, "include/chapulin/{s}\n", .{name}) catch @panic("OOM");
     return text.items;
 }
 

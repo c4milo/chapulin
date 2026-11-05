@@ -1,5 +1,5 @@
 invariant: INV-57
-file: src/profile_cfg.h
+file: include/chapulin/profile_cfg.h
 catches: cnsa2_test
 reason: the profile takes a pin, so ch_connect sends a hello for a
   pinned config and would authenticate the server by RSA or ECDSA, which

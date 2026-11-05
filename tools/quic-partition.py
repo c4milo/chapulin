@@ -86,7 +86,7 @@ CC = os.environ.get("CC") or "cc"
 # Reading a gcc run as a clang run says every quic* file declares its body
 # without the define, which is how this lint passed here and failed on CI
 # until 2026-09-18. Plain -E evaluates conditionals on both.
-FLAGS = ["-E", "-x", "c", "-std=c11", "-DCH_RAND_EXTERN", "-Isrc", "-I."]
+FLAGS = ["-E", "-x", "c", "-std=c11", "-DCH_RAND_EXTERN", "-Isrc", "-Iinclude/chapulin", "-Iinclude", "-I."]
 DEFINE = "-DCH_TRANSPORT_QUIC_NONBLOCKING"
 
 # A conditional and the identifiers it tests. `defined` is the operator,
@@ -335,7 +335,9 @@ def main(argv):
     names = lists()
     shared = [f for f in names["QUIC_SHARED"] if (ROOT / f).exists()]
     quic = [p for p in run("git", "ls-files", "src/quic*") if p.count("/") == 1]
+    quic += run("git", "ls-files", "include/chapulin/quic*")
     roots = [p for p in run("git", "ls-files", "src/*.c", "src/*.h") if p.count("/") == 1]
+    roots += run("git", "ls-files", "include/chapulin/*.h")
     # A QUIC object compiles neither list: QUIC_REPLACED names the six
     # sources the mode replaces outright, QUIC_PENDING the four that owe an
     # arm they do not have yet. Asking what those contribute under the

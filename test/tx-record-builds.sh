@@ -47,16 +47,16 @@ _Static_assert(CH_TX_STAGE == STAGE, "CH_TX_STAGE is the size the case expects")
 EOF
 
 compiles() {
-    "$cc" -std=c11 -Isrc -I. -fsyntax-only -DCH_RAND_EXTERN "$@" "$tu" 2> /dev/null
+    "$cc" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_RAND_EXTERN "$@" "$tu" 2> /dev/null
 }
 
-compiles -DCH_TX_PT=512 || fail "src/cfg.h must accept CH_TX_PT=512"
-compiles -DCH_TX_PT=16384 || fail "src/cfg.h must accept CH_TX_PT=16384"
+compiles -DCH_TX_PT=512 || fail "include/chapulin/cfg.h must accept CH_TX_PT=512"
+compiles -DCH_TX_PT=16384 || fail "include/chapulin/cfg.h must accept CH_TX_PT=16384"
 if compiles -DCH_TX_PT=511; then
-    fail "CH_TX_PT=511 compiled; src/cfg.h must refuse a value below 512"
+    fail "CH_TX_PT=511 compiled; include/chapulin/cfg.h must refuse a value below 512"
 fi
 if compiles -DCH_TX_PT=16385; then
-    fail "CH_TX_PT=16385 compiled; src/cfg.h must refuse a value above 2^14"
+    fail "CH_TX_PT=16385 compiled; include/chapulin/cfg.h must refuse a value above 2^14"
 fi
 compiles -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TX_PT=512 ||
     fail "src/session.h must accept CH_TX_PT=512 under TRANSPORT=quic-nonblocking"

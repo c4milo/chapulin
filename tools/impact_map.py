@@ -25,7 +25,7 @@ from shipped_sources import shipped_sources
 # Paths whose change the mapping refuses to narrow. Each one either feeds
 # every gate or has no source list to read.
 #   Makefile, test/platforms.mk  every recipe and every roster
-#   src/*.h                      $(HDRS) is a prerequisite of every
+#   src/*.h, include/chapulin/*.h  $(HDRS) is a prerequisite of every
 #                                binary, so narrowing would be a lie
 #   cfg.h, ct.h, buf.h           the same, and every module includes them
 #   tools/toolchain.env          the pinned compilers every gate runs
@@ -334,6 +334,7 @@ def is_wide(path, mapping):
     if path in WIDE_PATHS or path.startswith(WIDE_PREFIXES):
         return f"{path} feeds every gate, so nothing can be ruled out"
     if ((path.startswith("src/") and path.count("/") == 1 and path.endswith(".h"))
+            or (path.startswith("include/chapulin/") and path.count("/") == 2 and path.endswith(".h"))
             or ("/" not in path and path.endswith(".hpp"))):
         return (f"{path} is a library header, and $(HDRS) is a prerequisite "
                 f"of every test binary")

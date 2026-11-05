@@ -20,13 +20,13 @@
 #include <stdnoreturn.h>
 #include <string.h>
 
-#include "build.h"
-#include "ch_assert.h"
+#include "chapulin/build.h"
+#include "chapulin/ch_assert.h"
 #ifdef CH_RAND_EXTERN
-#include "rand.h"
+#include "chapulin/rand.h"
 #endif
 #ifdef CH_KEYLOG
-#include "keylog.h"
+#include "chapulin/keylog.h"
 #endif
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {

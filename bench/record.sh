@@ -149,7 +149,7 @@ fi
 
 # LIB_CFLAGS is a list of flags, so it splits on spaces.
 # shellcheck disable=SC2206
-FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -Isrc -I. -Ibench)
+FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench)
 SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     bench/record_chacha_vector.c bench/record_aead.c bench/record_stub.c
     src/record.c src/gcm.c src/aes.c "${AES_HW_SRCS[@]}" src/aead.c src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c

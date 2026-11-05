@@ -1,5 +1,5 @@
 invariant: INV-35
-file: src/alert.h
+file: include/chapulin/alert.h
 catches: test/lib-check-webpki-tcp-nonblocking.sh
 reason: alert.h includes session.h again, an internal header, as it did
   before the public headers stopped holding the library's state. A caller

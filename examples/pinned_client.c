@@ -25,7 +25,7 @@
  *
  *   make lib RAND=extern                         # RSA-PSS pins
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *      -Isrc -include bin/chapulin.h \
+ *      -Iinclude -include bin/chapulin.h \
  *      -o pinned_client examples/pinned_client.c bin/chapulin.o
  *
  * For P-256 pins, build the library with `make lib TRUST=raw-ecdsa RAND=extern`
@@ -50,10 +50,10 @@
 #include <sys/random.h> // getrandom; macOS has arc4random_buf instead
 #endif
 
-#include "build.h"
-#include "ch_assert.h"
-#include "rand.h"
-#include "tls.h"
+#include "chapulin/build.h"
+#include "chapulin/ch_assert.h"
+#include "chapulin/rand.h"
+#include "chapulin/tls.h"
 
 /*
  * --- Getting the pin -------------------------------------------------

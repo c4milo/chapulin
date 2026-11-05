@@ -415,7 +415,7 @@ x86_clang_out=bin/qemu-clang
 mkdir -p "$x86_out" "$arm64_out" "$x86_clang_out"
 # No -DCH_NATIVE_WIDEMUL: every binary here is a host object, which holds
 # both multiplies and whose ct.h refuses the define.
-flags=(-Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -static -Isrc -I. -Itest
+flags=(-Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -static -Isrc -Iinclude/chapulin -Iinclude -I. -Itest
        -DCH_RAND_EXTERN)
 runtime=(-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME)
 both=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI)
@@ -749,7 +749,7 @@ if [ -z "$only" ] || [ "$only" = rsa-addcarry ]; then
     # in the Makefile do for bin/rsa_addcarry_equiv_test.
     rows_called=1
     "$x86_cc" -dM -E -x c /dev/null | grep -qw __clang__ && rows_called=0
-    "$x86_cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -Isrc -I. -c src/rsa_mont64.c -o "$x86_out/rsa_mont64.o" ||
+    "$x86_cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -c src/rsa_mont64.c -o "$x86_out/rsa_mont64.o" ||
         exit 1
     for symbol in rsa_mont64_addcarry_mul rsa_mont64_addcarry_square; do
         called=0

@@ -39,7 +39,7 @@
  *   make TRUST=ca-rsa RAND=extern lib     # RSA-PSS chains, the default
  *   make TRUST=ca-ecdsa RAND=extern lib   # P-256 chains instead
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *      -Isrc -include bin/chapulin.h \
+ *      -Iinclude -include bin/chapulin.h \
  *      -o ca_client examples/ca_client.c bin/chapulin.o
  *
  * make lib writes bin/chapulin.h beside bin/chapulin.o. It holds the
@@ -62,10 +62,10 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include "build.h"
-#include "ch_assert.h"
-#include "rand.h"
-#include "tls.h"
+#include "chapulin/build.h"
+#include "chapulin/ch_assert.h"
+#include "chapulin/rand.h"
+#include "chapulin/tls.h"
 
 // --- The pinned CA key ---------------------------------------------------
 //

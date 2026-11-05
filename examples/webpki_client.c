@@ -51,7 +51,7 @@
  *
  *   make TRUST=webpki RAND=extern lib
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *      -Isrc -include bin/chapulin.h \
+ *      -Iinclude -include bin/chapulin.h \
  *      -o webpki_client examples/webpki_client.c bin/chapulin.o
  *
  * make lib writes bin/chapulin.h beside bin/chapulin.o. It holds the
@@ -86,10 +86,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "build.h"
-#include "ch_assert.h"
-#include "rand.h"
-#include "tls.h"
+#include "chapulin/build.h"
+#include "chapulin/ch_assert.h"
+#include "chapulin/rand.h"
+#include "chapulin/tls.h"
 
 // --- The trust anchors ---------------------------------------------------
 //

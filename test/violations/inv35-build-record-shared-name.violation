@@ -1,5 +1,5 @@
 invariant: INV-35
-file: src/build.h
+file: include/chapulin/build.h
 catches: test/lib-pair-check.sh
 reason: build.h gives the QUIC transport's build record the tcp-nonblocking
   transport's name, so two transports name their build records alike again, as every

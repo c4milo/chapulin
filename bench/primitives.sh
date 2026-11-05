@@ -125,7 +125,7 @@ W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
 FLAGS=(-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_DRBG
-    -Isrc -I. -Ibench -Itest)
+    -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench -Itest)
 # The primitives program links each module it times and what that module
 # calls, and nothing else. CH_RSA_MODULUS_MAX=512 is the bound TRUST=webpki
 # gives rsa.h, so the RSA-4096 rows run.

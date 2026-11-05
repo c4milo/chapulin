@@ -1,5 +1,5 @@
 invariant: INV-14
-file: src/ticket.h
+file: include/chapulin/ticket.h
 catches: unit
 reason: ticket_obfuscated_age returns the age without ticket_age_add, so
   every resumed ClientHello sends the ticket's age in the clear and a
