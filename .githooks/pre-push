@@ -1,6 +1,7 @@
 #!/bin/sh
 # Refuses the push of a release tag whose name and build.zig.zon's .version
-# differ (tools/release-version.sh). Wire up once with: make hooks
+# differ (tools/release-version.sh), or whose CI is not green
+# (tools/release-ci-green.sh). Wire up once with: make hooks
 #
 # git writes one line per ref: local ref, local object, remote ref, remote
 # object. A deleted ref has an all-zero local object and needs no check.
@@ -13,5 +14,6 @@ while read -r _ local_object remote_ref _; do
     esac
     [ "$local_object" = "$zero" ] && continue
     tools/release-version.sh "${remote_ref#refs/tags/}" "$local_object^{commit}" || status=1
+    tools/release-ci-green.sh "${remote_ref#refs/tags/}" "$local_object^{commit}" || status=1
 done
 exit $status

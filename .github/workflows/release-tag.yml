@@ -8,6 +8,7 @@ on:
     tags: ["v*"]
 permissions:
   contents: read
+  actions: read
 jobs:
   release-version:
     runs-on: ubuntu-26.04
@@ -16,3 +17,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Compare the tag with build.zig.zon's version
         run: tools/release-version.sh "$GITHUB_REF_NAME" HEAD
+      - name: Require green check and nightly runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: tools/release-ci-green.sh "$GITHUB_REF_NAME" HEAD
