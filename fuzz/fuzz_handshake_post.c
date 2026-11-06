@@ -96,7 +96,7 @@ static void seal_stream(rec_dir *wr, const uint8_t *data, size_t size) {
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    ch_tls t;
+    ch_tls_priv t;
     memset(&t, 0, sizeof t);
     uint8_t buf[0x4200];
     t.cfg.buf = buf;
@@ -114,7 +114,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     // Both directions from one secret, so what the harness seals is what
     // hspost_read can open; both sequence counters start at zero.
     static const uint8_t secret[SHA256_LEN] = {0x2b, 0x7e, 0x15, 0x16};
-    ch_tls u;
+    ch_tls_priv u;
     memset(&u, 0, sizeof u);
     static uint8_t rbuf[0x4200];
     u.cfg.buf = rbuf;

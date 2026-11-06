@@ -58,7 +58,8 @@ def comment_names(text, public):
     for line in text.splitlines():
         m = MARKER.match(line)
         if m:
-            # The tree's headers come in as relative paths through -Isrc and -I.;
+            # The tree's headers come in as relative paths through -Isrc,
+            # -Iinclude/chapulin, -Iinclude and -I.;
             # system headers and the generated source are absolute.
             path = pathlib.Path(m.group(1))
             header = None if path.is_absolute() else path.name

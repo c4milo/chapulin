@@ -63,7 +63,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     g_size = size;
     g_off = 0;
 
-    ch_tls t;
+    ch_tls_priv t;
     memset(&t, 0, sizeof t);
     static uint8_t buf[0x4200];
     t.cfg.buf = buf;
