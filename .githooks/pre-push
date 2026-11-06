@@ -1,0 +1,17 @@
+#!/bin/sh
+# Refuses the push of a release tag whose name and build.zig.zon's .version
+# differ (tools/release-version.sh). Wire up once with: make hooks
+#
+# git writes one line per ref: local ref, local object, remote ref, remote
+# object. A deleted ref has an all-zero local object and needs no check.
+zero=0000000000000000000000000000000000000000
+status=0
+while read -r _ local_object remote_ref _; do
+    case $remote_ref in
+    refs/tags/*) ;;
+    *) continue ;;
+    esac
+    [ "$local_object" = "$zero" ] && continue
+    tools/release-version.sh "${remote_ref#refs/tags/}" "$local_object^{commit}" || status=1
+done
+exit $status

@@ -8199,8 +8199,9 @@ lint-cppcheck-run:
 # config outright.
 COMMITLINT := tools/node_modules/.bin/commitlint --config tools/commitlint.config.mjs
 
-# One-time setup: point git at the committed hooks (commit-msg runs
-# commitlint; run npm ci in tools/ first).
+# One-time setup: point git at the committed hooks. commit-msg runs
+# commitlint (run npm ci in tools/ first), and pre-push refuses a release
+# tag that build.zig.zon's .version does not name (tools/release-version.sh).
 .PHONY: hooks lint-commits
 hooks:
 	git config core.hooksPath .githooks

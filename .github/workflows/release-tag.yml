@@ -1,0 +1,18 @@
+# The v0.3.0 tag carried build.zig.zon's version 0.2.0. .githooks/pre-push
+# refuses such a tag, but only on a machine that ran make hooks, so this
+# job checks each release tag that GitHub receives. A red run here means
+# the release must not be published.
+name: release-tag
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  release-version:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compare the tag with build.zig.zon's version
+        run: tools/release-version.sh "$GITHUB_REF_NAME" HEAD
