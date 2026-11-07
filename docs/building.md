@@ -354,9 +354,9 @@ Other targets:
   the program adds no `addObjectFile` of its own; a second one defines
   every public name twice. The program writes
   `const chapulin = @import("chapulin");`, calls
-  `chapulin.buildMatches()` once, and runs sessions through
+  `chapulin.build_matches()` once, and runs sessions through
   `chapulin.tcp` or `chapulin.quic` ([`zig.md`](zig.md)). Under
-  `.RAND = .session` each session's values carry a `std.Random`, and the
+  `.RAND = .session` each session's options carry a `std.Random`, and the
   program defines no `ch_rand_bytes`.
   `chapulin.c` is the public headers, translated by translate-c under the
   defines the object compiled with, so its types have the object's

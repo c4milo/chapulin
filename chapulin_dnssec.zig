@@ -18,7 +18,7 @@ pub const Algorithm = if (has_dnssec) enum(u8) {
     ed25519 = c.CH_DNSSEC_ALG_ED25519,
 } else @compileError("chapulin.dnssec.Algorithm needs DNSSEC=on");
 
-/// The digest types Hash.digest takes, RFC 9904's DS numbers. sha1 serves an NSEC3 owner-name
+/// The digest types Hash.init_digest takes, RFC 9904's DS numbers. sha1 serves an NSEC3 owner-name
 /// hash too, whose hash algorithm 1 is SHA-1.
 pub const DigestType = if (has_dnssec) enum(u8) {
     sha1 = c.CH_DNSSEC_DIGEST_SHA1,
@@ -37,15 +37,15 @@ pub const Hash = if (has_dnssec) struct {
     /// is not 64.
     pub fn init(algorithm: Algorithm, key: []const u8, sig: []const u8) error{Invalid}!@This() {
         var self: @This() = .{};
-        try chapulin.fromCode(error{Invalid}, c.ch_dnssec_hash_init(&self.state, @intFromEnum(algorithm), key.ptr, key.len, sig.ptr, sig.len));
+        try chapulin.from_code(error{Invalid}, c.ch_dnssec_hash_init(&self.state, @intFromEnum(algorithm), key.ptr, key.len, sig.ptr, sig.len));
         return self;
     }
 
     /// ch_dnssec_digest_init: a plain hash, for a DS digest or an NSEC3 owner-name hash. Every
     /// DigestType has a hash, so the C call's refusal does not arise.
-    pub fn digest(digest_type: DigestType) @This() {
+    pub fn init_digest(digest_type: DigestType) @This() {
         var self: @This() = .{};
-        chapulin.fromCode(error{Invalid}, c.ch_dnssec_digest_init(&self.state, @intFromEnum(digest_type))) catch unreachable;
+        chapulin.from_code(error{Invalid}, c.ch_dnssec_digest_init(&self.state, @intFromEnum(digest_type))) catch unreachable;
         return self;
     }
 
@@ -64,8 +64,8 @@ pub const Hash = if (has_dnssec) struct {
 /// ch_dnssec_verify: the signature sig over digest under key, the DNSKEY's key field as it
 /// arrived. error.Auth for a signature the key does not verify, and error.Invalid for a digest of
 /// the wrong length or a key dnssec.h refuses.
-pub const verify = if (has_dnssec) verifyOf else @compileError("chapulin.dnssec.verify needs DNSSEC=on");
+pub const verify = if (has_dnssec) verify_of else @compileError("chapulin.dnssec.verify needs DNSSEC=on");
 
-fn verifyOf(algorithm: Algorithm, key: []const u8, digest: []const u8, sig: []const u8) error{ Auth, Invalid }!void {
-    return chapulin.fromCode(error{ Auth, Invalid }, c.ch_dnssec_verify(@intFromEnum(algorithm), key.ptr, key.len, digest.ptr, digest.len, sig.ptr, sig.len));
+fn verify_of(algorithm: Algorithm, key: []const u8, digest: []const u8, sig: []const u8) error{ Auth, Invalid }!void {
+    return chapulin.from_code(error{ Auth, Invalid }, c.ch_dnssec_verify(@intFromEnum(algorithm), key.ptr, key.len, digest.ptr, digest.len, sig.ptr, sig.len));
 }

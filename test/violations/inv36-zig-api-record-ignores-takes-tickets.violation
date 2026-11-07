@@ -9,6 +9,6 @@ reason: record.Client.init sets on_ticket whatever the values'
   and objects.
 
 --- old
-            if (values.takes_tickets) cfg.on_ticket = onTicket;
+            if (options.takes_tickets) cfg.on_ticket = on_ticket;
 --- new
-            cfg.on_ticket = onTicket;
+            cfg.on_ticket = on_ticket;

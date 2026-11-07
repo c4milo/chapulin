@@ -5,6 +5,7 @@ const std = @import("std");
 const chapulin = @import("chapulin.zig");
 const c = chapulin.c;
 const quic = chapulin.quic;
+const cfg_of = @import("chapulin_cfg.zig");
 
 // The fields a TRUST=webpki ticket and a QUIC ticket add, as chapulin.zig reads them.
 const has_webpki = @hasField(c.ch_cfg, "anchors");
@@ -12,7 +13,7 @@ const has_quic = @hasField(c.ch_cfg, "quic_original_version");
 
 /// A NewSessionTicket (RFC 9846 §4.7.1) that outlives the session: the
 /// ch_ticket on_ticket received, by value, and the identity bytes it
-/// pointed at. Its layout is c.ch_saved_ticket's (ticket.h), so a Client's
+/// pointed at. Its layout is c.ch_saved_ticket's (ticket.h), so a ClientOptions'
 /// ch_cfg points at it as it is. A program that copies a Ticket owns
 /// zeroing that copy.
 pub const Ticket = extern struct {
@@ -35,7 +36,7 @@ pub const Ticket = extern struct {
         return @ptrCast(self);
     }
 
-    /// The fields fromFields takes. binding is the ticket's ch_ticket.binding, which a TRUST=webpki
+    /// The fields from_fields takes. lifetime_seconds is its ch_ticket.lifetime_s. binding is the ticket's ch_ticket.binding, which a TRUST=webpki
     /// object alone has, trust_hash its ch_ticket.trust_hash, which every other object has, and
     /// quic_version its ch_ticket.quic_version, a QUIC object's alone, whose null init refuses as
     /// a resuming ticket's version.
@@ -43,7 +44,7 @@ pub const Ticket = extern struct {
         identity: []const u8,
         psk: []const u8,
         age_add: u32,
-        lifetime_s: u32,
+        lifetime_seconds: u32,
         epoch: u32 = 0,
         binding: *const [c.SHA256_LEN]u8,
         quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
@@ -51,7 +52,7 @@ pub const Ticket = extern struct {
         identity: []const u8,
         psk: []const u8,
         age_add: u32,
-        lifetime_s: u32,
+        lifetime_seconds: u32,
         epoch: u32 = 0,
         trust_hash: *const [c.SHA256_LEN]u8,
         quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
@@ -62,7 +63,7 @@ pub const Ticket = extern struct {
     /// than CH_TICKET_ID_MAX or a psk that is not a hash length this object holds, SHA256_LEN or,
     /// where HKDF_HASH_MAX is SHA384_LEN, that too. Setting ticket's fields by hand is not
     /// supported.
-    pub fn fromFields(fields: Fields) error{Invalid}!Ticket {
+    pub fn from_fields(fields: *const Fields) error{Invalid}!Ticket {
         const psk_ok = fields.psk.len == c.SHA256_LEN or fields.psk.len == c.HKDF_HASH_MAX;
         if (fields.identity.len > c.CH_TICKET_ID_MAX or !psk_ok) return error.Invalid;
         var out: Ticket = .{ .ticket = std.mem.zeroes(c.ch_ticket), .identity = @splat(0) };
@@ -71,10 +72,10 @@ pub const Ticket = extern struct {
         out.ticket.identity_len = fields.identity.len;
         out.ticket.psk_len = fields.psk.len;
         out.ticket.age_add = fields.age_add;
-        out.ticket.lifetime_s = fields.lifetime_s;
+        out.ticket.lifetime_s = fields.lifetime_seconds;
         out.ticket.epoch = fields.epoch;
         if (has_webpki) out.ticket.binding = fields.binding.* else out.ticket.trust_hash = fields.trust_hash.*;
-        if (has_quic) out.ticket.quic_version = quic.versionCode(fields.quic_version);
+        if (has_quic) out.ticket.quic_version = cfg_of.version_code(fields.quic_version);
         return out;
     }
 
@@ -82,7 +83,7 @@ pub const Ticket = extern struct {
     /// all, through ch_ticket_save, or null for a ticket that call refuses:
     /// an identity that is NULL, empty or longer than CH_TICKET_ID_MAX,
     /// which C drops before on_ticket. The sessions' own on_ticket calls it.
-    pub fn fromOnTicket(ticket: *const c.ch_ticket) ?Ticket {
+    pub fn from_on_ticket(ticket: *const c.ch_ticket) ?Ticket {
         var out: Ticket = undefined;
         if (c.ch_ticket_save(@ptrCast(&out), ticket) != c.CH_OK) return null;
         return out;

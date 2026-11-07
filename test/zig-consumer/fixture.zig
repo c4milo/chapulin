@@ -102,17 +102,17 @@ var pem_anchors: if (has_webpki) chapulin.Anchors else void = if (has_webpki) .{
 /// holds each value to webpki_corpus.h's.
 fn decodeFiles() void {
     if (decoded) return;
-    pem_chain = chapulin.Chain.fromPem(&pem.pem_fixture_r2_chain, &chain_der, &chain_slices) catch @panic("the r2 chain file does not decode");
+    pem_chain = chapulin.Chain.from_pem(&pem.pem_fixture_r2_chain, &chain_der, &chain_slices) catch @panic("the r2 chain file does not decode");
     splitChain();
     if (pem_chain.certs.len != chain.len) @panic("the r2 chain file does not hold two certificates");
     for (pem_chain.certs, &chain) |got, want| {
         if (!std.mem.eql(u8, got, want)) @panic("a certificate of the r2 chain file is not the corpus's");
     }
-    pem_key.fromPem(cpuAnswer(), &pem.pem_fixture_key_sec1_params, pem_chain.leaf()) catch @panic("the r2 key file does not decode");
+    pem_key.init_from_pem(cpuAnswer(), &pem.pem_fixture_key_sec1_params, pem_chain.leaf()) catch @panic("the r2 key file does not decode");
     if (!std.mem.eql(u8, &pem_key.private_key, &corpus.webpki_corpus_server_priv) or
         !std.mem.eql(u8, &pem_key.public_key, &corpus.webpki_corpus_server_pub)) @panic("the r2 key file's key is not the corpus's");
     if (has_webpki) {
-        pem_anchors = chapulin.Anchors.fromPem(.{}, &pem.pem_fixture_bundle, &bundle_der, &bundle_entries) catch @panic("the bundle does not decode");
+        pem_anchors = chapulin.Anchors.from_pem(.{}, &pem.pem_fixture_bundle, &bundle_der, &bundle_entries) catch @panic("the bundle does not decode");
         const root = pem_anchors.anchors[pem_anchors.anchors.len - 1];
         if (!std.mem.eql(u8, root.name, &corpus.webpki_corpus_name_root_p384) or
             !std.mem.eql(u8, root.spki, &corpus.webpki_corpus_spki_root_p384)) @panic("the bundle's last root is not root_p384");
@@ -180,7 +180,7 @@ pub const ticket_key = [_]u8{0x61} ** c.CH_SRV_TICKET_KEY_LEN;
 
 /// This tree's server with the r2 identity, sealing tickets under
 /// ticket_key at clock now_seconds and selecting from alpn.
-pub fn server(alpn: []const []const u8, now_seconds: u64) chapulin.Server {
+pub fn server(alpn: []const []const u8, now_seconds: u64) chapulin.ServerOptions {
     decodeFiles();
     return .{
         .ecdsa_p256 = .{
@@ -208,11 +208,11 @@ pub fn stored(taken: *const chapulin.Ticket) !chapulin.Ticket {
     const identity = taken.identity[0..t.identity_len];
     const psk = t.psk[0..t.psk_len];
     var fields: chapulin.Ticket.Fields = if (has_webpki)
-        .{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_s = t.lifetime_s, .epoch = t.epoch, .binding = &t.binding }
+        .{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_seconds = t.lifetime_s, .epoch = t.epoch, .binding = &t.binding }
     else
-        .{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_s = t.lifetime_s, .epoch = t.epoch, .trust_hash = &t.trust_hash };
+        .{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_seconds = t.lifetime_s, .epoch = t.epoch, .trust_hash = &t.trust_hash };
     if (has_quic) fields.quic_version = @as(chapulin.quic.Version, @enumFromInt(t.quic_version));
-    return chapulin.Ticket.fromFields(fields);
+    return chapulin.Ticket.from_fields(&fields);
 }
 
 /// Whether every byte of value is zero.

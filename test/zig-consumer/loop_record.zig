@@ -2,9 +2,9 @@
 //! against each other, through the API alone: the handshake, ALPN, the
 //! server name, data both ways across several records, a write that does
 //! not fit, the exporter, a ticket taken and resumed through
-//! Ticket.fromFields, a stale ticket refused, a client whose takes_tickets
+//! Ticket.from_fields, a stale ticket refused, a client whose takes_tickets
 //! is false that keeps no ticket and still resumes one, close in each
-//! direction and tcpClose, four refusals, the last of whose alerts the
+//! direction and close, four refusals, the last of whose alerts the
 //! server reads as the client's fatal alert and does not answer, and each
 //! side's handshake failure before and after its write key, whose alert
 //! record the other side reads. At TX_RECORD=16384 the records carry
@@ -62,21 +62,21 @@ const server_alpn = [_][]const u8{http11};
 /// The server's clock, which it writes into tickets and judges them by.
 const server_now = 1_700_000_000;
 
-pub fn clientValues() chapulin.Client {
+pub fn clientValues() chapulin.ClientOptions {
     return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer() };
 }
 
 /// The server each handshake below runs against.
-pub fn serverValues() chapulin.Server {
+pub fn serverValues() chapulin.ServerOptions {
     return fixture.server(&server_alpn, server_now);
 }
 
 /// Moves what the client staged into the server, and what the server
 /// wrote into its pipe. Returns the bytes of the server's flight.
 fn clientToServer() !usize {
-    to_server.push(try client.recordOut(to_server.free()));
+    to_server.push(try client.record_out(to_server.free()));
     if (to_server.pending().len == 0) return 0;
-    const progress = try server.recordIn(to_server.pending(), to_client.free());
+    const progress = try server.record_in(to_server.pending(), to_client.free());
     to_server.pop(progress.consumed);
     to_client.push(progress.written);
     return progress.written;
@@ -84,23 +84,23 @@ fn clientToServer() !usize {
 
 fn serverToClient() !void {
     if (to_client.pending().len == 0) return;
-    to_client.pop(try client.recordIn(to_client.pending()));
+    to_client.pop(try client.record_in(to_client.pending()));
 }
 
 /// One handshake between fresh sessions. The client is connected once
-/// recordOut has handed its Finished over, and what the server writes
+/// record_out has handed its Finished over, and what the server writes
 /// after that, the ticket, is read with read.
-pub fn handshake(server_values: chapulin.Server, values: chapulin.Client) !void {
+pub fn handshake(server_values: chapulin.ServerOptions, values: chapulin.ClientOptions) !void {
     to_server = .{};
     to_client = .{};
-    try server.init(server_values, &sni_buf);
-    try client.init(values);
+    try server.init(&server_values, &sni_buf);
+    try client.init(&values);
     for (0..4) |_| {
         _ = try clientToServer();
-        if (client.tcpState() == .connected) break;
+        if (client.state() == .connected) break;
         try serverToClient();
     }
-    try check(client.tcpState() == .connected and server.tcpState() == .connected, "the handshake did not connect both ends");
+    try check(client.state() == .connected and server.state() == .connected, "the handshake did not connect both ends");
 }
 
 var received: [1 << 16]u8 = undefined;
@@ -144,9 +144,9 @@ fn exchange() !void {
     const message = "one record";
     const sealed = try client.write(message, to_server.free());
     to_server.push(sealed);
-    try check(client.writableLen(sealed) == message.len and client.writableLen(sealed - 1) < message.len, "writableLen does not match what write sealed");
+    try check(client.writable_len(sealed) == message.len and client.writable_len(sealed - 1) < message.len, "writable_len does not match what write sealed");
     const refused = client.write(message, to_server.free()[0 .. sealed - 1]);
-    try check(refused == error.Cap and client.tcpState() == .connected, "a write that did not fit was not refused whole");
+    try check(refused == error.Cap and client.state() == .connected, "a write that did not fit was not refused whole");
     to_server.push(try client.write(message, to_server.free()[0..sealed]));
     const got, _ = try drain(&server, &to_server);
     try check(std.mem.eql(u8, got, message ++ message), "a refused write sealed part of its plaintext");
@@ -154,19 +154,19 @@ fn exchange() !void {
 }
 
 /// A 9-byte header and a payload one byte longer than a record, as an h2
-/// DATA frame holds them, through writeParts: the server reads them joined,
+/// DATA frame holds them, through write_parts: the server reads them joined,
 /// in two records, and a call one byte short of what the parts need seals
 /// nothing. The second call's records follow the first's on the wire.
 fn writeParts() !void {
     const header = [_]u8{ 0, 0x40, 0, 0, 1, 0, 0, 0, 1 };
     const body = payload[0 .. c.CH_TX_PT + 1];
-    const parts = [_]c.ch_part{ chapulin.part(&header), chapulin.part(body) };
-    const sealed = try client.writeParts(&parts, to_server.free());
+    const parts = [_][]const u8{ &header, body };
+    const sealed = try client.write_parts(&parts, to_server.free());
     to_server.push(sealed);
-    try check(client.writableLen(sealed) == header.len + body.len, "writableLen does not match what writeParts sealed");
-    const refused = client.writeParts(&parts, to_server.free()[0 .. sealed - 1]);
-    try check(refused == error.Cap and client.tcpState() == .connected, "writeParts that did not fit was not refused whole");
-    to_server.push(try client.writeParts(&parts, to_server.free()[0..sealed]));
+    try check(client.writable_len(sealed) == header.len + body.len, "writable_len does not match what write_parts sealed");
+    const refused = client.write_parts(&parts, to_server.free()[0 .. sealed - 1]);
+    try check(refused == error.Cap and client.state() == .connected, "write_parts that did not fit was not refused whole");
+    to_server.push(try client.write_parts(&parts, to_server.free()[0..sealed]));
     const got, const records = try drain(&server, &to_server);
     try check(records == 4, "two frames of a header and a record and a byte of payload went out in other than four records");
     const frame = header.len + body.len;
@@ -175,22 +175,35 @@ fn writeParts() !void {
         try check(std.mem.eql(u8, one[0..header.len], &header) and std.mem.eql(u8, one[header.len..], body), "the server read other bytes than the parts joined");
     }
     try check(got.len == 2 * frame, "the server read more than the two frames");
+    try partsMax();
+}
+
+/// parts_max parts of one byte each go out as one run that the server reads
+/// joined, and one part more is refused with nothing sealed.
+fn partsMax() !void {
+    var parts: [tcp.parts_max + 1][]const u8 = undefined;
+    for (&parts, 0..) |*part, i| part.* = payload[i .. i + 1];
+    const refused = client.write_parts(&parts, to_server.free());
+    try check(refused == error.Cap and client.state() == .connected and to_server.pending().len == 0, "write_parts took one part over parts_max");
+    to_server.push(try client.write_parts(parts[0..tcp.parts_max], to_server.free()));
+    const got, const records = try drain(&server, &to_server);
+    try check(records == 1 and std.mem.eql(u8, got, payload[0..tcp.parts_max]), "parts_max parts did not go out as one record of the parts joined");
 }
 
 fn exporter() !void {
     if (!@hasDecl(c, "ch_export")) return;
     var a: [32]u8 = undefined;
     var b: [32]u8 = undefined;
-    try client.exportKeyingMaterial("EXPORTER-Channel-Binding", "", &a);
-    try server.exportKeyingMaterial("EXPORTER-Channel-Binding", "", &b);
+    try client.export_keying_material("EXPORTER-Channel-Binding", "", &a);
+    try server.export_keying_material("EXPORTER-Channel-Binding", "", &b);
     try check(std.mem.eql(u8, &a, &b), "the two ends export different keying material");
 }
 
-/// The server's ticket, through read and takeTicket, and the slot zeroed.
-fn takeTicket() !chapulin.Ticket {
+/// The server's ticket, through read and take_ticket, and the slot zeroed.
+fn take_ticket() !chapulin.Ticket {
     _ = try drain(&client, &to_client);
-    const taken = client.takeTicket() orelse return error.NoTicket;
-    try check(fixture.zeroed(&client.ticket), "takeTicket left bytes in the ticket slot");
+    const taken = client.take_ticket() orelse return error.NoTicket;
+    try check(fixture.zeroed(&client.ticket), "take_ticket left bytes in the ticket slot");
     try check(taken.ticket.lifetime_s > 0 and taken.ticket.identity == null, "the ticket lost its lifetime or kept an identity pointer");
     return taken;
 }
@@ -207,13 +220,13 @@ fn ticketsOff(taken: *const chapulin.Ticket) !void {
         values.ticket = presented;
         try handshake(serverValues(), values);
         const resumed = presented != null;
-        try check(client.pskSelected() == resumed and server.pskSelected() == resumed, "the PSK selection of a client whose takes_tickets is false does not match its ticket");
+        try check(client.psk_selected() == resumed and server.psk_selected() == resumed, "the PSK selection of a client whose takes_tickets is false does not match its ticket");
         try fixture.clientTakesTickets(&fixture.tcpPriv(&client.tcp).t, false);
         try check(to_client.pending().len > 0, "the server wrote no ticket");
         _ = try drain(&client, &to_client);
-        try check(to_client.pending().len == 0 and client.takeTicket() == null, "a client whose takes_tickets is false kept a ticket");
-        client.tcpClose();
-        server.tcpClose();
+        try check(to_client.pending().len == 0 and client.take_ticket() == null, "a client whose takes_tickets is false kept a ticket");
+        client.close();
+        server.close();
     }
 }
 
@@ -222,19 +235,19 @@ fn ticketsOff(taken: *const chapulin.Ticket) !void {
 /// then closes its own. A side that sent its close_notify has wiped its
 /// keys, so it reads no more.
 fn closeBothWays() !void {
-    const sent = try client.close(to_server.free());
+    const sent = try client.end(to_server.free());
     to_server.push(sent);
-    try check(sent == tcp.alert_record_len and client.tcpState() == .closed, "close did not send one alert record");
+    try check(sent == tcp.alert_record_len and client.state() == .closed, "close did not send one alert record");
     const r = try server.read(to_server.pending(), &received, &reply);
     to_server.pop(r.consumed);
-    try check(r.peer_closed and server.readClosed() and server.tcpState() == .connected, "the server did not read the client's close_notify");
+    try check(r.peer_closed and server.read_closed() and server.state() == .connected, "the server did not read the client's close_notify");
     to_client.push(try server.write("after", to_client.free()));
-    to_client.push(try server.close(to_client.free()));
+    to_client.push(try server.end(to_client.free()));
     const back = try client.read(to_client.pending(), &received, &reply);
     try check(back.peer_closed and back.consumed == 0, "a closed client read on");
-    client.tcpClose();
-    server.tcpClose();
-    try check(server.tcpState() == .closed, "tcpClose left the session open");
+    client.close();
+    server.close();
+    try check(server.state() == .closed, "close left the session open");
 }
 
 /// Resumes with the ticket rebuilt from its fields, at ages around the
@@ -245,20 +258,20 @@ fn resumeTicket(taken: *const chapulin.Ticket) !void {
     values.ticket = &ticket;
     values.ticket_age_ms = 1000;
     try handshake(serverValues(), values);
-    try check(client.pskSelected() and server.pskSelected(), "the ticket did not resume");
-    // The next ticket sits in the slot, and tcpClose zeroes it.
+    try check(client.psk_selected() and server.psk_selected(), "the ticket did not resume");
+    // The next ticket sits in the slot, and close zeroes it.
     _ = try drain(&client, &to_client);
     try check(client.ticket != null, "the resumed session received no ticket");
-    client.tcpClose();
-    try check(fixture.zeroed(&client.ticket), "tcpClose left the ticket in the slot");
+    client.close();
+    try check(fixture.zeroed(&client.ticket), "close left the ticket in the slot");
 
     // An age of exactly the lifetime is still offered, and one
     // millisecond more is refused before a byte is sent (ticket.h).
     values.ticket_age_ms = @as(u64, ticket.ticket.lifetime_s) * 1000;
-    try client.init(values);
-    client.tcpClose();
+    try client.init(&values);
+    client.close();
     values.ticket_age_ms += 1;
-    try check(client.init(values) == error.Invalid and client.tcpState() == .failed, "a stale ticket was not refused");
+    try check(client.init(&values) == error.Invalid and client.state() == .failed, "a stale ticket was not refused");
 }
 
 /// An anchor that did not sign the chain, a clock of 0 beside anchors,
@@ -266,17 +279,17 @@ fn resumeTicket(taken: *const chapulin.Ticket) !void {
 /// whose length no peer may send.
 fn refusals() !void {
     if (@hasField(c.ch_cfg, "anchors")) {
-        try server.init(serverValues(), &sni_buf);
-        try client.init(.{ .trust = fixture.trust(.impostor, null), .alpn = &client_alpn, .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer() });
+        try server.init(&serverValues(), &sni_buf);
+        try client.init(&.{ .trust = fixture.trust(.impostor, null), .alpn = &client_alpn, .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer() });
         to_server = .{};
         to_client = .{};
         _ = try clientToServer();
         try check(serverToClient() == error.Auth, "an impostor anchor was not refused");
-        try check(client.alertSent() == 48 and client.alertReceived() == null, "alertSent did not name the handshake's unknown_ca");
+        try check(client.alert_sent() == .unknown_ca and client.alert_received() == null, "alert_sent did not name the handshake's unknown_ca");
         // The client refused the Certificate after its write key went in,
         // so its unknown_ca is sealed.
-        try clientAlertReachesServer(48, tcp.alert_record_len);
-        try check(client.init(.{ .trust = fixture.trust(.root, 0), .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer() }) == error.Invalid, "a clock of 0 was accepted");
+        try clientAlertReachesServer(.unknown_ca, tcp.alert_record_len);
+        try check(client.init(&.{ .trust = fixture.trust(.root, 0), .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer() }) == error.Invalid, "a clock of 0 was accepted");
     }
     // The server's first flight twice, from the same draws: once whole, to
     // learn its length, and once into an output one byte short of it. The
@@ -290,8 +303,8 @@ fn refusals() !void {
     fixture.rewind(start);
     try startPair();
     var short: [8192]u8 = undefined;
-    const refused = server.recordIn(to_server.pending(), short[0 .. flight_len - 1]);
-    try check(refused == error.Io and server.tcpState() == .failed, "a flight that did not fit was not refused");
+    const refused = server.record_in(to_server.pending(), short[0 .. flight_len - 1]);
+    try check(refused == error.Io and server.state() == .failed, "a flight that did not fit was not refused");
 
     try handshake(serverValues(), clientValues());
     const oversize = [_]u8{ 0x17, 0x03, 0x03, 0xff, 0xff };
@@ -299,50 +312,50 @@ fn refusals() !void {
     try check(waiting.consumed == 0 and waiting.pt_len == 0, "read took a part of a header");
     try check(client.read(&oversize, &received, &reply) == error.Proto, "read waited on a record no peer may send");
     // The client's read sent the alert its failure chose into reply, and
-    // staged nothing for recordOut. The server reads that alert as the
+    // staged nothing for record_out. The server reads that alert as the
     // peer's fatal alert and sends nothing back (RFC 9846 section 6.2).
-    const sent = client.alertSent() orelse return error.NoAlertSent;
-    try check(client.alertReceived() == null and client.recordOut(to_server.free()) == error.Invalid, "the client's failed read staged an alert or reported one received");
+    const sent = client.alert_sent() orelse return error.NoAlertSent;
+    try check(client.alert_received() == null and client.record_out(to_server.free()) == error.Invalid, "the client's failed read staged an alert or reported one received");
     var answer: [256]u8 = undefined;
-    try check(server.read(reply[0..client.replyLen()], &received, &answer) == error.Proto, "the server read on after the client's fatal alert");
-    try check(server.alertReceived() == sent and server.alertSent() == null and server.replyLen() == 0, "the server answered the client's fatal alert");
+    try check(server.read(reply[0..client.reply_len()], &received, &answer) == error.Proto, "the server read on after the client's fatal alert");
+    try check(server.alert_received() == sent and server.alert_sent() == null and server.reply_len() == 0, "the server answered the client's fatal alert");
 }
 
-/// The failed client's alert record, handed to the server: recordOut
+/// The failed client's alert record, handed to the server: record_out
 /// returns all len bytes of it, then error.Invalid, and the server reads it
 /// as the client's fatal alert and writes nothing into output.
-fn clientAlertReachesServer(alert: u8, len: usize) !void {
+fn clientAlertReachesServer(alert: chapulin.AlertDescription, len: usize) !void {
     to_server = .{};
-    const n = try client.recordOut(to_server.free());
+    const n = try client.record_out(to_server.free());
     to_server.push(n);
-    try check(n == len and client.recordOut(to_server.free()) == error.Invalid, "recordOut did not return the client's alert record once");
-    try check(server.recordIn(to_server.pending(), to_client.free()) == error.Proto, "the server read on after the client's fatal alert");
-    try check(server.alertReceived() == alert and server.alertSent() == null and server.outputLen() == 0, "the server did not read the client's alert, or answered it");
+    try check(n == len and client.record_out(to_server.free()) == error.Invalid, "record_out did not return the client's alert record once");
+    try check(server.record_in(to_server.pending(), to_client.free()) == error.Proto, "the server read on after the client's fatal alert");
+    try check(server.alert_received() == alert and server.alert_sent() == null and server.output_len() == 0, "the server did not read the client's alert, or answered it");
 }
 
-/// What the failed server wrote into output, outputLen bytes, handed to
+/// What the failed server wrote into output, output_len bytes, handed to
 /// the client in its handshake: the client reads the alert as the server's
-/// fatal alert and stages nothing for recordOut.
-fn serverAlertReachesClient(alert: u8) !void {
-    to_client.push(server.outputLen());
+/// fatal alert and stages nothing for record_out.
+fn serverAlertReachesClient(alert: chapulin.AlertDescription) !void {
+    to_client.push(server.output_len());
     try check(serverToClient() == error.Proto, "the client read on after the server's fatal alert");
-    try check(client.alertReceived() == alert and client.alertSent() == null, "the client did not read the server's alert");
-    try check(client.recordOut(to_server.free()) == error.Invalid, "the client answered the server's fatal alert");
+    try check(client.alert_received() == alert and client.alert_sent() == null, "the client did not read the server's alert");
+    try check(client.record_out(to_server.free()) == error.Invalid, "the client answered the server's fatal alert");
 }
 
 /// Fresh sessions, with the ClientHello in to_server and nothing sent yet.
 fn startPair() !void {
-    try server.init(serverValues(), &sni_buf);
-    try client.init(clientValues());
+    try server.init(&serverValues(), &sni_buf);
+    try client.init(&clientValues());
     to_server = .{};
     to_client = .{};
-    to_server.push(try client.recordOut(to_server.free()));
+    to_server.push(try client.record_out(to_server.free()));
 }
 
 /// Hands the ClientHello in to_server to the server, and the flight it
 /// writes into to_client.
 fn serverAnswersHello() !void {
-    const progress = try server.recordIn(to_server.pending(), to_client.free());
+    const progress = try server.record_in(to_server.pending(), to_client.free());
     to_server.pop(progress.consumed);
     to_client.push(progress.written);
 }
@@ -359,19 +372,19 @@ fn callerFails() !void {
     try handshake(serverValues(), clientValues());
     to_server = .{};
     for ([_]u8{ 0, 90, 1, 255 }) |description| {
-        try check(client.fail(description, to_server.free()) == error.Invalid, "fail took a description that is not an error alert");
+        try check(client.fail(@enumFromInt(description), to_server.free()) == error.Invalid, "fail took a description that is not an error alert");
     }
-    try check(client.tcpState() == .connected and client.alertSent() == null, "a refused fail changed the session");
-    const n = try client.fail(22, to_server.free());
+    try check(client.state() == .connected and client.alert_sent() == null, "a refused fail changed the session");
+    const n = try client.fail(.record_overflow, to_server.free());
     to_server.push(n);
-    try check(n == tcp.alert_record_len and client.tcpState() == .failed and client.alertSent() == 22, "fail did not send one sealed record_overflow");
-    try check(client.fail(22, to_server.free()) == error.Proto, "fail sent on a failed session");
+    try check(n == tcp.alert_record_len and client.state() == .failed and client.alert_sent() == .record_overflow, "fail did not send one sealed record_overflow");
+    try check(client.fail(.record_overflow, to_server.free()) == error.Proto, "fail sent on a failed session");
     try check(server.read(to_server.pending(), &received, &reply) == error.Proto, "the server read on after the client's fatal alert");
-    try check(server.alertReceived() == 22 and server.alertSent() == null and server.replyLen() == 0, "the server did not read the client's record_overflow, or answered it");
+    try check(server.alert_received() == .record_overflow and server.alert_sent() == null and server.reply_len() == 0, "the server did not read the client's record_overflow, or answered it");
 
     try handshake(serverValues(), clientValues());
     var short: [tcp.alert_record_len - 1]u8 = undefined;
-    try check(client.fail(50, &short) == error.Io and client.tcpState() == .failed and client.alertSent() == 50, "fail into a short output did not fail the session");
+    try check(client.fail(.decode_error, &short) == error.Io and client.state() == .failed and client.alert_sent() == .decode_error, "fail into a short output did not fail the session");
 }
 
 fn failureAlerts() !void {
@@ -390,16 +403,16 @@ fn failureAlerts() !void {
     try check(picked == c.SUITE_CHACHA20_POLY1305_SHA256 or picked == c.SUITE_AES_256_GCM_SHA384, "the ServerHello's cipher_suite is not a default pick where the test looks");
     flight[suite_at + 1] = 0x04;
     try check(serverToClient() == error.Proto, "the client took a suite it did not offer");
-    const refused_hello = client.alertSent() orelse return error.NoAlertSent;
+    const refused_hello = client.alert_sent() orelse return error.NoAlertSent;
     try clientAlertReachesServer(refused_hello, c.REC_HDR + 2);
 
     // The server, before its key: a first message whose type is the
     // ServerHello's. Its unexpected_message goes into output in the clear.
     try startPair();
     to_server.pending()[c.REC_HDR] = 2;
-    try check(server.recordIn(to_server.pending(), to_client.free()) == error.Proto, "the server took a ServerHello as its first message");
-    try check(server.alertSent() == 10 and server.outputLen() == c.REC_HDR + 2, "the server did not write unexpected_message in the clear");
-    try serverAlertReachesClient(10);
+    try check(server.record_in(to_server.pending(), to_client.free()) == error.Proto, "the server took a ServerHello as its first message");
+    try check(server.alert_sent() == .unexpected_message and server.output_len() == c.REC_HDR + 2, "the server did not write unexpected_message in the clear");
+    try serverAlertReachesClient(.unexpected_message);
 
     // The server, under its application write key: the client Finished
     // with one bit of its tag flipped. Its bad_record_mac goes into output
@@ -408,26 +421,26 @@ fn failureAlerts() !void {
     try startPair();
     try serverAnswersHello();
     try serverToClient();
-    to_server.push(try client.recordOut(to_server.free()));
-    try check(client.tcpState() == .connected, "the client did not connect once its Finished went out");
+    to_server.push(try client.record_out(to_server.free()));
+    try check(client.state() == .connected, "the client did not connect once its Finished went out");
     const finished = to_server.pending();
     finished[finished.len - 1] ^= 1;
-    try check(server.recordIn(finished, to_client.free()) == error.Proto, "the server took a Finished whose tag does not verify");
-    try check(server.alertSent() == 20 and server.outputLen() == tcp.alert_record_len, "the server did not write a sealed bad_record_mac");
-    to_client.push(server.outputLen());
+    try check(server.record_in(finished, to_client.free()) == error.Proto, "the server took a Finished whose tag does not verify");
+    try check(server.alert_sent() == .bad_record_mac and server.output_len() == tcp.alert_record_len, "the server did not write a sealed bad_record_mac");
+    to_client.push(server.output_len());
     try check(client.read(to_client.pending(), &received, &reply) == error.Proto, "the client read on after the server's fatal alert");
-    try check(client.alertReceived() == 20 and client.alertSent() == null and client.replyLen() == 0, "the client did not read the server's alert, or answered it");
+    try check(client.alert_received() == .bad_record_mac and client.alert_sent() == null and client.reply_len() == 0, "the client did not read the server's alert, or answered it");
 }
 
 pub fn run() !void {
     try handshake(serverValues(), clientValues());
-    const alpn_ok = std.mem.eql(u8, client.alpnSelected() orelse "", http11) and std.mem.eql(u8, server.alpnSelected() orelse "", http11);
+    const alpn_ok = std.mem.eql(u8, client.alpn_selected() orelse "", http11) and std.mem.eql(u8, server.alpn_selected() orelse "", http11);
     try check(alpn_ok, "ALPN did not select http/1.1 on both ends");
     try check(std.mem.eql(u8, server.sni() orelse "", fixture.hostname()), "the server did not report the hostname");
     try check(client.group() == .x25519mlkem768 and server.group() == .x25519mlkem768, "the group is not X25519MLKEM768");
-    try check(!client.pskSelected() and client.serverCertType() == .x509, "the full handshake reports a PSK or a raw key");
+    try check(!client.psk_selected() and client.server_cert_type() == .x509, "the full handshake reports a PSK or a raw key");
     try fixture.clientTakesTickets(&fixture.tcpPriv(&client.tcp).t, true);
-    const taken = try takeTicket();
+    const taken = try take_ticket();
     try exchange();
     try exporter();
     try closeBothWays();
@@ -439,5 +452,5 @@ pub fn run() !void {
     try key_limit.run();
     try key_update_run.run();
     const across = if (key_limit.runs) ", each side's write across its AES-GCM write key's ceiling under both AES-GCM suites" else "";
-    std.debug.print("a tcp-nonblocking client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, two frames of a header and a payload through writeParts, a resumed ticket, a stale one refused, a client that takes no tickets, first with no ticket and then with one it resumes, both closes, four refusals, each side's failure alert on each side of its write key{s}, and error.KeyUpdateLimit for one KeyUpdate past a run of {d}\n", .{ c.CH_TX_PT, payload.len, across, c.CH_KEY_UPDATE_RUN_MAX });
+    std.debug.print("a tcp-nonblocking client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, two frames of a header and a payload through write_parts, a resumed ticket, a stale one refused, a client that takes no tickets, first with no ticket and then with one it resumes, both closes, four refusals, each side's failure alert on each side of its write key{s}, and error.KeyUpdateLimit for one KeyUpdate past a run of {d}\n", .{ c.CH_TX_PT, payload.len, across, c.CH_KEY_UPDATE_RUN_MAX });
 }

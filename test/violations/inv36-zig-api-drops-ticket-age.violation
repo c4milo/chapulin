@@ -6,6 +6,6 @@ reason: clientCfg (chapulin_cfg.zig) leaves ch_cfg.ticket_age_ms at 0, so C judg
   that RFC 9846 section 4.3.11.1 forbids. unit.zig's field-by-field ch_cfg
   test and the stale-ticket rows of loop.zig object.
 --- old
-    cfg.ticket_age_ms = values.ticket_age_ms;
+    cfg.ticket_age_ms = options.ticket_age_ms;
 --- new
     cfg.ticket_age_ms = 0;

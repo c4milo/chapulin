@@ -45,11 +45,11 @@ fn readSeconds(clock_io: ?*anyopaque) callconv(.c) u64 {
     return seconds.*;
 }
 
-fn clientValues(comptime api: type) api.Client {
+fn clientValues(comptime api: type) api.ClientOptions {
     const anchors = struct {
         const list = [_]api.TrustAnchor{.{ .name = &anchor_name, .spki = &anchor_spki }};
     };
-    var values: api.Client = .{ .trust = .{ .web_pki = .{
+    var values: api.ClientOptions = .{ .trust = .{ .web_pki = .{
         .anchors = &anchors.list,
         .server_name = hostname,
         .clock = .{ .now_seconds = readSeconds, .clock_io = @constCast(&client_seconds) },
@@ -78,15 +78,15 @@ var h2_flight: [h2.c.CH_TX_STAGE]u8 = undefined;
 var h2_client: h2.tcp.Client(h2.c.CH_MIN_RXBUF, .{}) = undefined;
 
 fn startH2() u8 {
-    if (h2.c.ch_build_matches(hooks.record(h2.c)) != 1 or !h2.buildMatches()) {
+    if (h2.c.ch_build_matches(hooks.record(h2.c)) != 1 or !h2.build_matches()) {
         return failed("h2", "ch_build_matches read a record that is not this object's");
     }
     if (!ticketAgeAdds(h2)) return failed("h2", "ch_ticket_obfuscated_age did not add age_add modulo 2^32");
-    h2_client.init(clientValues(h2)) catch return failed("h2", "tcp.Client.init refused a client");
-    const n = h2_client.recordOut(&h2_flight) catch 0;
-    h2_client.tcpClose();
+    h2_client.init(&clientValues(h2)) catch return failed("h2", "tcp.Client.init refused a client");
+    const n = h2_client.record_out(&h2_flight) catch 0;
+    h2_client.close();
     if (n == 0 or h2_flight[0] != handshake_record) {
-        return failed("h2", "recordOut handed out no handshake record");
+        return failed("h2", "record_out handed out no handshake record");
     }
     return 0;
 }
@@ -103,18 +103,18 @@ var quic_peer_params: [64]u8 = undefined;
 var quic_client: quic.quic.Client(quic.c.CH_MIN_RXBUF, .{}) = undefined;
 
 fn startQuic() u8 {
-    if (quic.c.ch_build_matches(hooks.record(quic.c)) != 1 or !quic.buildMatches()) {
+    if (quic.c.ch_build_matches(hooks.record(quic.c)) != 1 or !quic.build_matches()) {
         return failed("quic", "ch_build_matches read a record that is not this object's");
     }
     if (!ticketAgeAdds(quic)) return failed("quic", "ch_ticket_obfuscated_age did not add age_add modulo 2^32");
     var values = clientValues(quic);
     values.alpn = &alpn;
     values.quic_version = .v1;
-    quic_client.init(values, &params, &quic_peer_params) catch return failed("quic", "quic.Client.init refused a client");
-    const n = quic_client.cryptoOut(.initial, &quic_flight) catch 0;
+    quic_client.init(&values, &params, &quic_peer_params) catch return failed("quic", "quic.Client.init refused a client");
+    const n = quic_client.crypto_out(.initial, &quic_flight) catch 0;
     quic_client.close();
     if (n == 0 or quic_flight[0] != client_hello) {
-        return failed("quic", "cryptoOut handed out no ClientHello");
+        return failed("quic", "crypto_out handed out no ClientHello");
     }
     return 0;
 }

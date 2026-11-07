@@ -21,6 +21,6 @@ else
 /// An error from here exits 1, and the Debug build prints its return
 /// trace, which names the step that failed.
 pub fn main() !void {
-    if (!chapulin.buildMatches()) return error.BuildRecordDiffers;
+    if (!chapulin.build_matches()) return error.BuildRecordDiffers;
     try loop.run();
 }

@@ -2,7 +2,7 @@
 //! program links, as docs/porting.md says an image defines them. The loop
 //! programs complete handshakes, so ch_rand_bytes and, under KEYLOG=on,
 //! ch_keylog run. ch_keylog keeps the io it was last given, which the QUIC
-//! loop reads back through chapulin.hookContext, and every other hook stops
+//! loop reads back through chapulin.hook_context, and every other hook stops
 //! the program if it runs.
 const std = @import("std");
 

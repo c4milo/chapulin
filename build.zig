@@ -18,7 +18,7 @@
 //! localized object, for a program that compiles the headers as C; and
 //! "include", the directory that holds chapulin/ and its API headers, for
 //! #include <chapulin/tls.h> (docs/decisions.md 185). It calls
-//! chapulin.buildMatches once (build.h).
+//! chapulin.build_matches once (build.h).
 const std = @import("std");
 
 const Transport = enum { @"tcp-blocking", @"tcp-nonblocking", @"quic-nonblocking" };
@@ -381,6 +381,7 @@ pub fn build(b: *std.Build) void {
     const root = api_files.addCopyFile(b.path("chapulin.zig"), "chapulin.zig");
     _ = api_files.addCopyFile(b.path("chapulin_tcp.zig"), "chapulin_tcp.zig");
     _ = api_files.addCopyFile(b.path("chapulin_quic.zig"), "chapulin_quic.zig");
+    _ = api_files.addCopyFile(b.path("chapulin_quic_token.zig"), "chapulin_quic_token.zig");
     _ = api_files.addCopyFile(b.path("chapulin_ticket.zig"), "chapulin_ticket.zig");
     _ = api_files.addCopyFile(b.path("chapulin_pem.zig"), "chapulin_pem.zig");
     _ = api_files.addCopyFile(b.path("chapulin_dnssec.zig"), "chapulin_dnssec.zig");

@@ -34,7 +34,6 @@ const has_mldsa_server = has_server and @hasField(c.ch_srv_cfg, "mldsa87");
 const has_classic_server = has_server and @hasField(c.ch_srv_cfg, "ecdsa_p256");
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
-const has_write_parts = @hasDecl(c, "ch_write_parts");
 const has_suite_order = has_server and @hasField(c.ch_srv_cfg, "cipher_suites");
 // TRANSPORT=quic-nonblocking: every session names its original version in
 // ch_cfg (cfg.h), and quic.Version is the type that names one.
@@ -65,9 +64,9 @@ const AnyError = error{
     Proto,
     /// CH_EAUTH: authentication failed. The session is dead.
     Auth,
-    /// CH_ECAP: a buffer was short. From recordOut, cryptoOut, seal,
-    /// sealClose and tokenMint, and from write's own check, the session is
-    /// live; from recordIn, cryptoIn and read, and from ch_write, it is dead.
+    /// CH_ECAP: a buffer was short. From record_out, crypto_out, seal,
+    /// seal_close and token_mint, and from write's own check, the session is
+    /// live; from record_in, crypto_in and read, and from ch_write, it is dead.
     Cap,
     /// CH_EINVAL: a configuration or an argument was refused, or a call
     /// came out of order, and nothing was sent. From init the session is
@@ -83,7 +82,7 @@ const AnyError = error{
 };
 
 /// The C code each error stands for.
-fn codeOf(comptime err: AnyError) c_int {
+fn code_of(comptime err: AnyError) c_int {
     return switch (err) {
         error.Io => c.CH_EIO,
         error.Proto => c.CH_EPROTO,
@@ -99,11 +98,11 @@ fn codeOf(comptime err: AnyError) c_int {
 /// Nothing for CH_OK, and otherwise the error of E that code stands for. E is the error set of one
 /// C call, a part of Error. A code E does not name is one that call's header says it never returns,
 /// and it panics, as a broken contract is a programmer error. A program that calls a C function the
-/// API leaves out maps its result with fromCode(Error, code).
-pub fn fromCode(comptime E: type, code: c_int) E!void {
+/// API leaves out maps its result with from_code(Error, code).
+pub fn from_code(comptime E: type, code: c_int) E!void {
     if (code == c.CH_OK) return;
     inline for (@typeInfo(E).error_set.?) |member| {
-        if (code == comptime codeOf(@field(Error, member.name))) return @field(E, member.name);
+        if (code == comptime code_of(@field(Error, member.name))) return @field(E, member.name);
     }
     @panic("chapulin: a C call returned a code its header does not name");
 }
@@ -121,16 +120,9 @@ pub const TrustAnchor = if (has_webpki) struct {
 pub const Limits = struct {
     /// Certificates in each server identity's chain: 1 to 255, the range of chain_count.
     chain_max: usize = 8,
-    /// Roots a TRUST=webpki client takes, and the most Anchors.fromPem decodes.
+    /// Roots a TRUST=webpki client takes, and the most Anchors.from_pem decodes.
     anchors_max: usize = 256,
 };
-
-/// One part of the plaintext Session.writeParts sends: the bytes of pt,
-/// which the caller owns until the call returns (tls.h, ch_part).
-pub const part = if (has_write_parts) partOf else @compileError("part needs TRANSPORT=tcp-nonblocking");
-fn partOf(pt: []const u8) c.ch_part {
-    return .{ .pt = pt.ptr, .pt_len = pt.len };
-}
 
 /// The SHA-256 of a DER SubjectPublicKeyInfo. A slice of them is ch_cfg.spki_pins as it is.
 pub const SpkiPin = [c.CH_SPKI_PIN_LEN]u8;
@@ -164,8 +156,9 @@ pub const Trust = if (has_webpki) union(enum) {
 };
 
 /// What a client sets. Every slice and pointer is borrowed and must outlive
-/// the session, as ch_cfg's must (cfg.h).
-pub const Client = if (has_client) ClientValues else @compileError("Client needs ROLE=client or ROLE=both");
+/// the session, as ch_cfg's must (cfg.h). A session's init copies what it keeps and keeps no
+/// pointer to the options.
+pub const ClientOptions = if (has_client) ClientValues else @compileError("ClientOptions needs ROLE=client or ROLE=both");
 const ClientValues = struct {
     /// How the server is judged: the fields Trust names.
     trust: Trust,
@@ -178,7 +171,7 @@ const ClientValues = struct {
     /// The ticket's age in milliseconds: ticket_age_ms. init answers error.Invalid for an
     /// age above the ticket's lifetime or above seven days (ticket.h).
     ticket_age_ms: u64 = 0,
-    /// A session's init sets on_ticket, which keeps tickets for takeTicket. false leaves it NULL. Then a
+    /// A session's init sets on_ticket, which keeps tickets for take_ticket. false leaves it NULL. Then a
     /// TRUST=webpki init hashes once with a `ticket`, to check its binding, and not at all without one (docs/decisions.md 132).
     takes_tickets: bool = true,
     /// Refuse a key exchange other than X25519MLKEM768: require_pq.
@@ -191,12 +184,15 @@ const ClientValues = struct {
     /// cipher_suites, cipher_suite_count.
     cipher_suites: if (has_client_suite_order) []const Suite else void = if (has_client_suite_order) &.{} else {},
     /// The session's source of random bytes, under RAND=session alone: rand_bytes and rand_io,
-    /// through the copy the session's init stores (attachRandom). null leaves rand_bytes NULL,
+    /// through the copy the session's init stores. null leaves rand_bytes NULL,
     /// which init refuses with error.Invalid. void in every other build.
     random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
     /// What the caller states about its CPU, in a host object alone: cpu. null leaves it 0, which
     /// init refuses with error.Invalid. void in every other build.
     cpu: if (has_cpu) ?Cpu else void = if (has_cpu) null else {},
+    /// The caller's context, which a session's init stores in its hook: what hook_context answers
+    /// in ch_keylog.
+    context: ?*anyopaque = null,
 };
 
 /// ch_cfg.now_seconds and clock_io (cfg.h): a function that answers the seconds since
@@ -236,13 +232,12 @@ pub const RsaPssIdentity = if (has_classic_server) struct {
     chain: []const []const u8,
     /// The modulus, big-endian: pub, pub_len.
     public_key: []const u8,
-    /// The modulus and the private exponent, and in a host object the five
-    /// integers of the CRT (rsa_sign.h): priv, priv_len = @sizeOf(c.ch_rsa_priv).
-    private_key: *const c.ch_rsa_priv,
+    /// The key RsaKey.init_from_pem decoded: priv, priv_len = @sizeOf(c.ch_rsa_priv).
+    private_key: *const RsaKey,
 } else @compileError("RsaPssIdentity needs ROLE=server or ROLE=both outside PROFILE=cnsa2");
 
 /// An mldsa87 identity: srv.mldsa87, a PROFILE=cnsa2 server's one and a third beside the other
-/// two in every host server (docs/decisions.md 180). MlDsa87Key.fromPem writes both keys.
+/// two in every host server (docs/decisions.md 180). MlDsa87Key.init_from_pem writes both keys.
 pub const MlDsa87Identity = if (has_mldsa_server) struct {
     /// DER certificates, leaf first, at most Limits.chain_max: chain, chain_count.
     chain: []const []const u8,
@@ -252,8 +247,9 @@ pub const MlDsa87Identity = if (has_mldsa_server) struct {
     private_key: *const [4896]u8,
 } else @compileError("MlDsa87Identity needs a host server object, or PROFILE=cnsa2 ROLE=server");
 
-/// What a server sets. Every slice and pointer is borrowed and must outlive the session.
-pub const Server = if (has_server) ServerValues else @compileError("Server needs ROLE=server or ROLE=both");
+/// What a server sets. Every slice and pointer is borrowed and must outlive the session. A
+/// session's init copies what it keeps and keeps no pointer to the options.
+pub const ServerOptions = if (has_server) ServerValues else @compileError("ServerOptions needs ROLE=server or ROLE=both");
 const ServerValues = struct {
     /// srv.ecdsa_p256; null leaves the slot unprovisioned. void under PROFILE=cnsa2.
     ecdsa_p256: if (has_classic_server) ?EcdsaP256Identity else void = if (has_classic_server) null else {},
@@ -275,36 +271,39 @@ const ServerValues = struct {
     /// Suites in this server's order, empty for the default: srv.cipher_suites, cipher_suite_count.
     cipher_suites: if (has_suite_order) []const Suite else void = if (has_suite_order) &.{} else {},
     /// The Version field of the client's first Initial packet, under TRANSPORT=quic-nonblocking
-    /// alone, as Client.quic_version is: quic_original_version. void in every other build.
+    /// alone, as ClientOptions.quic_version is: quic_original_version. void in every other build.
     quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
     /// The negotiated version's chooser, under TRANSPORT=quic-nonblocking
     /// alone: srv.choose_version, through the session's own adapter
     /// (quic.ChooseVersion). null keeps the original version.
     choose_version: if (has_choose_version) ?quic.ChooseVersion else void = if (has_choose_version) null else {},
     /// The session's source of random bytes, under RAND=session alone, as
-    /// Client.random is. check draws from it too, for the RSA-PSS salt.
+    /// ClientOptions.random is. check draws from it too, for the RSA-PSS salt.
     random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
-    /// What the caller states about its CPU, in a host object alone, as Client.cpu is.
+    /// What the caller states about its CPU, in a host object alone, as ClientOptions.cpu is.
     cpu: if (has_cpu) ?Cpu else void = if (has_cpu) null else {},
+    /// The caller's context, which a session's init stores in its hook: what choose_version
+    /// receives, and what hook_context answers in ch_keylog.
+    context: ?*anyopaque = null,
 
     /// ch_srv_check: each provisioned key signs, the signature verifies, and the two keys meet the
     /// rules a server init call applies (srv_cfg.h). It takes no session
     /// and runs no I/O. Under RAND=session the RSA-PSS signature draws its salt from random, which
     /// C holds for the call alone.
-    pub fn check(values: ServerValues) error{Invalid}!void {
+    pub fn check(options: *const ServerValues) error{Invalid}!void {
         // Its lists live for this call alone, on its stack, at the C cap of 255 certificates.
         const limits: Limits = .{ .chain_max = 255, .anchors_max = 0 };
         var lists: cfg_of.Lists(limits) = undefined;
-        var cfg = try cfg_of.serverCfg(values, limits, &lists);
+        var cfg = try cfg_of.server_cfg(options, limits, &lists);
         var source: RandomSource = undefined;
-        attachRandom(&cfg, &source, values.random);
-        return fromCode(error{Invalid}, c.ch_srv_check(&cfg));
+        cfg_of.attach_random(&cfg, &source, options.random);
+        return from_code(error{Invalid}, c.ch_srv_check(&cfg));
     }
 };
 
 /// ch_cfg.cpu in a host object, and the C value one gives (chapulin_cpu.zig).
 pub const Cpu = @import("chapulin_cpu.zig").Cpu;
-pub const cpuBits = @import("chapulin_cpu.zig").cpuBits;
+pub const cpu_bits = @import("chapulin_cpu.zig").cpu_bits;
 
 /// ch_tls.group's code points (cfg.h).
 pub const Group = enum(u16) {
@@ -338,10 +337,50 @@ pub const CertType = if (has_webpki) enum(u8) {
     _,
 } else @compileError("CertType needs TRUST=webpki");
 
+/// An alert description (RFC 9846 §6), as ch_alert_sent, ch_alert_received, ch_quic_alert and
+/// ch_fail carry it. The names are the RFC's, which std.crypto.tls.Alert.Description uses too.
+/// Any other byte converts, and C decides whether it takes one.
+pub const AlertDescription = enum(u8) {
+    close_notify = 0,
+    unexpected_message = 10,
+    bad_record_mac = 20,
+    record_overflow = 22,
+    handshake_failure = 40,
+    bad_certificate = 42,
+    unsupported_certificate = 43,
+    certificate_revoked = 44,
+    certificate_expired = 45,
+    certificate_unknown = 46,
+    illegal_parameter = 47,
+    unknown_ca = 48,
+    access_denied = 49,
+    decode_error = 50,
+    decrypt_error = 51,
+    protocol_version = 70,
+    insufficient_security = 71,
+    internal_error = 80,
+    inappropriate_fallback = 86,
+    user_canceled = 90,
+    missing_extension = 109,
+    unsupported_extension = 110,
+    unrecognized_name = 112,
+    bad_certificate_status_response = 113,
+    unknown_psk_identity = 115,
+    certificate_required = 116,
+    general_error = 117,
+    no_application_protocol = 120,
+    _,
+};
+
+/// The description a C alert byte names, null for 0, which no failure sends as a fatal alert.
+pub fn alert_of(code: u8) ?AlertDescription {
+    return if (code == 0) null else @enumFromInt(code);
+}
+
 /// ch_build_matches over this object's build record,
 /// ch_build_info_<transport> (build.h). Call it once at start. A test that
 /// checks a changed record calls chapulin.c.ch_build_matches with its own.
-pub fn buildMatches() bool {
+pub fn build_matches() bool {
     const info = if (@hasDecl(c, "ch_build_info_quic_nonblocking"))
         &c.ch_build_info_quic_nonblocking
     else if (@hasDecl(c, "ch_build_info_tcp_nonblocking"))
@@ -351,8 +390,8 @@ pub fn buildMatches() bool {
     return c.ch_build_matches(info) == 1;
 }
 
-/// What ch_cfg.io points at in every session. context is the caller's, for ch_keylog: a session's
-/// init sets it to null, and the caller writes session.hook.context after init.
+/// What ch_cfg.io points at in every session. context is the options' context, which a session's
+/// init stores, for ch_keylog and choose_version.
 pub const Hook = extern struct { context: ?*anyopaque = null };
 
 /// What a session stores under RAND=session: the std.Random its values
@@ -360,31 +399,9 @@ pub const Hook = extern struct { context: ?*anyopaque = null };
 /// the session must not move after init. void in every other build.
 pub const RandomSource = if (has_rand_session) std.Random else void;
 
-/// Under RAND=session, stores random in source and points cfg at it: rand_io is source, and
-/// rand_bytes the adapter that fills each draw from it. A null random leaves rand_bytes NULL, which
-/// every init call and ch_srv_check refuse with CH_EINVAL, so the refusal stays C's. It does
-/// nothing in any other build. The sessions' init calls and Server.check call it.
-pub fn attachRandom(cfg: *c.ch_cfg, source: *RandomSource, random: if (has_rand_session) ?std.Random else void) void {
-    if (has_rand_session) {
-        if (random) |r| {
-            source.* = r;
-            cfg.rand_bytes = fillRandom;
-            cfg.rand_io = source;
-        }
-    }
-}
-
-/// ch_cfg.rand_bytes under RAND=session: fills out[0..n] from the
-/// std.Random rand_io points at. A std.Random's fill returns nothing and
-/// cannot fail, which is the contract cfg.h states for rand_bytes.
-fn fillRandom(rand_io: ?*anyopaque, out: [*c]u8, n: usize) callconv(.c) void {
-    const source: *const std.Random = @ptrCast(@alignCast(rand_io.?));
-    source.bytes(out[0..n]);
-}
-
 /// The caller's context, from the io argument ch_keylog receives (KEYLOG=on).
-pub const hookContext = if (@hasDecl(c, "ch_keylog")) hookContextOf else @compileError("hookContext needs KEYLOG=on");
-fn hookContextOf(io: ?*anyopaque) ?*anyopaque {
+pub const hook_context = if (@hasDecl(c, "ch_keylog")) hook_context_of else @compileError("hook_context needs KEYLOG=on");
+fn hook_context_of(io: ?*anyopaque) ?*anyopaque {
     const hook: *const Hook = @ptrCast(@alignCast(io orelse return null));
     return hook.context;
 }

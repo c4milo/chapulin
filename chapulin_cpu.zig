@@ -1,5 +1,5 @@
 //! The Zig API's Cpu: what the caller states about its CPU in a host object, and the ch_cfg.cpu
-//! value it gives, which chapulin.zig declares as chapulin.Cpu and chapulin.cpuBits. It sits in a
+//! value it gives, which chapulin.zig declares as chapulin.Cpu and chapulin.cpu_bits. It sits in a
 //! file of its own because chapulin.zig stood at the 500-line cap CLAUDE.md sets and make lint-size
 //! holds. docs/zig.md is the reference.
 const chapulin = @import("chapulin.zig");
@@ -68,10 +68,10 @@ const CpuBits = struct {
     bmi2_adx: bool = false,
 };
 
-/// ch_cfg.cpu for what found states, and 0 for null, which every init refuses. EcdsaP256Key.fromPem
+/// ch_cfg.cpu for what found states, and 0 for null, which every init refuses. EcdsaP256Key.init_from_pem
 /// passes it to ch_p256_key_from_pem too.
-pub const cpuBits = if (has_cpu) cpuBitsOf else @compileError("cpuBits needs a host object: TRUST=webpki, ROLE=server or ROLE=both on arm64 or x86-64");
-fn cpuBitsOf(found: ?CpuBits) u32 {
+pub const cpu_bits = if (has_cpu) cpu_bits_of else @compileError("cpu_bits needs a host object: TRUST=webpki, ROLE=server or ROLE=both on arm64 or x86-64");
+fn cpu_bits_of(found: ?CpuBits) u32 {
     const cpu = found orelse return 0;
     return c.CH_CPU_PROBED | (if (cpu.constant_time_aes) c.CH_CPU_CONSTANT_TIME_AES else 0) |
         (if (cpu.constant_time_multiply) c.CH_CPU_CONSTANT_TIME_MULTIPLY else 0) |

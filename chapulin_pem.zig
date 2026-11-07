@@ -22,7 +22,7 @@ const has_mldsa_key = has_server and @hasDecl(c, "ch_mldsa_key_from_pem");
 
 /// A server's certificate chain, decoded from a PEM file by ch_chain_from_pem into the caller's
 /// rooms. certs is the start of the caller's slices that the call filled. Each slice points into
-/// the caller's DER room. So both rooms stay where fromPem filled them for as long as a session
+/// the caller's DER room. So both rooms stay where from_pem filled them for as long as a session
 /// uses certs.
 pub const Chain = if (has_server) struct {
     /// The certificates' DER, end-entity first, as the identities' chain fields take them.
@@ -31,16 +31,16 @@ pub const Chain = if (has_server) struct {
     /// ch_chain_from_pem: one or more CERTIFICATE blocks, end-entity first, into der and slices.
     /// error.Invalid for a file pem_files.h refuses, for DER over der.len bytes, and for more
     /// blocks than slices.len or 255. The C call writes its entries into an array on this call's
-    /// stack, 255 of them at the C cap, and fromPem copies each entry's DER slice into slices.
-    pub fn fromPem(pem: []const u8, der: []u8, slices: [][]const u8) error{Invalid}!@This() {
+    /// stack, 255 of them at the C cap, and from_pem copies each entry's DER slice into slices.
+    pub fn from_pem(pem: []const u8, der: []u8, slices: [][]const u8) error{Invalid}!@This() {
         var entries: [255]c.ch_cert = undefined;
         var count: u8 = 0;
-        try chapulin.fromCode(error{Invalid}, c.ch_chain_from_pem(pem.ptr, pem.len, der.ptr, der.len, &entries, @min(slices.len, entries.len), &count));
+        try chapulin.from_code(error{Invalid}, c.ch_chain_from_pem(pem.ptr, pem.len, der.ptr, der.len, &entries, @min(slices.len, entries.len), &count));
         for (entries[0..count], slices[0..count]) |entry, *slice| slice.* = entry.der[0..entry.len];
         return .{ .certs = slices[0..count] };
     }
 
-    /// The end-entity certificate's DER, which EcdsaP256Key.fromPem holds the key to.
+    /// The end-entity certificate's DER, which EcdsaP256Key.init_from_pem holds the key to.
     pub fn leaf(self: @This()) []const u8 {
         if (self.certs.len == 0) return &.{};
         return self.certs[0];
@@ -49,7 +49,7 @@ pub const Chain = if (has_server) struct {
 
 /// A P-256 private key, decoded from a PEM file by ch_p256_key_from_pem: the scalar and its point,
 /// which EcdsaP256Identity.private_key and public_key point at. The scalar is a secret: wipe zeroes
-/// it once no session uses it. The program wipes the key file's text after fromPem returns, on
+/// it once no session uses it. The program wipes the key file's text after init_from_pem returns, on
 /// success and on error.
 pub const EcdsaP256Key = if (has_p256_key) struct {
     private_key: [32]u8 = undefined,
@@ -58,12 +58,12 @@ pub const EcdsaP256Key = if (has_p256_key) struct {
     /// ch_p256_key_from_pem: one PRIVATE KEY (PKCS #8) or EC PRIVATE KEY (SEC 1) block that holds
     /// a P-256 key. leaf, the end-entity certificate's DER, carries the key's point. An EC
     /// PARAMETERS block that names prime256v1 may come before an EC PRIVATE KEY block. cpu is the
-    /// value a session's Server.cpu takes, in a host object alone, where null is refused.
+    /// value a session's ServerOptions.cpu takes, in a host object alone, where null is refused.
     /// error.Invalid for a cpu, a file or a leaf that pem_files.h refuses, and both fields are then
     /// zero.
-    pub fn fromPem(self: *@This(), cpu: if (has_cpu) ?chapulin.Cpu else void, pem: []const u8, leaf: []const u8) error{Invalid}!void {
-        const bits: u32 = if (has_cpu) chapulin.cpuBits(cpu) else 0;
-        return chapulin.fromCode(error{Invalid}, c.ch_p256_key_from_pem(bits, pem.ptr, pem.len, leaf.ptr, leaf.len, &self.private_key, &self.public_key));
+    pub fn init_from_pem(self: *@This(), cpu: if (has_cpu) ?chapulin.Cpu else void, pem: []const u8, leaf: []const u8) error{Invalid}!void {
+        const bits: u32 = if (has_cpu) chapulin.cpu_bits(cpu) else 0;
+        return chapulin.from_code(error{Invalid}, c.ch_p256_key_from_pem(bits, pem.ptr, pem.len, leaf.ptr, leaf.len, &self.private_key, &self.public_key));
     }
 
     /// Writes zero over the scalar, through a write the compiler keeps.
@@ -72,34 +72,45 @@ pub const EcdsaP256Key = if (has_p256_key) struct {
     }
 } else @compileError("EcdsaP256Key needs ROLE=server or ROLE=both outside PROFILE=cnsa2");
 
-/// An RSA private key, decoded from a PEM file by ch_rsa_key_from_pem: the ch_rsa_priv that
-/// RsaPssIdentity.private_key points at. publicKey returns its modulus, which
+/// An RSA private key, decoded from a PEM file by ch_rsa_key_from_pem, which
+/// RsaPssIdentity.private_key points at. public_key returns its modulus, which
 /// RsaPssIdentity.public_key takes. The key's integers are secrets: wipe zeroes them once no
-/// session uses the key. The program wipes the key file's text after fromPem returns, on success
-/// and on error.
+/// session uses the key. The program wipes the key file's text after init_from_pem returns, on
+/// success and on error.
 pub const RsaKey = if (has_rsa_key) struct {
-    private_key: c.ch_rsa_priv = undefined,
+    /// The bytes of the C key, a ch_rsa_priv (rsa_sign.h). The API promises nothing about them.
+    bytes: [@sizeOf(c.ch_rsa_priv)]u8 align(@alignOf(c.ch_rsa_priv)) = undefined,
 
     /// ch_rsa_key_from_pem: one PRIVATE KEY block, a PKCS #8 PrivateKeyInfo of rsaEncryption that
     /// holds a two-prime key with the public exponent 65537. leaf, the end-entity certificate's
-    /// DER, carries the modulus. cpu is the value a session's Server.cpu takes, in a host object
+    /// DER, carries the modulus. cpu is the value a session's ServerOptions.cpu takes, in a host object
     /// alone, where null is refused. The call signs once with the key and verifies the signature
     /// under the leaf's key. error.Invalid for a cpu, a file, a leaf or a key that pem_files.h
-    /// refuses, and private_key is then zero.
-    pub fn fromPem(self: *@This(), cpu: if (has_cpu) ?chapulin.Cpu else void, pem: []const u8, leaf: []const u8) error{Invalid}!void {
-        const bits: u32 = if (has_cpu) chapulin.cpuBits(cpu) else 0;
-        return chapulin.fromCode(error{Invalid}, c.ch_rsa_key_from_pem(bits, pem.ptr, pem.len, leaf.ptr, leaf.len, &self.private_key));
+    /// refuses, and every byte of the key is then zero.
+    pub fn init_from_pem(self: *@This(), cpu: if (has_cpu) ?chapulin.Cpu else void, pem: []const u8, leaf: []const u8) error{Invalid}!void {
+        const bits: u32 = if (has_cpu) chapulin.cpu_bits(cpu) else 0;
+        return chapulin.from_code(error{Invalid}, c.ch_rsa_key_from_pem(bits, pem.ptr, pem.len, leaf.ptr, leaf.len, self.c_key_mut()));
     }
 
-    /// The modulus, big-endian, n_len bytes of private_key.n: what RsaPssIdentity.public_key
-    /// takes. It points into self, so self stays where fromPem filled it.
-    pub fn publicKey(self: *const @This()) []const u8 {
-        return self.private_key.n[0..self.private_key.n_len];
+    /// The modulus, big-endian, n_len bytes of the key's n: what RsaPssIdentity.public_key
+    /// takes. It points into self, so self stays where init_from_pem filled it.
+    pub fn public_key(self: *const @This()) []const u8 {
+        const key = self.c_key();
+        return key.n[0..key.n_len];
     }
 
     /// Writes zero over the whole key, through a write the compiler keeps.
     pub fn wipe(self: *@This()) void {
-        std.crypto.secureZero(u8, std.mem.asBytes(&self.private_key));
+        std.crypto.secureZero(u8, &self.bytes);
+    }
+
+    /// The C key the bytes are, which ch_cfg's srv.rsa_pss.priv points at.
+    pub fn c_key(self: *const @This()) *const c.ch_rsa_priv {
+        return @ptrCast(&self.bytes);
+    }
+
+    fn c_key_mut(self: *@This()) *c.ch_rsa_priv {
+        return @ptrCast(&self.bytes);
     }
 } else @compileError("RsaKey needs ROLE=server or ROLE=both outside PROFILE=cnsa2");
 
@@ -112,11 +123,11 @@ pub const MlDsa87Key = if (has_mldsa_key) struct {
 
     /// ch_mldsa_key_from_pem: one PRIVATE KEY block, a PKCS #8 OneAsymmetricKey of
     /// id-ml-dsa-87 in the seed form or the both form. leaf, the end-entity certificate's DER,
-    /// carries the public key. cpu is the value a session's Server.cpu takes, where null is
+    /// carries the public key. cpu is the value a session's ServerOptions.cpu takes, where null is
     /// refused. error.Invalid for a cpu, a file or a leaf that pem_files.h refuses, and both
     /// fields are then zero.
-    pub fn fromPem(self: *@This(), cpu: ?chapulin.Cpu, pem: []const u8, leaf: []const u8) error{Invalid}!void {
-        return chapulin.fromCode(error{Invalid}, c.ch_mldsa_key_from_pem(chapulin.cpuBits(cpu), pem.ptr, pem.len, leaf.ptr, leaf.len, &self.private_key, &self.public_key));
+    pub fn init_from_pem(self: *@This(), cpu: ?chapulin.Cpu, pem: []const u8, leaf: []const u8) error{Invalid}!void {
+        return chapulin.from_code(error{Invalid}, c.ch_mldsa_key_from_pem(chapulin.cpu_bits(cpu), pem.ptr, pem.len, leaf.ptr, leaf.len, &self.private_key, &self.public_key));
     }
 
     /// Writes zero over the secret key, through a write the compiler keeps.
@@ -127,7 +138,7 @@ pub const MlDsa87Key = if (has_mldsa_key) struct {
 
 /// A client's trust anchors, decoded from a CA bundle by ch_anchors_from_pem into the caller's
 /// rooms. anchors is the start of the caller's room that the call filled. Each anchor points into
-/// the caller's DER room. So both rooms stay where fromPem filled them for as long as a session
+/// the caller's DER room. So both rooms stay where from_pem filled them for as long as a session
 /// uses anchors.
 pub const Anchors = if (has_webpki) struct {
     /// The anchors, in the bundle's order, as Trust.web_pki.anchors takes them.
@@ -141,10 +152,10 @@ pub const Anchors = if (has_webpki) struct {
     /// that its session could not take is refused here. The C call writes its entries into an
     /// array of limits.anchors_max on this call's stack, because a bundle has no C cap and the
     /// API allocates nothing (docs/decisions.md 168).
-    pub fn fromPem(comptime limits: chapulin.Limits, pem: []const u8, der: []u8, room: []chapulin.TrustAnchor) error{Invalid}!@This() {
+    pub fn from_pem(comptime limits: chapulin.Limits, pem: []const u8, der: []u8, room: []chapulin.TrustAnchor) error{Invalid}!@This() {
         var entries: [limits.anchors_max]c.ch_trust_anchor = undefined;
         var count: usize = 0;
-        try chapulin.fromCode(error{Invalid}, c.ch_anchors_from_pem(pem.ptr, pem.len, der.ptr, der.len, &entries, @min(room.len, entries.len), &count));
+        try chapulin.from_code(error{Invalid}, c.ch_anchors_from_pem(pem.ptr, pem.len, der.ptr, der.len, &entries, @min(room.len, entries.len), &count));
         for (entries[0..count], room[0..count]) |entry, *anchor| anchor.* = .{ .name = entry.name[0..entry.name_len], .spki = entry.spki[0..entry.spki_len] };
         return .{ .anchors = room[0..count] };
     }

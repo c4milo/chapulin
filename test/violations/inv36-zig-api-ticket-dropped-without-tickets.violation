@@ -6,6 +6,6 @@ reason: clientCfg (chapulin_cfg.zig) drops the values' ticket when takes_tickets
   it offers, and runs a full handshake in its place. Both loops resume a
   ticket with takes_tickets false, and object.
 --- old
-    if (values.ticket) |ticket| cfg.ticket = ticket.saved();
+    if (options.ticket) |ticket| cfg.ticket = ticket.saved();
 --- new
-    if (if (values.takes_tickets) values.ticket else null) |ticket| cfg.ticket = ticket.saved();
+    if (if (options.takes_tickets) options.ticket else null) |ticket| cfg.ticket = ticket.saved();

@@ -364,7 +364,8 @@ def known(path):
                 "fuzz/", "tools/", ".githooks/")) or path in (
         "README.md", "SECURITY.md", "CONTRIBUTING.md", "CLAUDE.md",
         "build.zig", "build.zig.zon", "chapulin.zig", "chapulin_tcp.zig",
-        "chapulin_quic.zig", "chapulin_ticket.zig", "chapulin_cpu.zig", "chapulin_cfg.zig")
+        "chapulin_quic.zig", "chapulin_quic_token.zig", "chapulin_ticket.zig", "chapulin_pem.zig",
+        "chapulin_dnssec.zig", "chapulin_cpu.zig", "chapulin_cfg.zig")
 
 
 class Plan:

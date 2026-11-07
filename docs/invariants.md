@@ -1232,7 +1232,7 @@ last `ROLE=server` stub, as the entry said it would.
     first record does not. `inv38-writable-len-skips-key-update`
     requires `bin/tcp_blocking_key_limit` to fail.
   - `test/zig-consumer/loop_key_limit.zig` holds the Zig API's
-    `writableLen` to the same rows two records before the ceiling, and
+    `writable_len` to the same rows two records before the ceiling, and
     `write` to refusing whole an output one byte short of the records it
     seals, the KeyUpdate record among them.
     `inv38-zig-writable-len-skips-key-update`, the same edit, requires
@@ -2988,7 +2988,7 @@ last `ROLE=server` stub, as the entry said it would.
   of each `ROLE=both` object against each other through the API alone,
   over tcp-nonblocking and over QUIC (`docs/zig.md`, "How it is checked"), and
   under `SUITE=aesgcm` has each side write across its AES-GCM write key's
-  ceiling, where `writableLen` must count the KeyUpdate record to the
+  ceiling, where `writable_len` must count the KeyUpdate record to the
   byte and `write` must refuse whole an output one byte short of the
   records it seals; and
   `pair.zig` imports the modules of two transports and starts a client on
@@ -3027,7 +3027,7 @@ last `ROLE=server` stub, as the entry said it would.
   catches each:
   `inv36-zig-module-drops-object` takes the object off the module, so
   every consumer program fails to link; `inv36-zig-api-drops-ticket-age`
-  leaves `ch_cfg.ticket_age_ms` at 0 in `clientCfg` (`chapulin_cfg.zig`), so a stale ticket
+  leaves `ch_cfg.ticket_age_ms` at 0 in `client_cfg` (`chapulin_cfg.zig`), so a stale ticket
   resumes; `inv36-zig-api-write-seals-part` seals the part of `pt` that
   fits where `write` must refuse it whole;
   `inv36-zig-api-write-sizes-without-key-update` sizes `write`'s output
@@ -3036,14 +3036,14 @@ last `ROLE=server` stub, as the entry said it would.
   notices;
   `inv36-zig-api-auth-proto-swapped` swaps two codes in the error table;
   `inv36-zig-api-read-drops-key-update-limit` leaves `KeyUpdateLimit` out
-  of `read`'s error set, so `fromCode` panics when the server in
+  of `read`'s error set, so `from_code` panics when the server in
   `loop_key_update_run.zig` reads one KeyUpdate past a full run;
   `inv36-zig-api-close-without-notify` closes without a close_notify;
   `inv36-zig-api-ticket-drops-binding` zeroes a copied ticket's binding,
   so it no longer resumes; `inv36-zig-api-ticket-drops-quic-version`
   zeroes a copied ticket's QUIC version, so `ch_quic_init` refuses it;
   `inv36-zig-api-ticket-slot-kept` leaves
-  the resumption PSK in the slot after `takeTicket` and `tcpClose`;
+  the resumption PSK in the slot after `take_ticket` and `close`;
   `inv36-zig-api-record-ignores-takes-tickets` and
   `inv36-zig-api-quic-ignores-takes-tickets` set `on_ticket` in a client
   whose `takes_tickets` is false;
@@ -3686,7 +3686,7 @@ last `ROLE=server` stub, as the entry said it would.
   record over once and then answers `CH_EINVAL`, and the other side reads
   each record through `ch_alert_received`. `test/zig-consumer/loop_record.zig`
   runs failures on both sides of each key through the Zig API and
-  collects the server's record through `outputLen()`. Four violations
+  collects the server's record through `output_len()`. Four violations
   each break one term, and `bin/tcp_nonblocking_loop_test` catches each:
   `inv13-tcp-nonblocking-alert-clear-after-key`,
   `inv13-tcp-nonblocking-seals-after-wipe`,

@@ -2,7 +2,7 @@
 //! reads CH_KEY_UPDATE_RUN_MAX KeyUpdates in a row, one a call, and its read
 //! of one more returns error.KeyUpdateLimit. test/session_update_run_tests.h
 //! and test/tcp_nonblocking_record_end_tests.h check the C calls; this
-//! checks read's error set. fromCode panics on a code that set does not
+//! checks read's error set. from_code panics on a code that set does not
 //! name (chapulin.zig), so a set without KeyUpdateLimit would let one
 //! peer stop the process.
 //!
@@ -52,8 +52,8 @@ pub fn run() !void {
             try check(loop.server.read(update, &got, &reply) == error.KeyUpdateLimit, "the KeyUpdate past a full run did not fail read with error.KeyUpdateLimit");
         }
     }
-    try check(loop.server.tcpState() == .failed and loop.server.alertSent() == 10, "the run limit did not fail the server with unexpected_message");
-    try check(loop.server.replyLen() == tcp.alert_record_len, "the server's failed read did not send its alert record");
-    loop.client.tcpClose();
-    loop.server.tcpClose();
+    try check(loop.server.state() == .failed and loop.server.alert_sent() == .unexpected_message, "the run limit did not fail the server with unexpected_message");
+    try check(loop.server.reply_len() == tcp.alert_record_len, "the server's failed read did not send its alert record");
+    loop.client.close();
+    loop.server.close();
 }

@@ -7,7 +7,7 @@
 //! reader's read sequence number two records below the ceiling, and every
 //! step after that goes through the API alone. Under each AES-GCM suite:
 //!
-//! - writableLen counts no KeyUpdate record for the one data record the
+//! - writable_len counts no KeyUpdate record for the one data record the
 //!   key has left, and counts one for the record after it, to the byte;
 //! - write refuses whole a write across the ceiling into one byte less
 //!   than its records, and then seals it into exactly its records: the
@@ -70,15 +70,15 @@ pub fn run() !void {
         _ = try loop.drain(&loop.client, &loop.to_client);
         try crossCeiling(&loop.client, &loop.server, &loop.to_server);
         try crossCeiling(&loop.server, &loop.client, &loop.to_client);
-        loop.client.tcpClose();
-        loop.server.tcpClose();
+        loop.client.close();
+        loop.server.close();
     }
 }
 
 /// writer writes across its write key's ceiling into wire, and reader
 /// reads what arrives.
 fn crossCeiling(writer: anytype, reader: anytype, wire: *loop.Pipe) !void {
-    try check(wire.pending().len == 0 and writer.peerLimit() >= per_record, "the pipe holds bytes, or the peer's limit is below CH_TX_PT");
+    try check(wire.pending().len == 0 and writer.peer_limit() >= per_record, "the pipe holds bytes, or the peer's limit is below CH_TX_PT");
     // No call of the API sets a sequence number, and writing up to the
     // ceiling would seal 2^24 - 2 records per direction and suite. So the
     // test writes the two fields, as test/key_limit_cases.h does in C, with
@@ -93,16 +93,16 @@ fn crossCeiling(writer: anytype, reader: anytype, wire: *loop.Pipe) !void {
     // first record, and not one byte sooner.
     const whole = per_record + overhead;
     const key_update = tcp.key_update_record_len;
-    try check(writer.writableLen(whole) == per_record, "writableLen counted a KeyUpdate record one record before the ceiling");
+    try check(writer.writable_len(whole) == per_record, "writable_len counted a KeyUpdate record one record before the ceiling");
     const second = whole + key_update + overhead;
-    try check(writer.writableLen(second) == per_record and writer.writableLen(second + 1) == per_record + 1, "writableLen did not count the KeyUpdate record at the ceiling");
+    try check(writer.writable_len(second) == per_record and writer.writable_len(second + 1) == per_record + 1, "writable_len did not count the KeyUpdate record at the ceiling");
 
-    // One write across the ceiling, into exactly the bytes writableLen
+    // One write across the ceiling, into exactly the bytes writable_len
     // counts for it: the first record, the KeyUpdate record and a second
     // record of rest bytes. One byte fewer is refused whole.
     const rest = data.len - per_record;
     const sealed = second + rest;
-    try check(writer.writableLen(sealed) == data.len and writer.writableLen(sealed - 1) == data.len - 1, "writableLen does not match the write across the ceiling");
+    try check(writer.writable_len(sealed) == data.len and writer.writable_len(sealed - 1) == data.len - 1, "writable_len does not match the write across the ceiling");
     try check(writer.write(&data, wire.free()[0 .. sealed - 1]) == error.Cap, "a write across the ceiling into one byte less than its records was not refused");
     const written = try writer.write(&data, wire.free()[0..sealed]);
     try check(written == sealed, "write did not count the KeyUpdate record among the bytes it sealed");
@@ -124,7 +124,7 @@ fn crossCeiling(writer: anytype, reader: anytype, wire: *loop.Pipe) !void {
 
     // The next write, under the next key, sends no KeyUpdate.
     const next = "under the next key";
-    try check(writer.writableLen(next.len + overhead) == next.len, "writableLen counted a KeyUpdate record under the next key");
+    try check(writer.writable_len(next.len + overhead) == next.len, "writable_len counted a KeyUpdate record under the next key");
     const sent = try writer.write(next, wire.free());
     wire.push(sent);
     const r = try reader.read(wire.pending(), &got, &reply);
@@ -137,7 +137,7 @@ fn crossCeiling(writer: anytype, reader: anytype, wire: *loop.Pipe) !void {
 /// Both sessions still connected, and neither has sent or received an
 /// alert.
 fn checkNoAlerts(a: anytype, b: anytype) !void {
-    try check(a.tcpState() == .connected and b.tcpState() == .connected, "a session left the connected state across the ceiling");
-    try check(a.alertSent() == null and a.alertReceived() == null, "the writer reported an alert across the ceiling");
-    try check(b.alertSent() == null and b.alertReceived() == null, "the reader reported an alert across the ceiling");
+    try check(a.state() == .connected and b.state() == .connected, "a session left the connected state across the ceiling");
+    try check(a.alert_sent() == null and a.alert_received() == null, "the writer reported an alert across the ceiling");
+    try check(b.alert_sent() == null and b.alert_received() == null, "the reader reported an alert across the ceiling");
 }

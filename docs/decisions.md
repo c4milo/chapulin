@@ -16140,3 +16140,43 @@ does nothing more.
       headers under `src/` read `include/chapulin/` too: the impact map,
       the QUIC partition and footprint checks, the proof coverage and
       the stack walk.
+
+190. **The Zig API follows TigerStyle first, then Zig's standard library.**
+    Camilo ruled this for every Zig project on 2026-11-07, after an audit
+    of chapulin's API, and took each of its findings. They break the API
+    once, in v0.5.0, so colibri and cocuyo move once.
+
+    - **Names.** Every function is snake_case, as TigerStyle names one:
+      `record_in`, `write_parts`, `from_code`, `build_matches`. The
+      configurations are `ClientOptions` and `ServerOptions`, because
+      `tcp.Client` and `quic.Client` name the sessions. A tcp session's
+      `end(output)` sends close_notify, as `std.crypto.tls.Client.end`
+      does. Its `close()` ends the session and `state()` reports it, as a
+      QUIC session's calls do.
+    - **Pointers.** A session's `init`, `ServerOptions.check` and
+      `Ticket.from_fields` take their struct by `*const` pointer, because
+      TigerStyle passes an argument over 16 bytes that way. Each copies
+      what it keeps, and keeps no pointer to the options.
+    - **No C type in a signature.** `write_parts` takes
+      `[]const []const u8`. A Zig slice has no defined layout, so the call
+      copies each slice into a `c.ch_part` on its own stack, and takes
+      `tcp.parts_max`, 16, parts at most. `quic.RetryConnectionIds` and
+      `RsaKey` hold the C layouts under Zig names, and a comptime check
+      or a cast holds each to its C struct.
+    - **Alerts and errors.** `AlertDescription` is an `enum(u8)` of RFC
+      9846 §6's names with `_`. Each error set of more than one error has
+      a name, as `tcp.ReadError`. A QUIC session reports `alert` alone:
+      its `alert_sent` repeated it, and its `alert_received` was always
+      null, because QUIC carries no alert record.
+    - **Smaller moves.** The options carry the caller's `context`, which
+      `init` stores in the hook; the caller wrote `hook.context` after
+      `init` before. A key's `init_from_pem` fills the key in place, and
+      `Chain.from_pem` and `Anchors.from_pem` return a value.
+      `dnssec.Hash.init_digest` starts a plain hash. `Ticket.Fields` names
+      `lifetime_seconds`. `attach_random` and `version_code` move into
+      `chapulin_cfg.zig`, which no program names.
+    - **What holds it.** `test/zig-consumer` runs every call under its new
+      name in each configuration `lint-zig-build` checks. New tests take
+      `parts_max` parts and refuse one more, take two connection IDs of
+      `CH_QUIC_DCID_MAX` bytes and refuse a longer one, and read the
+      options' context back from a tcp session's hook.

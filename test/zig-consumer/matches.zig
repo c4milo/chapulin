@@ -8,7 +8,7 @@
 //! object's public headers name, which the build passes as
 //! exports.constants. It exits 0 when ch_build_matches finds the object's
 //! build record equal to what the translated types compute, through
-//! chapulin.c and through chapulin.buildMatches, and 1 when it does not.
+//! chapulin.c and through chapulin.build_matches, and 1 when it does not.
 const std = @import("std");
 const chapulin = @import("chapulin");
 const c = chapulin.c;
@@ -73,7 +73,7 @@ fn provided(comptime name: []const u8) bool {
 }
 
 pub fn main() u8 {
-    if (c.ch_build_matches(hooks.record(c)) == 1 and chapulin.buildMatches()) return 0;
+    if (c.ch_build_matches(hooks.record(c)) == 1 and chapulin.build_matches()) return 0;
     std.debug.print("matches: the object's build record differs from the translated types\n", .{});
     return 1;
 }
