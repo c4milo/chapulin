@@ -211,21 +211,17 @@ typedef struct {
     words s1, s2, s3, s4;
 } multiplier;
 
-// How multiply_add reads a multiplier. On x86-64 it reads each word
-// through a volatile pointer, so a product loads its word from the struct
-// where it uses it. x86-64 has 16 vector registers and a group's two
-// multipliers are 18 vectors, so a compiler that loads them before the
-// loop keeps some in stack slots it picks, which ct_wipe cannot name:
-// Apple clang 21 left r^4 there, and bin/poly1305_equiv_test's residue
-// check found it. Read this way, the powers stay in the one struct the
-// call wipes. arm64 has 32 vector registers and holds both multipliers in
-// them, so the same reads there remove nothing and cost 30 percent more
-// instructions (docs/decisions.md 83).
-#ifdef __ARM_NEON
-typedef const multiplier multiplier_read;
-#else
+// How multiply_add reads a multiplier: through a volatile pointer, so a
+// product loads its word from the struct where it uses it. A pass's
+// multipliers are more vectors than SSE2's 16 registers hold, and a NEON
+// pass of four pairs needs 36 beside arm64's 32. A compiler that loads
+// them before the loop keeps some in stack slots it picks, which ct_wipe
+// cannot name: Apple clang 21 left r^4 there on x86-64, gcc 13 left r^2
+// on arm64, and bin/poly1305_equiv_test's residue check found both. Read
+// this way, the powers stay in the one struct the call wipes. On the M1
+// Pro the reads cost 10% of a call over 16 KiB (docs/decisions.md 83 and
+// 194).
 typedef const volatile multiplier multiplier_read;
-#endif
 
 // The power lane0 in lane 0 and the power lane1 in lane 1. Each word is
 // at most 2^26, so 5 times it fits in 32 bits.
@@ -341,11 +337,9 @@ static inline void carry_round(sums out[5], const sums in[5]) {
     out[4] = sums_add_carry(sums_low_word(in[4]), in[3]);
 }
 
-// The five sums of each lane carried into words, in two rounds. The sums
-// are below 2^59, and d4 below 2^56, since none of its products is by 5
-// times a word, so its carry fits the 32 bits sums_add_carry_times_5
-// takes. The first round leaves values below 2^33, and the second words
-// below 2^26 + 2^10.
+// The five sums of each lane carried into words, in two rounds: values
+// below 2^34, then words below 2^26 + 2^10, the bounds and the 32-bit
+// carry spec/lean/Spec/Poly1305Vector.lean's passStep_bounds proves.
 static inline void carry(words h[5], const sums d[5]) {
     sums once[5];
     sums twice[5];
@@ -361,20 +355,18 @@ static inline void carry(words h[5], const sums d[5]) {
 // What one call derives from r: r to r^(2 PASS_PAIRS), and the
 // multipliers built from them. r and a tag seen on the wire give the pad
 // s, and r and s forge any message under that key, so the call wipes this
-// struct through ct_wipe once, when it ends. One struct makes that one
-// wipe. The registers and the spill slots the compiler picks stay out of
-// its reach, as they do for every wipe written in C, which is why
-// multiply_add reads the multipliers as multiplier_read says.
+// one struct through ct_wipe when it ends. No wipe written in C clears a
+// register or a spill slot, which is why multiply_add reads the
+// multipliers as multiplier_read says.
 typedef struct {
     uint32_t power[2 * PASS_PAIRS][5]; // power[i] is r^(i + 1)
     multiplier by[PASS_PAIRS];
 } powers;
 
-// The fewest bytes for which a NEON call runs passes of PASS_PAIRS pairs.
-// r^5 to r^8 cost four products more than r^2 to r^4. On the M1 Pro a call
-// of 1,024 bytes took 8% more time with them, one of 1,536 bytes 2% less
-// and one of 2,048 bytes 9% less (docs/decisions.md 194). A shorter call,
-// a QUIC packet's among them, runs passes of two pairs.
+// The fewest bytes for which a NEON call runs passes of PASS_PAIRS pairs,
+// and computes r^5 to r^8. On the M1 Pro a call of 1,024 bytes took 8%
+// more time with them, and one of 2,048 bytes 9% less (docs/decisions.md
+// 194). A shorter call, a QUIC packet's among them, takes two pairs.
 #define POLY1305_VECTOR_WIDE_MIN ((size_t)2048)
 
 // power[1] to power[2 * pairs - 1] from power[0], which holds r.
@@ -461,7 +453,11 @@ static inline __attribute__((always_inline)) void passes(sums d[5], words h[5], 
 void poly1305_vector_blocks(poly1305 *p, const uint8_t *m, size_t n) {
     CH_ASSERT(n > 0 && n % POLY1305_VECTOR_GROUP == 0);
     // Only n, which is public, picks the pairs of a pass.
-    size_t pairs = PASS_PAIRS > 2 && n >= POLY1305_VECTOR_WIDE_MIN ? PASS_PAIRS : 2;
+#if PASS_PAIRS > 2
+    size_t pairs = n >= POLY1305_VECTOR_WIDE_MIN ? PASS_PAIRS : 2;
+#else
+    size_t pairs = 2;
+#endif
     powers of_r;
     for (size_t i = 0; i < 5; i++) {
         of_r.power[0][i] = p->r[i];

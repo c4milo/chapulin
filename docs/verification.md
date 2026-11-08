@@ -5016,10 +5016,13 @@ object alone, and each is caught. The equivalence test catches
 `chacha-vector-tail-whole-rows-only`,
 `chacha-vector-counter-carries-into-nonce`,
 `chacha-vector-skips-a-lane`,
-`chacha-vector-blocks-in-descending-order`,
+`chacha-vector-blocks-in-descending-order`. The same binary built for
+arm64 in `test/docker-aes-runtime-qemu.sh vector-neon` catches the three
+that break the NEON arm alone, which an x86-64 runner never runs:
 `chacha-vector-scalar-block-reuses-a-counter`,
 `chacha-vector-scalar-row-drops-counter` and
-`chacha-vector-keeps-input-words`; `test/chacha-builds.sh`
+`chacha-vector-keeps-input-words`, whose residue search runs on NEON
+alone. `test/chacha-builds.sh`
 catches `chacha-vector-header-admits-any-target`,
 `chacha-vector-header-admits-big-endian` and
 `chacha-vector-falls-back-to-portable`; and `make lint-trust-separation`

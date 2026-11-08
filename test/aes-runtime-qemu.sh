@@ -305,6 +305,11 @@
 #   chacha20-avx2     bin/chacha20_equiv_test for x86-64, for the
 #                     violation of chacha20_avx2.c's clear of its
 #                     registers
+#   vector-neon       bin/chacha20_equiv_test and bin/poly1305_equiv_test
+#                     for arm64, for the violations of the NEON arms of
+#                     chacha20_vector.c and poly1305_vector.c: the block
+#                     in general registers, the residue checks that run
+#                     on NEON alone, and the passes of four pairs
 #   aes-equiv         bin/aes_equiv_test for x86-64 and for arm64, for the
 #                     violations of aes_hw.c's two key expansions
 #   ghash-equiv       bin/ghash_equiv_test for arm64, for the violations
@@ -355,10 +360,10 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
-    mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
+    mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | vector-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
     rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | vector-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx]" >&2
     exit 2
     ;;
 esac
@@ -381,7 +386,8 @@ x86_cc=""
 arm64_cc=""
 x86_qemu=${QEMU_X86_64:-qemu-x86_64}
 arm64_qemu=${QEMU_AARCH64:-qemu-aarch64}
-if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ] && [ "$only" != ghash-equiv ]; then
+if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ] && [ "$only" != ghash-equiv ] &&
+    [ "$only" != vector-neon ]; then
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
@@ -672,6 +678,30 @@ if [ -z "$only" ] || [ "$only" = chacha20-avx2 ]; then
 fi
 if [ "$only" = chacha20-avx2 ]; then
     echo "aes-runtime-qemu: bin/chacha20_equiv_test held the AVX2 ChaCha20 and the SSE2 path to src/chacha20.c's loop, on AVX2 for x86-64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = vector-neon ]; then
+    # The NEON ChaCha20 and Poly1305 against chacha20.c's and poly1305.c's
+    # loops, with the searches of the stack each call leaves, which run on
+    # NEON alone. avx512_wipe.c has no body for arm64.
+    arm64_chacha20_equiv_srcs=()
+    for src in "${chacha20_equiv_srcs[@]}"; do
+        [ "$src" = src/avx512_wipe.c ] || arm64_chacha20_equiv_srcs+=("$src")
+    done
+    "$arm64_cc" "${flags[@]}" -o "$arm64_out/chacha20_equiv_test" test/chacha20_equiv_test.c \
+        "${arm64_chacha20_equiv_srcs[@]}" || exit 1
+    expect_arm64 max 0 \
+        "the NEON ChaCha20 and src/chacha20.c's loop disagree, or a call left the key or a block's words on the stack" \
+        chacha20_equiv_test
+    "$arm64_cc" "${flags[@]}" -o "$arm64_out/poly1305_equiv_test" test/poly1305_equiv_test.c \
+        "${poly1305_equiv_srcs[@]}" || exit 1
+    expect_arm64 max 0 \
+        "the NEON Poly1305 and src/poly1305.c's loop disagree, or a call left a power of r on the stack" \
+        poly1305_equiv_test
+fi
+if [ "$only" = vector-neon ]; then
+    echo "aes-runtime-qemu: bin/chacha20_equiv_test and bin/poly1305_equiv_test held the NEON ChaCha20 and Poly1305 to the portable loops, for arm64"
     exit 0
 fi
 

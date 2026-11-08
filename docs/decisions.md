@@ -16525,6 +16525,13 @@ does nothing more.
       multipliers from the struct in every pass of two pairs, which took
       30% more time. The residue check now calls the path over 32 groups,
       so a NEON call computes r^5 to r^8 and the check searches for them.
+      Built by gcc 13 for arm64, in `test/docker-aes-runtime-qemu.sh
+      vector-neon`, the call left a copy of r^2's multiplier in a stack
+      slot: a pass of four pairs needs 36 vectors of multipliers beside
+      arm64's 32 registers. So `multiply_add` reads each multiplier word
+      through a volatile pointer on NEON too, as it does on x86-64. The
+      reads cost about 10% of a 16 KiB call on the M1 Pro, so such a call
+      takes about 23% less time than before this entry, not 30%.
     - **SSE2 unchanged in its passes.** No x86-64 machine here times the
       SSE2 arm, so it keeps passes of two pairs, through the same code.
 

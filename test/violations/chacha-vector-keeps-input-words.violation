@@ -1,6 +1,6 @@
 invariant: INV-17
 file: src/chacha20_vector.c
-catches: chacha20_equiv_test
+catches: test/docker-aes-runtime-qemu.sh vector-neon
 reason: chacha20_vector_xor returns without the wipe of its input words,
   so the key's eight words stay side by side in its dead frame below the
   caller. bin/chacha20_equiv_test copies the stack below a call and

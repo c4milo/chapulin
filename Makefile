@@ -5958,12 +5958,18 @@ bin/diff_poly1305_ifma: test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.
 # bin/poly1305_equiv_test compiles it, against
 # spec/lean/Spec/Poly1305Vector.lean. Its own main, for
 # bin/diff_rsa_ifma's reason. test/poly1305_equiv_vector.c defines
-# CH_CPU_RUNTIME itself, so the line names no define.
-bin/diff_poly1305_vector: test/diff_poly1305_vector_test.c test/poly1305_equiv_vector.c src/poly1305.c \
-                          src/poly1305_vector.c src/ct.c src/ct_wipe.c $(HDRS) $(TESTH)
+# CH_CPU_RUNTIME itself, so the line names no define. On x86-64 the
+# native copy's update calls the AVX2 and IFMA kernels, so the line links
+# their copies as bin/poly1305_equiv_test does; on arm64 they compile to
+# nothing.
+bin/diff_poly1305_vector: test/diff_poly1305_vector_test.c test/poly1305_equiv_vector.c \
+                          test/poly1305_equiv_avx2.c test/poly1305_equiv_ifma.c src/poly1305.c \
+                          src/poly1305_vector.c src/poly1305_avx2_native.c src/poly1305_avx2.c \
+                          src/poly1305_ifma_native.c src/poly1305_ifma.c src/avx512_wipe.c src/ct.c \
+                          src/ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/diff_poly1305_vector_test.c \
-	  test/poly1305_equiv_vector.c src/ct.c src/ct_wipe.c
+	  test/poly1305_equiv_vector.c test/poly1305_equiv_avx2.c test/poly1305_equiv_ifma.c src/ct.c src/ct_wipe.c
 # The AVX2 arm: rsa_avx2.c's products and squares and rsa_vp1_cpu's AVX2
 # path, compiled over the lane model as bin/rsa_avx2_model_test compiles
 # them, against spec/lean/Spec/RsaAvx2.lean. Its own main for the same

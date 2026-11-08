@@ -38,7 +38,10 @@
 # ch_srv_check with and without CH_CPU_AVX512_IFMA on a model without
 # AVX-512 IFMA; and "rsa-addcarry" bin/rsa_addcarry_equiv_test and
 # bin/rsa_sign_equiv_test alone, which gcc builds for x86-64 on
-# rsa_mont64_addcarry.c's rows.
+# rsa_mont64_addcarry.c's rows; and "vector-neon"
+# bin/chacha20_equiv_test and bin/poly1305_equiv_test alone, for arm64,
+# which hold the NEON ChaCha20 and Poly1305 to the portable loops and
+# search the stack each call leaves.
 # The mips job in .github/workflows/check.yml runs the same script on its
 # runner. tools/toolchain.env pins the container, and the container's apt
 # supplies gcc, clang and qemu-user, as the runner's does (Ubuntu 24.04
@@ -67,7 +70,8 @@
 # violations that hand an RSA verifier 0 in place of a session's
 # ch_cfg.cpu with "rsa-ifma-callers", and the violations of the rows'
 # intrinsic, their wipes and the define that picks them with
-# "rsa-addcarry".
+# "rsa-addcarry", and the violations of the NEON arms of
+# chacha20_vector.c and poly1305_vector.c with "vector-neon".
 # Needs docker (OrbStack works); skips without it.
 set -euo pipefail
 
