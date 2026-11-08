@@ -308,7 +308,8 @@ Home: github.com/c4milo.
   G that is read whole and kept by mask, a host session whose caller
   sets CH_CPU_CONSTANT_TIME_MULTIPLY; `p256_wide_verify.c` and
   `p256_wide_verify_point.c` run `p256.[ch]`'s verification on the wide
-  field, with variable-time Jacobian routines of their own and an inverse
+  field, with variable-time Jacobian additions of their own and the key
+  exchange's doubling (docs/decisions.md 196), and an inverse
   of s that stops at the first zero a, in every session of a host object) +
   `p256_adx.h` with `p256_adx_names.h`, `p256_adx_asm.h` and the
   `p256_adx_*` files (the wide files compiled once more under renames,
