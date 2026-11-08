@@ -16972,3 +16972,29 @@ does nothing more.
 
       One verification under `qemu-x86_64 -cpu max` and gcc 13.3 retires
       7,468,098 instructions where it retired 9,258,177.
+
+202. **A host object writes out the inner loop of `mlk_sample_cbd`.** On an
+    EPYC 7763 an ML-KEM-768 encapsulation took 22.8 µs under gcc 13.3 and
+    19.1 µs under clang 23, 1.05 and 0.88 of OpenSSL 3.6.4's time.
+
+    - **The cause.** `perf record` put 8.3% of gcc's encapsulation in
+      `mlk_sample_cbd`, 1.8 µs, against 2.5% of clang's, 0.46 µs. gcc 13
+      at -O2 kept the loop over the eight coefficients of a 32-bit word,
+      and shifted the word by a register for each of them. clang writes
+      the loop out and shifts by constants.
+    - **The change.** `#pragma GCC unroll 8` on that loop, under
+      `CH_CPU_RUNTIME`, so a device object's code is the same as before.
+      Keccak takes most of the rest of gcc's lead over clang here: the
+      SHAKE and SHA-3 calls are 29% and 31% of the two encapsulations,
+      and another item of this wave works on `sha3.c`.
+    - **Numbers.** A/B runs 42520196408, 42520851760 and 42522580036 on the
+      EPYC 7763, in µs, each the median of five processes:
+
+      | ML-KEM-768 | gcc before | gcc after | clang before | clang after |
+      | --- | --- | --- | --- | --- |
+      | key generation | 19.31, 19.30, 19.52 | 18.99, 18.71, 18.60 | 16.37, 16.31, 16.68 | 16.38, 16.56, 16.22 |
+      | encapsulation | 21.96, 22.01, 22.26 | 21.45, 21.24, 21.16 | 18.37, 18.36, 18.48 | 18.23, 18.54, 18.21 |
+      | decapsulation | 25.11, 25.28, 25.41 | 24.68, 24.55, 24.31 | 20.31, 20.28, 20.51 | 20.19, 20.48, 20.19 |
+
+      Under `qemu-x86_64 -cpu max` and gcc 13.3, an encapsulation retires
+      309,534 instructions where it retired 332,858.

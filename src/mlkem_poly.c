@@ -463,6 +463,12 @@ void mlk_sample_cbd(mlk_poly *p, const uint8_t seed[32], uint8_t nonce) {
         uint32_t t = (uint32_t)buf[4 * i] | ((uint32_t)buf[4 * i + 1] << 8) |
                      ((uint32_t)buf[4 * i + 2] << 16) | ((uint32_t)buf[4 * i + 3] << 24);
         uint32_t d = (t & 0x55555555U) + ((t >> 1) & 0x55555555U);
+        // gcc 13 at -O2 kept this loop, and shifted d by a register each
+        // time. Written out, every shift is a constant (docs/decisions.md
+        // 202). A device object keeps the loop.
+#ifdef CH_CPU_RUNTIME
+#pragma GCC unroll 8
+#endif
         for (size_t j = 0; j < 8; j++) {
             int16_t a = (int16_t)((d >> (4 * j)) & 0x3);
             int16_t b = (int16_t)((d >> (4 * j + 2)) & 0x3);
