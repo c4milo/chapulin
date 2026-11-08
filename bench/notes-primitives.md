@@ -16,6 +16,31 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of 15c37ef4
+
+The AVX-512 CSVs now hold a run of 2026-11-08 on 15c37ef4, on a Xeon
+Platinum 8573C (bench run 42443861605). The run of 2026-11-01 came before
+docs/decisions.md 175, 176 and 178, so its ML-DSA-87 and P-256 rows did
+not show those three changes. The other job of the run drew an AMD EPYC
+9V74 with no AVX-512 flags, not the EPYC 7763 of its CSVs, so those CSVs
+keep their run.
+
+What moved by design:
+
+- **ML-DSA-87's key generation takes 0.27 of its time under gcc and 0.14
+  under clang**, its signature 0.70 and 0.73, and its verification 0.61
+  and 0.58. Key generation takes 292 µs under gcc and 183 µs under clang,
+  where it took 1.10 and 1.28 ms.
+- **P-256's shared secret takes 0.87 of its time under gcc and 0.90 under
+  clang**, and its verification 0.93 and 0.87. The point formulas run the
+  product and the square inline (decision 175).
+
+What moved otherwise:
+
+- **This host is faster than the last one.** OpenSSL's rows above the
+  AEADs took 0.94 to 1.01 of their time, and its AEAD rows 0.78 to 0.83.
+  chapulin's AEAD rows moved with them, 0.76 to 0.83.
+
 ## The run of 0b1608d1
 
 The M1 Pro's CSV and the EPYC 7763's CSVs now hold runs of 2026-10-28
