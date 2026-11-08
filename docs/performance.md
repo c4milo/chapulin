@@ -494,8 +494,8 @@ The M1 CSV holds no ML-DSA-87 rows yet, so those three rows show a dash in the M
 | SHA-256, 64 bytes | 72.8 ns | 148 ns | 0.49 | 114 ns | 194 ns | 0.59 | 126 ns | 192 ns | 0.65 | 106 ns | 156 ns | 0.68 | 108 ns | 156 ns | 0.69 |
 | SHA-384, 16 KiB | 11.7 µs | 11.8 µs | 0.99 | 23.1 µs | 21.9 µs | **1.05** | 22.9 µs | 21.9 µs | **1.04** | 23.1 µs | 21.6 µs | **1.07** | 22.5 µs | 21.6 µs | **1.04** |
 | SHA-384, 64 bytes | 127 ns | 185 ns | 0.68 | 231 ns | 332 ns | 0.70 | 226 ns | 333 ns | 0.68 | 225 ns | 295 ns | 0.76 | 205 ns | 295 ns | 0.69 |
-| SHA3-256, 16 KiB | 19.3 µs | 18.6 µs | **1.04** | 51.2 µs | 38.5 µs | **1.33** | 47.5 µs | 38.5 µs | **1.23** | 41.7 µs | 31.8 µs | **1.31** | 38.8 µs | 31.8 µs | **1.22** |
-| SHA3-256, 64 bytes | 171 ns | 341 ns | 0.50 | 458 ns | 491 ns | 0.93 | 427 ns | 492 ns | 0.87 | 356 ns | 393 ns | 0.91 | 333 ns | 393 ns | 0.85 |
+| SHA3-256, 16 KiB | 19.3 µs | 18.6 µs | **1.04** | 46.9 µs | 38.5 µs | **1.22** | 42.9 µs | 38.5 µs | **1.12** | 47.4 µs | 37.2 µs | **1.28** | 40.8 µs | 37.0 µs | **1.10** |
+| SHA3-256, 64 bytes | 171 ns | 341 ns | 0.50 | 424 ns | 489 ns | 0.87 | 371 ns | 490 ns | 0.76 | 409 ns | 460 ns | 0.89 | 352 ns | 458 ns | 0.77 |
 | X25519 key generation | 10.7 µs | 27.3 µs | 0.39 | 15.0 µs | 33.8 µs | 0.44 | 14.1 µs | 33.8 µs | 0.42 | 11.5 µs | 27.2 µs | 0.42 | 10.9 µs | 27.3 µs | 0.40 |
 | X25519 shared secret | 28.5 µs | 28.7 µs | 0.99 | 38.2 µs | 36.5 µs | **1.05** | 33.6 µs | 36.5 µs | 0.92 | 29.3 µs | 30.0 µs | 0.98 | 27.1 µs | 30.0 µs | 0.90 |
 | P-256 key generation | 10.1 µs | 9.68 µs | **1.04** | 15.3 µs | 12.3 µs | **1.24** | 12.0 µs | 12.3 µs | 0.97 | 12.4 µs | 10.5 µs | **1.18** | 10.3 µs | 10.5 µs | 0.98 |
@@ -782,8 +782,10 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   run the second. The first, the CSV's rows under `ch_cfg.cpu 0x1`, takes 1.42 times OpenSSL's time
   over 16 KiB and 0.88 of it over 64 bytes under gcc, and 1.41 times and 0.89 of it under clang. On
   the tree of decision 124, which held no x86-64 SHA-512 code, the portable C took 2.06 and 1.21
-  times under gcc and 2.20 and 1.57 times under clang (decision 93). SHA3-256 takes 1.33 times and
-  0.93 of it under gcc, where `sha3.c`'s loops took 7.68 and 5.02 times (decision 98).
+  times under gcc and 2.20 and 1.57 times under clang (decision 93). SHA3-256 takes 1.22 times and
+  0.87 of it under gcc, and 1.12 times and 0.76 of it under clang, with six lanes kept inverted
+  between rounds (decision 195). The plain round took 1.33 and 0.93 times under gcc and 1.23 and
+  0.87 times under clang, and `sha3.c`'s loops 7.68 and 5.02 times under gcc (decision 98).
 - P-256's key generation and shared secret take 1.24 and 1.25 times OpenSSL's time under gcc, and
   its signature 1.08 times, on the wide files with the table of decision 109, the additions of
   decision 111, the Jacobian key exchange of decision 112, the inline additions of decision 114 and
@@ -861,8 +863,9 @@ What the AVX-512 machine's columns show:
   OpenSSL's time under gcc and 1.86 to 1.94 times under clang, so the kernel takes 0.47 to 0.53 of
   their time. The key expansion of decision 123 takes 18 and 20 ns under gcc.
 - SHA-384 takes 1.07 times OpenSSL's time over 16 KiB under gcc and 1.04 times under clang, and 0.76
-  and 0.69 of it over 64 bytes, on `sha512_avx2.c` (decision 128). SHA3-256 over 16 KiB takes 1.31
-  times under gcc and 1.22 under clang. ML-KEM-768's encapsulation takes 1.14 times OpenSSL's time
+  and 0.69 of it over 64 bytes, on `sha512_avx2.c` (decision 128). SHA3-256 over 16 KiB takes 1.28
+  times under gcc and 1.10 under clang, where the plain round took 1.31 and 1.22 times (decision
+  195). That run's runner timed both libraries about 17% slower than the run of the other rows. ML-KEM-768's encapsulation takes 1.14 times OpenSSL's time
   under gcc and 0.91 of it under clang, and its key generation and decapsulation 0.46 to 0.81 of it.
 
 To record a column again after a change to a primitive:
