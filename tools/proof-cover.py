@@ -181,6 +181,19 @@ AUDITED = {
         "under a ch_cfg.cpu value with the multiply bit and CH_CPU_AVX2. "
         "Delete this entry if a harness can ever compile the file."
     ),
+    "aead_avx2.c": (
+        "the one-pass ChaCha20-Poly1305 seal and open of an x86-64 host object, "
+        "over chacha20_avx2_lanes.h's and poly1305_avx2_lanes.h's intrinsics, "
+        "the text the chacha20_avx2.c and poly1305_avx2.c entries read, which "
+        "CBMC cannot read, so no harness compiles the file. Its own code adds "
+        "no bitwise operator: it computes byte offsets and pass counts as "
+        "size_t from n, at least AEAD_AVX2_MIN by the CH_ASSERT at each entry, "
+        "and pass_counter converts 1 + 8 times a pass index to uint32_t, "
+        "which wraps modulo 2^32 as chacha20.c's counter does. "
+        "bin/aead_avx2_equiv_test holds both entries to the two-pass AEAD on "
+        "every length to 3,072 bytes and at 16 KiB, on a CPU with AVX2. "
+        "Delete this entry if a harness can ever compile the file."
+    ),
     "mlkem_vector.c": (
         "a host object's ML-KEM NTT, inverse NTT and base multiplication on "
         "eight 16-bit lanes, written in NEON or SSE2 intrinsics through "

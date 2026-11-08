@@ -1,0 +1,14 @@
+invariant: INV-16
+file: src/aead_avx2.c
+catches: test/docker-aes-runtime-qemu.sh aead-avx2
+reason: each pass of the open absorbs the bytes at pt in place of the bytes
+  at ct. An open in place reads the same bytes, so only a separate output
+  shows it: there the pass absorbs bytes it has not written, the tag does
+  not match, and the open of a correct record fails.
+  bin/aead_avx2_equiv_test opens into a separate output; the script runs
+  it for x86-64 under qemu-x86_64.
+
+--- old
+pass_hashing(input, pass_counter(index), ct + offset, pt + offset, ct + offset, h, &of_r);
+--- new
+pass_hashing(input, pass_counter(index), ct + offset, pt + offset, pt + offset, h, &of_r);

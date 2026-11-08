@@ -10,14 +10,16 @@ reason: aead.c gains a call into hkdf.c, the way chacha20_vector.c gained one
 #include "ct.h"
 #include "widemul.h"
 
+// The padding Poly1305 absorbs after the aad and after the ciphertext.
+static const uint8_t ZEROS[16] = {0};
+
 // MAC input per RFC 8439: aad, pad to 16, ct, pad to 16, le64(aad_len),
 // le64(ctlen). widemul is the answer Poly1305's block loop runs under
-// (widemul.h). cpu is the session's ch_cfg.cpu, from which the
-// ciphertext's update picks its path (widemul_poly1305_update_cpu), and 0
-// from aead_seal and aead_open, which hold no description of the CPU.
-static void mac(uint32_t cpu, uint8_t widemul, const uint8_t key[CHACHA20_KEY],
-                const uint8_t nonce[CHACHA20_NONCE], const uint8_t *aad, size_t aad_len,
-                const uint8_t *ct, size_t n, uint8_t tag[AEAD_TAG]) {
+// (widemul.h). mac_start keys p and absorbs the aad and its padding, and
+// mac_end absorbs the padding of n bytes of ciphertext and the lengths,
+// and writes the tag.
+static void mac_start(uint8_t widemul, poly1305 *p, const uint8_t key[CHACHA20_KEY],
+                      const uint8_t nonce[CHACHA20_NONCE], const uint8_t *aad, size_t aad_len) {
     uint8_t otk[CHACHA20_BLOCK];
     chacha20_block(key, nonce, 0, otk);
 --- new
@@ -25,14 +27,16 @@ static void mac(uint32_t cpu, uint8_t widemul, const uint8_t key[CHACHA20_KEY],
 #include "hkdf.h"
 #include "widemul.h"
 
+// The padding Poly1305 absorbs after the aad and after the ciphertext.
+static const uint8_t ZEROS[16] = {0};
+
 // MAC input per RFC 8439: aad, pad to 16, ct, pad to 16, le64(aad_len),
 // le64(ctlen). widemul is the answer Poly1305's block loop runs under
-// (widemul.h). cpu is the session's ch_cfg.cpu, from which the
-// ciphertext's update picks its path (widemul_poly1305_update_cpu), and 0
-// from aead_seal and aead_open, which hold no description of the CPU.
-static void mac(uint32_t cpu, uint8_t widemul, const uint8_t key[CHACHA20_KEY],
-                const uint8_t nonce[CHACHA20_NONCE], const uint8_t *aad, size_t aad_len,
-                const uint8_t *ct, size_t n, uint8_t tag[AEAD_TAG]) {
+// (widemul.h). mac_start keys p and absorbs the aad and its padding, and
+// mac_end absorbs the padding of n bytes of ciphertext and the lengths,
+// and writes the tag.
+static void mac_start(uint8_t widemul, poly1305 *p, const uint8_t key[CHACHA20_KEY],
+                      const uint8_t nonce[CHACHA20_NONCE], const uint8_t *aad, size_t aad_len) {
     uint8_t otk[CHACHA20_BLOCK];
     chacha20_block(key, nonce, 0, otk);
     uint8_t probe[SHA256_LEN];

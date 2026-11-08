@@ -1,0 +1,18 @@
+invariant: INV-17
+file: src/aead_avx2.c
+catches: test/docker-aes-runtime-qemu.sh aead-avx2
+reason: aead_avx2_open returns without VZEROALL. Its last step is the
+  keystream of the rest of the message, so ymm0 to ymm15 hold keystream and
+  state words, which give the key. Every tag and byte is still right.
+  bin/aead_avx2_equiv_test sets every bit of the sixteen registers, calls
+  the entry and requires every stored word zero. The file has a body on
+  x86-64 alone, so the script builds the binary for x86-64 and runs it
+  under qemu-x86_64.
+
+--- old
+    xor_message(input, pass_counter(passes - 1), ct + hashed, pt + hashed, n - hashed);
+    ct_wipe(input, sizeof input);
+    _mm256_zeroall();
+--- new
+    xor_message(input, pass_counter(passes - 1), ct + hashed, pt + hashed, n - hashed);
+    ct_wipe(input, sizeof input);

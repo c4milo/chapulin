@@ -1,0 +1,18 @@
+invariant: INV-49
+file: src/aead_avx2.c
+catches: test/lint-frame-align.sh
+reason: pass_hashing loses the attribute that makes clang align its frame
+  to 32 bytes. Its rounds and its Poly1305 groups store and reload 256-bit
+  values in stack slots, and clang then places those slots wherever the
+  caller's stack pointer leaves them, so some lie across a cache line or a
+  page boundary, as chacha20_avx2.c's pass did before decision 124. Every
+  test still passes, because the bytes are the same. gcc aligns the frame
+  on its own and CI compiles with gcc, so the lint reads what the pinned
+  clang compiles for x86-64.
+
+--- old
+__attribute__((force_align_arg_pointer)) static void
+pass_hashing(
+--- new
+static void
+pass_hashing(

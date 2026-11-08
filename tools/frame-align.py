@@ -4,7 +4,7 @@
 Run from the repository root, with the pinned clang:
 
     python3 tools/frame-align.py "$(make -s print-clang-rv)" chacha20_avx2.c keccak_avx2.c \
-        sha512_avx2.c
+        sha512_avx2.c aead_avx2.c
 
 The arguments after the compiler are the sources the script reads. It takes
 them so that the recipe of make lint-frame-align names them, and it refuses
@@ -22,6 +22,10 @@ each store and load of it stalls (docs/decisions.md 124, INV-49). gcc aligns
 the frame on its own, and no clang build of this machine or of CI's check job
 runs these files on a CPU: this machine is arm64 and CI compiles with gcc. So
 this script reads what clang compiles.
+
+aead_avx2.c's pass_hashing runs chacha20_avx2.c's rounds beside Poly1305's
+groups, so it keeps more values in 256-bit slots than pass does, and carries
+the same attribute (docs/decisions.md 199).
 
 sha512_avx2.c's sha512_avx2_compress_blocks is the third function it reads.
 Its loop stores four sums at a time, 256 bits, to an array in its frame, and a
@@ -73,6 +77,7 @@ SOURCES = {
     "src/chacha20_avx2.c": "pass",
     "src/keccak_avx2.c": "keccak_avx2_permute",
     "src/sha512_avx2.c": "sha512_avx2_compress_blocks",
+    "src/aead_avx2.c": "pass_hashing",
 }
 
 # lint-wide-multiply's x86-64 machine, headers, level and hosted compile

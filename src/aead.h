@@ -1,6 +1,8 @@
-// ChaCha20-Poly1305 AEAD (RFC 8439 §2.8). Verify-before-decrypt: open
-// computes the tag over the ciphertext first and never releases a byte of
-// plaintext on a bad tag.
+// ChaCha20-Poly1305 AEAD (RFC 8439 §2.8). An open never returns a byte of
+// plaintext on a bad tag. aead_open computes the tag over the ciphertext
+// first and writes nothing on a mismatch. aead_open_cpu may decrypt while
+// it computes the tag, and then wipes the bytes it wrote on a mismatch, as
+// gcm.h's open does (docs/decisions.md 85 and 199).
 #ifndef CH_AEAD_H
 #define CH_AEAD_H
 
@@ -36,8 +38,12 @@ int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[
 // contracts. Both take the session's ch_cfg.cpu in place of the answer,
 // and read two bits of it: CH_CPU_CONSTANT_TIME_MULTIPLY gives the answer
 // Poly1305 runs under (widemul_of_cpu), and chacha20_xor_cpu runs the
-// keystream on the path the value names. A record and a QUIC packet go
-// through these two. aead_seal and aead_open run the keystream on the
+// keystream on the path the value names. On x86-64, where the value holds
+// CH_CPU_AVX2 and the multiply bit and not CH_CPU_AVX512_IFMA, a message of
+// AEAD_AVX2_MIN bytes or more runs aead_avx2.c's one pass instead. That
+// open writes the plaintext before it compares the tag, and on a mismatch
+// it writes zero over the n bytes at pt and returns 0. A record and a QUIC
+// packet go through these two. aead_seal and aead_open run the keystream on the
 // 128-bit path, for a caller with an answer and no description of the
 // CPU.
 void aead_seal_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],

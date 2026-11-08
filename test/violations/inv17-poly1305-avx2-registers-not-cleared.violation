@@ -1,5 +1,5 @@
 invariant: INV-17
-file: src/poly1305_avx2.c
+file: src/poly1305_avx2_lanes.h
 catches: test/docker-aes-runtime-qemu.sh poly1305-avx2
 reason: poly1305_avx2_blocks ends with VZEROUPPER where it had VZEROALL,
   as it already clears the upper halves before carry_scalar (decision

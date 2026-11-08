@@ -1,0 +1,13 @@
+invariant: INV-16
+file: src/aead_avx2.c
+catches: test/docker-aes-runtime-qemu.sh aead-avx2
+reason: each pass of the seal absorbs the ciphertext of its own pass in
+  place of the pass before it, so it reads bytes it has not yet
+  encrypted and the tag is wrong for every seal of AEAD_AVX2_MIN bytes or
+  more. bin/aead_avx2_equiv_test compares the tag with the two-pass
+  AEAD's; the script runs it for x86-64 under qemu-x86_64.
+
+--- old
+ct + offset, ct + offset - PASS_BYTES,
+--- new
+ct + offset, ct + offset,

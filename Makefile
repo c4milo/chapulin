@@ -353,7 +353,7 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
         src/pem.c src/base64.c src/x509.c src/x509_der.c src/x509_ca.c src/webpki_time.c src/webpki_name.c src/webpki_spki.c src/webpki_ext.c src/buf.c src/record.c src/keysched.c src/io.c src/handshake_message.c src/handshake_parser.c src/handshake_parser_ee.c src/handshake_record.c src/session.c \
         src/handshake_auth.c src/handshake_flight.c src/handshake.c src/handshake_post.c src/tls.c src/tls_entry.c src/session_report.c src/tls_write.c src/softmul.c src/build.c
 
-HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
+HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
         src/pem.h src/base64.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
         include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
         src/keccak_neon.h src/keccak_neon_round.h src/mlkem_neon.h src/mldsa_neon.h \
@@ -738,6 +738,7 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
           test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c test/chacha20_equiv_test.c \
+          src/aead_avx2.c test/aead_avx2_equiv_test.c \
           test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c test/chacha20_equiv_avx512.c \
           src/avx512_wipe.c test/avx512_wipe_test.c src/x25519_wide.c \
           test/x25519_equiv_test.c src/x25519_adx.c test/x25519_adx_model.c test/x25519_adx_model_test.c \
@@ -778,7 +779,7 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h \
          test/sha2_equiv_residue512_avx2.h test/avx2_registers.h test/sha2_equiv_length512.h \
          test/sha512_portable.h \
-         test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h test/x86_kernels_sha512.h test/x86_kernels_gcm.h \
+         test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h test/x86_kernels_sha512.h test/x86_kernels_gcm.h test/x86_kernels_aead.h test/aead_avx2_equiv_residue.h \
          test/rsa_ifma_count.h test/aead_avx512_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/aes_equiv_gcm.h test/aes_equiv_residue.h test/ghash_equiv_eor3.h test/ghash_equiv_lengths.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/gcm_avx512_residue.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
@@ -1887,6 +1888,7 @@ host_srcs = $(call sha512_host_of,$(1)) $(call widemul_native_of,$(1)) \
             $(if $(filter src/chacha20.c src/poly1305.c src/rsa_sign.c src/gcm.c,$(1)),$(AVX512_WIPE_SRCS)) \
             $(if $(filter src/poly1305.c,$(1)),src/poly1305_vector_native.c src/poly1305_avx2_native.c \
               src/poly1305_ifma_native.c) \
+            $(if $(filter src/aead.c,$(1)),src/aead_avx2.c) \
             $(if $(filter src/rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
             $(if $(filter src/rsa_sign.c,$(1)),$(RSA_SIGN64_SRCS)) \
             $(if $(filter src/mlkem.c,$(1)),src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c) \
@@ -1921,6 +1923,12 @@ endif
 # entries 83, 89 and 110 say why.
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += src/poly1305_vector_native.c src/poly1305_avx2_native.c src/poly1305_ifma_native.c
+endif
+# An x86-64 host object holds the one-pass ChaCha20-Poly1305 seal and open
+# beside the two-pass AEAD, which a session with the multiply bit and
+# CH_CPU_AVX2 runs; the file has no body on arm64 (docs/decisions.md 199).
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += src/aead_avx2.c
 endif
 # A host object holds SHA-256 on the CPU's instructions and the two copies
 # over it (hash_hw_of above); a session's hash bit picks them, and a device
@@ -2132,6 +2140,7 @@ print-aes-runtime-qemu-srcs:
 	@echo $(MLDSA_AVX2_EQUIV_TEST_SRCS)
 	@echo $(RSA_MONT64_ADX_TEST_SRCS)
 	@echo $(KECCAK_NEON_EQUIV_TEST_SRCS)
+	@echo $(AEAD_AVX2_EQUIV_TEST_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -3651,6 +3660,17 @@ bin/rsa_test_host: test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS)) $(HDRS) $(
 CHACHA20_EQUIV_TEST_SRCS := test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c \
                             test/chacha20_equiv_avx512.c src/chacha20.c src/ct.c src/ct_wipe.c \
                             test/stack_residue.c
+# The one-pass ChaCha20-Poly1305 of an x86-64 host object against the
+# two-pass AEAD of the same object, both through aead_seal_cpu and
+# aead_open_cpu under two ch_cfg.cpu values (docs/decisions.md 199). Its
+# cases run on a CPU with AVX2; on arm64 it compiles to a skip.
+AEAD_AVX2_EQUIV_TEST_SRCS := $(call host_srcs,src/aead.c src/chacha20.c src/poly1305.c src/ct.c \
+                             src/ct_wipe.c) test/stack_residue.c
+bin/aead_avx2_equiv_test: test/aead_avx2_equiv_test.c \
+                          $(AEAD_AVX2_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/aead_avx2_equiv_test.c $(AEAD_AVX2_EQUIV_TEST_SRCS)
 bin/chacha20_equiv_test: test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS) $(CHACHA_VECTOR_SRCS) \
                          src/avx512_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -3859,7 +3879,8 @@ bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRC
 X86_KERNELS_TEST_SRCS := $(filter-out src/chacha20_avx2.c src/chacha20_avx512.c src/gcm_vaes.c src/gcm_avx512_kernel.c src/keccak_avx2.c \
                            src/mlkem_avx2.c \
                            src/poly1305_avx2_native.c src/poly1305_ifma_native.c src/rsa_ifma.c src/rsa_avx2.c src/rsa_ifma_sign.c \
-                           src/rsa_mont64_adx.c src/avx512_wipe.c $(SHA512_AVX2_UNIT) src/sha512_compress_blocks.c, \
+                           src/rsa_mont64_adx.c src/avx512_wipe.c $(SHA512_AVX2_UNIT) src/sha512_compress_blocks.c \
+                           src/aead_avx2.c, \
                            $(call host_srcs,src/record.c \
                            src/quic_packet.c src/quic_keys.c src/quic_initial.c src/aes.c $(AES_HW_SRCS) src/quic_aes_soft.c src/gcm.c src/aead.c \
                            src/chacha20.c src/poly1305.c src/hkdf.c src/sha256.c src/sha512.c src/sha512_compress.c src/buf.c src/ct.c src/ct_wipe.c \
@@ -4915,7 +4936,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/p256_verify_equiv_test bin/p384_equiv_test bin/p384_test_host \
                                  bin/p256_adx_model_test bin/p256_adx_equiv_test \
                                  bin/p256_adx_verify_model_test bin/p256_adx_verify_equiv_test \
-                                 bin/chacha20_equiv_test bin/poly1305_equiv_test \
+                                 bin/chacha20_equiv_test bin/poly1305_equiv_test bin/aead_avx2_equiv_test \
                                  bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/mlkem_hw_equiv_test \
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
                                  bin/mldsa_vector_equiv_test bin/mldsa_runtime_test \
@@ -7470,7 +7491,7 @@ else
 	  $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
 	  test/p384_portable.c \
 	  test/diff_x25519_test.c test/diff_p256_wide_test.c src/chacha20_vector.c test/chacha20_equiv_vector.c \
-	  test/chacha20_equiv_test.c \
+	  test/chacha20_equiv_test.c src/aead_avx2.c test/aead_avx2_equiv_test.c \
 	  src/avx512_wipe.c test/avx512_wipe_test.c test/chacha20_equiv_avx512.c src/poly1305_vector.c \
 	  test/poly1305_equiv_vector.c test/stack_residue.c \
 	  src/poly1305_avx2.c test/poly1305_equiv_avx2.c src/poly1305_ifma.c test/poly1305_equiv_ifma.c \
@@ -7642,6 +7663,9 @@ else
 	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
 	  test/chacha20_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -Isrc -Iinclude/chapulin -Iinclude -I.)
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
+	  test/aead_avx2_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	# rsa_avx2.c over its lane model, as bin/rsa_avx2_model_test runs it on
 	# every host, with rsa_mont.c's dispatch to it and the two test mains
 	# (docs/decisions.md 122). test/rsa_avx2_model.c and
@@ -7689,8 +7713,9 @@ else
 	# Poly1305 as their native copies, which have a body on x86-64 alone,
 	# with poly1305.c's native copy, whose x86-64 arm holds the updates that
 	# call them, and aead.c, whose MAC calls them through widemul.h's x86-64
-	# arm.
-	@$(call TIDY_EACH,src/poly1305_avx2_native.c src/poly1305_ifma_native.c src/poly1305_native.c src/aead.c, \
+	# arm, and aead_avx2.c, the one-pass AEAD (docs/decisions.md 199).
+	@$(call TIDY_EACH,src/poly1305_avx2_native.c src/poly1305_ifma_native.c src/poly1305_native.c src/aead.c \
+	  src/aead_avx2.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# A host object's ML-KEM NTT (docs/decisions.md 101). mlkem_vector.c
@@ -8797,7 +8822,7 @@ WIDE64_CEILING := src/x25519_wide.c:0 src/x25519_adx.c:0 src/rsa_mont64_adx.c:0 
                   src/poly1305_vector_native.c:0 src/poly1305_avx2_native.c:0 src/poly1305_ifma.c:0 \
                   src/poly1305_ifma_native.c:0 src/sha256_hw.c:0 src/sha512_hw.c:0 src/hkdf_hw.c:0 src/keysched_hw.c:0 src/rsa_mont64.c:0 \
                   src/rsa_mont64_blocks.c:0 src/rsa_mont64_addcarry.c:0 src/rsa_sign64.c:0 src/rsa_sign64_wipe.c:0 src/rsa_ifma.c:0 src/rsa_ifma_sign.c:0 \
-                  src/rsa_avx2.c:0 \
+                  src/rsa_avx2.c:0 src/aead_avx2.c:0 \
                   src/sha3_hw.c:0 src/mlkem_hw.c:0 src/mlkem_poly_hw.c:0 src/mlkem_vector.c:0 src/mldsa_vector.c:0 \
                   src/keccak_avx2.c:0 src/mlkem_avx2.c:0 src/mldsa_avx2.c:0 src/avx512_wipe.c:0 src/sha512_compress_blocks.c:0 \
                   src/keccak_neon.c:0 src/mlkem_neon.c:0 src/mldsa_neon.c:0 \
@@ -8913,7 +8938,7 @@ WIDEMUL_DEFINES := src/quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_pack
                    src/chacha20_vector.c:-DCH_CPU_RUNTIME src/chacha20_avx2.c:-DCH_CPU_RUNTIME \
                    src/chacha20_avx512.c:-DCH_CPU_RUNTIME \
                    src/poly1305_vector.c:-DCH_CPU_RUNTIME src/poly1305_avx2.c:-DCH_CPU_RUNTIME \
-                   src/poly1305_ifma.c:-DCH_CPU_RUNTIME \
+                   src/poly1305_ifma.c:-DCH_CPU_RUNTIME src/aead_avx2.c:-DCH_CPU_RUNTIME \
                    src/x25519_wide.c:-DCH_CPU_RUNTIME src/x25519_adx.c:-DCH_CPU_RUNTIME src/rsa_mont64_adx.c:-DCH_CPU_RUNTIME src/rsa_mont64.c:-DCH_CPU_RUNTIME src/rsa_mont64_blocks.c:-DCH_CPU_RUNTIME \
                    src/rsa_mont64_addcarry.c:-DCH_CPU_RUNTIME$(COMMA)-DRSA_MONT64_ADDCARRY=1$(COMMA)-DRSA_MONT64_BLOCKS=0 \
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
@@ -9225,6 +9250,11 @@ WIDEMUL_SPECS := \
 #   own. A pass holds the loop over the ten double rounds and tests of the
 #   limit against the rows it writes: 34 branches on arm64, whose pass
 #   holds two groups, and 17 in each x86-64 file.
+# aead_avx2.c, 0 and 50: the 17 of chacha20_avx2.c's pass, its own copy of the
+#   xor entry's tests of n in each of the seal and the open, the CH_ASSERT's
+#   tests of n and p->fill, the loops over the passes and over the groups
+#   of the rest, and the test of the bytes after them. Each reads n, a
+#   loop index or p->fill, which are public (docs/decisions.md 199).
 # poly1305_native.c, 22 and 22; poly1305.c@host, 21 and 19: update's tests
 #   of the count of buffered bytes and of n, final's tests of that count
 #   and the loop that pads the last block, and the block loop. The native
@@ -9409,9 +9439,12 @@ WIDEMUL_SPECS := \
 # drbg.c@host, 5 and 5: ch_drbg_seed's CH_ASSERT on the seed's length, and
 #   ch_rand_bytes' tests of whether the generator was seeded and of n for
 #   zero and its loop over n.
-# aead.c@host, 4 and 6: mac's tests of the session's multiply answer and of
+# aead.c@host, 4 and 17: mac's tests of the session's multiply answer and of
 #   the CPU bits that pick a Poly1305, and aead_open's and aead_open_cpu's
-#   `if (!ok)` on the tag, which the caller is told.
+#   `if (!ok)` on the tag, which the caller is told. On x86-64 use_one_pass
+#   tests the CPU bits and n, the one-pass open tests its verdict, and
+#   mac_start and mac_end, inlined in the one pass's seal and open, test
+#   the answer each time (docs/decisions.md 199).
 # aes.c@host, 20 and 19; gcm.c@host, 20 and 32: the bytes of a schedule that
 #   record its round count and which cipher expanded it, a key length
 #   against 16 and 32, aes_traffic_key_load's CH_ASSERT on its key_len,
@@ -9805,7 +9838,7 @@ BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/cha
                src/sha512.c \
                src/sha512_compress.c src/p256_scalar.c src/poly1305_native.c src/mlkem_poly_native.c \
                src/poly1305_vector_native.c src/poly1305_avx2.c src/poly1305_avx2_native.c src/poly1305_ifma.c \
-               src/poly1305_ifma_native.c \
+               src/poly1305_ifma_native.c src/aead_avx2.c \
                src/sha256_hw.c src/sha512_hw.c src/hkdf_hw.c src/keysched_hw.c src/rsa_mont64.c src/rsa_mont64_blocks.c \
                src/sha512_compress_blocks.c src/sha512_avx2.c \
                src/rsa_mont64_addcarry.c src/rsa_sign64.c src/rsa_sign64_wipe.c src/rsa_ifma.c src/rsa_ifma.c@512 src/rsa_avx2.c \
@@ -9996,6 +10029,7 @@ BRANCH_CEILING := \
   arm64/src/poly1305_vector.c:0 x86-64/src/poly1305_vector.c:0 \
   arm64/src/poly1305_avx2.c:0 x86-64/src/poly1305_avx2.c:0 \
   arm64/src/poly1305_ifma.c:0 x86-64/src/poly1305_ifma.c:0 \
+  arm64/src/aead_avx2.c:0 x86-64/src/aead_avx2.c:50 \
   arm64/src/rsa_mont64.c:71 x86-64/src/rsa_mont64.c:109 \
   arm64/src/rsa_mont64_blocks.c:14 x86-64/src/rsa_mont64_blocks.c:0 \
   arm64/src/rsa_mont64_addcarry.c:11 x86-64/src/rsa_mont64_addcarry.c:23 \
@@ -10019,7 +10053,7 @@ BRANCH_CEILING := \
   arm64/src/base64.c@host:0 x86-64/src/base64.c@host:0 \
   arm64/src/sha256.c@host:28 x86-64/src/sha256.c@host:35 arm64/src/sha3.c@host:75 x86-64/src/sha3.c@host:84 \
   arm64/src/hkdf.c@host:19 x86-64/src/hkdf.c@host:19 arm64/src/chacha20.c@host:1 x86-64/src/chacha20.c@host:3 \
-  arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:6 \
+  arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:17 \
   arm64/src/mlkem.c@host:12 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:79 x86-64/src/rsa_sign.c@host:67 \
   arm64/src/drbg.c@host:5 x86-64/src/drbg.c@host:5 \
   arm64/src/aes.c@host:20 x86-64/src/aes.c@host:19 arm64/src/gcm.c@host:22 x86-64/src/gcm.c@host:32 \
@@ -10420,7 +10454,8 @@ lint-frame-align:
 ifeq ($(CLANG_RV),)
 	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	@python3 tools/frame-align.py "$(CLANG_RV)" src/chacha20_avx2.c src/keccak_avx2.c src/sha512_avx2.c
+	@python3 tools/frame-align.py "$(CLANG_RV)" src/chacha20_avx2.c src/keccak_avx2.c src/sha512_avx2.c \
+	  src/aead_avx2.c
 endif
 
 # sha512_avx2.c's kernel runs a quarter of a schedule step after each

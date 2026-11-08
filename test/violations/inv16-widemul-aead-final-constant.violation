@@ -7,6 +7,6 @@ reason: the AEAD's Poly1305 final runs under WIDEMUL_NOT_STATED whatever
   alone under the constant-time answer.
 
 --- old
-    widemul_poly1305_final(widemul, &p, tag);
+    widemul_poly1305_final(widemul, p, tag);
 --- new
-    widemul_poly1305_final(WIDEMUL_NOT_STATED, &p, tag);
+    widemul_poly1305_final(WIDEMUL_NOT_STATED, p, tag);

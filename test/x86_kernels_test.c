@@ -26,6 +26,9 @@
 //   - chacha20_xor_cpu, and aead_seal_cpu and aead_open_cpu, which pass the value on to the
 //     keystream and to Poly1305's update of the ciphertext. chacha20_xor, aead_seal and aead_open
 //     take no value and run no kernel.
+//   - aead_seal_cpu and aead_open_cpu over 1,061 bytes, which run aead_avx2.c's one pass
+//     where the value names the AVX2 Poly1305 and the two-pass AEAD elsewhere
+//     (test/x86_kernels_aead.h, docs/decisions.md 199).
 //   - a record under each of the three suites, sealed and opened: the direction's cpu picks the
 //     AVX-512 or the AVX2 keystream and the AVX2 Poly1305 under ChaCha20, and the 512-bit
 //     kernel, followed by avx512_wipe_registers, or else the VAES kernels under AES-GCM.
@@ -283,6 +286,8 @@ static void check_chacha20(uint32_t cpu) {
 
 // One record under suite, sealed by a direction whose cpu is the value
 // and opened by another, as a session's two ends hold them.
+#include "x86_kernels_aead.h"
+
 static void check_record(uint16_t suite, uint32_t cpu) {
     uint8_t secret[HKDF_HASH_MAX];
     uint8_t rec[PAYLOAD + REC_OVERHEAD];
@@ -424,6 +429,7 @@ static void check_value(uint32_t cpu) {
                                       SUITE_AES_256_GCM_SHA384};
     int failures_before = failures;
     check_chacha20(cpu);
+    check_aead_one_pass(cpu);
     for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
         check_record(suites[i], cpu);
         check_packets(suites[i], cpu);
@@ -471,6 +477,8 @@ int main(void) {
             "was, RSA signing's exponentiations and check on the IFMA kernels, each followed by "
             "both wipes, where CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY were, and its "
             "exponentiations on MULX and ADX where CH_CPU_BMI2_ADX and the multiply bit were and "
+            "CH_CPU_AVX512_IFMA was not, a ChaCha20-Poly1305 seal or open of 1,024 bytes or "
+            "more on the one pass where CH_CPU_AVX2 and the multiply bit were and "
             "CH_CPU_AVX512_IFMA was not, and none of them anywhere else\n");
     }
     return failures != 0;

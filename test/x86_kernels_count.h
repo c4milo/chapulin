@@ -47,5 +47,9 @@ extern unsigned long x86_poly1305_ifma_calls;
 // Calls to sha512_avx2_compress_blocks, SHA-512's compression function with
 // its message schedule in AVX2 registers (docs/decisions.md 128).
 extern unsigned long x86_sha512_avx2_calls;
+// Calls to aead_avx2.c's aead_avx2_seal and aead_avx2_open, the one-pass
+// ChaCha20-Poly1305 (docs/decisions.md 199).
+extern unsigned long x86_aead_avx2_seal_calls;
+extern unsigned long x86_aead_avx2_open_calls;
 
 #endif

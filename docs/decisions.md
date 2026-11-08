@@ -16805,3 +16805,78 @@ does nothing more.
     - **Pairs across rows.** ML-KEM-768's nine entries would take five
       passes in place of six, but a row would need the next row's
       entries, as entry 107 found for four states.
+
+199. **An x86-64 host object seals and opens a ChaCha20-Poly1305 message
+    of 1,024 bytes or more in one pass, under `CH_CPU_AVX2` and the
+    multiply bit.** The seal ran `chacha20_avx2.c` over the message and
+    then `poly1305_avx2.c` over the ciphertext: two passes over 16 KiB.
+    Camilo approved a one-pass seal and open on 2026-11-08.
+
+    - **What runs.** `aead_avx2.c` holds `aead_avx2_seal` and
+      `aead_avx2_open`. Each pass of eight ChaCha20 blocks also absorbs
+      four Poly1305 groups of eight blocks, one group after each two
+      double rounds. The seal absorbs the ciphertext the pass before it
+      wrote, and the open absorbs its own pass before it writes the
+      plaintext. The last whole pass and the bytes after it are absorbed
+      whole, with the last group of the run among them, and the open then
+      decrypts them. The rounds, the groups and the powers of r are
+      `chacha20_avx2.c`'s and `poly1305_avx2.c`'s, moved into
+      `chacha20_avx2_lanes.h` and `poly1305_avx2_lanes.h`, so each kernel
+      has one text. `aead.c` splits its MAC into `mac_start` and
+      `mac_end` and calls the entries for a message of `AEAD_AVX2_MIN`
+      bytes or more, where the two-pass AEAD would run both AVX2 kernels:
+      under `CH_CPU_AVX2` and `CH_CPU_CONSTANT_TIME_MULTIPLY`, without
+      `CH_CPU_AVX512_IFMA`. Every other session and length keeps the two
+      passes, which stay the reference.
+    - **The open.** It writes the plaintext before it compares the tag,
+      and on a mismatch it writes zero over the n bytes and returns 0, as
+      entry 85 rules for AES-GCM. A record and a QUIC packet already
+      accept that result. `aead_open`, which takes no description of the
+      CPU, still compares first and writes nothing.
+    - **Secrets.** The file is a native copy alone, so the caller's
+      multiply bit covers its VPMULUDQ products, as for `poly1305_avx2.c`
+      (entry 110). The powers of r stay in one struct, read through
+      volatile pointers and wiped by `run_finish`. Each entry wipes its
+      input words and ends with VZEROALL (entry 129). `pass_hashing` and
+      `hash_rest` keep 256-bit values in stack slots in a loop, so both
+      carry `force_align_arg_pointer`, and `lint-frame-align` reads the
+      file (entry 124).
+    - **What holds it.** `bin/aead_avx2_equiv_test` compares both entries
+      with the two-pass AEAD at every length to 3,072 bytes, at every
+      alignment from 1,024 to 1,535 bytes and at the pass edges, and at
+      16,384 and 16,385 bytes, in the three aliasing shapes. It opens
+      each under a changed tag. It searches the stack below a seal and an
+      open for the key and for r^2 to r^8, and it reads ymm0 to ymm15
+      back as zero after each entry. `bin/x86_kernels_test` counts the
+      calls under each `ch_cfg.cpu` value. The part `aead-avx2` of
+      `test/docker-aes-runtime-qemu.sh` runs the binary under qemu for
+      the five new violations, all caught. RFC 8439's AEAD vector is 114
+      bytes, below `AEAD_AVX2_MIN`, so the equivalence binary is what
+      holds the one pass.
+    - **Gain.** `aead_seal_data` of a 16 KiB record, from runs
+      42519973952 and 42519953264 of bench.yml on tree edc6555:
+
+      | CPU, compiler | two passes (2026-11-05) | one pass | OpenSSL 3.6.4 | ratio |
+      | --- | --- | --- | --- | --- |
+      | EPYC 7763, gcc 13 | 9.25 µs | 9.08 µs | 7.47 µs | 1.24 → 1.22 |
+      | EPYC 7763, clang 23 | 8.76 µs | 8.40 µs | 7.47 µs | 1.17 → 1.12 |
+
+      In the same process the one-pass seal took 2.6% (gcc) and 3.2%
+      (clang) less than the sum of its two-pass parts. Before, it took
+      0.5% and 0.9% more. On an EPYC 9V74 under `0x1f` it took 2.4% and
+      3.5% less.
+    - **Why so little.** ChaCha20's rounds and Poly1305's products both
+      run on the vector ports, so one pass removes the second read of the
+      record and little else. A 16 KiB record stays in the L1 data cache
+      between two passes, as the M1 run in docs/performance.md found.
+
+    Rejected:
+
+    - **The AVX-512 IFMA pair in one pass.** On the EPYC 9V74 the two
+      IFMA kernels take 4.45 µs under gcc where the AVX2 one pass takes 8.10, and
+      the AVX2 pair gained 3% from one pass. That pair runs on the same
+      vector ports, so the same gain at most is about 0.13 µs.
+    - **A scalar Poly1305 on the general registers beside the vector
+      ChaCha20.** It would use ports that the AVX2 rounds leave idle. It
+      needs a Poly1305 in 64-bit limbs, which the tree does not hold,
+      with its own CBMC harness and Lean proof.

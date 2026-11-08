@@ -152,7 +152,7 @@ fi
 FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench)
 SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     bench/record_chacha_vector.c bench/record_aead.c bench/record_stub.c
-    src/record.c src/gcm.c src/aes.c "${AES_HW_SRCS[@]}" src/aead.c src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c
+    src/record.c src/gcm.c src/aes.c "${AES_HW_SRCS[@]}" src/aead.c src/aead_avx2.c src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c
     src/chacha20_avx512.c src/poly1305.c src/poly1305_native.c src/poly1305_vector_native.c src/poly1305_avx2_native.c
     src/poly1305_ifma_native.c src/ct.c src/ct_wipe.c
     src/hkdf.c src/hkdf_hw.c src/sha256.c src/sha256_hw.c src/sha512.c src/sha512_compress_blocks.c src/sha512_hw.c

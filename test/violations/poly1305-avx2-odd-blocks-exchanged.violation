@@ -1,5 +1,5 @@
 invariant: INV-16
-file: src/poly1305_avx2.c
+file: src/poly1305_avx2_lanes.h
 catches: test/docker-aes-runtime-qemu.sh poly1305-avx2
 reason: load_blocks reads the group's fourth block into lane 1 and its
   second into lane 3, so two blocks of every four take each other's

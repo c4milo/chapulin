@@ -6250,7 +6250,14 @@ last `ROLE=server` stub, as the entry said it would.
   The AVX2 Poly1305 computes r^2 to r^8 and wipes them the same way
   (decision 110). The same binary searches the stack below its calls, and
   `poly1305-avx2-keeps-powers` drops that wipe and the binary's x86-64
-  build under qemu catches it. The AVX-512 IFMA Poly1305 computes r^2 to
+  build under qemu catches it. The one-pass ChaCha20-Poly1305 of
+  `aead_avx2.c` computes the same powers through the same steps and wipes
+  them, wipes its input words, which hold the key, and ends each entry
+  with VZEROALL (decision 199). `bin/aead_avx2_equiv_test` searches the
+  stack below a seal and an open for the key and the powers and reads
+  ymm0 to ymm15 back, and `inv17-aead-avx2-seal-keeps-key` and
+  `inv17-aead-avx2-open-registers-not-cleared` are caught by its x86-64
+  build under qemu. The AVX-512 IFMA Poly1305 computes r^2 to
   r^16 into one struct of 1,984 bytes and wipes it the same way, and the
   binary's search reads its digits as well, on the instructions and over
   the lane model. That kernel and the AVX-512 ChaCha20 also hold the key's

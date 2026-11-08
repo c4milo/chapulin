@@ -1,0 +1,18 @@
+invariant: INV-17
+file: src/aead.c
+catches: test/docker-aes-runtime-qemu.sh aead-avx2
+reason: open_one_pass returns 0 on a bad tag without the wipe of the n
+  bytes it wrote, so the caller holds the plaintext of a forged
+  ciphertext, which is that ciphertext XORed with the keystream of the
+  nonce (docs/decisions.md 85). The verdict is still right.
+  bin/aead_avx2_equiv_test requires zeros where the plaintext was after a
+  changed tag. Only an x86-64 host object calls open_one_pass, so the
+  script builds the binary for x86-64 and runs it under qemu-x86_64.
+
+--- old
+    if (ok == 0) {
+        ct_wipe(pt, n);
+        return 0;
+--- new
+    if (ok == 0) {
+        return 0;

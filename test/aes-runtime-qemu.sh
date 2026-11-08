@@ -302,6 +302,9 @@
 #                     mldsa_vector.c's two arms and of the dispatch to it
 #   poly1305-avx2     bin/poly1305_equiv_test for x86-64, for the
 #                     violations of poly1305_avx2.c
+#   aead-avx2         bin/aead_avx2_equiv_test for x86-64, for the
+#                     violations of aead_avx2.c's one-pass ChaCha20-Poly1305
+#                     (docs/decisions.md 199)
 #   chacha20-avx2     bin/chacha20_equiv_test for x86-64, for the
 #                     violation of chacha20_avx2.c's clear of its
 #                     registers
@@ -367,10 +370,10 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
-    mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
+    mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
     rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx]" >&2
     exit 2
     ;;
 esac
@@ -399,7 +402,7 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ] && [ "$only" != ghas
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
 if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != mldsa-avx2 ] &&
-    [ "$only" != poly1305-avx2 ] &&
+    [ "$only" != poly1305-avx2 ] && [ "$only" != aead-avx2 ] &&
     [ "$only" != chacha20-avx2 ] &&
     [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
     [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ] && [ "$only" != sha512-stack ] &&
@@ -471,6 +474,7 @@ read -r -a mldsa_runtime_srcs <<< "$(sed -n 29p <<< "$lists")"
 read -r -a mldsa_avx2_equiv_srcs <<< "$(sed -n 30p <<< "$lists")"
 read -r -a rsa_mont64_adx_test_srcs <<< "$(sed -n 31p <<< "$lists")"
 read -r -a keccak_neon_equiv_srcs <<< "$(sed -n 32p <<< "$lists")"
+read -r -a aead_avx2_equiv_srcs <<< "$(sed -n 33p <<< "$lists")"
 [ "${#ghash_equiv_srcs[@]}" -gt 0 ] ||
     { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-four lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
@@ -671,6 +675,21 @@ if [ -z "$only" ] || [ "$only" = poly1305-avx2 ]; then
 fi
 if [ "$only" = poly1305-avx2 ]; then
     echo "aes-runtime-qemu: bin/poly1305_equiv_test held the AVX2 Poly1305 and the SSE2 path to src/poly1305.c's loop, on AVX2 for x86-64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = aead-avx2 ]; then
+    # The one-pass ChaCha20-Poly1305 against the two-pass AEAD, the stack
+    # each entry leaves and ymm0 to ymm15 after each. The file has a body
+    # on x86-64 alone, and the rule in the Makefile passes CH_CPU_RUNTIME.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/aead_avx2_equiv_test" \
+        test/aead_avx2_equiv_test.c "${aead_avx2_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_X86_KERNELS=1 expect max 0 \
+        "the one-pass ChaCha20-Poly1305 and the two-pass AEAD disagree, or an entry left the key, a power of r or a register" \
+        aead_avx2_equiv_test
+fi
+if [ "$only" = aead-avx2 ]; then
+    echo "aes-runtime-qemu: bin/aead_avx2_equiv_test held the one-pass ChaCha20-Poly1305 to the two-pass AEAD, on AVX2 for x86-64"
     exit 0
 fi
 
