@@ -18,9 +18,9 @@
 // "+D" operands bind, because a round writes both registers once the
 // product is done. It leaves its result in r8 to r11, which four register
 // variables bind as its outputs: GNU C keeps a local register variable in
-// its register for the asm statement that names it as an operand. The C
-// after the statement stores them to o. Every other register a statement
-// writes is in its clobber list.
+// its register for the asm statement that names it as an operand.
+// p256_adx_store, after the statement, stores them to o. Every other
+// register a statement writes is in its clobber list.
 //
 // Each round k takes u = t[k] and adds u * p, which clears t[k], because
 // p's low word is 2^64 - 1 and so -p^-1 mod 2^64 is 1. As in reduce_round,
@@ -38,6 +38,21 @@
 #define CH_P256_ADX_ASM_H
 
 #include <stdint.h>
+
+// o = (w3 : w2 : w1 : w0), the four words a statement leaves in r8 to r11.
+// Between each two stores is an empty statement that clobbers memory, so no
+// compiler merges the four stores, as x25519_adx_asm.h's adx_store does
+// (docs/decisions.md 205). The empty statements emit no instruction.
+static inline __attribute__((always_inline)) void
+p256_adx_store(uint64_t o[4], uint64_t w0, uint64_t w1, uint64_t w2, uint64_t w3) {
+    o[0] = w0;
+    __asm__ volatile("" ::: "memory");
+    o[1] = w1;
+    __asm__ volatile("" ::: "memory");
+    o[2] = w2;
+    __asm__ volatile("" ::: "memory");
+    o[3] = w3;
+}
 
 // o = a * b / 2^256 mod p. o may be a or b: every word of both is read
 // before o is written.
@@ -106,10 +121,7 @@ p256_adx_mul_mont(uint64_t o[4], const uint64_t a[4], const uint64_t b[4]) {
         : "=&r"(w0), "=&r"(w1), "=&r"(w2), "=&r"(w3), "+S"(a_words), "+D"(b_words)
         :
         : "memory", "cc", "rax", "rbx", "rcx", "rdx", "r12", "r13", "r14", "r15");
-    o[0] = w0;
-    o[1] = w1;
-    o[2] = w2;
-    o[3] = w3;
+    p256_adx_store(o, w0, w1, w2, w3);
 }
 
 // o = a * a / 2^256 mod p: the six products of two different words once,
@@ -171,10 +183,7 @@ static inline __attribute__((always_inline)) void p256_adx_sqr_mont(uint64_t o[4
         : "=&r"(w0), "=&r"(w1), "=&r"(w2), "=&r"(w3), "+S"(a_words), "+D"(b_words)
         :
         : "memory", "cc", "rax", "rbx", "rcx", "rdx", "r12", "r13", "r14", "r15");
-    o[0] = w0;
-    o[1] = w1;
-    o[2] = w2;
-    o[3] = w3;
+    p256_adx_store(o, w0, w1, w2, w3);
 }
 
 #endif

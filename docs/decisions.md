@@ -17078,3 +17078,36 @@ does nothing more.
       Under `qemu-x86_64 -cpu max` and gcc 13.3, a key generation retires
       162,201 instructions where it retired 171,160, and a signature
       250,281 where it retired 268,199.
+
+205. **The four stores after each statement of `p256_adx_asm.h` have an
+    empty statement that clobbers memory between each two, as decision 203
+    gave X25519.** gcc 13's SLP vectorizer at -O2 merged the four stores of
+    each product and square of `p256_adx.h`'s copy into two 16-byte stores
+    from vector registers, as it did in `x25519_adx_asm.h`.
+    `p256_adx_store` writes them as four 8-byte stores. In gcc's
+    `p256_adx_point.c` and `p256_adx_verify_point.c` the MOVQ from a
+    general register to an XMM register falls from 309 to 37, and the
+    PUNPCKLQDQ from 160 to 24.
+
+    - **What is left.** Some of the moves that remain are in the halving
+      of decision 196, which is C: gcc shifts its words in pairs in XMM
+      registers, with PSRLQ, PSLLQ and POR. This change does not touch the
+      C. Before decisions 204 and 205, gcc built whole with
+      `-fno-tree-slp-vectorize` took 0.97 of its time for a verification
+      and 0.99 for a key generation (A/B run 42520196408).
+    - **Numbers.** A/B run 42526447797 on the EPYC 7763 times the tree of
+      decision 204 and this change in turn, in µs, each the median of
+      nine processes:
+
+      | P-256 | gcc before | gcc after | clang before | clang after |
+      | --- | --- | --- | --- | --- |
+      | key generation | 14.07 | 13.46 | 12.02 | 12.03 |
+      | ECDSA signature | 21.88 | 21.33 | 19.06 | 19.10 |
+      | shared secret | 58.63 | 58.07 | 55.84 | 55.77 |
+      | ECDSA verification | 60.55 | 58.94 | 56.15 | 55.73 |
+
+      Under `qemu-x86_64 -cpu max` and gcc 13.3, with decision 204, a key
+      generation retires 160,849 instructions where it retired 162,201, a
+      signature 248,916 where it retired 250,281, a shared secret 550,992
+      where it retired 556,287, and a verification 557,130 where it
+      retired 568,135 before decision 204.
