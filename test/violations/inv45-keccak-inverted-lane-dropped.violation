@@ -1,0 +1,11 @@
+invariant: INV-45
+file: src/sha3_inverted_lanes.h
+catches: sha3_equiv_test
+reason: invert_lanes leaves lane 17 as stored, so the inverted lanes form
+  of the permutation starts and ends with five lanes inverted where its
+  round expects six. The equivalence test runs that form on every
+  machine, beside the plain form, and requires the reference's state.
+
+--- old
+    a[17] = ~a[17];
+--- new

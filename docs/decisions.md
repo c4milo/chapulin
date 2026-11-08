@@ -16546,6 +16546,69 @@ does nothing more.
     caught. The bound of 2,048 bytes changes no output word, so no test
     sees it.
 
+195. **An x86-64 host object runs Keccak-f[1600] with six lanes kept
+    inverted, each bit flipped, between rounds.** On the EPYC 7763 SHA3-256 of 16 KiB
+    took 1.33 times OpenSSL's time under gcc and 1.23 times under clang.
+    Baseline x86-64 has no AND-NOT instruction, since BMI1 is not part of
+    it, so chi took a NOT and an AND for each of the 25 lanes.
+
+    - **The transform.** `sha3_inverted_lanes.h` holds the form that the
+      Keccak team's implementation overview calls "lane complementing".
+      Between rounds the state keeps lanes 1, 2, 8, 12, 17 and 20
+      inverted. theta and rho and pi are the plain round's lines, because
+      an inverted lane only changes which b lanes are stored inverted.
+      chi then writes each lane with an AND or an OR, and takes five NOTs
+      a round in place of 25. `keccak_f1600_inverted` inverts the six
+      lanes before the first round and after the last, so the state
+      outside the call holds the standard's lanes.
+    - **x86-64 host objects alone.** arm64 and the Cortex-M cores compute
+      AND-NOT with BIC, so the inverted lanes add instructions there. The
+      permutation's code with its round inlined, plain to inverted,
+      under clang 23: x86-64 at -O2 363 to 339 instructions, of which the
+      loop of one round is 264 to 230; arm64 at -O2 204 to 222; Cortex-M3
+      at `-Os` 839 to 865, and 867 to 886 under Arm GNU gcc 15.3.
+      mips32r2 fell from 977 to 903 and rv32imac from 893 to 875, but a
+      device object chooses no code by architecture, so every device
+      object keeps the plain round. Its
+      code is the same as before: `sha3.c` is 3,500 bytes on a Cortex-M3
+      under gcc at `-Os` before and after, and `make lint-wide-multiply`
+      reads the same branch counts.
+    - **Both forms in every object.** `keccak_f1600` picks a form from a
+      constant, `SHA3_INVERTED_LANES`, so both compile everywhere and a
+      compiler removes the one not picked. `bin/sha3_equiv_test` runs
+      both on every machine, against the reference and against
+      `keccak_f1600`. The round is written out again in the header,
+      because a shared helper that wrote b into an array gave the `sha3`
+      harness more addressed objects than CBMC's default 256.
+    - **What holds it.** INV-45. `sha3_round` proves the inverted lanes
+      round equal to FIPS 202's round, with the six lanes inverted before
+      and after, for every state and every round constant, and
+      evaluates both forms' 24 rounds from zeros (3,301 properties, 50 s,
+      0.8 GB). `sha3` and `sha3_stream` still prove the sponge memory
+      safe. `inv45-keccak-inverted-lane-dropped` leaves lane 17 out of
+      `invert_lanes`, and `bin/sha3_equiv_test` catches it.
+
+    Measured by `bench.yml` run 42508863722 on the EPYC 7763, before and
+    after, in the ratio to OpenSSL 3.6.4 on the same runner:
+
+    | SHA3-256 | gcc 13.3 | clang 23 |
+    | --- | --- | --- |
+    | 16 KiB | 1.33 to 1.22 | 1.23 to 1.12 |
+    | 64 bytes | 0.93 to 0.87 | 0.87 to 0.76 |
+
+    chapulin's own time over 16 KiB fell by 8.4% under gcc and by 9.7%
+    under clang. ML-KEM-768's key generation and decapsulation, whose
+    SHAKE calls outside the matrix run `sha3.c`, took 3% less time under
+    gcc and 4% to 5% less under clang.
+
+    On the Xeon 8573C, run 42511169514, the ratio over 16 KiB fell from
+    1.31 to 1.28 under gcc and from 1.22 to 1.10 under clang, and over
+    64 bytes from 0.91 to 0.89 and from 0.85 to 0.77. That runner timed
+    OpenSSL and chapulin about 17% slower than the runner of the recorded
+    rows, so only the ratios compare. Each CSV names the run its sha3_256
+    rows come from. No gcc for x86-64 runs on the development machine, so
+    gcc's instruction count is not read; its times fell less than clang's.
+
 196. **The Jacobian doubling of the wide P-256 files computes the
     database's point scaled by 1/2.** Decision 175 found the doubling to be
     most of the gap to OpenSSL on an EPYC 7763: 469 cycles under gcc and

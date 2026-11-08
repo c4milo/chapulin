@@ -151,9 +151,34 @@ static void keccak_round(uint64_t a[25], uint64_t round_constant) {
     a[0] ^= round_constant;
 }
 
-static void keccak_f1600(uint64_t a[25]) {
+static void keccak_f1600_plain(uint64_t a[25]) {
     for (int round = 0; round < 24; round++) {
         keccak_round(a, RC[round]);
+    }
+}
+
+#include "sha3_inverted_lanes.h"
+
+// Two forms of one permutation. An x86-64 host object runs
+// sha3_inverted_lanes.h's form, which keeps six lanes inverted between
+// rounds, and every other object runs keccak_f1600_plain, which stays the
+// reference. On arm64 and on a Cortex-M core, BIC computes AND-NOT in one
+// instruction, so the inverted lanes add instructions there
+// (docs/decisions.md 195). Both forms compile in every object, so
+// bin/sha3_equiv_test and the sha3_round harness hold both on every
+// machine. The compiler removes the form that SHA3_INVERTED_LANES does
+// not pick.
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+#define SHA3_INVERTED_LANES 1
+#else
+#define SHA3_INVERTED_LANES 0
+#endif
+
+static void keccak_f1600(uint64_t a[25]) {
+    if (SHA3_INVERTED_LANES) {
+        keccak_f1600_inverted(a);
+    } else {
+        keccak_f1600_plain(a);
     }
 }
 

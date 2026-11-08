@@ -8,8 +8,9 @@
 // computed by the standard's rules, and a sponge that moves one byte at a
 // time. This binary gives both the same input:
 //
-//   - the permutation alone, on the state of zeros, the state of ones,
-//     each of the 1,600 states with one bit set, and random states;
+//   - the permutation alone, in both of sha3.c's forms, on the state of
+//     zeros, the state of ones, each of the 1,600 states with one bit
+//     set, and random states;
 //   - SHA3-256 and SHA3-512 of a message of every length from 0 to 420
 //     bytes, which is past three blocks of either rate, and of random
 //     longer ones;
@@ -74,14 +75,25 @@ static void expect_same(const char *what, const void *ours, const void *referenc
 
 static uint64_t reference_constants[24];
 
+// keccak_f1600 runs one of sha3.c's two forms, by the object's kind and
+// architecture (docs/decisions.md 195). Both compile here, so each runs on
+// every machine, against the reference and against each other.
 static void permutation(const char *what, const uint64_t state[25]) {
     uint64_t ours[25];
+    uint64_t plain[25];
+    uint64_t inverted[25];
     uint64_t reference[25];
     memcpy(ours, state, sizeof ours);
+    memcpy(plain, state, sizeof plain);
+    memcpy(inverted, state, sizeof inverted);
     memcpy(reference, state, sizeof reference);
     keccak_f1600(ours);
+    keccak_f1600_plain(plain);
+    keccak_f1600_inverted(inverted);
     reference_f1600(reference, reference_constants);
     expect_same(what, ours, reference, sizeof ours);
+    expect_same(what, plain, reference, sizeof plain);
+    expect_same(what, inverted, reference, sizeof inverted);
 }
 
 static void permutations(void) {

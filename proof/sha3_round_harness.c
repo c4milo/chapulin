@@ -14,9 +14,15 @@
 // out of its order, would leave another state, because every round is a
 // bijection.
 //
-// Together: the round is the standard's for every input, and
-// keccak_f1600 applies it 24 times with the standard's constants in the
-// standard's order, so the permutation is the standard's.
+// And the inverted lanes form (docs/decisions.md 195). Its round, run on
+// a state with invert_lanes' six lanes inverted, leaves the standard's
+// round's state with the same six lanes inverted, for
+// every state and every round constant. Its 24 rounds between the two
+// calls of invert_lanes leave Keccak-f[1600]'s state from zeros.
+//
+// Together: each round is the standard's for every input, and each form
+// of the permutation applies it 24 times with the standard's constants
+// in the standard's order, so both forms are the standard's.
 #include "harness.h"
 
 #include "sha3.c"
@@ -33,10 +39,19 @@ int main(void) {
         written[i] = standard[i];
     }
     uint64_t round_constant = nondet_u64();
+    uint64_t inverted[25];
+    for (size_t i = 0; i < 25; i++) {
+        inverted[i] = standard[i];
+    }
+    invert_lanes(inverted);
     reference_round(standard, round_constant);
     keccak_round(written, round_constant);
+    keccak_round_inverted(inverted, round_constant);
+    invert_lanes(inverted);
     for (size_t i = 0; i < 25; i++) {
         __CPROVER_assert(standard[i] == written[i], "the written-out round is FIPS 202's round");
+        __CPROVER_assert(standard[i] == inverted[i],
+                         "the inverted lanes round is FIPS 202's round on the inverted lanes");
     }
 
     uint64_t constants[24];
@@ -46,12 +61,20 @@ int main(void) {
                          "the table holds the shift register's constant");
     }
     uint64_t standard_zeros[25] = {0};
+    uint64_t plain_zeros[25] = {0};
+    uint64_t inverted_zeros[25] = {0};
     uint64_t our_zeros[25] = {0};
     reference_f1600(standard_zeros, constants);
+    keccak_f1600_plain(plain_zeros);
+    keccak_f1600_inverted(inverted_zeros);
     keccak_f1600(our_zeros);
     for (size_t i = 0; i < 25; i++) {
+        __CPROVER_assert(standard_zeros[i] == plain_zeros[i],
+                         "24 plain rounds from the state of zeros are Keccak-f[1600]");
+        __CPROVER_assert(standard_zeros[i] == inverted_zeros[i],
+                         "24 inverted lanes rounds from the state of zeros are Keccak-f[1600]");
         __CPROVER_assert(standard_zeros[i] == our_zeros[i],
-                         "24 rounds from the state of zeros are Keccak-f[1600]");
+                         "the form keccak_f1600 picks is Keccak-f[1600]");
     }
     return 0;
 }

@@ -317,13 +317,19 @@ The entries are grouped by area:
     constants computed by the standard's rules. The table of round
     constants holds the 24 values the standard's shift register gives,
     and `keccak_f1600` leaves the state that 24 rounds of the reference
-    leave from the state of zeros (decision 98, INV-45).
+    leave from the state of zeros (decision 98, INV-45). The same holds
+    for the inverted lanes form of `sha3_inverted_lanes.h`, which an
+    x86-64 host object runs: its round, on a state with six lanes
+    inverted, leaves the reference round's state with the same six lanes
+    inverted, for every state and every round constant, and its 24
+    rounds between the two calls of `invert_lanes` leave the reference's
+    state from zeros (decision 195).
 - **Bound:** one-call: messages ≤ 200 B, output ≤ 400 B. Streaming:
   chunks ≤ 32 B. The round: the full domain. The 24 rounds: one state.
 - **Tested instead:** that absorb, the padding and squeeze move the
   standard's bytes. `bin/sha3_equiv_test` holds every entry of `sha3.h`
-  to the reference's sponge, which moves one byte at a time, over 6,043
-  outputs; `bin/sha3_test` runs the FIPS 202 vectors; and the spec
+  to the reference's sponge, which moves one byte at a time, over 13,247
+  outputs, with both forms of the permutation on every machine; `bin/sha3_test` runs the FIPS 202 vectors; and the spec
   differential runs every mode against the Lean model.
 
 #### hkdf

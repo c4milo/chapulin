@@ -2334,17 +2334,24 @@ last `ROLE=server` stub, as the entry said it would.
   bytes between a message and the lanes in three steps: one byte at a
   time up to a lane's first byte, eight bytes at a time, and the bytes
   that do not fill a lane. Both name each byte of a lane by its place,
-  so no object reads a lane in its host's byte order. No build chooses
-  between two forms: every object compiles this one (decision 98).
+  so no object reads a lane in its host's byte order. Every object
+  compiles one sponge and one round (decision 98). An x86-64 host object
+  runs that round in the form of `sha3_inverted_lanes.h`, which keeps
+  six lanes inverted, each bit flipped, between rounds and so needs five
+  NOTs a round in chi in place of 25 (decision 195).
 - **Check.** CBMC's `sha3_round` proves the round equal to
-  `proof/sha3_reference.h`'s for every state and every constant. That
+  `proof/sha3_reference.h`'s for every state and every constant, and the
+  inverted lanes round equal to it with the six lanes inverted before
+  and after. That
   reference is the standard's five step algorithms as loops, with the
   rho offsets and the round constants computed by the standard's rules
   and read from no table. The same harness compares the table with the
-  reference's constants and evaluates 24 rounds from the state of zeros
-  against the reference's. `bin/sha3_equiv_test` holds the permutation,
+  reference's constants and evaluates each form's 24 rounds from the
+  state of zeros against the reference's. `bin/sha3_equiv_test` holds
+  both forms of the permutation on every machine, and
   both digests and both XOFs to the reference's sponge, which moves one
-  byte at a time, over 6,043 outputs: 3,602 states, a message of every
+  byte at a time, over 13,247 outputs: 3,602 states, each run through
+  `keccak_f1600` and through both forms, a message of every
   length from 0 to 420 bytes and 200 random longer ones, and 600 SHAKE
   streams absorbed and squeezed in pieces of random lengths. The
   sanitizer build runs it, and the mips lane runs it on a big-endian
@@ -2356,8 +2363,9 @@ last `ROLE=server` stub, as the entry said it would.
   a lane; exchanges chi's two neighbours; puts two bytes of a lane in
   each other's place; counts lanes from the block's first byte in a
   partly filled block, absorbing or squeezing; squeezes a second block
-  without the permutation; moves the last pad bit; or takes eight bytes
-  where fewer remain. The eleven `inv45-*` violations are these. Six
+  without the permutation; moves the last pad bit; takes eight bytes
+  where fewer remain; or leaves one of the six lanes out of
+  `invert_lanes`. The twelve `inv45-*` violations are these. Seven
   fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
   `sha3_round` proof and one the `sha3_stream` proof.
 
