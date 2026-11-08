@@ -157,6 +157,7 @@ def selftestAll (_ : Unit) : String :=
     ("poly1305_vector", Spec.Poly1305Vector.selftest),
     ("rsa_avx2", Spec.RsaAvx2.selftest),
     ("rsa_mont64_adx", Spec.RsaMont64Adx.selftest),
+    ("rsa_mont64_square", Spec.RsaMont64Square.selftest),
     ("p384", Spec.P384.selftest),
     ("rsa_pkcs1", Spec.RsaPkcs1.selftest),
     ("pem", Spec.Pem.selftest),
@@ -889,6 +890,18 @@ def dispatch : List String → Option String
     let x := bytesToNatBE (← hexArg? a)
     guard (m < 2 ^ (64 * k) && (m * inverse + 1) % 2 ^ 64 == 0 && x < m)
     return bytesToHex (natToBytesBE (Spec.RsaMont64Adx.montSquare k m inverse x) (8 * k))
+  | ["rsa_blocks_square", words, m0inv, modulus, a] => do
+    -- rsa_mont64_blocks_square of rsa_mont64_blocks.c (Spec/RsaMont64Square.lean): its words and
+    -- the word above them, (a a + U m) / R below 2m, before the last subtraction, under an m of
+    -- `words` 64-bit words and m0inv, its -m⁻¹ mod 2^64 in decimal; m and a are big-endian hex
+    -- of any length. The answer is 8 * (words + 1) big-endian bytes. The guard is the C's
+    -- contract, a below m, and blocksSquare_montMul's hypotheses.
+    let k ← words.toNat?
+    let inverse ← m0inv.toNat?
+    let m := bytesToNatBE (← hexArg? modulus)
+    let x := bytesToNatBE (← hexArg? a)
+    guard (m < 2 ^ (64 * k) && (m * inverse + 1) % 2 ^ 64 == 0 && x < m)
+    return bytesToHex (natToBytesBE (Spec.RsaMont64Square.blocksSquare k m inverse x) (8 * (k + 1)))
   | ["rsa_avx2_multiply", words, k0, modulus, a, b] => do
     -- rsa_avx2.c's multiplication of a by b, both below 2m, under an m of `words` 64-bit words
     -- and k0, its -m⁻¹ mod 2^D in decimal; m, a and b are big-endian hex of any length. The

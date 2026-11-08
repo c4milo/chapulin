@@ -16181,6 +16181,100 @@ does nothing more.
       `CH_QUIC_DCID_MAX` bytes and refuse a longer one, and read the
       options' context back from a tcp session's hook.
 
+192. **The blocks' square adds each row's cross products and its multiple of
+    m in one pass.** After decision 118, on the M1 Pro under Apple clang
+    21, `rsa_mont64_blocks_square` took 0.99 times the time of the blocks'
+    multiplication of a by itself at 32 words. So a 2048-bit square ran as
+    that multiplication. The square added its cross products in rows of
+    their own, doubled them, and then took the multiples of m off in a
+    second pass. Each row of either pass carried one product chain, and
+    each block loaded and stored four words of the sum for four products.
+
+    - **What changes.** Row i of the square now adds a_i V_i and u m in
+      one pass, as a round of the multiplication adds a_i b and u m. V_i
+      is zero below word i, a_i at word i, a_{i+1} moved up one bit at
+      word i + 1, and the words of 2a above that. So the row holds each
+      cross product a_i a_j, j > i, twice and a_i^2 once, and the rows add
+      up to a^2. A vector v starts as 2a, and each row writes its two
+      words before it runs. Below the block that holds word i, a row adds
+      u m alone. The square computes about three quarters of the
+      multiplication's products.
+    - **The blocks read x once.** A block now reads x through its
+      volatile pointer once, and the four words of y once each, where it
+      read x at each of its four products. The words of the modulus are
+      public, and a block reads them through a plain pointer, so clang
+      loads two in one instruction. Both changes apply to the
+      multiplication too.
+    - **Where the square runs.** `RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX` is
+      16 where it was 32. In processor cycles counted by
+      `proc_pid_rusage` over 3,000 calls, best of nine, the square took
+      this many times the multiplication's cycles:
+
+      | words | 8 | 16 | 24 | 32 | 48 | 64 |
+      | --- | --- | --- | --- | --- | --- | --- |
+      | the square before | 1.33 | 1.38 | 1.10 | 1.02 | 0.97 | 0.94 |
+      | the square after | 1.09 | 1.09 | 0.96 | 0.91 | 0.87 | 0.84 |
+
+      At 32 words the multiplication runs in 14,240 instructions where it
+      ran 16,065, and the square in 13,172.
+    - **Gain.** In `bench/primitives.c` under `ch_cfg.cpu 0xe7`, built
+      from HEAD and from this change and run in turn five times each at a
+      load average of 7 to 17, the medians and the instructions of one
+      operation:
+
+      | one operation | before | after | instructions before | after |
+      | --- | --- | --- | --- | --- |
+      | RSA-2048 PKCS#1 v1.5 verification | 18.4 µs | 17.5 µs | 333,665 | 284,781 |
+      | RSA-3072 PKCS#1 v1.5 verification | 37.9 µs | 35.4 µs | 711,263 | 585,989 |
+      | RSA-4096 PKCS#1 v1.5 verification | 61.4 µs | 57.1 µs | 1,199,233 | 974,577 |
+      | RSA-2048 PSS signature | 727 µs | 720 µs | 14,179,214 | 12,828,592 |
+      | RSA-3072 PSS signature | 2.15 ms | 2.11 ms | 42,015,276 | 37,202,576 |
+
+      Each verification run after the change took less time than each run
+      before it. A signature's two moves are inside the spread of its runs,
+      and its instructions fall because the multiplication reads x once a
+      block. The scoreboard's M1 column is not recorded again here: it
+      times OpenSSL 3.6.4 in the same sitting, and this machine holds no
+      build of it.
+    - **Branches.** `lint-wide-multiply` holds `rsa_mont64_blocks.c` at 14
+      conditional branches under clang for arm64, where it held 13. The
+      one more is the square's test of a row's index for whether its cross
+      products start in the first block. Every branch reads the word
+      count, a row's index or a block's position, which are public.
+    - **What holds it.** `spec/lean/Spec/RsaMont64Square.lean` models the
+      words of v from the C and proves three things. `twice_words`: the
+      words of 2x that the C writes, each word moved up one bit with the
+      top bit of the word below, are 2x. `rowSum_eq`: the rows add up to
+      a a. `blocksSquare_montMul`: the rows with u m between them give
+      `RsaMont64Adx.montMul` of a by itself, because the rows after row i
+      add a multiple of 2^(64 (i + 1)), and so row i reads the u that the
+      reduction of a a reads. `bin/diff_rsa_mont64_square` holds the C's
+      words and the word above them to that model at every multiple of 4
+      from 4 to 64 words, 1,408 rows. `bin/rsa_blocks_equiv_test` squares
+      four more operands at an edge of the doubling, and holds the square
+      to the multiplication and to the loops. CBMC proves no sum wraps at
+      four and eight words, and the memory accesses at the bound and at
+      20 words. Equality with the multiplication is not a CBMC property:
+      docs/proofs.md says no formula solves the equality of two
+      multipliers at 64-bit words. Three violations drop the bit the
+      doubling moves up, the doubling of a_{i+1} and a row's top word, and
+      the binary catches each under clang and gcc 15.
+      `bin/rsa_sign_equiv_test`'s stack search passes under Apple clang 21
+      and gcc 15 for arm64.
+
+    Rejected:
+
+    - **Two rows a pass.** Rows i and i + 1 in one pass, so that every
+      block below word i carries two u m chains, took 1.3 times the
+      one-pass square's time at 32 words: four chains in a block left
+      clang for arm64 too few registers, and it wrote words to the stack.
+      With the pass split into two sweeps of two chains each, it took 1.04
+      times the one-pass square's cycles.
+    - **Eight-word blocks for u m alone.** About 1.05 times the one-pass
+      square's time at 32 words.
+    - **The rows under gcc for x86-64.** `rsa_mont64_addcarry.c` keeps its
+      square. No x86-64 runner timed this change in this wave.
+
 193. **A NEON pass of `chacha20_vector.c` computes nine blocks: two groups
     of four in vectors and one block in general registers. A rotation by
     8 is one byte shuffle.** Entry 86 left eight blocks a pass on NEON. In

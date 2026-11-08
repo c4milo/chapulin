@@ -3112,21 +3112,25 @@ launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:529" src/ct.c proof/ct_wipe
 # rsa_mont64.c's own loops, and these three set RSA_MONT64_BLOCKS to 1, include the blocks and
 # run them through the same two entries, over the same product contract. rsa_mont64_blocks_sums
 # runs them at four words and at eight with the wrap check on, the square also through
-# rsa_mont64_blocks_square itself, since rsa_mont64_mont_square runs a square of up to 32 words
+# rsa_mont64_blocks_square itself, since rsa_mont64_mont_square runs a square of up to 16 words
 # as the blocks' multiplication. rsa_mont64_blocks and its _webpki variant run them at the
-# build's bound without the check, for their memory accesses, and the square at 32 words too.
-# The square's array is 2k + 2 words, which the unwind of ct_wipe's loop covers byte by byte.
+# build's bound without the check, for their memory accesses, and the square at 16 and 20 words
+# too. The largest array either wipes is k + 2 words, which the unwind of ct_wipe's loop covers
+# byte by byte (docs/decisions.md 192).
 # Measured one line at a time through proof/prove-one.sh on 2026-10-08 (cbmc 6.11.0, kissat
 # 4.0.4, an M1 Pro) at a load average of 13 to 17, so the time is the processor time of cbmc and
 # the solver:
 #   rsa_mont64_blocks_sums    1265 properties,  70 s, 1.5 GB
 #   rsa_mont64_blocks         1088 properties, 235 s, 1.3 GB
 #   rsa_mont64_blocks_webpki  1088 properties, 450 s, 2.2 GB, hence slow
+# After decision 192's square, on 2026-11-08 at a load average of 25 to 60, in wall time:
+#   rsa_mont64_blocks_sums    1658 properties, 133 s
+#   rsa_mont64_blocks         1486 properties, 930 s
 # The prove job's runner took about 1.35 times the M1's processor time on the rsa_mont64 lines
 # above, which puts the last line near ten minutes there.
-launch fast full rsa_mont64_blocks_sums 10 "ct_wipe.0:145" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_mont64_blocks 50 "ct_wipe.0:785" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch slow full rsa_mont64_blocks_webpki 66 "ct_wipe.0:1041" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_blocks_sums 10 "ct_wipe.0:81" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_blocks 50 "ct_wipe.0:401" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch slow full rsa_mont64_blocks_webpki 66 "ct_wipe.0:529" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont64_addcarry.c, the multiplication and square in rows whose carries go down
 # _addcarry_u64 chains, which a gcc build for x86-64 runs at every word count (docs/decisions.md
 # 122). These three set RSA_MONT64_ADDCARRY to 1 and the add with carry to its 128-bit sum form,

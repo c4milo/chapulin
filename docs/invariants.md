@@ -1833,11 +1833,12 @@ last `ROLE=server` stub, as the entry said it would.
   `inv41-rsa-mont64-sum-one-word-short` and
   `inv41-rsa-mont64-borrow-wraps`, through `proof/prove-one.sh`, in the
   nightly's proof-backed job. Or, in the blocks, it drops a block's low
-  carry, the bit the square's doubling moves up a word or the carry
-  between the rows of its reduction, or runs the blocks at every even
-  word count: `inv41-rsa-mont64-blocks-low-carry-dropped`,
+  carry, the bit the square's doubling moves up a word, the doubling of
+  a row's cross products or the top word of a row, or runs the blocks at
+  every even word count: `inv41-rsa-mont64-blocks-low-carry-dropped`,
   `inv41-rsa-mont64-blocks-square-bit-not-moved`,
-  `inv41-rsa-mont64-blocks-reduction-carry-dropped` and
+  `inv41-rsa-mont64-blocks-square-not-doubled`,
+  `inv41-rsa-mont64-blocks-square-top-word-dropped` and
   `inv41-rsa-mont64-blocks-even-word-counts`, which
   `bin/rsa_blocks_equiv_test` catches; or adds a round's top word and
   both carry words in one 64-bit sum,

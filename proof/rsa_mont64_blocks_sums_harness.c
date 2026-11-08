@@ -1,8 +1,8 @@
 // Proves: no sum in rsa_mont64_blocks.c's multiplication or square wraps, for any operands, any
 // modulus and any m0inv. The check is --unsigned-overflow-check on the launch line, which makes
 // every unsigned +, - and * a property: each sum in a block's two carry chains, the word a block
-// returns, a row's tail, the top step of a multiplication's round, the doubling and the squares
-// of the square, and each step of its reduction.
+// returns, the top step of a multiplication's round, and the top step of each row of the square,
+// which adds a_i under the mask of the top bit of 2a beside the row's two carry words.
 //
 // RSA_MONT64_BLOCKS is 1 here whatever compiler preprocesses the harness. The products are the
 // contract in proof/rsa_mont64_stubs.h: any value at or below (2^64 - 1)^2, which
@@ -15,10 +15,11 @@
 // RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX words as the blocks' multiplication of a by itself, and the
 // square through rsa_mont64_blocks_square itself. Four words run a round of one block, whose
 // carry words start at zero. Eight run a round of two, where the second block takes the first's
-// carry words, and the square's rows of seven words down to one, each with a block and a tail or
-// a tail alone. Each sum reads values that are unconstrained there or that the routine computed
-// from such values, so more words repeat the same sums over the same ranges, as in
-// rsa_mont64_sums_harness.c.
+// carry words, and the square's rows 0 to 3, whose cross products start in the first block, and
+// rows 4 to 7, whose first block adds u m alone. Each sum reads values that are unconstrained
+// there or that the routine computed from such values, so more words repeat the same sums over
+// the same ranges, as in rsa_mont64_sums_harness.c. The square's a is unconstrained here, not
+// below m: no sum's bound reads that.
 #define RSA_MONT64_BLOCKS 1
 #include "rsa_mont64_stubs.h"
 

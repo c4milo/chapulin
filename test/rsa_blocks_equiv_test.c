@@ -28,7 +28,8 @@
 //     by b from 0, 1, m - 1, the top bit alone and random values below m,
 //     with o apart from both, o on a and o on b;
 //   - for each a below m, the multiplication of a by itself, apart from o
-//     and in place, and the square, apart from o and in place;
+//     and in place, and the square, apart from o and in place, a among them
+//     four operands at an edge of the square's doubling (run_square_edges);
 //   - where the kernel runs, its square against its multiplication of a
 //     by itself, both before the last subtraction: the blocks at a
 //     multiple of 4, since rsa_mont64_mont_square runs their square only
@@ -232,6 +233,30 @@ static void compare_square(const char *case_name, const uint64_t *a,
     }
 }
 
+// Squares of operands whose words sit at an edge of the square's doubling, which moves the top
+// bit of each word into the word above (docs/decisions.md 192): all ones under a top word one
+// below m's, words of all ones and of zero in turn under the same top word, m with a low word of
+// zero, and random words with every second word zero. Each is below m.
+static void run_square_edges(const char *modulus_name, const rsa_mont64_modulus *mod) {
+    size_t k = mod->words;
+    enum { EDGE_ROWS = 4 };
+    uint64_t a[EDGE_ROWS][WORDS_MAX] = {{0}};
+    for (size_t i = 0; i < k; i++) {
+        a[0][i] = UINT64_MAX;
+        a[1][i] = (i % 2 == 0) ? UINT64_MAX : 0;
+        a[2][i] = mod->m[i];
+        a[3][i] = (i % 2 == 0) ? rng_next() : 0;
+    }
+    a[0][k - 1] = mod->m[k - 1] - 1;
+    a[1][k - 1] = mod->m[k - 1] - 1;
+    a[2][0] = 0;
+    a[3][k - 1] = mod->m[k - 1] - 1;
+    for (int r = 0; r < EDGE_ROWS; r++) {
+        CH_ASSERT(below(a[r], mod->m, k));
+        compare_square(modulus_name, a[r], mod);
+    }
+}
+
 // Every case under one modulus of k words, given as len = 8k big-endian
 // bytes with the top bit set.
 static void run_modulus(const char *modulus_name, const uint8_t *n, size_t k) {
@@ -278,6 +303,7 @@ static void run_modulus(const char *modulus_name, const uint8_t *n, size_t k) {
     for (int j = 4; j < B_ROWS; j++) {
         compare_square(modulus_name, b[j], &mod);
     }
+    run_square_edges(modulus_name, &mod);
 }
 
 // The big-endian bytes of the k words in words, top word first.

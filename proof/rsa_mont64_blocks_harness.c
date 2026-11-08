@@ -13,6 +13,8 @@
 // callers use and the square in its two, every operand havocked before each. The square runs as
 // the blocks' square at the largest count, and as their multiplication of a by itself at
 // RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX words, the largest count that does, in the same two shapes.
+// The blocks' square also runs at RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX + 4 words, the smallest count
+// at which rsa_mont64_mont_square calls it.
 //
 // This line runs without --unsigned-overflow-check. That every sum in the blocks stays inside
 // 128 bits is rsa_mont64_blocks_sums_harness.c's claim, at four and eight words.
@@ -64,6 +66,10 @@ int main(void) {
 
     havoc_modulus(&mod, RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX);
     havoc_words(a, RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX);
+    rsa_mont64_mont_square(a, a, &mod);
+
+    havoc_modulus(&mod, RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX + 4);
+    havoc_words(a, RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX + 4);
     rsa_mont64_mont_square(a, a, &mod);
     return 0;
 }

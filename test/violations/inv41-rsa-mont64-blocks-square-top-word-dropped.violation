@@ -1,0 +1,12 @@
+invariant: INV-41
+file: src/rsa_mont64_blocks.c
+catches: rsa_blocks_equiv_test
+reason: a row of the square drops a_i times word k of its words, the top
+  bit of 2a, so the result is short whenever the top bit of a's top word
+  is set. bin/rsa_blocks_equiv_test squares operands whose top word has
+  that bit, all ones under a modulus of all ones among them.
+
+--- old
+    uint64_t top_word = *a_word & blocks_mask_of_bit(*v_top);
+--- new
+    uint64_t top_word = *a_word & blocks_mask_of_bit(*v_top) & 0;

@@ -1688,9 +1688,9 @@ The entries are grouped by area:
 - **Proves:**
   - `rsa_mont64_blocks_sums`: at four words and at eight, over any
     operands, any modulus and any `m0inv`, no sum in the blocks wraps:
-    each sum of a block's two carry chains, the word a block returns, a
-    row's tail, the top step of a multiplication's round, the doubling
-    and the squares of the square, and each step of its reduction. It
+    each sum of a block's two carry chains, the word a block returns, the
+    top step of a multiplication's round and the top step of each row of
+    the square (decision 192). It
     runs the multiplication through `rsa_mont64_mont_mul` and
     `rsa_mont64_mont_square`, which runs a square of up to
     `RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX` words as the multiplication of
@@ -1700,8 +1700,9 @@ The entries are grouped by area:
     `rsa_mont64_mont_square`, the blocks read and write inside their
     arrays at the largest word count, the multiplication in the four
     aliasing shapes its callers use and the square in its two, and so
-    does the square at 32 words, `RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX`,
-    the largest count it runs as the multiplication, in the same two.
+    does the square at 16 words, `RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX`,
+    the largest count it runs as the multiplication, in the same two, and
+    at 20 words, the smallest count it runs as the blocks' square.
 
   The `_webpki` line is the same harness at the `CH_TRUST_WEBPKI`
   bound.
@@ -1709,7 +1710,13 @@ The entries are grouped by area:
   four and eight words for `rsa_mont64_blocks_sums`.
 - **Not proved:** any value. That the blocks write the words
   `rsa_mont64.c`'s loops write rests on
-  [tests](#the-host-objects-rsa-arithmetic). The file's timing claim is
+  [tests](#the-host-objects-rsa-arithmetic). That the square writes the
+  words the multiplication of a by itself writes is not a CBMC property:
+  it is the equality of two multipliers, which docs/proofs.md says no
+  formula here solves at 64-bit words.
+  `spec/lean/Spec/RsaMont64Square.lean` proves it on a model of the C's
+  rows, and `bin/diff_rsa_mont64_square` holds the C's words to that
+  model at every multiple of 4 words from 4 to 64. The file's timing claim is
   `make lint-wide-multiply`'s, which counts the conditional branches it
   compiles to, and `bin/rsa_sign_equiv_test`'s search of the stack,
   which runs the blocks only where a clang build for arm64 runs them.
@@ -6845,12 +6852,22 @@ value. Tests hold the values:
   and random values, which may be above n, by b from 0, 1, n - 1, the
   top bit alone and random values below n, with the output apart, on a
   and on b; and for each a below n the multiplication of a by itself
-  and the square, each with the output apart from a and on it. At a
-  multiple of 4 it also
+  and the square, each with the output apart from a and on it. The
+  square also takes four operands at an edge of its doubling: all ones
+  under a top word one below n's, words of all ones and of zero in turn,
+  n with a low word of zero, and random words with every second word
+  zero (decision 192). At a multiple of 4 it also
   holds `rsa_mont64_blocks_square` to
   `rsa_mont64_blocks_mul(o, a, a, mod)` before the last subtraction,
-  since `rsa_mont64_mont_square` runs the square only above 32 words:
-  62,720 multiplications and 7,056 squares in all.
+  since `rsa_mont64_mont_square` runs the square only above 16 words:
+  66,304 multiplications and 11,088 squares in all.
+- `bin/diff_rsa_mont64_square`, in `make diff`, holds
+  `rsa_mont64_blocks_square`'s words and the word above them to
+  `spec/lean/Spec/RsaMont64Square.lean`'s model of its rows, at every
+  multiple of 4 from 4 to 64 words, under ten random moduli and the
+  modulus of all ones: 0, 1, n - 1, all ones under a top word one below
+  n's and random values below n, 1,408 rows. The module proves that the
+  rows give `RsaMont64Adx.montMul` of a by itself (decision 192).
 - `bin/rsa_addcarry_equiv_test`, in `make check`, is the same two units
   compiled with the rows on and the blocks off, under any compiler, so
   `rsa_mont64_mont_mul` and `rsa_mont64_mont_square` run the rows at every

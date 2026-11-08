@@ -5823,6 +5823,8 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_p256_adx
 	$(MAKE) bin/diff_rsa_mont64_adx
 	./bin/diff_rsa_mont64_adx
+	$(MAKE) bin/diff_rsa_mont64_square
+	./bin/diff_rsa_mont64_square
 else
 	@echo "SKIP diff's wide X25519 and P-256 binaries: $(CC) fails the host test"
 	@echo "SKIP diff's RSA signers' binary: $(CC) fails the host test"
@@ -5831,6 +5833,7 @@ else
 	@echo "SKIP diff's DNSSEC exponent binary: $(CC) fails the host test"
 	@echo "SKIP diff's DNSSEC Ed25519 binary: $(CC) fails the host test"
 	@echo "SKIP diff's radix-2^64 X25519 binary: $(CC) fails the host test"
+	@echo "SKIP diff's RSA blocks' square binary: $(CC) fails the host test"
 endif
 endif
 
@@ -6003,6 +6006,18 @@ bin/diff_rsa_mont64_adx: $(DIFF_RSA_MONT64_ADX_SRCS) src/rsa_mont64_adx.c test/r
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  $(DIFF_RSA_MONT64_ADX_SRCS)
+
+# The blocks' square: rsa_mont64_blocks.c's rsa_mont64_blocks_square against
+# spec/lean/Spec/RsaMont64Square.lean (docs/decisions.md 192). Its own main,
+# because the blocks compile here under -DRSA_MONT64_BLOCKS=1 whatever the
+# compiler, as bin/rsa_blocks_equiv_test compiles them, and no row of
+# bin/diff reads them. rsa_mont64.c computes each modulus's m0inv.
+DIFF_RSA_MONT64_SQUARE_SRCS := test/diff_rsa_mont64_square_test.c src/rsa_mont64.c src/rsa_mont64_blocks.c \
+                               src/rsa_mont64_addcarry.c src/ct.c src/ct_wipe.c
+bin/diff_rsa_mont64_square: $(DIFF_RSA_MONT64_SQUARE_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 -DCH_RSA_MODULUS_MAX=512 \
+	  -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ $(DIFF_RSA_MONT64_SQUARE_SRCS)
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
@@ -9358,9 +9373,11 @@ WIDEMUL_SPECS := \
 #   one of its arguments' addresses. The comparison and the subtraction
 #   that end a multiplication, a sum and a difference stay a carry and a
 #   mask.
-# rsa_mont64_blocks.c, 13 and 0; rsa_mont64_addcarry.c, 11 and 23: loop
+# rsa_mont64_blocks.c, 14 and 0; rsa_mont64_addcarry.c, 11 and 23: loop
 #   control over the word count and a row's length, and the tests that skip
-#   a loop of no iterations.
+#   a loop of no iterations. The blocks' square adds one more, a test of a
+#   row's index for whether its cross products start in the first block
+#   (docs/decisions.md 192).
 # rsa_sign64.c, 42 and 40; rsa_sign64.c@512, 46 and 42: the CH_ASSERTs on a
 #   key's and a prime's public lengths; rsa_sign64_power's loops over the
 #   exponent's digits, the four squarings and the sixteen entries a read of
@@ -9883,7 +9900,7 @@ BRANCH_CEILING := \
   arm64/src/poly1305_avx2.c:0 x86-64/src/poly1305_avx2.c:0 \
   arm64/src/poly1305_ifma.c:0 x86-64/src/poly1305_ifma.c:0 \
   arm64/src/rsa_mont64.c:71 x86-64/src/rsa_mont64.c:109 \
-  arm64/src/rsa_mont64_blocks.c:13 x86-64/src/rsa_mont64_blocks.c:0 \
+  arm64/src/rsa_mont64_blocks.c:14 x86-64/src/rsa_mont64_blocks.c:0 \
   arm64/src/rsa_mont64_addcarry.c:11 x86-64/src/rsa_mont64_addcarry.c:23 \
   arm64/src/rsa_sign64.c:42 x86-64/src/rsa_sign64.c:42 \
   arm64/src/rsa_sign64.c@512:46 x86-64/src/rsa_sign64.c@512:42 \

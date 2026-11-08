@@ -1,0 +1,12 @@
+invariant: INV-41
+file: src/rsa_mont64_blocks.c
+catches: rsa_blocks_equiv_test
+reason: row i of the square reads a_{i+1} at word i + 1 where it needs
+  a_{i+1} moved up one bit, so the row adds the cross product a_i a_{i+1}
+  once where the square holds it twice. bin/rsa_blocks_equiv_test holds
+  rsa_mont64_blocks_square to the blocks' multiplication of a by itself.
+
+--- old
+        v[i + 1] = a[i + 1] << 1;
+--- new
+        v[i + 1] = a[i + 1];
