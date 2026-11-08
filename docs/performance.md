@@ -1786,7 +1786,8 @@ patterns of multi-word arithmetic below, before its first measurement.
 3. Read a value from a volatile object once for each step, for all of its uses in that step, not
    once for each use. Mark a small function of inline assembly `always_inline`, and read gcc's
    output for a call to it. `x25519_adx.c` reads the ladder bit from a volatile object in each of
-   its two swaps of a step.
+   its two swaps of a step. Both were measured and did not win on the EPYC 7763: gcc's calls run
+   beside the products (decision 197).
 
 This tree refuses these patterns, whatever they save:
 

@@ -16612,6 +16612,36 @@ does nothing more.
       so its rows were not timed for the record. Run one after the other at
       that load, the two programs gave the shared secret 0.91 of its time.
 
+197. **`x25519_adx.c` keeps its calls and its two volatile reads a step:
+    the change did not win past the noise.** Pattern 3 of a fast primitive in
+    docs/performance.md named two costs in the ladder: gcc 13.3 for x86-64 at
+    -O2 called the five operations of `x25519_adx_asm.h` out of line, and
+    each swap read the ladder bit from its own volatile object. Camilo
+    approved the item on 2026-11-08 under the rule that a change lands
+    only when it wins.
+
+    - **The change measured.** The five operations were always_inline,
+      the ladder read the bit back once a step and built one mask for both
+      swaps, and `x25519_wide.c`'s cswap, which gcc also called out of
+      line twice a step, was always_inline. clang inlined all of them
+      before. Inlined, gcc for x86-64 and for arm64 kept every mask and
+      wrote no jump on a bit; its conditional branches in `x25519_adx.c`
+      went from 19 to 15, each a loop's or the stack check's.
+    - **Instructions.** One shared secret under `qemu-x86_64 -cpu max`
+      and gcc 13.3 took 291,194 instructions where it took 342,716, under
+      `CH_CPU_BMI2_ADX`; under clang 18 it moved by 0.4%.
+    - **Time.** On an EPYC 7763 the shared secret took 38.05 µs where it
+      took 38.28 under gcc, and 33.48 where it took 33.70 under clang
+      (bench runs 42505883938 and 42508204226), inside the spread of a
+      row. On an EPYC 9V45 it took 0.94 of its time under gcc and 0.97
+      under clang, and OpenSSL's row moved by 0.96 between the same two
+      runs. The core runs a call and its saves beside the products, so
+      the instructions it removes cost no time there.
+    - **What holds.** The tree keeps decision 165's form. A mutant that
+      built the one mask from the bit itself was not caught by the x86-64
+      branch count under the pinned clang 23, so the volatile read stays
+      what decision 125 asks for, not what a test holds.
+
 198. **An arm64 host object samples ML-KEM's matrix and ML-DSA-87's A two
     entries at a time on a two-way Keccak, in every session.** On arm64 each
     entry of the two matrices ran on one Keccak state: `sha3.c`, or
