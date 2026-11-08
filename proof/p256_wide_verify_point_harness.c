@@ -14,7 +14,9 @@
 // the contracts of proof/p256_wide_field_stubs.h, whose predicates answer
 // an unconstrained mask, so every branch on a coordinate is taken both
 // ways. The launch line links p256_wide_table.c, whose row 0 the additions
-// of G's multiples read.
+// of G's multiples read. point_double calls p256_wide_point_double_jacobian,
+// which the stub below states: it reads a and writes o, and o may be a.
+// proof/p256_wide_point_harness.c proves its body.
 //
 // Not unrolled: the loop of p256_wide_jacobian_double_mul, 257 rounds of a
 // doubling and two additions. Its body is point_double, add_g_multiple and
@@ -35,6 +37,11 @@ static void havoc_point(p256_wide_jacobian *p) {
     havoc_wide_fe(&p->x);
     havoc_wide_fe(&p->y);
     havoc_wide_fe(&p->z);
+}
+
+void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jacobian *a) {
+    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "double_jacobian: point readable");
+    havoc_point(o);
 }
 
 int main(void) {

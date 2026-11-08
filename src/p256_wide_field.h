@@ -136,6 +136,26 @@ static inline void p256_wide_fe_sub(p256_wide_fe *o, const p256_wide_fe *a, cons
     o->word[3] = p256_wide_add_carry(&carry, d3, P256_WIDE_P3 & wrapped);
 }
 
+// o = a / 2 mod p, the element whose double is a. p is odd, so a + p is even when a is odd:
+// o = (a + p) / 2 for an odd a and a / 2 for an even a, and both are below p. The sum of a and
+// p is below 2^257, and the carry out of the four words is its bit 256. A shift of the five
+// words by one bit divides by 2. The low bit of a is a secret's, so it is read back from a
+// volatile object before the mask is built: a compiler that knows a mask is all ones or zero
+// may write the choice as a jump (docs/decisions.md 125 and 196).
+static inline void p256_wide_fe_half(p256_wide_fe *o, const p256_wide_fe *a) {
+    volatile uint64_t low_bit = a->word[0] & 1U;
+    uint64_t odd = p256_wide_mask(low_bit);
+    uint64_t carry = 0;
+    uint64_t s0 = p256_wide_add_carry(&carry, a->word[0], P256_WIDE_P0 & odd);
+    uint64_t s1 = p256_wide_add_carry(&carry, a->word[1], P256_WIDE_P1 & odd);
+    uint64_t s2 = p256_wide_add_carry(&carry, a->word[2], P256_WIDE_P2 & odd);
+    uint64_t s3 = p256_wide_add_carry(&carry, a->word[3], P256_WIDE_P3 & odd);
+    o->word[0] = (s0 >> 1) | (s1 << 63);
+    o->word[1] = (s1 >> 1) | (s2 << 63);
+    o->word[2] = (s2 >> 1) | (s3 << 63);
+    o->word[3] = (s3 >> 1) | (carry << 63);
+}
+
 #endif // CH_CPU_RUNTIME
 
 #endif

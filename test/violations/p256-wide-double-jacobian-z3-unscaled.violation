@@ -1,0 +1,15 @@
+invariant: INV-16
+file: src/p256_wide_point.c
+catches: diff_p256_wide
+reason: the Jacobian doubling writes the database's Z3 = 2 Y1 Z1 beside
+  an X3 and a Y3 that are scaled by 1/2 (docs/decisions.md 196). The
+  three coordinates then hold another point. The differential compares
+  each coordinate with the Lean doubling, which is proven to double.
+
+--- old
+    p256_wide_fe_mul(&z3, &a->y, &a->z);
+    // zz = Z1^2
+--- new
+    p256_wide_fe_mul(&z3, &a->y, &a->z);
+    p256_wide_fe_add(&z3, &z3, &z3);
+    // zz = Z1^2

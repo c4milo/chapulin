@@ -499,9 +499,9 @@ The M1 CSV holds no ML-DSA-87 rows yet, so those three rows show a dash in the M
 | X25519 key generation | 10.7 µs | 27.3 µs | 0.39 | 15.0 µs | 33.8 µs | 0.44 | 14.1 µs | 33.8 µs | 0.42 | 11.5 µs | 27.2 µs | 0.42 | 10.9 µs | 27.3 µs | 0.40 |
 | X25519 shared secret | 28.5 µs | 28.7 µs | 0.99 | 38.2 µs | 36.5 µs | **1.05** | 33.6 µs | 36.5 µs | 0.92 | 29.3 µs | 30.0 µs | 0.98 | 27.1 µs | 30.0 µs | 0.90 |
 | P-256 key generation | 10.1 µs | 9.68 µs | **1.04** | 15.3 µs | 12.3 µs | **1.24** | 12.0 µs | 12.3 µs | 0.97 | 12.4 µs | 10.5 µs | **1.18** | 10.3 µs | 10.5 µs | 0.98 |
-| P-256 shared secret | 53.5 µs | 41.5 µs | **1.29** | 64.9 µs | 51.7 µs | **1.26** | 59.2 µs | 51.6 µs | **1.15** | 54.1 µs | 49.5 µs | **1.09** | 49.9 µs | 49.6 µs | **1.01** |
+| P-256 shared secret | 53.5 µs | 41.5 µs | **1.29** | 60.1 µs | 51.7 µs | **1.16** | 56.2 µs | 51.7 µs | **1.09** | 54.1 µs | 49.5 µs | **1.09** | 49.9 µs | 49.6 µs | **1.01** |
 | ECDSA P-256 sign | 14.7 µs | 18.3 µs | 0.81 | 24.2 µs | 22.2 µs | **1.09** | 19.1 µs | 22.1 µs | 0.86 | 20.0 µs | 19.7 µs | **1.01** | 16.5 µs | 19.7 µs | 0.84 |
-| ECDSA P-256 verify | 55.0 µs | 55.0 µs | **1.00** | 69.8 µs | 67.8 µs | **1.03** | 60.1 µs | 67.7 µs | 0.89 | 60.4 µs | 65.5 µs | 0.92 | 50.5 µs | 64.2 µs | 0.79 |
+| ECDSA P-256 verify | 55.0 µs | 55.0 µs | **1.00** | 61.2 µs | 67.7 µs | 0.90 | 56.1 µs | 67.8 µs | 0.83 | 60.4 µs | 65.5 µs | 0.92 | 50.5 µs | 64.2 µs | 0.79 |
 | ECDSA P-384 verify | 275 µs | 488 µs | 0.56 | 691 µs | 728 µs | 0.95 | 365 µs | 730 µs | 0.50 | 490 µs | 521 µs | 0.94 | 272 µs | 521 µs | 0.52 |
 | RSA-2048 PSS sign | 673 µs | 558 µs, PKCS#1 v1.5 sign | — | 1.01 ms | 660 µs, PKCS#1 v1.5 sign | — | 954 µs | 659 µs, PKCS#1 v1.5 sign | — | 284 µs | 275 µs, PKCS#1 v1.5 sign | — | 261 µs | 273 µs, PKCS#1 v1.5 sign | — |
 | RSA-2048 PSS verify | 22.1 µs | 14.6 µs, PKCS#1 v1.5 verify | — | 23.6 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 22.2 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 10.9 µs | 16.2 µs, PKCS#1 v1.5 verify | — | 10.3 µs | 16.1 µs, PKCS#1 v1.5 verify | — |
@@ -1776,9 +1776,9 @@ patterns of multi-word arithmetic below, before its first measurement.
 
 1. Count every operation of a formula: its additions, subtractions and halvings as well as its
    products and squares. 8·Y^4 takes three additions from Y^4, or
-   one halving by a mask from (2Y)^4. P-256's doubling in
-   `p256_wide_point.c` runs 14 additions and subtractions, and on the EPYC 7763 an addition of four
-   words takes 14.1 cycles under gcc and 7.6 under clang.
+   one halving by a mask from (2Y)^4. On the EPYC 7763 an addition of four words takes 14.1 cycles
+   under gcc and 7.6 under clang. P-256's doubling in `p256_wide_point.c` ran 14 additions and
+   subtractions. It now computes the same point scaled by 1/2, in 7 and one halving (decision 196).
 2. Reduce inside the products. Start each round of a Montgomery reduction as soon as its word of
    the product is ready, so the reduction and the next products overlap. Carry only where the
    proved bound requires it, and give each carry that a change removes a CBMC bound and a Lean

@@ -218,7 +218,11 @@ p256_wide_inverse_steps 153
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
 p256_wide_mul 216
-p256_wide_point 408
+# Decision 196 wrote the doubling with 7 additions and subtractions and one
+# halving, where it had 14: p256_wide_point reaches 405 of 415 locations
+# where it reached 408 of 418, on arm64 macOS, whose counts matched these
+# floors before the change.
+p256_wide_point 405
 p256_wide_row 51
 p256_wide_row_sum 45
 p256_wide_scalar 192
@@ -253,8 +257,13 @@ p256_wide_sqr 39
 # locations. The harness reaches 184 of 253 locations on the runner (run
 # 39117500983).
 p256_wide_verify 184
-p256_wide_verify_digits 190
-p256_wide_verify_point 215
+# Decision 196 also moved the verifier's doubling out of
+# p256_wide_verify_point.c: it calls the key exchange's, which both harnesses
+# stub. Each harness reaches 25 locations fewer, the old body's, and holds
+# 18 fewer, since the stub adds its own: 190 of 293 became 165 of 275, and
+# 215 of 304 became 190 of 286, on arm64 macOS.
+p256_wide_verify_digits 165
+p256_wide_verify_point 190
 p256_wide_wipe 11
 p384_mul 13
 # The four p384_wide harnesses took their floors on 2026-10-05 from an

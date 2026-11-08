@@ -16546,6 +16546,72 @@ does nothing more.
     caught. The bound of 2,048 bytes changes no output word, so no test
     sees it.
 
+196. **The Jacobian doubling of the wide P-256 files computes the
+    database's point scaled by 1/2.** Decision 175 found the doubling to be
+    most of the gap to OpenSSL on an EPYC 7763: 469 cycles under gcc and
+    383 under clang, against 301. The products were at OpenSSL's speed. The
+    doubling also ran 14 additions and subtractions, and one addition of
+    four words took 14.1 cycles under gcc and 7.6 under clang. Camilo
+    approved the item on 2026-11-08.
+
+    - **The formula.** (l^2 X : l^3 Y : l Z) is the same Jacobian point for
+      every l other than zero. With l = 1/2, dbl-1986-cc-2 gives Z3 = Y1 Z1,
+      m = 3/2 (X1 - Z1^2) (X1 + Z1^2), s = X1 Y1^2, X3 = m^2 - 2 s and
+      Y3 = m (s - X3) - Y1^4. It takes 4 products, 4 squares, 3 additions,
+      4 subtractions and 1 halving, where the database's form took 4
+      products, 4 squares and 14 additions and subtractions. Z3 still
+      comes first (decision 112).
+    - **The halving.** `p256_wide_fe_half` adds p to an odd element under
+      a mask and shifts the five words right by one bit. The low bit is a
+      secret's, so it is read back from a volatile object before the mask
+      is built (decision 125). Neither compiler writes a jump for it
+      without the volatile read today, so no count guards the read.
+    - **Where it runs.** The key exchange's doubling in
+      `p256_wide_point.c`, the x86-64 copy that `p256_adx_point.c`
+      compiles, and the verifier: `p256_wide_verify_point.c` dropped its
+      dbl-2001-b of 3 products, 5 squares and 16 linear steps and calls the
+      same doubling. `p256.c`, the 32-bit verifier of a device object,
+      keeps dbl-2001-b. bin/p256_verify_equiv_test holds the wide verifier
+      to it, and two formulas that agree are a stronger test than one. By
+      operation count the change would save about 1% of a verification on
+      the Cortex-M3, whose products are most of the time. That is not
+      measured.
+    - **What holds it.** `spec/lean/Spec/P256WidePoint.lean` keeps the
+      database's form as `doubleJacobianDatabase` and models the C as
+      `doubleJacobian`, over a ring in which 2 has an inverse.
+      `doubleJacobian_eq_scale` proves that the C's form is the database's
+      point scaled by 1/2, `scale_represents` that a scaled point is the
+      same point, and `doubleJacobian_represents` follows. The differential
+      runs the doubling as before and a new `p256_half` row at the edges of
+      the words: 0, 1, 2, p - 2 and p - 1. The `p256_wide_field` harness
+      holds the halving to a reference and proves that the half added to
+      itself is the element. Five mutants are caught under clang and gcc.
+    - **Numbers.** Bench runs 42505883938 (the tree before) and
+      42508204226 (this tree) on one EPYC 7763 model, in µs, before then
+      after:
+
+      | row | gcc 13.3 | clang 23 |
+      |---|---|---|
+      | P-256 shared secret | 65.1, 60.1 | 59.1, 56.2 |
+      | ECDSA P-256 verify | 69.7, 61.2 | 60.0, 56.1 |
+
+      The key generation and the signature do not double, and did not
+      move. Against OpenSSL 3.6.4 the shared secret now takes 1.16 and
+      1.09 of its time, where it took 1.26 and 1.15, and the
+      verification 0.90 and 0.83. On an EPYC 9V45 (runs 42505709214 and
+      42508204226) the two rows took 0.86 and 0.80 of their time under
+      gcc and 0.94 and 0.91 under clang, while OpenSSL's rows moved by
+      0.95 to 1.01 between the runs; the AVX-512 column holds a Xeon
+      8573C, so no row there changed. Instructions of one operation under
+      `qemu-x86_64 -cpu max`, gcc 13.3 then clang 18, with
+      `CH_CPU_BMI2_ADX`: the shared secret 655,542 to 590,774 and 613,814
+      to 558,913, the verification 639,492 to 568,109 and 609,939 to
+      542,139. On the M1 Pro under `0xe7` the shared secret retires
+      531,312 instructions where it retired 561,685, and the verification
+      534,686 where it retired 563,927. The M1 was at a load of 40 to 50,
+      so its rows were not timed for the record. Run one after the other at
+      that load, the two programs gave the shared secret 0.91 of its time.
+
 198. **An arm64 host object samples ML-KEM's matrix and ML-DSA-87's A two
     entries at a time on a two-way Keccak, in every session.** On arm64 each
     entry of the two matrices ran on one Keccak state: `sha3.c`, or

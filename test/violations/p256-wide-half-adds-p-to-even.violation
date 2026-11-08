@@ -1,0 +1,13 @@
+invariant: INV-16
+file: src/p256_wide_field.h
+catches: proof/prove-one.sh p256_wide_field
+reason: p256_wide_fe_half adds p to an even element and nothing to an
+  odd one, so the shift drops the odd bit and the result is neither
+  half. The harness holds the halving to a reference that adds p to an
+  odd value by a branch, and requires that the half added to itself is
+  the element.
+
+--- old
+    uint64_t odd = p256_wide_mask(low_bit);
+--- new
+    uint64_t odd = p256_wide_mask(low_bit ^ 1U);

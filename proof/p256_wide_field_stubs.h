@@ -17,12 +17,13 @@
 
 #include "p256_wide_field.h"
 
-// p256_wide_field.h defines the addition and the subtraction inline. These defines rename every
-// later use to the stubs below, as proof/p256_wide_stubs.h renames the product row, and the
-// header's include guard keeps the files a harness reads after this one from defining them
+// p256_wide_field.h defines the addition, the subtraction and the halving inline. These defines
+// rename every later use to the stubs below, as proof/p256_wide_stubs.h renames the product row,
+// and the header's include guard keeps the files a harness reads after this one from defining them
 // again.
 #define p256_wide_fe_add stub_wide_fe_add
 #define p256_wide_fe_sub stub_wide_fe_sub
+#define p256_wide_fe_half stub_wide_fe_half
 
 uint64_t nondet_u64(void);
 
@@ -113,6 +114,11 @@ void p256_wide_fe_add(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe
 void p256_wide_fe_sub(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b) {
     check_wide_fe_readable(a);
     check_wide_fe_readable(b);
+    havoc_wide_fe(o);
+}
+
+void p256_wide_fe_half(p256_wide_fe *o, const p256_wide_fe *a) {
+    check_wide_fe_readable(a);
     havoc_wide_fe(o);
 }
 

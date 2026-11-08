@@ -228,12 +228,17 @@ void p256_wide_point_from_jacobian(p256_wide_point *o, const p256_wide_jacobian 
     p256_wide_fe_cmov(&o->y, &p256_wide_fe_one_mont, p256_wide_fe_zero_mask(&a->z));
 }
 
-// The Explicit-Formulas Database's dbl-1986-cc-2 for a = -3, with the database's names in lower
-// case. The database writes Z1^2, Y1^2 and Y1^4 inline, and zz, yy and yyyy hold them here. Its
-// T is X3. Z3 comes first, where the database computes it last: the next doubling squares it
-// first, and with Z3 last each of a key exchange's 253 doublings waited for its product and its
-// sum, 4 of 58 µs on the M1 Pro (docs/decisions.md 112). spec/lean/Spec/P256WidePoint.lean
-// holds the same steps, one definition per local, and proves what they compute.
+// The Explicit-Formulas Database's dbl-1986-cc-2 for a = -3, with every coordinate of its
+// result scaled. (l^2 X : l^3 Y : l Z) is the same Jacobian point for every l other than zero,
+// and here l = 1/2. The database's Z3 = 2 Y1 Z1 becomes Y1 Z1. Its M = 3 (X1 - Z1^2) (X1 + Z1^2)
+// becomes m = M / 2, and its S = 4 X1 Y1^2 becomes s = X1 Y1^2 = S / 4. Then X3 = m^2 - 2 s is
+// the database's X3 / 4, and Y3 = m (s - X3) - Y1^4 is its Y3 / 8. The database's form takes 14
+// additions and subtractions: three for 8 Y1^4, two for S and one for Z3. This form takes 4
+// products, 4 squares, 3 additions, 4 subtractions and 1 halving (docs/decisions.md 196). zz,
+// yy and yyyy hold Z1^2, Y1^2 and Y1^4. Z3 comes first: the next doubling squares it first,
+// and with Z3 last each of a key exchange's 253 doublings waited for it (docs/decisions.md
+// 112). spec/lean/Spec/P256WidePoint.lean holds the same steps, one definition per local, and
+// proves what they compute.
 void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jacobian *a) {
     p256_wide_fe zz;
     p256_wide_fe yy;
@@ -245,32 +250,27 @@ void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jaco
     p256_wide_fe y3;
     p256_wide_fe z3;
 
-    // Z3 = 2 * Y1 * Z1.
+    // Z3 = Y1 * Z1.
     p256_wide_fe_mul(&z3, &a->y, &a->z);
-    p256_wide_fe_add(&z3, &z3, &z3);
-    // zz = Z1^2, and m = 3 * (X1 - zz) * (X1 + zz), the tangent's slope times Z3.
+    // zz = Z1^2, and m = 3/2 * (X1 - zz) * (X1 + zz), the tangent's slope times Z3: the
+    // product plus half the product.
     p256_wide_fe_sqr(&zz, &a->z);
     p256_wide_fe_sub(&t, &a->x, &zz);
     p256_wide_fe_add(&m, &a->x, &zz);
     p256_wide_fe_mul(&m, &t, &m);
-    p256_wide_fe_add(&t, &m, &m);
-    p256_wide_fe_add(&m, &t, &m);
-    // yy = Y1^2, and s = 4 * X1 * yy.
+    p256_wide_fe_half(&t, &m);
+    p256_wide_fe_add(&m, &m, &t);
+    // yy = Y1^2, and s = X1 * yy.
     p256_wide_fe_sqr(&yy, &a->y);
     p256_wide_fe_mul(&s, &a->x, &yy);
-    p256_wide_fe_add(&s, &s, &s);
-    p256_wide_fe_add(&s, &s, &s);
     // X3 = m^2 - 2 * s.
     p256_wide_fe_sqr(&x3, &m);
     p256_wide_fe_add(&t, &s, &s);
     p256_wide_fe_sub(&x3, &x3, &t);
-    // Y3 = m * (s - X3) - 8 * yy^2.
+    // Y3 = m * (s - X3) - yy^2.
     p256_wide_fe_sub(&t, &s, &x3);
     p256_wide_fe_mul(&y3, &m, &t);
     p256_wide_fe_sqr(&yyyy, &yy);
-    p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
-    p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
-    p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
     p256_wide_fe_sub(&y3, &y3, &yyyy);
 
     // o may alias a, so the three coordinates move only now.

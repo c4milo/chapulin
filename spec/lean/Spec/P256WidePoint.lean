@@ -30,11 +30,16 @@ digits that are odd and at most 63 in size, wherever `G`'s order is at least
 `64 ^ 42 = 2 ^ 252`. `windowSum_represents_p256` states it at P-256, with `n`
 prime and `n • G = 0` as hypotheses.
 
-`doubleJacobian` is the database's dbl-1986-cc-2 and `addJacobianIncomplete`
-its add-1998-cmo-2. `doubleJacobian_represents` proves that the first computes
+`doubleJacobianDatabase` is the database's dbl-1986-cc-2, and `doubleJacobian`
+is that formula with its result scaled by `1/2`, the form the C runs since
+docs/decisions.md 196. `addJacobianIncomplete` is the database's
+add-1998-cmo-2. `doubleJacobian_eq_scale` proves that the C's doubling gives the
+database's point scaled by `1/2`, `scale_represents` that a scaled point is
+the same point, and `doubleJacobian_represents` that the doubling computes
 `P + P` for every point `P` of every curve `y^2 = x^3 - 3x + b`, over a field
-in which 2 is not zero, and `addJacobianIncomplete_represents` that the second
-computes `P + Q` for two finite points whose x differ, over every field.
+in which 2 has an inverse. `addJacobianIncomplete_represents` proves that the
+addition computes `P + Q` for two finite points whose x differ, over every
+field.
 `toJacobian_represents` and `fromJacobian_represents` prove that the
 conversions keep every point. `p256_wide_mul` computes the odd multiples of its
 point by `addJacobianIncomplete`, which `multiples` is, and adds windows 62 to
@@ -134,10 +139,12 @@ def fromJacobian {R : Type*} [CommRing R] [DecidableEq R] (a : Jacobian R) : Pro
   let y := if a.z = 0 then 1 else y
   ⟨x, y, z⟩
 
-/-- `p256_wide_point_double_jacobian` (`p256_wide_point.c`): the Explicit-Formulas Database's
-dbl-1986-cc-2 for `a = -3`, with `s = 4 X1 Y1^2` and `m = 3 (X1 - Z1^2) (X1 + Z1^2)`, giving
-`X3 = m^2 - 2 s`, `Y3 = m (s - X3) - 8 Y1^4` and `Z3 = 2 Y1 Z1`. -/
-def doubleJacobian {R : Type*} [CommRing R] (a : Jacobian R) : Jacobian R :=
+/-- The Explicit-Formulas Database's dbl-1986-cc-2 for `a = -3`, which
+`p256_wide_point_double_jacobian` (`p256_wide_point.c`) ran until docs/decisions.md 196: with
+`s = 4 X1 Y1^2` and `m = 3 (X1 - Z1^2) (X1 + Z1^2)`, it gives `X3 = m^2 - 2 s`,
+`Y3 = m (s - X3) - 8 Y1^4` and `Z3 = 2 Y1 Z1`. `doubleJacobian_eq_scale` relates the C's form to
+it. -/
+def doubleJacobianDatabase {R : Type*} [CommRing R] (a : Jacobian R) : Jacobian R :=
   let z3 := a.y * a.z
   let z3 := z3 + z3
   let zz := a.z ^ 2
@@ -161,6 +168,39 @@ def doubleJacobian {R : Type*} [CommRing R] (a : Jacobian R) : Jacobian R :=
   let yyyy := yyyy + yyyy
   let y3 := y3 - yyyy
   ⟨x3, y3, z3⟩
+
+/-- `(l^2 X : l^3 Y : l Z)`, the same Jacobian point as `(X : Y : Z)` for every `l` other than
+zero: `scale_represents` proves it. -/
+def scale {R : Type*} [CommRing R] (l : R) (a : Jacobian R) : Jacobian R :=
+  ⟨l ^ 2 * a.x, l ^ 3 * a.y, l * a.z⟩
+
+/-- `p256_wide_point_double_jacobian` (`p256_wide_point.c`): `doubleJacobianDatabase` scaled by
+`1/2`. With `m = 3/2 (X1 - Z1^2) (X1 + Z1^2)` and `s = X1 Y1^2`, it gives `X3 = m^2 - 2 s`,
+`Y3 = m (s - X3) - Y1^4` and `Z3 = Y1 Z1`. `⅟2 * m` is the C's `p256_wide_fe_half`: the product
+of `m` and the inverse of 2, which the ring must have. -/
+def doubleJacobian {R : Type*} [CommRing R] [Invertible (2 : R)] (a : Jacobian R) : Jacobian R :=
+  let z3 := a.y * a.z
+  let zz := a.z ^ 2
+  let t := a.x - zz
+  let m := a.x + zz
+  let m := t * m
+  let t := ⅟2 * m
+  let m := m + t
+  let yy := a.y ^ 2
+  let s := a.x * yy
+  let x3 := m ^ 2
+  let t := s + s
+  let x3 := x3 - t
+  let t := s - x3
+  let y3 := m * t
+  let yyyy := yy ^ 2
+  let y3 := y3 - yyyy
+  ⟨x3, y3, z3⟩
+
+/-- 2 has an inverse mod P-256's prime `p`, `(p + 1) / 2`. `doubleJacobian` reads it, and so
+the differential and `selftest` compute it over `ZMod Spec.P256.p`. -/
+instance invertibleTwoP256 : Invertible (2 : ZMod Spec.P256.p) :=
+  ⟨((Spec.P256.p + 1) / 2 : ℕ), by decide, by decide⟩
 
 /-- `p256_wide_point_add_jacobian_incomplete` (`p256_wide_point.c`): the Explicit-Formulas
 Database's add-1998-cmo-2, with `h = X2 Z1^2 - X1 Z2^2`, `r = Y2 Z1^3 - Y1 Z2^3` and
@@ -195,7 +235,7 @@ def addJacobianIncomplete {R : Type*} [CommRing R] (a b : Jacobian R) : Jacobian
 /-- The odd multiples `p256_wide_mul` (`p256_wide_mul.c`) computes first: `multiples a 0` is `a`,
 and `multiples a (j + 1)` is `multiples a j` plus `doubleJacobian a`, by
 `addJacobianIncomplete`. The C computes them for `j` up to 7. -/
-def multiples {R : Type*} [CommRing R] (a : Jacobian R) : ℕ → Jacobian R
+def multiples {R : Type*} [CommRing R] [Invertible (2 : R)] (a : Jacobian R) : ℕ → Jacobian R
   | 0 => a
   | j + 1 => addJacobianIncomplete (multiples a j) (doubleJacobian a)
 
@@ -204,7 +244,8 @@ entry `entry j` of window `63 - j`: window 63's entry, and for each later window
 by `doubleJacobian` and that window's entry added by `addJacobianIncomplete`. The C runs it to
 `m = 62` and adds window 0 and the correction by the complete addition, in homogeneous
 coordinates, which this module does not model. -/
-def ladderSum {R : Type*} [CommRing R] (entry : ℕ → Jacobian R) : ℕ → Jacobian R
+def ladderSum {R : Type*} [CommRing R] [Invertible (2 : R)] (entry : ℕ → Jacobian R) :
+    ℕ → Jacobian R
   | 0 => entry 0
   | m + 1 =>
     addJacobianIncomplete
@@ -219,7 +260,8 @@ def ladderScalar (e : ℕ → ℤ) : ℕ → ℤ
 
 /-- Where `a`'s `Z` is zero, so is the `Z` of every multiple `multiples a` computes: the point at
 infinity's multiples are the point at infinity. -/
-theorem multiples_z_eq_zero {R : Type*} [CommRing R] {a : Jacobian R} (h_z : a.z = 0) (j : ℕ) :
+theorem multiples_z_eq_zero {R : Type*} [CommRing R] [Invertible (2 : R)] {a : Jacobian R}
+    (h_z : a.z = 0) (j : ℕ) :
     (multiples a j).z = 0 := by
   induction j with
   | zero => exact h_z
@@ -228,7 +270,7 @@ theorem multiples_z_eq_zero {R : Type*} [CommRing R] {a : Jacobian R} (h_z : a.z
     ring
 
 /-- Where every entry's `Z` is zero, so is the `Z` of every sum `ladderSum` computes. -/
-theorem ladderSum_z_eq_zero {R : Type*} [CommRing R] {entry : ℕ → Jacobian R}
+theorem ladderSum_z_eq_zero {R : Type*} [CommRing R] [Invertible (2 : R)] {entry : ℕ → Jacobian R}
     (h_z : ∀ j, (entry j).z = 0) (m : ℕ) : (ladderSum entry m).z = 0 := by
   cases m with
   | zero => exact h_z 0
@@ -457,16 +499,16 @@ theorem fromJacobian_represents {b : F} {a : Jacobian F} {P : (curve b).Point}
 /-- `doubleJacobian` doubles: where `a` holds `P`, `doubleJacobian a` holds `P + P`. That covers
 every point of the curve, the point at infinity and a point with `y = 0` among them, on every curve
 `y^2 = x^3 - 3x + b`, over every field in which 2 is not zero. -/
-theorem doubleJacobian_represents (h_two : (2 : F) ≠ 0) {b : F} {a : Jacobian F}
+theorem doubleJacobianDatabase_represents (h_two : (2 : F) ≠ 0) {b : F} {a : Jacobian F}
     {P : (curve b).Point} (h_represents : RepresentsJacobian b a P) :
-    RepresentsJacobian b (doubleJacobian a) (P + P) := by
+    RepresentsJacobian b (doubleJacobianDatabase a) (P + P) := by
   obtain ⟨x, y, z⟩ := a
   cases P with
   | zero =>
     change z = 0 at h_represents
     subst h_represents
-    change (doubleJacobian _).z = 0
-    simp [doubleJacobian]
+    change (doubleJacobianDatabase _).z = 0
+    simp [doubleJacobianDatabase]
   | some u v h_nonsingular =>
     obtain ⟨h_z, rfl, rfl⟩ := h_represents
     dsimp only at h_z h_nonsingular ⊢
@@ -474,8 +516,8 @@ theorem doubleJacobian_represents (h_two : (2 : F) ≠ 0) {b : F} {a : Jacobian 
     · subst h_y
       have h_own_negative : 0 / z ^ 3 = (curve b).negY (x / z ^ 2) (0 / z ^ 3) := by simp [curve]
       rw [WeierstrassCurve.Affine.Point.add_self_of_Y_eq h_own_negative]
-      change (doubleJacobian _).z = 0
-      simp [doubleJacobian]
+      change (doubleJacobianDatabase _).z = 0
+      simp [doubleJacobianDatabase]
     · have h_z3 : y * z + y * z ≠ 0 := by
         rw [← two_mul]
         exact mul_ne_zero h_two (mul_ne_zero h_y h_z)
@@ -487,7 +529,7 @@ theorem doubleJacobian_represents (h_two : (2 : F) ≠ 0) {b : F} {a : Jacobian 
         · exact h_two h_two_zero
         · exact h_y ((div_eq_zero_iff.mp h_quotient).resolve_right (pow_ne_zero 3 h_z))
       rw [WeierstrassCurve.Affine.Point.add_of_Y_ne h_negY]
-      simp only [RepresentsJacobian, doubleJacobian]
+      simp only [RepresentsJacobian, doubleJacobianDatabase]
       -- The C's Z3, 2 Y1 Z1, stays one name until the denominators are gone, so that no numeral
       -- lands in a denominator, where field_simp would need it to be nonzero.
       set z3 := y * z + y * z with h_z3_def
@@ -510,6 +552,41 @@ theorem doubleJacobian_represents (h_two : (2 : F) ≠ 0) {b : F} {a : Jacobian 
         field_simp
         rw [h_z3_def]
         ring
+
+omit [DecidableEq F] in
+/-- `scale` keeps the point: where `a` holds `P`, `scale l a` holds `P` for every `l` other than
+zero, over every field. -/
+theorem scale_represents {b l : F} (h_l : l ≠ 0) {a : Jacobian F} {P : (curve b).Point}
+    (h_represents : RepresentsJacobian b a P) : RepresentsJacobian b (scale l a) P := by
+  obtain ⟨x, y, z⟩ := a
+  cases P with
+  | zero =>
+    change z = 0 at h_represents
+    change l * z = 0
+    rw [h_represents, mul_zero]
+  | some u v h_nonsingular =>
+    obtain ⟨h_z, rfl, rfl⟩ := h_represents
+    refine ⟨mul_ne_zero h_l h_z, ?_, ?_⟩ <;> simp only [scale] <;> field_simp
+
+omit [DecidableEq F] in
+/-- The C's doubling is the database's scaled by `1/2`: the same Jacobian point, over every field
+in which 2 has an inverse. -/
+theorem doubleJacobian_eq_scale [Invertible (2 : F)] (a : Jacobian F) :
+    doubleJacobian a = scale (⅟2) (doubleJacobianDatabase a) := by
+  have h_two : (2 : F) ≠ 0 := Invertible.ne_zero (2 : F)
+  obtain ⟨x, y, z⟩ := a
+  simp only [doubleJacobian, doubleJacobianDatabase, scale, invOf_eq_inv, Jacobian.mk.injEq]
+  refine ⟨?_, ?_, ?_⟩ <;> field_simp <;> ring
+
+/-- `doubleJacobian` doubles: where `a` holds `P`, `doubleJacobian a` holds `P + P`. That covers
+every point of the curve, the point at infinity and a point with `y = 0` among them, on every curve
+`y^2 = x^3 - 3x + b`, over every field in which 2 has an inverse. -/
+theorem doubleJacobian_represents [Invertible (2 : F)] {b : F} {a : Jacobian F}
+    {P : (curve b).Point} (h_represents : RepresentsJacobian b a P) :
+    RepresentsJacobian b (doubleJacobian a) (P + P) := by
+  rw [doubleJacobian_eq_scale]
+  exact scale_represents (Invertible.ne_zero (⅟2 : F))
+    (doubleJacobianDatabase_represents (Invertible.ne_zero (2 : F)) h_represents)
 
 /-- `addJacobianIncomplete` adds: where `a` holds a finite point `(x₁, y₁)` and `c` a finite point
 `(x₂, y₂)` with `x₁ ≠ x₂`, `addJacobianIncomplete a c` holds their sum. That covers every such pair
@@ -583,7 +660,7 @@ private theorem addJacobianIncomplete_zsmul {b : F} {P : (curve b).Point} {a c :
 least 16, `multiples a j` holds `(2 j + 1) • P` for `j` up to 7. Every addition meets
 `addJacobianIncomplete_represents`'s conditions: `2 j - 1`, `2`, `2 j + 1` and `2 j - 3` are not
 zero and are at most 15 in size. -/
-theorem multiples_represents (h_two : (2 : F) ≠ 0) {b : F} {a : Jacobian F}
+theorem multiples_represents [Invertible (2 : F)] {b : F} {a : Jacobian F}
     {P : (curve b).Point} (h_represents : RepresentsJacobian b a P) (h_order : 16 ≤ addOrderOf P)
     {j : ℕ} (h_j : j ≤ 7) : RepresentsJacobian b (multiples a j) ((2 * j + 1 : ℤ) • P) := by
   have h_order_int : (16 : ℤ) ≤ addOrderOf P := by exact_mod_cast h_order
@@ -593,7 +670,7 @@ theorem multiples_represents (h_two : (2 : F) ≠ 0) {b : F} {a : Jacobian F}
     simp only [multiples]
     have h_twice : RepresentsJacobian b (doubleJacobian a) ((2 : ℤ) • P) := by
       rw [two_zsmul]
-      exact doubleJacobian_represents h_two h_represents
+      exact doubleJacobian_represents h_represents
     have h_sum := addJacobianIncomplete_zsmul (ih (by omega)) h_twice
       ⟨by omega, by rw [abs_lt]; constructor <;> omega⟩
       ⟨by norm_num, by rw [abs_lt]; constructor <;> omega⟩
@@ -611,7 +688,7 @@ every `m` with `16 ^ (m + 1)` at most `P`'s order. Every addition meets
 leave `(16 S) • P` for an odd `S` below `16 ^ (m + 1)` in size, and `16 S`, `16 S + E` and
 `16 S - E`, for the entry `E • P`, are not zero and are below `16 ^ (m + 2)` in size, so none is a
 multiple of the order. -/
-theorem ladderSum_represents (h_two : (2 : F) ≠ 0) {b : F} {P : (curve b).Point} {e : ℕ → ℤ}
+theorem ladderSum_represents [Invertible (2 : F)] {b : F} {P : (curve b).Point} {e : ℕ → ℤ}
     (h_odd : ∀ j, Odd (e j)) (h_size : ∀ j, |e j| ≤ 15) {entry : ℕ → Jacobian F}
     (h_entry : ∀ j, RepresentsJacobian b (entry j) (e j • P)) {m : ℕ}
     (h_order : 16 ^ (m + 1) ≤ addOrderOf P) :
@@ -628,8 +705,8 @@ theorem ladderSum_represents (h_two : (2 : F) ≠ 0) {b : F} {P : (curve b).Poin
     have h_doubled : RepresentsJacobian b
         (doubleJacobian (doubleJacobian (doubleJacobian (doubleJacobian (ladderSum entry m)))))
         ((16 * S) • P) := by
-      have h_four := doubleJacobian_represents h_two (doubleJacobian_represents h_two
-        (doubleJacobian_represents h_two (doubleJacobian_represents h_two h_before)))
+      have h_four := doubleJacobian_represents (doubleJacobian_represents
+        (doubleJacobian_represents (doubleJacobian_represents h_before)))
       convert h_four using 1
       simp only [← add_zsmul]
       congr 1
@@ -681,10 +758,6 @@ theorem windowSum_represents_p256 [Fact Spec.P256.p.Prime] [Fact Spec.P256.n.Pri
   calc 64 ^ i ≤ 64 ^ 42 := Nat.pow_le_pow_right (by norm_num) h_i.2
     _ ≤ Spec.P256.n := by decide
 
-/-- `(2 : ZMod p) ≠ 0` for P-256's prime `p`, which `decide` settles on the literals. -/
-private theorem two_ne_zero_p256 [Fact Spec.P256.p.Prime] : (2 : ZMod Spec.P256.p) ≠ 0 := by
-  exact_mod_cast cast_ne_of_mod_ne (n := 2) (m := 0) (by decide)
-
 /-- `multiples_represents` at P-256, for every finite point `P`: `n` prime and `n • P = 0` make
 `n` the order of `P`, and `n` is above 16. -/
 theorem multiples_represents_p256 [Fact Spec.P256.p.Prime] [Fact Spec.P256.n.Prime]
@@ -694,7 +767,7 @@ theorem multiples_represents_p256 [Fact Spec.P256.p.Prime] [Fact Spec.P256.n.Pri
     (h_j : j ≤ 7) :
     RepresentsJacobian (Spec.P256.b : ZMod Spec.P256.p) (multiples a j) ((2 * j + 1 : ℤ) • P) := by
   have h_order_eq : addOrderOf P = Spec.P256.n := addOrderOf_eq_prime h_order h_P
-  refine multiples_represents two_ne_zero_p256 h_represents (le_of_le_of_eq ?_ h_order_eq.symm) h_j
+  refine multiples_represents h_represents (le_of_le_of_eq ?_ h_order_eq.symm) h_j
   decide
 
 /-- `ladderSum_represents` at P-256, for windows 63 down to 1, the ones `p256_wide_mul` adds by
@@ -710,7 +783,7 @@ theorem ladderSum_represents_p256 [Fact Spec.P256.p.Prime] [Fact Spec.P256.n.Pri
     RepresentsJacobian (Spec.P256.b : ZMod Spec.P256.p) (ladderSum entry m)
       (ladderScalar e m • P) := by
   have h_order_eq : addOrderOf P = Spec.P256.n := addOrderOf_eq_prime h_order h_P
-  refine ladderSum_represents two_ne_zero_p256 h_odd h_size h_entry
+  refine ladderSum_represents h_odd h_size h_entry
     (le_of_le_of_eq ?_ h_order_eq.symm)
   calc 16 ^ (m + 1) ≤ 16 ^ 63 := Nat.pow_le_pow_right (by norm_num) (by omega)
     _ ≤ Spec.P256.n := by decide

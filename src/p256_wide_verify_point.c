@@ -65,43 +65,13 @@ int p256_wide_jacobian_is_infinity(const p256_wide_jacobian *p) {
     return fe_is_zero(&p->z);
 }
 
-// Doubling, a = -3 (EFD dbl-2001-b). It maps the point at infinity to a
-// point at infinity: Z = 0 makes Z3 = (Y + Z)^2 - Y^2 - Z^2 zero. P-256 has
-// prime order, so no finite point has Y = 0, and twice a finite point is
-// finite. o may alias a.
+// Doubling: the key exchange's, p256_wide_point_double_jacobian, of 4
+// products, 4 squares and 8 additions, subtractions and halvings
+// (docs/decisions.md 196). It maps the point at infinity to a point at
+// infinity: Z = 0 makes Z3 = Y Z zero. P-256 has prime order, so no finite
+// point has Y = 0, and twice a finite point is finite. o may alias a.
 static void point_double(p256_wide_jacobian *o, const p256_wide_jacobian *a) {
-    p256_wide_fe delta;
-    p256_wide_fe gamma;
-    p256_wide_fe beta;
-    p256_wide_fe alpha;
-    p256_wide_fe t;
-    p256_wide_fe t2;
-    p256_wide_jacobian r;
-    p256_wide_fe_sqr(&delta, &a->z);        // delta = Z^2
-    p256_wide_fe_sqr(&gamma, &a->y);        // gamma = Y^2
-    p256_wide_fe_mul(&beta, &a->x, &gamma); // beta = X * gamma
-    p256_wide_fe_sub(&t, &a->x, &delta);
-    p256_wide_fe_add(&t2, &a->x, &delta);
-    p256_wide_fe_mul(&alpha, &t, &t2);
-    p256_wide_fe_add(&t, &alpha, &alpha);
-    p256_wide_fe_add(&alpha, &t, &alpha); // alpha = 3 * (X - delta) * (X + delta)
-    p256_wide_fe_sqr(&r.x, &alpha);       // X3 = alpha^2 - 8 * beta
-    p256_wide_fe_add(&t, &beta, &beta);
-    p256_wide_fe_add(&t, &t, &t); // t = 4 * beta
-    p256_wide_fe_add(&t2, &t, &t);
-    p256_wide_fe_sub(&r.x, &r.x, &t2);
-    p256_wide_fe_add(&r.z, &a->y, &a->z); // Z3 = (Y + Z)^2 - gamma - delta
-    p256_wide_fe_sqr(&r.z, &r.z);
-    p256_wide_fe_sub(&r.z, &r.z, &gamma);
-    p256_wide_fe_sub(&r.z, &r.z, &delta);
-    p256_wide_fe_sub(&t, &t, &r.x); // Y3 = alpha * (4 * beta - X3) - 8 * gamma^2
-    p256_wide_fe_mul(&r.y, &alpha, &t);
-    p256_wide_fe_sqr(&t, &gamma);
-    p256_wide_fe_add(&t, &t, &t);
-    p256_wide_fe_add(&t, &t, &t);
-    p256_wide_fe_add(&t, &t, &t);
-    p256_wide_fe_sub(&r.y, &r.y, &t);
-    *o = r;
+    p256_wide_point_double_jacobian(o, a);
 }
 
 // The end of both additions, once h = U2 - U1 is known not to be zero:

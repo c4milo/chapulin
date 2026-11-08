@@ -717,6 +717,12 @@ def dispatch : List String → Option String
     let field ← p256Coordinates? [x, y, z]
     let o := Spec.P256WidePoint.doubleJacobian ⟨field[0]!, field[1]!, field[2]!⟩
     return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
+  | ["p256_half", x] => do
+    -- p256_wide_fe_half's element, 32 big-endian bytes below p, halved as it is: the product of
+    -- the element and the inverse of 2 that doubleJacobian reads (Spec/P256WidePoint.lean).
+    let field ← p256Coordinates? [x]
+    let o := ⅟(2 : ZMod Spec.P256.p) * field[0]!
+    return bytesToHex (natToBytesBE o.val 32)
   | ["p256_add_jacobian_incomplete", x, y, z, x2, y2, z2] => do
     -- p256_wide_point_add_jacobian_incomplete's two Jacobian points, the same way.
     let field ← p256Coordinates? [x, y, z, x2, y2, z2]

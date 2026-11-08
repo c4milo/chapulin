@@ -31,6 +31,13 @@ static void havoc_point(p256_wide_jacobian *p) {
     havoc_wide_fe(&p->z);
 }
 
+// The doubling an addition of a point to itself calls, as
+// proof/p256_wide_verify_point_harness.c states it.
+void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jacobian *a) {
+    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "double_jacobian: point readable");
+    havoc_point(o);
+}
+
 int main(void) {
     p256_wide_jacobian a;
     p256_wide_jacobian table[TABLE_LEN];

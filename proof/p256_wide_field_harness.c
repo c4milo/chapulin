@@ -16,8 +16,12 @@
 //   mask fails these;
 //
 //   the field contract on the linear routines: given elements below p,
-//   p256_wide_fe_add, p256_wide_fe_sub and p256_wide_fe_neg leave an element
-//   below p, and zero negates to zero;
+//   p256_wide_fe_add, p256_wide_fe_sub, p256_wide_fe_neg and
+//   p256_wide_fe_half leave an element below p, zero negates to zero, and
+//   the half added to itself gives back the element;
+//
+//   p256_wide_fe_half against a reference that adds p to an odd value by a
+//   branch and shifts the five words right by one bit;
 //
 //   a reduction round's carry out is 0 or 1 when the carry it is handed
 //   is, which is the word above the four that p256_wide_fe_reduce_once takes;
@@ -132,10 +136,31 @@ static void prove_linear(void) {
                          p256_wide_fe_zero_mask(&o) == UINT64_MAX,
                      "p256_wide_fe_neg: zero negates to zero, not to p");
 
+    // a / 2. The reference adds p to an odd a in 128-bit sums, and shifts the four words and
+    // the carry out of them right by one bit.
+    uint64_t addend[WORDS];
+    for (size_t i = 0; i < WORDS; i++) {
+        addend[i] = (a.word[0] & 1U) != 0 ? PRIME[i] : 0;
+    }
+    carry = ref_add(sum, a.word, addend);
+    for (size_t i = 0; i + 1 < WORDS; i++) {
+        reduced[i] = (sum[i] >> 1) | (sum[i + 1] << 63);
+    }
+    reduced[WORDS - 1] = (sum[WORDS - 1] >> 1) | (carry << 63);
+    p256_wide_fe_half(&o, &a);
+    __CPROVER_assert(words_same(o.word, reduced),
+                     "p256_wide_fe_half: (a + p) / 2 for an odd a and a / 2 for an even a");
+    __CPROVER_assert(!elements || ref_below_p(o.word), "p256_wide_fe_half: the half is an element");
+    p256_wide_fe twice;
+    p256_wide_fe_add(&twice, &o, &o);
+    __CPROVER_assert(!elements || words_same(twice.word, a.word),
+                     "p256_wide_fe_half: the half added to itself is a");
+
     // The shapes a point formula writes: the output over either input, and
     // both inputs one object.
     fe_nondet(&a);
     fe_nondet(&b);
+    p256_wide_fe_half(&a, &a);
     p256_wide_fe_add(&a, &a, &b);
     p256_wide_fe_add(&b, &a, &b);
     p256_wide_fe_add(&a, &a, &a);

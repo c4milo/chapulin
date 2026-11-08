@@ -13,7 +13,7 @@
 // modulo p and n, so it states no word representation and serves both
 // copies unchanged.
 //
-// Six rows, each on fresh random inputs. The first four run under both answers:
+// Seven rows, each on fresh random inputs. The first four run under both answers:
 //
 //   key generation: the point p256_ecdh_keygen writes for a scalar d is the
 //   spec's p256_pub of d;
@@ -40,6 +40,10 @@
 //   spec/lean/Spec/P256WidePoint.lean holds that function and proves that it
 //   doubles every point of the curve, so this row is what makes the proof
 //   about the C. The row reads the wide file alone, so it runs once;
+//
+//   halving: the element p256_wide_fe_half writes for an element below p
+//   is the spec's product of it and the inverse of 2, at the edges of the
+//   words and on random elements. The doubling halves one value with it;
 //
 //   incomplete addition: the three coordinates
 //   p256_wide_point_add_affine_incomplete writes for a projective point and
@@ -454,9 +458,10 @@ static void diff_add_jacobian_incomplete(void) {
     diff_point_row("p256_add_jacobian_incomplete", coordinate, 6, run_add_jacobian_incomplete);
 }
 
-#include "diff_p256_wide_inverse.h"
-
 #define ROUNDS 25
+
+#include "diff_p256_wide_half.h"
+#include "diff_p256_wide_inverse.h"
 
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "spec/lean/.lake/build/bin/diffspec";
@@ -477,6 +482,7 @@ int main(int argc, char **argv) {
         diff_jacobian_one_point();
         diff_add_jacobian_incomplete();
     }
+    diff_half();
     diff_inverse();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");

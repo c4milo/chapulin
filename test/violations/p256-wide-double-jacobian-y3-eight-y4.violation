@@ -1,0 +1,17 @@
+invariant: INV-16
+file: src/p256_wide_point.c
+catches: p256_equiv_test
+reason: the Jacobian doubling subtracts the database's 8 Y1^4 from Y3,
+  where the form scaled by 1/2 subtracts Y1^4 (docs/decisions.md 196).
+  Y3 is then wrong for every input with Y1 other than zero, and every
+  key exchange gives another x.
+
+--- old
+    p256_wide_fe_sqr(&yyyy, &yy);
+    p256_wide_fe_sub(&y3, &y3, &yyyy);
+--- new
+    p256_wide_fe_sqr(&yyyy, &yy);
+    p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
+    p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
+    p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
+    p256_wide_fe_sub(&y3, &y3, &yyyy);
