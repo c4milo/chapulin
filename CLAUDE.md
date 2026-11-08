@@ -1162,4 +1162,7 @@ Home: github.com/c4milo.
   every project that adopts it shares; `docs/performance.md` is
   chapulin's appendix to it: its instruments, its admission rule and the
   pitfalls it has paid for. Read both before a change that moves SRAM,
-  code size or instructions.
+  code size or instructions. A new primitive or kernel follows the
+  patterns in pepegrillo's `docs/performance/performance_hardware.md` and
+  docs/performance.md's patterns of a fast primitive, which also list the
+  patterns chapulin refuses.

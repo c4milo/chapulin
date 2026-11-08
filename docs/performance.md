@@ -1778,3 +1778,33 @@ property, never a cost to trade (`ct.[ch]`).
 | `rec_seal_without_aead` read the copy of a 16 KiB plaintext as 257 ns in one record on the EPYC 7763 and as 684 ns in another, and in a scratch program whose plaintext and record buffers started at the same offset within a page the copy took 5.4 µs. | glibc 2.39 on that CPU copies more than 2,112 bytes with `rep movsb`. With the destination 1 to 31 bytes past the source's offset within a page, 16 KiB takes 5.3 to 5.6 µs in every process, against about 0.25 µs at the other offsets: a record's body starts 5 bytes past the record, so a plaintext and a record at the same offset are in that range. With the bench's buffers, 61 bytes apart, the copy takes 0.25 µs unless a source page and the destination page its bytes go to have physical frame numbers equal modulo 16. It then takes 0.44 to 1.3 µs: in 243 of 900 processes on three runners, each of which had such a pair, and in none of the 657 that had none. Under `GLIBC_TUNABLES=glibc.cpu.x86_rep_movsb_threshold=16777216`, which keeps glibc off `rep movsb`, the copy takes at most 0.37 µs at any offset, and 0.16 to 0.18 µs in each of 300 processes with the bench's buffers. An EPYC 9V45 showed neither effect (run 38154870948). `bench_state` now starts its plaintext on a page boundary and its record buffer 2,048 bytes into a page, so the copy's destination is 2,053 bytes past its source's offset, and the copy took 250 ns in each of 600 processes on two runners (run 38159239411). | Keep a timed copy's destination more than 31 bytes from its source's offset within a page, and read `rec_seal_without_aead` beside `rec_seal` before reading a move of up to 1 µs in a 16 KiB row as the AEAD's. |
 | On the EPYC 7763 under clang 23, `sha384_of_cpu` of 64 bytes under `CH_CPU_AVX2` read 230 ns in a program linked with `sha512_avx2.c` after decision 128's quarter steps and 205 ns in one linked with the file before them, on each of 11 runners, while the kernel alone over one block read 182 ns and 186 (run 38182747184). | That call runs at one of two speeds on that CPU by where the kernel's code starts within a 64-byte line. Linked with 0, 16, 32 and 48 bytes of padding before the kernel's object, the kernel after the change read 230, 230, 203 and 232 ns and the one before it 205, 234, 235 and 235, on each of 13 runners. The 16 KiB row and the kernel alone over one block did not move with the padding, and under gcc 13 one padding of the four read 230 ns where the other three read 220 to 224 (run 38184809651). What in the CPU makes the two speeds was not found. | A bench program links a kernel at one address. Before a move of a tenth in a row of one block is read as a change's, link the kernel at each of the four offsets a function takes within a 64-byte line and read the row at all four. |
 | Under `qemu-x86_64` 8.2.2, `sha512_avx2_compress_blocks` as gcc 13.3 compiles it took SIGSEGV on one block that ends at the last mapped byte before an unmapped page, and passed as clang 18 compiles it. | gcc loads each four words of a block as a 16-byte VMOVDQU and a VINSERTI128 whose second operand is 16 bytes of memory, and that qemu reads past those 16 bytes: the same VINSERTI128 on the last 16 mapped bytes took the signal in a probe of its own, where a 16-byte VMOVDQU of them did not, and a CPU reads 16. clang loads a block in four 32-byte VMOVDQU. | Read a fault under qemu-user at an instruction with a memory operand against that operand's size before reading it as the code's. A gcc host object that runs under that qemu with `CH_CPU_AVX2` needs 16 mapped bytes after a message, and what a kernel reads past its input is measured on a CPU. |
+
+### Patterns of a fast primitive
+
+pepegrillo's [performance_hardware.md](https://github.com/c4milo/pepegrillo/blob/main/docs/performance/performance_hardware.md)
+gives the patterns of any fast loop. A new primitive or kernel here follows them, and the three
+patterns of multi-word arithmetic below, before its first measurement.
+
+1. Count every operation of a formula: its additions, subtractions and halvings as well as its
+   products and squares. 8·Y^4 takes three additions from Y^4, or
+   one halving by a mask from (2Y)^4. P-256's doubling in
+   `p256_wide_point.c` runs 14 additions and subtractions, and on the EPYC 7763 an addition of four
+   words takes 14.1 cycles under gcc and 7.6 under clang.
+2. Reduce inside the products. Start each round of a Montgomery reduction as soon as its word of
+   the product is ready, so the reduction and the next products overlap. Carry only where the
+   proved bound requires it, and give each carry that a change removes a CBMC bound and a Lean
+   theorem.
+3. Read a value from a volatile object once for each step, for all of its uses in that step, not
+   once for each use. Mark a small function of inline assembly `always_inline`, and read gcc's
+   output for a call to it. `x25519_adx.c` reads the ladder bit from a volatile object in each of
+   its two swaps of a step.
+
+This tree refuses these patterns, whatever they save:
+
+- A load at an address that a secret selects (`ct.[ch]`).
+- A table larger than the first-level cache of the smallest core that runs it. On the M1 Pro, a
+  scan of a 148 KiB table took a time that followed the secret scalar, and a scan of 86 KiB did not
+  (decision 109).
+- State that a call keeps for the next call where the API holds none, such as an RSA key's R^2 mod
+  n.
+- A branch on a secret byte, such as a sampler that squeezes more bytes only when it needs them.
