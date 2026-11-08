@@ -229,7 +229,12 @@ Home: github.com/c4milo.
   (up to four entries of a row of ML-DSA-87's matrix A on
   `keccak_avx2.c`'s four states, an x86-64 session whose caller sets
   CH_CPU_AVX2: A comes from the public rho, so the four-way Keccak may
-  take it, docs/decisions.md 178)
+  take it, docs/decisions.md 178) + `keccak_neon.[ch]` with
+  `keccak_neon_round.h` (Keccak-f[1600] on two states in NEON, plain and
+  on FEAT_SHA3 under CH_CPU_CONSTANT_TIME_SHA3, for public input alone),
+  with `mlkem_neon.[ch]` and `mldsa_neon.[ch]` (two entries of a row of
+  ML-KEM's matrix and of ML-DSA-87's A on it, every session of an arm64
+  host object, docs/decisions.md 198)
   ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) with `hash_hw.h`, `hkdf_hw.c` and `keysched_hw.c` (`hkdf.c`
@@ -698,8 +703,8 @@ Home: github.com/c4milo.
   one with AVX-512 IFMA `poly1305_ifma.c`, to `poly1305.c`'s loop the
   same way, runs `poly1305_ifma.c`'s own text over
   `test/poly1305_ifma_model_lanes.h` on every machine, and searches the
-  stack below a call for the powers of r: on x86-64 the three paths read
-  their multipliers through volatile pointers, so the powers stay in the
+  stack below a call for the powers of r: the three paths read their
+  multipliers through volatile pointers, on NEON as on x86-64, so the powers stay in the
   one struct the call wipes and in no spill slot the compiler picks
   (docs/decisions.md 83, 110 and 121). `bin/diff_poly1305_vector` holds
   its entry to `spec/lean/Spec/Poly1305Vector.lean`. After a call of either AVX2
