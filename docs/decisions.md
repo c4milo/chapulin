@@ -16245,3 +16245,69 @@ does nothing more.
     code and each is caught: `chacha-vector-scalar-block-reuses-a-counter`,
     `chacha-vector-scalar-row-drops-counter` and
     `chacha-vector-keeps-input-words`.
+
+194. **A NEON call of `poly1305_vector.c` of 2,048 bytes or more runs
+    passes of eight blocks with one carry each, and splits their blocks
+    into words in the general registers.** Entry 83 runs passes of four
+    blocks, two pairs, and carries after each in two rounds. In the record
+    bench of 2026-10-28 Poly1305 took 2.5 of the 10.5 µs a 16 KiB seal took
+    on the M1 Pro.
+
+    - **One carry per eight blocks.** Each lane's pass now multiplies four
+      of its blocks by r^8, r^6, r^4 and r^2, and lane 1's last pass by
+      r^7, r^5, r^3 and r, where lane 1's powers were r^3 and r. A carry
+      waits on the products of the pass's first pair alone, as before, and
+      now comes once per eight blocks. A call of an odd count of groups
+      starts with one group of two pairs under r^4 and r^2.
+    - **One carry round is not enough.** One round in place of two leaves
+      values up to about 2^33, which a
+      32-bit operand of the next pass's products cannot hold, and the
+      carry out of a sum of products by 5 times a word grows each pass, so
+      no bound holds. `poly1305-vector-one-carry-round` shows it. The bounds
+      allow a pass of four pairs before the two rounds:
+      `spec/lean/Spec/Poly1305Vector.lean` proves that from words below
+      2^26 + 2^10, blocks below 2^26 and powers whose words are at most
+      2^26, a pass of up to four pairs keeps every operand below 2^32 and
+      every sum below 2^59, the carry it narrows below 2^32, and the words
+      its carry leaves below 2^26 + 2^10 (`passStep_bounds`), and that it
+      computes `(h + b0) x0 + ... + bk xk` modulo 2^130 - 5
+      (`passStep_mod`). The two lanes' sums then add to less than 2^60,
+      which `carry_scalar` takes.
+    - **The split in the general registers.** In a pass of four pairs the
+      products keep the vector units busy, so `load_blocks_split` splits
+      each block with shifts and masks in the general registers and moves
+      each pair of words to a vector in one 64-bit move. In a pass of two
+      pairs it took more time than the vector split, so those passes keep
+      `load_blocks`.
+    - **From 2,048 bytes.** r^5 to r^8 cost four more products a call. The
+      M1 Pro ran other work for this change, at a one-minute load average
+      from 14 to 80, so a loop of `poly1305_init`, one update and
+      `poly1305_final` ran per size and `/usr/bin/time -l` read the cycles
+      its process used. Against entry 83's path, passes of eight blocks
+      took 8% more cycles at 1,024 bytes, 2% less at 1,536, 9% less at
+      2,048, 20% less at 4,096 and 30% less at 16 KiB. A call below
+      2,048 bytes, a QUIC packet's among them, runs passes of two pairs;
+      such a call took 1% to 2% more cycles than before from 1,024 bytes
+      and 8% more at 128 bytes, about 3 ns.
+    - **The wipe and the residue.** The call's struct of powers grows from
+      r^2 to r^4 and two multipliers to r to r^8 and four. Its one wipe
+      covers all of it. On x86-64 `multipliers_set` is never inlined:
+      inlined, Apple clang 21 kept a copy of r^4's multiplier in a stack
+      slot, and `bin/poly1305_equiv_test`'s residue check found it. On
+      arm64 it is inlined, because out of line clang loaded the
+      multipliers from the struct in every pass of two pairs, which took
+      30% more time. The residue check now calls the path over 32 groups,
+      so a NEON call computes r^5 to r^8 and the check searches for them.
+    - **SSE2 unchanged in its passes.** No x86-64 machine here times the
+      SSE2 arm, so it keeps passes of two pairs, through the same code.
+
+    Cost: `poly1305_vector.c` grows from 347 to 500 lines, and its native
+    copy's arm64 conditional branches in `make lint-wide-multiply` from 4
+    to 10, each on the byte count. `bin/diff_poly1305_vector` holds the C
+    entry to the model's `entry`, word for word, on one to 40 groups.
+    `bin/poly1305_equiv_test` calls the path alone on one to 40 groups,
+    from random words and from all 0xff bytes, under Apple clang 21 and
+    gcc 15 for arm64, and under Apple clang 21 for x86-64 through Rosetta.
+    `poly1305-vector-wide-pass-drops-carry` breaks the new loop and is
+    caught. The bound of 2,048 bytes changes no output word, so no test
+    sees it.

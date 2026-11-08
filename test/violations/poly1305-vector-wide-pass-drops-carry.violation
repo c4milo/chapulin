@@ -1,0 +1,21 @@
+invariant: INV-16
+file: src/poly1305_vector.c
+catches: poly1305_equiv_test
+reason: a pass hands its sums to the next pass without the carry, so the
+  next pass multiplies words far past 2^32, which the lanes' 32-bit
+  operands cut, and every update of more than one pass computes a wrong
+  tag. bin/poly1305_equiv_test holds the accumulator to poly1305.c's on
+  calls of up to 20 groups and on random updates to 2,048 bytes.
+
+--- old
+    for (; n > pass_bytes; n -= pass_bytes) {
+        pairs_sums(d, h, m, by, pairs);
+        carry(h, d);
+--- new
+    for (; n > pass_bytes; n -= pass_bytes) {
+        pairs_sums(d, h, m, by, pairs);
+        h[0] = sums_narrow(d[0]);
+        h[1] = sums_narrow(d[1]);
+        h[2] = sums_narrow(d[2]);
+        h[3] = sums_narrow(d[3]);
+        h[4] = sums_narrow(d[4]);

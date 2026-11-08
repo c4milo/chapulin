@@ -62,7 +62,7 @@ The other 38 sources are in no such harness:
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `chacha20_avx512.c` | It runs ChaCha20 on AVX-512F intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with AVX-512F, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it under a `ch_cfg.cpu` value with `CH_CPU_AVX512_IFMA`; the nightly's `rsa-ifma-sde` job runs the first under Intel SDE. |
 | `avx512_wipe.c` | It is one block of inline assembly, which CBMC does not read, and holds no C a harness could drive. It has a body on x86-64 alone. | On a CPU with AVX-512F, `bin/avx512_wipe_test` sets every bit of zmm0 to zmm31 and k1 to k7, calls it, and requires each register to read back as zero; the nightly's `rsa-ifma-sde` job runs the binary under Intel SDE. |
-| `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
+| `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, `bin/diff_poly1305_vector` holds it to the Lean model whose bounds `Spec/Poly1305Vector.lean` proves, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
 | `mldsa_vector.c` | It runs ML-DSA-87's NTT, inverse NTT and two NTT-domain products on NEON intrinsics for arm64 and AVX2 intrinsics for x86-64, and has a body in a host object alone. | `bin/mldsa_vector_equiv_test` holds it to `mldsa_poly.c`'s and `mldsa_sign_poly.c`'s proven loops, `bin/mldsa_runtime_test` counts which calls run it, and the signer's, Wycheproof's and the CNSA 2.0 server's tests sign and verify on it ([The ML-DSA-87 lanes](#the-ml-dsa-87-lanes)). |
@@ -5020,8 +5020,9 @@ is the cost decision 89 states.
 
 ### The vector Poly1305
 
-`poly1305_vector.c` runs Poly1305's block loop four blocks at a time, in
-two lanes on NEON or SSE2 intrinsics (decision 83). It exists in a host
+`poly1305_vector.c` runs Poly1305's block loop in two lanes on NEON or
+SSE2 intrinsics, four blocks a pass, and on NEON eight blocks a pass in a
+call of 2,048 bytes or more (decisions 83 and 194). It exists in a host
 object's native copy alone, `poly1305_vector_native.c`, which
 `poly1305_native.c` calls, so a session runs it only where its caller
 set `CH_CPU_CONSTANT_TIME_MULTIPLY` (decision 89). A session without the
@@ -5048,14 +5049,26 @@ path rests on these, each in `make check` on a host target:
 
   The vector build reads each message from a heap buffer that ends where
   the message ends, which `make san-check` runs under AddressSanitizer.
-- The same binary copies the stack below one call over four groups, where
+- The same binary copies the stack below one call over 32 groups, where
   the call's dead frame lay, and requires none of r^2, r^3 and r^4 there:
   not as five words side by side, as the call's struct holds each power,
   nor one word every 8 or 16 bytes, as a NEON or SSE2 multiplier holds a
   lane's (test/poly1305_equiv_residue.h). Five words match when they hold
   the power's value modulo 2^130 - 5, whatever their carry form. The
-  search also looks for r^5 to r^8, and for one word every 32 bytes, the
-  AVX2 kernel's powers and layout, which this path never writes.
+  search also looks for r^5 to r^8, which a NEON call of 2,048 bytes or
+  more computes, and for one word every 32 bytes, the AVX2 kernel's
+  layout.
+- `bin/diff_poly1305_vector` runs the entry on the host's own
+  instructions against `spec/lean/Spec/Poly1305Vector.lean`'s `entry`, a
+  model of the C, and compares the accumulator's five words: one to 40
+  groups, 16 random rows each and one of all 0xff bytes, so passes of two
+  and of four pairs both run, with an odd and an even count of groups on
+  each side of 2,048 bytes. The module proves that a pass of up to four
+  pairs keeps every operand of a product below 2^32, every sum below
+  2^59 and the words its carry leaves below 2^26 + 2^10, the bound the
+  next pass takes (`passStep_bounds`), and that it computes
+  `(h + b0) x0 + ... + bk xk` modulo 2^130 - 5 (`passStep_mod`)
+  (decision 194).
 - `bin/unit_host` runs the unit suite on the path under a `ch_cfg.cpu`
   with the multiply bit: RFC 8439's A.3 vectors 2 and 3, 375 bytes each,
   and A.5's 265 bytes run on it, as does every record the suite seals and
@@ -5069,9 +5082,9 @@ path rests on these, each in `make check` on a host target:
   whole QUIC handshakes
   ([The host object's two multiplies](#the-host-objects-two-multiplies)).
 - `make lint-wide-multiply` compiles the native copy for arm64 and
-  x86-64 under the pinned clang and holds its conditional branches at 4
-  on each: the contract check at the entry and the group loop, all on
-  the byte count. It divides nothing and calls no runtime routine. Its
+  x86-64 under the pinned clang and holds its conditional branches at 10
+  and 4: the contract check at the entry and the group loop, and on arm64
+  the choice of passes of four pairs, all on the byte count. It divides nothing and calls no runtime routine. Its
   multiplies are the ones the caller's bit states, so the count leaves
   them out, as it leaves out `x25519_wide.c`'s. Under its own name the
   file compiles to nothing, and the count holds that at 0.
@@ -5082,9 +5095,10 @@ path rests on these, each in `make check` on a host target:
   `poly1305.c`, with `-DCH_NATIVE_WIDEMUL` and without it, and requires
   no call to the path.
 
-Nine violations break the path, and each is caught. The equivalence
+Ten violations break the path, and each is caught. The equivalence
 test catches `poly1305-vector-last-group-even-powers`,
 `poly1305-vector-carry-drops-fold`, `poly1305-vector-one-carry-round`,
+`poly1305-vector-wide-pass-drops-carry`,
 `poly1305-vector-lane-1-starts-from-h`,
 `poly1305-vector-hands-partial-group`,
 `poly1305-vector-returns-wide-h1` and `poly1305-vector-keeps-powers`,
@@ -5093,8 +5107,11 @@ which drops the wipe; `test/widemul-builds.sh` catches
 catches `poly1305-vector-in-device-object`.
 
 None of this proves the two paths agree on an input no case runs.
-The word bounds that keep every sum below 2^64 are argued in the file's
-comments, not proved. The residue check reads the stack one compiler
+The word bounds that keep every sum below 2^64 are proved of the Lean
+model, and the differential holds the C to the model on the rows it runs;
+no CBMC harness compiles the file. The bound on 2,048 bytes, below which
+a NEON call keeps passes of two pairs, changes no output word, so no test
+sees it; it rests on the timing decision 194 states. The residue check reads the stack one compiler
 left on one call; it cannot see registers, or a spill slot that holds a
 power in a layout it does not search. It runs under CI's gcc and clang
 and under Apple clang on arm64. No CI job builds x86-64 with Apple
@@ -5128,7 +5145,7 @@ file. The kernel rests on these:
   called alone on one to twelve groups, with the bounds its header states
   checked on return, and on a group a search found whose lane totals
   carry h1 past 2^26 in the first pass; 20,000 random cases; and the two
-  large inputs. It searches the stack below a call over four groups for
+  large inputs. It searches the stack below a call over 32 groups for
   r^2 to r^8 in the layouts the 128-bit path's search reads and in one
   word every 32 bytes, as an AVX2 multiplier holds a lane's power. It
   then reads ymm0 to ymm15 after a call over one group and one over four,
@@ -5238,7 +5255,7 @@ Tests hold the rest:
   128-bit path's kinds of case on the kernel's text over the model, from
   the same seed, 358,545 in all. On an x86-64 CPU with AVX-512 IFMA it
   runs them again on the instructions and searches the stack below a call
-  over four groups for r^2 to r^16 in every layout the residue search
+  over 32 groups for r^2 to r^16 in every layout the residue search
   reads, three 64-bit digits among them. On a CPU without it skips that
   run and says so, and under `CH_REQUIRE_AVX512_IFMA=1` fails instead.
   The model run searches no stack: the model's lane operations are plain

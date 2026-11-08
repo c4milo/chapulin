@@ -28,6 +28,7 @@ import Spec.Rsa
 import Spec.RsaExp
 import Spec.RsaIfma
 import Spec.Poly1305Ifma
+import Spec.Poly1305Vector
 import Spec.RsaAvx2
 import Spec.RsaMont64Adx
 import Spec.RsaBlind

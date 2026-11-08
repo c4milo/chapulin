@@ -738,7 +738,7 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
           $(RSA_HOST_LINT_C) \
           src/poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           src/poly1305_avx2.c test/poly1305_equiv_avx2.c src/poly1305_ifma.c test/poly1305_equiv_ifma.c \
-          test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c \
+          test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c test/diff_poly1305_vector_test.c \
           src/mlkem_vector.c test/mlkem_vector_equiv_test.c \
           src/mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
           src/keccak_avx2.c src/mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
@@ -5809,6 +5809,8 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_rsa_ifma
 	$(MAKE) bin/diff_poly1305_ifma
 	./bin/diff_poly1305_ifma
+	$(MAKE) bin/diff_poly1305_vector
+	./bin/diff_poly1305_vector
 	$(MAKE) bin/diff_rsa_avx2
 	./bin/diff_rsa_avx2
 	$(MAKE) bin/diff_rsa_exp
@@ -5939,6 +5941,17 @@ bin/diff_poly1305_ifma: test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.c \
 	  src/ct.c src/ct_wipe.c
+# The vector Poly1305 arm: poly1305_vector.c's entry on this host's own
+# instructions, NEON or SSE2, in a host object's native copy, as
+# bin/poly1305_equiv_test compiles it, against
+# spec/lean/Spec/Poly1305Vector.lean. Its own main, for
+# bin/diff_rsa_ifma's reason. test/poly1305_equiv_vector.c defines
+# CH_CPU_RUNTIME itself, so the line names no define.
+bin/diff_poly1305_vector: test/diff_poly1305_vector_test.c test/poly1305_equiv_vector.c src/poly1305.c \
+                          src/poly1305_vector.c src/ct.c src/ct_wipe.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/diff_poly1305_vector_test.c \
+	  test/poly1305_equiv_vector.c src/ct.c src/ct_wipe.c
 # The AVX2 arm: rsa_avx2.c's products and squares and rsa_vp1_cpu's AVX2
 # path, compiled over the lane model as bin/rsa_avx2_model_test compiles
 # them, against spec/lean/Spec/RsaAvx2.lean. Its own main for the same
@@ -7387,7 +7400,7 @@ else
 	  src/avx512_wipe.c test/avx512_wipe_test.c test/chacha20_equiv_avx512.c src/poly1305_vector.c \
 	  test/poly1305_equiv_vector.c test/stack_residue.c \
 	  src/poly1305_avx2.c test/poly1305_equiv_avx2.c src/poly1305_ifma.c test/poly1305_equiv_ifma.c \
-	  test/poly1305_equiv_test.c test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c \
+	  test/poly1305_equiv_test.c test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c test/diff_poly1305_vector_test.c \
 	  src/mlkem_vector.c test/mlkem_vector_equiv_test.c \
 	  src/mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
 	  src/keccak_avx2.c src/mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
@@ -7538,7 +7551,7 @@ else
 	  $(call TIDY_EACH,src/poly1305_ifma.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,test/diff_poly1305_ifma_test.c, \
+	  $(call TIDY_EACH,test/diff_poly1305_ifma_test.c test/diff_poly1305_vector_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	# The ChaCha20 and Poly1305 equivalence tests, each in a pass of its
 	# own with portability-no-assembler off for that file alone: on x86-64
@@ -9131,10 +9144,13 @@ WIDEMUL_SPECS := \
 #   copy's update also tests n against a vector path's minimum and, on
 #   x86-64, the kernel an update names, a constant each entry passes. The
 #   final reduction and its select stay masks.
-# poly1305_vector_native.c, 4 and 4; poly1305_avx2_native.c, 0 and 4;
+# poly1305_vector_native.c, 10 and 4; poly1305_avx2_native.c, 0 and 4;
 #   poly1305_ifma_native.c, 0 and 4: the CH_ASSERT's two tests of n, and
-#   the group loop's entry and back edge. poly1305_vector.c, poly1305_avx2.c
-#   and poly1305_ifma.c have no body under their own names.
+#   the group loop's entry and back edge. arm64 holds six more, each on n:
+#   two tests of n against 2,048 bytes, the test for a lead group, the
+#   entry and back edge of the loop of passes of four pairs, and the test
+#   of the last pass's width (docs/decisions.md 194). poly1305_vector.c, poly1305_avx2.c and
+#   poly1305_ifma.c have no body under their own names.
 # mlkem_poly_native.c, 76 and 61; mlkem_poly_hw.c, 56 and 0;
 #   mlkem_poly.c@host, 56 and 59: the loops over the file's constants -- the
 #   256 coefficients, the 128 pairs, the 32 bytes, the three polynomials and
@@ -9485,7 +9501,7 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
   arm64/src/poly1305_native.c:22 arm64/src/mlkem_poly_native.c:53 \
   x86-64/src/poly1305_native.c:22 \
   x86-64/src/mlkem_poly_native.c:54 \
-  arm64/src/poly1305_vector_native.c:4 x86-64/src/poly1305_vector_native.c:4 \
+  arm64/src/poly1305_vector_native.c:10 x86-64/src/poly1305_vector_native.c:4 \
   arm64/src/poly1305_avx2_native.c:0 x86-64/src/poly1305_avx2_native.c:4 \
   arm64/src/poly1305_ifma_native.c:0 x86-64/src/poly1305_ifma_native.c:4
 # A host object's hash sources on the CPU's instructions (docs/decisions.md

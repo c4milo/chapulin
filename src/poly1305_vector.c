@@ -5,6 +5,7 @@
 
 #ifdef __ARM_NEON
 #include <arm_neon.h>
+#include <string.h>
 #else
 #include <emmintrin.h>
 #endif
@@ -14,6 +15,20 @@
 
 // The 2^128 bit of a whole block, in its fifth word.
 #define HIGH_BIT ((uint32_t)1 << 24)
+
+// The most pairs of blocks a pass takes before its carry: four on NEON
+// and two on SSE2, which no x86-64 machine here has timed with four. A
+// carry then waits on the products of the pass's first pair alone. The
+// sums of 20 products stay below 2^59, which
+// spec/lean/Spec/Poly1305Vector.lean proves (docs/decisions.md 194).
+#ifdef __ARM_NEON
+#define PASS_PAIRS 4
+#else
+#define PASS_PAIRS 2
+#endif
+#define PAIR_BYTES ((size_t)32)
+#define PASS_BYTES (PASS_PAIRS * PAIR_BYTES)
+_Static_assert(PASS_BYTES % POLY1305_VECTOR_GROUP == 0, "a pass is whole groups");
 
 // The vector operations the group loop below is written in, one set per
 // instruction set. A words vector holds one 32-bit word in each of two
@@ -69,6 +84,13 @@ static inline uint64_t sums_lane_total(sums a) {
     return vgetq_lane_u64(a, 0) + vgetq_lane_u64(a, 1);
 }
 
+// The 64-bit word at p, little-endian as poly1305_vector.h requires.
+static inline uint64_t load64(const uint8_t *p) {
+    uint64_t word;
+    memcpy(&word, p, sizeof word);
+    return word;
+}
+
 // The five words of the block at m in lane 0 and of the block at m + 16
 // in lane 1, each with its 2^128 bit. A 64-bit lane holds eight bytes of
 // a block, little-endian as poly1305_vector.h requires.
@@ -83,6 +105,29 @@ static inline void load_blocks(words out[5], const uint8_t *m) {
     out[2] = vand_u32(vmovn_u64(vorrq_u64(vshrq_n_u64(low, 52), vshlq_n_u64(high, 12))), mask);
     out[3] = vand_u32(vshrn_n_u64(high, 14), mask);
     out[4] = vorr_u32(vmovn_u64(vshrq_n_u64(high, 40)), vdup_n_u32(HIGH_BIT));
+}
+
+// load_blocks with the split in the general registers, each pair of words
+// moved to a vector in one 64-bit move. The products of a pass of four
+// pairs keep the vector units busy, and on the M1 Pro this split took a
+// sixth off such passes. A pass of two pairs runs load_blocks, which took
+// less time there (docs/decisions.md 194).
+static inline void load_blocks_split(words out[5], const uint8_t *m) {
+    uint64_t low0 = load64(m);
+    uint64_t high0 = load64(m + 8);
+    uint64_t low1 = load64(m + 16);
+    uint64_t high1 = load64(m + 24);
+    uint64_t word0 = (low0 & WORD_MASK) | ((low1 & WORD_MASK) << 32);
+    uint64_t word1 = ((low0 >> 26) & WORD_MASK) | (((low1 >> 26) & WORD_MASK) << 32);
+    uint64_t word2 = (((low0 >> 52) | (high0 << 12)) & WORD_MASK) |
+                     ((((low1 >> 52) | (high1 << 12)) & WORD_MASK) << 32);
+    uint64_t word3 = ((high0 >> 14) & WORD_MASK) | (((high1 >> 14) & WORD_MASK) << 32);
+    uint64_t word4 = ((high0 >> 40) | HIGH_BIT) | (((high1 >> 40) | HIGH_BIT) << 32);
+    out[0] = vcreate_u32(word0);
+    out[1] = vcreate_u32(word1);
+    out[2] = vcreate_u32(word2);
+    out[3] = vcreate_u32(word3);
+    out[4] = vcreate_u32(word4);
 }
 
 #else
@@ -229,33 +274,58 @@ static inline void multiply_add(sums d[5], const words a[5], multiplier_read *by
     d[4] = sums_multiply_add(d[4], a[1], by->r3);
 }
 
-// The sums for the group of four blocks at m. Lane 0 takes the group's
-// first and third blocks and lane 1 its second and fourth, so each lane
-// runs Horner's rule over every other block:
+// The sums for the pairs of blocks at m, pairs of them: 2 or PASS_PAIRS,
+// a constant wherever the function is inlined. Lane 0 takes the first
+// block of each pair and lane 1 the second, so each lane runs Horner's
+// rule over every other block:
 //
-//   d = (h + the lane's first block) * first + (the lane's second block) * second
+//   d = (h + the lane's block of pair 0) * by[0] + ... + (its block of pair k) * by[k]
 //
-// Every array here is indexed by constants alone: gcc keeps an array that
-// a loop indexes in memory, and reloads it on every group.
-static inline void group_sums(sums d[5], const words h[5], const uint8_t *m, multiplier_read *first,
-                              multiplier_read *second) {
-    words first_blocks[5];
-    words second_blocks[5];
-    load_blocks(first_blocks, m);
-    load_blocks(second_blocks, m + 32);
-    first_blocks[0] = words_add(first_blocks[0], h[0]);
-    first_blocks[1] = words_add(first_blocks[1], h[1]);
-    first_blocks[2] = words_add(first_blocks[2], h[2]);
-    first_blocks[3] = words_add(first_blocks[3], h[3]);
-    first_blocks[4] = words_add(first_blocks[4], h[4]);
+// The pairs after the first go first: they do not wait on h. Every array
+// here is indexed by constants once the loops are unrolled: gcc keeps an
+// array that a rolled loop indexes in memory, and reloads it on every
+// pass. gcc does not expand a macro in the pragma, so the count is written
+// out and the assertion holds it.
+_Static_assert(PASS_PAIRS <= 4, "each #pragma GCC unroll 4 below covers PASS_PAIRS");
+
+// load_blocks for a pass of pairs pairs: on NEON a pass of four pairs
+// splits the blocks in the general registers.
+static inline void load_pair(words out[5], const uint8_t *m, size_t pairs) {
+#ifdef __ARM_NEON
+    if (pairs == 4) {
+        load_blocks_split(out, m);
+        return;
+    }
+#else
+    (void)pairs;
+#endif
+    load_blocks(out, m);
+}
+
+// pairs_sums is always inlined, so pairs is a constant in each copy and
+// clang unrolls its loop: clang did not inline it on its own, and the call
+// took a third more time over 16 KiB.
+static inline __attribute__((always_inline)) void
+pairs_sums(sums d[5], const words h[5], const uint8_t *m, multiplier_read *by, size_t pairs) {
     d[0] = sums_zero();
     d[1] = sums_zero();
     d[2] = sums_zero();
     d[3] = sums_zero();
     d[4] = sums_zero();
-    // The second blocks' products first: they do not wait on h.
-    multiply_add(d, second_blocks, second);
-    multiply_add(d, first_blocks, first);
+#pragma GCC unroll 4
+    for (size_t k = pairs - 1; k > 0; k--) {
+        words blocks[5];
+        load_pair(blocks, m + PAIR_BYTES * k, pairs);
+        multiply_add(d, blocks, &by[k]);
+    }
+    words first[5];
+    load_pair(first, m, pairs);
+    first[0] = words_add(first[0], h[0]);
+    first[1] = words_add(first[1], h[1]);
+    first[2] = words_add(first[2], h[2]);
+    first[3] = words_add(first[3], h[3]);
+    first[4] = words_add(first[4], h[4]);
+    multiply_add(d, first, &by[0]);
 }
 
 // One round of carries: each value's low 26 bits plus the carry out of
@@ -288,7 +358,7 @@ static inline void carry(words h[5], const sums d[5]) {
     h[4] = sums_narrow(twice[4]);
 }
 
-// What one call derives from r: r^2, r^3 and r^4, and the two
+// What one call derives from r: r to r^(2 PASS_PAIRS), and the
 // multipliers built from them. r and a tag seen on the wire give the pad
 // s, and r and s forge any message under that key, so the call wipes this
 // struct through ct_wipe once, when it ends. One struct makes that one
@@ -296,25 +366,107 @@ static inline void carry(words h[5], const sums d[5]) {
 // its reach, as they do for every wipe written in C, which is why
 // multiply_add reads the multipliers as multiplier_read says.
 typedef struct {
-    uint32_t r2[5];
-    uint32_t r3[5];
-    uint32_t r4[5];
-    multiplier first;
-    multiplier second;
+    uint32_t power[2 * PASS_PAIRS][5]; // power[i] is r^(i + 1)
+    multiplier by[PASS_PAIRS];
 } powers;
+
+// The fewest bytes for which a NEON call runs passes of PASS_PAIRS pairs.
+// r^5 to r^8 cost four products more than r^2 to r^4. On the M1 Pro a call
+// of 1,024 bytes took 8% more time with them, one of 1,536 bytes 2% less
+// and one of 2,048 bytes 9% less (docs/decisions.md 194). A shorter call,
+// a QUIC packet's among them, runs passes of two pairs.
+#define POLY1305_VECTOR_WIDE_MIN ((size_t)2048)
+
+// power[1] to power[2 * pairs - 1] from power[0], which holds r.
+static void powers_compute(powers *of_r, size_t pairs) {
+    multiply_scalar(of_r->power[1], of_r->power[0], of_r->power[0]);
+    multiply_scalar(of_r->power[2], of_r->power[1], of_r->power[0]);
+    multiply_scalar(of_r->power[3], of_r->power[1], of_r->power[1]);
+#if PASS_PAIRS == 4
+    if (pairs == 4) {
+        multiply_scalar(of_r->power[4], of_r->power[3], of_r->power[0]);
+        multiply_scalar(of_r->power[5], of_r->power[3], of_r->power[1]);
+        multiply_scalar(of_r->power[6], of_r->power[3], of_r->power[2]);
+        multiply_scalar(of_r->power[7], of_r->power[3], of_r->power[3]);
+    }
+#else
+    (void)pairs;
+#endif
+}
+
+// The multipliers of the last pairs of by[], from by[PASS_PAIRS - pairs]
+// on, for every pass but the last: by[k] multiplies both lanes by
+// r^(2 (PASS_PAIRS - k)). With last set, the last pass's: lane 1 of by[k]
+// takes r^(2 (PASS_PAIRS - k) - 1), one power less, because its blocks
+// come one block after lane 0's. So the last two multipliers of either set
+// are those of a pass of two pairs.
+static inline void multipliers_write(powers *of_r, size_t pairs, size_t last) {
+#pragma GCC unroll 4
+    for (size_t k = PASS_PAIRS - pairs; k < PASS_PAIRS; k++) {
+        size_t even = 2 * (PASS_PAIRS - k) - 1;
+        multiplier_set(&of_r->by[k], of_r->power[even], of_r->power[even - last]);
+    }
+}
+
+// multipliers_write. On x86-64 the call is never inlined. Inlined into the
+// entry, Apple clang 21 kept a copy of r^4's multiplier in a stack slot it
+// picked, which ct_wipe cannot name, and bin/poly1305_equiv_test's residue
+// check found it. Out of line, it writes the multipliers into the struct
+// alone. On arm64 it is inlined: out of line, clang loaded the
+// multipliers from the struct in every pass of two pairs, and such a pass
+// took 30% more time.
+#ifdef __ARM_NEON
+static inline void multipliers_set(powers *of_r, size_t pairs, size_t last) {
+    multipliers_write(of_r, pairs, last);
+}
+#else
+static __attribute__((noinline)) void multipliers_set(powers *of_r, size_t pairs, size_t last) {
+    multipliers_write(of_r, pairs, last);
+}
+#endif
+
+// The n bytes at m in passes of pairs pairs, a constant wherever the
+// function is inlined, from the accumulator in h. On return d holds the
+// last pass's sums. A call of an odd count of groups starts with one
+// group, two pairs, under the set's last two multipliers, r^4 and r^2.
+// Each pass after it but the last multiplies by the set and carries. The
+// last pass, or the one group of a call of one group, takes the powers the
+// last blocks are owed.
+static inline __attribute__((always_inline)) void passes(sums d[5], words h[5], const uint8_t *m,
+                                                         size_t n, powers *of_r, size_t pairs) {
+    size_t pass_bytes = PAIR_BYTES * pairs;
+    multiplier_read *by = &of_r->by[PASS_PAIRS - pairs];
+    multiplier_read *two = &of_r->by[PASS_PAIRS - 2];
+    multipliers_set(of_r, pairs, 0);
+    size_t lead = n % pass_bytes;
+    if (lead != 0 && n > lead) {
+        pairs_sums(d, h, m, two, 2);
+        carry(h, d);
+        m += lead;
+        n -= lead;
+    }
+    for (; n > pass_bytes; n -= pass_bytes) {
+        pairs_sums(d, h, m, by, pairs);
+        carry(h, d);
+        m += pass_bytes;
+    }
+    multipliers_set(of_r, pairs, 1);
+    if (n == pass_bytes) {
+        pairs_sums(d, h, m, by, pairs);
+    } else {
+        pairs_sums(d, h, m, two, 2);
+    }
+}
 
 void poly1305_vector_blocks(poly1305 *p, const uint8_t *m, size_t n) {
     CH_ASSERT(n > 0 && n % POLY1305_VECTOR_GROUP == 0);
-    // r^2, r^3 and r^4 beside r. Every group but the last multiplies both
-    // lanes by r^4 and r^2, two steps of Horner's rule over every other
-    // block. The last multiplies lane 0 by r^4 and r^2 and lane 1 by r^3
-    // and r, the powers the last four blocks are owed.
+    // Only n, which is public, picks the pairs of a pass.
+    size_t pairs = PASS_PAIRS > 2 && n >= POLY1305_VECTOR_WIDE_MIN ? PASS_PAIRS : 2;
     powers of_r;
-    multiply_scalar(of_r.r2, p->r, p->r);
-    multiply_scalar(of_r.r3, of_r.r2, p->r);
-    multiply_scalar(of_r.r4, of_r.r2, of_r.r2);
-    multiplier_set(&of_r.first, of_r.r4, of_r.r4);
-    multiplier_set(&of_r.second, of_r.r2, of_r.r2);
+    for (size_t i = 0; i < 5; i++) {
+        of_r.power[0][i] = p->r[i];
+    }
+    powers_compute(&of_r, pairs);
 
     // Lane 0 starts from the accumulator and lane 1 from 0.
     words h[5];
@@ -324,14 +476,15 @@ void poly1305_vector_blocks(poly1305 *p, const uint8_t *m, size_t n) {
     h[3] = words_of(p->h[3], 0);
     h[4] = words_of(p->h[4], 0);
     sums d[5];
-    for (; n > POLY1305_VECTOR_GROUP; n -= POLY1305_VECTOR_GROUP) {
-        group_sums(d, h, m, &of_r.first, &of_r.second);
-        carry(h, d);
-        m += POLY1305_VECTOR_GROUP;
+#if PASS_PAIRS > 2
+    if (pairs == PASS_PAIRS) {
+        passes(d, h, m, n, &of_r, PASS_PAIRS);
+    } else {
+        passes(d, h, m, n, &of_r, 2);
     }
-    multiplier_set(&of_r.first, of_r.r4, of_r.r3);
-    multiplier_set(&of_r.second, of_r.r2, p->r);
-    group_sums(d, h, m, &of_r.first, &of_r.second);
+#else
+    passes(d, h, m, n, &of_r, 2);
+#endif
 
     // The two lanes' sums add up to the accumulator.
     uint64_t total[5];

@@ -221,7 +221,7 @@ static const vector_path *current = &vector_128;
 #define GROUP (current->group)
 #define LENGTH_MAX (current->min + 4 * GROUP + 32)
 #define CUT_MAX (2 * GROUP)
-#define GROUPS_MAX 12
+#define GROUPS_MAX 40 // past the 2,048 bytes where NEON passes take 8 blocks
 // The most bytes of whole blocks a direct call's accumulator starts from.
 #define PREFIX_MAX ((size_t)64)
 #define RANDOM_CASES 20000
@@ -381,8 +381,8 @@ static void compare_direct(const char *case_name, const uint8_t key[POLY1305_KEY
 }
 
 // One group to GROUPS_MAX groups, from the accumulator that zero to four
-// random blocks left. One group is below POLY1305_VECTOR_MIN, so only a
-// direct call reaches the path with it.
+// random blocks left, or from all 0xff bytes. Only a direct call reaches
+// the path with one group, which is below POLY1305_VECTOR_MIN.
 static void run_direct(void) {
     uint8_t key[POLY1305_KEY];
     for (size_t groups = 1; groups <= GROUPS_MAX && failures == 0; groups++) {
@@ -391,6 +391,9 @@ static void run_direct(void) {
             rng_fill(message, prefix + GROUP * groups);
             compare_direct("direct", key, prefix, GROUP * groups);
         }
+        memset(key, 0xff, sizeof key);
+        memset(message, 0xff, PREFIX_MAX + GROUP * groups);
+        compare_direct("direct, largest words", key, PREFIX_MAX, GROUP * groups);
     }
 }
 

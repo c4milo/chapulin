@@ -102,6 +102,12 @@ def ifmaBlock (m : ByteArray) (j : Nat) : Spec.Poly1305Ifma.Digits :=
   Spec.Poly1305Ifma.blockDigits (bytesToNatLE (m.extract (16 * j) (16 * j + 8)))
     (bytesToNatLE (m.extract (16 * j + 8) (16 * j + 16)))
 
+/-- Five 26-bit words from 20 bytes: word `i` is the 4 big-endian bytes at `4 i`. -/
+def vectorWords? (b : ByteArray) : Option Spec.Poly1305Vector.Words := do
+  guard (b.size == 20)
+  let w := fun (i : Nat) => bytesToNatBE (b.extract (4 * i) (4 * i + 4))
+  return ⟨w 0, w 1, w 2, w 3, w 4⟩
+
 /-- A PEM label by the name a `pemone` request gives it. -/
 def pemLabel? : String → Option (List UInt8)
   | "certificate" => some Spec.PemBlocks.labelCertificate
@@ -148,6 +154,7 @@ def selftestAll (_ : Unit) : String :=
     ("rsa", Spec.Rsa.selftest),
     ("rsa_ifma", Spec.RsaIfma.selftest),
     ("poly1305_ifma", Spec.Poly1305Ifma.selftest),
+    ("poly1305_vector", Spec.Poly1305Vector.selftest),
     ("rsa_avx2", Spec.RsaAvx2.selftest),
     ("rsa_mont64_adx", Spec.RsaMont64Adx.selftest),
     ("p384", Spec.P384.selftest),
@@ -831,6 +838,25 @@ def dispatch : List String → Option String
       let b := Spec.Poly1305Ifma.blockOf l
       Spec.Poly1305Ifma.groupStep (h l) (ifmaBlock m b) (ifmaBlock m (8 + b))
         (Spec.Poly1305Ifma.complete (x l)) (Spec.Poly1305Ifma.complete (y l)))
+  | ["poly1305_vector_blocks", pairs, r, h, message] => do
+    -- poly1305_vector_blocks of poly1305_vector.c (Spec/Poly1305Vector.lean's `entry`): passes of
+    -- `pairs` pairs, 4 as NEON runs them or 2 as SSE2 does, from r's and the accumulator's words,
+    -- each as `vectorWords?` reads them, over whole groups of 64 bytes. The answer is the
+    -- accumulator's five words, written the same way. The guard is the entry's contract and the
+    -- bounds poly1305.c's loop keeps, which `passStep_bounds` takes.
+    let pairsMax ← pairs.toNat?
+    guard (pairsMax == 2 || pairsMax == 4)
+    let rw ← vectorWords? (← hexArg? r)
+    let hw ← vectorWords? (← hexArg? h)
+    let m ← hexArg? message
+    guard (m.size > 0 && m.size % 64 == 0)
+    guard (decide (Spec.Poly1305Vector.PowerFits rw) && decide (Spec.Poly1305Vector.PowerFits hw))
+    let block := fun (j : Nat) => Spec.Poly1305Vector.blockWords
+      (bytesToNatLE (m.extract (16 * j) (16 * j + 8)))
+      (bytesToNatLE (m.extract (16 * j + 8) (16 * j + 16)))
+    let out := Spec.Poly1305Vector.entry pairsMax rw hw block (m.size / 64)
+    return bytesToHex ([out.w0, out.w1, out.w2, out.w3, out.w4].foldl
+      (init := ByteArray.empty) fun acc x => acc ++ natToBytesBE x 4)
   | ["poly1305_ifma_powers", words] => do
     -- compute_powers from r's five 26-bit words, 4 big-endian bytes each, word 0 first. The
     -- answer is the model's last_first, last_second, by_16 and by_8, each register as

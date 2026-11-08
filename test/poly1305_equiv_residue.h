@@ -41,7 +41,9 @@
 #ifndef CH_POLY1305_EQUIV_RESIDUE_H
 #define CH_POLY1305_EQUIV_RESIDUE_H
 
-#define RESIDUE_GROUPS 4
+// 32 groups, 2,048 bytes on NEON, so the 128-bit path's call runs passes of
+// eight blocks and computes r^5 to r^8 (docs/decisions.md 194).
+#define RESIDUE_GROUPS 32
 // Deep enough for the IFMA kernel's frame, which holds its struct of
 // powers, 1,984 bytes, beside its own spills.
 #define RESIDUE_BYTES 8192
