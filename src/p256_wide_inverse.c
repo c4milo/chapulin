@@ -29,6 +29,11 @@
 
 #define WORDS P256_WIDE_INVERSE_WORDS
 
+// Each loop of a round over a fixed count of words carries #pragma GCC unroll. gcc 13 at -O2 left
+// them in place, with the round's arrays in memory and the carry of each word in a byte register
+// between steps. On an EPYC 7763 combine_exact and combine_modular took 2.6 times clang's time.
+// clang writes the loops out with or without the pragma (docs/decisions.md 204).
+
 // The steps of a round. After STEPS steps each factor is between -(2^STEPS - 1) and 2^STEPS, so
 // with 31 a factor and the one beside it share a word in step_factors.
 #define STEPS 31
@@ -85,6 +90,7 @@ static void approximations(uint64_t *xa, uint64_t *xb, const uint64_t a[WORDS],
     uint64_t b_high = b[0];
     uint64_t b_low = 0;
     uint64_t above_64 = 0; // all ones when n is above 64
+#pragma GCC unroll 3
     for (size_t i = 1; i < WORDS; i++) {
         uint64_t nonzero = nonzero_mask(a[i] | b[i]);
         a_high = (a[i] & nonzero) | (a_high & ~nonzero);
@@ -95,6 +101,7 @@ static void approximations(uint64_t *xa, uint64_t *xb, const uint64_t a[WORDS],
     }
     // Shifts of 32, 16, 8, 4, 2 and 1 bits, each where the bits it moves out of a_high | b_high
     // are zero.
+#pragma GCC unroll 6
     for (unsigned s = 32; s > 0; s >>= 1) {
         uint64_t mask = ~nonzero_mask((a_high | b_high) >> (64 - s));
         shift_left_masked(&a_high, &a_low, s, mask);
@@ -175,6 +182,7 @@ static void multiply_word(uint64_t o[WORDS + 1], const uint64_t x[WORDS], uint64
 // o = -o modulo 2^320 where mask is all ones, and o where it is zero.
 static void negate_masked(uint64_t o[WORDS + 1], uint64_t mask) {
     uint64_t carry = mask & 1;
+#pragma GCC unroll 5
     for (size_t i = 0; i < WORDS + 1; i++) {
         o[i] = p256_wide_add_carry(&carry, o[i] ^ mask, 0);
     }
@@ -198,11 +206,13 @@ static uint64_t combine_exact(uint64_t o[WORDS], const uint64_t x[WORDS], const 
     negate_masked(product_y, g_negative);
     uint64_t sum[WORDS + 1];
     uint64_t carry = 0;
+#pragma GCC unroll 5
     for (size_t i = 0; i < WORDS + 1; i++) {
         sum[i] = p256_wide_add_carry(&carry, product_x[i], product_y[i]);
     }
     uint64_t negative = p256_wide_mask(sum[WORDS] >> 63);
     negate_masked(sum, negative);
+#pragma GCC unroll 4
     for (size_t i = 0; i < WORDS; i++) {
         o[i] = (sum[i] >> STEPS) | (sum[i + 1] << (64 - STEPS));
     }
@@ -228,6 +238,7 @@ static void combine_modular(uint64_t o[WORDS], const uint64_t x[WORDS], const ui
     uint64_t operand_y[WORDS];
     uint64_t borrow_x = 0;
     uint64_t borrow_y = 0;
+#pragma GCC unroll 4
     for (size_t i = 0; i < WORDS; i++) {
         uint64_t negated_x = p256_wide_sub_borrow(&borrow_x, m->word[i], x[i]);
         uint64_t negated_y = p256_wide_sub_borrow(&borrow_y, m->word[i], y[i]);
@@ -245,17 +256,20 @@ static void combine_modular(uint64_t o[WORDS], const uint64_t x[WORDS], const ui
     t[4] += p256_wide_mul_row(&t[0], &t[1], &t[2], &t[3], q, m->word[0], m->word[1], m->word[2],
                               m->word[3]);
     uint64_t s[WORDS + 1];
+#pragma GCC unroll 4
     for (size_t i = 0; i < WORDS; i++) {
         s[i] = (t[i] >> STEPS) | (t[i + 1] << (64 - STEPS));
     }
     s[WORDS] = t[WORDS] >> STEPS;
     uint64_t reduced[WORDS];
     uint64_t borrow = 0;
+#pragma GCC unroll 4
     for (size_t i = 0; i < WORDS; i++) {
         reduced[i] = p256_wide_sub_borrow(&borrow, s[i], m->word[i]);
     }
     (void)p256_wide_sub_borrow(&borrow, s[WORDS], 0);
     uint64_t below_m = p256_wide_mask(borrow);
+#pragma GCC unroll 4
     for (size_t i = 0; i < WORDS; i++) {
         o[i] = (s[i] & below_m) | (reduced[i] & ~below_m);
     }

@@ -17038,3 +17038,43 @@ does nothing more.
 
       Under `qemu-x86_64 -cpu max` and gcc 13.3, a shared secret retires
       323,535 instructions where it retired 342,959.
+
+204. **The loops of a round of the P-256 binary GCD carry `#pragma GCC
+    unroll`.** On an EPYC 7763, P-256 key generation took 15.3 µs under gcc
+    13.3 and 12.0 µs under clang 23, and an ECDSA signature 24.2 and 19.1
+    µs. OpenSSL 3.6.4 took 12.3 and 22.2.
+
+    - **The cause.** `perf record` put 15.9% of gcc's key generation in
+      `combine_exact` and `combine_modular`, 2.4 µs, against 7.8% of
+      clang's, 0.94 µs, and 19.7% of gcc's signature against 9.4% of
+      clang's. gcc 13 at -O2 kept their loops over four and five words,
+      with `operand_x`, `operand_y`, the sums and the products in memory,
+      and a carry in a byte register between the words of a chain. clang
+      writes the loops out.
+    - **The change.** `#pragma GCC unroll` with each loop's count on the
+      nine loops of a round over a fixed count of words: `approximations`,
+      `negate_masked`, `combine_exact` and `combine_modular`. The loops
+      and their bounds are as before, so the `p256_wide_inverse` harnesses
+      and `spec/lean/Spec/P256WideInverse.lean` do not change. A host
+      object alone compiles the file.
+    - **What is left.** On the same runs gcc's key generation took 1.17
+      times clang's time, and its signature 1.14 times. Built whole with
+      `-fno-tree-slp-vectorize`, gcc's key generation took 0.45 µs less
+      and its verification 2.0 µs less: gcc moves the four words of a
+      field element into two vector registers and back, in the halving of
+      decision 196 and in the stores after each product. That cause is
+      measured here and not changed.
+    - **Numbers.** A/B runs 42520196408, 42520851760, 42522580036 and
+      42523935989 on the EPYC 7763, in µs, each the median of five
+      processes:
+
+      | P-256 | gcc before | gcc after | clang before | clang after |
+      | --- | --- | --- | --- | --- |
+      | key generation | 15.18, 15.36, 15.10, 15.14 | 14.07, 14.12, 14.11, 14.07 | 12.09, 12.09, 12.04, 12.01 | 12.04, 12.14, 12.06, 12.11 |
+      | ECDSA signature | 24.02, 24.36, 24.04, 24.01 | 21.77, 22.04, 21.72, 21.79 | 19.13, 19.15, 19.09, 19.07 | 19.11, 19.16, 19.20, 19.20 |
+      | shared secret | 60.26, 60.15, 59.76 | 58.82, 58.65, 59.11 | 56.31, 56.42, 55.84 | 56.12, 55.93, 56.10 |
+      | ECDSA verification | 61.47, 61.37 | 60.74, 60.57 | 56.19, 56.15 | 55.15, 55.20 |
+
+      Under `qemu-x86_64 -cpu max` and gcc 13.3, a key generation retires
+      162,201 instructions where it retired 171,160, and a signature
+      250,281 where it retired 268,199.
