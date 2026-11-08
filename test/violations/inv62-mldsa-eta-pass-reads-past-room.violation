@@ -1,0 +1,15 @@
+invariant: INV-62
+file: src/mldsa_sign_pack.c
+catches: proof/prove-one.sh mldsa_sign_samplers_padded
+reason: A pass of RejBoundedPoly's compaction reads the entry 2^bit above
+  every position its first loop writes, and that loop must end at
+  MLDS_ETA_READ_END (docs/decisions.md 200). Run over all 976 positions of
+  the padded form, the pass of bit 9 reads up to 975 + 512, past the 992
+  entries the array holds. A test can see the same values, since the
+  stack above often holds zeros. The mldsa_sign_samplers_padded proof
+  checks every read of the ten passes and fails on this edit.
+
+--- old
+    for (; p + step < MLDS_ETA_READ_END(step); p++) {
+--- new
+    for (; p < MLDS_ETA_SPAN; p++) {

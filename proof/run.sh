@@ -821,6 +821,10 @@ launch fast full mldsa_coefficient 2 ""
 # --max-field-sensitivity-array-size 962 splits it: 312 properties, 412 s,
 # 0.65 GB resident, in an Ubuntu 24.04 amd64 container under Rosetta with
 # the pinned cbmc and kissat, against 2.0 GB without the flag.
+# mldsa_sign_samplers_padded proves the padded form a host object compiles,
+# whose passes run over 976 positions of a 992-entry array
+# (docs/decisions.md 200): 313 properties, 536 s on an M1 Pro at a load
+# average of 40.
 launch fast:6 full mldsa_signer 816 "ct_wipe.0:4628" src/ct.c
 launch fast:5 full mldsa_signer_keygen 258 "ct_wipe.0:4897" src/ct.c
 launch fast full mldsa_sign_round 258 ""
@@ -835,6 +839,7 @@ launch fast:3 full mldsa_sign_poly 258 "mlds_poly_ntt.2:9,mlds_poly_invntt_tomon
 launch fast full mldsa_sign_ntt 258 "mlds_poly_ntt.2:9,mlds_poly_invntt_tomont.2:9"
 launch fast full mldsa_sign_pack 642 "" src/ct.c proof/ct_wipe_stub.c
 launch fast full mldsa_sign_samplers 963 "" --max-field-sensitivity-array-size 962 src/ct.c proof/ct_wipe_stub.c
+launch fast full mldsa_sign_samplers_padded 977 "" --max-field-sensitivity-array-size 992 src/ct.c proof/ct_wipe_stub.c
 launch fast full mldsa_sign_coefficient 2 ""
 launch fast full mldsa_sign_coefficient_ct 2 ""
 # A host object's signer (docs/decisions.md 191), two formulas over the

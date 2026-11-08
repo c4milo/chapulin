@@ -56,7 +56,8 @@ def choose (b : Nat) (here above : Entry) : Entry :=
       | some (w, k) => if k.testBit b then none else some (w, k)
       | none => none
 
-/-- `eta_pass` for bit `b`. The C reads 0, an empty entry, past its array. -/
+/-- `eta_pass` for bit `b`. Past the 962 entries `eta_entry` writes, the C
+reads 0, an empty entry, from the zero entries its array holds above them. -/
 def pass (b : Nat) (s : Nat → Entry) : Nat → Entry :=
   fun p => choose b (s p) (s (p + 2 ^ b))
 

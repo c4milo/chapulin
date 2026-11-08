@@ -1355,7 +1355,7 @@ The entries are grouped by area:
 
 #### mldsa_sign
 
-- **Harnesses:** `mldsa_signer` (fast), `mldsa_signer_keygen` (fast), `mldsa_sign_keygen_row` (fast), `mldsa_sign_keygen_row0` (fast), `mldsa_sign_hint_row0` (fast), `mldsa_sign_round` (fast), `mldsa_sign_commit` (fast), `mldsa_sign_response` (fast), `mldsa_sign_hint_row` (fast), `mldsa_sign_encode` (fast), `mldsa_sign_poly` (fast), `mldsa_sign_ntt` (fast), `mldsa_sign_pack` (fast), `mldsa_sign_samplers` (fast), `mldsa_sign_coefficient` (fast), `mldsa_sign_coefficient_ct` (fast), `mldsa_sign_expanded` (fast), `mldsa_sign_expanded_commit` (fast)
+- **Harnesses:** `mldsa_signer` (fast), `mldsa_signer_keygen` (fast), `mldsa_sign_keygen_row` (fast), `mldsa_sign_keygen_row0` (fast), `mldsa_sign_hint_row0` (fast), `mldsa_sign_round` (fast), `mldsa_sign_commit` (fast), `mldsa_sign_response` (fast), `mldsa_sign_hint_row` (fast), `mldsa_sign_encode` (fast), `mldsa_sign_poly` (fast), `mldsa_sign_ntt` (fast), `mldsa_sign_pack` (fast), `mldsa_sign_samplers` (fast), `mldsa_sign_samplers_padded` (fast), `mldsa_sign_coefficient` (fast), `mldsa_sign_coefficient_ct` (fast), `mldsa_sign_expanded` (fast), `mldsa_sign_expanded_commit` (fast)
 - **Proves:**
   - `mldsa87_keygen` and `mldsa87_sign` are safe for every seed, every
     key and public key of every length up to one byte past its own,

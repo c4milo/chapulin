@@ -78,6 +78,40 @@ static int32_t load_at(const mld_poly *p, uint32_t at) {
 #define MLDS_ETA_PASSES 10U
 _Static_assert(MLDS_ETA_HALVES <= (1U << MLDS_ETA_PASSES), "every move fits the passes");
 
+// The form of the passes. MLDS_ETA_PADDED is 1 in a host object and 0 in a
+// device object; a harness may set it. In the padded form a pass writes
+// MLDS_ETA_SPAN positions, MLDS_ETA_HALVES rounded up to a multiple of 16,
+// and its first loop ends at a multiple of 16, so the counts of both loops
+// are multiples of 16. The array then holds MLDS_ETA_ROOM entries, and those
+// from MLDS_ETA_HALVES up stay 0, so a read past the entries reads 0 and
+// stays in the array. gcc 13 at -O2 makes vector code only of a loop of such
+// a count, with a step it knows: it left the loops of decision 176's form in
+// scalar code, and they took 65% of a key generation on an x86-64 host
+// (docs/decisions.md 200). The device form is decision 176's: its array
+// holds the entries alone, and no pass reads past them.
+#ifndef MLDS_ETA_PADDED
+#ifdef CH_CPU_RUNTIME
+#define MLDS_ETA_PADDED 1
+#else
+#define MLDS_ETA_PADDED 0
+#endif
+#endif
+#if MLDS_ETA_PADDED
+#define MLDS_ETA_SPAN 976U
+#define MLDS_ETA_ROOM (MLDS_ETA_SPAN + 16U)
+// The end of the positions the first loop of the pass of step s writes, plus
+// s: the first multiple of 16 at or above MLDS_ETA_HALVES - s, plus s.
+#define MLDS_ETA_READ_END(s) ((((MLDS_ETA_HALVES - (s)) + 15U) & ~15U) + (s))
+_Static_assert(MLDS_ETA_SPAN % 16U == 0 && MLDS_ETA_SPAN >= MLDS_ETA_HALVES &&
+                   MLDS_ETA_SPAN - MLDS_ETA_HALVES < 16U,
+               "the span is the halves rounded up to a multiple of 16");
+_Static_assert(MLDS_ETA_HALVES + 15U <= MLDS_ETA_ROOM, "every read stays in the array");
+#else
+#define MLDS_ETA_SPAN MLDS_ETA_HALVES
+#define MLDS_ETA_ROOM MLDS_ETA_HALVES
+#define MLDS_ETA_READ_END(s) MLDS_ETA_HALVES
+#endif
+
 // An entry: bits 0 to 2 hold the value plus eta, bit 3 is 1 for a kept
 // half-byte, and bits 4 up hold its move. An entry of 0 holds nothing.
 #define MLDS_ETA_KEPT 8U
@@ -110,28 +144,38 @@ static uint16_t eta_choose(uint32_t one, uint32_t here, uint32_t above, unsigned
 // and every other kept entry stays. Each move is the count of rejected
 // entries before its entry, so no two kept entries meet at one position
 // (docs/decisions.md 176). Each position is written from a mask, and the
-// loop runs in increasing order, so a read at p + step sees the entry before
-// this pass.
-static void eta_pass(uint16_t entries[MLDS_ETA_HALVES], unsigned bit) {
+// loops run in increasing order, so a read at p + step sees the entry before
+// this pass. Once p + step reaches MLDS_ETA_READ_END(step), it is
+// MLDS_ETA_HALVES or more, where no entry is kept, so the entry above is 0.
+static inline void eta_pass(uint16_t entries[MLDS_ETA_ROOM], unsigned bit) {
     volatile uint32_t opaque = 1;
     uint32_t one = opaque;
     uint32_t step = 1U << bit;
     uint32_t p = 0;
-    for (; p + step < MLDS_ETA_HALVES; p++) {
+    for (; p + step < MLDS_ETA_READ_END(step); p++) {
         entries[p] = eta_choose(one, entries[p], entries[p + step], bit);
     }
-    for (; p < MLDS_ETA_HALVES; p++) {
+    for (; p < MLDS_ETA_SPAN; p++) {
         entries[p] = eta_choose(one, entries[p], 0U, bit);
     }
 }
 
 uint32_t mlds_eta_from_stream(mld_poly *p, const uint8_t stream[MLDS_ETA_STREAM_BYTES]) {
-    uint16_t entries[MLDS_ETA_HALVES];
+    uint16_t entries[MLDS_ETA_ROOM];
     uint32_t rejected = 0;
     for (size_t at = 0; at < MLDS_ETA_STREAM_BYTES; at++) {
         entries[2 * at] = eta_entry(stream[at] & 15U, &rejected);
         entries[2 * at + 1] = eta_entry((uint32_t)stream[at] >> 4, &rejected);
     }
+    for (uint32_t at = MLDS_ETA_HALVES; at < MLDS_ETA_ROOM; at++) {
+        entries[at] = 0;
+    }
+    // The padded form writes the ten passes out, so each pass's step is a
+    // constant. gcc 13 makes no vector code of a pass whose step it does
+    // not know. A device object keeps the loop.
+#if MLDS_ETA_PADDED
+#pragma GCC unroll 10
+#endif
     for (unsigned bit = 0; bit < MLDS_ETA_PASSES; bit++) {
         eta_pass(entries, bit);
     }

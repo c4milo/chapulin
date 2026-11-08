@@ -3172,8 +3172,10 @@ bin/mldsa_test: test/mldsa_test.c $(MLDSA_TEST_SRCS) $(HDRS) $(TESTH)
 # 204's rounding at every input, the verifier's SampleInBall and each
 # refusal at its boundary (docs/decisions.md 159). The second binary runs
 # the same test over ct.h's 16x16 decomposition, the multiply a host
-# object runs for a session without CH_CPU_CONSTANT_TIME_MULTIPLY. Both
-# take -DCH_MLDSA_SIGN_TEST, which declares the signer's test entries; no
+# object runs for a session without CH_CPU_CONSTANT_TIME_MULTIPLY, and on
+# the padded form of RejBoundedPoly's passes that a host object compiles
+# (-DMLDS_ETA_PADDED=1, docs/decisions.md 200). Both take
+# -DCH_MLDSA_SIGN_TEST, which declares the signer's test entries; no
 # library object takes it.
 MLDSA_SIGNER_TEST_SRCS := $(MLDSA_SIGN_SRCS) test/mldsa_sign.c src/mldsa.c src/mldsa_poly.c src/sha3.c src/ct.c src/ct_wipe.c \
                           test/stack_residue.c test/mldsa_signer_frames.c
@@ -3182,8 +3184,8 @@ bin/mldsa_signer_test: test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS) $(HDRS
 	$(CC) $(CFLAGS) -DCH_MLDSA_SIGN_TEST -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS)
 bin/mldsa_signer_test_ct_widemul: test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLDSA_SIGN_TEST -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/mldsa_signer_test.c \
-	  $(MLDSA_SIGNER_TEST_SRCS)
+	$(CC) $(CT_WIDEMUL_CFLAGS) -DCH_MLDSA_SIGN_TEST -DMLDS_ETA_PADDED=1 -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS)
 # The TRANSPORT=quic-nonblocking driver through its sixteen public entries: the
 # configuration rules, the staged ClientHello, a ServerHello delivered
 # over CRYPTO bytes, the level rules RFC 9001 §4.1.3 states, and the one
@@ -9330,6 +9332,11 @@ WIDEMUL_SPECS := \
 #   MOVZ on mips picks a trip count from SLTU on 963, and on rv32 one BEQ
 #   is the stack protector's check, which the 1924-byte array of entries
 #   adds. The m3 gcc code holds no IT.
+# RejBoundedPoly's passes over a padded array (docs/decisions.md 200): a
+#   host object writes the ten passes out, and each pass's two loops run to
+#   constants. arm64's 42 and x86-64's 34 hold 15 in mlds_eta_from_stream,
+#   the back edges of those loops. A device object's code is the same as
+#   before.
 # ML-KEM's rank at run time (docs/decisions.md 177): mlkem.c's loops run
 #   to the rank a call passes, not to a constant, and K-PKE codes u one
 #   poly at a time. m3's 16 hold a BEQ in mlk_matvec_row on the term
@@ -9712,10 +9719,10 @@ MLDSA_SIGN_BRANCH_CEILING := \
   rv32ic-gcc/src/mldsa_signer.c:29 rv32ic-gcc/src/mldsa_sign_round.c:6 rv32ic-gcc/src/mldsa_sign_steps.c:24 \
   rv32ic-gcc/src/mldsa_sign_poly.c:12 rv32ic-gcc/src/mldsa_sign_pack.c:23 \
   arm64/src/mldsa_signer.c@host:27 arm64/src/mldsa_sign_round.c@host:2 arm64/src/mldsa_sign_steps.c@host:62 \
-  arm64/src/mldsa_sign_poly.c@host:25 arm64/src/mldsa_sign_pack.c@host:40 \
+  arm64/src/mldsa_sign_poly.c@host:25 arm64/src/mldsa_sign_pack.c@host:42 \
   x86-64/src/mldsa_signer.c@host:18 x86-64/src/mldsa_sign_round.c@host:2 \
   x86-64/src/mldsa_sign_steps.c@host:67 x86-64/src/mldsa_sign_poly.c@host:26 \
-  x86-64/src/mldsa_sign_pack.c@host:32
+  x86-64/src/mldsa_sign_pack.c@host:34
 QUIC_PACKET_BRANCH_CEILING := \
   m3/src/quic_packet.c:59 mips32r2/src/quic_packet.c:42 rv32imac/src/quic_packet.c:46 m3-gcc/src/quic_packet.c:46 \
   mips32r2-gcc/src/quic_packet.c:46 mips32r2-gcc-O2/src/quic_packet.c:52 rv32imac-gcc/src/quic_packet.c:55 \

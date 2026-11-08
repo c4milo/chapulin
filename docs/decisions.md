@@ -16880,3 +16880,66 @@ does nothing more.
       ChaCha20.** It would use ports that the AVX2 rounds leave idle. It
       needs a Poly1305 in 64-bit limbs, which the tree does not hold,
       with its own CBMC harness and Lean proof.
+
+200. **A host object runs RejBoundedPoly's passes over a padded array, in
+    loops whose counts are multiples of 16, with the ten passes written
+    out.** On an EPYC 7763, an ML-DSA-87 key generation took 355 µs under
+    gcc 13.3 and 198 µs under clang 23, 1.28 and 0.72 of OpenSSL 3.6.4's
+    time. Camilo approved the study of why gcc trails clang on 2026-11-08.
+
+    - **The cause.** `perf record` on the runner put 65% of gcc's key
+      generation in `mlds_eta_from_stream`, against 44% of clang's. clang
+      made SSE2 code of each pass. gcc left the passes in scalar code: a
+      shift by a register and a 2-byte store for each of 9,620 entries. At
+      -O2 gcc 13 makes vector code of a loop only when it needs no check
+      at run time. A pass read `entries[p + step]` with a step that gcc
+      did not know, so the overlap of the read and the write needed a
+      check.
+    - **The padded form.** `MLDS_ETA_PADDED` is 1 in a host object. A pass
+      then writes 976 positions, the 962 entries rounded up to a multiple
+      of 16, in two loops. The first reads the entry 2^bit above each
+      position, and ends at the first multiple of 16 at or above
+      962 - 2^bit. The second writes the positions from there, whose
+      entry above is 0. The array holds 992 entries, and those from 962
+      up are zero, so the first loop's reads, all under 977, stay in it.
+      `#pragma GCC unroll 10` writes the ten passes out, so each step is
+      a constant, and gcc makes 16-byte vector code of every loop. The
+      array is 1,984 bytes, where it was 1,924, and each call clears its
+      last 30 entries.
+    - **A device object keeps decision 176's form.** No device object
+      holds the signer, and the form is chosen by constants: its array,
+      loops and code are those of decision 176. The code of
+      `mldsa_sign_pack.c` is the same as before under the pinned clang
+      for rv32imac, Cortex-M3 and mips32r2 at -Os, and under the Arm GNU
+      gcc 15.3 for Cortex-M3. lint-wide-multiply's ceilings for a host
+      object rise from 40 to 42 on arm64 and from 32 to 34 on x86-64: the
+      back edges of the loops written out.
+    - **What holds it.** `Spec.MlDsaEta.pass` reads an empty entry past
+      the entries, as the zeros do, so the Lean statements do not change.
+      `mldsa_sign_samplers_padded` runs the harness of
+      `mldsa_sign_samplers` on the padded form, over 962 nondeterministic
+      entries and 30 zero entries: 313 properties, 536 s on the M1 Pro at
+      a load average of 40, at a field-sensitivity size of 992. Each
+      harness reaches 47.5% of its locations, where `mldsa_sign_samplers`
+      reached 48.5%. The loop that clears the padding is new, and in the
+      device form it never runs. `bin/mldsa_signer_test_ct_widemul` now
+      compiles the padded form, so with `bin/mldsa_signer_test` it holds
+      the masked loop to the branching one in both forms.
+      `inv62-mldsa-eta-pass-reads-past-room` runs the first loop over all
+      976 positions, and the padded harness catches it. A mutant that
+      drops the zeros was not caught: the read of an uninitialized entry
+      is undefined, and clang read it as 0.
+    - **Numbers.** A/B runs 42523935989 and 42524927118 on the EPYC 7763,
+      in µs, each the median of five processes. Each run times the tree
+      before and the tree after in turn, built by the same compiler on the
+      same runner:
+
+      | ML-DSA-87 key generation | before | after |
+      | --- | --- | --- |
+      | gcc 13.3 | 360.4, 361.6 | 167.8, 167.3 |
+      | clang 23 | 199.9, 200.1 | 193.5, 191.9 |
+
+      Signing and verification did not move by more than 1%. One key
+      generation under `qemu-x86_64 -cpu max` and gcc 13.3, under
+      `ch_cfg.cpu 0x43f`, retires 2,475,218 instructions where it retired
+      5,460,533.

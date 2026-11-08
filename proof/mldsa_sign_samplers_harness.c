@@ -13,10 +13,12 @@
 //    the two are never both chosen in a run, where the C's OR of two
 //    masked entries would differ from the model.
 //  - the ten passes of eta_pass in order, bits 0 to 9, as
-//    mlds_eta_from_stream runs them, over every array of 962 entries:
-//    every read and write stays in the array. A pass whose bit is
-//    nondeterministic makes every index symbolic, and cbmc passed 14.5 GB
-//    after 46 minutes on that formula (docs/decisions.md 176).
+//    mlds_eta_from_stream runs them, over every array of 962 entries, and
+//    in mldsa_sign_samplers_padded over the padded form's 962 entries and 30
+//    zero entries (docs/decisions.md 200): every read and write stays in
+//    the array. A pass whose bit is nondeterministic makes every index
+//    symbolic, and cbmc passed 14.5 GB after 46 minutes on that formula
+//    (docs/decisions.md 176).
 //  - ball_step, for every position j from the stream, every i from 196
 //    to 256 and every polynomial and sign word: i grows by at most 1 and
 //    stays at most 256, and each coefficient is the one before, the one at
@@ -83,7 +85,7 @@ static void eta_choose_step(void) {
 }
 
 static void eta_pass_step(void) {
-    uint16_t entries[MLDS_ETA_HALVES];
+    uint16_t entries[MLDS_ETA_ROOM] = {0};
     for (unsigned i = 0; i < MLDS_ETA_HALVES; i++) {
         entries[i] = nondet_u16();
     }
