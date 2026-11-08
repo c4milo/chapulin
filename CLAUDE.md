@@ -237,8 +237,9 @@ Home: github.com/c4milo.
   in 256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2) and
   `chacha20_avx512.[ch]` (sixteen blocks a pass in 512-bit vectors, an
   x86-64 session whose caller sets CH_CPU_AVX512_IFMA) +
-  `poly1305.[ch]` with `poly1305_vector.[ch]` (four blocks at a time in
-  two NEON or SSE2 lanes, a host session whose caller sets
+  `poly1305.[ch]` with `poly1305_vector.[ch]` (four blocks a pass in
+  two NEON or SSE2 lanes, eight on NEON from 2,048 bytes,
+  docs/decisions.md 194, a host session whose caller sets
   CH_CPU_CONSTANT_TIME_MULTIPLY), `poly1305_avx2.[ch]` (eight blocks at a
   time in four AVX2 lanes, an x86-64 session whose caller sets that bit
   and CH_CPU_AVX2), `poly1305_ifma.[ch]` with `poly1305_ifma_lanes.h`
@@ -579,8 +580,9 @@ Home: github.com/c4milo.
   that way. No variable picks the X25519 field or the ChaCha20 keystream.
   Every object holds the 16-word field and `chacha20.c`'s loop, which stay
   the references and are all a device object runs. A host object runs
-  ChaCha20 on `chacha20_vector.c`'s passes of eight blocks on NEON and
-  four on SSE2 in every session: every arm64 and x86-64 CPU has those, so
+  ChaCha20 on `chacha20_vector.c`'s passes of nine blocks on NEON, two
+  groups of four in vectors and one block in general registers, and four
+  on SSE2 (docs/decisions.md 193), in every session: every arm64 and x86-64 CPU has those, so
   no bit picks them, and a host build whose compiler defines neither
   `__ARM_NEON` nor `__SSE2__` stops at an `#error` (docs/decisions.md 82
   and 86). ML-KEM's NTT and base multiplication run on `mlkem_vector.c`'s
@@ -696,7 +698,8 @@ Home: github.com/c4milo.
   stack below a call for the powers of r: on x86-64 the three paths read
   their multipliers through volatile pointers, so the powers stay in the
   one struct the call wipes and in no spill slot the compiler picks
-  (docs/decisions.md 83, 110 and 121). After a call of either AVX2
+  (docs/decisions.md 83, 110 and 121). `bin/diff_poly1305_vector` holds
+  its entry to `spec/lean/Spec/Poly1305Vector.lean`. After a call of either AVX2
   kernel, each binary reads ymm0 to ymm15 back as zero
   (docs/decisions.md 129). `bin/gcm_avx512_equiv_test` holds the
   512-bit AES-GCM kernel to `gcm.c` on `gcm_hw.c`'s loops, and in a
