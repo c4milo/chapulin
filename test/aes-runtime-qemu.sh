@@ -310,6 +310,13 @@
 #                     chacha20_vector.c and poly1305_vector.c: the block
 #                     in general registers, the residue checks that run
 #                     on NEON alone, and the passes of four pairs
+#   keccak-neon       bin/keccak_neon_equiv_test for arm64, built with the
+#                     arm64 gcc, which runs the plain form, and with clang,
+#                     which runs the SHA-3 form too, and
+#                     bin/mldsa_runtime_test for arm64, for the violations
+#                     of keccak_neon.c, its round and its two samplers,
+#                     which have a body on arm64 alone (docs/decisions.md
+#                     198)
 #   aes-equiv         bin/aes_equiv_test for x86-64 and for arm64, for the
 #                     violations of aes_hw.c's two key expansions
 #   ghash-equiv       bin/ghash_equiv_test for arm64, for the violations
@@ -360,10 +367,10 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
-    mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | vector-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
+    mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
     rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | vector-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx]" >&2
     exit 2
     ;;
 esac
@@ -387,7 +394,7 @@ arm64_cc=""
 x86_qemu=${QEMU_X86_64:-qemu-x86_64}
 arm64_qemu=${QEMU_AARCH64:-qemu-aarch64}
 if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ] && [ "$only" != ghash-equiv ] &&
-    [ "$only" != vector-neon ]; then
+    [ "$only" != vector-neon ] && [ "$only" != keccak-neon ]; then
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
@@ -402,7 +409,7 @@ if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != mldsa
 fi
 # clang for arm64, the one compiler under which sha3_hw.c has a body.
 keccak_cc=""
-if [ -z "$only" ] || [ "$only" = keccak ]; then
+if [ -z "$only" ] || [ "$only" = keccak ] || [ "$only" = keccak-neon ]; then
     keccak_cc=${KECCAK_ARM64_CC:-clang}
     "$keccak_cc" --target=aarch64-linux-gnu -dM -E -x c /dev/null 2> /dev/null | grep -qw __clang__ ||
         { echo "aes-runtime-qemu: $keccak_cc is not a clang that compiles for aarch64; set KECCAK_ARM64_CC" >&2; exit 1; }
@@ -463,6 +470,7 @@ read -r -a mldsa_vector_equiv_srcs <<< "$(sed -n 28p <<< "$lists")"
 read -r -a mldsa_runtime_srcs <<< "$(sed -n 29p <<< "$lists")"
 read -r -a mldsa_avx2_equiv_srcs <<< "$(sed -n 30p <<< "$lists")"
 read -r -a rsa_mont64_adx_test_srcs <<< "$(sed -n 31p <<< "$lists")"
+read -r -a keccak_neon_equiv_srcs <<< "$(sed -n 32p <<< "$lists")"
 [ "${#ghash_equiv_srcs[@]}" -gt 0 ] ||
     { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-four lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
@@ -702,6 +710,33 @@ if [ -z "$only" ] || [ "$only" = vector-neon ]; then
 fi
 if [ "$only" = vector-neon ]; then
     echo "aes-runtime-qemu: bin/chacha20_equiv_test and bin/poly1305_equiv_test held the NEON ChaCha20 and Poly1305 to the portable loops, for arm64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = keccak-neon ]; then
+    # The two-way Keccak and its samplers against sha3.c, mlk_sample_ntt
+    # and mld_sample_ntt: on plain NEON as gcc builds it, and on both forms
+    # as clang builds it, under qemu's max model, which has FEAT_SHA3. Then
+    # ML-DSA-87's counts of the pairs of streams each row starts.
+    "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$arm64_out/keccak_neon_equiv_test" \
+        test/keccak_neon_equiv_test.c "${keccak_neon_equiv_srcs[@]}" || exit 1
+    expect_arm64 max 0 \
+        "the two-way Keccak or a sampler over it disagrees with sha3.c, mlk_sample_ntt or mld_sample_ntt" \
+        keccak_neon_equiv_test
+    "$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -DCH_CPU_RUNTIME \
+        -o "$arm64_out/keccak_neon_equiv_clang_test" test/keccak_neon_equiv_test.c "${keccak_neon_equiv_srcs[@]}" ||
+        exit 1
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 \
+        "a form of the two-way Keccak, as clang builds it, disagrees with sha3.c or the proven samplers" \
+        keccak_neon_equiv_clang_test
+    "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -o "$arm64_out/mldsa_runtime_neon_test" \
+        test/mldsa_runtime_test.c "${mldsa_runtime_srcs[@]}" || exit 1
+    expect_arm64 max 0 \
+        "an ML-DSA-87 row of A started other pairs of streams on the two-way Keccak, or a permutation ran on the wrong form" \
+        mldsa_runtime_neon_test
+fi
+if [ "$only" = keccak-neon ]; then
+    echo "aes-runtime-qemu: bin/keccak_neon_equiv_test held the two-way Keccak and its samplers to sha3.c and the proven samplers on both forms for arm64, and bin/mldsa_runtime_test counted the pairs of streams of A"
     exit 0
 fi
 

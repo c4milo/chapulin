@@ -1,6 +1,6 @@
 invariant: INV-69
 file: src/mldsa_neon.h
-catches: mldsa_runtime_test
+catches: test/docker-aes-runtime-qemu.sh keccak-neon
 reason: no arm64 session samples A on the two-way Keccak, so ML-DSA-87's A runs
   one Keccak state at a time. Every key, signature and verdict stays the
   same, so bin/mldsa_runtime_test counts the pairs of streams each row

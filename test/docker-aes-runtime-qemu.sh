@@ -41,7 +41,9 @@
 # rsa_mont64_addcarry.c's rows; and "vector-neon"
 # bin/chacha20_equiv_test and bin/poly1305_equiv_test alone, for arm64,
 # which hold the NEON ChaCha20 and Poly1305 to the portable loops and
-# search the stack each call leaves.
+# search the stack each call leaves; and "keccak-neon"
+# bin/keccak_neon_equiv_test and bin/mldsa_runtime_test alone, for arm64,
+# which hold the two-way Keccak and its samplers to the proven code.
 # The mips job in .github/workflows/check.yml runs the same script on its
 # runner. tools/toolchain.env pins the container, and the container's apt
 # supplies gcc, clang and qemu-user, as the runner's does (Ubuntu 24.04
@@ -71,7 +73,8 @@
 # ch_cfg.cpu with "rsa-ifma-callers", and the violations of the rows'
 # intrinsic, their wipes and the define that picks them with
 # "rsa-addcarry", and the violations of the NEON arms of
-# chacha20_vector.c and poly1305_vector.c with "vector-neon".
+# chacha20_vector.c and poly1305_vector.c with "vector-neon", and the
+# violations of keccak_neon.c and its samplers with "keccak-neon".
 # Needs docker (OrbStack works); skips without it.
 set -euo pipefail
 

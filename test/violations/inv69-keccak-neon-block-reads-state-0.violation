@@ -1,6 +1,6 @@
 invariant: INV-69
 file: src/keccak_neon.c
-catches: keccak_neon_equiv_test
+catches: test/docker-aes-runtime-qemu.sh keccak-neon
 reason: keccak_neon_block reads lane i of state 0 whatever k names, so
   both entries of a pair take the first stream. The equivalence test
   compares each state's blocks with sha3.c's stream for its own

@@ -1,6 +1,6 @@
 invariant: INV-69
 file: src/mlkem_neon.c
-catches: keccak_neon_equiv_test
+catches: test/docker-aes-runtime-qemu.sh keccak-neon
 reason: the ML-KEM sampler hands each state the indices of A where the caller
   asks for A^T, so encryption multiplies by the wrong matrix. The
   equivalence test compares each entry with mlk_sample_ntt's for both

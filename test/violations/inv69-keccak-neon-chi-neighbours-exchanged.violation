@@ -1,6 +1,6 @@
 invariant: INV-69
 file: src/keccak_neon_round.h
-catches: keccak_neon_equiv_test
+catches: test/docker-aes-runtime-qemu.sh keccak-neon
 reason: chi's first lane of each row reads its two neighbours in the wrong
   order, b0 ^ (~b2 & b1). Both forms run the text, and the
   equivalence test compares each with sha3.c's stream.

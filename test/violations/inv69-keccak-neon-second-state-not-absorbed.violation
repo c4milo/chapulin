@@ -1,6 +1,6 @@
 invariant: INV-69
 file: src/keccak_neon.c
-catches: keccak_neon_equiv_test
+catches: test/docker-aes-runtime-qemu.sh keccak-neon
 reason: the absorb writes the seed, the indices and the padding into state
   0 alone, so state 1 runs the permutation over a block of zeros. The
   equivalence test compares state 1's stream with sha3.c's.

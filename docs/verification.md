@@ -5627,6 +5627,10 @@ proofs cover. These hold the rest (INV-69):
   of A on arm64 to start three pairs of streams, under every
   `ch_cfg.cpu` value and in the calls that take no value, with every
   permutation on the form the SHA-3 bit names.
+- `test/aes-runtime-qemu.sh keccak-neon`, in CI's mips job, builds
+  `bin/keccak_neon_equiv_test` for arm64 with gcc and with clang and
+  `bin/mldsa_runtime_test` with gcc, and runs them under qemu's `max`
+  model, so an x86-64 machine runs both forms too.
 - `test/mlkem-builds.sh` requires `mlkem.c` and `mlkem_hw.c` to call
   `mlk_sample_pair_neon`, `mldsa.c` and `mldsa_sign_steps.c` to call
   `mld_sample_ntt_neon`, the samplers to call the Keccak's entries, the

@@ -2131,6 +2131,7 @@ print-aes-runtime-qemu-srcs:
 	@echo $(MLDSA_RUNTIME_TEST_SRCS)
 	@echo $(MLDSA_AVX2_EQUIV_TEST_SRCS)
 	@echo $(RSA_MONT64_ADX_TEST_SRCS)
+	@echo $(KECCAK_NEON_EQUIV_TEST_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources

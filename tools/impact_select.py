@@ -131,7 +131,8 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # mldsa-avx2, a violation of poly1305_avx2.c names poly1305-avx2, and one of
 # chacha20_avx2.c names chacha20-avx2, for the same reason. A violation
 # of the NEON arm of chacha20_vector.c names vector-neon, because an
-# x86-64 runner never compiles that arm. A violation of either of aes_hw.c's key expansions names
+# x86-64 runner never compiles that arm. A violation of keccak_neon.c, its
+# round or its two samplers names keccak-neon, for the same reason. A violation of either of aes_hw.c's key expansions names
 # aes-equiv, because a machine's own compiler reads one of the two. A
 # violation of gcm_arm64.c names ghash-equiv, because the file has a body
 # on arm64 alone and the nightly runs its violations on x86-64. A
@@ -176,6 +177,7 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh poly1305-avx2",
                           "test/docker-aes-runtime-qemu.sh chacha20-avx2",
                           "test/docker-aes-runtime-qemu.sh vector-neon",
+                          "test/docker-aes-runtime-qemu.sh keccak-neon",
                           "test/docker-aes-runtime-qemu.sh aes-equiv",
                           "test/docker-aes-runtime-qemu.sh ghash-equiv",
                           "test/docker-aes-runtime-qemu.sh rsa-ifma-callers",

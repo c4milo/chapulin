@@ -1591,8 +1591,10 @@ last `ROLE=server` stub, as the entry said it would.
   ML-DSA-87 sampler A[j][i] for A[i][j], stops ML-DSA-87's streams after
   four blocks, leaves either matrix on one Keccak state at a time, or
   includes `keccak_neon.h` in a source that reads secrets. The ten
-  `inv69-*` violations are these. Seven fail
-  `bin/keccak_neon_equiv_test`, one `bin/mldsa_runtime_test` and two
+  `inv69-*` violations are these. Eight fail
+  `test/docker-aes-runtime-qemu.sh keccak-neon`, which builds
+  `bin/keccak_neon_equiv_test` and `bin/mldsa_runtime_test` for arm64 and
+  runs them under qemu, so an x86-64 runner checks them too. Two fail
   `test/mlkem-builds.sh`.
 - See [decisions: Engineering](decisions.md#engineering), entry 198.
 

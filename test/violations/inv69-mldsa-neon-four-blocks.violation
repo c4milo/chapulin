@@ -1,6 +1,6 @@
 invariant: INV-69
 file: src/mldsa_neon.c
-catches: keccak_neon_equiv_test
+catches: test/docker-aes-runtime-qemu.sh keccak-neon
 reason: the ML-DSA-87 sampler stops after four blocks of each stream. Four
   blocks hold 224 groups, fewer than 256, so every entry stops short
   and each call returns 0, where mld_sample_ntt reads up to

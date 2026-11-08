@@ -1,6 +1,6 @@
 invariant: INV-69
 file: src/keccak_neon.c
-catches: keccak_neon_equiv_test
+catches: test/docker-aes-runtime-qemu.sh keccak-neon
 reason: the plain form's theta rotates each column parity by 2 and not by 1,
   so d[x] is wrong in every round. The plain form runs under every
   compiler, and the equivalence test runs it on every arm64 host.
