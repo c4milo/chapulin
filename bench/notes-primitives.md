@@ -16,6 +16,30 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of 49796323
+
+The four x86-64 CSVs now hold one run of 2026-11-08 on 49796323 (bench
+run 42518780187): the EPYC 7763 and, after ten re-runs, a Xeon Platinum
+8573C. The tree holds docs/decisions.md 191 to 196 and 198. Each agent
+of that work had re-recorded only its own rows from runs of its own, so
+this run puts every row of a column on one tree again.
+
+What moved by design, as ratios to OpenSSL:
+
+- **ML-DSA-87's signature**: 0.57 under gcc and 0.52 under clang on the
+  EPYC, and 0.80 and 0.70 on the 8573C (decision 191).
+- **P-256's shared secret**: 1.16 and 1.08 on the EPYC, and 1.00 and
+  0.94 on the 8573C. Its verification: 0.91 and 0.83, and 0.78 and 0.73
+  (decision 196).
+- **SHA3-256 over 16 KiB**: 1.22 and 1.12 on the EPYC, and 1.29 and
+  1.11 on the 8573C (decision 195).
+
+What moved otherwise:
+
+- **The 8573C host is slower than the last one.** It timed both
+  libraries 15 to 25% slower; OpenSSL's RSA-2048 signature took 340 µs
+  where it took 275. Only the ratios compare with the run of 15c37ef4.
+
 ## The run of 15c37ef4
 
 The AVX-512 CSVs now hold a run of 2026-11-08 on 15c37ef4, on a Xeon
