@@ -14,6 +14,13 @@
 // It also runs the three calls a session makes, under a ch_cfg.cpu value
 // with and without CH_CPU_CONSTANT_TIME_SHA3.
 //
+// The binary links test/keccak_neon_count.c in keccak_neon.c's place
+// (docs/decisions.md 198). Each call above that expands the matrix must
+// start MLKEM_K * (MLKEM_K / 2) pairs of streams on the two-way Keccak, one
+// pair for each two entries of a row, and run every permutation on the form
+// its copy names: the plain form for mlkem.c, and the form on the SHA-3
+// instructions for mlkem_hw.c. The count runs the plain form for both.
+//
 // An object holds the instructions where clang compiled it for arm64
 // (CH_KECCAK_INSTRUCTIONS, cpu_cfg.h). In any other object this binary says
 // so and passes, and on a CPU without the instructions it skips. Under
@@ -25,6 +32,7 @@
 #include <string.h>
 
 #include "hash_instructions_cpu.h"
+#include "keccak_neon_count.h"
 #include "mlkem.h"
 
 #ifndef CH_CPU_RUNTIME
@@ -77,6 +85,28 @@ static void expect_same(const char *what, int at, const void *ours, const void *
 #define ANSWER_DECOMPOSED 2
 #define CPU_WITH_SHA3 (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA3)
 
+// The pairs of streams one expansion of the matrix starts: MLKEM_K rows of
+// MLKEM_K / 2 pairs, the last entry of an odd row on mlk_sample_ntt.
+#define MATRIX_STARTS ((unsigned long)MLKEM_K * (MLKEM_K / 2))
+
+// The calls into the two-way Keccak since the last check: MATRIX_STARTS
+// pairs, every permutation on the form sha3 names, and none on the other.
+// Then the counts start again.
+static void expect_form(const char *what, int at, int sha3) {
+    const keccak_neon_calls *got = &keccak_neon_counted;
+    unsigned long right = sha3 ? got->sha3 : got->plain;
+    unsigned long wrong = sha3 ? got->plain : got->sha3;
+    compared++;
+    if (got->starts != MATRIX_STARTS || wrong != 0 || right < MATRIX_STARTS) {
+        failures++;
+        (void)fprintf(stderr,
+                      "mlkem instructions equivalence: case %d, %s started %lu pairs of streams, "
+                      "not %lu, and ran %lu plain permutations and %lu on the instructions\n",
+                      at, what, got->starts, MATRIX_STARTS, got->plain, got->sha3);
+    }
+    keccak_neon_counted = (keccak_neon_calls){0, 0, 0};
+}
+
 static uint8_t ek[2][MLKEM_EK_LEN];
 static uint8_t dk[2][MLKEM_DK_LEN];
 static uint8_t ct[2][MLKEM_CT_LEN];
@@ -98,12 +128,17 @@ static void one_case(int at) {
     rng_bytes(d, sizeof d);
     rng_bytes(z, sizeof z);
     rng_bytes(m, sizeof m);
+    keccak_neon_counted = (keccak_neon_calls){0, 0, 0};
     mlkem_keygen_derand(ek[0], dk[0], d, z);
+    expect_form("mlkem_keygen_derand", at, 0);
     mlkem_keygen_derand_hw(ek[1], dk[1], d, z);
+    expect_form("mlkem_keygen_derand_hw", at, 1);
     expect_same("the encapsulation keys", at, ek[1], ek[0], MLKEM_EK_LEN);
     expect_same("the decapsulation keys", at, dk[1], dk[0], MLKEM_DK_LEN);
     int refused = mlkem_encaps_derand(widemul, ct[0], ss[0], ek[0], m);
+    expect_form("mlkem_encaps_derand", at, 0);
     int refused_hw = mlkem_encaps_derand_hw(widemul, ct[1], ss[1], ek[1], m);
+    expect_form("mlkem_encaps_derand_hw", at, 1);
     expect_same("the two verdicts on the key", at, &refused_hw, &refused, sizeof refused);
     expect_same("the ciphertexts", at, ct[1], ct[0], MLKEM_CT_LEN);
     expect_same("the shared secrets", at, ss[1], ss[0], MLKEM_SS_LEN);
@@ -118,19 +153,26 @@ static void one_case(int at) {
         }
     }
     mlkem_decaps(widemul, back[0], ct[0], dk[0]);
+    expect_form("mlkem_decaps", at, 0);
     mlkem_decaps_hw(widemul, back[1], ct[1], dk[1]);
+    expect_form("mlkem_decaps_hw", at, 1);
     expect_same("the secrets a decapsulation writes", at, back[1], back[0], MLKEM_SS_LEN);
 
     // The three calls a session makes, under each kind of ch_cfg.cpu.
     mlkem_keygen_dk_cpu(CPU_WITH_SHA3, dk[1], d, z);
+    expect_form("mlkem_keygen_dk_cpu with the bit", at, 1);
     expect_same("mlkem_keygen_dk_cpu with the bit and mlkem.c", at, dk[1], dk[0], MLKEM_DK_LEN);
     mlkem_keygen_dk_cpu(CH_CPU_PROBED, dk[1], d, z);
+    expect_form("mlkem_keygen_dk_cpu without the bit", at, 0);
     expect_same("mlkem_keygen_dk_cpu without the bit and mlkem.c", at, dk[1], dk[0], MLKEM_DK_LEN);
     (void)mlkem_encaps_derand(widemul, ct[0], ss[0], ek[0], m);
+    expect_form("mlkem_encaps_derand", at, 0);
     (void)mlkem_encaps_derand_cpu(CPU_WITH_SHA3, widemul, ct[1], ss[1], ek[0], m);
+    expect_form("mlkem_encaps_derand_cpu with the bit", at, 1);
     expect_same("mlkem_encaps_derand_cpu's ciphertext and mlkem.c's", at, ct[1], ct[0],
                 MLKEM_CT_LEN);
     mlkem_decaps_cpu(CPU_WITH_SHA3, widemul, back[1], ct[0], dk[0]);
+    expect_form("mlkem_decaps_cpu with the bit", at, 1);
     expect_same("mlkem_decaps_cpu's secret and the encapsulated one", at, back[1], ss[0],
                 MLKEM_SS_LEN);
 }

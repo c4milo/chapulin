@@ -16545,3 +16545,88 @@ does nothing more.
     `poly1305-vector-wide-pass-drops-carry` breaks the new loop and is
     caught. The bound of 2,048 bytes changes no output word, so no test
     sees it.
+
+198. **An arm64 host object samples ML-KEM's matrix and ML-DSA-87's A two
+    entries at a time on a two-way Keccak, in every session.** On arm64 each
+    entry of the two matrices ran on one Keccak state: `sha3.c`, or
+    `sha3_hw.c` for a session with `CH_CPU_CONSTANT_TIME_SHA3`. A row's
+    entries are independent streams over public input, as on x86-64, where
+    `keccak_avx2.c` runs four at once (entries 107 and 178).
+
+    - **What runs.** `keccak_neon.c` holds Keccak-f[1600] on two states,
+      lane i of both states in one 128-bit NEON register.
+      `keccak_neon_round.h` holds one round, `sha3_hw.c`'s round on two
+      lanes, and `keccak_neon.c` compiles it twice: on plain NEON, where a
+      rotation is SHL and SRI and chi's AND-NOT is BIC, and, where clang
+      compiled the object, on FEAT_SHA3's EOR3, RAX1, XAR and BCAX.
+      `mlkem_neon.c` samples two entries of a row of ML-KEM's matrix, and
+      `mldsa_neon.c` one or two entries of a row of A. Each block of each
+      stream goes through `mlk_sample_groups` or `mld_sample_groups`, the
+      steps the proven samplers run, until both entries hold 256
+      coefficients or the streams reach those samplers' caps.
+    - **The callers.** `mlkem.c`'s `mlk_matvec_row` samples each pair of a
+      row's entries on it, in `mlkem.c` under its own names on the plain
+      form and in `mlkem_hw.c` on the SHA-3 form. A row of rank 3 leaves
+      one entry, which runs `mlk_sample_ntt`: one state on `sha3.c` or
+      `sha3_hw.c` took less time than two with one unread. `mldsa.c` and
+      `mldsa_sign_steps.c` call `mld_sample_ntt_wide`, which
+      `mldsa_avx2.h` names for x86-64 and `mldsa_neon.h` for arm64, so
+      one text serves both. A row of A takes three pairs and one entry
+      alone.
+    - **Which form, and no bit for the plain one.** The input is public,
+      so no bit has to state a timing, as entry 107 ruled for
+      `CH_CPU_AVX2`. Every arm64 CPU has NEON, so the plain form runs in
+      every session, as `chacha20_vector.c` does (entry 82). The SHA-3
+      form needs FEAT_SHA3, and `CH_CPU_CONSTANT_TIME_SHA3` is the
+      caller's statement that the CPU has it, so the bit picks that form,
+      where clang compiled the object (entry 99). In an object gcc
+      compiled the bit picks nothing here either, and the plain form
+      runs. One permutation of two states took, in a timing loop on the
+      M1 Pro at a load average of 7.7: 278 ns on plain NEON and 176 ns on
+      the SHA-3 form, where one state took 246 ns on `sha3.c` and 159 ns
+      on `sha3_hw.c`. So the plain form takes 0.57 of `sha3.c`'s time a
+      state, and the SHA-3 form 0.55 of `sha3_hw.c`'s.
+    - **Public input alone.** The two states' 50 lanes and the values a
+      round computes do not fit arm64's 32 vector registers, and Apple
+      clang 21 stores two of them in stack slots of its own in the plain
+      form and three in the SHA-3 form, which no wipe clears. So no secret may reach the two-way
+      Keccak: the noise, the hashes, s1, s2 and the key's SHAKE stay on
+      `sha3.c` and `sha3_hw.c`. `test/mlkem-builds.sh` admits the two
+      samplers as its only callers, as it does for `keccak_avx2.h`.
+    - **The stack.** `challenge`, the verifier's frame, holds two entries
+      of A where it held one: 11,728 bytes with Apple clang 21 at `-O2`,
+      above `STACK_BUDGET_MLDSA`. An arm64 host object takes the two
+      ceilings entry 178 gave an x86-64 one, `STACK_BUDGET_MLDSA_AVX2`
+      and `STACK_BUDGET_MLDSA_ROW_AVX2`. Camilo has not yet ruled on this.
+      A device object compiles none of this, and keeps its ceilings.
+    - **What holds it.** `bin/keccak_neon_equiv_test` holds both forms to
+      `sha3.c` and the samplers to `mlk_sample_ntt` and `mld_sample_ntt`
+      under Apple clang 21 and under gcc 15.2 for arm64.
+      `bin/mlkem_hw_equiv_test` and `bin/mldsa_runtime_test` count the
+      pairs of streams and each form's permutations under each value.
+      INV-69 states the claim, and its ten violations are caught under
+      both compilers.
+    - **Gain.** Instructions of one call in `bench/primitives.c`'s program
+      on the M1 Pro, before and after:
+
+      | operation | `ch_cfg.cpu 0x1` | `ch_cfg.cpu 0xe7` |
+      | --- | --- | --- |
+      | ML-KEM-768 key generation | 256,757 → 209,720 | 175,579 → 151,385 |
+      | ML-KEM-768 encapsulation | 308,205 → 261,123 | 202,378 → 179,338 |
+      | ML-KEM-768 decapsulation | 331,838 → 284,991 | 220,003 → 195,021 |
+      | ML-DSA-87 key generation | 3,304,453 → 2,750,941 | 2,232,791 → 1,974,743 |
+      | ML-DSA-87 sign | 6,172,815 → 5,058,145 | 3,601,377 → 3,101,964 |
+      | ML-DSA-87 verify | 1,781,148 → 1,240,692 | 1,200,842 → 941,269 |
+
+      The machine ran other agents' work at a load average near 100 when
+      this was counted, so the times wait for a run at a load of 8 or less.
+
+    Rejected:
+
+    - **Three states, or a third entry of a row on the general
+      registers.** A hybrid of NEON and scalar lanes would sample a row of
+      rank 3 in one pass. It needs a round written twice in one function,
+      and the gain is one lone entry a row.
+    - **Pairs across rows.** ML-KEM-768's nine entries would take five
+      passes in place of six, but a row would need the next row's
+      entries, as entry 107 found for four states.

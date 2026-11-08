@@ -11,6 +11,7 @@
 
 #include "ct.h"
 #include "mldsa_avx2.h"
+#include "mldsa_neon.h"
 #include "mldsa_poly.h"
 #include "mldsa_vector.h"
 #include "sha3.h"
@@ -111,34 +112,36 @@ static int mld_hints_well_formed(const uint8_t y[MLD_HINT_BYTES]) {
     return 1;
 }
 
-#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+#ifdef MLD_WIDE_ENTRIES
 // The sum mld_row_w1 computes over row i of A, with the row's entries
-// sampled four at a time on the four-way Keccak (mldsa_avx2.h) into four.
-// Returns 1, or 0 when an entry stops at its sampling bound.
-static int mld_row_sum_avx2(uint32_t cpu, mld_poly *sum, mld_poly four[MLD_AVX2_ENTRIES],
+// sampled several at a time (MLD_WIDE_ENTRIES): on the four-way Keccak
+// on x86-64 (mldsa_avx2.h) and on the two-way Keccak on arm64
+// (mldsa_neon.h), into room. Returns 1, or 0 when an entry stops at its
+// sampling bound.
+static int mld_row_sum_wide(uint32_t cpu, mld_poly *sum, mld_poly room[MLD_WIDE_ENTRIES],
                             unsigned i, const uint8_t pk[MLDSA87_PK_LEN],
                             const mld_poly z_hat[MLD_L]) {
-    for (unsigned first = 0; first < MLD_L; first += MLD_AVX2_ENTRIES) {
-        unsigned count = MLD_L - first < MLD_AVX2_ENTRIES ? MLD_L - first : MLD_AVX2_ENTRIES;
-        if (!mld_sample_ntt_avx2(four, pk, i, first, count)) {
+    for (unsigned first = 0; first < MLD_L; first += MLD_WIDE_ENTRIES) {
+        unsigned count = MLD_L - first < MLD_WIDE_ENTRIES ? MLD_L - first : MLD_WIDE_ENTRIES;
+        if (!mld_sample_ntt_wide(cpu, room, pk, i, first, count)) {
             return 0;
         }
         for (unsigned k = 0; k < count; k++) {
             if (first + k == 0) {
-                mld_pointwise(cpu, sum, &four[0], &z_hat[0]);
+                mld_pointwise(cpu, sum, &room[0], &z_hat[0]);
             } else {
-                mld_pointwise_acc(cpu, sum, &four[k], &z_hat[first + k]);
+                mld_pointwise_acc(cpu, sum, &room[k], &z_hat[first + k]);
             }
         }
     }
     return 1;
 }
-#endif // CH_CPU_RUNTIME && __x86_64__
+#endif // MLD_WIDE_ENTRIES
 
-// The entries of A that mld_row_w1's room holds: four in an x86-64 host
-// object, for the four-way sampler, and one everywhere else.
-#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
-#define MLD_ROW_ROOM MLD_AVX2_ENTRIES
+// The entries of A that mld_row_w1's room holds: MLD_WIDE_ENTRIES in a
+// host object that samples several at a time, and one everywhere else.
+#ifdef MLD_WIDE_ENTRIES
+#define MLD_ROW_ROOM MLD_WIDE_ENTRIES
 #else
 #define MLD_ROW_ROOM 1
 #endif
@@ -147,9 +150,9 @@ static int mld_row_sum_avx2(uint32_t cpu, mld_poly *sum, mld_poly four[MLD_AVX2_
 // room. Returns 1, or 0 when an entry stops at its sampling bound.
 static int mld_row_sum(uint32_t cpu, mld_poly *sum, mld_poly room[MLD_ROW_ROOM], unsigned i,
                        const uint8_t pk[MLDSA87_PK_LEN], const mld_poly z_hat[MLD_L]) {
-#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
-    if (cpu & CH_CPU_AVX2) {
-        return mld_row_sum_avx2(cpu, sum, room, i, pk, z_hat);
+#ifdef MLD_WIDE_ENTRIES
+    if (mld_wide_runs(cpu)) {
+        return mld_row_sum_wide(cpu, sum, room, i, pk, z_hat);
     }
 #endif
     mld_poly *entry = &room[0];
@@ -171,8 +174,8 @@ static int mld_row_sum(uint32_t cpu, mld_poly *sum, mld_poly room[MLD_ROW_ROOM],
 static int mld_row_w1(uint32_t cpu, uint8_t w1[MLD_W1_BYTES], unsigned i,
                       const uint8_t pk[MLDSA87_PK_LEN], const uint8_t sig[MLDSA87_SIG_LEN],
                       const mld_poly z_hat[MLD_L], const mld_poly *c_hat) {
-    // The four-way sampler's entries share their room with entry, which
-    // the row reads after them, so the frame holds one polynomial fewer.
+    // The wide sampler's entries share their room with entry, which the
+    // row reads after them, so the frame holds one polynomial fewer.
     mld_poly room[MLD_ROW_ROOM];
     mld_poly sum;
     if (!mld_row_sum(cpu, &sum, room, i, pk, z_hat)) {

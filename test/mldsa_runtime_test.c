@@ -44,6 +44,16 @@
 // (docs/decisions.md 191), and each verification as many, and a value
 // without the bit makes none. On arm64 no call runs there.
 //
+// On arm64 the same rows count the calls into keccak_neon.c's two-way
+// Keccak instead (test/keccak_neon_count.h, docs/decisions.md 198). Every
+// row of A samples its first six entries there, two a pair of streams, in
+// every session, the calls that take no value too: NEON_ROW_STARTS pairs
+// for the eight rows. Each permutation must run on the SHA-3 instructions'
+// form for a value that holds CH_CPU_CONSTANT_TIME_SHA3, in an object that
+// clang compiled, and on the plain form for any other value. A row's
+// seventh entry runs mld_sample_ntt_cpu, whose SHAKE calls the counts below
+// hold.
+//
 // The same rows count the SHAKE calls (test/mldsa_sha3_count.h). Under
 // CH_CPU_PROBED alone each row makes its calls on sha3.c, and their counts
 // are the row's reference. In an arm64 host object that clang compiled, a
@@ -58,6 +68,7 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "keccak_neon_count.h"
 #include "mldsa.h"
 #include "mldsa_avx2_count.h"
 #include "mldsa_poly.h"
@@ -116,6 +127,47 @@ static const mldsa_vector_calls NO_CALLS = {0, 0, 0, 0};
 static const mldsa_avx2_calls AVX2_ROW_CALLS = {2UL * MLD_K, (unsigned long)MLD_K * MLD_L};
 
 static int failures;
+
+// The pairs of streams the two-way Keccak starts for the eight rows of A:
+// three a row, for entries 0 to 5.
+#define NEON_ROW_STARTS ((unsigned long)MLD_K * (MLD_L / 2))
+
+#ifdef __aarch64__
+// Whether the two-way Keccak runs on the SHA-3 instructions for cpu,
+// written apart from keccak_neon_runs_sha3.
+static int neon_sha3_expected(uint32_t cpu) {
+#ifdef CH_KECCAK_INSTRUCTIONS
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA3) != 0;
+#else
+    (void)cpu;
+    return 0;
+#endif
+}
+#endif
+
+// rows times NEON_ROW_STARTS pairs of streams on arm64, and none
+// elsewhere, with every permutation on the form neon_sha3_expected names
+// and at least one a pair.
+static void check_neon(const char *row, uint32_t cpu, unsigned long rows) {
+    const keccak_neon_calls *got = &keccak_neon_counted;
+#ifdef __aarch64__
+    const unsigned long starts = rows * NEON_ROW_STARTS;
+    unsigned long right = neon_sha3_expected(cpu) ? got->sha3 : got->plain;
+    unsigned long wrong = neon_sha3_expected(cpu) ? got->plain : got->sha3;
+    int ok = got->starts == starts && wrong == 0 && right >= starts;
+#else
+    const unsigned long starts = 0 * rows;
+    int ok = got->starts == 0 && got->plain == 0 && got->sha3 == 0;
+#endif
+    if (!ok) {
+        failures++;
+        (void)fprintf(stderr,
+                      "mldsa runtime: %s under 0x%x started %lu pairs of streams on the two-way "
+                      "Keccak, not %lu, and ran %lu permutations on the plain form and %lu on "
+                      "the SHA-3 instructions\n",
+                      row, (unsigned)cpu, got->starts, starts, got->plain, got->sha3);
+    }
+}
 
 // Whether a row of A runs on the four-way sampler for cpu, written apart
 // from the callers' own test.
@@ -200,6 +252,7 @@ static void reset_counts(void) {
     memset(&mldsa_vector_counted, 0, sizeof mldsa_vector_counted);
     memset(&mldsa_sha3_counted, 0, sizeof mldsa_sha3_counted);
     memset(&mldsa_avx2_counted, 0, sizeof mldsa_avx2_counted);
+    memset(&keccak_neon_counted, 0, sizeof keccak_neon_counted);
 }
 
 // The reference under CH_CPU_PROBED; under every other value, the
@@ -277,6 +330,7 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
     int keygen_ok = mldsa87_keygen_cpu(cpu, sk, pk, SEED);
     check_counts("mldsa87_keygen_cpu", cpu, expected(KEYGEN_CALLS, signer, NO_CALLS, 0));
     check_avx2("mldsa87_keygen_cpu", cpu, avx2);
+    check_neon("mldsa87_keygen_cpu", cpu, 1UL);
     check_sha3("mldsa87_keygen_cpu", ROW_KEYGEN, cpu, 1);
     check_bytes("mldsa87_keygen_cpu", cpu,
                 keygen_ok == 1 && memcmp(sk, want_sk, sizeof sk) == 0 &&
@@ -288,6 +342,7 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
                  plus(expected(EXPAND_CALLS, signer, NO_CALLS, 0),
                       expected(ROUND_CALLS, signer * rounds, CHALLENGE_CALLS, verifier)));
     check_avx2("mldsa87_sign_mu_cpu", cpu, avx2 * 2UL);
+    check_neon("mldsa87_sign_mu_cpu", cpu, 2UL);
     check_sha3("mldsa87_sign_mu_cpu", ROW_SIGN_MU, cpu, 1);
     check_bytes("mldsa87_sign_mu_cpu", cpu,
                 rounds == mu_rounds && memcmp(sig, want_mu_sig, sizeof sig) == 0);
@@ -299,6 +354,7 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
                  plus(expected(EXPAND_CALLS, signer, NO_CALLS, 0),
                       expected(ROUND_CALLS, signer * msg_rounds, CHALLENGE_CALLS, verifier)));
     check_avx2("mldsa87_sign_cpu", cpu, avx2 * 2UL);
+    check_neon("mldsa87_sign_cpu", cpu, 2UL);
     check_sha3("mldsa87_sign_cpu", ROW_SIGN, cpu, 1);
     check_bytes("mldsa87_sign_cpu", cpu, sign_ok == 1 && memcmp(sig, want_sig, sizeof sig) == 0);
 
@@ -307,6 +363,7 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
         mldsa87_verify_cpu(cpu, pk, sizeof pk, MSG, sizeof MSG, NULL, 0, sig, sizeof sig);
     check_counts("mldsa87_verify_cpu", cpu, expected(NO_CALLS, 0, CHALLENGE_CALLS, verifier));
     check_avx2("mldsa87_verify_cpu", cpu, avx2);
+    check_neon("mldsa87_verify_cpu", cpu, 1UL);
     check_sha3("mldsa87_verify_cpu", ROW_VERIFY_CPU, cpu, 1);
     check_bytes("mldsa87_verify_cpu", cpu, verified_cpu == 1);
 
@@ -314,6 +371,7 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
     int verified = mldsa87_verify(pk, sizeof pk, MSG, sizeof MSG, NULL, 0, sig, sizeof sig);
     check_counts("mldsa87_verify", cpu, expected(NO_CALLS, 0, CHALLENGE_CALLS, no_value));
     check_avx2("mldsa87_verify", cpu, 0);
+    check_neon("mldsa87_verify", 0, 1UL);
     check_sha3("mldsa87_verify", ROW_VERIFY, cpu, 0);
     check_bytes("mldsa87_verify", cpu, verified == 1);
 }

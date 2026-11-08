@@ -91,11 +91,10 @@ uint32_t mlds_key_in_range(mlds_round *st, const uint8_t sk[MLDSA87_SK_LEN]);
 #ifdef CH_CPU_RUNTIME
 // Writes A, NTT(s1), NTT(s2) and NTT(t0) of sk to ex (FIPS 204 Algorithm
 // 7, steps 1 to 5), with A on the four-way Keccak for a cpu that holds
-// CH_CPU_AVX2 on x86-64. Returns 1 when every coefficient of s1 and s2 is
-// in [-2, 2] and every entry of A holds 256 coefficients, and 0 otherwise.
-// Each answer is public, as mlds_key_in_range's is and as a sampler's
-// bound is (FIPS 204 Appendix C). ex holds secrets on every path, and the
-// caller wipes ex->key.
+// CH_CPU_AVX2 on x86-64, and on the two-way Keccak on arm64. Returns 1 when every coefficient of s1
+// and s2 is in [-2, 2] and every entry of A holds 256 coefficients, and 0 otherwise. Each answer is
+// public, as mlds_key_in_range's is and as a sampler's bound is (FIPS 204 Appendix C). ex holds
+// secrets on every path, and the caller wipes ex->key.
 uint32_t mlds_expand(mlds_expanded *ex, uint32_t cpu, const uint8_t sk[MLDSA87_SK_LEN]);
 #endif
 

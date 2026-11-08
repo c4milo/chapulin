@@ -1,0 +1,16 @@
+invariant: INV-69
+file: src/mldsa_neon.h
+catches: mldsa_runtime_test
+reason: no arm64 session samples A on the two-way Keccak, so ML-DSA-87's A runs
+  one Keccak state at a time. Every key, signature and verdict stays the
+  same, so bin/mldsa_runtime_test counts the pairs of streams each row
+  starts.
+
+--- old
+static inline int mld_wide_runs(uint32_t cpu) {
+    (void)cpu;
+    return 1;
+--- new
+static inline int mld_wide_runs(uint32_t cpu) {
+    (void)cpu;
+    return 0;

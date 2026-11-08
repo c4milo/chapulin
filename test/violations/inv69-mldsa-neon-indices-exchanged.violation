@@ -1,0 +1,11 @@
+invariant: INV-69
+file: src/mldsa_neon.c
+catches: keccak_neon_equiv_test
+reason: the ML-DSA-87 sampler absorbs rho || i || j for entry A[i][j], the
+  stream of A[j][i]. The equivalence test compares each entry with
+  mld_sample_ntt's for every row and first entry.
+
+--- old
+    keccak_neon_shake128_start(&state, rho, x0, x1, cpu);
+--- new
+    keccak_neon_shake128_start(&state, rho, x1, x0, cpu);

@@ -62,8 +62,10 @@
 #     mlkem_poly_hw.c name the _hw entries of every SHA-3 and SHAKE call
 #     they make and none of sha3.c's, mlkem.c and mlkem_poly.c the
 #     reverse, and every mlk_ call mlkem_hw.c makes goes to the copy's
-#     own, to a native copy (widemul.h) or to the vector NTT, which hashes
-#     nothing (mlkem_vector.h).
+#     own, to a native copy (widemul.h), to the vector NTT, which hashes
+#     nothing (mlkem_vector.h), or to mlk_sample_pair_neon, the matrix's
+#     sampler on the two-way Keccak, which both copies call and which takes
+#     the form of the permutation as an argument (mlkem_neon.h).
 #
 # test/aes-runtime-disasm.sh reads the same about the instructions from a
 # whole packaged object on the host's own compiler. This script asks the
@@ -299,9 +301,11 @@ for target in "$x86" "$arm64"; do
     defines mlkem_decaps_hw || fail "src/mlkem_hw.c for $target does not define mlkem_decaps_hw"
     defines mlkem_decaps && fail "src/mlkem_hw.c for $target defines mlkem_decaps, which src/mlkem.c defines"
     # mlkem_vector.c's two transforms hash nothing, and both copies of
-    # mlkem.c call them (docs/decisions.md 101).
+    # mlkem.c call them (docs/decisions.md 101). Both copies call the
+    # sampler on the two-way Keccak too, the copy with the SHA-3 form
+    # (docs/decisions.md 198).
     stray=$(nm "$work/cross.o" | awk '$1 == "U" { print $2 }' | grep -E '^_?mlk_' | grep -vE '_(hw|native)$' |
-        grep -vxE '_?mlk_vector_(ntt|invntt|basemul)' || true)
+        grep -vxE '_?mlk_vector_(ntt|invntt|basemul)|_?mlk_sample_pair_neon' || true)
     [ -z "$stray" ] || fail "src/mlkem_hw.c for $target calls $stray, which the copy of src/mlkem_poly.c does not define"
     cross_object "$target" src/mlkem_poly_hw.c
     calls "src/mlkem_poly_hw.c for $target" _hw "${mlkem_poly_keccak_calls[@]}"

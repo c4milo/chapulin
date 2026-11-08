@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "ct.h"
+#include "mlkem_neon.h"
 #include "mlkem_poly.h"
 #include "mlkem_vector.h"
 #include "sha3.h"
@@ -98,6 +99,40 @@ static void mlk_dot_term(mlk_poly *out, const mlk_poly *a, const mlk_poly *b, un
 // supplies mlk_matvec_row, so the text between the #ifndef below and its
 // #endif is this file's alone.
 #ifndef CH_MLKEM_AVX2_COPY
+#if defined(CH_CPU_RUNTIME) && defined(__aarch64__)
+// The form of the two-way Keccak this copy runs (mlkem_neon.h). mlkem_hw.c compiles this file
+// for sessions whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_SHA3 (keccak_hw.h), and so runs the
+// form on the SHA-3 instructions. This file under its own names runs plain NEON.
+#ifdef CH_KECCAK_HW_H
+#define MLK_NEON_CPU CH_CPU_CONSTANT_TIME_SHA3
+#else
+#define MLK_NEON_CPU 0U
+#endif
+
+// out = row i of A o s, or of A^T o s where transposed is 1, as the function below computes
+// it, in an arm64 host object (docs/decisions.md 198). The row's entries are sampled two at a
+// time on two Keccak states side by side, and an entry left over runs mlk_sample_ntt alone,
+// which takes less time than two states with one unread. The entries are public. mlk_dot_term
+// wipes each product with the secret vector.
+static void mlk_matvec_row(mlk_poly *out, const uint8_t seed[32], unsigned i, int transposed,
+                           const mlk_polyvec *s, unsigned rank) {
+    mlk_poly a[MLK_NEON_ENTRIES];
+    for (unsigned j = 0; j < rank; j += MLK_NEON_ENTRIES) {
+        unsigned count = MLK_NEON_ENTRIES;
+        if (rank - j < MLK_NEON_ENTRIES) {
+            uint8_t x0 = transposed ? (uint8_t)i : (uint8_t)j;
+            uint8_t x1 = transposed ? (uint8_t)j : (uint8_t)i;
+            mlk_sample_ntt(&a[0], seed, x0, x1);
+            count = 1;
+        } else {
+            mlk_sample_pair_neon(a, seed, i, transposed, j, MLK_NEON_CPU);
+        }
+        for (unsigned k = 0; k < count; k++) {
+            mlk_dot_term(out, &a[k], &s->vec[j + k], j + k);
+        }
+    }
+}
+#else
 // out = row i of A o s, expanding A one entry at a time from the public
 // seed. FIPS 203 samples A[i][j] from rho || j || i, so keygen
 // (transposed = 0) reads row i of A and encrypt (transposed = 1) reads
@@ -121,6 +156,7 @@ static void mlk_matvec_row(mlk_poly *out, const uint8_t seed[32], unsigned i, in
     }
     ct_wipe(&prod, sizeof prod);
 }
+#endif // CH_CPU_RUNTIME && __aarch64__
 #endif // CH_MLKEM_AVX2_COPY
 
 // K-PKE.KeyGen (Algorithm 13). Writes ek (t-hat || rho) and the K-PKE

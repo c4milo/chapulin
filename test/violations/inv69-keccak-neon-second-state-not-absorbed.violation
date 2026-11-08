@@ -1,0 +1,13 @@
+invariant: INV-69
+file: src/keccak_neon.c
+catches: keccak_neon_equiv_test
+reason: the absorb writes the seed, the indices and the padding into state
+  0 alone, so state 1 runs the permutation over a block of zeros. The
+  equivalence test compares state 1's stream with sha3.c's.
+
+--- old
+    for (size_t k = 0; k < 2; k++) {
+        for (size_t i = 0; i < 4; i++) {
+--- new
+    for (size_t k = 0; k < 1; k++) {
+        for (size_t i = 0; i < 4; i++) {

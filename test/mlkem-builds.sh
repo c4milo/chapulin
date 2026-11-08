@@ -23,7 +23,13 @@
 #     call keccak_avx2.c's three entries, and mldsa.c and
 #     mldsa_sign_steps.c for x86-64 must call it; for arm64 it must
 #     define no symbol, and it is the one other source that may reach the
-#     four-way Keccak (docs/decisions.md 178).
+#     four-way Keccak (docs/decisions.md 178);
+#   - for arm64, mlkem.c and mlkem_hw.c must call mlk_sample_pair_neon,
+#     mlkem_neon.c and mldsa_neon.c must call keccak_neon.c's entries, and
+#     mldsa.c and mldsa_sign_steps.c must call mld_sample_ntt_neon; for
+#     x86-64 the three files of the two-way Keccak must define no symbol;
+#     and no other source in src/ may include keccak_neon.h or call its
+#     entries (docs/decisions.md 198).
 #
 # The cross targets use the pinned clang, which make resolves, with no
 # toolchain beside it, the way lint-wide-multiply compiles for them.
@@ -122,6 +128,44 @@ for src in src/mlkem_avx2.c src/keccak_avx2.c src/mldsa_avx2.c; do
     nm "$work/cross.o" | grep -qE '[[:space:]][A-TV-Z][[:space:]]' &&
         fail "$src for arm64 defines a symbol; an arm64 object holds no four-way Keccak"
 done
+# The two-way Keccak of an arm64 host object, its two samplers, and their
+# callers (docs/decisions.md 198). keccak_neon.h's inline entries call the
+# three below.
+keccak_neon_entries=(keccak_neon_shake128_absorb keccak_neon_permute keccak_neon_permute_sha3)
+for src in src/mlkem.c src/mlkem_hw.c; do
+    cross_object aarch64-none-elf "$src"
+    undefined "$work/cross.o" | grep -qx mlk_sample_pair_neon ||
+        fail "$src for arm64 does not call mlk_sample_pair_neon; its rows sample the matrix on the two-way Keccak"
+done
+for src in src/mldsa.c src/mldsa_sign_steps.c; do
+    cross_object aarch64-none-elf "$src"
+    undefined "$work/cross.o" | grep -qx mld_sample_ntt_neon ||
+        fail "$src for arm64 does not call mld_sample_ntt_neon; every session samples A on the two-way Keccak"
+done
+for src in src/mlkem_neon.c src/mldsa_neon.c; do
+    cross_object aarch64-none-elf "$src"
+    calls=$(undefined "$work/cross.o")
+    for symbol in "${keccak_neon_entries[@]}"; do
+        grep -qx "$symbol" <<< "$calls" ||
+            fail "$src for arm64 does not call $symbol; its entries run on the two-way Keccak"
+    done
+done
+cross_object aarch64-none-elf src/keccak_neon.c
+defined=$(nm "$work/cross.o" | awk '$2 == "T" { print $3 }' | sed 's/^_//')
+for symbol in "${keccak_neon_entries[@]}" keccak_neon_block; do
+    grep -qx "$symbol" <<< "$defined" || fail "src/keccak_neon.c for arm64 does not define $symbol"
+done
+for src in src/keccak_neon.c src/mlkem_neon.c src/mldsa_neon.c; do
+    cross_object x86_64-unknown-linux-gnu "$src"
+    nm "$work/cross.o" | grep -qE '[[:space:]][A-TV-Z][[:space:]]' &&
+        fail "$src for x86-64 defines a symbol; an x86-64 object holds no two-way Keccak"
+done
+# The two samplers alone reach the two-way Keccak, for the reason the
+# four-way Keccak takes public input alone (keccak_neon.h).
+others=$(cd src && git ls-files -- '*.c' '*.h' | grep -vxE 'keccak_neon(_round)?\.[ch]|mlkem_neon\.c|mldsa_neon\.c' |
+    xargs grep -lE '#[[:space:]]*include[[:space:]]*"keccak_neon\.h"|keccak_neon_[a-z0-9_]+[[:space:]]*\(' || true)
+[ -z "$others" ] ||
+    fail "$(tr '\n' ' ' <<< "$others")reach the two-way Keccak, which src/mlkem_neon.c and src/mldsa_neon.c alone may call: it takes public input alone"
 # The copy and mldsa_avx2.c alone reach the four-way Keccak: no other
 # source in src/ includes its header or calls its entries. Its lanes reach stack slots no
 # wipe clears, so it takes public input alone (keccak_avx2.h).
@@ -130,4 +174,4 @@ others=$(cd src && git ls-files -- '*.c' '*.h' | grep -vxE 'keccak_avx2\.[ch]|ml
 [ -z "$others" ] ||
     fail "$(tr '\n' ' ' <<< "$others")reach the four-way Keccak, which src/mlkem_avx2.c's row sampler and src/mldsa_avx2.c alone may call: it takes public input alone"
 
-echo "mlkem-builds: a device object's src/mlkem.c calls src/mlkem_poly.c's loops alone, a host object's src/mlkem.c and its two copies call the three vector entries and none of the loops, and the x86-64 copy and ML-DSA-87's matrix sample their rows on the four-way Keccak, which an arm64 object does not hold"
+echo "mlkem-builds: a device object's src/mlkem.c calls src/mlkem_poly.c's loops alone, a host object's src/mlkem.c and its two copies call the three vector entries and none of the loops, and the x86-64 copy and ML-DSA-87's matrix sample their rows on the four-way Keccak, which an arm64 object does not hold, and an arm64 object samples both matrices on the two-way Keccak"

@@ -180,10 +180,13 @@ STACK_BUDGET_MLDSA_SIGN_HOST := 106496
 # gcc 13.3, at -O2, where both held 10,768 at most. 14.5 kB keeps a margin
 # of about 7%. mldsa_sign_steps.c's mlds_matrix_row_avx2 holds them alone:
 # 4,152 bytes with clang 23 and 4,224 with gcc 13.3, so 4.5 kB keeps about
-# 9%. Every other object keeps the ceilings above.
+# 9%. An arm64 host object samples two entries at once on the two-way
+# Keccak (docs/decisions.md 198) and takes the same two ceilings:
+# challenge holds 11,728 bytes with Apple clang 21 at -O2, more than
+# STACK_BUDGET_MLDSA. Every other object keeps the ceilings above.
 STACK_BUDGET_MLDSA_AVX2 := 14848
 STACK_BUDGET_MLDSA_ROW_AVX2 := 4608
-STACK_MLDSA_AVX2 = $(and $(X86_KERNEL_PROBE),$(filter -DCH_CPU_RUNTIME,$(LIB_DEF)))
+STACK_MLDSA_AVX2 = $(and $(HOST_TARGET),$(filter -DCH_CPU_RUNTIME,$(LIB_DEF)))
 # The PROFILE=cnsa2 server (docs/decisions.md 162) takes two more
 # ceilings, each set from its measured frame. srv_mldsa.c stages the
 # 4,627-byte ML-DSA-87 signature, the 146-byte signed content and the
@@ -353,6 +356,7 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
 HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
         src/pem.h src/base64.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
         include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
+        src/keccak_neon.h src/keccak_neon_round.h src/mlkem_neon.h src/mldsa_neon.h \
         src/p256_wide_word.h src/p256_wide_field.h src/p256_wide_scalar.h src/p256_wide_inverse.h src/p256_wide_point.h \
         src/p256_wide_mul.h src/p256_wide_table.h src/p256_wide_wipe.h src/p256_wide_verify.h src/p256_wide_verify_point.h \
         src/p256_adx.h src/p256_adx_names.h src/p256_adx_asm.h src/p256_adx_field_inline.h \
@@ -620,6 +624,8 @@ QUIC_UNPROBED += $(if $(HOST_TARGET),,src/sha256_hw.c src/sha512_hw.c src/sha512
 # it (107).
 QUIC_UNPROBED += $(if $(HOST_TARGET),,src/sha3_hw.c src/keccak_hw.h src/mlkem_hw.c src/mlkem_poly_hw.c)
 QUIC_UNPROBED += $(if $(HOST_TARGET),,src/keccak_avx2.c src/mlkem_avx2.h src/mlkem_avx2.c)
+# So do the two-way Keccak and its two samplers (docs/decisions.md 198).
+QUIC_UNPROBED += $(if $(HOST_TARGET),,src/keccak_neon.c src/mlkem_neon.c src/mldsa_neon.c)
 
 # The ROLE=server mode's own sources, named here for the reason
 # QUIC_SRCS and WEBPKI_SRCS are named: an auditor reads the object's
@@ -751,6 +757,8 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
           src/mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
           src/keccak_avx2.c src/mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
           src/mldsa_avx2.c test/mldsa_avx2_equiv_test.c test/mldsa_avx2_count.c \
+          src/keccak_neon.c src/mlkem_neon.c src/mldsa_neon.c test/keccak_neon_equiv_test.c \
+          test/keccak_neon_count.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
           test/entropy_recipe.c test/ticket_epoch_test.c test/webpki_ticket_count.c \
           $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C) \
@@ -1472,6 +1480,16 @@ endif
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter src/mldsa.c,$(LIB_SRCS)),$(filter-out $(LIB_SRCS),src/keccak_avx2.c) src/mldsa_avx2.c)
 endif
+# The same matrices on arm64. An arm64 host object also holds keccak_neon.c,
+# Keccak on two states at once in NEON, mlkem_neon.c, which samples two
+# entries of a row of ML-KEM's matrix at once on it, and mldsa_neon.c, which
+# does the same for ML-DSA-87's A. Every session runs them
+# (docs/decisions.md 198). On x86-64 the three hold nothing.
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(if $(filter src/mlkem.c src/mldsa.c,$(LIB_SRCS)),src/keccak_neon.c)
+LIB_SRCS += $(if $(filter src/mlkem.c,$(LIB_SRCS)),src/mlkem_neon.c)
+LIB_SRCS += $(if $(filter src/mldsa.c,$(LIB_SRCS)),src/mldsa_neon.c)
+endif
 # The ChaCha20 keystream, which every build runs
 # (https://github.com/c4milo/chapulin/issues/181). A device object runs
 # chacha20.c's loop, one 64-byte block at a time in 32-bit words. A host
@@ -1753,6 +1771,8 @@ QUIC_EXTRA_DEFINES += src/hash_hw.h:-DCH_CPU_RUNTIME src/hkdf_hw.c:-DCH_CPU_RUNT
 # one anywhere else (docs/decisions.md 107).
 QUIC_EXTRA_DEFINES += src/keccak_avx2.c:-DCH_CPU_RUNTIME src/mlkem_avx2.h:-DCH_CPU_RUNTIME \
                       src/mlkem_avx2.c:-DCH_CPU_RUNTIME
+QUIC_EXTRA_DEFINES += src/keccak_neon.c:-DCH_CPU_RUNTIME src/mlkem_neon.c:-DCH_CPU_RUNTIME \
+                      src/mldsa_neon.c:-DCH_CPU_RUNTIME
 # What a host test binary compiles with, and what it links
 # (docs/decisions.md 89). HOST_CFLAGS is the test flags without the host's
 # CH_NATIVE_WIDEMUL, which ct.h refuses beside -DCH_CPU_RUNTIME, because a
@@ -1872,6 +1892,9 @@ host_srcs = $(call sha512_host_of,$(1)) $(call widemul_native_of,$(1)) \
             $(if $(filter src/mlkem.c,$(1)),src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c) \
             $(if $(filter src/mldsa.c,$(1)),src/mldsa_vector.c src/mldsa_avx2.c \
               $(if $(filter src/mlkem.c,$(1)),,src/keccak_avx2.c)) \
+            $(if $(filter src/mlkem.c src/mldsa.c,$(1)),src/keccak_neon.c) \
+            $(if $(filter src/mlkem.c,$(1)),src/mlkem_neon.c) \
+            $(if $(filter src/mldsa.c,$(1)),src/mldsa_neon.c) \
             $(call hash_hw_of,$(1))
 WIDEMUL ?= decomposed
 ifneq ($(CPU_RUNTIME_DEF),)
@@ -2466,7 +2489,7 @@ lint-trust-separation-run:
 	  "src/sha512.c src/sha512_compress_blocks.c" "src/sha512_compress.c" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
 	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "src/sha512.c src/sha512_compress.c" \
 	  "src/sha512_compress_blocks.c" "-DCH_SUITE_AES_GCM" "-DCH_CPU_RUNTIME"; \
-	keccak_hw="src/sha3_hw.c src/mlkem_hw.c src/mlkem_poly_hw.c src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c"; \
+	keccak_hw="src/sha3_hw.c src/mlkem_hw.c src/mlkem_poly_hw.c src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c src/keccak_neon.c src/mlkem_neon.c"; \
 	check "TRUST=raw-rsa KEX=pq" "src/sha3.c src/mlkem.c src/mlkem_poly.c" "$$keccak_hw" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "src/sha3.c src/mlkem.c src/mlkem_poly.c $$keccak_hw" "" \
 	  "-DCH_CPU_RUNTIME" ""; \
@@ -3685,7 +3708,11 @@ bin/sha3_hw_equiv_test: test/sha3_hw_equiv_test.c test/sha3_hw_equiv_residue.h \
 # mlkem_poly.c, the code CBMC proves (docs/decisions.md 99): the same
 # keys, ciphertexts and secrets on the two paths, and the three calls a
 # session makes under each kind of ch_cfg.cpu.
-MLKEM_HW_EQUIV_TEST_SRCS := $(call host_srcs,src/sha3.c src/mlkem.c src/mlkem_poly.c) src/ct.c src/ct_wipe.c
+# On arm64 it links test/keccak_neon_count.c in keccak_neon.c's place, and
+# requires each copy's matrix on its own form of the two-way Keccak
+# (docs/decisions.md 198).
+MLKEM_HW_EQUIV_TEST_SRCS := $(filter-out src/keccak_neon.c,$(call host_srcs,src/sha3.c src/mlkem.c src/mlkem_poly.c)) \
+                            test/keccak_neon_count.c src/ct.c src/ct_wipe.c
 bin/mlkem_hw_equiv_test: test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS)
@@ -3718,9 +3745,13 @@ bin/mldsa_vector_equiv_test: test/mldsa_vector_equiv_test.c $(MLDSA_VECTOR_EQUIV
 # sha3_hw.c's, which counts each SHAKE call on each path and runs sha3.c,
 # and test/mldsa_avx2_count.c in mldsa_avx2.c's and keccak_avx2.c's, which
 # counts each call into the four-way sampler of A and runs mld_sample_ntt,
-# so it gives the same verdict on every host.
+# so it gives the same verdict on every host. On arm64 it links
+# mldsa_neon.c, and test/keccak_neon_count.c in keccak_neon.c's place,
+# which counts the pairs of streams and each form's permutations and runs
+# the plain form (docs/decisions.md 198).
 MLDSA_RUNTIME_TEST_SRCS := $(MLDSA_SIGN_SRCS) src/mldsa.c src/mldsa_poly.c src/ct.c src/ct_wipe.c \
-                           test/mldsa_vector_count.c test/mldsa_sha3_count.c test/mldsa_avx2_count.c
+                           test/mldsa_vector_count.c test/mldsa_sha3_count.c test/mldsa_avx2_count.c \
+                           src/mldsa_neon.c test/keccak_neon_count.c
 bin/mldsa_runtime_test: test/mldsa_runtime_test.c $(MLDSA_RUNTIME_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
@@ -3735,6 +3766,16 @@ bin/mldsa_avx2_equiv_test: test/mldsa_avx2_equiv_test.c $(MLDSA_AVX2_EQUIV_TEST_
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  test/mldsa_avx2_equiv_test.c $(MLDSA_AVX2_EQUIV_TEST_SRCS)
+# The two-way Keccak against sha3.c, in each of its two forms, and the
+# samplers over it against mlk_sample_ntt and mld_sample_ntt
+# (docs/decisions.md 198). It has a body on arm64 alone; on another target
+# the binary says so and passes.
+KECCAK_NEON_EQUIV_TEST_SRCS := $(call host_srcs,src/sha3.c src/mlkem_poly.c) src/mldsa_poly.c src/keccak_neon.c \
+                               src/mlkem_neon.c src/mldsa_neon.c src/ct.c src/ct_wipe.c
+bin/keccak_neon_equiv_test: test/keccak_neon_equiv_test.c $(KECCAK_NEON_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/keccak_neon_equiv_test.c \
+	  $(KECCAK_NEON_EQUIV_TEST_SRCS)
 # The four-way Keccak against sha3.c, and ML-KEM's copy over it against
 # mlkem.c (docs/decisions.md 107). Both have a body on x86-64 alone; on
 # another target the binary says so and passes.
@@ -4779,7 +4820,7 @@ WIDEMUL_COUNT_FIELDS := src/p256_field.c src/p256_wide_field.c src/p256_wide_inv
                         src/p256_adx_verify_point.c src/rsa_sign64_wipe.c
 WIDEMUL_COUNT_SRCS := src/aead.c src/chacha20.c $(WIDEMUL_COUNT_CHACHA) src/hkdf.c src/sha256.c $(call hash_hw_of,src/hkdf.c src/sha256.c) \
                       src/ct.c src/ct_wipe.c src/buf.c src/record.c src/mlkem.c src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c \
-                      src/sha3.c src/p256.c src/p256_ecdh.c src/p256_sign.c src/rsa.c src/rsa_mont.c $(RSA_MONT64_SRCS) \
+                      src/keccak_neon.c src/mlkem_neon.c src/sha3.c src/p256.c src/p256_ecdh.c src/p256_sign.c src/rsa.c src/rsa_mont.c $(RSA_MONT64_SRCS) \
                       $(WIDEMUL_COUNT_FIELDS)
 WIDEMUL_RUNTIME_TEST_SRCS := test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
                              $(WIDEMUL_COUNT_SRCS)
@@ -4815,7 +4856,8 @@ widemul_counted = $(call sha512_host_of,$(filter-out $(WIDEMUL_COUNTED) $(WIDEMU
                   $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(WIDEMUL_COUNT_CHACHA) \
                   $(if $(filter src/rsa_mont.c,$(1)),$(filter-out src/rsa_ifma.c,$(RSA_MONT64_SRCS)) test/rsa_ifma_count.c) \
                   $(if $(filter src/p384.c,$(1)),$(P384_WIDE_SRCS)) \
-                  $(if $(filter src/mlkem.c,$(1)),src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c) \
+                  $(if $(filter src/mlkem.c,$(1)),src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c \
+                    src/keccak_neon.c src/mlkem_neon.c) \
                   $(call hash_hw_of,$(1))
 # A list that holds sha512.c links sha512_avx2.c's object (hash_hw_of),
 # which the five rules below do not name among their prerequisites, so
@@ -4876,7 +4918,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/mlkem_hw_equiv_test \
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
                                  bin/mldsa_vector_equiv_test bin/mldsa_runtime_test \
-                                 bin/mldsa_avx2_equiv_test \
+                                 bin/mldsa_avx2_equiv_test bin/keccak_neon_equiv_test \
                                  bin/mlkem_hw_equiv_test_1024 bin/mlkem_avx2_equiv_test_1024 \
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
@@ -7137,7 +7179,7 @@ lint-stack-run:
 	      echo "lint-stack: src/gcm_avx512_kernel.c defines [$$local_functions] beside its four functions; a kernel must call no function, so that its frame is all the stack it writes"; rc=1; \
 	    fi ;; esac; \
 	done; rm -rf $$objs; \
-	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B, its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B, the 512-bit AES-GCM kernel's under $(STACK_BUDGET_GCM_AVX512) B, its stack wipe's under $(STACK_BUDGET_GCM_AVX512_WIPE) B, ML-DSA-87's verifier's under $(STACK_BUDGET_MLDSA) B and its signer's under $(if $(filter -DCH_CPU_RUNTIME,$(LIB_DEF)),$(STACK_BUDGET_MLDSA_SIGN_HOST),$(STACK_BUDGET_MLDSA_SIGN)) B$(if $(STACK_MLDSA_AVX2),; on the four-way sampler its verifier's under $(STACK_BUDGET_MLDSA_AVX2) B and its signer's row under $(STACK_BUDGET_MLDSA_ROW_AVX2) B)$(if $(filter -DCH_SIGN_MLDSA,$(LIB_DEF)),; the profile server's CertificateVerify under $(STACK_BUDGET_SRV_MLDSA) B and its key file call under $(STACK_BUDGET_PEM_FILES_MLDSA) B)"; exit $$rc
+	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B, its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B, the 512-bit AES-GCM kernel's under $(STACK_BUDGET_GCM_AVX512) B, its stack wipe's under $(STACK_BUDGET_GCM_AVX512_WIPE) B, ML-DSA-87's verifier's under $(STACK_BUDGET_MLDSA) B and its signer's under $(if $(filter -DCH_CPU_RUNTIME,$(LIB_DEF)),$(STACK_BUDGET_MLDSA_SIGN_HOST),$(STACK_BUDGET_MLDSA_SIGN)) B$(if $(STACK_MLDSA_AVX2),; on the sampler of several entries its verifier's under $(STACK_BUDGET_MLDSA_AVX2) B and its signer's row under $(STACK_BUDGET_MLDSA_ROW_AVX2) B)$(if $(filter -DCH_SIGN_MLDSA,$(LIB_DEF)),; the profile server's CertificateVerify under $(STACK_BUDGET_SRV_MLDSA) B and its key file call under $(STACK_BUDGET_PEM_FILES_MLDSA) B)"; exit $$rc
 
 # Every document must be named in the README; an orphaned doc is a doc
 # nobody finds. The second and third loops keep the invariants
@@ -7436,6 +7478,7 @@ else
 	  src/mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
 	  src/keccak_avx2.c src/mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
 	  src/mldsa_avx2.c test/mldsa_avx2_equiv_test.c test/mldsa_avx2_count.c \
+	  src/keccak_neon.c src/mlkem_neon.c src/mldsa_neon.c test/keccak_neon_equiv_test.c test/keccak_neon_count.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c test/aead_avx512_count.c \
 	  test/gcm_avx512_equiv_test.c test/webpki_ticket_count.c test/ct_taint_test.c test/ct_taint_keys.c \
 	  $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
@@ -7667,6 +7710,13 @@ else
 	@$(call TIDY_EACH,src/mldsa_vector.c src/mldsa.c src/mldsa_sign_steps.c src/mldsa_signer.c, \
 	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I.)
+	# The two-way Keccak and its two samplers (docs/decisions.md 198),
+	# which have a body on arm64 alone, read for an arm64 target whatever
+	# the host, with mlkem.c and mlkem_hw.c, whose arm64 host arms call the
+	# ML-KEM sampler.
+	@$(call TIDY_EACH,src/keccak_neon.c src/mlkem_neon.c src/mldsa_neon.c src/mlkem.c src/mlkem_hw.c, \
+	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# The four-way Keccak and ML-KEM's copy over it (docs/decisions.md
 	# 107), which have a body on x86-64 alone, read for an x86-64 target
 	# whatever the host, as the kernels' passes above are. mlkem_avx2.c
@@ -7744,7 +7794,7 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/sha3_hw_equiv_test.c test/mlkem_hw_equiv_test.c test/mlkem_vector_equiv_test.c \
-	    test/mlkem_avx2_equiv_test.c, \
+	    test/mlkem_avx2_equiv_test.c test/keccak_neon_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	# The ML-DSA-87 lanes' equivalence test, in a pass of its own with
 	# portability-no-assembler off for that file alone: on x86-64 it reads
@@ -8656,6 +8706,9 @@ WIDEMUL_CEILING := src/ct.c:0 src/ct_wipe.c:0 src/sha256.c:0 src/sha3.c:0 src/hk
 # than mlkem_vector.c's (docs/decisions.md 107). mldsa_avx2.c, ML-DSA-87's
 # sampler of A over the four-way Keccak, compiles to nothing on arm64, and
 # on x86-64 multiplies and divides nothing (docs/decisions.md 178).
+# keccak_neon.c, mlkem_neon.c and mldsa_neon.c, the two-way Keccak and its
+# two samplers, compile to nothing on x86-64, and on arm64 multiply and
+# divide nothing (docs/decisions.md 198).
 # poly1305_vector.c compiles to nothing under its own name: a host object
 # holds it as poly1305_vector_native.c alone, and the entry here holds
 # that, because the file would compile to its four branches if
@@ -8746,6 +8799,7 @@ WIDE64_CEILING := src/x25519_wide.c:0 src/x25519_adx.c:0 src/rsa_mont64_adx.c:0 
                   src/rsa_avx2.c:0 \
                   src/sha3_hw.c:0 src/mlkem_hw.c:0 src/mlkem_poly_hw.c:0 src/mlkem_vector.c:0 src/mldsa_vector.c:0 \
                   src/keccak_avx2.c:0 src/mlkem_avx2.c:0 src/mldsa_avx2.c:0 src/avx512_wipe.c:0 src/sha512_compress_blocks.c:0 \
+                  src/keccak_neon.c:0 src/mlkem_neon.c:0 src/mldsa_neon.c:0 \
                   src/sha512_avx2.c:0 $(addsuffix :0,$(AES_HW_SRCS)) \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
 # Files the two 64-bit specs compile once more under other defines, each
@@ -8882,6 +8936,7 @@ WIDEMUL_DEFINES := src/quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_pack
                    src/sha512_compress_blocks.c:-DCH_CPU_RUNTIME \
                    src/sha3_hw.c:-DCH_CPU_RUNTIME src/mlkem_hw.c:-DCH_CPU_RUNTIME src/mlkem_poly_hw.c:-DCH_CPU_RUNTIME \
                    src/keccak_avx2.c:-DCH_CPU_RUNTIME src/mlkem_avx2.c:-DCH_CPU_RUNTIME src/mldsa_avx2.c:-DCH_CPU_RUNTIME \
+                   src/keccak_neon.c:-DCH_CPU_RUNTIME src/mlkem_neon.c:-DCH_CPU_RUNTIME src/mldsa_neon.c:-DCH_CPU_RUNTIME \
                    src/mlkem_vector.c:-DCH_CPU_RUNTIME src/mldsa_vector.c:-DCH_CPU_RUNTIME \
                    src/hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    src/keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
@@ -9283,6 +9338,19 @@ WIDEMUL_SPECS := \
 #   st->w[i] and st->product overlap, which compare addresses. None reads
 #   a coefficient. The device arm's counts do not move.
 # keccak_avx2.c, 0 and 1: the permutation's 24 rounds.
+# The two-way Keccak on arm64 (docs/decisions.md 198), each count read by
+#   its instruction under clang 23. keccak_neon.c's 2 are the loops over
+#   the 24 rounds of its two forms. mlkem_neon.c's 17 and mldsa_neon.c's 9
+#   are their loops over the two states and the blocks, the tests of each
+#   entry's count and of mlk_sample_groups's and mld_sample_groups's
+#   candidates, which the compiler inlines, the TBNZ on bit 7 of cpu,
+#   CH_CPU_CONSTANT_TIME_SHA3, that picks the form, and mldsa_neon.c's test
+#   of the count a caller asks for. mlkem.c@host and mlkem_hw.c on arm64 hold one
+#   more, 12, in mlk_matvec_row: the test of whether two entries are left
+#   in the row. mldsa_sign_steps.c@host on arm64 is down from 71 to 62:
+#   the sampler's tests of each entry's verdict, which mlds_expand
+#   unrolled, are now in mldsa_neon.c. Each reads the rank, a count or a
+#   coefficient of the public matrix, and none reads a secret.
 # sha256_hw.c, 6 and 10; sha512_hw.c, 17 and 13; sha256.c@host, 28 and 35:
 #   an update's tests of n and of the count of buffered bytes, the loop
 #   over whole blocks, a final's tests of where the padding ends and its
@@ -9561,7 +9629,7 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
 HASH_HW_BRANCH_CEILING := \
   arm64/src/sha256_hw.c:6 x86-64/src/sha256_hw.c:10 arm64/src/hkdf_hw.c:19 x86-64/src/hkdf_hw.c:19 \
   arm64/src/keysched_hw.c:0 x86-64/src/keysched_hw.c:0 arm64/src/sha512_hw.c:17 x86-64/src/sha512_hw.c:13 \
-  arm64/src/sha3_hw.c:72 x86-64/src/sha3_hw.c:0 arm64/src/mlkem_hw.c:11 x86-64/src/mlkem_hw.c:0 \
+  arm64/src/sha3_hw.c:72 x86-64/src/sha3_hw.c:0 arm64/src/mlkem_hw.c:12 x86-64/src/mlkem_hw.c:0 \
   arm64/src/mlkem_poly_hw.c:49 x86-64/src/mlkem_poly_hw.c:0 \
   arm64/src/sha512_compress_blocks.c:3 x86-64/src/sha512_compress_blocks.c:3 \
   arm64/src/sha512_avx2.c:0 x86-64/src/sha512_avx2.c:3
@@ -9609,7 +9677,7 @@ MLDSA_SIGN_BRANCH_CEILING := \
   rv32imac-gcc/src/mldsa_sign_pack.c:23 \
   rv32ic-gcc/src/mldsa_signer.c:29 rv32ic-gcc/src/mldsa_sign_round.c:6 rv32ic-gcc/src/mldsa_sign_steps.c:24 \
   rv32ic-gcc/src/mldsa_sign_poly.c:12 rv32ic-gcc/src/mldsa_sign_pack.c:23 \
-  arm64/src/mldsa_signer.c@host:27 arm64/src/mldsa_sign_round.c@host:2 arm64/src/mldsa_sign_steps.c@host:71 \
+  arm64/src/mldsa_signer.c@host:27 arm64/src/mldsa_sign_round.c@host:2 arm64/src/mldsa_sign_steps.c@host:62 \
   arm64/src/mldsa_sign_poly.c@host:25 arm64/src/mldsa_sign_pack.c@host:40 \
   x86-64/src/mldsa_signer.c@host:18 x86-64/src/mldsa_sign_round.c@host:2 \
   x86-64/src/mldsa_sign_steps.c@host:67 x86-64/src/mldsa_sign_poly.c@host:26 \
@@ -9743,6 +9811,7 @@ BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/cha
                src/rsa_avx2.c@512 \
                $(P256_WIDE_SRCS) \
                src/sha3_hw.c src/mlkem_hw.c src/mlkem_poly_hw.c src/mlkem_vector.c src/mldsa_vector.c src/keccak_avx2.c src/mlkem_avx2.c \
+               src/keccak_neon.c src/mlkem_neon.c src/mldsa_neon.c \
                src/mldsa_avx2.c src/avx512_wipe.c src/rsa_ifma_sign.c src/rsa_ifma_sign.c@512 src/rsa_sign64.c@512 src/base64.c \
                $(MLDSA_SIGN_SRCS) $(addsuffix @host,$(WIDE64_HOST_COPIES))
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
@@ -9938,6 +10007,8 @@ BRANCH_CEILING := \
   arm64/src/mldsa_vector.c:13 x86-64/src/mldsa_vector.c:13 \
   arm64/src/keccak_avx2.c:0 x86-64/src/keccak_avx2.c:1 arm64/src/mlkem_avx2.c:0 x86-64/src/mlkem_avx2.c:24 \
   arm64/src/mldsa_avx2.c:0 x86-64/src/mldsa_avx2.c:8 \
+  arm64/src/keccak_neon.c:2 x86-64/src/keccak_neon.c:0 arm64/src/mlkem_neon.c:17 x86-64/src/mlkem_neon.c:0 \
+  arm64/src/mldsa_neon.c:9 x86-64/src/mldsa_neon.c:0 \
   arm64/src/avx512_wipe.c:0 x86-64/src/avx512_wipe.c:0 \
   arm64/src/rsa_ifma_sign.c:0 x86-64/src/rsa_ifma_sign.c:62 arm64/src/rsa_ifma_sign.c@512:0 \
   x86-64/src/rsa_ifma_sign.c@512:65 \
@@ -9948,7 +10019,7 @@ BRANCH_CEILING := \
   arm64/src/sha256.c@host:28 x86-64/src/sha256.c@host:35 arm64/src/sha3.c@host:75 x86-64/src/sha3.c@host:84 \
   arm64/src/hkdf.c@host:19 x86-64/src/hkdf.c@host:19 arm64/src/chacha20.c@host:1 x86-64/src/chacha20.c@host:3 \
   arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:6 \
-  arm64/src/mlkem.c@host:11 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:79 x86-64/src/rsa_sign.c@host:67 \
+  arm64/src/mlkem.c@host:12 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:79 x86-64/src/rsa_sign.c@host:67 \
   arm64/src/drbg.c@host:5 x86-64/src/drbg.c@host:5 \
   arm64/src/aes.c@host:20 x86-64/src/aes.c@host:19 arm64/src/gcm.c@host:22 x86-64/src/gcm.c@host:32 \
   arm64/src/p256_field.c@host:4 x86-64/src/p256_field.c@host:4 \

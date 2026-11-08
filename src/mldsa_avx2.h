@@ -34,6 +34,22 @@
 int mld_sample_ntt_avx2(mld_poly e[MLD_AVX2_ENTRIES], const uint8_t rho[MLD_RHO_BYTES], unsigned i,
                         unsigned first, unsigned count);
 
+// The names the callers of a sampler of several entries read, which mldsa_neon.h gives for
+// arm64 (docs/decisions.md 198): the entries one call samples at most, whether a session runs
+// the sampler, and the call. Here a session whose cpu holds CH_CPU_AVX2 runs it.
+#define MLD_WIDE_ENTRIES MLD_AVX2_ENTRIES
+
+static inline int mld_wide_runs(uint32_t cpu) {
+    return (cpu & CH_CPU_AVX2) != 0;
+}
+
+static inline int mld_sample_ntt_wide(uint32_t cpu, mld_poly e[MLD_WIDE_ENTRIES],
+                                      const uint8_t rho[MLD_RHO_BYTES], unsigned i, unsigned first,
+                                      unsigned count) {
+    (void)cpu;
+    return mld_sample_ntt_avx2(e, rho, i, first, count);
+}
+
 #endif // CH_CPU_RUNTIME && __x86_64__
 
 #endif

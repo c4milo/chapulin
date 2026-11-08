@@ -1,0 +1,12 @@
+invariant: INV-69
+file: src/mlkem.c
+catches: test/mlkem-builds.sh
+reason: an arm64 host object's mlk_matvec_row samples every entry with
+  mlk_sample_ntt, so ML-KEM's matrix runs one Keccak state at a time.
+  Every value stays the same, so the script compiles mlkem.c for arm64
+  and requires it to call mlk_sample_pair_neon.
+
+--- old
+        if (rank - j < MLK_NEON_ENTRIES) {
+--- new
+        if (rank - j < MLK_NEON_ENTRIES + 4) {

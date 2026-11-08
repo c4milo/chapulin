@@ -1,0 +1,11 @@
+invariant: INV-69
+file: src/keccak_neon.c
+catches: keccak_neon_equiv_test
+reason: the plain form's theta rotates each column parity by 2 and not by 1,
+  so d[x] is wrong in every round. The plain form runs under every
+  compiler, and the equivalence test runs it on every arm64 host.
+
+--- old
+    return veorq_u64(x, vsriq_n_u64(vshlq_n_u64(y, 1), y, 63));
+--- new
+    return veorq_u64(x, vsriq_n_u64(vshlq_n_u64(y, 2), y, 62));

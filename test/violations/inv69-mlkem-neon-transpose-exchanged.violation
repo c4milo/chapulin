@@ -1,0 +1,14 @@
+invariant: INV-69
+file: src/mlkem_neon.c
+catches: keccak_neon_equiv_test
+reason: the ML-KEM sampler hands each state the indices of A where the caller
+  asks for A^T, so encryption multiplies by the wrong matrix. The
+  equivalence test compares each entry with mlk_sample_ntt's for both
+  transposes.
+
+--- old
+        x0[k] = transposed ? (uint8_t)i : (uint8_t)(first + k);
+        x1[k] = transposed ? (uint8_t)(first + k) : (uint8_t)i;
+--- new
+        x0[k] = (uint8_t)(first + k + 0U * (unsigned)transposed);
+        x1[k] = (uint8_t)i;

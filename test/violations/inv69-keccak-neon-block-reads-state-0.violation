@@ -1,0 +1,12 @@
+invariant: INV-69
+file: src/keccak_neon.c
+catches: keccak_neon_equiv_test
+reason: keccak_neon_block reads lane i of state 0 whatever k names, so
+  both entries of a pair take the first stream. The equivalence test
+  compares each state's blocks with sha3.c's stream for its own
+  indices.
+
+--- old
+        uint64_t lane = s->lane[i][k];
+--- new
+        uint64_t lane = s->lane[i][k & 0];

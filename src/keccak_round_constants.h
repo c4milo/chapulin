@@ -1,7 +1,8 @@
 // FIPS 202 §3.2.5: the round constants RC[0..23] for iota, one for each
 // round of Keccak-f[1600]. sha3.c's permutation reads them, and so do the
-// two that a host object holds beside it: sha3_hw.c's, which compiles
-// sha3.c once more, and keccak_avx2.c's, which runs four states at once.
+// three that a host object holds beside it: sha3_hw.c's, which compiles
+// sha3.c once more, keccak_avx2.c's, which runs four states at once, and
+// keccak_neon.c's, which runs two.
 // proof/sha3_round_harness.c holds the table to the constants FIPS 202's
 // rc(t) generates.
 #ifndef CH_KECCAK_ROUND_CONSTANTS_H

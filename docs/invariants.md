@@ -1547,6 +1547,55 @@ last `ROLE=server` stub, as the entry said it would.
   every host.
 - See [decisions: Engineering](decisions.md#engineering), entry 183.
 
+### INV-69 — the two-way Keccak takes public input alone and gives sha3.c's streams
+
+- **Claim.** `keccak_neon.c`, which an arm64 host object runs for
+  ML-KEM's matrix and ML-DSA-87's A in every session, computes for every
+  seed and pair of indices the SHAKE128 stream `sha3.c` computes, in both
+  of its forms: plain NEON, and FEAT_SHA3's instructions where clang
+  compiled the object. A session runs the second form exactly where its
+  `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_SHA3`. Its two callers,
+  `mlkem_neon.c` and `mldsa_neon.c`, hand it the seed rho, which the
+  encapsulation key and the ML-DSA-87 public key carry in the clear, and
+  two indices, and each entry they sample is the one `mlk_sample_ntt` or
+  `mld_sample_ntt` samples. So `mlkem.c`, `mlkem_hw.c`, `mldsa.c` and
+  `mldsa_sign_steps.c` write the keys, ciphertexts, secrets, signatures
+  and verdicts they write without it (decision 198).
+- **Mechanism.** `keccak_neon_round.h` holds one round text, `sha3_hw.c`'s
+  round on two lanes, and `keccak_neon.c` compiles it twice under the
+  four operations of each form. `keccak_neon.h`'s
+  `keccak_neon_permute_cpu` branches once on `keccak_neon_runs_sha3`. The
+  samplers run each block of each stream through `mlk_sample_groups` or
+  `mld_sample_groups`, the rejection steps the proven samplers run, until
+  both entries hold 256 coefficients or the streams reach the proven
+  samplers' caps. `mlkem.c` passes the plain form's value and
+  `mlkem_hw.c`, its copy for sessions with the SHA-3 bit, passes the bit.
+  A compiler may keep the two states' lanes in stack slots no wipe
+  clears, and that is why no secret may reach the two-way Keccak
+  (decisions 99 and 107).
+- **Check.** `bin/keccak_neon_equiv_test` runs on every arm64 host, on
+  the plain form and, where the object and the CPU have them, on the
+  SHA-3 instructions. It compares ten blocks of each of the two streams
+  with `sha3.c`'s SHAKE128 for 200 random seeds, the two forms with each
+  other on random states, and every entry and result of the two samplers
+  with the proven samplers' for 40 random seeds. `bin/mlkem_hw_equiv_test`
+  and `bin/mldsa_runtime_test` link a count in `keccak_neon.c`'s place and
+  require the pairs of streams each call starts and the form of every
+  permutation. `test/mlkem-builds.sh` requires the four callers to call
+  the samplers, the samplers to call the Keccak, the three files to hold
+  nothing on x86-64, and no other source in src/ to include
+  `keccak_neon.h` or call its entries.
+- **Violation.** A PR reads a block from the wrong state, absorbs one
+  state alone, rotates theta's parities by the wrong count, exchanges
+  chi's neighbours, hands the ML-KEM sampler A's indices for A^T or the
+  ML-DSA-87 sampler A[j][i] for A[i][j], stops ML-DSA-87's streams after
+  four blocks, leaves either matrix on one Keccak state at a time, or
+  includes `keccak_neon.h` in a source that reads secrets. The ten
+  `inv69-*` violations are these. Seven fail
+  `bin/keccak_neon_equiv_test`, one `bin/mldsa_runtime_test` and two
+  `test/mlkem-builds.sh`.
+- See [decisions: Engineering](decisions.md#engineering), entry 198.
+
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
 - **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit words

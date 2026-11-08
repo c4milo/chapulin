@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-131 of the 169 C sources in the tree root are compiled into a
+131 of the 172 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 38 sources are in no such harness:
+The other 41 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -68,6 +68,9 @@ The other 38 sources are in no such harness:
 | `mldsa_vector.c` | It runs ML-DSA-87's NTT, inverse NTT and two NTT-domain products on NEON intrinsics for arm64 and AVX2 intrinsics for x86-64, and has a body in a host object alone. | `bin/mldsa_vector_equiv_test` holds it to `mldsa_poly.c`'s and `mldsa_sign_poly.c`'s proven loops, `bin/mldsa_runtime_test` counts which calls run it, and the signer's, Wycheproof's and the CNSA 2.0 server's tests sign and verify on it ([The ML-DSA-87 lanes](#the-ml-dsa-87-lanes)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
+| `keccak_neon.c` | It runs Keccak-f[1600] on two states at once in NEON intrinsics, plain and on FEAT_SHA3's instructions, and has a body on arm64 alone. | `bin/keccak_neon_equiv_test` holds both forms' two SHAKE128 streams to `sha3.c`'s proven code for ten blocks each, and the two forms to each other on random states ([The two-way Keccak](#the-two-way-keccak)). |
+| `mlkem_neon.c` | It samples two entries of a row of ML-KEM's matrix on `keccak_neon.c`'s two states, so it has a body on arm64 alone. | The `mlkem_poly` harness proves `mlk_sample_groups`, the step it runs on each block, inside `mlk_sample_ntt`. `bin/keccak_neon_equiv_test` holds each entry it samples to `mlk_sample_ntt`'s for every row, first entry and transpose at ranks 3 and 4, on both forms (decision 198). |
+| `mldsa_neon.c` | It samples one or two entries of a row of ML-DSA-87's matrix A on `keccak_neon.c`'s two states, so it has a body on arm64 alone. | The `mldsa_poly` harness proves `mld_sample_groups` inside `mld_sample_ntt`. `bin/keccak_neon_equiv_test` holds each entry and each result to `mld_sample_ntt`'s for every row, first entry and count, on both forms, and `bin/mldsa_runtime_test` counts the pairs of streams and each form's permutations under each `ch_cfg.cpu` value (decision 198). |
 | `mldsa_avx2.c` | It samples up to four entries of a row of ML-DSA-87's matrix A on `keccak_avx2.c`'s four states, so it has a body on x86-64 alone. | The `mldsa_poly` harness proves `mld_sample_groups`, the step it runs on each block, inside `mld_sample_ntt`. On a CPU with AVX2, `bin/mldsa_avx2_equiv_test` holds each entry it samples to `mld_sample_ntt`'s for every row, first entry and count, and the keys, signatures and verdicts of the calls that take `CH_CPU_AVX2` to those of the calls that take no value. `bin/mldsa_runtime_test` counts its calls under each `ch_cfg.cpu` value, and `test/mlkem-builds.sh` requires both callers to call it (decision 178). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha512_hw.c` | Its arm64 arm runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics. Its x86-64 arm is `sha512.c`'s first arm compiled once more over `sha512_avx2.c`. | `bin/sha2_equiv_test` holds each arm to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions), [SHA-512 on AVX2](#sha-512-on-avx2)). The `sha512_host` harness proves the text of the x86-64 arm under its own names, over `sha512_compress_blocks.c`. |
@@ -5588,6 +5591,53 @@ What none of this shows: the copy at the cap, where an entry's stream
 gives `MLK_SAMPLE_GROUPS` groups without 256 coefficients. No seed reaches
 it in practice, so no test runs it, and the copy stops at the cap's group
 by the arithmetic its entry in `tools/proof-cover.py` reads.
+
+### The two-way Keccak
+
+`keccak_neon.c` runs Keccak-f[1600] on two states at once in 128-bit NEON
+vectors, in two forms: plain NEON, and FEAT_SHA3's EOR3, RAX1, XAR and
+BCAX where clang compiled the object (decision 198). `mlkem_neon.c`
+samples two entries of a row of ML-KEM's matrix on it, and `mldsa_neon.c`
+one or two entries of a row of ML-DSA-87's A. An arm64 host object runs
+them in every session: plain NEON, or the SHA-3 form for a value that
+holds `CH_CPU_CONSTANT_TIME_SHA3`. Their input is public: the matrix's
+seed and indices. CBMC cannot unwind an intrinsic, and the three files
+have a body on arm64 alone, so no harness compiles them. The rejection
+steps they run on each block, `mlk_sample_groups` and
+`mld_sample_groups`, are the loops the `mlkem_poly` and `mldsa_poly`
+proofs cover. These hold the rest (INV-69):
+
+- `bin/keccak_neon_equiv_test`, in `make check` on an arm64 host, runs
+  each check on the plain form and, where the object and the CPU have
+  them, on the SHA-3 instructions. It compares ten blocks of each of the
+  two streams with `sha3.c`'s SHAKE128 for 200 random seeds, each state
+  with an index pair of its own, and the two forms with each other on 200
+  pairs of random states. It compares each entry `mlk_sample_pair_neon`
+  samples with `mlk_sample_ntt`'s, and each entry and result of
+  `mld_sample_ntt_neon` with `mld_sample_ntt`'s, for 40 random seeds,
+  every row, every first entry, ML-KEM's transpose and ranks 3 and 4,
+  and ML-DSA-87's counts 1 and 2. It counts the ML-KEM entries whose
+  stream needs a fourth block, and fails if there are none. On an x86-64
+  host it has nothing to run and says so.
+- `bin/mlkem_hw_equiv_test` links a count in `keccak_neon.c`'s place. It
+  requires each ML-KEM call to start one pair of streams for each two
+  entries of a row, with every permutation on the plain form in
+  `mlkem.c` and on the SHA-3 form in `mlkem_hw.c`.
+- `bin/mldsa_runtime_test` links the same count, and requires each row
+  of A on arm64 to start three pairs of streams, under every
+  `ch_cfg.cpu` value and in the calls that take no value, with every
+  permutation on the form the SHA-3 bit names.
+- `test/mlkem-builds.sh` requires `mlkem.c` and `mlkem_hw.c` to call
+  `mlk_sample_pair_neon`, `mldsa.c` and `mldsa_sign_steps.c` to call
+  `mld_sample_ntt_neon`, the samplers to call the Keccak's entries, the
+  three files to hold nothing on x86-64, and no other source in src/ to
+  include `keccak_neon.h` or call its entries.
+- `make lint-wide-multiply` holds `keccak_neon.c` at 2 conditional
+  branches on arm64, the loops over the rounds of its two forms.
+
+What none of this shows: a sampler at its cap, where a stream gives its
+last group or block without 256 coefficients. No seed reaches it in
+practice, so no test runs it.
 
 ### The x86-64 kernels
 

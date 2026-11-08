@@ -11,8 +11,8 @@ reason: the verifier samples A on the four-way Keccak where the session's
   docker, and this then reports unguarded rather than caught.
 
 --- old
-    if (cpu & CH_CPU_AVX2) {
-        return mld_row_sum_avx2(cpu, sum, room, i, pk, z_hat);
+    if (mld_wide_runs(cpu)) {
+        return mld_row_sum_wide(cpu, sum, room, i, pk, z_hat);
 --- new
     if (cpu & CH_CPU_VAES) {
-        return mld_row_sum_avx2(cpu, sum, room, i, pk, z_hat);
+        return mld_row_sum_wide(cpu, sum, room, i, pk, z_hat);

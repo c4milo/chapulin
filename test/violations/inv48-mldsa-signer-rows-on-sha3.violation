@@ -10,8 +10,8 @@ reason: the signer's and key generation's rows of A run on sha3.c under
   this then reports unguarded rather than caught.
 
 --- old
-    if (cpu & CH_CPU_AVX2) {
-        return mlds_matrix_row_avx2(cpu, row, rho, i, v_hat);
+    if (mld_wide_runs(cpu)) {
+        return mlds_matrix_row_wide(cpu, row, rho, i, v_hat);
 --- new
     if (cpu & 0U) {
-        return mlds_matrix_row_avx2(cpu, row, rho, i, v_hat);
+        return mlds_matrix_row_wide(cpu, row, rho, i, v_hat);

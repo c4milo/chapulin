@@ -14,42 +14,44 @@
 
 #include "ct.h"
 #include "mldsa_avx2.h"
+#include "mldsa_neon.h"
 #include "mldsa_sign_poly.h"
 #include "sha3.h"
 
-#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+#ifdef MLD_WIDE_ENTRIES
 // The sum mlds_matrix_row computes before its inverse NTT, with the
-// row's entries sampled four at a time on the four-way Keccak
-// (mldsa_avx2.h). Returns 1, or 0 when an entry stops at its sampling
-// bound. The entries are public, so four is not wiped.
-static int mlds_matrix_row_avx2(uint32_t cpu, mld_poly *row, const uint8_t rho[MLD_RHO_BYTES],
+// row's entries sampled several at a time (MLD_WIDE_ENTRIES): on the
+// four-way Keccak on x86-64 (mldsa_avx2.h) and on the two-way Keccak on
+// arm64 (mldsa_neon.h). Returns 1, or 0 when an entry stops at its
+// sampling bound. The entries are public, so wide is not wiped.
+static int mlds_matrix_row_wide(uint32_t cpu, mld_poly *row, const uint8_t rho[MLD_RHO_BYTES],
                                 unsigned i, const mld_poly v_hat[MLD_L]) {
-    mld_poly four[MLD_AVX2_ENTRIES];
-    for (unsigned first = 0; first < MLD_L; first += MLD_AVX2_ENTRIES) {
-        unsigned count = MLD_L - first < MLD_AVX2_ENTRIES ? MLD_L - first : MLD_AVX2_ENTRIES;
-        if (!mld_sample_ntt_avx2(four, rho, i, first, count)) {
+    mld_poly wide[MLD_WIDE_ENTRIES];
+    for (unsigned first = 0; first < MLD_L; first += MLD_WIDE_ENTRIES) {
+        unsigned count = MLD_L - first < MLD_WIDE_ENTRIES ? MLD_L - first : MLD_WIDE_ENTRIES;
+        if (!mld_sample_ntt_wide(cpu, wide, rho, i, first, count)) {
             return 0;
         }
         for (unsigned k = 0; k < count; k++) {
             if (first + k == 0) {
-                mlds_pointwise(cpu, row, &four[0], &v_hat[0]);
+                mlds_pointwise(cpu, row, &wide[0], &v_hat[0]);
             } else {
-                mlds_pointwise_acc(cpu, row, &four[k], &v_hat[first + k]);
+                mlds_pointwise_acc(cpu, row, &wide[k], &v_hat[first + k]);
             }
         }
     }
     return 1;
 }
-#endif // CH_CPU_RUNTIME && __x86_64__
+#endif // MLD_WIDE_ENTRIES
 
 // The sum mlds_matrix_row computes before its inverse NTT, each entry
 // sampled into entry.
 static int mlds_matrix_row_sum(uint32_t cpu, mld_poly *row, mld_poly *entry,
                                const uint8_t rho[MLD_RHO_BYTES], unsigned i,
                                const mld_poly v_hat[MLD_L]) {
-#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
-    if (cpu & CH_CPU_AVX2) {
-        return mlds_matrix_row_avx2(cpu, row, rho, i, v_hat);
+#ifdef MLD_WIDE_ENTRIES
+    if (mld_wide_runs(cpu)) {
+        return mlds_matrix_row_wide(cpu, row, rho, i, v_hat);
     }
 #endif
     for (unsigned j = 0; j < MLD_L; j++) {
@@ -81,23 +83,25 @@ int mlds_matrix_row(uint32_t cpu, mld_poly *row, mld_poly *entry, const uint8_t 
 
 #ifdef CH_CPU_RUNTIME
 // Row i of A into row, each entry sampled in the NTT domain from rho.
-// Returns 1, or 0 when an entry stops at its sampling bound. On x86-64,
-// for a cpu that holds CH_CPU_AVX2, the four-way Keccak samples four
-// entries into four, and the call copies the count it asked for: the
-// sampler's array is four entries long, and row has three past its
-// fourth entry. Each entry is public, so four is not wiped.
+// Returns 1, or 0 when an entry stops at its sampling bound. Where the
+// object samples several entries at a time (MLD_WIDE_ENTRIES), on the
+// four-way Keccak on x86-64 for a cpu that holds CH_CPU_AVX2 and on the
+// two-way Keccak on arm64, the sampler writes into wide, and the call
+// copies the count it asked for: the sampler's array is MLD_WIDE_ENTRIES
+// entries long, and row may end before it does. Each entry is public, so
+// wide is not wiped.
 static int expand_row(uint32_t cpu, mld_poly row[MLD_L], const uint8_t rho[MLD_RHO_BYTES],
                       unsigned i) {
-#ifdef __x86_64__
-    if (cpu & CH_CPU_AVX2) {
-        mld_poly four[MLD_AVX2_ENTRIES];
-        for (unsigned first = 0; first < MLD_L; first += MLD_AVX2_ENTRIES) {
-            unsigned count = MLD_L - first < MLD_AVX2_ENTRIES ? MLD_L - first : MLD_AVX2_ENTRIES;
-            if (!mld_sample_ntt_avx2(four, rho, i, first, count)) {
+#ifdef MLD_WIDE_ENTRIES
+    if (mld_wide_runs(cpu)) {
+        mld_poly wide[MLD_WIDE_ENTRIES];
+        for (unsigned first = 0; first < MLD_L; first += MLD_WIDE_ENTRIES) {
+            unsigned count = MLD_L - first < MLD_WIDE_ENTRIES ? MLD_L - first : MLD_WIDE_ENTRIES;
+            if (!mld_sample_ntt_wide(cpu, wide, rho, i, first, count)) {
                 return 0;
             }
             for (unsigned k = 0; k < count; k++) {
-                row[first + k] = four[k];
+                row[first + k] = wide[k];
             }
         }
         return 1;
