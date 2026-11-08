@@ -10,10 +10,32 @@
 // the count alone.
 #include "aead_avx512_count.h"
 
+#include "aead_avx2.h"
+#include "chacha20_avx2.h"
 #include "chacha20_avx512.h"
 #include "chacha20_vector.h"
 
 unsigned long chacha20_avx512_calls;
+unsigned long aead_avx2_seal_calls;
+unsigned long aead_avx2_open_calls;
+
+#ifdef CH_AEAD_AVX2
+// The one pass's entries as the two-pass AEAD's two calls, in the order
+// each runs them (test/aead_avx512_count.h).
+void aead_avx2_seal(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
+                    poly1305 *p, const uint8_t *pt, size_t n, uint8_t *ct) {
+    aead_avx2_seal_calls++;
+    chacha20_avx2_xor(key, nonce, 1, pt, ct, n);
+    poly1305_update_avx2_native(p, ct, n);
+}
+
+void aead_avx2_open(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
+                    poly1305 *p, const uint8_t *ct, size_t n, uint8_t *pt) {
+    aead_avx2_open_calls++;
+    poly1305_update_avx2_native(p, ct, n);
+    chacha20_avx2_xor(key, nonce, 1, ct, pt, n);
+}
+#endif
 
 #if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
 

@@ -17,6 +17,13 @@
 // operation. bin/x86_kernels_test counts both kernels' calls through
 // test/x86_kernels_count.c instead.
 //
+// It also defines aead_avx2.c's two entries, the one-pass ChaCha20-Poly1305
+// that aead.c calls for a session whose ch_cfg.cpu holds CH_CPU_AVX2 and the
+// multiply bit (docs/decisions.md 199), as a count and the two-pass AEAD's
+// calls, chacha20_avx2_xor and poly1305_update_avx2_native, which write the
+// same bytes and leave the same accumulator. So a counting binary links no
+// one-pass code, and its rows of the multiply count the same calls as before.
+//
 // The name is these tests' alone, as test/rsa_ifma_count.h's is.
 #ifndef CH_TEST_AEAD_AVX512_COUNT_H
 #define CH_TEST_AEAD_AVX512_COUNT_H
@@ -29,6 +36,11 @@
 // Calls to chacha20_avx512_xor. On arm64 chacha20_xor_cpu calls none, and
 // the count stays 0.
 extern unsigned long chacha20_avx512_calls;
+
+// Calls to aead_avx2_seal and aead_avx2_open. On arm64 aead.c calls none,
+// and the counts stay 0.
+extern unsigned long aead_avx2_seal_calls;
+extern unsigned long aead_avx2_open_calls;
 
 #if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
 // The name test/widemul_runtime_count.c's poly1305_ifma_blocks_native
