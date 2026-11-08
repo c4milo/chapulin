@@ -16998,3 +16998,43 @@ does nothing more.
 
       Under `qemu-x86_64 -cpu max` and gcc 13.3, an encapsulation retires
       309,534 instructions where it retired 332,858.
+
+203. **The four stores after each statement of `x25519_adx_asm.h` have an
+    empty statement that clobbers memory between each two.** On an EPYC
+    7763 an X25519 shared secret took 38.2 µs under gcc 13.3 and 33.6 µs
+    under clang 23, 1.05 and 0.92 of OpenSSL 3.6.4's time. Decision 197
+    wrote the calls inline and found no change in time.
+
+    - **The cause.** Each of the five statements leaves its result in r8
+      to r11, and C stored the four words to `o`. gcc 13's SLP vectorizer
+      at -O2 merged the four stores: two MOVQ to XMM registers and a
+      PUNPCKLQDQ for each pair, then two 16-byte stores. The next
+      statement reads `o` back 8 bytes at a time, so each operation of
+      the ladder waited for the moves into the vector registers and for
+      the stores. `perf annotate` put 24% of `adx_sub`'s samples on the
+      first 16-byte store. Built whole with `-fno-tree-slp-vectorize`, the
+      gcc object took 35.0 µs where it took 37.6 µs (A/B run 42520196408).
+    - **The change.** `adx_store` writes the four words with an empty
+      `__asm__ volatile("" ::: "memory")` between each two. Such a
+      statement emits no instruction, and no compiler moves a store across
+      it, so gcc cannot merge them. The 21 MOVQ from a general register
+      to an XMM register in gcc's `x25519_adx.c` fall to 1, and the 11
+      PUNPCKLQDQ to 1. The statements, their operands and the model in
+      `test/x25519_adx_model.h` are as before, so the `x25519_adx`
+      harnesses do not change. clang 23 for x86-64 keeps one more loop of
+      the inversion's repeated squares, so lint-wide-multiply's ceiling for
+      `x25519_adx.c` rises from 4 to 5 branches, each on a loop counter.
+    - **Rejected: the stores inside the statements.** Each statement can
+      store r8 to r11 itself, through a pointer operand. It took gcc to the
+      same time, but clang's to 1.00 to 1.01 of its time before, in three
+      runs, where the empty statements took clang's to 0.97 and 0.98.
+    - **Numbers.** A/B runs 42524927118 and 42525776064 on the EPYC 7763,
+      in µs, each the median of five processes:
+
+      | X25519 shared secret | before | after |
+      | --- | --- | --- |
+      | gcc 13.3 | 38.57, 38.50 | 34.62, 34.74 |
+      | clang 23 | 34.65, 34.38 | 33.68, 33.68 |
+
+      Under `qemu-x86_64 -cpu max` and gcc 13.3, a shared secret retires
+      323,535 instructions where it retired 342,959.

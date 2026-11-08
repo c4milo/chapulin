@@ -14,12 +14,31 @@
 // Each statement reads its operands through the pointers it is given and
 // leaves its result in r8 to r11, which four register variables bind as its
 // outputs: GNU C keeps a local register variable in its register for the asm
-// statement that names it as an operand. The C after the statement stores
-// them to o. Every other register a statement writes is in its clobber list.
+// statement that names it as an operand. adx_store, after the statement,
+// stores them to o. Every other register a statement writes is in its
+// clobber list.
 #ifndef CH_X25519_ADX_ASM_H
 #define CH_X25519_ADX_ASM_H
 
 #include <stdint.h>
+
+// o = (w3 : w2 : w1 : w0), the four words a statement leaves in r8 to r11.
+// Between each two stores is an empty statement that clobbers memory, so no
+// compiler merges the four stores. gcc 13 at -O2 merged them: it moved the
+// four words into two vector registers and wrote o with two 16-byte
+// stores, which the next statement read back 8 bytes at a time, and an
+// X25519 shared secret took 1.11 times clang's time on an EPYC 7763
+// (docs/decisions.md 203). The empty statements emit no instruction.
+static inline __attribute__((always_inline)) void adx_store(fe o, uint64_t w0, uint64_t w1,
+                                                            uint64_t w2, uint64_t w3) {
+    o[0] = w0;
+    __asm__ volatile("" ::: "memory");
+    o[1] = w1;
+    __asm__ volatile("" ::: "memory");
+    o[2] = w2;
+    __asm__ volatile("" ::: "memory");
+    o[3] = w3;
+}
 
 // Each product's last step is the same reduction: r8 to r11 plus 38 times
 // r12 to r15, then the carry out of that sum times 38 once more, then 38
@@ -80,10 +99,7 @@ static void adx_mul(fe o, const fe a, const fe b) {
         : "=&r"(w0), "=&r"(w1), "=&r"(w2), "=&r"(w3)
         : [a] "r"(a), [b] "r"(b)
         : "memory", "cc", "rax", "rcx", "rdx", "r12", "r13", "r14", "r15");
-    o[0] = w0;
-    o[1] = w1;
-    o[2] = w2;
-    o[3] = w3;
+    adx_store(o, w0, w1, w2, w3);
 }
 
 // o = a * a: the six products of two different words once, doubled, then
@@ -130,10 +146,7 @@ static void adx_sqr(fe o, const fe a) {
         : "=&r"(w0), "=&r"(w1), "=&r"(w2), "=&r"(w3)
         : [a] "r"(a)
         : "memory", "cc", "rax", "rcx", "rdx", "r12", "r13", "r14", "r15");
-    o[0] = w0;
-    o[1] = w1;
-    o[2] = w2;
-    o[3] = w3;
+    adx_store(o, w0, w1, w2, w3);
 }
 
 // o = a + b. A carry out of 2^256 adds 38, and a carry out of that adds 38
@@ -153,10 +166,7 @@ static void adx_add(fe o, const fe a, const fe b) {
                      : "=&r"(w0), "=&r"(w1), "=&r"(w2), "=&r"(w3)
                      : [a] "r"(a), [b] "r"(b)
                      : "memory", "cc", "rax");
-    o[0] = w0;
-    o[1] = w1;
-    o[2] = w2;
-    o[3] = w3;
+    adx_store(o, w0, w1, w2, w3);
 }
 
 // o = a - b. A borrow out of 2^256 subtracts 38, and a borrow out of that
@@ -176,10 +186,7 @@ static void adx_sub(fe o, const fe a, const fe b) {
                      : "=&r"(w0), "=&r"(w1), "=&r"(w2), "=&r"(w3)
                      : [a] "r"(a), [b] "r"(b)
                      : "memory", "cc", "rax");
-    o[0] = w0;
-    o[1] = w1;
-    o[2] = w2;
-    o[3] = w3;
+    adx_store(o, w0, w1, w2, w3);
 }
 
 // o = a * 121666, RFC 7748's a24 plus one: the ladder adds BB rather than AA
@@ -200,10 +207,7 @@ static void adx_mul_a24(fe o, const fe a) {
                      : "=&r"(w0), "=&r"(w1), "=&r"(w2), "=&r"(w3)
                      : [a] "r"(a)
                      : "memory", "cc", "rax", "rcx", "rdx");
-    o[0] = w0;
-    o[1] = w1;
-    o[2] = w2;
-    o[3] = w3;
+    adx_store(o, w0, w1, w2, w3);
 }
 
 #endif

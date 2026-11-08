@@ -9337,6 +9337,10 @@ WIDEMUL_SPECS := \
 #   constants. arm64's 42 and x86-64's 34 hold 15 in mlds_eta_from_stream,
 #   the back edges of those loops. A device object's code is the same as
 #   before.
+# The X25519 stores with empty statements between them (docs/decisions.md
+#   203): x86-64's 5 in x25519_adx.c are the ladder's loop and four loops of
+#   repeated squares in the inversion, each on a constant count; clang now
+#   keeps one more of those loops.
 # ML-KEM's rank at run time (docs/decisions.md 177): mlkem.c's loops run
 #   to the rank a call passes, not to a constant, and K-PKE codes u one
 #   poly at a time. m3's 16 hold a BEQ in mlk_matvec_row on the term
@@ -10028,7 +10032,7 @@ BRANCH_CEILING := \
   rv32imac-gcc/src/sha512_compress.c:5 rv32ic-gcc/src/sha512.c:14 rv32ic-gcc/src/sha512_compress.c:5 \
   m3/src/base64.c:0 mips32r2/src/base64.c:0 rv32imac/src/base64.c:0 m3-gcc/src/base64.c:0 mips32r2-gcc/src/base64.c:0 \
   mips32r2-gcc-O2/src/base64.c:0 rv32imac-gcc/src/base64.c:0 rv32ic-gcc/src/base64.c:0 \
-  arm64/src/x25519_wide.c:8 x86-64/src/x25519_wide.c:9 arm64/src/x25519_adx.c:0 x86-64/src/x25519_adx.c:4 \
+  arm64/src/x25519_wide.c:8 x86-64/src/x25519_wide.c:9 arm64/src/x25519_adx.c:0 x86-64/src/x25519_adx.c:5 \
   arm64/src/rsa_mont64_adx.c:0 x86-64/src/rsa_mont64_adx.c:32 \
   arm64/src/chacha20_vector.c:45 x86-64/src/chacha20_vector.c:26 \
   arm64/src/chacha20_avx2.c:0 x86-64/src/chacha20_avx2.c:31 \
