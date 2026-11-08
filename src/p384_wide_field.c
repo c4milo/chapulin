@@ -12,6 +12,12 @@
 // borrow would be. proof/p384_wide_field_harness.c runs with
 // --unsigned-overflow-check on, over a contract of ct_mul128, so each of
 // those sums is a property CBMC checks.
+//
+// Each loop over the six words carries #pragma GCC unroll. gcc 13 at -O2
+// left those loops in place and kept the eight words of a product's sum in
+// memory, and a P-384 verification took 1.89 times clang's time on an EPYC
+// 7763. clang writes the loops out with or without the pragma
+// (docs/decisions.md 201).
 #include "p384_wide_field.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -73,6 +79,7 @@ void p384_wide_from_bytes(uint64_t o[P384_WIDE_WORDS], const uint8_t b[P384_LEN]
 uint64_t p384_wide_add_raw(uint64_t o[P384_WIDE_WORDS], const uint64_t a[P384_WIDE_WORDS],
                            const uint64_t b[P384_WIDE_WORDS]) {
     uint64_t carry = 0;
+#pragma GCC unroll 6
     for (int i = 0; i < P384_WIDE_WORDS; i++) {
         ct_u128 v = (ct_u128)a[i] + b[i] + carry;
         o[i] = (uint64_t)v;
@@ -87,6 +94,7 @@ uint64_t p384_wide_add_raw(uint64_t o[P384_WIDE_WORDS], const uint64_t a[P384_WI
 uint64_t p384_wide_sub_raw(uint64_t o[P384_WIDE_WORDS], const uint64_t a[P384_WIDE_WORDS],
                            const uint64_t b[P384_WIDE_WORDS]) {
     uint64_t carry = 1;
+#pragma GCC unroll 6
     for (int i = 0; i < P384_WIDE_WORDS; i++) {
         ct_u128 v = (ct_u128)a[i] + ~b[i] + carry;
         o[i] = (uint64_t)v;
@@ -118,6 +126,7 @@ void p384_wide_mod_sub(uint64_t o[P384_WIDE_WORDS], const uint64_t a[P384_WIDE_W
 static inline void mont_round(uint64_t t[P384_WIDE_WORDS + 2], uint64_t a_word,
                               const uint64_t b[P384_WIDE_WORDS], const p384_wide_modulus *mod) {
     uint64_t carry = 0;
+#pragma GCC unroll 6
     for (int j = 0; j < P384_WIDE_WORDS; j++) {
         ct_u128 v = ct_mul128(a_word, b[j]) + t[j] + carry;
         t[j] = (uint64_t)v;
@@ -131,6 +140,7 @@ static inline void mont_round(uint64_t t[P384_WIDE_WORDS + 2], uint64_t a_word,
     // one more product.
     uint64_t u = (uint64_t)ct_mul128(t[0], mod->m0inv);
     carry = (uint64_t)((ct_mul128(u, mod->m[0]) + t[0]) >> 64);
+#pragma GCC unroll 5
     for (int j = 1; j < P384_WIDE_WORDS; j++) {
         ct_u128 v = ct_mul128(u, mod->m[j]) + t[j] + carry;
         t[j - 1] = (uint64_t)v;

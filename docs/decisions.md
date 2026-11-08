@@ -16943,3 +16943,32 @@ does nothing more.
       generation under `qemu-x86_64 -cpu max` and gcc 13.3, under
       `ch_cfg.cpu 0x43f`, retires 2,475,218 instructions where it retired
       5,460,533.
+
+201. **The loops of the P-384 field over its six words carry `#pragma GCC
+    unroll`.** On an EPYC 7763 a P-384 verification took 691 µs under gcc
+    13.3 and 365 µs under clang 23, where OpenSSL 3.6.4 took 728.
+
+    - **The cause.** `perf record` put 86% of gcc's verification in
+      `p384_wide_mont_mul`. clang writes `mont_round`'s two loops out and
+      keeps the running sum in registers. gcc 13 at -O2 writes a loop out
+      only when the copy is no larger, so it kept each loop, with the eight
+      words of `t` in memory and each 128-bit sum through them.
+    - **The change.** `#pragma GCC unroll 6` on the two loops of
+      `mont_round`, on `p384_wide_add_raw` and on `p384_wide_sub_raw`. The
+      loops and their bounds are as before, so the `p384_wide_field`
+      harness's statements do not change. clang wrote the loops out before
+      the pragma too.
+    - **What is left.** gcc's product is 1,129 lines of assembly with 227
+      references to the stack, and it still multiplies the high half of
+      `u`, a register it set to zero, for each word of the modulus. clang's
+      verification is 0.79 of gcc's time after the change.
+    - **Numbers.** A/B runs 42520196408, 42520851760 and 42522580036 on the
+      EPYC 7763, in µs, each the median of five processes:
+
+      | P-384 verification | before | after |
+      | --- | --- | --- |
+      | gcc 13.3 | 691.0, 676.7, 686.1 | 464.2, 464.5, 464.1 |
+      | clang 23 | 366.7, 366.6, 367.8 | 366.4, 367.7, 366.1 |
+
+      One verification under `qemu-x86_64 -cpu max` and gcc 13.3 retires
+      7,468,098 instructions where it retired 9,258,177.
