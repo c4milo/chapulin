@@ -245,7 +245,12 @@ Home: github.com/c4milo.
   object) ← `chacha20.[ch]` with `chacha20_vector.[ch]` (eight blocks a
   pass on NEON, two groups of four side by side, and four on SSE2, every
   session of a host object), `chacha20_avx2.[ch]` (eight blocks a pass
-  in 256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2) and
+  in 256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2),
+  `aead_avx2.[ch]` (the ChaCha20-Poly1305 seal and open in one pass over
+  `chacha20_avx2_lanes.h` and `poly1305_avx2_lanes.h`, an x86-64 session
+  whose caller sets CH_CPU_AVX2 and CH_CPU_CONSTANT_TIME_MULTIPLY and not
+  CH_CPU_AVX512_IFMA, for 1,024 bytes or more; its open wipes the
+  plaintext on a bad tag, docs/decisions.md 199) and
   `chacha20_avx512.[ch]` (sixteen blocks a pass in 512-bit vectors, an
   x86-64 session whose caller sets CH_CPU_AVX512_IFMA) +
   `poly1305.[ch]` with `poly1305_vector.[ch]` (four blocks a pass in
