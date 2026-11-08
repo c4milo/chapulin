@@ -96,11 +96,11 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`KEX=pq`) | 11952 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1888 |
 | peak stack, `ch_write` / `ch_close` | 1616 / 896 |
-| peak stack, `ch_srv_accept` (`ROLE=server`) | 28752 |
-| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 28912 |
+| peak stack, `ch_srv_accept` (`ROLE=server`) | 109696 |
+| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 109856 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 13808 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=ca-mldsa`) | 16448 |
-| peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`) | 28048 |
+| peak stack, `ch_srv_accept` (`PROFILE=cnsa2 ROLE=server`) | 108992 |
 
 Two of these rows grew in October 2026, and `bench/stack.py` names the
 frame each time:
@@ -156,11 +156,12 @@ server holds the hybrid ([`docs/decisions.md`](decisions.md) 54) and
 ML-KEM-1024 (179). Its ServerHello is built in the clear in the same
 staging array, and the ML-KEM-1024 one carries a 1,568-byte share, so
 the array holds 1,664 bytes of message behind the record header.
-`ch_srv_accept` peaks at 28,752 bytes in the host object this host
+`ch_srv_accept` peaks at 109,696 bytes in the host object this host
 builds, through the ML-DSA-87 signer, which every host server holds
 beside its ECDSA and RSA identities (180) and which the
-`PROFILE=cnsa2` server also runs. The peak counts whether or not a
-deployment sets the `mldsa87` slot. With the ML-DSA-87 CertificateVerify,
+`PROFILE=cnsa2` server also runs. The signer's frame holds A and the
+NTTs of the key for the whole signature, 100,048 bytes (191). The peak
+counts whether or not a deployment sets the `mldsa87` slot. With the ML-DSA-87 CertificateVerify,
 whose own frame stages the 4,627-byte signature, pruned from the call
 graph (`STACK_PRUNE=srv_mldsa_send_certificate_verify`) the deepest chain is
 `rsa_sign64.c`'s RSA-PSS signer, at 20,320 bytes, which holds a modulus
@@ -232,8 +233,9 @@ column. `bench/sram.sh` measures:
 - a receive floor of 2,179 bytes, the 2,174-byte largest ClientHello of
   the profile's client behind its record header, and 2,698 bytes over
   QUIC;
-- a `ch_srv_accept` peak of 28,048 bytes, through the ML-DSA-87 signer's
-  rejection loop under the CertificateVerify. With the signer pruned
+- a `ch_srv_accept` peak of 108,992 bytes, through the ML-DSA-87 signer's
+  rejection loop under the CertificateVerify, whose frame holds A and the
+  NTTs of the key (decision 191). With the signer pruned
   (`STACK_PRUNE=mldsa87_sign_cpu`) the peak is ML-KEM-1024's encapsulation,
   at 9,024 bytes.
 
@@ -489,30 +491,30 @@ The M1 CSV holds no ML-DSA-87 rows yet, so those three rows show a dash in the M
 | one operation | M1 Pro, chapulin | M1 Pro, OpenSSL | ratio | x86-64 gcc, chapulin | x86-64 gcc, OpenSSL | ratio | x86-64 clang, chapulin | x86-64 clang, OpenSSL | ratio | x86-64 AVX-512 gcc, chapulin | x86-64 AVX-512 gcc, OpenSSL | ratio | x86-64 AVX-512 clang, chapulin | x86-64 AVX-512 clang, OpenSSL | ratio |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | SHA-256, 16 KiB | 6.86 µs | 6.97 µs | 0.98 | 10.4 µs | 10.4 µs | 0.99 | 10.4 µs | 10.4 µs | 0.99 | 9.45 µs | 9.52 µs | 0.99 | 9.45 µs | 9.51 µs | 0.99 |
-| SHA-256, 64 bytes | 72.8 ns | 148 ns | 0.49 | 114 ns | 193 ns | 0.59 | 127 ns | 191 ns | 0.67 | 106 ns | 156 ns | 0.68 | 108 ns | 156 ns | 0.69 |
+| SHA-256, 64 bytes | 72.8 ns | 148 ns | 0.49 | 114 ns | 194 ns | 0.59 | 126 ns | 192 ns | 0.65 | 106 ns | 156 ns | 0.68 | 108 ns | 156 ns | 0.69 |
 | SHA-384, 16 KiB | 11.7 µs | 11.8 µs | 0.99 | 23.1 µs | 21.9 µs | **1.05** | 22.9 µs | 21.9 µs | **1.04** | 23.1 µs | 21.6 µs | **1.07** | 22.5 µs | 21.6 µs | **1.04** |
-| SHA-384, 64 bytes | 127 ns | 185 ns | 0.68 | 239 ns | 333 ns | 0.72 | 219 ns | 334 ns | 0.66 | 225 ns | 295 ns | 0.76 | 205 ns | 295 ns | 0.69 |
-| SHA3-256, 16 KiB | 19.3 µs | 18.6 µs | **1.04** | 51.1 µs | 38.6 µs | **1.33** | 47.6 µs | 38.5 µs | **1.24** | 41.7 µs | 31.8 µs | **1.31** | 38.8 µs | 31.8 µs | **1.22** |
-| SHA3-256, 64 bytes | 171 ns | 341 ns | 0.50 | 458 ns | 490 ns | 0.94 | 423 ns | 489 ns | 0.87 | 356 ns | 393 ns | 0.91 | 333 ns | 393 ns | 0.85 |
+| SHA-384, 64 bytes | 127 ns | 185 ns | 0.68 | 231 ns | 332 ns | 0.70 | 226 ns | 333 ns | 0.68 | 225 ns | 295 ns | 0.76 | 205 ns | 295 ns | 0.69 |
+| SHA3-256, 16 KiB | 19.3 µs | 18.6 µs | **1.04** | 51.2 µs | 38.5 µs | **1.33** | 47.5 µs | 38.5 µs | **1.23** | 41.7 µs | 31.8 µs | **1.31** | 38.8 µs | 31.8 µs | **1.22** |
+| SHA3-256, 64 bytes | 171 ns | 341 ns | 0.50 | 458 ns | 491 ns | 0.93 | 427 ns | 492 ns | 0.87 | 356 ns | 393 ns | 0.91 | 333 ns | 393 ns | 0.85 |
 | X25519 key generation | 10.7 µs | 27.3 µs | 0.39 | 15.0 µs | 33.8 µs | 0.44 | 14.1 µs | 33.8 µs | 0.42 | 11.5 µs | 27.2 µs | 0.42 | 10.9 µs | 27.3 µs | 0.40 |
-| X25519 shared secret | 28.5 µs | 28.7 µs | 0.99 | 38.2 µs | 36.6 µs | **1.04** | 34.1 µs | 36.6 µs | 0.93 | 29.3 µs | 30.0 µs | 0.98 | 27.1 µs | 30.0 µs | 0.90 |
-| P-256 key generation | 10.1 µs | 9.68 µs | **1.04** | 15.2 µs | 12.5 µs | **1.22** | 12.0 µs | 12.4 µs | 0.97 | 12.4 µs | 10.5 µs | **1.18** | 10.3 µs | 10.5 µs | 0.98 |
-| P-256 shared secret | 53.5 µs | 41.5 µs | **1.29** | 65.1 µs | 51.7 µs | **1.26** | 59.3 µs | 51.7 µs | **1.15** | 54.1 µs | 49.5 µs | **1.09** | 49.9 µs | 49.6 µs | **1.01** |
-| ECDSA P-256 sign | 14.7 µs | 18.3 µs | 0.81 | 24.2 µs | 22.1 µs | **1.10** | 19.0 µs | 22.1 µs | 0.86 | 20.0 µs | 19.7 µs | **1.01** | 16.5 µs | 19.7 µs | 0.84 |
-| ECDSA P-256 verify | 55.0 µs | 55.0 µs | **1.00** | 69.8 µs | 67.7 µs | **1.03** | 60.1 µs | 67.7 µs | 0.89 | 60.4 µs | 65.5 µs | 0.92 | 50.5 µs | 64.2 µs | 0.79 |
-| ECDSA P-384 verify | 275 µs | 488 µs | 0.56 | 691 µs | 730 µs | 0.95 | 367 µs | 726 µs | 0.51 | 490 µs | 521 µs | 0.94 | 272 µs | 521 µs | 0.52 |
-| RSA-2048 PSS sign | 673 µs | 558 µs, PKCS#1 v1.5 sign | — | 1.01 ms | 660 µs, PKCS#1 v1.5 sign | — | 942 µs | 660 µs, PKCS#1 v1.5 sign | — | 284 µs | 275 µs, PKCS#1 v1.5 sign | — | 261 µs | 273 µs, PKCS#1 v1.5 sign | — |
-| RSA-2048 PSS verify | 22.1 µs | 14.6 µs, PKCS#1 v1.5 verify | — | 23.7 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 22.1 µs | 18.8 µs, PKCS#1 v1.5 verify | — | 10.9 µs | 16.2 µs, PKCS#1 v1.5 verify | — | 10.3 µs | 16.1 µs, PKCS#1 v1.5 verify | — |
-| RSA-2048 PKCS#1 v1.5 verify | 18.5 µs | 14.6 µs | **1.27** | 20.4 µs | 18.9 µs | **1.08** | 18.6 µs | 18.8 µs | 0.99 | 7.91 µs | 16.2 µs | 0.49 | 7.59 µs | 16.1 µs | 0.47 |
-| RSA-3072 PSS sign | 2.02 ms | 1.62 ms, PKCS#1 v1.5 sign | — | 2.93 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 2.76 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 651 µs | 734 µs, PKCS#1 v1.5 sign | — | 612 µs | 733 µs, PKCS#1 v1.5 sign | — |
-| RSA-3072 PSS verify | 42.4 µs | 30.9 µs, PKCS#1 v1.5 verify | — | 42.1 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 40.2 µs | 40.0 µs, PKCS#1 v1.5 verify | — | 17.8 µs | 34.6 µs, PKCS#1 v1.5 verify | — | 17.3 µs | 34.6 µs, PKCS#1 v1.5 verify | — |
-| RSA-3072 PKCS#1 v1.5 verify | 38.0 µs | 30.9 µs | **1.23** | 38.1 µs | 40.1 µs | 0.95 | 35.7 µs | 40.0 µs | 0.89 | 14.1 µs | 34.6 µs | 0.41 | 14.3 µs | 34.6 µs | 0.41 |
-| ML-KEM-768 key generation | 12.2 µs | 22.0 µs | 0.55 | 20.1 µs | 36.3 µs | 0.55 | 17.0 µs | 36.2 µs | 0.47 | 18.2 µs | 31.7 µs | 0.57 | 14.3 µs | 31.4 µs | 0.46 |
-| ML-KEM-768 encapsulation | 14.2 µs | 13.1 µs | **1.08** | 22.8 µs | 21.7 µs | **1.05** | 18.8 µs | 21.9 µs | 0.86 | 20.2 µs | 17.7 µs | **1.14** | 16.2 µs | 17.8 µs | 0.91 |
-| ML-KEM-768 decapsulation | 15.3 µs | 18.7 µs | 0.82 | 26.0 µs | 33.4 µs | 0.78 | 20.8 µs | 33.3 µs | 0.62 | 22.5 µs | 27.8 µs | 0.81 | 18.0 µs | 27.9 µs | 0.64 |
-| ML-DSA-87 key generation | — | — | — | 353 µs | 276 µs | **1.28** | 200 µs | 276 µs | 0.72 | 292 µs | 214 µs | **1.36** | 183 µs | 215 µs | 0.85 |
-| ML-DSA-87 sign | — | — | — | 932 µs | 1.23 ms | 0.76 | 799 µs | 1.23 ms | 0.65 | 824 µs | 898 µs | 0.92 | 808 µs | 861 µs | 0.94 |
-| ML-DSA-87 verify | — | — | — | 99.4 µs | 299 µs | 0.33 | 88.7 µs | 301 µs | 0.29 | 89.8 µs | 224 µs | 0.40 | 82.4 µs | 224 µs | 0.37 |
+| X25519 shared secret | 28.5 µs | 28.7 µs | 0.99 | 38.2 µs | 36.5 µs | **1.05** | 33.6 µs | 36.5 µs | 0.92 | 29.3 µs | 30.0 µs | 0.98 | 27.1 µs | 30.0 µs | 0.90 |
+| P-256 key generation | 10.1 µs | 9.68 µs | **1.04** | 15.3 µs | 12.3 µs | **1.24** | 12.0 µs | 12.3 µs | 0.97 | 12.4 µs | 10.5 µs | **1.18** | 10.3 µs | 10.5 µs | 0.98 |
+| P-256 shared secret | 53.5 µs | 41.5 µs | **1.29** | 64.9 µs | 51.7 µs | **1.26** | 59.2 µs | 51.6 µs | **1.15** | 54.1 µs | 49.5 µs | **1.09** | 49.9 µs | 49.6 µs | **1.01** |
+| ECDSA P-256 sign | 14.7 µs | 18.3 µs | 0.81 | 24.2 µs | 22.2 µs | **1.09** | 19.1 µs | 22.1 µs | 0.86 | 20.0 µs | 19.7 µs | **1.01** | 16.5 µs | 19.7 µs | 0.84 |
+| ECDSA P-256 verify | 55.0 µs | 55.0 µs | **1.00** | 69.8 µs | 67.8 µs | **1.03** | 60.1 µs | 67.7 µs | 0.89 | 60.4 µs | 65.5 µs | 0.92 | 50.5 µs | 64.2 µs | 0.79 |
+| ECDSA P-384 verify | 275 µs | 488 µs | 0.56 | 691 µs | 728 µs | 0.95 | 365 µs | 730 µs | 0.50 | 490 µs | 521 µs | 0.94 | 272 µs | 521 µs | 0.52 |
+| RSA-2048 PSS sign | 673 µs | 558 µs, PKCS#1 v1.5 sign | — | 1.01 ms | 660 µs, PKCS#1 v1.5 sign | — | 954 µs | 659 µs, PKCS#1 v1.5 sign | — | 284 µs | 275 µs, PKCS#1 v1.5 sign | — | 261 µs | 273 µs, PKCS#1 v1.5 sign | — |
+| RSA-2048 PSS verify | 22.1 µs | 14.6 µs, PKCS#1 v1.5 verify | — | 23.6 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 22.2 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 10.9 µs | 16.2 µs, PKCS#1 v1.5 verify | — | 10.3 µs | 16.1 µs, PKCS#1 v1.5 verify | — |
+| RSA-2048 PKCS#1 v1.5 verify | 18.5 µs | 14.6 µs | **1.27** | 20.4 µs | 18.9 µs | **1.08** | 18.6 µs | 18.9 µs | 0.98 | 7.91 µs | 16.2 µs | 0.49 | 7.59 µs | 16.1 µs | 0.47 |
+| RSA-3072 PSS sign | 2.02 ms | 1.62 ms, PKCS#1 v1.5 sign | — | 2.92 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 2.78 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 651 µs | 734 µs, PKCS#1 v1.5 sign | — | 612 µs | 733 µs, PKCS#1 v1.5 sign | — |
+| RSA-3072 PSS verify | 42.4 µs | 30.9 µs, PKCS#1 v1.5 verify | — | 42.1 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 40.1 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 17.8 µs | 34.6 µs, PKCS#1 v1.5 verify | — | 17.3 µs | 34.6 µs, PKCS#1 v1.5 verify | — |
+| RSA-3072 PKCS#1 v1.5 verify | 38.0 µs | 30.9 µs | **1.23** | 38.0 µs | 40.1 µs | 0.95 | 35.7 µs | 40.1 µs | 0.89 | 14.1 µs | 34.6 µs | 0.41 | 14.3 µs | 34.6 µs | 0.41 |
+| ML-KEM-768 key generation | 12.2 µs | 22.0 µs | 0.55 | 20.1 µs | 36.6 µs | 0.55 | 17.3 µs | 36.3 µs | 0.48 | 18.2 µs | 31.7 µs | 0.57 | 14.3 µs | 31.4 µs | 0.46 |
+| ML-KEM-768 encapsulation | 14.2 µs | 13.1 µs | **1.08** | 22.8 µs | 21.7 µs | **1.05** | 19.1 µs | 21.7 µs | 0.88 | 20.2 µs | 17.7 µs | **1.14** | 16.2 µs | 17.8 µs | 0.91 |
+| ML-KEM-768 decapsulation | 15.3 µs | 18.7 µs | 0.82 | 26.0 µs | 33.4 µs | 0.78 | 21.1 µs | 33.4 µs | 0.63 | 22.5 µs | 27.8 µs | 0.81 | 18.0 µs | 27.9 µs | 0.64 |
+| ML-DSA-87 key generation | — | — | — | 355 µs | 277 µs | **1.28** | 198 µs | 276 µs | 0.72 | 292 µs | 214 µs | **1.36** | 183 µs | 215 µs | 0.85 |
+| ML-DSA-87 sign | — | — | — | 707 µs | 1.22 ms | 0.58 | 636 µs | 1.21 ms | 0.53 | 824 µs | 898 µs | 0.92 | 808 µs | 861 µs | 0.94 |
+| ML-DSA-87 verify | — | — | — | 99.2 µs | 300 µs | 0.33 | 88.9 µs | 300 µs | 0.30 | 89.8 µs | 224 µs | 0.40 | 82.4 µs | 224 µs | 0.37 |
 | AES-128-GCM, the key set and one 16 KiB record sealed | 2.01 µs | 2.02 µs | 0.99 | 2.78 µs | 4.05 µs | 0.69 | 2.49 µs | 4.05 µs | 0.61 | 994 ns | 998 ns | 1.00 | 980 ns | 992 ns | 0.99 |
 | AES-128-GCM, the key set and one 16 KiB record opened | 1.99 µs | 2.04 µs | 0.97 | 2.78 µs | 4.13 µs | 0.67 | 2.50 µs | 4.13 µs | 0.61 | 975 ns | 1.03 µs | 0.95 | 946 ns | 1.03 µs | 0.92 |
 | AES-256-GCM, the key set and one 16 KiB record sealed | 2.35 µs | 2.41 µs | 0.97 | 3.13 µs | 4.36 µs | 0.72 | 2.80 µs | 4.36 µs | 0.64 | 1.17 µs | 1.19 µs | 0.99 | 1.17 µs | 1.18 µs | 0.99 |
@@ -529,12 +531,12 @@ The machines, as the CSV headers state them:
   it, and 4.13 and 4.04 around the AEAD rows' run
 - **x86-64 gcc**: AMD EPYC 7763 64-Core Processor, Linux 7.0.0-1017-azure, gcc (Ubuntu
   13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.4, `ch_cfg.cpu 0x43f`, and `0x1f` for the AEAD rows,
-  which no hash bit changes; one-minute load average 1.20 before the primitives' run and 1.05 after
+  which no hash bit changes; one-minute load average 1.10 before the primitives' run and 1.08 after
   it, and 0.91 and 1.12 around the AEAD rows' run
 - **x86-64 clang**: AMD EPYC 7763 64-Core Processor, Linux 7.0.0-1017-azure, Ubuntu clang version
   23.1.6 (++20261103094202+2875c6073a7e-1~exp1~20261103214217.95), OpenSSL 3.6.4, `ch_cfg.cpu
-  0x43f`, and `0x1f` for the AEAD rows, which no hash bit changes; one-minute load average 1.05
-  before the primitives' run and 1.15 after it, and 1.20 and 1.20 around the AEAD rows' run
+  0x43f`, and `0x1f` for the AEAD rows, which no hash bit changes; one-minute load average 1.16
+  before the primitives' run and 1.03 after it, and 1.20 and 1.20 around the AEAD rows' run
 - **x86-64 AVX-512 gcc**: INTEL(R) XEON(R) PLATINUM 8573C, Linux 7.0.0-1017-azure, gcc (Ubuntu
   13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.4, `ch_cfg.cpu 0x73f`, and `0x31f` for the AEAD rows,
   which no hash bit changes; one-minute load average 1.06 before the primitives' run and 1.15 after
@@ -756,8 +758,12 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   time under gcc, against rows that hold a key's expanded matrix (decision 100). Under `CH_CPU_AVX2`
   its matrix runs on four Keccak states side by side (decision 107), and its NTT and base
   multiplication run on SSE2 (decision 101).
-- ML-DSA-87's key generation, signature and verification take 1.29, 0.76 and 0.34 of OpenSSL's
-  time under gcc, and 0.72, 0.69 and 0.30 of it under clang. Under `CH_CPU_AVX2` its transforms and
+- ML-DSA-87's key generation, signature and verification take 1.28, 0.58 and 0.33 of OpenSSL's
+  time under gcc, and 0.72, 0.53 and 0.30 of it under clang. A host object's signer computes A and
+  the NTTs of s1, s2 and t0 once for each signature, not in each round (decision 191). The run of
+  2026-11-08 on b04ba4e5 recorded the column again for it: a signature took 0.76 of its time on
+  the tree of 15c37ef4 under gcc and 0.80 under clang, and every other row 0.92 to 1.05 of its
+  time. Under `CH_CPU_AVX2` its transforms and
   products run on `mldsa_vector.c`'s eight AVX2 lanes, the signer's only beside the multiply bit
   (decisions 172 and 174). Its matrix A runs four entries at a time on the four-way Keccak
   (decision 178), and RejBoundedPoly moves its kept values by ten masked passes (decision 176). In

@@ -1,0 +1,14 @@
+invariant: INV-62
+file: src/mldsa_signer.c
+catches: mldsa_signer_test_host
+reason: a host object's signer leaves the NTT of s1, s2 and t0 on the
+  stack after the signature: 23 polynomials that the frame held for every
+  round (docs/decisions.md 191). bin/mldsa_signer_test_host searches the
+  stack below the call for two coefficients of six of them and finds
+  them.
+
+--- old
+    ct_wipe(&st, sizeof st);
+    ct_wipe(&ex.key, sizeof ex.key);
+--- new
+    ct_wipe(&st, sizeof st);

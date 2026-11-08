@@ -2,11 +2,14 @@
 // Algorithm 7), and a row of key generation (Algorithm 6). Contract in
 // mldsa_sign_steps.h.
 //
-// Neither s1, s2 nor t0 is held whole in the NTT domain. Each step that
-// needs one polynomial of them decodes it from sk and transforms it, so a
-// round holds NTT(y) or z, w, NTT(c) and two polynomials of work: 18 of
-// them, 18 kB (docs/decisions.md 159). Each entry of A is sampled from rho
-// just before its product, as the verifier samples it (mldsa.c).
+// In a device object neither s1, s2 nor t0 is held whole in the NTT
+// domain. Each step that needs one polynomial of them decodes it from sk
+// and transforms it, so a round holds NTT(y) or z, w, NTT(c) and two
+// polynomials of work: 18 of them, 18 kB (docs/decisions.md 159). Each
+// entry of A is sampled from rho just before its product, as the verifier
+// samples it (mldsa.c). A host object's signer runs mlds_expand once for
+// each signature, and each step then reads A and the three NTTs from
+// st->ex (docs/decisions.md 191).
 #include "mldsa_sign_steps.h"
 
 #include "ct.h"
@@ -76,6 +79,123 @@ int mlds_matrix_row(uint32_t cpu, mld_poly *row, mld_poly *entry, const uint8_t 
     return 1;
 }
 
+#ifdef CH_CPU_RUNTIME
+// Row i of A into row, each entry sampled in the NTT domain from rho.
+// Returns 1, or 0 when an entry stops at its sampling bound. On x86-64,
+// for a cpu that holds CH_CPU_AVX2, the four-way Keccak samples four
+// entries into four, and the call copies the count it asked for: the
+// sampler's array is four entries long, and row has three past its
+// fourth entry. Each entry is public, so four is not wiped.
+static int expand_row(uint32_t cpu, mld_poly row[MLD_L], const uint8_t rho[MLD_RHO_BYTES],
+                      unsigned i) {
+#ifdef __x86_64__
+    if (cpu & CH_CPU_AVX2) {
+        mld_poly four[MLD_AVX2_ENTRIES];
+        for (unsigned first = 0; first < MLD_L; first += MLD_AVX2_ENTRIES) {
+            unsigned count = MLD_L - first < MLD_AVX2_ENTRIES ? MLD_L - first : MLD_AVX2_ENTRIES;
+            if (!mld_sample_ntt_avx2(four, rho, i, first, count)) {
+                return 0;
+            }
+            for (unsigned k = 0; k < count; k++) {
+                row[first + k] = four[k];
+            }
+        }
+        return 1;
+    }
+#endif
+    for (unsigned j = 0; j < MLD_L; j++) {
+        if (!mld_sample_ntt_cpu(cpu, &row[j], rho, (uint8_t)j, (uint8_t)i)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+uint32_t mlds_expand(mlds_expanded *ex, uint32_t cpu, const uint8_t sk[MLDSA87_SK_LEN]) {
+    uint32_t ok = 1;
+    for (unsigned j = 0; j < MLD_L; j++) {
+        ok &= mlds_unpack_eta(&ex->key.s1_hat[j], sk + MLDS_SK_S1_AT + (size_t)j * MLDS_ETA_BYTES);
+        mlds_ntt(cpu, &ex->key.s1_hat[j]);
+    }
+    for (unsigned i = 0; i < MLD_K; i++) {
+        ok &= mlds_unpack_eta(&ex->key.s2_hat[i], sk + MLDS_SK_S2_AT + (size_t)i * MLDS_ETA_BYTES);
+        mlds_ntt(cpu, &ex->key.s2_hat[i]);
+        mlds_unpack(&ex->key.t0_hat[i], sk + MLDS_SK_T0_AT + (size_t)i * MLDS_T0_BYTES, 13,
+                    1 << (MLD_D - 1));
+        mlds_ntt(cpu, &ex->key.t0_hat[i]);
+    }
+    for (unsigned i = 0; i < MLD_K; i++) {
+        ok &= (uint32_t)expand_row(cpu, ex->a_hat[i], sk, i);
+    }
+    return ok;
+}
+
+// mlds_matrix_row's row i of A y into st->w[i], from the entries in st->ex,
+// each product in the order mlds_matrix_row_sum takes them.
+static void stored_row(mlds_round *st, unsigned i) {
+    mld_poly *row = &st->w[i];
+    mlds_pointwise(st->cpu, row, &st->ex->a_hat[i][0], &st->yz[0]);
+    for (unsigned j = 1; j < MLD_L; j++) {
+        mlds_pointwise_acc(st->cpu, row, &st->ex->a_hat[i][j], &st->yz[j]);
+    }
+    mlds_invntt_freeze(st->cpu, row);
+}
+#endif // CH_CPU_RUNTIME
+
+// Row i of w = A y into st->w[i], each coefficient in [0, q): from the
+// entries of A in st->ex, or from entries sampled into st->s_hat. Returns
+// 1, or 0 when an entry stops at its sampling bound.
+static int commit_row(mlds_round *st, const uint8_t *sk, unsigned i) {
+#ifdef CH_CPU_RUNTIME
+    if (st->ex != NULL) {
+        stored_row(st, i);
+        return 1;
+    }
+#endif
+    return mlds_matrix_row(st->cpu, &st->w[i], &st->s_hat, sk, i, st->yz);
+}
+
+// NTT of the polynomial of sk at part, decoded at bits and offset into
+// st->s_hat. Returns st->s_hat.
+static const mld_poly *decoded_hat(mlds_round *st, const uint8_t *part, unsigned bits,
+                                   int32_t offset) {
+    mlds_unpack(&st->s_hat, part, bits, offset);
+    mlds_ntt(st->cpu, &st->s_hat);
+    return &st->s_hat;
+}
+
+// NTT(s1[j]): st->ex's copy, or decoded from sk into st->s_hat.
+static const mld_poly *s1_hat(mlds_round *st, const uint8_t *sk, unsigned j) {
+#ifdef CH_CPU_RUNTIME
+    if (st->ex != NULL) {
+        return &st->ex->key.s1_hat[j];
+    }
+#endif
+    (void)mlds_unpack_eta(&st->s_hat, sk + MLDS_SK_S1_AT + (size_t)j * MLDS_ETA_BYTES);
+    mlds_ntt(st->cpu, &st->s_hat);
+    return &st->s_hat;
+}
+
+// NTT(s2[i]): st->ex's copy, or decoded from sk into st->s_hat.
+static const mld_poly *s2_hat(mlds_round *st, const uint8_t *sk, unsigned i) {
+#ifdef CH_CPU_RUNTIME
+    if (st->ex != NULL) {
+        return &st->ex->key.s2_hat[i];
+    }
+#endif
+    return decoded_hat(st, sk + MLDS_SK_S2_AT + (size_t)i * MLDS_ETA_BYTES, 3, MLDS_ETA);
+}
+
+// NTT(t0[i]): st->ex's copy, or decoded from sk into st->s_hat.
+static const mld_poly *t0_hat(mlds_round *st, const uint8_t *sk, unsigned i) {
+#ifdef CH_CPU_RUNTIME
+    if (st->ex != NULL) {
+        return &st->ex->key.t0_hat[i];
+    }
+#endif
+    return decoded_hat(st, sk + MLDS_SK_T0_AT + (size_t)i * MLDS_T0_BYTES, 13, 1 << (MLD_D - 1));
+}
+
 uint32_t mlds_key_in_range(mlds_round *st, const uint8_t sk[MLDSA87_SK_LEN]) {
     uint32_t ok = 1;
     for (unsigned r = 0; r < MLD_L + MLD_K; r++) {
@@ -96,7 +216,7 @@ int mlds_commit(mlds_round *st, const uint8_t *sk, const uint8_t mu[MLDSA_MU_LEN
     uint8_t w1[MLD_W1_BYTES];
     int32_t r0 = 0; // the low bits, which w1 does not read
     for (unsigned i = 0; i < MLD_K; i++) {
-        if (!mlds_matrix_row(st->cpu, &st->w[i], &st->s_hat, sk, i, st->yz)) {
+        if (!commit_row(st, sk, i)) {
             return 0;
         }
         for (unsigned n = 0; n < MLD_N; n++) {
@@ -118,9 +238,7 @@ int mlds_commit(mlds_round *st, const uint8_t *sk, const uint8_t mu[MLDSA_MU_LEN
 uint32_t mlds_response(mlds_round *st, const uint8_t *sk, const uint8_t rho2[64], unsigned kappa) {
     uint32_t reject = 0;
     for (unsigned j = 0; j < MLD_L; j++) {
-        (void)mlds_unpack_eta(&st->s_hat, sk + MLDS_SK_S1_AT + (size_t)j * MLDS_ETA_BYTES);
-        mlds_ntt(st->cpu, &st->s_hat);
-        mlds_product(st->cpu, &st->product, &st->c_hat, &st->s_hat);
+        mlds_product(st->cpu, &st->product, &st->c_hat, s1_hat(st, sk, j));
         mlds_expand_mask(st->cpu, &st->yz[j], rho2, (uint16_t)(kappa + j));
         for (unsigned n = 0; n < MLD_N; n++) {
             int32_t z = st->yz[j].coeffs[n] + st->product.coeffs[n];
@@ -131,25 +249,23 @@ uint32_t mlds_response(mlds_round *st, const uint8_t *sk, const uint8_t rho2[64]
     return reject;
 }
 
-// c times polynomial r of the part of sk at offset, into st->product.
-static void times_c(mlds_round *st, const uint8_t *part, unsigned bits, int32_t offset) {
-    mlds_unpack(&st->s_hat, part, bits, offset);
-    mlds_ntt(st->cpu, &st->s_hat);
-    mlds_product(st->cpu, &st->product, &st->c_hat, &st->s_hat);
+// c times the polynomial whose NTT is hat, into st->product.
+static void times_c(mlds_round *st, const mld_poly *hat) {
+    mlds_product(st->cpu, &st->product, &st->c_hat, hat);
 }
 
 uint32_t mlds_hint_row(mlds_round *st, const uint8_t *sk, unsigned i, uint32_t *count) {
     uint32_t reject = 0;
     int32_t r0 = 0;
     int32_t unused = 0; // the low bits, which a hint does not read
-    times_c(st, sk + MLDS_SK_S2_AT + (size_t)i * MLDS_ETA_BYTES, 3, MLDS_ETA);
+    times_c(st, s2_hat(st, sk, i));
     for (unsigned n = 0; n < MLD_N; n++) {
         int32_t r = mlds_freeze(st->w[i].coeffs[n] - st->product.coeffs[n]);
         st->w[i].coeffs[n] = r;
         (void)mlds_decompose(r, &r0);
         reject |= mlds_at_least(r0, MLD_GAMMA2 - MLD_BETA);
     }
-    times_c(st, sk + MLDS_SK_T0_AT + (size_t)i * MLDS_T0_BYTES, 13, 1 << (MLD_D - 1));
+    times_c(st, t0_hat(st, sk, i));
     for (unsigned n = 0; n < MLD_N; n++) {
         int32_t ct0 = st->product.coeffs[n];
         reject |= mlds_at_least(ct0, MLD_GAMMA2);

@@ -27,6 +27,25 @@
 _Static_assert(MLDSA87_SK_LEN == MLDS_SK_T0_AT + MLD_K * MLDS_T0_BYTES, "FIPS 204 Table 2 sk size");
 _Static_assert(MLDSA87_SIG_LEN == MLDS_SIG_HINT_AT + MLD_HINT_BYTES, "FIPS 204 Table 2 sig size");
 
+#ifdef CH_CPU_RUNTIME
+// What a host object's signer computes once for each signature, before
+// the first round, and keeps until the last (docs/decisions.md 191): A,
+// which comes from rho and is public, and the NTT of each polynomial of
+// s1, s2 and t0, which are secret. It is 80,896 bytes, so a device
+// object keeps decision 159's round, which computes these again in each
+// round.
+typedef struct {
+    mld_poly s1_hat[MLD_L];
+    mld_poly s2_hat[MLD_K];
+    mld_poly t0_hat[MLD_K];
+} mlds_key_hat;
+
+typedef struct {
+    mld_poly a_hat[MLD_K][MLD_L]; // A[i][j], sampled in the NTT domain
+    mlds_key_hat key;             // the secrets, which the signer wipes
+} mlds_expanded;
+#endif
+
 // The working state of one round of the rejection loop.
 typedef struct {
     mld_poly yz[MLD_L]; // NTT(y), then z
@@ -37,6 +56,11 @@ typedef struct {
     uint8_t c_tilde[MLDSA87_CTILDE_LEN];
     uint8_t hints[MLD_K][MLD_N / 8]; // the hint of each coefficient, one bit each
     uint32_t cpu; // the session's ch_cfg.cpu, which mldsa_sign_poly.h's dispatchers read
+#ifdef CH_CPU_RUNTIME
+    // The key and A that mlds_expand wrote, or NULL: each step then decodes
+    // and samples what it needs, as in a device object.
+    const mlds_expanded *ex;
+#endif
 } mlds_round;
 
 // The working state of key generation: NTT(s1), one row of t, one entry
@@ -64,16 +88,30 @@ int mlds_matrix_row(uint32_t cpu, mld_poly *row, mld_poly *entry, const uint8_t 
 // at every call, so the answer is public.
 uint32_t mlds_key_in_range(mlds_round *st, const uint8_t sk[MLDSA87_SK_LEN]);
 
+#ifdef CH_CPU_RUNTIME
+// Writes A, NTT(s1), NTT(s2) and NTT(t0) of sk to ex (FIPS 204 Algorithm
+// 7, steps 1 to 5), with A on the four-way Keccak for a cpu that holds
+// CH_CPU_AVX2 on x86-64. Returns 1 when every coefficient of s1 and s2 is
+// in [-2, 2] and every entry of A holds 256 coefficients, and 0 otherwise.
+// Each answer is public, as mlds_key_in_range's is and as a sampler's
+// bound is (FIPS 204 Appendix C). ex holds secrets on every path, and the
+// caller wipes ex->key.
+uint32_t mlds_expand(mlds_expanded *ex, uint32_t cpu, const uint8_t sk[MLDSA87_SK_LEN]);
+#endif
+
 // The commitment w = A y and the challenge for it (FIPS 204 Algorithm 7,
 // steps 11 to 17): writes NTT(y) to st->yz, w to st->w with each
 // coefficient in [0, q), c-tilde to st->c_tilde and NTT(c) to st->c_hat.
 // w1Encode of each row goes into the hash of mu before the next row.
-// Returns 1, or 0 when a sampler stops at its bound.
+// Each row of A comes from st->ex in a host object that set it, and is
+// sampled from the rho in sk otherwise. Returns 1, or 0 when a sampler
+// stops at its bound.
 int mlds_commit(mlds_round *st, const uint8_t *sk, const uint8_t mu[MLDSA_MU_LEN],
                 const uint8_t rho2[64], unsigned kappa);
 
 // z = y + c s1 into st->yz (FIPS 204 Algorithm 7, steps 18 to 20 and 23),
-// with y drawn again from rho''. Each product is exact, under beta in
+// with y drawn again from rho''. NTT(s1) comes from st->ex where it is
+// set, and from sk otherwise. Each product is exact, under beta in
 // absolute value, and so is each sum. Returns 1 when a coefficient of z
 // reaches gamma1 - beta, and 0 otherwise.
 uint32_t mlds_response(mlds_round *st, const uint8_t *sk, const uint8_t rho2[64], unsigned kappa);
@@ -83,7 +121,8 @@ uint32_t mlds_response(mlds_round *st, const uint8_t *sk, const uint8_t rho2[64]
 // coefficient is MakeHint(-ct0, w - cs2 + ct0): whether the high bits of
 // w - cs2 + ct0 and of w - cs2 differ. Sets the row's hint bits in
 // st->hints, which the caller cleared, and adds their count to *count.
-// Writes w - cs2 to st->w[i]. Returns 1 when a check rejects the round,
+// Writes w - cs2 to st->w[i]. NTT(s2[i]) and NTT(t0[i]) come from st->ex
+// where it is set, and from sk otherwise. Returns 1 when a check rejects the round,
 // and 0 otherwise.
 uint32_t mlds_hint_row(mlds_round *st, const uint8_t *sk, unsigned i, uint32_t *count);
 

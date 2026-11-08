@@ -2417,19 +2417,25 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** `sign_checked` runs the loop, then the verifier, and
   wipes sig on either refusal. `rnd_drawn` ORs the 32 bytes before the
   CH_ASSERT reads them. `mlds_key_in_range` checks the 15 polynomials of
-  s1 and s2 before the first round. Every product goes through
+  s1 and s2 before the first round, and in a host object `mlds_expand`
+  checks them as it computes A and the NTTs of s1, s2 and t0 once for
+  the signature (decision 191). Every product goes through
   `ct_widemul_s`, and every test is a mask: `mlds_at_least`,
   `mlds_mask_eq` and `mlds_select`. SampleInBall writes
   each value to all 256 positions by mask (`store_at`, `load_at`).
   RejBoundedPoly moves each kept value down by ten masked passes over all
   962 entries (`eta_pass`). `mlds_sign_round` ORs every check and the hint count's
   test into one word, the one value the loop branches on. Key generation
-  and the loop wipe their state on every path.
+  and the loop wipe their state on every path, and a host object's frame
+  wipes the key's NTTs too.
 - **Check.** Known answers, a model and proofs.
   `bin/wycheproof_mldsa_library_test` holds the signer to all 165 cases
   of Wycheproof's two signing suites. `bin/mldsa_signer_test` holds it to
   the test-only signer on 48 signatures, the roundings at every input
-  and each refusal at its boundary. `bin/pem_files_mldsa_test` holds the
+  and each refusal at its boundary. Its host build holds the host frame
+  to the device frame on 128 signatures and searches the stack below a
+  signature for the key's NTTs. `bin/ct_taint_test` signs with a secret
+  key under Memcheck (INV-60). `bin/pem_files_mldsa_test` holds the
   key call to OpenSSL 3.5's files and searches the stack below it.
   `bin/diff_mldsa` holds keys and signatures to `Spec/MlDsa.lean`. The
   `mldsa_signer` harness proves that a signature leaves only after the
@@ -2450,6 +2456,10 @@ last `ROLE=server` stub, as the entry said it would.
   `inv62-mldsa-keygen-state-not-wiped` and
   `inv62-mldsa-pem-both-form-unchecked` fail `bin/pem_files_mldsa_test`.
   `inv62-mldsa-eta-sampler-branches` fails `lint-wide-multiply`.
+  `inv62-mldsa-host-key-not-wiped`, `inv62-mldsa-host-s2-range-unchecked`,
+  `inv62-mldsa-host-t0-row-zero` and
+  `inv62-mldsa-host-matrix-indices-exchanged` fail
+  `bin/mldsa_signer_test_host`.
   `inv62-mldsa-hint-count-unchecked` fails the `mldsa_sign_round` proof,
   and `inv62-mldsa-low-bits-bound-admits-edge` fails Wycheproof's cases
   (`test/wycheproof.sh`). `inv62-srv-mldsa-content-at-sha384` signs 48
@@ -5244,10 +5254,12 @@ last `ROLE=server` stub, as the entry said it would.
   that picks another path on the machine. The secrets are each private
   key and its CRT integers, each key-exchange scalar and seed, each
   nonce input, salt and noise, each traffic key and HMAC key, each
-  plaintext, and each byte of a key file. The operations are X25519 on
+  plaintext, each byte of a key file, and an ML-DSA-87 key's K, s1, s2
+  and t0 with the rnd of its signature. The operations are X25519 on
   both fields, P-256 key generation and ECDH, both P-256 signers, both
   RSA-PSS signers, ML-KEM-768 key generation, encapsulation and
-  decapsulation, ChaCha20-Poly1305 and AES-GCM under a traffic key, HMAC,
+  decapsulation, ML-DSA-87 signing (decision 191), ChaCha20-Poly1305
+  and AES-GCM under a traffic key, HMAC,
   HKDF and the key schedule over SHA-256 and SHA-384, SHA-256, SHA-384,
   SHA-512, SHA3-256, SHA3-512 and SHAKE256 on secret input, `ct_memeq`,
   and `base64_class` over a key file. A value stops being secret only at
@@ -5286,8 +5298,10 @@ last `ROLE=server` stub, as the entry said it would.
   byte that differs, and `inv60-x25519-wide-table-read-by-digit` makes
   the wide field's key generation read the one table entry its secret
   digit names. `inv60-p256-sign-encodes-before-verdict` writes an ECDSA
-  signature's DER before the checks' verdict again. `test/ct-taint.sh`
-  fails on each.
+  signature's DER before the checks' verdict again.
+  `inv60-mldsa-expand-range-branches` makes a host object's
+  `mlds_expand` return at the first polynomial of s1 out of range.
+  `test/ct-taint.sh` fails on each.
 - **Violation.** A PR replaces a mask with an `if` on a secret bit, and
   the compiler writes a jump for it. Or a PR looks up a secret byte in a
   table for speed.

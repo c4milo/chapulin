@@ -1,0 +1,15 @@
+invariant: INV-60
+file: src/mldsa_sign_steps.c
+catches: test/ct-taint.sh
+reason: a host object's mlds_expand returns at the first polynomial of
+  s1 out of range, so its time tells which polynomial failed. The return
+  branches on a verdict that a secret decides, before the caller
+  declassifies the combined answer (docs/decisions.md 191). Memcheck
+  reports the jump in the ML-DSA-87 case of every value.
+
+--- old
+        ok &= mlds_unpack_eta(&ex->key.s1_hat[j], sk + MLDS_SK_S1_AT + (size_t)j * MLDS_ETA_BYTES);
+--- new
+        if (!mlds_unpack_eta(&ex->key.s1_hat[j], sk + MLDS_SK_S1_AT + (size_t)j * MLDS_ETA_BYTES)) {
+            return 0;
+        }

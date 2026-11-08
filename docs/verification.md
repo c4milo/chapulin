@@ -1345,7 +1345,7 @@ The entries are grouped by area:
 
 #### mldsa_sign
 
-- **Harnesses:** `mldsa_signer` (fast), `mldsa_signer_keygen` (fast), `mldsa_sign_keygen_row` (fast), `mldsa_sign_keygen_row0` (fast), `mldsa_sign_hint_row0` (fast), `mldsa_sign_round` (fast), `mldsa_sign_commit` (fast), `mldsa_sign_response` (fast), `mldsa_sign_hint_row` (fast), `mldsa_sign_encode` (fast), `mldsa_sign_poly` (fast), `mldsa_sign_ntt` (fast), `mldsa_sign_pack` (fast), `mldsa_sign_samplers` (fast), `mldsa_sign_coefficient` (fast), `mldsa_sign_coefficient_ct` (fast)
+- **Harnesses:** `mldsa_signer` (fast), `mldsa_signer_keygen` (fast), `mldsa_sign_keygen_row` (fast), `mldsa_sign_keygen_row0` (fast), `mldsa_sign_hint_row0` (fast), `mldsa_sign_round` (fast), `mldsa_sign_commit` (fast), `mldsa_sign_response` (fast), `mldsa_sign_hint_row` (fast), `mldsa_sign_encode` (fast), `mldsa_sign_poly` (fast), `mldsa_sign_ntt` (fast), `mldsa_sign_pack` (fast), `mldsa_sign_samplers` (fast), `mldsa_sign_coefficient` (fast), `mldsa_sign_coefficient_ct` (fast), `mldsa_sign_expanded` (fast), `mldsa_sign_expanded_commit` (fast)
 - **Proves:**
   - `mldsa87_keygen` and `mldsa87_sign` are safe for every seed, every
     key and public key of every length up to one byte past its own,
@@ -1379,6 +1379,15 @@ The entries are grouped by area:
     the count (`mldsa_sign_hint_row`, `mldsa_sign_hint_row0`). The response is `mldsa_sign_response`, and
     the encoding writes sig's 4,627 bytes and nothing past them for
     every state (`mldsa_sign_encode`);
+  - a host object's path (`-DCH_CPU_RUNTIME`, decision 191), for every
+    cpu value, with the lanes of `mldsa_vector.c` and the four-way
+    sampler of A stubbed to the contracts of the loops they replace:
+    `mlds_expand` reads s1, s2 and t0 inside sk, asks for each entry of
+    A inside the matrix, writes inside the expanded state and returns 0
+    or 1. The response and the last row of hints, with the key's NTTs
+    read from that state, keep the checks above
+    (`mldsa_sign_expanded`). The commitment on the stored rows of A
+    decomposes values in [0, q) alone (`mldsa_sign_expanded_commit`);
   - every function in `mldsa_sign_poly.c` is free of overflow over
     coefficients from all of int32_t, with the coefficient functions in
     `mldsa_sign_poly.h` replaced by their contracts

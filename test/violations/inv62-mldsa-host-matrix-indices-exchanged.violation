@@ -1,0 +1,26 @@
+invariant: INV-62
+file: src/mldsa_sign_steps.c
+catches: mldsa_signer_test_host
+reason: a host object's mlds_expand samples entry A[i][j] from rho || i
+  || j, where FIPS 204 Algorithm 32 takes rho || j || i. The commitment
+  is then another matrix's, and bin/mldsa_signer_test_host compares each
+  signature with the device frame's and with the test signer's.
+
+--- old
+        if (!mld_sample_ntt_cpu(cpu, &row[j], rho, (uint8_t)j, (uint8_t)i)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+uint32_t mlds_expand(
+--- new
+        if (!mld_sample_ntt_cpu(cpu, &row[j], rho, (uint8_t)i, (uint8_t)j)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+uint32_t mlds_expand(

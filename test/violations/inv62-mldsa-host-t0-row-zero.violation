@@ -1,0 +1,12 @@
+invariant: INV-62
+file: src/mldsa_sign_steps.c
+catches: mldsa_signer_test_host
+reason: a host object's round reads NTT(t0[0]) for every row of the
+  hints, so its c t0 is wrong in seven rows of eight. The signature
+  differs from the device frame's and from the test signer's, and
+  bin/mldsa_signer_test_host compares it with both.
+
+--- old
+        return &st->ex->key.t0_hat[i];
+--- new
+        return &st->ex->key.t0_hat[0];

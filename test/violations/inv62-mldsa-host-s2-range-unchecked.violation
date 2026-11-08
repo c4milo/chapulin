@@ -1,0 +1,12 @@
+invariant: INV-62
+file: src/mldsa_sign_steps.c
+catches: mldsa_signer_test_host
+reason: a host object's mlds_expand decodes s2 without its range check,
+  so a key whose s2 holds a value outside [-2, 2] signs, where the device
+  frame refuses it. bin/mldsa_signer_test_host signs under such a key on
+  both frames and requires a refusal from each.
+
+--- old
+        ok &= mlds_unpack_eta(&ex->key.s2_hat[i], sk + MLDS_SK_S2_AT + (size_t)i * MLDS_ETA_BYTES);
+--- new
+        (void)mlds_unpack_eta(&ex->key.s2_hat[i], sk + MLDS_SK_S2_AT + (size_t)i * MLDS_ETA_BYTES);

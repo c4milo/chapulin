@@ -9,6 +9,8 @@
 #include "ct.h"
 #include "ct_taint.h"
 #include "ct_taint_cases.h"
+#include "mldsa.h"
+#include "mldsa_signer.h"
 #include "mlkem.h"
 #include "mlkem_vectors.h"
 #include "p256_ecdh.h"
@@ -209,6 +211,37 @@ static void case_mlkem(uint32_t cpu, uint8_t widemul) {
     check(memcmp(reject, ss, MLKEM_SS_LEN) != 0, "ml-kem implicit rejection");
 }
 
+// ML-DSA-87 signing with a secret key and a secret rnd, on the frame the object signs on: in a
+// host object, A and the NTTs of s1, s2 and t0 once for each signature, which every round then
+// reads (docs/decisions.md 191). Key generation runs before the marks, so its seed is not marked.
+static void case_mldsa(uint32_t cpu) {
+    static uint8_t sk[MLDSA87_SK_LEN];
+    static uint8_t pk[MLDSA87_PK_LEN];
+    static uint8_t sig[MLDSA87_SIG_LEN];
+    uint8_t seed[MLDSA87_SEED_LEN];
+    uint8_t rnd[MLDSA87_RND_LEN];
+    for (size_t i = 0; i < sizeof seed; i++) {
+        seed[i] = (uint8_t)(0x3c + 7 * i);
+        rnd[i] = (uint8_t)(0xc3 + 11 * i);
+    }
+    check(mldsa87_keygen_cpu(cpu, sk, pk, seed) == 1, "ml-dsa key generation");
+    // Secret: K, at bytes 32 to 63 of sk, and s1, s2 and t0 after tr. rho, the first 32 bytes,
+    // stays public, because pk carries it, and so does tr, the hash of pk.
+    CT_SECRET(sk + 32, 32);
+    CT_SECRET(sk + 128, MLDSA87_SK_LEN - 128);
+    CT_SECRET(rnd, sizeof rnd);
+    static const uint8_t msg[] = "CertificateVerify";
+    int signed_ok =
+        mldsa87_sign_cpu(cpu, sig, sk, sizeof sk, pk, sizeof pk, msg, sizeof msg, NULL, 0, rnd);
+    // Public: the signature travels in CertificateVerify, and the verdict is the caller's.
+    CT_PUBLIC(&signed_ok, sizeof signed_ok);
+    CT_PUBLIC(sig, sizeof sig);
+    check(signed_ok == 1 &&
+              mldsa87_verify(pk, sizeof pk, msg, sizeof msg, NULL, 0, sig, sizeof sig) == 1,
+          "ml-dsa signature");
+    ct_wipe(sk, sizeof sk);
+}
+
 int ct_taint_public_key_cases(uint32_t cpu) {
     uint8_t widemul = widemul_of_cpu(cpu);
     case_x25519(widemul);
@@ -220,5 +253,6 @@ int ct_taint_public_key_cases(uint32_t cpu) {
     case_rsa(cpu, widemul, &k3072, rsa_sign_3072_msg, sizeof rsa_sign_3072_msg, rsa_sign_3072_salt,
              rsa_sign_3072_sig);
     case_mlkem(cpu, widemul);
+    case_mldsa(cpu);
     return failures;
 }

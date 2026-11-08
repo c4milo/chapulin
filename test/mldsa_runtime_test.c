@@ -18,10 +18,10 @@
 //
 //   - mldsa87_keygen_cpu: KEYGEN_CALLS under the signer's bits, and none
 //     without them;
-//   - mldsa87_sign_mu_cpu: ROUND_CALLS for each round the signature took
-//     under the signer's bits, and none without them, then
-//     CHALLENGE_CALLS for the check of the signature under the verifier's
-//     bits;
+//   - mldsa87_sign_mu_cpu: EXPAND_CALLS once and ROUND_CALLS for each
+//     round the signature took under the signer's bits, and none without
+//     them, then CHALLENGE_CALLS for the check of the signature under the
+//     verifier's bits;
 //   - mldsa87_sign_cpu: as mldsa87_sign_mu_cpu, with the whole
 //     verification's calls, which are CHALLENGE_CALLS, after the rounds.
 //     Its rounds are the rounds mldsa87_sign_mu takes for the message's
@@ -40,9 +40,9 @@
 // of A runs there for a value that holds CH_CPU_AVX2, the signer's and
 // the verifier's alike, because A is public: two calls a row, which
 // sample four entries and then three. So key generation makes
-// AVX2_ROW_CALLS, each round of a signature as many, and each
-// verification as many, and a value without the bit makes none. On arm64
-// no call runs there.
+// AVX2_ROW_CALLS, a signature as many before its first round
+// (docs/decisions.md 191), and each verification as many, and a value
+// without the bit makes none. On arm64 no call runs there.
 //
 // The same rows count the SHAKE calls (test/mldsa_sha3_count.h). Under
 // CH_CPU_PROBED alone each row makes its calls on sha3.c, and their counts
@@ -83,13 +83,17 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 static const mldsa_vector_calls KEYGEN_CALLS = {MLD_L, MLD_K, MLD_K,
                                                 (unsigned long)MLD_K * (MLD_L - 1)};
 
+// mlds_expand, once for each signature (docs/decisions.md 191): the NTT
+// of each of the seven polynomials of s1 and of the eight of s2 and of t0.
+static const mldsa_vector_calls EXPAND_CALLS = {MLD_L + 2UL * MLD_K, 0, 0, 0};
+
 // One round of the rejection loop. mlds_commit: NTT(y), seven transforms,
 // the eight rows of A y as in key generation, and NTT(c). mlds_response:
-// for each of the seven polynomials of s1, NTT(s1[j]) and c s1[j], one
-// pointwise product and one inverse transform. mlds_hint_row: for each of
-// the eight rows, the same three for s2[i] and then for t0[i].
+// for each of the seven polynomials of s1, c s1[j], one pointwise product
+// and one inverse transform. mlds_hint_row: for each of the eight rows,
+// the same two for s2[i] and then for t0[i].
 static const mldsa_vector_calls ROUND_CALLS = {
-    MLD_L + 1 + MLD_L + 2UL * MLD_K,
+    MLD_L + 1,
     MLD_K + MLD_L + 2UL * MLD_K,
     MLD_K + MLD_L + 2UL * MLD_K,
     (unsigned long)MLD_K * (MLD_L - 1),
@@ -166,6 +170,13 @@ static mldsa_vector_calls expected(mldsa_vector_calls round, unsigned long round
     want.pointwise = rounds * round.pointwise + afters * after.pointwise;
     want.pointwise_acc = rounds * round.pointwise_acc + afters * after.pointwise_acc;
     return want;
+}
+
+// a plus b, count for count.
+static mldsa_vector_calls plus(mldsa_vector_calls a, mldsa_vector_calls b) {
+    mldsa_vector_calls sum = {a.ntt + b.ntt, a.invntt + b.invntt, a.pointwise + b.pointwise,
+                              a.pointwise_acc + b.pointwise_acc};
+    return sum;
 }
 
 static void check_counts(const char *row, uint32_t cpu, mldsa_vector_calls want) {
@@ -274,8 +285,9 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
     reset_counts();
     unsigned rounds = mldsa87_sign_mu_cpu(cpu, sig, sk, pk, MU, RND);
     check_counts("mldsa87_sign_mu_cpu", cpu,
-                 expected(ROUND_CALLS, signer * rounds, CHALLENGE_CALLS, verifier));
-    check_avx2("mldsa87_sign_mu_cpu", cpu, avx2 * (rounds + 1UL));
+                 plus(expected(EXPAND_CALLS, signer, NO_CALLS, 0),
+                      expected(ROUND_CALLS, signer * rounds, CHALLENGE_CALLS, verifier)));
+    check_avx2("mldsa87_sign_mu_cpu", cpu, avx2 * 2UL);
     check_sha3("mldsa87_sign_mu_cpu", ROW_SIGN_MU, cpu, 1);
     check_bytes("mldsa87_sign_mu_cpu", cpu,
                 rounds == mu_rounds && memcmp(sig, want_mu_sig, sizeof sig) == 0);
@@ -284,8 +296,9 @@ static void rows(uint32_t cpu, unsigned mu_rounds, unsigned msg_rounds) {
     int sign_ok =
         mldsa87_sign_cpu(cpu, sig, sk, sizeof sk, pk, sizeof pk, MSG, sizeof MSG, NULL, 0, RND);
     check_counts("mldsa87_sign_cpu", cpu,
-                 expected(ROUND_CALLS, signer * msg_rounds, CHALLENGE_CALLS, verifier));
-    check_avx2("mldsa87_sign_cpu", cpu, avx2 * (msg_rounds + 1UL));
+                 plus(expected(EXPAND_CALLS, signer, NO_CALLS, 0),
+                      expected(ROUND_CALLS, signer * msg_rounds, CHALLENGE_CALLS, verifier)));
+    check_avx2("mldsa87_sign_cpu", cpu, avx2 * 2UL);
     check_sha3("mldsa87_sign_cpu", ROW_SIGN, cpu, 1);
     check_bytes("mldsa87_sign_cpu", cpu, sign_ok == 1 && memcmp(sig, want_sig, sizeof sig) == 0);
 

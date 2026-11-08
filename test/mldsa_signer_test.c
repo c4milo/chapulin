@@ -10,6 +10,8 @@
 //    signer, test/mldsa_sign.c, which bin/wycheproof_mldsa_sign_test holds
 //    to Wycheproof, over 48 seeds, messages and contexts, hedged and
 //    deterministic;
+//  - the two signing frames against each other, and the stack below a
+//    signature (test/mldsa_signer_frames.c, docs/decisions.md 191);
 //  - the refusals at their boundaries: a context of 255 bytes signs and
 //    one of 256 does not, a key of the wrong length, a key out of range,
 //    a public key that is not the key's, and zero rnd, which stops
@@ -27,6 +29,7 @@
 #include "mldsa_sign_pack.h"
 #include "mldsa_sign_poly.h"
 #include "mldsa_signer.h"
+#include "mldsa_signer_frames.h"
 #include "sha3.h"
 #include "test_cpu.h"
 
@@ -413,12 +416,14 @@ int main(int argc, char **argv) {
     test_against_test_signer();
     test_refusals();
     test_hedge();
+    failures += (int)mldsa_signer_frame_checks(TEST_SESSION_CPU);
     if (failures != 0) {
         (void)fprintf(stderr, "mldsa signer: %d failure(s)\n", failures);
         return 1;
     }
-    (void)printf("mldsa signer: rounding at every r, coefficients, SampleInBall, RejBoundedPoly, "
-                 "48 signatures "
-                 "equal to the test signer's, refusals, hedge: ok\n");
+    (void)printf(
+        "mldsa signer: rounding at every r, coefficients, SampleInBall, RejBoundedPoly, "
+        "48 signatures "
+        "equal to the test signer's, refusals, hedge, no NTT of the key below a signature: ok\n");
     return 0;
 }

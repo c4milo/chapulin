@@ -16181,6 +16181,139 @@ does nothing more.
       `CH_QUIC_DCID_MAX` bytes and refuse a longer one, and read the
       options' context back from a tcp session's hook.
 
+191. **A host object's ML-DSA-87 signer computes A and the NTTs of s1,
+    s2 and t0 once for each signature, and each round reads them.**
+    Entry 159 computed all of them again in each round of the rejection
+    loop, to keep the round's frame near 19 kB, and entry 178 refused to
+    hold A whole for the same reason. Camilo ruled on 2026-11-08 that a
+    host object holds them, under a ceiling of its own, and that a
+    device object keeps entry 159's frame.
+
+    - **What is computed once.** `mlds_expand` in `mldsa_sign_steps.c`
+      writes `mlds_expanded`: the 56 entries of A in the NTT domain,
+      sampled from rho, and the NTT of the 7 polynomials of s1, the 8 of
+      s2 and the 8 of t0, decoded from sk. It also returns the range
+      check of s1 and s2, which `mlds_key_in_range` answers in a device
+      object. A signature runs about 3.85 rounds. Each round of entry
+      159 sampled the 56 entries again, about 280 permutations of
+      Keccak-f[1600], and ran 23 forward NTTs on the key. Now a round runs
+      the products alone: `mlds_commit` reads row i of A from the state,
+      and `mlds_response` and `mlds_hint_row` read NTT(s1[j]), NTT(s2[i])
+      and NTT(t0[i]).
+    - **Where it runs.** `mldsa_signer.c`'s `sign_rounds_expanded`, which
+      every host object signs on, through `mldsa87_sign` and through
+      `mldsa87_sign_cpu`. `mlds_round` carries a pointer `ex` to the
+      state, and each step reads from it when it is set. A device object
+      compiles neither the field nor the function, and its `sign_rounds`
+      is entry 159's. A host test binary also compiles `sign_rounds`,
+      under `CH_MLDSA_SIGN_TEST`, to compare the two.
+    - **The paths stay.** On x86-64 under `CH_CPU_AVX2` the four-way
+      sampler of entry 178 samples each row of A, four entries and then
+      three, into a buffer of four entries, and the call copies them into
+      the row. The buffer keeps the sampler's array of four entries, and
+      the row holds three past its fourth. The NTTs and products run on
+      `mldsa_vector.c`'s lanes under the bits of entries 172 and 174.
+      The signer still verifies each signature with `mldsa87_verify`
+      before it returns it.
+    - **The frame.** `mlds_expanded` is 80,896 bytes: 56 entries of A
+      and 23 polynomials of the key, 1,024 bytes each.
+      `sign_rounds_expanded` holds it beside the round and rho'':
+      100,048 bytes with Apple clang 21 -O2 on arm64 and with gcc 15.2
+      -O2 on x86-64, and 100,024 with clang 23 for x86-64. The Makefile's
+      new `STACK_BUDGET_MLDSA_SIGN_HOST` is 106,496 bytes, a margin of
+      about 6%, and `lint-stack` applies it to `mldsa_signer.c` in a host
+      object alone. A device object keeps `STACK_BUDGET_MLDSA_SIGN`,
+      20,480 bytes, where `sign_rounds` measures 19,120 with Apple clang
+      and 19,136 with gcc 15.2. `mlds_expand` holds the four-way buffer
+      on x86-64, 4,264 bytes with clang 23 and 4,176 in gcc 15.2's
+      `expand_row`, under `STACK_BUDGET_MLDSA_ROW_AVX2`. The callers'
+      ceilings do not move: `STACK_BUDGET_SRV_MLDSA` and
+      `STACK_BUDGET_PEM_FILES_MLDSA` bound their own frames, and
+      `ch_mldsa_key_from_pem` generates a key and signs nothing.
+    - **Why the stack.** The library has no heap and no static state
+      beyond the session, and no storage the caller owns is free during a
+      CertificateVerify: `cfg.buf` holds the flight, and `ch_tls` is one
+      struct per session, where 80 kB would multiply. A host thread has
+      a stack of 512 kB or more on macOS and of 8 MB on Linux, and a Zig
+      thread 16 MB. So `bench/sram.sh` measures `ch_srv_accept` at
+      109,696 bytes in the arm64 host server, 109,856 with
+      `SUITE=aesgcm` and 108,992 under `PROFILE=cnsa2`, where it measured
+      28,752, 28,912 and 28,048. A caller that runs a host server on a
+      smaller stack, such as a coroutine, must give it about 110 kB.
+    - **The wipe.** s1, s2 and t0 in the NTT domain are secret, and they
+      now live across the rounds. `sign_rounds_expanded` wipes `ex.key`
+      and the round with `ct_wipe` on every path: after a signature,
+      after a key out of range, after a sampler at its bound and after
+      814 rounds. A is public, because pk carries rho, so the call does
+      not wipe it. `mlds_expand` decodes and transforms in constant time,
+      branches on no coefficient, and its verdict is declassified as
+      `mlds_key_in_range`'s is.
+    - **What holds it.**
+      - `bin/mldsa_signer_test_host` signs 128 signatures on both frames,
+        over 64 keys, with two mu and rnd each and some rnd of zero, and
+        requires the same rounds and the same bytes. It holds the same
+        for keys with a changed t0 and for a key whose s2 is out of
+        range, which both frames refuse. It still holds the host frame
+        to the test-only signer's 48 signatures.
+      - Every build of `bin/mldsa_signer_test` signs once and searches
+        128 kB of stack below the call for two coefficients of the NTT
+        of s1[0], s1[6], s2[0], s2[7], t0[0] and t0[7].
+      - `bin/mldsa_runtime_test` counts the calls into the lanes: 23
+        forward NTTs once for each signature and 8 a round, and two
+        calls into the four-way sampler for each row of A once for each
+        signature.
+      - `bin/ct_taint_test` signs with a secret K, s1, s2, t0 and rnd
+        under Memcheck (INV-60). The round that passes declassifies its
+        hints and the signature, which the protocol publishes, before the
+        encoding reads the hint positions.
+      - The `mldsa_sign_expanded` and `mldsa_sign_expanded_commit`
+        harnesses prove `mlds_expand` and the three steps on the stored
+        state memory-safe under `-DCH_CPU_RUNTIME`, for every cpu value,
+        over stubs of the lanes and of the four-way sampler.
+      - Violations: `inv62-mldsa-host-key-not-wiped`,
+        `inv62-mldsa-host-s2-range-unchecked`,
+        `inv62-mldsa-host-t0-row-zero`,
+        `inv62-mldsa-host-matrix-indices-exchanged` and
+        `inv60-mldsa-expand-range-branches`.
+      - `bin/wycheproof_mldsa_library_test` and its host build hold both
+        frames to Wycheproof's 165 signing cases.
+    - **The spec.** `Spec/MlDsa.lean` models Algorithm 7 and not the
+      order of its steps. The C computes the same values, so the spec
+      does not change, and the differential keeps the device frame.
+    - **Numbers.** Bench run 42491562620 on b04ba4e5, under the runner's
+      gcc 13.3 and the pinned clang 23 at `-O2`, drew an EPYC 7763 and a
+      Xeon Platinum 8573C. Each figure is the median of 101 samples, in µs,
+      at the widest `ch_cfg.cpu` value, beside the column recorded on
+      15c37ef4 on the same CPU:
+
+      | CPU, compiler | sign before | sign after | ratio | OpenSSL's sign |
+      |---|---|---|---|---|
+      | EPYC 7763, gcc | 932 | 707 | 0.76 | 1,218 |
+      | EPYC 7763, clang | 799 | 636 | 0.80 | 1,212 |
+      | Xeon 8573C, gcc | 824 | 814 | 0.99 | 982 |
+      | Xeon 8573C, clang | 808 | 723 | 0.90 | 988 |
+
+      On the EPYC 7763 key generation and verification, which the change
+      does not touch, took 0.99 to 1.01 of their time, and every other row
+      0.92 to 1.05. Under `CH_CPU_PROBED` alone a signature took 0.77 of its
+      time under gcc and 0.78 under clang. So a signature takes 0.58 of
+      OpenSSL's time under gcc, where it took 0.76, and 0.53 under clang,
+      where it took 0.65. The Xeon 8573C sample ran slow: its key
+      generation took 1.23 times and its verification 1.19 times its
+      recorded time under gcc. So its column stays the one recorded on
+      15c37ef4, and its rows show no measured gain. The M1 CSV holds no
+      ML-DSA-87 rows: it was recorded on 2026-10-28, before the bench timed
+      ML-DSA-87. The machine ran at a load of 30 to 45 during this work, so
+      no M1 row was timed.
+    - **Rejected:**
+      - **A in storage the caller owns.** No storage of the caller is
+        free during the CertificateVerify, and a new room in `ch_cfg`
+        would serve one signature at a time across every session.
+      - **The key's NTTs alone, with A sampled in each round.** A's
+        sampling is most of a round's Keccak, so it is most of the gain.
+      - **A packed in 23 bits a coefficient.** It saves 13 kB and costs an
+        unpack before each product.
+
 192. **The blocks' square adds each row's cross products and its multiple of
     m in one pass.** After decision 118, on the M1 Pro under Apple clang
     21, `rsa_mont64_blocks_square` took 0.99 times the time of the blocks'

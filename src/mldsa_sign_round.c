@@ -25,6 +25,10 @@ int mlds_sign_round(mlds_round *st, uint8_t sig[MLDSA87_SIG_LEN], const uint8_t 
     if (reject != 0) {
         return 0;
     }
+    // The round passed, so its hints, z and c-tilde are the signature,
+    // which the protocol publishes. mlds_encode reads each hint's position.
+    CT_DECLASSIFY(st->hints, sizeof st->hints);
     mlds_encode(sig, st);
+    CT_DECLASSIFY(sig, MLDSA87_SIG_LEN);
     return 1;
 }

@@ -3094,8 +3094,11 @@ none of it, because the signer's frames do not fit a device's stack.
 - **Keys.** `ch_mldsa_key_from_pem` writes the slot's keys, and
   `ch_srv_check` signs and verifies once at boot with each set slot.
 - **Memory.** The signer sets `ch_srv_accept`'s peak whether or not the
-  slot is set: 28,752 bytes in the arm64 host object, against 12,752
-  before, measured by `bench/sram.sh` ([performance.md](performance.md)).
+  slot is set: 109,696 bytes in the arm64 host object, against 12,752
+  before the slot, measured by `bench/sram.sh`
+  ([performance.md](performance.md)). Since decision 191 the signer's
+  frame holds A and the NTTs of the key, 100,048 bytes, so a thread that
+  runs a host server needs about 110 kB of stack.
   The slot adds 48 bytes to `ch_tls`.
 - **Tests.** `bin/srv_mldsa_identity_test` holds the boot check and the
   order at their boundaries, and `test/e2e.sh` runs OpenSSL's `s_client`
@@ -3128,7 +3131,7 @@ under the profile.
 - **CPU.** Every init call and `ch_srv_check` refuse a `ch_cfg.cpu`
   without `CH_CPU_CONSTANT_TIME_AES`.
 - **Memory.** A `ch_tls` of 3,160 bytes, a receive floor of 2,179 bytes
-  (2,698 over QUIC), and a `ch_srv_accept` peak of 28,048 bytes through
+  (2,698 over QUIC), and a `ch_srv_accept` peak of 108,992 bytes through
   the signer, measured by `bench/sram.sh` ([performance.md](performance.md)).
 
 ## What is still open

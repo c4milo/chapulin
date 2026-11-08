@@ -834,6 +834,16 @@ launch fast full mldsa_sign_pack 642 "" src/ct.c proof/ct_wipe_stub.c
 launch fast full mldsa_sign_samplers 963 "" --max-field-sensitivity-array-size 962 src/ct.c proof/ct_wipe_stub.c
 launch fast full mldsa_sign_coefficient 2 ""
 launch fast full mldsa_sign_coefficient_ct 2 ""
+# A host object's signer (docs/decisions.md 191), two formulas over the
+# same stubs and over stubs of the lanes and the four-way sampler:
+# mlds_expand with the response and the last row of the hints on the
+# key's NTTs in st->ex, and the commitment on the rows of A in st->ex.
+# Measured on an M1 Pro on 2026-11-08 through proof/run.sh under load 30
+# to 45, wall time and the peak of cbmc and kissat together:
+# mldsa_sign_expanded 642 properties, 894 s, 3.3 GB;
+# mldsa_sign_expanded_commit 635, 372 s, 3.4 GB. Each weight is its peak.
+launch fast:4 full mldsa_sign_expanded 258 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast:4 full mldsa_sign_expanded_commit 258 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain
 # and in-place-open shapes joined the formula. With rec_dir's suite and
 # its key and IV derived at the suite's hash (docs/decisions.md entry

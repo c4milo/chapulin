@@ -164,6 +164,14 @@ STACK_BUDGET_MLDSA := 11264
 # the build's budget.
 MLDSA_SIGN_SRCS := src/mldsa_signer.c src/mldsa_sign_round.c src/mldsa_sign_steps.c src/mldsa_sign_poly.c src/mldsa_sign_pack.c
 STACK_BUDGET_MLDSA_SIGN := 20480
+# A host object's signer computes A and the NTTs of s1, s2 and t0 once for
+# each signature, and each round reads them (docs/decisions.md 191). So
+# its sign_rounds_expanded holds them, 80,896 bytes, beside the round of
+# the frame above: 100,048 bytes with Apple clang 21 -O2 on arm64 and
+# with gcc 15.2 -O2 on x86-64, and 100,024 with clang 23 for x86-64.
+# 104 kB keeps a margin of about 6%. mldsa_signer.c takes it in a host
+# object alone, and every other object keeps the ceiling above.
+STACK_BUDGET_MLDSA_SIGN_HOST := 106496
 # An x86-64 host object samples four entries of a row of A at once on the
 # four-way Keccak (docs/decisions.md 178), so two frames hold four
 # polynomials where they held one, and each takes a ceiling of its own
@@ -755,7 +763,7 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/diff_pem_files_calls.h test/timing_pem.h test/timing_mldsa.h test/pem_fixtures_mldsa.h \
          test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
-         test/mldsa_vector_count.h \
+         test/mldsa_vector_count.h test/mldsa_signer_frames.h \
          test/hash_instructions_cpu.h test/hash_runtime_count.h test/hash_runtime_quic.h \
          test/hash_runtime_srv.h test/hash_runtime_webpki.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
@@ -3134,7 +3142,8 @@ bin/mldsa_test: test/mldsa_test.c $(MLDSA_TEST_SRCS) $(HDRS) $(TESTH)
 # object runs for a session without CH_CPU_CONSTANT_TIME_MULTIPLY. Both
 # take -DCH_MLDSA_SIGN_TEST, which declares the signer's test entries; no
 # library object takes it.
-MLDSA_SIGNER_TEST_SRCS := $(MLDSA_SIGN_SRCS) test/mldsa_sign.c src/mldsa.c src/mldsa_poly.c src/sha3.c src/ct.c src/ct_wipe.c
+MLDSA_SIGNER_TEST_SRCS := $(MLDSA_SIGN_SRCS) test/mldsa_sign.c src/mldsa.c src/mldsa_poly.c src/sha3.c src/ct.c src/ct_wipe.c \
+                          test/stack_residue.c test/mldsa_signer_frames.c
 bin/mldsa_signer_test: test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_MLDSA_SIGN_TEST -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/mldsa_signer_test.c $(MLDSA_SIGNER_TEST_SRCS)
@@ -6819,7 +6828,7 @@ san-selftest:
 CT_TAINT_SRCS := src/x25519.c src/chacha20.c src/poly1305.c src/aead.c src/hkdf.c src/keysched.c src/sha256.c src/sha512.c \
                  src/sha512_compress.c src/sha3.c src/mlkem.c src/mlkem_poly.c src/buf.c src/ct.c src/ct_wipe.c src/p256_sign.c \
                  src/p256_ecdh.c src/p256_point.c src/p256_scalar.c src/p256_field.c src/rsa_sign.c src/rsa_mont.c src/aes.c \
-                 src/gcm.c src/base64.c
+                 src/gcm.c src/base64.c $(MLDSA_SIGN_SRCS) src/mldsa.c src/mldsa_poly.c
 CT_TAINT_TEST_SRCS = test/ct_taint_keys.c $(call host_srcs,$(CT_TAINT_SRCS)) $(AES_HW_SRCS)
 # The recipe links the binary again on every run, so a run under another
 # CC tests that compiler's code.
@@ -7110,7 +7119,8 @@ lint-stack-run:
 	  case "$$f" in src/mldsa.c) budget=$(STACK_BUDGET_MLDSA) ;; esac; \
 	  case "$$f-$(STACK_MLDSA_AVX2)" in src/mldsa.c--DCH_CPU_RUNTIME) budget=$(STACK_BUDGET_MLDSA_AVX2) ;; \
 	    src/mldsa_sign_steps.c--DCH_CPU_RUNTIME) budget=$(STACK_BUDGET_MLDSA_ROW_AVX2) ;; esac; \
-	  case "$$f" in src/mldsa_signer.c) budget=$(STACK_BUDGET_MLDSA_SIGN) ;; esac; \
+	  case "$$f-$(filter -DCH_CPU_RUNTIME,$(LIB_DEF))" in src/mldsa_signer.c-) budget=$(STACK_BUDGET_MLDSA_SIGN) ;; \
+	    src/mldsa_signer.c--DCH_CPU_RUNTIME) budget=$(STACK_BUDGET_MLDSA_SIGN_HOST) ;; esac; \
 	  case "$$f" in src/srv_mldsa.c) budget=$(STACK_BUDGET_SRV_MLDSA) ;; esac; \
 	  case "$$f-$(filter -DCH_SIGN_MLDSA,$(LIB_DEF))" in src/pem_files.c--DCH_SIGN_MLDSA) \
 	    budget=$(STACK_BUDGET_PEM_FILES_MLDSA) ;; esac; \
@@ -7121,7 +7131,7 @@ lint-stack-run:
 	      echo "lint-stack: src/gcm_avx512_kernel.c defines [$$local_functions] beside its four functions; a kernel must call no function, so that its frame is all the stack it writes"; rc=1; \
 	    fi ;; esac; \
 	done; rm -rf $$objs; \
-	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B, its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B, the 512-bit AES-GCM kernel's under $(STACK_BUDGET_GCM_AVX512) B, its stack wipe's under $(STACK_BUDGET_GCM_AVX512_WIPE) B, ML-DSA-87's verifier's under $(STACK_BUDGET_MLDSA) B and its signer's under $(STACK_BUDGET_MLDSA_SIGN) B$(if $(STACK_MLDSA_AVX2),; on the four-way sampler its verifier's under $(STACK_BUDGET_MLDSA_AVX2) B and its signer's row under $(STACK_BUDGET_MLDSA_ROW_AVX2) B)$(if $(filter -DCH_SIGN_MLDSA,$(LIB_DEF)),; the profile server's CertificateVerify under $(STACK_BUDGET_SRV_MLDSA) B and its key file call under $(STACK_BUDGET_PEM_FILES_MLDSA) B)"; exit $$rc
+	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B, its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B, the 512-bit AES-GCM kernel's under $(STACK_BUDGET_GCM_AVX512) B, its stack wipe's under $(STACK_BUDGET_GCM_AVX512_WIPE) B, ML-DSA-87's verifier's under $(STACK_BUDGET_MLDSA) B and its signer's under $(if $(filter -DCH_CPU_RUNTIME,$(LIB_DEF)),$(STACK_BUDGET_MLDSA_SIGN_HOST),$(STACK_BUDGET_MLDSA_SIGN)) B$(if $(STACK_MLDSA_AVX2),; on the four-way sampler its verifier's under $(STACK_BUDGET_MLDSA_AVX2) B and its signer's row under $(STACK_BUDGET_MLDSA_ROW_AVX2) B)$(if $(filter -DCH_SIGN_MLDSA,$(LIB_DEF)),; the profile server's CertificateVerify under $(STACK_BUDGET_SRV_MLDSA) B and its key file call under $(STACK_BUDGET_PEM_FILES_MLDSA) B)"; exit $$rc
 
 # Every document must be named in the README; an orphaned doc is a doc
 # nobody finds. The second and third loops keep the invariants
@@ -9255,6 +9265,17 @@ WIDEMUL_SPECS := \
 #   unrolls beside. mldsa_avx2.c's 8 on x86-64 are its loops over the four
 #   states and the six blocks and the tests of each entry's count, all
 #   over the public stream of A.
+# ML-DSA-87's A and the key's NTTs once a signature (docs/decisions.md
+#   191): mldsa_sign_steps.c@host's 71 on arm64 and 67 on x86-64 hold 25
+#   and 27 more, in mlds_expand, mlds_commit and mlds_hint_row. Each was
+#   read by its instruction under clang 23: a test of st->ex against
+#   NULL, a TBNZ or TBZ on bits 2 and 7 of cpu or a TESTB of cpu with 8
+#   or 12 in the dispatchers that clang now inlines into stored_row and
+#   mlds_expand, a test of a sampler's verdict for each entry of A that
+#   mlds_expand unrolls, the loops over the rows, the entries and the
+#   four-way copies, and on x86-64 the vectorizer's tests of whether
+#   st->w[i] and st->product overlap, which compare addresses. None reads
+#   a coefficient. The device arm's counts do not move.
 # keccak_avx2.c, 0 and 1: the permutation's 24 rounds.
 # sha256_hw.c, 6 and 10; sha512_hw.c, 17 and 13; sha256.c@host, 28 and 35:
 #   an update's tests of n and of the count of buffered bytes, the loop
@@ -9582,10 +9603,10 @@ MLDSA_SIGN_BRANCH_CEILING := \
   rv32imac-gcc/src/mldsa_sign_pack.c:23 \
   rv32ic-gcc/src/mldsa_signer.c:29 rv32ic-gcc/src/mldsa_sign_round.c:6 rv32ic-gcc/src/mldsa_sign_steps.c:24 \
   rv32ic-gcc/src/mldsa_sign_poly.c:12 rv32ic-gcc/src/mldsa_sign_pack.c:23 \
-  arm64/src/mldsa_signer.c@host:27 arm64/src/mldsa_sign_round.c@host:2 arm64/src/mldsa_sign_steps.c@host:46 \
+  arm64/src/mldsa_signer.c@host:27 arm64/src/mldsa_sign_round.c@host:2 arm64/src/mldsa_sign_steps.c@host:71 \
   arm64/src/mldsa_sign_poly.c@host:25 arm64/src/mldsa_sign_pack.c@host:40 \
   x86-64/src/mldsa_signer.c@host:18 x86-64/src/mldsa_sign_round.c@host:2 \
-  x86-64/src/mldsa_sign_steps.c@host:40 x86-64/src/mldsa_sign_poly.c@host:26 \
+  x86-64/src/mldsa_sign_steps.c@host:67 x86-64/src/mldsa_sign_poly.c@host:26 \
   x86-64/src/mldsa_sign_pack.c@host:32
 QUIC_PACKET_BRANCH_CEILING := \
   m3/src/quic_packet.c:59 mips32r2/src/quic_packet.c:42 rv32imac/src/quic_packet.c:46 m3-gcc/src/quic_packet.c:46 \

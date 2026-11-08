@@ -83,6 +83,11 @@ int mldsa87_sign(uint8_t sig[MLDSA87_SIG_LEN], const uint8_t *sk, size_t sk_len,
 // Both paths compute the same values, so each call writes the bytes the
 // call without cpu writes. mldsa87_keygen and mldsa87_sign take no value
 // and run the pieces.
+//
+// In a host object each signature, through either call, computes A and
+// the NTTs of s1, s2 and t0 once before its first round, in a frame of
+// about 100 kB (docs/decisions.md 191). A device object computes them in
+// each round, in a frame of about 19 kB. Both write the same bytes.
 int mldsa87_keygen_cpu(uint32_t cpu, uint8_t sk[MLDSA87_SK_LEN], uint8_t pk[MLDSA87_PK_LEN],
                        const uint8_t seed[MLDSA87_SEED_LEN]);
 
@@ -120,6 +125,16 @@ int mldsa87_sign_any_rnd_cpu(uint32_t cpu, uint8_t sig[MLDSA87_SIG_LEN], const u
 unsigned mldsa87_sign_mu_cpu(uint32_t cpu, uint8_t sig[MLDSA87_SIG_LEN],
                              const uint8_t sk[MLDSA87_SK_LEN], const uint8_t pk[MLDSA87_PK_LEN],
                              const uint8_t mu[MLDSA_MU_LEN], const uint8_t rnd[MLDSA87_RND_LEN]);
+
+// mldsa87_sign_mu_cpu on the frame a device object signs on, which
+// decodes and samples in each round, in place of the host object's frame,
+// which computes A and the NTTs of the key once (docs/decisions.md 191).
+// A test holds the two to the same rounds and the same bytes.
+unsigned mldsa87_sign_mu_device_cpu(uint32_t cpu, uint8_t sig[MLDSA87_SIG_LEN],
+                                    const uint8_t sk[MLDSA87_SK_LEN],
+                                    const uint8_t pk[MLDSA87_PK_LEN],
+                                    const uint8_t mu[MLDSA_MU_LEN],
+                                    const uint8_t rnd[MLDSA87_RND_LEN]);
 #endif
 #endif
 

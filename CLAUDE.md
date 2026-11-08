@@ -207,7 +207,10 @@ Home: github.com/c4milo.
   over a fixed byte count, and the round's verdict the one branch on a
   secret-derived value; each signature is verified with
   `mldsa87_verify` before it leaves; `mldsa_signer.c` stays under
-  `STACK_BUDGET_MLDSA_SIGN`; every host server object and the
+  `STACK_BUDGET_MLDSA_SIGN` in a device object, and a host object
+  computes A and the NTTs of s1, s2 and t0 once for each signature in a
+  frame under `STACK_BUDGET_MLDSA_SIGN_HOST`, wiping the key's NTTs on
+  every path, docs/decisions.md 191; every host server object and the
   PROFILE=cnsa2 server role package them, and `CH_MLDSA_SIGN_TEST`
   declares their two test entries, docs/decisions.md 159;
   `srv_mldsa.[ch]` is the ML-DSA-87 identity of both, which a host
