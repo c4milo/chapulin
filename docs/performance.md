@@ -908,7 +908,7 @@ which it does not call. It times these on the same buffers:
 
 One stage has no function of its own, so its row is a difference of two timed rows:
 `chacha20_xor_cpu` less the keystream's passes gives the ChaCha20 exclusive-or. The passes' row is
-`chacha20_vector.c`'s, eight blocks a pass on NEON and four on SSE2, the AVX2 kernel's, or under
+`chacha20_vector.c`'s, nine blocks a pass on NEON and four on SSE2, the AVX2 kernel's, or under
 0x11f the AVX-512 kernel's, with each pass's keystream stored to a buffer. AES-GCM's exclusive-or
 has no row: `gcm_hw.c` runs it in the same pass as the AES rounds (below), so its time is inside
 counter mode's and the loops'.

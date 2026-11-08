@@ -1,6 +1,7 @@
 // A host object's ChaCha20: the stream cipher of RFC 8439 §2.4, several
 // blocks at a time in 128-bit vectors, NEON on arm64 and SSE2 on x86-64:
-// eight blocks a pass on NEON and four on SSE2.
+// nine blocks a pass on NEON, eight of them in vectors and one in general
+// registers, and four on SSE2.
 // chacha20.c's chacha20_xor calls it in place of its own loop in a host
 // object (-DCH_CPU_RUNTIME, cpu_cfg.h), and chacha20.c's loop stays the
 // reference and a device object's path:

@@ -87,11 +87,19 @@ void bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY],
         for (size_t g = 0; g < PASS_GROUPS; g++) {
             group_input(x[g], words, counter + (uint32_t)(GROUP_BLOCKS * g));
         }
+#if PASS_SCALAR_BLOCKS
+        uint32_t scalar_counter = counter + (uint32_t)(PASS_GROUPS * GROUP_BLOCKS);
+        uint32_t scalar[16];
+        scalar_input(scalar, words, scalar_counter);
+#endif
         for (int i = 0; i < 10; i++) {
 #pragma GCC unroll 2
             for (size_t g = 0; g < PASS_GROUPS; g++) {
                 double_round(x[g]);
             }
+#if PASS_SCALAR_BLOCKS
+            scalar_double_round(scalar);
+#endif
         }
 #pragma GCC unroll 2
         for (size_t g = 0; g < PASS_GROUPS; g++) {
@@ -101,7 +109,13 @@ void bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY],
                 store_16(out + GROUP_BYTES * g + 16 * row, x[g][4 * (row % 4) + row / 4]);
             }
         }
-        counter += PASS_GROUPS * GROUP_BLOCKS;
+#if PASS_SCALAR_BLOCKS
+#pragma GCC unroll 4
+        for (size_t row = 0; row < 4; row++) {
+            store_16(out + GROUPS_BYTES + 16 * row, scalar_row(scalar, words, scalar_counter, row));
+        }
+#endif
+        counter += PASS_BLOCKS;
     }
 }
 #endif

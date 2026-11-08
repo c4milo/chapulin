@@ -4938,8 +4938,9 @@ as an `if`. No gcc measures it.
 ### The vector ChaCha20
 
 `chacha20_vector.c` computes ChaCha20 on NEON or SSE2 intrinsics, in
-passes of eight blocks on NEON, two groups of four side by side, and of
-four blocks on SSE2 (decisions 82 and 86). Every host object holds it,
+passes of nine blocks on NEON, two groups of four side by side and one
+block in general registers, and of four blocks on SSE2 (decisions 82, 86
+and 193). Every host object holds it,
 and every host session runs it: in a host object `chacha20_xor` calls it
 in place of `chacha20.c`'s loop, which a device object runs (decision
 89). CBMC cannot unwind an intrinsic, so no harness compiles the file,
@@ -4964,6 +4965,15 @@ target:
   Each case checks every output byte and every byte around the output,
   then runs again on heap buffers of exactly the case's size, which
   `make san-check` runs under AddressSanitizer.
+- On NEON the same binary copies the stack below one call of two passes
+  less 7 bytes, where the call's dead frame lay
+  (test/chacha20_equiv_residue.h). It requires that the copy holds
+  neither the key's eight words side by side, as the call's input words
+  hold them, nor any word of a block the call computed in general
+  registers, before or after the input is added back. It does not search
+  for a key word alone: the groups' vectors start as the input words, and
+  Apple clang 21 leaves one of them in a spill slot, which no wipe written
+  in C can name.
 - `bin/unit_host`, the unit suite compiled as a host object, runs on the
   path under each `ch_cfg.cpu` value it takes: RFC 8439's §2.3.2,
   §2.4.2, A.2 and A.5 vectors, of which A.2's 375-byte vector and A.5's
@@ -4973,7 +4983,7 @@ target:
   under every `ch_cfg.cpu` value that binary takes, with messages up to
   513 bytes.
 - `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
-  the pinned clang and holds its conditional branches at 40 and 26,
+  the pinned clang and holds its conditional branches at 45 and 26,
   every one loop control over a public count or a test of the byte
   count: most of them test whether the last pass's limit covers a row of
   16 bytes. It multiplies nothing.
@@ -4985,12 +4995,15 @@ target:
   every device object's, and requires the Makefile to refuse the `CHACHA`
   variable for both.
 
-Ten violations break the path or the rule that puts it in a host object
-alone, and each is caught. The equivalence test catches
+Thirteen violations break the path or the rule that puts it in a host
+object alone, and each is caught. The equivalence test catches
 `chacha-vector-tail-whole-rows-only`,
 `chacha-vector-counter-carries-into-nonce`,
-`chacha-vector-skips-a-lane` and
-`chacha-vector-blocks-in-descending-order`; `test/chacha-builds.sh`
+`chacha-vector-skips-a-lane`,
+`chacha-vector-blocks-in-descending-order`,
+`chacha-vector-scalar-block-reuses-a-counter`,
+`chacha-vector-scalar-row-drops-counter` and
+`chacha-vector-keeps-input-words`; `test/chacha-builds.sh`
 catches `chacha-vector-header-admits-any-target`,
 `chacha-vector-header-admits-big-endian` and
 `chacha-vector-falls-back-to-portable`; and `make lint-trust-separation`
@@ -5000,8 +5013,8 @@ catches `inv16-host-object-drops-vector-chacha`,
 
 None of this proves the two paths agree on an input no case runs.
 The path's timing rests on construction, as the portable loop's does:
-it runs adds, exclusive-ors, shifts and lane moves, with no table and no
-multiply. No gcc measures its branches. No proof covers the ChaCha20 a
+it runs adds, exclusive-ors, shifts, lane moves and byte shuffles by a
+constant index, with no table in memory and no multiply. No gcc measures its branches. No proof covers the ChaCha20 a
 host session runs: the proved loop runs in a device object alone, which
 is the cost decision 89 states.
 

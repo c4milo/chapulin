@@ -1,0 +1,13 @@
+invariant: INV-16
+file: src/chacha20_vector.c
+catches: chacha20_equiv_test
+reason: the NEON block in general registers takes the counter of the
+  last block of the second group, so a pass computes one keystream block
+  twice and skips the next: an in-place record XORs the same 64 bytes of
+  keystream into two blocks. bin/chacha20_equiv_test compares every byte
+  of the output with chacha20.c's, at every length that reaches the block.
+
+--- old
+    uint32_t scalar_counter = counter + (uint32_t)(PASS_GROUPS * GROUP_BLOCKS);
+--- new
+    uint32_t scalar_counter = counter + (uint32_t)(PASS_GROUPS * GROUP_BLOCKS - 1);

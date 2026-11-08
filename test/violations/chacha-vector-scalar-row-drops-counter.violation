@@ -1,0 +1,12 @@
+invariant: INV-16
+file: src/chacha20_vector.c
+catches: chacha20_equiv_test
+reason: the last row of the NEON block in general registers leaves the
+  counter out of the input it adds back, so word 12 of that block's
+  keystream differs from RFC 8439 §2.3's. bin/chacha20_equiv_test
+  compares every byte of the output with chacha20.c's.
+
+--- old
+    uint32_t word_12 = row == 3 ? counter : 0;
+--- new
+    uint32_t word_12 = row == 4 ? counter : 0;

@@ -771,7 +771,7 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8439_tests.h test/rfc8448_vectors.h \
          test/cnsa2_mock.h test/cnsa2_cases.h test/cnsa2_mldsa_cases.h test/cnsa2_mldsa_fixture.h \
          test/mldsa_sign.h test/mldsa_cert.h \
-         test/poly1305_equiv_residue.h test/poly1305_ifma_model.h test/poly1305_ifma_model_lanes.h \
+         test/chacha20_equiv_residue.h test/poly1305_equiv_residue.h test/poly1305_ifma_model.h test/poly1305_ifma_model_lanes.h \
          test/p256_equiv_field.h test/p256_equiv_residue.h \
          test/p256_equiv_table.h test/p256_verify_equiv_joint.h \
          test/rfc8448_tests.h \
@@ -1467,7 +1467,7 @@ endif
 # The ChaCha20 keystream, which every build runs
 # (https://github.com/c4milo/chapulin/issues/181). A device object runs
 # chacha20.c's loop, one 64-byte block at a time in 32-bit words. A host
-# object also holds chacha20_vector.c, eight blocks a pass on NEON on
+# object also holds chacha20_vector.c, nine blocks a pass on NEON on
 # arm64 and four on SSE2 on x86-64, in 128-bit vectors, which every
 # session runs in place of the loop, and chacha20_avx2.c, an AVX2 kernel
 # of eight blocks a pass, which a session whose ch_cfg.cpu holds
@@ -3616,7 +3616,8 @@ bin/rsa_test_host: test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS)) $(HDRS) $(
 # ct_wipe.c is the wipe of the buffer a vector path's last bytes pass
 # through. The line takes HOST_CFLAGS for bin/aes_equiv_test's reason.
 CHACHA20_EQUIV_TEST_SRCS := test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c \
-                            test/chacha20_equiv_avx512.c src/chacha20.c src/ct.c src/ct_wipe.c
+                            test/chacha20_equiv_avx512.c src/chacha20.c src/ct.c src/ct_wipe.c \
+                            test/stack_residue.c
 bin/chacha20_equiv_test: test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS) $(CHACHA_VECTOR_SRCS) \
                          src/avx512_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -9116,7 +9117,7 @@ WIDEMUL_SPECS := \
 #   pack and in mul. ct_widemul_s reads no sign bit by itself: before it
 #   took that form x86-64 held a 13th, a jump on the sign of a word in
 #   mul's inner loop.
-# chacha20_vector.c, 40 and 26; chacha20_avx2.c, 0 and 31; chacha20_avx512.c,
+# chacha20_vector.c, 45 and 26; chacha20_avx2.c, 0 and 31; chacha20_avx512.c,
 #   0 and 77: each closes a loop over a public count or tests the byte
 #   count n. An xor entry tests n against the bytes of a pass, against zero
 #   and against the rows and bytes the last pass leaves, and clang runs the
@@ -9859,7 +9860,7 @@ BRANCH_CEILING := \
   mips32r2-gcc-O2/src/base64.c:0 rv32imac-gcc/src/base64.c:0 rv32ic-gcc/src/base64.c:0 \
   arm64/src/x25519_wide.c:8 x86-64/src/x25519_wide.c:9 arm64/src/x25519_adx.c:0 x86-64/src/x25519_adx.c:4 \
   arm64/src/rsa_mont64_adx.c:0 x86-64/src/rsa_mont64_adx.c:32 \
-  arm64/src/chacha20_vector.c:40 x86-64/src/chacha20_vector.c:26 \
+  arm64/src/chacha20_vector.c:45 x86-64/src/chacha20_vector.c:26 \
   arm64/src/chacha20_avx2.c:0 x86-64/src/chacha20_avx2.c:31 \
   arm64/src/chacha20_avx512.c:0 x86-64/src/chacha20_avx512.c:77 \
   arm64/src/poly1305_vector.c:0 x86-64/src/poly1305_vector.c:0 \

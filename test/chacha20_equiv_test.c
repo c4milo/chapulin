@@ -25,17 +25,19 @@
 // The inputs, in order:
 //
 //   - every length from 0 to LENGTH_MAX, which crosses the AVX-512
-//     kernel's pass of sixteen blocks four times, the pass of eight blocks
-//     on NEON and on AVX2 eight times and the pass of four blocks on SSE2
-//     sixteen times, so the pass loop, the last partial pass, every length
-//     of that pass, on NEON a last pass that ends in either of its two
-//     groups, and on AVX-512 a last pass of four blocks alone and beside a
-//     pass of sixteen all run;
+//     kernel's pass of sixteen blocks four times, the NEON pass of nine
+//     blocks seven times, the pass of eight blocks on AVX2 eight times and
+//     the pass of four blocks on SSE2 sixteen times, so the pass loop, the
+//     last partial pass, every length of that pass, on NEON a last pass
+//     that ends in either of its two groups or in its block in general
+//     registers, and on AVX-512 a last pass of four blocks alone and beside
+//     a pass of sixteen all run;
 //   - the counter's last values, 2^32 - 17 to 2^32 - 1, and 0, at every
 //     length to 36 blocks, so the 32-bit counter wraps inside a group, at
-//     the edge between a pass's two groups, at a pass's edge, inside the
-//     pass after it, and in the last partial pass, the AVX-512 kernel's
-//     two passes of sixteen blocks and four after them among them;
+//     the edge between a pass's two groups, at the NEON block in general
+//     registers and on each side of it, at a pass's edge, inside the pass
+//     after it, and in the last partial pass, the AVX-512 kernel's two
+//     passes of sixteen blocks and four after them among them;
 //   - RANDOM_CASES cases with a random key, nonce, counter, length up to
 //     RANDOM_LENGTH_MAX, alignment and aliasing shape;
 //   - a 16 KiB record with its content type byte, 16,385 bytes, and 64 KiB.
@@ -99,10 +101,10 @@ static void rng_fill(uint8_t *p, size_t n) {
 }
 
 // The vector path computes one pass of sixteen blocks at a time on
-// AVX-512, of eight blocks on NEON, two groups of four side by side, and on
-// AVX2, and of four blocks on SSE2. The lengths below count in the largest
-// pass, so each path crosses its own pass's edge at least four times. The
-// counter's wrap runs to two passes of sixteen blocks and four more.
+// AVX-512, of nine blocks on NEON, two groups of four side by side and one
+// block in general registers, of eight on AVX2, and of four on SSE2. The lengths below count in the
+// largest pass, so each path crosses its own pass's edge at least four times. The counter's wrap
+// runs to two passes of sixteen blocks and four more.
 #define PASS_BYTES_MAX ((size_t)16 * CHACHA20_BLOCK)
 #define LENGTH_MAX (4 * PASS_BYTES_MAX)
 #define WRAP_BACK_MAX 17
@@ -341,6 +343,8 @@ static void run_path(const vector_path *path, uint64_t seed) {
            compared - before_path, path->name, (unsigned long long)seed);
 }
 
+#include "chacha20_equiv_residue.h"
+
 #ifdef __x86_64__
 #include "avx2_registers.h"
 
@@ -399,6 +403,9 @@ static void run_avx2_registers(void) {
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     run_path(&vector_128, seed);
+#ifdef __ARM_NEON
+    run_residue();
+#endif
 #ifdef __x86_64__
     if (x86_cpu_has_avx2()) {
         run_path(&vector_avx2, seed);

@@ -16180,3 +16180,68 @@ does nothing more.
       `parts_max` parts and refuse one more, take two connection IDs of
       `CH_QUIC_DCID_MAX` bytes and refuse a longer one, and read the
       options' context back from a tcp session's hook.
+
+193. **A NEON pass of `chacha20_vector.c` computes nine blocks: two groups
+    of four in vectors and one block in general registers. A rotation by
+    8 is one byte shuffle.** Entry 86 left eight blocks a pass on NEON. In
+    the record bench of 2026-10-28, ChaCha20 took 7.9 of the 10.5 µs a
+    16 KiB seal took on the M1 Pro, and OpenSSL 3.6.4 ran ChaCha20 and
+    Poly1305 over the same bytes in 8.95 (docs/performance.md, "Where a
+    record's time goes").
+
+    - **The block in general registers.** The vector rounds keep the
+      M1 Pro's vector units busy and leave its integer units free. So a
+      pass now runs `chacha20.c`'s quarter round on one more block in
+      general registers, in the same loop as the groups' double rounds.
+      The block's counter follows the groups': counter + 8 of a pass that
+      starts at counter. Its 16 words take 16 of arm64's general
+      registers. A second block's 16 words do not fit beside the pass's
+      pointers and counts: Apple clang 21 then wrote 261 stack loads and
+      stores in the file's code, where one block's held 66, and a pass
+      took 4% more time than eight blocks alone. The block's rows XOR into the
+      data through `lanes_of`, which moves two 64-bit words to a vector,
+      so the last pass's tests of the limit and its last 1 to 15 bytes
+      stay as they were.
+    - **The rotation by 8 as TBL.** A rotation by 8 is one byte shuffle by
+      a constant index vector, where a shift and an insert are two
+      operations. Entry 86 rejected it, because gcc 13 then kept more of
+      the state on the stack. CI's arm64 job now runs gcc 15 on
+      ubuntu-26.04-arm, which keeps the state in registers with the
+      shuffle: its round loop holds 342 instructions and 17 stack loads
+      and stores, beside Apple clang 21's 339 and 8. The index is a
+      constant, and TBL reads its table from the register that holds the
+      state, so no address depends on a secret.
+    - **Measured.** The M1 Pro ran other work for this whole change, at a
+      one-minute load average from 14 to 80, so each variant ran a loop
+      of in-place calls over 16 KiB and `/usr/bin/time -l` read the
+      cycles its process used, which other processes do not add to. From
+      1,415 to 1,481 million cycles for entry 86's pass: the shuffle alone
+      took 4% off, the block alone 6%, and both 11% to 15%, at 1,249 to
+      1,280 million. Three groups and the block took the same as two
+      groups and the block, with twice the stack loads and stores, so a
+      pass keeps two groups.
+    - **The input words are wiped.** `chacha20_vector_xor` keeps the
+      input words, the key among them, in an array on its frame, and it
+      left them there after it returned. The call now wipes them through
+      `ct_wipe`. `bin/chacha20_equiv_test` copies the stack below a call on
+      NEON and requires neither the key's eight words side by side nor a
+      word of the block in general registers, before or after the input
+      is added back (test/chacha20_equiv_residue.h). It does not search
+      for a key word alone: a group's vectors start as the input words,
+      and Apple clang 21 leaves one of them in a spill slot, which no
+      wipe written in C can name.
+    - **SSE2 unchanged.** No x86-64 machine here times the SSE2 arm, and
+      its 16 vector registers already hold one group, so it computes four
+      blocks a pass as before. It wipes the input words too.
+
+    Cost: `chacha20_vector.c` grows from 343 to 457 lines. Its arm64
+    conditional branches in `make lint-wide-multiply` rise from 40 to 45:
+    each new one tests the last pass's limit against a row of the block
+    in general registers. A 1-byte call now computes nine blocks where it
+    computed eight. `bin/chacha20_equiv_test` holds the path to
+    `chacha20.c`'s loop at every length to 4,096 bytes, the counter's
+    wrap at each block of a pass, random cases and 64 KiB, under Apple
+    clang 21 and under gcc 15 for arm64. Three violations break the new
+    code and each is caught: `chacha-vector-scalar-block-reuses-a-counter`,
+    `chacha-vector-scalar-row-drops-counter` and
+    `chacha-vector-keeps-input-words`.

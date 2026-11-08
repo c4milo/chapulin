@@ -79,7 +79,7 @@ void bench_gcm_compute_tag(const aes_traffic_key *k, const uint8_t nonce[AES_IV]
 // names, chacha20_vector.c's or one of the kernels', run as often and with
 // the same counters as the path's xor runs them over n bytes, with each
 // pass's keystream written to out and no exclusive-or. A pass is sixteen
-// blocks on AVX-512, eight on NEON and on AVX2 and four on SSE2, so out
+// blocks on AVX-512, nine on NEON, eight on AVX2 and four on SSE2, so out
 // holds the largest.
 #define BENCH_CHACHA20_VECTOR_PASS_MAX (16 * CHACHA20_BLOCK)
 void bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY],

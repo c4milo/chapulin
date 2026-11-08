@@ -33,7 +33,23 @@
 #define PASS_GROUPS 1
 #endif
 _Static_assert(PASS_GROUPS <= 2, "each #pragma GCC unroll 2 below covers PASS_GROUPS");
-#define PASS_BYTES ((size_t)PASS_GROUPS * GROUP_BYTES)
+#define GROUPS_BYTES ((size_t)PASS_GROUPS * GROUP_BYTES)
+
+// The blocks a pass computes in general registers beside its groups, after
+// them in counter order. The vector rounds keep arm64's vector units busy
+// and leave its integer units free, so on the M1 Pro one block there took
+// a pass from eight blocks to nine for about 6% more time per pass. Its 16
+// words fill 16 of arm64's general registers, and a second block's 16
+// would not fit beside the pointers and counts the pass keeps
+// (docs/decisions.md 193). SSE2 keeps none, because no x86-64 machine
+// here has timed one.
+#ifdef __ARM_NEON
+#define PASS_SCALAR_BLOCKS 1
+#else
+#define PASS_SCALAR_BLOCKS 0
+#endif
+#define PASS_BLOCKS (PASS_GROUPS * GROUP_BLOCKS + PASS_SCALAR_BLOCKS)
+#define PASS_BYTES ((size_t)PASS_BLOCKS * CHACHA20_BLOCK)
 
 // The vector operations the rounds below are written in, one set per
 // instruction set. Each operates on all four lanes at once and has no
@@ -61,14 +77,20 @@ static inline lanes lanes_rotate_left_16(lanes x) {
     return vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)));
 }
 
+// A rotation by 8 moves each byte of a lane one place up and the top byte
+// to the bottom: one byte shuffle (TBL) by a constant index vector. The
+// index is the same for every input, and TBL reads its table from the
+// register that holds x, so no address depends on x (docs/decisions.md
+// 193).
+static inline lanes lanes_rotate_left_8(lanes x) {
+    static const uint8_t index[16] = {3, 0, 1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14};
+    return vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), vld1q_u8(index)));
+}
+
 // The other rotations shift left by r, then shift right by 32 - r and
 // insert the result into the bits the left shift cleared (SRI).
 static inline lanes lanes_rotate_left_12(lanes x) {
     return vsriq_n_u32(vshlq_n_u32(x, 12), x, 20);
-}
-
-static inline lanes lanes_rotate_left_8(lanes x) {
-    return vsriq_n_u32(vshlq_n_u32(x, 8), x, 24);
 }
 
 static inline lanes lanes_rotate_left_7(lanes x) {
@@ -101,6 +123,14 @@ static inline void xor_16(const uint8_t *in, uint8_t *out, lanes keystream) {
 
 static inline void store_16(uint8_t *out, lanes keystream) {
     vst1q_u8(out, vreinterpretq_u8_u32(keystream));
+}
+
+// The four words w0 to w3 in lanes 0 to 3: two general registers moved to
+// the vector's two halves, lane 0 and lane 2 in their low 32 bits.
+static inline lanes lanes_of(uint32_t w0, uint32_t w1, uint32_t w2, uint32_t w3) {
+    uint64_t low = (uint64_t)w0 | ((uint64_t)w1 << 32);
+    uint64_t high = (uint64_t)w2 | ((uint64_t)w3 << 32);
+    return vreinterpretq_u32_u64(vcombine_u64(vcreate_u64(low), vcreate_u64(high)));
 }
 
 #else
@@ -284,14 +314,81 @@ static inline lanes xor_rows(const uint8_t *in, uint8_t *out, const lanes x[16],
     return next;
 }
 
+#if PASS_SCALAR_BLOCKS
+
+#define ROTATE_LEFT(v, c) (((v) << (c)) | ((v) >> (32 - (c))))
+
+// chacha20.c's QUARTERROUND on one block in general registers.
+static inline void scalar_quarter_round(uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
+    *a += *b;
+    *d = ROTATE_LEFT(*d ^ *a, 16);
+    *c += *d;
+    *b = ROTATE_LEFT(*b ^ *c, 12);
+    *a += *b;
+    *d = ROTATE_LEFT(*d ^ *a, 8);
+    *c += *d;
+    *b = ROTATE_LEFT(*b ^ *c, 7);
+}
+
+// double_round on the one block in x.
+static inline void scalar_double_round(uint32_t x[16]) {
+    scalar_quarter_round(&x[0], &x[4], &x[8], &x[12]);
+    scalar_quarter_round(&x[1], &x[5], &x[9], &x[13]);
+    scalar_quarter_round(&x[2], &x[6], &x[10], &x[14]);
+    scalar_quarter_round(&x[3], &x[7], &x[11], &x[15]);
+    scalar_quarter_round(&x[0], &x[5], &x[10], &x[15]);
+    scalar_quarter_round(&x[1], &x[6], &x[11], &x[12]);
+    scalar_quarter_round(&x[2], &x[7], &x[8], &x[13]);
+    scalar_quarter_round(&x[3], &x[4], &x[9], &x[14]);
+}
+
+// The input of the block whose counter is counter, word w in x[w].
+static inline void scalar_input(uint32_t x[16], const uint32_t words[16], uint32_t counter) {
+#pragma GCC unroll 16
+    for (size_t w = 0; w < 16; w++) {
+        x[w] = words[w];
+    }
+    x[12] = counter;
+}
+
+// Row row of the block in x after its ten double rounds, bytes 16 * row
+// to 16 * row + 15 of the block: words 4 * row to 4 * row + 3 with the
+// input added back. words[12] is 0, so row 3 adds the counter to word 12.
+static inline lanes scalar_row(const uint32_t x[16], const uint32_t words[16], uint32_t counter,
+                               size_t row) {
+    size_t w = 4 * row;
+    uint32_t word_12 = row == 3 ? counter : 0;
+    return lanes_of(x[w] + words[w] + word_12, x[w + 1] + words[w + 1], x[w + 2] + words[w + 2],
+                    x[w + 3] + words[w + 3]);
+}
+
+// xor_rows for the block in x, whose counter is counter: its four rows,
+// for out[0..limit) and in[0..limit).
+static inline lanes scalar_rows(const uint8_t *in, uint8_t *out, const uint32_t x[16],
+                                const uint32_t words[16], uint32_t counter, size_t limit,
+                                lanes next) {
+#pragma GCC unroll 4
+    for (size_t row = 0; row < 4; row++) {
+        size_t offset = 16 * row;
+        lanes keystream = scalar_row(x, words, counter, row);
+        if (offset + 16 > limit) {
+            return keystream;
+        }
+        xor_16(in + offset, out + offset, keystream);
+    }
+    return next;
+}
+
+#endif // PASS_SCALAR_BLOCKS
+
 // One pass: the PASS_GROUPS groups whose blocks start at the counter
-// counter, their ten double rounds run side by side, and their keystream
-// XORed into each whole row of 16 bytes that out[0..limit) and
-// in[0..limit) hold, for a limit of 1 to PASS_BYTES. Returns the
-// keystream of the row the limit ends inside, whose first limit % 16
-// bytes the caller XORs when limit % 16 is not 0. A pass with a limit
-// below PASS_BYTES is the message's last, and it computes every group of
-// the pass, since the groups run side by side.
+// counter and the PASS_SCALAR_BLOCKS blocks after them, their ten double
+// rounds run side by side, and their keystream XORed into each whole row
+// of 16 bytes that out[0..limit) and in[0..limit) hold, for a limit of 1
+// to PASS_BYTES. Returns the keystream of the row the limit ends inside,
+// whose first limit % 16 bytes the caller XORs when limit % 16 is not 0.
+// A pass with a limit below PASS_BYTES is the message's last, and it
+// computes every block of the pass, since the blocks run side by side.
 static lanes pass(const uint32_t words[16], uint32_t counter, const uint8_t *in, uint8_t *out,
                   size_t limit) {
     lanes x[PASS_GROUPS][16];
@@ -299,11 +396,19 @@ static lanes pass(const uint32_t words[16], uint32_t counter, const uint8_t *in,
     for (size_t g = 0; g < PASS_GROUPS; g++) {
         group_input(x[g], words, counter + (uint32_t)(GROUP_BLOCKS * g));
     }
+#if PASS_SCALAR_BLOCKS
+    uint32_t scalar_counter = counter + (uint32_t)(PASS_GROUPS * GROUP_BLOCKS);
+    uint32_t scalar[16];
+    scalar_input(scalar, words, scalar_counter);
+#endif
     for (int i = 0; i < 10; i++) {
 #pragma GCC unroll 2
         for (size_t g = 0; g < PASS_GROUPS; g++) {
             double_round(x[g]);
         }
+#if PASS_SCALAR_BLOCKS
+        scalar_double_round(scalar);
+#endif
     }
     lanes next = lanes_broadcast(0);
 #pragma GCC unroll 2
@@ -314,6 +419,12 @@ static lanes pass(const uint32_t words[16], uint32_t counter, const uint8_t *in,
             next = xor_rows(in + start, out + start, x[g], limit - start, next);
         }
     }
+#if PASS_SCALAR_BLOCKS
+    if (GROUPS_BYTES < limit) {
+        next = scalar_rows(in + GROUPS_BYTES, out + GROUPS_BYTES, scalar, words, scalar_counter,
+                           limit - GROUPS_BYTES, next);
+    }
+#endif
     return next;
 }
 
@@ -323,7 +434,7 @@ void chacha20_vector_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CH
     setup(words, key, nonce);
     while (n >= PASS_BYTES) {
         (void)pass(words, counter, in, out, PASS_BYTES);
-        counter += PASS_GROUPS * GROUP_BLOCKS;
+        counter += PASS_BLOCKS;
         in += PASS_BYTES;
         out += PASS_BYTES;
         n -= PASS_BYTES;
@@ -338,6 +449,9 @@ void chacha20_vector_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CH
             xor_partial(in + whole, out + whole, last, n - whole);
         }
     }
+    // words holds the key, and bin/chacha20_equiv_test's residue check
+    // finds it below the caller after the return.
+    ct_wipe(words, sizeof words);
 }
 
 #endif // CH_CPU_RUNTIME
