@@ -208,7 +208,10 @@ Home: github.com/c4milo.
   Algorithms 2, 6 and 7, constant time over s1, s2, t0, K, rnd, y and c:
   every product on ct.h's `ct_widemul_s`, both rejection samplers masked
   over a fixed byte count, and the round's verdict the one branch on a
-  secret-derived value; each signature is verified with
+  secret-derived value; a host object runs RejBoundedPoly's passes in
+  `MLDS_ETA_PADDED` form, over 992 entries in loops of multiples of 16
+  (docs/decisions.md 200), and a device object keeps decision 176's
+  form; each signature is verified with
   `mldsa87_verify` before it leaves; `mldsa_signer.c` stays under
   `STACK_BUDGET_MLDSA_SIGN` in a device object, and a host object
   computes A and the NTTs of s1, s2 and t0 once for each signature in a
