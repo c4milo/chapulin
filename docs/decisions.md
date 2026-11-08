@@ -16618,8 +16618,24 @@ does nothing more.
       | ML-DSA-87 sign | 6,172,815 → 5,058,145 | 3,601,377 → 3,101,964 |
       | ML-DSA-87 verify | 1,781,148 → 1,240,692 | 1,200,842 → 941,269 |
 
-      The machine ran other agents' work at a load average near 100 when
-      this was counted, so the times wait for a run at a load of 8 or less.
+      Times of one call, in microseconds, from the same program built
+      from the tree before and after, run in turn twice under the bench
+      lock at a one-minute load average from 7.6 to 8.7. Each figure is
+      the lower of the two runs' medians over 101 samples:
+
+      | operation | `0x1` | `0xe7` |
+      | --- | --- | --- |
+      | ML-KEM-768 key generation | 16.4 → 13.9 | 12.2 → 10.6 |
+      | ML-KEM-768 encapsulation | 19.4 → 16.4 | 13.8 → 12.2 |
+      | ML-KEM-768 decapsulation | 21.1 → 18.6 | 15.0 → 13.4 |
+      | ML-DSA-87 key generation | 217 → 185 | 149 → 131 |
+      | ML-DSA-87 verify | 109 → 81 | 79 → 62 |
+
+      The signing row of that program signs several messages a sample, and
+      it took 0.93 of the time before under both values. A run of `make
+      bench-primitives` on the same commit started at a load of 8.8, and
+      its later passes at 14 to 26, so its rows are not recorded:
+      docs/performance.md and the M1 CSV keep their rows.
 
     Rejected:
 
