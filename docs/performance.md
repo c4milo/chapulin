@@ -847,8 +847,9 @@ What the AVX-512 machine's columns show:
   and 1.08 times and 0.93 of it to open. Under `CH_CPU_AVX512_IFMA` the keystream runs sixteen
   blocks a pass in 512-bit vectors, and beside the multiply bit Poly1305 runs sixteen blocks at a
   time in eight AVX-512 IFMA lanes (decision 121). Of a 16 KiB record under gcc the keystream takes
-  3.16 µs and Poly1305 1.00, and the seal 5.44. The seal's time beyond its two parts grew from 0.71
-  to 1.28 µs under gcc in this run, where the open's did not; the cause is open.
+  3.16 µs and Poly1305 1.00, and the seal 5.44. This row varies between runs on the 8573C under
+  both compilers, with a spread of 11 to 18% in each build: a second run on the same tree measured
+  the seal at 5.26 µs (docs/decisions.md 207).
 - AES-GCM takes 1.01 to 1.05 times OpenSSL's time under gcc, and 0.93 to 0.97 of it under clang.
   Under `CH_CPU_AVX512` beside the VAES and AES bits each seal and open runs whole in one call of
   `gcm_avx512_kernel.c`: 32 blocks a step in eight 512-bit registers, with GHASH between the AES

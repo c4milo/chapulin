@@ -37,7 +37,9 @@ What moved otherwise:
 - **The 8573C's ChaCha20-Poly1305 seal under gcc**: 1.08 to 1.32. Its
   two parts took less time than in the run of 49796323, and the seal
   more: its time beyond the parts grew from 0.71 to 1.28 µs. The open
-  did not move. The cause is open.
+  did not move. The row varies between runs, with a spread of 11 to
+  18% in each build: a second run on the same tree measured 5.26 µs
+  where this one measured 5.44 (docs/decisions.md 207).
 
 ## The M1 Pro's run of 49796323
 
