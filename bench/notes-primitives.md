@@ -16,6 +16,29 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of 3322aa42
+
+The four x86-64 CSVs now hold one run of 2026-11-09 on 3322aa42 (bench
+run 42553779994): the EPYC 7763 and, after three re-runs, a Xeon
+Platinum 8573C. The tree adds docs/decisions.md 199 to 206.
+
+What moved by design, as ratios to OpenSSL on the EPYC 7763:
+
+- **ChaCha20-Poly1305's seal**: 1.24 to 1.18 under gcc and 1.17 to 0.92
+  under clang (decisions 199 and 206).
+- **ML-DSA-87's key generation under gcc**: 1.26 to 0.60 (decision 200).
+- **P-256 under gcc**: key generation 1.25 to 1.09, shared secret 1.16 to
+  1.12, signature 1.11 to 0.96 (decisions 204 and 205).
+- **X25519's shared secret under gcc**: 1.05 to 0.95 (decision 203).
+- **P-384 verification under gcc**: 0.92 to 0.64 (decision 201).
+
+What moved otherwise:
+
+- **The 8573C's ChaCha20-Poly1305 seal under gcc**: 1.08 to 1.32. Its
+  two parts took less time than in the run of 49796323, and the seal
+  more: its time beyond the parts grew from 0.71 to 1.28 µs. The open
+  did not move. The cause is open.
+
 ## The M1 Pro's run of 49796323
 
 The M1 Pro's CSVs now hold a run of 2026-11-09 on 49796323, against a
