@@ -6,10 +6,11 @@
 // aead_seal_cpu and aead_open_cpu, copies the stack below its caller as
 // deep as RESIDUE_BYTES after each, and looks in the copy, at every byte
 // offset, for the key's eight words side by side, as the input words of a
-// pass hold them, and for r^2 to r^8 as five words 4 or 32 bytes apart, as
-// the struct of powers and an AVX2 multiplier hold them. The calls wipe
-// both before they return. The search finds no key word alone, for the
-// reason test/chacha20_equiv_residue.h gives.
+// pass hold them, for r's two 64-bit limbs side by side, as the key of
+// poly1305_wide.h's step holds them, and for r^2 to r^8 as five words 4 or
+// 32 bytes apart, as poly1305_avx2.c's struct of powers and an AVX2
+// multiplier hold them. The calls wipe all three before they return. The search finds no key word
+// alone, for the reason test/chacha20_equiv_residue.h gives.
 //
 // run_avx2_registers sets every bit of ymm0 to ymm15, calls each entry,
 // and requires every bit of the sixteen registers zero after it, since
@@ -19,6 +20,7 @@
 #define CH_AEAD_AVX2_EQUIV_RESIDUE_H
 
 #include "avx2_registers.h"
+#include "poly1305_wide.h"
 
 #define RESIDUE_LENGTH ((size_t)4096 + 37)
 #define RESIDUE_BYTES 8192
@@ -43,6 +45,22 @@ static __attribute__((noinline)) void residue_seal(void) {
 static __attribute__((noinline)) int residue_open(void) {
     return aead_open_cpu(ONE_PASS, key, nonce, aad, SHIFT, sealed, RESIDUE_LENGTH, sealed_tag,
                          buffer);
+}
+
+// The one pass's entries called alone, from a poly1305 keyed as aead.c keys
+// it, so that no call after them writes over their dead frames before the
+// copy: aead.c's tag runs after them, and its frames reach the stack the
+// entries left.
+static __attribute__((noinline)) void residue_entry(int seal) {
+    static poly1305 state;
+    uint8_t otk[CHACHA20_BLOCK];
+    chacha20_block(key, nonce, 0, otk);
+    poly1305_init(&state, otk);
+    if (seal) {
+        aead_avx2_seal(key, nonce, &state, message, RESIDUE_LENGTH, sealed);
+    } else {
+        aead_avx2_open(key, nonce, &state, sealed, RESIDUE_LENGTH, buffer);
+    }
 }
 
 // value carried and reduced modulo 2^130 - 5 to its one form below it.
@@ -127,6 +145,19 @@ static void residue_search(const char *call) {
     uint32_t r[5];
     uint32_t power[5];
     residue_r(r);
+    poly1305_wide_key limbs;
+    poly1305_wide_key_of(&limbs, r);
+    const uint64_t pair[2] = {limbs.r0, limbs.r1};
+    for (size_t at = 0; at + sizeof pair <= RESIDUE_BYTES; at++) {
+        if (memcmp(&residue_copy[at], pair, sizeof pair) == 0) {
+            failures++;
+            (void)fprintf(stderr,
+                          "aead avx2 equivalence: residue: the stack below %s holds r's two "
+                          "limbs at byte %zu of the copy\n",
+                          call, at);
+            return;
+        }
+    }
     memcpy(power, r, sizeof power);
     static const size_t strides[2] = {4, 32};
     for (size_t k = 2; k < 2 + RESIDUE_POWERS; k++) {
@@ -162,6 +193,12 @@ static void run_residue(void) {
     }
     residue_snapshot();
     residue_search("the open");
+    residue_entry(1);
+    residue_snapshot();
+    residue_search("aead_avx2_seal");
+    residue_entry(0);
+    residue_snapshot();
+    residue_search("aead_avx2_open");
 }
 
 // One entry's registers after a call over n bytes. The call takes a

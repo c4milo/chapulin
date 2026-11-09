@@ -6257,7 +6257,11 @@ last `ROLE=server` stub, as the entry said it would.
   stack below a seal and an open for the key and the powers and reads
   ymm0 to ymm15 back, and `inv17-aead-avx2-seal-keeps-key` and
   `inv17-aead-avx2-open-registers-not-cleared` are caught by its x86-64
-  build under qemu. The AVX-512 IFMA Poly1305 computes r^2 to
+  build under qemu. Its Poly1305 steps keep r in two 64-bit limbs in
+  general registers (decision 206), which the seal and the open wipe; the
+  binary searches for the two limbs side by side, and
+  `inv17-aead-avx2-keeps-r-limbs` drops that wipe and is caught the same
+  way. The AVX-512 IFMA Poly1305 computes r^2 to
   r^16 into one struct of 1,984 bytes and wipes it the same way, and the
   binary's search reads its digits as well, on the instructions and over
   the lane model. That kernel and the AVX-512 ChaCha20 also hold the key's

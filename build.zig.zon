@@ -227,6 +227,7 @@
         "src/poly1305_vector.c",
         "src/poly1305_vector.h",
         "src/poly1305_vector_native.c",
+        "src/poly1305_wide.h",
         "include/chapulin/profile_cfg.h",
         "include/chapulin/public_sizes.h",
         "src/quic.c",

@@ -1,0 +1,12 @@
+invariant: INV-16
+file: src/poly1305_wide.h
+catches: diff_poly1305_wide
+reason: the step multiplies h1 by r1 in place of s1, 5/4 of r1, in the sum at
+  2^0, so the part of h1 r1 past 2^130 is not reduced by 5 and every tag
+  is wrong. bin/diff_poly1305_wide compares the limbs with the Lean model's
+  block, whose block_mod states the value.
+
+--- old
+    ct_u128 d0 = ct_mul128(h0, k->r0) + ct_mul128(h1, k->s1);
+--- new
+    ct_u128 d0 = ct_mul128(h0, k->r0) + ct_mul128(h1, k->r1);

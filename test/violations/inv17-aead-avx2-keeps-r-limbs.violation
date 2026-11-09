@@ -1,0 +1,16 @@
+invariant: INV-17
+file: src/aead_avx2.c
+catches: test/docker-aes-runtime-qemu.sh aead-avx2
+reason: hash_rest returns without wiping the key of poly1305_wide.h's step,
+  so the seal's and the open's dead frames keep r's two 64-bit limbs. r and
+  a tag seen on the wire give the pad, and r and the pad forge any message
+  under that key. Every tag is still right. bin/aead_avx2_equiv_test copies
+  the stack below a seal and an open and looks for the two limbs side by
+  side; the script builds it for x86-64 and runs it under qemu-x86_64,
+  because the file has a body there alone.
+
+--- old
+    ct_wipe(acc, sizeof *acc);
+    ct_wipe(key, sizeof *key);
+--- new
+    ct_wipe(acc, sizeof *acc);

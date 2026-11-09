@@ -155,6 +155,7 @@ def selftestAll (_ : Unit) : String :=
     ("rsa_ifma", Spec.RsaIfma.selftest),
     ("poly1305_ifma", Spec.Poly1305Ifma.selftest),
     ("poly1305_vector", Spec.Poly1305Vector.selftest),
+    ("poly1305_wide", Spec.Poly1305Wide.selftest),
     ("rsa_avx2", Spec.RsaAvx2.selftest),
     ("rsa_mont64_adx", Spec.RsaMont64Adx.selftest),
     ("rsa_mont64_square", Spec.RsaMont64Square.selftest),
@@ -864,6 +865,24 @@ def dispatch : List String → Option String
     let out := Spec.Poly1305Vector.entry pairsMax rw hw block (m.size / 64)
     return bytesToHex ([out.w0, out.w1, out.w2, out.w3, out.w4].foldl
       (init := ByteArray.empty) fun acc x => acc ++ natToBytesBE x 4)
+  | ["poly1305_wide_blocks", key, acc, message] => do
+    -- poly1305_wide_block of poly1305_wide.h (Spec/Poly1305Wide.lean's `block`) once for each
+    -- 16 bytes of the message, from r0 and r1 (16 bytes, 8 big-endian bytes each) and the
+    -- accumulator's h0, h1 and h2 (24 bytes the same way). The answer is the accumulator after
+    -- them, written the same way. The guard is the step's contract: r0 and r1 below 2 ^ 60, r1 a
+    -- multiple of 4, h0 and h1 below 2 ^ 64, and h2 at most 4.
+    let kb ← hexArg? key
+    let ab ← hexArg? acc
+    let m ← hexArg? message
+    guard (kb.size == 16 && ab.size == 24 && m.size % 16 == 0)
+    let limb := fun (b : ByteArray) (i : Nat) => bytesToNatBE (b.extract (8 * i) (8 * i + 8))
+    let k : Spec.Poly1305Wide.Key := ⟨limb kb 0, limb kb 1⟩
+    let a : Spec.Poly1305Wide.Acc := ⟨limb ab 0, limb ab 1, limb ab 2⟩
+    guard (k.r0 < 2 ^ 60 && k.r1 < 2 ^ 60 && k.r1 % 4 == 0 && a.h2 ≤ 4)
+    let out := (List.range (m.size / 16)).foldl (init := a) fun a j =>
+      Spec.Poly1305Wide.block a k (bytesToNatLE (m.extract (16 * j) (16 * j + 8)))
+        (bytesToNatLE (m.extract (16 * j + 8) (16 * j + 16)))
+    return bytesToHex (natToBytesBE out.h0 8 ++ natToBytesBE out.h1 8 ++ natToBytesBE out.h2 8)
   | ["poly1305_ifma_powers", words] => do
     -- compute_powers from r's five 26-bit words, 4 big-endian bytes each, word 0 first. The
     -- answer is the model's last_first, last_second, by_16 and by_8, each register as

@@ -29,6 +29,7 @@ import Spec.RsaExp
 import Spec.RsaIfma
 import Spec.Poly1305Ifma
 import Spec.Poly1305Vector
+import Spec.Poly1305Wide
 import Spec.RsaAvx2
 import Spec.RsaMont64Adx
 import Spec.RsaMont64Square

@@ -8,7 +8,7 @@ reason: aead_avx2_seal returns without wiping its input words, eight of
   under qemu-x86_64, because the file has a body there alone.
 
 --- old
-    hash_rest(&of_r, h, p, ct + hashed, n - hashed);
+    xor_message(input, pass_counter(passes), pt + done, ct + done, n - done);
     ct_wipe(input, sizeof input);
 --- new
-    hash_rest(&of_r, h, p, ct + hashed, n - hashed);
+    xor_message(input, pass_counter(passes), pt + done, ct + done, n - done);

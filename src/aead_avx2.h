@@ -1,19 +1,23 @@
 // The ChaCha20-Poly1305 seal and open of an x86-64 host object in one
-// pass over the data, on chacha20_avx2.c's ChaCha20 pass and poly1305_avx2.c's
-// Poly1305 groups. Each pass of eight ChaCha20 blocks also absorbs four
-// Poly1305 groups of eight blocks, so the two kernels' instructions run
-// side by side and each byte is read from memory once for both. aead.c
-// calls the two entries for a session whose ch_cfg.cpu holds CH_CPU_AVX2
-// and CH_CPU_CONSTANT_TIME_MULTIPLY and not CH_CPU_AVX512_IFMA. The
-// two-pass AEAD stays the reference: bin/aead_avx2_equiv_test compares the
-// entries with it on a CPU that has AVX2 (docs/decisions.md 199).
+// pass over the data, on chacha20_avx2.c's ChaCha20 pass and
+// poly1305_wide.h's block step on three 64-bit limbs. Each pass of eight
+// ChaCha20 blocks also absorbs 32 Poly1305 blocks, four after each of its
+// first eight double rounds, so the vector units run the rounds while the
+// scalar multiplier runs the blocks, and each byte is read from memory once
+// for both (docs/decisions.md 199 and 206). The last bytes of a message run
+// on poly1305_avx2.c's kernel. aead.c calls the two entries for a session
+// whose ch_cfg.cpu holds CH_CPU_AVX2 and CH_CPU_CONSTANT_TIME_MULTIPLY and
+// not CH_CPU_AVX512_IFMA. The two-pass AEAD stays the reference:
+// bin/aead_avx2_equiv_test compares the entries with it on a CPU that has
+// AVX2.
 //
-// The file holds the multiplies of poly1305_avx2.c, so it compiles as a
-// native copy alone (widemul_native.h), and the caller's
-// CH_CPU_CONSTANT_TIME_MULTIPLY covers its VPMULUDQ products, as it covers
-// poly1305_avx2.c's. Every other instruction is one that chacha20_avx2.c
-// or poly1305_avx2.c runs, with no branch on the key, r or the data, and
-// no address computed from them. Only the byte count n decides how many
+// The file holds widening multiplies, ct_mul128's 64x64->128 products and
+// poly1305_avx2.c's VPMULUDQ, so it compiles as a native copy alone
+// (widemul_native.h), and the caller's CH_CPU_CONSTANT_TIME_MULTIPLY covers
+// them, as it covers x25519_wide.c's and poly1305_avx2.c's. Every other
+// instruction is an add, a carry, a shift by a constant, a mask or a lane
+// move, with no branch on the key, r, the accumulator or the data, and no
+// address computed from them. Only the byte count n decides how many
 // passes run, and it is public.
 #ifndef CH_AEAD_AVX2_H
 #define CH_AEAD_AVX2_H

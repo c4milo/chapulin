@@ -1,0 +1,17 @@
+invariant: INV-16
+file: src/poly1305_wide.h
+catches: proof/prove-one.sh poly1305_wide
+reason: the block step returns without its fold, so h2 keeps every bit at 2^130
+  and up. The value is still right modulo 2^130 - 5, so a tag of a short
+  message is still right, but h2 grows each block, and after enough blocks
+  h2 times s1 passes 2^64 and the tag is wrong. The harness requires h2 at
+  most 4 after one step from h2 at most 4, the invariant the pass loop
+  needs.
+
+--- old
+    a->h2 = d2;
+    poly1305_wide_fold(a);
+}
+--- new
+    a->h2 = d2;
+}

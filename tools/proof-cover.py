@@ -183,9 +183,10 @@ AUDITED = {
     ),
     "aead_avx2.c": (
         "the one-pass ChaCha20-Poly1305 seal and open of an x86-64 host object, "
-        "over chacha20_avx2_lanes.h's and poly1305_avx2_lanes.h's intrinsics, "
-        "the text the chacha20_avx2.c and poly1305_avx2.c entries read, which "
-        "CBMC cannot read, so no harness compiles the file. Its own code adds "
+        "over chacha20_avx2_lanes.h's intrinsics, the text the chacha20_avx2.c "
+        "entry reads, which CBMC cannot read, so no harness compiles the file. "
+        "Its Poly1305 step is poly1305_wide.h's, which the poly1305_wide "
+        "harnesses prove in portable C. Its own code adds "
         "no bitwise operator: it computes byte offsets and pass counts as "
         "size_t from n, at least AEAD_AVX2_MIN by the CH_ASSERT at each entry, "
         "and pass_counter converts 1 + 8 times a pass index to uint32_t, "

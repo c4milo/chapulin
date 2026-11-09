@@ -130,8 +130,11 @@ static inline void quarter_round(lanes *a, lanes *b, lanes *c, lanes *d) {
 }
 
 // One double round of RFC 8439 §2.3 on the pass: the four column rounds,
-// then the four diagonal rounds, as chacha20.c's block runs them.
-static inline void double_round(lanes x[16]) {
+// then the four diagonal rounds, as chacha20.c's block runs them. gcc 13
+// kept an out-of-line copy for aead_avx2.c's pass_hashing, whose loop also
+// holds Poly1305's steps, and every call stored the state and loaded it
+// back, so the attribute makes it inline (docs/decisions.md 206).
+static inline __attribute__((always_inline)) void double_round(lanes x[16]) {
     quarter_round(&x[0], &x[4], &x[8], &x[12]);
     quarter_round(&x[1], &x[5], &x[9], &x[13]);
     quarter_round(&x[2], &x[6], &x[10], &x[14]);

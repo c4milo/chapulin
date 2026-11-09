@@ -353,7 +353,7 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
         src/pem.c src/base64.c src/x509.c src/x509_der.c src/x509_ca.c src/webpki_time.c src/webpki_name.c src/webpki_spki.c src/webpki_ext.c src/buf.c src/record.c src/keysched.c src/io.c src/handshake_message.c src/handshake_parser.c src/handshake_parser_ee.c src/handshake_record.c src/session.c \
         src/handshake_auth.c src/handshake_flight.c src/handshake.c src/handshake_post.c src/tls.c src/tls_entry.c src/session_report.c src/tls_write.c src/softmul.c src/build.c
 
-HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
+HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/poly1305_wide.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
         src/pem.h src/base64.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
         include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
         src/keccak_neon.h src/keccak_neon_round.h src/mlkem_neon.h src/mldsa_neon.h \
@@ -754,6 +754,7 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
           src/poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           src/poly1305_avx2.c test/poly1305_equiv_avx2.c src/poly1305_ifma.c test/poly1305_equiv_ifma.c \
           test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c test/diff_poly1305_vector_test.c \
+          test/diff_poly1305_wide_test.c \
           src/mlkem_vector.c test/mlkem_vector_equiv_test.c \
           src/mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
           src/keccak_avx2.c src/mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
@@ -5886,6 +5887,8 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_poly1305_ifma
 	$(MAKE) bin/diff_poly1305_vector
 	./bin/diff_poly1305_vector
+	$(MAKE) bin/diff_poly1305_wide
+	./bin/diff_poly1305_wide
 	$(MAKE) bin/diff_rsa_avx2
 	./bin/diff_rsa_avx2
 	$(MAKE) bin/diff_rsa_exp
@@ -6036,6 +6039,14 @@ bin/diff_poly1305_vector: test/diff_poly1305_vector_test.c test/poly1305_equiv_v
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/diff_poly1305_vector_test.c \
 	  test/poly1305_equiv_vector.c test/poly1305_equiv_avx2.c test/poly1305_equiv_ifma.c src/ct.c src/ct_wipe.c
+# The 64-bit-limb Poly1305 step of poly1305_wide.h, which aead_avx2.c's one
+# pass runs, against spec/lean/Spec/Poly1305Wide.lean (docs/decisions.md
+# 206). The step is a header under CH_CPU_RUNTIME, so the line compiles the
+# test alone, on any host with unsigned __int128.
+bin/diff_poly1305_wide: test/diff_poly1305_wide_test.c src/poly1305_wide.h $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/diff_poly1305_wide_test.c
 # The AVX2 arm: rsa_avx2.c's products and squares and rsa_vp1_cpu's AVX2
 # path, compiled over the lane model as bin/rsa_avx2_model_test compiles
 # them, against spec/lean/Spec/RsaAvx2.lean. Its own main for the same
@@ -7498,6 +7509,7 @@ else
 	  test/poly1305_equiv_vector.c test/stack_residue.c \
 	  src/poly1305_avx2.c test/poly1305_equiv_avx2.c src/poly1305_ifma.c test/poly1305_equiv_ifma.c \
 	  test/poly1305_equiv_test.c test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c test/diff_poly1305_vector_test.c \
+	  test/diff_poly1305_wide_test.c \
 	  src/mlkem_vector.c test/mlkem_vector_equiv_test.c \
 	  src/mldsa_vector.c test/mldsa_vector_equiv_test.c test/mldsa_runtime_test.c test/mldsa_vector_count.c \
 	  src/keccak_avx2.c src/mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
@@ -7651,6 +7663,11 @@ else
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/diff_poly1305_ifma_test.c test/diff_poly1305_vector_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
+	# The 64-bit-limb Poly1305 arm of the differential, whose step sits
+	# under CH_CPU_RUNTIME (docs/decisions.md 206).
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,test/diff_poly1305_wide_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	# The ChaCha20 and Poly1305 equivalence tests, each in a pass of its
 	# own with portability-no-assembler off for that file alone: on x86-64
 	# each reads ymm0 to ymm15 back after its AVX2 kernel through
@@ -9252,10 +9269,10 @@ WIDEMUL_SPECS := \
 #   own. A pass holds the loop over the ten double rounds and tests of the
 #   limit against the rows it writes: 34 branches on arm64, whose pass
 #   holds two groups, and 17 in each x86-64 file.
-# aead_avx2.c, 0 and 50: the 17 of chacha20_avx2.c's pass, its own copy of the
+# aead_avx2.c, 0 and 48: the 17 of chacha20_avx2.c's pass, its own copy of the
 #   xor entry's tests of n in each of the seal and the open, the CH_ASSERT's
-#   tests of n and p->fill, the loops over the passes and over the groups
-#   of the rest, and the test of the bytes after them. Each reads n, a
+#   tests of n and p->fill, and the loops over the passes and over the
+#   round steps of a pass (docs/decisions.md 206). Each reads n, a
 #   loop index or p->fill, which are public (docs/decisions.md 199).
 # poly1305_native.c, 22 and 22; poly1305.c@host, 21 and 19: update's tests
 #   of the count of buffered bytes and of n, final's tests of that count
@@ -10040,7 +10057,7 @@ BRANCH_CEILING := \
   arm64/src/poly1305_vector.c:0 x86-64/src/poly1305_vector.c:0 \
   arm64/src/poly1305_avx2.c:0 x86-64/src/poly1305_avx2.c:0 \
   arm64/src/poly1305_ifma.c:0 x86-64/src/poly1305_ifma.c:0 \
-  arm64/src/aead_avx2.c:0 x86-64/src/aead_avx2.c:50 \
+  arm64/src/aead_avx2.c:0 x86-64/src/aead_avx2.c:48 \
   arm64/src/rsa_mont64.c:71 x86-64/src/rsa_mont64.c:109 \
   arm64/src/rsa_mont64_blocks.c:14 x86-64/src/rsa_mont64_blocks.c:0 \
   arm64/src/rsa_mont64_addcarry.c:11 x86-64/src/rsa_mont64_addcarry.c:23 \

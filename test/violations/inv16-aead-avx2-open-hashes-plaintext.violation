@@ -9,6 +9,6 @@ reason: each pass of the open absorbs the bytes at pt in place of the bytes
   it for x86-64 under qemu-x86_64.
 
 --- old
-pass_hashing(input, pass_counter(index), ct + offset, pt + offset, ct + offset, h, &of_r);
+pass_hashing(input, pass_counter(index), ct + offset, pt + offset, ct + offset, &acc, &r);
 --- new
-pass_hashing(input, pass_counter(index), ct + offset, pt + offset, pt + offset, h, &of_r);
+pass_hashing(input, pass_counter(index), ct + offset, pt + offset, pt + offset, &acc, &r);

@@ -17116,3 +17116,64 @@ does nothing more.
       signature 248,916 where it retired 250,281, a shared secret 550,992
       where it retired 556,287, and a verification 557,130 where it
       retired 568,135 before decision 204.
+
+206. **The one-pass ChaCha20-Poly1305 runs Poly1305 on three 64-bit limbs
+    in general registers, beside the AVX2 ChaCha20 rounds.** Entry 199's
+    one pass absorbed four groups of eight blocks on `poly1305_avx2.c`'s
+    VPMULUDQ lanes between the rounds. The rounds and the groups both ran
+    on the vector units, so the pass gained 3%. Camilo approved a Poly1305
+    on the scalar multiplier on 2026-11-08.
+
+    - **What runs.** `poly1305_wide.h` holds the block step: h is
+      h0 + h1 2^64 + h2 2^128 and r is r0 + r1 2^64. A step adds the block
+      and its 2^128 bit with carries, takes four 64x64->128 products on
+      `ct_mul128` and two 64-bit products by h2, and folds the bits of h2
+      at 2^130 and up, times 5, into h0. `s1 = r1 + r1 / 4` carries the
+      products past 2^130, which the clamp keeps exact. `aead_avx2.c`'s
+      `pass_hashing` runs four steps after each of a pass's first eight
+      double rounds. The last whole pass and the bytes after it run on
+      `poly1305_update_avx2`, as before.
+    - **Secrets.** The step has no branch and no address on h, r or the
+      block. A carry is a comparison of a 64-bit sum with an operand,
+      which both compilers write as the carry flag. The caller's multiply
+      bit covers `ct_mul128`'s products, as it covers `x25519_wide.c`'s.
+      `hash_rest` wipes the key and the accumulator, and each entry still
+      ends with VZEROALL. The step needs no mask, so no final select
+      reads a secret bit; `poly1305.c`'s final reduction runs as before.
+    - **gcc.** gcc 13 first called out-of-line copies of the step and of
+      `double_round` from the loop, so both carry always_inline. A carry
+      read from the high word of a 128-bit sum then made gcc keep the
+      limbs as 128-bit values and multiply each in three products. The
+      comparison form gives one MUL a product, as clang does.
+    - **What holds it.** The `poly1305_wide` harnesses prove on the real
+      multiply that a step from h2 at most 4 wraps nothing and leaves h2
+      at most 4, and that the conversions keep their bounds.
+      `spec/lean/Spec/Poly1305Wide.lean`'s `block_mod` proves that a step
+      computes (h + m + 2^128) r modulo 2^130 - 5 where 4 divides r1, and
+      `fold_mod` that a fold keeps the value. `bin/diff_poly1305_wide`
+      holds the C to the model limb for limb. `bin/aead_avx2_equiv_test`
+      also searches the stack for r's two limbs. Four new violations are
+      caught: the fold dropped (by the proof), the s1 product and the
+      carry dropped (by the differential), and the key's wipe dropped (by
+      the qemu lane).
+    - **Gain.** `aead_seal_data` of a 16 KiB record on the EPYC 7763, run
+      42534824412 of bench.yml:
+
+      | compiler | entry 199 | this entry | OpenSSL 3.6.4 | ratio |
+      | --- | --- | --- | --- | --- |
+      | gcc 13 | 9.08 µs | 8.81 µs | 7.47 µs | 1.22 → 1.18 |
+      | clang 23 | 8.40 µs | 6.86 µs | 7.47 µs | 1.12 → 0.92 |
+
+      The open took 8.74 and 6.80 µs, 1.17 and 0.91 of OpenSSL's. Under
+      clang the one pass takes 0.53 µs more than the keystream alone,
+      where Poly1305 alone takes 2.36. Under gcc it takes 2.30 µs more:
+      gcc keeps 27 vector values on the stack in each round step where
+      clang keeps 12. No 8573C was drawn, so the AVX-512 columns run the
+      IFMA kernels as before.
+
+    Rejected:
+
+    - **The AVX2 groups beside the rounds** (entry 199). They share the
+      vector ports with the rounds.
+    - **A 128-bit sum for each carry.** It is what gcc multiplied in three
+      products.

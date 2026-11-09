@@ -1,0 +1,12 @@
+invariant: INV-16
+file: src/poly1305_wide.h
+catches: diff_poly1305_wide
+reason: the message's add drops the carry out of h0 into h1, so a block whose
+  low half and h0 pass 2^64 loses 2^64 of its value. bin/diff_poly1305_wide
+  compares the limbs with the Lean model's block, whose rows of all ones
+  bits make the carry every time.
+
+--- old
+    h1 = poly1305_wide_add(h1, carry, &carry);
+--- new
+    h1 = poly1305_wide_add(h1, 0, &carry);

@@ -2799,6 +2799,19 @@ launch fast:4 full x25519_wide_invert 101 "" src/ct.c proof/ct_wipe_stub.c -DCH_
 #   x25519_wide_edwards  1941 properties,  6 s, 203 MB
 launch fast full x25519_wide_select 65 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full x25519_wide_edwards 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+# The 64-bit-limb Poly1305 step of poly1305_wide.h, which aead_avx2.c's one
+# pass runs beside the AVX2 ChaCha20 rounds (docs/decisions.md 206), under
+# the flags of the wide X25519 field: -DCH_CPU_RUNTIME, behind which the
+# header and ct.h's ct_mul128 sit, and --unsigned-overflow-check.
+# poly1305_wide runs one block step on the real 64x64->128 multiply, and
+# poly1305_wide_words the conversions to and from poly1305.c's words.
+# spec/lean/Spec/Poly1305Wide.lean proves what the step computes.
+# Measured with PROVE_ONLY=<name> PROVE_NO_CACHE=1 /usr/bin/time -l
+# ./proof/run.sh fast (cbmc 6.11.0, an M1 Pro), on 2026-11-08:
+#   poly1305_wide        235 properties, 7 s, 190 MB
+#   poly1305_wide_words  324 properties, 1 s, 20 MB
+launch fast full poly1305_wide 17 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full poly1305_wide_words 6 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 # Ed25519 verification on the same field, x25519_wide_ed25519.h, for
 # DNSSEC algorithm 15 (https://github.com/c4milo/chapulin/issues/189).
 # x25519_wide_ed25519 proves to_entry() writes canonical words, the entry
