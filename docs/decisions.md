@@ -17177,3 +17177,29 @@ does nothing more.
       vector ports with the rounds.
     - **A 128-bit sum for each carry.** It is what gcc multiplied in three
       products.
+
+207. **The one pass's seal and open stay out of line in `aead.c`.** After
+    entry 199, gcc 13 inlined `seal_one_pass` and `open_one_pass`, with
+    their `poly1305` and tag, into `aead_seal_cpu` and `aead_open_cpu`.
+    Their frames grew from 32 and 64 bytes to 136, and clang 23 gave the
+    seal 168. Every session ran under that frame, the two-pass sessions
+    too. The two calls now carry noinline, and gcc's frames are 40 and 56
+    bytes again.
+
+    - **The report.** Run 42553779994 read the 16 KiB seal of an IFMA
+      session, `ch_cfg.cpu 0x11f`, on the Xeon 8573C under gcc as 5.44
+      µs, where its two kernels took 4.16. Before entry 199 it read 5.13.
+    - **What the runs show.** That row is bimodal on the 8573C in every
+      build: its spread within one run is 11.6% on the tree before entry
+      199, 17.7% and 13.4% on main and 13.8% with this entry, and 5% to
+      14% under clang. Its median then falls anywhere from 4.6 to 5.6 µs,
+      while the open and the two kernels' rows hold their medians within
+      one run. With this entry the seal read 5.04 µs, 0.54 µs above its
+      two kernels, against 0.64 before entry 199 and 0.75 on main in the
+      same week (runs 42559517338 and 42559519339). That gain is inside
+      the row's spread, so this entry claims no change to it.
+    - **What it gains.** On the EPYC 7763, at spreads under 1%, gcc's
+      16-byte `aead_seal_data` under `0x1f` took 260 ns where main took
+      296, its open 257 where main took 285, and its 1 KiB seal 1,047 ns
+      where main took 1,071. On the 8573C gcc's 1 KiB IFMA seal took 453
+      ns where main took 471. No other row moved past its spread.

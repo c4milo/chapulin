@@ -88,9 +88,14 @@ static int use_one_pass(uint32_t cpu, size_t n) {
            !widemul_poly1305_ifma(cpu, widemul_of_cpu(cpu)) && n >= AEAD_AVX2_MIN;
 }
 
-static void seal_one_pass(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
-                          const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n,
-                          uint8_t *ct, uint8_t tag[AEAD_TAG]) {
+// The one pass's seal and open stay out of line. Inlined, their poly1305
+// and tag gave aead_seal_cpu and aead_open_cpu a frame of 136 bytes under
+// gcc 13 and 168 under clang 23, where gcc gave them 32 and 64 before. Every
+// session's two-pass AEAD then saved and restored that frame, and a short
+// message paid for it (docs/decisions.md 207).
+static __attribute__((noinline)) void
+seal_one_pass(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
+              size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]) {
     poly1305 p;
     mac_start(WIDEMUL_CONSTANT_TIME, &p, key, nonce, aad, aad_len);
     aead_avx2_seal(key, nonce, &p, pt, n, ct);
@@ -99,9 +104,11 @@ static void seal_one_pass(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_
 
 // The open decrypts while it absorbs, and on a mismatch wipes the n bytes
 // it wrote, as gcm.c's open does (docs/decisions.md 85).
-static int open_one_pass(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
-                         const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
-                         const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+static __attribute__((noinline)) int open_one_pass(const uint8_t key[AEAD_KEY],
+                                                   const uint8_t nonce[AEAD_NONCE],
+                                                   const uint8_t *aad, size_t aad_len,
+                                                   const uint8_t *ct, size_t n,
+                                                   const uint8_t tag[AEAD_TAG], uint8_t *pt) {
     poly1305 p;
     uint8_t want[AEAD_TAG];
     mac_start(WIDEMUL_CONSTANT_TIME, &p, key, nonce, aad, aad_len);
