@@ -9658,7 +9658,7 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
   arm64/src/poly1305_native.c:22 arm64/src/mlkem_poly_native.c:53 \
   x86-64/src/poly1305_native.c:22 \
   x86-64/src/mlkem_poly_native.c:54 \
-  arm64/src/poly1305_vector_native.c:10 x86-64/src/poly1305_vector_native.c:4 \
+  arm64/src/poly1305_vector_native.c:9 x86-64/src/poly1305_vector_native.c:4 \
   arm64/src/poly1305_avx2_native.c:0 x86-64/src/poly1305_avx2_native.c:4 \
   arm64/src/poly1305_ifma_native.c:0 x86-64/src/poly1305_ifma_native.c:4
 # A host object's hash sources on the CPU's instructions (docs/decisions.md

@@ -465,8 +465,9 @@ void mlk_sample_cbd(mlk_poly *p, const uint8_t seed[32], uint8_t nonce) {
         uint32_t d = (t & 0x55555555U) + ((t >> 1) & 0x55555555U);
         // gcc 13 at -O2 kept this loop, and shifted d by a register each
         // time. Written out, every shift is a constant (docs/decisions.md
-        // 202). A device object keeps the loop.
-#ifdef CH_CPU_RUNTIME
+        // 202). The native copy alone writes it out: this file under its
+        // own names stays the decomposed build's code (test/widemul-builds.sh).
+#ifdef CH_WIDEMUL_NATIVE_COPY
 #pragma GCC unroll 8
 #endif
         for (size_t j = 0; j < 8; j++) {

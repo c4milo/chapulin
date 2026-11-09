@@ -16982,8 +16982,13 @@ does nothing more.
       at -O2 kept the loop over the eight coefficients of a 32-bit word,
       and shifted the word by a register for each of them. clang writes
       the loop out and shifts by constants.
-    - **The change.** `#pragma GCC unroll 8` on that loop, under
-      `CH_CPU_RUNTIME`, so a device object's code is the same as before.
+    - **The change.** `#pragma GCC unroll 8` on that loop, in the native
+      copy alone (`CH_WIDEMUL_NATIVE_COPY`), which a session with
+      `CH_CPU_CONSTANT_TIME_MULTIPLY` runs. The file under its own names
+      stays the decomposed build's code, as `test/widemul-builds.sh`
+      requires, and a device object's code is the same as before. The
+      first form put the pragma under `CH_CPU_RUNTIME`, and
+      `check-widemul-builds` refused it under gcc 13 for x86-64.
       Keccak takes most of the rest of gcc's lead over clang here: the
       SHAKE and SHA-3 calls are 29% and 31% of the two encapsulations,
       and another item of this wave works on `sha3.c`.
