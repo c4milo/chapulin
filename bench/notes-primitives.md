@@ -16,6 +16,27 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The M1 Pro's run of 49796323
+
+The M1 Pro's CSVs now hold a run of 2026-11-09 on 49796323, against a
+build of the pinned OpenSSL 3.6.4, with every pass started below a
+1-minute load of 5. The M1 Pro's last run came before docs/decisions.md
+191 to 198. Its CSV now holds the ML-DSA-87 rows.
+
+What moved by design, as ratios to OpenSSL:
+
+- **ChaCha20-Poly1305**: 1.17 to 0.99 (decisions 193 and 194).
+- **RSA-2048 PKCS#1 v1.5 verification**: 1.27 to 1.20 (decision 192).
+- **ML-KEM-768 encapsulation**: 1.08 to 0.94, and SHA3-256 over 16 KiB
+  1.04 to 1.01 (decision 198 for ML-KEM).
+- **P-256's shared secret**: 1.29 to 1.16, and its key generation 1.04
+  to 1.03 (decision 196).
+- **ML-DSA-87**: key generation, signature and verification take 0.76,
+  0.58 and 0.34 of OpenSSL's time.
+
+The M1 Pro rows still behind OpenSSL are SHA3-256 over 16 KiB, P-256's
+key generation and shared secret, and RSA verification.
+
 ## The run of 49796323
 
 The four x86-64 CSVs now hold one run of 2026-11-08 on 49796323 (bench
