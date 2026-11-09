@@ -3,6 +3,12 @@
 # env via ./.github/actions/load-pins: version is CBMC_VERSION and sha256
 # is CBMC_DEB_SHA256, which the .deb is checked against before dpkg
 # installs it as root (https://github.com/c4milo/chapulin/issues/142).
+#
+# GitHub's release download answered 504 for hours on 2026-11-08 and
+# 2026-11-09, and every proof job failed at this step. So the .deb is kept
+# in the Actions cache under its version and its pinned hash, and
+# install.sh retries the download. A cached .deb is checked against the
+# same hash before dpkg reads it.
 name: install-cbmc
 description: Install the pinned CBMC release
 inputs:
@@ -15,6 +21,10 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/chapulin-cbmc
+        key: cbmc-deb-${{ inputs.version }}-${{ inputs.sha256 }}
     - shell: bash
       env:
         VERSION: ${{ inputs.version }}
