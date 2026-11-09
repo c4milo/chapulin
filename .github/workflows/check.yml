@@ -800,7 +800,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
@@ -870,7 +870,7 @@ jobs:
       # One target. test-invariants-fast, which it names, runs one
       # violation per worker itself (test/violations.py --jobs), and -j
       # gives the builds under those workers the runner's cores.
-      - run: make -j"$(nproc)" ci-mutants VIOLATION_SHARD="$SHARD/2"
+      - run: make -j"$(nproc)" ci-mutants VIOLATION_SHARD="$SHARD/3"
         env:
           SHARD: ${{ matrix.shard }}
 
