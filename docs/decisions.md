@@ -17702,3 +17702,57 @@ does nothing more.
       computes each mask in eight scalar instructions and moves it to an
       XMM register for each of the 32 entries. The binary GCD took 2.72 µs
       under gcc and 2.15 under clang.
+
+213. **Under gcc the cause of the RSA verification row is the loader
+    that decision 209 rewrites, so this study changes no RSA code.** On an
+    EPYC 7763 an RSA-2048 PKCS#1 v1.5 verification took 20.7 µs under gcc
+    13.3 and 18.3 under clang 23, 1.10 and 0.97 of OpenSSL 3.6.4's time.
+
+    - **The cause.** `rsa_mont64_from_bytes` ORed one byte at a time
+      into its word in memory. Each OR read the word that the OR before it
+      had stored, so eight loads and eight stores followed one another for
+      each word. A verification on `rsa_avx2.c` loads the modulus once and
+      the signature twice. `perf record` put 4.6% of gcc's verification
+      there and 1.9% of clang's.
+    - **Decision 209 holds the fix.** It found the same loop on the M1,
+      and it loads each whole word as one assignment of its eight bytes.
+      The study wrote the same assignment. gcc 13.3 for x86-64 compiles
+      the whole-word loop of both to the same instructions: one load, one
+      BSWAP and one store for each word. So the study's loader did not
+      land.
+    - **Numbers.** A/B run 42751977710 on the EPYC 7763 timed the
+      study's loader, in ns, each the median of five runs, before then
+      after:
+
+      | PKCS#1 v1.5 verification | gcc 13.3 | clang 23 |
+      | --- | --- | --- |
+      | RSA-2048 | 20688, 19817 | 18478, 17949 |
+
+    Measured and not changed:
+
+    - **A loop in `words_to_digits` that checks no index.**
+      `words_to_digits` in `rsa_avx2_number.h` reads each of a digit's two
+      words through `value_at_or_zero`, a bound check for each, and the
+      four conversions of a verification took 2.4% of gcc's. A first loop
+      for the digits whose two words are both in the number, with no
+      check, took gcc's RSA-2048 row from 20688 to 20593 ns and clang's
+      from 18478 to 18295 (run 42751977710). With the study's loader it
+      took them to 19620 and 17707 (run 42754920128). Bench run
+      42759645458, on a tree with both, read the row as 19.4 µs under gcc
+      and 17.9 under clang, 1.03 and 0.95 of OpenSSL's 18.8. The count of
+      the digits inside the number is a division by the digit width,
+      which the file's ceiling of zero divisions refuses. The two loops
+      took the file's branch count on x86-64 from 49 to 64. A form that
+      counts the digits with no division is not measured, so the loop did
+      not land.
+    - **A call for the triangle.** Both compilers keep the triangle's
+      lanes and its y's in stack slots between the multiplications of its
+      chain. As a function of its own, which the compilers call, it took
+      gcc's verification to 22059 ns and clang's to 20786 (run
+      42751977710).
+    - **The window's zeros.** gcc writes `product_core`'s `memset` of the
+      window as REP STOSQ, 2.9% of `square_28`'s samples. Stores of a zero
+      register in its place took gcc from 19620 to 19570 ns, inside the
+      spread of the five runs.
+    - **`square_28` itself.** It takes 14.2 µs of gcc's verification and
+      13.0 of clang's, and no change above reads it.
