@@ -52,8 +52,12 @@
 #     that ends in _hw, sha3_hw.c, mlkem_hw.c and mlkem_poly_hw.c compiled
 #     that way define nothing, and keccak_hw.h refuses such a build;
 #   - for arm64, sha3_hw.c must define its six entries and hold FEAT_SHA3's
-#     instructions and no SHA-256 or SHA-512 one, and for x86-64 it and
-#     ML-KEM's two copies must define nothing;
+#     instructions and no SHA-256 or SHA-512 one, and for x86-64 ML-KEM's
+#     two copies must define nothing;
+#   - for x86-64, sha3_hw.c must define its six entries and hold ANDN and
+#     RORX and no NOT, which sha3_andn.h's chi on BMI1 writes, and sha3.c
+#     must hold no BMI1 or BMI2 instruction, because a session without
+#     CH_CPU_BMI1 and CH_CPU_BMI2_ADX runs it (docs/decisions.md 217);
 #   - for both targets, sha3.c, mlkem.c, mlkem_poly.c, mlkem_poly_native.c
 #     and ML-KEM's two copies hold none of FEAT_SHA3's instructions, so
 #     sha3_hw.c holds every one an object runs;
@@ -169,6 +173,18 @@ holds_bmi() {
         "$work/cross.s"
 }
 
+# Whether it holds ANDN, RORX or NOT, in AT&T syntax with or without a
+# size suffix.
+holds_andn() {
+    grep -qE '^[[:space:]]+andn[lq]?[[:space:]]' "$work/cross.s"
+}
+holds_rorx() {
+    grep -qE '^[[:space:]]+rorx[lq]?[[:space:]]' "$work/cross.s"
+}
+holds_not() {
+    grep -qE '^[[:space:]]+not[bwlq]?[[:space:]]' "$work/cross.s"
+}
+
 # Whether $work/cross.o names a symbol, defined or not.
 names() { # $1 = symbol
     nm "$work/cross.o" | grep -qE "[[:space:]]$1\$"
@@ -281,11 +297,20 @@ for target in "$x86" "$arm64"; do
     cross_object "$target" src/mlkem_poly.c
     calls "src/mlkem_poly.c for $target" "" "${mlkem_poly_keccak_calls[@]}"
     if [ "$target" = "$x86" ]; then
-        for src in src/sha3_hw.c src/mlkem_hw.c src/mlkem_poly_hw.c; do
+        for src in src/mlkem_hw.c src/mlkem_poly_hw.c; do
             cross_object "$target" "$src"
             nm "$work/cross.o" | grep -qE '[[:space:]][A-TV-Z][[:space:]]' &&
                 fail "$src for $target defines a symbol; x86-64 has no SHA-3 instructions to run it on"
         done
+        cross_object "$target" src/sha3.c
+        holds_bmi && fail "src/sha3.c for $target holds a BMI1 or BMI2 instruction; a session without CH_CPU_BMI1 and CH_CPU_BMI2_ADX runs it"
+        cross_object "$target" src/sha3_hw.c
+        for symbol in "${sha3_entries[@]}"; do
+            defines "$symbol" || fail "src/sha3_hw.c for $target does not define $symbol"
+        done
+        holds_andn || fail "src/sha3_hw.c for $target holds no ANDN; its chi runs on BMI1 (docs/decisions.md 217)"
+        holds_rorx || fail "src/sha3_hw.c for $target holds no RORX; its rotations run on BMI2 (docs/decisions.md 217)"
+        holds_not && fail "src/sha3_hw.c for $target holds a NOT; its round is sha3_andn.h's, whose AND-NOT is ANDN"
         continue
     fi
     cross_object "$target" src/sha3_hw.c
@@ -311,4 +336,4 @@ for target in "$x86" "$arm64"; do
     calls "src/mlkem_poly_hw.c for $target" _hw "${mlkem_poly_keccak_calls[@]}"
 done
 
-echo "hash-builds: a device object holds the portable hashes alone, src/hash_hw.h refuses a copy outside a host object, src/sha256_hw.c compiles for x86-64 and arm64 with no instruction flag and holds the SHA-256 instructions, src/sha512_hw.c does the same for arm64 with the SHA-512 instructions and none of FEAT_SHA3's and for x86-64 defines the same five calls over src/sha512_avx2.c's kernel, which holds 256-bit instructions and no BMI1 or BMI2 one, no other hash source holds a hash instruction, and each copy calls src/sha256_hw.c's and src/sha512_hw.c's entries; and the same holds for Keccak on FEAT_SHA3 in src/sha3_hw.c, on arm64 alone, and ML-KEM's two copies over it"
+echo "hash-builds: a device object holds the portable hashes alone, src/hash_hw.h refuses a copy outside a host object, src/sha256_hw.c compiles for x86-64 and arm64 with no instruction flag and holds the SHA-256 instructions, src/sha512_hw.c does the same for arm64 with the SHA-512 instructions and none of FEAT_SHA3's and for x86-64 defines the same five calls over src/sha512_avx2.c's kernel, which holds 256-bit instructions and no BMI1 or BMI2 one, no other hash source holds a hash instruction, and each copy calls src/sha256_hw.c's and src/sha512_hw.c's entries; and the same holds for Keccak on FEAT_SHA3 in src/sha3_hw.c on arm64 and ML-KEM's two copies over it, and on x86-64 src/sha3_hw.c holds ANDN and RORX and no NOT, and src/sha3.c no BMI1 or BMI2 instruction"

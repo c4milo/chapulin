@@ -119,6 +119,41 @@ static inline int x86_cpu_has_bmi2_adx(void) {
 #endif
 }
 
+// BMI1 and BMI2, which sha3_hw.c's x86-64 copy runs: ANDN and RORX. CH_CPU_BMI1 names the first,
+// and CH_CPU_BMI2_ADX the second with ADX, which the copy does not run (cpu_cfg.h). CPUID leaf 7
+// reports them in bits 3 and 8 of EBX; they need no state the operating system saves. Rosetta 2,
+// under ROSETTA_ADVERTISE_AVX=1, reports BMI1 and BMI2 and not ADX.
+static inline int x86_cpu_has_bmi1_bmi2(void) {
+#ifdef __x86_64__
+    unsigned int eax = 0;
+    unsigned int ebx = 0;
+    unsigned int ecx = 0;
+    unsigned int edx = 0;
+    if (!__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+        return 0;
+    }
+    return ((ebx >> 3) & 1U) != 0 && ((ebx >> 8) & 1U) != 0;
+#else
+    return 0;
+#endif
+}
+
+// BMI1 alone, which CH_CPU_BMI1 names: bit 3 of EBX.
+static inline int x86_cpu_has_bmi1(void) {
+#ifdef __x86_64__
+    unsigned int eax = 0;
+    unsigned int ebx = 0;
+    unsigned int ecx = 0;
+    unsigned int edx = 0;
+    if (!__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+        return 0;
+    }
+    return ((ebx >> 3) & 1U) != 0;
+#else
+    return 0;
+#endif
+}
+
 // Whether a binary whose CPU lacks a kernel's instructions must fail
 // rather than skip.
 static inline int x86_kernels_required(void) {
@@ -144,6 +179,12 @@ static inline int x86_avx512_required(void) {
 // skip.
 static inline int x86_bmi2_adx_required(void) {
     const char *required = getenv("CH_REQUIRE_BMI2_ADX");
+    return required != NULL && strcmp(required, "1") == 0;
+}
+
+// Whether a binary whose CPU lacks BMI1 must fail rather than skip.
+static inline int x86_bmi1_required(void) {
+    const char *required = getenv("CH_REQUIRE_BMI1");
     return required != NULL && strcmp(required, "1") == 0;
 }
 

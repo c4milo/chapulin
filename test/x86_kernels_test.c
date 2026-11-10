@@ -17,11 +17,12 @@
 // test/rsa_ifma_count.c and test/rsa_avx2_count.c count the calls instead, and run each on the
 // entry it stands beside, so this binary runs on every x86-64 CPU.
 //
-// Every row runs under each of the 64 values the six bits from 0x02 to 0x10, 0x100 and 0x200 make
-// beside CH_CPU_PROBED, and under 0, which a wiped record direction holds. Those six are the AES
-// bit, the multiply bit and the four that name a kernel; a hash bit picks no path a row here
-// takes, and SHA-512's kernel follows CH_CPU_AVX2. Under each, a call must run a kernel exactly
-// when the value names it, and must give the same bytes back:
+// Every row runs under each of the 256 values the eight bits from 0x02 to 0x10, 0x100, 0x200, 0x400
+// and 0x800 make beside CH_CPU_PROBED, and under 0, which a wiped record direction holds. Those
+// eight are the AES bit, the multiply bit, the four that name a kernel, and CH_CPU_BMI2_ADX and
+// CH_CPU_BMI1, which pick sha3_hw.c's copy together; a hash bit picks no path a row here takes, and
+// SHA-512's kernel follows CH_CPU_AVX2. Under each, a call must run a kernel
+// exactly when the value names it, and must give the same bytes back:
 //
 //   - chacha20_xor_cpu, and aead_seal_cpu and aead_open_cpu, which pass the value on to the
 //     keystream and to Poly1305's update of the ciphertext. chacha20_xor, aead_seal and aead_open
@@ -39,7 +40,7 @@
 //   - an AES traffic key: aes_traffic_key_init names no kernel, and aes_traffic_key_cpu names what
 //     its value does (test/x86_kernels_gcm.h).
 //   - ML-KEM's three session calls, mlkem_keygen_dk_cpu, mlkem_encaps_derand_cpu and
-//     mlkem_decaps_cpu.
+//     mlkem_decaps_cpu (test/x86_kernels_keccak.h).
 //   - the two RSA verifiers' entries that take a value, and rsa_vp1_cpu, which runs the kernel
 //     the value names, the IFMA one before the AVX2 one, for each of two moduli they take and
 //     rsa_vp1 for each of three they do not (test/x86_kernels_rsa.h).
@@ -49,6 +50,8 @@
 //   - sha512.h's and hkdf.h's entries at SHA-384's hash length and a record direction's keying,
 //     whose every compression call runs sha512_avx2.c's kernel under CH_CPU_AVX2
 //     (test/x86_kernels_sha512.h).
+//   - sha3.h's four entries that take a value, and ML-KEM's three calls once more
+//     (test/x86_kernels_keccak.h).
 //
 // What the kernels compute is held elsewhere: bin/chacha20_equiv_test,
 // bin/poly1305_equiv_test, bin/aes_equiv_test and bin/sha2_equiv_test call them against the
@@ -68,6 +71,7 @@
 #include "quic_keys.h"
 #include "quic_packet.h"
 #include "record.h"
+#include "sha3.h"
 #include "suite.h"
 #include "widemul.h"
 #include "x86_kernels_count.h"
@@ -371,58 +375,7 @@ static void check_packets(uint16_t suite, uint32_t cpu) {
           memcmp(pkt + sizeof handshake_hdr, payload, PAYLOAD) == 0);
 }
 
-// Whether the calls into ML-KEM's copy since the last look are these, and
-// resets them.
-static int mlkem_calls_are(unsigned long keygen, unsigned long encaps, unsigned long decaps) {
-    int same = x86_mlkem_keygen_calls == keygen && x86_mlkem_encaps_calls == encaps &&
-               x86_mlkem_decaps_calls == decaps;
-    if (!same) {
-        (void)fprintf(stderr,
-                      "calls: ML-KEM's copy, key generation %lu, encapsulation %lu, decapsulation "
-                      "%lu; want %lu, %lu, %lu\n",
-                      x86_mlkem_keygen_calls, x86_mlkem_encaps_calls, x86_mlkem_decaps_calls,
-                      keygen, encaps, decaps);
-    }
-    x86_mlkem_keygen_calls = 0;
-    x86_mlkem_encaps_calls = 0;
-    x86_mlkem_decaps_calls = 0;
-    return same;
-}
-
-// ML-KEM's three session calls: each runs mlkem_avx2.c's copy where the
-// value holds CH_CPU_AVX2 and the call it is named for everywhere else, and
-// gives that call's bytes. The encapsulation key sits at dk + 1152, as
-// mlkem.h says.
-static void check_mlkem(uint32_t cpu) {
-    uint8_t d[32];
-    uint8_t z[32];
-    uint8_t m[32];
-    fill(d, sizeof d, 0x55);
-    fill(z, sizeof z, 0x66);
-    fill(m, sizeof m, 0x77);
-    static uint8_t dk[MLKEM_DK_LEN];
-    static uint8_t dk_cpu[MLKEM_DK_LEN];
-    mlkem_keygen_dk(dk, d, z);
-    mlkem_keygen_dk_cpu(cpu, dk_cpu, d, z);
-    CHECK(mlkem_calls_are(names_avx2(cpu), 0, 0));
-    CHECK(memcmp(dk_cpu, dk, sizeof dk) == 0);
-
-    const uint8_t *ek = dk + 1152;
-    uint8_t widemul = widemul_of_cpu(cpu);
-    uint8_t ct[MLKEM_CT_LEN];
-    uint8_t ct_cpu[MLKEM_CT_LEN];
-    uint8_t ss[MLKEM_SS_LEN];
-    uint8_t ss_cpu[MLKEM_SS_LEN];
-    CHECK(mlkem_encaps_derand(widemul, ct, ss, ek, m) == 0);
-    CHECK(mlkem_encaps_derand_cpu(cpu, widemul, ct_cpu, ss_cpu, ek, m) == 0);
-    CHECK(mlkem_calls_are(0, names_avx2(cpu), 0));
-    CHECK(memcmp(ct_cpu, ct, sizeof ct) == 0 && memcmp(ss_cpu, ss, sizeof ss) == 0);
-
-    uint8_t back[MLKEM_SS_LEN];
-    mlkem_decaps_cpu(cpu, widemul, back, ct, dk);
-    CHECK(mlkem_calls_are(0, 0, names_avx2(cpu)));
-    CHECK(memcmp(back, ss, sizeof back) == 0);
-}
+#include "x86_kernels_keccak.h"
 
 static void check_value(uint32_t cpu) {
     static const uint16_t suites[] = {SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_128_GCM_SHA256,
@@ -442,6 +395,7 @@ static void check_value(uint32_t cpu) {
     check_rsa_moduli(cpu);
     check_rsa_signer(cpu);
     check_sha512(cpu);
+    check_sha3(cpu);
     if (failures != failures_before) {
         (void)fprintf(stderr, "x86 kernels: the checks above ran under ch_cfg.cpu 0x%x\n",
                       (unsigned)cpu);
@@ -450,20 +404,22 @@ static void check_value(uint32_t cpu) {
 
 int main(void) {
     fill(payload, sizeof payload, 0x99);
-    // The seven bits are 0x02 to 0x10, 0x100, 0x200 and 0x400, so the 128
-    // values are the probe's bit with each of 0 to 15 shifted up one, each
+    // The eight bits are 0x02 to 0x10, 0x100, 0x200, 0x400 and 0x800, so the
+    // 256 values are the probe's bit with each of 0 to 15 shifted up one, each
     // of those with CH_CPU_AVX512_IFMA, each of the 32 with CH_CPU_AVX512,
-    // and each of the 64 with CH_CPU_BMI2_ADX.
-    for (uint32_t bits = 0; bits < 128; bits++) {
+    // each of the 64 with CH_CPU_BMI2_ADX, and each of the 128 with
+    // CH_CPU_BMI1.
+    for (uint32_t bits = 0; bits < 256; bits++) {
         uint32_t ifma = (bits & 16U) != 0 ? CH_CPU_AVX512_IFMA : 0U;
         uint32_t avx512 = (bits & 32U) != 0 ? CH_CPU_AVX512 : 0U;
         uint32_t adx = (bits & 64U) != 0 ? CH_CPU_BMI2_ADX : 0U;
-        check_value(CH_CPU_PROBED | ((bits & 15U) << 1) | ifma | avx512 | adx);
+        uint32_t bmi1 = (bits & 128U) != 0 ? CH_CPU_BMI1 : 0U;
+        check_value(CH_CPU_PROBED | ((bits & 15U) << 1) | ifma | avx512 | adx | bmi1);
     }
     check_value(0);
     if (failures == 0) {
         (void)printf(
-            "x86 kernels: under each of 129 ch_cfg.cpu values, the ChaCha20 keystream ran on the "
+            "x86 kernels: under each of 257 ch_cfg.cpu values, the ChaCha20 keystream ran on the "
             "AVX-512 kernel where CH_CPU_AVX512_IFMA was set and on the AVX2 kernel where "
             "CH_CPU_AVX2 was and that bit was not, ML-KEM's matrix on the AVX2 kernel where "
             "CH_CPU_AVX2 was, Poly1305 on the IFMA kernel where CH_CPU_AVX512_IFMA and "
@@ -479,7 +435,9 @@ int main(void) {
             "exponentiations on MULX and ADX where CH_CPU_BMI2_ADX and the multiply bit were and "
             "CH_CPU_AVX512_IFMA was not, a ChaCha20-Poly1305 seal or open of 1,024 bytes or "
             "more on the one pass where CH_CPU_AVX2 and the multiply bit were and "
-            "CH_CPU_AVX512_IFMA was not, and none of them anywhere else\n");
+            "CH_CPU_AVX512_IFMA was not, SHA-3 and SHAKE on sha3_hw.c's copy on ANDN and RORX "
+            "where CH_CPU_BMI1 and CH_CPU_BMI2_ADX were, and ML-KEM's hashes never on it, and "
+            "none of them anywhere else\n");
     }
     return failures != 0;
 }

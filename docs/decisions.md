@@ -18079,11 +18079,100 @@ does nothing more.
     clang on the 8573C the sponge gained 5%, where the permutation alone
     gained 15% in the A/B runs. The cause is not found.
 
-217. **No x86-64 host object holds a second Keccak round yet: the forms
-    that BMI2, BMI1, carried parities and 512-bit registers permit are
-    measured and not built.** Camilo approved the work on 2026-11-10,
-    with decision 216: RORX under `CH_CPU_BMI2_ADX`, ANDN as a
-    measurement alone, and a 512-bit round only on a clear win. Each
+217. **An x86-64 host object holds a second SHA-3, FIPS 202's chi on
+    ANDN and RORX, under a new bit, `CH_CPU_BMI1`.** Camilo approved the
+    study on 2026-11-10, with decision 216: RORX under
+    `CH_CPU_BMI2_ADX`, ANDN as a measurement alone, and a 512-bit round
+    only on a clear win. The study, below, found ANDN with RORX the one
+    clear win, and ANDN is BMI1. Camilo ruled on 2026-11-10 for a new
+    bit, `CH_CPU_BMI1`, which a caller sets after it probes BMI1, and
+    against a wider meaning for `CH_CPU_BMI2_ADX`. No bit that existed
+    before changes its meaning.
+
+    - **The bit.** `CH_CPU_BMI1` is 0x800, an x86-64 bit in
+      `CH_CPU_DEFINED`, so every init and `ch_srv_check` take it on
+      x86-64 and refuse it on arm64. It states presence alone and no
+      timing, as `CH_CPU_AVX2` does: ANDN, RORX, XOR, loads and stores are
+      the kinds of instruction `sha3.c`'s round runs on every x86-64 CPU.
+      `chapulin.hpp`'s `Cpu` and the Zig API's `Cpu` gain a `bmi1` field.
+    - **The copy.** `sha3_hw.c`'s x86-64 arm is `sha3.c` compiled once
+      more under `keccak_hw.h`'s `_hw` names, with every function under
+      `target("bmi,bmi2")`, as `sha512_hw.c`'s x86-64 arm is `sha512.c`
+      over its AVX2 kernel. Its permutation is `sha3_andn.h`'s: decision
+      216's two states, the empty statements and the function of 24
+      rounds out of line, with FIPS 202's chi, so no lane is inverted. The
+      compiler writes ANDN for each `~b & c` and RORX for each rotation: 25
+      ANDN and 29 RORX a round, and no NOT. A round is 183 instructions
+      under gcc 13.3 and 182.5 under clang 18 and clang 23, where decision
+      216's is 210 and 198.5, and the function of 24 rounds writes no value
+      to a stack slot under the three on Linux. The rest of the object
+      compiles with no instruction flag.
+    - **Who runs it.** `sha3.h`'s `sha3_on_instructions` picks the copy
+      where the value holds both `CH_CPU_BMI1` and `CH_CPU_BMI2_ADX`, so
+      its four `_cpu` entries run it: ML-DSA-87's SHAKE calls, through
+      `mld_absorb` and `mld_squeeze`, and a caller's own SHA-3. ML-KEM
+      calls `sha3.c` under its plain names inside `mlkem.c` and its AVX2
+      copy, so its hashes run decision 216's form whatever the bits say. A
+      copy of `mlkem.c` and `mlkem_poly.c` over the new sponge would move
+      them, as `mlkem_hw.c` does on arm64, and is not built here.
+    - **What holds it.** `sha3_round` proves the round, from one array to
+      a second one, equal to FIPS 202's for every state and every round
+      constant, and evaluates the 24 rounds from zeros with the scratch
+      state at zeros after them. `bin/sha3_equiv_test` runs the form on
+      every machine, 31,257 outputs. `bin/sha3_hw_equiv_test` holds the
+      copy to `sha3.c` and searches the stack each kind of call leaves, in
+      the qemu lane's new `sha3-bmi` part under gcc 13.3, and under clang
+      18 and gcc 15.2 by hand. `test/hash-builds.sh` requires ANDN and RORX and no NOT
+      in the copy, and no BMI1 or BMI2 instruction in `sha3.c`.
+      `bin/hash_runtime_test`, `bin/x86_kernels_test` and
+      `bin/mldsa_runtime_test` count the SHA-3 calls on each path under
+      each value. ML-DSA-87's signer vectors, the unit suite and the
+      Wycheproof suites run under 0xc0d and 0xc1f, and `make ct-taint`
+      under 0xc01. The `sha3-bmi` part runs the signer's vectors under one
+      of the two bits on a model without the other's instructions.
+    - **Mutants.** `inv14-cpu-arm64-admits-bmi1-bit` and
+      `inv14-cpu-x86-64-drops-bmi1-bit` move the bit between the two
+      sets. `inv16-sha3-bmi-copy-without-bmi1` and
+      `inv16-sha3-bmi-copy-without-bmi2-adx` drop one bit from the
+      predicate, `inv45-keccak-bmi-copy-runs-the-inverted-lanes` gives the
+      copy decision 216's form, `inv45-keccak-andn-chi-neighbours-exchanged`
+      breaks one line of chi, and `inv17-sha3-andn-scratch-state-kept`
+      drops the wipe of the scratch state.
+    - **macOS.** On macOS clang keeps rbp for the frame pointer, so the
+      round has 14 general registers. In both two-state forms it then
+      writes two values of theta to the red zone below the function of 24
+      rounds, and `bin/sha3_hw_equiv_test`'s search finds them under
+      Rosetta. No lane here builds a macOS x86-64 object.
+
+    Measured by `bench.yml` run 42883685329. On the bench branch alone,
+    `bench/primitives.sh` timed each chapulin row once more under the
+    widest value without `CH_CPU_BMI1`, 0x43f on the EPYC 7763 and 0x73f
+    on the 8573C, beside the widest value with it. Each cell is the ratio
+    to OpenSSL 3.6.4 in the same run without the bit and with it, and the
+    time with the bit as a part of the time without. Run 42873923182 drew
+    no 8573C, and its EPYC cells are within 0.003 of these:
+
+    | one operation | EPYC 7763, gcc | EPYC 7763, clang | 8573C, gcc | 8573C, clang |
+    | --- | --- | --- | --- | --- |
+    | SHA3-256, 16 KiB | 1.095 to 1.036, 0.946 | 1.105 to 1.043, 0.944 | 1.035 to 0.930, 0.899 | 1.036 to 0.943, 0.910 |
+    | SHA3-256, 64 bytes | 0.778 to 0.735, 0.945 | 0.764 to 0.730, 0.956 | 0.777 to 0.639, 0.822 | 0.727 to 0.650, 0.894 |
+    | ML-KEM-768 key generation | 0.526 to 0.526, 1.000 | 0.456 to 0.454, 0.998 | 0.562 to 0.561, 0.999 | 0.468 to 0.468, 0.998 |
+    | ML-KEM-768 encapsulation | 0.992 to 0.992, 0.999 | 0.842 to 0.842, 1.000 | 1.115 to 1.114, 0.999 | 0.929 to 0.931, 1.003 |
+    | ML-KEM-768 decapsulation | 0.747 to 0.748, 1.001 | 0.607 to 0.607, 1.000 | 0.802 to 0.802, 1.000 | 0.649 to 0.650, 1.001 |
+    | ML-DSA-87 key generation | 0.592 to 0.583, 0.986 | 0.696 to 0.689, 0.991 | 0.710 to 0.691, 0.973 | 0.843 to 0.835, 0.990 |
+    | ML-DSA-87 sign | 0.556 to 0.555, 0.999 | 0.517 to 0.513, 0.991 | 0.798 to 0.780, 0.977 | 0.739 to 0.707, 0.956 |
+    | ML-DSA-87 verify | 0.336 to 0.336, 0.998 | 0.300 to 0.298, 0.993 | 0.433 to 0.433, 0.998 | 0.388 to 0.384, 0.988 |
+
+    SHA3-256 of 16 KiB with the bit takes 0.90 and 0.91 of its time
+    without it on the 8573C, and 0.94 and 0.95 on the EPYC 7763. ML-KEM's
+    rows do not move, as above. ML-DSA-87's move by 0.96 to 1.00. Under
+    `qemu-x86_64 -cpu max`, one SHA3-256 of 16 KiB through `sha3_256_cpu`
+    retires 563,527 instructions under gcc 13.3 with the two bits, where
+    it retires 644,475 without them, and 554,574 under clang 18, where it
+    retires 602,510. Over 64 bytes it retires 4,925 where it retired 5,593,
+    and 4,834 where it retired 5,250.
+
+    The study that led to the ruling follows. Before the ruling, each
     candidate ran in one binary with decision 216's round, for each
     compiler, on the runners that record the scoreboard. A candidate is a
     function of 24 rounds. It is checked against FIPS 202's round over
@@ -18134,18 +18223,9 @@ does nothing more.
       instructions under both compilers. With RORX beside it the round
       takes 0.85 to 0.90 of decision 216's time on the 8573C, and 0.94 to
       0.95 on the EPYC 7763. ANDN is BMI1, CPUID leaf 7 EBX bit 3.
-      `cpu_cfg.h` names BMI2 and ADX and not BMI1. A session needs either
-      a bit of its own, `CH_CPU_BMI1`, or `CH_CPU_BMI2_ADX` to state BMI1
-      as well, which changes what a caller's probe reads. Camilo rules.
-    - **One copy, after Camilo rules.** A second round needs a second
-      sponge, as `sha3_hw.c` is for arm64. That sponge is `sha3.c`
-      compiled once more under a target attribute. `sha3.h`'s `_cpu`
-      entries would pick it for ML-DSA-87 and for a caller's own SHA-3.
-      Its round is decision 216's text under BMI2 alone, and FIPS 202's
-      chi under BMI1 and BMI2. The copy is not built here, so that one
-      rule from Camilo sets its round and its bit. ML-KEM calls `sha3.c`
-      under its plain names inside `mlkem.c` and its AVX2 copy. So it
-      needs a copy of `mlkem.c` and `mlkem_poly.c` for each sponge.
+      `cpu_cfg.h` named BMI2 and ADX and not BMI1, so the form needed a
+      bit of its own or a wider meaning for `CH_CPU_BMI2_ADX`. Camilo
+      ruled for the first, above.
     - **Parities carried: a gain under clang on the EPYC alone.** A round
       can XOR each lane it writes into its column's parity, and hand the
       five parities to the next round as values. No round then loads a

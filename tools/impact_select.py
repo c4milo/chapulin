@@ -156,7 +156,8 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # the assembly has a body on arm64 alone, and CI's machines are x86-64. A
 # violation of rsa_mont64_adx_asm.h or
 # of the dispatch to it in rsa_sign64.c names rsa-adx, for the same
-# reason. A violation of
+# reason. A violation of sha3_hw.c's x86-64 copy or of the dispatch to it
+# in sha3.h names sha3-bmi, for the same reason. A violation of
 # sha512_avx2.c's kernel, of the wipe after it or of where its sums lie
 # names sha512-avx2, for the same reason, and because the lane builds it
 # with gcc, the compiler under which the declared alignment of the sums
@@ -192,7 +193,8 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x25519-adx",
                           "test/docker-aes-runtime-qemu.sh p256-adx",
                           "test/docker-aes-runtime-qemu.sh p256-arm64",
-                          "test/docker-aes-runtime-qemu.sh rsa-adx"]
+                          "test/docker-aes-runtime-qemu.sh rsa-adx",
+                          "test/docker-aes-runtime-qemu.sh sha3-bmi"]
 
 # What "everything" means, in the order to run it: the two tiers, then
 # the targets only the nightly runs. Each entry is (tier, command, reason).

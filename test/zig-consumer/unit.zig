@@ -213,6 +213,7 @@ test "the Client values\' ch_cfg and Server.toCfg in a host object: CH_CPU_PROBE
         .{ .constant_time_sha3 = true },
         .{ .avx512_ifma = true },
         .{ .avx512 = true },
+        .{ .bmi1 = true },
         .{ .constant_time_aes = true, .constant_time_multiply = true, .avx2 = true, .vaes = true, .constant_time_sha256 = true, .constant_time_sha512 = true, .constant_time_sha3 = true, .avx512_ifma = true, .avx512 = true },
     };
     const probed = c.CH_CPU_PROBED;
@@ -228,6 +229,7 @@ test "the Client values\' ch_cfg and Server.toCfg in a host object: CH_CPU_PROBE
         probed | c.CH_CPU_CONSTANT_TIME_SHA3,
         probed | c.CH_CPU_AVX512_IFMA,
         probed | c.CH_CPU_AVX512,
+        probed | c.CH_CPU_BMI1,
         probed | c.CH_CPU_CONSTANT_TIME_AES | c.CH_CPU_CONSTANT_TIME_MULTIPLY | c.CH_CPU_AVX2 | c.CH_CPU_VAES | c.CH_CPU_CONSTANT_TIME_SHA256 | c.CH_CPU_CONSTANT_TIME_SHA512 | c.CH_CPU_CONSTANT_TIME_SHA3 | c.CH_CPU_AVX512_IFMA | c.CH_CPU_AVX512,
     };
     for (descriptions, codes) |description, code| {

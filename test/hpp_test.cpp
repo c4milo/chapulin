@@ -366,6 +366,16 @@ static void test_webpki_config(chapulin::Io io) {
         CHECK(avx512.connect(cfg) == ((CH_CPU_DEFINED & CH_CPU_AVX512) != 0
                                           ? chapulin::Status::io
                                           : chapulin::Status::invalid));
+        // bmi1 to its own bit, which an arm64 object refuses. Without
+        // bmi2_adx the session runs no SHA-3 on sha3_hw.c's copy.
+        chapulin::Cpu andn;
+        andn.bmi1 = true;
+        cfg.cpu(andn);
+        CHECK(cfg.raw().cpu == (CH_CPU_PROBED | CH_CPU_BMI1));
+        chapulin::Session bmi1;
+        CHECK(bmi1.connect(cfg) == ((CH_CPU_DEFINED & CH_CPU_BMI1) != 0
+                                        ? chapulin::Status::io
+                                        : chapulin::Status::invalid));
         // The three hash bits, each to its own bit of ch_cfg.cpu. An
         // x86-64 object refuses the SHA-512 bit, which is arm64's, as
         // an arm64 object refuses avx2. No session runs here under a

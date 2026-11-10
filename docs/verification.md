@@ -76,7 +76,7 @@ The other 46 sources are in no such harness:
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha512_hw.c` | Its arm64 arm runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics. Its x86-64 arm is `sha512.c`'s first arm compiled once more over `sha512_avx2.c`. | `bin/sha2_equiv_test` holds each arm to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions), [SHA-512 on AVX2](#sha-512-on-avx2)). The `sha512_host` harness proves the text of the x86-64 arm under its own names, over `sha512_compress_blocks.c`. |
 | `sha512_avx2.c` | It runs SHA-512's compression function with its message schedule on AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/sha2_equiv_test` holds it, under `sha512_hw.c`'s five calls, to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, searches the stack each kind of call leaves and reads ymm0 to ymm15 back as zero after a call, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it. `make lint-schedule-order` reads the order of its instructions as each compiler wrote them ([SHA-512 on AVX2](#sha-512-on-avx2)). |
-| `sha3_hw.c` | It runs Keccak-f[1600] on arm64's SHA-3 intrinsics. It has no body on x86-64, and none under a compiler other than clang, because gcc 13 keeps lanes of the state in stack slots it picks (decision 99). | Where it has a body, `bin/sha3_hw_equiv_test` holds it to `sha3.c`'s proven code, compares it with FIPS 202 as `proof/sha3_reference.h` writes it, and searches the stack each kind of call leaves for any lane the call computed. |
+| `sha3_hw.c` | Its arm64 arm runs Keccak-f[1600] on arm64's SHA-3 intrinsics, and has no body under a compiler other than clang, because gcc 13 keeps lanes of the state in stack slots it picks (decision 99). Its x86-64 arm is `sha3.c` compiled once more under `target("bmi,bmi2")`, whose round `sha3_round` proves as C (decision 217). | Where it has a body, `bin/sha3_hw_equiv_test` holds it to `sha3.c`'s proven code, compares it with FIPS 202 as `proof/sha3_reference.h` writes it, and searches the stack each kind of call leaves for any lane the call computed. |
 | `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, but for the host arms of `mlkem.c`'s three NTT wrappers, each one call into `mlkem_vector.c` ([The vector NTT](#the-vector-ntt)), and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decisions 93 and 128). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
@@ -327,13 +327,18 @@ The entries are grouped by area:
     rounds between the two calls of `invert_lanes` leave the reference's
     state from zeros (decision 195). That round reads one array and
     writes a second one, and the scratch state its 24 rounds write holds
-    zeros when the permutation returns (decision 216).
+    zeros when the permutation returns (decision 216). And for the ANDN
+    form of `sha3_andn.h`, which `sha3_hw.c`'s x86-64 copy runs: its
+    round, from one array to a second one, leaves the reference round's
+    state for every state and every round constant, its 24 rounds leave
+    the reference's state from zeros, and its scratch state then holds
+    zeros (decision 217).
 - **Bound:** one-call: messages ≤ 200 B, output ≤ 400 B. Streaming:
   chunks ≤ 32 B. The round: the full domain. The 24 rounds: one state.
 - **Tested instead:** that absorb, the padding and squeeze move the
   standard's bytes. `bin/sha3_equiv_test` holds every entry of `sha3.h`
-  to the reference's sponge, which moves one byte at a time, over 20,451
-  outputs, with both forms of the permutation on every machine; `bin/sha3_test` runs the FIPS 202 vectors; and the spec
+  to the reference's sponge, which moves one byte at a time, over 31,257
+  outputs, with the three forms of the permutation on every machine; `bin/sha3_test` runs the FIPS 202 vectors; and the spec
   differential runs every mode against the Lean model.
 
 #### hkdf
@@ -6840,6 +6845,17 @@ names `keccak_hw.h` gives. A session whose `ch_cfg.cpu` holds
 `sha3.h` and `mlkem.h`. Under any other compiler the three files hold
 nothing and every session runs `sha3.c`.
 
+An x86-64 host object holds a copy of its own in `sha3_hw.c`: `sha3.c`
+compiled once more under `target("bmi,bmi2")`, which runs `sha3_andn.h`'s
+form of the permutation, for a session whose `ch_cfg.cpu` holds
+`CH_CPU_BMI1` and `CH_CPU_BMI2_ADX` (decision 217). Its round is C, so
+`sha3_round` proves it, and what the compiler wrote for it under the
+target attribute is held by `bin/sha3_hw_equiv_test` in the qemu lane's
+`sha3-bmi` part, by `test/hash-builds.sh`, which requires ANDN and RORX
+and no NOT in the copy, and by ML-DSA-87's vectors under the two bits.
+ML-KEM's two copies hold nothing on x86-64, and ML-KEM's hashes run
+`sha3.c`.
+
 What holds them:
 
 - `bin/sha3_hw_equiv_test` compares `sha3_hw.c` with `sha3.c` over
@@ -6869,8 +6885,13 @@ What holds them:
   has FEAT_SHA3 (`test/test_cpu.h`).
 - `test/hash-builds.sh` requires FEAT_SHA3's instructions in
   `sha3_hw.c` alone, and each copy's SHA-3 and SHAKE calls on the `_hw`
-  names, for arm64 under the pinned clang, and no body in any of the
-  three files for x86-64 or a device object.
+  names, for arm64 under the pinned clang, no body in ML-KEM's two
+  copies for x86-64, and no body in any of the three files for a device
+  object.
+- `bin/hash_runtime_test` counts each SHA-3 and SHAKE call of its rows
+  on each path under every value, and `bin/x86_kernels_test` does the
+  same for x86-64 and requires that ML-KEM's session calls send none to
+  the copy.
 - CI builds the two binaries with Apple clang in the macos job and with
   the pinned clang in the arm64 job, whose own compiler is gcc (`make
   keccak-instructions-check`), and runs them natively.
@@ -6879,15 +6900,21 @@ Four violations each break one of those rules, and each is caught:
 `inv17-sha3-digest-state-kept` and `inv17-sha3-hw-lane-in-stack-slot`
 by the stack check, `inv16-mlkem-copy-absorb-on-portable` by
 `test/hash-builds.sh`, and `inv16-sha3-instructions-without-bit` by the
-qemu lane on cortex-a72.
+qemu lane on cortex-a72. For x86-64, `inv16-sha3-bmi-copy-without-bmi1`
+and `inv16-sha3-bmi-copy-without-bmi2-adx` are caught by the qemu lane's
+`sha3-bmi` part, and `inv45-keccak-bmi-copy-runs-the-inverted-lanes` by
+`test/hash-builds.sh`.
 
 None of this proves the two paths agree on an input no case runs. The
 stack check reads the stack one compiler left on one call, and cannot
-see a register. It ran under Apple clang 21, clang 18 and clang 23, and
-nothing holds the claim for a clang that is none of them. No binary
-counts which path each ML-KEM call takes, as `bin/hash_runtime_test`
-does for SHA-2, so a call site that hands the portable code a session
-with the bit runs slower and no check fails.
+see a register. For arm64 it ran under Apple clang 21, clang 18 and
+clang 23, and for x86-64 under gcc 13.3 and clang 18 on Linux, and
+nothing holds the claim for another compiler. On macOS x86-64 clang
+keeps rbp for the frame pointer, and the search finds two values of
+theta that the x86-64 copy wrote to the red zone (decision 217). No
+binary counts which path each ML-KEM call takes, so a call site that
+hands the portable code a session with the bit runs slower and no
+check fails.
 
 ### The host object's two multiplies
 

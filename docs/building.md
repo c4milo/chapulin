@@ -159,7 +159,7 @@ Other targets:
   `CH_CPU_CONSTANT_TIME_MULTIPLY` and `CH_CPU_CONSTANT_TIME_SHA256` where
   you state those instructions run in constant time on that CPU in the
   mode your thread runs in, on x86-64 `CH_CPU_AVX2`, `CH_CPU_VAES`,
-  `CH_CPU_AVX512_IFMA`, `CH_CPU_AVX512` and `CH_CPU_BMI2_ADX`, and on arm64
+  `CH_CPU_AVX512_IFMA`, `CH_CPU_AVX512`, `CH_CPU_BMI2_ADX` and `CH_CPU_BMI1`, and on arm64
   `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`. Every
   init call, `ch_srv_check` and `ch_p256_key_from_pem` refuse a value
   without `CH_CPU_PROBED`, and one with a bit this object does not
@@ -257,6 +257,10 @@ Other targets:
   `p256_adx.h`'s copy of the wide files, whose products and squares are
   MULX's. By itself it runs an ECDSA P-256 verification on that copy,
   because a verification reads public inputs alone (decision 171).
+  `CH_CPU_BMI1` says the CPU has BMI1: ANDN. It states no timing, and
+  beside `CH_CPU_BMI2_ADX`, whose BMI2 gives RORX, the session runs SHA-3
+  and SHAKE on `sha3_hw.c`'s copy of `sha3.c`, whose chi is ANDN, so its
+  ML-DSA-87 hashes run there (decision 217).
   Set each bit from your probe alone: a session whose bit names
   instructions its CPU lacks faults on the first one. The three hash
   bits say the CPU has the SHA-256, the SHA-512 or the SHA-3

@@ -1,18 +1,31 @@
-// SHA-3 and SHAKE (FIPS 202) with Keccak-f[1600] on arm64's SHA-3 instructions, through
-// <arm_neon.h>'s veor3q_u64, vrax1q_u64, vxarq_u64 and vbcaxq_u64. An arm64 host object
-// (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles this file beside sha3.c, and sha3.h's and mlkem.h's
-// entries call it for a session whose caller set CH_CPU_CONSTANT_TIME_SHA3 (docs/decisions.md
-// 99). No x86-64 CPU has these instructions, so on x86-64 the file holds nothing, and
-// cpu_cfg.h refuses the bit there.
+// SHA-3 and SHAKE (FIPS 202) for a session of a host object (-DCH_CPU_RUNTIME, cpu_cfg.h) whose
+// ch_cfg.cpu names the architecture's faster Keccak-f[1600]: the six calls sha3.h declares with _hw
+// after their names. A host object compiles this file beside sha3.c, and sha3.h's entries call it
+// for such a session. The file has two arms, one for each architecture.
 //
-// Only clang compiles the instructions (CH_KECCAK_INSTRUCTIONS, cpu_cfg.h). A round keeps 32
-// values in arm64's 32 vector registers: the 25 lanes and seven more. A compiler that needs a
+// For x86-64 it is sha3.c compiled once more, under the _hw names keccak_hw.h gives, with every
+// function under target("bmi,bmi2"). The define below makes that copy run sha3_andn.h's form of
+// the permutation, whose chi is FIPS 202's: the compiler writes ANDN, a BMI1 instruction, for each
+// ~b & c, and RORX, a BMI2 instruction, for rotations. sha3.h's entries call it for a session
+// whose caller set CH_CPU_BMI1 and CH_CPU_BMI2_ADX (docs/decisions.md 217). x86-64 has no Keccak
+// instruction, so on x86-64 the _hw names run those two instructions and no hash instruction. The
+// copy is sha3.c's own text, so its sponge and its wipes are that file's, and the sha3_round
+// harness proves its round, which is C. The rest of the object compiles with no instruction flag
+// and runs on any x86-64 CPU. bin/sha3_hw_equiv_test holds this arm to sha3.c and searches the
+// stack each kind of call leaves, on a CPU with BMI1 and BMI2.
+//
+// For arm64 it is the rest of this file: Keccak-f[1600] on arm64's SHA-3 instructions, through
+// <arm_neon.h>'s veor3q_u64, vrax1q_u64, vxarq_u64 and vbcaxq_u64, for a session whose caller set
+// CH_CPU_CONSTANT_TIME_SHA3, and sha3.h's and mlkem.h's entries call it (docs/decisions.md 99).
+//
+// On arm64 only clang compiles the instructions (CH_KECCAK_INSTRUCTIONS, cpu_cfg.h). A round keeps
+// 32 values in arm64's 32 vector registers: the 25 lanes and seven more. A compiler that needs a
 // 33rd writes a lane to a stack slot of its choosing, and no wipe written in C clears one.
 // Apple clang 21, clang 18 and clang 23 keep all 32 in registers. gcc 13 does not, in this form
-// or with four lanes held in a struct the function wipes, so under any other compiler this
-// file holds nothing and every session runs sha3.c.
+// or with four lanes held in a struct the function wipes, so under any other compiler the arm64
+// arm holds nothing and every session runs sha3.c.
 //
-// The file is two things. The sponge is sha3.c's text, compiled once more under the names
+// The arm64 arm is two things. The sponge is sha3.c's text, compiled once more under the names
 // keccak_hw.h gives: absorbing, padding and squeezing are the code CBMC proves. The permutation
 // is this file's own, the two functions sha3.c leaves to a copy: keccak_f1600, and
 // absorb_whole_blocks, which keeps the state in registers from a message's first whole block to
@@ -20,23 +33,53 @@
 //
 // The object compiles this file with no instruction flag, so the rest of the object runs on any
 // arm64 CPU. The pragma below puts the target attribute that turns the instructions on onto
-// each function in this file, the copied text's too, and on no function outside it. Under it
+// each function of the arm64 arm, the copied text's too, and on no function outside it. Under it
 // a compiler may write EOR3 for plain C as well (sha512_hw.c), and here that is the bit's own
 // instruction. Nothing here probes a CPU: the caller does, and states what it found in
 // ch_cfg.cpu.
 //
-// ML-KEM hashes its secrets with this file, so its timing matters. It reads no table with a
-// secret index and branches on lengths and on the rate alone, which is what it can state for
-// itself. Whether the four instructions take the same time whatever their operands are is the
-// CPU's, in the mode the thread runs in, and CH_CPU_CONSTANT_TIME_SHA3 is the caller's
-// statement that they do (cpu_cfg.h).
+// ML-KEM hashes its secrets with the arm64 arm, and ML-DSA-87 with both arms, so their timing
+// matters. Each arm reads no table with a secret index and branches on lengths and on the rate
+// alone, which is what it can state for itself. Whether the four arm64 instructions take the same
+// time whatever their operands are is the CPU's, in the mode the thread runs in, and
+// CH_CPU_CONSTANT_TIME_SHA3 is the caller's statement that they do (cpu_cfg.h). The x86-64 arm's
+// ANDN, RORX, XOR, loads and stores are the kinds sha3.c's own round runs on every x86-64 CPU, so
+// CH_CPU_BMI1 states no timing.
 //
 // CBMC cannot read an intrinsic, so the proofs stay on sha3.c. bin/sha3_hw_equiv_test holds
-// this file to that code over every length and split it tries, compares it with FIPS 202 as
+// the arm64 arm to that code over every length and split it tries, compares it with FIPS 202 as
 // proof/sha3_reference.h writes it, and searches the stack each kind of call leaves.
 // bin/mlkem_hw_equiv_test holds ML-KEM's two copies to mlkem.c and mlkem_poly.c
 // (docs/verification.md).
 #include "sha3.h"
+
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+
+// Every function from here to the pop below carries the target attribute that turns BMI1 and BMI2
+// on, the copied text's too, and no function outside it does: clang applies it through one
+// attribute push, and gcc's target pragma sets it for each function defined after it, until the
+// pop.
+#ifdef __clang__
+#pragma clang attribute push(__attribute__((target("bmi,bmi2"))), apply_to = function)
+#else
+#pragma GCC push_options
+#pragma GCC target("bmi,bmi2")
+#endif
+
+// sha3.h is read above, so the renames find its declarations of the _hw names in place.
+#include "keccak_hw.h"
+
+#define CH_SHA3_BMI_COPY
+
+#include "sha3.c"
+
+#ifdef __clang__
+#pragma clang attribute pop
+#else
+#pragma GCC pop_options
+#endif
+
+#endif // CH_CPU_RUNTIME && __x86_64__
 
 #ifdef CH_KECCAK_INSTRUCTIONS
 

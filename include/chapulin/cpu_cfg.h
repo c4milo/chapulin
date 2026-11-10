@@ -165,7 +165,8 @@
 // alone. A session whose bit names instructions its CPU lacks faults on the first one. With
 // CH_CPU_CONSTANT_TIME_SHA3 an arm64 session runs SHA-3, SHAKE and ML-KEM's hashes on the SHA-3
 // instructions (sha3_hw.c, keccak_hw.h) where the object holds them, which is where clang compiled
-// it (CH_KECCAK_INSTRUCTIONS below), and on sha3.c everywhere else. Beside CH_CPU_CONSTANT_TIME_AES
+// it (CH_KECCAK_INSTRUCTIONS below), and on sha3.c everywhere else but where CH_CPU_BMI1 below
+// picks sha3_hw.c's x86-64 copy. Beside CH_CPU_CONSTANT_TIME_AES
 // it also runs AES-GCM on gcm_arm64_eor3.c, whose GHASH sums three values with EOR3, in place of
 // gcm_arm64.c (docs/decisions.md 158). A hash call that takes no value
 // runs no hash instruction in any object: a certificate's, a signature's and the DRBG's are such
@@ -188,9 +189,18 @@
 // widemul_p256_adx). An ECDSA P-256 verification reads public inputs alone, so the bit by itself
 // runs it on that copy (p256.h's p256_ecdsa_verify_cpu, docs/decisions.md 171).
 //
+// CH_CPU_BMI1 says the CPU has BMI1, which CPUID leaf 7 reports in bit 3 of EBX: ANDN, which
+// writes the AND of one operand's complement and a second operand to a third register. It is an
+// x86-64 bit, and like CH_CPU_AVX2 it states presence alone and no timing. With CH_CPU_BMI2_ADX
+// beside it, whose BMI2 gives RORX, a rotation to a third register, a session's SHA-3 and SHAKE
+// calls run on sha3_hw.c's x86-64 copy of sha3.c (sha3.h's sha3_on_instructions). That copy's
+// Keccak-f[1600] computes FIPS 202's chi on ANDN, and the rest of the object runs on any x86-64
+// CPU (docs/decisions.md 217). ML-DSA-87 passes the session's value to its hashes, so its SHAKE
+// calls run there. ML-KEM's hashes take no value, and run sha3.c whatever the two bits say.
+//
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2, CH_CPU_VAES, CH_CPU_AVX512_IFMA,
-// CH_CPU_AVX512 or CH_CPU_BMI2_ADX on arm64, CH_CPU_CONSTANT_TIME_SHA512 or
+// CH_CPU_AVX512, CH_CPU_BMI2_ADX or CH_CPU_BMI1 on arm64, CH_CPU_CONSTANT_TIME_SHA512 or
 // CH_CPU_CONSTANT_TIME_SHA3 on x86-64, or a bit a later release adds. A caller written before such
 // a release leaves the new bit clear and runs the slower path. A defined bit for instructions the
 // object never runs, such as CH_CPU_CONSTANT_TIME_AES in an object that carries no AES, still
@@ -208,11 +218,12 @@
 #define CH_CPU_AVX512_IFMA 0x100U
 #define CH_CPU_AVX512 0x200U
 #define CH_CPU_BMI2_ADX 0x400U
+#define CH_CPU_BMI1 0x800U
 #ifdef __x86_64__
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY | CH_CPU_AVX2 |      \
      CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_AVX512_IFMA | CH_CPU_AVX512 |              \
-     CH_CPU_BMI2_ADX)
+     CH_CPU_BMI2_ADX | CH_CPU_BMI1)
 #else
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \

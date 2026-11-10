@@ -76,9 +76,10 @@
 # intrinsic, their wipes and the define that picks them with
 # "rsa-addcarry", and the violations of the NEON arms of
 # chacha20_vector.c and poly1305_vector.c with "vector-neon", the
-# violations of keccak_neon.c and its samplers with "keccak-neon", and the
+# violations of keccak_neon.c and its samplers with "keccak-neon", the
 # violations of p256_arm64_asm.h and of the dispatch to it with
-# "p256-arm64".
+# "p256-arm64", and the violations of sha3_hw.c's x86-64 copy and of the
+# dispatch to it in sha3.h with "sha3-bmi".
 # Needs docker (OrbStack works); skips without it.
 set -euo pipefail
 

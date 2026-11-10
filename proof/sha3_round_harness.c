@@ -22,9 +22,17 @@
 // Keccak-f[1600]'s state from zeros, and its scratch state holds zeros
 // after them.
 //
+// And the ANDN form that sha3_hw.c's x86-64 copy runs (docs/decisions.md
+// 217). Its round reads one state and writes a second one with FIPS 202's
+// chi, and writes the standard's round's state for every state and every
+// round constant. Its 24 rounds leave Keccak-f[1600]'s state from zeros,
+// and its scratch state holds zeros after them. The copy compiles this C
+// under target("bmi,bmi2"), which changes the instructions and not the
+// function the C computes.
+//
 // Together: each round is the standard's for every input, and each form
 // of the permutation applies it 24 times with the standard's constants
-// in the standard's order, so both forms are the standard's.
+// in the standard's order, so the three forms are the standard's.
 #include "harness.h"
 
 #include "sha3.c"
@@ -43,9 +51,11 @@ int main(void) {
     uint64_t round_constant = nondet_u64();
     uint64_t before[25];
     uint64_t inverted[25];
+    uint64_t andn[25];
     for (size_t i = 0; i < 25; i++) {
         before[i] = standard[i];
     }
+    keccak_round_andn(andn, before, round_constant);
     invert_lanes(before);
     reference_round(standard, round_constant);
     keccak_round(written, round_constant);
@@ -55,6 +65,7 @@ int main(void) {
         __CPROVER_assert(standard[i] == written[i], "the written-out round is FIPS 202's round");
         __CPROVER_assert(standard[i] == inverted[i],
                          "the inverted lanes round is FIPS 202's round on the inverted lanes");
+        __CPROVER_assert(standard[i] == andn[i], "the ANDN form's round is FIPS 202's round");
     }
 
     uint64_t constants[24];
@@ -69,11 +80,14 @@ int main(void) {
     uint64_t our_zeros[25] = {0};
     uint64_t with_zeros[25] = {0};
     uint64_t scratch[25];
+    uint64_t andn_zeros[25] = {0};
+    uint64_t andn_scratch[25];
     reference_f1600(standard_zeros, constants);
     keccak_f1600_plain(plain_zeros);
     keccak_f1600_inverted(inverted_zeros);
     keccak_f1600(our_zeros);
     keccak_f1600_inverted_with(with_zeros, scratch);
+    keccak_f1600_andn_with(andn_zeros, andn_scratch);
     for (size_t i = 0; i < 25; i++) {
         __CPROVER_assert(standard_zeros[i] == plain_zeros[i],
                          "24 plain rounds from the state of zeros are Keccak-f[1600]");
@@ -84,6 +98,10 @@ int main(void) {
         __CPROVER_assert(standard_zeros[i] == with_zeros[i],
                          "24 inverted lanes rounds with the caller's scratch are Keccak-f[1600]");
         __CPROVER_assert(scratch[i] == 0, "the scratch state holds zeros after the 24 rounds");
+        __CPROVER_assert(standard_zeros[i] == andn_zeros[i],
+                         "24 ANDN form rounds from the state of zeros are Keccak-f[1600]");
+        __CPROVER_assert(andn_scratch[i] == 0,
+                         "the ANDN form's scratch state holds zeros after the 24 rounds");
     }
     return 0;
 }

@@ -1,0 +1,12 @@
+invariant: INV-45
+file: src/sha3_andn.h
+catches: sha3_equiv_test
+reason: one line of the ANDN form's chi takes its two neighbours in each
+  other's place, so the round is no longer FIPS 202's and every digest of
+  sha3_hw.c's x86-64 copy is wrong. bin/sha3_equiv_test runs the form on
+  every machine and requires the reference's state.
+
+--- old
+    out[7] = b7 ^ (~b8 & b9);
+--- new
+    out[7] = b7 ^ (~b9 & b8);

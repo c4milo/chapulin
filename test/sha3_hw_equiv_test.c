@@ -1,7 +1,11 @@
-// bin/sha3_hw_equiv_test: holds sha3_hw.c, Keccak-f[1600] on arm64's SHA-3
-// instructions, to sha3.c, the portable code CBMC proves (docs/decisions.md
-// 99). CBMC cannot read an intrinsic, so this binary is what holds the
-// instructions to the proved code.
+// bin/sha3_hw_equiv_test: holds sha3_hw.c to sha3.c, the portable code CBMC
+// proves: on arm64 Keccak-f[1600] on the SHA-3 instructions
+// (docs/decisions.md 99), and on x86-64 sha3.c's copy whose chi is FIPS
+// 202's on BMI1's ANDN, with BMI2's RORX (docs/decisions.md 217). CBMC
+// cannot read an intrinsic, so this binary is what holds the instructions to
+// the proved code. On x86-64 CBMC proves the copy's round, which is C, and
+// this binary holds what the compiler wrote for it under the target
+// attribute.
 //
 // It compares the two over
 //
@@ -22,9 +26,11 @@
 // test/sha3_hw_equiv_residue.h then searches the stack each kind of call
 // leaves for any lane the call computed.
 //
-// An object holds the instructions where clang compiled it for arm64
-// (CH_KECCAK_INSTRUCTIONS, cpu_cfg.h). In any other object this binary says
-// so and passes, and on a CPU without the instructions it skips. Under
+// An object holds sha3_hw.c's Keccak where clang compiled it for arm64
+// (CH_KECCAK_INSTRUCTIONS, cpu_cfg.h), and in every x86-64 host object. In
+// any other object this binary says so and passes, and on a CPU without the
+// instructions it skips: FEAT_SHA3 on arm64, and BMI1 and BMI2 on x86-64.
+// Under
 // CH_REQUIRE_HASH_INSTRUCTIONS=1 it fails in either case instead
 // (test/hash_instructions_cpu.h), so a run that must test the instructions
 // cannot pass by testing nothing.
@@ -34,12 +40,13 @@
 
 #include "hash_instructions_cpu.h"
 #include "sha3.h"
+#include "x86_kernels_cpu.h"
 
 #ifndef CH_CPU_RUNTIME
 #error "bin/sha3_hw_equiv_test links a host object's hash sources: -DCH_CPU_RUNTIME"
 #endif
 
-#ifndef CH_KECCAK_INSTRUCTIONS
+#if !defined(CH_KECCAK_INSTRUCTIONS) && !defined(__x86_64__)
 
 int main(void) {
     if (hash_instructions_required()) {
@@ -282,14 +289,25 @@ static void run_streams(void) {
 
 #include "sha3_hw_equiv_residue.h"
 
+// Whether this CPU has the instructions sha3_hw.c runs: FEAT_SHA3 on arm64, and on x86-64 BMI1 and
+// BMI2, which a value with CH_CPU_BMI1 and CH_CPU_BMI2_ADX states.
+static int cpu_runs_sha3_hw(void) {
+#ifdef __x86_64__
+    return x86_cpu_has_bmi1_bmi2();
+#else
+    return cpu_has_sha3_instructions();
+#endif
+}
+
 int main(void) {
-    if (!cpu_has_sha3_instructions()) {
+    if (!cpu_runs_sha3_hw()) {
         if (hash_instructions_required()) {
-            (void)fprintf(stderr, "sha3 instructions equivalence: this CPU lacks the SHA-3 "
-                                  "instructions, and CH_REQUIRE_HASH_INSTRUCTIONS is 1\n");
+            (void)fprintf(stderr, "sha3 instructions equivalence: this CPU lacks the instructions "
+                                  "of sha3_hw.c, and CH_REQUIRE_HASH_INSTRUCTIONS is 1\n");
             return 1;
         }
-        (void)printf("SKIP sha3 instructions equivalence: this CPU lacks the SHA-3 instructions\n");
+        (void)printf("SKIP sha3 instructions equivalence: this CPU lacks the instructions of "
+                     "sha3_hw.c\n");
         return 0;
     }
     uint64_t seed = rng_seed_from_env();
@@ -310,4 +328,4 @@ int main(void) {
     return 0;
 }
 
-#endif // CH_KECCAK_INSTRUCTIONS
+#endif // CH_KECCAK_INSTRUCTIONS || __x86_64__

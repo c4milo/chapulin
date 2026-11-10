@@ -1,4 +1,4 @@
-// The fifteen entries of an x86-64 host object's kernels, each a count and a
+// The fifteen entries of an x86-64 host object's kernels and sha3_hw.c's six, each a count and a
 // call to the code it stands beside (test/x86_kernels_count.h).
 // chacha20_vector_xor computes the bytes chacha20_avx2_xor and
 // chacha20_avx512_xor compute,
@@ -26,6 +26,7 @@
 #include "poly1305_avx2.h"
 #include "poly1305_ifma.h"
 #include "poly1305_vector.h"
+#include "sha3.h"
 #include "sha512_avx2.h"
 #include "sha512_compress_blocks.h"
 
@@ -232,6 +233,39 @@ void poly1305_ifma_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {
 void sha512_avx2_compress_blocks(uint64_t state[8], const uint8_t *p, size_t blocks) {
     x86_sha512_avx2_calls++;
     sha512_compress_blocks(state, p, blocks);
+}
+
+// sha3_hw.c's six entries, on sha3.c's code, which computes the bytes the
+// copy on ANDN and RORX computes. The two init calls run no permutation and
+// count nothing.
+unsigned long x86_sha3_bmi_calls;
+
+void sha3_256_hw(const uint8_t *in, size_t n, uint8_t out[SHA3_256_LEN]) {
+    x86_sha3_bmi_calls++;
+    sha3_256(in, n, out);
+}
+
+void sha3_512_hw(const uint8_t *in, size_t n, uint8_t out[SHA3_512_LEN]) {
+    x86_sha3_bmi_calls++;
+    sha3_512(in, n, out);
+}
+
+void shake128_init_hw(shake *s) {
+    shake128_init(s);
+}
+
+void shake256_init_hw(shake *s) {
+    shake256_init(s);
+}
+
+void shake_absorb_hw(shake *s, const uint8_t *in, size_t n) {
+    x86_sha3_bmi_calls++;
+    shake_absorb(s, in, n);
+}
+
+void shake_squeeze_hw(shake *s, uint8_t *out, size_t n) {
+    x86_sha3_bmi_calls++;
+    shake_squeeze(s, out, n);
 }
 
 #endif // __x86_64__

@@ -51,31 +51,31 @@ static uint32_t test_cpu = TEST_CPU;
 #define TEST_CPU_DIR(d) ((&(d))->cpu = test_cpu)
 
 // Every bit a host object defines on the architecture this binary targets: the four of every
-// host object, on x86-64 CH_CPU_AVX2, CH_CPU_VAES, CH_CPU_AVX512_IFMA, CH_CPU_AVX512 and
-// CH_CPU_BMI2_ADX, and on
-// arm64 CH_CPU_CONSTANT_TIME_SHA512 and CH_CPU_CONSTANT_TIME_SHA3. It is written here apart from
-// cpu_cfg.h's CH_CPU_DEFINED, so a wrong set there fails a row.
+// host object, on x86-64 CH_CPU_AVX2, CH_CPU_VAES, CH_CPU_AVX512_IFMA, CH_CPU_AVX512,
+// CH_CPU_BMI2_ADX and CH_CPU_BMI1, and on arm64 CH_CPU_CONSTANT_TIME_SHA512 and
+// CH_CPU_CONSTANT_TIME_SHA3. It is written here apart from cpu_cfg.h's CH_CPU_DEFINED, so a wrong
+// set there fails a row.
 #define TEST_CPU_COMMON                                                                            \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \
      CH_CPU_CONSTANT_TIME_SHA256)
 #ifdef __x86_64__
 #define TEST_CPU_ALL                                                                               \
     (TEST_CPU_COMMON | CH_CPU_AVX2 | CH_CPU_VAES | CH_CPU_AVX512_IFMA | CH_CPU_AVX512 |            \
-     CH_CPU_BMI2_ADX)
+     CH_CPU_BMI2_ADX | CH_CPU_BMI1)
 #else
 #define TEST_CPU_ALL (TEST_CPU_COMMON | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3)
 #endif
 
 // The values every init call and ch_srv_check refuse: 0, which a caller that never set the field
-// leaves; every defined bit but CH_CPU_PROBED; the first bit past CH_CPU_BMI2_ADX, which no
+// leaves; every defined bit but CH_CPU_PROBED; the first bit past CH_CPU_BMI1, which no
 // architecture defines; the top bit; and each bit of the other architecture, which an object
-// refuses rather than ignores: the five x86-64 bits on arm64, and the SHA-512 and SHA-3 bits on
+// refuses rather than ignores: the six x86-64 bits on arm64, and the SHA-512 and SHA-3 bits on
 // x86-64. Then the two they take at the edges: CH_CPU_PROBED alone, and every bit the
 // architecture defines.
 static const uint32_t test_cpu_values[] = {
     0,
     TEST_CPU_ALL & ~(uint32_t)CH_CPU_PROBED,
-    CH_CPU_PROBED | (CH_CPU_BMI2_ADX << 1),
+    CH_CPU_PROBED | (CH_CPU_BMI1 << 1),
     CH_CPU_PROBED | 0x80000000U,
 #ifdef __x86_64__
     CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA512,
@@ -86,6 +86,7 @@ static const uint32_t test_cpu_values[] = {
     CH_CPU_PROBED | CH_CPU_AVX512_IFMA,
     CH_CPU_PROBED | CH_CPU_AVX512,
     CH_CPU_PROBED | CH_CPU_BMI2_ADX,
+    CH_CPU_PROBED | CH_CPU_BMI1,
 #endif
     CH_CPU_PROBED,
     TEST_CPU_ALL,
@@ -155,6 +156,19 @@ static inline uint32_t test_cpu_absent_bmi2_adx_bit(uint32_t value) {
     return 0;
 }
 
+// CH_CPU_BMI1 where value holds it and this CPU lacks BMI1 (test/x86_kernels_cpu.h), and 0 for
+// every other value and on arm64.
+static inline uint32_t test_cpu_absent_bmi1_bit(uint32_t value) {
+#ifdef __x86_64__
+    if ((value & CH_CPU_BMI1) != 0 && !x86_cpu_has_bmi1()) {
+        return CH_CPU_BMI1;
+    }
+#else
+    (void)value;
+#endif
+    return 0;
+}
+
 // CH_CPU_AVX2 where value holds it and this CPU lacks AVX2 (test/x86_kernels_cpu.h), and 0 for
 // every other value and on arm64.
 static inline uint32_t test_cpu_absent_avx2_bit(uint32_t value) {
@@ -177,8 +191,9 @@ static inline uint32_t test_cpu_absent_avx2_bit(uint32_t value) {
 // the bit on sha512_avx2.c's kernel (docs/decisions.md 128). It leaves out CH_CPU_AVX512 where
 // this CPU lacks what the bit names, because a suite session's AES-GCM records run on
 // gcm_avx512_kernel.c under it. It leaves out CH_CPU_BMI2_ADX where this CPU lacks BMI2 or ADX,
-// because a session's shared secret runs on x25519_adx.c under it. A value the call refuses runs
-// nothing and stays whole.
+// because a session's shared secret runs on x25519_adx.c under it. It leaves out CH_CPU_BMI1 where
+// this CPU lacks BMI1, because a session's SHA-3 runs on sha3_hw.c's x86-64 copy under it and
+// CH_CPU_BMI2_ADX. A value the call refuses runs nothing and stays whole.
 static inline uint32_t test_cpu_value(size_t i) {
     uint32_t value = test_cpu_values[i];
     if (!test_cpu_taken(i)) {
@@ -186,7 +201,7 @@ static inline uint32_t test_cpu_value(size_t i) {
     }
     return value & ~test_cpu_absent_hash_bits(value) & ~test_cpu_absent_ifma_bit(value) &
            ~test_cpu_absent_avx2_bit(value) & ~test_cpu_absent_avx512_bit(value) &
-           ~test_cpu_absent_bmi2_adx_bit(value);
+           ~test_cpu_absent_bmi2_adx_bit(value) & ~test_cpu_absent_bmi1_bit(value);
 }
 
 // The hash bits a row gives an end that states its hash instructions: each one an object runs
@@ -246,6 +261,10 @@ static inline const char *test_cpu_lacks(int *required) {
     *required = x86_bmi2_adx_required();
     if (test_cpu_absent_bmi2_adx_bit(test_cpu) != 0) {
         return "BMI2 or ADX";
+    }
+    *required = x86_bmi1_required();
+    if (test_cpu_absent_bmi1_bit(test_cpu) != 0) {
+        return "BMI1";
     }
 #endif
     *required = hash_instructions_required();

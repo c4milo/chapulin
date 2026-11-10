@@ -255,6 +255,21 @@ static void reset_counts(void) {
     memset(&keccak_neon_counted, 0, sizeof keccak_neon_counted);
 }
 
+// Whether a SHAKE call that takes cpu runs sha3_hw.c, written apart from
+// sha3.h's sha3_on_instructions: on arm64 where clang built the object and
+// cpu holds CH_CPU_CONSTANT_TIME_SHA3, and on x86-64 where cpu holds both
+// CH_CPU_BMI1 and CH_CPU_BMI2_ADX (docs/decisions.md 99 and 217). Any other
+// object holds no sha3_hw.c.
+#ifdef CH_KECCAK_INSTRUCTIONS
+static int sha3_hw_expected(uint32_t cpu) {
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA3) != 0;
+}
+#elif defined(__x86_64__)
+static int sha3_hw_expected(uint32_t cpu) {
+    return (cpu & CH_CPU_BMI1) != 0 && (cpu & CH_CPU_BMI2_ADX) != 0;
+}
+#endif
+
 // The reference under CH_CPU_PROBED; under every other value, the
 // reference's calls on the path takes_value names for this cpu.
 static void check_sha3(const char *row, unsigned at, uint32_t cpu, int takes_value) {
@@ -263,17 +278,23 @@ static void check_sha3(const char *row, unsigned at, uint32_t cpu, int takes_val
         sha3_reference[at] = *got;
     }
     const mldsa_sha3_calls *ref = &sha3_reference[at];
-    mldsa_sha3_calls want = {ref->absorb, ref->squeeze, 0, 0};
-#ifdef CH_KECCAK_INSTRUCTIONS
-    if (takes_value && (cpu & CH_CPU_CONSTANT_TIME_SHA3) != 0) {
-        want = (mldsa_sha3_calls){0, 0, ref->absorb, ref->squeeze};
+    // The reference's calls, less those the four-way sampler's stand-in made
+    // apart, which the library makes on keccak_avx2.c.
+    unsigned long absorb = ref->absorb - got->absorb_apart;
+    unsigned long squeeze = ref->squeeze - got->squeeze_apart;
+    mldsa_sha3_calls want = {absorb, squeeze, 0, 0, 0, 0};
+#if defined(CH_KECCAK_INSTRUCTIONS) || defined(__x86_64__)
+    if (takes_value && sha3_hw_expected(cpu)) {
+        want = (mldsa_sha3_calls){0, 0, absorb, squeeze, 0, 0};
     }
 #else
     (void)takes_value;
 #endif
     if (ref->absorb == 0 || ref->squeeze == 0 || ref->absorb_hw != 0 || ref->squeeze_hw != 0 ||
-        got->absorb != want.absorb || got->squeeze != want.squeeze ||
-        got->absorb_hw != want.absorb_hw || got->squeeze_hw != want.squeeze_hw) {
+        ref->absorb_apart != 0 || got->absorb_apart > ref->absorb ||
+        got->squeeze_apart > ref->squeeze || got->absorb != want.absorb ||
+        got->squeeze != want.squeeze || got->absorb_hw != want.absorb_hw ||
+        got->squeeze_hw != want.squeeze_hw) {
         failures++;
         (void)fprintf(stderr,
                       "mldsa runtime: %s under 0x%x made %lu and %lu SHAKE calls on sha3.c and "
@@ -419,7 +440,7 @@ int main(void) {
         return 1;
     }
     (void)printf("mldsa runtime: keygen, sign by mu, sign and verify under %u ch_cfg.cpu values, "
-                 "each SHAKE call on the path the SHA-3 bit names, and %s\n",
+                 "each SHAKE call on the path the bits of sha3_hw.c name, and %s\n",
                  values, LANES_SUMMARY);
     return 0;
 }

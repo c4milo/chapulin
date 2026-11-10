@@ -1,0 +1,15 @@
+invariant: INV-17
+file: src/sha3_andn.h
+catches: sha3_equiv_test
+reason: keccak_f1600_andn_with no longer writes zeros over the scratch
+  state, so the state before the last round stays in it after the call.
+  Keccak-f[1600] is a permutation, so that state gives back each state
+  before it, as far back as the input. The equivalence test hands the
+  call a scratch state of its own and requires zeros in it after each
+  permutation.
+
+--- old
+    keccak_rounds_andn(a, scratch);
+    ct_wipe(scratch, 25 * sizeof(uint64_t));
+--- new
+    keccak_rounds_andn(a, scratch);

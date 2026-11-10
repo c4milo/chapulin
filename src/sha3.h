@@ -49,17 +49,18 @@ void shake_squeeze(shake *s, uint8_t *out, size_t n);
 #if defined(CH_CPU_RUNTIME) && !defined(__cplusplus)
 #include "cpu_cfg.h"
 
-#ifdef CH_KECCAK_INSTRUCTIONS
-// The six calls above with Keccak-f[1600] on arm64's SHA-3 instructions (sha3_hw.c,
-// docs/decisions.md 99). An arm64 host object that clang compiled (cpu_cfg.h) holds them beside
-// sha3.c's, which stay the reference: CBMC proves the portable code, and
-// bin/sha3_hw_equiv_test holds these to it. Each has the contract of the call it is named for,
-// on the same context type, and the two paths keep the same state in it, so a context may
-// take a call from one path and the next from the other.
+#if defined(CH_KECCAK_INSTRUCTIONS) || defined(__x86_64__)
+// The six calls above with the architecture's faster Keccak-f[1600] (sha3_hw.c): on arm64's SHA-3
+// instructions (docs/decisions.md 99), and on x86-64 FIPS 202's chi on BMI1's ANDN, with BMI2's
+// RORX (docs/decisions.md 217). An arm64 host object that clang compiled (cpu_cfg.h) and every
+// x86-64 host object hold them beside sha3.c's, which stay the reference: CBMC proves the portable
+// code, and bin/sha3_hw_equiv_test holds these to it. Each has the contract of the call it is named
+// for, on the same context type, and the two paths keep the same state in it, so a context may take
+// a call from one path and the next from the other.
 //
-// Requires: what the portable call requires, and a CPU with the instructions
-// CH_CPU_CONSTANT_TIME_SHA3 names, which the session's caller states. On a CPU without them
-// the first permutation faults.
+// Requires: what the portable call requires, and a CPU with the instructions the bits name:
+// CH_CPU_CONSTANT_TIME_SHA3 on arm64, and CH_CPU_BMI1 and CH_CPU_BMI2_ADX on x86-64, which the
+// session's caller states. On a CPU without them the first permutation faults.
 void sha3_256_hw(const uint8_t *in, size_t n, uint8_t out[SHA3_256_LEN]);
 void sha3_512_hw(const uint8_t *in, size_t n, uint8_t out[SHA3_512_LEN]);
 void shake128_init_hw(shake *s);
@@ -116,11 +117,49 @@ static inline void shake_squeeze_cpu(uint32_t cpu, shake *s, uint8_t *out, size_
     }
     shake_squeeze(s, out, n);
 }
+#elif defined(__x86_64__)
+// Whether a session's Keccak runs on sha3_hw.c's x86-64 copy: where cpu, the session's
+// ch_cfg.cpu, holds both CH_CPU_BMI1 and CH_CPU_BMI2_ADX, which the caller sets from its own
+// probe. The copy's chi is ANDN, a BMI1 instruction, and its rotations RORX, a BMI2 one, so
+// either bit alone picks nothing (docs/decisions.md 217).
+static inline int sha3_on_instructions(uint32_t cpu) {
+    uint32_t both = CH_CPU_BMI1 | CH_CPU_BMI2_ADX;
+    return (cpu & both) == both;
+}
+static inline void sha3_256_cpu(uint32_t cpu, const uint8_t *in, size_t n,
+                                uint8_t out[SHA3_256_LEN]) {
+    if (sha3_on_instructions(cpu)) {
+        sha3_256_hw(in, n, out);
+        return;
+    }
+    sha3_256(in, n, out);
+}
+static inline void sha3_512_cpu(uint32_t cpu, const uint8_t *in, size_t n,
+                                uint8_t out[SHA3_512_LEN]) {
+    if (sha3_on_instructions(cpu)) {
+        sha3_512_hw(in, n, out);
+        return;
+    }
+    sha3_512(in, n, out);
+}
+static inline void shake_absorb_cpu(uint32_t cpu, shake *s, const uint8_t *in, size_t n) {
+    if (sha3_on_instructions(cpu)) {
+        shake_absorb_hw(s, in, n);
+        return;
+    }
+    shake_absorb(s, in, n);
+}
+static inline void shake_squeeze_cpu(uint32_t cpu, shake *s, uint8_t *out, size_t n) {
+    if (sha3_on_instructions(cpu)) {
+        shake_squeeze_hw(s, out, n);
+        return;
+    }
+    shake_squeeze(s, out, n);
+}
 #else
-// An object that holds sha3.c alone: one for x86-64, whose CPUs have no SHA-3 instructions and
-// whose cpu_cfg.h refuses CH_CPU_CONSTANT_TIME_SHA3, or one for arm64 that a compiler other
-// than clang built (cpu_cfg.h, docs/decisions.md 99). The answer is no for every value, and
-// each entry runs the portable call.
+// An object that holds sha3.c alone: one for arm64 that a compiler other than clang built
+// (cpu_cfg.h, docs/decisions.md 99). The answer is no for every value, and each entry runs the
+// portable call.
 static inline int sha3_on_instructions(uint32_t cpu) {
     (void)cpu;
     return 0;

@@ -40,6 +40,10 @@ extern hash_calls sha512_c_calls;
 // Calls to the same five with _hw after their names: sha512_hw.c's, on
 // arm64's SHA-512 instructions and on x86-64 over sha512_avx2.c's kernel.
 extern hash_calls sha512_hw_calls;
+// test/hash_runtime_sha3_count.c: a SHAKE absorb counts as an update, a squeeze as a final, and
+// SHA3-256 or SHA3-512 of a whole message as a whole message.
+extern hash_calls sha3_portable_calls;
+extern hash_calls sha3_hw_calls;
 
 // Calls to sha512_compress_blocks, which sha512.c's first arm makes.
 extern unsigned long sha512_compress_blocks_calls;

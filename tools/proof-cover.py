@@ -420,12 +420,16 @@ AUDITED = {
     ),
     "sha3_hw.c": (
         "an arm64 host object's Keccak-f[1600] on FEAT_SHA3's instructions, "
-        "which only clang compiles, so the file has no body on x86-64 or under "
-        "gcc. The sponge is sha3.c's text compiled once more under "
-        "keccak_hw.h's names, and the sha3, sha3_stream and sha3_round "
-        "harnesses prove that text. The rest, the permutation and "
-        "absorb_whole_blocks, runs on intrinsics CBMC cannot read and holds no "
-        "bitwise operator on a scalar: every round runs on uint64x2_t values "
+        "which only clang compiles, so that arm has no body under gcc, and an "
+        "x86-64 host object's copy of sha3.c under target(\"bmi,bmi2\"), whose "
+        "permutation is sha3_andn.h's C, which the sha3_round harness proves "
+        "(docs/decisions.md 217). No harness compiles the file itself: its "
+        "x86-64 arm is sha3.c's text, and its arm64 arm runs intrinsics CBMC "
+        "cannot read. The arm64 sponge is sha3.c's text compiled once more "
+        "under keccak_hw.h's names, and the sha3, sha3_stream and sha3_round "
+        "harnesses prove that text. The rest of the arm64 arm, the permutation "
+        "and absorb_whole_blocks, holds no bitwise operator on a scalar: every "
+        "round runs on uint64x2_t values "
         "through veor3q_u64, vrax1q_u64, vxarq_u64 and vbcaxq_u64, whose "
         "rotation counts are int constant expressions such as 64 - 44, each "
         "from 2 to 63. The round counter is an int that stops at 24 and "
@@ -433,7 +437,8 @@ AUDITED = {
         "blocks by subtraction in size_t, so the product it subtracts is at "
         "most the length it was given. bin/sha3_hw_equiv_test holds the file "
         "to sha3.c's proven code and to FIPS 202 as proof/sha3_reference.h "
-        "writes it, under a ch_cfg.cpu value with the SHA-3 bit. Delete this "
+        "writes it, under a ch_cfg.cpu value with the SHA-3 bit, and the "
+        "x86-64 arm the same way on a CPU with BMI1 and BMI2. Delete this "
         "entry if a harness can ever compile the file."
     ),
     "aes_hw.c": (

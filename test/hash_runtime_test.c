@@ -1,5 +1,6 @@
-// bin/hash_runtime_test: which SHA-256 and which SHA-512 a host object's
-// hash calls run under each ch_cfg.cpu value (docs/decisions.md 93).
+// bin/hash_runtime_test: which SHA-256, which SHA-512 and which SHA-3 a host
+// object's hash calls run under each ch_cfg.cpu value (docs/decisions.md 93).
+// test/hash_runtime_sha3.h says which SHA-3 a value picks.
 // sha256.h's sha256_on_instructions picks sha256_hw.c's code where the
 // value holds CH_CPU_CONSTANT_TIME_SHA256. sha512.h's
 // sha512_on_instructions picks sha512_hw.c's where it holds
@@ -15,7 +16,9 @@
 // compression function sha512.c's code then calls.
 //
 // Every row runs under each of the 256 values the eight bits beside
-// CH_CPU_PROBED make, and under 0, which a wiped record direction holds.
+// CH_CPU_PROBED make, and under 0, which a wiped record direction holds. On
+// x86-64 the SHA-3 rows run under those 256 with each set of the two bits
+// test/hash_runtime_sha3.h names too.
 // CH_CPU_AVX512_IFMA, 0x100, picks no hash. A row is one call that takes a
 // session's value. It runs first under CH_CPU_PROBED alone, which names no
 // instruction, and that run's calls into sha256.c and sha512.c are the row's
@@ -135,6 +138,8 @@ static int names_sha512(uint32_t cpu) {
 }
 
 static void reset_calls(void) {
+    memset(&sha3_portable_calls, 0, sizeof sha3_portable_calls);
+    memset(&sha3_hw_calls, 0, sizeof sha3_hw_calls);
     memset(&sha256_portable_calls, 0, sizeof sha256_portable_calls);
     memset(&sha256_hw_calls, 0, sizeof sha256_hw_calls);
     memset(&sha512_c_calls, 0, sizeof sha512_c_calls);
@@ -166,6 +171,8 @@ static int calls_on(int on_instructions, const hash_calls *counted, const hash_c
     return same_calls(taken, counted) && no_calls(left);
 }
 
+#include "hash_runtime_sha3.h"
+
 // The row under cpu, against the same row under CH_CPU_PROBED alone.
 static void check_row(const row *r, uint32_t cpu) {
     uint8_t want[OUTPUT];
@@ -174,7 +181,9 @@ static void check_row(const row *r, uint32_t cpu) {
     r->call(CH_CPU_PROBED);
     hash_calls counted256 = sha256_portable_calls;
     hash_calls counted512 = sha512_c_calls;
-    int probed_alone_ok = no_calls(&sha256_hw_calls) && no_calls(&sha512_hw_calls);
+    hash_calls counted3 = sha3_portable_calls;
+    int probed_alone_ok =
+        no_calls(&sha256_hw_calls) && no_calls(&sha512_hw_calls) && no_calls(&sha3_hw_calls);
     memcpy(want, output, sizeof want);
 
     memset(output, 0, sizeof output);
@@ -183,10 +192,12 @@ static void check_row(const row *r, uint32_t cpu) {
     int sha256_ok =
         calls_on(names_sha256(cpu), &counted256, &sha256_portable_calls, &sha256_hw_calls);
     int sha512_ok = calls_on(names_sha512(cpu), &counted512, &sha512_c_calls, &sha512_hw_calls);
+    int sha3_ok = sha3_calls_ok(r->name, cpu, &counted3);
     int bytes_ok = memcmp(output, want, sizeof want) == 0;
     CHECK(probed_alone_ok);
     CHECK(sha256_ok);
     CHECK(sha512_ok);
+    CHECK(sha3_ok);
     CHECK(bytes_ok);
     if (!probed_alone_ok || !sha256_ok || !sha512_ok || !bytes_ok) {
         (void)fprintf(stderr,
@@ -204,42 +215,7 @@ static void check_row(const row *r, uint32_t cpu) {
     }
 }
 
-// sha256.h's entries.
-static void row_sha256_update_final(uint32_t cpu) {
-    sha256 s;
-    sha256_init(&s);
-    sha256_update_cpu(cpu, &s, input, 70);
-    sha256_update_cpu(cpu, &s, input + 70, INPUT - 70);
-    sha256_final_cpu(cpu, &s, output);
-}
-
-static void row_sha256_of(uint32_t cpu) {
-    sha256_of_cpu(cpu, input, INPUT, output);
-}
-
-// sha512.h's entries: SHA-512 and SHA-384, each streamed and in one call.
-static void row_sha512_update_final(uint32_t cpu) {
-    sha512 s;
-    sha512_init(&s);
-    sha512_update_cpu(cpu, &s, input, 70);
-    sha512_update_cpu(cpu, &s, input + 70, INPUT - 70);
-    sha512_final_cpu(cpu, &s, output);
-}
-
-static void row_sha384_update_final(uint32_t cpu) {
-    sha512 s;
-    sha384_init(&s);
-    sha512_update_cpu(cpu, &s, input, INPUT);
-    sha384_final_cpu(cpu, &s, output);
-}
-
-static void row_sha512_of(uint32_t cpu) {
-    sha512_of_cpu(cpu, input, INPUT, output);
-}
-
-static void row_sha384_of(uint32_t cpu) {
-    sha384_of_cpu(cpu, input, INPUT, output);
-}
+#include "hash_runtime_hashes.h"
 
 // The calls that take no value run sha256.c and sha512.c, whatever a
 // session states.
@@ -396,6 +372,9 @@ static const row fixed_rows[] = {
     {"sha512_update_cpu and sha384_final_cpu", row_sha384_update_final      },
     {"sha512_of_cpu",                          row_sha512_of                },
     {"sha384_of_cpu",                          row_sha384_of                },
+    {"sha3_256_cpu",                           row_sha3_256                 },
+    {"sha3_512_cpu",                           row_sha3_512                 },
+    {"shake_absorb_cpu and shake_squeeze_cpu", row_shake                    },
     {"hmac_sha256_cpu",                        row_hmac_sha256              },
     {"p256_sign_cpu",                          row_p256_sign                },
     {"p256_sign_hedged_cpu",                   row_p256_sign_hedged         },
@@ -444,6 +423,26 @@ static const row suite_rows[] = {
 
 #define COUNT(a) (sizeof(a) / sizeof(a)[0])
 
+// The rows of sha3.h's entries once more under each of the 256 values with each set of
+// sha3_copy_bits but the empty one, which no other row's path reads, and the count of those values.
+static unsigned check_sha3_values(void) {
+    static const row sha3_rows[] = {
+        {"sha3_256_cpu",                           row_sha3_256},
+        {"sha3_512_cpu",                           row_sha3_512},
+        {"shake_absorb_cpu and shake_squeeze_cpu", row_shake   },
+    };
+    unsigned values = 0;
+    for (size_t k = 1; k < COUNT(sha3_copy_bits); k++) {
+        for (uint32_t bits = 0; bits < 256 && failures == 0; bits++) {
+            for (size_t i = 0; i < COUNT(sha3_rows); i++) {
+                check_row(&sha3_rows[i], CH_CPU_PROBED | (bits << 1) | sha3_copy_bits[k]);
+            }
+            values++;
+        }
+    }
+    return values;
+}
+
 static void check_value(uint32_t cpu) {
     static const size_t hash_lens[] = {SHA256_LEN, SHA384_LEN};
     static const uint16_t suites[] = {SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_128_GCM_SHA256,
@@ -481,15 +480,20 @@ int main(void) {
         check_value(CH_CPU_PROBED | (bits << 1));
     }
     check_value(0);
+    unsigned values = check_sha3_values();
     // A host object compresses on sha512_compress_blocks.c, and never on
     // sha512_compress.c's function, the reference (docs/decisions.md 127).
     CHECK(sha512_compress_blocks_calls != 0 && sha512_compress_calls == 0);
     if (failures == 0) {
         (void)printf("hash runtime: under each of 257 ch_cfg.cpu values, every SHA-256 call of "
                      "every row ran on the instructions where CH_CPU_CONSTANT_TIME_SHA256 was "
-                     "set and on sha256.c anywhere else, and every SHA-512 call on sha512_hw.c "
+                     "set and on sha256.c anywhere else, every SHA-512 call on sha512_hw.c "
                      "where CH_CPU_CONSTANT_TIME_SHA512 was set in an arm64 object or CH_CPU_AVX2 "
-                     "in an x86-64 one, and on sha512.c anywhere else\n");
+                     "in an x86-64 one, and on sha512.c anywhere else, and under those and %u "
+                     "more every SHA-3 call on sha3_hw.c where the SHA-3 bit was set in an arm64 "
+                     "object that clang compiled or CH_CPU_BMI1 and CH_CPU_BMI2_ADX in an x86-64 "
+                     "one, and on sha3.c anywhere else\n",
+                     values);
     }
     return failures != 0;
 }

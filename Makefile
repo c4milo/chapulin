@@ -355,7 +355,7 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
 
 HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/poly1305_wide.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont_division.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
         src/pem.h src/base64.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
-        include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
+        include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/sha3_andn.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
         src/keccak_neon.h src/keccak_neon_round.h src/mlkem_neon.h src/mldsa_neon.h \
         src/p256_wide_word.h src/p256_wide_field.h src/p256_wide_scalar.h src/p256_wide_inverse.h src/p256_wide_point.h \
         src/p256_wide_mul.h src/p256_wide_table.h src/p256_wide_wipe.h src/p256_wide_verify.h src/p256_wide_verify_point.h \
@@ -707,7 +707,7 @@ HASH_HOST_LINT_C := src/sha256_hw.c src/sha512_hw.c src/sha512_avx2.c src/hkdf_h
                     src/sha3_hw.c src/mlkem_hw.c src/mlkem_poly_hw.c test/sha3_hw_equiv_test.c \
                     test/mlkem_hw_equiv_test.c \
                     test/hash_runtime_test.c test/hash_runtime_count.c \
-                    test/hash_runtime_compress_count.c
+                    test/hash_runtime_compress_count.c test/hash_runtime_sha3_count.c
 # RSA's arithmetic on 64-bit words, the signer built on it and their
 # equivalence tests (docs/decisions.md 95, 118 and 122), rsa_ifma.c and
 # rsa_avx2.c, the public operation on AVX-512 IFMA and on AVX2, each with
@@ -784,13 +784,13 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
          test/mldsa_vector_count.h test/mldsa_signer_frames.h \
-         test/hash_instructions_cpu.h test/hash_runtime_count.h test/hash_runtime_quic.h \
+         test/hash_instructions_cpu.h test/hash_runtime_count.h test/hash_runtime_quic.h test/hash_runtime_sha3.h test/hash_runtime_hashes.h \
          test/hash_runtime_srv.h test/hash_runtime_webpki.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
          test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h \
          test/sha2_equiv_residue512_avx2.h test/avx2_registers.h test/sha2_equiv_length512.h \
          test/sha512_portable.h \
-         test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h test/x86_kernels_sha512.h test/x86_kernels_gcm.h test/x86_kernels_aead.h test/aead_avx2_equiv_residue.h test/aead_avx2_equiv_sum.h \
+         test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h test/x86_kernels_sha512.h test/x86_kernels_keccak.h test/x86_kernels_gcm.h test/x86_kernels_aead.h test/aead_avx2_equiv_residue.h test/aead_avx2_equiv_sum.h \
          test/rsa_ifma_count.h test/aead_avx512_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/aes_equiv_gcm.h test/aes_equiv_residue.h test/ghash_equiv_eor3.h test/ghash_equiv_lengths.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/gcm_avx512_residue.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
@@ -1585,18 +1585,24 @@ endif
 # shared secret runs on x25519_adx.c under 0x40d and 0x41f alone, and so
 # does P-256 on p256_adx.h's copy, its verification included. A run
 # under them on a CPU without BMI2 or ADX skips, and fails instead under
-# CH_REQUIRE_BMI2_ADX=1.
+# CH_REQUIRE_BMI2_ADX=1. Under 0xc0d and 0xc1f the same runs, and SHA-3
+# and SHAKE take sha3_hw.c's x86-64 copy on ANDN and RORX, so the ML-DSA-87
+# signer's vectors and the Wycheproof suites run on it (docs/decisions.md
+# 217). A run under them on a CPU without BMI1 skips, and fails instead
+# under CH_REQUIRE_BMI1=1.
 #   0xd    the probe's bit, the multiply bit and CH_CPU_AVX2
 #   0x10d  those and CH_CPU_AVX512_IFMA
 #   0x40d  0xd's bits and CH_CPU_BMI2_ADX
+#   0xc0d  those and CH_CPU_BMI1
 #   0xf    0xd's bits and the AES bit
 #   0x1f   those and CH_CPU_VAES
 #   0x11f  those and CH_CPU_AVX512_IFMA
 #   0x31f  those and CH_CPU_AVX512
 #   0x41f  0x1f's bits and CH_CPU_BMI2_ADX
+#   0xc1f  those and CH_CPU_BMI1
 X86_KERNEL_BINS := $(if $(X86_KERNEL_PROBE),$(if $(HOST_TARGET),bin/x86_kernels_test))
-X86_UNIT_CPU := $(if $(X86_KERNEL_PROBE),0xd 0x10d 0x40d)
-X86_WYCHEPROOF_CPU := $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f 0x31f 0x41f)
+X86_UNIT_CPU := $(if $(X86_KERNEL_PROBE),0xd 0x10d 0x40d 0xc0d)
+X86_WYCHEPROOF_CPU := $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f 0x31f 0x41f 0xc1f)
 # The values under which the host binaries that take a ch_cfg.cpu value run
 # their hashes on the CPU's hash instructions (docs/decisions.md 93). The
 # unit suite runs FIPS 180-4's, RFC 4231's and RFC 5869's vectors and keys
@@ -2112,7 +2118,9 @@ print-host-srcs:
 # units and sources, bin/widemul_runtime_test's, the sources
 # bin/p256_adx_verify_equiv_test links beside its one, and
 # bin/mldsa_vector_equiv_test's, bin/mldsa_runtime_test's and
-# bin/mldsa_avx2_equiv_test's.
+# bin/mldsa_avx2_equiv_test's, bin/rsa_mont64_adx_test's,
+# bin/keccak_neon_equiv_test's, bin/aead_avx2_equiv_test's and
+# bin/mldsa_signer_test_host's.
 # Each list names sha512_avx2.c where its rule here links the file's
 # object (sha512_avx2_named): the script compiles for two architectures
 # under compilers of its own, and asks for each one's object with make
@@ -2152,6 +2160,7 @@ print-aes-runtime-qemu-srcs:
 	@echo $(RSA_MONT64_ADX_TEST_SRCS)
 	@echo $(KECCAK_NEON_EQUIV_TEST_SRCS)
 	@echo $(AEAD_AVX2_EQUIV_TEST_SRCS)
+	@echo $(call host_srcs,$(MLDSA_SIGNER_TEST_SRCS))
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -3861,8 +3870,11 @@ bin/mlkem_avx2_equiv_test_1024: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_MLKEM_1024 -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/mlkem_avx2_equiv_test.c \
 	  $(MLKEM_AVX2_EQUIV_TEST_SRCS)
-# Which SHA-256 and which SHA-512 a host object's hash calls run under
-# each ch_cfg.cpu value (docs/decisions.md 93). test/hash_runtime_count.c
+# Which SHA-256, which SHA-512 and which SHA-3 a host object's hash calls
+# run under each ch_cfg.cpu value (docs/decisions.md 93, 99 and 217).
+# test/hash_runtime_sha3_count.c defines sha3.c's four calls that run the
+# permutation and the same calls of sha3_hw.c, each as a count and a call
+# to sha3.c's code, and the binary links no sha3_hw.c. test/hash_runtime_count.c
 # defines sha256.c's three calls that hash, sha512.c's five and the same
 # calls of sha256_hw.c and sha512_hw.c, each as a count and a call to
 # sha256.c's or sha512.c's code, and the binary links it in place of the
@@ -3882,20 +3894,20 @@ bin/mlkem_avx2_equiv_test_1024: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_
 # whose nonce's HMACs follow the SHA-256 bit (p256_sign_cpu).
 HASH_RUNTIME_COUNTED := src/sha256.c src/sha256_hw.c src/sha512.c $(call sha512_avx2_apart,$(SHA512_HW_SRCS)) \
                         src/sha512_compress_blocks.c
-HASH_RUNTIME_TEST_SRCS := test/hash_runtime_count.c test/hash_runtime_compress_count.c \
+HASH_RUNTIME_TEST_SRCS := test/hash_runtime_count.c test/hash_runtime_compress_count.c test/hash_runtime_sha3_count.c \
                           $(filter-out $(HASH_RUNTIME_COUNTED),$(call host_srcs,src/record.c src/aes.c $(AES_HW_SRCS) \
                           src/gcm.c src/aead.c src/chacha20.c src/poly1305.c src/hkdf.c src/keysched.c src/sha256.c src/sha512.c \
                           src/sha512_compress.c src/p256_sign.c src/p256_scalar.c src/p256_point.c src/p256_field.c \
                           src/buf.c src/ct.c src/ct_wipe.c))
 HASH_RUNTIME_QUIC_SRCS := src/quic_packet.c src/quic_keys.c src/quic_initial.c src/quic_aes_soft.c src/webpki_ticket.c
 bin/hash_runtime_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS) src/sha256.c \
-                       src/sha512.c src/sha512_compress_blocks.c src/hkdf.c src/keysched.c $(HDRS) $(TESTH)
+                       src/sha512.c src/sha512_compress_blocks.c src/sha3.c src/hkdf.c src/keysched.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS)
 HASH_RUNTIME_SRV_SRCS := src/srv_auth.c src/srv_parser.c src/srv_parser_ext.c
 bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) src/sha256.c src/sha512.c \
-                                src/sha512_compress_blocks.c src/hkdf.c src/keysched.c $(HASH_RUNTIME_SRV_SRCS) \
+                                src/sha512_compress_blocks.c src/sha3.c src/hkdf.c src/keysched.c $(HASH_RUNTIME_SRV_SRCS) \
                                 $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
@@ -3928,7 +3940,7 @@ bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRC
 # the kernels compute is held by the equivalence binaries and by the
 # vectors the host binaries run under the kernels' bits.
 X86_KERNELS_TEST_SRCS := $(filter-out src/chacha20_avx2.c src/chacha20_avx512.c src/gcm_vaes.c src/gcm_avx512_kernel.c src/keccak_avx2.c \
-                           src/mlkem_avx2.c \
+                           src/mlkem_avx2.c src/sha3_hw.c \
                            src/poly1305_avx2_native.c src/poly1305_ifma_native.c src/rsa_ifma.c src/rsa_avx2.c src/rsa_ifma_sign.c \
                            src/rsa_mont64_adx.c src/avx512_wipe.c $(SHA512_AVX2_UNIT) src/sha512_compress_blocks.c \
                            src/aead_avx2.c, \
@@ -7010,10 +7022,13 @@ CT_TAINT_DEF := -DCH_CT_TAINT
 # SKIP for 0x27, 0x1f, 0x11f and 0x31f there. The SHA-3 bit is not on the
 # list: Valgrind 3.27.1 decodes no EOR3, the first SHA-3 instruction
 # sha3_hw.c's Keccak runs, which then dies of SIGILL. The notes of 3.28.0
-# name EOR3 and none of RAX1, XAR and BCAX. Each run is one Valgrind
-# process.
+# name EOR3 and none of RAX1, XAR and BCAX. On x86-64 0xc01, the probe's
+# bit with CH_CPU_BMI2_ADX and CH_CPU_BMI1, runs SHA-3 and SHAKE on
+# sha3_hw.c's x86-64 copy, whose ANDN and RORX Valgrind decodes, and picks
+# no other path a case takes without the multiply bit (docs/decisions.md
+# 217). Each run is one Valgrind process.
 CT_TAINT_CPU := 0x1 0x5 0x3 0x7 0x27 \
-                $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f 0x31f,0x67)
+                $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f 0x31f 0xc01,0x67)
 CT_TAINT_VALGRIND_FLAGS := --tool=memcheck --error-exitcode=1 --track-origins=yes \
                            --exit-on-first-error=no --leak-check=no -q
 bin/ct_taint_test: test/ct_taint_test.c $(CT_TAINT_TEST_SRCS) $(HDRS) $(TESTH)
@@ -7871,12 +7886,14 @@ else
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# sha3.c as an x86-64 host object, which runs the form of
-	# sha3_inverted_lanes.h (docs/decisions.md 216), read for an x86-64
-	# target whatever the host. portability-no-assembler is off for this
-	# file alone: that form's empty statements that clobber memory are
-	# inline assembler that emits no instruction. Every other pass reads
-	# the file with the statements empty.
-	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler src/sha3.c, \
+	# sha3_inverted_lanes.h (docs/decisions.md 216), and sha3_hw.c, whose
+	# x86-64 arm compiles sha3.c once more and runs sha3_andn.h's form
+	# (docs/decisions.md 217), read for an x86-64 target whatever the host.
+	# portability-no-assembler is off for these two files alone: the two
+	# forms' empty statements that clobber memory are inline assembler that
+	# emits no instruction. Every other pass reads the files with the
+	# statements empty.
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler src/sha3.c src/sha3_hw.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# RSA's public operation on AVX-512 IFMA and on AVX2, which have a body
@@ -7915,11 +7932,13 @@ else
 	# mains under their binaries' defines. The pass for
 	# test/hash_runtime_test.c also reads webpki_ticket.c, whose host arm
 	# that TRUST=webpki binary calls (docs/decisions.md 132).
-	# test/hash_runtime_count.c stays out of every pass, for the reason
-	# test/aes_equiv_soft.c does below.
-	# sha3_hw.c and ML-KEM's two copies have a body for arm64 under clang
-	# alone (docs/decisions.md 99), which the arm64 pass's target gives
-	# them, and the two Keccak test mains follow under the host's own target.
+	# test/hash_runtime_count.c and test/hash_runtime_sha3_count.c stay out
+	# of every pass, for the reason test/aes_equiv_soft.c does below.
+	# ML-KEM's two copies have a body for arm64 under clang alone
+	# (docs/decisions.md 99), which the arm64 pass's target gives them,
+	# and so does sha3_hw.c's arm64 arm. Its x86-64 arm has a pass with
+	# sha3.c's (docs/decisions.md 217). The two Keccak test mains follow
+	# under the host's own target.
 	@$(call TIDY_EACH,src/sha256_hw.c src/sha512_hw.c src/sha512_avx2.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I.)
@@ -9505,6 +9524,12 @@ WIDEMUL_SPECS := \
 #   st->w[i] and st->product overlap, which compare addresses. None reads
 #   a coefficient. The device arm's counts do not move.
 # keccak_avx2.c, 0 and 1: the permutation's 24 rounds.
+# The SHA-3 copy on BMI1 and BMI2 (docs/decisions.md 217): on x86-64
+#   mld_absorb and mld_squeeze now test cpu against CH_CPU_BMI1 and
+#   CH_CPU_BMI2_ADX, a NOTL and a TESTL with 0xC00 or a CMPL with 0xC00,
+#   read by instruction under clang 23. mldsa_signer.c@host's 22,
+#   mldsa_sign_steps.c@host's 70 and mldsa_sign_pack.c@host's 37 hold 4, 3
+#   and 3 more, one at each SHAKE call that takes the session's value.
 # The two-way Keccak on arm64 (docs/decisions.md 198), each count read by
 #   its instruction under clang 23. keccak_neon.c's 2 are the loops over
 #   the 24 rounds of its two forms. mlkem_neon.c's 17 and mldsa_neon.c's 9
@@ -9556,15 +9581,16 @@ WIDEMUL_SPECS := \
 #   contract checks of hkdf_expand and hkdf_expand_label, the output loop
 #   and the test of an empty context. keysched_hw.c is calls in a straight
 #   line.
-# sha3_hw.c, 72 and 0; sha3.c@host, 75 and 84: absorb and squeeze test the
+# sha3_hw.c, 72 and 84; sha3.c@host, 75 and 84: absorb and squeeze test the
 #   position in the block, the bytes left and the rate. block_xor and
 #   block_bytes move 1 to 7 bytes up to a lane's edge, and clang writes that
 #   loop as tests of the count and of the position against each of 1 to 7,
 #   which is most of the two functions' branches. The rest are the loop
 #   over whole lanes, the tests before it, the round loop, and in
 #   sha3_hw.c permute_blocks' loop over blocks and its tests of how many
-#   lanes of the message a block takes. None reads a lane or a message
-#   byte.
+#   lanes of the message a block takes. On x86-64 sha3_hw.c is sha3.c on
+#   BMI1 and BMI2 (docs/decisions.md 217), and its 84 are sha3.c@host's.
+#   None reads a lane or a message byte.
 # ct.c@host, 9 and 4: ct_memeq's test of n for zero and its loop, which
 #   clang runs several bytes a pass with a test of n for each width.
 #   ct_wipe.c@host, 5 and 11: its three loops, over the bytes before the
@@ -9826,7 +9852,7 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
 HASH_HW_BRANCH_CEILING := \
   arm64/src/sha256_hw.c:6 x86-64/src/sha256_hw.c:10 arm64/src/hkdf_hw.c:19 x86-64/src/hkdf_hw.c:19 \
   arm64/src/keysched_hw.c:0 x86-64/src/keysched_hw.c:0 arm64/src/sha512_hw.c:17 x86-64/src/sha512_hw.c:13 \
-  arm64/src/sha3_hw.c:72 x86-64/src/sha3_hw.c:0 arm64/src/mlkem_hw.c:12 x86-64/src/mlkem_hw.c:0 \
+  arm64/src/sha3_hw.c:72 x86-64/src/sha3_hw.c:84 arm64/src/mlkem_hw.c:12 x86-64/src/mlkem_hw.c:0 \
   arm64/src/mlkem_poly_hw.c:49 x86-64/src/mlkem_poly_hw.c:0 \
   arm64/src/sha512_compress_blocks.c:3 x86-64/src/sha512_compress_blocks.c:3 \
   arm64/src/sha512_avx2.c:0 x86-64/src/sha512_avx2.c:3
@@ -9880,9 +9906,9 @@ MLDSA_SIGN_BRANCH_CEILING := \
   rv32ic-gcc/src/mldsa_sign_poly.c:12 rv32ic-gcc/src/mldsa_sign_pack.c:23 \
   arm64/src/mldsa_signer.c@host:27 arm64/src/mldsa_sign_round.c@host:2 arm64/src/mldsa_sign_steps.c@host:62 \
   arm64/src/mldsa_sign_poly.c@host:25 arm64/src/mldsa_sign_pack.c@host:42 \
-  x86-64/src/mldsa_signer.c@host:18 x86-64/src/mldsa_sign_round.c@host:2 \
-  x86-64/src/mldsa_sign_steps.c@host:67 x86-64/src/mldsa_sign_poly.c@host:26 \
-  x86-64/src/mldsa_sign_pack.c@host:34
+  x86-64/src/mldsa_signer.c@host:22 x86-64/src/mldsa_sign_round.c@host:2 \
+  x86-64/src/mldsa_sign_steps.c@host:70 x86-64/src/mldsa_sign_poly.c@host:26 \
+  x86-64/src/mldsa_sign_pack.c@host:37
 QUIC_PACKET_BRANCH_CEILING := \
   m3/src/quic_packet.c:59 mips32r2/src/quic_packet.c:42 rv32imac/src/quic_packet.c:46 m3-gcc/src/quic_packet.c:46 \
   mips32r2-gcc/src/quic_packet.c:46 mips32r2-gcc-O2/src/quic_packet.c:52 rv32imac-gcc/src/quic_packet.c:55 \

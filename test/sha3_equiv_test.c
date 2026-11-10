@@ -75,14 +75,15 @@ static void expect_same(const char *what, const void *ours, const void *referenc
 
 static uint64_t reference_constants[24];
 
-// keccak_f1600 runs one of sha3.c's two forms, by the object's kind and
-// architecture (docs/decisions.md 195). Both compile here, so each runs on
-// every machine, against the reference and against each other.
+// keccak_f1600 runs one of sha3.c's three forms, by the object's kind and
+// architecture (docs/decisions.md 195 and 217). All three compile here, so
+// each runs on every machine, against the reference and against each other.
 //
-// The inverted lanes form writes each second round into a scratch state
-// (docs/decisions.md 216). keccak_f1600_inverted_with takes that state from
-// its caller, so this binary reads it after the call. It holds a state of
-// the permutation until the call writes zeros over it.
+// The inverted lanes form and the ANDN form write each second round into a
+// scratch state (docs/decisions.md 216 and 217). keccak_f1600_inverted_with
+// and keccak_f1600_andn_with take that state from their caller, so this
+// binary reads it after the call. It holds a state of the permutation until
+// the call writes zeros over it.
 static void permutation(const char *what, const uint64_t state[25]) {
     static const uint64_t zeros[25] = {0};
     uint64_t ours[25];
@@ -90,23 +91,35 @@ static void permutation(const char *what, const uint64_t state[25]) {
     uint64_t inverted[25];
     uint64_t with_scratch[25];
     uint64_t scratch[25];
+    uint64_t andn[25];
+    uint64_t andn_with_scratch[25];
+    uint64_t andn_scratch[25];
     uint64_t reference[25];
     memcpy(ours, state, sizeof ours);
     memcpy(plain, state, sizeof plain);
     memcpy(inverted, state, sizeof inverted);
     memcpy(with_scratch, state, sizeof with_scratch);
     memset(scratch, 0xa5, sizeof scratch);
+    memcpy(andn, state, sizeof andn);
+    memcpy(andn_with_scratch, state, sizeof andn_with_scratch);
+    memset(andn_scratch, 0x5a, sizeof andn_scratch);
     memcpy(reference, state, sizeof reference);
     keccak_f1600(ours);
     keccak_f1600_plain(plain);
     keccak_f1600_inverted(inverted);
     keccak_f1600_inverted_with(with_scratch, scratch);
+    keccak_f1600_andn(andn);
+    keccak_f1600_andn_with(andn_with_scratch, andn_scratch);
     reference_f1600(reference, reference_constants);
     expect_same(what, ours, reference, sizeof ours);
     expect_same(what, plain, reference, sizeof plain);
     expect_same(what, inverted, reference, sizeof inverted);
     expect_same(what, with_scratch, reference, sizeof with_scratch);
     expect_same("the scratch state after the permutation", scratch, zeros, sizeof scratch);
+    expect_same(what, andn, reference, sizeof andn);
+    expect_same(what, andn_with_scratch, reference, sizeof andn_with_scratch);
+    expect_same("the ANDN form's scratch state after the permutation", andn_scratch, zeros,
+                sizeof andn_scratch);
 }
 
 static void permutations(void) {

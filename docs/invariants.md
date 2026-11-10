@@ -2431,20 +2431,25 @@ last `ROLE=server` stub, as the entry said it would.
   NOTs a round in chi in place of 25 (decision 195). That form's round
   reads one state and writes a second one, and its 24 rounds go from the
   caller's state to a scratch state and back, 12 times (decision 216).
+  `sha3_hw.c`'s x86-64 copy of `sha3.c` runs `sha3_andn.h`'s form, the
+  same two states with FIPS 202's chi, which the compiler writes as ANDN
+  under the copy's target attribute (decision 217).
 - **Check.** CBMC's `sha3_round` proves the round equal to
   `proof/sha3_reference.h`'s for every state and every constant, and the
   inverted lanes round, from one array to a second one, equal to it with
-  the six lanes inverted before and after. That
+  the six lanes inverted before and after, and the ANDN form's round,
+  from one array to a second one, equal to it. That
   reference is the standard's five step algorithms as loops, with the
   rho offsets and the round constants computed by the standard's rules
   and read from no table. The same harness compares the table with the
   reference's constants and evaluates each form's 24 rounds from the
   state of zeros against the reference's. `bin/sha3_equiv_test` holds
-  both forms of the permutation on every machine, and
+  the three forms of the permutation on every machine, and
   both digests and both XOFs to the reference's sponge, which moves one
-  byte at a time, over 20,451 outputs: 3,602 states, each run through
-  `keccak_f1600`, through both forms and through the inverted lanes
-  form with a scratch state the binary reads after the call, a message
+  byte at a time, over 31,257 outputs: 3,602 states, each run through
+  `keccak_f1600`, through the three forms and through the inverted lanes
+  form and the ANDN form with a scratch state the binary reads after the
+  call, a message
   of every
   length from 0 to 420 bytes and 200 random longer ones, and 600 SHAKE
   streams absorbed and squeezed in pieces of random lengths. The
@@ -2459,11 +2464,13 @@ last `ROLE=server` stub, as the entry said it would.
   partly filled block, absorbing or squeezing; squeezes a second block
   without the permutation; moves the last pad bit; takes eight bytes
   where fewer remain; leaves one of the six lanes out of
-  `invert_lanes`; or hands the inverted lanes round one array as the
-  state it reads and the state it writes. The thirteen `inv45-*`
-  violations are these. Eight fail `bin/sha3_equiv_test`, one
-  `bin/sha3_test`, three the `sha3_round` proof and one the
-  `sha3_stream` proof.
+  `invert_lanes`; hands the inverted lanes round one array as the
+  state it reads and the state it writes; exchanges two neighbours in the
+  ANDN form's chi; or makes `sha3_hw.c`'s x86-64 copy run the inverted
+  lanes form. The fifteen `inv45-*` violations are these. Nine fail
+  `bin/sha3_equiv_test`, one `bin/sha3_test`, three the `sha3_round`
+  proof, one the `sha3_stream` proof, and one `test/hash-builds.sh`,
+  which requires ANDN and RORX and no NOT in the copy.
 
 ### INV-64 — a PROFILE=cnsa2 server runs CNSA 2.0's algorithms alone, its retry cookie and its tickets included
 
@@ -4019,8 +4026,9 @@ last `ROLE=server` stub, as the entry said it would.
   object every init call and `ch_srv_check` refuse with `CH_EINVAL`, and
   send nothing, a `ch_cfg.cpu` without `CH_CPU_PROBED`, 0 among them, and
   one with a bit outside `CH_CPU_DEFINED`, the bits the object defines
-  for its architecture: `CH_CPU_AVX2`, `CH_CPU_VAES` or
-  `CH_CPU_AVX512_IFMA` on arm64,
+  for its architecture: `CH_CPU_AVX2`, `CH_CPU_VAES`,
+  `CH_CPU_AVX512_IFMA`, `CH_CPU_AVX512`, `CH_CPU_BMI2_ADX` or
+  `CH_CPU_BMI1` on arm64,
   `CH_CPU_CONSTANT_TIME_SHA512` or `CH_CPU_CONSTANT_TIME_SHA3` on x86-64,
   or a bit a later release adds, and in a `SUITE=aesgcm` host object a caller's
   suite list that names an AES-GCM suite under a `ch_cfg.cpu` without
@@ -4311,14 +4319,15 @@ last `ROLE=server` stub, as the entry said it would.
   `ch_srv_quic_init` and `ch_srv_check`, and test/webpki_session_cpu.h for
   the webpki `ch_connect`. Each refuses 0, every defined bit but
   `CH_CPU_PROBED`, the first bit past `CH_CPU_AVX512_IFMA`, the top
-  bit and each bit of the other architecture, the three x86-64 bits on
+  bit and each bit of the other architecture, the six x86-64 bits on
   arm64 and the SHA-512 and SHA-3 bits on x86-64, and takes
   `CH_CPU_PROBED` alone and every bit the architecture defines, which
   test/test_cpu.h writes out apart from `cpu_cfg.h`. Eight `inv14-cpu-` violations drop the rule at each of the
   five places it is written, admit 0, admit an undefined bit, or give each
-  architecture the other's bits, and a row catches each. Five more move
-  one bit in one architecture's set, three of them a hash bit and two of
-  them `CH_CPU_AVX512_IFMA`, which the rows of the other architecture
+  architecture the other's bits, and a row catches each. More move
+  one bit in one architecture's set, among them a hash bit,
+  `CH_CPU_AVX512_IFMA`, `CH_CPU_BMI2_ADX` and `CH_CPU_BMI1` (decision
+  217), which the rows of the other architecture
   cannot see, so test/host-builds.sh reads `CH_CPU_DEFINED` for both under
   the pinned clang and compares each set with the bits it writes out.
   test/pem_files_parameters_tests.h holds the key call to the same
@@ -5410,9 +5419,26 @@ last `ROLE=server` stub, as the entry said it would.
   no table with a secret index and branches on lengths, positions in a
   block and the rate alone: the arm64 spec holds its conditional branches
   at 72, and the two copies' at 5 and 56, the counts of the files they
-  copy, and each branch was read by the instruction that sets its flags. For x86-64, and in
+  copy, and each branch was read by the instruction that sets its flags. In
   an arm64 object another compiler built, the three files define nothing
-  and the bit picks nothing. `test/hash-builds.sh` holds FEAT_SHA3's
+  and the bit picks nothing. For x86-64 the two ML-KEM copies define
+  nothing, and `sha3_hw.c` is `sha3.c` compiled once more under
+  `target("bmi,bmi2")`, with `sha3_andn.h`'s form of the permutation,
+  whose chi is ANDN, a BMI1 instruction, and whose rotations are RORX, a
+  BMI2 one. `sha3_on_instructions` picks it where the value holds both
+  `CH_CPU_BMI1` and `CH_CPU_BMI2_ADX`, so ML-DSA-87's hashes and a
+  caller's own SHA-3 run there, and ML-KEM's, whose calls take no value,
+  run `sha3.c` (decision 217). `bin/hash_runtime_test` and
+  `bin/x86_kernels_test` count the SHA-3 calls on each path under each
+  value, the second also that ML-KEM's three session calls send none to
+  the copy, and `bin/mldsa_runtime_test` counts each SHAKE call.
+  `test/hash-builds.sh` requires ANDN and RORX and no NOT in the x86-64
+  copy, and no BMI1 or BMI2 instruction in `sha3.c`. The qemu lane's
+  `sha3-bmi` part runs ML-DSA-87's vectors on the copy under both bits,
+  and under one of them on a model without the other's instructions,
+  where they must pass. `inv16-sha3-bmi-copy-without-bmi1` and
+  `inv16-sha3-bmi-copy-without-bmi2-adx` each drop one bit from the
+  predicate, and that part catches both. `test/hash-builds.sh` holds FEAT_SHA3's
   instructions to `sha3_hw.c` and each copy's calls to the `_hw` names,
   for arm64 under the pinned clang. The qemu lane builds the two loops
   with clang for arm64 and runs them on cortex-a72, which has no
@@ -6689,6 +6715,16 @@ last `ROLE=server` stub, as the entry said it would.
   gcc 13.3, clang 18 and clang 23, as their assembly reads, and before
   decision 216 gcc and clang kept lanes of the state in stack slots that
   no call cleared.
+  `sha3_hw.c`'s x86-64 copy runs `sha3_andn.h`'s form, whose scratch
+  state `keccak_f1600_andn_with` wipes the same way (decision 217).
+  `bin/sha3_equiv_test` reads that form's scratch state too, and
+  `inv17-sha3-andn-scratch-state-kept` drops its wipe. The qemu lane's
+  `sha3-bmi` part runs `bin/sha3_hw_equiv_test` for x86-64, built with
+  gcc 13.3, so its stack search covers the copy's six kinds of call; the
+  same search passes under clang 18 and gcc 15.2. On macOS clang keeps rbp for the
+  frame pointer, and in both two-state forms it then writes two values
+  of theta to the red zone below the function of 24 rounds, where the
+  search finds them. That build has no test lane here.
   Each of `gcm_avx512.c`'s two entries wipes `GCM_AVX512_BELOW_LEN`,
   2,560 bytes, of the stack below its own frame after the kernel returns,
   through `wipe_frame` and a volatile pointer, in `p256_wide_wipe.c`'s

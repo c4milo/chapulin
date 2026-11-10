@@ -1,0 +1,14 @@
+invariant: INV-45
+file: src/sha3.c
+catches: test/hash-builds.sh
+reason: sha3_hw.c's x86-64 copy runs sha3_inverted_lanes.h's form in place
+  of sha3_andn.h's, so a session that states BMI1 and BMI2 gets the round
+  of a CPU without them. Every digest stays right, so no vector notices.
+  test/hash-builds.sh compiles the copy for x86-64 under the pinned clang
+  and requires ANDN and RORX and no NOT: the inverted lanes' chi takes
+  five NOTs a round.
+
+--- old
+#define SHA3_FORM SHA3_FORM_ANDN
+--- new
+#define SHA3_FORM SHA3_FORM_INVERTED_LANES

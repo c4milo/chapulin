@@ -408,15 +408,16 @@ the AVX-512 kernels alone, `rsa_ifma.c`, `rsa_ifma_sign.c`,
 and in `avx512_wipe.c`'s block of assembly, as make's does
 (docs/decisions.md 119 to 121).
 
-- **A value states what the caller found.** `Cpu` holds ten bools,
+- **A value states what the caller found.** `Cpu` holds eleven bools,
   false by default: `constant_time_aes`, `constant_time_multiply`, `avx2`,
   `vaes`, `constant_time_sha256`, `constant_time_sha512`,
-  `constant_time_sha3`, `avx512_ifma`, `avx512` and `bmi2_adx`. `init` writes
+  `constant_time_sha3`, `avx512_ifma`, `avx512`, `bmi2_adx` and `bmi1`.
+  `init` writes
   `CH_CPU_PROBED` and the bit of each one that is true. `Cpu{}` says the
   caller looked and states nothing more. The five named `constant_time_`
   state a timing, and `cpu_cfg.h` says what each claims. `avx2`, `vaes`,
-  `avx512_ifma`, `avx512` and `bmi2_adx` are x86-64's and say what the CPU
-  has: with
+  `avx512_ifma`, `avx512`, `bmi2_adx` and `bmi1` are x86-64's and say what
+  the CPU has: with
   `avx2` the session's ChaCha20
   runs in 256-bit vectors, and with `vaes` beside `constant_time_aes` its
   AES-GCM runs on VAES and VPCLMULQDQ (docs/decisions.md 90). With `avx2`
@@ -446,7 +447,11 @@ and in `avx512_wipe.c`'s block of assembly, as make's does
   shared secret on `x25519_adx.c`'s four 64-bit words (docs/decisions.md
   165) and its P-256 point arithmetic on `p256_adx.h`'s copy of the wide
   files. By itself it runs an ECDSA P-256 verification on that copy
-  (docs/decisions.md 171).
+  (docs/decisions.md 171). `bmi1` says the CPU has BMI1, and beside
+  `bmi2_adx` the session runs SHA-3 and SHAKE on `sha3_hw.c`'s copy of
+  `sha3.c`, whose chi is ANDN and whose rotations are RORX, so its
+  ML-DSA-87 hashes run there. ML-KEM's hashes run `sha3.c` whatever the
+  field says (docs/decisions.md 217).
   The three hash fields say the CPU has the SHA-256, the SHA-512 or the
   SHA-3 instructions. With `constant_time_sha256` the session hashes its
   transcript and derives its keys over SHA-256 on them, and with
@@ -457,7 +462,7 @@ and in `avx512_wipe.c`'s block of assembly, as make's does
 - **A value without one is refused at init.** A null `cpu` leaves the
   field 0, C answers `CH_EINVAL`, and `init` and `ServerOptions.check` return
   `error.Invalid` with nothing sent. So does `avx2`, `vaes`,
-  `avx512_ifma`, `avx512` or `bmi2_adx` in an arm64 object, and `constant_time_sha512` or
+  `avx512_ifma`, `avx512`, `bmi2_adx` or `bmi1` in an arm64 object, and `constant_time_sha512` or
   `constant_time_sha3` in an x86-64 one: each object defines its own
   architecture's bits. Both refusals are C's.
 - **The probe is the caller's.** chapulin and its API probe nothing and

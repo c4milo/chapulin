@@ -216,6 +216,12 @@ struct Cpu {
     // ECDSA P-256 verification on that copy, because a verification's
     // inputs are public. An x86-64 bit, which an arm64 object refuses.
     bool bmi2_adx = false;
+    // The CPU has BMI1: CH_CPU_BMI1. It states presence alone, as avx2
+    // does. Beside bmi2_adx the session runs SHA-3 and SHAKE on sha3_hw.c's
+    // copy of sha3.c, whose chi is ANDN and whose rotations are RORX, so its
+    // ML-DSA-87 hashes run there. ML-KEM's hashes run sha3.c whatever this
+    // says. An x86-64 bit, which an arm64 object refuses.
+    bool bmi1 = false;
 };
 #endif
 
@@ -430,7 +436,8 @@ class Config {
                    (found.constant_time_sha512 ? CH_CPU_CONSTANT_TIME_SHA512 : 0U) |
                    (found.constant_time_sha3 ? CH_CPU_CONSTANT_TIME_SHA3 : 0U) |
                    (found.avx512_ifma ? CH_CPU_AVX512_IFMA : 0U) |
-                   (found.avx512 ? CH_CPU_AVX512 : 0U) | (found.bmi2_adx ? CH_CPU_BMI2_ADX : 0U);
+                   (found.avx512 ? CH_CPU_AVX512 : 0U) | (found.bmi2_adx ? CH_CPU_BMI2_ADX : 0U) |
+                   (found.bmi1 ? CH_CPU_BMI1 : 0U);
         return *this;
     }
 #endif

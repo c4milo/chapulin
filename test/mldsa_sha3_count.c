@@ -10,21 +10,30 @@
 #undef shake_squeeze
 
 mldsa_sha3_calls mldsa_sha3_counted;
+int mldsa_sha3_counting_apart;
 
 void shake_absorb(shake *s, const uint8_t *in, size_t n);
 void shake_squeeze(shake *s, uint8_t *out, size_t n);
 
 void shake_absorb(shake *s, const uint8_t *in, size_t n) {
-    mldsa_sha3_counted.absorb++;
+    if (mldsa_sha3_counting_apart) {
+        mldsa_sha3_counted.absorb_apart++;
+    } else {
+        mldsa_sha3_counted.absorb++;
+    }
     counted_shake_absorb(s, in, n);
 }
 
 void shake_squeeze(shake *s, uint8_t *out, size_t n) {
-    mldsa_sha3_counted.squeeze++;
+    if (mldsa_sha3_counting_apart) {
+        mldsa_sha3_counted.squeeze_apart++;
+    } else {
+        mldsa_sha3_counted.squeeze++;
+    }
     counted_shake_squeeze(s, out, n);
 }
 
-#ifdef CH_KECCAK_INSTRUCTIONS
+#if defined(CH_KECCAK_INSTRUCTIONS) || defined(__x86_64__)
 void shake_absorb_hw(shake *s, const uint8_t *in, size_t n) {
     mldsa_sha3_counted.absorb_hw++;
     counted_shake_absorb(s, in, n);

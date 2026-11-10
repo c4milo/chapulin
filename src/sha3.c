@@ -13,7 +13,10 @@
 // instructions (docs/decisions.md 99). That copy defines CH_SHA3_HW_COPY
 // and supplies the two functions the sponge calls for the permutation,
 // keccak_f1600 and absorb_whole_blocks, so the text between each #ifndef
-// below and its #endif is this file's alone.
+// below and its #endif is this file's alone. For an x86-64 host object
+// sha3_hw.c compiles this file once more under the same second names and
+// under target("bmi,bmi2"). That copy defines CH_SHA3_BMI_COPY, and the
+// whole text below is its own, with SHA3_FORM's choice.
 #ifndef CH_SHA3_HW_COPY
 
 // r is 1 to 63 at every call below.
@@ -157,26 +160,36 @@ static void keccak_f1600_plain(uint64_t a[25]) {
     }
 }
 
+#include "sha3_andn.h"
 #include "sha3_inverted_lanes.h"
 
-// Two forms of one permutation. An x86-64 host object runs
-// sha3_inverted_lanes.h's form, which keeps six lanes inverted between
-// rounds and writes each round into a second state (docs/decisions.md
-// 216), and every other object runs keccak_f1600_plain, which stays the
+// Three forms of one permutation. sha3_hw.c's x86-64 copy of this file
+// defines CH_SHA3_BMI_COPY and runs sha3_andn.h's form, whose chi is
+// FIPS 202's on ANDN (docs/decisions.md 217). This file in an x86-64 host
+// object runs sha3_inverted_lanes.h's form, which keeps six lanes inverted
+// between rounds and writes each round into a second state
+// (docs/decisions.md 216), because an x86-64 CPU without BMI1 has no
+// AND-NOT. Every other object runs keccak_f1600_plain, which stays the
 // reference. On arm64 and on a Cortex-M core, BIC computes AND-NOT in one
 // instruction, so the inverted lanes add instructions there
-// (docs/decisions.md 195). Both forms compile in every object, so
-// bin/sha3_equiv_test and the sha3_round harness hold both on every
-// machine. The compiler removes the form that SHA3_INVERTED_LANES does
-// not pick.
-#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
-#define SHA3_INVERTED_LANES 1
+// (docs/decisions.md 195). The three forms compile in every object, so
+// bin/sha3_equiv_test and the sha3_round harness hold all three on every
+// machine. The compiler removes the forms that SHA3_FORM does not pick.
+#define SHA3_FORM_PLAIN 0
+#define SHA3_FORM_INVERTED_LANES 1
+#define SHA3_FORM_ANDN 2
+#ifdef CH_SHA3_BMI_COPY
+#define SHA3_FORM SHA3_FORM_ANDN
+#elif defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+#define SHA3_FORM SHA3_FORM_INVERTED_LANES
 #else
-#define SHA3_INVERTED_LANES 0
+#define SHA3_FORM SHA3_FORM_PLAIN
 #endif
 
 static void keccak_f1600(uint64_t a[25]) {
-    if (SHA3_INVERTED_LANES) {
+    if (SHA3_FORM == SHA3_FORM_ANDN) {
+        keccak_f1600_andn(a);
+    } else if (SHA3_FORM == SHA3_FORM_INVERTED_LANES) {
         keccak_f1600_inverted(a);
     } else {
         keccak_f1600_plain(a);

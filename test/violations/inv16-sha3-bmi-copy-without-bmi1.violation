@@ -1,0 +1,15 @@
+invariant: INV-16
+file: src/sha3.h
+catches: test/docker-aes-runtime-qemu.sh sha3-bmi
+reason: sha3_on_instructions picks sha3_hw.c's x86-64 copy where the
+  session's ch_cfg.cpu holds CH_CPU_BMI2_ADX alone, so a session whose
+  caller never said the CPU has BMI1 runs ANDN, and dies of SIGILL on a
+  CPU without it. Every digest is still right on a CPU with it. The qemu
+  lane's sha3-bmi part counts the SHA-3 calls under each value, and runs
+  ML-DSA-87's vectors under CH_CPU_BMI2_ADX alone on a model without BMI1,
+  where they must pass. x86-64 alone compiles this arm of sha3.h.
+
+--- old
+    uint32_t both = CH_CPU_BMI1 | CH_CPU_BMI2_ADX;
+--- new
+    uint32_t both = CH_CPU_BMI2_ADX;

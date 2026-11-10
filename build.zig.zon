@@ -314,6 +314,7 @@
         "src/sha256_hw.c",
         "src/sha3.c",
         "src/sha3.h",
+        "src/sha3_andn.h",
         "src/sha3_inverted_lanes.h",
         "src/sha3_hw.c",
         "src/sha512.c",

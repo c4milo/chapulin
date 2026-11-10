@@ -258,6 +258,7 @@ CPU_CONSTANT_TIME_SHA3=0x80
 CPU_AVX512_IFMA=0x100
 CPU_AVX512=0x200
 CPU_BMI2_ADX=0x400
+CPU_BMI1=0x800
 
 # Whether a CPU's feature list names every word given.
 reports() { # $1 = the list, space separated; the rest = the words
@@ -358,6 +359,11 @@ cpu_value() {
     if [ "$ARCH" = x86_64 ] && reports "$features" bmi2 adx; then
         value=$((value | CPU_BMI2_ADX))
     fi
+    # sha3_hw.c's x86-64 copy, which runs beside CH_CPU_BMI2_ADX: x86-64
+    # Linux names BMI1 bmi1.
+    if [ "$ARCH" = x86_64 ] && reports "$features" bmi1; then
+        value=$((value | CPU_BMI1))
+    fi
     printf '0x%x\n' "$value"
 }
 
@@ -366,7 +372,7 @@ cpu_value() {
 cpu_names() { # $1 = a ch_cfg.cpu value
     local names=CH_CPU_PROBED bit variable
     for bit in CONSTANT_TIME_AES CONSTANT_TIME_MULTIPLY AVX2 VAES CONSTANT_TIME_SHA256 \
-        CONSTANT_TIME_SHA512 CONSTANT_TIME_SHA3 AVX512_IFMA AVX512 BMI2_ADX; do
+        CONSTANT_TIME_SHA512 CONSTANT_TIME_SHA3 AVX512_IFMA AVX512 BMI2_ADX BMI1; do
         variable=CPU_$bit
         if [ $(($1 & ${!variable})) -ne 0 ]; then
             names="$names, CH_CPU_$bit"

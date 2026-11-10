@@ -354,6 +354,11 @@
 #   rsa-adx           bin/rsa_mont64_adx_test and bin/rsa_sign_equiv_test
 #                     for x86-64, for the violations of
 #                     rsa_mont64_adx_asm.h's assembly
+#   sha3-bmi          bin/sha3_hw_equiv_test, bin/hash_runtime_test and
+#                     bin/mldsa_signer_test_host for x86-64, the last on a
+#                     model without BMI1 and on one without BMI2 too, for
+#                     the violations of sha3_hw.c's x86-64 copy and of the
+#                     dispatch that picks it
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -376,9 +381,9 @@ only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
     mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
-    rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx) ;;
+    rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi]" >&2
     exit 2
     ;;
 esac
@@ -411,7 +416,7 @@ if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != mldsa
     [ "$only" != chacha20-avx2 ] &&
     [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
     [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ] && [ "$only" != sha512-stack ] &&
-    [ "$only" != x25519-adx ] && [ "$only" != p256-adx ] && [ "$only" != rsa-adx ]; then
+    [ "$only" != x25519-adx ] && [ "$only" != p256-adx ] && [ "$only" != rsa-adx ] && [ "$only" != sha3-bmi ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -480,6 +485,7 @@ read -r -a mldsa_avx2_equiv_srcs <<< "$(sed -n 30p <<< "$lists")"
 read -r -a rsa_mont64_adx_test_srcs <<< "$(sed -n 31p <<< "$lists")"
 read -r -a keccak_neon_equiv_srcs <<< "$(sed -n 32p <<< "$lists")"
 read -r -a aead_avx2_equiv_srcs <<< "$(sed -n 33p <<< "$lists")"
+read -r -a mldsa_signer_host_srcs <<< "$(sed -n 34p <<< "$lists")"
 [ "${#ghash_equiv_srcs[@]}" -gt 0 ] ||
     { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-four lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
@@ -926,6 +932,37 @@ if [ -z "$only" ] || [ "$only" = rsa-adx ]; then
 fi
 if [ "$only" = rsa-adx ]; then
     echo "aes-runtime-qemu: for x86-64, bin/rsa_mont64_adx_test held src/rsa_mont64_adx.c's assembly to its model and src/rsa_mont64.c, and bin/rsa_sign_equiv_test held the signer on it to the ladder and found nothing on the stack"
+    exit 0
+fi
+if [ -z "$only" ] || [ "$only" = sha3-bmi ]; then
+    # sha3_hw.c's x86-64 copy of sha3.c on ANDN and RORX, and the dispatch in
+    # sha3.h that picks it for a value with CH_CPU_BMI1 and CH_CPU_BMI2_ADX
+    # (docs/decisions.md 217). qemu's max model has BMI1, BMI2 and ADX. The
+    # two other models lack AVX2 too, because glibc's AVX2 string functions
+    # run TZCNT, a BMI1 instruction, and BZHI, a BMI2 one.
+    no_bmi1='max,-bmi1,-avx2'
+    no_bmi2='max,-bmi2,-avx2'
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/sha3_hw_equiv_test" test/sha3_hw_equiv_test.c \
+        "${sha3_hw_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 \
+        "src/sha3_hw.c's x86-64 copy and src/sha3.c disagree, or a call left a lane it computed on the stack" \
+        sha3_hw_equiv_test
+    "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI "${runtime[@]}" \
+        -o "$x86_out/hash_runtime_test" test/hash_runtime_test.c "${hash_count_srcs[@]}" \
+        "${hash_count_quic_srcs[@]}" || exit 1
+    expect max 0 "a SHA-3 call ran a path the session's ch_cfg.cpu does not name" hash_runtime_test
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_MLDSA_SIGN_TEST -o "$x86_out/mldsa_signer_test_host" \
+        test/mldsa_signer_test.c "${mldsa_signer_host_srcs[@]}" || exit 1
+    CH_REQUIRE_BMI1=1 CH_REQUIRE_BMI2_ADX=1 expect max 0 \
+        "ML-DSA-87's vectors failed with its SHAKE calls on src/sha3_hw.c's x86-64 copy" \
+        mldsa_signer_test_host 0xc05
+    expect "$no_bmi1" 0 "a session without CH_CPU_BMI1 ran src/sha3_hw.c's x86-64 copy" \
+        mldsa_signer_test_host 0x405
+    expect "$no_bmi2" 0 "a session without CH_CPU_BMI2_ADX ran src/sha3_hw.c's x86-64 copy" \
+        mldsa_signer_test_host 0x805
+fi
+if [ "$only" = sha3-bmi ]; then
+    echo "aes-runtime-qemu: for x86-64, bin/sha3_hw_equiv_test held src/sha3_hw.c's copy on ANDN and RORX to src/sha3.c and found no lane on the stack, bin/hash_runtime_test held the dispatch to the path each value names, and bin/mldsa_signer_test_host ran ML-DSA-87's vectors on the copy under both bits, and with one of them on $no_bmi1 and $no_bmi2"
     exit 0
 fi
 if [ "$only" = p256-adx ]; then

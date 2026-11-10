@@ -66,6 +66,11 @@ const CpuBits = struct {
     /// whatever this says. By itself it runs an ECDSA P-256 verification on that copy, because a
     /// verification's inputs are public. An x86-64 bit, which an arm64 object refuses.
     bmi2_adx: bool = false,
+    /// CH_CPU_BMI1: the CPU has BMI1. It states presence alone, as avx2 does. Beside bmi2_adx the
+    /// session runs SHA-3 and SHAKE on sha3_hw.c's copy of sha3.c, whose chi is ANDN and whose
+    /// rotations are RORX, so its ML-DSA-87 hashes run there. ML-KEM's hashes run sha3.c whatever
+    /// this says. An x86-64 bit, which an arm64 object refuses.
+    bmi1: bool = false,
 };
 
 /// ch_cfg.cpu for what found states, and 0 for null, which every init refuses. EcdsaP256Key.init_from_pem
@@ -81,5 +86,6 @@ fn cpu_bits_of(found: ?CpuBits) u32 {
         (if (cpu.constant_time_sha3) c.CH_CPU_CONSTANT_TIME_SHA3 else 0) |
         (if (cpu.avx512_ifma) c.CH_CPU_AVX512_IFMA else 0) |
         (if (cpu.avx512) c.CH_CPU_AVX512 else 0) |
-        (if (cpu.bmi2_adx) c.CH_CPU_BMI2_ADX else 0);
+        (if (cpu.bmi2_adx) c.CH_CPU_BMI2_ADX else 0) |
+        (if (cpu.bmi1) c.CH_CPU_BMI1 else 0);
 }
