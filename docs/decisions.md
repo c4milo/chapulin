@@ -17004,6 +17004,14 @@ does nothing more.
       Under `qemu-x86_64 -cpu max` and gcc 13.3, an encapsulation retires
       309,534 instructions where it retired 332,858.
 
+    Note of 2026-11-10: the pragma is removed. The numbers above are of
+    the first form, under `CH_CPU_RUNTIME`, which every host session ran.
+    In the native copy the pragma wrote out `mlk_sample_cbd_native` alone,
+    and no session calls that function: widemul.h dispatches the three
+    entries of `mlkem_poly.c` that multiply, and `mlkem.c` calls the
+    sampler under its own name. Decision 214 holds what the sampler takes
+    under gcc now and what a call of the native copy measured.
+
 203. **The four stores after each statement of `x25519_adx_asm.h` have an
     empty statement that clobbers memory between each two.** On an EPYC
     7763 an X25519 shared secret took 38.2 µs under gcc 13.3 and 33.6 µs
@@ -17809,17 +17817,20 @@ does nothing more.
 
     Measured and not changed:
 
-    - **Decision 202's loop runs in no session.** Decision 202 wrote the
+    - **Decision 202's loop ran in no session.** Decision 202 wrote the
       inner loop of `mlk_sample_cbd` out in the native copy alone. No
       dispatcher of `widemul.h` names `mlk_sample_cbd_native`: `mlkem.c`
-      calls `mlk_sample_cbd` under its own name in every session. In the
-      profile above that function took 8.8% of gcc's encapsulation, 2.08
+      calls `mlk_sample_cbd` under its own name in every session. So the
+      pragma is removed, and decision 202's entry has a note. In the
+      profile above the sampler took 8.8% of gcc's encapsulation, 2.08
       µs, and 2.2% of clang's, 0.40 µs. With `mlk_pke_encrypt` calling the
       native copy where the session states the multiply, gcc's
       encapsulation took 21051 ns and its decapsulation 24293 in the same
-      run. That call is not in the tree: `mlk_sample_cbd` multiplies
-      nothing, key generation takes no answer, and an arm64 object's copy
-      over the SHA-3 instructions has no native copy.
+      run. That call is not in the tree. widemul.h calls an entry that
+      multiplies nothing under its own name, key generation takes no
+      answer, and an arm64 object's copy over the SHA-3 instructions has
+      no native copy. A sampler that every host session can run needs a
+      host file of its own, as `mlk_vector_add` has.
     - **The matrix's rejection loop.** gcc writes `mlk_sample_groups` with
       a jump for each candidate, on public bytes, inside `mlk_matvec_row`:
       2.83 µs of gcc's encapsulation against 2.11 of clang's.
