@@ -1,7 +1,8 @@
 // RSA's Montgomery multiplication and square in blocks of four words, which a host object
 // built by clang for arm64 runs for a word count that is a multiple of 4 (RSA_MONT64_BLOCKS in
 // rsa_mont64.h, docs/decisions.md 118). rsa_mont64.c calls them for its multiplication and its
-// square and takes the last subtraction itself.
+// square and takes the last subtraction itself. rsa_mont_division.h's long division runs its
+// steps on the same block for a public modulus (docs/decisions.md 208).
 //
 // A block adds x times four words of y to four words of the running sum. The low halves of the
 // four products go down one carry chain and the high halves down another, which clang compiles
@@ -20,6 +21,40 @@
 
 #ifdef CH_CPU_RUNTIME
 #if RSA_MONT64_BLOCKS
+
+// (t[3] : t[2] : t[1] : t[0]) and the word returned = the four words + x * (y[3] : ... : y[0])
+// + w. The low halves of the four products go down one carry chain and the high halves, with w
+// below them, down another. The sum is at most 2^320 - 1, so the word returned cannot wrap.
+//
+// It reads no memory and keeps no copy, so its caller decides how each operand is read.
+// rsa_mont64_blocks.c reads a secret operand through a volatile pointer.
+// rsa_mont_division.h's long division, whose operands are public, reads its words through
+// plain pointers (docs/decisions.md 208).
+static inline uint64_t rsa_mont64_block_add(uint64_t t[4], uint64_t x, uint64_t y0, uint64_t y1,
+                                            uint64_t y2, uint64_t y3, uint64_t w) {
+    ct_u128 p0 = ct_mul128(x, y0);
+    ct_u128 p1 = ct_mul128(x, y1);
+    ct_u128 p2 = ct_mul128(x, y2);
+    ct_u128 p3 = ct_mul128(x, y3);
+    ct_u128 sum = (ct_u128)t[0] + (uint64_t)p0;
+    t[0] = (uint64_t)sum;
+    sum = (ct_u128)t[1] + (uint64_t)p1 + (uint64_t)(sum >> 64);
+    t[1] = (uint64_t)sum;
+    sum = (ct_u128)t[2] + (uint64_t)p2 + (uint64_t)(sum >> 64);
+    t[2] = (uint64_t)sum;
+    sum = (ct_u128)t[3] + (uint64_t)p3 + (uint64_t)(sum >> 64);
+    t[3] = (uint64_t)sum;
+    uint64_t low_carry = (uint64_t)(sum >> 64);
+    sum = (ct_u128)t[0] + w;
+    t[0] = (uint64_t)sum;
+    sum = (ct_u128)t[1] + (uint64_t)(p0 >> 64) + (uint64_t)(sum >> 64);
+    t[1] = (uint64_t)sum;
+    sum = (ct_u128)t[2] + (uint64_t)(p1 >> 64) + (uint64_t)(sum >> 64);
+    t[2] = (uint64_t)sum;
+    sum = (ct_u128)t[3] + (uint64_t)(p2 >> 64) + (uint64_t)(sum >> 64);
+    t[3] = (uint64_t)sum;
+    return (uint64_t)(p3 >> 64) + low_carry + (uint64_t)(sum >> 64);
+}
 
 // o and the word returned = a * b / R, plus m or nothing: a Montgomery product before its last
 // subtraction. The value is below 2m, so the word returned is 0 or 1. It needs b below m,

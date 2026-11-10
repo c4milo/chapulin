@@ -1,0 +1,17 @@
+invariant: INV-41
+file: src/rsa_mont_division.h
+catches: rsa_equiv_test_compare
+reason: times_r_mod runs k - 1 steps of the division where R = 2^(64k)
+  needs k, so the squares start from base * R / 2^64 and every result is
+  off by a power of 2^64. bin/rsa_equiv_test_compare runs the loops'
+  steps at every word count on every machine and compares rsa_vp1 with
+  the 32-bit arm.
+
+--- old
+    for (size_t i = 0; i < k; i++) {
+        times_word_mod(x, m, k);
+    }
+--- new
+    for (size_t i = 0; i + 1 < k; i++) {
+        times_word_mod(x, m, k);
+    }

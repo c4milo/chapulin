@@ -1471,26 +1471,52 @@ The entries are grouped by area:
 
 #### rsa_mont_host
 
-- **Harnesses:** `rsa_mont_host` (fast), `rsa_mont_host_webpki` (slow)
+- **Harnesses:** `rsa_mont_host` (fast), `rsa_mont_host_webpki` (slow), `rsa_mont_host_blocks` (fast), `rsa_mont_host_blocks_webpki` (slow), `rsa_mont_division_sums` (fast)
 - **Build:** `rsa_mont.c`'s host arm, `rsa_vp1` as a host object
-  compiles it, under `-DCH_CPU_RUNTIME` (decision 103).
+  compiles it, under `-DCH_CPU_RUNTIME` (decisions 103 and 208).
 - **Proves:** `rsa_vp1` whole, over any odd modulus bytes and any
   signature bytes at the largest length, reads and writes inside its
   arrays and divides by no zero. A modulus whose top bit is set takes
-  the division that computes R^2: `rsa_mont64_modulus_load`, the
-  complement of the modulus, and its k steps, each with its quotient
-  estimate, its subtraction and the passes that add the modulus back.
-  Any other modulus takes `rsa_mont64_modulus_init` under the bit length
-  its bytes give. The products are the contract
-  `rsa_mont64_mul128` proves, and `rsa_mont64_modulus_init` and
-  `rsa_mont64_public` are contracts that assert what their `CH_ASSERT`s
-  need, which the [rsa_mont64](#rsa_mont64) harnesses discharge. The
-  `_webpki` line is the same harness at the `CH_TRUST_WEBPKI` bound.
+  `public_by_division`: `rsa_mont64_modulus_load`, the base's words and
+  its one subtraction, and the k steps of the division that multiplies
+  the base by R, each with its quotient estimate, its subtraction and
+  the passes that add the modulus back. Any other modulus takes
+  `rsa_mont64_modulus_init` under the bit length its bytes give. The
+  products are the contract `rsa_mont64_mul128` proves.
+  `rsa_mont64_modulus_init`, `rsa_mont64_public`,
+  `rsa_mont64_mont_square` and `rsa_mont64_mont_mul` are contracts that
+  assert what the real entries need, which the
+  [rsa_mont64](#rsa_mont64) harnesses discharge. The `_webpki` line is
+  the same harness at the `CH_TRUST_WEBPKI` bound.
+  - `rsa_mont_host_blocks` and its `_webpki` line: the same harness
+    with `RSA_MONT64_BLOCKS` set to 1, as a clang build for arm64 sets
+    it. At the largest length each step runs in blocks of four words,
+    `times_word_mod_blocks`, over the words of R - m, and adds the
+    modulus back with `add_modulus_blocks`. The block itself,
+    `rsa_mont64_block_add`, is a contract there: it writes any four
+    words and returns any word.
+  - `rsa_mont_division_sums`, with `--unsigned-overflow-check` on: no
+    sum wraps in `rsa_mont64_block_add` over any four words, any
+    multiplier, any four words it multiplies and any carry word, nor in
+    `add_modulus_blocks` at 8 words, whose carry out is 0 or 1.
 - **Bound:** 384 bytes and 48 words, and 512 bytes and 64 words under
   `CH_TRUST_WEBPKI`; any odd modulus bytes.
-- **Not proved:** that the words the division writes are R^2 mod n; see
-  [The host object's RSA arithmetic](#the-host-objects-rsa-arithmetic).
-  The lines run without `--unsigned-overflow-check`, because a step
+- **Lean:** `spec/lean/Spec/RsaDivision.lean` models the division from
+  the C. `quotient_le_estimate` and `estimate_le_quotient_add_two`
+  prove Knuth's Theorem B for the estimate. `timesWord_eq` proves that
+  a step writes rem 2^64 mod m, `timesWordBlocks_eq` that the step in
+  blocks writes the same value, and `timesR_eq` that k steps write the
+  base times R mod m. `publicOp_eq` proves that the division, sixteen
+  Montgomery squares and a Montgomery product by the base write
+  sig^65537 mod m, over `RsaMont64Adx.montMul`. The model holds a
+  step's difference as an integer, where the C holds it in two's
+  complement over k + 1 words. `bin/diff_rsa_division`, in `make diff`,
+  holds both steps and `rsa_vp1` to the model.
+- **Not proved:** by CBMC, that the words the division writes are the
+  base times R mod n; the Lean module and the tests of
+  [The host object's RSA arithmetic](#the-host-objects-rsa-arithmetic)
+  hold that.
+  The host lines run without `--unsigned-overflow-check`, because a step
   wraps the word above the modulus's words to zero on purpose when it
   adds the modulus back. No line drives `rsa_vp1_cpu`, the dispatch to
   `rsa_ifma.c`; see
@@ -6897,13 +6923,16 @@ verifiers, on `rsa_mont64.c`'s 64-bit words, and a device object on
 picks between them and no count is needed to say which ran. On x86-64
 one bit picks a third path for `rsa_vp1_cpu`, `rsa_ifma.c`, which
 [The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)
-covers. The host
-arm computes R^2 by a long division for a modulus whose top bit is set,
-and by `rsa_mont64_modulus_init` for any other (decision 103). The
-proofs of [rsa_mont64](#rsa_mont64) and
+covers. For a modulus whose top bit is set, the host arm computes no
+R^2: a long division multiplies the base by R modulo n, and sixteen
+squares and one product by the base follow (decisions 103 and 208). Any
+other modulus takes `rsa_mont64_modulus_init` and `rsa_mont64_public`.
+The proofs of [rsa_mont64](#rsa_mont64) and
 [rsa_mont_host](#rsa_mont_host) hold the 64-bit arm's memory accesses
 and its sums, over a contract of the multiply, and say nothing about a
-value. Tests hold the values:
+value. `spec/lean/Spec/RsaDivision.lean` proves the value of the
+division and of the public operation on a model of the C. Tests hold
+the values:
 
 - `bin/rsa_equiv_test`, in `make check`, compiles both arms into one
   binary, the device arm under a second name
@@ -6912,13 +6941,16 @@ value. Tests hold the values:
   lengths from 256 to 512 bytes; over moduli of all ones, of the top and
   bottom bits alone, with a low word of 1 and of all ones, and with zero
   words between the top and the bottom; over the modulus
-  (B^(k + 1) + 1) / (B + 1), for B = 2^64 and an even word count k,
-  whose division meets the remainder n - 1 and takes the largest
-  estimate, which no random modulus does; and over moduli of 24 bit
-  lengths below the top bit, down to 3 bits, and the moduli 3 and 1, at
-  256, 264 and 512 bytes.
+  (B^(k + 1) + 1) / (B + 1), for B = 2^64 and an even word count k; and
+  over moduli of 24 bit lengths below the top bit, down to 3 bits, and
+  the moduli 3 and 1, at 256, 264 and 512 bytes.
   Under each it tries the signatures 0, 1, 2, n - 2, n - 1, the top bit
-  alone and random values, 2,044 comparisons in all. It also holds
+  alone and random values, and n, n + 1 and all ones, which are at or
+  above n and which the division subtracts n from once. The signature
+  n - 1 has n's top word, so its first division step takes the largest
+  estimate, which no random signature does. Under the all-ones modulus
+  one more signature makes that step add the modulus back with a carry
+  through four words. That is 2,707 comparisons in all. It also holds
   `rsa_mont64_mont_square` to the multiplication of a number by itself,
   apart from its operand and on it, at every word count from 1 to 64, a
   prime's among them: 0, 1, n - 1, the top bit alone and random values
@@ -6934,7 +6966,20 @@ value. Tests hold the values:
   runs `rsa_mont64_blocks.c`'s blocks at a word count that is a multiple
   of 4, and under gcc for x86-64 `rsa_mont64_addcarry.c`'s rows at every
   count, and the other two turn both off, so the loops run at every count
-  (decisions 118 and 122).
+  (decisions 118 and 122). `bin/rsa_equiv_test_blocks` is the same binary
+  with the blocks on under any compiler, so every machine runs the
+  division's step in blocks at a multiple of 4 (decision 208).
+- `bin/diff_rsa_division`, in `make diff`, holds `times_word_mod`,
+  `times_word_mod_blocks` and `rsa_vp1` to
+  `spec/lean/Spec/RsaDivision.lean`'s model. It compiles `rsa_mont.c`
+  with the blocks on under any compiler. At 13 word counts from 2 to 64
+  it runs three random odd moduli with the top bit set, the modulus of
+  all ones, and two whose top word is 2^63, over ones and over zeros.
+  Under each, a step takes the remainders 0, 1, m - 1, m's top word
+  over zeros, m's top word less one over ones and seven random values,
+  in the loops and, at a multiple of 4, in the blocks. The public
+  operation takes the bases 0, 1, m - 1, m, all ones and three random
+  values of k words: 2,136 rows (decision 208).
 - `bin/rsa_blocks_equiv_test`, in `make check`, holds the blocks to the
   loops, word for word. It compiles with the blocks on under any
   compiler, and `test/rsa_mont64_loops.c` compiles `rsa_mont64.c` once
@@ -7055,9 +7100,10 @@ how it reads an exponent and its memory accesses. Tests hold the values:
   RSASP1 as m^d mod n over `Nat` and has no model of the CRT; the
   comparison is what holds the CRT to it.
 
-Twenty-one violations hold the arm: thirteen break a value, and
-`bin/rsa_equiv_test` catches seven of them, `bin/rsa_equiv_test_compare`
-and `bin/rsa_equiv_test_sum` one each and `bin/rsa_blocks_equiv_test`
+Twenty-six violations hold the arm: eighteen break a value, and
+`bin/rsa_equiv_test` catches eight of them, `bin/rsa_equiv_test_compare`
+two, `bin/rsa_equiv_test_sum` one, `bin/rsa_equiv_test_blocks` three, in
+the division's step in blocks, and `bin/rsa_blocks_equiv_test`
 four, three in the blocks and one that runs them at every even word
 count; four break a sum, a bound or the no-wrap form and a proof
 catches each; one writes the last subtraction

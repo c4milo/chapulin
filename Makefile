@@ -353,7 +353,7 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
         src/pem.c src/base64.c src/x509.c src/x509_der.c src/x509_ca.c src/webpki_time.c src/webpki_name.c src/webpki_spki.c src/webpki_ext.c src/buf.c src/record.c src/keysched.c src/io.c src/handshake_message.c src/handshake_parser.c src/handshake_parser_ee.c src/handshake_record.c src/session.c \
         src/handshake_auth.c src/handshake_flight.c src/handshake.c src/handshake_post.c src/tls.c src/tls_entry.c src/session_report.c src/tls_write.c src/softmul.c src/build.c
 
-HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/poly1305_wide.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
+HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/poly1305_wide.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont_division.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
         src/pem.h src/base64.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
         include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
         src/keccak_neon.h src/keccak_neon_round.h src/mlkem_neon.h src/mldsa_neon.h \
@@ -3477,6 +3477,15 @@ bin/rsa_equiv_test_sum: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_SUM -DRSA_MONT64_BLOCKS=0 \
 	  -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+# The same binary with the blocks on, whatever the compiler:
+# rsa_mont_division.h's long division then runs each step in blocks of four words at a word
+# count that is a multiple of 4, which only a clang build for arm64 does
+# unless a build names it (docs/decisions.md 208). So CI's gcc check job
+# holds that step to the 32-bit arm too.
+bin/rsa_equiv_test_blocks: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) \
+	  -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
 # rsa_mont64_blocks.c's blocks against rsa_mont64.c's loops, word for word
 # (docs/decisions.md 118). Every unit compiles with the blocks on, whatever
 # the compiler, so every machine runs them, and test/rsa_mont64_loops.c
@@ -4947,6 +4956,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/mlkem_hw_equiv_test_1024 bin/mlkem_avx2_equiv_test_1024 \
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
+                                 bin/rsa_equiv_test_blocks \
                                  bin/rsa_mont64_adx_test \
                                  bin/rsa_exp_test bin/dnssec_test \
                                  bin/rsa_blocks_equiv_test bin/rsa_addcarry_equiv_test \
@@ -5903,6 +5913,8 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_rsa_mont64_adx
 	$(MAKE) bin/diff_rsa_mont64_square
 	./bin/diff_rsa_mont64_square
+	$(MAKE) bin/diff_rsa_division
+	./bin/diff_rsa_division
 else
 	@echo "SKIP diff's wide X25519 and P-256 binaries: $(CC) fails the host test"
 	@echo "SKIP diff's RSA signers' binary: $(CC) fails the host test"
@@ -6110,6 +6122,19 @@ bin/diff_rsa_mont64_square: $(DIFF_RSA_MONT64_SQUARE_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 -DCH_RSA_MODULUS_MAX=512 \
 	  -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ $(DIFF_RSA_MONT64_SQUARE_SRCS)
+
+# The long division of rsa_mont.c's host arm, rsa_mont_division.h, and the
+# public operation it starts: times_word_mod, times_word_mod_blocks and rsa_vp1 against
+# spec/lean/Spec/RsaDivision.lean (docs/decisions.md 208). Its own main,
+# because its unit includes rsa_mont.c to call that file's static
+# functions, under -DRSA_MONT64_BLOCKS=1 whatever the compiler, so every
+# host runs the step in blocks. It links every source rsa_mont.c calls:
+# on x86-64 that file's rsa_vp1_cpu calls the two kernels.
+DIFF_RSA_DIVISION_SRCS := test/diff_rsa_division_test.c $(RSA_MONT64_SRCS) src/ct.c src/ct_wipe.c
+bin/diff_rsa_division: $(DIFF_RSA_DIVISION_SRCS) src/rsa_mont.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 -DCH_RSA_MODULUS_MAX=512 \
+	  -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ $(DIFF_RSA_DIVISION_SRCS)
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
@@ -6837,6 +6862,9 @@ san-check:
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/rsa_equiv_test \
 	    $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS); \
 	  echo "== rsa_equiv_test (SAN -O$(O))"; ./bin/san/rsa_equiv_test; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. \
+	    -o bin/san/rsa_equiv_test_blocks $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS); \
+	  echo "== rsa_equiv_test_blocks (SAN -O$(O))"; ./bin/san/rsa_equiv_test_blocks; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. \
 	    -o bin/san/rsa_blocks_equiv_test $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) src/ct.c src/ct_wipe.c; \
 	  echo "== rsa_blocks_equiv_test (SAN -O$(O))"; ./bin/san/rsa_blocks_equiv_test; \
@@ -7612,7 +7640,8 @@ else
 	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
 	  test/rsa_ifma_sign_residue_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I.)
-	# rsa_mont64_blocks.c's blocks and rsa_mont64.c's calls into them,
+	# rsa_mont64_blocks.c's blocks, rsa_mont64.c's calls into them and
+	# rsa_mont_division.h's division step on them (docs/decisions.md 208),
 	# which only a clang build for arm64 compiles unless a build names them
 	# (docs/decisions.md 118). This pass names them with
 	# -DRSA_MONT64_BLOCKS=1, as bin/rsa_blocks_equiv_test does, so every
@@ -7620,7 +7649,7 @@ else
 	# test/rsa_mont64_loops.c stays out of every pass, for the reason
 	# test/rsa_equiv_portable.c does.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,src/rsa_mont64.c src/rsa_mont64_blocks.c test/rsa_blocks_equiv_test.c, \
+	  $(call TIDY_EACH,src/rsa_mont64.c src/rsa_mont64_blocks.c src/rsa_mont.c test/rsa_blocks_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 \
 	  -DRSA_MONT64_ADDCARRY=0 -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# rsa_mont64_addcarry.c's rows and rsa_mont64.c's calls into them,

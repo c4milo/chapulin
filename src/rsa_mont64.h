@@ -72,9 +72,10 @@ typedef struct {
 // rsa_mont64_blocks.c's blocks of four words: under clang for arm64 alone. Under clang for
 // x86-64 the blocks ran a 2048-bit square in up to 1.15 times the loops' time, and gcc ran both
 // operations slower on arm64 and x86-64 and, for x86-64, left words of the signer's secrets on
-// the stack (docs/decisions.md 118). A build may name either with
+// the stack (docs/decisions.md 118). Under the same value rsa_mont_division.h's long division
+// runs each step on that block of four words (docs/decisions.md 208). A build may name either with
 // -DRSA_MONT64_BLOCKS=0 or 1, as the proofs, bin/rsa_blocks_equiv_test,
-// bin/rsa_equiv_test_compare and bin/rsa_equiv_test_sum do.
+// bin/rsa_equiv_test_blocks, bin/rsa_equiv_test_compare and bin/rsa_equiv_test_sum do.
 #ifndef RSA_MONT64_BLOCKS
 #if defined(__clang__) && defined(__aarch64__)
 #define RSA_MONT64_BLOCKS 1
@@ -163,8 +164,10 @@ void rsa_mont64_modulus_init(rsa_mont64_modulus *mod, const uint8_t *m, size_t m
 // Writes what rsa_mont64_modulus_init writes but r2: the modulus's words,
 // m0inv and words, for 1 <= m_len <= CH_RSA_MODULUS_MAX, which CH_ASSERT
 // holds. rsa_mont64_modulus_init calls it first. rsa_mont.c calls it for
-// a public modulus and writes r2 itself, by a division whose time depends
-// on the modulus (docs/decisions.md 103).
+// a public modulus whose top bit is set, and its public operation there
+// reads no r2: a division whose time depends on the modulus and the base
+// moves the base into the Montgomery domain (docs/decisions.md 103 and
+// 208).
 void rsa_mont64_modulus_load(rsa_mont64_modulus *mod, const uint8_t *m, size_t m_len);
 
 // o = a * b / R mod m, the Montgomery product, over mod->words words. It

@@ -1656,10 +1656,12 @@ last `ROLE=server` stub, as the entry said it would.
   that reaches 2. A subtraction adds the complement of the subtrahend and one,
   so its words carry where a borrow would wrap. `rsa_mont.c` compiles to
   a call into this file under `-DCH_CPU_RUNTIME` and to the 32-bit
-  arithmetic without it, so an object holds one of the two. Its host arm
-  computes R^2 for a modulus whose top bit is set by a long division of
-  its own, whose estimate of each quotient word is at most 2 above the
-  word, and takes `rsa_mont64_modulus_init` for any other modulus.
+  arithmetic without it, so an object holds one of the two. For a
+  modulus whose top bit is set, its host arm computes no R^2: a long
+  division of its own multiplies the base by R modulo n, and its
+  estimate of each quotient word is at most 2 above the word
+  (docs/decisions.md 208). It takes `rsa_mont64_modulus_init` for any
+  other modulus.
   A block adds a word times four words and a carry word to four words
   of the running sum: the low halves of the four products go down one
   chain of 128-bit sums and the high halves down another, each sum two
@@ -1740,7 +1742,13 @@ last `ROLE=server` stub, as the entry said it would.
   `rsa_mont64_mul`, `rsa_mont64_init` and `rsa_mont64_public` prove the
   memory accesses of the multiplication and the square, the modulus
   setup and the public operation at that bound, and `rsa_mont_host`
-  those of the host arm's `rsa_vp1` with its division. The values are
+  those of the host arm's `rsa_vp1` with its division, and
+  `rsa_mont_host_blocks` and `rsa_mont_division_sums` those of the
+  division's step in blocks and its sums.
+  `spec/lean/Spec/RsaDivision.lean` proves that the division writes the
+  base times R mod n and that the public operation writes the 65537th
+  power, on a model of the C that `bin/diff_rsa_division` holds the C
+  to (docs/decisions.md 208). The values are
   held by `bin/rsa_equiv_test`, which compiles both arms of `rsa_mont.c`
   into one binary and requires the same bytes from each over random
   moduli at every length, moduli at the word edges, a modulus whose
@@ -1867,7 +1875,7 @@ last `ROLE=server` stub, as the entry said it would.
   that wraps; copies a product out without its last subtraction; drops
   the running sum's top word; squares R^2's seed four times where five
   are needed; stops the low word's inverse one step short; lets the
-  division of R^2 divide past 2^64 where it caps the estimate; drops the
+  host arm's division divide past 2^64 where it caps the estimate; drops the
   top bit of 2a from a square's round, or reads it at the word above the
   square; or drops the carry from the word below in either form of the
   step. `make test-invariants` runs the seven before the last as
@@ -1895,6 +1903,18 @@ last `ROLE=server` stub, as the entry said it would.
   both carry words in one 64-bit sum,
   `inv41-rsa-mont64-blocks-top-in-one-word`, which
   `rsa_mont64_blocks_sums` catches in the proof-backed job. Or, in the
+  host arm's division, it starts from a base it did not bring below the
+  modulus, or runs one step short:
+  `inv41-rsa-mont-division-base-not-reduced` and
+  `inv41-rsa-mont-division-one-step-short`, which `bin/rsa_equiv_test`
+  and `bin/rsa_equiv_test_compare` catch. Or, in the division's step in
+  blocks, it keeps the estimate in the word above the remainder, drops
+  the carry of a block's second chain where it adds the modulus back, or
+  runs the blocks at every even word count:
+  `inv41-rsa-mont-division-blocks-estimate-kept`,
+  `inv41-rsa-mont-division-blocks-second-carry-dropped` and
+  `inv41-rsa-mont-division-blocks-even-word-counts`, which
+  `bin/rsa_equiv_test_blocks` catches on every machine. Or, in the
   rows, it drops a block's carry out or the carry word it starts from, a
   row's tail carry or the bit the square's doubling moves up a word:
   `inv41-rsa-mont64-addcarry-chain-carry-dropped`,

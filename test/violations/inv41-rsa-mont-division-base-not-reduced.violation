@@ -1,0 +1,16 @@
+invariant: INV-41
+file: src/rsa_mont.c
+catches: rsa_equiv_test
+reason: public_by_division starts the division from the base as it came,
+  without the one subtraction of the modulus. A step of the division
+  needs a remainder below the modulus: its quotient estimate fits one
+  word only then. rsa.c passes no signature at or above n, so every
+  vector and every handshake passes. bin/rsa_equiv_test hands both arms
+  the signatures n, n + 1 and all ones, and the host arm's bytes then
+  differ from the 32-bit arm's.
+
+--- old
+    rsa_mont64_reduce_once(base, base, mod);
+    memcpy(acc, base, k * sizeof(uint64_t));
+--- new
+    memcpy(acc, base, k * sizeof(uint64_t));

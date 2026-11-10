@@ -3216,17 +3216,26 @@ launch fast full dnssec 10 "fill_nondet.0:97" -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_
 launch fast full sha1 3 "fill_nondet.0:65,sha1_update.0:65,sha1_update.1:4,sha1_update.2:65,sha1_final.0:9,sha1_final.1:6,compress.0:17,compress.1:65,compress.2:81" -DCH_DNSSEC src/sha1.c
 launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont_host runs rsa_mont.c's host arm, rsa_vp1 as a host object
-# compiles it, whole: the division that computes R^2 for a modulus with
-# its top bit set (docs/decisions.md 103), over the product contract,
-# with rsa_mont64_modulus_init and rsa_mont64_public as contracts that
-# the lines above discharge. The step that adds the modulus back wraps a
-# word to zero on purpose, so neither line takes the wrap check.
+# compiles it, whole: for a modulus with its top bit set, the division
+# that multiplies the base by R (docs/decisions.md 103 and 208), over the
+# product contract, with rsa_mont64_modulus_init, rsa_mont64_public,
+# rsa_mont64_mont_square and rsa_mont64_mont_mul as contracts that the
+# lines above discharge. The step that adds the modulus back wraps a
+# word to zero on purpose, so none of the four lines takes the wrap check.
+# rsa_mont_host_blocks and its _webpki line run the same harness with
+# RSA_MONT64_BLOCKS set to 1, where the largest length takes each step in
+# blocks of four words. rsa_mont_division_sums takes the wrap check for
+# the two functions those steps add with: rsa_mont64_block_add over every
+# input, and add_modulus_blocks at 8 words.
 # Measured with proof/prove-one.sh under /usr/bin/time -l (cbmc 6.11.0,
 # kissat, an M1 Pro at a load average of 2 to 5), on 2026-10-07:
 #   rsa_mont_host          900 properties, 29 s, 2.6 GB, hence fast:3
 #   rsa_mont_host_webpki   900 properties, 60 s, 5.2 GB, hence slow
 launch fast:3 full rsa_mont_host 385 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch slow full rsa_mont_host_webpki 513 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast:3 full rsa_mont_host_blocks 385 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch slow full rsa_mont_host_blocks_webpki 513 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont_division_sums 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # rsa_ifma.c, RSA's public operation on AVX-512 IFMA, which an x86-64 host
 # object runs for a session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA, and
 # rsa_mont.c's power_of_two_mod, which computes the 2^(104n) mod m it takes.

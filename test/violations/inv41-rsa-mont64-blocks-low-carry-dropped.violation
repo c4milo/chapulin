@@ -1,7 +1,7 @@
 invariant: INV-41
-file: src/rsa_mont64_blocks.c
+file: src/rsa_mont64_blocks.h
 catches: rsa_blocks_equiv_test
-reason: block_mul_add drops the carry out of its low chain, the carry from
+reason: rsa_mont64_block_add drops the carry out of its low chain, the carry from
   the four products' low halves into the word above the block, so the
   word it returns is one short whenever that chain carries, which random
   words do about half the time. bin/rsa_blocks_equiv_test runs the blocks

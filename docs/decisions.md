@@ -17203,3 +17203,117 @@ does nothing more.
       296, its open 257 where main took 285, and its 1 KiB seal 1,047 ns
       where main took 1,071. On the 8573C gcc's 1 KiB IFMA seal took 453
       ns where main took 471. No other row moved past its spread.
+
+208. **A host object's verifier computes no R^2: its long division
+    multiplies the signature by R.** After decision 192, on the M1 Pro
+    under Apple clang 21 and `ch_cfg.cpu 0xe7`, an RSA-2048 PKCS#1 v1.5
+    verification took 1.20 times OpenSSL 3.6.4's time and an RSA-3072 one
+    1.15. Camilo approved this work on 2026-11-10. The parts of one
+    RSA-2048 verification, in processor cycles and instructions that
+    `proc_pid_rusage` counted over 2,000 calls, best of nine:
+
+    | part | cycles | instructions |
+    | --- | --- | --- |
+    | the modulus's words and m0inv | 1,713 | 2,900 |
+    | R^2 mod n, by the division of decision 103 | 6,559 | 22,854 |
+    | the signature's words | 1,627 | 2,881 |
+    | the product by R^2 | 2,571 | 15,052 |
+    | 16 squares | 39,328 | 225,504 |
+    | the product by the signature | 2,552 | 15,052 |
+    | the bytes of the result | 402 | 2,318 |
+    | `rsa_vp1`, whole | 55,605 | 284,736 |
+
+    The padding check and its compare took under 800 instructions. The
+    setup of R^2 and the product by it took 9,130 cycles, a sixth of the
+    verification, to write the signature times R mod n. `openssl speed`
+    runs no such setup: its key object keeps the Montgomery values
+    (decision 103), and chapulin keeps no value between calls.
+
+    - **What changes.** For a modulus whose top bit is set,
+      `rsa_mont.c`'s host arm subtracts n from the signature once, where
+      the signature is at or above n, and then runs the k steps of the
+      long division on the result. Each step multiplies by 2^64 modulo
+      n, so the k steps write the signature times R mod n, the value the
+      product by R^2 wrote. The sixteen squares and the last product
+      follow as before. `r2_by_division` is gone, and
+      `rsa_mont64_public` stays for the signer's check and for a modulus
+      whose top bit is clear. The division's functions moved to
+      `rsa_mont_division.h`, which `rsa_mont.c` alone includes, so that
+      `rsa_mont.c` stays under 500 lines.
+    - **The step in blocks.** Where `RSA_MONT64_BLOCKS` is 1, under
+      clang for arm64, a step at a word count that is a multiple of 4
+      runs on `rsa_mont64_block_add`, the block of four products that
+      the rows of `rsa_mont64_blocks.c` run. rem 2^64 - q n is
+      rem 2^64 + q (R - n), less q R. So the step adds the estimate
+      times the words of R - n to the remainder moved up one word, and
+      takes the estimate off the word above. The pass that adds n back
+      runs in blocks too. `rsa_mont64_block_add` moved to
+      `rsa_mont64_blocks.h` for it. Every other build keeps
+      `times_word_mod`, and so do the x86-64 kernels' powers of two.
+    - **Public values, variable time.** The modulus and the signature
+      are public. The division branches on the remainder and calls the
+      compiler's 128-bit division, as it did for R^2, and `rsa_mont.c`
+      stays in `WIDEMUL_PUBLIC`. No device object changes: its arm of
+      `rsa_mont.c` is the 32-bit code.
+    - **What holds it.** `spec/lean/Spec/RsaDivision.lean` models the
+      estimate, the step in both forms and the public operation from the
+      C. `quotient_le_estimate` and `estimate_le_quotient_add_two` prove
+      Knuth's Theorem B, which decision 103 took from the book.
+      `timesWord_eq` proves that a step writes rem 2^64 mod n,
+      `timesWordBlocks_eq` that the step in blocks writes the same
+      value, and `publicOp_eq` that the whole operation writes
+      sig^65537 mod n, over `RsaMont64Adx.montMul`.
+      `bin/diff_rsa_division` holds both steps and `rsa_vp1` to the
+      model in 2,136 rows. `bin/rsa_equiv_test` holds the bytes to the
+      32-bit arm, now with signatures at or above n and one whose step
+      adds n back with a carry through four words, and
+      `bin/rsa_equiv_test_blocks` runs the step in blocks under any
+      compiler. CBMC proves the memory accesses of both forms at the
+      bound (`rsa_mont_host`, `rsa_mont_host_blocks` and their `_webpki`
+      lines) and that no sum of the blocks wraps
+      (`rsa_mont_division_sums`). Five new violations are caught: a base
+      that is not brought below n, one step short, the estimate kept in
+      the word above, the carry of a block's second chain dropped, and
+      the blocks at every even word count.
+    - **Gain.** The one-minute load average was 35 to 80 while this entry
+      was measured, and `bench/primitives.c`'s rows then spread 40% between
+      samples. So no time was taken, and the figures are counts. The
+      instructions are `bench/primitives.c`'s, under `ch_cfg.cpu 0xe7`,
+      built from 5a36a180 and from this change:
+
+      | one operation | instructions before | after |
+      | --- | --- | --- |
+      | RSA-2048 PKCS#1 v1.5 verification | 287,195 | 263,851 |
+      | RSA-3072 PKCS#1 v1.5 verification | 594,136 | 541,497 |
+      | RSA-4096 PKCS#1 v1.5 verification | 982,968 | 899,596 |
+      | RSA-2048 PSS verification | 321,852 | 301,796 |
+      | RSA-3072 PSS verification | 634,185 | 585,644 |
+      | RSA-2048 PSS signature | 12,912,231 | 12,978,685 |
+      | RSA-3072 PSS signature | 37,472,797 | 37,569,865 |
+
+      A signature's count moves with its two blinds, and no code that a
+      signature runs changed. The cycles of `rsa_vp1` alone, counted as
+      the parts above were, best of nine:
+
+      | modulus | cycles before | after |
+      | --- | --- | --- |
+      | 2,048 bits | 55,605 | 48,726 |
+      | 3,072 bits | 111,870 | 100,417 |
+      | 4,096 bits | 195,854 | 170,102 |
+
+      At 32 words the division takes 3,489 cycles and 12,885
+      instructions, where R^2 and the product by it took 9,130 and
+      37,906. The judge, `make bench-primitives` beside OpenSSL 3.6.4 at
+      a load below 8, has not run on this change, and the scoreboard's
+      M1 column is not recorded again here.
+
+    Rejected:
+
+    - **R^2 by doublings and squares.** R mod n is one subtraction, and
+      64 doublings and five Montgomery squares raise it to R^2 mod n.
+      Five squares take 12,300 cycles at 32 words, more than the 6,559
+      of the division this entry replaces.
+    - **A reciprocal for the estimate, and Knuth's test of the next
+      word.** A prototype of the first ran the 32 steps in 3,705 cycles
+      where the 128-bit division ran them in 4,385. Each needs a theorem
+      of its own, and both are open.

@@ -1,0 +1,15 @@
+invariant: INV-41
+file: src/rsa_mont_division.h
+catches: rsa_equiv_test_blocks
+reason: times_r_mod runs the step in blocks for every even word count,
+  not only a multiple of 4, so a count of 34 or 38 reads a last block of
+  four words past the remainder's and the modulus's words, and writes
+  words that are no remainder. bin/rsa_equiv_test_blocks compares rsa_vp1
+  with the 32-bit arm at every word count from 32 to 64.
+
+--- old
+    if (k % 4 == 0) {
+        // R - m over k words: the complement of m, plus one.
+--- new
+    if (k % 2 == 0) {
+        // R - m over k words: the complement of m, plus one.

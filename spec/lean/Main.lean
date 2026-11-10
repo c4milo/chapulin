@@ -159,6 +159,7 @@ def selftestAll (_ : Unit) : String :=
     ("rsa_avx2", Spec.RsaAvx2.selftest),
     ("rsa_mont64_adx", Spec.RsaMont64Adx.selftest),
     ("rsa_mont64_square", Spec.RsaMont64Square.selftest),
+    ("rsa_division", Spec.RsaDivision.selftest),
     ("p384", Spec.P384.selftest),
     ("rsa_pkcs1", Spec.RsaPkcs1.selftest),
     ("pem", Spec.Pem.selftest),
@@ -927,6 +928,35 @@ def dispatch : List String → Option String
     let x := bytesToNatBE (← hexArg? a)
     guard (m < 2 ^ (64 * k) && (m * inverse + 1) % 2 ^ 64 == 0 && x < m)
     return bytesToHex (natToBytesBE (Spec.RsaMont64Square.blocksSquare k m inverse x) (8 * (k + 1)))
+  | ["rsa_division_step", words, modulus, remainder] => do
+    -- times_word_mod of rsa_mont.c's host arm (Spec/RsaDivision.lean): rem 2^64 mod m, under an
+    -- m of `words` 64-bit words; m and rem are big-endian hex of any length. The answer is
+    -- 8 * words big-endian bytes. The guard is timesWord_eq's hypotheses.
+    let k ← words.toNat?
+    let m := bytesToNatBE (← hexArg? modulus)
+    let rem := bytesToNatBE (← hexArg? remainder)
+    guard (2 ≤ k && 2 ^ (64 * k - 1) ≤ m && m < 2 ^ (64 * k) && rem < m)
+    return bytesToHex (natToBytesBE (Spec.RsaDivision.timesWord k m rem) (8 * k))
+  | ["rsa_division_step_blocks", words, modulus, remainder] => do
+    -- times_word_mod_blocks, as rsa_division_step, from the step's own sum.
+    let k ← words.toNat?
+    let m := bytesToNatBE (← hexArg? modulus)
+    let rem := bytesToNatBE (← hexArg? remainder)
+    guard (2 ≤ k && 2 ^ (64 * k - 1) ≤ m && m < 2 ^ (64 * k) && rem < m)
+    return bytesToHex (natToBytesBE (Spec.RsaDivision.timesWordBlocks k m rem) (8 * k))
+  | ["rsa_division_public", words, m0inv, modulus, base] => do
+    -- rsa_vp1 of rsa_mont.c's host arm for a modulus whose top bit is set (Spec/RsaDivision.lean):
+    -- sig^65537 mod m from the division, the squares and the last product, under an m of `words`
+    -- 64-bit words and m0inv, its -m⁻¹ mod 2^64 in decimal; m and the base are big-endian hex of
+    -- any length. The answer is 8 * words big-endian bytes. The guard is publicOp_eq's
+    -- hypotheses.
+    let k ← words.toNat?
+    let inverse ← m0inv.toNat?
+    let m := bytesToNatBE (← hexArg? modulus)
+    let sig := bytesToNatBE (← hexArg? base)
+    guard (2 ≤ k && 2 ^ (64 * k - 1) ≤ m && m < 2 ^ (64 * k) &&
+      (m * inverse + 1) % 2 ^ 64 == 0 && sig < 2 ^ (64 * k))
+    return bytesToHex (natToBytesBE (Spec.RsaDivision.publicOp k m inverse sig) (8 * k))
   | ["rsa_avx2_multiply", words, k0, modulus, a, b] => do
     -- rsa_avx2.c's multiplication of a by b, both below 2m, under an m of `words` 64-bit words
     -- and k0, its -m⁻¹ mod 2^D in decimal; m, a and b are big-endian hex of any length. The

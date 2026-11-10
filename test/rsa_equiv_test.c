@@ -18,14 +18,18 @@
 //     and bottom bits alone, a low word of 1 and a low word of all ones,
 //     which are the two ends of the inverse rsa_mont64.c computes from
 //     that word, a top word of 2^63 with zeros under it, and a modulus
-//     whose division of R^2 in rsa_mont.c meets the remainder n - 1;
+//     of alternating words;
 //   - moduli of every bit length around a word boundary and down to two
 //     bits, in the same number of bytes, which the verifier admits
 //     because a peer's key comes from elsewhere. Those start
 //     rsa_mont64_modulus_init at another power of two and run it through
 //     more doublings;
 //   - under each of those, the signatures 0, 1, 2, n - 2 and n - 1, a
-//     single bit and random values.
+//     single bit and random values, and n, n + 1 and all ones, which are
+//     at or above n;
+//   - under the all-ones modulus, a signature whose division in
+//     rsa_mont_division.h adds the modulus back with a carry through
+//     four words.
 //
 // rsa_mont64.c's square is held to its multiplication of a number by
 // itself, at every word count from 1 to the bound, which the signer's
@@ -154,6 +158,18 @@ static void subtract_small(uint8_t *a, size_t len, unsigned small) {
     }
 }
 
+// a += 1, over len big-endian bytes, and the carry out of the top byte.
+static unsigned add_one(uint8_t *a, size_t len) {
+    for (size_t i = len; i-- > 0;) {
+        if (a[i] != 0xff) {
+            a[i]++;
+            return 0;
+        }
+        a[i] = 0;
+    }
+    return 1;
+}
+
 // The index of the top set bit of the len-byte n, counted from bit 0 at
 // the end, for n not zero.
 static size_t top_bit(const uint8_t *n, size_t len) {
@@ -198,6 +214,21 @@ static void run_modulus(const char *case_name, const uint8_t *n, size_t n_len, i
     subtract_small(sig, n_len, 1);
     compare(case_name, n, n_len, sig, out);
 
+    // Signatures at or above n. rsa.c refuses them before it calls rsa_vp1,
+    // and both arms take them all the same: n is 0 modulo n, n + 1 is 1,
+    // and all ones is at or above every n. The host arm's division needs a
+    // base below n, and subtracts n once for it (docs/decisions.md 208).
+    uint8_t want[CH_RSA_MODULUS_MAX];
+    memset(want, 0, n_len);
+    compare_known(case_name, n, n_len, n, want);
+    memcpy(sig, n, n_len);
+    if (add_one(sig, n_len) == 0) {
+        want[n_len - 1] = 1;
+        compare_known(case_name, n, n_len, sig, want);
+    }
+    memset(sig, 0xff, n_len);
+    compare(case_name, n, n_len, sig, out);
+
     // The top bit of n alone is below n, because n is odd and above 1.
     size_t top = top_bit(n, n_len);
     memset(sig, 0, n_len);
@@ -232,6 +263,24 @@ static void run_edge_moduli(size_t n_len) {
     memset(n, 0xff, n_len);
     run_modulus("all ones", n, n_len, 2);
 
+    // Under the all-ones modulus, a base whose first step of
+    // rsa_mont_division.h's division adds the modulus back to a remainder with four zero words
+    // above a word that is not zero. The base's top word is 2^64 - 2 and
+    // the word under it is all ones, so the estimate is one above the
+    // quotient. The step leaves the base moved up one word, over a low
+    // word of all ones. So words 3 to 6 of the base, which are zero, are
+    // words 4 to 7 of that remainder. The sum of those four words and the
+    // modulus's takes a carry from the words below and carries out, down
+    // the second chain of a block of add_modulus_blocks
+    // (docs/decisions.md 208).
+    uint8_t sig[CH_RSA_MODULUS_MAX];
+    uint8_t out[CH_RSA_MODULUS_MAX];
+    memset(sig, 0x55, n_len);
+    memset(sig, 0xff, 16);
+    sig[7] = 0xfe;
+    memset(sig + n_len - 56, 0, 32);
+    compare("all ones, a sum that carries through a block", n, n_len, sig, out);
+
     memset(n, 0, n_len);
     n[0] = 0x80;
     n[n_len - 1] = 1;
@@ -256,12 +305,13 @@ static void run_edge_moduli(size_t n_len) {
 
     // (B^(k + 1) + 1) / (B + 1), for B = 2^64 and an even word count k:
     // word 0 is 1, every odd word is all ones and every other word is
-    // zero. B^(k + 1) is -1 modulo it, so the division by which
-    // rsa_mont.c computes R^2 meets the remainder n - 1, whose top word is
-    // n's, and its next step takes the largest estimate, 2^64 - 1, where
-    // the division of the top words would pass 2^64. No random modulus
-    // meets that step: a remainder's top word equals the modulus's about
-    // once in 2^64 steps.
+    // zero. Under every modulus here the signature n - 1 has n's top word,
+    // so the first step of rsa_mont_division.h's division takes the largest
+    // estimate, 2^64 - 1, where the division of the top words would pass
+    // 2^64. No random signature meets that step: a remainder's top word
+    // equals the modulus's about once in 2^64 steps. Under this modulus
+    // B^(k + 1) is -1, so the division of 2^(64 (k + 1)) that an x86-64
+    // kernel's setup runs meets the remainder n - 1 too.
     if ((n_len / 8) % 2 == 0) {
         memset(n, 0, n_len);
         for (size_t word = 1; word < n_len / 8; word += 2) {

@@ -1,0 +1,19 @@
+invariant: INV-41
+file: src/rsa_mont_division.h
+catches: rsa_equiv_test_blocks
+reason: add_modulus_blocks drops the carry out of a block's second chain,
+  the chain that adds the carry from the block below. That chain carries
+  out only when the four words' sum is all ones, which no random
+  remainder meets. bin/rsa_equiv_test_blocks holds one signature under
+  the all-ones modulus whose first step adds the modulus back to four
+  zero words above a word that is not zero, and its bytes then differ
+  from the 32-bit arm's.
+
+--- old
+        carry = high + (uint64_t)(sum >> 64);
+    }
+    return carry;
+--- new
+        carry = high;
+    }
+    return carry;

@@ -1,0 +1,14 @@
+invariant: INV-41
+file: src/rsa_mont_division.h
+catches: rsa_equiv_test_blocks
+reason: times_word_mod_blocks adds the estimate times R - m and does not
+  take the estimate off the word above the k, so that word is the
+  estimate too large and the step adds the modulus back twice to a
+  remainder that needed none. bin/rsa_equiv_test_blocks compiles the
+  step in blocks under any compiler and compares rsa_vp1 with the 32-bit
+  arm.
+
+--- old
+    uint64_t above = moved + carry - estimate;
+--- new
+    uint64_t above = moved + carry;

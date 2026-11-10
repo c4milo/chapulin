@@ -282,6 +282,7 @@
         "src/rsa_mont64_blocks.c",
         "src/rsa_mont64_blocks.h",
         "src/rsa_mont64_exp.c",
+        "src/rsa_mont_division.h",
         "src/rsa_pkcs1.c",
         "src/rsa_pkcs1.h",
         "src/rsa_sign.c",

@@ -19,51 +19,24 @@
 
 #define WORDS_MAX RSA_MONT64_WORDS_MAX
 
-// (t[3] : t[2] : t[1] : t[0]) and the word returned = the four words + x * (y[3] : ... : y[0])
-// + w. The low halves of the four products go down one carry chain and the high halves, with w
-// below them, down another.
-static inline uint64_t block_add(uint64_t t[4], uint64_t x, uint64_t y0, uint64_t y1, uint64_t y2,
-                                 uint64_t y3, uint64_t w) {
-    ct_u128 p0 = ct_mul128(x, y0);
-    ct_u128 p1 = ct_mul128(x, y1);
-    ct_u128 p2 = ct_mul128(x, y2);
-    ct_u128 p3 = ct_mul128(x, y3);
-    ct_u128 sum = (ct_u128)t[0] + (uint64_t)p0;
-    t[0] = (uint64_t)sum;
-    sum = (ct_u128)t[1] + (uint64_t)p1 + (uint64_t)(sum >> 64);
-    t[1] = (uint64_t)sum;
-    sum = (ct_u128)t[2] + (uint64_t)p2 + (uint64_t)(sum >> 64);
-    t[2] = (uint64_t)sum;
-    sum = (ct_u128)t[3] + (uint64_t)p3 + (uint64_t)(sum >> 64);
-    t[3] = (uint64_t)sum;
-    uint64_t low_carry = (uint64_t)(sum >> 64);
-    sum = (ct_u128)t[0] + w;
-    t[0] = (uint64_t)sum;
-    sum = (ct_u128)t[1] + (uint64_t)(p0 >> 64) + (uint64_t)(sum >> 64);
-    t[1] = (uint64_t)sum;
-    sum = (ct_u128)t[2] + (uint64_t)(p1 >> 64) + (uint64_t)(sum >> 64);
-    t[2] = (uint64_t)sum;
-    sum = (ct_u128)t[3] + (uint64_t)(p2 >> 64) + (uint64_t)(sum >> 64);
-    t[3] = (uint64_t)sum;
-    return (uint64_t)(p3 >> 64) + low_carry + (uint64_t)(sum >> 64);
-}
-
-// block_add of *x and four secret words at y. x and y are both read through volatile pointers,
+// rsa_mont64_block_add of *x and four secret words at y. x and y are both read through volatile
+// pointers,
 // once each for the block, so that no copy outlives the block. The first block of every round of
 // the multiplication reads the same four words of b, so without it clang for arm64 loads them once
 // before the rounds and keeps them, spilled to the stack, for the whole call;
 // bin/rsa_sign_equiv_test found three words of b left there.
 static inline uint64_t block_mul_add(uint64_t t[4], const volatile uint64_t *x,
                                      const volatile uint64_t *y, uint64_t w) {
-    return block_add(t, *x, y[0], y[1], y[2], y[3], w);
+    return rsa_mont64_block_add(t, *x, y[0], y[1], y[2], y[3], w);
 }
 
-// block_add of *x and four words of the modulus at m_block. The modulus is public, so a copy of
+// rsa_mont64_block_add of *x and four words of the modulus at m_block. The modulus is public, so
+// a copy of
 // its words in a register or a stack slot holds nothing secret, and the words are read through a
 // plain pointer, which lets clang load two words in one instruction.
 static inline uint64_t block_mul_add_modulus(uint64_t t[4], const volatile uint64_t *x,
                                              const uint64_t *m_block, uint64_t w) {
-    return block_add(t, *x, m_block[0], m_block[1], m_block[2], m_block[3], w);
+    return rsa_mont64_block_add(t, *x, m_block[0], m_block[1], m_block[2], m_block[3], w);
 }
 
 // Round i adds a[i] * b and u * m to the running sum and moves it down one word, as

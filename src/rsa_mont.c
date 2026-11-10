@@ -12,10 +12,12 @@
 // (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles the first arm below in its
 // place: the same exponentiation on rsa_mont64.c's 64-bit words, in every
 // session, because nothing here is secret and so no caller has to state
-// the multiply's timing (docs/decisions.md 95). That arm computes R^2 by
-// a long division of its own, which branches on the modulus
-// (docs/decisions.md 103). bin/rsa_equiv_test compiles both arms into one
-// binary and requires the same bytes from each.
+// the multiply's timing (docs/decisions.md 95). For a modulus whose top
+// bit is set, that arm computes no R^2. A long division of its own, in
+// rsa_mont_division.h, which branches on the modulus and the signature,
+// multiplies the signature by R modulo n (docs/decisions.md 103 and 208).
+// bin/rsa_equiv_test compiles both arms into one binary and requires the
+// same bytes from each.
 //
 // The host arm also defines rsa_vp1_cpu, which takes a session's
 // ch_cfg.cpu. On x86-64 it hands the public operation to rsa_ifma.h's
@@ -28,9 +30,12 @@
 
 #ifdef CH_CPU_RUNTIME
 
+#include <string.h>
+
 #include "cpu_cfg.h"
 #include "ct.h"
 #include "rsa_mont64.h"
+#include "rsa_mont_division.h"
 
 // rsa_ifma.h's declarations exist in an x86-64 host object and in a test
 // unit that defines CH_RSA_IFMA_MODEL, test/rsa_ifma_model.c, which runs
@@ -66,90 +71,54 @@ static size_t bit_length(const uint8_t *n, size_t n_len) {
     return bits;
 }
 
-// rem = rem * 2^64 mod m, for rem below m and an m of k >= 2 words whose
-// top bit is set. It is one step of a long division, Knuth's algorithm D
-// (The Art of Computer Programming, vol. 2, 4.3.1), whose dividend is rem
-// with a zero word below it.
+// em = sig^65537 mod m (RSAVP1), sig and em both len big-endian bytes, for
+// the modulus in mod, of k >= 2 words with its top bit set. It reads
+// mod->m, mod->m0inv and mod->words, and never mod->r2.
 //
-// The estimate of the quotient divides the dividend's top two words by
-// m's top word. The quotient is below 2^64, because rem is below m. When
-// rem's top word equals m's, that division passes 2^64, and the estimate
-// is 2^64 - 1. Knuth's Theorem B says the estimate is the quotient or at
-// most 2 above it, because m's top word is at least 2^63. So the step
-// subtracts the estimate times m and then adds m back, at most twice.
-//
-// m is public, so every value here is public: the step branches on them,
-// and the division takes whatever time it takes.
-static void times_word_mod(uint64_t *rem, const uint64_t *m, size_t k) {
-    uint64_t top = rem[k - 1];
-    uint64_t estimate = UINT64_MAX;
-    if (top < m[k - 1]) {
-        estimate = (uint64_t)((((ct_u128)top << 64) | rem[k - 2]) / m[k - 1]);
+// rsa_mont64_public moves the base into the Montgomery domain with a
+// product by R^2 mod m, which costs the setup of R^2 and that product.
+// Here rsa_mont_division.h's times_r_mod writes base * R mod m from the
+// base, in half the multiplies of one Montgomery product
+// (docs/decisions.md 208). The
+// rest is rsa_mont64_public's: sixteen squares, and a last product by the
+// base itself, outside the domain, which divides by R.
+// spec/lean/Spec/RsaDivision.lean proves that the result is sig^65537 mod
+// m, as `publicOp_eq`.
+static void public_by_division(uint8_t *em, const uint8_t *sig, size_t len,
+                               const rsa_mont64_modulus *mod) {
+    size_t k = mod->words;
+    // Zeroed at declaration, as rsa_mont64_public's are.
+    uint64_t base[RSA_MONT64_WORDS_MAX] = {0};
+    uint64_t acc[RSA_MONT64_WORDS_MAX] = {0};
+    rsa_mont64_from_bytes(base, k, sig, len);
+    // The division needs a base below m. The base is below R and m is at
+    // least R / 2, so one subtraction of m gives it.
+    rsa_mont64_reduce_once(base, base, mod);
+    memcpy(acc, base, k * sizeof(uint64_t));
+    times_r_mod(acc, mod->m, k);
+    for (int i = 0; i < 16; i++) {
+        rsa_mont64_mont_square(acc, acc, mod);
     }
-    // The dividend less the estimate times m, from the bottom word up.
-    // Word j of the dividend is rem[j - 1], and word 0 is zero. A
-    // subtraction adds the complement and one, as rsa_mont64.c's do, so
-    // the carry out is 1 where no borrow happened.
-    uint64_t dividend_word = 0;
-    uint64_t product_carry = 0;
-    uint64_t carry = 1;
-    for (size_t j = 0; j < k; j++) {
-        ct_u128 product = ct_mul128(estimate, m[j]) + product_carry;
-        product_carry = (uint64_t)(product >> 64);
-        ct_u128 difference = (ct_u128)dividend_word + ~(uint64_t)product + carry;
-        dividend_word = rem[j];
-        rem[j] = (uint64_t)difference;
-        carry = (uint64_t)(difference >> 64);
-    }
-    // The difference's word above the k, in two's complement: 0 when the
-    // difference is at or above zero, and 2^64 - 1 or 2^64 - 2 when the
-    // estimate was 1 or 2 too large. Each pass adds m, and the carry out
-    // of its top word moves that word toward 0, where it wraps on purpose.
-    uint64_t above = (uint64_t)((ct_u128)dividend_word + ~product_carry + carry);
-    for (int pass = 0; pass < 2 && above != 0; pass++) {
-        uint64_t sum_carry = 0;
-        for (size_t j = 0; j < k; j++) {
-            ct_u128 sum = (ct_u128)rem[j] + m[j] + sum_carry;
-            rem[j] = (uint64_t)sum;
-            sum_carry = (uint64_t)(sum >> 64);
-        }
-        above += sum_carry;
-    }
-}
-
-// r2 = R^2 mod m, with R = 2^(64k), for an m of k >= 2 words whose top
-// bit is set. R mod m is R - m, because m is below R and at least R / 2,
-// and k steps of times_word_mod multiply it by R modulo m.
-static void r2_by_division(uint64_t *r2, const uint64_t *m, size_t k) {
-    // R - m over k words: the complement of m, plus one.
-    uint64_t carry = 1;
-    for (size_t j = 0; j < k; j++) {
-        ct_u128 sum = (ct_u128)~m[j] + carry;
-        r2[j] = (uint64_t)sum;
-        carry = (uint64_t)(sum >> 64);
-    }
-    for (size_t i = 0; i < k; i++) {
-        times_word_mod(r2, m, k);
-    }
+    rsa_mont64_mont_mul(acc, base, acc, mod);
+    rsa_mont64_to_bytes(em, len, acc);
 }
 
 // A modulus whose top word has its top bit set, as every RSA key's does,
-// takes R^2 by the division above, about a sixth of the time
-// rsa_mont64_modulus_init takes for RSA-2048 (docs/decisions.md 103). That
-// setup doubles 2k + 1 times and squares five times, in a time that
-// depends on the modulus's length alone, which the signer needs for its
-// secret primes and the verifier does not. Any other modulus still takes
-// it.
+// takes the public operation by the division. Any other modulus
+// takes rsa_mont64_modulus_init and rsa_mont64_public. That setup doubles
+// 2k + 1 times and squares five times, in a time that depends on the
+// modulus's length alone, which the signer needs for its secret primes
+// and the verifier does not (docs/decisions.md 103).
 void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em) {
     rsa_mont64_modulus mod;
     size_t k = (n_len + 7) / 8;
     size_t bits = bit_length(n, n_len);
     if (k >= 2 && bits == 64 * k) {
         rsa_mont64_modulus_load(&mod, n, n_len);
-        r2_by_division(mod.r2, mod.m, k);
-    } else {
-        rsa_mont64_modulus_init(&mod, n, n_len, bits);
+        public_by_division(em, sig, n_len, &mod);
+        return;
     }
+    rsa_mont64_modulus_init(&mod, n, n_len, bits);
     rsa_mont64_public(em, sig, n_len, &mod);
 }
 
@@ -193,7 +162,7 @@ static int kernel_takes(const uint8_t *n, size_t n_len, size_t words_min) {
 // modulo m, so floor(exponent / 64) - (k - 1) steps end at 2^exponent mod
 // m. For rsa_ifma_public's 2^(104n) that is 34, 50 and 65 steps at
 // RSA-2048, RSA-3072 and RSA-4096, and for rsa_avx2_public's 2^(2Dn) 33,
-// 49 and 65, where r2_by_division takes 32, 48 and 64.
+// 49 and 65, where times_r_mod takes 32, 48 and 64.
 static void power_of_two_mod(uint64_t *rem, const uint64_t *m, size_t k, size_t exponent) {
     for (size_t j = 0; j + 1 < k; j++) {
         rem[j] = 0;
