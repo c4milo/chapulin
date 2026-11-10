@@ -17837,3 +17837,222 @@ does nothing more.
       `mlkem_poly.c` holds the loop, and a device object compiles it too.
     - **Keccak** takes 10.9 µs of gcc's encapsulation and 10.1 of clang's,
       in `sha3.c` and `keccak_avx2.c`.
+
+216. **The inverted lanes round of an x86-64 host object reads one state
+    and writes a second one.** After decision 195, SHA3-256 of 16 KiB on
+    the EPYC 7763 took 1.22 times OpenSSL 3.6.4's time under gcc 13.3 and
+    1.11 times under clang 23. Camilo approved the work on 2026-11-10.
+
+    - **The cause.** `keccak_round_inverted` worked in place on one
+      array, as `keccak_round` does. Inline in the loop of 24 rounds, the
+      25 lanes and theta's ten values are then values, and x86-64 has 15
+      general registers. Each compiler chose the values it kept in stack
+      slots. One round was 230 instructions under clang 23 and 272 under
+      gcc 13.3. Of these, 135 compute: 76 XOR, 29 rotations, 25 AND or OR
+      and 5 NOT. clang wrote 33 loads, 32 stores, 26 moves between
+      registers, 15 XOR with a memory operand and 11 instructions that
+      read and write memory. gcc wrote 60 loads, 35 stores and 38 moves,
+      and no instruction with a memory operand.
+    - **Two states.** `keccak_round_inverted(out, in, round_constant)`
+      reads `in` and writes `out`. It loads the lanes of each column for
+      its parity. Then it works one row of five lanes at a time: five
+      loads, theta's XOR, rho's rotation, chi and five stores.
+      `keccak_rounds_inverted` runs the 24 rounds as 12 times from the
+      caller's state to a scratch state and back. The round is 198 or 199
+      instructions under clang 18, 21 and 23, and 210 under gcc 13.3.
+    - **The empty statements.** The form holds only where the compiler
+      loads each lane where the text reads it, and both compilers did
+      otherwise. gcc kept each lane it stored as a value for the next
+      round, across the loop's back edge. It also stored the lane once
+      more in a stack slot, and the round was 247 instructions. clang 18
+      loaded two lanes of two columns with one 16-byte load. The round
+      before stored each of the two lanes 8 bytes at a time, and such a
+      load waits for both stores. So the round has
+      `__asm__ volatile("" ::: "memory")` at its start and after each
+      column's parity, as decision 203 gave `x25519_adx_asm.h`. Such a
+      statement emits no instruction, and after it the compiler holds no
+      lane's value. An x86-64 host object alone compiles them.
+      `invert_lanes` has one more, between lanes 1 and 2, which clang
+      read as 16 bytes after the last round.
+    - **Out of line.** `keccak_rounds_inverted` carries `noinline`. Its
+      two arrays are then pointers of which the compiler knows nothing,
+      so a store to `out` ends what it knows of `in`. Inline in the
+      function that owns the scratch state, clang wrote eight more
+      instructions a round, and gcc the same count in both places.
+    - **The order of chi's lines.** An AND or an OR of x86-64 writes its
+      result over one of its two operands. So a line of chi needs a copy
+      of a lane, unless no later line reads one of its two lanes. Each
+      row's five lines are in the order that needs two copies. In the
+      order of the lanes, clang wrote three copies a row and gcc four:
+      204 and 215 instructions a round.
+    - **The scratch state.** It is 200 bytes on
+      `keccak_f1600_inverted`'s frame. After the rounds it holds the
+      state before the last round, and Keccak-f[1600] is a permutation,
+      so `keccak_f1600_inverted_with` writes zeros over it with
+      `ct_wipe`. Before this decision gcc and clang kept lanes of the
+      state in stack slots that no call cleared. The function of 24
+      rounds now writes no value to a stack slot under gcc 13.3, clang 18
+      and clang 23.
+    - **Other objects.** A device object and an arm64 host object run
+      `keccak_round`. Under the pinned clang at `-Os`, the assembly of
+      `sha3.c` for rv32imac, Cortex-M3 and mips32r2 is the same as
+      before. So is its assembly under the Arm GNU gcc 15.3 for Cortex-M3
+      at `-Os` and `-O2`, and for an arm64 host object, an arm64 device
+      object and an x86-64 device object.
+    - **What holds it.** INV-45 and INV-17. `sha3_round` proves the round
+      from one array to a second one equal to FIPS 202's round, for every
+      state and every round constant. The six lanes are inverted before
+      and after. The harness evaluates the 24 rounds from zeros, and
+      proves that the scratch state holds zeros after them.
+      `bin/sha3_equiv_test` runs the form on every machine and reads a
+      scratch state of its own after each of 3,602 permutations.
+      `inv45-keccak-round-writes-the-state-it-reads` hands the round one
+      array for both states, and `inv17-sha3-scratch-state-kept` drops
+      the wipe. The test catches each, under clang and under gcc 13.3 for
+      x86-64. lint-tidy reads `sha3.c` once more as an x86-64 host
+      object, with portability-no-assembler off for that pass alone.
+
+    Under `qemu-x86_64 -cpu max`, one SHA3-256 of 16 KiB retires 644,475
+    instructions under gcc 13.3 where it retired 824,138, and 602,510
+    under clang 18 where it retired 690,696. Over 64 bytes it retires
+    5,593 where it retired 7,058, and 5,250 where it retired 5,956.
+
+    The time does not follow the count. A/B runs 42835203950 and
+    42837577439 on the EPYC 7763 time one permutation in one binary for
+    each compiler. Each cell is the median of nine passes, in ns:
+
+    | Keccak-f[1600] | gcc 13.3 | clang 23 |
+    | --- | --- | --- |
+    | decision 195's round, in place | 381, 381 | 342.7, 342.7 |
+    | this decision's round | 340, 340 | 338.8, 338.8 |
+
+    gcc's permutation takes 0.89 of its time before, and clang's 0.989:
+    14% fewer instructions gave clang 1.1%. The second run measured a
+    clock of 3.21 GHz. At that clock a round takes 45 cycles under both
+    compilers, and 135 operations on that CPU's four ALUs need 34. The
+    same run timed OpenSSL at 320 ns for a block of 136 bytes, 43 cycles
+    a round. Its time was the same with and without AVX2, BMI1 and BMI2
+    in `OPENSSL_ia32cap`. Decision 217 holds the forms that were measured
+    and not built.
+
+    Measured by `bench.yml` run 42839469360, each cell the ratio to
+    OpenSSL 3.6.4 in the same run, before (run 42553779994) and after. A
+    second run of the same commit, 42848454093, gave each cell within
+    0.03 of this one:
+
+    | one operation | EPYC 7763, gcc | EPYC 7763, clang | 8573C, gcc | 8573C, clang |
+    | --- | --- | --- | --- | --- |
+    | SHA3-256, 16 KiB | 1.22 to 1.10 | 1.11 to 1.11 | 1.23 to 1.03 | 1.10 to 1.05 |
+    | SHA3-256, 64 bytes | 0.86 to 0.79 | 0.76 to 0.77 | 0.87 to 0.79 | 0.77 to 0.74 |
+    | ML-KEM-768 key generation | 0.54 to 0.52 | 0.46 to 0.45 | 0.55 to 0.55 | 0.44 to 0.47 |
+    | ML-KEM-768 encapsulation | 1.02 to 0.98 | 0.84 to 0.84 | 1.12 to 1.11 | 0.89 to 0.93 |
+    | ML-KEM-768 decapsulation | 0.76 to 0.73 | 0.61 to 0.61 | 0.80 to 0.80 | 0.63 to 0.65 |
+    | ML-DSA-87 key generation | 0.60 to 0.59 | 0.69 to 0.69 | 0.67 to 0.71 | 0.79 to 0.84 |
+    | ML-DSA-87 sign | 0.57 to 0.57 | 0.52 to 0.51 | 0.78 to 0.78 | 0.72 to 0.72 |
+    | ML-DSA-87 verify | 0.33 to 0.33 | 0.30 to 0.29 | 0.42 to 0.43 | 0.37 to 0.39 |
+
+    On the EPYC 7763 SHA3-256 of 16 KiB took 42.4 µs under gcc, where it
+    took 46.9, and 42.6 µs under clang, where it took 42.9. OpenSSL took
+    38.5 µs in both runs. On the 8573C of this run OpenSSL's SHA3-256
+    took 38.2 µs, where it took 31.9 to 34.0 on the recorded run's
+    runner. chapulin's vector rows slowed more than OpenSSL's on that
+    runner. So only the ratios compare, and the 8573C's ML-KEM and ML-DSA
+    cells moved by that runner's noise as well as by this change. Under
+    clang on the 8573C the sponge gained 5%, where the permutation alone
+    gained 15% in the A/B runs. The cause is not found.
+
+217. **No x86-64 host object holds a second Keccak round yet: the forms
+    that BMI2, BMI1, carried parities and 512-bit registers permit are
+    measured and not built.** Camilo approved the work on 2026-11-10,
+    with decision 216: RORX under `CH_CPU_BMI2_ADX`, ANDN as a
+    measurement alone, and a 512-bit round only on a clear win. Each
+    candidate ran in one binary with decision 216's round, for each
+    compiler, on the runners that record the scoreboard. A candidate is a
+    function of 24 rounds. It is checked against FIPS 202's round over
+    seeded states before its time is taken. The cells are ns for one
+    permutation, each the median of nine passes, and that time as a part
+    of decision 216's.
+
+    The EPYC 7763, A/B runs 42835203950 and 42837577439:
+
+    | Keccak-f[1600] | gcc 13.3 | clang 23 |
+    | --- | --- | --- |
+    | decision 216's round | 340 | 338.8 |
+    | the same text under `target("bmi2")` | 341, 1.00 | 334 to 338, 0.99 |
+    | theta stored into the state it reads, each lane then read by RORX | 407, 1.20 | 403, 1.19 |
+    | FIPS 202's chi on ANDN, BMI1 | 325 to 327, 0.96 | 322, 0.95 |
+    | ANDN and RORX, BMI1 and BMI2 | 320 to 322, 0.94 | 321, 0.95 |
+    | parities carried from round to round, no BMI | 344, 1.01 | 320, 0.945 |
+    | parities carried, and ANDN | 324, 0.95 | 313, 0.925 |
+
+    The Xeon 8573C, A/B run 42835226378. The two rows of carried parities
+    are from run 42839318160, where decision 216's round took 291 to 305
+    ns under gcc and 276 under clang:
+
+    | Keccak-f[1600] | gcc 13.3 | clang 23 |
+    | --- | --- | --- |
+    | decision 216's round | 310 | 293 |
+    | the same text under `target("bmi2")` | 285 to 293, 0.92 to 0.94 | 282, 0.96 |
+    | theta stored into the state it reads, each lane then read by RORX | 365 to 382, 1.18 to 1.23 | 360, 1.23 |
+    | FIPS 202's chi on ANDN, BMI1 | 276, 0.89 | 277, 0.95 |
+    | ANDN and RORX, BMI1 and BMI2 | 262, 0.85 | 264, 0.90 |
+    | parities carried from round to round, no BMI | 337 to 340, 1.10 to 1.17 | 289 to 291, 1.05 |
+    | parities carried, and ANDN | 289 to 342 | 272, 0.99 |
+    | one state in five 512-bit registers | 294, 0.95 | 293, 1.00 |
+
+    - **RORX: 4% to 8% on the 8573C, nothing on the EPYC.** With BMI2 a
+      compiler writes RORX, a rotation into a third register, in decision
+      216's text: one instruction a round fewer under clang and four
+      under gcc. On the 8573C that text takes 0.96 of the time under clang
+      and 0.92 to 0.94 under gcc, in both runs. On the EPYC 7763 the
+      difference is inside the noise. RORX can also read memory. So a
+      round can store theta's XOR into the state it reads, and then load
+      each lane rotated. That round is 178 instructions under clang and
+      181 under gcc. It is the slowest form on both CPUs, because each
+      lane's load waits for a store of the same round.
+    - **ANDN: needs a bit that no caller can state.** ANDN computes
+      `~b & c` into a third register. So chi takes no copy and no NOT,
+      and the lanes stay as FIPS 202 has them. The round is 186
+      instructions under both compilers. With RORX beside it the round
+      takes 0.85 to 0.90 of decision 216's time on the 8573C, and 0.94 to
+      0.95 on the EPYC 7763. ANDN is BMI1, CPUID leaf 7 EBX bit 3.
+      `cpu_cfg.h` names BMI2 and ADX and not BMI1. A session needs either
+      a bit of its own, `CH_CPU_BMI1`, or `CH_CPU_BMI2_ADX` to state BMI1
+      as well, which changes what a caller's probe reads. Camilo rules.
+    - **One copy, after Camilo rules.** A second round needs a second
+      sponge, as `sha3_hw.c` is for arm64. That sponge is `sha3.c`
+      compiled once more under a target attribute. `sha3.h`'s `_cpu`
+      entries would pick it for ML-DSA-87 and for a caller's own SHA-3.
+      Its round is decision 216's text under BMI2 alone, and FIPS 202's
+      chi under BMI1 and BMI2. The copy is not built here, so that one
+      rule from Camilo sets its round and its bit. ML-KEM calls `sha3.c`
+      under its plain names inside `mlkem.c` and its AVX2 copy. So it
+      needs a copy of `mlkem.c` and `mlkem_poly.c` for each sponge.
+    - **Parities carried: a gain under clang on the EPYC alone.** A round
+      can XOR each lane it writes into its column's parity, and hand the
+      five parities to the next round as values. No round then loads a
+      lane for a parity. On the EPYC 7763 clang wrote 213 instructions a
+      round, 14 more than decision 216's, and took 0.945 of its time. gcc
+      wrote 237 and took 1.01. On the 8573C the form is slower under both
+      compilers. Five more values are live through a row. So both
+      compilers keep values in stack slots of their choice again, and
+      clang writes 8 more stores a round.
+    - **512-bit registers: no gain.** The prototype holds the five lanes
+      of a plane in a 512-bit register. Its round is VPTERNLOGQ for
+      theta's sums and for chi, VPROLVQ for rho and VPERMQ for pi. Four
+      VPUNPCK and eight VPERMT2Q then write chi's columns as planes again.
+      A round is 47 instructions with no load but the round constant. On
+      the 8573C it takes decision 216's time under clang and 0.95 of it
+      under gcc, and 1.11 times the time of ANDN and RORX. It was checked
+      on the runner against FIPS 202's round, and on every machine over a
+      model of its nine lane operations in portable C. It would need
+      `avx512_wipe_registers`, a stack wipe and a residue test, and it is
+      not built.
+
+    OpenSSL 3.6.4 takes 320 ns for a block of 136 bytes on the EPYC 7763,
+    and 294 to 300 ns on the 8573C. Its time is the same with AVX2, BMI1,
+    BMI2 and AVX-512F masked in `OPENSSL_ia32cap`. On the EPYC 7763
+    decision 216's permutation takes 339 ns under clang, and the sponge
+    around it adds about 3%. With carried parities and ANDN it takes 313
+    ns. So on that CPU no form measured here puts SHA3-256 of 16 KiB ahead
+    of OpenSSL by more than the noise.

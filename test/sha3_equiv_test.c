@@ -78,22 +78,35 @@ static uint64_t reference_constants[24];
 // keccak_f1600 runs one of sha3.c's two forms, by the object's kind and
 // architecture (docs/decisions.md 195). Both compile here, so each runs on
 // every machine, against the reference and against each other.
+//
+// The inverted lanes form writes each second round into a scratch state
+// (docs/decisions.md 216). keccak_f1600_inverted_with takes that state from
+// its caller, so this binary reads it after the call. It holds a state of
+// the permutation until the call writes zeros over it.
 static void permutation(const char *what, const uint64_t state[25]) {
+    static const uint64_t zeros[25] = {0};
     uint64_t ours[25];
     uint64_t plain[25];
     uint64_t inverted[25];
+    uint64_t with_scratch[25];
+    uint64_t scratch[25];
     uint64_t reference[25];
     memcpy(ours, state, sizeof ours);
     memcpy(plain, state, sizeof plain);
     memcpy(inverted, state, sizeof inverted);
+    memcpy(with_scratch, state, sizeof with_scratch);
+    memset(scratch, 0xa5, sizeof scratch);
     memcpy(reference, state, sizeof reference);
     keccak_f1600(ours);
     keccak_f1600_plain(plain);
     keccak_f1600_inverted(inverted);
+    keccak_f1600_inverted_with(with_scratch, scratch);
     reference_f1600(reference, reference_constants);
     expect_same(what, ours, reference, sizeof ours);
     expect_same(what, plain, reference, sizeof plain);
     expect_same(what, inverted, reference, sizeof inverted);
+    expect_same(what, with_scratch, reference, sizeof with_scratch);
+    expect_same("the scratch state after the permutation", scratch, zeros, sizeof scratch);
 }
 
 static void permutations(void) {

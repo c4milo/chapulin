@@ -14,11 +14,13 @@
 // out of its order, would leave another state, because every round is a
 // bijection.
 //
-// And the inverted lanes form (docs/decisions.md 195). Its round, run on
-// a state with invert_lanes' six lanes inverted, leaves the standard's
-// round's state with the same six lanes inverted, for
-// every state and every round constant. Its 24 rounds between the two
-// calls of invert_lanes leave Keccak-f[1600]'s state from zeros.
+// And the inverted lanes form (docs/decisions.md 195 and 216). Its round
+// reads one state and writes a second one. Run on a state with
+// invert_lanes' six lanes inverted, it writes the standard's round's
+// state with the same six lanes inverted, for every state and every round
+// constant. Its 24 rounds between the two calls of invert_lanes leave
+// Keccak-f[1600]'s state from zeros, and its scratch state holds zeros
+// after them.
 //
 // Together: each round is the standard's for every input, and each form
 // of the permutation applies it 24 times with the standard's constants
@@ -39,14 +41,15 @@ int main(void) {
         written[i] = standard[i];
     }
     uint64_t round_constant = nondet_u64();
+    uint64_t before[25];
     uint64_t inverted[25];
     for (size_t i = 0; i < 25; i++) {
-        inverted[i] = standard[i];
+        before[i] = standard[i];
     }
-    invert_lanes(inverted);
+    invert_lanes(before);
     reference_round(standard, round_constant);
     keccak_round(written, round_constant);
-    keccak_round_inverted(inverted, round_constant);
+    keccak_round_inverted(inverted, before, round_constant);
     invert_lanes(inverted);
     for (size_t i = 0; i < 25; i++) {
         __CPROVER_assert(standard[i] == written[i], "the written-out round is FIPS 202's round");
@@ -64,10 +67,13 @@ int main(void) {
     uint64_t plain_zeros[25] = {0};
     uint64_t inverted_zeros[25] = {0};
     uint64_t our_zeros[25] = {0};
+    uint64_t with_zeros[25] = {0};
+    uint64_t scratch[25];
     reference_f1600(standard_zeros, constants);
     keccak_f1600_plain(plain_zeros);
     keccak_f1600_inverted(inverted_zeros);
     keccak_f1600(our_zeros);
+    keccak_f1600_inverted_with(with_zeros, scratch);
     for (size_t i = 0; i < 25; i++) {
         __CPROVER_assert(standard_zeros[i] == plain_zeros[i],
                          "24 plain rounds from the state of zeros are Keccak-f[1600]");
@@ -75,6 +81,9 @@ int main(void) {
                          "24 inverted lanes rounds from the state of zeros are Keccak-f[1600]");
         __CPROVER_assert(standard_zeros[i] == our_zeros[i],
                          "the form keccak_f1600 picks is Keccak-f[1600]");
+        __CPROVER_assert(standard_zeros[i] == with_zeros[i],
+                         "24 inverted lanes rounds with the caller's scratch are Keccak-f[1600]");
+        __CPROVER_assert(scratch[i] == 0, "the scratch state holds zeros after the 24 rounds");
     }
     return 0;
 }

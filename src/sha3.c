@@ -161,7 +161,8 @@ static void keccak_f1600_plain(uint64_t a[25]) {
 
 // Two forms of one permutation. An x86-64 host object runs
 // sha3_inverted_lanes.h's form, which keeps six lanes inverted between
-// rounds, and every other object runs keccak_f1600_plain, which stays the
+// rounds and writes each round into a second state (docs/decisions.md
+// 216), and every other object runs keccak_f1600_plain, which stays the
 // reference. On arm64 and on a Cortex-M core, BIC computes AND-NOT in one
 // instruction, so the inverted lanes add instructions there
 // (docs/decisions.md 195). Both forms compile in every object, so

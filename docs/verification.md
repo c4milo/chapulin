@@ -324,12 +324,14 @@ The entries are grouped by area:
     inverted, leaves the reference round's state with the same six lanes
     inverted, for every state and every round constant, and its 24
     rounds between the two calls of `invert_lanes` leave the reference's
-    state from zeros (decision 195).
+    state from zeros (decision 195). That round reads one array and
+    writes a second one, and the scratch state its 24 rounds write holds
+    zeros when the permutation returns (decision 216).
 - **Bound:** one-call: messages ≤ 200 B, output ≤ 400 B. Streaming:
   chunks ≤ 32 B. The round: the full domain. The 24 rounds: one state.
 - **Tested instead:** that absorb, the padding and squeeze move the
   standard's bytes. `bin/sha3_equiv_test` holds every entry of `sha3.h`
-  to the reference's sponge, which moves one byte at a time, over 13,247
+  to the reference's sponge, which moves one byte at a time, over 20,451
   outputs, with both forms of the permutation on every machine; `bin/sha3_test` runs the FIPS 202 vectors; and the spec
   differential runs every mode against the Lean model.
 

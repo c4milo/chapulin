@@ -717,15 +717,16 @@ launch fast:4 full sha512_host 2 "havoc_context.0:9,fill_nondet.0:129,ct_wipe.0:
 # sha3_round holds the round and the 24 of them to
 # proof/sha3_reference.h, whose shift register runs 167 steps at most.
 # sha3_round also holds sha3_inverted_lanes.h's round and its 24 rounds
-# (docs/decisions.md 195). The two permutation loops each take 25.
+# (docs/decisions.md 195 and 216). The plain permutation's loop takes 25,
+# and the inverted lanes form's loop of two rounds takes 13.
 # Measured (cbmc 6.11.0, kissat, /usr/bin/time -l, user time on an M1
-# Pro at a load average of 20 to 60):
-#   sha3          3,006 properties,  86 s, 2.8 GB
-#   sha3_stream   3,044 properties, 116 s, 1.4 GB
-#   sha3_round    3,301 properties,  50 s, 0.8 GB
-launch fast:4 full sha3 26 "keccak_f1600_plain.0:25,keccak_f1600_inverted.0:25,block_xor.0:8,block_xor.1:22,block_xor.2:8,block_bytes.0:8,block_bytes.1:22,block_bytes.2:8,absorb_whole_blocks.0:3,squeeze.0:3,shake_init.0:26,ct_wipe.0:201,fill_nondet.0:202" src/ct.c proof/ct_wipe_stub.c
-launch fast:3 full sha3_stream 26 "keccak_f1600_plain.0:25,keccak_f1600_inverted.0:25,block_xor.0:8,block_xor.1:5,block_xor.2:8,block_bytes.0:8,block_bytes.1:5,block_bytes.2:8,absorb_whole_blocks.0:1,squeeze.0:2,fill_context.0:26,fill_nondet.0:33" src/ct.c proof/ct_wipe_stub.c
-launch fast full sha3_round 26 "keccak_f1600_plain.0:25,keccak_f1600_inverted.0:25,reference_f1600.0:25,reference_theta.0:6,reference_theta.1:6,reference_theta.2:6,reference_rho.0:25,reference_pi.0:6,reference_pi.1:6,reference_chi.0:6,reference_chi.1:6,reference_rc.0:9,reference_rc.1:256,reference_round_constant.0:8,main.0:26,main.1:26,main.2:26,main.3:25,main.4:26" src/ct.c proof/ct_wipe_stub.c
+# Pro at a load average of 60 to 130):
+#   sha3          2,697 properties,  89 s, 2.0 GB
+#   sha3_stream   2,735 properties, 121 s, 1.8 GB
+#   sha3_round    2,996 properties,  48 s, 0.9 GB
+launch fast:4 full sha3 26 "keccak_f1600_plain.0:25,keccak_rounds_inverted.0:13,block_xor.0:8,block_xor.1:22,block_xor.2:8,block_bytes.0:8,block_bytes.1:22,block_bytes.2:8,absorb_whole_blocks.0:3,squeeze.0:3,shake_init.0:26,ct_wipe.0:201,fill_nondet.0:202" src/ct.c proof/ct_wipe_stub.c
+launch fast:3 full sha3_stream 26 "keccak_f1600_plain.0:25,keccak_rounds_inverted.0:13,block_xor.0:8,block_xor.1:5,block_xor.2:8,block_bytes.0:8,block_bytes.1:5,block_bytes.2:8,absorb_whole_blocks.0:1,squeeze.0:2,fill_context.0:26,fill_nondet.0:33" src/ct.c proof/ct_wipe_stub.c
+launch fast full sha3_round 26 "keccak_f1600_plain.0:25,keccak_rounds_inverted.0:13,reference_f1600.0:25,reference_theta.0:6,reference_theta.1:6,reference_theta.2:6,reference_rho.0:25,reference_pi.0:6,reference_pi.1:6,reference_chi.0:6,reference_chi.1:6,reference_rc.0:9,reference_rc.1:256,reference_round_constant.0:8,ct_wipe.0:201,main.0:26,main.1:26,main.2:26,main.3:25,main.4:26" src/ct.c proof/ct_wipe_stub.c
 # ML-KEM splits six ways: the KEM layer over contract stubs of the
 # polynomial layer; the polynomial layer minus its chained-product
 # functions; and one slow formula each for the NTT, the two halves of

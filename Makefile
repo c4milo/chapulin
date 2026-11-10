@@ -7804,6 +7804,15 @@ else
 	@$(call TIDY_EACH,src/keccak_avx2.c src/mlkem_avx2.c src/mldsa_avx2.c src/mldsa.c src/mldsa_sign_steps.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I.)
+	# sha3.c as an x86-64 host object, which runs the form of
+	# sha3_inverted_lanes.h (docs/decisions.md 216), read for an x86-64
+	# target whatever the host. portability-no-assembler is off for this
+	# file alone: that form's empty statements that clobber memory are
+	# inline assembler that emits no instruction. Every other pass reads
+	# the file with the statements empty.
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler src/sha3.c, \
+	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# RSA's public operation on AVX-512 IFMA and on AVX2, which have a body
 	# on x86-64 alone, with rsa_mont.c, whose x86-64 host arm holds use_ifma,
 	# use_avx2, power_of_two_mod and the dispatch in rsa_vp1_cpu that calls

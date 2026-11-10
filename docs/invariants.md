@@ -2372,11 +2372,13 @@ last `ROLE=server` stub, as the entry said it would.
   compiles one sponge and one round (decision 98). An x86-64 host object
   runs that round in the form of `sha3_inverted_lanes.h`, which keeps
   six lanes inverted, each bit flipped, between rounds and so needs five
-  NOTs a round in chi in place of 25 (decision 195).
+  NOTs a round in chi in place of 25 (decision 195). That form's round
+  reads one state and writes a second one, and its 24 rounds go from the
+  caller's state to a scratch state and back, 12 times (decision 216).
 - **Check.** CBMC's `sha3_round` proves the round equal to
   `proof/sha3_reference.h`'s for every state and every constant, and the
-  inverted lanes round equal to it with the six lanes inverted before
-  and after. That
+  inverted lanes round, from one array to a second one, equal to it with
+  the six lanes inverted before and after. That
   reference is the standard's five step algorithms as loops, with the
   rho offsets and the round constants computed by the standard's rules
   and read from no table. The same harness compares the table with the
@@ -2384,8 +2386,10 @@ last `ROLE=server` stub, as the entry said it would.
   state of zeros against the reference's. `bin/sha3_equiv_test` holds
   both forms of the permutation on every machine, and
   both digests and both XOFs to the reference's sponge, which moves one
-  byte at a time, over 13,247 outputs: 3,602 states, each run through
-  `keccak_f1600` and through both forms, a message of every
+  byte at a time, over 20,451 outputs: 3,602 states, each run through
+  `keccak_f1600`, through both forms and through the inverted lanes
+  form with a scratch state the binary reads after the call, a message
+  of every
   length from 0 to 420 bytes and 200 random longer ones, and 600 SHAKE
   streams absorbed and squeezed in pieces of random lengths. The
   sanitizer build runs it, and the mips lane runs it on a big-endian
@@ -2398,10 +2402,12 @@ last `ROLE=server` stub, as the entry said it would.
   each other's place; counts lanes from the block's first byte in a
   partly filled block, absorbing or squeezing; squeezes a second block
   without the permutation; moves the last pad bit; takes eight bytes
-  where fewer remain; or leaves one of the six lanes out of
-  `invert_lanes`. The twelve `inv45-*` violations are these. Seven
-  fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
-  `sha3_round` proof and one the `sha3_stream` proof.
+  where fewer remain; leaves one of the six lanes out of
+  `invert_lanes`; or hands the inverted lanes round one array as the
+  state it reads and the state it writes. The thirteen `inv45-*`
+  violations are these. Eight fail `bin/sha3_equiv_test`, one
+  `bin/sha3_test`, three the `sha3_round` proof and one the
+  `sha3_stream` proof.
 
 ### INV-64 — a PROFILE=cnsa2 server runs CNSA 2.0's algorithms alone, its retry cookie and its tickets included
 
@@ -6614,6 +6620,19 @@ last `ROLE=server` stub, as the entry said it would.
   `inv17-sha3-hw-lane-in-stack-slot` writes one lane to a slot of its own
   each round. The binary catches both, built with clang for arm64 and run
   under `qemu-aarch64`.
+  An x86-64 host object's `sha3.c` runs `sha3_inverted_lanes.h`'s form,
+  whose second state is an array on `keccak_f1600_inverted`'s frame
+  (decision 216). After the 24 rounds that array holds the state before
+  the last round, and `keccak_f1600_inverted_with` writes zeros over it
+  with `ct_wipe`. `bin/sha3_equiv_test` hands that function a scratch
+  state of its own and requires zeros in it after each of 3,602
+  permutations, and `sha3_round` proves the zeros after the 24 rounds
+  from the state of zeros. `inv17-sha3-scratch-state-kept` drops the
+  wipe, and the test catches it. No test searches the stack below that
+  form. Its function of 24 rounds writes no value to a stack slot under
+  gcc 13.3, clang 18 and clang 23, as their assembly reads, and before
+  decision 216 gcc and clang kept lanes of the state in stack slots that
+  no call cleared.
   Each of `gcm_avx512.c`'s two entries wipes `GCM_AVX512_BELOW_LEN`,
   2,560 bytes, of the stack below its own frame after the kernel returns,
   through `wipe_frame` and a volatile pointer, in `p256_wide_wipe.c`'s

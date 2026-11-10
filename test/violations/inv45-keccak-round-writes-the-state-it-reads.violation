@@ -1,0 +1,13 @@
+invariant: INV-45
+file: src/sha3_inverted_lanes.h
+catches: sha3_equiv_test
+reason: the second round of each two writes the state it reads, where it
+  reads the scratch state and writes the caller's. A row's five stores
+  then change lanes that a later row reads, so the round is no longer
+  the standard's. The equivalence test runs the inverted lanes form on
+  every machine and requires the reference's state.
+
+--- old
+        keccak_round_inverted(a, scratch, RC[round + 1]);
+--- new
+        keccak_round_inverted(a, a, RC[round + 1]);
