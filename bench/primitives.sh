@@ -69,7 +69,12 @@
 # and a burst of load lands in one run of a row rather than in all of them.
 # A row's figure is the median over the runs.
 #
-# Every timed build is -O2, the level the packaged object uses. CC picks
+# Every timed build takes the flags the library's objects compile with,
+# LIB_CFLAGS, which the script asks make for, so it compiles the library
+# sources as make lib does. A flag list of its own lacked
+# -fno-strict-aliasing, and under it gcc wrote code for mlkem_poly.c and
+# the wide P-256 files that the library object does not hold
+# (docs/decisions.md 214). CC picks
 # the compiler (default cc). bench.yml times the x86-64 runner under gcc and
 # under the pinned clang: CI compiles with gcc, and build.zig, which a Zig
 # project such as colibri builds the object with, compiles with clang.
@@ -124,8 +129,14 @@ fi
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
-FLAGS=(-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_DRBG
-    -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench -Itest)
+LIB_CFLAGS=$(make -s --no-print-directory print-lib-cflags CC="$CC")
+if [ -z "$LIB_CFLAGS" ]; then
+    echo "FAIL primitives bench: make print-lib-cflags returned no flags" >&2
+    exit 1
+fi
+# LIB_CFLAGS is a list of flags, so it splits on spaces.
+# shellcheck disable=SC2206
+FLAGS=($LIB_CFLAGS -DCH_RAND_DRBG -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench -Itest)
 # The primitives program links each module it times and what that module
 # calls, and nothing else. CH_RSA_MODULUS_MAX=512 is the bound TRUST=webpki
 # gives rsa.h, so the RSA-4096 rows run.

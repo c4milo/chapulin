@@ -29,8 +29,10 @@
 # these sources gains into a file the list leaves out fails check
 # (docs/decisions.md 88).
 #
-# Every build is -O2, the level the packaged object uses. CC picks the
-# compiler (default cc); CI and the x86-64 row use CC=gcc.
+# Every build takes the flags the library's objects compile with,
+# LIB_CFLAGS, which the script asks make for, as bench/primitives.sh and
+# bench/record.sh do. CC picks the compiler (default cc); CI and the x86-64
+# row use CC=gcc.
 #
 # Timings are properties of the machine that ran them. Never record a run
 # under emulation: `bench/aead.sh --quick` builds everything, takes three
@@ -75,8 +77,15 @@ fi
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
-FLAGS=(-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE
-    -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench)
+LIB_CFLAGS=$(make -s --no-print-directory print-lib-cflags CC="$CC")
+if [ -z "$LIB_CFLAGS" ]; then
+    echo "FAIL aead bench: make print-lib-cflags returned no flags" >&2
+    exit 1
+fi
+# LIB_CFLAGS is a list of flags, so it splits on spaces.
+# shellcheck disable=SC2206
+FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -Isrc -Iinclude/chapulin
+    -Iinclude -I. -Ibench)
 COMMON=(bench/aead.c bench/aead_gcm.c src/aes.c src/hkdf.c src/sha256.c src/ct.c src/ct_wipe.c src/chacha20.c src/poly1305.c
     src/aead.c)
 "$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" src/quic_aes_soft.c

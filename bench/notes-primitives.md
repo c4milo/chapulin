@@ -588,6 +588,13 @@ What the rows say:
 - Apple M1 Pro (8 performance and 2 efficiency cores), macOS 26.6.2
   (Darwin 25.6.0), Apple clang 21.0.0, `-std=c11 -O2`, the packaged
   object's level. Tree e54b20c3, one run, on 2026-10-05.
+- Since 2026-11-10 bench/primitives.sh and bench/aead.sh compile chapulin
+  with the flags `make print-lib-cflags` prints, as bench/record.sh does.
+  Their own list lacked `-fno-strict-aliasing`. Under gcc 13.3 on the
+  EPYC 7763 a CSV from that list reads the ML-KEM-768 encapsulation 6% and
+  the P-256 shared secret 4% below the library's code at tree 5a36a180,
+  and within 1% of it after docs/decisions.md 212 and 214. clang's two
+  rows read the same under both lists.
 - Every timed program is a host object, which holds each fast path
   beside the portable code (docs/decisions.md entry 89), and each row
   runs under two `ch_cfg.cpu` values:
