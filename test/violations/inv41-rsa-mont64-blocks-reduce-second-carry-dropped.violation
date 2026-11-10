@@ -1,0 +1,19 @@
+invariant: INV-41
+file: src/rsa_mont64_blocks.c
+catches: rsa_blocks_equiv_test
+reason: rsa_mont64_blocks_reduce drops the carry out of a block's second
+  chain, the chain that adds the carry from the block below. That chain
+  carries out only when four words of the value equal four words of the
+  modulus, which no product of random words meets, so every
+  multiplication still agrees with the loops. bin/rsa_blocks_equiv_test
+  hands the last subtraction the modulus itself, where every block's
+  second chain carries, and its words then differ from the loops'.
+
+--- old
+        carry = high + (uint64_t)(sum >> 64);
+    }
+    // top:a - m borrows when top is zero and a - m borrowed. The sum below carries when it did
+--- new
+        carry = high;
+    }
+    // top:a - m borrows when top is zero and a - m borrowed. The sum below carries when it did

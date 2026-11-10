@@ -8,7 +8,7 @@ reason: reduce_once picks a - m or a with an if where it selected with a
   right, so the vectors and bin/rsa_equiv_test pass; the count of what
   the compiler emits sees it. The pinned clang emits more conditional
   branches for rsa_mont64.c than its ceilings record on both 64-bit
-  specs: 79 against 71 on arm64 and 116 against 109 on x86-64.
+  specs: 103 against 97 on arm64 and 139 against 132 on x86-64.
 
 --- old
     sub_masked(o, a, m, k, mask_of_bit(at_or_above(a, top, m, k)));

@@ -9547,23 +9547,41 @@ WIDEMUL_SPECS := \
 #   compiles to nothing on arm64. On x86-64 each copy holds the branches of
 #   the wide file it copies, read above, and the product and square of
 #   p256_adx_asm.h hold none.
-# rsa_mont64.c, 71 and 109: every one reads the word count k, a byte length
+# rsa_mont64.c, 97 and 132: every one reads the word count k, a byte length
 #   or the bits argument of rsa_mont64_modulus_init, all public. They are
 #   the tests of k for zero, the loops over words and rows, the tests a
 #   square makes of a row's index, the CH_ASSERTs on the lengths the
 #   entries take, and on arm64 the tests of whether k is a multiple of 4,
-#   which send a multiplication to rsa_mont64_blocks.c. x86-64 holds 38
+#   which send a multiplication to rsa_mont64_blocks.c. x86-64 holds 35
 #   more because clang runs each loop there two words a pass, with a test
 #   of k's low bit for the odd word and a test of k - 1 for zero, and runs
 #   rsa_mont64_mul_add's copy in vector registers behind a test of k and
 #   one of its arguments' addresses. The comparison and the subtraction
 #   that end a multiplication, a sum and a difference stay a carry and a
-#   mask.
-# rsa_mont64_blocks.c, 14 and 0; rsa_mont64_addcarry.c, 11 and 23: loop
+#   mask. The byte moves hold 9 each, where they held 2 and 4
+#   (docs/decisions.md 209): the loop over a length's whole words, the
+#   test of its low three bits, and one test of those bits for each of
+#   the seven bytes a number can have at the front, which clang writes
+#   out. rsa_mont64_modulus_load and rsa_mont64_public hold the same
+#   tests in their copies of the moves. Each reads a length, never a
+#   byte. On arm64 the multiplication and the square hold 3 fewer each:
+#   the last subtraction they copied in is a call into the blocks.
+# rsa_mont64_blocks.c, 21 and 0; rsa_mont64_addcarry.c, 11 and 23: loop
 #   control over the word count and a row's length, and the tests that skip
 #   a loop of no iterations. The blocks' square adds one more, a test of a
 #   row's index for whether its cross products start in the first block
-#   (docs/decisions.md 192).
+#   (docs/decisions.md 192). The blocks' last subtraction holds 7
+#   (docs/decisions.md 209): its test of k for zero, the loop of its first
+#   pass, and for the second pass, which clang runs in vector registers,
+#   a test of k against four, a comparison of its two arrays' addresses,
+#   and the loops and the test for the words a vector pass leaves. None
+#   reads the mask the second pass selects under. A select written as an
+#   if raises the count to 22
+#   (test/violations/inv16-rsa-mont64-blocks-reduce-select-branch.violation).
+#   A count does not hold the read-back of the mask: with none, clang
+#   keeps the 7 and picks with a csel which array it loads each word
+#   from, so inv-16-rsa-blocks-last-subtraction holds it
+#   (test/violations/inv16-rsa-mont64-blocks-reduce-mask-not-read-back.violation).
 # rsa_sign64.c, 42 and 40; rsa_sign64.c@512, 46 and 42: the CH_ASSERTs on a
 #   key's and a prime's public lengths; rsa_sign64_power's loops over the
 #   exponent's digits, the four squarings and the sixteen entries a read of
@@ -10087,8 +10105,8 @@ BRANCH_CEILING := \
   arm64/src/poly1305_avx2.c:0 x86-64/src/poly1305_avx2.c:0 \
   arm64/src/poly1305_ifma.c:0 x86-64/src/poly1305_ifma.c:0 \
   arm64/src/aead_avx2.c:0 x86-64/src/aead_avx2.c:48 \
-  arm64/src/rsa_mont64.c:71 x86-64/src/rsa_mont64.c:109 \
-  arm64/src/rsa_mont64_blocks.c:14 x86-64/src/rsa_mont64_blocks.c:0 \
+  arm64/src/rsa_mont64.c:97 x86-64/src/rsa_mont64.c:132 \
+  arm64/src/rsa_mont64_blocks.c:21 x86-64/src/rsa_mont64_blocks.c:0 \
   arm64/src/rsa_mont64_addcarry.c:11 x86-64/src/rsa_mont64_addcarry.c:23 \
   arm64/src/rsa_sign64.c:42 x86-64/src/rsa_sign64.c:42 \
   arm64/src/rsa_sign64.c@512:46 x86-64/src/rsa_sign64.c@512:42 \

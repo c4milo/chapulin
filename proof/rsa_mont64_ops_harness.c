@@ -10,7 +10,13 @@
 // byte length from 1 to CH_RSA_MODULUS_MAX and the word count that
 // length takes, (len + 7) / 8, which is the count
 // rsa_mont64_modulus_init gives them. A length that is no multiple of 8
-// is in that range: half of a 376-byte modulus is 188 bytes.
+// is in that range: half of a 376-byte modulus is 188 bytes. The two
+// calls move a word at a time (docs/decisions.md 209), so the launch
+// line's unwindset bounds each word loop by the word count and each
+// loop of the bytes at the front by seven. Under the line's one bound,
+// the byte count, a word loop unwound eight times too often, and that
+// formula passed 8.6 GB with no verdict in 2,324 s.
+// rsa_mont64_bytes_harness.c proves the values the two calls write.
 //
 // The mask. mask_of_bit returns all ones or all zeros and nothing else,
 // because every select in the file is an AND against it.

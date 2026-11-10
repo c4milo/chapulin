@@ -7,7 +7,8 @@
 // --unsigned-overflow-check on, so each of those sums is a property CBMC checks.
 //
 // Constant time: no branch and no memory index depends on a word. The branches the file
-// compiles to are loops over word counts and the square's test of a row's index.
+// compiles to are loops over word counts, the square's test of a row's index, and the last
+// subtraction's tests of where its two arrays lie, before its second pass.
 #include "rsa_mont64_blocks.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -206,6 +207,65 @@ uint64_t rsa_mont64_blocks_square(uint64_t *o, const uint64_t *a, const rsa_mont
     ct_wipe(t, (k + 2) * sizeof(uint64_t));
     ct_wipe(v, (k + 1) * sizeof(uint64_t));
     return top;
+}
+
+// The last subtraction (rsa_mont64_blocks.h, docs/decisions.md 209). rsa_mont64.c's reduce_once
+// compares in one pass and subtracts under a mask in a second, and in each pass a word waits
+// two instructions on the carry of the word below. Here one pass writes a - m to o. A block
+// adds four words of a to the complement of four words of m down one carry chain, and the carry
+// from the block below down another, as rsa_mont64_block_add's two chains go. The first carry
+// in is the one that makes the complement a negation. Eight words and a carry are at most
+// 2^257 - 1 together, so at most one of a block's two chains carries out.
+//
+// The carry out of the top word is 1 when a is at or above m. With top, the word above a, it
+// answers whether top:a is at or above m, as rsa_mont64.c's at_or_above answers. A second pass
+// keeps a - m under that answer's mask and a under its complement, and no word of it waits on
+// another.
+//
+// Constant time: no branch and no memory index depends on a word. The mask is all ones or all
+// zeros, and a compiler that sees how it was computed knows that, and may write a select under
+// it as a jump (docs/decisions.md 125). So the mask is written through a volatile pointer and
+// read back before the pass uses it, as rsa_sign64.c's table_select reads its masks, and the
+// word ends on zero, so no frame keeps the answer. With no read-back, clang for arm64 picked
+// with a csel which of the two arrays it loads each word from, an address the answer decides
+// (docs/decisions.md 209). A Semgrep rule, inv-16-rsa-blocks-last-subtraction, holds the
+// read-back, the last write of zero, and that this function holds no if.
+void rsa_mont64_blocks_reduce(uint64_t *o, const uint64_t *a, uint64_t top,
+                              const rsa_mont64_modulus *mod) {
+    size_t k = mod->words;
+    const uint64_t *m = mod->m;
+    uint64_t carry = 1;
+    for (size_t j = 0; j < k; j += 4) {
+        ct_u128 sum = (ct_u128)a[j] + ~m[j];
+        uint64_t s0 = (uint64_t)sum;
+        sum = (ct_u128)a[j + 1] + ~m[j + 1] + (uint64_t)(sum >> 64);
+        uint64_t s1 = (uint64_t)sum;
+        sum = (ct_u128)a[j + 2] + ~m[j + 2] + (uint64_t)(sum >> 64);
+        uint64_t s2 = (uint64_t)sum;
+        sum = (ct_u128)a[j + 3] + ~m[j + 3] + (uint64_t)(sum >> 64);
+        uint64_t s3 = (uint64_t)sum;
+        uint64_t high = (uint64_t)(sum >> 64);
+        sum = (ct_u128)s0 + carry;
+        o[j] = (uint64_t)sum;
+        sum = (ct_u128)s1 + (uint64_t)(sum >> 64);
+        o[j + 1] = (uint64_t)sum;
+        sum = (ct_u128)s2 + (uint64_t)(sum >> 64);
+        o[j + 2] = (uint64_t)sum;
+        sum = (ct_u128)s3 + (uint64_t)(sum >> 64);
+        o[j + 3] = (uint64_t)sum;
+        carry = high + (uint64_t)(sum >> 64);
+    }
+    // top:a - m borrows when top is zero and a - m borrowed. The sum below carries when it did
+    // not: it adds the complement of the zero word above m, and the carry.
+    uint64_t at_or_above = (uint64_t)(((ct_u128)top + UINT64_MAX + carry) >> 64);
+    uint64_t kept = 0;
+    volatile uint64_t *hidden = &kept;
+    *hidden = blocks_mask_of_bit(at_or_above);
+    uint64_t mask = *hidden;
+    for (size_t j = 0; j < k; j++) {
+        o[j] = (o[j] & mask) | (a[j] & ~mask);
+    }
+    *hidden = 0;
 }
 
 #endif // RSA_MONT64_BLOCKS

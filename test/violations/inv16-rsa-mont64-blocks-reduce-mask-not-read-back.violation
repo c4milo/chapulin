@@ -1,0 +1,22 @@
+invariant: INV-16
+file: src/rsa_mont64_blocks.c
+catches: test/lint-invariants.sh
+reason: rsa_mont64_blocks_reduce writes its mask through the volatile
+  pointer and then uses the value it computed and not the one it would
+  read back, so the compiler still knows the mask is the carry of the
+  last sum. RSA signing runs this select on values the private key
+  decides. The pinned clang 23 and Apple clang 21 emit no new branch for
+  this form on arm64, so the branch count passes. Both compare the mask
+  with zero, pick the address of o or of a with a csel, and load each
+  word from that address: a memory address that the borrow decides. The
+  form that reads the mask back loads both words and writes and, bic
+  and orr. inv-16-rsa-blocks-last-subtraction refuses a mask in
+  rsa_mont64_blocks_reduce that is taken straight from
+  blocks_mask_of_bit (docs/decisions.md 209).
+
+--- old
+    *hidden = blocks_mask_of_bit(at_or_above);
+    uint64_t mask = *hidden;
+--- new
+    uint64_t mask = blocks_mask_of_bit(at_or_above);
+    *hidden = mask;

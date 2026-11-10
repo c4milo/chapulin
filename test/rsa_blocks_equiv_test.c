@@ -34,7 +34,14 @@
 //     by itself, both before the last subtraction: the blocks at a
 //     multiple of 4, since rsa_mont64_mont_square runs their square only
 //     above RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX words, and the rows at every
-//     word count.
+//     word count;
+//   - for the blocks, at a multiple of 4, their last subtraction,
+//     rsa_mont64_blocks_reduce, against the loops',
+//     rsa_mont64_reduce_once_with_top, under a word above of 0 and of 1:
+//     the values 0, 1, m - 1, m, m + 1, all ones and random words
+//     (docs/decisions.md 209). The two write the same words for every
+//     input, so the values need not be below 2m. The value m makes the
+//     second carry chain of every block carry.
 //
 // For the blocks, a word count that is not a multiple of 4 runs the loops
 // on both sides, which shows that the calls pick the blocks for no other
@@ -117,6 +124,9 @@ static uint64_t rng_next(void) {
 static int failures = 0;
 static unsigned long multiplied = 0;
 static unsigned long squared = 0;
+#if RSA_MONT64_BLOCKS
+static unsigned long reduced = 0;
+#endif
 
 // 1 when the k words of a are below those of m.
 static int below(const uint64_t *a, const uint64_t *m, size_t k) {
@@ -257,6 +267,69 @@ static void run_square_edges(const char *modulus_name, const rsa_mont64_modulus 
     }
 }
 
+#if RSA_MONT64_BLOCKS
+// The blocks' last subtraction of top:a against the loops', which
+// rsa_mont64_reduce_once_with_top runs in this unit too: reduce_once has
+// no blocks.
+static void compare_reduce(const char *case_name, const uint64_t *a, uint64_t top,
+                           const rsa_mont64_modulus *mod) {
+    uint64_t loops[WORDS_MAX];
+    uint64_t kernel[WORDS_MAX];
+    memset(loops, 0x55, sizeof loops);
+    memset(kernel, 0xaa, sizeof kernel);
+    rsa_mont64_reduce_once_with_top(loops, a, top, mod);
+    rsa_mont64_blocks_reduce(kernel, a, top, mod);
+    compare(case_name, top == 0 ? "the last subtraction" : "the last subtraction under a top word",
+            mod->words, kernel, loops);
+    reduced++;
+}
+
+// a = m + 1 over k words, from a = m. It wraps to zero under the all-ones
+// modulus, which is one more value for the comparison.
+static void add_one(uint64_t *a, size_t k) {
+    for (size_t i = 0; i < k; i++) {
+        a[i] += 1;
+        if (a[i] != 0) {
+            return;
+        }
+    }
+}
+
+// The value of shape s over k words: 0, 1, m - 1, m, m + 1, all ones, and
+// from 6 up random words.
+static void reduce_value(uint64_t *a, const rsa_mont64_modulus *mod, unsigned s) {
+    size_t k = mod->words;
+    memset(a, 0, k * sizeof(uint64_t));
+    if (s == 1) {
+        a[0] = 1;
+    } else if (s == 2) {
+        memcpy(a, mod->m, k * sizeof(uint64_t));
+        a[0] -= 1; // m is odd
+    } else if (s == 3) {
+        memcpy(a, mod->m, k * sizeof(uint64_t));
+    } else if (s == 4) {
+        memcpy(a, mod->m, k * sizeof(uint64_t));
+        add_one(a, k);
+    } else if (s == 5) {
+        memset(a, 0xff, k * sizeof(uint64_t));
+    } else if (s >= 6) {
+        for (size_t i = 0; i < k; i++) {
+            a[i] = rng_next();
+        }
+    }
+}
+
+// Ten values, four of them random, each under a word above of 0 and of 1.
+static void run_reduce(const char *modulus_name, const rsa_mont64_modulus *mod) {
+    for (unsigned shape = 0; shape < 10; shape++) {
+        uint64_t a[WORDS_MAX];
+        reduce_value(a, mod, shape);
+        compare_reduce(modulus_name, a, 0, mod);
+        compare_reduce(modulus_name, a, 1, mod);
+    }
+}
+#endif
+
 // Every case under one modulus of k words, given as len = 8k big-endian
 // bytes with the top bit set.
 static void run_modulus(const char *modulus_name, const uint8_t *n, size_t k) {
@@ -304,6 +377,11 @@ static void run_modulus(const char *modulus_name, const uint8_t *n, size_t k) {
         compare_square(modulus_name, b[j], &mod);
     }
     run_square_edges(modulus_name, &mod);
+#if RSA_MONT64_BLOCKS
+    if (k % 4 == 0) {
+        run_reduce(modulus_name, &mod);
+    }
+#endif
 }
 
 // The big-endian bytes of the k words in words, top word first.
@@ -377,5 +455,8 @@ int main(void) {
                  ": %lu multiplications and %lu squares at 1 to %d words, seed 0x%llx, all "
                  "equal\n",
                  multiplied, squared, (int)WORDS_MAX, (unsigned long long)seed);
+#if RSA_MONT64_BLOCKS
+    (void)printf(KERNEL_TEST ": %lu last subtractions, all equal\n", reduced);
+#endif
     return 0;
 }

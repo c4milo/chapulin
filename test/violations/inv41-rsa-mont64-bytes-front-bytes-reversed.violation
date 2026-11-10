@@ -1,0 +1,13 @@
+invariant: INV-41
+file: src/rsa_mont64.c
+catches: rsa_equiv_test
+reason: rsa_mont64_to_bytes writes the len % 8 bytes at the front of a
+  number in the order of their weights, the lowest first, where the
+  number is big-endian. A length that is a multiple of 8 has no such
+  bytes, so every verification passes. bin/rsa_equiv_test holds the byte
+  moves to the bytes that went in at every length.
+
+--- old
+        bytes[(len & 7) - 1 - i] = (uint8_t)(words[whole] >> (8 * i));
+--- new
+        bytes[i] = (uint8_t)(words[whole] >> (8 * i));

@@ -1,0 +1,22 @@
+invariant: INV-16
+file: src/rsa_mont64_blocks.c
+catches: test/lint-wide-multiply.sh
+reason: rsa_mont64_blocks_reduce keeps a where the mask is zero with an
+  if, and not with the mask. RSA signing runs this select on values the
+  private key decides, so the if is a branch on whether a - m borrowed.
+  Every test passes: the words are the same. The pinned clang for arm64
+  writes the if as a cbnz on the mask, so rsa_mont64_blocks.c emits 22
+  conditional branches where its ceiling is 21.
+  inv-16-rsa-blocks-last-subtraction refuses the if too
+  (docs/decisions.md 209).
+
+--- old
+        o[j] = (o[j] & mask) | (a[j] & ~mask);
+    }
+    *hidden = 0;
+--- new
+        if (mask == 0) {
+            o[j] = a[j];
+        }
+    }
+    *hidden = 0;

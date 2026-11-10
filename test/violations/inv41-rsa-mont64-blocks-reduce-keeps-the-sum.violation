@@ -1,0 +1,13 @@
+invariant: INV-41
+file: src/rsa_mont64_blocks.c
+catches: rsa_blocks_equiv_test
+reason: rsa_mont64_blocks_reduce's second pass keeps a under the mask
+  where it keeps a - m, so a product at or above the modulus leaves the
+  blocks without its last subtraction, and one below it leaves as a - m.
+  bin/rsa_blocks_equiv_test compares every multiplication and the last
+  subtraction itself with the loops'.
+
+--- old
+        o[j] = (o[j] & mask) | (a[j] & ~mask);
+--- new
+        o[j] = (o[j] & ~mask) | (a[j] & mask);

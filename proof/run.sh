@@ -3114,6 +3114,21 @@ launch fast full rsa_sign_blind 397 "" src/ct.c proof/ct_wipe_stub.c
 # the summed size of cbmc and the solver):
 #   rsa_mont64_ops             851 properties,  21 s, 1.6 GB, 2.0 GB
 #   rsa_mont64_ops_webpki      851 properties,  42 s, 1.5 GB, 2.1 GB, hence fast:3
+# The byte moves then took a word at a time (docs/decisions.md 209), and
+# the two lines took an unwindset. It bounds each word loop of
+# rsa_mont64_from_bytes and rsa_mont64_to_bytes by the word count, 48 or
+# 64, and each loop of the bytes at the front by seven. Under the line's
+# one bound, the byte count, a word loop unwound eight times too often,
+# and rsa_mont64_ops passed 8.6 GB with no verdict in 2,324 s. Measured
+# on 2026-11-10 through proof/prove-one.sh under /usr/bin/time -l, one
+# line at a time, at a load average of 27 to 52. The same two lines of
+# the tree before the change, 1148c176, ran at the same load, and the
+# last two rows are theirs (the processor time of cbmc and the solver,
+# user and system, and the largest process):
+#   rsa_mont64_ops            1091 properties,  38 s, 0.68 GB
+#   rsa_mont64_ops_webpki     1091 properties,  66 s, 0.73 GB
+#   rsa_mont64_ops             845 properties,  41 s, 0.76 GB, before
+#   rsa_mont64_ops_webpki      845 properties,  66 s, 1.39 GB, before
 # The lines below that read the step's sum (docs/decisions.md 117) were
 # measured again the same way on 2026-10-07 through proof/prove-one.sh,
 # one at a time, at a load average of 2 to 5:
@@ -3134,8 +3149,8 @@ launch fast full rsa_mont64_mul128 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-che
 launch fast full rsa_mont64_step 2 "" -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_step_sum 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_sums 6 "ct_wipe.0:49" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_mont64_ops 385 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast:3 full rsa_mont64_ops_webpki 513 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_ops 385 "rsa_mont64_from_bytes.0:49,rsa_mont64_from_bytes.1:8,rsa_mont64_to_bytes.0:49,rsa_mont64_to_bytes.1:8" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast:3 full rsa_mont64_ops_webpki 513 "rsa_mont64_from_bytes.0:65,rsa_mont64_from_bytes.1:8,rsa_mont64_to_bytes.0:65,rsa_mont64_to_bytes.1:8" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_mul 50 "ct_wipe.0:401" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:529" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont64_blocks.c, the multiplication and square in blocks of four words that a clang build
@@ -3160,6 +3175,17 @@ launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:529" src/ct.c proof/ct_wipe
 # The prove job's runner took about 1.35 times the M1's processor time on the rsa_mont64 lines
 # above, which puts the last line near ten minutes there.
 launch fast full rsa_mont64_blocks_sums 10 "ct_wipe.0:81" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+# rsa_mont64_blocks_reduce proves that the blocks' last subtraction writes
+# reduce_once's words for every input at four and eight words, and
+# rsa_mont64_bytes that the byte moves write a byte loop's words at every
+# length up to 24 bytes (docs/decisions.md 209). Neither formula holds a
+# multiply. rsa_mont64_bytes takes each length as a number in a loop:
+# under one unconstrained length it took 111 s. Measured on 2026-11-10
+# through proof/prove-one.sh, in wall time:
+#   rsa_mont64_blocks_reduce  2066 properties,  30 s
+#   rsa_mont64_bytes           965 properties,   4 s
+launch fast full rsa_mont64_blocks_reduce 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_bytes 26 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_blocks 50 "ct_wipe.0:401" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch slow full rsa_mont64_blocks_webpki 66 "ct_wipe.0:529" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont64_addcarry.c, the multiplication and square in rows whose carries go down
@@ -3228,9 +3254,15 @@ launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" src/ct.c proof/ct_
 # the two functions those steps add with: rsa_mont64_block_add over every
 # input, and add_modulus_blocks at 8 words.
 # Measured with proof/prove-one.sh under /usr/bin/time -l (cbmc 6.11.0,
-# kissat, an M1 Pro at a load average of 2 to 5), on 2026-10-07:
-#   rsa_mont_host          900 properties, 29 s, 2.6 GB, hence fast:3
-#   rsa_mont_host_webpki   900 properties, 60 s, 5.2 GB, hence slow
+# kissat, an M1 Pro) on 2026-11-10, at a load average of 40 to 55. The
+# time is the processor time of cbmc and the solver, and the size the
+# largest single process:
+#   rsa_mont_host           938 properties, 38 s, 1.5 GB, hence fast:3
+#   rsa_mont_host_blocks   1304 properties, 87 s, 0.7 GB, hence fast:3
+#   rsa_mont_division_sums 1410 properties,  1 s, 22 MB
+# The two _webpki lines were not measured that day. On 2026-10-07
+# rsa_mont_host_webpki took 60 s and 5.2 GB over the division of R^2,
+# hence slow, and rsa_mont_host_blocks_webpki takes its tier.
 launch fast:3 full rsa_mont_host 385 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch slow full rsa_mont_host_webpki 513 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast:3 full rsa_mont_host_blocks 385 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME

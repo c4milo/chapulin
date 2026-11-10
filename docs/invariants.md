@@ -1761,7 +1761,12 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/rsa_blocks_equiv_test` builds the blocks under any compiler and
   holds their words to the loops' at every word count from 1 to 64, and
   their square to their multiplication of a by itself at every multiple
-  of 4. `bin/rsa_addcarry_equiv_test` does the same for the rows at every
+  of 4. It also holds the blocks' last subtraction to the loops', and
+  `rsa_mont64_blocks_reduce` proves the two equal for every input at
+  four and eight words (docs/decisions.md 209). `bin/rsa_equiv_test`
+  holds the byte moves to a loop of one byte at a time at every length,
+  and `rsa_mont64_bytes` proves that up to 24 bytes.
+  `bin/rsa_addcarry_equiv_test` does the same for the rows at every
   word count, on `_addcarry_u64` on x86-64 and on the sum form elsewhere,
   and `test/docker-aes-runtime-qemu.sh rsa-addcarry` runs it and
   `bin/rsa_sign_equiv_test` as gcc builds them for x86-64 on any machine.
@@ -1903,6 +1908,15 @@ last `ROLE=server` stub, as the entry said it would.
   both carry words in one 64-bit sum,
   `inv41-rsa-mont64-blocks-top-in-one-word`, which
   `rsa_mont64_blocks_sums` catches in the proof-backed job. Or, in the
+  blocks' last subtraction, it drops the carry of a block's second chain
+  or keeps the wrong one of its two values under the mask:
+  `inv41-rsa-mont64-blocks-reduce-second-carry-dropped` and
+  `inv41-rsa-mont64-blocks-reduce-keeps-the-sum`, which
+  `bin/rsa_blocks_equiv_test` catches. Or, in the byte moves, it drops
+  the word of the bytes at the front of a number, or writes those bytes
+  in the other order: `inv41-rsa-mont64-bytes-top-word-dropped` and
+  `inv41-rsa-mont64-bytes-front-bytes-reversed`, which
+  `bin/rsa_equiv_test` catches. Or, in the
   host arm's division, it starts from a base it did not bring below the
   modulus, or runs one step short:
   `inv41-rsa-mont-division-base-not-reduced` and
@@ -5043,15 +5057,41 @@ last `ROLE=server` stub, as the entry said it would.
   (docs/verification.md, "p256_wide"), and `bin/p256_equiv_test` holds
   every routine to the 32-bit files on the same inputs.
   They compile `rsa_mont64.c` as well, RSA's Montgomery arithmetic on
-  64-bit words, and hold its conditional branches at 71 on arm64 and
-  109 on x86-64: loop control over word counts, byte counts, the
+  64-bit words, and hold its conditional branches at 97 on arm64 and
+  132 on x86-64: loop control over word counts, byte counts, the
   doublings `rsa_mont64_modulus_init` counts from its bits argument and
   the squarings, the tests of a count's low bits that clang adds to a
-  loop it runs two words a pass, and the `CH_ASSERT`s on public lengths.
+  loop it runs two words a pass, the tests of a byte length's low three
+  bits that the byte moves make (decision 209), and the `CH_ASSERT`s on
+  public lengths.
   `inv16-rsa-mont64-subtract-branch` writes the subtraction that ends a
   multiplication as an `if`, and `inv16-rsa-crt-difference-branch` the
   step that adds the modulus back to a difference; both counts rise
   under each.
+  They compile `rsa_mont64_blocks.c` on arm64, the one spec whose object
+  holds it, and hold its conditional branches at 21. Seven are in
+  `rsa_mont64_blocks_reduce`, the last subtraction of a multiplication
+  in blocks, which RSA signing runs on values the private key decides
+  (decision 209). It keeps a - m or a under a mask that it reads back
+  through a volatile pointer.
+  `inv16-rsa-mont64-blocks-reduce-select-branch` writes that select as
+  an `if` on the mask, the pinned clang writes a `cbnz` on the mask, and
+  the count rises to 22. The count does not hold the read-back.
+  `inv16-rsa-mont64-blocks-reduce-mask-not-read-back` uses the mask as
+  it computed it, and the pinned clang and Apple clang 21 then keep
+  their counts: they compare the mask with zero, pick the address of
+  one of the two arrays with a `csel`, and load each word from it, an
+  address the borrow decides. So a Semgrep rule,
+  `inv-16-rsa-blocks-last-subtraction`, refuses five things in that
+  function: an `if`, a conditional expression, a statement that leaves
+  a loop, a mask taken straight from `blocks_mask_of_bit`, and an end
+  that does not write zero through the pointer. `lint-invariants`
+  catches the mutant. The function's code was read at `-O2` under the
+  pinned clang 23 and Apple clang 21 for arm64, and under gcc 13.3 for
+  arm64 in a build that names `RSA_MONT64_BLOCKS=1`. Each loads the
+  mask from its stack slot and writes each word with `and`, `bic` and
+  `orr`, or under gcc with `eor`, `and` and `eor`. Each branch reads the
+  word count, a loop's counter or the addresses of the two arrays.
   They compile `rsa_sign64.c` too, the signer on those words, and hold
   its conditional branches at 41 on arm64 and 39 on x86-64: loop control
   over the table's entries, the exponents' digits, the four squarings

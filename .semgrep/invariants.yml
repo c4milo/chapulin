@@ -185,6 +185,51 @@ rules:
                       metavariable: $CALLEE
                       regex: ^(?!mask_of_bit$)
           - pattern-not: o[$I] = (o[$I] & ~mask) | (table->powers[entry][$I] & mask);
+  - id: inv-16-rsa-blocks-last-subtraction
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-16: rsa_mont64_blocks_reduce keeps a - m or a under one mask,
+      and RSA signing runs it on values the private key decides. It
+      holds no if, no conditional expression and no statement that
+      leaves a loop early. It reads the mask back through its volatile
+      pointer before it uses it: a compiler that knows how a mask was
+      computed may test what it was computed from. With no read-back the
+      pinned clang and Apple clang for arm64 compared the mask with zero,
+      picked the address of o or of a with a csel and loaded each word
+      from it, an address the borrow decides, and another compiler is
+      free to write a branch (docs/decisions.md 209). It ends by writing
+      zero through that pointer, so the word the mask went through does
+      not end on it.
+    paths:
+      include: [rsa_mont64_blocks.c]
+    pattern-either:
+      - patterns:
+          - pattern-inside: |
+              void rsa_mont64_blocks_reduce(...) {
+                ...
+              }
+          - pattern-either:
+              - pattern: |
+                  if ($COND) {
+                    ...
+                  }
+              - pattern: '$COND ? $A : $B'
+              - pattern: break;
+              - pattern: continue;
+              - pattern: return;
+              - pattern: goto $LABEL;
+              - pattern: $TYPE $MASK = blocks_mask_of_bit(...);
+      - patterns:
+          - pattern: |
+              void rsa_mont64_blocks_reduce(...) {
+                ...
+              }
+          - pattern-not: |
+              void rsa_mont64_blocks_reduce(...) {
+                ...
+                *hidden = 0;
+              }
   - id: inv-16-rsa-ifma-table-read
     languages: [c]
     severity: ERROR

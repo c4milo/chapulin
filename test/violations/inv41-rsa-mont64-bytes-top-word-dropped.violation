@@ -1,0 +1,13 @@
+invariant: INV-41
+file: src/rsa_mont64.c
+catches: rsa_equiv_test
+reason: rsa_mont64_from_bytes writes zero for the word that holds the
+  len % 8 bytes at the front of a number. Every modulus rsa.h admits is a
+  multiple of 8 bytes long, so no verification reads that word; a signer's
+  blinded exponent and a DNSSEC key do. bin/rsa_equiv_test holds the
+  byte moves to a loop of one byte at a time at every length.
+
+--- old
+        words[whole] = (words[whole] << 8) | bytes[i];
+--- new
+        words[whole] = (words[whole] << 8) | (bytes[i] & 0);

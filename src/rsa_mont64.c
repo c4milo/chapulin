@@ -41,18 +41,48 @@ static uint64_t mask_of_bit(uint64_t bit) {
     return (uint64_t)((int64_t)(bit << 63) >> 63);
 }
 
+// The eight bytes at p as one word, the first byte at the top. A word moves as one load or one
+// store (docs/decisions.md 209): the first form added each byte into its word in memory, and
+// each byte waited on the store of the byte before it. Each byte is still named, so no host byte
+// order enters.
+static uint64_t word_from_bytes(const uint8_t *p) {
+    return ((uint64_t)p[0] << 56) | ((uint64_t)p[1] << 48) | ((uint64_t)p[2] << 40) |
+           ((uint64_t)p[3] << 32) | ((uint64_t)p[4] << 24) | ((uint64_t)p[5] << 16) |
+           ((uint64_t)p[6] << 8) | (uint64_t)p[7];
+}
+
+// The word w as eight bytes at p, the top byte first.
+static void word_to_bytes(uint8_t *p, uint64_t w) {
+    p[0] = (uint8_t)(w >> 56);
+    p[1] = (uint8_t)(w >> 48);
+    p[2] = (uint8_t)(w >> 40);
+    p[3] = (uint8_t)(w >> 32);
+    p[4] = (uint8_t)(w >> 24);
+    p[5] = (uint8_t)(w >> 16);
+    p[6] = (uint8_t)(w >> 8);
+    p[7] = (uint8_t)w;
+}
+
 void rsa_mont64_from_bytes(uint64_t *words, size_t count, const uint8_t *bytes, size_t len) {
     memset(words, 0, count * sizeof(uint64_t));
-    // Byte i from the end has weight 2^(8i): word i / 8, shifted up
-    // 8 * (i % 8) bits.
-    for (size_t i = 0; i < len; i++) {
-        words[i >> 3] |= (uint64_t)bytes[len - 1 - i] << (8 * (i & 7));
+    // Word i is the eight bytes that end 8 * i bytes before the end.
+    size_t whole = len >> 3;
+    for (size_t i = 0; i < whole; i++) {
+        words[i] = word_from_bytes(bytes + len - 8 * (i + 1));
+    }
+    // The len % 8 bytes at the front are the low bytes of the next word.
+    for (size_t i = 0; i < (len & 7); i++) {
+        words[whole] = (words[whole] << 8) | bytes[i];
     }
 }
 
 void rsa_mont64_to_bytes(uint8_t *bytes, size_t len, const uint64_t *words) {
-    for (size_t i = 0; i < len; i++) {
-        bytes[len - 1 - i] = (uint8_t)(words[i >> 3] >> (8 * (i & 7)));
+    size_t whole = len >> 3;
+    for (size_t i = 0; i < whole; i++) {
+        word_to_bytes(bytes + len - 8 * (i + 1), words[i]);
+    }
+    for (size_t i = 0; i < (len & 7); i++) { // the bytes at the front, from the next word
+        bytes[(len & 7) - 1 - i] = (uint8_t)(words[whole] >> (8 * i));
     }
 }
 
@@ -120,14 +150,14 @@ static uint64_t neg_inverse(uint64_t m0) {
 
 #if RSA_MONT64_BLOCKS
 // The multiplication on rsa_mont64_blocks.c's blocks, for a word count that is a multiple of 4.
-// Their product goes to r, apart from a and b, which o may be, and the last subtraction moves it
-// to o.
+// Their product goes to r, apart from a and b, which o may be, and the blocks' last subtraction
+// moves it to o.
 static void mont_mul_blocks(uint64_t *o, const uint64_t *a, const uint64_t *b,
                             const rsa_mont64_modulus *mod) {
     size_t k = mod->words;
     uint64_t r[RSA_MONT64_WORDS_MAX];
     uint64_t top = rsa_mont64_blocks_mul(r, a, b, mod);
-    reduce_once(o, r, top, mod->m, k);
+    rsa_mont64_blocks_reduce(o, r, top, mod);
     ct_wipe(r, k * sizeof(uint64_t));
 }
 
@@ -143,7 +173,7 @@ static void mont_square_blocks(uint64_t *o, const uint64_t *a, const rsa_mont64_
     } else {
         top = rsa_mont64_blocks_square(r, a, mod);
     }
-    reduce_once(o, r, top, mod->m, k);
+    rsa_mont64_blocks_reduce(o, r, top, mod);
     ct_wipe(r, k * sizeof(uint64_t));
 }
 #endif

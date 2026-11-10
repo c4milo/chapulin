@@ -35,6 +35,10 @@
 // itself, at every word count from 1 to the bound, which the signer's
 // primes need: 0, 1, n - 1, the top bit alone and random values below n.
 //
+// rsa_mont64_from_bytes and rsa_mont64_to_bytes, which move a word at a
+// time (docs/decisions.md 209), are held to a loop that moves one byte at
+// a time, at every length from 0 to 8 times each of five word counts.
+//
 // Three answers are known without either arm: 0 and 1 are their own
 // 65537th powers, and n - 1 is its own, because 65537 is odd. Each is
 // checked against both arms, so neither is held only to the other.
@@ -101,6 +105,7 @@ static void rng_fill(uint8_t *p, size_t n) {
 static int failures = 0;
 static unsigned long compared = 0;
 static unsigned long squared = 0;
+static unsigned long moved = 0;
 
 static void print_hex(const char *name, const uint8_t *p, size_t n) {
     (void)fprintf(stderr, "  %s ", name);
@@ -422,10 +427,55 @@ static void run_squares(void) {
     }
 }
 
+// rsa_mont64_from_bytes against a loop that adds one byte at a time into
+// its word, the form the file had before docs/decisions.md 209, and
+// rsa_mont64_to_bytes against the bytes that went in, at every length from
+// 0 to 8 * count. A length that is no multiple of 8 has a top word of
+// fewer than eight bytes, and a count above the length's words leaves
+// words of zero. The last check writes one byte fewer than the number
+// holds, which rsa_sign64_blind.h's sum does.
+static void compare_bytes(size_t count, size_t len) {
+    uint8_t bytes[CH_RSA_MODULUS_MAX];
+    uint8_t back[CH_RSA_MODULUS_MAX];
+    uint64_t words[RSA_MONT64_WORDS_MAX];
+    uint64_t want[RSA_MONT64_WORDS_MAX] = {0};
+    rng_fill(bytes, len);
+    for (size_t i = 0; i < len; i++) {
+        want[i >> 3] |= (uint64_t)bytes[len - 1 - i] << (8 * (i & 7));
+    }
+    memset(words, 0xaa, sizeof words);
+    rsa_mont64_from_bytes(words, count, bytes, len);
+    int words_equal = memcmp(words, want, count * sizeof(uint64_t)) == 0;
+    memset(back, 0x55, sizeof back);
+    rsa_mont64_to_bytes(back, len, words);
+    int bytes_equal = memcmp(back, bytes, len) == 0;
+    int short_equal = 1;
+    if (len >= 1) {
+        rsa_mont64_to_bytes(back, len - 1, words);
+        short_equal = memcmp(back, bytes + 1, len - 1) == 0;
+    }
+    if (!words_equal || !bytes_equal || !short_equal) {
+        failures++;
+        (void)fprintf(stderr, "FAIL bytes: %zu bytes in %zu words differ from the loop\n", len,
+                      count);
+    }
+    moved++;
+}
+
+static void run_bytes(void) {
+    static const size_t counts[] = {1, 2, 3, 9, RSA_MONT64_WORDS_MAX};
+    for (size_t c = 0; c < sizeof counts / sizeof counts[0]; c++) {
+        for (size_t len = 0; len <= 8 * counts[c]; len++) {
+            compare_bytes(counts[c], len);
+        }
+    }
+}
+
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     run_random();
     run_squares();
+    run_bytes();
     static const size_t edge_lengths[] = {256, 264, CH_RSA_MODULUS_MAX};
     for (size_t i = 0; i < sizeof edge_lengths / sizeof edge_lengths[0]; i++) {
         run_edge_moduli(edge_lengths[i]);
@@ -436,8 +486,8 @@ int main(void) {
                       (unsigned long long)seed);
         return 1;
     }
-    (void)printf("rsa_equiv_test: %lu comparisons of rsa_vp1 and %lu of a square, seed 0x%llx, all "
-                 "equal\n",
-                 compared, squared, (unsigned long long)seed);
+    (void)printf("rsa_equiv_test: %lu comparisons of rsa_vp1, %lu of a square and %lu of the byte "
+                 "moves, seed 0x%llx, all equal\n",
+                 compared, squared, moved, (unsigned long long)seed);
     return 0;
 }

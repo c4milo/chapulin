@@ -17277,7 +17277,7 @@ does nothing more.
       the blocks at every even word count.
     - **Gain.** The one-minute load average was 35 to 80 while this entry
       was measured, and `bench/primitives.c`'s rows then spread 40% between
-      samples. So no time was taken, and the figures are counts. The
+      samples. So no time was taken then, and these figures are counts. The
       instructions are `bench/primitives.c`'s, under `ch_cfg.cpu 0xe7`,
       built from 5a36a180 and from this change:
 
@@ -17303,9 +17303,13 @@ does nothing more.
 
       At 32 words the division takes 3,489 cycles and 12,885
       instructions, where R^2 and the product by it took 9,130 and
-      37,906. The judge, `make bench-primitives` beside OpenSSL 3.6.4 at
-      a load below 8, has not run on this change, and the scoreboard's
-      M1 column is not recorded again here.
+      37,906. The timing ran later the same day, at a load of 2.9 to
+      3.5, on this change and decision 209's together, and decision 209
+      holds its rows. An RSA-2048 PKCS#1 v1.5 verification takes 13,455
+      ns where it took 16,852, which is 0.95 of OpenSSL 3.6.4's 14,145
+      ns where it was 1.19. An RSA-3072 one takes 28,030 ns where it
+      took 34,325, which is 0.93 of OpenSSL's 30,019 ns where it was
+      1.14. The scoreboard's M1 column is not recorded again here.
 
     Rejected:
 
@@ -17317,3 +17321,179 @@ does nothing more.
       word.** A prototype of the first ran the 32 steps in 3,705 cycles
       where the 128-bit division ran them in 4,385. Each needs a theorem
       of its own, and both are open.
+
+209. **`rsa_mont64.c` moves bytes a word at a time, and the blocks' last
+    subtraction runs in blocks.** Decision 208's count of the parts of an
+    RSA-2048 verification on the M1 Pro showed two more costs outside the
+    products. The words of the modulus and of the signature took 1,713
+    and 1,627 cycles, 6% of the verification. And each of its 18
+    multiplications and squares ended with `reduce_once`, at 192 cycles,
+    where the blocks' products of a square took 2,176.
+
+    - **Bytes.** `rsa_mont64_from_bytes` added one byte at a time into
+      its word in memory, so each byte waited on the store of the byte
+      before it. It now builds a word from eight bytes and stores it
+      once, and `rsa_mont64_to_bytes` writes a word as eight bytes. Each
+      byte is still read and written by itself, so no host byte order
+      enters, and both compilers write the eight as one load or one
+      store. A length that is no multiple of 8 keeps a loop over the
+      bytes at the front. 256 bytes take 40 cycles where they took
+      1,630.
+    - **The last subtraction.** `reduce_once` compares in one pass and
+      subtracts under a mask in a second, and in each pass a word waits
+      two instructions on the carry of the word below.
+      `rsa_mont64_blocks_reduce` writes a - m in one pass: a block adds
+      four words of a to the complement of four words of m down one
+      carry chain, and the carry from the block below down another, as
+      `rsa_mont64_block_add` adds. A second pass keeps a - m or a under
+      a mask, and no word of it waits on another. `mont_mul_blocks` and
+      `mont_square_blocks` call it in `reduce_once`'s place, so it runs
+      where the blocks run, under clang for arm64. `reduce_once` stays
+      for every other build, for the loops, and for the sum, the
+      difference and the doubling, which reduce in place.
+    - **Secrets.** A signer runs both. The byte moves have no branch on
+      a byte and keep no copy outside the caller's arrays. The last
+      subtraction selects under a mask that is read back through a
+      volatile pointer, as `rsa_sign64.c`'s `table_select` reads its
+      masks (decision 125), and the word ends on zero.
+      `bin/rsa_sign_equiv_test`'s stack search passes under Apple clang
+      21 for arm64, where the signer runs the blocks, and so does its
+      `_loops` build. `lint-wide-multiply` now holds `rsa_mont64.c` at 97
+      and 132 conditional branches, where it held 71 and 109, and
+      `rsa_mont64_blocks.c` at 21 on arm64, where it held 14. Each new
+      branch was read in the pinned clang's assembly, and the Makefile's
+      note names them: a byte move tests a length's whole words, its low
+      three bits, and one more count for each of the seven bytes a
+      number can have at the front, and the last subtraction tests the
+      word count and where its two arrays lie. None reads a byte, a
+      word or the mask.
+    - **The select is no branch.** `rsa_mont64_blocks_reduce` is in an
+      object that clang builds for arm64 and in no other:
+      `RSA_MONT64_BLOCKS` is 0 under gcc and on x86-64, and
+      `rsa_mont64_blocks.c` then compiles to nothing. Two checks and a
+      read of the compiled code hold its select there.
+
+      - **The branch count.**
+        `inv16-rsa-mont64-blocks-reduce-select-branch` writes the select
+        as an `if` on the mask. The pinned clang writes that as a `cbnz`
+        on the mask, the file emits 22 conditional branches, and
+        `lint-wide-multiply` fails at its ceiling of 21.
+      - **A Semgrep rule.** The count does not hold the read-back.
+        `inv16-rsa-mont64-blocks-reduce-mask-not-read-back` writes the
+        mask through the pointer and uses the value it computed. The
+        pinned clang 23 and Apple clang 21 then keep their 7 and 8
+        branches. Both compare the mask with zero, pick the address of
+        o or of a with a `csel`, and load each word from that address:
+        a memory address that the borrow decides. So
+        `inv-16-rsa-blocks-last-subtraction` refuses five things in that
+        function: an `if`, a conditional expression, a statement that
+        leaves a loop, a mask taken straight from `blocks_mask_of_bit`,
+        and an end that does not write zero through the pointer.
+        `inv-16-rsa-table-read` holds `table_select` the same way.
+        `lint-invariants` catches the mutant.
+      - **The compiled code.** The function was read at `-O2` under
+        three compilers. The pinned clang 23 for arm64 emits 7
+        conditional branches and Apple clang 21 emits 8. They test the
+        word count against zero, against 4 or 8, and against the words
+        the vector loop took. They test whether the two arrays overlap,
+        and the rest are the loops' counters. Both load the mask from
+        its stack slot, load a word of each array, and write the answer
+        with `and`, `bic` and `orr`, in general registers and in NEON
+        ones. gcc 13.3 for arm64 compiles the function only where a
+        build names `RSA_MONT64_BLOCKS=1`, as the test binaries do. It
+        emits 3 branches: the word count against zero and the two
+        loops' counters. It loads the mask from its stack slot too, and
+        writes each word with `eor`, `and` and `eor`.
+
+      The taint lane reads the same function. CI's arm64 job runs `make
+      ct-taint` a second time under the pinned clang, whose
+      `bin/ct_taint_test` signs on the blocks with the key marked
+      undefined (decision 155). It did not run on this machine, which
+      has no Valgrind.
+    - **What holds it.** `rsa_mont64_blocks_reduce` proves that the
+      blocks' subtraction writes `reduce_once`'s words for every value,
+      every word above it and every modulus at four and eight words,
+      with the wrap check on: no multiply is in that formula.
+      `rsa_mont64_bytes` proves the byte moves against a loop of one
+      byte at a time at every length up to 24 bytes.
+      `rsa_mont64_blocks_sums`, `rsa_mont64_blocks` and `rsa_mont64_ops`
+      cover the new code's sums and memory accesses. The two
+      `rsa_mont64_ops` lines took an unwindset for it: under the line's
+      one bound, the byte count, each word loop of the byte moves
+      unwound eight times too often, and the formula passed 8.6 GB with
+      no verdict in 2,324 s. With each word loop bound by the word
+      count, the line took 38 s of processor time and 0.68 GB at a load
+      of 27 to 52. The line of the tree before this entry took 41 s and
+      0.76 GB at the same load. The `_webpki` line took 66 s, as it did
+      before.
+      `bin/rsa_blocks_equiv_test` compares the subtraction with the
+      loops' for the values 0, 1, m - 1, m, m + 1, all ones and random
+      words under a word above of 0 and of 1, and
+      `bin/rsa_equiv_test` compares the byte moves with a byte loop at
+      every length from 0 to 8 times five word counts. Six new
+      violations are caught: the carry of a block's second chain
+      dropped, the select inverted, the front bytes' word dropped, the
+      front bytes written in the other order, and the two of the select
+      above. The qemu lane, `test/docker-aes-runtime-qemu.sh` whole,
+      passed on this entry's sources.
+    - **Gain.** The load was as in decision 208, so the figures are counts
+      again. `bench/primitives.c`'s instructions under `ch_cfg.cpu 0xe7`,
+      on decision 208's tree and on this one:
+
+      | one operation | instructions before | after |
+      | --- | --- | --- |
+      | RSA-2048 PKCS#1 v1.5 verification | 263,243 | 249,434 |
+      | RSA-3072 PKCS#1 v1.5 verification | 535,630 | 516,741 |
+      | RSA-4096 PKCS#1 v1.5 verification | 894,592 | 863,989 |
+      | RSA-2048 PSS verification | 299,446 | 287,461 |
+      | RSA-3072 PSS verification | 582,984 | 563,217 |
+      | RSA-2048 PSS signature | 12,851,069 | 12,427,664 |
+      | RSA-3072 PSS signature | 37,302,742 | 36,217,331 |
+
+      In cycles, counted as decision 208 counted its parts, a 32-word
+      square takes 2,284 where it took 2,406, a product 2,470 where it
+      took 2,551, and each byte move 49 or less. The parts of an RSA-2048
+      verification then add up to 42,900 cycles, where decision 192's
+      tree added up to 54,750 and decision 208's to 48,450. At 3.2 GHz
+      that is 13.3 µs, and OpenSSL 3.6.4's row is 14.5 µs. For RSA-3072
+      the parts add up to 89,200 cycles, 27.6 µs, against 30.8. Those
+      two figures are sums of counts, not a row.
+
+      The timing ran later the same day, at a one-minute load of 2.9 to
+      3.5. The builds of `bench/primitives.c` from 5a36a180 and from
+      this tree ran in turn five times under `ch_cfg.cpu 0xe7`, beside
+      `openssl speed` of OpenSSL 3.6.4. Each figure is the median of
+      five runs, and no row's five runs spread more than 0.8%:
+
+      | one operation | ns before | after | ratio | instructions before | after |
+      | --- | --- | --- | --- | --- | --- |
+      | RSA-2048 PKCS#1 v1.5 verification | 16,852 | 13,455 | 0.798 | 284,743 | 248,967 |
+      | RSA-3072 PKCS#1 v1.5 verification | 34,325 | 28,030 | 0.817 | 585,820 | 514,800 |
+      | RSA-4096 PKCS#1 v1.5 verification | 55,321 | 46,452 | 0.840 | 974,556 | 863,373 |
+      | RSA-2048 PSS verification | 20,330 | 17,109 | 0.842 | 320,068 | 285,607 |
+      | RSA-3072 PSS verification | 38,636 | 32,870 | 0.851 | 629,842 | 560,916 |
+      | RSA-4096 PSS verification | 62,219 | 53,307 | 0.857 | 1,044,070 | 931,573 |
+      | RSA-2048 PSS signature | 698,302 | 651,646 | 0.933 | 12,828,260 | 12,380,254 |
+      | RSA-3072 PSS signature | 2,019,208 | 1,910,875 | 0.946 | 37,207,546 | 36,169,694 |
+
+      OpenSSL's verification took 14,145 ns at 2,048 bits and 30,019 ns
+      at 3,072 bits in the same runs. So an RSA-2048 PKCS#1 v1.5
+      verification takes 0.95 of OpenSSL's time where it took 1.19, and
+      an RSA-3072 one 0.93 where it took 1.14. The rows hold decision
+      208's change and this one together. No timing ran on decision
+      208's tree alone, and the two tables of counts divide the gain
+      between the two entries. A signature runs this entry's code and
+      none of decision 208's. The scoreboard's M1 column is not recorded
+      again here.
+
+    Rejected:
+
+    - **The blocks reducing straight into the output.** It saves a copy
+      of k words and one wipe a product, about 60 cycles at 32 words. It
+      changes what `rsa_mont64_blocks_mul` and `rsa_mont64_blocks_square`
+      return, which the Lean model of decision 192 and its differential
+      read before the last subtraction. Open.
+    - **`reduce_once` in blocks for every caller.** The sum, the
+      difference and the doubling reduce in place, where the second
+      pass has no copy of a to keep. Two carry passes in blocks would
+      serve them, at about 100 cycles where the select takes 60.

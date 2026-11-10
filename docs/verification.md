@@ -1526,7 +1526,7 @@ The entries are grouped by area:
 
 #### rsa_mont64
 
-- **Harnesses:** `rsa_mont64_mul128` (fast), `rsa_mont64_step` (fast), `rsa_mont64_step_sum` (fast), `rsa_mont64_sums` (fast), `rsa_mont64_ops` (fast), `rsa_mont64_ops_webpki` (fast), `rsa_mont64_mul` (fast), `rsa_mont64_mul_webpki` (fast), `rsa_mont64_init` (fast), `rsa_mont64_init_webpki` (fast), `rsa_mont64_public` (fast), `rsa_mont64_public_webpki` (slow)
+- **Harnesses:** `rsa_mont64_mul128` (fast), `rsa_mont64_step` (fast), `rsa_mont64_step_sum` (fast), `rsa_mont64_sums` (fast), `rsa_mont64_ops` (fast), `rsa_mont64_ops_webpki` (fast), `rsa_mont64_mul` (fast), `rsa_mont64_mul_webpki` (fast), `rsa_mont64_init` (fast), `rsa_mont64_init_webpki` (fast), `rsa_mont64_public` (fast), `rsa_mont64_public_webpki` (slow), `rsa_mont64_bytes` (fast)
 - **Build:** a host object's Montgomery arithmetic on 64-bit words
   (`rsa_mont64.c`, INV-41), under `-DCH_CPU_RUNTIME`.
   `rsa_mont64_mul128`, `rsa_mont64_step_sum`, `rsa_mont64_sums` and the
@@ -1567,6 +1567,12 @@ The entries are grouped by area:
     the output and both operands one array, the doubling of
     [rsa_ifma_sign](#rsa_ifma_sign)'s `state_setup`, and
     `rsa_mont64_reduce_once`.
+  - `rsa_mont64_bytes`: `rsa_mont64_from_bytes` and
+    `rsa_mont64_to_bytes`, which move a word at a time (decision 209),
+    write what a loop of one byte at a time writes, for every length
+    from 0 to 24 bytes and every byte, in three words: byte i from the
+    end is in word i / 8, moved up 8 (i mod 8) bits, the words past the
+    number are zero, and the second call gives the bytes back.
   - `rsa_mont64_mul`: the multiplication reads and writes inside its
     arrays at the largest word count, in the four aliasing shapes, the
     square in its two, and `rsa_mont64_mul_add` at half that count, a
@@ -1743,13 +1749,13 @@ The entries are grouped by area:
 
 #### rsa_mont64_blocks
 
-- **Harnesses:** `rsa_mont64_blocks_sums` (fast), `rsa_mont64_blocks` (fast), `rsa_mont64_blocks_webpki` (slow)
+- **Harnesses:** `rsa_mont64_blocks_sums` (fast), `rsa_mont64_blocks` (fast), `rsa_mont64_blocks_webpki` (slow), `rsa_mont64_blocks_reduce` (fast)
 - **Build:** the multiplication and the square in blocks of four words
   that a clang build for arm64 runs (`rsa_mont64_blocks.c`, INV-41,
   decision 118), under `-DCH_CPU_RUNTIME`, with `RSA_MONT64_BLOCKS` at 1
   whatever compiler preprocesses the harness, over the product contract
-  of `proof/rsa_mont64_stubs.h`. `rsa_mont64_blocks_sums` adds
-  `--unsigned-overflow-check`.
+  of `proof/rsa_mont64_stubs.h`. `rsa_mont64_blocks_sums` and
+  `rsa_mont64_blocks_reduce` add `--unsigned-overflow-check`.
 - **Proves:**
   - `rsa_mont64_blocks_sums`: at four words and at eight, over any
     operands, any modulus and any `m0inv`, no sum in the blocks wraps:
@@ -1767,13 +1773,21 @@ The entries are grouped by area:
     aliasing shapes its callers use and the square in its two, and so
     does the square at 16 words, `RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX`,
     the largest count it runs as the multiplication, in the same two, and
-    at 20 words, the smallest count it runs as the blocks' square.
+    at 20 words, the smallest count it runs as the blocks' square. Each
+    call ends in `rsa_mont64_blocks_reduce`, so the line holds that
+    function's memory accesses too.
+  - `rsa_mont64_blocks_reduce`: the blocks' last subtraction (decision
+    209) writes the words `reduce_once` writes, for every value, every
+    word above it and every modulus, at four words and at eight. The
+    formula holds no multiply: it is three adders and a comparison of
+    words. Four words run one block, and eight run two, where the second
+    takes the first's carry down its second chain.
 
   The `_webpki` line is the same harness at the `CH_TRUST_WEBPKI`
   bound.
 - **Bound:** 48 words, and 64 under `CH_TRUST_WEBPKI`; full-range words;
   four and eight words for `rsa_mont64_blocks_sums`.
-- **Not proved:** any value. That the blocks write the words
+- **Not proved:** any value of a product. That the blocks write the words
   `rsa_mont64.c`'s loops write rests on
   [tests](#the-host-objects-rsa-arithmetic). That the square writes the
   words the multiplication of a by itself writes is not a CBMC property:
@@ -6950,7 +6964,10 @@ the values:
   n - 1 has n's top word, so its first division step takes the largest
   estimate, which no random signature does. Under the all-ones modulus
   one more signature makes that step add the modulus back with a carry
-  through four words. That is 2,707 comparisons in all. It also holds
+  through four words. That is 2,707 comparisons in all. It holds
+  `rsa_mont64_from_bytes` and `rsa_mont64_to_bytes` to a loop of one
+  byte at a time at every length from 0 to 8 times 1, 2, 3, 9 and 64
+  words, 637 lengths (decision 209). It also holds
   `rsa_mont64_mont_square` to the multiplication of a number by itself,
   apart from its operand and on it, at every word count from 1 to 64, a
   prime's among them: 0, 1, n - 1, the top bit alone and random values
@@ -6998,7 +7015,12 @@ the values:
   holds `rsa_mont64_blocks_square` to
   `rsa_mont64_blocks_mul(o, a, a, mod)` before the last subtraction,
   since `rsa_mont64_mont_square` runs the square only above 16 words:
-  66,304 multiplications and 11,088 squares in all.
+  66,304 multiplications and 11,088 squares in all. At a multiple of 4
+  it also holds the blocks' last subtraction, `rsa_mont64_blocks_reduce`,
+  to the loops', `rsa_mont64_reduce_once_with_top`: the values 0, 1,
+  n - 1, n, n + 1, all ones and four random ones, each under a word
+  above of 0 and of 1, 2,240 subtractions. The value n makes the second
+  carry chain of every block carry (decision 209).
 - `bin/diff_rsa_mont64_square`, in `make diff`, holds
   `rsa_mont64_blocks_square`'s words and the word above them to
   `spec/lean/Spec/RsaMont64Square.lean`'s model of its rows, at every
@@ -7100,11 +7122,13 @@ how it reads an exponent and its memory accesses. Tests hold the values:
   RSASP1 as m^d mod n over `Nat` and has no model of the CRT; the
   comparison is what holds the CRT to it.
 
-Twenty-six violations hold the arm: eighteen break a value, and
-`bin/rsa_equiv_test` catches eight of them, `bin/rsa_equiv_test_compare`
+Thirty violations hold the arm: twenty-two break a value, and
+`bin/rsa_equiv_test` catches ten of them, two of them in the byte
+moves, `bin/rsa_equiv_test_compare`
 two, `bin/rsa_equiv_test_sum` one, `bin/rsa_equiv_test_blocks` three, in
 the division's step in blocks, and `bin/rsa_blocks_equiv_test`
-four, three in the blocks and one that runs them at every even word
+six, five in the blocks, two of them in the last subtraction, and one
+that runs them at every even word
 count; four break a sum, a bound or the no-wrap form and a proof
 catches each; one writes the last subtraction
 as a branch and `lint-wide-multiply`'s count catches it; two move the

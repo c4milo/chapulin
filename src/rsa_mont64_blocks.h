@@ -1,8 +1,9 @@
 // RSA's Montgomery multiplication and square in blocks of four words, which a host object
 // built by clang for arm64 runs for a word count that is a multiple of 4 (RSA_MONT64_BLOCKS in
 // rsa_mont64.h, docs/decisions.md 118). rsa_mont64.c calls them for its multiplication and its
-// square and takes the last subtraction itself. rsa_mont_division.h's long division runs its
-// steps on the same block for a public modulus (docs/decisions.md 208).
+// square, and then calls the last subtraction, which runs in blocks too (docs/decisions.md 209).
+// rsa_mont_division.h's long division runs its steps on the same block for a public modulus
+// (docs/decisions.md 208).
 //
 // A block adds x times four words of y to four words of the running sum. The low halves of the
 // four products go down one carry chain and the high halves down another, which clang compiles
@@ -66,6 +67,13 @@ uint64_t rsa_mont64_blocks_mul(uint64_t *o, const uint64_t *a, const uint64_t *b
 // a_i^2, and in the same pass the row's multiple of m. It writes the words
 // rsa_mont64_blocks_mul(o, a, a, mod) writes.
 uint64_t rsa_mont64_blocks_square(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod);
+
+// o = top:a - m when the k + 1 word value top:a is at or above m, and a when it is below: the
+// last subtraction of a Montgomery product, in blocks of four words. For top:a below 2m the
+// result is top:a mod m. It writes the words rsa_mont64_reduce_once_with_top writes, for every
+// a, top and m. It needs mod->words a multiple of 4, and o apart from a.
+void rsa_mont64_blocks_reduce(uint64_t *o, const uint64_t *a, uint64_t top,
+                              const rsa_mont64_modulus *mod);
 
 // The largest word count whose square rsa_mont64.c runs as rsa_mont64_blocks_mul(o, a, a, mod)
 // rather than as rsa_mont64_blocks_square. Both write the same words. On the M1 Pro under Apple
