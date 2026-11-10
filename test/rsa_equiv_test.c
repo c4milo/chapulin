@@ -435,7 +435,9 @@ static void run_squares(void) {
 // words of zero. The last check writes one byte fewer than the number
 // holds, which rsa_sign64_blind.h's sum does.
 static void compare_bytes(size_t count, size_t len) {
-    uint8_t bytes[CH_RSA_MODULUS_MAX];
+    // Zero first: rng_fill writes len bytes, and gcc 15 cannot see that
+    // rsa_mont64_from_bytes reads no byte past len.
+    uint8_t bytes[CH_RSA_MODULUS_MAX] = {0};
     uint8_t back[CH_RSA_MODULUS_MAX];
     uint64_t words[RSA_MONT64_WORDS_MAX];
     uint64_t want[RSA_MONT64_WORDS_MAX] = {0};
