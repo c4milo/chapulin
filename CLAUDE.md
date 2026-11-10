@@ -164,9 +164,10 @@ Home: github.com/c4milo.
   FEAT_SHA256 or the x86-64 SHA extensions, a host session whose caller
   sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` with
   `keccak_round_constants.h` (the round constants every Keccak here
-  reads) and with `sha3_inverted_lanes.h` (Keccak-f[1600] with six
-  lanes kept inverted between rounds, which `sha3.c` alone includes and
-  an x86-64 host object runs, docs/decisions.md 195) and with
+  reads) and with `sha3_inverted_lanes.h` (Keccak-f[1600] with six lanes
+  kept inverted between rounds, each round read from one state and written
+  to a second one, which `sha3.c` alone includes and an x86-64 host object
+  runs, docs/decisions.md 195 and 216) and with
   `sha3_hw.c` (Keccak-f[1600] on FEAT_SHA3, an arm64
   host object that clang compiles, a session whose caller sets
   CH_CPU_CONSTANT_TIME_SHA3) +
