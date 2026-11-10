@@ -334,13 +334,17 @@ Home: github.com/c4milo.
   the P-256 dispatchers and `widemul_answer.h` the answers both widemul
   headers read; `test/p256_adx_model.h` writes the same words in portable
   C, docs/decisions.md 171) +
-  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify; a host object's arm
-  computes R^2 by a long division that branches on the public modulus)
+  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify; for a modulus whose top
+  bit is set, a host object's arm computes no R^2: `rsa_mont_division.h`'s
+  long division, which branches on the public modulus and signature,
+  multiplies the signature by R, docs/decisions.md 208)
   with `rsa_mont64.[ch]` (the same public operation on 64-bit words,
   every session of a host object, and the square both it and the signer
-  run), `rsa_mont64_blocks.[ch]` (its multiplication and square in
-  blocks of four words, which a clang build for arm64 runs at a word
-  count that is a multiple of 4), `rsa_mont64_adx.[ch]` with
+  run), `rsa_mont64_blocks.[ch]` (its multiplication, square and last
+  subtraction in blocks of four words, which a clang build for arm64 runs
+  at a word count that is a multiple of 4; `inv-16-rsa-blocks-last-subtraction`
+  holds the mask read-back of the subtraction's select, docs/decisions.md
+  209), `rsa_mont64_adx.[ch]` with
   `rsa_mont64_adx_asm.h` (the signer's multiplication and square on
   MULX, ADCX and ADOX, x86-64; `test/rsa_mont64_adx_model.h` writes the
   same words in portable C, docs/decisions.md 183), `rsa_mont64_addcarry.[ch]` (its
