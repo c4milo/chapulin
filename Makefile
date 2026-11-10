@@ -9342,8 +9342,9 @@ WIDEMUL_SPECS := \
 #   decapsulation. mlkem_avx2.c holds 23 more in mlk_matvec_row, the row
 #   sampler's tests of the three streams' blocks, of each entry's count of
 #   coefficients and of each candidate against q.
-# mlkem_vector.c, 7 and 7: the loops over the layers and blocks of the two
-#   transforms and the base multiplication's 16 blocks, all constants.
+# mlkem_vector.c, 8 and 8: the loops over the layers and blocks of the two
+#   transforms, the base multiplication's 16 blocks and the sum's 32 steps
+#   (docs/decisions.md 214), all constants.
 # mldsa_vector.c, 13 and 13: the loops over the layers, the blocks and
 #   the coefficients of the two transforms and the two products, all over
 #   constants. On arm64 they are the NEON arm's, and on x86-64 the AVX2
@@ -10116,7 +10117,7 @@ BRANCH_CEILING := \
   arm64/src/rsa_sign64_wipe.c:0 x86-64/src/rsa_sign64_wipe.c:0 \
   arm64/src/rsa_ifma.c:0 x86-64/src/rsa_ifma.c:41 arm64/src/rsa_ifma.c@512:0 x86-64/src/rsa_ifma.c@512:45 \
   arm64/src/rsa_avx2.c:0 x86-64/src/rsa_avx2.c:49 arm64/src/rsa_avx2.c@512:0 x86-64/src/rsa_avx2.c@512:86 \
-  arm64/src/mlkem_vector.c:7 x86-64/src/mlkem_vector.c:7 \
+  arm64/src/mlkem_vector.c:8 x86-64/src/mlkem_vector.c:8 \
   arm64/src/mldsa_vector.c:13 x86-64/src/mldsa_vector.c:13 \
   arm64/src/keccak_avx2.c:0 x86-64/src/keccak_avx2.c:1 arm64/src/mlkem_avx2.c:0 x86-64/src/mlkem_avx2.c:24 \
   arm64/src/mldsa_avx2.c:0 x86-64/src/mldsa_avx2.c:8 \

@@ -1,0 +1,14 @@
+invariant: INV-46
+file: src/mlkem_vector.c
+catches: mlkem_vector_equiv_test
+reason: mlk_vector_add stops eight coefficients short, so the last eight
+  coefficients of every sum keep what r held: the noise is never added to
+  them, and an encapsulation's ciphertext is wrong. bin/mlkem_vector_equiv_test
+  compares the sum with mlk_poly_add's loop coefficient for coefficient.
+
+--- old
+    for (size_t at = 0; at < MLKEM_N; at += 8) {
+        lanes sum = lanes_add(
+--- new
+    for (size_t at = 0; at < MLKEM_N - 8; at += 8) {
+        lanes sum = lanes_add(

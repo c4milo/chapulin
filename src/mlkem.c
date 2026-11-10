@@ -48,7 +48,8 @@ _Static_assert(32 * 10 * MLKEM_RANK_768 + 32 * 4 == MLKEM_CT_LEN_768, "ct holds 
 _Static_assert(32 * 11 * MLKEM_RANK_1024 + 32 * 5 == MLKEM_CT_LEN_1024, "ct holds u and v");
 _Static_assert(MLKEM_DK_EK_AT == (size_t)MLK_POLY_BYTES * MLKEM_K, "mlkem.h's ek offset");
 
-// The forward and inverse NTT and the base multiplication this object runs.
+// The forward and inverse NTT, the base multiplication and the sum this
+// object runs.
 // A host object runs them on eight lanes at a time (mlkem_vector.h) in
 // every session. A device object runs mlkem_poly.c's loops, which CBMC
 // proves and which bin/mlkem_vector_equiv_test holds the vector path to.
@@ -78,6 +79,14 @@ static void mlk_multiply_ntts(mlk_poly *r, const mlk_poly *a, const mlk_poly *b)
 #endif
 }
 
+static void mlk_add(mlk_poly *r, const mlk_poly *a, const mlk_poly *b) {
+#ifdef CH_CPU_RUNTIME
+    mlk_vector_add(r, a, b);
+#else
+    mlk_poly_add(r, a, b);
+#endif
+}
+
 // out = a o b for the first term of an NTT-domain dot product, and out +=
 // a o b for each later one. The result keeps the Montgomery R^-1 factor
 // that basemul introduces. prod holds a product with a secret operand, so
@@ -88,7 +97,7 @@ static void mlk_dot_term(mlk_poly *out, const mlk_poly *a, const mlk_poly *b, un
     if (j == 0) {
         *out = prod;
     } else {
-        mlk_poly_add(out, out, &prod);
+        mlk_add(out, out, &prod);
     }
     ct_wipe(&prod, sizeof prod);
 }
@@ -151,7 +160,7 @@ static void mlk_matvec_row(mlk_poly *out, const uint8_t seed[32], unsigned i, in
         if (j == 0) {
             *out = prod;
         } else {
-            mlk_poly_add(out, out, &prod);
+            mlk_add(out, out, &prod);
         }
     }
     ct_wipe(&prod, sizeof prod);
@@ -187,7 +196,7 @@ static void mlk_pke_keygen(unsigned rank, uint8_t *ek, uint8_t *dkpke, const uin
         mlk_poly_tomont(&t);                     // undo the R^-1
         mlk_sample_cbd(&e, sigma, (uint8_t)(rank + i));
         mlk_ntt(&e);
-        mlk_poly_add(&t, &t, &e);
+        mlk_add(&t, &t, &e);
         mlk_poly_reduce(&t);
         mlk_poly_tobytes(ek + (size_t)384 * i, &t);
         mlk_poly_tobytes(dkpke + (size_t)384 * i, &s.vec[i]);
@@ -224,15 +233,15 @@ static void mlk_pke_encrypt(uint8_t widemul, unsigned rank, uint8_t *ct, const u
         mlk_matvec_row(&u, rho, i, 1, &r, rank); // A^T o r (with R^-1)
         mlk_invntt(&u);                          // inverse NTT absorbs R^-1
         mlk_sample_cbd(&noise, coins, (uint8_t)(rank + i));
-        mlk_poly_add(&u, &u, &noise); // + e1
+        mlk_add(&u, &u, &noise); // + e1
         mlk_poly_reduce(&u);
         widemul_mlk_poly_compress_du(widemul, ct + mlk_poly_comp_du_bytes(rank) * i, &u, rank);
     }
     mlk_invntt(&v);
     mlk_sample_cbd(&noise, coins, (uint8_t)(2 * rank)); // e2
-    mlk_poly_add(&v, &v, &noise);
+    mlk_add(&v, &v, &noise);
     mlk_poly_frommsg(&noise, m); // Decompress1(m)
-    mlk_poly_add(&v, &v, &noise);
+    mlk_add(&v, &v, &noise);
     mlk_poly_reduce(&v);
     widemul_mlk_poly_compress(widemul, ct + mlk_polyvec_comp_bytes(rank), &v, rank);
     // u and v are published only compressed; the low bits the

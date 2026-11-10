@@ -27,6 +27,9 @@
 // at an edge value at each position, against a b at another; and CASES
 // pairs from all of int16 and CASES with a from (-q/2, q/2], an NTT's
 // output range, and b from [0, q), a sampled matrix entry's.
+//
+// And for the sum: the same pairs, with the output apart from both
+// operands, on the first and on the second, which is how mlkem.c calls it.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -102,6 +105,39 @@ static void compare_product(const char *what, const mlk_poly *a, const mlk_poly 
             return;
         }
     }
+}
+
+static void require_same(const char *what, const char *shape, const mlk_poly *portable,
+                         const mlk_poly *vector) {
+    compared++;
+    for (size_t i = 0; i < MLKEM_N; i++) {
+        if (portable->coeffs[i] != vector->coeffs[i]) {
+            failures++;
+            (void)fprintf(stderr,
+                          "mlkem vector equivalence: sum %s, %s: coefficient %zu is %d on the "
+                          "vector path and %d on the portable loop\n",
+                          what, shape, i, vector->coeffs[i], portable->coeffs[i]);
+            return;
+        }
+    }
+}
+
+// Runs the sum both ways on a and b, in each shape mlkem.c calls it, and
+// compares the results.
+static void compare_sum(const char *what, const mlk_poly *a, const mlk_poly *b) {
+    mlk_poly portable;
+    mlk_poly vector;
+    memset(&portable, 0, sizeof portable);
+    memset(&vector, 0, sizeof vector);
+    mlk_poly_add(&portable, a, b);
+    mlk_vector_add(&vector, a, b);
+    require_same(what, "output apart", &portable, &vector);
+    vector = *a;
+    mlk_vector_add(&vector, &vector, b);
+    require_same(what, "output on the first operand", &portable, &vector);
+    vector = *b;
+    mlk_vector_add(&vector, a, &vector);
+    require_same(what, "output on the second operand", &portable, &vector);
 }
 
 static void fill(mlk_poly *p, int16_t value) {
@@ -185,6 +221,8 @@ static void product_random_cases(void) {
         }
         compare_product("over all of int16", &a_wide, &b_wide);
         compare_product("over an NTT's output and a matrix entry", &a_centered, &b_reduced);
+        compare_sum("over all of int16", &a_wide, &b_wide);
+        compare_sum("over an NTT's output and a matrix entry", &a_centered, &b_reduced);
     }
 }
 
@@ -216,12 +254,13 @@ int main(void) {
     product_random_cases();
     if (failures != 0) {
         (void)fprintf(stderr,
-                      "mlkem vector equivalence: %d of %lu transforms and products differ\n",
+                      "mlkem vector equivalence: %d of %lu transforms, products and sums differ\n",
                       failures, compared);
         return 1;
     }
-    (void)printf("mlkem vector equivalence: %lu transforms and products, the same coefficients on "
-                 "the vector path and the portable loops\n",
-                 compared);
+    (void)printf(
+        "mlkem vector equivalence: %lu transforms, products and sums, the same coefficients on "
+        "the vector path and the portable loops\n",
+        compared);
     return 0;
 }

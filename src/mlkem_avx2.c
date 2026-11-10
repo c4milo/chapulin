@@ -106,7 +106,7 @@ static void mlk_matvec_row(mlk_poly *out, const uint8_t seed[32], unsigned i, in
         if (j == 0) {
             *out = prod;
         } else {
-            mlk_poly_add(out, out, &prod);
+            mlk_add(out, out, &prod);
         }
     }
     ct_wipe(&prod, sizeof prod);

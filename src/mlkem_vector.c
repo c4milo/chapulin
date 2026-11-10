@@ -233,4 +233,15 @@ void mlk_vector_basemul(mlk_poly *r, const mlk_poly *a, const mlk_poly *b) {
     }
 }
 
+// Eight coefficients a step: both loads come before the store, so r may be
+// a or b. gcc 13 at -O2 kept mlk_poly_add's loop one coefficient a step,
+// because r may overlap a there, and the sums took 5.9% of an ML-KEM-768
+// encapsulation (docs/decisions.md 214).
+void mlk_vector_add(mlk_poly *r, const mlk_poly *a, const mlk_poly *b) {
+    for (size_t at = 0; at < MLKEM_N; at += 8) {
+        lanes sum = lanes_add(lanes_load(a->coeffs + at), lanes_load(b->coeffs + at));
+        lanes_store(r->coeffs + at, sum);
+    }
+}
+
 #endif // CH_CPU_RUNTIME

@@ -17756,3 +17756,73 @@ does nothing more.
       spread of the five runs.
     - **`square_28` itself.** It takes 14.2 µs of gcc's verification and
       13.0 of clang's, and no change above reads it.
+
+214. **A host object adds two ML-KEM polynomials on eight lanes.** On an
+    EPYC 7763 an ML-KEM-768 encapsulation took 22.2 µs under gcc 13.3 and
+    18.3 under clang 23 in `bench/primitives.sh`, 1.02 and 0.84 of OpenSSL
+    3.6.4's time. Compiled as `make lib` compiles it, gcc's took 23.7 µs.
+
+    - **The cause.** `mlk_poly_add` is a loop over 256 coefficients whose
+      output may be an operand. clang 23 writes it as vector code. gcc 13
+      at -O2 writes vector code for a loop only where it needs no check at
+      run time. Under `-fno-strict-aliasing`, which `make lib` and
+      `build.zig` pass (decision 185), the loop needs a check that the
+      output and the operands do not overlap, so gcc kept one coefficient
+      a step. `perf record` put 5.9% of gcc's encapsulation in it, 1.40
+      µs, and 0.9% of clang's, 0.16 µs.
+    - **Why the scoreboard did not show it.** `bench/primitives.sh`
+      compiles the library's sources with flags of its own, without
+      `-fno-strict-aliasing`. There gcc reads two `mlk_poly` objects as one
+      object or two apart, and writes PADDW on 16 bytes a step. So the
+      scoreboard's ML-KEM rows time code that the library object does not
+      hold, and they do not move with this entry: bench run 42759645458
+      read gcc's encapsulation as 22.3 µs on the tree with it.
+      `bench/record.sh` takes the library's flags from `make
+      print-lib-cflags`.
+    - **The change.** `mlk_vector_add` in `mlkem_vector.c` loads eight
+      coefficients of each operand, adds them and stores the eight, on the
+      lanes of `mlkem_lanes.h`. Both loads come before the store, so the
+      output may be an operand. `mlkem.c`'s `mlk_add` calls it in a host
+      object and `mlk_poly_add` in a device object, as `mlk_ntt` and
+      `mlk_multiply_ntts` choose. `mlkem_poly.c` does not change, so a
+      device object's code is the same.
+    - **What holds it.** `bin/mlkem_vector_equiv_test` compares the sum
+      with `mlk_poly_add`'s loop over pairs from all of int16 and from the
+      ranges mlkem.c passes, with the output apart, on the first operand
+      and on the second. `inv46-mlkem-vector-add-stops-short` is caught
+      there. `lint-wide-multiply`'s branch count for `mlkem_vector.c` goes
+      from 7 to 8 on arm64 and on x86-64: the loop over the sum's 32
+      steps, a constant.
+    - **Numbers.** A/B run 42754920128 on the EPYC 7763, in ns, each the
+      median of five runs, before then after:
+
+      | ML-KEM-768 | gcc 13.3 | clang 23 |
+      | --- | --- | --- |
+      | key generation | 20494, 19454 | 16472, 16389 |
+      | encapsulation | 23654, 22106 | 18250, 18183 |
+      | decapsulation | 27064, 25332 | 20247, 20188 |
+
+      The driver of these runs compiles with the library's flags. No M1
+      was free to time the arm64 object. Under `qemu-aarch64` its
+      encapsulation retires 151,517 instructions where it retired 171,940
+      under clang 18, and 271,380 where it retired 291,764 under gcc 13.3.
+
+    Measured and not changed:
+
+    - **Decision 202's loop runs in no session.** Decision 202 wrote the
+      inner loop of `mlk_sample_cbd` out in the native copy alone. No
+      dispatcher of `widemul.h` names `mlk_sample_cbd_native`: `mlkem.c`
+      calls `mlk_sample_cbd` under its own name in every session. In the
+      profile above that function took 8.8% of gcc's encapsulation, 2.08
+      µs, and 2.2% of clang's, 0.40 µs. With `mlk_pke_encrypt` calling the
+      native copy where the session states the multiply, gcc's
+      encapsulation took 21051 ns and its decapsulation 24293 in the same
+      run. That call is not in the tree: `mlk_sample_cbd` multiplies
+      nothing, key generation takes no answer, and an arm64 object's copy
+      over the SHA-3 instructions has no native copy.
+    - **The matrix's rejection loop.** gcc writes `mlk_sample_groups` with
+      a jump for each candidate, on public bytes, inside `mlk_matvec_row`:
+      2.83 µs of gcc's encapsulation against 2.11 of clang's.
+      `mlkem_poly.c` holds the loop, and a device object compiles it too.
+    - **Keccak** takes 10.9 µs of gcc's encapsulation and 10.1 of clang's,
+      in `sha3.c` and `keccak_avx2.c`.

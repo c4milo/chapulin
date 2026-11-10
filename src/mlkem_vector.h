@@ -1,10 +1,10 @@
 // A host object's ML-KEM NTT arithmetic: mlkem_poly.c's forward and
-// inverse transforms and its base multiplication on eight 16-bit lanes at
-// a time, NEON on arm64 and SSE2 on x86-64. mlkem.c calls them in place of
-// mlk_poly_ntt, mlk_poly_invntt and mlk_poly_basemul in a host object
-// (-DCH_CPU_RUNTIME, cpu_cfg.h), and mlkem_poly.c's loops stay the
-// reference and a device object's path: bin/mlkem_vector_equiv_test
-// compares the two over the same inputs.
+// inverse transforms, its base multiplication and its sum on eight 16-bit
+// lanes at a time, NEON on arm64 and SSE2 on x86-64. mlkem.c calls them in
+// place of mlk_poly_ntt, mlk_poly_invntt, mlk_poly_basemul and
+// mlk_poly_add in a host object (-DCH_CPU_RUNTIME, cpu_cfg.h), and
+// mlkem_poly.c's loops stay the reference and a device object's path:
+// bin/mlkem_vector_equiv_test compares the two over the same inputs.
 //
 // Each lane computes the value mlkem_poly.c's loops compute for its
 // coefficient: the same Montgomery and Barrett reductions, to the same
@@ -40,6 +40,10 @@ void mlk_vector_invntt(mlk_poly *p);
 // mlk_poly_basemul's product of a and b into r, which must not overlap
 // either.
 void mlk_vector_basemul(mlk_poly *r, const mlk_poly *a, const mlk_poly *b);
+
+// mlk_poly_add's sum of a and b into r, each coefficient modulo 2^16. r may
+// be a or b.
+void mlk_vector_add(mlk_poly *r, const mlk_poly *a, const mlk_poly *b);
 
 #endif // CH_CPU_RUNTIME
 
