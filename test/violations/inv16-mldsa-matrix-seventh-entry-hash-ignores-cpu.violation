@@ -1,0 +1,20 @@
+invariant: INV-16
+file: src/mldsa_neon.c
+catches: test/docker-aes-runtime-qemu.sh keccak
+reason: an arm64 host object samples the seventh entry of each row of A
+  through the call that takes no value. So key generation, a signature and
+  a verification under CH_CPU_CONSTANT_TIME_SHA3 run eight SHAKE128
+  streams of ExpandA on sha3.c. Every key, signature and verdict stays
+  right, so no vector notices. bin/mldsa_runtime_test counts each SHAKE
+  call on each path under every ch_cfg.cpu value. The first six entries of
+  a row run on the two-way Keccak, and INV-69's violations hold them.
+  mldsa.c's and mldsa_sign_steps.c's own loops run in no arm64 host
+  object, because mld_wide_runs returns 1 there (docs/decisions.md 198).
+  Only an arm64 object that clang compiled has the instructions' path, so
+  the script builds the binary with clang for arm64 and runs it under
+  qemu-aarch64.
+
+--- old
+        return mld_sample_ntt_cpu(cpu, &e[0], rho, (uint8_t)first, (uint8_t)i);
+--- new
+        return mld_sample_ntt(&e[0], rho, (uint8_t)first, (uint8_t)i);
