@@ -17497,3 +17497,65 @@ does nothing more.
       difference and the doubling reduce in place, where the second
       pass has no copy of a to keep. Two carry passes in blocks would
       serve them, at about 100 cycles where the select takes 60.
+
+210. **The lanes of the AVX2 ChaCha20 pass are a vector of eight
+    `uint32_t`, and the adds, the XORs and two rotations are C operators.**
+    On an EPYC 7763, gcc 13.3's keystream kernel `chacha20_avx2.c` took
+    6.27 µs over 16 KiB where clang 23's took 6.12. Camilo approved the
+    second part of the gcc study on 2026-11-10.
+
+    - **The cause.** `lanes` was `__m256i`, four 64-bit lanes.
+      `_mm256_add_epi32` converts its result from eight 32-bit lanes, and
+      `_mm256_shuffle_epi8` converts its result from 32 bytes. gcc 13 gave
+      the value before a conversion and the value after it a
+      pseudo-register each. At the round loop's back edge both were live:
+      the next pass read one, and the code after the loop read the other.
+      A word's last operation in a double round is an add in rows 0 and 2
+      and a shuffle in row 3, so 12 of the 16 words had two values there.
+      Row 1 ends with an OR of four 64-bit lanes and had one. gcc's
+      allocator dump (`-fdump-rtl-ira`) lists the pairs as conflicts, and
+      gcc kept those 12 words on the stack through the loop: 16 stores and
+      15 loads of a 256-bit register in each double round of the pass,
+      where clang wrote 7 and 7.
+    - **The change.** `lanes` is `uint32_t` with `vector_size(32)`.
+      `lanes_add`, `lanes_xor` and the rotations by 12 and by 7 are `+`,
+      `^`, `<<`, `>>` and `|` on that type. `lanes_of` and
+      `lanes_register` convert at the shuffles, the unpacks, the loads and
+      the stores, and a conversion is no instruction. A word's last value
+      in the loop is then the value both readers take. gcc's pass has 6
+      stores and 5 loads in a double round, and 138 instructions where it
+      had 153. The hashing pass of `aead_avx2.c` has the same 11, where it
+      had 27. The pinned clang's two loops keep their instruction counts
+      and their stack references.
+    - **What holds it.** No byte changes. `bin/chacha20_equiv_test` and
+      `bin/aead_avx2_equiv_test` hold both kernels to the portable loop
+      and the two-pass AEAD as before, search the stack below each call,
+      and read ymm0 to ymm15 back as zero. The parts `chacha20-avx2` and
+      `aead-avx2` of `test/docker-aes-runtime-qemu.sh` run both under gcc
+      13.3 for x86-64.
+    - **Numbers.** A/B run 42754920128 on the EPYC 7763, 16 KiB under
+      `ch_cfg.cpu 0x1f`, in ns, each the median of five runs, before then
+      after:
+
+      | row | gcc 13.3 | clang 23 |
+      | --- | --- | --- |
+      | `chacha20_xor_cpu` | 6274, 5558 | 6120, 6099 |
+      | `aead_seal_cpu` | 8736, 8461 | 6751, 6786 |
+      | `aead_open_cpu` | 8750, 8495 | 6788, 6766 |
+
+      The five runs of clang's seal spread from 6740 to 6819 before and
+      from 6748 to 6844 after, so its row did not move. Under `qemu-x86_64
+      -cpu max` and gcc 13.3 the keystream of 16 KiB retires 50,960
+      instructions where it retired 55,984.
+
+    Rejected:
+
+    - **A word held in a slot the source names.** One, two or three words
+      stored and loaded through a volatile lvalue between the quarter
+      rounds left gcc 19 to 21 stack references a double round, more than
+      the 11 it writes without them.
+    - **The two shuffle orders held in registers.** clang 23 writes the
+      rotation by 16 as two shuffles and the rotation by 8 as two shuffles
+      and an XOR. With the orders in registers it writes one shuffle for
+      each, and its keystream took 5664 ns (run 42751977710). gcc then
+      kept 19 loads a double round and took the base's 6273 ns.

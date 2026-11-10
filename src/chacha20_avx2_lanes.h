@@ -31,23 +31,46 @@
 // out and the assertion holds them.
 _Static_assert(PASS_ROWS == 16, "the #pragma GCC unroll 16 below writes PASS_ROWS out");
 
-// Eight 32-bit lanes in one AVX2 register. The AVX2 calls take a lane's
-// word as an int; the casts below keep its 32 bits, which is how gcc and
-// clang define the conversion of a value above INT_MAX. Each operation
-// below works on all eight lanes at once and has no branch and no memory
-// access that depends on a lane's value.
-typedef __m256i lanes;
+// Eight 32-bit lanes in one AVX2 register: a GNU C vector of eight
+// uint32_t, which gcc and clang keep in a ymm register. The adds, the XORs
+// and the rotations by 12 and by 7 are C operators on that type. The AVX2
+// calls take __m256i, which is four 64-bit lanes, so lanes_of and
+// lanes_register convert at each call, and a conversion is no instruction.
+// Each operation below works on all eight lanes at once and has no branch
+// and no memory access that depends on a lane's value.
+//
+// gcc 13 needs this type. With __m256i as the lane type, each add and each
+// shuffle converted its result from the type of its operation. At the end
+// of each pass of the round loop gcc then held two values for one word:
+// the value the next pass reads, and the value the code after the loop
+// reads. It kept twelve of the sixteen words on the stack through the
+// loop. With this type one value serves both (docs/decisions.md 210).
+typedef uint32_t lanes __attribute__((vector_size(32)));
 
-static inline lanes lanes_broadcast(uint32_t word) {
-    return _mm256_set1_epi32((int)word);
+// The lanes of the register an AVX2 call returns, and the register an AVX2
+// call takes: the same 256 bits.
+static inline lanes lanes_of(__m256i x) {
+    return (lanes)x;
 }
 
+static inline __m256i lanes_register(lanes x) {
+    return (__m256i)x;
+}
+
+// The AVX2 call takes a lane's word as an int; the cast keeps its 32 bits,
+// which is how gcc and clang define the conversion of a value above
+// INT_MAX.
+static inline lanes lanes_broadcast(uint32_t word) {
+    return lanes_of(_mm256_set1_epi32((int)word));
+}
+
+// Each lane of a plus the same lane of b, modulo 2^32: VPADDD.
 static inline lanes lanes_add(lanes a, lanes b) {
-    return _mm256_add_epi32(a, b);
+    return a + b;
 }
 
 static inline lanes lanes_xor(lanes a, lanes b) {
-    return _mm256_xor_si256(a, b);
+    return a ^ b;
 }
 
 // A rotation by 16 or by 8 moves whole bytes inside each lane, so one byte
@@ -58,33 +81,34 @@ static inline lanes lanes_xor(lanes a, lanes b) {
 // 2 up one place. The order is a constant, so which byte moves where
 // depends on nothing the cipher computes.
 static inline lanes lanes_rotate_left_16(lanes x) {
-    const lanes order = _mm256_setr_epi8(2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13, 2, 3,
-                                         0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13);
-    return _mm256_shuffle_epi8(x, order);
+    const __m256i order = _mm256_setr_epi8(2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13, 2,
+                                           3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13);
+    return lanes_of(_mm256_shuffle_epi8(lanes_register(x), order));
 }
 
 static inline lanes lanes_rotate_left_8(lanes x) {
-    const lanes order = _mm256_setr_epi8(3, 0, 1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14, 3, 0,
-                                         1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14);
-    return _mm256_shuffle_epi8(x, order);
+    const __m256i order = _mm256_setr_epi8(3, 0, 1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14, 3,
+                                           0, 1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14);
+    return lanes_of(_mm256_shuffle_epi8(lanes_register(x), order));
 }
 
 // The other two rotations shift left by r, shift right by 32 - r, and OR
-// the two, as chacha20_vector.c's SSE2 rotations do.
+// the two, as chacha20_vector.c's SSE2 rotations do: VPSLLD, VPSRLD and
+// VPOR. The shift counts are constants, and a lane is unsigned, so the
+// right shift moves zeros in.
 static inline lanes lanes_rotate_left_12(lanes x) {
-    return _mm256_or_si256(_mm256_slli_epi32(x, 12), _mm256_srli_epi32(x, 20));
+    return (x << 12) | (x >> 20);
 }
 
 static inline lanes lanes_rotate_left_7(lanes x) {
-    return _mm256_or_si256(_mm256_slli_epi32(x, 7), _mm256_srli_epi32(x, 25));
+    return (x << 7) | (x >> 25);
 }
 
 // counter to counter + 7 in lanes 0 to 7. The lane adds wrap modulo 2^32,
 // as chacha20.c's state[12]++ does. _mm256_setr_epi32 names the lanes from
 // 0 up.
 static inline lanes lanes_counters(uint32_t counter) {
-    return _mm256_add_epi32(_mm256_set1_epi32((int)counter),
-                            _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7));
+    return lanes_broadcast(counter) + lanes_of(_mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7));
 }
 
 // A 4x4 transpose of 32-bit words in each 128-bit half, which AVX2's
@@ -92,25 +116,29 @@ static inline lanes lanes_counters(uint32_t counter) {
 // becomes lanes 0 to 3 of the j-th of them. The low half holds lanes 0 to
 // 3 and the high half lanes 4 to 7.
 static inline void transpose(lanes *a, lanes *b, lanes *c, lanes *d) {
-    lanes ab_low = _mm256_unpacklo_epi32(*a, *b);  // a0 b0 a1 b1, a4 b4 a5 b5
-    lanes cd_low = _mm256_unpacklo_epi32(*c, *d);  // c0 d0 c1 d1, c4 d4 c5 d5
-    lanes ab_high = _mm256_unpackhi_epi32(*a, *b); // a2 b2 a3 b3, a6 b6 a7 b7
-    lanes cd_high = _mm256_unpackhi_epi32(*c, *d); // c2 d2 c3 d3, c6 d6 c7 d7
-    *a = _mm256_unpacklo_epi64(ab_low, cd_low);    // a0 b0 c0 d0, a4 b4 c4 d4
-    *b = _mm256_unpackhi_epi64(ab_low, cd_low);    // a1 b1 c1 d1, a5 b5 c5 d5
-    *c = _mm256_unpacklo_epi64(ab_high, cd_high);  // a2 b2 c2 d2, a6 b6 c6 d6
-    *d = _mm256_unpackhi_epi64(ab_high, cd_high);  // a3 b3 c3 d3, a7 b7 c7 d7
+    __m256i a_register = lanes_register(*a);
+    __m256i b_register = lanes_register(*b);
+    __m256i c_register = lanes_register(*c);
+    __m256i d_register = lanes_register(*d);
+    __m256i ab_low = _mm256_unpacklo_epi32(a_register, b_register);  // a0 b0 a1 b1, a4 b4 a5 b5
+    __m256i cd_low = _mm256_unpacklo_epi32(c_register, d_register);  // c0 d0 c1 d1, c4 d4 c5 d5
+    __m256i ab_high = _mm256_unpackhi_epi32(a_register, b_register); // a2 b2 a3 b3, a6 b6 a7 b7
+    __m256i cd_high = _mm256_unpackhi_epi32(c_register, d_register); // c2 d2 c3 d3, c6 d6 c7 d7
+    *a = lanes_of(_mm256_unpacklo_epi64(ab_low, cd_low));            // a0 b0 c0 d0, a4 b4 c4 d4
+    *b = lanes_of(_mm256_unpackhi_epi64(ab_low, cd_low));            // a1 b1 c1 d1, a5 b5 c5 d5
+    *c = lanes_of(_mm256_unpacklo_epi64(ab_high, cd_high));          // a2 b2 c2 d2, a6 b6 c6 d6
+    *d = lanes_of(_mm256_unpackhi_epi64(ab_high, cd_high));          // a3 b3 c3 d3, a7 b7 c7 d7
 }
 
 // out[0..31] = in[0..31] XOR the keystream's 32 bytes, lane 0's four bytes
 // first. The 32 input bytes are read before any output byte is written.
 static inline void xor_32(const uint8_t *in, uint8_t *out, lanes keystream) {
-    lanes data = _mm256_loadu_si256((const __m256i *)(const void *)in);
-    _mm256_storeu_si256((__m256i *)(void *)out, _mm256_xor_si256(data, keystream));
+    lanes data = lanes_of(_mm256_loadu_si256((const __m256i *)(const void *)in));
+    _mm256_storeu_si256((__m256i *)(void *)out, lanes_register(lanes_xor(data, keystream)));
 }
 
 static inline void store_32(uint8_t *out, lanes keystream) {
-    _mm256_storeu_si256((__m256i *)(void *)out, keystream);
+    _mm256_storeu_si256((__m256i *)(void *)out, lanes_register(keystream));
 }
 
 static uint32_t load32(const uint8_t *p) {
@@ -201,10 +229,12 @@ static inline void pass_keystream(lanes x[16], const uint32_t words[16], uint32_
 static inline lanes row_keystream(const lanes x[16], size_t row) {
     size_t block = row / 2;
     size_t first = 8 * (row % 2) + block % 4;
+    __m256i low_words = lanes_register(x[first]);
+    __m256i high_words = lanes_register(x[first + 4]);
     if (block < 4) {
-        return _mm256_permute2x128_si256(x[first], x[first + 4], 0x20);
+        return lanes_of(_mm256_permute2x128_si256(low_words, high_words, 0x20));
     }
-    return _mm256_permute2x128_si256(x[first], x[first + 4], 0x31);
+    return lanes_of(_mm256_permute2x128_si256(low_words, high_words, 0x31));
 }
 
 // out[0..count) = in[0..count) XOR the first count bytes of keystream,
