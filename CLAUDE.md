@@ -157,7 +157,9 @@ Home: github.com/c4milo.
   `rsa_mont64_adx_asm.h` hold the tree's other assembly, the arm64 AES-GCM
   passes, the x86-64 X25519 field's five operations, the x86-64 P-256
   field's product and square, and the x86-64 RSA signer's five row
-  operations (docs/decisions.md 158, 165, 171 and 183)
+  operations (docs/decisions.md 158, 165, 171 and 183), and
+  `poly1305_wide.h` holds one statement of three instructions under gcc
+  for x86-64 (docs/decisions.md 211)
   ← `sha256.[ch]` with `sha256_hw.c` (SHA-256 on
   FEAT_SHA256 or the x86-64 SHA extensions, a host session whose caller
   sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` with
@@ -186,9 +188,10 @@ Home: github.com/c4milo.
   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq and TRUST=webpki
   builds and every server role package them with `sha3.[ch]`, other
   builds keep them test-only) with `mlkem_zetas.h` (the NTT's twiddle
-  factors), with `mlkem_vector.[ch]` and `mlkem_lanes.h` (the NTT and
-  base multiplication on eight 16-bit lanes, NEON or SSE2, every session
-  of a host object), with `keccak_avx2.[ch]` and `mlkem_avx2.[ch]`
+  factors), with `mlkem_vector.[ch]` and `mlkem_lanes.h` (the NTT, the
+  base multiplication and the sum of two polynomials on eight 16-bit
+  lanes, NEON or SSE2, every session of a host object), with
+  `keccak_avx2.[ch]` and `mlkem_avx2.[ch]`
   (Keccak on four states at once in AVX2, and `mlkem.c` compiled once
   more to sample the matrix on it, an x86-64 session whose caller sets
   CH_CPU_AVX2), and with `keccak_hw.h`, `mlkem_hw.c` and
@@ -247,16 +250,21 @@ Home: github.com/c4milo.
   and `keysched.c` compiled once more over the hash instructions, a host
   object) ← `chacha20.[ch]` with `chacha20_vector.[ch]` (eight blocks a
   pass on NEON, two groups of four side by side, and four on SSE2, every
-  session of a host object), `chacha20_avx2.[ch]` (eight blocks a pass
-  in 256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2),
+  session of a host object), `chacha20_avx2.[ch]` (eight blocks a pass in
+  256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2;
+  `chacha20_avx2_lanes.h` holds each lane as a GNU C vector of eight
+  `uint32_t`, whose sums, exclusive-ors and rotations by 12 and 7 are C
+  operators, docs/decisions.md 210),
   `aead_avx2.[ch]` (the ChaCha20-Poly1305 seal and open in one pass over
   `chacha20_avx2_lanes.h` and `poly1305_avx2_lanes.h`, an x86-64 session
   whose caller sets CH_CPU_AVX2 and CH_CPU_CONSTANT_TIME_MULTIPLY and not
   CH_CPU_AVX512_IFMA, for 1,024 bytes or more; its open wipes the
   plaintext on a bad tag, docs/decisions.md 199), and `poly1305_wide.h`
   (Poly1305's block step on three 64-bit limbs on `ct_mul128`, which the
-  one pass runs between the AVX2 rounds under the multiply bit,
-  docs/decisions.md 206) and
+  one pass runs between the AVX2 rounds under the multiply bit, three
+  blocks a double round; under gcc for x86-64 its sum of three words is
+  one assembly statement, ADD, ADC and ADC, and the C form of the sum
+  stays the reference, docs/decisions.md 206 and 211) and
   `chacha20_avx512.[ch]` (sixteen blocks a pass in 512-bit vectors, an
   x86-64 session whose caller sets CH_CPU_AVX512_IFMA) +
   `poly1305.[ch]` with `poly1305_vector.[ch]` (four blocks a pass in
@@ -616,7 +624,9 @@ Home: github.com/c4milo.
   eight 16-bit lanes in every session of a host object the same way:
   their multiplies are 16x16, the size of `ct.h`'s pieces, so no bit
   picks them, and `mlkem_poly.c`'s loops stay the reference and a device
-  object's path (docs/decisions.md 101).
+  object's path (docs/decisions.md 101). The sum of two polynomials runs
+  on the same lanes in every session of a host object, through
+  `mlk_vector_add`, because it multiplies nothing (docs/decisions.md 214).
   ML-DSA-87's transforms and products run on `mldsa_vector.c`'s four
   32-bit lanes in an arm64 host object: a verification in every session,
   because its inputs are public, and a signature or a key generation
@@ -979,7 +989,11 @@ Home: github.com/c4milo.
   `spec/lean/Spec/RsaMont64Adx.lean` proves that the multiplication and
   the square write a b R^-1 mod m below m, which `bin/diff_rsa_mont64_adx`
   holds the C to, and `bin/rsa_mont64_adx_test` holds the assembly to the
-  model (docs/decisions.md 183). Portable C that
+  model (docs/decisions.md 183). The `poly1305_wide` harnesses and
+  `bin/diff_poly1305_wide` compile `poly1305_wide.h` with
+  `POLY1305_WIDE_ADC` 0, the C form of its sum, and under gcc for x86-64
+  `bin/aead_avx2_equiv_test` holds the assembly statement to a 128-bit sum
+  of the same words (docs/decisions.md 211). Portable C that
   a host object alone compiles carries harnesses as every module does:
   `sha512_compress_blocks`, `sha512_compress_blocks_steps` and
   `sha512_compress_blocks_advancing` prove `sha512_compress_blocks.c`'s
