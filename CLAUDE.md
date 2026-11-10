@@ -153,11 +153,12 @@ Home: github.com/c4milo.
   compiler cannot remove) and `avx512_wipe.[ch]` (a block of assembly,
   32 VPXORD and 7 KXORW, which zeros zmm0 to zmm31 and k1 to k7 for a
   kernel that held secrets in them, an x86-64 host object alone);
-  `gcm_arm64_passes.h`, `x25519_adx_asm.h`, `p256_adx_asm.h` and
-  `rsa_mont64_adx_asm.h` hold the tree's other assembly, the arm64 AES-GCM
-  passes, the x86-64 X25519 field's five operations, the x86-64 P-256
-  field's product and square, and the x86-64 RSA signer's five row
-  operations (docs/decisions.md 158, 165, 171 and 183), and
+  `gcm_arm64_passes.h`, `x25519_adx_asm.h`, `p256_adx_asm.h`,
+  `p256_arm64_asm.h` and `rsa_mont64_adx_asm.h` hold the tree's other
+  assembly, the arm64 AES-GCM passes, the x86-64 X25519 field's five
+  operations, the x86-64 and the arm64 P-256 fields' products and squares,
+  and the x86-64 RSA signer's five row operations (docs/decisions.md 158,
+  165, 171, 183 and 215), and
   `poly1305_wide.h` holds one statement of three instructions under gcc
   for x86-64 (docs/decisions.md 211)
   ← `sha256.[ch]` with `sha256_hw.c` (SHA-256 on
@@ -342,7 +343,15 @@ Home: github.com/c4milo.
   ECDSA verification under CH_CPU_BMI2_ADX alone; `widemul_p256.h` holds
   the P-256 dispatchers and `widemul_answer.h` the answers both widemul
   headers read; `test/p256_adx_model.h` writes the same words in portable
-  C, docs/decisions.md 171) +
+  C, docs/decisions.md 171) + `p256_arm64.h` with `p256_arm64_names.h`,
+  `p256_arm64_asm.h` and the `p256_arm64_*` files (the same copy whose
+  product and square are arm64 inline assembly on MUL, UMULH, ADDS and
+  ADCS, which takes and gives every word in a register, arm64; a session
+  whose caller sets the multiply bit runs its point arithmetic there in
+  place of the wide files, and every session its ECDSA verification;
+  `test/p256_arm64_model.h` writes the same words in portable C over
+  `p256_wide_mul_row`, `p256_wide_sqr_product` and
+  `test/p256_adx_model.h`'s `model_reduce`, docs/decisions.md 215) +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify; for a modulus whose top
   bit is set, a host object's arm computes no R^2: `rsa_mont_division.h`'s
   long division, which branches on the public modulus and signature,
@@ -603,8 +612,9 @@ Home: github.com/c4milo.
   `poly1305_ifma.c` on IFMA's products, or with CH_CPU_AVX2
   `poly1305_avx2.c` on VPMULUDQ, X25519 runs the wide field's five 51-bit
   words, or for a shared secret on x86-64 with CH_CPU_BMI2_ADX
-  `x25519_adx.c`'s four 64-bit words, P-256 runs the wide files' four 64-bit words,
-  or on x86-64 with CH_CPU_BMI2_ADX `p256_adx.h`'s copy of them, and RSA signs with
+  `x25519_adx.c`'s four 64-bit words, P-256 runs the wide files' four
+  64-bit words, or on x86-64 with CH_CPU_BMI2_ADX `p256_adx.h`'s copy of
+  them, or on arm64 `p256_arm64.h`'s copy of them, and RSA signs with
   `rsa_sign64.c`, which on x86-64 with CH_CPU_AVX512_IFMA runs both CRT
   exponentiations on `rsa_ifma_sign.c` and its check on `rsa_ifma.c`
   through `rsa_vp1_cpu`, and wipes the stack below each call and the
@@ -985,7 +995,12 @@ Home: github.com/c4milo.
   and prove no word wraps; `spec/lean/Spec/P256Adx.lean` proves the
   reduction's value, which `bin/diff_p256_adx` holds the C to, and
   `bin/p256_adx_equiv_test` holds the assembly to the model
-  (docs/decisions.md 171). `rsa_mont64_adx.c`'s harnesses compile it over
+  (docs/decisions.md 171). `p256_arm64_field.c`'s harnesses compile it
+  over `test/p256_arm64_model.h` and prove no word wraps; that model's
+  rounds are `model_reduce` itself, so `Spec.P256Adx`'s theorems hold of
+  it, `bin/diff_p256_arm64` holds the C to its `mulMont`, and
+  `bin/p256_arm64_equiv_test` holds the assembly to the model
+  (docs/decisions.md 215). `rsa_mont64_adx.c`'s harnesses compile it over
   `test/rsa_mont64_adx_model.h` and prove no word wraps;
   `spec/lean/Spec/RsaMont64Adx.lean` proves that the multiplication and
   the square write a b R^-1 mod m below m, which `bin/diff_rsa_mont64_adx`
