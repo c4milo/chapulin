@@ -32,21 +32,29 @@
 
 #include "chacha20_avx2_lanes.h"
 
-// A pass covers PASS_BYTES, 32 Poly1305 blocks. The round loop below
-// absorbs four blocks after each of its first eight double rounds.
+// A pass covers PASS_BYTES, 32 Poly1305 blocks. Each of the ten double
+// rounds below absorbs three, and the last two follow the rounds.
 #define POLY1305_BLOCK ((size_t)16)
-#define STEP_BLOCKS ((size_t)4)
-#define STEPS ((size_t)8)
-_Static_assert(STEPS * STEP_BLOCKS * POLY1305_BLOCK == PASS_BYTES,
-               "the round loop absorbs a pass's blocks");
+#define DOUBLE_ROUNDS ((size_t)10)
+#define STEP_BLOCKS ((size_t)3)
+#define LAST_BLOCKS ((size_t)2)
+_Static_assert((DOUBLE_ROUNDS * STEP_BLOCKS + LAST_BLOCKS) * POLY1305_BLOCK == PASS_BYTES,
+               "the rounds and the two blocks after them absorb a pass's blocks");
 
 // One pass of eight ChaCha20 blocks, as chacha20_avx2_lanes.h's pass with a
-// limit of PASS_BYTES, and between its double rounds the 32 blocks at hash
+// limit of PASS_BYTES, and between its rounds the 32 blocks at hash
 // absorbed into acc on the general registers (poly1305_wide.h). The rounds
 // run on the vector units and the blocks on the scalar multiplier, and
 // neither waits on the other, so the CPU runs both at once. The blocks
 // are read before the pass writes out, so hash may be in. The attribute
 // aligns the frame to 32 bytes, for the reason pass gives.
+//
+// A block's step waits for the step before it, and a round waits for no
+// block. Four blocks after a double round took longer than the double
+// round, and the last two double rounds absorbed none. So each double
+// round absorbs three: two after its column round and one after its
+// diagonal round. The last two run beside the keystream's adds and its
+// transposes (docs/decisions.md 211).
 __attribute__((force_align_arg_pointer)) static void
 pass_hashing(const uint32_t input[16], uint32_t counter, const uint8_t *in, uint8_t *out,
              const uint8_t *hash, poly1305_wide_acc *acc, const poly1305_wide_key *key) {
@@ -54,16 +62,17 @@ pass_hashing(const uint32_t input[16], uint32_t counter, const uint8_t *in, uint
     const poly1305_wide_key k = *key;
     lanes x[16];
     pass_input(x, input, counter);
-    for (size_t step = 0; step < STEPS; step++) {
-        double_round(x);
+    for (size_t step = 0; step < DOUBLE_ROUNDS; step++) {
         const uint8_t *m = hash + STEP_BLOCKS * POLY1305_BLOCK * step;
+        column_round(x);
         poly1305_wide_block(&a, &k, m);
         poly1305_wide_block(&a, &k, m + POLY1305_BLOCK);
+        diagonal_round(x);
         poly1305_wide_block(&a, &k, m + 2 * POLY1305_BLOCK);
-        poly1305_wide_block(&a, &k, m + 3 * POLY1305_BLOCK);
     }
-    double_round(x);
-    double_round(x);
+    const uint8_t *last = hash + DOUBLE_ROUNDS * STEP_BLOCKS * POLY1305_BLOCK;
+    poly1305_wide_block(&a, &k, last);
+    poly1305_wide_block(&a, &k, last + POLY1305_BLOCK);
     pass_keystream(x, input, counter);
     (void)xor_rows(in, out, x, PASS_BYTES);
     *acc = a;

@@ -17559,3 +17559,76 @@ does nothing more.
       and an XOR. With the orders in registers it writes one shuffle for
       each, and its keystream took 5664 ns (run 42751977710). gcc then
       kept 19 loads a double round and took the base's 6273 ns.
+
+211. **The one pass's Poly1305 sum of three words is one statement of ADD,
+    ADC and ADC under gcc for x86-64, and each double round of a pass
+    absorbs three blocks.** After decision 210 a 16 KiB seal took 8.46 µs
+    under gcc 13.3 on an EPYC 7763, 2.90 µs over its keystream, where
+    clang 23's took 0.69 µs over its own.
+
+    - **The first cause: gcc writes no ADC.** `poly1305_wide_add` computes
+      a carry as a comparison of the sum with an operand. clang 23 writes
+      the three-word sums of a block as ADD, ADC and ADC. gcc 13 writes
+      each carry as SETC, MOVZBL and ADD: 53 instructions a block where
+      clang writes 36. `__builtin_add_overflow` gave gcc 52 instructions.
+      A 128-bit sum made gcc multiply in three products (decision 206),
+      and a 128-bit comparison made it write a jump on the carry, which is
+      a branch on a secret.
+    - **The sum.** `poly1305_wide_sum` adds (m2 : m1 : m0) to
+      (h2 : h1 : h0). `POLY1305_WIDE_ADC` names its form, as
+      `RSA_MONT64_CARRY` names the form of `rsa_mont64_addcarry.c`'s add.
+      A gcc build for x86-64 compiles one statement of ADD, ADC and ADC,
+      and every other build compiles the comparisons. The statement has no
+      branch. Its memory operands are the block's two words, at an address
+      that the pass computes from its length alone. gcc's block is then 39
+      instructions. Under clang 23 the header compiles to the code it
+      compiled to before, but for two moves in `hash_rest` that changed
+      places.
+    - **The second cause: where the blocks sit.** A block's step waits for
+      the step before it, and a round waits for no block. A pass absorbed
+      four blocks after each of its first eight double rounds, and none
+      after the last two. On the tree before decision 210, the spread below
+      alone took gcc's seal from 8736 to 7674 ns and clang's from 6751 to
+      6543.
+    - **The spread.** Each of the ten double rounds absorbs three blocks:
+      two after its column round and one after its diagonal round. The
+      last two blocks follow the rounds and run beside the keystream's
+      adds and transposes. `column_round` and `diagonal_round` are the two
+      halves of `double_round` in `chacha20_avx2_lanes.h`.
+    - **What holds it.** The `poly1305_wide` harnesses define
+      `POLY1305_WIDE_ADC` as 0 and prove the comparisons, as before. The
+      rule of `bin/diff_poly1305_wide` passes `-DPOLY1305_WIDE_ADC=0`, so
+      the Lean model is held to the form in C under every compiler.
+      `bin/aead_avx2_equiv_test` holds the form its build compiles to a sum
+      in 128-bit arithmetic, over 12,960 edge cases and 4,096 random ones,
+      and then the one pass to the two-pass AEAD. CI's check job compiles
+      it with gcc for x86-64, and the part `aead-avx2` of
+      `test/docker-aes-runtime-qemu.sh` does on every machine. Two new
+      violations are caught by that part: the statement with ADD for its
+      second ADC, and a pass that absorbs its last block twice.
+      `inv16-poly1305-wide-drops-carry` now edits the form in C.
+    - **Numbers.** A/B run 42754920128 on the EPYC 7763, 16 KiB under
+      `ch_cfg.cpu 0x1f`, in ns, each the median of five runs, seal then
+      open:
+
+      | tree | gcc 13.3 | clang 23 |
+      | --- | --- | --- |
+      | decision 210 | 8461, 8495 | 6786, 6766 |
+      | with the sum | 7130, 7134 | 6789, 6769 |
+      | with the sum and the spread | 6393, 6417 | 6574, 6562 |
+
+      OpenSSL 3.6.4 took 7473 and 7490 ns on that CPU model in run
+      42553779994. Under `qemu-x86_64 -cpu max` and gcc 13.3 a seal of 16
+      KiB retires 95,275 instructions with the sum, where it retired
+      109,752.
+
+    Rejected:
+
+    - **Two blocks after each of the first sixteen rounds.** gcc took 6869
+      and 6830 ns, and clang 6672 and 6660: the last four rounds still
+      absorb nothing.
+    - **Three blocks after each double round.** gcc took 6534 and 6530 ns,
+      and clang 6731 and 6747.
+    - **The statement under clang.** clang 23 kept the statement's
+      operands in stack slots, and its seal took 9303 ns (run
+      42751977710).

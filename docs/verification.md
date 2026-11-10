@@ -64,7 +64,7 @@ The other 42 sources are in no such harness:
 | `avx512_wipe.c` | It is one block of inline assembly, which CBMC does not read, and holds no C a harness could drive. It has a body on x86-64 alone. | On a CPU with AVX-512F, `bin/avx512_wipe_test` sets every bit of zmm0 to zmm31 and k1 to k7, calls it, and requires each register to read back as zero; the nightly's `rsa-ifma-sde` job runs the binary under Intel SDE. |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, `bin/diff_poly1305_vector` holds it to the Lean model whose bounds `Spec/Poly1305Vector.lean` proves, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
-| `aead_avx2.c` | It runs the one-pass ChaCha20-Poly1305 seal and open on the AVX2 intrinsics of `chacha20_avx2_lanes.h`, beside `poly1305_wide.h`'s block step, which the `poly1305_wide` harnesses prove, and has a body in an x86-64 host object alone (decisions 199 and 206). | On a CPU with AVX2, `bin/aead_avx2_equiv_test` holds both entries to the two-pass AEAD at every length to 3,072 bytes and at 16 KiB, searches the stack below each for the key, r's two limbs and r^2 to r^8, and reads ymm0 to ymm15 back as zero after each. `bin/x86_kernels_test` counts the calls under each `ch_cfg.cpu` value. |
+| `aead_avx2.c` | It runs the one-pass ChaCha20-Poly1305 seal and open on the AVX2 intrinsics of `chacha20_avx2_lanes.h`, beside `poly1305_wide.h`'s block step, which the `poly1305_wide` harnesses prove, and has a body in an x86-64 host object alone (decisions 199 and 206). | On a CPU with AVX2, `bin/aead_avx2_equiv_test` holds both entries to the two-pass AEAD at every length to 3,072 bytes and at 16 KiB, searches the stack below each for the key, r's two limbs and r^2 to r^8, and reads ymm0 to ymm15 back as zero after each. It also holds `poly1305_wide.h`'s sum of three words, in the form its build compiles, to a sum in 128-bit arithmetic. `bin/x86_kernels_test` counts the calls under each `ch_cfg.cpu` value. |
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
 | `mldsa_vector.c` | It runs ML-DSA-87's NTT, inverse NTT and two NTT-domain products on NEON intrinsics for arm64 and AVX2 intrinsics for x86-64, and has a body in a host object alone. | `bin/mldsa_vector_equiv_test` holds it to `mldsa_poly.c`'s and `mldsa_sign_poly.c`'s proven loops, `bin/mldsa_runtime_test` counts which calls run it, and the signer's, Wycheproof's and the CNSA 2.0 server's tests sign and verify on it ([The ML-DSA-87 lanes](#the-ml-dsa-87-lanes)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
@@ -783,6 +783,11 @@ The entries are grouped by area:
     computes `(h + m + 2^128) r` modulo 2^130 - 5 on the numbers these
     checks keep in range, and `bin/diff_poly1305_wide` holds the C to
     that model limb for limb.
+  - Both harnesses and the differential read the step's sum of three
+    words in C (`POLY1305_WIDE_ADC` at 0). A gcc build for x86-64
+    compiles the sum as one statement of ADD, ADC and ADC, which CBMC does
+    not read: `bin/aead_avx2_equiv_test` holds that statement to a sum in
+    128-bit arithmetic (decision 211).
 - **Bound:** one block; `h2` at most 4.
 
 #### x25519_adx

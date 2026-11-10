@@ -13,6 +13,12 @@
 // --unsigned-overflow-check on the launch line checks each shift and sum.
 // The values the conversions keep rest on bin/aead_avx2_equiv_test, which
 // compares every tag with the two-pass AEAD's.
+// The sum's statement of ADD, ADC and ADC is off, as the rows of
+// proof/rsa_mont64_stubs.h are: the prove job's cbmc preprocesses as gcc
+// does for x86-64, which would turn it on, and CBMC reads no assembly. The
+// harness proves the comparisons, and bin/aead_avx2_equiv_test holds the
+// statement to a 128-bit sum (docs/decisions.md 211).
+#define POLY1305_WIDE_ADC 0
 #include "harness.h"
 
 #include "poly1305_wide.h"

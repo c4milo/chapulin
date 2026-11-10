@@ -13,6 +13,19 @@
 // compares the one pass with the two-pass AEAD, and the poly1305_wide
 // harnesses and spec/lean/Spec/Poly1305Wide.lean hold the step itself.
 //
+// The sum of three words has two forms, and POLY1305_WIDE_ADC names the one
+// a build compiles:
+//
+//   1  gcc for x86-64: one statement of ADD, ADC and ADC. gcc 13 writes no
+//      ADC for a carry that C computes from a comparison, and its form of
+//      the C took 15 more instructions a block (docs/decisions.md 211).
+//   0  every other build: the comparisons, which clang writes as ADD, ADC
+//      and ADC. The harnesses in proof/ name this form, which CBMC reads.
+//
+// bin/aead_avx2_equiv_test holds the form its build compiles to a sum in
+// 128-bit arithmetic, and bin/diff_poly1305_wide holds the step over it to
+// the Lean model.
+//
 // The bounds the step keeps, which the harnesses prove for every input
 // within them and the Lean module states:
 //   - r0 and r1 below 2^60, r1 a multiple of 4: the clamp of RFC 8439
@@ -27,6 +40,14 @@
 #include "ct.h"
 
 #ifdef CH_CPU_RUNTIME
+
+#ifndef POLY1305_WIDE_ADC
+#if defined(__GNUC__) && !defined(__clang__) && defined(__x86_64__)
+#define POLY1305_WIDE_ADC 1
+#else
+#define POLY1305_WIDE_ADC 0
+#endif
+#endif
 
 // r and 5/4 of r1, which a product past 2^130 takes: modulo 2^130 - 5,
 // 2^128 r1 h1 2^0 is 2^130 (r1 / 4) h1, which is 5 (r1 / 4) h1.
@@ -88,15 +109,40 @@ static inline __attribute__((always_inline)) uint64_t poly1305_wide_add(uint64_t
     return sum;
 }
 
+// (h2 : h1 : h0) = (h2 : h1 : h0) + (m2 : m1 : m0), three words with the
+// carry out of each of the lower two added to the word above. The caller
+// keeps h2 + m2 + 2 below 2^64, so the top word does not wrap. Neither form
+// has a branch. The statement of the first form reads m0 to m2 as
+// registers, immediates or memory at an address the caller computed from
+// nothing secret, and names the flags it writes.
+static inline __attribute__((always_inline)) void
+poly1305_wide_sum(uint64_t *h0, uint64_t *h1, uint64_t *h2, uint64_t m0, uint64_t m1, uint64_t m2) {
+#if POLY1305_WIDE_ADC
+    __asm__("add %[m0], %[h0]\n adc %[m1], %[h1]\n adc %[m2], %[h2]"
+            : [h0] "+&r"(*h0), [h1] "+&r"(*h1), [h2] "+r"(*h2)
+            : [m0] "rme"(m0), [m1] "rme"(m1), [m2] "rme"(m2)
+            : "cc");
+#else
+    uint64_t carry = 0;
+    uint64_t carry_high = 0;
+    *h0 = poly1305_wide_add(*h0, m0, &carry);
+    uint64_t sum = poly1305_wide_add(*h1, m1, &carry_high);
+    *h1 = poly1305_wide_add(sum, carry, &carry);
+    *h2 = *h2 + m2 + carry_high + carry;
+#endif
+}
+
 // h2 at or above 4 folded down: the bits at 2^130 and up, times 5, added
 // at 2^0.
 static inline __attribute__((always_inline)) void poly1305_wide_fold(poly1305_wide_acc *a) {
     uint64_t c = (a->h2 >> 2) * 5;
-    uint64_t carry = 0;
-    a->h2 &= 3;
-    a->h0 = poly1305_wide_add(a->h0, c, &carry);
-    a->h1 = poly1305_wide_add(a->h1, carry, &carry);
-    a->h2 += carry;
+    uint64_t h0 = a->h0;
+    uint64_t h1 = a->h1;
+    uint64_t h2 = a->h2 & 3;
+    poly1305_wide_sum(&h0, &h1, &h2, c, 0, 0);
+    a->h0 = h0;
+    a->h1 = h1;
+    a->h2 = h2;
 }
 
 // poly1305.c's five words from the accumulator, each below 2^26. Two folds
@@ -117,12 +163,10 @@ static inline void poly1305_wide_to_words(uint32_t h[5], poly1305_wide_acc *a) {
 // of aead_avx2.c's pass_hashing, so the attribute makes it inline.
 static inline __attribute__((always_inline)) void
 poly1305_wide_block(poly1305_wide_acc *a, const poly1305_wide_key *k, const uint8_t m[16]) {
-    uint64_t carry = 0;
-    uint64_t carry_high = 0;
-    uint64_t h0 = poly1305_wide_add(a->h0, poly1305_wide_load64(m), &carry);
-    uint64_t h1 = poly1305_wide_add(a->h1, poly1305_wide_load64(m + 8), &carry_high);
-    h1 = poly1305_wide_add(h1, carry, &carry);
-    uint64_t h2 = a->h2 + 1 + carry_high + carry;
+    uint64_t h0 = a->h0;
+    uint64_t h1 = a->h1;
+    uint64_t h2 = a->h2;
+    poly1305_wide_sum(&h0, &h1, &h2, poly1305_wide_load64(m), poly1305_wide_load64(m + 8), 1);
     ct_u128 d0 = ct_mul128(h0, k->r0) + ct_mul128(h1, k->s1);
     ct_u128 d1 = ct_mul128(h0, k->r1) + ct_mul128(h1, k->r0) + (ct_u128)(h2 * k->s1);
     uint64_t d2 = h2 * k->r0;

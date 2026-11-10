@@ -27,6 +27,10 @@
 //     tag changed, which returns 0, and on the one pass leaves zeros where
 //     the plaintext was.
 //
+// Before those cases the binary holds poly1305_wide.h's sum of three
+// words, in the form this build compiles, to a sum in 128-bit arithmetic
+// (test/aead_avx2_equiv_sum.h), on every x86-64 CPU.
+//
 // On a CPU with AVX2 the binary then searches the stack below a seal and
 // an open for the key's eight words side by side and for r^2 to r^8, and
 // reads ymm0 to ymm15 back as zero after each entry (test/avx2_registers.h).
@@ -228,8 +232,19 @@ static void run_cases(void) {
 }
 
 #include "aead_avx2_equiv_residue.h"
+#include "aead_avx2_equiv_sum.h"
 
 int main(void) {
+    // The sum needs no AVX2. Its random cases draw from the generator, so
+    // the state the cases below start from is put back.
+    uint64_t rng_start = rng_state;
+    run_sum();
+    rng_state = rng_start;
+    if (failures != 0) {
+        (void)fprintf(stderr, "aead avx2 equivalence: %lu of %lu sums of three words failed\n",
+                      failures, compared);
+        return 1;
+    }
     if (!x86_cpu_has_avx2()) {
         if (x86_kernels_required()) {
             (void)fprintf(stderr, "aead avx2 equivalence: this CPU lacks AVX2, and "

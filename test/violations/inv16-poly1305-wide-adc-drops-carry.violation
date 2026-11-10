@@ -1,0 +1,16 @@
+invariant: INV-16
+file: src/poly1305_wide.h
+catches: test/docker-aes-runtime-qemu.sh aead-avx2
+reason: the sum's statement, which a gcc build for x86-64 compiles, adds the
+  second words with ADD in place of ADC, so the carry out of h0 never
+  arrives in h1 and a block whose low half and h0 pass 2^64 loses 2^64 of
+  its value. The form in C, which the harnesses and bin/diff_poly1305_wide
+  read, is still right. bin/aead_avx2_equiv_test holds the statement to a
+  sum in 128-bit arithmetic and the one pass to the two-pass AEAD; the
+  script builds it with gcc for x86-64 and runs it under qemu-x86_64,
+  because no other compiler reads the statement.
+
+--- old
+    __asm__("add %[m0], %[h0]\n adc %[m1], %[h1]\n adc %[m2], %[h2]"
+--- new
+    __asm__("add %[m0], %[h0]\n add %[m1], %[h1]\n adc %[m2], %[h2]"

@@ -1,0 +1,14 @@
+invariant: INV-16
+file: src/aead_avx2.c
+catches: test/docker-aes-runtime-qemu.sh aead-avx2
+reason: pass_hashing absorbs the last block of its pass twice and never the
+  block before it, so the tag of every message of two passes or more is
+  wrong. The ten double rounds absorb 30 of a pass's 32 blocks, and the two
+  after the loop are the rest. bin/aead_avx2_equiv_test compares the one
+  pass with the two-pass AEAD; the script builds it for x86-64 and runs it
+  under qemu-x86_64, because the file has a body there alone.
+
+--- old
+    poly1305_wide_block(&a, &k, last);
+--- new
+    poly1305_wide_block(&a, &k, last + POLY1305_BLOCK);

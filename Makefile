@@ -780,7 +780,7 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h \
          test/sha2_equiv_residue512_avx2.h test/avx2_registers.h test/sha2_equiv_length512.h \
          test/sha512_portable.h \
-         test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h test/x86_kernels_sha512.h test/x86_kernels_gcm.h test/x86_kernels_aead.h test/aead_avx2_equiv_residue.h \
+         test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h test/x86_kernels_sha512.h test/x86_kernels_gcm.h test/x86_kernels_aead.h test/aead_avx2_equiv_residue.h test/aead_avx2_equiv_sum.h \
          test/rsa_ifma_count.h test/aead_avx512_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/aes_equiv_gcm.h test/aes_equiv_residue.h test/ghash_equiv_eor3.h test/ghash_equiv_lengths.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/gcm_avx512_residue.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
@@ -6054,10 +6054,13 @@ bin/diff_poly1305_vector: test/diff_poly1305_vector_test.c test/poly1305_equiv_v
 # The 64-bit-limb Poly1305 step of poly1305_wide.h, which aead_avx2.c's one
 # pass runs, against spec/lean/Spec/Poly1305Wide.lean (docs/decisions.md
 # 206). The step is a header under CH_CPU_RUNTIME, so the line compiles the
-# test alone, on any host with unsigned __int128.
+# test alone, on any host with unsigned __int128. -DPOLY1305_WIDE_ADC=0
+# names the sum's form in C under every compiler, which the model is held
+# to; bin/aead_avx2_equiv_test holds the statement a gcc build for x86-64
+# compiles to the same sum (docs/decisions.md 211).
 bin/diff_poly1305_wide: test/diff_poly1305_wide_test.c src/poly1305_wide.h $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DPOLY1305_WIDE_ADC=0 -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  test/diff_poly1305_wide_test.c
 # The AVX2 arm: rsa_avx2.c's products and squares and rsa_vp1_cpu's AVX2
 # path, compiled over the lane model as bin/rsa_avx2_model_test compiles
