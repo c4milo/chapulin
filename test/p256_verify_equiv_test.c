@@ -3,9 +3,9 @@
 // signature into both, the same verdict out.
 //
 // A host object checks a signature on the wide files' four 64-bit words
-// (p256_wide_verify.c) and a device object on p256.c's eight 32-bit
-// words. This binary holds both: p256_ecdsa_verify is the host arm, and
-// p256_ecdsa_verify_portable is the device arm, which
+// (p256_wide_verify.c), or on arm64 on their copy over the arm64 field
+// (p256_arm64.h), and a device object on p256.c's eight 32-bit words. This binary holds both:
+// p256_ecdsa_verify is the host arm, and p256_ecdsa_verify_portable is the device arm, which
 // test/p256_verify_portable.c compiles under that name. The 32-bit arm
 // carries the CBMC harness, the Lean differential and the vectors of
 // bin/unit; this binary is what carries the 64-bit arm to the same
@@ -41,6 +41,12 @@
 // wide files (p256_adx.h). bin/p256_adx_verify_model_test builds it so over
 // the model, on every host, and bin/p256_adx_verify_equiv_test over the
 // assembly (test/p256_adx_verify_equiv_test.c).
+//
+// Under P256_VERIFY_EQUIV_ARM64 the host arm is p256_ecdsa_verify, which runs
+// the check on the arm64 field's copy of the wide files (p256_arm64.h) on
+// arm64 and in the model build. bin/p256_arm64_verify_model_test builds it
+// so over the model, on every host, and bin/p256_arm64_verify_equiv_test
+// over the assembly (test/p256_arm64_verify_equiv_test.c).
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -53,9 +59,17 @@
 #include "p256_sign.h"
 #include "widemul.h"
 
-#ifdef P256_VERIFY_EQUIV_ADX
+#ifdef P256_VERIFY_EQUIV_ARM64
+#define HOST_VERIFY(...) p256_ecdsa_verify(__VA_ARGS__)
+#define HOST_VERIFIER "the arm64 field's verifier"
+#elif defined(P256_VERIFY_EQUIV_ADX)
 #define HOST_VERIFY(...) p256_ecdsa_verify_cpu(CH_CPU_BMI2_ADX, __VA_ARGS__)
 #define HOST_VERIFIER "the x86-64 field's verifier"
+#elif defined(__aarch64__)
+// An arm64 host object checks every signature on the arm64 field's copy
+// (docs/decisions.md 215).
+#define HOST_VERIFY(...) p256_ecdsa_verify(__VA_ARGS__)
+#define HOST_VERIFIER "the arm64 field's verifier"
 #else
 #define HOST_VERIFY(...) p256_ecdsa_verify(__VA_ARGS__)
 #define HOST_VERIFIER "the wide verifier"

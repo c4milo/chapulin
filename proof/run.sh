@@ -3013,6 +3013,21 @@ launch fast full p256_wide_verify_digits 9 "signed_digits.0:257" --object-bits 1
 launch fast full p256_adx_reduce 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
 launch fast full p256_adx_mul 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
 launch fast full p256_adx_sqr 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Itest --unsigned-overflow-check
+# The arm64 P-256 field, p256_arm64_field.c (docs/decisions.md 215), over its
+# model, test/p256_arm64_model.h, for p256_adx_field.c's reason: each line
+# compiles the file with -DCH_P256_ARM64_MODEL, as bin/p256_arm64_model_test
+# does, and bin/p256_arm64_equiv_test holds the assembly to the model. The
+# model's rows are p256_wide_mul_row's and its square p256_wide_sqr_product's,
+# on the overflow builtins, and its reduction is model_reduce, which
+# p256_adx_reduce proves above. p256_arm64_mul and p256_arm64_sqr run the
+# product and the square on the real multiply, and check that no word wraps.
+# Measured one line at a time with PROVE_ONLY=<name> PROVE_NO_CACHE=1
+# ./proof/run.sh fast on an M1 Pro (cbmc 6.11.0, kissat) on 2026-11-10, peak
+# memory the largest resident size of the run's processes:
+#   p256_arm64_mul   579 properties, 51 s, 2521 MB
+#   p256_arm64_sqr   579 properties, 14 s,  756 MB
+launch fast full p256_arm64_mul 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ARM64_MODEL -Itest --unsigned-overflow-check
+launch fast full p256_arm64_sqr 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_P256_ARM64_MODEL -Itest --unsigned-overflow-check
 # P-384 on six 64-bit words, which a host object verifies with
 # (docs/decisions.md 97): three layers, each over a contract of the one
 # below it. p384_wide_field runs every routine of p384_wide_field.c but

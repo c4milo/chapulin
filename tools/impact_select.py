@@ -151,7 +151,10 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # the AVX2 kernel has a body on x86-64 alone. A violation of x25519_adx.c
 # or of the dispatch to it in widemul.h names x25519-adx, and one of
 # p256_adx_asm.h or of the dispatch to it in widemul.h and p256.c names
-# p256-adx, for the same reason. A violation of rsa_mont64_adx_asm.h or
+# p256-adx, for the same reason. One of p256_arm64_asm.h or of the
+# dispatch to it names p256-arm64, which builds the arm64 binaries with gcc:
+# the assembly has a body on arm64 alone, and CI's machines are x86-64. A
+# violation of rsa_mont64_adx_asm.h or
 # of the dispatch to it in rsa_sign64.c names rsa-adx, for the same
 # reason. A violation of
 # sha512_avx2.c's kernel, of the wipe after it or of where its sums lie
@@ -188,6 +191,7 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh rsa-avx2",
                           "test/docker-aes-runtime-qemu.sh x25519-adx",
                           "test/docker-aes-runtime-qemu.sh p256-adx",
+                          "test/docker-aes-runtime-qemu.sh p256-arm64",
                           "test/docker-aes-runtime-qemu.sh rsa-adx"]
 
 # What "everything" means, in the order to run it: the two tiers, then
@@ -435,7 +439,8 @@ AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/rsa_sign_equiv_test", "bin/rsa_avx2_equiv_test",
                              "bin/ghash_equiv_test", "bin/x25519_adx_equiv_test",
                              "bin/widemul_runtime_test", "bin/p256_adx_equiv_test",
-                             "bin/p256_adx_verify_equiv_test", "bin/mldsa_vector_equiv_test",
+                             "bin/p256_adx_verify_equiv_test", "bin/p256_arm64_equiv_test",
+                             "bin/p256_arm64_verify_equiv_test", "bin/mldsa_vector_equiv_test",
                              "bin/mldsa_runtime_test", "bin/rsa_mont64_adx_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 

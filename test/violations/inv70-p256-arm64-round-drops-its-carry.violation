@@ -1,0 +1,24 @@
+invariant: INV-70
+file: src/p256_arm64_asm.h
+catches: test/docker-aes-runtime-qemu.sh p256-arm64
+reason: p256_arm64_mul_mont's second round of the reduction drops the carry
+  the first round left in the C flag, so a product whose first round
+  carries comes out short by that bit times 2^64 at word 5, a value no
+  longer congruent to the product. The square keeps the carry, so only
+  products go wrong, in about one product in four. bin/p256_arm64_equiv_test
+  compares each product with the model word for word, and the qemu lane
+  runs it for arm64 under gcc.
+
+--- old
+        // Round 1, u = t1, at words 2 to 5. ADC adds the carry of round 0 to
+        // the high word of u * p3. MUL, UMULH and LSR write no flag.
+        "mul %[l0], %[t1], %[p3]\n"
+        "umulh %[l1], %[t1], %[p3]\n"
+        "lsr %[l2], %[t1], #0x20\n"
+        "adc %[l1], %[l1], xzr\n"
+--- new
+        // Round 1, u = t1, at words 2 to 5. ADC adds the carry of round 0 to
+        // the high word of u * p3. MUL, UMULH and LSR write no flag.
+        "mul %[l0], %[t1], %[p3]\n"
+        "umulh %[l1], %[t1], %[p3]\n"
+        "lsr %[l2], %[t1], #0x20\n"

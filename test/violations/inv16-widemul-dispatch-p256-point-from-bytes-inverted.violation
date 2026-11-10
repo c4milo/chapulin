@@ -11,7 +11,9 @@ reason: widemul_p256_point_from_bytes inverts its branch, so the operation runs
 
 --- old
     if (widemul_native(widemul)) {
-        return p256_wide_point_from_bytes(o, in);
+#ifdef WIDEMUL_P256_ARM64
+        return p256_arm64_point_from_bytes(o, in);
 --- new
     if (!widemul_native(widemul)) {
-        return p256_wide_point_from_bytes(o, in);
+#ifdef WIDEMUL_P256_ARM64
+        return p256_arm64_point_from_bytes(o, in);

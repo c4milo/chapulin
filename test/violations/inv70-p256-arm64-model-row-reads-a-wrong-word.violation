@@ -1,0 +1,14 @@
+invariant: INV-70
+file: test/p256_arm64_model.h
+catches: diff_p256_arm64
+reason: the model's last row multiplies b by a[2] where the assembly's row 3
+  multiplies it by a[3], so the model's product is not a b for any a whose
+  top two words differ. The model is what the assembly is held to, word for
+  word. bin/diff_p256_arm64 holds the model to spec/lean/Spec/P256Adx.lean's
+  mulMont, whose proofs mulMont_lt and mulMont_mod are what make the Lean
+  bounds a proof about this C.
+
+--- old
+    t[7] = p256_wide_mul_row(&t[3], &t[4], &t[5], &t[6], a[3], b[0], b[1], b[2], b[3]);
+--- new
+    t[7] = p256_wide_mul_row(&t[3], &t[4], &t[5], &t[6], a[2], b[0], b[1], b[2], b[3]);

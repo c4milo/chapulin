@@ -360,6 +360,7 @@ HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/t
         src/p256_wide_word.h src/p256_wide_field.h src/p256_wide_scalar.h src/p256_wide_inverse.h src/p256_wide_point.h \
         src/p256_wide_mul.h src/p256_wide_table.h src/p256_wide_wipe.h src/p256_wide_verify.h src/p256_wide_verify_point.h \
         src/p256_adx.h src/p256_adx_names.h src/p256_adx_asm.h src/p256_adx_field_inline.h \
+        src/p256_arm64.h src/p256_arm64_names.h src/p256_arm64_asm.h src/p256_arm64_field_inline.h \
         src/p384_wide_field.h src/p384_wide_point.h src/p384_wide_verify.h \
         src/handshake_flight.h src/handshake_groups.h include/chapulin/quic.h include/chapulin/quic_cfg.h src/quic_session.h src/quic_version.h src/quic_config.h src/quic_initial.h src/quic_keys.h src/quic_packet.h src/quic_retry.h src/quic_step.h src/quic_fail.h include/chapulin/quic_token.h src/aes.h src/aes_block.h src/aes_public_key.h src/aes_traffic_key.h src/aes_schedule.h src/gcm.h src/gcm_ghash.h src/ghash_hw.h src/ghash_vector.h src/gcm_hw.h src/gcm_arm64.h src/gcm_arm64_passes.h src/gcm_vaes.h src/gcm_avx512.h src/gcm_avx512_kernel.h src/gcm_avx512_ghash.h \
         include/chapulin/srv_cfg.h include/chapulin/srv.h src/srv_parser.h src/srv_parser_ext.h src/srv_message.h src/srv_cookie.h src/srv_ticket.h src/srv_auth.h src/srv_mldsa.h src/srv_out.h src/srv_flight.h src/srv_resume.h src/srv_handshake.h include/chapulin/srv_quic.h include/chapulin/srv_tcp_nonblocking.h src/srv_kex.h include/chapulin/keylog.h \
@@ -377,16 +378,24 @@ HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/t
 # multiplications and the verifier whose products and squares are MULX,
 # ADCX and ADOX, which compiles on x86-64 alone and which widemul.h and
 # p256.c run where the session's ch_cfg.cpu holds CH_CPU_BMI2_ADX
-# (docs/decisions.md 171). They are named once, here, for the object, for
-# the test binaries that link a host object's P-256 and for the lints.
+# (docs/decisions.md 171). The P256_ARM64_SRCS are the same copy whose
+# products and squares are arm64 assembly on registers, which compiles on
+# arm64 alone and which widemul.h runs in place of the wide files under the
+# multiply bit, and p256.c for every verification (docs/decisions.md 215).
+# They are named once, here, for the object, for the test binaries that
+# link a host object's P-256 and for the lints.
 P256_ADX_SRCS := src/p256_adx_field.c src/p256_adx_point.c src/p256_adx_mul.c src/p256_adx_verify_point.c \
                  src/p256_adx_verify.c
 # The three that include p256_adx_asm.h, through p256_adx_field_inline.h
 # (docs/decisions.md 175).
 P256_ADX_INLINE_SRCS := src/p256_adx_field.c src/p256_adx_point.c src/p256_adx_verify_point.c
+P256_ARM64_SRCS := src/p256_arm64_field.c src/p256_arm64_point.c src/p256_arm64_mul.c \
+                   src/p256_arm64_verify_point.c src/p256_arm64_verify.c
+# The three that include p256_arm64_asm.h, through p256_arm64_field_inline.h.
+P256_ARM64_INLINE_SRCS := src/p256_arm64_field.c src/p256_arm64_point.c src/p256_arm64_verify_point.c
 P256_WIDE_SRCS := src/p256_wide_field.c src/p256_wide_scalar.c src/p256_wide_inverse.c src/p256_wide_point.c \
                   src/p256_wide_mul.c src/p256_wide_table.c src/p256_wide_wipe.c src/p256_wide_verify.c \
-                  src/p256_wide_verify_point.c $(P256_ADX_SRCS)
+                  src/p256_wide_verify_point.c $(P256_ADX_SRCS) $(P256_ARM64_SRCS)
 
 # P-384 on six 64-bit words: the field, the points and the verifier over
 # them, which a host object holds in place of p384_field.c and of p384.c's
@@ -747,7 +756,8 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
           $(P256_WIDE_SRCS) test/p256_equiv_test.c test/diff_p256_wide_test.c \
           test/p256_verify_equiv_test.c test/p256_verify_portable.c \
           test/p256_adx_model_test.c test/p256_adx_equiv_test.c test/p256_adx_verify_model_test.c \
-          test/p256_adx_verify_equiv_test.c \
+          test/p256_adx_verify_equiv_test.c test/p256_arm64_model_test.c test/p256_arm64_equiv_test.c \
+          test/p256_arm64_verify_model_test.c test/p256_arm64_verify_equiv_test.c \
           $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
           test/p384_portable.c \
           $(RSA_HOST_LINT_C) \
@@ -801,7 +811,7 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h test/rsa_sign_key.h test/rsa_sign_equiv_residue.h \
          test/rsa_sign_equiv_pieces.h test/rsa_sign_equiv_differential.h \
-         test/x25519_adx_model.h test/p256_adx_model.h test/rsa_mont64_adx_model.h test/rsa_mont64_adx_count.h test/rsa_sign_equiv_x86.h test/rsa_ifma_model_lanes.h test/rsa_ifma_test.h test/rsa_ifma_entries.h test/rsa_ifma_inputs.h \
+         test/x25519_adx_model.h test/p256_adx_model.h test/p256_arm64_model.h test/widemul_runtime_p256.h test/rsa_mont64_adx_model.h test/rsa_mont64_adx_count.h test/rsa_sign_equiv_x86.h test/rsa_ifma_model_lanes.h test/rsa_ifma_test.h test/rsa_ifma_entries.h test/rsa_ifma_inputs.h \
          test/rsa_ifma_sign_test.h test/rsa_ifma_sign_count.h test/diff_rsa_ifma_sign.h \
          test/rsa_avx2_model_lanes.h test/rsa_avx2_test.h test/rsa_avx2_entries.h test/rsa_avx2_count.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
@@ -3391,6 +3401,25 @@ bin/p256_adx_equiv_test: test/p256_adx_equiv_test.c test/p256_equiv_test.c $(P25
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/p256_adx_equiv_test.c \
 	  $(P256_EQUIV_TEST_SRCS)
+# The arm64 field's copy of the wide files (P256_ARM64_SRCS) under the same
+# cases, in the same four binaries. bin/p256_arm64_model_test and
+# bin/p256_arm64_verify_model_test compile every unit under
+# CH_P256_ARM64_MODEL, so the copy's product and square are
+# test/p256_arm64_model.h's portable C and widemul.h and p256.c dispatch to
+# the copy on every host. bin/p256_arm64_equiv_test and
+# bin/p256_arm64_verify_equiv_test compile the copy as the object does, on
+# the assembly, and run on arm64: the first compares the assembly with the
+# model word for word before the cases (docs/decisions.md 215).
+bin/p256_arm64_model_test: test/p256_arm64_model_test.c test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) \
+                           $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ARM64_MODEL -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/p256_arm64_model_test.c $(P256_EQUIV_TEST_SRCS)
+bin/p256_arm64_equiv_test: test/p256_arm64_equiv_test.c test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) \
+                           $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/p256_arm64_equiv_test.c \
+	  $(P256_EQUIV_TEST_SRCS)
 # The same binary on the 128-bit sums, the form of p256_wide_word.h's two
 # carry steps that gcc compiles for a machine other than x86-64. The
 # binary above runs the form its compiler picks: the builtins under clang
@@ -3424,6 +3453,16 @@ bin/p256_adx_verify_equiv_test: test/p256_adx_verify_equiv_test.c $(P256_VERIFY_
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/p256_adx_verify_equiv_test.c \
 	  test/p256_verify_portable.c $(P256_VERIFY_EQUIV_TEST_SRCS)
+bin/p256_arm64_verify_model_test: test/p256_arm64_verify_model_test.c $(P256_VERIFY_EQUIV_TEST_UNITS) \
+                                  $(P256_VERIFY_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ARM64_MODEL -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/p256_arm64_verify_model_test.c test/p256_verify_portable.c $(P256_VERIFY_EQUIV_TEST_SRCS)
+bin/p256_arm64_verify_equiv_test: test/p256_arm64_verify_equiv_test.c $(P256_VERIFY_EQUIV_TEST_UNITS) \
+                                  $(P256_VERIFY_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/p256_arm64_verify_equiv_test.c test/p256_verify_portable.c $(P256_VERIFY_EQUIV_TEST_SRCS)
 # The same binary on the overflow builtins, the form clang compiles. CI's
 # check job and test/docker-check.sh compile with gcc for x86-64, which
 # picks the intrinsics, so this rule names the builtins and a machine
@@ -4845,13 +4884,15 @@ WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomp
                        test/widemul_count_native_vector.c test/widemul_count_native_avx2.c \
                        test/widemul_count_wide.c test/widemul_count_adx.c \
                        test/widemul_count_wide_p256.c test/widemul_count_adx_p256.c \
+                       test/widemul_count_arm64_p256.c \
                        test/widemul_count_sign64.c \
                        test/rsa_ifma_sign_count.c test/aead_avx512_count.c test/rsa_mont64_adx_count.c
 WIDEMUL_COUNT_CHACHA := $(filter-out src/chacha20_avx512.c,$(CHACHA_VECTOR_SRCS))
 WIDEMUL_COUNTED := $(WIDEMUL_COPIED) src/x25519.c src/p256_scalar.c src/p256_point.c src/rsa_sign.c
 WIDEMUL_COUNT_FIELDS := src/p256_field.c src/p256_wide_field.c src/p256_wide_inverse.c src/p256_wide_table.c \
                         src/p256_wide_wipe.c src/p256_wide_verify_point.c src/p256_adx_field.c \
-                        src/p256_adx_verify_point.c src/rsa_sign64_wipe.c
+                        src/p256_adx_verify_point.c src/p256_arm64_field.c src/p256_arm64_verify_point.c \
+                        src/rsa_sign64_wipe.c
 WIDEMUL_COUNT_SRCS := src/aead.c src/chacha20.c $(WIDEMUL_COUNT_CHACHA) src/hkdf.c src/sha256.c $(call hash_hw_of,src/hkdf.c src/sha256.c) \
                       src/ct.c src/ct_wipe.c src/buf.c src/record.c src/mlkem.c src/mlkem_vector.c src/keccak_avx2.c src/mlkem_avx2.c \
                       src/keccak_neon.c src/mlkem_neon.c src/sha3.c src/p256.c src/p256_ecdh.c src/p256_sign.c src/rsa.c src/rsa_mont.c $(RSA_MONT64_SRCS) \
@@ -4948,6 +4989,8 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/p256_verify_equiv_test bin/p384_equiv_test bin/p384_test_host \
                                  bin/p256_adx_model_test bin/p256_adx_equiv_test \
                                  bin/p256_adx_verify_model_test bin/p256_adx_verify_equiv_test \
+                                 bin/p256_arm64_model_test bin/p256_arm64_equiv_test \
+                                 bin/p256_arm64_verify_model_test bin/p256_arm64_verify_equiv_test \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test bin/aead_avx2_equiv_test \
                                  bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/mlkem_hw_equiv_test \
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
@@ -5909,6 +5952,8 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_x25519_adx
 	$(MAKE) bin/diff_p256_adx
 	./bin/diff_p256_adx
+	$(MAKE) bin/diff_p256_arm64
+	./bin/diff_p256_arm64
 	$(MAKE) bin/diff_rsa_mont64_adx
 	./bin/diff_rsa_mont64_adx
 	$(MAKE) bin/diff_rsa_mont64_square
@@ -6102,6 +6147,14 @@ bin/diff_p256_adx: test/diff_p256_adx_test.c src/p256_adx_field.c src/ct.c $(HDR
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  test/diff_p256_adx_test.c src/p256_adx_field.c src/ct.c
+# The arm64 P-256 field's arm: p256_arm64_field.c's product and square,
+# compiled over test/p256_arm64_model.h as bin/p256_arm64_model_test compiles
+# them, against spec/lean/Spec/P256Adx.lean's mulMont (docs/decisions.md 215).
+# Its own main for the same reason.
+bin/diff_p256_arm64: test/diff_p256_arm64_test.c src/p256_arm64_field.c src/ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_P256_ARM64_MODEL -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/diff_p256_arm64_test.c src/p256_arm64_field.c src/ct.c
 # The x86-64 RSA signer's arm: rsa_mont64_adx.c's multiplication and square,
 # compiled over test/rsa_mont64_adx_model.h as bin/rsa_mont64_adx_test
 # compiles them, against spec/lean/Spec/RsaMont64Adx.lean. Its own main for
@@ -7518,7 +7571,8 @@ else
 	  test/x509_mldsa_test.c test/diff_x509_mldsa_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
 	  test/mldsa_signer_test.c test/diff_mldsa_test.c \
 	  test/p256_adx_model_test.c test/p256_adx_equiv_test.c test/p256_adx_verify_model_test.c \
-	  test/p256_adx_verify_equiv_test.c \
+	  test/p256_adx_verify_equiv_test.c test/p256_arm64_model_test.c test/p256_arm64_equiv_test.c \
+	  test/p256_arm64_verify_model_test.c test/p256_arm64_verify_equiv_test.c \
 	  test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) \
 	  $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c \
 	  test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c \
@@ -7593,7 +7647,9 @@ else
 	# test/aes_equiv_soft.c does below.
 	# P256_ADX_INLINE_SRCS is out of this pass: on an x86-64 host each
 	# body holds the assembly, which the two passes after this one read.
-	@$(call TIDY_EACH,$(filter-out $(P256_ADX_INLINE_SRCS),$(P256_WIDE_SRCS)) src/p256.c test/p256_equiv_test.c \
+	# P256_ARM64_INLINE_SRCS is out of it for the same reason on an arm64
+	# host, and the two passes after those read it.
+	@$(call TIDY_EACH,$(filter-out $(P256_ADX_INLINE_SRCS) $(P256_ARM64_INLINE_SRCS),$(P256_WIDE_SRCS)) src/p256.c test/p256_equiv_test.c \
 	  test/diff_p256_wide_test.c test/p256_verify_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	# The x86-64 P-256 field's copy over its model, the build
@@ -7609,6 +7665,16 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_P256_ADX_MODEL -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler $(P256_ADX_INLINE_SRCS), \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I.)
+	# The arm64 P-256 field's copy over its model, the build
+	# bin/p256_arm64_model_test runs on every host, and then the assembly
+	# for an arm64 target whatever the host, as the two passes above read
+	# the x86-64 copy (docs/decisions.md 215).
+	@$(call TIDY_EACH,$(P256_ARM64_SRCS) src/p256.c test/p256_arm64_model_test.c test/p256_arm64_equiv_test.c \
+	  test/p256_arm64_verify_model_test.c test/p256_arm64_verify_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_P256_ARM64_MODEL -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler $(P256_ARM64_INLINE_SRCS), \
+	  -std=c11 --target=aarch64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# P-384's 64-bit field, points and verifier (docs/decisions.md
 	# 97), whose bodies sit behind -DCH_CPU_RUNTIME, with p384.c, which
@@ -9560,6 +9626,15 @@ WIDEMUL_SPECS := \
 #   compiles to nothing on arm64. On x86-64 each copy holds the branches of
 #   the wide file it copies, read above, and the product and square of
 #   p256_adx_asm.h hold none.
+# p256_arm64_field.c, 0 and 0; p256_arm64_point.c, 3 and 0;
+#   p256_arm64_mul.c, 13 and 0; p256_arm64_verify_point.c, 31 and 0;
+#   p256_arm64_verify.c, 6 and 0: the arm64 copy of the wide files
+#   (docs/decisions.md 215), which compiles to nothing on x86-64. On arm64
+#   each copy holds the branches of the wide file it copies, read above,
+#   and the product and square of p256_arm64_asm.h hold none. In
+#   p256_arm64_jacobian_double_mul clang writes the test of u2's digit for
+#   zero twice, once more at the loop's end, which reads a public digit:
+#   the one branch more than p256_wide_verify_point.c.
 # rsa_mont64.c, 97 and 132: every one reads the word count k, a byte length
 #   or the bits argument of rsa_mont64_modulus_init, all public. They are
 #   the tests of k for zero, the loops over words and rows, the tests a
@@ -9775,7 +9850,11 @@ P256_WIDE_BRANCH_CEILING := \
   arm64/src/p256_adx_field.c:0 x86-64/src/p256_adx_field.c:0 arm64/src/p256_adx_point.c:0 \
   x86-64/src/p256_adx_point.c:3 arm64/src/p256_adx_mul.c:0 x86-64/src/p256_adx_mul.c:13 \
   arm64/src/p256_adx_verify_point.c:0 x86-64/src/p256_adx_verify_point.c:30 arm64/src/p256_adx_verify.c:0 \
-  x86-64/src/p256_adx_verify.c:6
+  x86-64/src/p256_adx_verify.c:6 \
+  arm64/src/p256_arm64_field.c:0 x86-64/src/p256_arm64_field.c:0 arm64/src/p256_arm64_point.c:3 \
+  x86-64/src/p256_arm64_point.c:0 arm64/src/p256_arm64_mul.c:13 x86-64/src/p256_arm64_mul.c:0 \
+  arm64/src/p256_arm64_verify_point.c:31 x86-64/src/p256_arm64_verify_point.c:0 \
+  arm64/src/p256_arm64_verify.c:6 x86-64/src/p256_arm64_verify.c:0
 P256_SCALAR_BRANCH_CEILING := \
   m3/src/p256_scalar.c:15 mips32r2/src/p256_scalar.c:14 rv32imac/src/p256_scalar.c:14 m3-gcc/src/p256_scalar.c:12 \
   mips32r2-gcc/src/p256_scalar.c:12 mips32r2-gcc-O2/src/p256_scalar.c:14 rv32imac-gcc/src/p256_scalar.c:18 rv32ic-gcc/src/p256_scalar.c:18

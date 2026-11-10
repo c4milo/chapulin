@@ -41,7 +41,26 @@
 // CH_CPU_BMI2_ADX, so every entry and dispatcher runs the copy too.
 // bin/p256_adx_model_test builds it so over the model, on every host, and
 // bin/p256_adx_equiv_test over the assembly (test/p256_adx_equiv_test.c).
-#ifdef P256_EQUIV_ADX
+//
+// Under P256_EQUIV_ARM64 the same cases run on the arm64 field's copy of the
+// wide files (p256_arm64.h), with p256_arm64_names.h first for the same
+// reason. P256_EQUIV_CPU names the multiply bit alone, under which
+// widemul.h runs the copy on arm64 and in the model build.
+// bin/p256_arm64_model_test builds it so over the model, on every host, and
+// bin/p256_arm64_equiv_test over the assembly
+// (test/p256_arm64_equiv_test.c).
+#ifdef P256_EQUIV_ARM64
+#include "p256_arm64_names.h"
+// The cases call p256_arm64_field.c's two routines, not the inline functions
+// of p256_arm64_field_inline.h, so this unit holds no assembly beside
+// test/p256_arm64_equiv_test.c's model.
+#undef p256_wide_fe_mul
+#undef p256_wide_fe_sqr
+#define p256_wide_fe_mul p256_arm64_fe_mul
+#define p256_wide_fe_sqr p256_arm64_fe_sqr
+#define P256_EQUIV_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY)
+#define P256_EQUIV_FILES "the arm64 field's copy"
+#elif defined(P256_EQUIV_ADX)
 #include "p256_adx_names.h"
 // The cases call p256_adx_field.c's two routines, not the inline functions
 // of p256_adx_field_inline.h, so this unit holds no assembly beside
@@ -77,6 +96,9 @@
 #include "p256_wide_point.h"
 #include "p256_wide_scalar.h"
 #include "widemul.h"
+#ifdef P256_EQUIV_ARM64
+#include "p256_arm64.h"
+#endif
 
 // p256.c's 32-bit arm, a device object's (test/p256_verify_portable.c).
 // The wide files compute none of it, so it reads each signature

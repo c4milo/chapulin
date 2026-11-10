@@ -11,7 +11,9 @@ reason: widemul_p256_point_on_curve inverts its branch, so the signer's
 
 --- old
     if (widemul_native(widemul)) {
-        uint32_t on_curve = p256_wide_point_on_curve(x, y);
+#ifdef WIDEMUL_P256_ARM64
+        uint32_t on_curve = p256_arm64_point_on_curve(x, y);
 --- new
     if (!widemul_native(widemul)) {
-        uint32_t on_curve = p256_wide_point_on_curve(x, y);
+#ifdef WIDEMUL_P256_ARM64
+        uint32_t on_curve = p256_arm64_point_on_curve(x, y);

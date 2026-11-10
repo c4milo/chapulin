@@ -413,27 +413,34 @@ fi
 # proof unit that stubs the kernel they call, CH_X25519_ADX_MODEL makes
 # x25519_adx.c read test/x25519_adx_model.h in place of its assembly, and
 # CH_P256_ADX_MODEL makes p256_adx_field.c read test/p256_adx_model.h in
-# place of its assembly, and CH_RSA_MONT64_ADX_MODEL makes rsa_mont64_adx.c
-# read test/rsa_mont64_adx_model.h in place of its assembly
-# (docs/decisions.md 183). No library source defines any of the seven, and the
+# place of its assembly, CH_P256_ARM64_MODEL makes p256_arm64_field.c read
+# test/p256_arm64_model.h in place of its assembly (docs/decisions.md 215),
+# and CH_RSA_MONT64_ADX_MODEL makes rsa_mont64_adx.c read
+# test/rsa_mont64_adx_model.h in place of its assembly
+# (docs/decisions.md 183). No library source defines any of the eight, and the
 # defines make and build.zig write for a library object, checked below,
 # never name one.
 model_defined=$(cd src && git ls-files -- '*.c' '*.h' |
-    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_((RSA|POLY1305)_IFMA|RSA_AVX2|GCM_AVX512|X25519_ADX|P256_ADX|RSA_MONT64_ADX)_MODEL' || true)
+    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_((RSA|POLY1305)_IFMA|RSA_AVX2|GCM_AVX512|X25519_ADX|P256_ADX|P256_ARM64|RSA_MONT64_ADX)_MODEL' || true)
 if [ -n "$model_defined" ]; then
-    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL, CH_RSA_AVX2_MODEL, CH_GCM_AVX512_MODEL, CH_X25519_ADX_MODEL, CH_P256_ADX_MODEL or CH_RSA_MONT64_ADX_MODEL, which only a test or proof unit may: under each a kernel runs a model" >&2
+    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL, CH_RSA_AVX2_MODEL, CH_GCM_AVX512_MODEL, CH_X25519_ADX_MODEL, CH_P256_ADX_MODEL, CH_P256_ARM64_MODEL or CH_RSA_MONT64_ADX_MODEL, which only a test or proof unit may: under each a kernel runs a model" >&2
     exit 1
 fi
 
-# p256.c's two arms. The host arm hands r and s to p256_wide_verify.c, and
+# p256.c's two arms. The host arm hands r and s to p256_wide_verify.c, or
+# on arm64 to its copy over the arm64 field (docs/decisions.md 215), and
 # the device arm is the 32-bit arithmetic, which calls nothing outside its
 # file but the byte reader, memset and memcpy.
-if ! calls src/p256.c p256_wide_verify_rs -DCH_CPU_RUNTIME; then
-    echo "widemul-builds: src/p256.c in a host object does not call p256_wide_verify_rs" >&2
+host_verifier=p256_wide_verify_rs
+if "$cc" -dM -E -x c /dev/null 2> /dev/null | grep -qw __aarch64__; then
+    host_verifier=p256_arm64_verify_rs
+fi
+if ! calls src/p256.c "$host_verifier" -DCH_CPU_RUNTIME; then
+    echo "widemul-builds: src/p256.c in a host object does not call $host_verifier" >&2
     exit 1
 fi
-if calls src/p256.c p256_wide_verify_rs; then
-    echo "widemul-builds: src/p256.c in a device object calls p256_wide_verify_rs; a host object alone holds src/p256_wide_verify.c" >&2
+if calls src/p256.c p256_wide_verify_rs || calls src/p256.c p256_arm64_verify_rs; then
+    echo "widemul-builds: src/p256.c in a device object calls a wide verifier; a host object alone holds src/p256_wide_verify.c and its copies" >&2
     exit 1
 fi
 
@@ -495,11 +502,12 @@ if ! has_words "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" "${ho
 fi
 # Whether a list names CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL,
 # CH_RSA_AVX2_MODEL, CH_GCM_AVX512_MODEL, CH_X25519_ADX_MODEL,
-# CH_P256_ADX_MODEL or CH_RSA_MONT64_ADX_MODEL, which no library object may.
+# CH_P256_ADX_MODEL, CH_P256_ARM64_MODEL or CH_RSA_MONT64_ADX_MODEL, which no
+# library object may.
 names_model() { # $1 = a list of words
     case " $1 " in
     *CH_RSA_IFMA_MODEL* | *CH_POLY1305_IFMA_MODEL* | *CH_RSA_AVX2_MODEL* | *CH_GCM_AVX512_MODEL* | *CH_X25519_ADX_MODEL* | \
-        *CH_P256_ADX_MODEL* | *CH_RSA_MONT64_ADX_MODEL*) return 0 ;;
+        *CH_P256_ADX_MODEL* | *CH_P256_ARM64_MODEL* | *CH_RSA_MONT64_ADX_MODEL*) return 0 ;;
     *) return 1 ;;
     esac
 }

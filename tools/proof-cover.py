@@ -647,6 +647,36 @@ COPIES = {
         "bin/p256_adx_verify_equiv_test holds the copy's verdicts to the "
         "32-bit verifier's."
     ),
+    "p256_arm64_point.c": (
+        "p256_wide_point.c",
+        "p256_wide_point.c under p256_arm64_names.h's names, whose products and "
+        "squares are p256_arm64_field_inline.h's. The p256_wide_point harness "
+        "proves that text over the field's stubs, which state the contract both "
+        "fields keep, and bin/p256_arm64_equiv_test holds the copy to the files "
+        "under their own names on arm64."
+    ),
+    "p256_arm64_mul.c": (
+        "p256_wide_mul.c",
+        "p256_wide_mul.c under p256_arm64_names.h's names, over the copy's "
+        "points. The p256_wide_mul harness proves that text over the points' "
+        "stubs, and bin/p256_arm64_equiv_test holds the copy's two scalar "
+        "multiplications to p256_point.c's."
+    ),
+    "p256_arm64_verify_point.c": (
+        "p256_wide_verify_point.c",
+        "p256_wide_verify_point.c under p256_arm64_names.h's names, whose "
+        "products and squares are p256_arm64_field_inline.h's. The "
+        "p256_wide_verify_point harness proves that text over the field's "
+        "stubs, and bin/p256_arm64_verify_equiv_test holds the copy's verdicts "
+        "to the 32-bit verifier's."
+    ),
+    "p256_arm64_verify.c": (
+        "p256_wide_verify.c",
+        "p256_wide_verify.c under p256_arm64_names.h's names, over the copy's "
+        "points. The p256_wide_verify harness proves that text, and "
+        "bin/p256_arm64_verify_equiv_test holds the copy's verdicts to the "
+        "32-bit verifier's."
+    ),
     "hkdf_hw.c": (
         "hkdf.c",
         "hkdf.c under hash_hw.h's names, which send its hash calls to "

@@ -35,6 +35,12 @@ extern unsigned long p256_adx_calls;
 // Calls into p256_adx.h's verifier, which p256.c runs under
 // CH_CPU_BMI2_ADX alone and which counts for neither answer.
 extern unsigned long p256_adx_verify_calls;
+// Calls into p256_arm64.h's five entries widemul.h dispatches to, on arm64
+// alone. Each also counts in widemul_native_calls, as p256_adx_calls do.
+extern unsigned long p256_arm64_calls;
+// Calls into p256_arm64.h's verifier, which p256.c runs in every session on
+// arm64 and which counts for neither answer.
+extern unsigned long p256_arm64_verify_calls;
 // Calls into poly1305_vector_native.c's entry, and on x86-64 into
 // poly1305_avx2_native.c's and poly1305_ifma_native.c's, which only
 // poly1305_native.c's block loop makes.

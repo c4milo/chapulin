@@ -11,6 +11,8 @@ reason: widemul_p256_point_affine_x no longer calls p256_wide_wipe_below
 
 --- old
         uint32_t finite = p256_wide_point_affine(out, NULL, a);
+#endif
         p256_wide_wipe_below();
 --- new
         uint32_t finite = p256_wide_point_affine(out, NULL, a);
+#endif

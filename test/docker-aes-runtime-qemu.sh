@@ -38,7 +38,9 @@
 # ch_srv_check with and without CH_CPU_AVX512_IFMA on a model without
 # AVX-512 IFMA; and "rsa-addcarry" bin/rsa_addcarry_equiv_test and
 # bin/rsa_sign_equiv_test alone, which gcc builds for x86-64 on
-# rsa_mont64_addcarry.c's rows; and "vector-neon"
+# rsa_mont64_addcarry.c's rows; "p256-arm64" bin/p256_arm64_equiv_test,
+# bin/p256_arm64_verify_equiv_test and bin/widemul_runtime_test alone,
+# which gcc builds for arm64 over p256_arm64_asm.h; and "vector-neon"
 # bin/chacha20_equiv_test and bin/poly1305_equiv_test alone, for arm64,
 # which hold the NEON ChaCha20 and Poly1305 to the portable loops and
 # search the stack each call leaves; and "keccak-neon"
@@ -73,8 +75,10 @@
 # ch_cfg.cpu with "rsa-ifma-callers", and the violations of the rows'
 # intrinsic, their wipes and the define that picks them with
 # "rsa-addcarry", and the violations of the NEON arms of
-# chacha20_vector.c and poly1305_vector.c with "vector-neon", and the
-# violations of keccak_neon.c and its samplers with "keccak-neon".
+# chacha20_vector.c and poly1305_vector.c with "vector-neon", the
+# violations of keccak_neon.c and its samplers with "keccak-neon", and the
+# violations of p256_arm64_asm.h and of the dispatch to it with
+# "p256-arm64".
 # Needs docker (OrbStack works); skips without it.
 set -euo pipefail
 

@@ -346,6 +346,11 @@
 #                     and bin/widemul_runtime_test for x86-64, for the
 #                     violations of p256_adx_asm.h's assembly and of the
 #                     dispatch that picks it
+#   p256-arm64        bin/p256_arm64_equiv_test,
+#                     bin/p256_arm64_verify_equiv_test and
+#                     bin/widemul_runtime_test for arm64, built with gcc,
+#                     for the violations of p256_arm64_asm.h's assembly and
+#                     of the dispatch that picks it
 #   rsa-adx           bin/rsa_mont64_adx_test and bin/rsa_sign_equiv_test
 #                     for x86-64, for the violations of
 #                     rsa_mont64_adx_asm.h's assembly
@@ -371,9 +376,9 @@ only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
     mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
-    rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx) ;;
+    rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | rsa-adx]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx]" >&2
     exit 2
     ;;
 esac
@@ -397,7 +402,7 @@ arm64_cc=""
 x86_qemu=${QEMU_X86_64:-qemu-x86_64}
 arm64_qemu=${QEMU_AARCH64:-qemu-aarch64}
 if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ] && [ "$only" != ghash-equiv ] &&
-    [ "$only" != vector-neon ] && [ "$only" != keccak-neon ]; then
+    [ "$only" != vector-neon ] && [ "$only" != keccak-neon ] && [ "$only" != p256-arm64 ]; then
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
@@ -925,6 +930,34 @@ if [ "$only" = rsa-adx ]; then
 fi
 if [ "$only" = p256-adx ]; then
     echo "aes-runtime-qemu: for x86-64, bin/p256_adx_equiv_test held src/p256_adx_asm.h's assembly to its model and the copy to the files under their own names, bin/p256_adx_verify_equiv_test held its verifier to the 32-bit one, and bin/widemul_runtime_test held the dispatch to the field each value names"
+    exit 0
+fi
+if [ -z "$only" ] || [ "$only" = p256-arm64 ]; then
+    # The arm64 P-256 field's copy of the wide files, whose product and
+    # square compile for arm64 alone, and the dispatch in widemul.h and
+    # p256.c that picks it (docs/decisions.md 215), as gcc compiles them.
+    # Every arm64 core has the instructions. avx512_wipe.c has no body for
+    # arm64, so the counting binary's list leaves it out.
+    arm64_widemul_runtime_srcs=()
+    for src in "${widemul_runtime_srcs[@]}"; do
+        [ "$src" = src/avx512_wipe.c ] || arm64_widemul_runtime_srcs+=("$src")
+    done
+    "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$arm64_out/p256_arm64_equiv_test" \
+        test/p256_arm64_equiv_test.c "${p256_equiv_srcs[@]}" || exit 1
+    expect_arm64 max 0 \
+        "src/p256_arm64_asm.h's assembly and its model, or the copy and the files under their own names, disagree, or a call left a word on the stack" \
+        p256_arm64_equiv_test
+    "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$arm64_out/p256_arm64_verify_equiv_test" \
+        test/p256_arm64_verify_equiv_test.c "${p256_verify_equiv_srcs[@]}" || exit 1
+    expect_arm64 max 0 \
+        "the copy's verifier and the 32-bit verifier disagree" p256_arm64_verify_equiv_test
+    "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$arm64_out/widemul_runtime_test" \
+        "${arm64_widemul_runtime_srcs[@]}" || exit 1
+    expect_arm64 max 0 \
+        "a P-256 dispatch ran a field the session's ch_cfg.cpu does not name" widemul_runtime_test
+fi
+if [ "$only" = p256-arm64 ]; then
+    echo "aes-runtime-qemu: for arm64 under gcc, bin/p256_arm64_equiv_test held src/p256_arm64_asm.h's assembly to its model and the copy to the files under their own names, bin/p256_arm64_verify_equiv_test held its verifier to the 32-bit one, and bin/widemul_runtime_test held the dispatch to the field each value names"
     exit 0
 fi
 

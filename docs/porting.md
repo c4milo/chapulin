@@ -84,7 +84,10 @@ scalar of four 64-bit words, `p256_wide_field.c` and `p256_wide_scalar.c`, with
 the point arithmetic over them, beside the eight 32-bit words of `p256_field.c`
 and `p256_scalar.c` that every object with the curve holds. A session with the
 bit signs and exchanges keys on the 64-bit words, and one without it on the
-32-bit words over the decomposition (decision 94). The host object also holds a
+32-bit words over the decomposition (decision 94). On arm64 the session with the
+bit runs a copy of the point arithmetic whose products and squares are inline
+assembly on MUL and UMULH, the instructions the bit already covers, and every
+session verifies ECDSA P-256 signatures on that copy (decision 215). The host object also holds a
 86 KiB table of multiples of the curve's generator, constants that a session with
 the bit reads for a signature's and a key generation's multiplication, every entry
 of a row at each step. A device object holds no table.

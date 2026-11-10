@@ -11,7 +11,9 @@ reason: widemul_p256_point_affine_x inverts its branch, so the operation runs
 
 --- old
     if (widemul_native(widemul)) {
-        uint32_t finite = p256_wide_point_affine(out, NULL, a);
+#ifdef WIDEMUL_P256_ARM64
+        uint32_t finite = p256_arm64_point_affine(out, NULL, a);
 --- new
     if (!widemul_native(widemul)) {
-        uint32_t finite = p256_wide_point_affine(out, NULL, a);
+#ifdef WIDEMUL_P256_ARM64
+        uint32_t finite = p256_arm64_point_affine(out, NULL, a);

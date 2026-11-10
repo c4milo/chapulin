@@ -10,10 +10,10 @@
 // (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles none of it: its entry reads the
 // signature with the same DER reader and hands r and s to
 // p256_wide_verify.c, which checks the same equation on the wide P-256
-// files' four 64-bit words, in every session, because nothing here is
-// secret and so no caller has to state the multiply's timing
-// (docs/decisions.md 96). bin/p256_verify_equiv_test compiles both arms
-// into one binary and requires one verdict from them.
+// files' four 64-bit words, or to a copy of it on x86-64 or arm64, in every
+// session, because nothing here is secret and so no caller has to state the
+// multiply's timing (docs/decisions.md 96, 171 and 215). bin/p256_verify_equiv_test compiles both
+// arms into one binary and requires one verdict from them.
 #include "p256.h"
 
 #include <string.h>
@@ -24,15 +24,17 @@
 
 #include "cpu_cfg.h"
 #include "p256_adx.h"
+#include "p256_arm64.h"
 #include "p256_wide_verify.h"
 
-// The host arm's check of r and s: p256_wide_verify.c's, or on x86-64
+// The host arm's check of r and s: p256_wide_verify.c's, on x86-64
 // p256_adx.h's copy of it where cpu, a session's ch_cfg.cpu, holds
-// CH_CPU_BMI2_ADX. Every input is public, so the bit alone picks the copy
-// and no caller states the multiply's timing for it, as for rsa_ifma.c's
-// public operation (docs/decisions.md 119 and 171). This is the one place
-// the file picks an arm, so an object compiles one check and the entries
-// below call it under one name.
+// CH_CPU_BMI2_ADX, and on arm64 p256_arm64.h's copy of it in every
+// session. Every input is public, so the bit alone picks the x86-64 copy
+// and no caller states the multiply's timing for either copy, as for
+// rsa_ifma.c's public operation (docs/decisions.md 119, 171 and 215). This
+// is the one place the file picks an arm, so an object compiles one check
+// and the entries below call it under one name.
 static int verify_rs(uint32_t cpu, const uint8_t pub[64], const uint8_t msg_hash[32],
                      const uint8_t r_be[32], const uint8_t s_be[32]) {
 #if defined(__x86_64__) || defined(CH_P256_ADX_MODEL)
@@ -40,10 +42,14 @@ static int verify_rs(uint32_t cpu, const uint8_t pub[64], const uint8_t msg_hash
         return p256_adx_verify_rs(pub, msg_hash, r_be, s_be);
     }
 #else
-    // arm64 has no such field, so no bit picks here.
+    // arm64 has no MULX, so no bit picks here.
     (void)cpu;
 #endif
+#if defined(__aarch64__) || defined(CH_P256_ARM64_MODEL)
+    return p256_arm64_verify_rs(pub, msg_hash, r_be, s_be);
+#else
     return p256_wide_verify_rs(pub, msg_hash, r_be, s_be);
+#endif
 }
 
 #else // !CH_CPU_RUNTIME

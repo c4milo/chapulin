@@ -11,7 +11,9 @@ reason: widemul_p256_point_base_mul inverts its branch, so the operation runs
 
 --- old
     if (widemul_native(widemul)) {
-        p256_wide_base_mul(o, k);
+#ifdef WIDEMUL_P256_ARM64
+        p256_arm64_base_mul(o, k);
 --- new
     if (!widemul_native(widemul)) {
-        p256_wide_base_mul(o, k);
+#ifdef WIDEMUL_P256_ARM64
+        p256_arm64_base_mul(o, k);

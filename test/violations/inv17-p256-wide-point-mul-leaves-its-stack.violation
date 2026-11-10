@@ -11,6 +11,8 @@ reason: widemul_p256_point_mul no longer calls p256_wide_wipe_below after
 
 --- old
         p256_wide_mul(o, k, p);
+#endif
         p256_wide_wipe_below();
 --- new
         p256_wide_mul(o, k, p);
+#endif

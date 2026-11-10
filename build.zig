@@ -130,14 +130,16 @@ const mldsa_sign_srcs = [_][]const u8{
 /// rsa_sign64.c's words.
 const widemul_copied = [_][]const u8{ "poly1305.c", "mlkem_poly.c" };
 /// P256_WIDE_SRCS: the wide P-256 files a host object holds beside
-/// p256_point.c (docs/decisions.md 94, 96, 104 and 115), and their x86-64
+/// p256_point.c (docs/decisions.md 94, 96, 104 and 115), their x86-64
 /// copy on MULX and ADX, which compiles to nothing on arm64
-/// (docs/decisions.md 171).
+/// (docs/decisions.md 171), and their arm64 copy, which compiles to nothing
+/// on x86-64 (docs/decisions.md 215).
 const p256_wide_srcs = [_][]const u8{
-    "p256_wide_field.c",        "p256_wide_scalar.c", "p256_wide_inverse.c", "p256_wide_point.c",
-    "p256_wide_mul.c",          "p256_wide_table.c",  "p256_wide_wipe.c",    "p256_wide_verify.c",
-    "p256_wide_verify_point.c", "p256_adx_field.c",   "p256_adx_point.c",    "p256_adx_mul.c",
-    "p256_adx_verify_point.c",  "p256_adx_verify.c",
+    "p256_wide_field.c",        "p256_wide_scalar.c",        "p256_wide_inverse.c", "p256_wide_point.c",
+    "p256_wide_mul.c",          "p256_wide_table.c",         "p256_wide_wipe.c",    "p256_wide_verify.c",
+    "p256_wide_verify_point.c", "p256_adx_field.c",          "p256_adx_point.c",    "p256_adx_mul.c",
+    "p256_adx_verify_point.c",  "p256_adx_verify.c",         "p256_arm64_field.c",  "p256_arm64_point.c",
+    "p256_arm64_mul.c",         "p256_arm64_verify_point.c", "p256_arm64_verify.c",
 };
 /// P384_WIDE_SRCS: P-384's field, points and verifier on six 64-bit
 /// words, which a host object holds beside p384.c (docs/decisions.md 97).

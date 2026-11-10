@@ -1598,6 +1598,62 @@ last `ROLE=server` stub, as the entry said it would.
   `test/mlkem-builds.sh`.
 - See [decisions: Engineering](decisions.md#engineering), entry 198.
 
+### INV-70 — the arm64 P-256 field gives the wide files' bytes, and runs a secret only under the multiply bit
+
+- **Claim.** On arm64, `p256_arm64_fe_mul` and `p256_arm64_fe_sqr` write the
+  four words that `p256_wide_fe_mul` and `p256_wide_fe_sqr` write, for
+  every pair of elements below p: the one element below p that is
+  a b / 2^256 mod p. So the copy of the wide files over them
+  (`p256_arm64.h`) writes the wide files' bytes and verdicts. widemul.h
+  runs the copy's scalar multiplications, point decode, affine conversion
+  and curve check, in place of the wide files', for a session whose
+  `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_MULTIPLY`, and for no other
+  session. `p256.c` runs the copy's verifier in every session. No library
+  object defines `CH_P256_ARM64_MODEL`.
+- **Mechanism.** `p256_arm64_asm.h`'s two statements compute the eight
+  words of a product with the rows of `p256_wide_mul_row`, or of a square
+  with the products of `p256_wide_sqr_product`, and reduce them in the same
+  registers with the rounds and the final subtraction of
+  `p256_adx_asm.h`. No instruction branches, and the final choice is CSEL
+  on the borrow. `test/p256_arm64_model.h` calls the two wide steps and
+  `model_reduce` itself. The copy is the wide files' own text under
+  `p256_arm64_names.h`'s renames. widemul.h calls the copy inside the
+  dispatchers' `widemul_native` test, and `verify_rs` calls it on arm64
+  with no test (decision 215).
+- **Check.** `bin/p256_arm64_model_test` and
+  `bin/p256_arm64_verify_model_test` run the cases of `bin/p256_equiv_test`
+  and `bin/p256_verify_equiv_test` on the copy over the model, on every
+  host, the dispatch and the stack checks included. On arm64,
+  `bin/p256_arm64_equiv_test` holds each statement to the model word for
+  word, on edge elements and random ones, with the output apart from the
+  inputs and over each, and then runs the same cases on the assembly.
+  `bin/p256_arm64_verify_equiv_test` holds the copy's verifier to the
+  32-bit one on the assembly. On arm64 `bin/widemul_runtime_test` counts
+  which field each value runs: the copy under the multiply bit, the
+  32-bit files without it, and the copy's verifier under every value. The
+  qemu lane's `p256-arm64` part builds the three with gcc and runs them
+  on `qemu-aarch64`, so CI's x86-64 machines run every row.
+  `test/widemul-builds.sh` refuses a host object's defines that name
+  `CH_P256_ARM64_MODEL`. CBMC reads no assembly, so the `p256_arm64`
+  harnesses compile the field over the model: no word wraps on any words.
+  `spec/lean/Spec/P256Adx.lean` proves that `model_reduce` lands below p
+  and is the Montgomery reduction, and `bin/diff_p256_arm64` holds the
+  model to its `mulMont`.
+- **Violation.** A PR runs the copy without the multiply bit:
+  `inv70-p256-arm64-ignores-multiply-bit` runs a base multiplication on the
+  copy under every answer. Every byte stays right, so no vector notices;
+  `bin/widemul_runtime_test` counts the calls through the qemu lane's
+  `p256-arm64` part. A PR breaks the assembly:
+  `inv70-p256-arm64-round-drops-its-carry` drops the carry a product's
+  first round leaves, and `inv70-p256-arm64-square-keeps-the-larger`
+  inverts the square's final choice. `bin/p256_arm64_equiv_test` catches
+  both through the same part. `inv70-p256-arm64-model-in-library` has make
+  write `CH_P256_ARM64_MODEL` for a host object, which
+  `test/widemul-builds.sh` catches. A PR breaks the model the assembly is
+  held to: `inv70-p256-arm64-model-row-reads-a-wrong-word` multiplies the
+  last row by the wrong word of a, which `bin/diff_p256_arm64` catches.
+- See [decisions: Engineering](decisions.md#engineering), entry 215.
+
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
 - **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit words

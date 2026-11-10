@@ -1,0 +1,37 @@
+invariant: INV-70
+file: src/widemul_p256.h
+catches: test/docker-aes-runtime-qemu.sh p256-arm64
+reason: on arm64 widemul_p256_point_base_mul runs the copy under every
+  answer, so a session whose caller states nothing about the multiply runs
+  MUL's and UMULH's products on its private scalar, whose timing that caller
+  has not stated. Every byte stays right, so no vector notices.
+  bin/widemul_runtime_test counts the calls into the copy without the
+  multiply bit, and the qemu lane runs it for arm64 under gcc.
+
+--- old
+#ifdef WIDEMUL_P256_ARM64
+        p256_arm64_base_mul(o, k);
+#else
+        p256_wide_base_mul(o, k);
+#endif
+        p256_wide_wipe_below();
+        return;
+    }
+    p256_point_base_mul(o, k);
+}
+--- new
+#ifdef WIDEMUL_P256_ARM64
+        p256_arm64_base_mul(o, k);
+#else
+        p256_wide_base_mul(o, k);
+#endif
+        p256_wide_wipe_below();
+        return;
+    }
+#ifdef WIDEMUL_P256_ARM64
+    p256_arm64_base_mul(o, k);
+    p256_wide_wipe_below();
+    return;
+#endif
+    p256_point_base_mul(o, k);
+}

@@ -276,6 +276,9 @@ Spec.P256Adx.mulMont : (a b : Nat) → Nat                              -- p256_
                         -- `p256_adx_mul <a> <b>` → 32 big-endian bytes, from a and b of 32
                         -- big-endian bytes each, below p. `p256_adx_reduce <t>` answers
                         -- Spec.P256Adx.reduce of 64 big-endian bytes the same way.
+                        -- `p256_arm64_mul <a> <b>` answers the same function for
+                        -- p256_arm64_mul_mont of p256_arm64_asm.h, written from
+                        -- test/p256_arm64_model.h, whose rounds are model_reduce itself.
 Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer) →
                         (pskOffered : Bool) → (msg : ByteArray) →
                         Except Alert ServerHelloKind                    -- RFC 9846 §4.2.3, §4.2.4.
@@ -1105,6 +1108,13 @@ where `L` is the four values of `u`. `reduce_lt` and `reduce_mod` prove that for
 with these definitions on edge elements and random ones, and the reduction alone on random eight
 words below `p 2 ^ 256`, so an error in the transcription fails a row. That the assembly writes the
 model's words stays with `bin/p256_adx_equiv_test`.
+
+The same module models the arm64 field's statements, `p256_arm64_asm.h` (decision 215).
+`test/p256_arm64_model.h` computes the eight words with `p256_wide_mul_row` or
+`p256_wide_sqr_product` and then calls `model_reduce` itself, so `mulMont` is its model and
+`mulMont_lt` and `mulMont_mod` are its theorems. `test/diff_p256_arm64_test.c`, in
+`bin/diff_p256_arm64`, compares the C over that model with `mulMont` in `p256_arm64_mul` rows, and
+`bin/p256_arm64_equiv_test` holds the assembly to the model.
 
 ## Where the C and the model split a check
 

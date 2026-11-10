@@ -1,7 +1,8 @@
 // The dispatchers of widemul.h for P-256: the six point operations, the two scalar operations
-// modulo the group order, and on x86-64 the choice of p256_adx.h's field. widemul.h includes this
-// file at its end, and no other file includes it. The answers it reads are widemul_answer.h's.
-// The rules are widemul.h's, and the file sits apart only to keep widemul.h under 500 lines.
+// modulo the group order, on x86-64 the choice of p256_adx.h's field, and on arm64 the run of
+// p256_arm64.h's field in place of the wide files. widemul.h includes this file at its end, and
+// no other file includes it. The answers it reads are widemul_answer.h's. The rules are
+// widemul.h's, and the file sits apart only to keep widemul.h under 500 lines.
 #ifndef CH_WIDEMUL_P256_H
 #define CH_WIDEMUL_P256_H
 
@@ -9,6 +10,7 @@
 #include <stdint.h>
 
 #include "p256_adx.h"
+#include "p256_arm64.h"
 #include "p256_point.h"
 #include "p256_scalar.h"
 #include "p256_wide_mul.h"
@@ -22,7 +24,7 @@
 #if defined(__x86_64__) || defined(CH_P256_ADX_MODEL)
 // The dispatchers below hold p256_adx.h's field where it exists: on x86-64, and on any host in
 // the model build, CH_P256_ADX_MODEL, so bin/p256_adx_model_test runs the dispatch over the
-// model. arm64 has no such field, and there no bit picks here.
+// model. arm64 has no MULX, and no bit picks its field: the block after this one names it.
 #define WIDEMUL_P256_ADX 1
 
 // Whether a P-256 scalar multiplication, point decode, affine conversion or curve check under
@@ -33,6 +35,15 @@
 static inline int widemul_p256_adx(uint32_t cpu, uint8_t widemul) {
     return widemul_native(widemul) && (cpu & CH_CPU_BMI2_ADX) != 0;
 }
+#endif
+
+#if defined(__aarch64__) || defined(CH_P256_ARM64_MODEL)
+// The dispatchers below run p256_arm64.h's field in place of the wide files' under the native
+// answer: on arm64, and on any host in the model build, CH_P256_ARM64_MODEL, so
+// bin/p256_arm64_model_test runs the dispatch over the model. Every arm64 core has the
+// instructions, and the multiply bit's statement covers MUL and UMULH, which the wide files run
+// too, so no bit of its own picks it (docs/decisions.md 215).
+#define WIDEMUL_P256_ARM64 1
 #endif
 
 static inline void widemul_p256_point_mul(uint32_t cpu, uint8_t widemul, p256_point *o,
@@ -47,7 +58,11 @@ static inline void widemul_p256_point_mul(uint32_t cpu, uint8_t widemul, p256_po
     (void)cpu;
 #endif
     if (widemul_native(widemul)) {
+#ifdef WIDEMUL_P256_ARM64
+        p256_arm64_mul(o, k, p);
+#else
         p256_wide_mul(o, k, p);
+#endif
         p256_wide_wipe_below();
         return;
     }
@@ -66,7 +81,11 @@ static inline void widemul_p256_point_base_mul(uint32_t cpu, uint8_t widemul, p2
     (void)cpu;
 #endif
     if (widemul_native(widemul)) {
+#ifdef WIDEMUL_P256_ARM64
+        p256_arm64_base_mul(o, k);
+#else
         p256_wide_base_mul(o, k);
+#endif
         p256_wide_wipe_below();
         return;
     }
@@ -83,7 +102,11 @@ static inline uint32_t widemul_p256_point_from_bytes(uint32_t cpu, uint8_t widem
     (void)cpu;
 #endif
     if (widemul_native(widemul)) {
+#ifdef WIDEMUL_P256_ARM64
+        return p256_arm64_point_from_bytes(o, in);
+#else
         return p256_wide_point_from_bytes(o, in);
+#endif
     }
     return p256_point_from_bytes(o, in);
 }
@@ -101,7 +124,11 @@ static inline uint32_t widemul_p256_point_affine(uint32_t cpu, uint8_t widemul,
     (void)cpu;
 #endif
     if (widemul_native(widemul)) {
+#ifdef WIDEMUL_P256_ARM64
+        uint32_t finite = p256_arm64_point_affine(x, y, a);
+#else
         uint32_t finite = p256_wide_point_affine(x, y, a);
+#endif
         p256_wide_wipe_below();
         return finite;
     }
@@ -121,7 +148,11 @@ static inline uint32_t widemul_p256_point_on_curve(uint32_t cpu, uint8_t widemul
     (void)cpu;
 #endif
     if (widemul_native(widemul)) {
+#ifdef WIDEMUL_P256_ARM64
+        uint32_t on_curve = p256_arm64_point_on_curve(x, y);
+#else
         uint32_t on_curve = p256_wide_point_on_curve(x, y);
+#endif
         p256_wide_wipe_below();
         return on_curve;
     }
@@ -140,7 +171,11 @@ static inline uint32_t widemul_p256_point_affine_x(uint32_t cpu, uint8_t widemul
     (void)cpu;
 #endif
     if (widemul_native(widemul)) {
+#ifdef WIDEMUL_P256_ARM64
+        uint32_t finite = p256_arm64_point_affine(out, NULL, a);
+#else
         uint32_t finite = p256_wide_point_affine(out, NULL, a);
+#endif
         p256_wide_wipe_below();
         return finite;
     }

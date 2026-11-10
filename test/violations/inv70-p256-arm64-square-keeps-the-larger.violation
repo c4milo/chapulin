@@ -1,0 +1,33 @@
+invariant: INV-70
+file: src/p256_arm64_asm.h
+catches: test/docker-aes-runtime-qemu.sh p256-arm64
+reason: p256_arm64_sqr_mont's final subtraction keeps the value less p where
+  the subtraction borrowed and the value where it did not, the choice
+  inverted. A square then comes out at or above p, or wrapped below zero,
+  for most inputs. bin/p256_arm64_equiv_test compares each square with the
+  model word for word, and the qemu lane runs it for arm64 under gcc.
+
+--- old
+        // last SBCS borrows exactly when t0 is 0 and the four words were
+        // below p.
+        "adds %[l0], %[w0], #0x1\n"
+        "sbcs %[l1], %[w1], %[p1]\n"
+        "sbcs %[l2], %[w2], xzr\n"
+        "sbcs %[l3], %[w3], %[p3]\n"
+        "sbcs xzr, %[t0], xzr\n"
+        "csel %[w0], %[w0], %[l0], lo\n"
+        "csel %[w1], %[w1], %[l1], lo\n"
+        "csel %[w2], %[w2], %[l2], lo\n"
+        "csel %[w3], %[w3], %[l3], lo\n"
+--- new
+        // last SBCS borrows exactly when t0 is 0 and the four words were
+        // below p.
+        "adds %[l0], %[w0], #0x1\n"
+        "sbcs %[l1], %[w1], %[p1]\n"
+        "sbcs %[l2], %[w2], xzr\n"
+        "sbcs %[l3], %[w3], %[p3]\n"
+        "sbcs xzr, %[t0], xzr\n"
+        "csel %[w0], %[w0], %[l0], hs\n"
+        "csel %[w1], %[w1], %[l1], hs\n"
+        "csel %[w2], %[w2], %[l2], hs\n"
+        "csel %[w3], %[w3], %[l3], hs\n"

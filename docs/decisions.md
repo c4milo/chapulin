@@ -17838,6 +17838,124 @@ does nothing more.
     - **Keccak** takes 10.9 µs of gcc's encapsulation and 10.1 of clang's,
       in `sha3.c` and `keccak_avx2.c`.
 
+215. **An arm64 host object runs P-256 on a copy of the wide files whose
+    product and square are arm64 assembly on registers.** On the M1 Pro under
+    `ch_cfg.cpu` 0xe7, a P-256 shared secret took 1.16 times OpenSSL
+    3.6.4's time and a key generation 1.03 times (the M1 column of
+    49796323). Camilo approved the item on 2026-11-10.
+
+    - **The profile.** `sample` of a loop of shared secrets put 59% of the
+      time in `p256_wide_fe_mul` and 23% in `p256_wide_fe_sqr`. The
+      doubling's own code took 9%, the binary GCD 3% and the scan of the
+      eight multiples 1%. `sample` of `openssl speed ecdhp256` put 39% in
+      its product and 33% in its square. `proc_pid_rusage` gave the
+      counts: a call of the product retired 147 instructions and took 48
+      cycles from operand to result. A doubling took 361 cycles, and a
+      shared secret 510,000 instructions in 144,000 to 149,000 cycles.
+    - **clang's code.** Apple clang 21 compiles the wide product's carry
+      chains with MRS and MSR of NZCV, which move the flags to general
+      registers and back. Each round of `reduce()` takes a CSET and two
+      SUBs for the borrow of its multiple of p. Between its loads and its
+      stores the product is 128 instructions and the square 105.
+    - **C forms first.** The wide product and square, inline in each point
+      formula through renames, took a shared secret to 135,000 cycles.
+      With each round's u times p's top word on the 64x64->128 multiply in
+      place of shifted copies, it took 118,500. Both forms change the
+      x86-64 objects, which compile the same files.
+    - **The statements.** `p256_arm64_asm.h` holds two. Each computes a
+      product or a square and runs the four rounds and the final
+      subtraction of p in one statement. The product's rows are
+      `p256_wide_mul_row`'s and the square's are the ten products of
+      `p256_wide_sqr_product`, on MUL, UMULH, ADDS and ADCS. The rounds and
+      the subtraction are `p256_adx_asm.h`'s, with u times p's top word on
+      MUL and UMULH and the choice on CSEL. Each round's carry stays in the
+      C flag, and the next round adds it to its high word with ADC. The
+      product's statement is 104 instructions and the square's 84. No
+      instruction branches.
+    - **On registers.** A first form read its operands through pointers
+      and wrote its result through one, as `p256_adx_asm.h` does. It made a
+      shared secret 9% faster. These statements take every word in a
+      register and give every word in a register, and read and write no
+      memory. Inline in a formula, the compiler keeps the formula's
+      elements in registers, and the doubling stores five words to the
+      stack. On the M1 a store and the load after it took 4.8 cycles, on
+      each edge of a formula's chain. The doubling takes 268 cycles where
+      it took 361.
+    - **One operand form.** The product writes the last round's carry over
+      b0, which row 3 reads last. So b0 is an input and an output, and the
+      compiler copies b0 first where a formula reads it after. With b0 an
+      input alone, the doubling took 289 cycles: Apple clang 21 placed the
+      formula's other words differently. The square takes its words as
+      inputs alone. With a0 an output too, its doubling took 289 cycles.
+    - **The copy.** `p256_arm64_point.c`, `p256_arm64_mul.c`,
+      `p256_arm64_verify_point.c` and `p256_arm64_verify.c` include
+      `p256_arm64_names.h` and then the wide file of the same stem, as
+      decision 171's copy does. `p256_arm64_field_inline.h` gives each
+      formula the two statements inline. The scalar arithmetic, the binary
+      GCD and the table stay the wide files'. The copy has a body on arm64
+      alone, and in the model build on every host.
+    - **Where it runs.** Every arm64 core has the instructions, and the
+      multiply bit's statement covers MUL and UMULH, which the wide files
+      run too. So no new bit picks the copy. widemul.h runs the copy's
+      scalar multiplications, decode, affine conversion and curve check in
+      place of the wide files' under the multiply bit. `p256.c` runs the
+      copy's verifier in every session, as decision 96 runs the wide one.
+      An arm64 object holds the wide point files beside the copy, and no
+      session runs them; `bin/p256_equiv_test` holds them to the files
+      under their own names.
+    - **What holds it.** `test/p256_arm64_model.h` calls
+      `p256_wide_mul_row`, `p256_wide_sqr_product` and
+      `test/p256_adx_model.h`'s `model_reduce` itself.
+      `bin/p256_arm64_model_test` and `bin/p256_arm64_verify_model_test`
+      run the equivalence cases on the copy over the model on every host.
+      On arm64 `bin/p256_arm64_equiv_test` holds each statement to the
+      model word for word, on edge elements and 200,000 random pairs. Then
+      it runs the cases and the stack checks on the assembly.
+      `bin/widemul_runtime_test` counts which field each value runs. The
+      qemu lane's new `p256-arm64` part builds the three with gcc and runs
+      them under `qemu-aarch64`. The `p256_arm64_mul` and `p256_arm64_sqr`
+      harnesses prove that no word of the model wraps. `Spec.P256Adx`'s
+      `mulMont` is the model's value, so its theorems hold of the model.
+      `bin/diff_p256_arm64` holds the C over the model to it in 40,339
+      rows. INV-70 states the rule, and five mutants hold it, each caught
+      under clang and gcc. The taint lane passed on arm64 under gcc 15 and
+      clang 21 with Valgrind 3.26.0. Every library source compiles to the
+      same x86-64 and Cortex-M3 instructions as before.
+    - **Numbers.** `bench/primitives.sh` on the M1 Pro, Apple clang 21,
+      0xe7, in µs, as chapulin's time over OpenSSL 3.6.4's in the same run.
+      The run of 59ac9ead started at a load of 5.4 and passed 26; the run
+      of this tree read 5.9 to 7.3:
+
+      | P-256 | before | after | instructions, before | after |
+      | --- | --- | --- | --- | --- |
+      | key generation | 10.07, 1.03 | 8.72, 0.90 | 123,036 | 105,538 |
+      | shared secret | 47.36, 1.14 | 36.80, 0.88 | 509,992 | 399,946 |
+      | ECDSA signature | 15.13, 0.82 | 13.76, 0.75 | 179,711 | 162,093 |
+      | ECDSA verification | 49.71, 0.90 | 39.19, 0.71 | 532,211 | 414,934 |
+
+      Five runs of the two programs in turn, at a load of 6.3 to 7.1, gave
+      the medians 47,604 and 36,880 ns for a shared secret, 10,108 and
+      8,726 for a key generation, 15,157 and 13,787 for a signature, and
+      49,732 and 39,011 for a verification. Each run of a row was within
+      3% of its median.
+    - **The branch count.** `lint-wide-multiply` counts 31 conditional
+      branches in `p256_arm64_verify_point.c` on arm64, one more than in
+      `p256_wide_verify_point.c`. clang writes the test of u2's digit for
+      zero once more, at the end of the loop. The digit is public.
+
+    Rejected:
+
+    - **The wide files' product and square replaced in place on arm64.**
+      No copy and no dispatch, but an arm64 test binary would then compile
+      no wide C to hold to the 32-bit files. Every wide harness would also
+      need a define to read the C on an arm64 host. The copy keeps
+      decision 171's form.
+    - **A CPU bit for the copy.** Every arm64 core has the instructions,
+      and the multiply bit already states their timing.
+    - **The point formulas or the additions in assembly.** The profile put
+      the doubling's own code at 9%, and the C additions already run on
+      registers inline.
+
 216. **The inverted lanes round of an x86-64 host object reads one state
     and writes a second one.** After decision 195, SHA3-256 of 16 KiB on
     the EPYC 7763 took 1.22 times OpenSSL 3.6.4's time under gcc 13.3 and

@@ -12,11 +12,7 @@ reason: widemul_p256_adx answers yes under the multiply bit alone, whatever
     return widemul_native(widemul) && (cpu & CH_CPU_BMI2_ADX) != 0;
 }
 #endif
-
-static inline void widemul_p256_point_mul(
 --- new
     return widemul_native(widemul) && cpu != 0;
 }
 #endif
-
-static inline void widemul_p256_point_mul(
