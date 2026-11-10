@@ -209,10 +209,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
-      - name: Install elan
-        uses: ./.github/actions/install-elan
-        with:
-          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and spec build
         # Mathlib's compiled files stay out of this cache and the next step
         # downloads them; check.yml's step of the same name states why.
@@ -222,6 +218,10 @@ jobs:
             ~/.elan
             spec/lean/.lake/build
           key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
+      - name: Install elan
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - name: Enumerate every server message sequence, KEX=pq
@@ -282,10 +282,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
-      - name: Install elan
-        uses: ./.github/actions/install-elan
-        with:
-          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and spec build
         # Mathlib's compiled files stay out of this cache and the next step
         # downloads them; check.yml's step of the same name states why.
@@ -295,6 +291,10 @@ jobs:
             ~/.elan
             spec/lean/.lake/build
           key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
+      - name: Install elan
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -494,10 +494,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
-      - name: Install elan
-        uses: ./.github/actions/install-elan
-        with:
-          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and spec build
         # Mathlib's compiled files stay out of this cache and the next step
         # downloads them; check.yml's step of the same name states why.
@@ -507,6 +503,10 @@ jobs:
             ~/.elan
             spec/lean/.lake/build
           key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
+      - name: Install elan
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - name: Search random seeds until the budget runs out
@@ -553,10 +553,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
-      - name: Install elan
-        uses: ./.github/actions/install-elan
-        with:
-          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and spec build
         # Mathlib's compiled files stay out of this cache and the next step
         # downloads them; check.yml's step of the same name states why.
@@ -566,6 +562,10 @@ jobs:
             ~/.elan
             spec/lean/.lake/build
           key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
+      - name: Install elan
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - run: make spec-coverage
@@ -584,10 +584,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
-      - name: Install elan
-        uses: ./.github/actions/install-elan
-        with:
-          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and spec build
         # Mathlib's compiled files stay out of this cache and the next step
         # downloads them; check.yml's step of the same name states why.
@@ -597,6 +593,10 @@ jobs:
             ~/.elan
             spec/lean/.lake/build
           key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
+      - name: Install elan
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - run: make diff-ecdsa
@@ -610,10 +610,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
-      - name: Install elan
-        uses: ./.github/actions/install-elan
-        with:
-          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and spec build
         # Mathlib's compiled files stay out of this cache and the next step
         # downloads them; check.yml's step of the same name states why.
@@ -623,6 +619,10 @@ jobs:
             ~/.elan
             spec/lean/.lake/build
           key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
+      - name: Install elan
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - run: make diff-pq
@@ -637,10 +637,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
-      - name: Install elan
-        uses: ./.github/actions/install-elan
-        with:
-          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and spec build
         # Mathlib's compiled files stay out of this cache and the next step
         # downloads them; check.yml's step of the same name states why.
@@ -650,6 +646,10 @@ jobs:
             ~/.elan
             spec/lean/.lake/build
           key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
+      - name: Install elan
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - run: make diff-webpki
