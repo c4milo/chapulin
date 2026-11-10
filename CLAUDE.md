@@ -169,9 +169,11 @@ Home: github.com/c4milo.
   kept inverted between rounds, each round read from one state and written
   to a second one, which `sha3.c` alone includes and an x86-64 host object
   runs, docs/decisions.md 195 and 216) and with
-  `sha3_hw.c` (Keccak-f[1600] on FEAT_SHA3, an arm64
-  host object that clang compiles, a session whose caller sets
-  CH_CPU_CONSTANT_TIME_SHA3) +
+  `sha3_hw.c` (Keccak-f[1600] on FEAT_SHA3, an arm64 host object that
+  clang compiles, a session whose caller sets CH_CPU_CONSTANT_TIME_SHA3;
+  on x86-64 `sha3.c` compiled once more over `sha3_andn.h`, FIPS 202's chi
+  on ANDN from one state to a second one, a session whose caller sets
+  CH_CPU_BMI1 and CH_CPU_BMI2_ADX, docs/decisions.md 217) +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
   TRUST=webpki and SUITE=aesgcm builds package them, other builds keep
   them test-only; `sha512_compress.c` is the reference, and of the
@@ -657,7 +659,7 @@ Home: github.com/c4milo.
   `mldsa87_verify_cpu` and `mldsa87_challenge_cpu` take the value in a
   host object; `bin/mldsa_runtime_test` counts each SHAKE call on each
   path (docs/decisions.md 173).
-  On x86-64 five more bits each pick a kernel beside a path every
+  On x86-64 six more bits each pick a kernel beside a path every
   CPU runs, and none states a timing: `CH_CPU_AVX2` runs the keystream
   on `chacha20_avx2.c` and ML-KEM's matrix on `keccak_avx2.c`, whose
   input is public (docs/decisions.md 107), `CH_CPU_VAES` beside
@@ -671,7 +673,12 @@ Home: github.com/c4milo.
   and by itself an ECDSA P-256 verification on that copy, whose inputs are
   public (docs/decisions.md 165 and 171). Beside the multiply bit and
   without the IFMA path it also runs RSA signing's two exponentiations on
-  `rsa_mont64_adx.c` (docs/decisions.md 183).
+  `rsa_mont64_adx.c` (docs/decisions.md 183). `CH_CPU_BMI1` beside
+  `CH_CPU_BMI2_ADX` runs a session's SHA-3 and SHAKE on `sha3_hw.c`'s
+  x86-64 arm, `sha3.c` compiled once more under `target("bmi,bmi2")` over
+  `sha3_andn.h`'s round, whose chi is ANDN and whose rotations are RORX,
+  so ML-DSA-87's hashes run there; ML-KEM's hashes take no value and run
+  `sha3.c` (docs/decisions.md 217).
   Each entry of `gcm_avx512.c` wipes
   `GCM_AVX512_BELOW_LEN` bytes of the stack below its frame after the
   kernel. The kernel calls no function, since every other function in
