@@ -5045,8 +5045,8 @@ last `ROLE=server` stub, as the entry said it would.
   `inv16-p256-wide-table-scan-skips-unselected` and
   `inv16-p256-wide-multiple-scan-skips-unselected` each make one of the
   two scans pass over the entries a digit does not name, and the
-  x86-64 spec's count of `p256_wide_mul.c` rises past its 14 for each.
-  The arm64 spec's rises for the second and falls to 12 for the first,
+  x86-64 spec's count of `p256_wide_mul.c` rises past its 13 for each.
+  The arm64 spec's rises for the second and falls for the first,
   where clang writes the skip as a comparison of the scan's index with
   the digit and drops a vector loop's branches: a count that falls is
   no sign that a file got safer.

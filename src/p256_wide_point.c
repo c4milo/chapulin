@@ -245,6 +245,7 @@ void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jaco
     p256_wide_fe yyyy;
     p256_wide_fe s;
     p256_wide_fe m;
+    p256_wide_fe half;
     p256_wide_fe t;
     p256_wide_fe x3;
     p256_wide_fe y3;
@@ -253,13 +254,16 @@ void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jaco
     // Z3 = Y1 * Z1.
     p256_wide_fe_mul(&z3, &a->y, &a->z);
     // zz = Z1^2, and m = 3/2 * (X1 - zz) * (X1 + zz), the tangent's slope times Z3: the
-    // product plus half the product.
+    // product plus half the product. The half has a local of its own, which no product reads,
+    // so a compiler keeps its four words in registers. In t, which the products read from
+    // memory, gcc 13 built the half in two vector registers and stored 16 bytes at a time, and
+    // the sum then read them back 8 bytes at a time (docs/decisions.md 212).
     p256_wide_fe_sqr(&zz, &a->z);
     p256_wide_fe_sub(&t, &a->x, &zz);
     p256_wide_fe_add(&m, &a->x, &zz);
     p256_wide_fe_mul(&m, &t, &m);
-    p256_wide_fe_half(&t, &m);
-    p256_wide_fe_add(&m, &m, &t);
+    p256_wide_fe_half(&half, &m);
+    p256_wide_fe_add(&m, &m, &half);
     // yy = Y1^2, and s = X1 * yy.
     p256_wide_fe_sqr(&yy, &a->y);
     p256_wide_fe_mul(&s, &a->x, &yy);

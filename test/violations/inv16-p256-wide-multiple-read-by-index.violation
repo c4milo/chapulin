@@ -9,16 +9,12 @@ reason: multiple_select loads the one multiple of the peer's point its
   inv-16-p256-wide-no-subscript-by-digit refuses the subscript.
 
 --- old
-    o->x = FE_ZERO;
-    o->y = FE_ZERO;
-    o->z = FE_ZERO;
-    for (uint64_t j = 0; j < ENTRIES; j++) {
-        uint64_t mask = equal_mask(j, index);
-        fe_keep(&o->x, &row[j].x, mask);
-        fe_keep(&o->y, &row[j].y, mask);
-        fe_keep(&o->z, &row[j].z, mask);
-    }
-}
+static void multiple_select(p256_wide_jacobian *o, const p256_wide_jacobian row[ENTRIES],
+                            uint64_t index) {
+    word_pair x_low = {0, 0};
 --- new
+static void multiple_select(p256_wide_jacobian *o, const p256_wide_jacobian row[ENTRIES],
+                            uint64_t index) {
     *o = row[index];
-}
+    return;
+    word_pair x_low = {0, 0};

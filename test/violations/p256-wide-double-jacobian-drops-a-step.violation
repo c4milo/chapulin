@@ -1,15 +1,16 @@
 invariant: INV-16
 file: src/p256_wide_point.c
 catches: p256_equiv_test
-reason: the Jacobian doubling leaves out the halving that makes m three
-  halves of (X1 - zz) (X1 + zz), so m is twice that, and X3 and Y3 come
-  out for another point. No fault follows: every coordinate is still a
-  field element. bin/p256_equiv_test holds the doubling to the complete
-  addition of a point with itself on multiples of G, and every key
-  exchange doubles 253 times.
+reason: the Jacobian doubling adds m to itself where it adds m's half, so
+  m is twice (X1 - zz) (X1 + zz) where it is three halves of it, and X3
+  and Y3 come out for another point. No fault follows: every coordinate
+  is still a field element. bin/p256_equiv_test holds the doubling to the
+  complete addition of a point with itself on multiples of G, and every
+  key exchange doubles 253 times.
 
 --- old
-    p256_wide_fe_half(&t, &m);
-    p256_wide_fe_add(&m, &m, &t);
+    p256_wide_fe_half(&half, &m);
+    p256_wide_fe_add(&m, &m, &half);
 --- new
+    p256_wide_fe_half(&half, &m);
     p256_wide_fe_add(&m, &m, &m);

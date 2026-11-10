@@ -9757,13 +9757,13 @@ P256_WIDE_BRANCH_CEILING := \
   arm64/src/p256_wide_scalar.c:0 x86-64/src/p256_wide_scalar.c:0 \
   arm64/src/p256_wide_inverse.c:3 x86-64/src/p256_wide_inverse.c:3 \
   arm64/src/p256_wide_point.c:3 x86-64/src/p256_wide_point.c:3 \
-  arm64/src/p256_wide_mul.c:14 x86-64/src/p256_wide_mul.c:14 \
+  arm64/src/p256_wide_mul.c:13 x86-64/src/p256_wide_mul.c:13 \
   arm64/src/p256_wide_table.c:0 x86-64/src/p256_wide_table.c:0 \
   arm64/src/p256_wide_wipe.c:0 x86-64/src/p256_wide_wipe.c:0 \
   arm64/src/p256_wide_verify.c:6 x86-64/src/p256_wide_verify.c:6 \
   arm64/src/p256_wide_verify_point.c:30 x86-64/src/p256_wide_verify_point.c:30 \
   arm64/src/p256_adx_field.c:0 x86-64/src/p256_adx_field.c:0 arm64/src/p256_adx_point.c:0 \
-  x86-64/src/p256_adx_point.c:3 arm64/src/p256_adx_mul.c:0 x86-64/src/p256_adx_mul.c:14 \
+  x86-64/src/p256_adx_point.c:3 arm64/src/p256_adx_mul.c:0 x86-64/src/p256_adx_mul.c:13 \
   arm64/src/p256_adx_verify_point.c:0 x86-64/src/p256_adx_verify_point.c:30 arm64/src/p256_adx_verify.c:0 \
   x86-64/src/p256_adx_verify.c:6
 P256_SCALAR_BRANCH_CEILING := \

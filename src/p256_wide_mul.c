@@ -48,10 +48,6 @@
 #define WINDOWS 64
 #define ENTRIES 8
 
-static const p256_wide_fe FE_ZERO = {
-    {0, 0, 0, 0}
-};
-
 // Bit i of k, for i below 256.
 static inline uint64_t scalar_bit(const p256_scalar *k, size_t i) {
     return (k->word[i >> 5] >> (i & 31)) & 1U;
@@ -101,13 +97,6 @@ static digit window_digit(const p256_scalar *k, size_t window, size_t bits, size
     return d;
 }
 
-// o |= a where mask is all ones, and o unchanged where it is zero.
-static inline void fe_keep(p256_wide_fe *o, const p256_wide_fe *a, uint64_t mask) {
-    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
-        o->word[i] |= a->word[i] & mask;
-    }
-}
-
 // Two words of a coordinate side by side, a GNU C vector type that gcc and clang compile to
 // SSE2 or NEON registers and CBMC reads as two uint64_t. & and | act on both words at once.
 typedef uint64_t word_pair __attribute__((vector_size(16)));
@@ -145,18 +134,47 @@ static void table_select(p256_wide_affine *o, const p256_wide_affine row[P256_WI
     o->y.word[3] = y_high[1];
 }
 
-// The same scan over eight points in Jacobian coordinates.
+// The same scan over eight points in Jacobian coordinates, with its six sums in word_pair
+// values. The sums were *o's twelve words, and each entry ORed into them in memory: a compiler
+// cannot keep *o in registers across a read of row, because the two may be one object for all
+// it can prove. Each word then passed through eight loads and eight stores, one after the other
+// (docs/decisions.md 212).
 static void multiple_select(p256_wide_jacobian *o, const p256_wide_jacobian row[ENTRIES],
                             uint64_t index) {
-    o->x = FE_ZERO;
-    o->y = FE_ZERO;
-    o->z = FE_ZERO;
+    word_pair x_low = {0, 0};
+    word_pair x_high = {0, 0};
+    word_pair y_low = {0, 0};
+    word_pair y_high = {0, 0};
+    word_pair z_low = {0, 0};
+    word_pair z_high = {0, 0};
     for (uint64_t j = 0; j < ENTRIES; j++) {
         uint64_t mask = equal_mask(j, index);
-        fe_keep(&o->x, &row[j].x, mask);
-        fe_keep(&o->y, &row[j].y, mask);
-        fe_keep(&o->z, &row[j].z, mask);
+        word_pair keep = {mask, mask};
+        word_pair multiple_x_low = {row[j].x.word[0], row[j].x.word[1]};
+        word_pair multiple_x_high = {row[j].x.word[2], row[j].x.word[3]};
+        word_pair multiple_y_low = {row[j].y.word[0], row[j].y.word[1]};
+        word_pair multiple_y_high = {row[j].y.word[2], row[j].y.word[3]};
+        word_pair multiple_z_low = {row[j].z.word[0], row[j].z.word[1]};
+        word_pair multiple_z_high = {row[j].z.word[2], row[j].z.word[3]};
+        x_low |= multiple_x_low & keep;
+        x_high |= multiple_x_high & keep;
+        y_low |= multiple_y_low & keep;
+        y_high |= multiple_y_high & keep;
+        z_low |= multiple_z_low & keep;
+        z_high |= multiple_z_high & keep;
     }
+    o->x.word[0] = x_low[0];
+    o->x.word[1] = x_low[1];
+    o->x.word[2] = x_high[0];
+    o->x.word[3] = x_high[1];
+    o->y.word[0] = y_low[0];
+    o->y.word[1] = y_low[1];
+    o->y.word[2] = y_high[0];
+    o->y.word[3] = y_high[1];
+    o->z.word[0] = z_low[0];
+    o->z.word[1] = z_low[1];
+    o->z.word[2] = z_high[0];
+    o->z.word[3] = z_high[1];
 }
 
 // o = a where mask is all ones, o unchanged where it is zero.

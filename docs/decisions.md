@@ -17632,3 +17632,73 @@ does nothing more.
     - **The statement under clang.** clang 23 kept the statement's
       operands in stack slots, and its seal took 9303 ns (run
       42751977710).
+
+212. **`multiple_select` keeps its sums in word pairs, and the doubling's
+    half has a local of its own.** On an EPYC 7763 a P-256 shared secret
+    took 58.1 µs under gcc 13.3 and 55.9 under clang 23, 1.12 and 1.08 of
+    OpenSSL 3.6.4's time.
+
+    - **The first cause: the scan of the eight multiples wrote its sums to
+      memory.** `multiple_select` set `*o` to zero and ORed each of the
+      eight entries into it under a mask. A compiler cannot keep `*o` in
+      registers across a read of `row`, because the two may be one object
+      for all it can prove. So each of the twelve words passed through
+      eight loads and eight stores, each load of the word the store before
+      it wrote. gcc 13 also kept the three loops over four words.
+      `perf record` put 6.6% of gcc's shared secret in `digit_multiple`,
+      3.97 µs, and 4.9% of clang's, 2.74 µs.
+    - **The scan.** The six sums are `word_pair` values, as
+      `table_select` keeps its four (decision 109), and the twelve words
+      are stored once after the scan. The masks, the order of the entries
+      and the reads are as before: every entry is read whole, and none by
+      an index.
+    - **The second cause: gcc built the half in vector registers.**
+      `p256_wide_fe_half` wrote the half to `t`, which the products read
+      from memory. gcc 13 packed the four words in two XMM registers,
+      shifted them there, and stored 16 bytes at a time. `p256_wide_fe_add`
+      then read them back 8 bytes at a time.
+    - **The half.** The doubling writes the half to `half`, a local that
+      no product reads. Both compilers then keep its four words in general
+      registers, and gcc's doubling has no PSRLQ and no PSLLQ where it had
+      four.
+    - **What holds it.** No value changes. `bin/p256_equiv_test` holds the
+      multiplication to `p256_point_mul`, and the `p256_wide_digit` harness
+      proves that the scan returns the entry at every index, word for
+      word. The three violations of the scan and the one of the doubling
+      edit the new text, and `p256-wide-multiple-scan-drops-a-sixth` is
+      new: all five are caught.
+    - **Numbers.** A/B run 42754920128 on the EPYC 7763, in ns, each the
+      median of five runs:
+
+      | P-256 shared secret | gcc 13.3 | clang 23 |
+      | --- | --- | --- |
+      | before | 60635 | 55745 |
+      | with the scan | 58274 | 54716 |
+      | with the scan and the half | 57148 | 54297 |
+
+      The half alone took gcc to 59666 and clang to 55818. A verification
+      took 58643 where it took 58916 under gcc, and 55456 where it took
+      55750 under clang. Key generation, which runs neither change, did
+      not move. The driver of these runs compiles with
+      `-fno-strict-aliasing`, as `make lib` does (decision 185).
+      `bench/primitives.sh` compiles without it, and gcc's shared secret
+      reads 58.1 µs there. On the tree with decisions 210 to 214, bench
+      run 42759645458 read 56.9 µs under gcc and 54.1 under clang, 1.10
+      and 1.05 of OpenSSL's 51.7.
+
+    Measured and not changed:
+
+    - **The three coordinates' stores.** Each point routine ends with
+      `o->x = x3; o->y = y3; o->z = z3`. gcc 13 builds each coordinate in
+      two XMM registers from four general registers: 29 MOVQ and 16
+      PUNPCKLQDQ in `p256_adx_point.c`. With each word stored through a
+      volatile lvalue the file has none. That form took gcc's shared
+      secret from 60581 to 60583 ns, and an empty statement between the
+      stores took it to 59918, with five runs that spread from 59834 to
+      59994 (run 42751977710). The first did not move the row, and the
+      second was measured in one run alone.
+    - **The table scan of key generation.** `digit_entry` took 17.3% of
+      gcc's key generation, 2.33 µs, and 14.8% of clang's, 1.78 µs. gcc
+      computes each mask in eight scalar instructions and moves it to an
+      XMM register for each of the 32 entries. The binary GCD took 2.72 µs
+      under gcc and 2.15 under clang.
