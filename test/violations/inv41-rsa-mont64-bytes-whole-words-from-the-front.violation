@@ -1,0 +1,14 @@
+invariant: INV-41
+file: src/rsa_mont64.c
+catches: rsa_equiv_test
+reason: rsa_mont64_from_bytes takes word i from the eight bytes that start
+  8 * i bytes from the front, where the number's least significant word is
+  its last eight bytes. A number of 16 bytes or more then has its words in
+  the reverse order, and one whose length is no multiple of 8 also loses
+  bytes. bin/rsa_equiv_test holds the byte moves to a loop of one byte at
+  a time at every length.
+
+--- old
+        words[i] = word_from_bytes(bytes + len - 8 * (i + 1));
+--- new
+        words[i] = word_from_bytes(bytes + 8 * i);
