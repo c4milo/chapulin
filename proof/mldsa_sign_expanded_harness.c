@@ -71,9 +71,11 @@ int mld_sample_ntt_avx2(mld_poly e[MLD_AVX2_ENTRIES], const uint8_t rho[MLD_RHO_
 }
 #endif
 
-#ifdef CH_KECCAK_INSTRUCTIONS
-// The SHAKE calls on the SHA-3 instructions, which an arm64 host object
-// that clang compiles holds (sha3.h), to the sponge's pointer contract.
+#if defined(CH_KECCAK_INSTRUCTIONS) || defined(__x86_64__)
+// The SHAKE calls of sha3_hw.c, to the sponge's pointer contract: the SHA-3
+// instructions of an arm64 host object that clang compiles, and the ANDN
+// copy of every x86-64 host object (sha3.h, docs/decisions.md 217). The
+// guard is sha3.h's own, so a harness that CBMC reads as x86-64 has them.
 void shake_absorb_hw(shake *s, const uint8_t *in, size_t n) {
     shake_absorb(s, in, n);
 }
