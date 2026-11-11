@@ -8,6 +8,6 @@ reason: sign_hedged hands sign_digest no noise, so the hedged entry signs
   vectors' bytes and requires them to differ from the RFC 6979 bytes.
 
 --- old
-    return sign_digest(widemul, cpu, priv, msg_hash, noise, sig, cap, sig_len);
+    return sign_digest(widemul, cpu, priv, msg_hash, noise, form, sig, cap, sig_len);
 --- new
-    return sign_digest(widemul, cpu, priv, msg_hash, NULL, sig, cap, sig_len);
+    return sign_digest(widemul, cpu, priv, msg_hash, NULL, form, sig, cap, sig_len);

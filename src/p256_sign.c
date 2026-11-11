@@ -347,13 +347,18 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
 // and no byte of sig otherwise; returns 1 when it wrote. This is the one
 // place the file writes a signature, and proof/p256_sign_harness.c proves
 // that sig and *sig_len keep what they held unless both checks passed.
+// The two forms a signature leaves in: the DER ECDSA-Sig-Value of a TLS
+// CertificateVerify, and r then s, which only a CH_JWS build writes.
+#define SIGNATURE_DER 0
+#define SIGNATURE_R_THEN_S 1
+
 // The verdict is what the caller sees, so the branch on it tells no more.
 // The DER writer branches on the leading bytes of r and s, so it runs only
 // after the verdict, on a pair that goes on the wire: a pair that a check
 // refused is never encoded (docs/decisions.md 155). The DER goes to an
 // array of this function's own first, which is wiped.
 static int write_if_checked(uint32_t checked, const uint8_t r[P256_SCALAR_LEN],
-                            const uint8_t s[P256_SCALAR_LEN], uint8_t *sig, size_t cap,
+                            const uint8_t s[P256_SCALAR_LEN], int form, uint8_t *sig, size_t cap,
                             size_t *sig_len) {
     CT_DECLASSIFY(&checked, sizeof checked);
     if (checked == 0) {
@@ -361,6 +366,22 @@ static int write_if_checked(uint32_t checked, const uint8_t r[P256_SCALAR_LEN],
     }
     CT_DECLASSIFY(r, P256_SCALAR_LEN);
     CT_DECLASSIFY(s, P256_SCALAR_LEN);
+#ifdef CH_JWS
+    // JWS's ES256 carries r then s at their full width, with no DER (RFC
+    // 7518 section 3.4). The pair passed both checks, as the DER pair
+    // below did.
+    if (form == SIGNATURE_R_THEN_S) {
+        if (cap < 2 * P256_SCALAR_LEN) {
+            return 0;
+        }
+        memcpy(sig, r, P256_SCALAR_LEN);
+        memcpy(sig + P256_SCALAR_LEN, s, P256_SCALAR_LEN);
+        *sig_len = 2 * P256_SCALAR_LEN;
+        return 1;
+    }
+#else
+    (void)form;
+#endif
     uint8_t candidate[P256_SIG_MAX];
     size_t candidate_len = 0;
     // The array holds the longest signature, so write_signature never refuses.
@@ -381,8 +402,8 @@ static int write_if_checked(uint32_t checked, const uint8_t r[P256_SCALAR_LEN],
 // checks passed (write_if_checked), and are wiped on either verdict: a
 // pair that failed is what a fault made of the nonce or of the key.
 static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
-                       const uint8_t msg_hash[32], const uint8_t *noise, uint8_t *sig, size_t cap,
-                       size_t *sig_len) {
+                       const uint8_t msg_hash[32], const uint8_t *noise, int form, uint8_t *sig,
+                       size_t cap, size_t *sig_len) {
     p256_scalar d;
     p256_scalar z;
     p256_scalar k;
@@ -408,7 +429,7 @@ static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PR
 
     if (derive_nonce(cpu, &k, priv, z_octets, noise)) {
         uint32_t checked = compute_signature(widemul, cpu, &k, &d, &z, r_bytes, s_bytes);
-        rc = write_if_checked(checked, r_bytes, s_bytes, sig, cap, sig_len);
+        rc = write_if_checked(checked, r_bytes, s_bytes, form, sig, cap, sig_len);
     }
 
     ct_wipe(&d, sizeof d);
@@ -425,7 +446,7 @@ static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PR
 // p256_sign_hedged's contract, with the multiplies under widemul and the
 // nonce generator's HMACs on the path cpu picks.
 static int sign_hedged(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
-                       const uint8_t msg_hash[32], const uint8_t noise[P256_NOISE_LEN],
+                       const uint8_t msg_hash[32], const uint8_t noise[P256_NOISE_LEN], int form,
                        uint8_t *sig, size_t cap, size_t *sig_len) {
     // INV-4's check on the noise draw, which the caller makes (srv_auth.c). A source that
     // returns without writing leaves the noise zero, and then every signature over one message is
@@ -436,29 +457,41 @@ static int sign_hedged(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PR
         static const uint8_t unwritten[P256_NOISE_LEN] = {0};
         CH_ASSERT(!ct_memeq_public(noise, unwritten, P256_NOISE_LEN));
     }
-    return sign_digest(widemul, cpu, priv, msg_hash, noise, sig, cap, sig_len);
+    return sign_digest(widemul, cpu, priv, msg_hash, noise, form, sig, cap, sig_len);
 }
 
 int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
               uint8_t *sig, size_t cap, size_t *sig_len) {
-    return sign_digest(widemul, 0, priv, msg_hash, NULL, sig, cap, sig_len);
+    return sign_digest(widemul, 0, priv, msg_hash, NULL, SIGNATURE_DER, sig, cap, sig_len);
 }
 
 int p256_sign_hedged(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
                      const uint8_t noise[P256_NOISE_LEN], uint8_t *sig, size_t cap,
                      size_t *sig_len) {
-    return sign_hedged(widemul, 0, priv, msg_hash, noise, sig, cap, sig_len);
+    return sign_hedged(widemul, 0, priv, msg_hash, noise, SIGNATURE_DER, sig, cap, sig_len);
 }
 
 #ifdef CH_CPU_RUNTIME
 int p256_sign_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
                   uint8_t *sig, size_t cap, size_t *sig_len) {
-    return sign_digest(widemul_of_cpu(cpu), cpu, priv, msg_hash, NULL, sig, cap, sig_len);
+    return sign_digest(widemul_of_cpu(cpu), cpu, priv, msg_hash, NULL, SIGNATURE_DER, sig, cap,
+                       sig_len);
 }
 
 int p256_sign_hedged_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
                          const uint8_t msg_hash[32], const uint8_t noise[P256_NOISE_LEN],
                          uint8_t *sig, size_t cap, size_t *sig_len) {
-    return sign_hedged(widemul_of_cpu(cpu), cpu, priv, msg_hash, noise, sig, cap, sig_len);
+    return sign_hedged(widemul_of_cpu(cpu), cpu, priv, msg_hash, noise, SIGNATURE_DER, sig, cap,
+                       sig_len);
 }
+
+#ifdef CH_JWS
+int p256_sign_hedged_raw_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
+                             const uint8_t msg_hash[32], const uint8_t noise[P256_NOISE_LEN],
+                             uint8_t sig[2 * P256_SCALAR_LEN]) {
+    size_t sig_len = 0;
+    return sign_hedged(widemul_of_cpu(cpu), cpu, priv, msg_hash, noise, SIGNATURE_R_THEN_S, sig,
+                       2 * P256_SCALAR_LEN, &sig_len);
+}
+#endif
 #endif

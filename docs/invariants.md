@@ -390,7 +390,7 @@ last `ROLE=server` stub, as the entry said it would.
   grows a verdict and no longer returns bytes alone.
 - See [decisions: Trust model](decisions.md#trust-model).
 
-### INV-6 — PKCS#1 v1.5 as verify only, in rsa_pkcs1.c and its three callers
+### INV-6 — PKCS#1 v1.5 signatures in rsa_pkcs1.c alone, signed for JWS alone
 
 - **Claim.** The device modes see RSA as PSS verify only: no v1.5
   signature or encryption padding, the certificate profile included.
@@ -404,7 +404,12 @@ last `ROLE=server` stub, as the entry said it would.
   ([issue 189](https://github.com/c4milo/chapulin/issues/189)), and
   `jws.c`, which calls the same function for a JWS signature under
   RS256 (RFC 7518 section 3.3), in a `CH_JWS` build alone
-  ([decision 221](decisions.md)). Neither
+  ([decision 221](decisions.md)). A fourth caller signs:
+  `jws_sign.c` calls `rsa_pkcs1_sign` for a JWS under RS256, in a
+  `CH_JWS` object with a server role alone, for the tests and the tools
+  that make tokens ([decision 223](decisions.md)). It runs the private
+  operation a server's RSA-PSS signature runs, and verifies each
+  signature before it leaves. No TLS path signs with this padding. Neither
   the raw nor the ca object packages these files; the `TRUST=webpki`
   object is the one that does. No
   v1.5 encryption padding exists anywhere.
@@ -416,7 +421,7 @@ last `ROLE=server` stub, as the entry said it would.
   never parses the padding it receives, which is the step a lax
   verifier gets wrong.
 - **Check.** Semgrep-tripwire (`inv-6-no-pkcs1`): the identifier
-  `pkcs1` outside `rsa_pkcs1.c`, `webpki_sigalg.c`, `dnssec.c` and `jws.c`, with no
+  `pkcs1` outside `rsa_pkcs1.c`, `webpki_sigalg.c`, `dnssec.c`, `jws.c` and `jws_sign.c`, with no
   exemption for the device modes' cert files. The webpki ClientHello
   offers `rsa_pkcs1_sha256` and `rsa_pkcs1_sha384` for certificate
   signatures, and `hsp_parse_certificate_verify` refuses both in

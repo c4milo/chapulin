@@ -676,6 +676,38 @@ test "JWS=on: tokens std.crypto signs verify, and base64url matches std.base64" 
 /// byte.
 const jws_sig_text_len = 86;
 
+test "JWS=on ROLE=both: tokens jws.sign writes verify under std.crypto's keys" {
+    if (!@hasDecl(c, "ch_jws_sign")) return error.SkipZigTest;
+    const jws = chapulin.jws;
+    const input = "eyJhbGciOiJFZERTQSJ9.c2lnbmVkIGJ5IHRoZSBaaWcgQVBJ";
+    const noise = [_]u8{0x5c} ** c.CH_JWS_NOISE_LEN;
+    const cpu: chapulin.Cpu = .{ .constant_time_multiply = true };
+    var room: [c.CH_JWS_SIG_LEN_MAX]u8 = undefined;
+
+    // EdDSA: Ed25519 is deterministic, so the signature is std.crypto's own bytes.
+    const Ed25519 = std.crypto.sign.Ed25519;
+    const seed = [_]u8{0x61} ** Ed25519.KeyPair.seed_length;
+    const ed = try Ed25519.KeyPair.generateDeterministic(seed);
+    const ed_sig = try jws.sign(&room, &.{ .cpu = cpu, .key = .{ .eddsa = &seed }, .noise = &noise, .input = input });
+    try std.testing.expectEqualSlices(u8, &(try ed.sign(input, null)).toBytes(), ed_sig);
+    const ed_key = ed.public_key.toBytes();
+    try jws.verify(&.{ .algorithm = .eddsa, .key = &ed_key, .input = input, .signature = ed_sig });
+
+    // ES256: the noise makes it another signature each time, and each one verifies under the key
+    // std.crypto computes from the same scalar.
+    const Ecdsa = std.crypto.sign.ecdsa.EcdsaP256Sha256;
+    const kp = try Ecdsa.KeyPair.generateDeterministic([_]u8{0x62} ** Ecdsa.KeyPair.seed_length);
+    const scalar = kp.secret_key.toBytes();
+    const es_sig = try jws.sign(&room, &.{ .cpu = cpu, .key = .{ .es256 = &scalar }, .noise = &noise, .input = input });
+    try std.testing.expectEqual(@as(usize, 64), es_sig.len);
+    const point = kp.public_key.toUncompressedSec1();
+    try jws.verify(&.{ .algorithm = .es256, .key = point[1..], .input = input, .signature = es_sig });
+
+    // The refusals: EdDSA without the multiply bit, and a room one byte short.
+    try expectError(error.Invalid, jws.sign(&room, &.{ .cpu = .{}, .key = .{ .eddsa = &seed }, .noise = &noise, .input = input }));
+    try expectError(error.Cap, jws.sign(room[0..63], &.{ .cpu = cpu, .key = .{ .es256 = &scalar }, .noise = &noise, .input = input }));
+}
+
 test "SCRAM=on: the parts match std.crypto, and a SCRAM-SHA-256 proof checks" {
     if (!@hasDecl(c, "ch_hmac_sha256")) return error.SkipZigTest;
     const scram = chapulin.scram;

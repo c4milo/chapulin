@@ -191,3 +191,41 @@ int rsa_pkcs1_verify_exponent(const uint8_t *n, size_t n_len, uint64_t e, const 
     return (int)ct_memeq(em, expected, n_len);
 }
 #endif
+
+#if defined(CH_JWS) && defined(CH_CPU_RUNTIME) && defined(CH_ROLE_SERVER)
+#include "widemul.h"
+
+int rsa_pkcs1_sign(uint32_t cpu, const ch_rsa_priv *k, const uint8_t digest[32],
+                   const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig) {
+    uint8_t widemul = widemul_of_cpu(cpu);
+    // The key's lengths are public, and the 64-bit signer's test of the
+    // primes computes in constant time and publishes its verdict alone.
+    // The verdict on the key is the one a server's configuration check
+    // reports, so it is public, as rsa_sign.c marks it.
+    int key_ok = widemul_rsa_pss_sign_key_ok(widemul, k);
+    CT_DECLASSIFY(&key_ok, sizeof key_ok);
+    if (!key_ok) {
+        return 0;
+    }
+    size_t n_len = k->n_len;
+    // The encoded message begins with a zero byte, so it is below n, whose
+    // top bit the key test requires.
+    uint8_t em[CH_RSA_MODULUS_MAX];
+    emsa_pkcs1_v1_5_encode(em, n_len, digest_info_sha256, digest, SHA256_LEN);
+    int written = widemul_rsa_sp1_cpu(cpu, widemul, k, em, blind, sig);
+    // The ladder has no check of its own, and the 64-bit signer's check
+    // reads its own arithmetic. This one runs the verifier a peer runs,
+    // whose arithmetic is variable time, so the signature is marked public
+    // first: the call publishes it when no fault changed it. The 64-bit
+    // signer has already checked it in constant time. A ladder signature
+    // that a fault changed is never written, and it is no CRT signature,
+    // so it does not give a prime away (docs/decisions.md 223).
+    CT_DECLASSIFY(&written, sizeof written);
+    CT_DECLASSIFY(sig, n_len);
+    if (!written || !rsa_pkcs1_verify_cpu(cpu, k->n, n_len, digest, SHA256_LEN, sig, n_len)) {
+        ct_wipe(sig, n_len);
+        return 0;
+    }
+    return 1;
+}
+#endif

@@ -10,6 +10,14 @@ reason: p256_sign_hedged_cpu, the entry a server signs through, hands its
   p256_sign_hedged_cpu makes into each path under every ch_cfg.cpu value.
 
 --- old
-    return sign_hedged(widemul_of_cpu(cpu), cpu, priv, msg_hash, noise, sig, cap, sig_len);
+    return sign_hedged(widemul_of_cpu(cpu), cpu, priv, msg_hash, noise, SIGNATURE_DER, sig, cap,
+                       sig_len);
+}
+
+#ifdef CH_JWS
 --- new
-    return sign_hedged(widemul_of_cpu(cpu), 0, priv, msg_hash, noise, sig, cap, sig_len);
+    return sign_hedged(widemul_of_cpu(cpu), 0, priv, msg_hash, noise, SIGNATURE_DER, sig, cap,
+                       sig_len);
+}
+
+#ifdef CH_JWS

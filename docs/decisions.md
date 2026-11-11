@@ -18773,3 +18773,55 @@ does nothing more.
       `std.crypto`.
     - **Not built.** A SCRAM state machine, SASLprep (RFC 4013), a
       streaming hash, and SCRAM-SHA-512.
+223. **ch_jws_sign signs a JWS under RS256, ES256 or EdDSA.** stompy's
+    tests and tools make login tokens. The owner ruled on 2026-11-11 that
+    the signers live in chapulin beside the check, as one dispatcher for
+    the three algorithms (decision 221).
+
+    - **The call.** `ch_jws_sign(cpu, algorithm, priv, priv_len, noise,
+      input, input_len, sig, sig_cap, sig_len)`, the mirror of
+      `ch_jws_verify`. The owner chose one dispatcher over three typed
+      calls, so the key is a `const void *` whose form the algorithm
+      names, and its length is checked.
+    - **Which objects.** An object with `JWS=on` and a server role,
+      `ROLE=both` under that axis. The RSA and P-256 signers are a
+      server's, and no client object packages them. colibri's object is
+      `ROLE=both`.
+    - **ES256.** The hedged signer a server runs (decision 153), with a
+      second output form: `p256_sign.c` writes r then s, 32 bytes each,
+      in place of DER, after the same two checks.
+    - **RS256.** `rsa_pkcs1_sign` encodes the digest with the encoder
+      the verifier compares against, runs the private operation a
+      server's RSA-PSS signature runs (the CRT signer under the multiply
+      bit, the ladder without it), and verifies the signature under the
+      modulus before it writes it. The noise's first 16 bytes blind the
+      exponents. INV-6 now names this signer, for JWS alone.
+    - **EdDSA.** New code: `x25519_wide_ed25519_sign.h`, which
+      `x25519_wide.c` includes. It computes A and R with the table scan
+      of X25519's key generation, keeping the Edwards point, and encodes
+      each with one inversion. Its arithmetic modulo L selects by mask:
+      the verifier's reduction branches on its public values, and r and
+      a are secret. It needs the multiply bit, because the Edwards code
+      runs on the wide field alone. It verifies each signature with
+      `ed25519_verify_hram` before it writes it.
+    - **Noise.** The caller draws 32 bytes for each call: ES256's hedge
+      and RS256's blinding. EdDSA reads none.
+    - **What holds it.** `bin/jws_sign_test` requires RS256 to write RFC
+      7515 A.2's signature under both signers, EdDSA to write RFC 8032
+      section 7.1's five, and each ES256 signature to verify under RFC
+      7515 A.3's key. The `jws_sign` proof holds the dispatcher over
+      stubs of the signers, and `x25519_wide_ed25519_sign` the
+      arithmetic modulo L. Wycheproof's Ed25519 suite at the pinned
+      commit holds public keys alone, so it cannot test signing.
+    - **The taint lane.** `bin/ct_taint_jws_test` runs the three signers
+      with each private key and the noise marked secret, under each
+      `ch_cfg.cpu` value the lane takes. Its first run found three things.
+      The test binaries missed `avx512_wipe.c` on x86-64. And the RS256 and
+      EdDSA checks ran a variable-time verifier on a signature still
+      marked secret. Each signature is now marked public where its check
+      starts: the call publishes it when no fault changed it. A signature
+      that a fault changed is never written, but the time its check takes
+      is observable. The RSA CRT signer has already checked its signature
+      in constant time by then, and a ladder signature is no CRT signature,
+      so a faulted one gives no prime away. A faulted Ed25519 signature's
+      timing is the one leak this leaves.

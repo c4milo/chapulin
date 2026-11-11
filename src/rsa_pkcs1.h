@@ -57,6 +57,30 @@ int rsa_pkcs1_verify_exponent(const uint8_t *n, size_t n_len, uint64_t e, const 
                               size_t digest_len, const uint8_t *sig, size_t sig_len);
 #endif
 
+#if defined(CH_JWS) && defined(CH_CPU_RUNTIME) && defined(CH_ROLE_SERVER)
+#include "rsa_sign.h"
+
+// Signs digest, a 32-byte SHA-256, with RSASSA-PKCS1-v1_5 (RFC 8017
+// section 8.2.1) under k, and writes k->n_len bytes to sig. ch_jws_sign
+// calls it for JWS's RS256 (jws.h), for tests and tools that make tokens:
+// no TLS path signs with this padding (INV-6). The private operation is
+// the one a server's RSA-PSS signature runs, under the same constant-time
+// claim (rsa_sign.h, rsa_sign64.h): the CRT signer for a cpu that states
+// its multiply, and the ladder for one that does not. blind is the
+// RSA_BLIND_LEN bytes that blind the exponents, fresh for each call.
+//
+// The encoded message is public: a digest of the token and fixed bytes.
+// So this file builds it with the encoder the verifier compares against.
+// Before the call returns 1 it verifies sig under the key's modulus and
+// the exponent 65537, so a signature that a fault changed does not leave.
+//
+// Returns 1 with sig written. Returns 0 when the signer's key test
+// refuses k, or when the signature failed a check, and then sig holds
+// zeros.
+int rsa_pkcs1_sign(uint32_t cpu, const ch_rsa_priv *k, const uint8_t digest[32],
+                   const uint8_t blind[RSA_BLIND_LEN], uint8_t *sig);
+#endif
+
 // rsa_pkcs1_verify as a source compiled into both objects calls it for a
 // session, in rsa.h's RSA_PSS_VERIFY_CPU form: rsa_pkcs1_verify_cpu in a
 // host object, and rsa_pkcs1_verify, which never evaluates cpu, in a

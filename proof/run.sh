@@ -2842,6 +2842,14 @@ launch fast full poly1305_wide_words 6 "" -DCH_CPU_RUNTIME --unsigned-overflow-c
 # and 2474 properties, 2 s.
 launch fast full x25519_wide_ed25519 9 "ct_wipe.0:41" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI --unsigned-overflow-check
 launch fast full x25519_wide_ed25519_mod_l 9 "" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI
+# Ed25519 signing's arithmetic modulo L (x25519_wide_ed25519_sign.h,
+# docs/decisions.md 223): scalar_settle, scalar_add and scalar_double give
+# their values from any input in their domains, and one step of
+# scalar_muladd keeps the sum below L.
+launch fast full x25519_wide_ed25519_sign 9 "ct_wipe.0:41" src/ct.c proof/ct_wipe_stub.c src/sha512.c src/sha512_compress_blocks.c -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI -DCH_JWS
+# jws_sign.c, the JWS signer's dispatcher, over contract stubs of the
+# three signers and SHA-256 (docs/decisions.md 223).
+launch fast full jws_sign 66 "fill_nondet.0:113,sign_rs256.0:73,ct_wipe.0:513" -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER -DCH_ROLE_BOTH src/jws_sign.c src/ct.c proof/ct_wipe_stub.c
 # The radix-2^64 field, x25519_adx.c (docs/decisions.md 165), over its
 # model, test/x25519_adx_model.h: CBMC reads no assembly, so each line
 # compiles the file with -DCH_X25519_ADX_MODEL, as bin/x25519_adx_model_test

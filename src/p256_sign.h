@@ -183,6 +183,18 @@ int p256_sign_hedged(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const u
 int p256_sign_hedged_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
                          const uint8_t msg_hash[32], const uint8_t noise[P256_NOISE_LEN],
                          uint8_t *sig, size_t cap, size_t *sig_len);
+
+#ifdef CH_JWS
+// p256_sign_hedged_cpu with the signature as r then s, 32 big-endian
+// bytes each, with no DER: the form JWS's ES256 carries (RFC 7518 section
+// 3.4). ch_jws_sign calls it (jws.h). The nonce, the two checks and the
+// wipes are p256_sign_hedged_cpu's, and r and s are copied to sig only
+// after both checks passed. Returns 1 with sig written, and 0, with sig
+// as it was, when the key is out of range or a check failed.
+int p256_sign_hedged_raw_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
+                             const uint8_t msg_hash[32], const uint8_t noise[P256_NOISE_LEN],
+                             uint8_t sig[64]);
+#endif
 #endif
 
 #ifdef CH_P256_SIGN_FAULT_TEST

@@ -10,6 +10,8 @@ reason: p256_sign_cpu hands its nonce generator 0 in place of the
   path under every ch_cfg.cpu value.
 
 --- old
-    return sign_digest(widemul_of_cpu(cpu), cpu, priv, msg_hash, NULL, sig, cap, sig_len);
+    return sign_digest(widemul_of_cpu(cpu), cpu, priv, msg_hash, NULL, SIGNATURE_DER, sig, cap,
+                       sig_len);
 --- new
-    return sign_digest(widemul_of_cpu(cpu), 0, priv, msg_hash, NULL, sig, cap, sig_len);
+    return sign_digest(widemul_of_cpu(cpu), 0, priv, msg_hash, NULL, SIGNATURE_DER, sig, cap,
+                       sig_len);

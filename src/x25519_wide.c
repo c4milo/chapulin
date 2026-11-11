@@ -472,6 +472,10 @@ void x25519_wide_ladder(uint8_t out[X25519_LEN], const uint8_t clamped[X25519_LE
 // for a JWS under EdDSA (ed25519_verify.h), under CH_DNSSEC or CH_JWS.
 #include "x25519_wide_ed25519.h"
 
+// Ed25519 signing on the same points and the same table, for ch_jws_sign's
+// EdDSA (ed25519_sign.h), under CH_JWS alone.
+#include "x25519_wide_ed25519_sign.h"
+
 // The two entries, x25519_wide and x25519_wide_base. x25519.c holds the
 // clamp and the all-zero check of both fields, so the two cannot differ:
 // under CH_X25519_WIDE it compiles those alone, around x25519_wide_ladder,

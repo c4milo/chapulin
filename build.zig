@@ -112,7 +112,7 @@ const webpki_srcs = [_][]const u8{
     "webpki_time.c", "webpki_name.c", "webpki_spki.c",   "webpki_sigalg.c", "webpki_ext.c",
     "webpki_cert.c", "webpki.c",      "webpki_ticket.c", "webpki_pin.c",    "webpki_cfg.c",
 };
-const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c", "dnssec.c", "sha1.c", "jws.c", "base64_codec.c", "scram.c", "pbkdf2.c", "x509_end_point.c" };
+const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c", "dnssec.c", "sha1.c", "jws.c", "jws_sign.c", "base64_codec.c", "scram.c", "pbkdf2.c", "x509_end_point.c" };
 const p256_ecdh_srcs = [_][]const u8{ "p256_ecdh.c", "p256_point.c", "p256_scalar.c", "p256_field.c" };
 const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
 const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_entry.c", "tls_write.c" };
@@ -186,6 +186,7 @@ const public_alert = [_][]const u8{ "ch_alert_sent", "ch_alert_received" };
 const public_dnssec = [_][]const u8{ "ch_dnssec_hash_init", "ch_dnssec_digest_init", "ch_dnssec_hash_update", "ch_dnssec_hash_final", "ch_dnssec_verify" };
 // PUBLIC_JWS: JWS=on's three calls, each named for the transport.
 const public_jws = [_][]const u8{ "ch_base64url_encode", "ch_base64url_decode", "ch_jws_verify" };
+const public_jws_signer = [_][]const u8{ "ch_base64url_encode", "ch_base64url_decode", "ch_jws_verify", "ch_jws_sign" };
 // PUBLIC_SCRAM: SCRAM=on's seven calls, each named for the transport.
 const public_scram = [_][]const u8{ "ch_sha256", "ch_hmac_sha256", "ch_pbkdf2_hmac_sha256", "ch_ct_compare", "ch_base64_encode", "ch_base64_decode", "ch_tls_server_end_point" };
 const public_tcp_nonblocking = [_][]const u8{
@@ -250,7 +251,7 @@ const declarations = [_]Declaration{
     .{ .header = "alert.h", .names = &public_alert },
     .{ .header = "session_report.h", .names = &public_report },
     .{ .header = "dnssec.h", .names = &public_dnssec },
-    .{ .header = "jws.h", .names = &public_jws },
+    .{ .header = "jws.h", .names = &public_jws_signer },
     .{ .header = "scram.h", .names = &public_scram },
     .{ .header = "drbg.h", .names = &.{"ch_drbg_seed"} },
     .{ .header = "rand.h", .names = &.{"ch_rand_bytes"} },
@@ -788,7 +789,8 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
         if (config.trust == .webpki) &public_pem_webpki else &.{},
     });
     const public_dnssec_names: Names = if (config.dnssec == .on) &public_dnssec else &.{};
-    const public_jws_names: Names = if (config.jws == .on) &public_jws else &.{};
+    // ch_jws_sign is an object's with a server role alone (docs/decisions.md 223).
+    const public_jws_names: Names = if (config.jws != .on) &.{} else if (config.role == .both) &public_jws_signer else &public_jws;
     const public_scram_names: Names = if (config.scram == .on) &public_scram else &.{};
     // PUBLIC_REPORT: session_report.h's read calls, each under the defines of the field it reads.
     const quic = config.transport == .@"quic-nonblocking";
@@ -968,7 +970,7 @@ fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
         } else if (std.mem.eql(u8, name, "ch_srv_check") or std.mem.eql(u8, name, "ch_pubkey_from_pem") or
             std.mem.eql(u8, name, "ch_ticket_obfuscated_age") or contains(&public_alert, name) or
             contains(&public_pem_server, name) or contains(&public_pem_server_cnsa2, name) or contains(&public_pem_webpki, name) or
-            contains(&public_dnssec, name) or contains(&public_jws, name) or contains(&public_scram, name) or contains(&public_report, name))
+            contains(&public_dnssec, name) or contains(&public_jws_signer, name) or contains(&public_scram, name) or contains(&public_report, name))
         {
             symbol.* = b.fmt("{s}_{s}", .{ name, suffix });
         } else {

@@ -45,6 +45,55 @@ fn verify_of(options: *const VerifyOptions) error{ Auth, Invalid }!void {
     ));
 }
 
+const has_sign = @hasDecl(c, "ch_jws_sign");
+
+/// A private key in the form its algorithm takes (jws.h): one RSA key as ch_rsa_key_from_pem
+/// writes it, a P-256 scalar, or an Ed25519 seed.
+pub const PrivateKey = if (has_sign) union(Algorithm) {
+    rs256: *const c.ch_rsa_priv,
+    es256: *const [32]u8,
+    eddsa: *const [32]u8,
+} else @compileError("chapulin.jws.PrivateKey needs JWS=on with ROLE=both");
+
+/// What sign takes. A caller names each field, so no two values change places.
+pub const SignOptions = if (has_sign) struct {
+    /// The caller's description of its CPU, which picks the multiply the signer runs. eddsa
+    /// needs constant_time_multiply.
+    cpu: chapulin.Cpu,
+    /// The key, whose tag is the algorithm.
+    key: PrivateKey,
+    /// 32 bytes drawn for this call from a strong random source. eddsa reads none.
+    noise: *const [c.CH_JWS_NOISE_LEN]u8,
+    /// The JWS Signing Input: the token's first two parts and the '.' between them.
+    input: []const u8,
+} else @compileError("chapulin.jws.SignOptions needs JWS=on with ROLE=both");
+
+/// ch_jws_sign: the signature of the input under the key, in the first bytes of out, for tests
+/// and tools that make tokens. error.Cap when out is shorter than the signature, and
+/// error.Invalid for a key or a cpu value jws.h refuses.
+pub const sign = if (has_sign) sign_of else @compileError("chapulin.jws.sign needs JWS=on with ROLE=both");
+
+fn sign_of(out: []u8, options: *const SignOptions) error{ Cap, Invalid }![]u8 {
+    var sig_len: usize = 0;
+    const key: struct { ptr: *const anyopaque, len: usize } = switch (options.key) {
+        .rs256 => |k| .{ .ptr = k, .len = @sizeOf(c.ch_rsa_priv) },
+        .es256, .eddsa => |k| .{ .ptr = k, .len = 32 },
+    };
+    try chapulin.from_code(error{ Cap, Invalid }, c.ch_jws_sign(
+        chapulin.cpu_bits(options.cpu),
+        @intFromEnum(@as(Algorithm, options.key)),
+        key.ptr,
+        key.len,
+        options.noise,
+        options.input.ptr,
+        options.input.len,
+        out.ptr,
+        out.len,
+        &sig_len,
+    ));
+    return out[0..sig_len];
+}
+
 /// CH_BASE64URL_LEN: the length of the base64url text of byte_count bytes.
 pub const base64url_len = if (has_jws) base64url_len_of else @compileError("chapulin.jws.base64url_len needs JWS=on");
 

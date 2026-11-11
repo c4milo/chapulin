@@ -44,9 +44,12 @@
 // The longest RS256 public exponent the check takes, in bytes.
 #define CH_JWS_RSA_EXPONENT_LEN_MAX 8
 
-// The longest signature the check reads: an RS256 signature under the
-// largest modulus.
+// The longest signature the check reads and the signer writes: an RS256
+// signature under the largest modulus.
 #define CH_JWS_SIG_LEN_MAX CH_JWS_RSA_MODULUS_LEN_MAX
+
+// The bytes of noise ch_jws_sign takes from its caller.
+#define CH_JWS_NOISE_LEN 32
 
 // The length of the base64url text of n bytes (RFC 4648 section 5), with
 // no padding, as RFC 7515 section 2 writes it: 4 characters for each 3
@@ -153,6 +156,61 @@ int CH_MUST_USE ch_base64url_decode(const uint8_t *text, size_t text_len, uint8_
 int CH_MUST_USE ch_jws_verify(uint8_t algorithm, const uint8_t *key, size_t key_len,
                               const uint8_t *input, size_t input_len, const uint8_t *sig,
                               size_t sig_len);
+
+#ifdef CH_ROLE_SERVER
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define ch_jws_sign ch_jws_sign_quic_nonblocking
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
+#define ch_jws_sign ch_jws_sign_tcp_nonblocking
+#else
+#define ch_jws_sign ch_jws_sign_tcp_blocking
+#endif
+
+// Writes the JWS signature of input under priv with algorithm to sig, and
+// its length to *sig_len (RFC 7515 section 5.1). It is for the tests and
+// the tools that make tokens. An object with a server role alone defines
+// it, ROLE=both under this axis, because the signers are a server's.
+// input is the JWS Signing Input, as for ch_jws_verify. priv is a private
+// key in the algorithm's form:
+//  - CH_JWS_RS256: one ch_rsa_priv (rsa_key.h), so priv_len is
+//    sizeof(ch_rsa_priv). ch_rsa_key_from_pem writes one (pem_files.h).
+//    The modulus is 256 bytes or more and a multiple of 8, and the public
+//    exponent is 65537. The signature is as long as the modulus.
+//  - CH_JWS_ES256: 32 bytes, the scalar d, big-endian, the JWK's "d" (RFC
+//    7518 section 6.2.2), from 1 to the group order less 1. The signature
+//    is 64 bytes, R then S.
+//  - CH_JWS_EDDSA: 32 bytes, the private key of RFC 8032 section 5.1.5,
+//    the JWK's "d" (RFC 8037 section 2). The signature is 64 bytes, R
+//    then S. The signer runs on the wide field alone, so cpu must hold
+//    CH_CPU_CONSTANT_TIME_MULTIPLY (cpu_cfg.h).
+//
+// noise is CH_JWS_NOISE_LEN bytes that the caller draws for each call
+// from a strong random source. ES256 adds them to RFC 6979's nonce
+// (draft-irtf-cfrg-det-sigs-with-noise), and RS256 blinds its exponents
+// with them. The signature does not show them: an RS256 signature is the
+// same bytes whatever the noise holds. EdDSA draws nothing (RFC 8032
+// section 5.1.6) and reads no noise, so noise may be NULL for it alone.
+//
+// cpu describes the CPU, as for ch_p256_key_from_pem (pem_files.h), and
+// the call refuses the same values. It picks the multiply that the
+// signer runs. Each signer checks its signature before the call writes
+// it: ES256 checks the nonce's point and the signature's equation
+// (docs/decisions.md 153), and RS256 and EdDSA verify the signature under
+// the public key.
+//
+// Returns CH_OK. Returns CH_ECAP, with nothing written, when sig_cap is
+// below the signature's length. Returns CH_EINVAL, with nothing written,
+// for a cpu value the object refuses, an algorithm the call does not
+// take, a NULL priv, a NULL noise for RS256 or ES256, a priv of the wrong
+// length, a key the signer refuses, EdDSA under a cpu value without the
+// multiply bit, or a signature that failed its check. input may be
+// NULL when input_len is 0. priv, noise and every value derived from them
+// are secret: no branch and no memory index reads them, and the call
+// wipes each copy that it makes. The signature is public.
+int CH_MUST_USE ch_jws_sign(uint32_t cpu, uint8_t algorithm, const void *priv, size_t priv_len,
+                            const uint8_t noise[CH_JWS_NOISE_LEN], const uint8_t *input,
+                            size_t input_len, uint8_t *sig, size_t sig_cap, size_t *sig_len);
+#endif // CH_ROLE_SERVER
 
 #endif // CH_JWS
 

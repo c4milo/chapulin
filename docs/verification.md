@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-137 of the 183 C sources in the tree root are compiled into a
+138 of the 184 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1766,6 +1766,47 @@ The entries are grouped by area:
 - **Not proved:** the verifiers and the two hashes, which are contract
   stubs here; their own harnesses prove them, and `bin/jws_test` runs
   the whole check against tokens OpenSSL signed.
+
+#### jws_sign
+
+- **Harness:** `jws_sign` (fast)
+- **Build:** a host object with `CH_JWS` and a server role.
+- **Proves:** `ch_jws_sign` (`jws_sign.c`) is memory safe and free of UB
+  over any cpu value, algorithm byte, key length, room and input up to
+  the bound. Also:
+  - it answers `CH_OK`, `CH_ECAP` or `CH_EINVAL`, and a cpu value the
+    object refuses runs no signer;
+  - it runs one signer at most, the algorithm's own, with a key of that
+    algorithm's length and with noise where the algorithm reads it;
+  - EdDSA runs only under `CH_CPU_CONSTANT_TIME_MULTIPLY`;
+  - `CH_OK` comes only after a signer accepted, with a signature that
+    fits the room, and a refusal reports no length and writes no byte
+    past the room.
+- **Bound:** an RSA modulus of up to 72 bytes, a room of up to 80 and an
+  input of up to 4. The dispatcher reads lengths and no byte of a key, so
+  a longer modulus takes the same path. At 512 bytes cbmc gave no verdict
+  in 7 minutes.
+- **Not proved:** the signatures, which contract stubs answer here.
+  `bin/jws_sign_test` holds RS256 to RFC 7515 A.2's signature and EdDSA
+  to RFC 8032's five, and verifies each ES256 signature.
+
+#### x25519_wide_ed25519_sign
+
+- **Harness:** `x25519_wide_ed25519_sign` (fast)
+- **Build:** a host object with `CH_JWS`.
+- **Proves:** of Ed25519 signing's arithmetic modulo L in
+  `x25519_wide_ed25519_sign.h`, which runs on secret scalars, that each
+  function is UB-free and gives its value from any input in its domain:
+  `scalar_settle` subtracts L exactly when its input below 2 L is at or
+  above L, `scalar_add` gives the sum of two values below L modulo L, and
+  `scalar_double` gives 2 o + bit modulo L. One step of `scalar_muladd`'s
+  loop keeps the sum below L, so by induction its 256 steps end below L.
+- **Bound:** every value below L, one step at a time.
+- **Not proved:** that the loop's sum is r + k a modulo L. The steps'
+  values make it a double-and-add over a's bits, and `bin/jws_sign_test`
+  holds the whole signature to RFC 8032 section 7.1's five, byte for
+  byte. No branch on a secret is proved here: the selects are masks, and
+  the taint lane runs the signer (INV-60).
 
 #### base64_codec
 

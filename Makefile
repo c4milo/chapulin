@@ -365,7 +365,7 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
         src/handshake_auth.c src/handshake_flight.c src/handshake.c src/handshake_post.c src/tls.c src/tls_entry.c src/session_report.c src/tls_write.c src/softmul.c src/build.c
 
 HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/poly1305_wide.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont_division.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
-        src/pem.h src/base64.h src/base64_codec.h src/pbkdf2.h src/rsa_key_field.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
+        src/pem.h src/base64.h src/base64_codec.h src/pbkdf2.h src/rsa_key_field.h src/ed25519_sign.h src/x25519_wide_ed25519_sign.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
         include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/sha3_andn.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h include/chapulin/jws.h include/chapulin/scram.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
         src/keccak_neon.h src/keccak_neon_round.h src/mlkem_neon.h src/mldsa_neon.h \
         src/p256_wide_word.h src/p256_wide_field.h src/p256_wide_scalar.h src/p256_wide_inverse.h src/p256_wide_point.h \
@@ -915,7 +915,7 @@ WEBPKI_SRCS := src/webpki_time.c src/webpki_name.c src/webpki_spki.c src/webpki_
 # parts of SCRAM-SHA-256, compile to nothing outside a CH_SCRAM build
 # (docs/decisions.md 222), and base64_codec.c serves both axes.
 WEBPKI_CHAIN_SRCS := src/sha512.c src/sha512_compress.c src/p384.c src/p384_field.c src/rsa_pkcs1.c src/dnssec.c src/sha1.c \
-                     src/jws.c src/base64_codec.c src/scram.c src/pbkdf2.c src/x509_end_point.c
+                     src/jws.c src/jws_sign.c src/base64_codec.c src/scram.c src/pbkdf2.c src/x509_end_point.c
 # The constant-time P-256 key exchange: p256_ecdh.c over the arithmetic
 # p256_sign.c computes with too. p256.c is the variable-time verifier and
 # is not among them. Every server role and every TRUST=webpki client
@@ -1720,7 +1720,10 @@ ifneq ($(TRUST),webpki)
 $(error JWS=on needs TRUST=webpki, whose object packages the PKCS#1 v1.5 verifier the RS256 check shares)
 endif
 LIB_DEF += -DCH_JWS
-PUBLIC_JWS := ch_base64url_encode ch_base64url_decode ch_jws_verify
+# ch_jws_sign is an object's with a server role alone, ROLE=both under this
+# axis: the RSA and P-256 signers it calls are a server's
+# (docs/decisions.md 223).
+PUBLIC_JWS := ch_base64url_encode ch_base64url_decode ch_jws_verify $(if $(filter both,$(ROLE)),ch_jws_sign)
 else ifeq ($(JWS),off)
 PUBLIC_JWS :=
 else
@@ -2786,7 +2789,7 @@ DECLARES_session_report.h := ch_state ch_group ch_suite ch_psk_selected ch_pin_s
                              ch_sni_len ch_read_closed ch_peer_limit
 DECLARES_dnssec.h := ch_dnssec_hash_init ch_dnssec_digest_init ch_dnssec_hash_update ch_dnssec_hash_final \
                      ch_dnssec_verify
-DECLARES_jws.h := ch_base64url_encode ch_base64url_decode ch_jws_verify
+DECLARES_jws.h := ch_base64url_encode ch_base64url_decode ch_jws_verify ch_jws_sign
 DECLARES_scram.h := ch_sha256 ch_hmac_sha256 ch_pbkdf2_hmac_sha256 ch_ct_compare ch_base64_encode ch_base64_decode \
                     ch_tls_server_end_point
 DECLARES_drbg.h := ch_drbg_seed
@@ -3608,6 +3611,16 @@ bin/jws_test: test/jws_test.c test/jws_vectors.h test/jws_rfc_vectors.h $(JWS_TE
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  test/jws_test.c $(sort $(JWS_TEST_SRCS))
+# jws_sign.c's signer with the private keys RFC 7515 prints, under each
+# ch_cfg.cpu value that picks another signer, and at every refusal jws.h
+# states (docs/decisions.md 223). It builds as a host object with CH_JWS
+# and a server role, on the signers a server runs.
+JWS_SIGN_TEST_SRCS := $(JWS_TEST_SRCS) src/jws_sign.c src/p256_sign.c src/hkdf.c $(call hash_hw_of,src/sha256.c src/hkdf.c) \
+                      src/rsa_sign.c $(RSA_SIGN64_SRCS) $(AVX512_WIPE_SRCS)
+bin/jws_sign_test: test/jws_sign_test.c test/jws_rfc_vectors.h test/jws_vectors.h $(JWS_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER -DCH_ROLE_BOTH $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/jws_sign_test.c $(sort $(JWS_SIGN_TEST_SRCS))
 # scram.c's calls against the vectors RFC 4231, RFC 7914 and RFC 7677
 # print and against certificates OpenSSL minted
 # (test/gen_scram_vectors.py), and at every refusal scram.h states
@@ -5128,7 +5141,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
                                  bin/rsa_equiv_test_blocks \
                                  bin/rsa_mont64_adx_test \
-                                 bin/rsa_exp_test bin/dnssec_test bin/jws_test bin/scram_test \
+                                 bin/rsa_exp_test bin/dnssec_test bin/jws_test bin/jws_sign_test bin/scram_test \
                                  bin/rsa_blocks_equiv_test bin/rsa_addcarry_equiv_test \
                                  bin/rsa_ifma_model_test bin/rsa_ifma_model_test_384 \
                                  bin/rsa_ifma_equiv_test bin/avx512_wipe_test bin/rsa_avx2_model_test \
@@ -5366,7 +5379,7 @@ CHECK_LIBRARY_BUILDS := check-lib-drbg check-lib-session check-lib-session-cxx c
               check-lib-cnsa2-quic check-lib-cnsa2-mldsa check-lib-cnsa2-ca-mldsa \
               check-lib-cnsa2-ca-mldsa-quic check-cnsa2-server check-srv-mldsa check-lib-cnsa2-server \
               check-lib-cnsa2-server-tcp-nonblocking \
-              check-lib-cnsa2-server-quic check-lib-exporter check-lib-dnssec check-lib-dnssec-quic check-lib-jws check-lib-jws-quic check-lib-scram check-lib-scram-quic \
+              check-lib-cnsa2-server-quic check-lib-exporter check-lib-dnssec check-lib-dnssec-quic check-lib-jws check-lib-jws-quic check-lib-jws-both check-lib-scram check-lib-scram-quic \
               check-lib-server-quic-keylog \
               check-lib-server-aes check-lib-server-aes-extern check-lib-quic-aes \
               check-lib-pair \
@@ -5767,6 +5780,16 @@ ifeq ($(HOST_TARGET),)
 else
 	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki \
 	  EXPORTER=off JWS=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
+# The object colibri builds for stompy's proxy: ROLE=both with the three
+# axes. It alone exports ch_jws_sign, whose signers a server role packages
+# (docs/decisions.md 223).
+check-lib-jws-both:
+ifeq ($(HOST_TARGET),)
+	@echo "SKIP lib-check JWS=on ROLE=both: $(CC) fails the host test"
+else
+	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=tcp-nonblocking TRUST=webpki \
+	  ROLE=both DNSSEC=on JWS=on SCRAM=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 endif
 # The SCRAM axis (docs/decisions.md 222), the same way. The
 # tcp-nonblocking job takes DNSSEC=on and JWS=on too, the three axes
@@ -7236,6 +7259,14 @@ CT_TAINT_CPU := 0x1 0x5 0x3 0x7 0x27 \
                 $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f 0x31f 0xc01,0x67)
 CT_TAINT_VALGRIND_FLAGS := --tool=memcheck --error-exitcode=1 --track-origins=yes \
                            --exit-on-first-error=no --leak-check=no -q
+# The JWS signers under the same marks (docs/decisions.md 223), in a binary
+# of their own: it builds with CH_JWS and a server role, and
+# bin/ct_taint_test builds without them.
+bin/ct_taint_jws_test: test/ct_taint_jws_test.c test/jws_rfc_vectors.h $(JWS_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -g -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER -DCH_ROLE_BOTH $(RSA_WIDE_DEF) \
+	  $(CT_TAINT_DEF) $(if $(VALGRIND_INCLUDE),-isystem $(VALGRIND_INCLUDE)) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/ct_taint_jws_test.c $(sort $(JWS_SIGN_TEST_SRCS))
 bin/ct_taint_test: test/ct_taint_test.c $(CT_TAINT_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -g $(HOST_SUITE_DEF) $(RSA_WIDE_DEF) $(CT_TAINT_DEF) \
@@ -7251,11 +7282,13 @@ else ifeq ($(VALGRIND),)
 	@echo "SKIP the taint lane: no valgrind; make ct-taint-docker runs it in the docker-check image"
 else
 	@rm -f bin/ct_taint_test
-	@$(MAKE) --no-print-directory bin/ct_taint_test
+	@$(MAKE) --no-print-directory bin/ct_taint_test bin/ct_taint_jws_test
 	@echo "ct-taint: $$($(VALGRIND) --version), $$($(CC) --version | head -1)"
 	@set -e; for bits in $(CT_TAINT_CPU); do \
 	  echo "== valgrind bin/ct_taint_test $$bits"; \
 	  $(VALGRIND) $(CT_TAINT_VALGRIND_FLAGS) ./bin/ct_taint_test $$bits; \
+	  echo "== valgrind bin/ct_taint_jws_test $$bits"; \
+	  $(VALGRIND) $(CT_TAINT_VALGRIND_FLAGS) ./bin/ct_taint_jws_test $$bits; \
 	done
 endif
 # The lane in the docker-check image, which builds the pinned Valgrind,
@@ -9180,7 +9213,10 @@ WIDEMUL_CEILING := src/ct.c:0 src/ct_wipe.c:0 src/sha256.c:0 src/sha3.c:0 src/hk
 # branches read the iteration count and the lengths, which are public,
 # and they hold no masked select for a compiler to write as a jump.
 # base64_codec.c compiles under both axes' defines here, so the count
-# reads both of its codecs.
+# reads both of its codecs. jws_sign.c, the JWS signer's dispatcher
+# (docs/decisions.md 223), joins on the same terms: a private key and the
+# noise pass through it to the signers, and it copies bytes and multiplies
+# nothing.
 #
 # The AES instructions' six files, AES_HW_SRCS, joined it from
 # WIDEMUL_PUBLIC for their division count (docs/decisions.md 156): aes_hw.c,
@@ -9212,7 +9248,7 @@ WIDE64_CEILING := src/x25519_wide.c:0 src/x25519_adx.c:0 src/rsa_mont64_adx.c:0 
                   src/rsa_avx2.c:0 src/aead_avx2.c:0 \
                   src/sha3_hw.c:0 src/mlkem_hw.c:0 src/mlkem_poly_hw.c:0 src/mlkem_vector.c:0 src/mldsa_vector.c:0 \
                   src/keccak_avx2.c:0 src/mlkem_avx2.c:0 src/mldsa_avx2.c:0 src/avx512_wipe.c:0 src/sha512_compress_blocks.c:0 \
-                  src/base64_codec.c:0 src/scram.c:0 src/pbkdf2.c:0 \
+                  src/base64_codec.c:0 src/scram.c:0 src/pbkdf2.c:0 src/jws_sign.c:0 \
                   src/keccak_neon.c:0 src/mlkem_neon.c:0 src/mldsa_neon.c:0 \
                   src/sha512_avx2.c:0 $(addsuffix :0,$(AES_HW_SRCS)) \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
@@ -9341,6 +9377,7 @@ WIDEMUL_DEFINES := src/quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_pack
                    src/base64.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_JWS \
                    src/base64_codec.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_JWS$(COMMA)-DCH_SCRAM$(COMMA)-DCH_TRUST_WEBPKI \
                    src/scram.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_SCRAM$(COMMA)-DCH_TRUST_WEBPKI \
+                   src/jws_sign.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_JWS$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-UCH_KEX_PQ \
                    src/pbkdf2.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_SCRAM$(COMMA)-DCH_TRUST_WEBPKI \
                    src/hkdf.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    src/aes.c@host:$(WIDE64_HOST_AES_DEFINES) src/gcm.c@host:$(WIDE64_HOST_AES_DEFINES) \

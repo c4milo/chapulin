@@ -21,6 +21,18 @@ stops if a range holds other text or ends early.
 It decodes each key from base64url with Python's base64 module and
 writes it in ch_jws_verify's form. It runs no cryptography, so a vector
 that verifies is the RFC's own key and signature.
+
+For ch_jws_sign's test it also writes the two private keys of RFC 7515:
+appendix A.2's RSA key as the fields of a ch_rsa_priv, "d", "p", "q",
+"dp", "dq" and "qi" (rfc7515.txt:2259-2279), and appendix A.3's P-256
+scalar "d" (rfc7515.txt:2456). It checks the RSA fields against each
+other with Python's integers first: n is p times q, and each exponent is
+the one RFC 8017 section 3.2 defines.
+
+And it writes the five Ed25519 vectors of RFC 8032 section 7.1
+(rfc8032.txt:1340-1620): each secret key, public key, message and
+signature. It takes the hexadecimal lines under each label, and requires
+the message to have the length its label states.
 """
 
 import base64
@@ -63,6 +75,44 @@ def token(rfc, first, last, header, sig_len):
     return text.encode(), len(signing_input), sig
 
 
+def ed25519_vectors():
+    """RFC 8032 section 7.1: (secret key, public key, message, signature)."""
+    text = (RFCS / "rfc8032.txt").read_text().split("\n")
+    start = next(i for i, line in enumerate(text) if line.startswith("7.1.  Test Vectors for Ed25519"))
+    end = next(i for i, line in enumerate(text) if line.startswith("7.2.  "))
+    vectors = []
+    fields = None
+    current = None
+    for line in text[start:end]:
+        stripped = line.strip()
+        if stripped.startswith("-----TEST"):
+            fields = {"SECRET KEY": "", "PUBLIC KEY": "", "MESSAGE": "", "SIGNATURE": ""}
+            vectors.append(fields)
+            current = None
+            continue
+        if fields is None:
+            continue
+        label = stripped.rstrip(":").split(" (")[0]
+        if label in fields:
+            current = label
+            if label == "MESSAGE":
+                fields["length"] = int(stripped.split("length ")[1].split(" ")[0])
+            continue
+        # A line of hexadecimal digits belongs to the field above it. A
+        # page's footer and header, and a blank line, belong to none.
+        if current and stripped and all(c in "0123456789abcdef" for c in stripped):
+            fields[current] += stripped
+    out = []
+    for fields in vectors:
+        secret, public, message, signature = (bytes.fromhex(fields[k]) for k in (
+            "SECRET KEY", "PUBLIC KEY", "MESSAGE", "SIGNATURE"))
+        assert len(secret) == 32 and len(public) == 32 and len(signature) == 64
+        assert len(message) == fields["length"], (len(message), fields["length"])
+        out.append((secret, public, message, signature))
+    assert len(out) == 5, len(out)
+    return out
+
+
 def c_array(name, data):
     out = []
     for i in range(0, len(data), 16):
@@ -86,6 +136,20 @@ def main():
     assert len(x) == 32 and len(y) == 32
     ed = unb64url(member("rfc8037.txt", 482, 482, "x"))
     assert len(ed) == 32
+    private = {name: unb64url(member("rfc7515.txt", first, last, name))
+               for name, first, last in (("d", 2259, 2264), ("p", 2265, 2267), ("q", 2268, 2270),
+                                         ("dp", 2271, 2273), ("dq", 2274, 2276),
+                                         ("qi", 2277, 2279))}
+    number = {name: int.from_bytes(value, "big") for name, value in private.items()}
+    modulus = int.from_bytes(n, "big")
+    assert number["p"] * number["q"] == modulus
+    assert number["d"] * 65537 % ((number["p"] - 1) * (number["q"] - 1)) == 1
+    assert number["dp"] == number["d"] % (number["p"] - 1)
+    assert number["dq"] == number["d"] % (number["q"] - 1)
+    assert number["qi"] * number["q"] % number["p"] == 1
+    assert len(private["d"]) <= 256 and all(len(private[k]) <= 128 for k in ("p", "q", "dp", "dq", "qi"))
+    ec_d = unb64url(member("rfc7515.txt", 2456, 2456, "d"))
+    assert len(ec_d) == 32
     examples = [
         ("rfc7515_a2", RS256, bytes([len(e)]) + e + n,
          token("rfc7515.txt", 2364, 2374, "eyJhbGciOiJSUzI1NiJ9", 256)),
@@ -110,6 +174,24 @@ def main():
                 c_array(name + "_sig", sig)]
         rows.append("    {%d, %s_key, sizeof %s_key, %s_token, sizeof %s_token - 1, %d, %s_sig, "
                     "sizeof %s_sig, 1}," % (algorithm, name, name, name, name, input_len, name, name))
+    out += ["// RFC 7515 appendix A.2's RSA private key: each field at its width in a",
+            "// ch_rsa_priv, with zero bytes on the left.",
+            c_array("rfc7515_a2_n", n), c_array("rfc7515_a2_d", private["d"].rjust(256, b"\x00"))]
+    for name, field in (("p", "p"), ("q", "q"), ("dp", "dp"), ("dq", "dq"), ("qi", "qinv")):
+        out.append(c_array("rfc7515_a2_" + field, private[name].rjust(128, b"\x00")))
+    out += ["// RFC 7515 appendix A.3's P-256 private scalar.", c_array("rfc7515_a3_d", ec_d)]
+    ed_rows = []
+    for i, (secret, public, message, signature) in enumerate(ed25519_vectors()):
+        out += [c_array("rfc8032_secret_%d" % i, secret), c_array("rfc8032_public_%d" % i, public),
+                c_array("rfc8032_message_%d" % i, message or b"\x00"),
+                c_array("rfc8032_signature_%d" % i, signature)]
+        ed_rows.append("    {rfc8032_secret_%d, rfc8032_public_%d, rfc8032_message_%d, %d, "
+                    "rfc8032_signature_%d}," % (i, i, i, len(message), i))
+    out += ["// RFC 8032 section 7.1's five Ed25519 vectors. The first message is empty,",
+            "// and its array holds one byte that is not read.",
+            "static const struct {", "    const uint8_t *secret;", "    const uint8_t *public_key;",
+            "    const uint8_t *message;", "    size_t message_len;", "    const uint8_t *signature;",
+            "} rfc8032_vectors[] = {"] + ed_rows + ["};", ""]
     out += ["// test/jws_vectors.h's rows, for the RFCs' own examples.",
             "static const jws_vector jws_rfc_vectors[] = {"]
     out += rows
