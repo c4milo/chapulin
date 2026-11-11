@@ -23,8 +23,8 @@
 // and every output sits in a heap buffer that ends where it ends, so under
 // AddressSanitizer a read or a write past one fails.
 //
-// test/sha3_hw_equiv_residue.h then searches the stack each kind of call
-// leaves for any lane the call computed.
+// test/sha3_residue.h then searches the stack each kind of call leaves for
+// any lane the call computed.
 //
 // An object holds sha3_hw.c's Keccak where clang compiled it for arm64
 // (CH_KECCAK_INSTRUCTIONS, cpu_cfg.h), and in every x86-64 host object. In
@@ -287,7 +287,11 @@ static void run_streams(void) {
     }
 }
 
-#include "sha3_hw_equiv_residue.h"
+// The names test/sha3_residue.h calls and prints.
+#define SHA3_RESIDUE_ENTRY(name) name##_hw
+#define SHA3_RESIDUE_SUFFIX "_hw"
+#define SHA3_RESIDUE_TEST "sha3 instructions equivalence"
+#include "sha3_residue.h"
 
 // Whether this CPU has the instructions sha3_hw.c runs: FEAT_SHA3 on arm64, and on x86-64 BMI1 and
 // BMI2, which a value with CH_CPU_BMI1 and CH_CPU_BMI2_ADX states.

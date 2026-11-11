@@ -166,12 +166,18 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # kernel's frame budget, or of a wiped length that gcc's frame fits and
 # clang's does not, names sha512-stack, which runs the frame-budget lint
 # for the x86-64 object that holds the kernel and builds
-# bin/sha2_equiv_test with clang for x86-64.
+# bin/sha2_equiv_test with clang for x86-64. A violation of the loop of
+# keccak_rounds_inverted or keccak_rounds_andn names sha3-stack. That part
+# builds bin/sha3_equiv_test_host and bin/sha3_hw_equiv_test for x86-64
+# with the frame pointer, because a Linux build without it has one
+# general register more. No runner builds for macOS on x86-64
+# (docs/decisions.md 218).
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
                           "test/docker-aes-runtime-qemu.sh sha512-avx2",
                           "test/docker-aes-runtime-qemu.sh sha512-stack",
+                          "test/docker-aes-runtime-qemu.sh sha3-stack",
                           "test/docker-aes-runtime-qemu.sh arm64-hash-count",
                           "test/docker-aes-runtime-qemu.sh p256-equiv",
                           "test/docker-aes-runtime-qemu.sh keccak",
@@ -443,7 +449,8 @@ AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/widemul_runtime_test", "bin/p256_adx_equiv_test",
                              "bin/p256_adx_verify_equiv_test", "bin/p256_arm64_equiv_test",
                              "bin/p256_arm64_verify_equiv_test", "bin/mldsa_vector_equiv_test",
-                             "bin/mldsa_runtime_test", "bin/rsa_mont64_adx_test")
+                             "bin/mldsa_runtime_test", "bin/rsa_mont64_adx_test",
+                             "bin/sha3_equiv_test_host")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 

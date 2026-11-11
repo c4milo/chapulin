@@ -19,6 +19,14 @@
 //     bytes up, so that a piece starts and ends at every offset of a
 //     lane and of a block.
 //
+// Built as an x86-64 host object (-DCH_CPU_RUNTIME), which runs
+// sha3_inverted_lanes.h's form, it then searches the stack each kind of
+// call leaves for any lane the call computed (test/sha3_residue.h,
+// docs/decisions.md 218). bin/sha3_equiv_test_host is that build on an
+// x86-64 machine. On an Apple silicon Mac, make check builds it for
+// x86-64 and runs it under Rosetta, where clang keeps rbp as the frame
+// pointer (test/rosetta-check.sh).
+//
 // This file includes sha3.c itself, so it can call the permutation,
 // which sha3.c keeps static. The random values come from the seeded
 // generator below, so an ordinary run replays exactly, and
@@ -62,18 +70,18 @@ static void rng_bytes(uint8_t *out, size_t n) {
     }
 }
 
-static unsigned long comparisons = 0;
+static unsigned long compared = 0;
 static int failures = 0;
 
 static void expect_same(const char *what, const void *ours, const void *reference, size_t n) {
-    comparisons++;
+    compared++;
     if (memcmp(ours, reference, n) != 0) {
         failures++;
         (void)fprintf(stderr, "sha3_equiv: %s: sha3.c and the reference differ\n", what);
     }
 }
 
-static uint64_t reference_constants[24];
+static uint64_t round_constants[24];
 
 // keccak_f1600 runs one of sha3.c's three forms, by the object's kind and
 // architecture (docs/decisions.md 195 and 217). All three compile here, so
@@ -110,7 +118,7 @@ static void permutation(const char *what, const uint64_t state[25]) {
     keccak_f1600_inverted_with(with_scratch, scratch);
     keccak_f1600_andn(andn);
     keccak_f1600_andn_with(andn_with_scratch, andn_scratch);
-    reference_f1600(reference, reference_constants);
+    reference_f1600(reference, round_constants);
     expect_same(what, ours, reference, sizeof ours);
     expect_same(what, plain, reference, sizeof plain);
     expect_same(what, inverted, reference, sizeof inverted);
@@ -234,22 +242,59 @@ static void stream(int is_128) {
     }
 }
 
+// The search runs where the object runs sha3_inverted_lanes.h's form: an
+// x86-64 host object, the condition under which sha3.c sets
+// SHA3_INVERTED_LANES.
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+
+// The entries the stack search calls: sha3.c's own, through pointers that
+// are volatile objects. This file includes sha3.c, so a direct call could
+// be compiled into the search's own functions. Through the pointers each
+// call runs the code that sha3.c's functions hold, as a call from another
+// file does.
+static void (*const volatile residue_shake128_init)(shake *) = shake128_init;
+static void (*const volatile residue_shake256_init)(shake *) = shake256_init;
+static void (*const volatile residue_shake_absorb)(shake *, const uint8_t *, size_t) = shake_absorb;
+static void (*const volatile residue_shake_squeeze)(shake *, uint8_t *, size_t) = shake_squeeze;
+static void (*const volatile residue_sha3_256)(const uint8_t *, size_t, uint8_t *) = sha3_256;
+static void (*const volatile residue_sha3_512)(const uint8_t *, size_t, uint8_t *) = sha3_512;
+
+// The names test/sha3_residue.h calls and prints.
+#define SHA3_RESIDUE_ENTRY(name) (*residue_##name)
+#define SHA3_RESIDUE_SUFFIX ""
+#define SHA3_RESIDUE_TEST "sha3_equiv"
+#include "sha3_residue.h"
+
+#else
+
+// Every other object runs keccak_round in place. Its lanes and theta's
+// values do not fit the registers, and the compilers keep lanes in stack
+// slots of their own choice. INV-17 makes no claim of that stack
+// (docs/decisions.md 218).
+static void run_residue(void) {
+    (void)printf("SKIP sha3_equiv, the stack check: this object runs keccak_round in place, "
+                 "which keeps lanes in stack slots (docs/decisions.md 218)\n");
+}
+
+#endif
+
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     for (unsigned round = 0; round < 24; round++) {
-        reference_constants[round] = reference_round_constant(round);
+        round_constants[round] = reference_round_constant(round);
     }
     permutations();
     digests();
     for (int i = 0; i < 600; i++) {
         stream(i & 1);
     }
+    run_residue();
     if (failures != 0) {
         (void)fprintf(stderr, "sha3_equiv: %d failures (seed 0x%llx)\n", failures,
                       (unsigned long long)seed);
         return 1;
     }
-    printf("sha3_equiv: %lu outputs, sha3.c == FIPS 202's algorithms (seed 0x%llx)\n", comparisons,
+    printf("sha3_equiv: %lu outputs, sha3.c == FIPS 202's algorithms (seed 0x%llx)\n", compared,
            (unsigned long long)seed);
     return 0;
 }

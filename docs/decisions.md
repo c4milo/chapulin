@@ -18254,3 +18254,105 @@ does nothing more.
     around it adds about 3%. With carried parities and ANDN it takes 313
     ns. So on that CPU no form measured here puts SHA3-256 of 16 KiB ahead
     of OpenSSL by more than the noise.
+
+218. **Each loop of 24 Keccak rounds holds one address of the round
+    constants, so a round fits the registers of a macOS build.** Camilo
+    approved the work on 2026-11-10.
+
+    - **The gap.** macOS keeps rbp as the frame pointer, so clang has 14
+      general registers for a function where a Linux build has 15. A row
+      of decision 216's round holds 13 values: the two states, theta's
+      five values, its five lanes and one copy. The loop held two more,
+      a count and the address of `RC`. So `keccak_rounds_inverted` wrote
+      theta's value d2 to -48(%rbp) and the count to -56(%rbp). These are
+      8 and 16 bytes below the stack pointer, in the red zone: the 128
+      bytes below the stack pointer that a function which calls no other
+      may use. Apple clang 21 and clang 21 and 23 for macOS wrote the same
+      two slots. So did clang 18 and 23 for Linux with
+      `-fno-omit-frame-pointer`. No later call wrote over d2. d2 comes
+      from the state, and the state holds secret input under HMAC, ML-KEM
+      and ML-DSA-87. Decision 217's `keccak_rounds_andn` has the same
+      loop, and wrote a value of theta and the count to the same slots.
+    - **How it shows.** `test/sha3_hw_equiv_residue.h` became
+      `test/sha3_residue.h`. `bin/sha3_equiv_test` runs its search when
+      it is built as an x86-64 host object. Built for macOS, it ran under
+      Rosetta. Below each of six kinds of call it found d2 of the last
+      round of the last permutation, 3,216 to 3,712 bytes into its copy of
+      the stack. `bin/sha3_hw_equiv_test` found a value of theta below
+      each of the ANDN copy's six kinds of call. Built for Linux, the
+      search found d2 under clang 18 with the frame pointer alone. gcc
+      13.3 with and without the frame pointer, and clang 18 without it,
+      left nothing.
+    - **The loop.** The loop's one variable is `rc`, the address of the
+      next two round constants. Its end test compares `rc` with `last`,
+      the address of the last two. `last` is the output of an empty
+      statement, `KECCAK_ASM_OUTPUT`. So the compiler computes `last` at
+      the test and keeps it in no register through the rounds. With the
+      frame pointer kept, no compiler measured writes a value of the state
+      to a stack slot. gcc 13.3 writes `last` to a slot, and with the frame
+      pointer kept also `rc`. Both are addresses in the table, which is
+      public. `sha3_andn.h`'s loop is the same.
+    - **The cost.** Instructions in the loop of two rounds, before and
+      after:
+
+      | build | `keccak_rounds_inverted` | `keccak_rounds_andn` |
+      | --- | --- | --- |
+      | Apple clang 21, macOS | 405 to 396 | 373 to 364 |
+      | clang 23, Linux | 397 to 396 | 365 to 364 |
+      | clang 23, Linux, frame pointer | 405 to 396 | 373 to 364 |
+      | clang 18, Linux | 397 to 397 | 365 to 365 |
+      | clang 18, Linux, frame pointer | 405 to 396 | 373 to 364 |
+      | gcc 13.3, Linux | 420 to 402 | 366 to 366 |
+      | gcc 13.3, Linux, frame pointer | 405 to 406 | 369 to 370 |
+
+      Under `qemu-x86_64 -cpu max`, one SHA3-256 runs decision 216's form.
+      Over 16 KiB it retires 618,460 instructions under gcc 13.3, where it
+      retired 644,475. Over 64 bytes it retires 5,378, where it retired
+      5,593. Under clang 18 it retires 602,510 and 5,250, before and
+      after. No x86-64 time was taken, and decision 216 found that the
+      time does not follow the count. The assembly of `sha3.c` is the same
+      as before for arm64, rv32imac, Cortex-M3, mips32r2 and an x86-64
+      device object. That holds under the pinned clang and the Arm GNU gcc
+      15.3, and for `sha3_hw.c` in an arm64 host object. The M1 Pro ran
+      SHA3-256 through `sha3.c` four times on each tree, at a load average
+      of 6 to 8. Over 16 KiB it took 30.40 to 30.53 µs before and 30.32 to
+      30.45 µs after. Over 64 bytes it took 261.5 to 267.0 ns before and
+      260.4 to 265.1 ns after. The code is the same, so the difference is
+      noise.
+    - **Forms not taken.** An end test with the end's address in a
+      register held one more value through the rounds: clang 23 wrote 401
+      instructions on Linux. In a second form, `rc` was also the output of
+      an empty statement, at the top of the loop. Under clang with the
+      frame pointer that kept `rc` in a slot, and clang 23 wrote 398 on
+      Linux. The scratch state on the frame of the function of 24 rounds
+      let clang keep lanes as values: 417 to 446 instructions. A wipe of
+      the stack below the call, in `p256_wide_wipe.c`'s form, would cover
+      every compiler's frame, and the red zone is 128 bytes deep. But it
+      adds a call and a loop of stores to each permutation on every
+      object. Linux is one, and there no value of the state lands below the
+      stack pointer. It was not built.
+    - **What holds it.** INV-17. `bin/sha3_equiv_test_host` is the host
+      object's build of `bin/sha3_equiv_test`, in `make check` on every
+      host, so CI's gcc builds it for x86-64 Linux. `check-rosetta` builds
+      it and `bin/sha3_hw_equiv_test` for x86-64 on an Apple silicon Mac.
+      It runs them under Rosetta, the one macOS x86-64 build of this tree,
+      and prints SKIP on every other machine. `ROSETTA_ADVERTISE_AVX=1`
+      makes Rosetta state BMI1 and BMI2, so the ANDN copy runs. The qemu
+      lane's `sha3-stack` part builds both tests for x86-64 with
+      `-fno-omit-frame-pointer` under gcc and clang. The search now looks
+      for the complement of each word as well, because decision 216's
+      form keeps six lanes inverted. `inv17-keccak-rounds-loop-counts-rounds`
+      and `inv17-keccak-andn-rounds-loop-counts-rounds` give the two loops
+      their count again. The `sha3-stack` part catches both, and
+      `check-rosetta` catches both under Apple clang. `sha3_round`, `sha3`
+      and `sha3_stream` prove the new loops: 3,906, 3,601 and 3,639
+      properties, two fewer each than before.
+    - **Out of this decision: arm64.** An arm64 host object runs
+      `keccak_round` in place in a session without
+      `CH_CPU_CONSTANT_TIME_SHA3`, and in every object gcc builds for
+      arm64. The same search, built for that object under Apple clang 21,
+      finds lanes in `keccak_f1600`'s frame of 208 bytes. They are lanes
+      after chi of the last two rounds, a lane after theta and lane 0
+      after iota. A device object's round leaves lanes the same way. The
+      search prints SKIP for both, and INV-17 says that it makes no claim
+      of their stack. Camilo rules whether that stack gets a fix.

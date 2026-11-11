@@ -1,0 +1,26 @@
+invariant: INV-17
+file: src/sha3_inverted_lanes.h
+catches: test/docker-aes-runtime-qemu.sh sha3-stack
+reason: keccak_rounds_inverted counts its rounds again, so the count and
+  the table's address take two registers. Built with the frame pointer,
+  as macOS builds it, clang then writes theta's value d2 to a slot below
+  the stack pointer. The value stays there after the call. The part
+  builds bin/sha3_equiv_test_host for x86-64 with -fno-omit-frame-pointer
+  under clang, and its search of the stack finds d2. On an Apple silicon
+  Mac, make check's check-rosetta finds it too.
+
+--- old
+    for (const uint64_t *rc = RC;; rc += 2) {
+        keccak_round_inverted(scratch, a, rc[0]);
+        keccak_round_inverted(a, scratch, rc[1]);
+        const uint64_t *last = RC + 22;
+        KECCAK_ASM_OUTPUT(last);
+        if (rc == last) {
+            break;
+        }
+    }
+--- new
+    for (int round = 0; round < 24; round += 2) {
+        keccak_round_inverted(scratch, a, RC[round]);
+        keccak_round_inverted(a, scratch, RC[round + 1]);
+    }

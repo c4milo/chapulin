@@ -1,8 +1,8 @@
 // The form of sha3.c's Keccak-f[1600] that sha3_hw.c's x86-64 copy runs for a session whose
 // ch_cfg.cpu holds CH_CPU_BMI1 and CH_CPU_BMI2_ADX (docs/decisions.md 217). sha3.c alone includes
 // this file, after rotate_left, which the text here calls. It includes sha3_inverted_lanes.h for
-// KECCAK_CLOBBER_MEMORY. Every object compiles the form, so the sha3_round harness and
-// bin/sha3_equiv_test hold it on every machine.
+// KECCAK_CLOBBER_MEMORY and KECCAK_ASM_OUTPUT. Every object compiles the form, so the sha3_round
+// harness and bin/sha3_equiv_test hold it on every machine.
 //
 // The round is decision 216's round, from one state to a second one, with FIPS 202's chi in place
 // of the chi of the six inverted lanes. ANDN, a BMI1 instruction, computes ~b & c to a third
@@ -132,11 +132,19 @@ keccak_round_andn(uint64_t out[25], const uint64_t in[25], uint64_t round_consta
 }
 
 // The 24 rounds, two at a time from a to scratch and back, so the last round writes a and scratch
-// holds the state before that round. Out of line for keccak_rounds_inverted's reason.
+// holds the state before that round. The function is out of line, and its loop is
+// keccak_rounds_inverted's, for that function's reasons. Where this loop counted rounds, clang
+// for a target that keeps rbp as the frame pointer wrote a value of theta to a slot below the
+// stack pointer (docs/decisions.md 218).
 static __attribute__((noinline)) void keccak_rounds_andn(uint64_t a[25], uint64_t scratch[25]) {
-    for (int round = 0; round < 24; round += 2) {
-        keccak_round_andn(scratch, a, RC[round]);
-        keccak_round_andn(a, scratch, RC[round + 1]);
+    for (const uint64_t *rc = RC;; rc += 2) {
+        keccak_round_andn(scratch, a, rc[0]);
+        keccak_round_andn(a, scratch, rc[1]);
+        const uint64_t *last = RC + 22;
+        KECCAK_ASM_OUTPUT(last);
+        if (rc == last) {
+            break;
+        }
     }
 }
 

@@ -339,7 +339,15 @@ The entries are grouped by area:
   standard's bytes. `bin/sha3_equiv_test` holds every entry of `sha3.h`
   to the reference's sponge, which moves one byte at a time, over 31,257
   outputs, with the three forms of the permutation on every machine; `bin/sha3_test` runs the FIPS 202 vectors; and the spec
-  differential runs every mode against the Lean model.
+  differential runs every mode against the Lean model. Built as an
+  x86-64 host object, the same binary searches the stack below six kinds
+  of call. It looks for any value the call computed, and for its
+  complement (`test/sha3_residue.h`, decision 218).
+  `bin/sha3_equiv_test_host` is that build on an x86-64 machine.
+  `make check` runs it for x86-64 under Rosetta on an Apple silicon Mac
+  (`check-rosetta`). The qemu lane's `sha3-stack` part runs it with
+  `-fno-omit-frame-pointer` under gcc and clang. The search is a test: no
+  harness proves what a compiler keeps in a stack slot.
 
 #### hkdf
 
@@ -6869,7 +6877,7 @@ What holds them:
   between them run every way the file runs its permutation, and requires
   no 64-bit word there that the call computed: a lane of a state, a
   column's parity, a value theta adds, or a lane after theta, rho or chi
-  of any round (`test/sha3_hw_equiv_residue.h`).
+  of any round, or the complement of one (`test/sha3_residue.h`).
 - `bin/mlkem_hw_equiv_test` compares, over 200 random seeds, the keys,
   ciphertexts and secrets the copies write with `mlkem.c`'s, under each
   answer a compression runs under, and the three calls a session makes

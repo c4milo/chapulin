@@ -14,7 +14,11 @@
 # lint-stack-run for the x86-64 host object that holds that kernel, and
 # bin/sha2_equiv_test alone as clang builds it for x86-64, which
 # measures the stack the two SHA-512 compression functions write under
-# the compiler whose frames are the deepest; "arm64-hash-count" the three
+# the compiler whose frames are the deepest; "sha3-stack"
+# bin/sha3_equiv_test_host and bin/sha3_hw_equiv_test alone, for x86-64
+# with the frame pointer under gcc and clang, which search the stack each
+# SHA-3 call leaves;
+# "arm64-hash-count" the three
 # counting binaries for arm64, which alone compiles the SHA-512 entries;
 # "p256-equiv" bin/p256_equiv_test alone, for x86-64 and for arm64,
 # which holds the wide P-256 files to the files under their own names on
@@ -65,8 +69,10 @@
 # constants and wipes with "sha2-equiv", the violations of
 # sha512_avx2.c's kernel with "sha512-avx2", the violations of that
 # kernel's frame budget and of the two wiped lengths that gcc's frames
-# fit and clang's do not with "sha512-stack", the violations of the
-# SHA-512 entries with "arm64-hash-count", the two violations of the
+# fit and clang's do not with "sha512-stack", the violations of the loops
+# of keccak_rounds_inverted and keccak_rounds_andn with "sha3-stack", the
+# violations of the SHA-512 entries with "arm64-hash-count", the two
+# violations of the
 # intrinsics in p256_wide_word.h's carry steps with "p256-equiv", the
 # violations of what sha3_hw.c leaves on the stack with "keccak", the
 # violations of aes_hw.c's two key expansions with "aes-equiv", the

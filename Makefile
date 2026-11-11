@@ -3155,6 +3155,25 @@ bin/sha3_test: test/sha3_test.c $(SHA3_TEST_SRCS) $(HDRS) $(TESTH)
 bin/sha3_equiv_test: test/sha3_equiv_test.c $(SHA3_TEST_SRCS) proof/sha3_reference.h $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/sha3_equiv_test.c $(filter-out src/sha3.c,$(SHA3_TEST_SRCS))
+# The same test as a host object builds it. On x86-64 it also searches
+# the stack each SHA-3 call leaves (test/sha3_residue.h,
+# docs/decisions.md 218). test/rosetta-check.sh builds it for x86-64 on
+# an Apple silicon Mac. test/aes-runtime-qemu.sh's sha3-stack part builds
+# it with the frame pointer. Both read the lists print-sha3-host-lists
+# prints.
+SHA3_EQUIV_HOST_SRCS := test/sha3_equiv_test.c test/stack_residue.c src/ct.c src/ct_wipe.c
+SHA3_HOST_FLAGS = $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest
+bin/sha3_equiv_test_host: $(SHA3_EQUIV_HOST_SRCS) src/sha3.c test/sha3_residue.h proof/sha3_reference.h \
+                          $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(SHA3_HOST_FLAGS) -o $@ $(SHA3_EQUIV_HOST_SRCS)
+# One a line: the flags of a host object's SHA-3 test, the sources of
+# bin/sha3_equiv_test_host, and the sources of bin/sha3_hw_equiv_test.
+.PHONY: print-sha3-host-lists
+print-sha3-host-lists:
+	@echo '$(SHA3_HOST_FLAGS)'
+	@echo '$(SHA3_EQUIV_HOST_SRCS)'
+	@echo 'test/sha3_hw_equiv_test.c $(SHA3_HW_EQUIV_TEST_SRCS)'
 
 # ML-KEM-768 known answers, the CCTV decaps anchors, and the input checks. Its
 # own binary, out of the packaged object like sha3
@@ -3777,11 +3796,11 @@ bin/sha2_equiv_test: test/sha2_equiv_test.c $(SHA2_EQUIV_TEST_SRCS) src/hkdf.c s
 # A host object's Keccak on arm64's SHA-3 instructions against sha3.c, the
 # portable code CBMC proves (docs/decisions.md 99). test/stack_residue.c
 # copies the stack a call left, for the check that no lane the call
-# computed is still there (test/sha3_hw_equiv_residue.h). In an object
+# computed is still there (test/sha3_residue.h). In an object
 # that holds no such path, and on a CPU without the instructions, the
 # binary says so and passes.
 SHA3_HW_EQUIV_TEST_SRCS := test/stack_residue.c $(call host_srcs,src/sha3.c) src/ct.c src/ct_wipe.c
-bin/sha3_hw_equiv_test: test/sha3_hw_equiv_test.c test/sha3_hw_equiv_residue.h \
+bin/sha3_hw_equiv_test: test/sha3_hw_equiv_test.c test/sha3_residue.h \
                         $(SHA3_HW_EQUIV_TEST_SRCS) proof/sha3_reference.h $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/sha3_hw_equiv_test.c $(SHA3_HW_EQUIV_TEST_SRCS)
@@ -5004,7 +5023,8 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/p256_arm64_model_test bin/p256_arm64_equiv_test \
                                  bin/p256_arm64_verify_model_test bin/p256_arm64_verify_equiv_test \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test bin/aead_avx2_equiv_test \
-                                 bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/mlkem_hw_equiv_test \
+                                 bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/sha3_equiv_test_host \
+                                 bin/mlkem_hw_equiv_test \
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
                                  bin/mldsa_vector_equiv_test bin/mldsa_runtime_test \
                                  bin/mldsa_avx2_equiv_test bin/keccak_neon_equiv_test \
@@ -5261,11 +5281,11 @@ CHECK_LIBRARY_BUILDS := check-lib-drbg check-lib-session check-lib-session-cxx c
 CHECK_RUN_HOST_VECTOR := $(patsubst bin/%,check-run-%,$(HOST_VECTOR_BINS))
 .PHONY: $(CHECK_LIBRARY_BUILDS) $(addprefix check-run-,$(CHECK_RUN_BINS)) $(CHECK_RUN_HOST_VECTOR) \
         check-chacha-builds check-mlkem-builds check-widemul-builds check-host-builds check-hash-builds \
-        check-script-builds check-wycheproof check-skips
+        check-script-builds check-rosetta check-wycheproof check-skips
 check: lint rand-check $(CHECK_BUILDS) $(CHECK_LIBRARY_BUILDS) $(addprefix check-run-,$(CHECK_RUN_BINS)) \
        $(CHECK_RUN_HOST_VECTOR) \
        check-chacha-builds check-mlkem-builds check-widemul-builds check-host-builds check-hash-builds \
-       check-script-builds check-wycheproof check-skips proof-coverage proof-reach-smoke
+       check-script-builds check-rosetta check-wycheproof check-skips proof-coverage proof-reach-smoke
 	@echo "check: every lint, library build and test run passed"
 
 # A recipe line that runs a script which calls make itself starts with +,
@@ -5385,6 +5405,18 @@ check-script-builds:
 	  $(STAMP_MAKEFILES) --output '$(CC) --version' --output '$(ZIG) version' \
 	  --output 'uname -srm' -- \
 	  env CC='$(CC)' ./test/script-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+
+# An x86-64 host object's SHA-3 on macOS, under Rosetta on an Apple
+# silicon Mac: bin/sha3_equiv_test_host and bin/sha3_hw_equiv_test built
+# for x86-64, where clang keeps rbp as the frame pointer, and their search
+# of the stack each call leaves (docs/decisions.md 218). No CI job builds
+# for macOS on x86-64. Every other machine prints SKIP with the reason,
+# Linux CI among them. The prerequisites are the sources the script
+# compiles, so a change to one of them selects this target
+# (tools/impact_select.py).
+check-rosetta: $(SHA3_EQUIV_HOST_SRCS) test/sha3_hw_equiv_test.c $(SHA3_HW_EQUIV_TEST_SRCS) \
+               src/sha3.c test/sha3_residue.h proof/sha3_reference.h $(HDRS) $(TESTH)
+	+@mkdir -p bin/check; CC='$(CC)' ./test/rosetta-check.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
 # The Wycheproof tests, then the total docs/verification.md states against
 # the vectors they ran. The second is not stamped: an edit to the page
@@ -7889,10 +7921,11 @@ else
 	# sha3_inverted_lanes.h (docs/decisions.md 216), and sha3_hw.c, whose
 	# x86-64 arm compiles sha3.c once more and runs sha3_andn.h's form
 	# (docs/decisions.md 217), read for an x86-64 target whatever the host.
-	# portability-no-assembler is off for these two files alone: the two
-	# forms' empty statements that clobber memory are inline assembler that
-	# emits no instruction. Every other pass reads the files with the
-	# statements empty.
+	# portability-no-assembler is off for these two files. The two forms
+	# hold empty statements that clobber memory or that make a loop's end
+	# address their output (docs/decisions.md 218). Each is inline
+	# assembler that emits no instruction. Every other pass reads the files
+	# with the statements empty, but the pass of the SHA-3 test below.
 	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler src/sha3.c src/sha3_hw.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I.)
@@ -7966,6 +7999,13 @@ else
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/sha3_hw_equiv_test.c test/mlkem_hw_equiv_test.c test/mlkem_vector_equiv_test.c \
 	    test/mlkem_avx2_equiv_test.c test/keccak_neon_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
+	# The SHA-3 test as bin/sha3_equiv_test_host builds it, with its search
+	# of the stack on x86-64 (docs/decisions.md 218). portability-no-assembler
+	# is off for this file alone. It includes sha3.c, whose x86-64 host form
+	# holds empty statements of inline assembler.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler test/sha3_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	# The ML-DSA-87 lanes' equivalence test, in a pass of its own with
 	# portability-no-assembler off for that file alone: on x86-64 it reads

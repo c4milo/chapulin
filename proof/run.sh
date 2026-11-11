@@ -719,12 +719,13 @@ launch fast:4 full sha512_host 2 "havoc_context.0:9,fill_nondet.0:129,ct_wipe.0:
 # sha3_round also holds sha3_inverted_lanes.h's round and its 24 rounds
 # (docs/decisions.md 195 and 216), and the ANDN form's round and its 24
 # rounds (docs/decisions.md 217). The plain permutation's loop takes 25,
-# and the loop of two rounds of each of the two other forms takes 13.
+# and the loop of two rounds of each of the two other forms takes 13: it
+# runs 12 times and leaves at its end test (docs/decisions.md 218).
 # Measured (cbmc 6.11.0, kissat, /usr/bin/time -l, user time on an M1
-# Pro at a load average of 20 to 40):
-#   sha3          3,603 properties,  79 s, 2.5 GB
-#   sha3_stream   3,641 properties,  98 s, 2.1 GB
-#   sha3_round    3,908 properties,  42 s, 0.9 GB
+# Pro at a load average of 6 to 10):
+#   sha3          3,601 properties,  79 s, 2.5 GB
+#   sha3_stream   3,639 properties,  96 s, 2.2 GB
+#   sha3_round    3,906 properties,  43 s, 0.9 GB
 launch fast:4 full sha3 26 "keccak_f1600_plain.0:25,keccak_rounds_inverted.0:13,keccak_rounds_andn.0:13,block_xor.0:8,block_xor.1:22,block_xor.2:8,block_bytes.0:8,block_bytes.1:22,block_bytes.2:8,absorb_whole_blocks.0:3,squeeze.0:3,shake_init.0:26,ct_wipe.0:201,fill_nondet.0:202" src/ct.c proof/ct_wipe_stub.c
 launch fast:3 full sha3_stream 26 "keccak_f1600_plain.0:25,keccak_rounds_inverted.0:13,keccak_rounds_andn.0:13,block_xor.0:8,block_xor.1:5,block_xor.2:8,block_bytes.0:8,block_bytes.1:5,block_bytes.2:8,absorb_whole_blocks.0:1,squeeze.0:2,fill_context.0:26,fill_nondet.0:33" src/ct.c proof/ct_wipe_stub.c
 launch fast full sha3_round 26 "keccak_f1600_plain.0:25,keccak_rounds_inverted.0:13,keccak_rounds_andn.0:13,reference_f1600.0:25,reference_theta.0:6,reference_theta.1:6,reference_theta.2:6,reference_rho.0:25,reference_pi.0:6,reference_pi.1:6,reference_chi.0:6,reference_chi.1:6,reference_rc.0:9,reference_rc.1:256,reference_round_constant.0:8,ct_wipe.0:201,main.0:26,main.1:26,main.2:26,main.3:25,main.4:26" src/ct.c proof/ct_wipe_stub.c

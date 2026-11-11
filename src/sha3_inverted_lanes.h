@@ -30,11 +30,20 @@
 // an earlier load or store, so it loads each lane where the text below
 // reads it. Only an x86-64 host object compiles the statement, because
 // only that object runs this form (sha3.c's SHA3_INVERTED_LANES). The
-// proofs and bin/sha3_equiv_test compile the same C without it.
+// proofs compile the same C without it, and so does bin/sha3_equiv_test
+// in every build but an x86-64 host object's.
+//
+// KECCAK_ASM_OUTPUT(pointer) makes the pointer the output of an empty
+// statement that reads it in a register. It emits no instruction either.
+// After it the compiler knows nothing of the pointer's value, so it cannot
+// compute the value before the statement. The same objects compile it.
+// keccak_rounds_inverted gives the reason.
 #if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
 #define KECCAK_CLOBBER_MEMORY() __asm__ volatile("" ::: "memory")
+#define KECCAK_ASM_OUTPUT(pointer) __asm__("" : "+r"(pointer))
 #else
 #define KECCAK_CLOBBER_MEMORY() ((void)0)
+#define KECCAK_ASM_OUTPUT(pointer) ((void)0)
 #endif
 
 // keccak_round from in to out, with the chi that the six inverted lanes
@@ -211,10 +220,27 @@ static void invert_lanes(uint64_t a[25]) {
 // of the other. Inline in the function that owns scratch, clang wrote
 // eight more instructions a round, and gcc 13 wrote the same count in both
 // places (docs/decisions.md 216).
+//
+// The loop's one variable is rc, the address of the next two round
+// constants. Its end test compares rc with last, the address of the last
+// two. last is the output of an empty statement before the test. So the
+// compiler computes last there, and keeps it in no register through the
+// rounds. A row of a round then holds 14 values in registers: a, scratch,
+// rc, theta's five values, its five lanes and one copy. A target that
+// keeps rbp as the frame pointer, as macOS does, has 14 general registers
+// for them. Where the loop counted rounds, the count and the table's
+// address took two registers. clang then wrote the count and one value of
+// theta to slots below the stack pointer, and no later call wrote over
+// them (docs/decisions.md 218).
 static __attribute__((noinline)) void keccak_rounds_inverted(uint64_t a[25], uint64_t scratch[25]) {
-    for (int round = 0; round < 24; round += 2) {
-        keccak_round_inverted(scratch, a, RC[round]);
-        keccak_round_inverted(a, scratch, RC[round + 1]);
+    for (const uint64_t *rc = RC;; rc += 2) {
+        keccak_round_inverted(scratch, a, rc[0]);
+        keccak_round_inverted(a, scratch, rc[1]);
+        const uint64_t *last = RC + 22;
+        KECCAK_ASM_OUTPUT(last);
+        if (rc == last) {
+            break;
+        }
     }
 }
 

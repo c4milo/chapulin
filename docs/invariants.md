@@ -6695,10 +6695,11 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/sha3_hw_equiv_test` copies the stack below six kinds of call and
   requires no 64-bit word there that the call computed: a lane of any
   state, a column's parity, a value theta adds, or a lane after theta,
-  rho or chi of any round (`test/sha3_hw_equiv_residue.h`). gcc 13 keeps
-  lanes in stack slots of its own choosing in every form of the file
-  tried, so only clang compiles it (decision 99). Two violations undo the
-  rule. `inv17-sha3-digest-state-kept` drops `sha3.c`'s wipe, and
+  rho or chi of any round, or the complement of one
+  (`test/sha3_residue.h`). gcc 13 keeps lanes in stack slots of its own
+  choosing in every form of the file tried, so only clang compiles it
+  (decision 99). Two violations undo the rule.
+  `inv17-sha3-digest-state-kept` drops `sha3.c`'s wipe, and
   `inv17-sha3-hw-lane-in-stack-slot` writes one lane to a slot of its own
   each round. The binary catches both, built with clang for arm64 and run
   under `qemu-aarch64`.
@@ -6710,21 +6711,33 @@ last `ROLE=server` stub, as the entry said it would.
   state of its own and requires zeros in it after each of 3,602
   permutations, and `sha3_round` proves the zeros after the 24 rounds
   from the state of zeros. `inv17-sha3-scratch-state-kept` drops the
-  wipe, and the test catches it. No test searches the stack below that
-  form. Its function of 24 rounds writes no value to a stack slot under
-  gcc 13.3, clang 18 and clang 23, as their assembly reads, and before
-  decision 216 gcc and clang kept lanes of the state in stack slots that
-  no call cleared.
-  `sha3_hw.c`'s x86-64 copy runs `sha3_andn.h`'s form, whose scratch
-  state `keccak_f1600_andn_with` wipes the same way (decision 217).
-  `bin/sha3_equiv_test` reads that form's scratch state too, and
-  `inv17-sha3-andn-scratch-state-kept` drops its wipe. The qemu lane's
-  `sha3-bmi` part runs `bin/sha3_hw_equiv_test` for x86-64, built with
-  gcc 13.3, so its stack search covers the copy's six kinds of call; the
-  same search passes under clang 18 and gcc 15.2. On macOS clang keeps rbp for the
-  frame pointer, and in both two-state forms it then writes two values
-  of theta to the red zone below the function of 24 rounds, where the
-  search finds them. That build has no test lane here.
+  wipe, and the test catches it. `sha3_hw.c`'s x86-64 copy runs
+  `sha3_andn.h`'s form, whose scratch state `keccak_f1600_andn_with`
+  wipes the same way (decision 217). `bin/sha3_equiv_test` reads that
+  form's scratch state too, and `inv17-sha3-andn-scratch-state-kept`
+  drops its wipe.
+  The function of 24 rounds of each form keeps its values in registers
+  and in the two states (decision 218). Its loop holds one address of
+  the round constants, so a round needs 14 general registers. A build
+  that keeps rbp as the frame pointer, as macOS does, has 14 for it.
+  Before decision 218 each loop held a count and the table's address.
+  clang there wrote a value of theta to a slot below the stack pointer.
+  Built as an x86-64 host object, `bin/sha3_equiv_test` searches the
+  stack below the same six kinds of call for the same words. It looks for
+  their complements too, since decision 216's form keeps six lanes
+  inverted. `bin/sha3_equiv_test_host` is that build on an x86-64
+  machine, gcc's in CI. The qemu lane's `sha3-bmi` part runs
+  `bin/sha3_hw_equiv_test` for x86-64, built with gcc 13.3, so its
+  search covers the copy's six kinds of call. `make check` builds both
+  tests for x86-64 on an Apple silicon Mac and runs them under Rosetta,
+  which is the one macOS x86-64 build (`check-rosetta`). The qemu lane's
+  `sha3-stack` part builds both with `-fno-omit-frame-pointer` under gcc
+  and clang. `inv17-keccak-rounds-loop-counts-rounds` and
+  `inv17-keccak-andn-rounds-loop-counts-rounds` give each loop its count
+  again. That part catches both, and so does `check-rosetta`. A device
+  object and an arm64 host object run `keccak_round` in place. Their
+  compilers keep lanes of the state in stack slots that no call clears,
+  and this invariant makes no claim of that stack (decision 218).
   Each of `gcm_avx512.c`'s two entries wipes `GCM_AVX512_BELOW_LEN`,
   2,560 bytes, of the stack below its own frame after the kernel returns,
   through `wipe_frame` and a volatile pointer, in `p256_wide_wipe.c`'s

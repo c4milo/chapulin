@@ -283,6 +283,12 @@
 #                     x86-64 built with clang, for the violations of the
 #                     kernel's frame budget and of the two wiped lengths
 #                     that gcc's frames fit and clang's do not
+#   sha3-stack        bin/sha3_equiv_test_host and bin/sha3_hw_equiv_test
+#                     for x86-64 with -fno-omit-frame-pointer, built with
+#                     gcc and with clang, for the violations of the loops
+#                     of keccak_rounds_inverted and keccak_rounds_andn,
+#                     whose values fit the registers that remain with rbp
+#                     kept
 #   arm64-hash-count  the three counting binaries for arm64, for the
 #                     violations of the entries an arm64 object alone
 #                     compiles and of the copy gcm_use_eor3 picks
@@ -367,7 +373,9 @@
 # clang by default; it links with the libraries ARM64_CC's toolchain
 # carries. SHA512_X86_64_CLANG names the clang that builds
 # bin/sha2_equiv_test for x86-64 a second time, clang by default; it links
-# with the libraries X86_CC's toolchain carries. The
+# with the libraries X86_CC's toolchain carries. SHA3_X86_64_CLANG names
+# the clang that builds bin/sha3_equiv_test_host for x86-64 with the frame
+# pointer, clang by default, which links the same way. The
 # mips job in .github/workflows/check.yml runs this script on every push,
 # because the qemu-user package it installs carries both emulators, and
 # test/docker-aes-runtime-qemu.sh runs it in a container elsewhere.
@@ -379,11 +387,11 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
+"" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | sha3-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
     mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
     rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | sha3-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi]" >&2
     exit 2
     ;;
 esac
@@ -416,6 +424,7 @@ if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != mldsa
     [ "$only" != chacha20-avx2 ] &&
     [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
     [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ] && [ "$only" != sha512-stack ] &&
+    [ "$only" != sha3-stack ] &&
     [ "$only" != x25519-adx ] && [ "$only" != p256-adx ] && [ "$only" != rsa-adx ] && [ "$only" != sha3-bmi ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
@@ -433,6 +442,14 @@ if [ -z "$only" ] || [ "$only" = sha512-stack ]; then
     sha512_clang=${SHA512_X86_64_CLANG:-clang}
     "$sha512_clang" --target=x86_64-linux-gnu -dM -E -x c /dev/null 2> /dev/null | grep -qw __clang__ ||
         { echo "aes-runtime-qemu: $sha512_clang is not a clang that compiles for x86-64; set SHA512_X86_64_CLANG" >&2; exit 1; }
+fi
+# clang for x86-64, which builds bin/sha3_equiv_test_host with the frame
+# pointer.
+sha3_clang=""
+if [ -z "$only" ] || [ "$only" = sha3-stack ]; then
+    sha3_clang=${SHA3_X86_64_CLANG:-clang}
+    "$sha3_clang" --target=x86_64-linux-gnu -dM -E -x c /dev/null 2> /dev/null | grep -qw __clang__ ||
+        { echo "aes-runtime-qemu: $sha3_clang is not a clang that compiles for x86-64; set SHA3_X86_64_CLANG" >&2; exit 1; }
 fi
 x86_out=bin/qemu
 arm64_out=bin/qemu-arm64
@@ -1103,6 +1120,40 @@ if [ -z "$only" ] || [ "$only" = sha512-stack ]; then
 fi
 if [ "$only" = sha512-stack ]; then
     echo "aes-runtime-qemu: under $x86_cc every frame of the x86-64 host object that holds src/sha512_avx2.c was under its budget, and as $sha512_clang compiled it for x86-64 bin/sha2_equiv_test found each SHA-512 compression function's frame inside the stack its caller wipes and no word of a call on the stack"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = sha3-stack ]; then
+    # bin/sha3_equiv_test_host and bin/sha3_hw_equiv_test for x86-64 with
+    # -fno-omit-frame-pointer, under gcc and under clang. Each searches the
+    # stack each SHA-3 call leaves: the first after sha3.c's form of
+    # decision 216, the second after sha3_hw.c's copy on ANDN and RORX,
+    # which the max model runs. With rbp kept as the frame pointer, as
+    # macOS keeps it, a round has one general register fewer
+    # (docs/decisions.md 218).
+    sha3_lists=$(make -s --no-print-directory print-sha3-host-lists) ||
+        { echo "aes-runtime-qemu: make print-sha3-host-lists failed" >&2; exit 1; }
+    read -r -a sha3_equiv_host_srcs <<< "$(sed -n 2p <<< "$sha3_lists")"
+    read -r -a sha3_hw_equiv_host_srcs <<< "$(sed -n 3p <<< "$sha3_lists")"
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -fno-omit-frame-pointer \
+        -o "$x86_out/sha3_equiv_test_host_fp" "${sha3_equiv_host_srcs[@]}" || exit 1
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -fno-omit-frame-pointer \
+        -o "$x86_out/sha3_hw_equiv_test_fp" "${sha3_hw_equiv_host_srcs[@]}" || exit 1
+    "$sha3_clang" --target=x86_64-linux-gnu "${flags[@]}" -DCH_CPU_RUNTIME -fno-omit-frame-pointer \
+        -o "$x86_clang_out/sha3_equiv_test_host_fp" "${sha3_equiv_host_srcs[@]}" || exit 1
+    "$sha3_clang" --target=x86_64-linux-gnu "${flags[@]}" -DCH_CPU_RUNTIME -fno-omit-frame-pointer \
+        -o "$x86_clang_out/sha3_hw_equiv_test_fp" "${sha3_hw_equiv_host_srcs[@]}" || exit 1
+    for sha3_out in "$x86_out" "$x86_clang_out"; do
+        expect_on "$x86_qemu" "$sha3_out" max 0 \
+            "built in $sha3_out for x86-64 with the frame pointer, a call of src/sha3.c left a value it computed from its input on the stack, or src/sha3.c disagrees with FIPS 202" \
+            sha3_equiv_test_host_fp
+        CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_on "$x86_qemu" "$sha3_out" max 0 \
+            "built in $sha3_out for x86-64 with the frame pointer, a call of src/sha3_hw.c's copy left a value it computed from its input on the stack, the copy disagrees with src/sha3.c, or this qemu's max model lacks BMI1 or BMI2" \
+            sha3_hw_equiv_test_fp
+    done
+fi
+if [ "$only" = sha3-stack ]; then
+    echo "aes-runtime-qemu: as $x86_cc and $sha3_clang compiled them for x86-64 with the frame pointer, bin/sha3_equiv_test_host and bin/sha3_hw_equiv_test found no value a SHA-3 call computed from its input on the stack"
     exit 0
 fi
 

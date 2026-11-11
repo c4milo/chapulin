@@ -8,6 +8,6 @@ reason: the second round of each two writes the state it reads, where it
   every machine and requires the reference's state.
 
 --- old
-        keccak_round_inverted(a, scratch, RC[round + 1]);
+        keccak_round_inverted(a, scratch, rc[1]);
 --- new
-        keccak_round_inverted(a, a, RC[round + 1]);
+        keccak_round_inverted(a, a, rc[1]);
