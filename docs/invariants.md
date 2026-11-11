@@ -293,15 +293,20 @@ last `ROLE=server` stub, as the entry said it would.
   the build's one algorithm, canonical DER on every decoded field,
   keyUsage and extendedKeyUsage required, no name matching, no
   clock. Any widening of that grammar is the violation, whether it
-  lands inside the verifier or beside it. Two other modules read
-  certificate DER, and neither returns a verdict. One is the reader in
-  `x509_ca.c`. The other is `x509_pem.c`, which reads for `pem_files.c`'s
+  lands inside the verifier or beside it. Three other modules read
+  certificate DER, and none returns a verdict. One is the reader in
+  `x509_ca.c`. The second is `x509_pem.c`, which reads for `pem_files.c`'s
   three calls (docs/decisions.md 131). It reads a provisioned
   certificate's outer fields as far as its subject and key. It reads a
   P-256 private key's DER and the DER of an EC PARAMETERS block too. Each
   returns bytes, never a decision, and leaves the certificate's
   signature, dates and names unread. No path that peer input takes
-  reaches either. A raw-pin client compiles none of them: it hashes
+  reaches either. The third is `x509_end_point.c`, in a `CH_SCRAM` build
+  alone (docs/decisions.md 222). It reads a certificate's
+  signatureAlgorithm, finds the hash it names, and returns the hash of
+  the certificate's bytes, the tls-server-end-point value of RFC 5929.
+  It leaves the signature, the dates and the names unread, and no
+  session calls it. A raw-pin client compiles none of them: it hashes
   the certificate into the transcript and never reads it. The `TRUST=webpki` chain verifier ([webpki.md](webpki.md))
   is a second verifier with its own public profile: `webpki_time.c`
   reads validity dates, `webpki_name.c` matches hostnames against

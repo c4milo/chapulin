@@ -18,8 +18,10 @@
 // under CH_JWS: each of the 64 characters gives its index, and every
 // other byte BASE64_INVALID, '+', '/', '=', CR and LF among them. And
 // base64url_char is the table itself for every value below 64, so each
-// function is the other's inverse there. proof/base64_codec_harness.c
-// drives jws.h's encoder and decoder over both.
+// function is the other's inverse there. base64_char is section 4's
+// table the same way, and base64_class is its inverse on the 64 values.
+// proof/base64_codec_harness.c drives jws.h's and scram.h's encoders and
+// decoders over all four.
 #include "harness.h"
 
 #include "base64.h"
@@ -68,6 +70,10 @@ int main(void) {
                      "base64url_char is RFC 4648 section 5's table");
     __CPROVER_assert(base64url_class(base64url_char(v)) == v,
                      "base64url_class is base64url_char's inverse");
+    static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    __CPROVER_assert(base64_char(v) == (uint8_t)table[v],
+                     "base64_char is RFC 4648 section 4's table");
+    __CPROVER_assert(base64_class(base64_char(v)) == v, "base64_class is base64_char's inverse");
     __CPROVER_assert(got == ref_base64_class(c),
                      "base64_class is RFC 4648 section 4's table and pem.c's four classes");
     __CPROVER_assert(BASE64_PAD > 63 && BASE64_CR > 63 && BASE64_LF > 63 && BASE64_DASH > 63 &&

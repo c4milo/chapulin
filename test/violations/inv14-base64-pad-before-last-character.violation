@@ -1,0 +1,14 @@
+invariant: INV-14
+file: src/base64_codec.c
+catches: scram_test
+reason: base64_decode counts a '=' before the last character as padding
+  whatever the last character is. "Zg=a" then decodes as "Zg=" does not:
+  the call drops the two characters and returns the one byte of "Zg", so
+  a second text decodes to the same value, and a character after the
+  padding goes unread (RFC 4648 section 3.5). bin/scram_test requires
+  CH_EINVAL for "Zg=a".
+
+--- old
+    size_t pads = last_is_pad + (last_is_pad & before_is_pad);
+--- new
+    size_t pads = before_is_pad != 0 ? 2 : last_is_pad;

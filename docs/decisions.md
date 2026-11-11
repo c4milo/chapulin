@@ -18686,3 +18686,79 @@ does nothing more.
     - **Not built.** A signer: the owner ruled one `ch_jws_sign` for the
       three algorithms, for tests and tools, and it takes an entry of
       its own. A JWK reader, JWE, and every HMAC algorithm.
+222. **SCRAM=on exports the parts of SCRAM-SHA-256.** stompy's proxy
+    checks a SCRAM-SHA-256 login, and its tools make SCRAM verifiers.
+    The owner ruled on 2026-11-11 that these parts live in chapulin,
+    under an axis named for the protocol (decision 221).
+
+    - **The axis.** `SCRAM=on` defines `CH_SCRAM`, off by default. A
+      host `TRUST=webpki` object alone takes it, on either transport.
+      The channel binding needs SHA-384, SHA-512 and `x509_der.c`,
+      which that object packages. No device object takes it: none has a
+      measured stack or size budget for these calls, and no device
+      caller exists. Each call carries the transport in its symbol name
+      (decision 61). It takes no build record bit.
+    - **Parts, and no exchange.** The calls run no SCRAM exchange and
+      read no SCRAM message. The caller writes and reads the messages,
+      draws its nonce and its salt, and computes each value of RFC 5802
+      section 3 with the calls. So one set of calls serves a client, a
+      server and a tool that makes verifiers.
+    - **`ch_sha256` and `ch_hmac_sha256`.** Each is one call over a
+      whole input, and each wipes its hash state, because a SCRAM key
+      passes through it. They run the portable code, as `dnssec.h`'s
+      hashes do, and take no `ch_cfg.cpu` value.
+    - **`ch_pbkdf2_hmac_sha256`.** RFC 8018's PBKDF2, which SCRAM calls
+      Hi(). `pbkdf2.c` hashes the password's two pad blocks once and
+      starts each HMAC from a copy of the two states, so an iteration
+      costs two compressions and not four. An output is at most
+      `CH_PBKDF2_OUT_LEN_MAX` bytes, 65,536 blocks, far above any key.
+      The argument is `iteration_count`, RFC 8018's name with the
+      qualifier last. The caller bounds a count that a peer sends.
+    - **`ch_ct_compare`.** No public compare existed. The owner ruled
+      the name and the result: `CH_OK` for equal bytes and `CH_EAUTH`
+      for different bytes. Zero means equal, as in `memcmp` and in
+      every other call's success. A name that reads as a predicate,
+      such as the internal `ct_memeq`, would make
+      `if (ch_ct_memeq(a, b, n))` true for different bytes under that
+      result. The Zig API gives `timing_safe_eql`, a `bool`.
+    - **base64.** `ch_base64_encode` and `ch_base64_decode` write and
+      read RFC 4648 section 4's text with its padding, which SCRAM's
+      messages carry. `base64_codec.c` holds one set of loops for this
+      alphabet and base64url's, and `base64.c` holds the four character
+      functions with no branch (decision 221). The decoder takes
+      canonical text alone. It counts the `=` at the end of the text in
+      constant time and then decodes the rest as text with no padding.
+    - **`ch_tls_server_end_point`.** RFC 5929 section 4.1's channel
+      binding for SCRAM-SHA-256-PLUS: the hash of the server's
+      certificate, under the hash its signatureAlgorithm names, with
+      SHA-256 in place of MD5 and SHA-1. For RSASSA-PSS the hash is the
+      one the parameters name, which PostgreSQL also takes. The call
+      refuses an algorithm that names no such hash, Ed25519, ML-DSA and
+      the SHA-224 ones among them, because the RFC defines no value
+      there. It takes RSA's parameters as NULL alone and ECDSA's as
+      absent alone, as RFC 4055 and RFC 5758 write them.
+    - **A certificate file.** `x509_end_point.c` reads the
+      certificate's outer fields through `x509_der.c`, and defines the
+      public call itself, so no other file calls an `x509_` reader
+      (INV-5). It returns a hash and no verdict, and no session calls
+      it.
+    - **The Zig API.** `chapulin.scram` holds the seven calls.
+      `hmac_sha256` and `pbkdf2_hmac_sha256` take an options struct,
+      because a key and a message, or a password and a salt, have one
+      type and could change places (pepegrillo's `docs/api.md` 3.6).
+    - **What holds it.** `bin/scram_test` reads RFC 4231's seven HMAC
+      cases, RFC 7914's two PBKDF2 vectors and RFC 7677's exchange out
+      of the RFC texts in `docs/rfcs/`, and Python checks each one. It
+      computes the exchange's ClientProof and ServerSignature from the
+      password with the calls alone. It checks 15 certificates that
+      OpenSSL minted, one for each signature algorithm, against
+      `hashlib`, and each rule for an algorithm's parameters on the
+      least bytes the call reads as a certificate. RFC 4231 prints test
+      case 3's key line with no `=`, and the script accepts that line.
+      `bin/wycheproof_scram_test` runs Wycheproof's 174 HMAC cases and
+      60 PBKDF2 keys. The `scram`, `pbkdf2`, `x509_end_point`,
+      `base64_codec` and `base64` proofs hold the memory accesses, the
+      refusals and the compare. The Zig test checks each call against
+      `std.crypto`.
+    - **Not built.** A SCRAM state machine, SASLprep (RFC 4013), a
+      streaming hash, and SCRAM-SHA-512.

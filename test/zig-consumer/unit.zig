@@ -676,6 +676,81 @@ test "JWS=on: tokens std.crypto signs verify, and base64url matches std.base64" 
 /// byte.
 const jws_sig_text_len = 86;
 
+test "SCRAM=on: the parts match std.crypto, and a SCRAM-SHA-256 proof checks" {
+    if (!@hasDecl(c, "ch_hmac_sha256")) return error.SkipZigTest;
+    const scram = chapulin.scram;
+    const Sha256 = std.crypto.hash.sha2.Sha256;
+    const Hmac = std.crypto.auth.hmac.sha2.HmacSha256;
+    const message = "chapulin scram through the Zig API";
+
+    var digest: [scram.sha256_len]u8 = undefined;
+    var want: [32]u8 = undefined;
+    scram.sha256(&digest, message);
+    Sha256.hash(message, &want, .{});
+    try std.testing.expectEqualSlices(u8, &want, &digest);
+
+    const key = "a key of the Zig API's test";
+    var tag: [scram.sha256_len]u8 = undefined;
+    scram.hmac_sha256(&tag, &.{ .key = key, .message = message });
+    Hmac.create(&want, message, key);
+    try std.testing.expectEqualSlices(u8, &want, &tag);
+
+    // Hi() of RFC 5802: std.crypto's PBKDF2 over the same HMAC.
+    var salted: [32]u8 = undefined;
+    var salted_want: [32]u8 = undefined;
+    try scram.pbkdf2_hmac_sha256(&salted, &.{ .password = "pencil", .salt = "a salt", .iteration_count = 4096 });
+    try std.crypto.pwhash.pbkdf2(&salted_want, "pencil", "a salt", 4096, Hmac);
+    try std.testing.expectEqualSlices(u8, &salted_want, &salted);
+    try expectError(error.Invalid, scram.pbkdf2_hmac_sha256(&salted, &.{ .password = "pencil", .salt = "a salt", .iteration_count = 0 }));
+    try expectError(error.Invalid, scram.pbkdf2_hmac_sha256(salted[0..0], &.{ .password = "pencil", .salt = "a salt", .iteration_count = 1 }));
+
+    // A SCRAM server's check of a proof (RFC 5802 section 3): the ClientKey the proof gives hashes
+    // to the StoredKey, and a proof with one bit changed does not.
+    var client_key: [32]u8 = undefined;
+    var stored_key: [32]u8 = undefined;
+    var signature: [32]u8 = undefined;
+    scram.hmac_sha256(&client_key, &.{ .key = &salted, .message = "Client Key" });
+    scram.sha256(&stored_key, &client_key);
+    scram.hmac_sha256(&signature, &.{ .key = &stored_key, .message = message });
+    var proof: [32]u8 = undefined;
+    for (&proof, client_key, signature) |*p, k, s| p.* = k ^ s;
+    var proof_text_room: [44]u8 = undefined;
+    const proof_text = try scram.base64_encode(&proof_text_room, &proof);
+    try std.testing.expectEqual(scram.base64_len(proof.len), proof_text.len);
+    var std_text_room: [44]u8 = undefined;
+    try std.testing.expectEqualSlices(u8, std.base64.standard.Encoder.encode(&std_text_room, &proof), proof_text);
+    var received_room: [33]u8 = undefined;
+    try std.testing.expectEqual(@as(usize, 33), scram.base64_decoded_len_max(proof_text.len));
+    const received = try scram.base64_decode(&received_room, proof_text);
+    var recovered: [32]u8 = undefined;
+    for (&recovered, received, signature) |*r, p, s| r.* = p ^ s;
+    var recovered_hash: [32]u8 = undefined;
+    scram.sha256(&recovered_hash, &recovered);
+    try std.testing.expect(scram.timing_safe_eql(&recovered_hash, &stored_key));
+    recovered[5] ^= 1;
+    scram.sha256(&recovered_hash, &recovered);
+    try std.testing.expect(!scram.timing_safe_eql(&recovered_hash, &stored_key));
+    try std.testing.expect(!scram.timing_safe_eql(recovered_hash[0..31], &stored_key));
+    try std.testing.expect(scram.timing_safe_eql("", ""));
+
+    // The rooms and the text the decoder refuses.
+    try expectError(error.Cap, scram.base64_encode(proof_text_room[0..43], &proof));
+    try expectError(error.Cap, scram.base64_decode(received_room[0..31], proof_text));
+    try expectError(error.Invalid, scram.base64_decode(&received_room, "Zg"));
+    try expectError(error.Invalid, scram.base64_decode(&received_room, "Zh=="));
+    try expectError(error.Invalid, scram.base64_decode(&received_room, "-_8="));
+
+    // tls-server-end-point: the least bytes the call reads as a certificate, an empty
+    // TBSCertificate, ecdsa-with-SHA384 and an empty signature. The value is their SHA-384.
+    const bare = [_]u8{ 0x30, 0x11, 0x30, 0x00, 0x30, 0x0a, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x03, 0x03, 0x01, 0x00 };
+    var binding_room: [scram.tls_server_end_point_len_max]u8 = undefined;
+    const binding = try scram.tls_server_end_point(&binding_room, &bare);
+    var binding_want: [48]u8 = undefined;
+    std.crypto.hash.sha2.Sha384.hash(&bare, &binding_want, .{});
+    try std.testing.expectEqualSlices(u8, &binding_want, binding);
+    try expectError(error.Invalid, scram.tls_server_end_point(&binding_room, bare[0..18]));
+}
+
 /// Refers to each named declaration of T, so it compiles.
 fn compile(comptime T: type, comptime names: []const []const u8) void {
     inline for (names) |name| _ = &@field(T, name);

@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-134 of the 180 C sources in the tree root are compiled into a
+137 of the 183 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1770,11 +1770,16 @@ The entries are grouped by area:
 #### base64_codec
 
 - **Harness:** `base64_codec` (fast)
-- **Build:** a host object with `CH_JWS`.
+- **Build:** a host object with `CH_JWS` and `CH_SCRAM`.
 - **Proves:** `base64url_encode` and `base64url_decode`
   (`base64_codec.c`), which `ch_base64url_encode` and
-  `ch_base64url_decode` forward to, are memory safe and free of UB.
-  Also:
+  `ch_base64url_decode` forward to, are memory safe and free of UB. It
+  proves the same of `base64_encode` and `base64_decode`, scram.h's
+  padded base64, whose loops are the same code: each is the other's
+  inverse, accepted text is canonical with its `=`, a text whose length
+  is no multiple of 4 is refused, and `padded_room_holds` is the compare
+  `text_cap >= CH_BASE64_LEN(in_len)` at every length. For base64url
+  also:
   - the encoder answers `CH_OK` exactly when the room holds
     `CH_BASE64URL_LEN(in_len)` characters, and a refused call writes
     nothing;
@@ -1794,9 +1799,63 @@ The entries are grouped by area:
   group of each length. No loop step reads the count of groups before
   it.
 - **Not proved:** that no branch reads a byte or a character. The
-  `base64` harness proves the two character functions against RFC 4648
-  section 5's table, and `lint-wide-multiply` holds `base64.c`'s count
+  `base64` harness proves the four character functions against RFC
+  4648's two tables, and `lint-wide-multiply` holds `base64.c`'s count
   of conditional branches at zero.
+
+#### scram
+
+- **Harness:** `scram` (fast)
+- **Build:** a host object with `CH_SCRAM`.
+- **Proves:** `scram.c`'s calls are memory safe and free of UB, with a
+  NULL pointer for each input of no bytes. Also:
+  - `ch_ct_compare` answers `CH_OK` exactly when the bytes are equal,
+    and `CH_EAUTH` otherwise;
+  - `ch_sha256` and `ch_hmac_sha256` hand the hash no pointer it cannot
+    read, over `hkdf.c`'s real HMAC;
+  - `ch_pbkdf2_hmac_sha256`, `ch_base64_encode` and `ch_base64_decode`
+    pass their arguments and their answer on unchanged.
+- **Bound:** a compare of up to 9 bytes, a key of up to 66 and a message
+  of up to 4.
+- **Not proved:** the digests, which a contract stub of SHA-256 answers
+  here. `bin/scram_test` holds them to RFC 4231's cases, and
+  `bin/wycheproof_scram_test` to Wycheproof's.
+
+#### pbkdf2
+
+- **Harness:** `pbkdf2` (fast)
+- **Build:** a host object with `CH_SCRAM`.
+- **Proves:** `pbkdf2_hmac_sha256` (`pbkdf2.c`) is memory safe and free
+  of UB. It answers `CH_EINVAL` exactly for an iteration count of 0, an
+  output of 0 bytes or an output above `CH_PBKDF2_OUT_LEN_MAX`, at every
+  value of the three, and then writes nothing. Otherwise it writes no
+  byte past the output.
+- **Bound:** a password of up to 66 bytes, which runs both arms of the
+  key's start, a salt of up to 3, an output of up to 34, which is two
+  blocks, and up to 3 iterations.
+- **Not proved:** the key's value: SHA-256 is a contract stub here.
+  `bin/scram_test` holds the value to RFC 7914's vectors, to RFC 7677's
+  exchange and to the longest output, and `bin/wycheproof_scram_test`
+  to Wycheproof's 60 cases.
+
+#### x509_end_point
+
+- **Harness:** `x509_end_point` (fast)
+- **Build:** a host object with `CH_SCRAM`.
+- **Proves:** `ch_tls_server_end_point` (`x509_end_point.c`) is memory
+  safe and free of UB over any bytes, with `x509_der.c`'s real readers.
+  Also:
+  - a refusal runs no hash and writes nothing;
+  - an acceptance runs one hash, over the whole certificate and no
+    other bytes, and reports that hash's digest length, 32, 48 or 64;
+  - it accepts only a SEQUENCE whose length fills the bytes and whose
+    first field is a SEQUENCE.
+- **Bound:** 56 bytes, which hold the least certificate the call reads
+  with RSASSA-PSS parameters of three fields.
+- **Not proved:** which hash each signature algorithm takes, and the
+  digest. `bin/scram_test` holds both to `hashlib` over 15 certificates
+  OpenSSL minted, one for each algorithm, and holds each rule for an
+  algorithm's parameters on the least certificate.
 
 #### sha1
 
@@ -3565,7 +3624,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   same of `base64url_class` and RFC 4648 §5's table, where `-` and `_`
   are the characters of 62 and 63 and every other byte is refused. It
   also proves that `base64url_char` is that table for every value below
-  64, so each function is the other's inverse.
+  64, so each function is the other's inverse. And it proves that
+  `base64_char` is §4's table, with `base64_class` as its inverse.
 - **Bound:** unbounded: one byte, all 256 values, and one value, all 64.
 
 #### pem_step
@@ -8147,6 +8207,14 @@ makes, `ch_dnssec_hash_init` with the key and the signature, an update
 with the message, `ch_dnssec_hash_final` and `ch_dnssec_verify`, in a
 host object with `CH_DNSSEC`. Every valid case verifies and no invalid
 one does (decision 169). These cases are not in the 6,364 either.
+
+`bin/wycheproof_scram_test` holds `ch_hmac_sha256` to every case of
+`hmac_sha256_test.json`, 174 in all, 66 valid and 108 invalid, with each
+tag cut to its group's length. It holds `ch_pbkdf2_hmac_sha256` to the
+60 keys of `pbkdf2_hmacsha256_test.json`, of up to 80,000 iterations, in
+a host object with `CH_SCRAM` (decision 222). `ch_ct_compare` makes
+each compare. Wycheproof has no suite for SHA-256 alone, for base64 or
+for the tls-server-end-point value. None of these cases is in the 6,364.
 
 ML-KEM-1024's three suites, 511 cases, run in a binary of their own,
 `bin/wycheproof_mlkem1024_test`, built under `-DCH_MLKEM_1024` with the

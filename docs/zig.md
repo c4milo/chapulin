@@ -2,14 +2,15 @@
 
 A Zig program runs chapulin's tcp-nonblocking and QUIC sessions through Zig
 values, Zig errors and session types it places in its own memory. It
-never builds a `ch_cfg` or writes a C callback. The API is ten files at
-the repository root: `chapulin.zig`, `chapulin_tcp.zig`,
+never builds a `ch_cfg` or writes a C callback. The API is eleven files
+at the repository root: `chapulin.zig`, `chapulin_tcp.zig`,
 `chapulin_quic.zig`, `chapulin_quic_token.zig`, `chapulin_ticket.zig`,
 `chapulin_pem.zig`, `chapulin_dnssec.zig`, `chapulin_jws.zig`,
-`chapulin_cpu.zig` and `chapulin_cfg.zig`. `chapulin_quic_token.zig` holds the Retry token calls,
+`chapulin_scram.zig`, `chapulin_cpu.zig` and `chapulin_cfg.zig`. `chapulin_quic_token.zig` holds the Retry token calls,
 `chapulin_ticket.zig` holds `Ticket`, `chapulin_pem.zig` holds `Chain`,
 `EcdsaP256Key`, `RsaKey`, `MlDsa87Key` and `Anchors`, `chapulin_dnssec.zig`
 holds the DNSSEC calls, `chapulin_jws.zig` holds the JWS calls,
+`chapulin_scram.zig` holds the parts of SCRAM-SHA-256,
 `chapulin_cpu.zig` holds `Cpu` and `cpu_bits`, and
 `chapulin_cfg.zig` builds each `ch_cfg`. The API is chapulin.hpp's kind of
 wrapper: each call
@@ -134,6 +135,7 @@ for a `@compileError` declaration too.
 | `hook_context` | `ch_keylog` (KEYLOG=on) |
 | `dnssec.Algorithm`, `dnssec.DigestType`, `dnssec.Hash`, `dnssec.verify` | `dnssec.h`'s five calls (DNSSEC=on) |
 | `jws.Algorithm`, `jws.VerifyOptions`, `jws.verify`, `jws.base64url_encode`, `jws.base64url_decode`, `jws.base64url_len`, `jws.base64url_decoded_len_max` | `jws.h`'s three calls and two length macros (JWS=on) |
+| `scram.sha256`, `scram.hmac_sha256`, `scram.pbkdf2_hmac_sha256`, `scram.timing_safe_eql`, `scram.base64_encode`, `scram.base64_decode`, `scram.tls_server_end_point` | `scram.h`'s seven calls (SCRAM=on); `timing_safe_eql` is `ch_ct_compare` as a bool |
 | `Error.Discard`, `Error.AeadLimit` | `CH_QUIC_DISCARD` (a QUIC object) |
 | `Error.KeyUpdateLimit` | `CH_KEY_UPDATE_LIMIT` (a TCP object) |
 | a record session's `key_update` | never: the name is reserved |

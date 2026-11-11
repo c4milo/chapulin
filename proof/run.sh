@@ -1595,7 +1595,7 @@ launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,writ
 # CH_X509_MAX to 2688 in place of 7808, which passed 8 GB in 17 s, and
 # unwinds the wipe and the harness's check of the 2592-byte key: 760
 # properties, 24 s, 2.6 GB (docs/decisions.md 157).
-launch fast full base64 66 "" -DCH_JWS src/base64.c
+launch fast full base64 66 "" -DCH_JWS -DCH_SCRAM src/base64.c
 launch fast full pem_step 66 "" src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 launch fast full pem_step_ecdsa 66 "" src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 launch fast:3 full pem 66 "" -DCH_PROOF_PEM_LEN=64 src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
@@ -3281,8 +3281,30 @@ launch fast full jws 10 "fill_nondet.0:268" -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST
 # canonical, and the encoder's test of the room is jws.h's compare at
 # every length. Measured in the same container: 389 properties, 10 s,
 # 0.13 GB. With the decoder's test of the last group's spare bits
-# removed, or its wipe after a refusal, one property fails.
-launch fast full base64_codec 12 "" -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI src/base64.c src/ct.c proof/ct_wipe_stub.c
+# removed, or its wipe after a refusal, one property fails. With
+# scram.h's padded base64 beside it, on 2026-11-11: 476 properties, 74 s,
+# 0.31 GB.
+launch fast full base64_codec 14 "" -DCH_CPU_RUNTIME -DCH_JWS -DCH_SCRAM -DCH_TRUST_WEBPKI src/base64.c src/ct.c proof/ct_wipe_stub.c
+# scram.c, the SCRAM parts' public calls (docs/decisions.md 222):
+# ch_ct_compare against a plain compare, the hash calls with NULL inputs
+# of no bytes over hkdf.c's real HMAC, and the three calls that forward.
+# Measured on 2026-11-11 in the Ubuntu 24.04 amd64 container with the
+# pinned cbmc and kissat (PROVE_NO_CACHE=1, /usr/bin/time -v): 293
+# properties, 2 s, 0.05 GB.
+launch fast full scram 68 "fill_nondet.0:113,ct_wipe.0:113" -DCH_CPU_RUNTIME -DCH_SCRAM -DCH_TRUST_WEBPKI src/scram.c src/hkdf.c src/ct.c proof/ct_wipe_stub.c
+# pbkdf2.c, PBKDF2-HMAC-SHA-256 over a stub of SHA-256: two blocks of
+# output, three iterations, and a password on each side of the block that
+# a longer one is hashed down to. The block loop and the iteration loop
+# take their own bounds, 3 each: at the default 68 cbmc copied the PRF
+# 4,624 times and gave no formula in 7 minutes. cbmc numbers an inner
+# loop before the loop around it, so those two are
+# pbkdf2_hmac_sha256.1 and block_of.2 (cbmc --show-loops). Measured in
+# the same container: 172 properties, 32 s, 0.22 GB.
+launch fast full pbkdf2 68 "pbkdf2_hmac_sha256.1:3,block_of.2:3,ct_wipe.0:225" -DCH_CPU_RUNTIME -DCH_SCRAM -DCH_TRUST_WEBPKI src/ct.c proof/ct_wipe_stub.c
+# x509_end_point.c, the tls-server-end-point channel binding, over any 56
+# bytes, with x509_der.c's real readers and stubs of the three hashes.
+# Measured in the same container: 904 properties, 112 s, 0.20 GB.
+launch fast full x509_end_point 12 "fill_nondet.0:65,main.0:65,main.1:65" -DCH_CPU_RUNTIME -DCH_SCRAM -DCH_TRUST_WEBPKI src/x509_end_point.c src/x509_der.c src/buf.c src/ct.c
 # sha1.c, the SHA-1 a DNSSEC=on object holds for NSEC3 and DS digests of
 # type 1 (docs/decisions.md 169): init, one update of up to a block and
 # the final padding, which writes into the block directly, so a final runs

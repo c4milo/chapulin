@@ -1,0 +1,14 @@
+invariant: INV-14
+file: src/scram.c
+catches: scram_test
+reason: ch_ct_compare compares one byte fewer than it is asked to. A
+  SCRAM server then accepts a StoredKey that differs from its own in the
+  last byte, so a proof needs 248 right bits and not 256, and a compare of
+  one byte accepts every value. The scram proof holds the answer to a
+  plain compare at every length, and bin/scram_test changes one bit at
+  each position of 67 bytes.
+
+--- old
+    return ct_memeq_public(a, b, n) != 0 ? CH_OK : CH_EAUTH;
+--- new
+    return ct_memeq_public(a, b, n == 0 ? 0 : n - 1) != 0 ? CH_OK : CH_EAUTH;

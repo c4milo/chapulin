@@ -35,7 +35,7 @@ uint8_t base64_class(uint8_t c) {
     return (uint8_t)(value | other | invalid);
 }
 
-#ifdef CH_JWS
+#ifdef CH_BASE64_TEXT
 // base64_class's sum with section 5's two characters. A byte outside the
 // five ranges has no mask, so it gets BASE64_INVALID alone.
 uint8_t base64url_class(uint8_t c) {
@@ -52,16 +52,25 @@ uint8_t base64url_class(uint8_t c) {
     return (uint8_t)(value | invalid);
 }
 
-// The same five ranges over the value. Exactly one mask is all ones for a
-// v below 64, so the ORs never mix two ranges.
-uint8_t base64url_char(uint8_t v) {
-    uint32_t x = v;
+// The character of the value x in either alphabet: at62 and at63 are the
+// two characters in which the alphabets differ. Five ranges over the
+// value. Exactly one mask is all ones for an x below 64, so the ORs never
+// mix two ranges.
+static uint8_t char_of(uint32_t x, uint32_t at62, uint32_t at63) {
     uint32_t upper = range_mask(x, 0, 25);
     uint32_t lower = range_mask(x, 26, 51);
     uint32_t digit = range_mask(x, 52, 61);
-    uint32_t minus = range_mask(x, 62, 62);
-    uint32_t underscore = range_mask(x, 63, 63);
+    uint32_t last_but_one = range_mask(x, 62, 62);
+    uint32_t last = range_mask(x, 63, 63);
     return (uint8_t)((upper & (x + 'A')) | (lower & (x - 26U + 'a')) | (digit & (x - 52U + '0')) |
-                     (minus & '-') | (underscore & '_'));
+                     (last_but_one & at62) | (last & at63));
+}
+
+uint8_t base64url_char(uint8_t v) {
+    return char_of(v, '-', '_');
+}
+
+uint8_t base64_char(uint8_t v) {
+    return char_of(v, '+', '/');
 }
 #endif

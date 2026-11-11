@@ -58,7 +58,11 @@ Other targets:
   (`jws.h`, decision 221): `ch_jws_verify`, which checks a JSON Web
   Signature under RS256, ES256 or EdDSA, and base64url's encoder and
   decoder. It takes the objects `DNSSEC=on` takes, and names its
-  symbols the same way. `WIDEMUL` is a device object's
+  symbols the same way. `SCRAM=on` adds the seven parts of
+  SCRAM-SHA-256 (`scram.h`, decision 222): SHA-256, HMAC-SHA-256,
+  PBKDF2-HMAC-SHA-256, `ch_ct_compare`, base64's encoder and decoder,
+  and the tls-server-end-point channel binding. It takes the same
+  objects. `WIDEMUL` is a device object's
   variable alone. `WIDEMUL=native` defines `CH_NATIVE_WIDEMUL` in the
   object: the builder states that this part's widening multiply runs in
   constant time, and every widening product then uses the CPU's multiply

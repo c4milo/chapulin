@@ -37,7 +37,14 @@
 // mask sum over nine ranges, computed the same way for every c.
 uint8_t base64_class(uint8_t c);
 
-#ifdef CH_JWS
+// The two axes whose callers hold whole values in memory and so call
+// base64_codec.c: jws.h's base64url and scram.h's base64. The character
+// functions below serve both codecs, so either define compiles all three.
+#if defined(CH_JWS) || defined(CH_SCRAM)
+#define CH_BASE64_TEXT
+#endif
+
+#ifdef CH_BASE64_TEXT
 // The class of c in RFC 4648 section 5's alphabet, base64url, which a
 // JWS writes its parts in (RFC 7515 section 2). It is base64_class's
 // table with '-' at 62 and '_' at 63. Every other byte gets
@@ -51,6 +58,12 @@ uint8_t base64url_class(uint8_t c);
 // mask sum over five ranges, computed the same way for every v: a token's
 // bytes may be secret, so no table is indexed by one (INV-16).
 uint8_t base64url_char(uint8_t v);
+
+// The character of the 6-bit value v in RFC 4648 section 4's alphabet,
+// the inverse of base64_class on the 64 characters. Requires v below 64.
+// The same five ranges as base64url_char, with '+' at 62 and '/' at 63: a
+// SCRAM proof's bytes are derived from a password.
+uint8_t base64_char(uint8_t v);
 #endif
 
 #endif

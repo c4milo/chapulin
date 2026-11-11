@@ -1,0 +1,14 @@
+invariant: INV-14
+file: src/pbkdf2.c
+catches: scram_test
+reason: pbkdf2_hmac_sha256 counts its blocks from 0. RFC 8018 section 5.2
+  counts them from 1, so every key the call derives is another key: a
+  SCRAM verifier made here matches no other implementation's, and a login
+  against a verifier that PostgreSQL made fails. The call still returns
+  CH_OK and fills its output. bin/scram_test holds the key to RFC 7914's
+  vectors and to RFC 7677's exchange.
+
+--- old
+    uint32_t block_index = 1;
+--- new
+    uint32_t block_index = 0;

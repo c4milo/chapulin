@@ -497,14 +497,17 @@ rules:
       and the key of a provisioned certificate, and a P-256 private key.
       It returns no verdict either. Its one caller is pem_files.c, and no
       library source calls the calls of pem_files.c (docs/decisions.md
-      131). The webpki_*.c files read it for the TRUST=webpki chain
+      131). x509_end_point.c reads a certificate's signatureAlgorithm for
+      the tls-server-end-point value of a SCRAM=on object, and returns a
+      hash and no verdict (docs/decisions.md 222). The webpki_*.c files
+      read it for the TRUST=webpki chain
       verifier docs/webpki.md describes, which only that object packages.
       A call anywhere else is a parser growing. Tripwire grade: this
       catches honest drift by name, not a reintroduction under another
       name.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, p256.c, p384.c, x509.c,
-                x509_der.c, x509_ca.c, x509_pem.c, pem_files.c, webpki.h, webpki_time.c,
+                x509_der.c, x509_ca.c, x509_pem.c, x509_end_point.c, pem_files.c, webpki.h, webpki_time.c,
                 webpki_name.c, webpki_spki.c, webpki_sigalg.c, webpki_ext.c, webpki_cert.c]
     patterns:
       - pattern: $F(...)

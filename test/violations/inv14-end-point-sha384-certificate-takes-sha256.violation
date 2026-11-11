@@ -1,0 +1,16 @@
+invariant: INV-14
+file: src/x509_end_point.c
+catches: scram_test
+reason: ch_tls_server_end_point hashes a sha384WithRSAEncryption
+  certificate with SHA-256. RFC 5929 section 4.1 takes the hash of the
+  certificate's signature algorithm, and SHA-256 only in place of MD5 and
+  SHA-1. The value is then 32 bytes that no peer computes, so
+  SCRAM-SHA-256-PLUS fails against every server whose certificate a
+  SHA-384 signature covers, and the call still returns CH_OK.
+  bin/scram_test holds the value to hashlib's for a certificate OpenSSL
+  signed with each algorithm.
+
+--- old
+    ROW(sha256_with_rsa, SHA256_LEN), ROW(sha384_with_rsa, SHA384_LEN),
+--- new
+    ROW(sha256_with_rsa, SHA256_LEN), ROW(sha384_with_rsa, SHA256_LEN),
