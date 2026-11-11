@@ -41,6 +41,27 @@ What moved otherwise:
   18% in each build: a second run on the same tree measured 5.26 µs
   where this one measured 5.44 (docs/decisions.md 207).
 
+## The M1 Pro's run of cffe66b2
+
+The M1 Pro's CSVs now hold a run of 2026-11-11 on cffe66b2, against the
+pinned OpenSSL 3.6.4, with every pass started below a 1-minute load of
+4.2. The tree adds docs/decisions.md 208 to 219 to the M1 Pro's run of
+49796323.
+
+What moved by design, as ratios to OpenSSL:
+
+- **RSA PKCS#1 v1.5 verification**: 1.20 to 0.95 at 2048 bits and 1.15
+  to 0.93 at 3072 (decisions 208 and 209).
+- **P-256**: key generation 1.03 to 0.90, shared secret 1.16 to 0.87,
+  signature 0.83 to 0.75 and verification 0.90 to 0.70 (decision 215).
+- **ML-KEM-768 encapsulation**: 0.94 to 0.85.
+
+SHA3-256 over 16 KiB stays at 1.01, the one M1 Pro row still behind
+OpenSSL; its session runs `sha3_hw.c` on the SHA-3 instructions, which
+decisions 216 to 219 do not change. Decision 219's wipe runs only in
+sessions without `CH_CPU_CONSTANT_TIME_SHA3`, so it moves no row of
+this column, which runs under `0xe7`.
+
 ## The run of ddff5bce
 
 The four x86-64 CSVs now hold one run of 2026-11-10 and 11 on ddff5bce

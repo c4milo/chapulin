@@ -466,10 +466,10 @@ core has no wider multiply to run a faster field on.
 A host object holds a second field for a session whose caller sets
 `CH_CPU_CONSTANT_TIME_MULTIPLY` (decisions 52 and 89): five 51-bit words
 whose products run on the 64x64->128 multiply. On an Apple M1 Pro a
-scalar multiplication takes 28.5 µs on that field against 913 µs on the
+scalar multiplication takes 27.7 µs on that field against 877 µs on the
 16-word one over the decomposition, and the client side of a pinned
-RSA-3072 handshake takes 88.7 µs under the value that machine's line
-states below against 1.91 ms under `CH_CPU_PROBED` alone
+RSA-3072 handshake takes 80.4 µs under the value that machine's line
+states below against 1.84 ms under `CH_CPU_PROBED` alone
 ([`bench/results-primitives-darwin-arm64-clang.csv`](../bench/results-primitives-darwin-arm64-clang.csv),
 [`bench/notes-primitives.md`](../bench/notes-primitives.md)).
 
@@ -491,45 +491,45 @@ Zig 0.16's clang 21, which `build.zig` compiles the object with for a Zig projec
 
 | one operation | M1 Pro, chapulin | M1 Pro, OpenSSL | ratio | x86-64 gcc, chapulin | x86-64 gcc, OpenSSL | ratio | x86-64 clang, chapulin | x86-64 clang, OpenSSL | ratio | x86-64 AVX-512 gcc, chapulin | x86-64 AVX-512 gcc, OpenSSL | ratio | x86-64 AVX-512 clang, chapulin | x86-64 AVX-512 clang, OpenSSL | ratio |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| SHA-256, 16 KiB | 7.06 µs | 7.09 µs | 1.00 | 10.4 µs | 10.4 µs | 0.99 | 10.4 µs | 10.4 µs | 0.99 | 11.3 µs | 11.4 µs | 1.00 | 11.2 µs | 11.3 µs | 1.00 |
-| SHA-256, 64 bytes | 73.4 ns | 149 ns | 0.49 | 114 ns | 193 ns | 0.59 | 126 ns | 192 ns | 0.66 | 128 ns | 189 ns | 0.68 | 129 ns | 186 ns | 0.69 |
-| SHA-384, 16 KiB | 12.1 µs | 12.1 µs | 1.00 | 23.1 µs | 21.9 µs | **1.05** | 22.9 µs | 21.9 µs | **1.04** | 27.7 µs | 25.9 µs | **1.07** | 26.8 µs | 25.7 µs | **1.04** |
-| SHA-384, 64 bytes | 131 ns | 188 ns | 0.70 | 226 ns | 332 ns | 0.68 | 229 ns | 333 ns | 0.69 | 265 ns | 352 ns | 0.75 | 244 ns | 350 ns | 0.70 |
-| SHA3-256, 16 KiB | 19.3 µs | 19.1 µs | **1.01** | 39.9 µs | 38.6 µs | **1.03** | 40.3 µs | 38.6 µs | **1.04** | 35.2 µs | 37.9 µs | 0.93 | 35.7 µs | 37.7 µs | 0.94 |
-| SHA3-256, 64 bytes | 171 ns | 346 ns | 0.50 | 361 ns | 489 ns | 0.74 | 359 ns | 490 ns | 0.73 | 300 ns | 471 ns | 0.64 | 305 ns | 466 ns | 0.65 |
-| X25519 key generation | 10.3 µs | 28.0 µs | 0.37 | 14.8 µs | 33.9 µs | 0.44 | 14.1 µs | 33.9 µs | 0.42 | 13.8 µs | 32.5 µs | 0.42 | 12.7 µs | 32.1 µs | 0.40 |
-| X25519 shared secret | 28.5 µs | 28.9 µs | 0.99 | 34.5 µs | 37.1 µs | 0.93 | 33.6 µs | 37.1 µs | 0.91 | 34.6 µs | 35.9 µs | 0.96 | 32.5 µs | 35.6 µs | 0.91 |
-| P-256 key generation | 10.1 µs | 9.75 µs | **1.03** | 13.3 µs | 12.3 µs | **1.09** | 11.9 µs | 12.2 µs | 0.97 | 13.4 µs | 12.7 µs | **1.06** | 12.2 µs | 12.6 µs | 0.97 |
-| P-256 shared secret | 48.3 µs | 41.6 µs | **1.16** | 57.1 µs | 51.7 µs | **1.10** | 54.1 µs | 51.6 µs | **1.05** | 56.2 µs | 59.0 µs | 0.95 | 53.3 µs | 58.9 µs | 0.90 |
-| ECDSA P-256 sign | 15.1 µs | 18.2 µs | 0.83 | 21.0 µs | 22.1 µs | 0.95 | 19.1 µs | 22.1 µs | 0.86 | 21.5 µs | 23.8 µs | 0.90 | 19.5 µs | 23.7 µs | 0.82 |
-| ECDSA P-256 verify | 49.7 µs | 55.1 µs | 0.90 | 58.4 µs | 67.7 µs | 0.86 | 54.7 µs | 67.8 µs | 0.81 | 57.9 µs | 76.4 µs | 0.76 | 55.1 µs | 76.0 µs | 0.73 |
-| ECDSA P-384 verify | 274 µs | 484 µs | 0.57 | 463 µs | 734 µs | 0.63 | 365 µs | 729 µs | 0.50 | 468 µs | 618 µs | 0.76 | 320 µs | 617 µs | 0.52 |
-| RSA-2048 PSS sign | 720 µs | 559 µs, PKCS#1 v1.5 sign | — | 1.02 ms | 661 µs, PKCS#1 v1.5 sign | — | 951 µs | 661 µs, PKCS#1 v1.5 sign | — | 342 µs | 344 µs, PKCS#1 v1.5 sign | — | 320 µs | 337 µs, PKCS#1 v1.5 sign | — |
-| RSA-2048 PSS verify | 20.9 µs | 14.5 µs, PKCS#1 v1.5 verify | — | 22.8 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 21.5 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 12.4 µs | 19.2 µs, PKCS#1 v1.5 verify | — | 12.0 µs | 19.0 µs, PKCS#1 v1.5 verify | — |
-| RSA-2048 PKCS#1 v1.5 verify | 17.3 µs | 14.5 µs | **1.20** | 19.5 µs | 18.9 µs | **1.03** | 17.9 µs | 18.9 µs | 0.95 | 8.88 µs | 19.2 µs | 0.46 | 8.64 µs | 19.0 µs | 0.45 |
-| RSA-3072 PSS sign | 2.08 ms | 1.64 ms, PKCS#1 v1.5 sign | — | 2.93 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 2.77 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 791 µs | 929 µs, PKCS#1 v1.5 sign | — | 757 µs | 905 µs, PKCS#1 v1.5 sign | — |
-| RSA-3072 PSS verify | 39.7 µs | 30.8 µs, PKCS#1 v1.5 verify | — | 41.1 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 39.1 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 20.2 µs | 41.4 µs, PKCS#1 v1.5 verify | — | 20.1 µs | 41.0 µs, PKCS#1 v1.5 verify | — |
-| RSA-3072 PKCS#1 v1.5 verify | 35.3 µs | 30.8 µs | **1.15** | 37.0 µs | 40.1 µs | 0.92 | 34.7 µs | 40.1 µs | 0.87 | 15.9 µs | 41.4 µs | 0.38 | 16.4 µs | 41.0 µs | 0.40 |
-| ML-KEM-768 key generation | 10.5 µs | 21.8 µs | 0.48 | 19.0 µs | 36.3 µs | 0.52 | 16.5 µs | 36.3 µs | 0.45 | 21.3 µs | 37.4 µs | 0.57 | 17.2 µs | 37.2 µs | 0.46 |
-| ML-KEM-768 encapsulation | 12.2 µs | 12.9 µs | 0.94 | 21.6 µs | 21.9 µs | 0.99 | 18.2 µs | 21.8 µs | 0.84 | 23.2 µs | 21.2 µs | **1.10** | 19.3 µs | 20.9 µs | 0.93 |
-| ML-KEM-768 decapsulation | 13.4 µs | 18.6 µs | 0.72 | 24.9 µs | 33.3 µs | 0.75 | 20.2 µs | 33.3 µs | 0.61 | 26.7 µs | 33.0 µs | 0.81 | 21.4 µs | 33.2 µs | 0.65 |
-| ML-DSA-87 key generation | 131 µs | 172 µs | 0.76 | 162 µs | 276 µs | 0.59 | 190 µs | 277 µs | 0.69 | 175 µs | 255 µs | 0.69 | 206 µs | 255 µs | 0.81 |
-| ML-DSA-87 sign | 408 µs | 702 µs | 0.58 | 682 µs | 1.22 ms | 0.56 | 621 µs | 1.21 ms | 0.51 | 795 µs | 1.05 ms | 0.76 | 741 µs | 1.02 ms | 0.72 |
-| ML-DSA-87 verify | 61.6 µs | 180 µs | 0.34 | 100 µs | 300 µs | 0.33 | 89.6 µs | 300 µs | 0.30 | 113 µs | 269 µs | 0.42 | 103 µs | 267 µs | 0.38 |
-| AES-128-GCM, the key set and one 16 KiB record sealed | 2.09 µs | 2.11 µs | 0.99 | 2.76 µs | 4.05 µs | 0.68 | 2.49 µs | 4.06 µs | 0.61 | 1.19 µs | 1.21 µs | 0.98 | 1.21 µs | 1.22 µs | 0.99 |
-| AES-128-GCM, the key set and one 16 KiB record opened | 2.06 µs | 2.13 µs | 0.96 | 2.77 µs | 4.13 µs | 0.67 | 2.49 µs | 4.12 µs | 0.60 | 1.23 µs | 1.26 µs | 0.98 | 1.20 µs | 1.29 µs | 0.93 |
-| AES-256-GCM, the key set and one 16 KiB record sealed | 2.44 µs | 2.53 µs | 0.96 | 3.12 µs | 4.37 µs | 0.71 | 2.80 µs | 4.36 µs | 0.64 | 1.48 µs | 1.45 µs | **1.02** | 1.49 µs | 1.50 µs | 1.00 |
-| AES-256-GCM, the key set and one 16 KiB record opened | 2.42 µs | 2.53 µs | 0.96 | 3.10 µs | 4.43 µs | 0.70 | 2.81 µs | 4.43 µs | 0.63 | 1.46 µs | 1.47 µs | 0.99 | 1.49 µs | 1.50 µs | 1.00 |
-| ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag | 9.22 µs | 9.34 µs | 0.99 | 6.43 µs | 7.47 µs | 0.86 | 6.63 µs | 7.46 µs | 0.89 | 5.16 µs | 4.75 µs | **1.09** | 4.90 µs | 4.75 µs | **1.03** |
-| ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag | 9.23 µs | 9.41 µs | 0.98 | 6.40 µs | 7.49 µs | 0.85 | 6.60 µs | 7.48 µs | 0.88 | 4.81 µs | 4.75 µs | **1.01** | 4.70 µs | 4.78 µs | 0.98 |
+| SHA-256, 16 KiB | 6.85 µs | 6.92 µs | 0.99 | 10.4 µs | 10.4 µs | 0.99 | 10.4 µs | 10.4 µs | 0.99 | 11.3 µs | 11.4 µs | 1.00 | 11.2 µs | 11.3 µs | 1.00 |
+| SHA-256, 64 bytes | 71.1 ns | 146 ns | 0.49 | 114 ns | 193 ns | 0.59 | 126 ns | 192 ns | 0.66 | 128 ns | 189 ns | 0.68 | 129 ns | 186 ns | 0.69 |
+| SHA-384, 16 KiB | 11.7 µs | 11.8 µs | 0.99 | 23.1 µs | 21.9 µs | **1.05** | 22.9 µs | 21.9 µs | **1.04** | 27.7 µs | 25.9 µs | **1.07** | 26.8 µs | 25.7 µs | **1.04** |
+| SHA-384, 64 bytes | 127 ns | 182 ns | 0.69 | 226 ns | 332 ns | 0.68 | 229 ns | 333 ns | 0.69 | 265 ns | 352 ns | 0.75 | 244 ns | 350 ns | 0.70 |
+| SHA3-256, 16 KiB | 18.8 µs | 18.7 µs | **1.01** | 39.9 µs | 38.6 µs | **1.03** | 40.3 µs | 38.6 µs | **1.04** | 35.2 µs | 37.9 µs | 0.93 | 35.7 µs | 37.7 µs | 0.94 |
+| SHA3-256, 64 bytes | 166 ns | 340 ns | 0.49 | 361 ns | 489 ns | 0.74 | 359 ns | 490 ns | 0.73 | 300 ns | 471 ns | 0.64 | 305 ns | 466 ns | 0.65 |
+| X25519 key generation | 9.94 µs | 27.1 µs | 0.37 | 14.8 µs | 33.9 µs | 0.44 | 14.1 µs | 33.9 µs | 0.42 | 13.8 µs | 32.5 µs | 0.42 | 12.7 µs | 32.1 µs | 0.40 |
+| X25519 shared secret | 27.7 µs | 28.1 µs | 0.98 | 34.5 µs | 37.1 µs | 0.93 | 33.6 µs | 37.1 µs | 0.91 | 34.6 µs | 35.9 µs | 0.96 | 32.5 µs | 35.6 µs | 0.91 |
+| P-256 key generation | 8.45 µs | 9.42 µs | 0.90 | 13.3 µs | 12.3 µs | **1.09** | 11.9 µs | 12.2 µs | 0.97 | 13.4 µs | 12.7 µs | **1.06** | 12.2 µs | 12.6 µs | 0.97 |
+| P-256 shared secret | 35.7 µs | 40.8 µs | 0.87 | 57.1 µs | 51.7 µs | **1.10** | 54.1 µs | 51.6 µs | **1.05** | 56.2 µs | 59.0 µs | 0.95 | 53.3 µs | 58.9 µs | 0.90 |
+| ECDSA P-256 sign | 13.3 µs | 17.7 µs | 0.75 | 21.0 µs | 22.1 µs | 0.95 | 19.1 µs | 22.1 µs | 0.86 | 21.5 µs | 23.8 µs | 0.90 | 19.5 µs | 23.7 µs | 0.82 |
+| ECDSA P-256 verify | 38.0 µs | 54.1 µs | 0.70 | 58.4 µs | 67.7 µs | 0.86 | 54.7 µs | 67.8 µs | 0.81 | 57.9 µs | 76.4 µs | 0.76 | 55.1 µs | 76.0 µs | 0.73 |
+| ECDSA P-384 verify | 267 µs | 477 µs | 0.56 | 463 µs | 734 µs | 0.63 | 365 µs | 729 µs | 0.50 | 468 µs | 618 µs | 0.76 | 320 µs | 617 µs | 0.52 |
+| RSA-2048 PSS sign | 652 µs | 544 µs, PKCS#1 v1.5 sign | — | 1.02 ms | 661 µs, PKCS#1 v1.5 sign | — | 951 µs | 661 µs, PKCS#1 v1.5 sign | — | 342 µs | 344 µs, PKCS#1 v1.5 sign | — | 320 µs | 337 µs, PKCS#1 v1.5 sign | — |
+| RSA-2048 PSS verify | 17.1 µs | 14.2 µs, PKCS#1 v1.5 verify | — | 22.8 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 21.5 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 12.4 µs | 19.2 µs, PKCS#1 v1.5 verify | — | 12.0 µs | 19.0 µs, PKCS#1 v1.5 verify | — |
+| RSA-2048 PKCS#1 v1.5 verify | 13.5 µs | 14.2 µs | 0.95 | 19.5 µs | 18.9 µs | **1.03** | 17.9 µs | 18.9 µs | 0.95 | 8.88 µs | 19.2 µs | 0.46 | 8.64 µs | 19.0 µs | 0.45 |
+| RSA-3072 PSS sign | 1.92 ms | 1.59 ms, PKCS#1 v1.5 sign | — | 2.93 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 2.77 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 791 µs | 929 µs, PKCS#1 v1.5 sign | — | 757 µs | 905 µs, PKCS#1 v1.5 sign | — |
+| RSA-3072 PSS verify | 32.8 µs | 30.3 µs, PKCS#1 v1.5 verify | — | 41.1 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 39.1 µs | 40.1 µs, PKCS#1 v1.5 verify | — | 20.2 µs | 41.4 µs, PKCS#1 v1.5 verify | — | 20.1 µs | 41.0 µs, PKCS#1 v1.5 verify | — |
+| RSA-3072 PKCS#1 v1.5 verify | 28.0 µs | 30.3 µs | 0.93 | 37.0 µs | 40.1 µs | 0.92 | 34.7 µs | 40.1 µs | 0.87 | 15.9 µs | 41.4 µs | 0.38 | 16.4 µs | 41.0 µs | 0.40 |
+| ML-KEM-768 key generation | 9.51 µs | 21.3 µs | 0.45 | 19.0 µs | 36.3 µs | 0.52 | 16.5 µs | 36.3 µs | 0.45 | 21.3 µs | 37.4 µs | 0.57 | 17.2 µs | 37.2 µs | 0.46 |
+| ML-KEM-768 encapsulation | 10.7 µs | 12.7 µs | 0.85 | 21.6 µs | 21.9 µs | 0.99 | 18.2 µs | 21.8 µs | 0.84 | 23.2 µs | 21.2 µs | **1.10** | 19.3 µs | 20.9 µs | 0.93 |
+| ML-KEM-768 decapsulation | 11.8 µs | 18.1 µs | 0.65 | 24.9 µs | 33.3 µs | 0.75 | 20.2 µs | 33.3 µs | 0.61 | 26.7 µs | 33.0 µs | 0.81 | 21.4 µs | 33.2 µs | 0.65 |
+| ML-DSA-87 key generation | 126 µs | 169 µs | 0.75 | 162 µs | 276 µs | 0.59 | 190 µs | 277 µs | 0.69 | 175 µs | 255 µs | 0.69 | 206 µs | 255 µs | 0.81 |
+| ML-DSA-87 sign | 396 µs | 684 µs | 0.58 | 682 µs | 1.22 ms | 0.56 | 621 µs | 1.21 ms | 0.51 | 795 µs | 1.05 ms | 0.76 | 741 µs | 1.02 ms | 0.72 |
+| ML-DSA-87 verify | 59.8 µs | 176 µs | 0.34 | 100 µs | 300 µs | 0.33 | 89.6 µs | 300 µs | 0.30 | 113 µs | 269 µs | 0.42 | 103 µs | 267 µs | 0.38 |
+| AES-128-GCM, the key set and one 16 KiB record sealed | 2.03 µs | 2.05 µs | 0.99 | 2.76 µs | 4.05 µs | 0.68 | 2.49 µs | 4.06 µs | 0.61 | 1.19 µs | 1.21 µs | 0.98 | 1.21 µs | 1.22 µs | 0.99 |
+| AES-128-GCM, the key set and one 16 KiB record opened | 2.00 µs | 2.08 µs | 0.96 | 2.77 µs | 4.13 µs | 0.67 | 2.49 µs | 4.12 µs | 0.60 | 1.23 µs | 1.26 µs | 0.98 | 1.20 µs | 1.29 µs | 0.93 |
+| AES-256-GCM, the key set and one 16 KiB record sealed | 2.37 µs | 2.46 µs | 0.96 | 3.12 µs | 4.37 µs | 0.71 | 2.80 µs | 4.36 µs | 0.64 | 1.48 µs | 1.45 µs | **1.02** | 1.49 µs | 1.50 µs | 1.00 |
+| AES-256-GCM, the key set and one 16 KiB record opened | 2.35 µs | 2.45 µs | 0.96 | 3.10 µs | 4.43 µs | 0.70 | 2.81 µs | 4.43 µs | 0.63 | 1.46 µs | 1.47 µs | 0.99 | 1.49 µs | 1.50 µs | 1.00 |
+| ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag | 8.94 µs | 9.17 µs | 0.97 | 6.43 µs | 7.47 µs | 0.86 | 6.63 µs | 7.46 µs | 0.89 | 5.16 µs | 4.75 µs | **1.09** | 4.90 µs | 4.75 µs | **1.03** |
+| ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag | 8.95 µs | 9.16 µs | 0.98 | 6.40 µs | 7.49 µs | 0.85 | 6.60 µs | 7.48 µs | 0.88 | 4.81 µs | 4.75 µs | **1.01** | 4.70 µs | 4.78 µs | 0.98 |
 
 The machines, as the CSV headers state them:
 
 - **M1 Pro**: Apple M1 Pro, Darwin 25.6.0, Apple clang version 21.0.0 (clang-2100.3.34.2), OpenSSL
   3.6.4, `ch_cfg.cpu 0xe7`, and `0x83` for the AES-GCM rows and `0x7` for the ChaCha20-Poly1305
   rows, as `CH_CPU_CONSTANT_TIME_SHA3` runs AES-GCM's passes with EOR3 (decision 158) and no other
-  hash bit changes a record; one-minute load average 3.85 before the primitives' run and 4.17 after
-  it, and 4.04 and 3.79 around the AEAD rows' run
+  hash bit changes a record; one-minute load average 3.03 before the primitives' run and 3.06 after
+  it, and 3.22 and 2.73 around the AEAD rows' run
 - **x86-64 gcc**: AMD EPYC 7763 64-Core Processor, Linux 7.0.0-1017-azure, gcc (Ubuntu
   13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.4, `ch_cfg.cpu 0xc3f`, and `0x1f` for the AEAD rows,
   which no hash bit changes; one-minute load average 1.23 before the primitives' run and 1.10 after
@@ -971,71 +971,71 @@ reading comes from):
 
 | AES-128-GCM, one 16 KiB record, µs | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
 | --- | --- | --- | --- |
-| `rec_seal` | 2.5 | 3.1 | 3.2 |
-| `rec_seal` without its AEAD | 0.3 (10%) | 0.6 (19%) | 0.7 (21%) |
+| `rec_seal` | 2.4 | 3.1 | 3.2 |
+| `rec_seal` without its AEAD | 0.2 (10%) | 0.6 (19%) | 0.7 (21%) |
 | the AEAD under a key expanded for the record, as `seal_aes_gcm` runs it | 2.2 | 2.8 | 2.8 |
-| the AEAD's seal, `gcm_traffic_seal` | 2.2 (89%) | 2.6 (83%) | 2.5 (79%) |
+| the AEAD's seal, `gcm_traffic_seal` | 2.1 (89%) | 2.6 (83%) | 2.5 (79%) |
 | counter mode and GHASH in one loop, the seal's whole passes | — | 2.5 (80%) | 2.5 (77%) |
 | counter mode alone, in place | 1.6 | 1.7 | 1.7 |
-| GHASH alone, over the ciphertext | 1.1 | 1.1 | 1.4 |
+| GHASH alone, over the ciphertext | 1.0 | 1.1 | 1.4 |
 | `rec_open` | 2.2 | 2.8 | 2.8 |
 | the AEAD under a key expanded for the record, as `open_aes_gcm` runs it | 2.2 | 2.8 | 2.8 |
-| the AEAD's open, `gcm_traffic_open` | 2.2 | 2.6 | 2.5 |
+| the AEAD's open, `gcm_traffic_open` | 2.1 | 2.6 | 2.5 |
 | GHASH and counter mode in one loop, the open's whole passes | — | 2.5 | 2.4 |
-| OpenSSL, the key set and one record sealed | 2.1 | — | — |
+| OpenSSL, the key set and one record sealed | 2.0 | — | — |
 | OpenSSL, the key set and one record opened | 2.1 | — | — |
 | OpenSSL, one record sealed under a key set before | — | 2.8 | 2.8 |
 | OpenSSL, one record opened under a key set before | — | 2.9 | 2.9 |
-| Zig `std.crypto`, one record sealed | 4.4 | — | — |
+| Zig `std.crypto`, one record sealed | 4.3 | — | — |
 
 | AES-256-GCM, one 16 KiB record, µs | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
 | --- | --- | --- | --- |
-| `rec_seal` | 2.8 | 3.6 | 3.7 |
-| the AEAD under a key expanded for the record, as `seal_aes_gcm` runs it | 2.6 | 3.2 | 3.3 |
-| the AEAD's seal, `gcm_traffic_seal` | 2.6 (91%) | 3.0 (82%) | 3.0 (80%) |
+| `rec_seal` | 2.7 | 3.6 | 3.7 |
+| the AEAD under a key expanded for the record, as `seal_aes_gcm` runs it | 2.5 | 3.2 | 3.3 |
+| the AEAD's seal, `gcm_traffic_seal` | 2.5 (91%) | 3.0 (82%) | 3.0 (80%) |
 | counter mode and GHASH in one loop, the seal's whole passes | — | 2.9 (80%) | 3.0 (80%) |
-| `rec_open` | 2.6 | 3.3 | 3.3 |
-| the AEAD under a key expanded for the record, as `open_aes_gcm` runs it | 2.6 | 3.3 | 3.3 |
-| the AEAD's open, `gcm_traffic_open` | 2.6 | 3.0 | 3.0 |
+| `rec_open` | 2.5 | 3.3 | 3.3 |
+| the AEAD under a key expanded for the record, as `open_aes_gcm` runs it | 2.5 | 3.3 | 3.3 |
+| the AEAD's open, `gcm_traffic_open` | 2.5 | 3.0 | 3.0 |
 | OpenSSL, the key set and one record sealed | 2.5 | — | — |
-| OpenSSL, the key set and one record opened | 2.5 | — | — |
+| OpenSSL, the key set and one record opened | 2.4 | — | — |
 | OpenSSL, one record sealed under a key set before | — | 3.1 | 3.1 |
 | OpenSSL, one record opened under a key set before | — | 3.2 | 3.1 |
-| Zig `std.crypto`, one record sealed | 5.4 | — | — |
+| Zig `std.crypto`, one record sealed | 5.3 | — | — |
 
 | ChaCha20-Poly1305, one 16 KiB record, µs | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
 | --- | --- | --- | --- |
-| `rec_seal`, `ch_cfg.cpu 0x3` | 40.7 | 37.1 | 54.9 |
+| `rec_seal`, `ch_cfg.cpu 0x3` | 39.5 | 37.1 | 54.9 |
 | `rec_seal` without its AEAD | 0.2 (1%) | 0.4 (1%) | 0.4 (1%) |
-| ChaCha20 in place | 7.1 (17%) | 8.1 (22%) | 9.0 (16%) |
-| Poly1305 over the ciphertext, on the 16x16 decomposition | 33.0 (81%) | 28.1 (76%) | 45.6 (83%) |
-| `rec_open`, `ch_cfg.cpu 0x3` | 40.4 | 36.7 | 54.6 |
-| `rec_seal`, `ch_cfg.cpu 0x7` | 9.6 | 11.6 | 12.3 |
-| the AEAD's seal, `aead_seal_cpu`, `ch_cfg.cpu 0x7` | 9.4 (97%) | 11.3 (97%) | 11.8 (97%) |
-| the seal less its tag's fixed work, `ch_cfg.cpu 0x7` | 9.2 | 11.1 | 11.7 |
-| ChaCha20 in place, `ch_cfg.cpu 0x7` | 7.1 (74%) | 8.2 (70%) | 8.9 (73%) |
-| Poly1305 over the ciphertext, the vector path | 2.1 (22%) | 2.9 (25%) | 2.8 (22%) |
-| `rec_open`, `ch_cfg.cpu 0x7` | 9.4 | 11.2 | 11.9 |
-| the AEAD's open, `aead_open_cpu`, `ch_cfg.cpu 0x7` | 9.4 | 11.2 | 11.9 |
-| the open less its tag's fixed work, `ch_cfg.cpu 0x7` | 9.2 | 11.0 | 11.7 |
+| ChaCha20 in place | 6.9 (17%) | 8.1 (22%) | 9.0 (16%) |
+| Poly1305 over the ciphertext, on the 16x16 decomposition | 32.0 (81%) | 28.1 (76%) | 45.6 (83%) |
+| `rec_open`, `ch_cfg.cpu 0x3` | 39.2 | 36.7 | 54.6 |
+| `rec_seal`, `ch_cfg.cpu 0x7` | 9.3 | 11.6 | 12.3 |
+| the AEAD's seal, `aead_seal_cpu`, `ch_cfg.cpu 0x7` | 9.1 (97%) | 11.3 (97%) | 11.8 (97%) |
+| the seal less its tag's fixed work, `ch_cfg.cpu 0x7` | 8.9 | 11.1 | 11.7 |
+| ChaCha20 in place, `ch_cfg.cpu 0x7` | 6.9 (74%) | 8.2 (70%) | 8.9 (73%) |
+| Poly1305 over the ciphertext, the vector path | 2.0 (22%) | 2.9 (25%) | 2.8 (22%) |
+| `rec_open`, `ch_cfg.cpu 0x7` | 9.1 | 11.2 | 11.9 |
+| the AEAD's open, `aead_open_cpu`, `ch_cfg.cpu 0x7` | 9.1 | 11.2 | 11.9 |
+| the open less its tag's fixed work, `ch_cfg.cpu 0x7` | 9.0 | 11.0 | 11.7 |
 | OpenSSL, one record sealed | — | 10.0 | 10.0 |
 | OpenSSL, one record opened | — | 10.0 | 10.0 |
-| OpenSSL, ChaCha20 and Poly1305 over the record's bytes, sealing | 9.3 | — | — |
-| OpenSSL, ChaCha20 and Poly1305 over the record's bytes, opening | 9.4 | — | — |
-| Zig `std.crypto`, one record sealed | 38.0 | — | — |
+| OpenSSL, ChaCha20 and Poly1305 over the record's bytes, sealing | 9.2 | — | — |
+| OpenSSL, ChaCha20 and Poly1305 over the record's bytes, opening | 9.2 | — | — |
+| Zig `std.crypto`, one record sealed | 36.9 | — | — |
 
 | Work a record pays whatever its size, and a 1 KiB record, ns | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
 | --- | --- | --- | --- |
-| AES-128 key expansion, `aes_traffic_key_init` | 11 | 205 | 283 |
+| AES-128 key expansion, `aes_traffic_key_init` | 10 | 205 | 283 |
 | AES-256 key expansion | 11 | 273 | 330 |
-| the wipe of the expanded key | 15 | 4 | 5 |
-| the GCM tag's fixed work | 44 | 56 | 55 |
-| the Poly1305 tag's fixed work, on the 16x16 decomposition | 196 | 176 | 252 |
-| the Poly1305 tag's fixed work, `ch_cfg.cpu 0x7` | 160 | 146 | 148 |
-| AES-128-GCM `rec_seal`, 1 KiB | 247 | 491 | 584 |
-| `rec_seal` without its AEAD, 1 KiB | 34 (14%) | 224 (46%) | 314 (54%) |
+| the wipe of the expanded key | 14 | 4 | 5 |
+| the GCM tag's fixed work | 42 | 56 | 55 |
+| the Poly1305 tag's fixed work, on the 16x16 decomposition | 190 | 176 | 252 |
+| the Poly1305 tag's fixed work, `ch_cfg.cpu 0x7` | 156 | 146 | 148 |
+| AES-128-GCM `rec_seal`, 1 KiB | 239 | 491 | 584 |
+| `rec_seal` without its AEAD, 1 KiB | 33 (14%) | 224 (46%) | 314 (54%) |
 
-The stages add up: every whole is within 17% of the sum of its parts. Every gap of 5% or more is
+The stages add up: every whole is within 16% of the sum of its parts. Every gap of 5% or more is
 at 16 bytes or 1 KiB. On the M1 the parts of a tag, GCM's or Poly1305's, sum to as much as 16% less
 than the tag, and the parts of a 16-byte ChaCha20-Poly1305 AEAD to as much as 9% less. On the Linux
 VM the parts of an AES-GCM AEAD sum to as much as 8% less than the AEAD, and the parts of the GCM
