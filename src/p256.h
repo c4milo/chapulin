@@ -47,10 +47,11 @@ int p256_ecdsa_verify_cpu(uint32_t cpu, const uint8_t pub[64], const uint8_t msg
 #define P256_ECDSA_VERIFY_CPU(cpu, ...) p256_ecdsa_verify(__VA_ARGS__)
 #endif
 
-#ifdef CH_DNSSEC
+#if defined(CH_DNSSEC) || defined(CH_JWS)
 // p256_ecdsa_verify over the signature a DNSSEC RRSIG carries for
-// algorithm 13: r then s, 32 big-endian bytes each, with no DER (RFC 6605
-// section 4). Returns 1 for a valid signature and 0 for anything else.
+// algorithm 13, and a JWS carries for ES256: r then s, 32 big-endian
+// bytes each, with no DER (RFC 6605 section 4, RFC 7518 section 3.4).
+// Returns 1 for a valid signature and 0 for anything else.
 int p256_ecdsa_verify_raw(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t sig[64]);
 #endif
 

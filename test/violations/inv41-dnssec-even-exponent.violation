@@ -7,6 +7,6 @@ reason: verify_rsa hands the RSA check an even exponent, which the RSA
   of at least 3, and fails on this edit.
 
 --- old
-    if (!read_rsa_key(key, key_len, &k) || k.e < 3 || (k.e & 1) == 0 ||
+    if (!rsa_key_field_read(key, key_len, &k) || k.e < 3 || (k.e & 1) == 0 ||
 --- new
-    if (!read_rsa_key(key, key_len, &k) || k.e < 3 ||
+    if (!rsa_key_field_read(key, key_len, &k) || k.e < 3 ||

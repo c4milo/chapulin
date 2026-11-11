@@ -1,0 +1,15 @@
+invariant: INV-14
+file: src/jws.c
+catches: jws_test
+reason: verify_rs256 takes a modulus below 256 bytes. RFC 7518 section 3.3
+  requires a key of 2048 bits or more for RS256, and jws.h states the
+  floor so that no caller has to repeat it. The check then accepts a token
+  under a 2040-bit key. Every other token verifies as before, so only a
+  key one byte under the floor shows it: test/gen_jws_vectors.py signs a
+  token under one with OpenSSL, and bin/jws_test requires CH_EINVAL for
+  it.
+
+--- old
+        k.n_len < CH_JWS_RSA_MODULUS_LEN_MIN || k.n_len > CH_JWS_RSA_MODULUS_LEN_MAX ||
+--- new
+        k.n_len > CH_JWS_RSA_MODULUS_LEN_MAX ||

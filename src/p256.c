@@ -487,9 +487,9 @@ int p256_ecdsa_verify_cpu(uint32_t cpu, const uint8_t pub[64], const uint8_t msg
 }
 #endif
 
-#ifdef CH_DNSSEC
+#if defined(CH_DNSSEC) || defined(CH_JWS)
 // The arm's check of r and s, with no reader in front: RFC 6605 puts the
-// two numbers side by side.
+// two numbers side by side, and so does RFC 7518 section 3.4 for ES256.
 int p256_ecdsa_verify_raw(const uint8_t pub[64], const uint8_t msg_hash[32],
                           const uint8_t sig[64]) {
     return verify_rs(0, pub, msg_hash, sig, sig + 32);

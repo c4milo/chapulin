@@ -610,6 +610,72 @@ test "DNSSEC=on: the hashes match std.crypto, and P-256, P-384 and Ed25519 signa
     try expectError(error.Invalid, dnssec.Hash.init(.ed25519, ed_key[0..31], &ed_sig));
 }
 
+test "JWS=on: tokens std.crypto signs verify, and base64url matches std.base64" {
+    if (!@hasDecl(c, "ch_jws_verify")) return error.SkipZigTest;
+    const jws = chapulin.jws;
+    const url = std.base64.url_safe_no_pad;
+
+    // The JWS Signing Input of a token: the base64url header, '.', and the base64url claims.
+    const header = "{\"alg\":\"ES256\",\"typ\":\"JWT\"}";
+    const claims = "{\"iss\":\"chapulin\",\"sub\":\"the Zig API\"}";
+    var input_room: [128]u8 = undefined;
+    const header_text = try jws.base64url_encode(&input_room, header);
+    try std.testing.expectEqual(jws.base64url_len(header.len), header_text.len);
+    input_room[header_text.len] = '.';
+    const claims_text = try jws.base64url_encode(input_room[header_text.len + 1 ..], claims);
+    const input = input_room[0 .. header_text.len + 1 + claims_text.len];
+    var want_room: [128]u8 = undefined;
+    try std.testing.expectEqualSlices(u8, url.Encoder.encode(&want_room, header), header_text);
+    try std.testing.expectEqualSlices(u8, url.Encoder.encode(&want_room, claims), claims_text);
+
+    // ES256: std.crypto signs over SHA-256, and the signature is R then S.
+    const Ecdsa = std.crypto.sign.ecdsa.EcdsaP256Sha256;
+    const kp = try Ecdsa.KeyPair.generateDeterministic([_]u8{0x51} ** Ecdsa.KeyPair.seed_length);
+    const sig = (try kp.sign(input, null)).toBytes();
+    const key = kp.public_key.toUncompressedSec1();
+    try jws.verify(&.{ .algorithm = .es256, .key = key[1..], .input = input, .signature = &sig });
+
+    // The signature as a token carries it: base64url text, which decodes to the same bytes.
+    var sig_text_room: [jws_sig_text_len]u8 = undefined;
+    const sig_text = try jws.base64url_encode(&sig_text_room, &sig);
+    var sig_room: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(usize, 64), jws.base64url_decoded_len_max(sig_text.len));
+    const decoded = try jws.base64url_decode(&sig_room, sig_text);
+    try std.testing.expectEqualSlices(u8, &sig, decoded);
+    try jws.verify(&.{ .algorithm = .es256, .key = key[1..], .input = input, .signature = decoded });
+
+    var bad = sig;
+    bad[63] ^= 1;
+    try expectError(error.Auth, jws.verify(&.{ .algorithm = .es256, .key = key[1..], .input = input, .signature = &bad }));
+    try expectError(error.Auth, jws.verify(&.{ .algorithm = .es256, .key = key[1..], .input = input, .signature = sig[0..63] }));
+    try expectError(error.Auth, jws.verify(&.{ .algorithm = .es256, .key = key[1..], .input = input[1..], .signature = &sig }));
+    try expectError(error.Invalid, jws.verify(&.{ .algorithm = .es256, .key = key[2..], .input = input, .signature = &sig }));
+    // A key of one algorithm is no key of another.
+    try expectError(error.Invalid, jws.verify(&.{ .algorithm = .eddsa, .key = key[1..], .input = input, .signature = &sig }));
+    try expectError(error.Invalid, jws.verify(&.{ .algorithm = .rs256, .key = key[1..], .input = input, .signature = &sig }));
+
+    // EdDSA: std.crypto signs the input itself.
+    const Ed25519 = std.crypto.sign.Ed25519;
+    const ed = try Ed25519.KeyPair.generateDeterministic([_]u8{0x52} ** Ed25519.KeyPair.seed_length);
+    const ed_sig = (try ed.sign(input, null)).toBytes();
+    const ed_key = ed.public_key.toBytes();
+    try jws.verify(&.{ .algorithm = .eddsa, .key = &ed_key, .input = input, .signature = &ed_sig });
+    var ed_bad = ed_sig;
+    ed_bad[0] ^= 1;
+    try expectError(error.Auth, jws.verify(&.{ .algorithm = .eddsa, .key = &ed_key, .input = input, .signature = &ed_bad }));
+
+    // The rooms: one byte short is refused, and text outside the alphabet is refused.
+    try expectError(error.Cap, jws.base64url_encode(sig_text_room[0 .. jws_sig_text_len - 1], &sig));
+    try expectError(error.Cap, jws.base64url_decode(sig_room[0..63], sig_text));
+    try expectError(error.Invalid, jws.base64url_decode(&sig_room, "Zg=="));
+    try expectError(error.Invalid, jws.base64url_decode(&sig_room, "+_8"));
+    try expectError(error.Invalid, jws.base64url_decode(&sig_room, "Zh"));
+}
+
+/// The base64url text of a 64-byte signature: 21 groups of 3 bytes, and 2 characters for the last
+/// byte.
+const jws_sig_text_len = 86;
+
 /// Refers to each named declaration of T, so it compiles.
 fn compile(comptime T: type, comptime names: []const []const u8) void {
     inline for (names) |name| _ = &@field(T, name);

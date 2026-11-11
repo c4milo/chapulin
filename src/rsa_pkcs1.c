@@ -154,10 +154,10 @@ int rsa_pkcs1_verify_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uin
 }
 #endif
 
-#if defined(CH_DNSSEC) && defined(CH_CPU_RUNTIME)
+#if (defined(CH_DNSSEC) || defined(CH_JWS)) && defined(CH_CPU_RUNTIME)
 // DigestInfo for SHA-512 (RFC 8017 section 9.2 note 1), which algorithm
 // 10 signs with (RFC 5702 section 3); only a DNSSEC check reads it, so no
-// TLS path admits a 64-byte digest.
+// TLS path admits a 64-byte digest, and jws.c passes a 32-byte one alone.
 static const uint8_t digest_info_sha512[DIGEST_INFO_LEN] = {
     0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01,
     0x65, 0x03, 0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40};

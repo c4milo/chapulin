@@ -54,7 +54,11 @@ Other targets:
   SHA-1, SHA-256 or SHA-384 for NSEC3 and DS digests, and
   `ch_dnssec_verify`. It takes a host `TRUST=webpki` object alone,
   on either transport, and each call carries the transport in its
-  symbol name. `WIDEMUL` is a device object's
+  symbol name. `JWS=on` adds three calls for a JWT login token
+  (`jws.h`, decision 221): `ch_jws_verify`, which checks a JSON Web
+  Signature under RS256, ES256 or EdDSA, and base64url's encoder and
+  decoder. It takes the objects `DNSSEC=on` takes, and names its
+  symbols the same way. `WIDEMUL` is a device object's
   variable alone. `WIDEMUL=native` defines `CH_NATIVE_WIDEMUL` in the
   object: the builder states that this part's widening multiply runs in
   constant time, and every widening product then uses the CPU's multiply

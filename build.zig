@@ -48,6 +48,7 @@ const Config = struct {
     exporter: Setting,
     keylog: Setting,
     dnssec: Setting,
+    jws: Setting,
     /// TX_RECORD as the Makefile takes it, the text of a decimal integer,
     /// and null for the default, cfg.h's 512.
     tx_record: ?[]const u8,
@@ -110,7 +111,7 @@ const webpki_srcs = [_][]const u8{
     "webpki_time.c", "webpki_name.c", "webpki_spki.c",   "webpki_sigalg.c", "webpki_ext.c",
     "webpki_cert.c", "webpki.c",      "webpki_ticket.c", "webpki_pin.c",    "webpki_cfg.c",
 };
-const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c", "dnssec.c", "sha1.c" };
+const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c", "dnssec.c", "sha1.c", "jws.c", "base64_codec.c" };
 const p256_ecdh_srcs = [_][]const u8{ "p256_ecdh.c", "p256_point.c", "p256_scalar.c", "p256_field.c" };
 const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
 const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_entry.c", "tls_write.c" };
@@ -182,6 +183,8 @@ const public_report = public_report_always ++ [_][]const u8{ "ch_alpn_selected",
 const public_alert = [_][]const u8{ "ch_alert_sent", "ch_alert_received" };
 // PUBLIC_DNSSEC: DNSSEC=on's four calls, each named for the transport.
 const public_dnssec = [_][]const u8{ "ch_dnssec_hash_init", "ch_dnssec_digest_init", "ch_dnssec_hash_update", "ch_dnssec_hash_final", "ch_dnssec_verify" };
+// PUBLIC_JWS: JWS=on's three calls, each named for the transport.
+const public_jws = [_][]const u8{ "ch_base64url_encode", "ch_base64url_decode", "ch_jws_verify" };
 const public_tcp_nonblocking = [_][]const u8{
     "ch_tcp_init",     "ch_tcp_in",        "ch_tcp_out", "ch_tcp_state", "ch_tcp_tls",
     "ch_tcp_close",    "ch_tcp_whole_len", "ch_read",    "ch_write",     "ch_write_parts",
@@ -244,6 +247,7 @@ const declarations = [_]Declaration{
     .{ .header = "alert.h", .names = &public_alert },
     .{ .header = "session_report.h", .names = &public_report },
     .{ .header = "dnssec.h", .names = &public_dnssec },
+    .{ .header = "jws.h", .names = &public_jws },
     .{ .header = "drbg.h", .names = &.{"ch_drbg_seed"} },
     .{ .header = "rand.h", .names = &.{"ch_rand_bytes"} },
     .{ .header = "keylog.h", .names = &.{"ch_keylog"} },
@@ -297,6 +301,7 @@ pub fn build(b: *std.Build) void {
         .exporter = b.option(Setting, "EXPORTER", "ch_export, RFC 9846 section 7.5") orelse .off,
         .keylog = b.option(Setting, "KEYLOG", "The ch_keylog hook (keylog.h)") orelse .off,
         .dnssec = b.option(Setting, "DNSSEC", "The DNSSEC signature checks (dnssec.h)") orelse .off,
+        .jws = b.option(Setting, "JWS", "The JSON Web Signature check and base64url (jws.h)") orelse .off,
         .tx_record = nonEmpty(b.option([]const u8, "TX_RECORD", "The most plaintext one outgoing TLS record carries, 512 to 16384 (cfg.h's CH_TX_PT)")),
         .host_target = b.option([]const u8, "HOST_TARGET", "The host test's result, for a check: empty builds the device object on a host target"),
         .aes_extern_constant_time = b.option(bool, "CH_AES_EXTERN_CONSTANT_TIME", "State that ch_aes_block runs in constant time (ct.h)") orelse false,
@@ -387,6 +392,7 @@ pub fn build(b: *std.Build) void {
     _ = api_files.addCopyFile(b.path("chapulin_ticket.zig"), "chapulin_ticket.zig");
     _ = api_files.addCopyFile(b.path("chapulin_pem.zig"), "chapulin_pem.zig");
     _ = api_files.addCopyFile(b.path("chapulin_dnssec.zig"), "chapulin_dnssec.zig");
+    _ = api_files.addCopyFile(b.path("chapulin_jws.zig"), "chapulin_jws.zig");
     _ = api_files.addCopyFile(b.path("chapulin_cpu.zig"), "chapulin_cpu.zig");
     _ = api_files.addCopyFile(b.path("chapulin_cfg.zig"), "chapulin_cfg.zig");
     _ = api_files.add("defines.txt", lines(b, plan.defs));
@@ -442,6 +448,9 @@ fn refuseUnbuildable(config: Config) void {
     }
     if (config.exporter == .on and config.transport == .@"quic-nonblocking") {
         fatal("EXPORTER=on has no QUIC entry point: ch_export is a record-layer call, so use TRANSPORT=tcp-blocking or TRANSPORT=tcp-nonblocking", .{});
+    }
+    if (config.jws == .on and config.trust != .webpki) {
+        fatal("JWS=on needs TRUST=webpki, whose object packages the PKCS#1 v1.5 verifier the RS256 check shares", .{});
     }
     if (config.dnssec == .on and config.trust != .webpki) {
         fatal("DNSSEC=on needs TRUST=webpki, whose object packages the PKCS#1 v1.5 verifier the RSA check shares", .{});
@@ -715,6 +724,10 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
         if (!host) std.process.fatal("DNSSEC=on needs a host object: the RSA check runs on rsa_mont64.c, so build for arm64 or x86-64 with HOST_TARGET=yes", .{});
         defs = concat(b, &.{ defs, &.{"-DCH_DNSSEC"} });
     }
+    if (config.jws == .on) {
+        if (!host) std.process.fatal("JWS=on needs a host object: the RS256 check runs on rsa_mont64.c, so build for arm64 or x86-64 with HOST_TARGET=yes", .{});
+        defs = concat(b, &.{ defs, &.{"-DCH_JWS"} });
+    }
     const widemul = config.widemul orelse .decomposed;
     if (widemul == .native) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });
     // A host object holds both multiplies, and each session's
@@ -762,6 +775,7 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
         if (config.trust == .webpki) &public_pem_webpki else &.{},
     });
     const public_dnssec_names: Names = if (config.dnssec == .on) &public_dnssec else &.{};
+    const public_jws_names: Names = if (config.jws == .on) &public_jws else &.{};
     // PUBLIC_REPORT: session_report.h's read calls, each under the defines of the field it reads.
     const quic = config.transport == .@"quic-nonblocking";
     const public_report_names = concat(b, &.{
@@ -771,7 +785,7 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
         if (config.role != .client) &.{"ch_sni_len"} else &.{},
         if (quic) &.{} else &.{ "ch_read_closed", "ch_peer_limit" },
     });
-    const names = concat(b, &.{ role.public, public_rand, public_ca, public_pem, public_export, &.{"ch_build"}, public_dnssec_names, public_report_names });
+    const names = concat(b, &.{ role.public, public_rand, public_ca, public_pem, public_export, &.{"ch_build"}, public_dnssec_names, public_jws_names, public_report_names });
 
     // The hooks the object imports, which the image defines
     // (docs/porting.md) and lib-check admits as undefined. An AES=extern
@@ -940,7 +954,7 @@ fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
         } else if (std.mem.eql(u8, name, "ch_srv_check") or std.mem.eql(u8, name, "ch_pubkey_from_pem") or
             std.mem.eql(u8, name, "ch_ticket_obfuscated_age") or contains(&public_alert, name) or
             contains(&public_pem_server, name) or contains(&public_pem_server_cnsa2, name) or contains(&public_pem_webpki, name) or
-            contains(&public_dnssec, name) or contains(&public_report, name))
+            contains(&public_dnssec, name) or contains(&public_jws, name) or contains(&public_report, name))
         {
             symbol.* = b.fmt("{s}_{s}", .{ name, suffix });
         } else {

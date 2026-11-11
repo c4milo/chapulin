@@ -1,0 +1,17 @@
+invariant: INV-14
+file: src/jws.c
+catches: proof/prove-one.sh jws
+reason: verify_es256 hands the P-256 check a signature of any length. The
+  check reads 64 bytes, so a shorter signature makes it read past the
+  bytes the token gave. bin/jws_test passes signatures from a room of
+  1,024 bytes, so the read lands on the room's other bytes and the answer
+  is still CH_EAUTH: no test sees the edit. The jws proof holds the P-256
+  stub to a readable 64-byte signature and requires CH_EAUTH, with no
+  verifier called, for every other length.
+
+--- old
+    if (sig_len != ES256_SIG_LEN) {
+        return CH_EAUTH;
+    }
+--- new
+    (void)sig_len;

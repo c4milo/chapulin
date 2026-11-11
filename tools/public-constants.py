@@ -26,6 +26,11 @@ take, which every public call takes. A named constant must be defined after the 
 or the script fails and names it. Otherwise it prints each name, one
 per line, and test/zig-consumer's matches.zig requires the module to
 declare and evaluate each one.
+
+A macro that takes arguments, such as jws.h's CH_BASE64URL_LEN(n), must
+be defined too, and the script does not print it: it is a function of a
+length, and matches.zig can evaluate a constant alone.
+test/zig-consumer/unit.zig calls each one through the Zig API.
 """
 
 import collections
@@ -101,6 +106,8 @@ def main():
     finally:
         pathlib.Path(source).unlink()
     defined = set(re.findall(r"^#define (\w+)", macros, re.M))
+    # A macro with arguments has its parenthesis directly after its name.
+    functions = set(re.findall(r"^#define (\w+)\(", macros, re.M))
     named = comment_names(kept, public)
     missing = sorted(n for n in named if n not in defined)
     for name in missing:
@@ -108,7 +115,7 @@ def main():
               "includes defines" % (" and ".join(sorted(named[name])), name), file=sys.stderr)
     if missing:
         return 1
-    print("\n".join(sorted(named)))
+    print("\n".join(sorted(n for n in named if n not in functions)))
     return 0
 
 

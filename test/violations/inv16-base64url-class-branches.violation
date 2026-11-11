@@ -1,0 +1,21 @@
+invariant: INV-16
+file: src/base64.c
+catches: test/lint-wide-multiply.sh
+reason: base64url_class tests its first range with an if, so whether a
+  token's character is a capital letter decides which path runs. A token
+  is a bearer credential, and its characters are secret. The class is the
+  same, so no test sees it; the branch count does, on the two 64-bit
+  specs, which compile base64.c@host under -DCH_JWS with a ceiling of
+  zero (docs/decisions.md 221).
+
+--- old
+uint8_t base64url_class(uint8_t c) {
+    uint32_t x = c;
+    uint32_t upper = range_mask(x, 'A', 'Z');
+--- new
+uint8_t base64url_class(uint8_t c) {
+    uint32_t x = c;
+    if (x >= 'A' && x <= 'Z') {
+        return (uint8_t)(x - 'A');
+    }
+    uint32_t upper = range_mask(x, 'A', 'Z');

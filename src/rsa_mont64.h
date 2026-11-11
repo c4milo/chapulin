@@ -216,11 +216,12 @@ void rsa_mont64_mul_add(uint64_t *o, const uint64_t *a, const uint64_t *b, const
 void rsa_mont64_public(uint8_t *out, const uint8_t *base, size_t len,
                        const rsa_mont64_modulus *mod);
 
-#ifdef CH_DNSSEC
-// out = base^e mod m, the RSAVP1 of a DNSSEC key, whose exponent is the
-// key's own (RFC 3110 section 2), under rsa_mont64_public's contract for
-// base, out and len. e is odd and at least 3, the rule the DNSSEC
-// entry checks before it calls; CH_ASSERT holds it here. Every input is
+#if defined(CH_DNSSEC) || defined(CH_JWS)
+// out = base^e mod m, the RSAVP1 of a DNSSEC key or a JWS RS256 key,
+// whose exponent is the key's own (RFC 3110 section 2), under
+// rsa_mont64_public's contract for base, out and len. e is odd and at
+// least 3, the rule each entry checks before it calls (dnssec.c, jws.c);
+// CH_ASSERT holds it here. Every input is
 // public, so the loop runs once for each bit below e's top bit, and
 // multiplies only at its set bits.
 void rsa_mont64_public_exp(uint8_t *out, const uint8_t *base, size_t len,

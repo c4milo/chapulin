@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-132 of the 178 C sources in the tree root are compiled into a
+134 of the 180 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1738,6 +1738,65 @@ The entries are grouped by area:
   harnesses above and the `p256` harnesses prove them, and
   `bin/dnssec_test` runs the whole check against OpenSSL's keys and
   signatures.
+
+#### jws
+
+- **Harness:** `jws` (fast)
+- **Build:** a host object with `CH_JWS`.
+- **Proves:** `ch_jws_verify` (`jws.c`) is memory safe and free of UB
+  over any algorithm byte and any key, signing input and signature up
+  to the bound. Also:
+  - it answers `CH_OK`, `CH_EAUTH` or `CH_EINVAL`. It answers `CH_OK`
+    only for `CH_JWS_RS256`, `CH_JWS_ES256` and `CH_JWS_EDDSA`, and only
+    when the one verifier it called accepted;
+  - it calls one verifier at most, the algorithm's own, so a key of one
+    algorithm never runs under another;
+  - it reads RFC 3110 section 2's key form in both length forms, as
+    `dnssec.c` does, through the same reader (`rsa_key_field.h`);
+  - the RSA check sees only an odd exponent of at least 3, a 32-byte
+    digest, and a modulus of 256 to 512 bytes that is odd and begins
+    with a nonzero byte;
+  - the P-256 check sees only a 64-byte key and signature, and the
+    Ed25519 check only a 32-byte key and a 64-byte signature;
+  - a key of the wrong length gives `CH_EINVAL`, and under a key of the
+    right length a signature of the wrong length gives `CH_EAUTH`.
+- **Bound:** a key of up to 267 bytes, which holds the shortest modulus
+  the RSA check takes, a signing input of up to 8 bytes and a signature
+  of up to 66.
+- **Not proved:** the verifiers and the two hashes, which are contract
+  stubs here; their own harnesses prove them, and `bin/jws_test` runs
+  the whole check against tokens OpenSSL signed.
+
+#### base64_codec
+
+- **Harness:** `base64_codec` (fast)
+- **Build:** a host object with `CH_JWS`.
+- **Proves:** `base64url_encode` and `base64url_decode`
+  (`base64_codec.c`), which `ch_base64url_encode` and
+  `ch_base64url_decode` forward to, are memory safe and free of UB.
+  Also:
+  - the encoder answers `CH_OK` exactly when the room holds
+    `CH_BASE64URL_LEN(in_len)` characters, and a refused call writes
+    nothing;
+  - the text it writes decodes to the same bytes;
+  - the decoder refuses a text whose length has the remainder 1 by 4,
+    and answers `CH_ECAP` exactly when the room is below the decoded
+    length, with nothing written;
+  - text it accepts is canonical: the encoder writes the same
+    characters from the decoded bytes, so no two texts decode to one
+    value;
+  - after `CH_EINVAL` the room holds zeros where the bytes would be;
+  - `room_holds`, the encoder's test of the room with no division, is
+    the compare `text_cap >= CH_BASE64URL_LEN(in_len)` for every
+    `in_len` of up to `CH_BASE64URL_IN_LEN_MAX` and every `text_cap`,
+    and the encoder refuses a longer `in_len` before it reads a byte.
+- **Bound:** 0 to 7 bytes and 0 to 10 characters, which cover a last
+  group of each length. No loop step reads the count of groups before
+  it.
+- **Not proved:** that no branch reads a byte or a character. The
+  `base64` harness proves the two character functions against RFC 4648
+  section 5's table, and `lint-wide-multiply` holds `base64.c`'s count
+  of conditional branches at zero.
 
 #### sha1
 
@@ -3502,8 +3561,12 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   for each of `=`, CR, LF and `-`, and one for every other byte. It reads
   the character through masks alone, because a key file's characters are
   a secret (decision 131). [Constant-time behavior](#constant-time-behavior)
-  says what holds the emitted code to that.
-- **Bound:** unbounded: one byte, all 256 values.
+  says what holds the emitted code to that. Under `CH_JWS` it proves the
+  same of `base64url_class` and RFC 4648 §5's table, where `-` and `_`
+  are the characters of 62 and 63 and every other byte is refused. It
+  also proves that `base64url_char` is that table for every value below
+  64, so each function is the other's inverse.
+- **Bound:** unbounded: one byte, all 256 values, and one value, all 64.
 
 #### pem_step
 

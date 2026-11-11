@@ -1,13 +1,14 @@
 // RSA's public operation with the key's own exponent, for the DNSSEC
-// verification calls: a DNSKEY names its exponent (RFC 3110 section 2),
-// where TLS fixes 65537. It runs on rsa_mont64.c's Montgomery
+// verification calls and for ch_jws_verify's RS256: a DNSKEY names its
+// exponent (RFC 3110 section 2), and so does a JWK (RFC 7518 section
+// 6.3.1), where TLS fixes 65537. It runs on rsa_mont64.c's Montgomery
 // arithmetic, and rsa_mont64.h states its contract. Every host object
-// packages the file, and only one built with -DCH_DNSSEC compiles the
-// call; in the others the header below, which declares the host object's
-// RSA arithmetic, keeps the unit from being empty.
+// packages the file, and only one built with -DCH_DNSSEC or -DCH_JWS
+// compiles the call; in the others the header below, which declares the
+// host object's RSA arithmetic, keeps the unit from being empty.
 #include "rsa_mont64.h"
 
-#if defined(CH_CPU_RUNTIME) && defined(CH_DNSSEC)
+#if defined(CH_CPU_RUNTIME) && (defined(CH_DNSSEC) || defined(CH_JWS))
 
 #include <string.h>
 
@@ -54,4 +55,4 @@ void rsa_mont64_public_exp(uint8_t *out, const uint8_t *base, size_t len,
     ct_wipe(acc, sizeof acc);
 }
 
-#endif // CH_CPU_RUNTIME && CH_DNSSEC
+#endif // CH_CPU_RUNTIME && (CH_DNSSEC || CH_JWS)

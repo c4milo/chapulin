@@ -37,4 +37,20 @@
 // mask sum over nine ranges, computed the same way for every c.
 uint8_t base64_class(uint8_t c);
 
+#ifdef CH_JWS
+// The class of c in RFC 4648 section 5's alphabet, base64url, which a
+// JWS writes its parts in (RFC 7515 section 2). It is base64_class's
+// table with '-' at 62 and '_' at 63. Every other byte gets
+// BASE64_INVALID, '+', '/', '=', CR and LF among them, because a JWS part
+// has no padding and no line break. The answer is a mask sum over five
+// ranges, computed the same way for every c.
+uint8_t base64url_class(uint8_t c);
+
+// The character of the 6-bit value v in RFC 4648 section 5's alphabet,
+// the inverse of base64url_class. Requires v below 64. The answer is a
+// mask sum over five ranges, computed the same way for every v: a token's
+// bytes may be secret, so no table is indexed by one (INV-16).
+uint8_t base64url_char(uint8_t v);
+#endif
+
 #endif

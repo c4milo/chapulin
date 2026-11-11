@@ -365,8 +365,8 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
         src/handshake_auth.c src/handshake_flight.c src/handshake.c src/handshake_post.c src/tls.c src/tls_entry.c src/session_report.c src/tls_write.c src/softmul.c src/build.c
 
 HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/poly1305_wide.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont_division.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
-        src/pem.h src/base64.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
-        include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/sha3_andn.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
+        src/pem.h src/base64.h src/base64_codec.h src/rsa_key_field.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
+        include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/sha3_andn.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h include/chapulin/jws.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
         src/keccak_neon.h src/keccak_neon_round.h src/mlkem_neon.h src/mldsa_neon.h \
         src/p256_wide_word.h src/p256_wide_field.h src/p256_wide_scalar.h src/p256_wide_inverse.h src/p256_wide_point.h \
         src/p256_wide_mul.h src/p256_wide_table.h src/p256_wide_wipe.h src/p256_wide_verify.h src/p256_wide_verify_point.h \
@@ -908,8 +908,12 @@ WEBPKI_SRCS := src/webpki_time.c src/webpki_name.c src/webpki_spki.c src/webpki_
 # x509_der.c, rsa.c, rsa_mont.c and p256.c already; these five it does
 # not, because the device objects never package them. dnssec.c, the
 # DNSSEC check, rides with them and compiles to nothing outside a
-# CH_DNSSEC build (https://github.com/c4milo/chapulin/issues/189).
-WEBPKI_CHAIN_SRCS := src/sha512.c src/sha512_compress.c src/p384.c src/p384_field.c src/rsa_pkcs1.c src/dnssec.c src/sha1.c
+# CH_DNSSEC build (https://github.com/c4milo/chapulin/issues/189). jws.c,
+# the JWS check, and base64_codec.c, its base64url, ride with them the
+# same way and compile to nothing outside a CH_JWS build
+# (docs/decisions.md 221).
+WEBPKI_CHAIN_SRCS := src/sha512.c src/sha512_compress.c src/p384.c src/p384_field.c src/rsa_pkcs1.c src/dnssec.c src/sha1.c \
+                     src/jws.c src/base64_codec.c
 # The constant-time P-256 key exchange: p256_ecdh.c over the arithmetic
 # p256_sign.c computes with too. p256.c is the variable-time verifier and
 # is not among them. Every server role and every TRUST=webpki client
@@ -1699,6 +1703,27 @@ PUBLIC_DNSSEC :=
 else
 $(error DNSSEC=$(DNSSEC) is not a setting; use DNSSEC=on or DNSSEC=off)
 endif
+# The JSON Web Signature check (jws.h, docs/decisions.md 221), off by
+# default. JWS=on adds three calls to the object: a check of a JWS
+# signature under RS256, ES256 or EdDSA, and base64url's encoder and
+# decoder. The check runs on rsa_pkcs1.c, rsa_mont64.c, p256.c and
+# x25519_wide.c, as DNSSEC=on's does, so the axis refuses the builds that
+# axis refuses. Each call carries the transport in its symbol name.
+JWS ?= off
+ifeq ($(JWS),on)
+ifeq ($(CPU_RUNTIME_DEF),)
+$(error JWS=on needs a host object: the RS256 check runs on src/rsa_mont64.c, so build for arm64 or x86-64 with HOST_TARGET=yes)
+endif
+ifneq ($(TRUST),webpki)
+$(error JWS=on needs TRUST=webpki, whose object packages the PKCS#1 v1.5 verifier the RS256 check shares)
+endif
+LIB_DEF += -DCH_JWS
+PUBLIC_JWS := ch_base64url_encode ch_base64url_decode ch_jws_verify
+else ifeq ($(JWS),off)
+PUBLIC_JWS :=
+else
+$(error JWS=$(JWS) is not a setting; use JWS=on or JWS=off)
+endif
 # The key log (keylog.h), off by default. KEYLOG=on hands each traffic
 # secret to a hook the image defines, which is the one path by which a
 # secret leaves chapulin on purpose, so a device client refuses it: a
@@ -2063,7 +2088,7 @@ LOCALIZE_C := $(wildcard test/localize/*.c)
 # ch_cfg and every object that reads it, and a check can build a server's
 # device object beside its host object. It is added only for a host
 # object, for TX_RECORD's reason.
-LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)$(if $(TX_RECORD),-tx$(TX_RECORD))$(if $(CPU_RUNTIME_DEF),-host)$(if $(PUBLIC_DNSSEC),-dnssec)
+LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)$(if $(TX_RECORD),-tx$(TX_RECORD))$(if $(CPU_RUNTIME_DEF),-host)$(if $(PUBLIC_DNSSEC),-dnssec)$(if $(PUBLIC_JWS),-jws)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -2690,7 +2715,7 @@ PUBLIC_PEM := $(if $(filter -DCH_ROLE_SERVER,$(ROLE_DEF)),ch_chain_from_pem \
 # what lib-check reads.
 TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_chain_from_pem ch_p256_key_from_pem ch_rsa_key_from_pem \
                    ch_mldsa_key_from_pem \
-                   ch_anchors_from_pem ch_ticket_obfuscated_age ch_alert_sent ch_alert_received $(PUBLIC_DNSSEC) \
+                   ch_anchors_from_pem ch_ticket_obfuscated_age ch_alert_sent ch_alert_received $(PUBLIC_DNSSEC) $(PUBLIC_JWS) \
                    ch_state ch_group ch_suite ch_psk_selected ch_pin_slot ch_epoch ch_epoch_seen \
                    ch_epoch_status ch_epoch_store_failed ch_alpn_selected ch_server_cert_type \
                    ch_sni_len ch_read_closed ch_peer_limit
@@ -2700,7 +2725,7 @@ TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_chain_from_pem ch
 TRANSPORT_SUFFIX := $(subst -,_,$(TRANSPORT))
 transport_symbol = $(if $(filter ch_build,$(1)),ch_build_info,$(1))_$(TRANSPORT_SUFFIX)
 PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) $(PUBLIC_BUILD) \
-            $(PUBLIC_DNSSEC) $(PUBLIC_REPORT), \
+            $(PUBLIC_DNSSEC) $(PUBLIC_JWS) $(PUBLIC_REPORT), \
             $(if $(filter $(s),$(TRANSPORT_NAMED)),$(call transport_symbol,$(s)),$(s)))
 
 # The hooks the object imports, which the image defines (docs/porting.md):
@@ -2734,6 +2759,7 @@ DECLARES_session_report.h := ch_state ch_group ch_suite ch_psk_selected ch_pin_s
                              ch_sni_len ch_read_closed ch_peer_limit
 DECLARES_dnssec.h := ch_dnssec_hash_init ch_dnssec_digest_init ch_dnssec_hash_update ch_dnssec_hash_final \
                      ch_dnssec_verify
+DECLARES_jws.h := ch_base64url_encode ch_base64url_decode ch_jws_verify
 DECLARES_drbg.h := ch_drbg_seed
 DECLARES_rand.h := ch_rand_bytes
 DECLARES_keylog.h := ch_keylog
@@ -2741,7 +2767,7 @@ DECLARES_aes_extern.h := ch_aes_block
 DECLARES_ch_assert.h := ch_assert_fail
 DECLARES_build.h := ch_build
 LIB_HEADER_ORDER := include/chapulin/tls.h include/chapulin/tcp_nonblocking.h include/chapulin/quic.h include/chapulin/srv.h include/chapulin/srv_tcp_nonblocking.h include/chapulin/srv_quic.h \
-                    include/chapulin/quic_token.h include/chapulin/x509_ca.h include/chapulin/pem_files.h include/chapulin/ticket.h include/chapulin/alert.h include/chapulin/session_report.h include/chapulin/dnssec.h include/chapulin/drbg.h include/chapulin/rand.h include/chapulin/keylog.h \
+                    include/chapulin/quic_token.h include/chapulin/x509_ca.h include/chapulin/pem_files.h include/chapulin/ticket.h include/chapulin/alert.h include/chapulin/session_report.h include/chapulin/dnssec.h include/chapulin/jws.h include/chapulin/drbg.h include/chapulin/rand.h include/chapulin/keylog.h \
                     include/chapulin/aes_extern.h include/chapulin/ch_assert.h include/chapulin/build.h
 # The API headers: the ones above and the headers they include. Together
 # they compile with no -Isrc under the object's header, which defines the
@@ -2750,7 +2776,7 @@ LIB_HEADER_ORDER := include/chapulin/tls.h include/chapulin/tcp_nonblocking.h in
 API_HEADERS := $(LIB_HEADER_ORDER) include/chapulin/cfg.h include/chapulin/cpu_cfg.h include/chapulin/profile_cfg.h include/chapulin/srv_cfg.h include/chapulin/result.h \
                include/chapulin/session_storage.h include/chapulin/public_sizes.h include/chapulin/rsa_key.h include/chapulin/webpki_cfg.h include/chapulin/quic_cfg.h
 LIB_DECLARED = $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) \
-               $(PUBLIC_BUILD) $(PUBLIC_DNSSEC) $(PUBLIC_REPORT) $(LIB_HOOKS)
+               $(PUBLIC_BUILD) $(PUBLIC_DNSSEC) $(PUBLIC_JWS) $(PUBLIC_REPORT) $(LIB_HOOKS)
 LIB_HEADERS = $(foreach h,$(LIB_HEADER_ORDER),$(if $(filter $(DECLARES_$(notdir $(h))),$(LIB_DECLARED)),$(h)))
 
 # LIB_VARIANT names the build variables that pick the sources and the
@@ -2894,7 +2920,7 @@ LIB_LAYOUT := bin/obj/$(LIB_VARIANT)/layout.s
 LIB_HEADER_AXES := CH_TRUST_CA CH_TRUST_WEBPKI CH_PIN_ECDSA CH_PIN_MLDSA CH_KEX_PQ CH_TRANSPORT_QUIC_NONBLOCKING \
                    CH_TRANSPORT_TCP_NONBLOCKING CH_SUITE_AES_GCM CH_ROLE_SERVER CH_ROLE_BOTH \
                    CH_EXPORTER CH_KEYLOG CH_RAND_EXTERN CH_RAND_DRBG CH_RAND_SESSION CH_CPU_RUNTIME \
-                   CH_PROFILE_CNSA2 CH_MLKEM_1024 CH_DNSSEC
+                   CH_PROFILE_CNSA2 CH_MLKEM_1024 CH_DNSSEC CH_JWS
 $(LIB_HEADER): FORCE
 	@mkdir -p $(@D)
 	@$(CC) $(LIB_CFLAGS) $(LIB_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -S tools/layout_probe.c -o $(LIB_LAYOUT)
@@ -3540,6 +3566,19 @@ bin/dnssec_test: test/dnssec_test.c test/dnssec_vectors.h test/dnssec_rfc_vector
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  test/dnssec_test.c $(sort $(DNSSEC_TEST_SRCS))
+# jws.c's check against tokens OpenSSL signed (test/gen_jws_vectors.py),
+# against the examples RFC 7515 and RFC 8037 print
+# (test/gen_jws_rfc_vectors.py), and at every refusal jws.h states, with base64_codec.c's base64url
+# against RFC 4648's vectors (docs/decisions.md 221). It builds as a host
+# object with CH_JWS at the 512-byte bound, on the verifiers
+# bin/dnssec_test holds.
+JWS_TEST_SRCS := src/jws.c src/base64.c src/base64_codec.c src/rsa_pkcs1.c src/rsa.c $(RSA_EQUIV_TEST_SRCS) \
+                 src/p256.c $(P256_WIDE_SRCS) src/p256_scalar.c src/p256_field.c src/p256_point.c src/buf.c \
+                 src/sha256.c src/sha512.c src/sha512_compress_blocks.c src/x25519_wide.c
+bin/jws_test: test/jws_test.c test/jws_vectors.h test/jws_rfc_vectors.h $(JWS_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/jws_test.c $(sort $(JWS_TEST_SRCS))
 bin/rsa_exp_test: test/rsa_exp_test.c test/rsa_exp_vectors.h $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
@@ -5050,7 +5089,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
                                  bin/rsa_equiv_test_blocks \
                                  bin/rsa_mont64_adx_test \
-                                 bin/rsa_exp_test bin/dnssec_test \
+                                 bin/rsa_exp_test bin/dnssec_test bin/jws_test \
                                  bin/rsa_blocks_equiv_test bin/rsa_addcarry_equiv_test \
                                  bin/rsa_ifma_model_test bin/rsa_ifma_model_test_384 \
                                  bin/rsa_ifma_equiv_test bin/avx512_wipe_test bin/rsa_avx2_model_test \
@@ -5288,7 +5327,7 @@ CHECK_LIBRARY_BUILDS := check-lib-drbg check-lib-session check-lib-session-cxx c
               check-lib-cnsa2-quic check-lib-cnsa2-mldsa check-lib-cnsa2-ca-mldsa \
               check-lib-cnsa2-ca-mldsa-quic check-cnsa2-server check-srv-mldsa check-lib-cnsa2-server \
               check-lib-cnsa2-server-tcp-nonblocking \
-              check-lib-cnsa2-server-quic check-lib-exporter check-lib-dnssec check-lib-dnssec-quic \
+              check-lib-cnsa2-server-quic check-lib-exporter check-lib-dnssec check-lib-dnssec-quic check-lib-jws check-lib-jws-quic \
               check-lib-server-quic-keylog \
               check-lib-server-aes check-lib-server-aes-extern check-lib-quic-aes \
               check-lib-pair \
@@ -5668,6 +5707,27 @@ ifeq ($(HOST_TARGET),)
 else
 	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki \
 	  EXPORTER=off DNSSEC=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
+# The JWS axis (docs/decisions.md 221), on the two objects of one image,
+# as the DNSSEC jobs are. The tcp-nonblocking job takes DNSSEC=on too,
+# the pair colibri's object holds, so the two axes' calls and the
+# verifiers they share link in one object. The QUIC job takes JWS=on
+# alone, so the verifiers compile under CH_JWS without CH_DNSSEC. Each
+# proves the object exports the three JWS calls under its transport's
+# names. A host object alone takes the axis.
+check-lib-jws:
+ifeq ($(HOST_TARGET),)
+	@echo "SKIP lib-check JWS=on TRANSPORT=tcp-nonblocking: $(CC) fails the host test"
+else
+	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=tcp-nonblocking TRUST=webpki \
+	  DNSSEC=on JWS=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
+check-lib-jws-quic:
+ifeq ($(HOST_TARGET),)
+	@echo "SKIP lib-check JWS=on TRANSPORT=quic-nonblocking: $(CC) fails the host test"
+else
+	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki \
+	  EXPORTER=off JWS=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 endif
 # The key log axis, on the build colibri's interop endpoint links: a
 # QUIC server. It proves the object still exports its nineteen calls
@@ -8824,6 +8884,9 @@ lint-impact:
 #   dnssec.c, rsa_mont64_exp.c, sha1.c: a DNSSEC check, over the
 #     key's modulus and exponent and a signature from a zone, all public
 #     (https://github.com/c4milo/chapulin/issues/189).
+#   jws.c: a JWS check, over a public key, a token's signing input and
+#     its signature. The check holds no secret of its own, and it runs
+#     the verifiers dnssec.c runs (docs/decisions.md 221).
 #   mldsa.c, mldsa_poly.c: ML-DSA-87 verify. Every product is over the
 #     public key, the message's mu and the signature, and no file here
 #     signs (docs/decisions.md 154).
@@ -8998,6 +9061,17 @@ WIDEMUL_CEILING := src/ct.c:0 src/ct_wipe.c:0 src/sha256.c:0 src/sha3.c:0 src/hk
 # multiplies and divides nothing, so its ceiling is zero, and what the
 # specs hold is its branch count.
 #
+# base64_codec.c, base64url for a JWS (docs/decisions.md 221), joins it
+# because its body sits behind -DCH_JWS, which jws.h refuses outside a
+# host object. A token is a bearer credential, so its bytes pass through
+# the file as secrets. It multiplies and divides nothing at run time, a
+# division by 3 among them, which a compiler writes as a widening multiply:
+# the encoder counts its groups by subtraction. So its ceiling is zero. It
+# takes no branch count, as pem.c takes none: its loops branch on the
+# lengths, and once on whether the decoder refused the text. The character
+# functions it calls are base64.c's, whose count of branches is zero, and
+# base64.c@host compiles them under -DCH_JWS.
+#
 # The AES instructions' six files, AES_HW_SRCS, joined it from
 # WIDEMUL_PUBLIC for their division count (docs/decisions.md 156): aes_hw.c,
 # the forward cipher; ghash_hw.c, GHASH's multiply on the carry-less
@@ -9028,6 +9102,7 @@ WIDE64_CEILING := src/x25519_wide.c:0 src/x25519_adx.c:0 src/rsa_mont64_adx.c:0 
                   src/rsa_avx2.c:0 src/aead_avx2.c:0 \
                   src/sha3_hw.c:0 src/mlkem_hw.c:0 src/mlkem_poly_hw.c:0 src/mlkem_vector.c:0 src/mldsa_vector.c:0 \
                   src/keccak_avx2.c:0 src/mlkem_avx2.c:0 src/mldsa_avx2.c:0 src/avx512_wipe.c:0 src/sha512_compress_blocks.c:0 \
+                  src/base64_codec.c:0 \
                   src/keccak_neon.c:0 src/mlkem_neon.c:0 src/mldsa_neon.c:0 \
                   src/sha512_avx2.c:0 $(addsuffix :0,$(AES_HW_SRCS)) \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
@@ -9152,7 +9227,9 @@ WIDEMUL_DEFINES := src/quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_pack
                    src/rsa_ifma_sign.c:-DCH_CPU_RUNTIME \
                    src/rsa_ifma_sign.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
                    src/rsa_sign64.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
-                   $(addsuffix @host:-DCH_CPU_RUNTIME,$(filter-out src/hkdf.c src/aes.c src/gcm.c src/quic_packet.c,$(WIDE64_HOST_COPIES))) \
+                   $(addsuffix @host:-DCH_CPU_RUNTIME,$(filter-out src/hkdf.c src/aes.c src/gcm.c src/quic_packet.c src/base64.c,$(WIDE64_HOST_COPIES))) \
+                   src/base64.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_JWS \
+                   src/base64_codec.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_JWS$(COMMA)-DCH_TRUST_WEBPKI \
                    src/hkdf.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    src/aes.c@host:$(WIDE64_HOST_AES_DEFINES) src/gcm.c@host:$(WIDE64_HOST_AES_DEFINES) \
                    src/quic_packet.c@host:$(WIDE64_HOST_AES_DEFINES) \
@@ -9171,7 +9248,7 @@ WIDEMUL_DEFINES := src/quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_pack
                    src/keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    src/pem_files.c:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    $(addsuffix :$(WIDE64_HOST_AES_DEFINES),$(AES_HW_SRCS))
-WIDEMUL_PUBLIC := src/p256.c src/rsa.c src/rsa_mont.c src/rsa_mont64_exp.c src/dnssec.c src/sha1.c src/pem_blocks.c src/x509.c src/x509_der.c src/x509_ca.c \
+WIDEMUL_PUBLIC := src/p256.c src/rsa.c src/rsa_mont.c src/rsa_mont64_exp.c src/dnssec.c src/sha1.c src/jws.c src/pem_blocks.c src/x509.c src/x509_der.c src/x509_ca.c \
                   src/p384.c src/p384_field.c $(P384_WIDE_SRCS) src/rsa_pkcs1.c src/webpki_time.c src/webpki_name.c src/webpki_spki.c \
                   src/webpki_sigalg.c \
                   src/webpki_ext.c src/webpki_cert.c src/webpki.c src/webpki_pin.c src/webpki_cfg.c \

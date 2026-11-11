@@ -165,6 +165,8 @@ roster=(
     "exporter|RAND=extern EXPORTER=on|"
     "dnssec-record|RAND=extern TRANSPORT=tcp-nonblocking TRUST=webpki DNSSEC=on|"
     "dnssec-quic|RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki EXPORTER=off DNSSEC=on|"
+    "jws-record|RAND=extern TRANSPORT=tcp-nonblocking TRUST=webpki DNSSEC=on JWS=on|"
+    "jws-quic|RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki EXPORTER=off JWS=on|"
     "server-quic-keylog|RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on|"
     "server-aes|RAND=extern ROLE=server TRUST=none SUITE=aesgcm|"
     "server-aes-extern|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=|CH_AES_EXTERN_CONSTANT_TIME"

@@ -648,9 +648,10 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-6: PKCS#1 v1.5 lives in rsa_pkcs1.c and its two callers,
-      webpki_sigalg.c, as signature verify over a public chain, and
-      dnssec.c, as the RSA check of a DNSSEC signature, and only the
+      INV-6: PKCS#1 v1.5 lives in rsa_pkcs1.c and its three callers,
+      webpki_sigalg.c, as signature verify over a public chain,
+      dnssec.c, as the RSA check of a DNSSEC signature, and jws.c, as
+      the RS256 check of a JWS, and only the
       TRUST=webpki object packages those files (docs/webpki.md). Every other file, the device modes' cert files
       included, sees RSA as PSS verify only, and v1.5 encryption
       padding exists nowhere: that padding imports
@@ -658,7 +659,7 @@ rules:
       drift by name, not a reintroduction under another name.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, rsa_pkcs1.c, webpki_sigalg.c,
-                dnssec.c]
+                dnssec.c, jws.c]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:

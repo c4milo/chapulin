@@ -11,7 +11,7 @@
 #ifndef CH_X25519_WIDE_ED25519_H
 #define CH_X25519_WIDE_ED25519_H
 
-#ifdef CH_DNSSEC
+#if defined(CH_DNSSEC) || defined(CH_JWS)
 
 #include <string.h>
 
@@ -282,6 +282,6 @@ int ed25519_verify_hram(const uint8_t key[32], const uint8_t hram[64], const uin
     return ct_memeq_public(r, sig, X25519_LEN) != 0;
 }
 
-#endif // CH_DNSSEC
+#endif // CH_DNSSEC || CH_JWS
 
 #endif

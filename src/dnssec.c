@@ -7,56 +7,27 @@
 
 #ifdef CH_DNSSEC
 
-#include "buf.h"
 #include "ct.h"
 #include "dnssec_hash.h"
 #include "ed25519_verify.h"
 #include "p256.h"
 #include "p384.h"
 #include "rsa.h"
+#include "rsa_key_field.h"
 #include "rsa_pkcs1.h"
 #include "sha1.h"
 #include "sha256.h"
 #include "sha512.h"
 
-// An RSA key field, RFC 3110 section 2: a one-byte exponent length, or a
-// zero byte and a two-byte one, then the exponent, then the modulus,
-// which runs to the end of the field.
-typedef struct {
-    uint64_t e;
-    const uint8_t *n;
-    size_t n_len;
-} rsa_key;
-
-// Reads key into k. Returns 0 for a field it refuses: an exponent of 0
-// bytes, or longer than CH_DNSSEC_RSA_EXPONENT_MAX, or that begins with a
-// zero byte; a modulus of 0 bytes or that begins with a zero byte.
-static int read_rsa_key(const uint8_t *key, size_t key_len, rsa_key *k) {
-    rbuf rb;
-    rb_init(&rb, key, key_len);
-    size_t e_len = rb_u8(&rb);
-    if (e_len == 0) {
-        e_len = rb_u16(&rb);
-    }
-    const uint8_t *e = rb_bytes(&rb, e_len);
-    if (rb.err || e_len == 0 || e_len > CH_DNSSEC_RSA_EXPONENT_MAX || e[0] == 0) {
-        return 0;
-    }
-    k->e = 0;
-    for (size_t i = 0; i < e_len; i++) {
-        k->e = (k->e << 8) | e[i];
-    }
-    // The modulus runs to the end of the field, so the reader ends empty
-    // (INV-25).
-    k->n_len = rb_left(&rb);
-    k->n = rb_bytes(&rb, k->n_len);
-    return !rb.err && rb_left(&rb) == 0 && k->n_len != 0 && k->n[0] != 0;
-}
+// rsa_key_field.h reads the DNSKEY's RSA key field, RFC 3110 section 2's
+// form, and refuses an exponent longer than dnssec.h states.
+_Static_assert(CH_DNSSEC_RSA_EXPONENT_MAX == RSA_KEY_FIELD_EXPONENT_MAX,
+               "dnssec.h states the reader's exponent bound");
 
 static int verify_rsa(const uint8_t *key, size_t key_len, const uint8_t *digest, size_t digest_len,
                       const uint8_t *sig, size_t sig_len) {
-    rsa_key k;
-    if (!read_rsa_key(key, key_len, &k) || k.e < 3 || (k.e & 1) == 0 ||
+    rsa_key_field k;
+    if (!rsa_key_field_read(key, key_len, &k) || k.e < 3 || (k.e & 1) == 0 ||
         k.n_len < CH_DNSSEC_RSA_MODULUS_MIN || k.n_len > CH_RSA_MODULUS_MAX ||
         (k.n[k.n_len - 1] & 1) == 0) {
         return CH_EINVAL;

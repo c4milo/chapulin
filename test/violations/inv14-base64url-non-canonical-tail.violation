@@ -1,0 +1,15 @@
+invariant: INV-14
+file: src/base64_codec.c
+catches: jws_test
+reason: base64url_decode no longer refuses a last group that sets a bit
+  past its bytes. "Zg" and "Zh" then decode to the same byte, so one
+  signature has several texts (RFC 4648 section 3.5). A caller that
+  compares or stores tokens as text, such as a list of revoked tokens,
+  then misses a token whose last character was changed. Every canonical
+  text decodes as before. bin/jws_test requires CH_EINVAL for "Zh" and
+  for "Zm9".
+
+--- old
+        bad |= tail == 3 ? (bits & 0xffU) : (bits & 0xffffU);
+--- new
+        bad |= 0U;

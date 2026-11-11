@@ -1,0 +1,19 @@
+invariant: INV-14
+file: src/jws.c
+catches: jws_test
+reason: verify_eddsa answers CH_EAUTH for a key that is not 32 bytes.
+  jws.h gives the two refusals to two owners: a key the call cannot take
+  is the caller's to correct, CH_EINVAL, and a signature that does not
+  verify is the token's fault, CH_EAUTH. A caller that logs CH_EINVAL as
+  its own error and counts CH_EAUTH as a failed login then hides a wrong
+  key in its login counters. bin/jws_test passes a P-256 key under EdDSA
+  and requires CH_EINVAL.
+
+--- old
+    if (key_len != ED25519_KEY_LEN) {
+        return CH_EINVAL;
+    }
+--- new
+    if (key_len != ED25519_KEY_LEN) {
+        return CH_EAUTH;
+    }

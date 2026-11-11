@@ -8,9 +8,11 @@ reason: base64_class tests its first two ranges with an if chain, so
   where base64.c's ceiling is zero (docs/decisions.md 131).
 
 --- old
+uint8_t base64_class(uint8_t c) {
     uint32_t x = c;
     uint32_t upper = range_mask(x, 'A', 'Z');
 --- new
+uint8_t base64_class(uint8_t c) {
     uint32_t x = c;
     if (x >= 'A' && x <= 'Z') {
         return (uint8_t)(x - 'A');

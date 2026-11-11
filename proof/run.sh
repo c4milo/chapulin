@@ -1595,7 +1595,7 @@ launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,writ
 # CH_X509_MAX to 2688 in place of 7808, which passed 8 GB in 17 s, and
 # unwinds the wipe and the harness's check of the 2592-byte key: 760
 # properties, 24 s, 2.6 GB (docs/decisions.md 157).
-launch fast full base64 66 "" src/base64.c
+launch fast full base64 66 "" -DCH_JWS src/base64.c
 launch fast full pem_step 66 "" src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 launch fast full pem_step_ecdsa 66 "" src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
 launch fast:3 full pem 66 "" -DCH_PROOF_PEM_LEN=64 src/base64.c src/buf.c src/ct.c proof/ct_wipe_stub.c
@@ -3266,6 +3266,23 @@ launch fast full rsa_mont64_exp_schedule 66 "ct_wipe.0:385,fill_nondet.0:385" sr
 # stubs of the RSA and P-256 checks. Measured on 2026-10-31 in the pinned
 # amd64 container: 583 properties, 5 s, 0.06 GB.
 launch fast full dnssec 10 "fill_nondet.0:97" -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI src/dnssec.c src/buf.c
+# jws.c, the JWS check's key reader and dispatcher (docs/decisions.md
+# 221), over contract stubs of the three verifiers and the two hashes.
+# base64_codec.c and base64.c are linked because jws.c defines
+# ch_base64url_encode and ch_base64url_decode over them; main calls
+# neither, and base64_codec proves them. Measured on 2026-11-11 in an
+# Ubuntu 24.04 amd64 container with the pinned cbmc and kissat
+# (PROVE_NO_CACHE=1, /usr/bin/time -v): 974 properties, 4 s, 0.09 GB.
+# With the ES256 test of the signature's length removed, or the RS256
+# floor, one property fails.
+launch fast full jws 10 "fill_nondet.0:268" -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI src/jws.c src/buf.c src/base64_codec.c src/base64.c src/ct.c proof/ct_wipe_stub.c
+# base64_codec.c, base64url's encoder and decoder, at 0 to 7 bytes and 0
+# to 10 characters: each is the other's inverse there, accepted text is
+# canonical, and the encoder's test of the room is jws.h's compare at
+# every length. Measured in the same container: 389 properties, 10 s,
+# 0.13 GB. With the decoder's test of the last group's spare bits
+# removed, or its wipe after a refusal, one property fails.
+launch fast full base64_codec 12 "" -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI src/base64.c src/ct.c proof/ct_wipe_stub.c
 # sha1.c, the SHA-1 a DNSSEC=on object holds for NSEC3 and DS digests of
 # type 1 (docs/decisions.md 169): init, one update of up to a block and
 # the final padding, which writes into the block directly, so a final runs

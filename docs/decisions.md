@@ -18602,3 +18602,87 @@ does nothing more.
       `srv_resume` harness proves the order of the two opens and that a
       seal runs under `ticket_key` alone, and the `srv_accept` harness
       proves the flight runs only under keys that meet the rules.
+221. **JWS=on checks JSON Web Signatures, and holds base64url.**
+    stompy's proxy takes a JWT as a login token, and checks it before it
+    opens a connection to a compute. The owner ruled on 2026-11-11 that
+    this crypto lives in chapulin, and not in stompy or in Zig's standard
+    library.
+
+    - **The axis.** `JWS=on` defines `CH_JWS`, off by default. A host
+      `TRUST=webpki` object alone takes it, on either transport, because
+      the check runs on the files `DNSSEC=on`'s check runs on (decision
+      169). Each call carries the transport in its symbol name (decision
+      61). It takes no build record bit: it changes no struct.
+    - **The name.** A first draft put these calls and SCRAM's parts under
+      one axis, `LOGIN=on`. The owner ruled a name for each protocol, as
+      `DNSSEC=on` has: "login" is one caller's word, and no RFC's. So
+      SCRAM's parts take an axis of their own, `SCRAM=on`.
+    - **The call.** One dispatcher, `ch_jws_verify`, takes the algorithm,
+      the key, the JWS Signing Input and the signature, as
+      `ch_dnssec_verify` takes its four. It hashes the input itself. A
+      token is small and whole in memory, so the call needs no hash
+      context.
+    - **The algorithms.** RS256, ES256 and EdDSA, the three that OIDC
+      issuers sign with. The caller passes the algorithm, from the
+      configuration that holds the key, and the call reads no header
+      (RFC 8725 section 3.1). No value names "none" or an HMAC
+      algorithm. An HMAC key is a shared secret. A check that takes one
+      beside a public key lets a token signed with the public key's
+      bytes pass.
+    - **The two refusals.** A key the call cannot take gives `CH_EINVAL`:
+      the caller's configuration holds the key, and the caller corrects
+      it. A signature that does not verify gives `CH_EAUTH`, a signature
+      of the wrong length among them: the token holds the signature.
+    - **The RS256 key.** RFC 3110 section 2's form, as `ch_dnssec_verify`
+      takes an RSA key: the owner ruled one dispatcher with one key
+      argument. `rsa_key_field.h` holds the reader for both callers. The
+      modulus is 256 to 512 bytes, because RFC 7518 section 3.3 requires
+      a key of 2048 bits or more, and a caller must not have to repeat
+      an RFC's rule. The exponent is the key's own, odd, of 3 to 8
+      bytes. INV-6 names `jws.c` as PKCS#1 v1.5's third caller.
+    - **The verifiers.** `p256_ecdsa_verify_raw`,
+      `rsa_pkcs1_verify_exponent`, `rsa_mont64_public_exp` and
+      `ed25519_verify_hram` compile under `CH_DNSSEC` or `CH_JWS`. The
+      axis adds no arithmetic.
+    - **base64url.** `ch_base64url_encode` and `ch_base64url_decode`
+      write and read RFC 4648 section 5's text with no padding, as RFC
+      7515 section 2 writes a token's parts. The decoder takes canonical
+      text alone, so no two texts decode to one value.
+    - **Constant time.** A token is a bearer credential, so its bytes
+      are secrets. `base64.c` holds the two character functions, and
+      `lint-wide-multiply` holds that file's count of branches at zero
+      on the two 64-bit specs under `-DCH_JWS`. `base64_codec.c` holds
+      the loops, which branch on lengths, and once on whether the
+      decoder refused the text. The encoder divides by 3 nowhere: a
+      compiler writes that division as a widening multiply, which the
+      lint counts. So it tests its room by `3 * text_cap >= 4 * in_len`,
+      and takes at most `CH_BASE64URL_IN_LEN_MAX` bytes.
+    - **No JSON.** The calls read no JSON and no claim. The caller
+      splits the token, reads the header and checks `exp`, `aud` and
+      `iss`.
+    - **The Zig API.** `chapulin.jws` holds `Algorithm`,
+      `VerifyOptions`, `verify`, `base64url_encode` and
+      `base64url_decode`. `verify` takes an options struct, because its
+      three slices have one type and could change places (pepegrillo's
+      `docs/api.md` 3.6). The two base64url calls take the destination
+      first, as `std.base64` does.
+    - **What holds it.** `bin/jws_test` checks ten tokens that OpenSSL
+      signed, two of them under RSA keys one byte outside the bounds.
+      It checks the examples of RFC 7515 appendix A.2 and A.3 and RFC
+      8037 appendix A.4, read from the RFC texts in `docs/rfcs/`. And it
+      checks RFC 4648's vectors and each refusal `jws.h` states. The Zig
+      test checks tokens `std.crypto` signs. The `jws` proof holds the
+      dispatcher over stubs of the verifiers, `base64_codec` proves that
+      the encoder and the decoder are inverses and that accepted text
+      is canonical, and `base64` proves the two character functions
+      against section 5's table. Five violations break the rules:
+      `inv14-jws-rsa-modulus-floor`,
+      `inv14-jws-wrong-key-length-is-auth`,
+      `inv14-jws-es256-signature-length-unchecked`, which the proof
+      alone catches, `inv14-base64url-non-canonical-tail` and
+      `inv16-base64url-class-branches`. `check-lib-jws` and
+      `check-lib-jws-quic` build the two objects, the first with
+      `DNSSEC=on` beside it, as colibri's object has.
+    - **Not built.** A signer: the owner ruled one `ch_jws_sign` for the
+      three algorithms, for tests and tools, and it takes an entry of
+      its own. A JWK reader, JWE, and every HMAC algorithm.

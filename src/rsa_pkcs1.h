@@ -39,18 +39,20 @@ int rsa_pkcs1_verify_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uin
                          size_t digest_len, const uint8_t *sig, size_t sig_len);
 #endif
 
-#if defined(CH_DNSSEC) && defined(CH_CPU_RUNTIME)
+#if (defined(CH_DNSSEC) || defined(CH_JWS)) && defined(CH_CPU_RUNTIME)
 // Verifies a PKCS#1 v1.5 signature of a DNSSEC key, whose exponent is the
 // key's own (RFC 3110 section 2): algorithm 8, RSA/SHA-256, with a
 // 32-byte digest, and algorithm 10, RSA/SHA-512, with a 64-byte one (RFC
-// 5702 section 3). n is the big-endian modulus, n_len bytes with a
+// 5702 section 3). ch_jws_verify calls it for RS256, with a 32-byte
+// digest and its own bounds on the key (jws.h). n is the big-endian modulus, n_len bytes with a
 // nonzero first byte and odd, from CH_DNSSEC_RSA_MODULUS_MIN bytes
 // (dnssec.h), or from
 // the length that leaves PS its 8 bytes when that is longer, to
 // CH_RSA_MODULUS_MAX; n_len need not be a multiple of 8. e is odd and at
 // least 3. sig is exactly n_len bytes and below n. Returns 1 for a valid
 // signature and 0 for anything else. Only a host object built with
-// CH_DNSSEC holds it (https://github.com/c4milo/chapulin/issues/189).
+// CH_DNSSEC or CH_JWS holds it
+// (https://github.com/c4milo/chapulin/issues/189, docs/decisions.md 221).
 int rsa_pkcs1_verify_exponent(const uint8_t *n, size_t n_len, uint64_t e, const uint8_t *digest,
                               size_t digest_len, const uint8_t *sig, size_t sig_len);
 #endif
