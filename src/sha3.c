@@ -198,6 +198,80 @@ static void keccak_f1600(uint64_t a[25]) {
 
 #endif // CH_SHA3_HW_COPY
 
+// The wipe of the stack below the four entries that run the permutation (docs/decisions.md
+// 219). keccak_f1600_plain computes the round in place, and the round holds more values than a
+// core has registers. So each compiler writes lanes and theta's values to stack slots of its
+// own, which no ct_wipe can name. bin/sha3_equiv_test found up to 40 such words after one call,
+// under gcc and clang, for arm64, x86-64, mips32r2, rv32 and Cortex-M3. The state comes from the
+// input, which is a secret seed under ML-KEM and ML-DSA-87.
+//
+// So in an object that runs keccak_f1600_plain, each entry calls a body that is never inlined.
+// When the body ran the permutation, the entry then calls wipe_frame through wipe_frame_call, in
+// sha512.c's form. The frames of the body and of every call it made lay right under the entry's
+// frame. wipe_frame's array lies in the same place, and the call writes zero over it.
+// SHA3_BELOW_LEN has to cover the deepest of those frames under every compiler:
+// bin/sha3_equiv_test measures it and requires it inside the length, and lint-stack holds every
+// frame of this file under the length and 512 bytes more.
+//
+// A body that ran no permutation only moved bytes between the caller's buffer and the context,
+// and the search finds nothing it left (test/sha3_residue.h). So no wipe follows it. ML-KEM's
+// sampler squeezes 24 bytes a call, and a permutation runs in one call of seven.
+//
+// The other forms keep their values in registers and in the states they name
+// (docs/decisions.md 99, 216, 217 and 218), so their objects run no wipe below. What no wipe
+// clears: a register, which holds what the last instruction left in it until another writes it.
+#ifdef CH_SHA3_HW_COPY
+#define SHA3_WIPES_BELOW 0
+#elif SHA3_FORM == SHA3_FORM_PLAIN
+#define SHA3_WIPES_BELOW 1
+#else
+#define SHA3_WIPES_BELOW 0
+#endif
+
+#if SHA3_WIPES_BELOW
+
+// The bytes of stack wipe_frame writes zero over. The deepest body, keccak under sha3_256 or
+// sha3_512, wrote 764 bytes below its caller under gcc 13.3 for mips32r2 at -O2, and 788 with
+// UBSan, as the nightly's cross-check builds it.
+#define SHA3_BELOW_LEN 1024
+
+// The attribute of a body of an entry: never inlined, so that its frame lies under the entry's
+// frame.
+#define SHA3_BODY_ATTRIBUTE noinline
+
+// The frame of this function is the array. ct_wipe is compiled apart from it and takes the
+// array's address, so the compiler keeps the array in memory and cannot delete the call.
+static void wipe_frame(void) {
+    uint8_t below[SHA3_BELOW_LEN];
+    ct_wipe(below, sizeof below);
+}
+
+// The entries call wipe_frame through this pointer, which is a volatile object
+// (docs/decisions.md 91). So the compiler cannot tell which function the call runs and cannot
+// compile it into the entry, where the array would join the entry's frame and lie above the
+// frames it is there to wipe.
+static void (*const volatile wipe_frame_call)(void) = wipe_frame;
+
+// The wipe after a body, where permuted says the body ran the permutation. It is always inlined,
+// so the call through wipe_frame_call is the entry's own and wipe_frame's frame lies right under
+// the entry's frame. permuted comes from the lengths and the position alone, which are public.
+static inline __attribute__((always_inline)) void wipe_below_after(int permuted) {
+    if (permuted) {
+        wipe_frame_call();
+    }
+}
+
+#else
+
+// Where no wipe follows, a body takes no attribute: __attribute__(()) holds an empty list.
+#define SHA3_BODY_ATTRIBUTE
+
+static inline void wipe_below_after(int permuted) {
+    (void)permuted;
+}
+
+#endif // SHA3_WIPES_BELOW
+
 // Bytes map to lanes little-endian (FIPS 202 §3.1.2): byte i of a block
 // is byte i % 8 of lane i / 8, counted from the lane's low end. Every
 // function below names a lane's bytes one by one, so the host's
@@ -286,7 +360,8 @@ static void absorb_whole_blocks(uint64_t lane[25], size_t rate, const uint8_t **
 // permutation runs once per whole block and never once per byte. The
 // CBMC harnesses depend on that count: a permutation guarded per byte
 // unrolls into one symbolic copy per byte.
-static void absorb(uint64_t lane[25], size_t rate, size_t *pos, const uint8_t *in, size_t n) {
+static __attribute__((SHA3_BODY_ATTRIBUTE)) void absorb(uint64_t lane[25], size_t rate, size_t *pos,
+                                                        const uint8_t *in, size_t n) {
     size_t fill = *pos;
     if (fill > 0) {
         size_t take = rate - fill;
@@ -309,7 +384,8 @@ static void absorb(uint64_t lane[25], size_t rate, size_t *pos, const uint8_t *i
     *pos = fill + n;
 }
 
-static void squeeze(uint64_t lane[25], size_t rate, size_t *pos, uint8_t *out, size_t n) {
+static __attribute__((SHA3_BODY_ATTRIBUTE)) void squeeze(uint64_t lane[25], size_t rate,
+                                                         size_t *pos, uint8_t *out, size_t n) {
     size_t drained = *pos;
     if (drained < rate) {
         size_t take = rate - drained;
@@ -344,15 +420,16 @@ static void squeeze(uint64_t lane[25], size_t rate, size_t *pos, uint8_t *out, s
 // final pad bit into the block's last byte (FIPS 202 §B.2). When one
 // byte remains the two XOR into the same byte, which is the standard's
 // single-byte case.
-static void pad_finish(uint64_t lane[25], size_t rate, size_t *pos, uint8_t domain) {
+static __attribute__((SHA3_BODY_ATTRIBUTE)) void pad_finish(uint64_t lane[25], size_t rate,
+                                                            size_t *pos, uint8_t domain) {
     xor_byte(lane, *pos, domain);
     xor_byte(lane, rate - 1, 0x80);
     keccak_f1600(lane);
     *pos = 0;
 }
 
-static void keccak(size_t rate, uint8_t domain, const uint8_t *in, size_t n, uint8_t *out,
-                   size_t out_len) {
+static __attribute__((SHA3_BODY_ATTRIBUTE)) void
+keccak(size_t rate, uint8_t domain, const uint8_t *in, size_t n, uint8_t *out, size_t out_len) {
     uint64_t lane[25] = {0};
     size_t pos = 0;
     absorb(lane, rate, &pos, in, n);
@@ -366,10 +443,12 @@ static void keccak(size_t rate, uint8_t domain, const uint8_t *in, size_t n, uin
 
 void sha3_256(const uint8_t *in, size_t n, uint8_t out[SHA3_256_LEN]) {
     keccak(SHA3_256_RATE, SHA3_DOMAIN, in, n, out, SHA3_256_LEN);
+    wipe_below_after(1);
 }
 
 void sha3_512(const uint8_t *in, size_t n, uint8_t out[SHA3_512_LEN]) {
     keccak(SHA3_512_RATE, SHA3_DOMAIN, in, n, out, SHA3_512_LEN);
+    wipe_below_after(1);
 }
 
 static void shake_init(shake *s, size_t rate) {
@@ -390,13 +469,21 @@ void shake256_init(shake *s) {
 }
 
 void shake_absorb(shake *s, const uint8_t *in, size_t n) {
+    // The body runs the permutation when the bytes fill the block. The position is below the
+    // rate while the context absorbs.
+    int permutes = n >= s->rate - s->pos;
     absorb(s->lane, s->rate, &s->pos, in, n);
+    wipe_below_after(permutes);
 }
 
 void shake_squeeze(shake *s, uint8_t *out, size_t n) {
+    // The bodies run the permutation when the first squeeze pads, and when the bytes read past
+    // the block. The position is at most the rate while the context squeezes.
+    int permutes = !s->squeezing || n > s->rate - s->pos;
     if (!s->squeezing) {
         pad_finish(s->lane, s->rate, &s->pos, SHAKE_DOMAIN);
         s->squeezing = 1;
     }
     squeeze(s->lane, s->rate, &s->pos, out, n);
+    wipe_below_after(permutes);
 }

@@ -1,0 +1,14 @@
+invariant: INV-17
+file: src/sha3.c
+catches: sha3_equiv_test
+reason: shake_absorb takes an absorb that fills its block to the last byte
+  for one that runs no permutation, so it skips the wipe after the one
+  absorb length at which the permutation starts to run. The lanes the
+  compiler wrote to stack slots of its own stay there. bin/sha3_equiv_test
+  makes that call and finds a lane it computed in the stack below it
+  (docs/decisions.md 219).
+
+--- old
+    int permutes = n >= s->rate - s->pos;
+--- new
+    int permutes = n > s->rate - s->pos;

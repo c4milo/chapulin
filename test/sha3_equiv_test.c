@@ -19,13 +19,16 @@
 //     bytes up, so that a piece starts and ends at every offset of a
 //     lane and of a block.
 //
-// Built as an x86-64 host object (-DCH_CPU_RUNTIME), which runs
-// sha3_inverted_lanes.h's form, it then searches the stack each kind of
-// call leaves for any lane the call computed (test/sha3_residue.h,
-// docs/decisions.md 218). bin/sha3_equiv_test_host is that build on an
-// x86-64 machine. On an Apple silicon Mac, make check builds it for
-// x86-64 and runs it under Rosetta, where clang keeps rbp as the frame
-// pointer (test/rosetta-check.sh).
+// It then searches the stack each kind of call leaves for any lane the
+// call computed (test/sha3_residue.h). bin/sha3_equiv_test is a device
+// object's build, and bin/sha3_equiv_test_host a host object's. Both run
+// keccak_f1600_plain, except a host object for x86-64, which runs
+// sha3_inverted_lanes.h's form (docs/decisions.md 218). sha3.c wipes the
+// stack below each entry where it runs keccak_f1600_plain, and there the
+// binary also measures the depth that wipe has to cover
+// (docs/decisions.md 219). On an Apple silicon Mac, make check builds the
+// host test for x86-64 and runs it under Rosetta, where clang keeps rbp
+// as the frame pointer (test/rosetta-check.sh).
 //
 // This file includes sha3.c itself, so it can call the permutation,
 // which sha3.c keeps static. The random values come from the seeded
@@ -242,11 +245,6 @@ static void stream(int is_128) {
     }
 }
 
-// The search runs where the object runs sha3_inverted_lanes.h's form: an
-// x86-64 host object, the condition under which sha3.c sets
-// SHA3_INVERTED_LANES.
-#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
-
 // The entries the stack search calls: sha3.c's own, through pointers that
 // are volatile objects. This file includes sha3.c, so a direct call could
 // be compiled into the search's own functions. Through the pointers each
@@ -259,24 +257,17 @@ static void (*const volatile residue_shake_squeeze)(shake *, uint8_t *, size_t) 
 static void (*const volatile residue_sha3_256)(const uint8_t *, size_t, uint8_t *) = sha3_256;
 static void (*const volatile residue_sha3_512)(const uint8_t *, size_t, uint8_t *) = sha3_512;
 
-// The names test/sha3_residue.h calls and prints.
+// The names test/sha3_residue.h calls and prints. An object that runs
+// keccak_f1600_plain wipes the stack below each entry (SHA3_WIPES_BELOW,
+// docs/decisions.md 219), so there the search also calls the bodies by
+// their own names and measures how far below its caller each writes.
 #define SHA3_RESIDUE_ENTRY(name) (*residue_##name)
 #define SHA3_RESIDUE_SUFFIX ""
 #define SHA3_RESIDUE_TEST "sha3_equiv"
-#include "sha3_residue.h"
-
-#else
-
-// Every other object runs keccak_round in place. Its lanes and theta's
-// values do not fit the registers, and the compilers keep lanes in stack
-// slots of their own choice. INV-17 makes no claim of that stack
-// (docs/decisions.md 218).
-static void run_residue(void) {
-    (void)printf("SKIP sha3_equiv, the stack check: this object runs keccak_round in place, "
-                 "which keeps lanes in stack slots (docs/decisions.md 218)\n");
-}
-
+#if SHA3_WIPES_BELOW
+#define SHA3_RESIDUE_BODIES
 #endif
+#include "sha3_residue.h"
 
 int main(void) {
     uint64_t seed = rng_seed_from_env();

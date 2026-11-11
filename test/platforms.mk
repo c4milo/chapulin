@@ -318,6 +318,7 @@ m3-check:
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/unit test/unit_test.c $(SRCS)
 	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/sha3_equiv_test $(SHA3_EQUIV_SRCS)
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/p384_test test/p384_test.c $(P384_TEST_SRCS)
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
@@ -345,7 +346,7 @@ m3-check:
 	  -o bin/m3/wycheproof_test test/wycheproof_test.c $(filter-out src/aes.c src/gcm.c,$(WYCHEPROOF_SRCS)) && \
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -Ibin -Itest -o bin/m3/wycheproof_mldsa_test test/wycheproof_mldsa_test.c \
 	  $(MLDSA_TEST_SRCS)
-	@set -e; for b in unit rsa_test sha3_test sha512_test p384_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test sha3_test sha3_equiv_test sha512_test p384_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (m3/qemu)"; $(M3_RUN) bin/m3/$$b; done; \
 	if [ -x bin/m3/wycheproof_test ]; then echo "== wycheproof_test (m3/qemu)"; $(M3_RUN) bin/m3/wycheproof_test; fi; \
 	if [ -x bin/m3/wycheproof_mldsa_test ]; then echo "== wycheproof_mldsa_test (m3/qemu)"; \

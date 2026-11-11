@@ -289,6 +289,11 @@
 #                     of keccak_rounds_inverted and keccak_rounds_andn,
 #                     whose values fit the registers that remain with rbp
 #                     kept
+#   sha3-device       bin/sha3_equiv_test as a device object builds it,
+#                     for x86-64 and for arm64 under gcc and under clang,
+#                     at -O2 and at -Os, and for mips32r2 under gcc, for
+#                     the violations of sha3.c's wipe of the stack below
+#                     its entries
 #   arm64-hash-count  the three counting binaries for arm64, for the
 #                     violations of the entries an arm64 object alone
 #                     compiles and of the copy gcm_use_eor3 picks
@@ -375,7 +380,11 @@
 # bin/sha2_equiv_test for x86-64 a second time, clang by default; it links
 # with the libraries X86_CC's toolchain carries. SHA3_X86_64_CLANG names
 # the clang that builds bin/sha3_equiv_test_host for x86-64 with the frame
-# pointer, clang by default, which links the same way. The
+# pointer, clang by default, which links the same way. SHA3_DEVICE_CLANG
+# names the clang that builds bin/sha3_equiv_test as a device object for
+# x86-64 and for arm64, clang by default, which links the same way.
+# MIPS_CC names the gcc that builds it for mips32r2, mips-linux-gnu-gcc by
+# default, and QEMU_MIPS the emulator that runs it. The
 # mips job in .github/workflows/check.yml runs this script on every push,
 # because the qemu-user package it installs carries both emulators, and
 # test/docker-aes-runtime-qemu.sh runs it in a container elsewhere.
@@ -389,9 +398,9 @@ only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | sha3-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
     mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
-    rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi) ;;
+    rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi | sha3-device) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | sha3-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | sha3-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi | sha3-device]" >&2
     exit 2
     ;;
 esac
@@ -451,11 +460,30 @@ if [ -z "$only" ] || [ "$only" = sha3-stack ]; then
     "$sha3_clang" --target=x86_64-linux-gnu -dM -E -x c /dev/null 2> /dev/null | grep -qw __clang__ ||
         { echo "aes-runtime-qemu: $sha3_clang is not a clang that compiles for x86-64; set SHA3_X86_64_CLANG" >&2; exit 1; }
 fi
+# clang for x86-64 and arm64, and gcc and qemu for mips32r2, which build
+# and run bin/sha3_equiv_test as a device object.
+sha3_device_clang=""
+mips_cc=""
+mips_qemu=${QEMU_MIPS:-qemu-mips}
+if [ -z "$only" ] || [ "$only" = sha3-device ]; then
+    sha3_device_clang=${SHA3_DEVICE_CLANG:-clang}
+    for target in x86_64-linux-gnu aarch64-linux-gnu; do
+        "$sha3_device_clang" --target=$target -dM -E -x c /dev/null 2> /dev/null | grep -qw __clang__ ||
+            { echo "aes-runtime-qemu: $sha3_device_clang is not a clang that compiles for $target; set SHA3_DEVICE_CLANG" >&2; exit 1; }
+    done
+    mips_cc=${MIPS_CC:-mips-linux-gnu-gcc}
+    "$mips_cc" -dM -E -x c /dev/null 2> /dev/null | grep -qw __mips__ ||
+        { echo "aes-runtime-qemu: $mips_cc does not compile for mips; set MIPS_CC" >&2; exit 1; }
+    command -v "$mips_qemu" > /dev/null || { echo "aes-runtime-qemu: $mips_qemu is missing" >&2; exit 1; }
+fi
 x86_out=bin/qemu
 arm64_out=bin/qemu-arm64
+# bin/sha3_equiv_test as a device object builds it, one binary for each
+# target, compiler and level.
+device_out=bin/qemu-device
 # The binary clang builds for x86-64, and the kernel's object under it.
 x86_clang_out=bin/qemu-clang
-mkdir -p "$x86_out" "$arm64_out" "$x86_clang_out"
+mkdir -p "$x86_out" "$arm64_out" "$x86_clang_out" "$device_out"
 # No -DCH_NATIVE_WIDEMUL: every binary here is a host object, which holds
 # both multiplies and whose ct.h refuses the define.
 flags=(-Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -static -Isrc -Iinclude/chapulin -Iinclude -I. -Itest
@@ -1157,6 +1185,49 @@ if [ "$only" = sha3-stack ]; then
     exit 0
 fi
 
+if [ -z "$only" ] || [ "$only" = sha3-device ]; then
+    # bin/sha3_equiv_test as a device object builds it, which runs
+    # keccak_f1600_plain: each entry of sha3.c wipes SHA3_BELOW_LEN bytes of
+    # the stack below its body (docs/decisions.md 219). The binary measures
+    # how deep each body writes below its caller, and searches the stack
+    # each kind of call leaves. Each build is the frames of one compiler at
+    # one level: gcc and clang for x86-64 and arm64 at -O2 and at -Os, the
+    # level of a firmware build, and gcc for mips32r2, whose bodies write
+    # the deepest of the builds measured. It links the list
+    # bin/sha3_equiv_test_host links, and no -DCH_CPU_RUNTIME.
+    sha3_lists=$(make -s --no-print-directory print-sha3-host-lists) ||
+        { echo "aes-runtime-qemu: make print-sha3-host-lists failed" >&2; exit 1; }
+    read -r -a sha3_device_srcs <<< "$(sed -n 2p <<< "$sha3_lists")"
+    for level in -O2 -Os; do
+        "$x86_cc" "${flags[@]}" "$level" -o "$device_out/sha3_equiv_test_x86_gcc$level" "${sha3_device_srcs[@]}" || exit 1
+        "$sha3_device_clang" --target=x86_64-linux-gnu "${flags[@]}" "$level" \
+            -o "$device_out/sha3_equiv_test_x86_clang$level" "${sha3_device_srcs[@]}" || exit 1
+        "$arm64_cc" "${flags[@]}" "$level" -o "$device_out/sha3_equiv_test_arm64_gcc$level" "${sha3_device_srcs[@]}" || exit 1
+        "$sha3_device_clang" --target=aarch64-linux-gnu "${flags[@]}" "$level" \
+            -o "$device_out/sha3_equiv_test_arm64_clang$level" "${sha3_device_srcs[@]}" || exit 1
+        "$mips_cc" "${flags[@]}" "$level" -o "$device_out/sha3_equiv_test_mips_gcc$level" "${sha3_device_srcs[@]}" || exit 1
+        for build in x86_gcc x86_clang; do
+            expect_on "$x86_qemu" "$device_out" max 0 \
+                "built as a device object for x86-64 ($build, $level), a body of src/sha3.c wrote below the stack its entry wipes, a call left a value it computed from its input on the stack, or src/sha3.c disagrees with FIPS 202" \
+                "sha3_equiv_test_$build$level"
+        done
+        for build in arm64_gcc arm64_clang; do
+            expect_on "$arm64_qemu" "$device_out" max 0 \
+                "built as a device object for arm64 ($build, $level), a body of src/sha3.c wrote below the stack its entry wipes, a call left a value it computed from its input on the stack, or src/sha3.c disagrees with FIPS 202" \
+                "sha3_equiv_test_$build$level"
+        done
+        "$mips_qemu" "$device_out/sha3_equiv_test_mips_gcc$level" > "$device_out/row.log" 2>&1 || {
+            cat "$device_out/row.log" >&2
+            echo "aes-runtime-qemu: built as a device object for mips32r2 by $mips_cc at $level, a body of src/sha3.c wrote below the stack its entry wipes, a call left a value it computed from its input on the stack, or src/sha3.c disagrees with FIPS 202" >&2
+            exit 1
+        }
+    done
+fi
+if [ "$only" = sha3-device ]; then
+    echo "aes-runtime-qemu: built as a device object by $x86_cc and $sha3_device_clang for x86-64, by $arm64_cc and $sha3_device_clang for arm64 and by $mips_cc for mips32r2, at -O2 and at -Os, bin/sha3_equiv_test found each body of src/sha3.c inside the stack its entry wipes and no value a SHA-3 call computed from its input on the stack"
+    exit 0
+fi
+
 if [ -z "$only" ] || [ "$only" = sha2-equiv ]; then
     # sha256_hw.c against sha256.c, sha512_hw.c against sha512.c's second
     # arm, and sha512.c's first arm against it, each on the model with
@@ -1383,6 +1454,8 @@ echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU
     "with src/sha3.c and left no lane on the stack, ML-KEM's copies agreed with src/mlkem.c, and one end on" \
     "the SHA-3 instructions and the other on src/sha3.c agreed; the vector NTT agreed with" \
     "src/mlkem_poly.c's loops on SSE2 and on NEON; src/aes_hw.c agreed with the table and left no word of a" \
-    "schedule on the stack on AES-NI and on the Arm AES instructions; and each caller of the RSA" \
+    "schedule on the stack on AES-NI and on the Arm AES instructions; built as a device object for" \
+    "x86-64, arm64 and mips32r2, bin/sha3_equiv_test found each body of src/sha3.c inside the stack" \
+    "its entry wipes and no value a SHA-3 call computed on the stack; and each caller of the RSA" \
     "verifiers sent the public operation to AVX-512 IFMA exactly where its session's ch_cfg.cpu" \
     "held the bit"

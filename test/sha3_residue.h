@@ -1,16 +1,18 @@
-// What the SHA-3 calls of a host object leave on the stack. A call's state comes from its
-// input, which under ML-KEM is a secret seed, and Keccak-f[1600] is a permutation: one whole
-// state gives back the state before it. A frame is dead after its call returns, but its bytes
-// stay in memory below this binary's own frames until another call writes over them.
+// What the SHA-3 calls leave on the stack. A call's state comes from its input, which under
+// ML-KEM and ML-DSA-87 is a secret seed, and Keccak-f[1600] is a permutation: one whole state
+// gives back the state before it. A frame is dead after its call returns, but its bytes stay in
+// memory below this binary's own frames until another call writes over them.
 //
 // Two binaries include this file, and each holds one set of calls to the rule:
 //
 //   test/sha3_hw_equiv_test.c holds sha3_hw.c's calls. sha3_hw.c keeps the 25 lanes in
 //   registers through the rounds of permute_blocks and writes them to the caller's state alone,
 //   and sha3_256_hw and sha3_512_hw wipe the state they hash in.
-//   test/sha3_equiv_test.c, built as an x86-64 host object, holds sha3.c's calls. They run
+//   test/sha3_equiv_test.c holds sha3.c's calls, in every object. An x86-64 host object runs
 //   sha3_inverted_lanes.h's form. Its function of 24 rounds keeps its values in registers and in
 //   the two states it names, and the scratch state is wiped (docs/decisions.md 216 and 218).
+//   Every other object runs keccak_f1600_plain, whose compilers keep lanes in stack slots, and
+//   there each entry wipes SHA3_BELOW_LEN bytes of the stack below it (docs/decisions.md 219).
 //
 // Before the include, each binary defines three names:
 //
@@ -18,12 +20,21 @@
 //   SHA3_RESIDUE_SUFFIX, the text that ends the name of an entry in a message;
 //   SHA3_RESIDUE_TEST, the text that starts each message.
 //
+// test/sha3_equiv_test.c defines SHA3_RESIDUE_BODIES as well in an object that wipes below the
+// entries. Then run_residue_depth (test/sha3_residue_depth.h) first calls each entry's body by
+// its own name, with no wipe after it. It requires the lowest byte the bodies wrote within
+// SHA3_BELOW_LEN of their caller, so the wipe covers their frames. It also requires the search to
+// find a word there, so a search that could find nothing fails.
+//
 // Each also declares the generator rng_bytes, the round constants round_constants and the counts
 // compared and failures.
 //
 // Each residue_call_ function below makes the calls of one kind, so that every way the entries
 // run the permutation runs once: over whole blocks of the caller's bytes at each of the three
 // rates, on a block the state held part of, after the padding, and between two blocks of output.
+// Four more kinds hold the two lengths at which a call starts to run the permutation, and so
+// where sha3.c's entries start to wipe: an absorb one byte short of the block and one that fills
+// it to the last byte, and a squeeze to the last byte of the block and one a byte past it.
 // The streams work in a context that is static, so the context's own copy of the state is not on
 // the stack; the two digests hash in a state on their own frame. residue_snapshot then copies
 // the stack below its caller as deep as RESIDUE_BYTES, where the dead frames lay, and
@@ -108,6 +119,43 @@ static __attribute__((noinline)) void residue_call_squeeze(void) {
     SHA3_RESIDUE_ENTRY(shake256_init)(&residue_context);
     SHA3_RESIDUE_ENTRY(shake_absorb)(&residue_context, residue_data, RESIDUE_SQUEEZE_IN_LEN);
     SHA3_RESIDUE_ENTRY(shake_squeeze)(&residue_context, residue_out, RESIDUE_SQUEEZE_OUT_LEN);
+}
+
+// An absorb one byte short of the block, the longest that runs no permutation. Its words are
+// the message's lanes.
+static __attribute__((noinline)) void residue_call_short_block(void) {
+    SHA3_RESIDUE_ENTRY(shake256_init)(&residue_context);
+    SHA3_RESIDUE_ENTRY(shake_absorb)(&residue_context, residue_data, SHAKE256_RATE - 1);
+}
+
+// An absorb that fills the block the state held part of to its last byte, the shortest that
+// runs the permutation.
+#define RESIDUE_FIRST_PART_LEN ((size_t)100)
+static __attribute__((noinline)) void residue_call_exact_block(void) {
+    SHA3_RESIDUE_ENTRY(shake256_init)(&residue_context);
+    SHA3_RESIDUE_ENTRY(shake_absorb)(&residue_context, residue_data, RESIDUE_FIRST_PART_LEN);
+    SHA3_RESIDUE_ENTRY(shake_absorb)(&residue_context, residue_data + RESIDUE_FIRST_PART_LEN,
+                                     SHAKE256_RATE - RESIDUE_FIRST_PART_LEN);
+}
+
+// The padding's permutation, and then a squeeze to the last byte of that block, the longest that
+// runs no permutation.
+#define RESIDUE_READ_FIRST_LEN ((size_t)10)
+static __attribute__((noinline)) void residue_call_read_block(void) {
+    SHA3_RESIDUE_ENTRY(shake256_init)(&residue_context);
+    SHA3_RESIDUE_ENTRY(shake_absorb)(&residue_context, residue_data, RESIDUE_SQUEEZE_IN_LEN);
+    SHA3_RESIDUE_ENTRY(shake_squeeze)(&residue_context, residue_out, RESIDUE_READ_FIRST_LEN);
+    SHA3_RESIDUE_ENTRY(shake_squeeze)(&residue_context, residue_out,
+                                      SHAKE256_RATE - RESIDUE_READ_FIRST_LEN);
+}
+
+// A squeeze of the whole block the padding's permutation left, and then one of a byte past it,
+// the shortest that runs the permutation.
+static __attribute__((noinline)) void residue_call_past_block(void) {
+    SHA3_RESIDUE_ENTRY(shake256_init)(&residue_context);
+    SHA3_RESIDUE_ENTRY(shake_absorb)(&residue_context, residue_data, RESIDUE_SQUEEZE_IN_LEN);
+    SHA3_RESIDUE_ENTRY(shake_squeeze)(&residue_context, residue_out, SHAKE256_RATE);
+    SHA3_RESIDUE_ENTRY(shake_squeeze)(&residue_context, residue_out, 1);
 }
 
 // The two digests, whose state is on their own frame.
@@ -284,13 +332,20 @@ static void run_residue_shape(const char *shape, void (*call)(void), size_t rate
     }
 }
 
-// The six kinds, in a binary whose stack the search can read (test/stack_residue.c).
+#ifdef SHA3_RESIDUE_BODIES
+#include "sha3_residue_depth.h"
+#endif
+
+// The ten kinds, in a binary whose stack the search can read (test/stack_residue.c).
 static void run_residue(void) {
     const char *unsearched = stack_residue_unsearched();
     if (unsearched != NULL) {
         (void)printf("SKIP " SHA3_RESIDUE_TEST ", the stack check: %s\n", unsearched);
         return;
     }
+#ifdef SHA3_RESIDUE_BODIES
+    run_residue_depth();
+#endif
     run_residue_shape("a SHAKE256 absorb over whole blocks", residue_call_whole_blocks256,
                       SHAKE256_RATE, RESIDUE_TWO_BLOCKS256_LEN, 0, 0);
     run_residue_shape("a SHAKE128 absorb over whole blocks", residue_call_whole_blocks128,
@@ -299,6 +354,14 @@ static void run_residue(void) {
                       residue_call_buffered_block, SHAKE256_RATE, RESIDUE_BUFFERED_LEN, 0, 0);
     run_residue_shape("a SHAKE256 squeeze of two blocks", residue_call_squeeze, SHAKE256_RATE,
                       RESIDUE_SQUEEZE_IN_LEN, 0x1f, RESIDUE_SQUEEZE_OUT_LEN);
+    run_residue_shape("a SHAKE256 absorb one byte short of a block", residue_call_short_block,
+                      SHAKE256_RATE, SHAKE256_RATE - 1, 0, 0);
+    run_residue_shape("a SHAKE256 absorb that fills its block to the last byte",
+                      residue_call_exact_block, SHAKE256_RATE, SHAKE256_RATE, 0, 0);
+    run_residue_shape("a SHAKE256 squeeze to the last byte of its block", residue_call_read_block,
+                      SHAKE256_RATE, RESIDUE_SQUEEZE_IN_LEN, 0x1f, SHAKE256_RATE);
+    run_residue_shape("a SHAKE256 squeeze a byte past its block", residue_call_past_block,
+                      SHAKE256_RATE, RESIDUE_SQUEEZE_IN_LEN, 0x1f, SHAKE256_RATE + 1);
     run_residue_shape("sha3_256" SHA3_RESIDUE_SUFFIX, residue_call_sha3_256, SHA3_256_RATE,
                       RESIDUE_SHA3_256_LEN, 0x06, SHA3_256_LEN);
     run_residue_shape("sha3_512" SHA3_RESIDUE_SUFFIX, residue_call_sha3_512, SHA3_512_RATE,

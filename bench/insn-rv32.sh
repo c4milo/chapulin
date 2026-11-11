@@ -271,7 +271,7 @@ GCC_INCLUDE=$("$GCC" -print-file-name=include)
 CC="$GCC -std=c11 -march=rv32imac -mabi=ilp32 -Os -ffreestanding \
     -nostdinc -isystem $GCC_INCLUDE -nostdlib -static -fno-pic -fno-pie -no-pie \
     -fno-stack-protector -Wl,--no-warn-rwx-segments \
-    -I/src -I/src/bench -I$W/shim -I$W ${INSN_DEF:?}"
+    -I/src -I/src/src -I/src/include/chapulin -I/src/include -I/src/bench -I$W/shim -I$W ${INSN_DEF:?}"
 # The sources and the defines every build takes are the Makefile's
 # INSN_SRCS and INSN_DEF, which the host half read and passed in; here
 # each source sits under /src.

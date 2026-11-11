@@ -18356,3 +18356,184 @@ does nothing more.
       after iota. A device object's round leaves lanes the same way. The
       search prints SKIP for both, and INV-17 says that it makes no claim
       of their stack. Camilo rules whether that stack gets a fix.
+
+219. **An object that runs `keccak_f1600_plain` wipes the stack below
+    each SHA-3 call that ran the permutation.** Camilo approved the work
+    on 2026-11-10.
+
+    - **The gap.** A device object and an arm64 host object run
+      `keccak_f1600_plain`, whose round computes the state in place. An
+      arm64 host object runs it in a session without
+      `CH_CPU_CONSTANT_TIME_SHA3`, and in every object gcc builds. The
+      round holds more values than a core has registers. So each
+      compiler writes lanes and values of theta to stack slots of its
+      own, and they stay there after the call returns. The state comes
+      from the input, which is a secret seed under ML-KEM and ML-DSA-87.
+      Decision 218 saw this on arm64, and INV-17 then made no claim of
+      that stack.
+    - **How it shows.** `bin/sha3_equiv_test` now runs decision 218's
+      search in every object. Run on main, the same search found these
+      64-bit words of the state after one call. The first column is a
+      SHAKE256 absorb of two
+      blocks. The second is `sha3_256` of 295 bytes, with the depth of
+      the deepest word below the caller.
+
+      | build | absorb | `sha3_256` |
+      | --- | --- | --- |
+      | Apple clang 21, arm64, `-O2` | 12 | 22, 568 bytes |
+      | clang 23, arm64, `-O2` | 11 | 22, 552 bytes |
+      | clang 18, arm64, `-O2` | 5 | 10, 496 bytes |
+      | gcc 13.3, arm64, `-O2` | 2 | 0 |
+      | gcc 13.3, arm64, `-Os` | 8 | 2, 360 bytes |
+      | gcc 13.3, x86-64 device, `-O2` | 13 | 17, 480 bytes |
+      | clang 18, x86-64 device, `-O2` | 24 | 40, 632 bytes |
+      | gcc 13.3, mips32r2, `-O2` | 25 | 26, 764 bytes |
+      | clang 18, mips32r2, `-O2` | 7 | 7, 436 bytes |
+      | Bootlin gcc 14.3, rv32, `-O2` | 14 | 14, 536 bytes |
+      | Arm GNU gcc 15.3, Cortex-M3, `-O2` | 12 | 12, 504 bytes |
+      | Arm GNU gcc 15.3, Cortex-M3, `-Os` | 32 | 31, 564 bytes |
+      | clang 23, Cortex-M3, `-O2` | 3 | 3, 536 bytes |
+
+      The words are lanes after theta, rho or chi of the last round,
+      values of theta, and lane 0 after iota. An x86-64 host object left
+      none, as decision 218 found. clang for Cortex-M3 and for mips32r2
+      also writes the two 32-bit halves of a lane to slots apart: 54 or
+      55 such halves lay in each copy, where the search for 64-bit words
+      counts 2 to 7.
+    - **The wipe.** Where `sha3.c` runs `keccak_f1600_plain`, it sets
+      `SHA3_WIPES_BELOW`. Then `sha3_256`, `sha3_512`, `shake_absorb`
+      and `shake_squeeze` each call a body that is never inlined:
+      `keccak`, `absorb`, or `pad_finish` and `squeeze`. When the body
+      ran the permutation, the entry then calls `wipe_frame` through the
+      volatile pointer `wipe_frame_call`, in `sha512.c`'s form. Its array
+      of `SHA3_BELOW_LEN` bytes, 1,024, lies where the bodies' frames
+      lay, and `ct_wipe` writes zero over it. One wipe runs for each such
+      call, not for each permutation. The one-shots always run the
+      permutation. An absorb runs it when its bytes fill the block, and a
+      squeeze when it pads or reads past the block. That test reads the
+      lengths and the position alone, which are public. The contracts in
+      `sha3.h` do not change. `sha3_hw.c`'s two copies and an x86-64 host
+      object run no wipe below, because their forms keep the state in
+      registers (decisions 99, 216, 217 and 218).
+    - **Why a call with no permutation gets no wipe.** ML-KEM's matrix
+      sampler squeezes 24 bytes a call. Of the seven squeezes that read
+      one SHAKE128 block, one runs a permutation. With a wipe after every
+      call, ML-KEM-768 took 18.8 to 24.4% longer on the M1 Pro, against
+      2.8 to 3.6% now. A call with no permutation moves bytes between the
+      caller's buffer and the context, and nothing more. Four kinds of
+      call in the search hold the two lengths at which a call starts to
+      run the permutation. They are an absorb one byte short of the block
+      and one that fills it, and a squeeze to the block's last byte and
+      one a byte past it. Each passes on every build below.
+    - **The depth.** Each body, called by its own name with no wipe after
+      it, wrote this far below its caller. The first column is the
+      deepest of the absorb and squeeze bodies, and the second is
+      `keccak`, the body of the one-shots, which holds the state in its
+      own frame.
+
+      | build | `absorb`, `squeeze` | `keccak` |
+      | --- | --- | --- |
+      | Apple clang 21, arm64, `-O2` | 304 | 576 |
+      | clang 18, arm64, `-O2` and `-Os` | 248 | 520 |
+      | gcc 13.3, arm64, `-O2` | 200 | 488 |
+      | gcc 13.3, arm64, `-Os` | 216 | 520 |
+      | gcc 13.3, x86-64 device, `-O2` | 208 | 480 |
+      | gcc 13.3, x86-64 device, `-Os` | 312 | 584 |
+      | clang 18, x86-64 device, `-O2` | 376 | 648 |
+      | clang 18, x86-64 device, `-Os` | 312 | 584 |
+      | gcc 13.3, mips32r2, `-O2` | 492 | 764 |
+      | gcc 13.3, mips32r2, `-Os` | 436 | 708 |
+      | clang 18, mips32r2, `-O2` and `-Os` | 480 | 712 |
+      | gcc 13.3 with UBSan, mips32r2, `-O2` | 516 | 788 |
+      | Bootlin gcc 14.3, rv32, `-O2` | 300 | 556 |
+      | Bootlin gcc 14.3, rv32, `-Os` | 280 | 536 |
+      | Arm GNU gcc 15.3, Cortex-M3, `-O2` | 280 | 512 |
+      | Arm GNU gcc 15.3, Cortex-M3, `-Os` | 372 | 604 |
+      | clang 23, Cortex-M3, `-O2` | 340 | 556 |
+      | clang 23, Cortex-M3, `-Os` | 316 | 548 |
+
+      gcc 15.2 for x86-64 gave `keccak` 480 bytes at `-O2` and 584 at
+      `-Os`, as gcc 13.3 does. `SHA3_BELOW_LEN` covers the deepest, 788
+      bytes under the nightly's UBSan build for mips32r2, with 236 bytes to
+      spare. After the wipe, the search found no word on any of these
+      builds.
+    - **The cost.** On the M1 Pro without the SHA-3 bit (`--cpu 0x1`),
+      five rounds of each tree in turn, at a load average of 5.2 to 7.4:
+
+      | row | main | this decision | instructions |
+      | --- | --- | --- | --- |
+      | SHA3-256, 64 bytes | 4.13 ns/B | 4.55 ns/B | +7.7% |
+      | SHA3-256, 1 KiB | 1.976 ns/B | 2.009 ns/B | +1.0% |
+      | SHA3-256, 16 KiB | 1.853 ns/B | 1.854 ns/B | +0.1% |
+      | SHAKE128, 64 bytes | 4.06 ns/B | 4.43 ns/B | +7.6% |
+      | SHAKE128, 1 KiB | 1.751 ns/B | 1.781 ns/B | +1.1% |
+      | SHAKE128, 16 KiB | 1.494 ns/B | 1.498 ns/B | +0.1% |
+      | ML-KEM-768 keygen | 13.09 µs | 13.56 µs | +2.8% |
+      | ML-KEM-768 encaps | 15.88 µs | 16.34 µs | +2.4% |
+      | ML-KEM-768 decaps | 17.34 µs | 17.84 µs | +2.4% |
+      | ML-DSA-87 keygen | 186.9 µs | 188.4 µs | +0.6% |
+      | ML-DSA-87 sign | 714.7 µs | 718.3 µs | +0.5% |
+      | ML-DSA-87 verify | 80.7 µs | 82.0 µs | +1.3% |
+
+      `sha3_256` of 64 bytes runs one permutation and one wipe, and took
+      27 ns more than its 264 ns on main. A session with
+      the SHA-3 bit runs `sha3_hw.c` and pays nothing. On a Cortex-M3,
+      under the Arm GNU gcc 15.3 build this Mac holds (15.3.rel2; the pin
+      is 15.3.rel1), ML-KEM-768 key generation runs 1,035,692 instructions
+      where it ran 1,006,828, and decapsulation 1,360,593 where it ran
+      1,330,100: 2.9% and 2.3% more. Under the Alpine clang 22 that
+      `bench/insn-mips.sh` runs for mips32r2 at `-Os`, key generation
+      runs 1,269,248 where it ran 1,230,363, and decapsulation 1,626,105
+      where it ran 1,584,780: 3.2% and 2.6% more. Under the Bootlin gcc
+      14.3 for rv32imac at `-Os` they run 1,216,804 where they ran
+      1,169,075, and 1,634,647 where they ran 1,584,053: 4.1% and 3.2%
+      more. Their stack high-water mark rose by 608 bytes on mips32r2 and
+      by 740 on rv32imac. Those two scripts had not built since the
+      sources moved to `src/`, and their include paths now name `src/`
+      and `include/`. The instruction CSVs keep their rows: this Mac's
+      Arm GNU gcc is not the pin, and the other rows would move with
+      changes that are not this decision's.
+
+      The wipe's array lies below the deepest SHAKE call of ML-KEM and
+      ML-DSA-87, so the stack peaks `bench/sram.sh` measures rose by 656
+      to 768 bytes in each build that holds them. `KEX=pq`'s `ch_connect`
+      rose from 11,952 to 12,720 bytes, a device server's `ch_srv_accept`
+      from 8,944 to 9,712, and the host server's from 112,096 to 112,864.
+      The memory table of `docs/performance.md` holds the new figures.
+      `bench/sram.sh` wrote no CSV on main: its rv32 probe includes
+      `session.h` and took the size of `ch_tls`, which that header no
+      longer declares. The probe now takes the size of `ch_tls_priv`, the
+      struct `ch_tls` is storage for.
+    - **Forms not taken.** A wipe after every call: the cost above. A
+      form that keeps the state in registers does not fit a 32-bit core,
+      where 25 lanes take 50 registers. A second, shorter array for the
+      absorb and squeeze bodies, whose frames lie within 516 bytes, was
+      not built: one length is one figure to audit and one ceiling.
+    - **What holds it.** INV-17. In an object that wipes,
+      `bin/sha3_equiv_test` calls each body by its own name, with no wipe
+      after it. It requires the depth within `SHA3_BELOW_LEN` and at
+      least one word of the state in the stack. Then it requires no word
+      after ten kinds of call through the entries. `make check` runs the
+      device build and `bin/sha3_equiv_test_host` on every machine: Apple
+      clang for arm64 on the Mac, and gcc 15 for x86-64 in CI. CI's arm64
+      job runs the host build under gcc for arm64, the `cross-check`
+      lanes run the device build for mips32r2 and rv32, and `m3-check`
+      now runs it on Cortex-M3 under the pinned Arm gcc. The qemu lane's
+      `sha3-device` part builds it as a device object for x86-64 and
+      arm64 under gcc and clang, at `-O2` and `-Os`, and for mips32r2
+      under gcc. `lint-stack` holds every frame of `sha3.c` under 1,536
+      bytes, the length and 512 more. The `sha3` and `sha3_stream` proofs
+      run each wipe, now 3,625 and 3,663 properties, and `ct_wipe.0` takes
+      1,025 in both. Three violations break the rule:
+      `inv17-sha3-absorb-wipe-below-dropped` drops one entry's wipe, and
+      `inv17-sha3-absorb-exact-fill-not-wiped` skips the wipe after an
+      absorb that fills its block. `bin/sha3_equiv_test` catches both
+      under Apple clang and under gcc 13.3 and 15.2.
+      `inv17-sha3-below-len-under-mips-frame` makes the length 704 bytes,
+      which covers each 64-bit build's frames. The `sha3-device` part
+      catches it under gcc for mips32r2.
+    - **What no test holds.** The attribute that keeps a body out of
+      its entry. The compilers measured keep `keccak_f1600` out of line
+      without it, so a body inlined into its entry leaves nothing above
+      the wipe there, and review holds it. A register still holds what
+      the last instruction left in it.

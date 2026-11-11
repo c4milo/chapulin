@@ -312,6 +312,14 @@ The entries are grouped by area:
   - `sha3_stream`: the SHAKE streaming calls are safe from any context
     state (arbitrary lanes, either rate, every position), for split
     absorbs and squeezes.
+  - Both: in the object the harnesses compile, which runs
+    `keccak_f1600_plain`, each entry that runs the permutation then wipes
+    the stack below its body (decision 219). The wipe is memory-safe and
+    UB-free, the call through the volatile pointer runs `wipe_frame`, and
+    `wipe_frame`'s one wipe covers its array of `SHA3_BELOW_LEN` bytes and
+    no byte outside it: `ct_wipe` is the stub of bounds-checked stores
+    (`proof/ct_wipe_stub.c`), and the unwinding assertion on its loop
+    bounds it at the array's length.
   - `sha3_round`: `sha3.c`'s round, written out lane by lane, leaves the
     state that FIPS 202's round leaves, for every state and every round
     constant. The reference is `proof/sha3_reference.h`: the standard's
@@ -339,15 +347,22 @@ The entries are grouped by area:
   standard's bytes. `bin/sha3_equiv_test` holds every entry of `sha3.h`
   to the reference's sponge, which moves one byte at a time, over 31,257
   outputs, with the three forms of the permutation on every machine; `bin/sha3_test` runs the FIPS 202 vectors; and the spec
-  differential runs every mode against the Lean model. Built as an
-  x86-64 host object, the same binary searches the stack below six kinds
-  of call. It looks for any value the call computed, and for its
-  complement (`test/sha3_residue.h`, decision 218).
-  `bin/sha3_equiv_test_host` is that build on an x86-64 machine.
-  `make check` runs it for x86-64 under Rosetta on an Apple silicon Mac
+  differential runs every mode against the Lean model. The same binary
+  searches the stack below ten kinds of call, in every object. It looks
+  for any value the call computed, and for its complement
+  (`test/sha3_residue.h`, decisions 218 and 219). Where the object runs
+  `keccak_f1600_plain`, it first calls each entry's body by its own name
+  with no wipe after it. It requires the depth the body writes within
+  `SHA3_BELOW_LEN`, and at least one word of the set in the stack.
+  `bin/sha3_equiv_test` is a device object's build, and
+  `bin/sha3_equiv_test_host` a host object's. `make check` runs the host
+  build for x86-64 under Rosetta on an Apple silicon Mac
   (`check-rosetta`). The qemu lane's `sha3-stack` part runs it with
-  `-fno-omit-frame-pointer` under gcc and clang. The search is a test: no
-  harness proves what a compiler keeps in a stack slot.
+  `-fno-omit-frame-pointer` under gcc and clang. The `cross-check` lanes
+  run the device build for mips32r2 and rv32. The lane's `sha3-device`
+  part runs it for x86-64 and arm64 under gcc and clang, and for
+  mips32r2 under gcc. The search is a test: no harness proves what a
+  compiler keeps in a stack slot, or where the array of the wipe lies.
 
 #### hkdf
 
@@ -6873,7 +6888,7 @@ What holds them:
   and once with each call on a path picked at random. At 17 lengths
   around a block's end it compares the instructions with FIPS 202 as
   `proof/sha3_reference.h` writes it.
-- The same binary copies the stack below six kinds of call, which
+- The same binary copies the stack below ten kinds of call, which
   between them run every way the file runs its permutation, and requires
   no 64-bit word there that the call computed: a lane of a state, a
   column's parity, a value theta adds, or a lane after theta, rho or chi

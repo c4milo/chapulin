@@ -107,7 +107,7 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 
 
 # The catches lines that name the host object's qemu lane: the lane
-# itself, and the lane with one of the sixteen arguments that run one part
+# itself, and the lane with one of the 29 arguments that run one part
 # alone. A violation of chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes
 # names x86-kernels, because only an x86-64 binary compiles either
 # function, and that argument fails on a machine whose qemu cannot run
@@ -171,7 +171,10 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # builds bin/sha3_equiv_test_host and bin/sha3_hw_equiv_test for x86-64
 # with the frame pointer, because a Linux build without it has one
 # general register more. No runner builds for macOS on x86-64
-# (docs/decisions.md 218).
+# (docs/decisions.md 218). A violation of sha3.c's wipe of the stack below
+# its entries names sha3-device. That part builds bin/sha3_equiv_test as a
+# device object under gcc and clang for x86-64 and arm64 and under gcc for
+# mips32r2, whose frames are the deepest (docs/decisions.md 219).
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
@@ -200,7 +203,8 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh p256-adx",
                           "test/docker-aes-runtime-qemu.sh p256-arm64",
                           "test/docker-aes-runtime-qemu.sh rsa-adx",
-                          "test/docker-aes-runtime-qemu.sh sha3-bmi"]
+                          "test/docker-aes-runtime-qemu.sh sha3-bmi",
+                          "test/docker-aes-runtime-qemu.sh sha3-device"]
 
 # What "everything" means, in the order to run it: the two tiers, then
 # the targets only the nightly runs. Each entry is (tier, command, reason).
@@ -433,7 +437,7 @@ def select_pairs(out, changed, lib):
 # bin/qemu-arm64/ and runs them under qemu-x86_64 and qemu-aarch64
 # (docs/decisions.md 81, 89, 90, 93 and 94). No make rule builds the
 # copies. The script asks make for each binary's source list and names its
-# test files itself, and the sources of these 27 rules hold every
+# test files itself, and the sources of these 32 rules hold every
 # file it compiles.
 AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/webpki_loop_aes", "bin/quic_test_hw",
@@ -450,7 +454,7 @@ AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/p256_adx_verify_equiv_test", "bin/p256_arm64_equiv_test",
                              "bin/p256_arm64_verify_equiv_test", "bin/mldsa_vector_equiv_test",
                              "bin/mldsa_runtime_test", "bin/rsa_mont64_adx_test",
-                             "bin/sha3_equiv_test_host")
+                             "bin/sha3_equiv_test_host", "bin/sha3_equiv_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 

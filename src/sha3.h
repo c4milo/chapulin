@@ -30,7 +30,10 @@ typedef struct {
 } shake;
 
 // The one-shots wipe their internal sponge state before returning, so
-// they are safe on secret input as-is.
+// they are safe on secret input as-is. In an object that runs sha3.c's
+// keccak_f1600_plain, the one-shots, shake_absorb and shake_squeeze also
+// wipe the stack below their bodies before they return (sha3.c,
+// docs/decisions.md 219).
 void sha3_256(const uint8_t *in, size_t n, uint8_t out[SHA3_256_LEN]);
 void sha3_512(const uint8_t *in, size_t n, uint8_t out[SHA3_512_LEN]);
 

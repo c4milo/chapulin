@@ -114,6 +114,17 @@ STACK_BUDGET_SHA512_COMPRESS_BLOCKS := 384
 # image, and the qemu lane's sha512-stack part does under its gcc for
 # x86-64 on every machine with docker.
 STACK_BUDGET_SHA512_AVX2 := 384
+# sha3.c gets a ceiling of its own. In an object that runs
+# keccak_f1600_plain, each entry that runs the permutation wipes
+# SHA3_BELOW_LEN bytes, 1,024, of the stack below its body, and the array
+# of that wipe is a frame of this file (docs/decisions.md 219). The
+# ceiling is that length, read from sha3.c, and 512 bytes more, the
+# margin gcm_avx512.c's wipe takes. So a wipe that grows past it fails
+# here, and so does a frame of the sponge that grows as large.
+# bin/sha3_equiv_test measures how deep the bodies under the entries
+# write, and requires that inside the length.
+SHA3_BELOW_LEN := $(shell sed -n 's/^.define SHA3_BELOW_LEN \([0-9][0-9]*\)$$/\1/p' src/sha3.c)
+STACK_BUDGET_SHA3 := $(shell expr $(SHA3_BELOW_LEN) + 512)
 # gcm_avx512_kernel.c, the 512-bit AES-GCM kernel, which only an x86-64
 # host object holds, gets a ceiling of its own for the same reason:
 # gcm_avx512.c's entries wipe GCM_AVX512_BELOW_LEN bytes of the stack below
@@ -3152,18 +3163,24 @@ bin/sha3_test: test/sha3_test.c $(SHA3_TEST_SRCS) $(HDRS) $(TESTH)
 # the permutation, both digests, and both XOFs through split calls
 # (docs/decisions.md 98). The test includes sha3.c itself, to call the
 # permutation that file keeps static, so the line links no second copy.
-bin/sha3_equiv_test: test/sha3_equiv_test.c $(SHA3_TEST_SRCS) proof/sha3_reference.h $(HDRS) $(TESTH)
+# It then searches the stack each SHA-3 call leaves (test/sha3_residue.h),
+# and in an object that wipes the stack below each entry it measures the
+# depth the wipe has to cover (docs/decisions.md 219). This is a device
+# object's build, and the cross-check lines and the qemu lane's
+# sha3-device part build it for the targets of their own compilers.
+SHA3_EQUIV_SRCS := test/sha3_equiv_test.c test/stack_residue.c src/ct.c src/ct_wipe.c
+bin/sha3_equiv_test: $(SHA3_EQUIV_SRCS) src/sha3.c test/sha3_residue.h test/sha3_residue_depth.h \
+                     proof/sha3_reference.h $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/sha3_equiv_test.c $(filter-out src/sha3.c,$(SHA3_TEST_SRCS))
-# The same test as a host object builds it. On x86-64 it also searches
-# the stack each SHA-3 call leaves (test/sha3_residue.h,
-# docs/decisions.md 218). test/rosetta-check.sh builds it for x86-64 on
-# an Apple silicon Mac. test/aes-runtime-qemu.sh's sha3-stack part builds
-# it with the frame pointer. Both read the lists print-sha3-host-lists
-# prints.
-SHA3_EQUIV_HOST_SRCS := test/sha3_equiv_test.c test/stack_residue.c src/ct.c src/ct_wipe.c
+	$(CC) $(CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ $(SHA3_EQUIV_SRCS)
+# The same test as a host object builds it. test/rosetta-check.sh builds
+# it for x86-64 on an Apple silicon Mac. test/aes-runtime-qemu.sh's
+# sha3-stack part builds it with the frame pointer. Both read the lists
+# print-sha3-host-lists prints.
+SHA3_EQUIV_HOST_SRCS := $(SHA3_EQUIV_SRCS)
 SHA3_HOST_FLAGS = $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest
-bin/sha3_equiv_test_host: $(SHA3_EQUIV_HOST_SRCS) src/sha3.c test/sha3_residue.h proof/sha3_reference.h \
+bin/sha3_equiv_test_host: $(SHA3_EQUIV_HOST_SRCS) src/sha3.c test/sha3_residue.h test/sha3_residue_depth.h \
+                          proof/sha3_reference.h \
                           $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(SHA3_HOST_FLAGS) -o $@ $(SHA3_EQUIV_HOST_SRCS)
@@ -6848,7 +6865,7 @@ san-check:
 	$(CC) $(filter-out $(HOST_RAND_DEF),$(SAN_CFLAGS)) -DCH_RAND_DRBG -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/drbg_test test/drbg_test.c $(DRBG_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/sha3_equiv_test test/sha3_equiv_test.c $(filter-out src/sha3.c,$(SHA3_TEST_SRCS))
+	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/sha3_equiv_test $(SHA3_EQUIV_SRCS)
 	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_HASH_SHA384 -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
 	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/p384_test test/p384_test.c $(P384_TEST_SRCS)
@@ -7119,7 +7136,7 @@ cross-check:
 	$(CROSS)gcc $(filter-out $(HOST_RAND_DEF),$(CFLAGS)) -DCH_RAND_DRBG $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/drbg_test test/drbg_test.c $(DRBG_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/sha3_equiv_test test/sha3_equiv_test.c $(filter-out src/sha3.c,$(SHA3_TEST_SRCS))
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/sha3_equiv_test $(SHA3_EQUIV_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_HASH_SHA384 -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/p384_test test/p384_test.c $(P384_TEST_SRCS)
@@ -7327,6 +7344,7 @@ lint-stack-run:
 	  case "$$f" in src/rsa_sign64_wipe.c) budget=$(STACK_BUDGET_RSA_SIGN64_WIPE) ;; esac; \
 	  case "$$f" in src/rsa_ifma_sign.c) budget=$(STACK_BUDGET_RSA_IFMA_SIGN) ;; esac; \
 	  case "$$f" in src/sha512_compress_blocks.c) budget=$(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) ;; esac; \
+	  case "$$f" in src/sha3.c) budget=$(STACK_BUDGET_SHA3) ;; esac; \
 	  case "$$f" in src/sha512_avx2.c) budget=$(STACK_BUDGET_SHA512_AVX2); apart="$(call unit_cflags,src/sha512_avx2.c)" ;; esac; \
 	  case "$$f" in src/gcm_avx512_kernel.c) budget=$(STACK_BUDGET_GCM_AVX512) ;; esac; \
 	  case "$$f" in src/gcm_avx512.c) budget=$(STACK_BUDGET_GCM_AVX512_WIPE) ;; esac; \
@@ -7345,7 +7363,7 @@ lint-stack-run:
 	      echo "lint-stack: src/gcm_avx512_kernel.c defines [$$local_functions] beside its four functions; a kernel must call no function, so that its frame is all the stack it writes"; rc=1; \
 	    fi ;; esac; \
 	done; rm -rf $$objs; \
-	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B, its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B, the 512-bit AES-GCM kernel's under $(STACK_BUDGET_GCM_AVX512) B, its stack wipe's under $(STACK_BUDGET_GCM_AVX512_WIPE) B, ML-DSA-87's verifier's under $(STACK_BUDGET_MLDSA) B and its signer's under $(if $(filter -DCH_CPU_RUNTIME,$(LIB_DEF)),$(STACK_BUDGET_MLDSA_SIGN_HOST),$(STACK_BUDGET_MLDSA_SIGN)) B$(if $(STACK_MLDSA_AVX2),; on the sampler of several entries its verifier's under $(STACK_BUDGET_MLDSA_AVX2) B and its signer's row under $(STACK_BUDGET_MLDSA_ROW_AVX2) B)$(if $(filter -DCH_SIGN_MLDSA,$(LIB_DEF)),; the profile server's CertificateVerify under $(STACK_BUDGET_SRV_MLDSA) B and its key file call under $(STACK_BUDGET_PEM_FILES_MLDSA) B)"; exit $$rc
+	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B, its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B, SHA-3's under $(STACK_BUDGET_SHA3) B, the 512-bit AES-GCM kernel's under $(STACK_BUDGET_GCM_AVX512) B, its stack wipe's under $(STACK_BUDGET_GCM_AVX512_WIPE) B, ML-DSA-87's verifier's under $(STACK_BUDGET_MLDSA) B and its signer's under $(if $(filter -DCH_CPU_RUNTIME,$(LIB_DEF)),$(STACK_BUDGET_MLDSA_SIGN_HOST),$(STACK_BUDGET_MLDSA_SIGN)) B$(if $(STACK_MLDSA_AVX2),; on the sampler of several entries its verifier's under $(STACK_BUDGET_MLDSA_AVX2) B and its signer's row under $(STACK_BUDGET_MLDSA_ROW_AVX2) B)$(if $(filter -DCH_SIGN_MLDSA,$(LIB_DEF)),; the profile server's CertificateVerify under $(STACK_BUDGET_SRV_MLDSA) B and its key file call under $(STACK_BUDGET_PEM_FILES_MLDSA) B)"; exit $$rc
 
 # Every document must be named in the README; an orphaned doc is a doc
 # nobody finds. The second and third loops keep the invariants
@@ -8001,7 +8019,7 @@ else
 	    test/mlkem_avx2_equiv_test.c test/keccak_neon_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	# The SHA-3 test as bin/sha3_equiv_test_host builds it, with its search
-	# of the stack on x86-64 (docs/decisions.md 218). portability-no-assembler
+	# of the stack (docs/decisions.md 218 and 219). portability-no-assembler
 	# is off for this file alone. It includes sha3.c, whose x86-64 host form
 	# holds empty statements of inline assembler.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
@@ -10159,6 +10177,20 @@ BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/cha
 # stack-protector canary this toolchain adds to a function holding an
 # array.
 #
+# sha3.c's entries rose by two when shake_absorb and shake_squeeze began to
+# test whether their bodies ran the permutation, before the wipe of the
+# stack below them (docs/decisions.md 219): m3 from 38 to 40, mips32r2 from
+# 25 to 27, rv32imac from 32 to 34 and arm64's host entry from 75 to 77.
+# The gcc entries rose the same way: m3-gcc from 21 to 23 under the Arm
+# GNU gcc 15.3, mips32r2-gcc from 17 to 19 and mips32r2-gcc-O2 from 32 to
+# 34 under Ubuntu 24.04's mips gcc 12.4, and rv32imac-gcc and rv32ic-gcc
+# from 22 to 24 under the Bootlin gcc 14.3.
+# The new branches were read. shake_absorb compares the bytes with the
+# room left in the block, and shake_squeeze the bytes with the bytes left
+# in the block; gcc writes the second as an IT block or a set and a test of
+# its result. Each reads a length and the position in the block, which are
+# public. x86-64's host entry runs no wipe and did not move.
+#
 # x25519.c's two riscv32 gcc entries rose from 23 to 24 when the clamp
 # moved into clamp_and_ladder(), which the wide field shares. Both branches
 # that function adds were read: a bne that closes the 32-byte copy loop,
@@ -10205,41 +10237,41 @@ BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/cha
 # in the comment above WIDE64_SPECS, at the flags a host object is
 # compiled with.
 BRANCH_CEILING := \
-  m3/src/ct.c:2 m3/src/ct_wipe.c:7 m3/src/sha256.c:17 m3/src/sha3.c:38 m3/src/hkdf.c:19 m3/src/chacha20.c:9 m3/src/poly1305.c:19 \
+  m3/src/ct.c:2 m3/src/ct_wipe.c:7 m3/src/sha256.c:17 m3/src/sha3.c:40 m3/src/hkdf.c:19 m3/src/chacha20.c:9 m3/src/poly1305.c:19 \
   m3/src/aead.c:4 m3/src/x25519.c:33 m3/src/p256_field.c:24 m3/src/mlkem.c:16 m3/src/mlkem_poly.c:43 m3/src/drbg.c:9 \
   m3/src/softmul.c:0 m3/src/aes.c:3 m3/src/quic_aes_soft.c:12 m3/src/aes_extern.c:0 \
-  m3/src/gcm.c:22 m3/src/rsa_sign.c:36 mips32r2/src/ct.c:2 mips32r2/src/ct_wipe.c:6 mips32r2/src/sha256.c:16 mips32r2/src/sha3.c:25 \
+  m3/src/gcm.c:22 m3/src/rsa_sign.c:36 mips32r2/src/ct.c:2 mips32r2/src/ct_wipe.c:6 mips32r2/src/sha256.c:16 mips32r2/src/sha3.c:27 \
   mips32r2/src/hkdf.c:16 mips32r2/src/chacha20.c:7 mips32r2/src/poly1305.c:18 mips32r2/src/aead.c:2 \
   mips32r2/src/x25519.c:31 mips32r2/src/p256_field.c:21 mips32r2/src/mlkem.c:13 mips32r2/src/mlkem_poly.c:36 \
   mips32r2/src/drbg.c:8 mips32r2/src/softmul.c:0 mips32r2/src/aes.c:2 mips32r2/src/quic_aes_soft.c:12 \
   mips32r2/src/aes_extern.c:0 mips32r2/src/gcm.c:16 mips32r2/src/rsa_sign.c:34 rv32imac/src/ct.c:2 rv32imac/src/ct_wipe.c:7 \
-  rv32imac/src/sha256.c:17 rv32imac/src/sha3.c:32 rv32imac/src/hkdf.c:18 rv32imac/src/chacha20.c:8 \
+  rv32imac/src/sha256.c:17 rv32imac/src/sha3.c:34 rv32imac/src/hkdf.c:18 rv32imac/src/chacha20.c:8 \
   rv32imac/src/poly1305.c:18 rv32imac/src/aead.c:2 rv32imac/src/x25519.c:31 rv32imac/src/p256_field.c:21 \
   rv32imac/src/mlkem.c:14 rv32imac/src/mlkem_poly.c:36 rv32imac/src/drbg.c:9 rv32imac/src/softmul.c:0 \
   rv32imac/src/aes.c:3 rv32imac/src/quic_aes_soft.c:12 rv32imac/src/aes_extern.c:0 \
   rv32imac/src/gcm.c:20 rv32imac/src/rsa_sign.c:32 m3-gcc/src/ct.c:1 m3-gcc/src/ct_wipe.c:4 m3-gcc/src/sha256.c:12 \
-  m3-gcc/src/sha3.c:21 m3-gcc/src/hkdf.c:19 m3-gcc/src/chacha20.c:7 m3-gcc/src/poly1305.c:14 m3-gcc/src/aead.c:2 \
+  m3-gcc/src/sha3.c:23 m3-gcc/src/hkdf.c:19 m3-gcc/src/chacha20.c:7 m3-gcc/src/poly1305.c:14 m3-gcc/src/aead.c:2 \
   m3-gcc/src/x25519.c:23 m3-gcc/src/p256_field.c:14 m3-gcc/src/mlkem.c:13 m3-gcc/src/mlkem_poly.c:37 \
   m3-gcc/src/drbg.c:8 m3-gcc/src/softmul.c:0 m3-gcc/src/aes.c:3 m3-gcc/src/quic_aes_soft.c:9 \
   m3-gcc/src/aes_extern.c:0 m3-gcc/src/gcm.c:15 m3-gcc/src/rsa_sign.c:33 mips32r2-gcc/src/ct.c:1 mips32r2-gcc/src/ct_wipe.c:3 \
-  mips32r2-gcc/src/sha256.c:12 mips32r2-gcc/src/sha3.c:17 mips32r2-gcc/src/hkdf.c:18 \
+  mips32r2-gcc/src/sha256.c:12 mips32r2-gcc/src/sha3.c:19 mips32r2-gcc/src/hkdf.c:18 \
   mips32r2-gcc/src/chacha20.c:6 mips32r2-gcc/src/poly1305.c:14 mips32r2-gcc/src/aead.c:2 \
   mips32r2-gcc/src/x25519.c:20 mips32r2-gcc/src/p256_field.c:13 mips32r2-gcc/src/mlkem.c:13 \
   mips32r2-gcc/src/mlkem_poly.c:41 mips32r2-gcc/src/drbg.c:7 mips32r2-gcc/src/softmul.c:0 \
   mips32r2-gcc/src/aes.c:3 mips32r2-gcc/src/quic_aes_soft.c:9 mips32r2-gcc/src/aes_extern.c:0 \
   mips32r2-gcc/src/gcm.c:13 mips32r2-gcc/src/rsa_sign.c:29 \
-  mips32r2-gcc-O2/src/ct.c:2 mips32r2-gcc-O2/src/ct_wipe.c:6 mips32r2-gcc-O2/src/sha256.c:23 mips32r2-gcc-O2/src/sha3.c:32 \
+  mips32r2-gcc-O2/src/ct.c:2 mips32r2-gcc-O2/src/ct_wipe.c:6 mips32r2-gcc-O2/src/sha256.c:23 mips32r2-gcc-O2/src/sha3.c:34 \
   mips32r2-gcc-O2/src/hkdf.c:23 mips32r2-gcc-O2/src/chacha20.c:7 mips32r2-gcc-O2/src/poly1305.c:21 \
   mips32r2-gcc-O2/src/aead.c:2 mips32r2-gcc-O2/src/x25519.c:28 mips32r2-gcc-O2/src/p256_field.c:24 \
   mips32r2-gcc-O2/src/mlkem.c:17 \
   mips32r2-gcc-O2/src/mlkem_poly.c:39 mips32r2-gcc-O2/src/drbg.c:8 mips32r2-gcc-O2/src/softmul.c:0 \
-  rv32imac-gcc/src/ct.c:1 rv32imac-gcc/src/ct_wipe.c:4 rv32imac-gcc/src/sha256.c:15 rv32imac-gcc/src/sha3.c:22 rv32imac-gcc/src/hkdf.c:23 \
+  rv32imac-gcc/src/ct.c:1 rv32imac-gcc/src/ct_wipe.c:4 rv32imac-gcc/src/sha256.c:15 rv32imac-gcc/src/sha3.c:24 rv32imac-gcc/src/hkdf.c:23 \
   rv32imac-gcc/src/chacha20.c:10 rv32imac-gcc/src/poly1305.c:15 rv32imac-gcc/src/aead.c:4 \
   rv32imac-gcc/src/x25519.c:24 rv32imac-gcc/src/p256_field.c:20 rv32imac-gcc/src/mlkem.c:19 \
   rv32imac-gcc/src/mlkem_poly.c:39 rv32imac-gcc/src/drbg.c:10 rv32imac-gcc/src/softmul.c:0 \
   rv32imac-gcc/src/aes.c:4 rv32imac-gcc/src/quic_aes_soft.c:12 rv32imac-gcc/src/aes_extern.c:0 \
   rv32imac-gcc/src/gcm.c:23 rv32imac-gcc/src/rsa_sign.c:33 rv32ic-gcc/src/ct.c:1 rv32ic-gcc/src/ct_wipe.c:4 \
-  rv32ic-gcc/src/sha256.c:15 rv32ic-gcc/src/sha3.c:22 rv32ic-gcc/src/hkdf.c:23 rv32ic-gcc/src/chacha20.c:10 \
+  rv32ic-gcc/src/sha256.c:15 rv32ic-gcc/src/sha3.c:24 rv32ic-gcc/src/hkdf.c:23 rv32ic-gcc/src/chacha20.c:10 \
   rv32ic-gcc/src/poly1305.c:15 rv32ic-gcc/src/aead.c:4 rv32ic-gcc/src/x25519.c:24 \
   rv32ic-gcc/src/p256_field.c:20 rv32ic-gcc/src/mlkem.c:19 rv32ic-gcc/src/mlkem_poly.c:39 \
   rv32ic-gcc/src/drbg.c:10 rv32ic-gcc/src/softmul.c:2 rv32ic-gcc/src/aes.c:4 \
@@ -10284,7 +10316,7 @@ BRANCH_CEILING := \
   arm64/src/mlkem_poly.c@host:49 x86-64/src/mlkem_poly.c@host:50 \
   arm64/src/ct.c@host:9 x86-64/src/ct.c@host:4 arm64/src/ct_wipe.c@host:5 x86-64/src/ct_wipe.c@host:11 \
   arm64/src/base64.c@host:0 x86-64/src/base64.c@host:0 \
-  arm64/src/sha256.c@host:28 x86-64/src/sha256.c@host:35 arm64/src/sha3.c@host:75 x86-64/src/sha3.c@host:84 \
+  arm64/src/sha256.c@host:28 x86-64/src/sha256.c@host:35 arm64/src/sha3.c@host:77 x86-64/src/sha3.c@host:84 \
   arm64/src/hkdf.c@host:19 x86-64/src/hkdf.c@host:19 arm64/src/chacha20.c@host:1 x86-64/src/chacha20.c@host:3 \
   arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:17 \
   arm64/src/mlkem.c@host:12 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:79 x86-64/src/rsa_sign.c@host:67 \

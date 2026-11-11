@@ -1,0 +1,17 @@
+invariant: INV-17
+file: src/sha3.c
+catches: test/docker-aes-runtime-qemu.sh sha3-device
+reason: SHA3_BELOW_LEN, the bytes of stack sha3.c's entries wipe below their
+  bodies, is 704. That covers the bodies' frames for x86-64 and arm64
+  under gcc and clang, so bin/sha3_equiv_test passes on every machine's
+  own compiler. Under gcc 13.3 for mips32r2 the body under sha3_256
+  writes 764 bytes below its caller at -O2 and 708 at -Os, and the wipe
+  leaves the deepest of them. The lane's sha3-device part builds the
+  binary as a device object for mips32r2 and runs it under qemu-mips,
+  where it measures that depth against the length. The lane skips
+  without docker, and this then reports unguarded rather than caught.
+
+--- old
+#define SHA3_BELOW_LEN 1024
+--- new
+#define SHA3_BELOW_LEN 704

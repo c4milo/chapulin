@@ -49,11 +49,15 @@
 # which hold the NEON ChaCha20 and Poly1305 to the portable loops and
 # search the stack each call leaves; and "keccak-neon"
 # bin/keccak_neon_equiv_test and bin/mldsa_runtime_test alone, for arm64,
-# which hold the two-way Keccak and its samplers to the proven code.
+# which hold the two-way Keccak and its samplers to the proven code;
+# and "sha3-device" bin/sha3_equiv_test alone as a device object builds
+# it, for x86-64 and arm64 under gcc and clang and for mips32r2 under
+# gcc, which measures how deep sha3.c's bodies write below their entries
+# and searches the stack each SHA-3 call leaves.
 # The mips job in .github/workflows/check.yml runs the same script on its
 # runner. tools/toolchain.env pins the container, and the container's apt
-# supplies gcc, clang and qemu-user, as the runner's does (Ubuntu 24.04
-# ships gcc 13.3, clang 18.1 and qemu 8.2.2).
+# supplies gcc, clang, the mips cross gcc and qemu-user, as the runner's
+# does (Ubuntu 24.04 ships gcc 13.3, clang 18.1 and qemu 8.2.2).
 #
 # The container runs on the host's architecture, and the script compiles
 # for the other one with the cross gcc: x86_64-linux-gnu-gcc on an arm64
@@ -85,7 +89,8 @@
 # violations of keccak_neon.c and its samplers with "keccak-neon", the
 # violations of p256_arm64_asm.h and of the dispatch to it with
 # "p256-arm64", and the violations of sha3_hw.c's x86-64 copy and of the
-# dispatch to it in sha3.h with "sha3-bmi".
+# dispatch to it in sha3.h with "sha3-bmi", and the violations of
+# sha3.c's wipe of the stack below its entries with "sha3-device".
 # Needs docker (OrbStack works); skips without it.
 set -euo pipefail
 
@@ -106,8 +111,10 @@ shift
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q >/dev/null
 if [ "$(uname -m)" = x86_64 ]; then
-    apt-get install -y -q make gcc libc6-dev gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user clang >/dev/null
+    apt-get install -y -q make gcc libc6-dev gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user clang \
+        gcc-mips-linux-gnu libc6-dev-mips-cross >/dev/null
 else
-    apt-get install -y -q make gcc libc6-dev gcc-x86-64-linux-gnu libc6-dev-amd64-cross qemu-user clang >/dev/null
+    apt-get install -y -q make gcc libc6-dev gcc-x86-64-linux-gnu libc6-dev-amd64-cross qemu-user clang \
+        gcc-mips-linux-gnu libc6-dev-mips-cross >/dev/null
 fi
 exec ./test/aes-runtime-qemu.sh "$@"

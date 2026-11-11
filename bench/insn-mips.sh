@@ -183,7 +183,8 @@ EOF
 # $gp without a crt0, and gp-relative loads fault at address zero.
 CC="clang -target mips-linux-musl -march=mips32r2 -mno-abicalls -fno-pic -G0 \
     -Os -fno-stack-protector -ffreestanding -nostdlibinc -nostdlib \
-    -fuse-ld=lld -static -I/src -I/src/bench -I$W/shim -I$W ${INSN_DEF:?}"
+    -fuse-ld=lld -static -I/src -I/src/src -I/src/include/chapulin -I/src/include \
+    -I/src/bench -I$W/shim -I$W ${INSN_DEF:?}"
 # The sources and the defines every build takes are the Makefile's
 # INSN_SRCS and INSN_DEF, which the host half read and passed in; here
 # each source sits under /src.

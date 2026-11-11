@@ -6692,7 +6692,7 @@ last `ROLE=server` stub, as the entry said it would.
   the file compiles once more, wipe the state they hash in. Keccak-f[1600]
   is a permutation, so one whole state gives back each state before it,
   as far back as the input, which under ML-KEM is a secret seed.
-  `bin/sha3_hw_equiv_test` copies the stack below six kinds of call and
+  `bin/sha3_hw_equiv_test` copies the stack below ten kinds of call and
   requires no 64-bit word there that the call computed: a lane of any
   state, a column's parity, a value theta adds, or a lane after theta,
   rho or chi of any round, or the complement of one
@@ -6723,21 +6723,51 @@ last `ROLE=server` stub, as the entry said it would.
   Before decision 218 each loop held a count and the table's address.
   clang there wrote a value of theta to a slot below the stack pointer.
   Built as an x86-64 host object, `bin/sha3_equiv_test` searches the
-  stack below the same six kinds of call for the same words. It looks for
+  stack below the same ten kinds of call for the same words. It looks for
   their complements too, since decision 216's form keeps six lanes
   inverted. `bin/sha3_equiv_test_host` is that build on an x86-64
   machine, gcc's in CI. The qemu lane's `sha3-bmi` part runs
   `bin/sha3_hw_equiv_test` for x86-64, built with gcc 13.3, so its
-  search covers the copy's six kinds of call. `make check` builds both
+  search covers the copy's ten kinds of call. `make check` builds both
   tests for x86-64 on an Apple silicon Mac and runs them under Rosetta,
   which is the one macOS x86-64 build (`check-rosetta`). The qemu lane's
   `sha3-stack` part builds both with `-fno-omit-frame-pointer` under gcc
   and clang. `inv17-keccak-rounds-loop-counts-rounds` and
   `inv17-keccak-andn-rounds-loop-counts-rounds` give each loop its count
-  again. That part catches both, and so does `check-rosetta`. A device
-  object and an arm64 host object run `keccak_round` in place. Their
-  compilers keep lanes of the state in stack slots that no call clears,
-  and this invariant makes no claim of that stack (decision 218).
+  again. That part catches both, and so does `check-rosetta`.
+  A device object and an arm64 host object run `keccak_f1600_plain`,
+  whose round computes the state in place. Their compilers keep lanes
+  and values of theta in stack slots of their own. So in those objects
+  each of `sha3.c`'s four entries that can run the permutation calls a
+  body that is never inlined. When the body ran the permutation, the
+  entry then wipes `SHA3_BELOW_LEN`, 1,024 bytes, of the stack below it,
+  where the body's frames lay, through `wipe_frame` and a volatile
+  pointer, in `sha512.c`'s form (decision 219). A call that ran no permutation moves bytes between
+  the caller's buffer and the context, and gets no wipe.
+  `bin/sha3_equiv_test` is a device object's build. There, and in
+  `bin/sha3_equiv_test_host` for arm64, the test first calls each body by
+  its own name, with no wipe after it. It requires the depth the body
+  writes within `SHA3_BELOW_LEN` of its caller, and at least one word of
+  the set in the stack below it. Then it searches the stack below the
+  same ten kinds of call for the same words. Four of them hold the two
+  lengths where an absorb and a squeeze start to run the permutation.
+  The deepest body measured wrote 788 bytes, under gcc 13.3 with UBSan
+  for mips32r2. `make check` runs the test on every machine. The
+  `cross-check` lanes run it for mips32r2 and rv32 under gcc, and
+  `m3-check` on Cortex-M3 under the pinned Arm gcc. The qemu lane's
+  `sha3-device` part builds it as a device object for x86-64 and arm64
+  under gcc and clang, at `-O2` and `-Os`, and for mips32r2 under gcc.
+  `lint-stack` holds every frame of `sha3.c` under the length and 512
+  bytes more. The `sha3` and `sha3_stream` proofs run each wipe and show
+  it covers its array and no byte outside it. Three violations undo the
+  rule. `inv17-sha3-absorb-wipe-below-dropped` drops one entry's wipe,
+  and `inv17-sha3-absorb-exact-fill-not-wiped` skips the wipe after an
+  absorb that fills its block to the last byte. `bin/sha3_equiv_test`
+  catches both. `inv17-sha3-below-len-under-mips-frame` makes the length
+  704 bytes, which covers every 64-bit build's frames and not
+  mips32r2's, and the `sha3-device` part catches it. No test holds the
+  attribute that keeps a body out of its entry. The compilers measured
+  keep `keccak_f1600` out of line without it, so review holds it.
   Each of `gcm_avx512.c`'s two entries wipes `GCM_AVX512_BELOW_LEN`,
   2,560 bytes, of the stack below its own frame after the kernel returns,
   through `wipe_frame` and a volatile pointer, in `p256_wide_wipe.c`'s

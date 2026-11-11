@@ -146,7 +146,7 @@ SESSION_RV32_SERVER="unmeasured"
 if [ -n "$RV32_CLANG" ] && [ -n "$RV32_NM" ]; then
     cat > "$TMP/probe.c" <<'PROBE'
 #include "session.h"
-char probe_ch_tls[sizeof(ch_tls)];
+char probe_ch_tls[sizeof(ch_tls_priv)];
 PROBE
     rv32_size() { # $1 = extra defines
         # shellcheck disable=SC2086

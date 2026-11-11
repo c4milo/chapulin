@@ -1,0 +1,18 @@
+invariant: INV-17
+file: src/sha3.c
+catches: sha3_equiv_test
+reason: shake_absorb never wipes the stack below its body, so the lanes
+  and the values of theta that the compiler wrote to stack slots of its
+  own stay there after a call that ran the permutation. Under ML-KEM and
+  ML-DSA-87 the state comes from a secret seed. Every output is still
+  right. bin/sha3_equiv_test, a device object's build, copies the stack
+  below each kind of call and finds a lane the call computed from its
+  input: under Apple clang on an Apple silicon Mac and under gcc in CI
+  (docs/decisions.md 219).
+
+--- old
+    absorb(s->lane, s->rate, &s->pos, in, n);
+    wipe_below_after(permutes);
+--- new
+    absorb(s->lane, s->rate, &s->pos, in, n);
+    (void)permutes;
