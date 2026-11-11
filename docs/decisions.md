@@ -18683,6 +18683,17 @@ does nothing more.
       `inv16-base64url-class-branches`. `check-lib-jws` and
       `check-lib-jws-quic` build the two objects, the first with
       `DNSSEC=on` beside it, as colibri's object has.
+    - **Wycheproof.** `bin/wycheproof_jws_test` holds the call to
+      Wycheproof's raw ECDSA P-256 suite, its three RSASSA-PKCS1-v1_5
+      SHA-256 suites and its Ed25519 suite, 1,189 cases, and to the 359
+      tokens of its JWS suite that a key of the call's can check. Six
+      tokens showed what the call leaves to its caller. Four carry a
+      true signature under a JWK registered for encryption, and two
+      carry an RS256 signature under a JWK registered for PS512. The
+      call sees a key's bytes and no JWK, so each verifies. `jws.h` now
+      states the three checks of the JWK and the header that the caller
+      owes (RFC 7517 sections 4.2 to 4.4), and
+      `test/gen_wycheproof_jws.py` makes them, as a caller does.
     - **Not built.** A signer: the owner ruled one `ch_jws_sign` for the
       three algorithms, for tests and tools, and it takes an entry of
       its own. A JWK reader, JWE, and every HMAC algorithm.

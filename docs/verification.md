@@ -8208,6 +8208,26 @@ with the message, `ch_dnssec_hash_final` and `ch_dnssec_verify`, in a
 host object with `CH_DNSSEC`. Every valid case verifies and no invalid
 one does (decision 169). These cases are not in the 6,364 either.
 
+`bin/wycheproof_jws_test` holds `ch_jws_verify` to five suites, in a
+host object with `CH_JWS` (decision 221). They are 1,189 signature
+cases: `ecdsa_secp256r1_sha256_p1363_test.json` under ES256, 262 cases
+with the signature as R then S; the three
+`rsa_signature_*_sha256_test.json` suites under RS256, 776 cases; and
+`ed25519_test.json` under EdDSA, 151 cases. 285 are valid and 901
+invalid, and the call refuses the 3 that Wycheproof leaves to the
+implementation. And they are 359 whole tokens of
+`json_web_signature_test.json`, which the test checks as a caller does:
+`test/gen_wycheproof_jws.py` checks the JWK and the token's header, and
+the test splits the token, decodes its signature with
+`ch_base64url_decode` and calls `ch_jws_verify`. 213 of the tokens carry
+an RS256 signature whose PKCS #1 padding was changed, and none
+verifies. The script refuses 78 tokens for the JWK or the header before
+any C call: a key registered for encryption, a key registered for an
+algorithm with no call, or a header that names another algorithm. 24
+true signatures of PS256, PS384, PS512, RS384 or RS512 do not verify as
+RS256. 42 tokens under an HMAC secret or a P-521 key have no form the
+call takes, and do not run. None of these cases is in the 6,364.
+
 `bin/wycheproof_scram_test` holds `ch_hmac_sha256` to every case of
 `hmac_sha256_test.json`, 174 in all, 66 valid and 108 invalid, with each
 tag cut to its group's length. It holds `ch_pbkdf2_hmac_sha256` to the

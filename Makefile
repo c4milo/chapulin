@@ -6657,10 +6657,11 @@ wycheproof:
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h \
 	  bin/wycheproof_mldsa_sign_vectors.h && \
 	python3 test/gen_wycheproof_ed25519.py $(WYCHEPROOF_DIR) bin/wycheproof_ed25519_vectors.h && \
+	python3 test/gen_wycheproof_jws.py $(WYCHEPROOF_DIR) bin/wycheproof_jws_vectors.h && \
 	python3 test/gen_wycheproof_scram.py $(WYCHEPROOF_DIR) bin/wycheproof_scram_vectors.h && \
 	$(MAKE) --no-print-directory -j4 wycheproof-default wycheproof-host wycheproof-aes-extern wycheproof-mldsa-library \
 	  wycheproof-mldsa-library-host wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-mlkem1024-two-ranks \
-	  wycheproof-mlkem1024-two-ranks-host wycheproof-mldsa-sign wycheproof-ed25519 wycheproof-scram
+	  wycheproof-mlkem1024-two-ranks-host wycheproof-mldsa-sign wycheproof-ed25519 wycheproof-jws wycheproof-scram
 # The three tests build and run at once, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
@@ -6816,6 +6817,24 @@ else
 endif
 wycheproof-run-ed25519:
 	@$(WYCHEPROOF_ED25519) -o bin/wycheproof_ed25519_test && ./bin/wycheproof_ed25519_test
+# ch_jws_verify, held to Wycheproof's raw ECDSA P-256 suite, its three
+# RSASSA-PKCS1-v1_5 SHA-256 suites, its Ed25519 suite and the tokens of its
+# JWS suite (test/gen_wycheproof_jws.py, docs/decisions.md 221). It builds
+# as a host object with CH_JWS, as bin/jws_test does, so a compiler that
+# fails the host test skips it.
+WYCHEPROOF_JWS = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest \
+  -Ibin test/wycheproof_jws_test.c $(sort $(JWS_TEST_SRCS))
+.PHONY: wycheproof-jws wycheproof-run-jws
+wycheproof-jws:
+ifeq ($(HOST_TARGET),)
+	$(call REQUIRE_ON_CI,wycheproof-jws)
+	@echo "SKIP the Wycheproof JWS test: $(CC) fails the host test"
+else
+	@python3 tools/stamp.py wycheproof-jws $(WYCHEPROOF_STAMP_INPUTS) \
+	  --output '$(WYCHEPROOF_JWS) -E' -- $(MAKE) --no-print-directory wycheproof-run-jws
+endif
+wycheproof-run-jws:
+	@$(WYCHEPROOF_JWS) -o bin/wycheproof_jws_test && ./bin/wycheproof_jws_test
 # scram.h's HMAC-SHA-256 and PBKDF2, held to Wycheproof's two suites
 # (test/gen_wycheproof_scram.py, docs/decisions.md 222). It builds as a
 # host object with CH_SCRAM, as bin/scram_test does, so a compiler that

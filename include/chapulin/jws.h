@@ -131,7 +131,16 @@ int CH_MUST_USE ch_base64url_decode(const uint8_t *text, size_t text_len, uint8_
 //
 // Take algorithm from the configuration that holds the key, never from
 // the token's header alone (RFC 8725 section 3.1). A caller that lets the
-// header choose lets whoever wrote the token choose.
+// header choose lets whoever wrote the token choose. A caller that reads
+// its keys from a JWK Set owes three checks before this call, because the
+// call sees the key's bytes and not its JWK (RFC 7517 sections 4.2 to
+// 4.4):
+//  - the JWK's "use" is absent or "sig", and its "key_ops" is absent or
+//    holds "verify";
+//  - the JWK's "alg", when present, is the algorithm the caller passes;
+//  - the token header's "alg" is that algorithm too.
+// A signature that is true under the key's bytes verifies here whatever
+// the JWK says the key is for.
 //
 // Returns CH_OK for a valid signature. Returns CH_EAUTH for a signature
 // that the key does not verify, one of the wrong length among them. The
