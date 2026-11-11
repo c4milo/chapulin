@@ -1,0 +1,13 @@
+invariant: INV-14
+file: src/srv.c
+catches: srv_auth_test
+reason: a server takes a ticket_key_previous while ticket_key is NULL. It
+  then issues no ticket, and the previous key opens none, because
+  srv_resume.c judges no ticket without ticket_key. srv_cfg.h refuses
+  the pair, and test/srv_identity_tests.h's test_previous_ticket_key
+  requires CH_EINVAL (docs/decisions.md 220).
+
+--- old
+        return srv->ticket_key_previous == NULL;
+--- new
+        return 1;

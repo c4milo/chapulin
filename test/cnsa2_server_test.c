@@ -316,6 +316,40 @@ static void test_ticket(void) {
     CHECK(srv_ticket_open(0, ticket_key, ticket, sizeof ticket, &got) == CH_EAUTH);
 }
 
+// The previous ticket key under the profile (docs/decisions.md 220): the
+// boot check takes a key of its own, and refuses one with the ticket key's
+// bytes or one beside no ticket key. A ticket sealed under the previous key
+// opens under its own AES-256-GCM schedule and not under the ticket key's.
+static void test_previous_ticket_key(void) {
+    static uint8_t previous[CH_SRV_TICKET_KEY_LEN];
+    memset(previous, 0x43, sizeof previous);
+    static uint8_t ticket_copy[CH_SRV_TICKET_KEY_LEN];
+    memcpy(ticket_copy, ticket_key, sizeof ticket_copy);
+    ch_cfg cfg;
+    base_cfg(&cfg);
+    cfg.srv.ticket_key_previous = previous;
+    CHECK(ch_srv_check(&cfg) == CH_OK && srv_config_ok(&cfg) == 1);
+    cfg.srv.ticket_key_previous = ticket_copy;
+    CHECK(ch_srv_check(&cfg) == CH_EINVAL && srv_config_ok(&cfg) == 0);
+    cfg.srv.ticket_key = NULL;
+    cfg.srv.ticket_key_previous = previous;
+    CHECK(ch_srv_check(&cfg) == CH_EINVAL && srv_config_ok(&cfg) == 0);
+
+    srv_ticket_contents c;
+    memset(&c, 0, sizeof c);
+    c.auth_seconds = 1000;
+    c.suite = SUITE_AES_256_GCM_SHA384;
+    memset(c.psk, 0x5b, sizeof c.psk);
+    uint8_t nonce[AEAD_NONCE];
+    memset(nonce, 8, sizeof nonce);
+    uint8_t ticket[SRV_TICKET_LEN];
+    CHECK(srv_ticket_seal(0, previous, nonce, &c, ticket, sizeof ticket) == SRV_TICKET_LEN);
+    srv_ticket_contents got;
+    CHECK(srv_ticket_open(0, ticket_key, ticket, sizeof ticket, &got) == CH_EAUTH);
+    CHECK(srv_ticket_open(0, previous, ticket, sizeof ticket, &got) == CH_OK);
+    CHECK(memcmp(got.psk, c.psk, sizeof c.psk) == 0);
+}
+
 int main(void) {
     uint8_t seed[MLDSA87_SEED_LEN];
     memset(seed, 3, sizeof seed);
@@ -329,10 +363,11 @@ int main(void) {
     test_selection();
     test_cookie();
     test_ticket();
+    test_previous_ticket_key();
     if (failures != 0) {
         (void)fprintf(stderr, "cnsa2_server_test: %d failures\n", failures);
         return 1;
     }
-    (void)printf("cnsa2_server_test: identity, cpu, selection, cookie and ticket ok\n");
+    (void)printf("cnsa2_server_test: identity, cpu, selection, cookie, ticket and previous key ok\n");
     return 0;
 }

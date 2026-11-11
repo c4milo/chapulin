@@ -192,6 +192,15 @@ static void test_resume_issue(void) {
     CHECK(read_issued_ticket(&client_rd, &lifetime, nonce, &c) > 0);
     CHECK(c.alpn_len == sizeof alpn_http11 && memcmp(c.alpn, alpn_http11, c.alpn_len) == 0);
 
+    // Beside a previous key the ticket is sealed under ticket_key alone:
+    // read_issued_ticket opens it under resume_key (docs/decisions.md 220).
+    resume_connected(RESUME_AUTH, &client_rd);
+    sess.cfg.srv.ticket_key_previous = other_resume_key;
+    CHECK(srv_send_new_session_ticket(&hs) == CH_OK);
+    CHECK(read_issued_ticket(&client_rd, &lifetime, nonce, &c) > 0 &&
+          c.auth_seconds == RESUME_AUTH);
+    sess.cfg.srv.ticket_key_previous = NULL;
+
     // No clock or no key: no ticket, and no error.
     resume_connected(RESUME_AUTH, &client_rd);
     sess.now_seconds = 0;

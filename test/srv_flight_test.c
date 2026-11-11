@@ -112,6 +112,7 @@ int main(void) {
     test_resume_select();
     test_resume_binder();
     test_resume_order();
+    test_resume_previous_key();
     test_retry_zeroed_selection();
     test_resume_after_retry();
     test_resume_binder_hash();

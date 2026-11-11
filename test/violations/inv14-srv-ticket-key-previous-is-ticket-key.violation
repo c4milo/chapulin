@@ -1,0 +1,14 @@
+invariant: INV-14
+file: src/srv.c
+catches: srv_auth_test
+reason: a server takes a ticket_key_previous with ticket_key's bytes, which
+  shows a key change that wrote one key twice, so the old key's tickets
+  no longer open. test/srv_identity_tests.h's test_previous_ticket_key
+  passes the same array and a copy of it, and requires CH_EINVAL for both
+  (docs/decisions.md 220).
+
+--- old
+    return ticket_key_own(srv->ticket_key_previous, srv->cookie_key) &&
+           !ct_memeq(srv->ticket_key_previous, srv->ticket_key, CH_SRV_TICKET_KEY_LEN);
+--- new
+    return ticket_key_own(srv->ticket_key_previous, srv->cookie_key);

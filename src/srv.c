@@ -149,21 +149,37 @@ static const uint8_t unfilled_key[CH_SRV_COOKIE_KEY_LEN];
 _Static_assert(CH_SRV_COOKIE_KEY_LEN == CH_SRV_TICKET_KEY_LEN,
                "the two server keys are one length");
 
-// The two keys' rules (srv_cfg.h): cookie_key set, and ticket_key NULL
-// or set. A key whose bytes are all zero is refused as unset. Whoever
-// guesses it mints cookies, or with ticket_key resumes as this server
-// with every client that kept a ticket. A ticket_key with the bytes of
-// cookie_key is refused too: srv_cfg.h gives each its own key. The keys
-// are secret, so each compare is ct_memeq's.
+// Whether a ticket key is set and its own: its bytes are not all zero,
+// and they are not cookie_key's bytes. A key whose bytes are all zero is
+// refused as unset, because whoever guesses it resumes as this server
+// with every client that kept a ticket. srv_cfg.h gives the cookie its
+// own key. The keys are secret, so each compare is ct_memeq's.
+static int ticket_key_own(const uint8_t *key, const uint8_t *cookie_key) {
+    return !ct_memeq(key, unfilled_key, sizeof unfilled_key) &&
+           !ct_memeq(key, cookie_key, CH_SRV_TICKET_KEY_LEN);
+}
+
+// The three keys' rules (srv_cfg.h): cookie_key set, and its bytes not all
+// zero, because whoever guesses it mints cookies. ticket_key NULL or its
+// own key. ticket_key_previous NULL, or its own key beside a ticket_key
+// with other bytes. A previous key with no ticket_key would open tickets
+// and issue none, and a previous key with ticket_key's bytes shows a key
+// change that wrote one key twice (docs/decisions.md 220).
 static int keys_ok(const ch_srv_cfg *srv) {
     if (srv->cookie_key == NULL || ct_memeq(srv->cookie_key, unfilled_key, sizeof unfilled_key)) {
         return 0;
     }
     if (srv->ticket_key == NULL) {
+        return srv->ticket_key_previous == NULL;
+    }
+    if (!ticket_key_own(srv->ticket_key, srv->cookie_key)) {
+        return 0;
+    }
+    if (srv->ticket_key_previous == NULL) {
         return 1;
     }
-    return !ct_memeq(srv->ticket_key, unfilled_key, sizeof unfilled_key) &&
-           !ct_memeq(srv->ticket_key, srv->cookie_key, CH_SRV_TICKET_KEY_LEN);
+    return ticket_key_own(srv->ticket_key_previous, srv->cookie_key) &&
+           !ct_memeq(srv->ticket_key_previous, srv->ticket_key, CH_SRV_TICKET_KEY_LEN);
 }
 
 // The server's own fields: at least one provisioned identity to prove

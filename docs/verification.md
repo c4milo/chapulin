@@ -2752,8 +2752,11 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   - only a flight that got as far as `srv_complete` answers `CH_OK`.
 
   The flight runs only under a `cookie_key` that is set and not all
-  zero, and a `ticket_key` that is NULL, or neither all zero nor the
-  bytes of `cookie_key` (`docs/decisions.md` entry 139).
+  zero, a `ticket_key` that is NULL, or neither all zero nor the bytes
+  of `cookie_key` (`docs/decisions.md` entry 139), and a
+  `ticket_key_previous` that is NULL, or beside a `ticket_key` and none
+  of all zero, the bytes of `cookie_key` and the bytes of `ticket_key`
+  (entry 220).
 - **Bound:** ALPN offers ≤ 8 names of ≤ 32 B. Each server key holds
   zeros and one byte of any value, its last. `keys_ok` reads the key
   bytes through `ct_memeq` alone, which [ct](#ct) proves equal to a plain
@@ -3060,9 +3063,13 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   - a selected ticket records the session's QUIC version, which over the
     TCP build the harness compiles is 0, whatever version each opened
     ticket carries;
+  - every open runs under `ticket_key` or `ticket_key_previous`, and an
+    open under `ticket_key_previous` follows an open of the same
+    identity that `ticket_key` refused (`docs/decisions.md` entry 220);
   - `srv_send_new_session_ticket` sends at most one ticket, none without
-    a key and a clock, with a lifetime of 1 to `SRV_TICKET_LIFETIME`, and
-    seals the session's QUIC version into it.
+    a key and a clock, with a lifetime of 1 to `SRV_TICKET_LIFETIME`,
+    seals it under `ticket_key` alone, and seals the session's QUIC
+    version into it.
 - **Bound:** identities ≤ 121 B, one whole ticket and a short entry;
   binders ≤ 35 B.
 - **Not proved:** which binder matches, and the QUIC arm, where the

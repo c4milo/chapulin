@@ -93,6 +93,21 @@ static int ticket_holds(const srv_ticket_contents *c, const ch_cfg *cfg, const c
            ticket_alpn_matches(c, cfg, ch->alpn_selected) && c->quic_version == quic_version;
 }
 
+// Opens the identity_len bytes at identity under ticket_key, and when that
+// open refuses them, under ticket_key_previous when it is set (srv_cfg.h,
+// docs/decisions.md 220). The ticket names no key, so the second open is
+// how a ticket sealed before a key change opens. Returns what the last
+// open returned: CH_OK with *c written, or CH_EAUTH with *c zeroed.
+static int open_ticket(const ch_cfg *cfg, const uint8_t *identity, size_t identity_len,
+                       srv_ticket_contents *c) {
+    uint8_t widemul = widemul_answer(cfg);
+    int rc = srv_ticket_open(widemul, cfg->srv.ticket_key, identity, identity_len, c);
+    if (rc == CH_OK || cfg->srv.ticket_key_previous == NULL) {
+        return rc;
+    }
+    return srv_ticket_open(widemul, cfg->srv.ticket_key_previous, identity, identity_len, c);
+}
+
 // Walks the client's identities in its order and stops at the first
 // ticket that opens and holds, writing its index and what it carried.
 // The parser held the list to its syntax, so the walk only reads it.
@@ -112,8 +127,7 @@ static int find_ticket(const ch_tls_priv *t, const client_hello *ch, const selec
         // The length travels in the clear, so an identity of any other
         // length is passed over without running the AEAD.
         if (identity_len == SRV_TICKET_LEN &&
-            srv_ticket_open(widemul_answer(cfg), cfg->srv.ticket_key, identity, identity_len, c) ==
-                CH_OK &&
+            open_ticket(cfg, identity, identity_len, c) == CH_OK &&
             ticket_holds(c, cfg, ch, sel, session_quic_version(t), t->now_seconds)) {
             *index = i;
             return 1;

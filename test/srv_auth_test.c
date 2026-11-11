@@ -451,6 +451,7 @@ int main(void) {
     test_check();
     test_identity_rules();
     test_server_keys();
+    test_previous_ticket_key();
     if (failures == 0) {
         (void)printf("srv_auth: the HelloRetryRequest random, the signed content, the identity "
                      "slots, the rules they are held to at entry, and both signers\n");

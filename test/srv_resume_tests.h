@@ -24,6 +24,9 @@ static const uint8_t resume_key[CH_SRV_TICKET_KEY_LEN] = {
 static const uint8_t other_resume_key[CH_SRV_TICKET_KEY_LEN] = {
     0x41, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
     0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f};
+static const uint8_t third_resume_key[CH_SRV_TICKET_KEY_LEN] = {
+    0x42, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
+    0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f};
 
 // The instant the cases issue their tickets at, on the caller's clock.
 #define RESUME_AUTH 1000000U
@@ -305,6 +308,83 @@ static void test_resume_binder(void) {
     flight_hello.psk_binders_len = 1 + SHA256_LEN;
     CHECK(srv_select_auth(&hs, &flight_hello, &sel) == CH_EAUTH);
     CHECK(hs.alert == ALERT_DECRYPT_ERROR);
+}
+
+// The previous ticket key (srv_cfg.h, docs/decisions.md 220). A ticket
+// that ticket_key does not open opens under ticket_key_previous, and every
+// test after the open holds as it does under ticket_key.
+static void test_resume_previous_key(void) {
+    selection sel;
+    uint8_t ticket[SRV_TICKET_LEN];
+
+    // Sealed under resume_key, which is now the previous key: it resumes.
+    resume_reset(&sel, RESUME_AUTH);
+    resume_ticket(ticket, resume_key, RESUME_AUTH, CH_ALPN_NONE);
+    sess.cfg.srv.ticket_key = other_resume_key;
+    sess.cfg.srv.ticket_key_previous = resume_key;
+    CHECK(resume_one(&sel, ticket) == CH_OK && resumed(&sel));
+    CHECK(sel.psk_identity == 0 && hs.ticket_auth_seconds == RESUME_AUTH);
+
+    // With no previous key the same ticket is passed over, and so is it
+    // when neither key sealed it.
+    resume_reset(&sel, RESUME_AUTH);
+    sess.cfg.srv.ticket_key = other_resume_key;
+    CHECK(resume_one(&sel, ticket) == CH_OK && sel.psk_selected == 0);
+    resume_reset(&sel, RESUME_AUTH);
+    sess.cfg.srv.ticket_key = other_resume_key;
+    sess.cfg.srv.ticket_key_previous = third_resume_key;
+    CHECK(resume_one(&sel, ticket) == CH_OK && sel.psk_selected == 0);
+
+    // A ticket under the current key still opens beside a previous key.
+    resume_reset(&sel, RESUME_AUTH);
+    sess.cfg.srv.ticket_key_previous = other_resume_key;
+    CHECK(resume_one(&sel, ticket) == CH_OK && resumed(&sel));
+
+    // The lifetime's exact boundary holds under the previous key too.
+    resume_reset(&sel, (uint64_t)RESUME_AUTH + SRV_TICKET_LIFETIME);
+    sess.cfg.srv.ticket_key = other_resume_key;
+    sess.cfg.srv.ticket_key_previous = resume_key;
+    CHECK(resume_one(&sel, ticket) == CH_OK && resumed(&sel));
+    resume_reset(&sel, (uint64_t)RESUME_AUTH + SRV_TICKET_LIFETIME + 1);
+    sess.cfg.srv.ticket_key = other_resume_key;
+    sess.cfg.srv.ticket_key_previous = resume_key;
+    CHECK(resume_one(&sel, ticket) == CH_OK && sel.psk_selected == 0);
+
+    // The client's order wins over the key: a ticket under the previous key
+    // first and one under the current key second selects index 0.
+    resume_reset(&sel, RESUME_AUTH);
+    sess.cfg.srv.ticket_key = other_resume_key;
+    sess.cfg.srv.ticket_key_previous = resume_key;
+    uint8_t current[SRV_TICKET_LEN];
+    resume_ticket(current, other_resume_key, RESUME_AUTH, CH_ALPN_NONE);
+    uint8_t binder[SHA256_LEN];
+    resume_binder(binder);
+    resume_offer two[2] = {
+        {ticket,  SRV_TICKET_LEN, binder, sizeof binder},
+        {current, SRV_TICKET_LEN, binder, sizeof binder}
+    };
+    offer_tickets(two, 2);
+    CHECK(srv_select_auth(&hs, &flight_hello, &sel) == CH_OK && resumed(&sel));
+    CHECK(sel.psk_identity == 0);
+
+    // The session reads the bytes through the two pointers when it opens a
+    // ticket. A key change written in place between two calls takes effect
+    // at the next open: the old key's ticket opens under the previous key.
+    uint8_t current_storage[CH_SRV_TICKET_KEY_LEN];
+    uint8_t previous_storage[CH_SRV_TICKET_KEY_LEN];
+    memcpy(current_storage, resume_key, sizeof current_storage);
+    memcpy(previous_storage, third_resume_key, sizeof previous_storage);
+    resume_reset(&sel, RESUME_AUTH);
+    sess.cfg.srv.ticket_key = current_storage;
+    sess.cfg.srv.ticket_key_previous = previous_storage;
+    memcpy(previous_storage, current_storage, sizeof previous_storage);
+    memcpy(current_storage, other_resume_key, sizeof current_storage);
+    CHECK(resume_one(&sel, ticket) == CH_OK && resumed(&sel));
+    // A second change in place ends it.
+    memcpy(previous_storage, current_storage, sizeof previous_storage);
+    memcpy(current_storage, third_resume_key, sizeof current_storage);
+    sel.sigalg = SIGALG_ECDSA_P256_SHA256;
+    CHECK(resume_one(&sel, ticket) == CH_OK && sel.psk_selected == 0);
 }
 
 // The order rule and the ALPN binding.

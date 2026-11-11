@@ -1,0 +1,12 @@
+invariant: INV-14
+file: src/srv_resume.c
+catches: srv_flight_test
+reason: the server opens an offered ticket under ticket_key alone, so a key
+  change ends every live ticket, which ticket_key_previous exists to
+  prevent (srv_cfg.h, docs/decisions.md 220). test/srv_resume_tests.h's
+  test_resume_previous_key requires the old key's ticket to resume.
+
+--- old
+    return srv_ticket_open(widemul, cfg->srv.ticket_key_previous, identity, identity_len, c);
+--- new
+    return rc;

@@ -98,6 +98,7 @@ pub fn server_cfg(options: *const chapulin.ServerOptions, comptime limits: chapu
     if (has_classic_server) try set_classic_identities(&cfg, options, &lists.ecdsa_chain, &lists.rsa_chain);
     cfg.srv.cookie_key = options.cookie_key;
     cfg.srv.ticket_key = if (options.ticket_key) |key| key else null;
+    cfg.srv.ticket_key_previous = if (options.ticket_key_previous) |key| key else null;
     if (options.clock) |clock| set_clock(&cfg, clock);
     cfg.alpn_protocols = try fill([]const u8, c.ch_alpn_protocol, &lists.alpn, options.alpn, alpn_protocol_of);
     cfg.alpn_count = options.alpn.len;

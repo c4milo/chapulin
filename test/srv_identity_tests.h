@@ -229,9 +229,10 @@ static void test_identity_rules(void) {
     }
 }
 
-// ch_srv_accept under one pair of keys. A refused pair returns CH_EINVAL
+// ch_srv_accept under one set of keys. A refused set returns CH_EINVAL
 // before any I/O, and an accepted one CH_EIO from the first read.
-static int keys_case(const uint8_t *cookie_key, const uint8_t *ticket_key) {
+static int keys_case(const uint8_t *cookie_key, const uint8_t *ticket_key,
+                     const uint8_t *ticket_key_previous) {
     ch_cfg cfg;
     usable_config(&cfg);
     cfg.buf = accept_buf;
@@ -240,18 +241,21 @@ static int keys_case(const uint8_t *cookie_key, const uint8_t *ticket_key) {
     cfg.recv = count_recv;
     cfg.srv.cookie_key = cookie_key;
     cfg.srv.ticket_key = ticket_key;
+    cfg.srv.ticket_key_previous = ticket_key_previous;
     send_calls = 0;
     recv_calls = 0;
     ch_tls_priv t;
     return ch_srv_accept(tls_public(&t), &cfg);
 }
 
-// ch_srv_check under one pair of keys and a usable identity.
-static int check_keys_case(const uint8_t *cookie_key, const uint8_t *ticket_key) {
+// ch_srv_check under one set of keys and a usable identity.
+static int check_keys_case(const uint8_t *cookie_key, const uint8_t *ticket_key,
+                           const uint8_t *ticket_key_previous) {
     ch_cfg cfg;
     usable_config(&cfg);
     cfg.srv.cookie_key = cookie_key;
     cfg.srv.ticket_key = ticket_key;
+    cfg.srv.ticket_key_previous = ticket_key_previous;
     return ch_srv_check(&cfg);
 }
 
@@ -266,26 +270,70 @@ static void test_server_keys(void) {
     uint8_t copy[CH_SRV_COOKIE_KEY_LEN];
     memcpy(copy, accept_cookie_key, sizeof copy);
 
-    CHECK(keys_case(accept_cookie_key, NULL) == CH_EIO && recv_calls > 0);
-    CHECK(keys_case(accept_cookie_key, ticket_key) == CH_EIO && recv_calls > 0);
-    CHECK(keys_case(last_set, ticket_key) == CH_EIO && recv_calls > 0);
-    CHECK(keys_case(accept_cookie_key, last_set) == CH_EIO && recv_calls > 0);
+    CHECK(keys_case(accept_cookie_key, NULL, NULL) == CH_EIO && recv_calls > 0);
+    CHECK(keys_case(accept_cookie_key, ticket_key, NULL) == CH_EIO && recv_calls > 0);
+    CHECK(keys_case(last_set, ticket_key, NULL) == CH_EIO && recv_calls > 0);
+    CHECK(keys_case(accept_cookie_key, last_set, NULL) == CH_EIO && recv_calls > 0);
 
-    CHECK(keys_case(zero, NULL) == CH_EINVAL && send_calls == 0 && recv_calls == 0);
-    CHECK(keys_case(zero, ticket_key) == CH_EINVAL && recv_calls == 0);
-    CHECK(keys_case(accept_cookie_key, zero) == CH_EINVAL && recv_calls == 0);
-    CHECK(keys_case(accept_cookie_key, accept_cookie_key) == CH_EINVAL && recv_calls == 0);
-    CHECK(keys_case(accept_cookie_key, copy) == CH_EINVAL && recv_calls == 0);
+    CHECK(keys_case(zero, NULL, NULL) == CH_EINVAL && send_calls == 0 && recv_calls == 0);
+    CHECK(keys_case(zero, ticket_key, NULL) == CH_EINVAL && recv_calls == 0);
+    CHECK(keys_case(accept_cookie_key, zero, NULL) == CH_EINVAL && recv_calls == 0);
+    CHECK(keys_case(accept_cookie_key, accept_cookie_key, NULL) == CH_EINVAL && recv_calls == 0);
+    CHECK(keys_case(accept_cookie_key, copy, NULL) == CH_EINVAL && recv_calls == 0);
 
     // ch_srv_check applies the same rules at boot.
-    CHECK(check_keys_case(accept_cookie_key, NULL) == CH_OK);
-    CHECK(check_keys_case(accept_cookie_key, ticket_key) == CH_OK);
-    CHECK(check_keys_case(last_set, ticket_key) == CH_OK);
-    CHECK(check_keys_case(NULL, NULL) == CH_EINVAL);
-    CHECK(check_keys_case(zero, NULL) == CH_EINVAL);
-    CHECK(check_keys_case(accept_cookie_key, zero) == CH_EINVAL);
-    CHECK(check_keys_case(accept_cookie_key, accept_cookie_key) == CH_EINVAL);
-    CHECK(check_keys_case(accept_cookie_key, copy) == CH_EINVAL);
+    CHECK(check_keys_case(accept_cookie_key, NULL, NULL) == CH_OK);
+    CHECK(check_keys_case(accept_cookie_key, ticket_key, NULL) == CH_OK);
+    CHECK(check_keys_case(last_set, ticket_key, NULL) == CH_OK);
+    CHECK(check_keys_case(NULL, NULL, NULL) == CH_EINVAL);
+    CHECK(check_keys_case(zero, NULL, NULL) == CH_EINVAL);
+    CHECK(check_keys_case(accept_cookie_key, zero, NULL) == CH_EINVAL);
+    CHECK(check_keys_case(accept_cookie_key, accept_cookie_key, NULL) == CH_EINVAL);
+    CHECK(check_keys_case(accept_cookie_key, copy, NULL) == CH_EINVAL);
+}
+
+// The previous ticket key's rules (srv.c's keys_ok, docs/decisions.md
+// 220): it is refused when its bytes are all zero, are cookie_key's or
+// are ticket_key's, in the same array or in another one, and when
+// ticket_key is NULL. A key that differs from each of them in its last
+// byte alone is a key.
+static void test_previous_ticket_key(void) {
+    static const uint8_t zero[CH_SRV_TICKET_KEY_LEN];
+    static const uint8_t ticket_key[CH_SRV_TICKET_KEY_LEN] = {0x51};
+    static const uint8_t previous[CH_SRV_TICKET_KEY_LEN] = {0x52};
+    uint8_t last_set[CH_SRV_TICKET_KEY_LEN] = {0};
+    last_set[sizeof last_set - 1] = 1;
+    uint8_t ticket_copy[CH_SRV_TICKET_KEY_LEN];
+    memcpy(ticket_copy, ticket_key, sizeof ticket_copy);
+    uint8_t copy[CH_SRV_COOKIE_KEY_LEN];
+    memcpy(copy, accept_cookie_key, sizeof copy);
+    uint8_t near_ticket[CH_SRV_TICKET_KEY_LEN];
+    memcpy(near_ticket, ticket_key, sizeof near_ticket);
+    near_ticket[sizeof near_ticket - 1] ^= 1;
+    uint8_t near_cookie[CH_SRV_COOKIE_KEY_LEN];
+    memcpy(near_cookie, accept_cookie_key, sizeof near_cookie);
+    near_cookie[sizeof near_cookie - 1] ^= 1;
+
+    const uint8_t *accepted_keys[] = {previous, last_set, near_ticket, near_cookie};
+    for (size_t i = 0; i < sizeof accepted_keys / sizeof accepted_keys[0]; i++) {
+        CHECK(keys_case(accept_cookie_key, ticket_key, accepted_keys[i]) == CH_EIO &&
+              recv_calls > 0);
+        CHECK(check_keys_case(accept_cookie_key, ticket_key, accepted_keys[i]) == CH_OK);
+    }
+
+    const uint8_t *refused_keys[] = {zero, accept_cookie_key, copy, ticket_key, ticket_copy};
+    for (size_t i = 0; i < sizeof refused_keys / sizeof refused_keys[0]; i++) {
+        CHECK(keys_case(accept_cookie_key, ticket_key, refused_keys[i]) == CH_EINVAL &&
+              send_calls == 0 && recv_calls == 0);
+        CHECK(check_keys_case(accept_cookie_key, ticket_key, refused_keys[i]) == CH_EINVAL);
+    }
+
+    // A previous key with no ticket_key would open tickets and issue none.
+    CHECK(keys_case(accept_cookie_key, NULL, previous) == CH_EINVAL && recv_calls == 0);
+    CHECK(check_keys_case(accept_cookie_key, NULL, previous) == CH_EINVAL);
+    // The previous key's rules do not excuse a bad ticket_key.
+    CHECK(keys_case(accept_cookie_key, zero, previous) == CH_EINVAL && recv_calls == 0);
+    CHECK(check_keys_case(accept_cookie_key, copy, previous) == CH_EINVAL);
 }
 
 #endif

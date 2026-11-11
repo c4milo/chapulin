@@ -261,6 +261,9 @@ const ServerValues = struct {
     cookie_key: *const [c.CH_SRV_COOKIE_KEY_LEN]u8,
     /// The key tickets are sealed under, null for no tickets: srv.ticket_key.
     ticket_key: ?*const [c.CH_SRV_TICKET_KEY_LEN]u8 = null,
+    /// The key ticket_key replaced, which opens tickets and seals none, null for none:
+    /// srv.ticket_key_previous. srv_cfg.h states how to change the key while a session runs.
+    ticket_key_previous: ?*const [c.CH_SRV_TICKET_KEY_LEN]u8 = null,
     /// The caller's clock, which each init calls once, null for no tickets: now_seconds.
     clock: ?Clock = null,
     /// Protocol names to select from, in this server's order, CH_ALPN_MAX at most:

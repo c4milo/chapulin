@@ -89,8 +89,10 @@
 // srv_auth.h);
 // cfg.srv.cookie_key is NULL, because §9.2 makes the cookie extension
 // mandatory to implement and a stateless HelloRetryRequest cannot be
-// minted without that key; either key is all zero bytes, or
-// cfg.srv.ticket_key holds cookie_key's bytes (srv_cfg.h); cfg.buf or
+// minted without that key; any of the three keys is all zero bytes;
+// cfg.srv.ticket_key holds cookie_key's bytes; cfg.srv.ticket_key_previous
+// holds the bytes of cookie_key or of ticket_key, or is set while
+// ticket_key is NULL (srv_cfg.h); cfg.buf or
 // cfg.send or cfg.recv is NULL;
 // cfg.buf_len is below CH_MIN_RXBUF (cfg.h); cfg.srv.sni_cap is
 // not 0 while cfg.srv.sni_buf is NULL; cfg.srv.require_server_name is
@@ -146,7 +148,8 @@ int CH_MUST_USE ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
 // provisioned identity signed and verified. Returns CH_EINVAL for a
 // configuration that cannot serve: no identity at all, an identity the
 // flight could not sign with or send (ch_srv_accept above), a
-// cookie_key or ticket_key that ch_srv_accept refuses (srv_cfg.h), under
+// cookie_key, ticket_key or ticket_key_previous that ch_srv_accept
+// refuses (srv_cfg.h), under
 // RAND=session a NULL cfg.rand_bytes, which it checks before it signs
 // because an RSA-PSS signature draws its salt from that source, in a host
 // object a cfg.cpu that every init call refuses (above), or a

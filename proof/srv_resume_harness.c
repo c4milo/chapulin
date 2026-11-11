@@ -70,6 +70,16 @@ uint64_t nondet_u64(void);
 static uint16_t opened;
 static uint32_t opened_version;
 
+// The two ticket keys of the session under proof, which fill_session
+// writes, and the last open: its key, its identity and its answer. A
+// ticket opens under ticket_key_previous only after ticket_key refused
+// the same identity (srv_cfg.h, docs/decisions.md 220).
+static const uint8_t *current_key;
+static const uint8_t *previous_key;
+static const uint8_t *last_key;
+static const uint8_t *last_ticket;
+static int last_refused;
+
 int srv_ticket_open(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
                     const uint8_t *ticket, size_t n, srv_ticket_contents *c) {
     (void)widemul;
@@ -77,11 +87,20 @@ int srv_ticket_open(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
     __CPROVER_assert(n == SRV_TICKET_LEN, "open: only a ticket-length identity is opened");
     __CPROVER_assert(__CPROVER_r_ok(ticket, n), "open: identity readable");
     __CPROVER_assert(__CPROVER_w_ok(c, sizeof *c), "open: contents writable");
+    __CPROVER_assert(key == current_key || (previous_key != NULL && key == previous_key),
+                     "open: under one of the session's two ticket keys");
+    __CPROVER_assert(key != previous_key ||
+                         (last_key == current_key && last_ticket == ticket && last_refused),
+                     "open: under the previous key only after ticket_key refused the identity");
     opened++;
+    last_key = key;
+    last_ticket = ticket;
+    last_refused = 1;
     memset(c, 0, sizeof *c);
     if (nondet_int()) {
         return CH_EAUTH;
     }
+    last_refused = 0;
     c->auth_seconds = nondet_u64();
     c->suite = nondet_u16();
     c->quic_version = nondet_u32();
@@ -98,6 +117,7 @@ size_t srv_ticket_seal(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN]
                        size_t cap) {
     (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(key, CH_SRV_TICKET_KEY_LEN), "seal: key readable");
+    __CPROVER_assert(key == current_key, "seal: under ticket_key alone");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "seal: nonce readable");
     __CPROVER_assert(__CPROVER_r_ok(c, sizeof *c), "seal: contents readable");
     __CPROVER_assert(c->alpn_len <= CH_ALPN_NAME_MAX, "seal: the name fits its field");
@@ -200,6 +220,7 @@ static selection sel;
 static uint8_t identities[IDS_MAX];
 static uint8_t binders[BINDERS_MAX];
 static uint8_t ticket_key[CH_SRV_TICKET_KEY_LEN];
+static uint8_t ticket_key_previous[CH_SRV_TICKET_KEY_LEN];
 static uint8_t names[2][CH_ALPN_NAME_MAX];
 static ch_alpn_protocol protocols[2];
 
@@ -212,6 +233,13 @@ static void fill_session(void) {
     h.t = &t;
     fill_nondet(ticket_key, sizeof ticket_key);
     t.cfg.srv.ticket_key = nondet_int() ? ticket_key : NULL;
+    fill_nondet(ticket_key_previous, sizeof ticket_key_previous);
+    t.cfg.srv.ticket_key_previous = nondet_int() ? ticket_key_previous : NULL;
+    current_key = t.cfg.srv.ticket_key;
+    previous_key = t.cfg.srv.ticket_key_previous;
+    last_key = NULL;
+    last_ticket = NULL;
+    last_refused = 0;
     t.now_seconds = nondet_u64();
     fill_nondet(names[0], sizeof names[0]);
     fill_nondet(names[1], sizeof names[1]);

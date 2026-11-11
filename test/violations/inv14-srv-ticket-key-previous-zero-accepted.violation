@@ -1,0 +1,12 @@
+invariant: INV-14
+file: src/srv.c
+catches: srv_auth_test
+reason: a server takes a ticket_key_previous of all zero bytes, so anyone
+  seals a ticket that opens under it and resumes as this server.
+  test/srv_identity_tests.h's test_previous_ticket_key requires CH_EINVAL
+  for it before any I/O (docs/decisions.md 220).
+
+--- old
+    return ticket_key_own(srv->ticket_key_previous, srv->cookie_key) &&
+--- new
+    return !ct_memeq(srv->ticket_key_previous, srv->cookie_key, CH_SRV_TICKET_KEY_LEN) &&

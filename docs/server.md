@@ -1949,9 +1949,11 @@ already in the object — `p256_ecdsa_verify` (`p256.h:16`) for the ECDSA
 identity and `rsa_pss_verify` (`rsa.h:34`) for the RSA one. It catches a broken
 signer and a key the operator paired with the wrong certificate, once, at boot,
 with a local error code instead of a client-side alert on every connection.
-It also refuses a `cookie_key` or `ticket_key` that every server init call
-refuses: one of all zero bytes, or a `ticket_key` with `cookie_key`'s bytes
-(`docs/decisions.md` 139). It reads no chain bytes, so it catches neither a chain whose end-entity key is not
+It also refuses a `cookie_key`, `ticket_key` or `ticket_key_previous` that
+every server init call refuses: one of all zero bytes, a `ticket_key` with
+`cookie_key`'s bytes (`docs/decisions.md` 139), and a `ticket_key_previous`
+with the bytes of either other key or beside no `ticket_key`
+(`docs/decisions.md` 220). It reads no chain bytes, so it catches neither a chain whose end-entity key is not
 the provisioned public key nor a fallback chain signed with the SHA-1 that
 `rfc9846.txt:2958-2960` forbids; a provisioning script does both off the
 device.
@@ -2937,6 +2939,23 @@ server with no clock issues no ticket and accepts none, because it could
 not tell a fresh ticket from an expired one. A webpki client reads the same
 two fields (docs/decisions.md 135).
 
+**How the key changes.** `ch_cfg.srv.ticket_key_previous` holds the key
+that `ticket_key` replaced, and NULL holds none (docs/decisions.md 220). A
+ticket the client offers opens under `ticket_key` first, and then under
+the previous key. A new ticket is sealed under `ticket_key` alone. The
+ticket names no key, so its format and version stay as they were. To
+change the key, the caller copies the bytes of `ticket_key` into the
+previous key's storage, and then writes the new key into the storage of
+`ticket_key`. It does both between two calls and keeps both pointers. A
+session copies the two pointers at init and reads the bytes through them
+for each ticket it opens or seals, so new bytes take effect at the next
+call. A ticket stays openable through one key change. A deployment that
+changes the key no more often than `SRV_TICKET_LIFETIME` keeps every live
+ticket openable, and one that wants every ticket gone changes the key
+twice. Every init call and `ch_srv_check` refuse a previous key of all
+zero bytes, one with the bytes of `cookie_key` or of `ticket_key`, and one
+beside no `ticket_key`.
+
 **What the server issues.** One NewSessionTicket per connection, full or
 resumed, after the client Finished verifies (`rfc9846.txt:3194-3196`), under
 the application write key: a record over TCP, CRYPTO bytes at
@@ -2967,7 +2986,8 @@ versions or transports. It binds neither the server name, which
 the signing identity, which the ticket key stands in for. `srv_resume.h`
 gives the reason for each.
 
-**What the server accepts.** A ticket it sealed, offered under `psk_dhe_ke`:
+**What the server accepts.** A ticket it sealed under `ticket_key` or
+`ticket_key_previous`, offered under `psk_dhe_ke`:
 a client that lists `psk_ke` alone gets a full handshake, because this
 server always runs a key exchange (`rfc9846.txt:2307-2308`). It walks the
 identities in the client's order, selects the first that opens and holds,

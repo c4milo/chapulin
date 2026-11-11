@@ -267,14 +267,14 @@ static void fill_alpn(ch_alpn_protocol *protocol, const uint8_t *name) {
     __CPROVER_assume(protocol->name_len <= CH_ALPN_NAME_MAX);
 }
 
-// The two server keys keys_ok judges (docs/decisions.md 139). scratch
-// holds zeros alone, so a key in it is always refused, and the flight
-// would never run. keys_ok reads the key bytes through ct_memeq alone,
-// which the ct harness proves equal to a plain comparison. No other line
-// under proof reads them. So the answer of keys_ok depends on three
-// facts: each key is all zero or not, and the two keys hold the same
-// bytes or not. Each array holds zeros and one byte of any value, its
-// last, which gives every combination of the three facts. A compare
+// The three server keys keys_ok judges (docs/decisions.md 139 and 220).
+// scratch holds zeros alone, so a key in it is always refused, and the
+// flight would never run. keys_ok reads the key bytes through ct_memeq
+// alone, which the ct harness proves equal to a plain comparison. No
+// other line under proof reads them. So the answer of keys_ok depends on
+// six facts: each key is all zero or not, and each two keys hold the
+// same bytes or not. Each array holds zeros and one byte of any value,
+// its last, which gives every combination of the six facts. A compare
 // that stops before the last byte then refuses every key it reads, and
 // the reach floor shows it. Keys of 32 bytes of any value reached the
 // same locations, but the proof took over 300 s on the runner
@@ -283,19 +283,26 @@ static void fill_alpn(ch_alpn_protocol *protocol, const uint8_t *name) {
 _Static_assert(CH_SRV_TICKET_KEY_LEN == CH_SRV_COOKIE_KEY_LEN, "one last-byte index serves both");
 static uint8_t cookie_bytes[CH_SRV_COOKIE_KEY_LEN];
 static uint8_t ticket_bytes[CH_SRV_TICKET_KEY_LEN];
+static uint8_t previous_bytes[CH_SRV_TICKET_KEY_LEN];
 
-// Whether the two keys meet srv_cfg.h's rules in this harness's shape: a
-// cookie key that is set and not all zero, and a ticket key that is
-// unset, or in its own array, not all zero and not the cookie key's
-// bytes. Every byte but KEY_LAST is zero, so that byte alone decides
-// both facts. It is one expression with no branch, because the assert
-// calls it only where the rules hold, and a branch for a refused key
-// would be a location that no path reaches.
+// Whether the three keys meet srv_cfg.h's rules in this harness's shape:
+// a cookie key that is set and not all zero; a ticket key that is unset,
+// or in its own array, not all zero and not the cookie key's bytes; and a
+// previous ticket key that is unset, or beside a ticket key, in its own
+// array, not all zero and not the bytes of either other key. Every byte
+// but KEY_LAST is zero, so that byte alone decides each fact. It is one
+// expression with no branch, because the assert calls it only where the
+// rules hold, and a branch for a refused key would be a location that no
+// path reaches.
 static int keys_meet_rules(const ch_srv_cfg *srv) {
     return srv->cookie_key != NULL && cookie_bytes[KEY_LAST] != 0 &&
-           (srv->ticket_key == NULL ||
+           ((srv->ticket_key == NULL && srv->ticket_key_previous == NULL) ||
             (srv->ticket_key == ticket_bytes && ticket_bytes[KEY_LAST] != 0 &&
-             ticket_bytes[KEY_LAST] != cookie_bytes[KEY_LAST]));
+             ticket_bytes[KEY_LAST] != cookie_bytes[KEY_LAST] &&
+             (srv->ticket_key_previous == NULL ||
+              (srv->ticket_key_previous == previous_bytes && previous_bytes[KEY_LAST] != 0 &&
+               previous_bytes[KEY_LAST] != cookie_bytes[KEY_LAST] &&
+               previous_bytes[KEY_LAST] != ticket_bytes[KEY_LAST]))));
 }
 
 // The configuration fields ch_srv_accept reads, each stored through its
@@ -318,15 +325,22 @@ static void fill_cfg(ch_cfg *cfg, ch_alpn_protocol *protocols, const uint8_t *na
     cfg->require_pq = nondet_int();
     cfg->buf = (nondet_u8() & 1) ? scratch : NULL;
     cfg->buf_len = nondet_size_t();
-    // Each key set or unset, and the ticket key as the cookie key's own
-    // array too, the shape of a caller who passes one key for both.
+    // Each key set or unset, the ticket key as the cookie key's own array
+    // too, the shape of a caller who passes one key for both, and the
+    // previous ticket key as either other key's array.
     cookie_bytes[KEY_LAST] = nondet_u8();
     ticket_bytes[KEY_LAST] = nondet_u8();
+    previous_bytes[KEY_LAST] = nondet_u8();
     cfg->srv.cookie_key = (nondet_u8() & 1) ? cookie_bytes : NULL;
     uint8_t ticket_shape = nondet_u8();
     cfg->srv.ticket_key = ticket_shape == 0   ? NULL
                           : ticket_shape == 1 ? cookie_bytes
                                               : ticket_bytes;
+    uint8_t previous_shape = nondet_u8();
+    cfg->srv.ticket_key_previous = previous_shape == 0   ? NULL
+                                   : previous_shape == 1 ? cookie_bytes
+                                   : previous_shape == 2 ? ticket_bytes
+                                                         : previous_bytes;
     cfg->srv.sni_buf = (nondet_u8() & 1) ? scratch : NULL;
     cfg->srv.sni_cap = nondet_size_t();
     cfg->srv.require_server_name = nondet_u8();

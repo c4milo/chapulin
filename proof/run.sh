@@ -2208,7 +2208,12 @@ launch fast full srv_mldsa_host 2 "fill_nondet.0:4628,ct_wipe.0:147,signed_conte
 # ticket records the session's version. With rand_draw writing zero to the
 # bytes before the source runs (docs/decisions.md 141), through
 # proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-20 at a load average
-# near 106: 1072 properties, 632 s, 1.56 GB peak.
+# near 106: 1072 properties, 632 s, 1.56 GB peak. With ticket_key_previous
+# (docs/decisions.md 220), the asserts on the order of the two opens and
+# on the seal's key, through proof/prove-one.sh with PROVE_NO_CACHE=1 on
+# 2026-11-11, beside a make check at -j4: 1087 properties, 1311 s, and
+# reach 84.8%, 395 locations against the floor of 383. That run recorded
+# no peak, and a cap of 12 GiB on resident memory did not stop it.
 launch slow full srv_resume 120 "fill_nondet.0:122,find_ticket.0:24,binder_at.0:36,ct_wipe.0:92,ct_memeq.0:33" src/buf.c src/ct.c proof/ct_wipe_stub.c -DCH_ROLE_SERVER
 # gcm and gcm_forge have no launch line, for the reason
 # aead_inplace has none: neither formula returned a verdict, and an
@@ -2622,6 +2627,11 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # proof/prove-one.sh with PROVE_NO_CACHE=1 on 2026-10-26 at a load average
 # near 15 (Apple M1, macOS, whose resident peaks read above the runner's):
 # 1011 properties, 103 s, 4.94 GB, and reach 95.6% against the 95.5 floor.
+# With ticket_key_previous, a third key array and its four refusals
+# (docs/decisions.md 220), through proof/prove-one.sh with
+# PROVE_NO_CACHE=1 on 2026-11-11, beside a make check at -j4: 1065
+# properties, 129 s, and reach 95.8%. That run recorded no peak, and a cap
+# of 12 GiB on resident memory did not stop it.
 # The weight is 3 because the peaks above pass the fast tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER src/srv.c src/srv_handshake.c src/ct.c proof/ct_wipe_stub.c src/session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with

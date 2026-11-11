@@ -18,6 +18,7 @@
 #include "session_convert.h"
 #include "srv_resume.h"
 #include "test_ticket.h"
+#include "test_widemul.h"
 
 static const uint8_t loop_ticket_key[CH_SRV_TICKET_KEY_LEN] = {
     0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70,
@@ -199,7 +200,23 @@ static void test_resumption(void) {
     test_clock_set(&scfg, test_server_seconds(), LOOP_NOW + 5);
     scfg.srv.ticket_key = other_loop_ticket_key;
     CHECK(refused(&client, &server, &ccfg, &scfg) == ALERT_MISSING_EXTENSION);
+
+    // The same server with the old key as its previous key opens the ticket
+    // and resumes, and seals the next ticket under its new key alone
+    // (docs/decisions.md 220).
+    scfg.srv.ticket_key_previous = loop_ticket_key;
+    tickets_kept = 0;
+    (void)run_handshake(&client, &server, &ccfg, &scfg);
+    CHECK(server.t.psk_selected == 1 && ch_tcp_state(tcp_public(&client)) == CH_ST_CONNECTED);
+    take_post_handshake(&client);
+    CHECK(tickets_kept == 1);
+    srv_ticket_contents opened;
+    CHECK(srv_ticket_open(TEST_WIDEMUL, other_loop_ticket_key, last_ticket.identity,
+                          last_ticket.identity_len, &opened) == CH_OK);
+    CHECK(srv_ticket_open(TEST_WIDEMUL, loop_ticket_key, last_ticket.identity,
+                          last_ticket.identity_len, &opened) == CH_EAUTH);
     scfg.srv.ticket_key = loop_ticket_key;
+    scfg.srv.ticket_key_previous = NULL;
 
     // One byte of the ticket moved: it no longer opens.
     kept_ticket tampered = first;

@@ -51,7 +51,10 @@
 // is about 2^-33, which is the bound NIST SP 800-38D §8.3 sets for random
 // 96-bit nonces under one key. A deployment rotates its ticket key before
 // it has issued 2^32 tickets under it; at one ticket per handshake that is
-// 7,000 handshakes a second for a week.
+// 7,000 handshakes a second for a week. The old key then becomes
+// ch_srv_cfg.ticket_key_previous, which opens the tickets it sealed and
+// seals none, so a key change ends no live ticket (srv_cfg.h,
+// docs/decisions.md 220).
 //
 // The ticket key is as valuable as the signing keys, for as long as the
 // tickets it sealed live. Whoever holds it opens every ticket, reads the

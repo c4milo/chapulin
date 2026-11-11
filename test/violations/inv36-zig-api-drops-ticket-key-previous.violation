@@ -1,0 +1,11 @@
+invariant: INV-36
+file: chapulin_cfg.zig
+catches: test/zig-build-check.sh
+reason: the Zig server options leave ch_srv_cfg.ticket_key_previous NULL,
+  so a Zig server that changed its ticket key ends every live ticket.
+  unit.zig's field-by-field ch_cfg test of the server options objects
+  (docs/decisions.md 220).
+--- old
+    cfg.srv.ticket_key_previous = if (options.ticket_key_previous) |key| key else null;
+--- new
+    cfg.srv.ticket_key_previous = null;

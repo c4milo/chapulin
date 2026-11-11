@@ -198,6 +198,32 @@ typedef struct {
     // rotate.
     const uint8_t *ticket_key;
 
+    // The key ticket_key replaced, so that a server can change its ticket
+    // key and keep the tickets it issued: CH_SRV_TICKET_KEY_LEN bytes, the
+    // same kind of key as ticket_key. A ticket the client offers opens
+    // under ticket_key first, and then under this key. A new ticket is
+    // sealed under ticket_key alone. NULL opens tickets under ticket_key
+    // alone. Every init call and ch_srv_check return CH_EINVAL for a key
+    // of all zero bytes, for one with the bytes of cookie_key or of
+    // ticket_key, and for this key while ticket_key is NULL
+    // (docs/decisions.md 220).
+    //
+    // To change the key, copy ticket_key's bytes into this key's storage,
+    // and then write the new key into ticket_key's storage. Do both
+    // between two calls, and keep both pointers. A session copies the two
+    // pointers at init, and reads the bytes through them for each ticket
+    // it opens or seals. It opens tickets in the call that reads a
+    // ClientHello, and seals one in the call that reads the client
+    // Finished. So new bytes take effect at the next call. The checks
+    // above run at init alone, and ch_srv_check checks new bytes.
+    //
+    // A ticket stays openable through one key change. A program that
+    // changes the key no more often than the ticket lifetime, 604800
+    // seconds by default (srv_ticket.h), keeps every live ticket
+    // openable. To end every live ticket, change the key twice. This key
+    // is as valuable as ticket_key until the tickets it sealed expire.
+    const uint8_t *ticket_key_previous;
+
     // The clock the tickets are dated by is ch_cfg.now_seconds (cfg.h),
     // which each init call reads once. A server with no clock issues no
     // ticket and accepts none, because it could not tell a fresh ticket

@@ -7,7 +7,6 @@ reason: a server takes a ticket_key of all zero bytes, so anyone opens its
   CH_EINVAL before any I/O.
 
 --- old
-    return !ct_memeq(srv->ticket_key, unfilled_key, sizeof unfilled_key) &&
-           !ct_memeq(srv->ticket_key, srv->cookie_key, CH_SRV_TICKET_KEY_LEN);
+    if (!ticket_key_own(srv->ticket_key, srv->cookie_key)) {
 --- new
-    return !ct_memeq(srv->ticket_key, srv->cookie_key, CH_SRV_TICKET_KEY_LEN);
+    if (ct_memeq(srv->ticket_key, srv->cookie_key, CH_SRV_TICKET_KEY_LEN)) {

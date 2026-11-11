@@ -602,8 +602,9 @@ rules:
       which stores each QUIC key's schedule through
       aes_traffic_key_store in a host object (docs/decisions.md 160),
       and srv_ticket.c, which seals a PROFILE=cnsa2 server's tickets
-      under AES-256-GCM with ch_srv_cfg.ticket_key (docs/decisions.md
-      162), are the four library sources that may name them; aes.c and gcm.c are excluded
+      under AES-256-GCM with ch_srv_cfg.ticket_key and opens them with
+      it or with ticket_key_previous (docs/decisions.md 162 and 220),
+      are the four library sources that may name them; aes.c and gcm.c are excluded
       as the definition sites. ct.h refuses that build unless it is a
       host object, whose caller states the instructions' timing in
       ch_cfg.cpu, or takes AES=extern and asserts the peripheral's

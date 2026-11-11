@@ -299,6 +299,7 @@ test "the Server values\' ch_cfg: both identities, the keys, the clock, ALPN, th
     const rsa_key = std.mem.zeroes(chapulin.RsaKey);
     const cookie_key = [_]u8{0x34} ** c.CH_SRV_COOKIE_KEY_LEN;
     const ticket_key = [_]u8{0x35} ** c.CH_SRV_TICKET_KEY_LEN;
+    const ticket_key_previous = [_]u8{0x36} ** c.CH_SRV_TICKET_KEY_LEN;
     const alpn = [_][]const u8{alpn_names[1]};
     const seconds: u64 = 1700000000;
     const clock = clockAt(&seconds);
@@ -307,6 +308,7 @@ test "the Server values\' ch_cfg: both identities, the keys, the clock, ALPN, th
         .rsa_pss = .{ .chain = chain[1..], .public_key = &modulus, .private_key = &rsa_key },
         .cookie_key = &cookie_key,
         .ticket_key = &ticket_key,
+        .ticket_key_previous = &ticket_key_previous,
         .clock = clock,
         .alpn = &alpn,
         .require_server_name = true,
@@ -318,6 +320,7 @@ test "the Server values\' ch_cfg: both identities, the keys, the clock, ALPN, th
     want.srv.rsa_pss = .{ .chain = &lists.rsa_chain, .chain_count = 1, .priv = rsa_key.c_key(), .priv_len = @sizeOf(c.ch_rsa_priv), .@"pub" = &modulus, .pub_len = 256 };
     want.srv.cookie_key = &cookie_key;
     want.srv.ticket_key = &ticket_key;
+    want.srv.ticket_key_previous = &ticket_key_previous;
     want.now_seconds = clock.now_seconds;
     want.clock_io = clock.clock_io;
     want.alpn_protocols = &lists.alpn;

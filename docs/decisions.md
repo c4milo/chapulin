@@ -18537,3 +18537,68 @@ does nothing more.
       without it, so a body inlined into its entry leaves nothing above
       the wipe there, and review holds it. A register still holds what
       the last instruction left in it.
+
+220. **A server opens a ticket under its previous ticket key too.** Camilo
+    approved the design on 2026-11-11, from
+    https://github.com/c4milo/chapulin/issues/220, which colibri's HTTP
+    API session filed.
+
+    - **The need.** A server configuration held one ticket key. A server
+      that changed its key ended every live ticket, and each client that
+      kept one ran a full handshake. `srv_ticket.h` asks for a key change
+      before 2^32 tickets, and a server that runs for weeks needs one.
+    - **The rule.** `ch_srv_cfg.ticket_key_previous` holds the key that
+      `ticket_key` replaced. `srv_resume.c`'s `open_ticket` opens an
+      offered ticket under `ticket_key`, and then under the previous key
+      when the first open refuses it. A new ticket is sealed under
+      `ticket_key` alone. NULL keeps the server as it was. Every test
+      after the open stays as it was: the lifetime from `auth_seconds`,
+      the suite's hash, the ALPN protocol and the QUIC version.
+    - **The checks.** `keys_ok` refuses a previous key of all zero
+      bytes, one with the bytes of `cookie_key` or of `ticket_key`, and
+      one beside a NULL `ticket_key`. Every init call and `ch_srv_check`
+      apply them. A previous key with no `ticket_key` would open tickets
+      and issue none, because `srv_resume.c` judges no ticket without
+      `ticket_key`. A previous key with the bytes of `ticket_key` shows a
+      key change that wrote one key twice.
+    - **When a session reads the keys.** Init copies `ch_cfg`, so a
+      session keeps the two pointers it got at init. It reads the bytes
+      through them for each ticket it opens or seals. So a caller that
+      writes a new key in place between two calls changes the key that
+      the next call uses. The checks run at init alone, and
+      `ch_srv_check` checks new bytes. `srv_cfg.h` states the order of
+      the two writes.
+    - **Forms not taken.** A key identifier in the ticket. One open would
+      then serve each ticket, but the format would need a new version,
+      and every live ticket would end once at the upgrade. A call that
+      changes the key inside chapulin. The caller owns the key storage,
+      as it owns every other key, and chapulin keeps no copy of a key.
+    - **Cost.** One more open, an AEAD over a 108-byte ticket, or 124
+      bytes under SUITE=aesgcm, for each identity that `ticket_key`
+      refuses, and only when a previous key is set. The time of the walk
+      shows whether a ticket opened under the current key. That tells a
+      client only whether the server changed its key after the ticket
+      was issued. `ch_srv_cfg` grows by one pointer, so the build record
+      changes, and a consumer compiles again against the new headers.
+    - **What holds it.** `test/srv_identity_tests.h`'s
+      `test_previous_ticket_key` holds each refusal and each key that
+      differs from another in its last byte alone. `test/srv_resume_tests.h`'s
+      `test_resume_previous_key` resumes a ticket under the previous key,
+      holds the lifetime's boundary there, and changes the key in place
+      between two calls. `test/srv_resume_issue_tests.h` opens the issued
+      ticket under `ticket_key`. The TCP and QUIC loop tests resume
+      through each init call, and `test/cnsa2_server_test.c` holds the
+      checks and the open under AES-256-GCM. Six violations break the
+      rules:
+      - `inv14-srv-ticket-key-previous-zero-accepted`;
+      - `inv14-srv-ticket-key-previous-is-cookie-key`;
+      - `inv14-srv-ticket-key-previous-is-ticket-key`;
+      - `inv14-srv-ticket-key-previous-without-ticket-key`;
+      - `srv-resume-previous-key-never-tried`;
+      - `srv-resume-seals-under-previous-key`.
+
+      
+      `inv36-zig-api-drops-ticket-key-previous` holds the Zig field. The
+      `srv_resume` harness proves the order of the two opens and that a
+      seal runs under `ticket_key` alone, and the `srv_accept` harness
+      proves the flight runs only under keys that meet the rules.

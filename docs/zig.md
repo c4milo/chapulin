@@ -289,6 +289,7 @@ over.
 | `mldsa87`, null by default, a host object alone | `srv.mldsa87`: `chain`, `chain_count`, `priv`, `priv_len = 4896`, `pub`, `pub_len = 2592` |
 | `cookie_key` | `srv.cookie_key` |
 | `ticket_key`, null for no tickets | `srv.ticket_key` |
+| `ticket_key_previous`, null for none | `srv.ticket_key_previous` |
 | `clock`, null for no clock | `now_seconds`, `clock_io` |
 | `alpn`, empty by default | `alpn_protocols`, `alpn_count` |
 | `require_server_name` | `srv.require_server_name` |
@@ -309,8 +310,8 @@ answers `error.Invalid` for a chain longer than its `Limits.chain_max`.
 `check()`, which takes the options by `*const` pointer, holds its chains at 255, the most `chain_count`'s `u8` holds,
 and runs
 `ch_srv_check`: each provisioned key signs, and the signature verifies.
-It also refuses a `cookie_key` or `ticket_key` that a server init call
-refuses. It takes no session.
+It also refuses a `cookie_key`, `ticket_key` or `ticket_key_previous`
+that a server init call refuses. It takes no session.
 
 ### PEM files
 

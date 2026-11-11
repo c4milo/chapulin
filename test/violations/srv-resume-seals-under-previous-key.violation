@@ -1,0 +1,17 @@
+invariant: INV-14
+file: src/srv_resume.c
+catches: srv_flight_test
+reason: the server seals new tickets under ticket_key_previous, the key
+  the caller retires at the next key change, so each new ticket dies one
+  key change early. srv_cfg.h seals under ticket_key alone, and
+  test/srv_resume_issue_tests.h opens the issued ticket under ticket_key
+  (docs/decisions.md 220).
+
+--- old
+    size_t ticket_len = srv_ticket_seal(widemul_answer(&t->cfg), t->cfg.srv.ticket_key, nonce, &c,
+--- new
+    size_t ticket_len = srv_ticket_seal(widemul_answer(&t->cfg),
+                                        t->cfg.srv.ticket_key_previous != NULL
+                                            ? t->cfg.srv.ticket_key_previous
+                                            : t->cfg.srv.ticket_key,
+                                        nonce, &c,

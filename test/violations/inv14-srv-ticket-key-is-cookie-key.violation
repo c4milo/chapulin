@@ -7,7 +7,6 @@ reason: a server takes a ticket_key with cookie_key's bytes, one key for
   both.
 
 --- old
-    return !ct_memeq(srv->ticket_key, unfilled_key, sizeof unfilled_key) &&
-           !ct_memeq(srv->ticket_key, srv->cookie_key, CH_SRV_TICKET_KEY_LEN);
+    if (!ticket_key_own(srv->ticket_key, srv->cookie_key)) {
 --- new
-    return !ct_memeq(srv->ticket_key, unfilled_key, sizeof unfilled_key);
+    if (ct_memeq(srv->ticket_key, unfilled_key, sizeof unfilled_key)) {

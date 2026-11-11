@@ -59,6 +59,24 @@ static void test_raw_resumption(void) {
     ccfg.server_pubkey_len = sizeof p256_sign_vectors[0].pub;
     CHECK(run_quic(&ccfg, &scfg));
     CHECK(from_server.len[CH_LEVEL_APPLICATION] == 0);
+
+    // The server changed its ticket key, and the old key is now its
+    // previous key. The kept ticket resumes, and the server seals the next
+    // ticket under the new key alone (docs/decisions.md 220).
+    static const uint8_t new_ticket_key[CH_SRV_TICKET_KEY_LEN] = {0x61};
+    test_clock_set(&scfg, test_server_seconds(), LOOP_NOW + 30);
+    scfg.srv.ticket_key = new_ticket_key;
+    scfg.srv.ticket_key_previous = ticket_key;
+    client_config(&ccfg, &server_alpn[0]);
+    present_ticket(&ccfg);
+    CHECK(run_quic(&ccfg, &scfg));
+    CHECK(server.t.psk_selected == 1 && handshake_messages() == 2);
+    take_ticket();
+    srv_ticket_contents c;
+    CHECK(srv_ticket_open(TEST_WIDEMUL, new_ticket_key, kept.identity, kept.identity_len, &c) ==
+          CH_OK);
+    CHECK(srv_ticket_open(TEST_WIDEMUL, ticket_key, kept.identity, kept.identity_len, &c) ==
+          CH_EAUTH);
 }
 
 #endif

@@ -46,7 +46,8 @@
 // Not the signing identity: the PSK proves that the server holds the
 // ticket key, which every identity of one deployment shares, and a
 // deployment that retires an identity and wants its tickets gone rotates
-// the ticket key. Not the ticket_age_add or the client's
+// the ticket key, and leaves ticket_key_previous NULL, or rotates it twice.
+// Not the ticket_age_add or the client's
 // obfuscated_ticket_age: RFC 9846 uses the age for 0-RTT anti-replay
 // (rfc9846.txt:4487-4499), and auth_seconds on the server's own clock is
 // the stronger lifetime check for a server that refuses 0-RTT.
@@ -80,7 +81,9 @@
 // tested alone and only its own binder is checked, which RFC 9846
 // §4.3.11 asks of a server (rfc9846.txt:2544-2546). An identity passes
 // when it is SRV_TICKET_LEN bytes long, srv_ticket_open opens it under
-// the ticket key, now_seconds is at least its auth_seconds and at most
+// cfg.srv.ticket_key, or else under cfg.srv.ticket_key_previous when that
+// is set (docs/decisions.md 220), now_seconds is at least its auth_seconds
+// and at most
 // SRV_TICKET_LIFETIME seconds past it, its suite is one this build holds
 // and hashes with the selected suite's hash, sel->hash_len
 // (rfc9846.txt:3219-3220), its ALPN protocol is the one the parser

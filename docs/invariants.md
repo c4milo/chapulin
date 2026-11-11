@@ -4012,12 +4012,18 @@ last `ROLE=server` stub, as the entry said it would.
   3-byte length leaves. The flight's own refusal of such an identity
   returns `CH_EAUTH` with internal_error, never `CH_EINVAL`
   (docs/decisions.md 74). The same four calls refuse a `cookie_key` that
-  is NULL or of all zero bytes, and a `ticket_key` of all zero bytes or
-  with `cookie_key`'s bytes (srv.c's `keys_ok`, docs/decisions.md 139).
-  `inv14-srv-cookie-key-zero-accepted`,
-  `inv14-srv-ticket-key-zero-accepted`, `inv14-srv-ticket-key-is-cookie-key`
-  and `inv14-srv-check-takes-unfilled-key` each require one of them to
-  fail. `ch_quic_init` and `ch_srv_quic_init` refuse
+  is NULL or of all zero bytes, a `ticket_key` of all zero bytes or
+  with `cookie_key`'s bytes (srv.c's `keys_ok`, docs/decisions.md 139),
+  and a `ticket_key_previous` of all zero bytes, with the bytes of
+  `cookie_key` or of `ticket_key`, or beside no `ticket_key`
+  (docs/decisions.md 220). `inv14-srv-cookie-key-zero-accepted`,
+  `inv14-srv-ticket-key-zero-accepted`, `inv14-srv-ticket-key-is-cookie-key`,
+  `inv14-srv-check-takes-unfilled-key`,
+  `inv14-srv-ticket-key-previous-zero-accepted`,
+  `inv14-srv-ticket-key-previous-is-cookie-key`,
+  `inv14-srv-ticket-key-previous-is-ticket-key` and
+  `inv14-srv-ticket-key-previous-without-ticket-key` each require one of
+  them to fail. `ch_quic_init` and `ch_srv_quic_init` refuse
   with `CH_EINVAL`, and send nothing, an original QUIC version this build
   derives no keys for, 0 among them; INV-7 states the version rules. INV-38
   states the refusals of a `CH_TX_PT` or a `record_size_limit` out of
@@ -5599,7 +5605,9 @@ last `ROLE=server` stub, as the entry said it would.
   §5.4.3). The Initial level keeps AES-128-GCM under its public keys in
   every build. A `PROFILE=cnsa2` server adds one more secret key, its
   `ch_srv_cfg.ticket_key`: `srv_ticket.c` seals and opens each ticket
-  under AES-256-GCM with it (docs/decisions.md 162). That object is a
+  under AES-256-GCM with it (docs/decisions.md 162). Its
+  `ticket_key_previous` is the same kind of key, and opens tickets alone
+  (docs/decisions.md 220). That object is a
   host object alone, and every init call refuses a session without
   `CH_CPU_CONSTANT_TIME_AES`, so the key runs on the instructions under
   the caller's statement, as the traffic keys do. `srv_ticket.c` expands
