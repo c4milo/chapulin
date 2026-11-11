@@ -802,8 +802,15 @@ Home: github.com/c4milo.
   lane's `sha512-avx2` part (INV-51).
   `bin/sha3_hw_equiv_test` holds `sha3_hw.c` to `sha3.c` and searches the
   stack below each call, and `bin/mlkem_hw_equiv_test` holds ML-KEM's
-  copies to `mlkem.c` and `mlkem_poly.c`. `bin/sha3_equiv_test_host`
-  searches the stack below each call of an x86-64 host object's `sha3.c`.
+  copies to `mlkem.c` and `mlkem_poly.c`. `bin/sha3_equiv_test` and
+  `bin/sha3_equiv_test_host` search the stack below each call of `sha3.c`,
+  in a device object and in a host object. Where `sha3.c` runs
+  `keccak_f1600_plain`, in a device object and an arm64 host object, each
+  entry calls a body that is never inlined and, when the body ran the
+  permutation, wipes `SHA3_BELOW_LEN` bytes, 1,024, of the stack below it,
+  in `sha512.c`'s form. The test measures each body's depth against that
+  length. `m3-check`, the `cross-check` lanes and the qemu lane's
+  `sha3-device` part run it on the device targets (docs/decisions.md 219).
   The loops of 24 rounds in `sha3_inverted_lanes.h` and `sha3_andn.h` hold
   one address of the round constants, so a round fits the 14 general
   registers of a build that keeps rbp as the frame pointer, as macOS does.
