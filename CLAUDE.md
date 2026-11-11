@@ -71,7 +71,8 @@ Home: github.com/c4milo.
   verifies each signature before it is sent. Its retry cookie runs under
   HMAC-SHA-384 and is 133 bytes, which raises `HSP_COOKIE_MAX` to 133 in
   both roles of the profile. Its tickets run under AES-256-GCM with
-  `ticket_key`, and their version byte is 3. Every init call and
+  `ticket_key`, and open under `ticket_key_previous` too
+  (docs/decisions.md 220). Their version byte is 3. Every init call and
   `ch_srv_check` refuse a `ch_cfg.cpu` without
   `CH_CPU_CONSTANT_TIME_AES`. The object exports `ch_mldsa_key_from_pem`
   and not `ch_p256_key_from_pem`, and holds no RSA, P-256 or x25519
@@ -883,8 +884,9 @@ Home: github.com/c4milo.
   a SUITE=aesgcm build's traffic keys: no key from the TLS key schedule
   is passed to AES outside that build, and that build is a host object or
   takes AES=extern, and a statement covers its timing (below). The third
-  is a PROFILE=cnsa2 server's `ticket_key`: `srv_ticket.c` seals and
-  opens each ticket under AES-256-GCM. It builds an `aes_traffic_key` on
+  is a PROFILE=cnsa2 server's `ticket_key` and `ticket_key_previous`:
+  `srv_ticket.c` seals each ticket under AES-256-GCM with the first, and
+  opens it with either. It builds an `aes_traffic_key` on
   its own frame and wipes it there, in a host object whose sessions all
   state `CH_CPU_CONSTANT_TIME_AES` (docs/decisions.md 162).
   What holds that: `aes.[ch]` and `gcm.[ch]` take a key type,
