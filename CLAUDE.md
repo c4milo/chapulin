@@ -800,9 +800,17 @@ Home: github.com/c4milo.
   schedule step after each round in the pinned clang's code on every
   machine, and in gcc's where gcc builds for x86-64 and in the qemu
   lane's `sha512-avx2` part (INV-51).
-  `bin/sha3_hw_equiv_test` holds `sha3_hw.c` to `sha3.c` and searches
-  the stack below each call, and `bin/mlkem_hw_equiv_test` holds
-  ML-KEM's copies to `mlkem.c` and `mlkem_poly.c`.
+  `bin/sha3_hw_equiv_test` holds `sha3_hw.c` to `sha3.c` and searches the
+  stack below each call, and `bin/mlkem_hw_equiv_test` holds ML-KEM's
+  copies to `mlkem.c` and `mlkem_poly.c`. `bin/sha3_equiv_test_host`
+  searches the stack below each call of an x86-64 host object's `sha3.c`.
+  The loops of 24 rounds in `sha3_inverted_lanes.h` and `sha3_andn.h` hold
+  one address of the round constants, so a round fits the 14 general
+  registers of a build that keeps rbp as the frame pointer, as macOS does.
+  `make check`'s `check-rosetta` builds both tests for x86-64 on an Apple
+  silicon Mac and runs them under Rosetta, and the qemu lane's
+  `sha3-stack` part builds them with `-fno-omit-frame-pointer`
+  (docs/decisions.md 218).
   `bin/mlkem_vector_equiv_test` holds `mlkem_vector.c` to
   `mlkem_poly.c`'s loops, coefficient for coefficient.
   `bin/mldsa_vector_equiv_test` holds `mldsa_vector.c` to
