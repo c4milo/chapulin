@@ -1726,8 +1726,8 @@ endif
 # SUITE=aesgcm, refused the same way for a device client. A raw or ca
 # client pins the endpoint it talks to and offers ChaCha20 alone, so the
 # AES suite would sit in its object unused (docs/decisions.md entry 45).
-# A TRUST=webpki client offers both suites, and a server role selects AES
-# from a client that offers nothing else. handshake_message.c refuses
+# A TRUST=webpki client offers both suites, and a server role selects one
+# in suite.h's order. handshake_message.c refuses
 # the define for a tree with its own build system.
 ifeq ($(SUITE)-$(ROLE)-$(PROFILE),aesgcm-client-general)
 ifneq ($(TRUST),webpki)

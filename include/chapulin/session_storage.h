@@ -6,6 +6,9 @@
 //
 // Each _SIZE and _ALIGN is the object's size and alignment of that struct. A program that compiles
 // with -Isrc and defines none of them gets them from those headers.
+//
+// A header comment that writes t->, r->, q-> or q->t. names a field of ch_tls_priv, ch_tcp_priv
+// or ch_quic_priv, which the library reads and writes. No caller reads such a field.
 #ifndef CH_SESSION_STORAGE_H
 #define CH_SESSION_STORAGE_H
 

@@ -53,7 +53,7 @@ typedef struct {
     uint8_t binding[SHA256_LEN];
 #else
     // The trust that authenticated the last full handshake before this ticket: the SHA-256 of
-    // the key in the pin slot that matched, ch_tls.pin_slot's, which is a CA key in a CA build,
+    // the key in the pin slot that matched, ch_pin_slot's, which is a CA key in a CA build,
     // or of the external PSK (handshake_post.h's hspost_trust_hash). Every client entry refuses
     // the ticket when neither pin slot nor the external PSK of its configuration has this hash.
     // So a ticket is refused once its key leaves both slots (docs/decisions.md 142). A ticket

@@ -8,7 +8,7 @@
 // docs/quic.md, "What the mode does not do", lists the split in full. The object opens no socket
 // and calls no I/O callback. Zero heap holds as it does over TCP: one ch_quic, one caller-supplied
 // buffer, no allocation. Configuration and result codes live in cfg.h and quic_cfg.h, ch_quic in
-// quic_session.h, the ch_tls under it in session.h, and the random source in rand.h. No call here
+// session_storage.h, which says what q-> names here, and the random source in rand.h. No call
 // polls for keys: RFC 9001 §4.1.4 says the availability of new keys is always a result of providing
 // inputs to TLS (rfc9001.txt:530-531), so cfg.on_level_ready fires from inside ch_quic_crypto_in
 // and the caller collects what a delivery produced.
@@ -67,10 +67,10 @@
 // CH_LEVEL_INITIAL, q->step HSQ_STEP_AWAIT_SERVER_HELLO and q->t.state CH_ST_START. Returns
 // CH_EINVAL for any refusal above, a PSK identity outside 1 to CH_TICKET_ID_MAX bytes among
 // them, as for ch_connect (tls.h). A refusal leaves q zeroed but for q->t.state, which is
-// CH_ST_FAILED, so no later call runs, and for ch_tls.epoch, epoch_seen and epoch_status as a
-// CA build's epoch check wrote them; nothing went out and no secret was drawn that a caller
-// must wipe. A CA build's ticket that the stored epoch retired is one of those refusals, and
-// epoch_status then reads CH_EPOCH_REVOKED, as it does after ch_connect (docs/ca.md).
+// CH_ST_FAILED, so no later call runs, and for what ch_epoch, ch_epoch_seen and ch_epoch_status
+// report, as a CA build's epoch check wrote them; nothing went out and no secret was drawn that
+// a caller must wipe. A CA build's ticket that the stored epoch retired is one of those
+// refusals, and ch_epoch_status then answers CH_EPOCH_REVOKED, as after ch_connect (docs/ca.md).
 int CH_MUST_USE ch_quic_init(ch_quic *q, const ch_cfg *cfg);
 #endif
 

@@ -97,7 +97,10 @@
 // WIDEMUL=native sets) and CH_AES_EXTERN_CONSTANT_TIME. CH_KEX_TWO_GROUPS and
 // CH_KEX_HYBRID are left out too: cfg.h computes both from
 // CH_TRUST_WEBPKI and CH_KEX_PQ, so a bit for either would repeat those
-// two. docs/decisions.md 56 gives the reason for each, entry 77
+// two. So is CH_SIGN_MLDSA, which adds ch_srv_cfg.mldsa87: every host
+// server object and the PROFILE=cnsa2 server set it, so the ROLE_SERVER,
+// CPU_RUNTIME and PROFILE_CNSA2 bits say whether an object holds the slot.
+// docs/decisions.md 56 gives the reason for each, entry 77
 // the reason RAND=session takes a bit where the other two patterns take
 // none, and entry 89 the same reason for a host object, whose bit no
 // record from 0.1.0 holds. 0x800 and 0x1000 were AES=runtime's and
@@ -222,7 +225,7 @@
 #endif
 
 // The bounds a consumer sizes its own buffers from, and 0 for a bound
-// this build does not check. CH_TX_STAGE sizes ch_tls.tx. CH_MIN_RXBUF
+// this build does not check. CH_TX_STAGE sizes ch_tls_priv.tx. CH_MIN_RXBUF
 // is the smallest cfg.buf_len every init call accepts, in every
 // transport and role. CH_X509_MAX is the length of the DER buffer
 // ch_pubkey_from_pem writes, which only a CA mode exports.

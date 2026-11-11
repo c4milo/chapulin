@@ -98,7 +98,7 @@ uint8_t ch_state(const ch_tls *t);
 // accepts a ServerHello's key_share.
 uint16_t ch_group(const ch_tls *t);
 
-// The cipher suite the session runs, a CH_TLS_ value (suite.h). A build that holds the AES-GCM
+// The cipher suite the session runs, a CH_TLS_ value (public_sizes.h). A build with the AES-GCM
 // suites answers 0 until a ServerHello or a HelloRetryRequest names one. A build that holds
 // ChaCha20 alone runs it in every session, so it answers CH_TLS_CHACHA20_POLY1305_SHA256.
 uint16_t ch_suite(const ch_tls *t);

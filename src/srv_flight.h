@@ -133,8 +133,9 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 // device object, which takes AES=extern. A build without that suite holds
 // ChaCha20 alone and does not meet §9.1's cipher suite requirement
 // (rfc9846.txt:4540-4543). The group order is srv_kex_group's:
-// X25519MLKEM768 whenever the client listed it, and x25519 otherwise
-// (docs/decisions.md 54). The signature scheme order is
+// ML-KEM-1024, X25519MLKEM768, x25519, then secp256r1, each whenever the
+// client listed it and no group before it (docs/decisions.md 54, 63 and
+// 179). The signature scheme order is
 // docs/server.md's, and a scheme whose identity slot srv_identity_live
 // leaves unset is not selected.
 //

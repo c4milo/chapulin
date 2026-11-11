@@ -8,16 +8,17 @@
 // had.
 //
 // It sits beside cfg.h rather than inside it for one measured reason:
-// cfg.h is 498 lines against the 500-line cap CLAUDE.md sets and
-// make lint-size holds, so every declaration below would have broken
-// that gate. docs/server.md sketches these fields flat inside ch_cfg;
+// cfg.h stands near the 500-line cap CLAUDE.md sets and make lint-size
+// holds, so the declarations below would break that gate. docs/server.md
+// sketches these fields flat inside ch_cfg;
 // they are one member deep instead, and a caller writes
 // cfg.srv.cookie_key where that sketch writes cfg.cookie_key.
 //
 // Nothing here answers "do I trust this peer". A server that requests
 // no client certificate never asks, so ch_cfg's pin fields, its PSK
 // offer fields and its epoch callbacks are the client's alone, and
-// ch_srv_accept returns CH_EINVAL for a configuration that sets one.
+// every server init call returns CH_EINVAL for a configuration that sets
+// one.
 //
 // Every pointer here is the caller's and must outlive the session.
 // chapulin copies none of them: a private key stays a pointer and is
@@ -107,14 +108,15 @@ typedef struct {
 // srv_sign_certificate_verify tests the caller's buffer against.
 //
 // These calls read the bytes behind the two pointers and no other line
-// does: p256_sign and rsa_pss_sign read priv, and so do their key tests,
-// p256_sign_key_ok and rsa_pss_sign_key_ok, when a server checks its
-// configuration; in a host object rsa_sign64_pss and rsa_sign64_key_ok
-// read it in their place for a session that states its multiply
-// (rsa_sign64.h); ch_srv_check's boot-time self-test reads pub through
-// the matching verifier. srv_auth.c reads the two lengths and passes the
-// pointers on. A slot whose lengths, key or chain the flight could not
-// use makes ch_srv_accept return CH_EINVAL (srv.h).
+// does: p256_sign_hedged and rsa_pss_sign read priv, and so do their key
+// tests, p256_sign_key_ok and rsa_pss_sign_key_ok, when a server checks
+// its configuration. In a host object p256_sign_hedged_cpu signs in
+// p256_sign_hedged's place, and rsa_sign64_pss and rsa_sign64_key_ok
+// read priv in place of the RSA calls for a session that states its
+// multiply (rsa_sign64.h). ch_srv_check's boot-time self-test reads pub
+// through the matching verifier. srv_auth.c reads the two lengths and
+// passes the pointers on. A slot whose lengths, key or chain the flight
+// could not use makes every server init call return CH_EINVAL (srv.h).
 typedef struct {
     const ch_cert *chain;
     uint8_t chain_count;
@@ -153,7 +155,7 @@ typedef struct {
     // bytes, which this header defines above. One key per deployment,
     // so a second ClientHello that lands on a different session, or on
     // a different device behind a load balancer, still verifies.
-    // ch_srv_accept returns CH_EINVAL when it is NULL, because RFC 9846
+    // Every init call returns CH_EINVAL when it is NULL, because RFC 9846
     // §9.2 makes the cookie extension mandatory to implement and a
     // stateless retry cannot be minted without it. It returns CH_EINVAL
     // for a key of all zero bytes too, which is what a static array
@@ -167,15 +169,15 @@ typedef struct {
     // certificate index and selects no identity by name. A name longer
     // than sni_cap is not copied, and the caller sees the result it
     // sees for a hello that carried none. Leave sni_buf NULL and
-    // sni_cap 0 to drop every name; ch_tls.sni_len reports how many
-    // bytes arrived.
+    // sni_cap 0 to drop every name; ch_sni_len reports how many
+    // bytes arrived (session_report.h).
     uint8_t *sni_buf;
     size_t sni_cap;
 
     // Refuse a ClientHello that carried no server_name, which RFC 9846
     // §9.2 permits a server to do (rfc9846.txt:4609-4612). It needs
     // sni_buf, because a server that required a name it cannot report
-    // would refuse clients silently, and ch_srv_accept returns
+    // would refuse clients silently, and every init call returns
     // CH_EINVAL for that pair.
     uint8_t require_server_name;
 
@@ -210,10 +212,13 @@ typedef struct {
     // TLS_AES_256_GCM_SHA384 first in a host object whose caller set
     // CH_CPU_CONSTANT_TIME_AES, TLS_CHACHA20_POLY1305_SHA256 alone in one
     // whose caller did not, and TLS_CHACHA20_POLY1305_SHA256 first on
-    // AES=extern (docs/decisions.md 80 and 89). A list can put another
-    // suite first or leave one out. Any other shape, a code point this
-    // build does not hold or a count without its list, makes
-    // ch_srv_accept return CH_EINVAL (docs/decisions.md 58).
+    // AES=extern (docs/decisions.md 80 and 89). A list of 1 to 3 entries
+    // can put another suite first or leave one out. Any other shape, a
+    // code point this build does not hold or a count without its list,
+    // makes every init call return CH_EINVAL (docs/decisions.md 58). So
+    // does a list that names an AES-GCM suite in a host session without
+    // CH_CPU_CONSTANT_TIME_AES: the list is refused, and not cut down to
+    // the suites that run (docs/decisions.md 81 and 89).
     const uint16_t *cipher_suites;
     size_t cipher_suite_count;
 #endif
@@ -227,7 +232,7 @@ typedef struct {
     //
     // A push, where the client's ch_quic_crypto_out is a pull, and the
     // certificate chain is what forces the difference: one Certificate
-    // message is larger than ch_tls.tx, so there is no staging buffer to
+    // message is larger than ch_tls_priv.tx, so there is no staging buffer to
     // pull from. One message can arrive as several calls and one call
     // never spans two messages. Both levels fire inside one
     // ch_quic_crypto_in, because one ClientHello produces the ServerHello
@@ -245,9 +250,9 @@ typedef struct {
     int (*on_crypto_out)(void *io, uint8_t level, const uint8_t *p, size_t n);
 
     // Chooses the negotiated version, a CH_QUIC_VERSION_ value
-    // (quic_cfg.h), which the server writes to
-    // ch_tls.quic_negotiated_version and derives every Handshake and 1-RTT
-    // key under. It fires once per connection, inside the
+    // (quic_cfg.h). The server derives every Handshake and 1-RTT key
+    // under it, and ch_quic_negotiated_version reports it (quic.h). It
+    // fires once per connection, inside the
     // ch_srv_quic_crypto_in that delivers the first ClientHello, right
     // after on_transport_params has handed over the client's transport
     // parameters. RFC 9369 section 4.1 lets a server send no CRYPTO frame
@@ -279,7 +284,7 @@ typedef struct {
     // A push, where the client's ch_tcp_out is a pull, and the same
     // certificate chain forces the difference here that forces it over
     // QUIC. srv_flight.c stages a protected message on the handler's own
-    // frame and streams the Certificate straight from cfg.srv.identity,
+    // frame and streams the Certificate straight from the identity slot,
     // so there is no buffer for a caller to collect from and no point in
     // the flight where a stack frame may be abandoned. A pull would need
     // a resume point inside srv_out_sealed's record loop, which is the

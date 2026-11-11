@@ -22,7 +22,7 @@
 // alert.h's two calls report them on either side.
 //
 // Output is a push, not a pull. A server has no ch_srv_tcp_out: one
-// Certificate message is larger than ch_tls.tx, so there is nothing to
+// Certificate message is larger than ch_tls_priv.tx, so there is nothing to
 // stage and pull from, and the flight goes out through
 // ch_srv_cfg.on_record_out as it is produced. srv_cfg.h states that
 // contract and docs/server.md the reasoning.
@@ -36,7 +36,7 @@
 #include "cfg.h"
 #include "tcp_nonblocking.h"
 
-// The step numbers ch_tcp.step holds in a server build. A server reads
+// The step numbers ch_tcp_priv.step holds in a server build. A server reads
 // three messages and writes the rest, so the table is shorter than the
 // client's: every send happens inside the step that read the message it
 // answers, and no send has a step of its own.

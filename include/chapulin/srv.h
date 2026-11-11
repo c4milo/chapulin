@@ -1,11 +1,28 @@
-// chapulin's server API: a TLS 1.3 server for the same devices the
-// client targets, built with ROLE=server. It speaks one profile —
-// TLS_CHACHA20_POLY1305_SHA256 over the X25519MLKEM768 hybrid, or over
-// x25519 for a client that does not list the hybrid, with the server
-// authenticated by a certificate chain the caller provisioned and the
-// client authenticated by nothing. ch_tls.group reports which group ran
-// (srv_kex.h). Zero heap: the session struct, the caller's receive buffer and the
-// caller's own chains and keys are the entire working set.
+// chapulin's server API: a TLS 1.3 server, built with ROLE=server or
+// ROLE=both. A certificate chain the caller provisioned authenticates the
+// server, and nothing authenticates the client. Zero heap: the session
+// struct, the caller's receive buffer and the caller's own chains and
+// keys are the entire working set.
+//
+// What the server selects, in its order of preference:
+//
+// - Groups: ML-KEM-1024, X25519MLKEM768, x25519, then secp256r1. It
+//   selects secp256r1 only from a client that lists none of the other
+//   three (srv_kex.h). ch_group reports the group (session_report.h).
+// - Cipher suites: TLS_CHACHA20_POLY1305_SHA256 alone, unless the build
+//   has SUITE=aesgcm (-DCH_SUITE_AES_GCM). Then a host session whose
+//   ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_AES prefers
+//   TLS_AES_256_GCM_SHA384, then TLS_AES_128_GCM_SHA256, then ChaCha20.
+//   A host session without that bit selects ChaCha20 alone. A device
+//   object takes AES=extern for the suites and prefers ChaCha20.
+//   cfg.srv.cipher_suites sets another order (srv_cfg.h), and ch_suite
+//   reports the suite.
+// - Signature schemes: ecdsa_secp256r1_sha256 and rsa_pss_rsae_sha256,
+//   each signed by its own identity slot. A host object holds a third
+//   slot, mldsa87, and prefers it when the client lists it (srv_cfg.h).
+//
+// A PROFILE=cnsa2 server selects ML-KEM-1024, TLS_AES_256_GCM_SHA384 and
+// mldsa87 alone (profile_cfg.h).
 //
 // Five calls, not two. ch_read, ch_write and ch_close are the same
 // functions in the same file as the client's and keep their tls.h
@@ -22,18 +39,12 @@
 // record layer, includes no tls.h here and declares ch_srv_check
 // alone.
 //
-// What this build does not meet, stated here rather than discovered
-// later. RFC 9846 §9.1 requires TLS_AES_128_GCM_SHA256 and recommends
-// TLS_AES_256_GCM_SHA384 beside the suite above. This build offers
-// neither, because the only AES in this tree is the software S-box
-// table in aes.c, which is admitted for QUIC Initial keys because
-// those keys are public, and a TLS traffic key is secret: that table
-// would leak it through cache timing. A client that offers only an
-// AES-GCM suite gets handshake_failure. The suites drop in when a
-// constant-time AES exists, and this header claims no §9.1 conformance
-// before then. §9.1 also requires secp256r1 for the key
-// exchange, which this build does not offer either, for the reason
-// srv_parser.h gives at SRV_GROUP_X25519.
+// RFC 9846 §9.1 requires TLS_AES_128_GCM_SHA256 and secp256r1, and
+// recommends TLS_AES_256_GCM_SHA384. Every server outside PROFILE=cnsa2
+// holds secp256r1. Only a SUITE=aesgcm build holds the AES-GCM suites,
+// and a host session runs them only under CH_CPU_CONSTANT_TIME_AES. A
+// build without the suites, or a host session without that bit, sends
+// handshake_failure to a client that offers only AES-GCM suites.
 //
 // What it declines conformantly, each with the permission it takes: no
 // client certificates (§4.4.2 makes the request a MAY), no 0-RTT (it
@@ -45,8 +56,9 @@
 // It resumes. With cfg.srv.ticket_key and a clock, cfg.now_seconds, set, it
 // issues one NewSessionTicket after every handshake and accepts its own
 // tickets as PSKs under psk_dhe_ke, with a key exchange and no
-// Certificate; ch_tls.psk_selected tells a resumed session from a full
-// one. srv_resume.h states the rules and srv_ticket.h the ticket.
+// Certificate; ch_psk_selected tells a resumed session from a full one
+// (session_report.h). srv_resume.h states the rules and srv_ticket.h the
+// ticket.
 #ifndef CH_SRV_H
 #define CH_SRV_H
 #ifdef CH_ROLE_SERVER
@@ -80,18 +92,22 @@
 // minted without that key; either key is all zero bytes, or
 // cfg.srv.ticket_key holds cookie_key's bytes (srv_cfg.h); cfg.buf or
 // cfg.send or cfg.recv is NULL;
-// cfg.buf_len is below the floor this build needs; cfg.srv.sni_cap is
+// cfg.buf_len is below CH_MIN_RXBUF (cfg.h); cfg.srv.sni_cap is
 // not 0 while cfg.srv.sni_buf is NULL; cfg.srv.require_server_name is
 // set while cfg.srv.sni_buf is NULL, because a server that requires a
 // name it cannot report would refuse every client silently; the ALPN
-// list breaks the rules cfg.h states for it; or, under RAND=session,
-// cfg.rand_bytes is NULL, because the server draws its key share before
-// it reads a byte (rand.h).
+// list breaks the rules cfg.h states for it; under SUITE=aesgcm,
+// cfg.srv.cipher_suites breaks the rules srv_cfg.h states for it; in a
+// host object, cfg.cpu is a value cpu_cfg.h's rules refuse, or under
+// PROFILE=cnsa2 a value without CH_CPU_CONSTANT_TIME_AES; or, under
+// RAND=session, cfg.rand_bytes is NULL, because the server draws its key
+// share before it reads a byte (rand.h).
 //
 // A NULL cfg.srv.ticket_key, a NULL cfg.now_seconds or a clock that
 // answers 0 is not refused: the server then issues no ticket and accepts
 // none, and every handshake authenticates with a certificate. The call
-// reads the clock once, before it reads a byte, into ch_tls.now_seconds.
+// reads the clock once, before it reads a byte, and every ticket rule of
+// the session reads that answer.
 //
 // It returns CH_EINVAL for the client-only fields too, rather than
 // ignoring them: cfg.psk, cfg.psk_id, cfg.ticket, cfg.ticket_age_ms, either
@@ -100,10 +116,11 @@
 // key never asks. That is the fail-closed shape a TRUST=webpki build
 // already uses for the pin fields.
 //
-// The receive buffer floor is the one bound this API leaves open. A
-// ClientHello is bounded by cfg.buf_len and by nothing else, so a
+// The receive buffer floor is the one bound this API leaves open. The
+// call refuses a buffer below CH_MIN_RXBUF, which the client's messages
+// set. A ClientHello is bounded by cfg.buf_len and by nothing else, so a
 // device that passes a small buffer serves the clients whose hellos
-// fit it and answers CH_ECAP to the rest. The floor constant is not
+// fit it and answers CH_ECAP to the rest. No server floor is
 // declared yet, because no measurement exists: docs/server.md's
 // "Bounds that need measuring" names bench/sram.sh as what produces
 // it, and this header will state the number rather than an estimate.
@@ -131,7 +148,8 @@ int CH_MUST_USE ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
 // flight could not sign with or send (ch_srv_accept above), a
 // cookie_key or ticket_key that ch_srv_accept refuses (srv_cfg.h), under
 // RAND=session a NULL cfg.rand_bytes, which it checks before it signs
-// because an RSA-PSS signature draws its salt from that source, or a
+// because an RSA-PSS signature draws its salt from that source, in a host
+// object a cfg.cpu that every init call refuses (above), or a
 // slot whose signer refused or whose signature the verifier rejected. It
 // does not report which slots are live, because its result is one
 // code; a caller that needs to know reads its own ch_cfg.

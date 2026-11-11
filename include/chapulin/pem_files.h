@@ -1,7 +1,7 @@
 // The PEM files an operator holds, decoded for a configuration
 // (https://github.com/c4milo/chapulin/issues/192). A server's
-// certificate chain and its P-256 private key decode into what
-// srv_cfg.h's ch_identity takes. A client's CA bundle decodes into what
+// certificate chain and its P-256, RSA or ML-DSA-87 private key decode
+// into what srv_cfg.h's ch_identity takes. A client's CA bundle decodes into what
 // ch_cfg.anchors takes (webpki_cfg.h). colibri's tls module calls these
 // calls through the Zig API (docs/zig.md), and it parses no PEM and no
 // key structure of its own.
@@ -29,7 +29,7 @@
 // (INV-36). Every object with a server role, ROLE=server and ROLE=both,
 // defines the chain call and its key calls (below). Every TRUST=webpki object, client
 // or ROLE=both, defines the bundle call. colibri's ROLE=both TRUST=webpki
-// object has all three. Every call names the object's transport in its
+// host object has all five. Every call names the object's transport in its
 // symbol, as ch_srv_check does (docs/decisions.md 61), because one image
 // links one object of each transport. Under the define of the objects
 // that define it, the name of each call maps to its symbol, as its

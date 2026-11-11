@@ -2,8 +2,8 @@
 // fatal alert the peer sent (RFC 9846 §6.2). Every object holds a ch_tls
 // and exports both calls, whatever its transport and role, so tls.h and
 // quic.h both include this header: a tcp-blocking session passes its
-// ch_tls, a tcp-nonblocking one &r->t (tcp_nonblocking.h) and a QUIC one
-// &q->t (quic.h). Neither value is secret: the peer sent or reads each one.
+// ch_tls, a tcp-nonblocking one ch_tcp_tls(r) (tcp_nonblocking.h) and a QUIC
+// one ch_quic_tls(q) (quic.h). Neither value is secret: the peer sent or reads each one.
 #ifndef CH_ALERT_H
 #define CH_ALERT_H
 

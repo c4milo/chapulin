@@ -44,8 +44,8 @@
 #include "cpu_cfg.h"
 
 // The NamedGroup code points: x25519 and secp256r1 (RFC 9846 §4.3.7), and the
-// X25519MLKEM768 hybrid (RFC 10024). ch_tls.group reports the one the ServerHello
-// selected, on both sides.
+// X25519MLKEM768 hybrid (RFC 10024); profile_cfg.h adds ML-KEM-1024. ch_group reports the one
+// the ServerHello selected, on both sides (session_report.h).
 //
 // A raw or ca client offers one group, and the Makefile KEX variable chooses it: x25519,
 // or the hybrid under -DCH_KEX_PQ. A TRUST=webpki client offers the hybrid and x25519 in
@@ -54,10 +54,10 @@
 // HelloRetryRequest naming secp256r1 asks for (docs/decisions.md 63). So -DCH_KEX_PQ
 // would choose nothing there, and a webpki build refuses it. CH_KEX_HYBRID marks every
 // client that offers the hybrid and so carries ML-KEM-768: the KEX=pq client and every
-// webpki client. All three defines describe the client alone. A server role holds all
-// three groups in every build, prefers the hybrid, then x25519, then secp256r1, and names
-// each group directly (srv_kex.h, docs/decisions.md 54 and 63), so none of the three
-// changes what a server selects.
+// webpki client. All three defines describe the client alone. A server role outside
+// PROFILE=cnsa2 holds these three groups and ML-KEM-1024 in every build, and prefers
+// ML-KEM-1024, the hybrid, x25519, then secp256r1 (srv_kex.h, docs/decisions.md 54, 63 and
+// 179), so none of the three defines changes what a server selects.
 #define CH_GROUP_X25519 0x001d
 #define CH_GROUP_X25519MLKEM768 0x11ec
 #define CH_GROUP_SECP256R1 0x0017
@@ -208,7 +208,7 @@ _Static_assert(CH_EPOCH_BOUND >= 1 && CH_EPOCH_BOUND < CH_EPOCH_MAX,
 #endif
 
 // How the epoch rule judged the certificate this session saw, reported in
-// ch_tls.epoch_status beside the value in ch_tls.epoch_seen. The handshake fails on the
+// ch_epoch_status beside the value ch_epoch_seen reports. The handshake fails on the
 // last two. They stay distinct because the operator response differs: a server behind the
 // fleet still needs reissuing, while an out-of-range date is a mis-issued certificate or an
 // attempt to strand the device.
@@ -250,7 +250,7 @@ typedef struct {
 #define CH_ALPN_MAX 8
 #define CH_ALPN_NAME_MAX 32
 
-// ch_tls.alpn_selected when no protocol was selected: the caller offered none, or the
+// ch_alpn_selected's answer when no protocol was selected: the caller offered none, or the
 // server sent no ALPN extension (RFC 7301 §3.2 lets a server that does not support ALPN
 // leave it out). Every other value is an index into ch_cfg.alpn_protocols.
 #define CH_ALPN_NONE 255
@@ -339,7 +339,7 @@ typedef struct {
     // Optional second pin, the staged "next" key during key rotation:
     // the server key in raw-pin builds, the CA key under CH_TRUST_CA.
     // The handshake accepts a proof against either slot and records
-    // which in ch_tls.pin_slot. Same length and oddness rules as
+    // which for ch_pin_slot. Same length and oddness rules as
     // server_pubkey, never set without it. See docs/rotation.md.
     const uint8_t *server_pubkey2;
     size_t server_pubkey2_len;
@@ -386,7 +386,7 @@ typedef struct {
     void *epoch_io;
 
     // Refuse a key exchange that is not post-quantum: the handshake fails closed unless
-    // ch_tls.group is CH_GROUP_X25519MLKEM768, and a TRUST=webpki hello lists the hybrid alone
+    // ch_group answers CH_GROUP_X25519MLKEM768, and a TRUST=webpki hello lists the hybrid alone
     // (docs/decisions.md 39). A classic raw or ca build offers x25519 alone and refuses the flag.
     int require_pq;
 #ifdef CH_CPU_RUNTIME
@@ -428,7 +428,7 @@ typedef struct {
     // NULL and alpn_count 0 — is legal and sends no extension. Every offered entry needs a
     // non-NULL name of 1 to CH_ALPN_NAME_MAX bytes, and no two entries may carry the same
     // name; ch_connect returns CH_EINVAL otherwise. The server picks one, and
-    // ch_tls.alpn_selected is its index in this array, or CH_ALPN_NONE when no protocol was
+    // ch_alpn_selected answers its index in this array, or CH_ALPN_NONE when no protocol was
     // selected. This is the second place the mode offers more than one of something, after
     // the signature schemes (docs/decisions.md 37).
     const ch_alpn_protocol *alpn_protocols;
@@ -490,7 +490,7 @@ typedef struct {
 
 #if defined(CH_TRUST_WEBPKI) || defined(CH_ROLE_SERVER)
 // The instant cfg's clock answers, and 0 when cfg sets no clock. Each init call calls it
-// once and keeps the answer in ch_tls.now_seconds, which every later step reads.
+// once and keeps the answer in ch_tls_priv.now_seconds, which every later step reads.
 static inline uint64_t cfg_clock_read(const ch_cfg *cfg) {
     return cfg->now_seconds != NULL ? cfg->now_seconds(cfg->clock_io) : 0;
 }

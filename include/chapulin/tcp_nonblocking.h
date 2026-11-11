@@ -93,9 +93,9 @@
 // an event loop fills them with buffer copies that never block, because
 // by then it holds the bytes.
 //
-// A refusal zeroes r, so nothing is staged, and sets r->t.state to
-// CH_ST_FAILED until the next ch_tcp_init. It keeps ch_tls.epoch,
-// epoch_seen and epoch_status as a CA build's epoch check wrote them,
+// A refusal zeroes r, so nothing is staged, and ch_tcp_state answers
+// CH_ST_FAILED until the next ch_tcp_init. It keeps the values ch_epoch,
+// ch_epoch_seen and ch_epoch_status report, as a CA build's epoch check wrote them,
 // the three fields ch_connect leaves (docs/ca.md): a ticket that the
 // stored epoch retired is one of those refusals, and epoch_status then
 // reads CH_EPOCH_REVOKED, as it does after ch_connect.
@@ -146,10 +146,10 @@ int CH_MUST_USE ch_tcp_out(ch_tcp *r, uint8_t *out, size_t cap, size_t *out_len)
 // and the session is ready for ch_read and ch_write, CH_ST_FAILED after
 // an error, and CH_ST_CLOSED after ch_close or ch_tcp_close
 // (session.h). The peer's close_notify leaves it at CH_ST_CONNECTED,
-// because ch_write still works; r->t.read_closed says it arrived.
+// because ch_write still works; ch_read_closed says it arrived.
 uint8_t ch_tcp_state(const ch_tcp *r);
 
-// Returns the ch_tls inside r, &r->t, which ch_read, ch_write, ch_close,
+// Returns the ch_tls inside r, which ch_read, ch_write, ch_close,
 // ch_fail, alert.h's calls and session_report.h's calls take. Requires: r
 // is not NULL. It cannot fail and changes nothing.
 ch_tls *ch_tcp_tls(ch_tcp *r);
@@ -157,7 +157,7 @@ ch_tls *ch_tcp_tls(ch_tcp *r);
 // Wipes every secret and marks the session dead. Safe on a session that
 // already failed, where it also drops an alert record ch_tcp_out has
 // not handed over. It sends nothing, so a connected caller calls ch_close
-// on &r->t first, which sends this side's close_notify.
+// on ch_tcp_tls(r) first, which sends this side's close_notify.
 void ch_tcp_close(ch_tcp *r);
 
 // The length of the TLS record at the front of p, its 5-byte header

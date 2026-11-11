@@ -185,7 +185,7 @@
 #define SUITE_AES_256_GCM_SHA384 0x1302
 
 // The names a caller writes in ch_cfg.cipher_suites and ch_srv_cfg.cipher_suites, and compares
-// ch_tls.suite with: the names RFC 9846 Appendix B.4 gives the three suites, with the CH_
+// ch_suite's answer with: the names RFC 9846 Appendix B.4 gives the three suites, with the CH_
 // prefix of every public name. The SUITE_ names above are the ones this tree's sources use.
 #define CH_TLS_CHACHA20_POLY1305_SHA256 SUITE_CHACHA20_POLY1305_SHA256
 #define CH_TLS_AES_128_GCM_SHA256 SUITE_AES_128_GCM_SHA256

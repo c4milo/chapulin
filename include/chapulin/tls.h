@@ -1,5 +1,11 @@
-// chapulin public API: a TLS 1.3 client speaking exactly one profile —
-// TLS_CHACHA20_POLY1305_SHA256, x25519, ECDHE-PSK (psk_dhe_ke). Zero heap:
+// chapulin public API over TCP: ch_connect runs a client's handshake, and
+// ch_read, ch_write and ch_close serve both roles. A raw or ca client
+// offers one group, x25519 or X25519MLKEM768 by the Makefile KEX
+// variable, and TLS_CHACHA20_POLY1305_SHA256 alone. It authenticates the
+// server with an external PSK (psk_dhe_ke) or with the server's key, which
+// the Makefile TRUST variable says how to trust. A TRUST=webpki client
+// offers more (cfg.h, webpki_cfg.h), and a PROFILE=cnsa2 client offers
+// CNSA 2.0's algorithms alone (profile_cfg.h). Zero heap:
 // the session struct plus the caller's receive buffer is the entire
 // working set. The caller supplies blocking I/O callbacks (bounded by its
 // own timeouts) and a random source (rand.h). Configuration and result
@@ -18,9 +24,10 @@
 // Any error wipes all key material and leaves the session dead. A
 // configuration it refuses returns CH_EINVAL before a byte is sent. A CA
 // build's ticket that the stored epoch retired is one of those
-// refusals, and ch_tls.epoch_status reads CH_EPOCH_REVOKED after it
+// refusals, and ch_epoch_status reads CH_EPOCH_REVOKED after it
 // (docs/ca.md). So is a PSK whose identity is not 1 to CH_TICKET_ID_MAX
-// bytes (cfg.h), and that bound keeps every ClientHello inside ch_tls.tx.
+// bytes (cfg.h), and that bound keeps every ClientHello inside
+// ch_tls_priv.tx.
 // Every other error comes from the handshake, which first tries to send
 // the alert its failure chose, and ch_alert_sent names it.
 // The peer's fatal alert is the exception: the handshake returns
@@ -83,9 +90,10 @@ typedef struct {
 // ch_write's, and ch_write is this call over one part. ch_writable_len
 // counts the parts' lengths together. So the caller seals a header and a
 // payload that sit apart in its memory without a copy of its own:
-// ch_write copies each record's plaintext once into ch_tls.tx anyway, and
-// this call copies it there from the parts. parts may be NULL when
-// part_count is 0. A part of 0 bytes adds nothing (docs/decisions.md 167).
+// ch_write copies each record's plaintext once into ch_tls_priv.tx
+// anyway, and this call copies it there from the parts. parts may be NULL
+// when part_count is 0. A part of 0 bytes adds nothing (docs/decisions.md
+// 167).
 int CH_MUST_USE ch_write_parts(ch_tls *t, const ch_part *parts, size_t part_count);
 
 // The most plaintext one ch_write seals into cap bytes of records, so a
@@ -109,10 +117,10 @@ int CH_MUST_USE ch_write_parts(ch_tls *t, const ch_part *parts, size_t part_coun
 // most. At the smallest record a peer may ask for, 63 bytes of plaintext,
 // that is still more than a gigabyte.
 //
-// It reads t->peer_limit, whether an answer is owed, and under
-// SUITE=aesgcm the write key's suite and sequence number, and nothing
-// else. ch_write still refuses a session that is not connected, whatever
-// this returns.
+// It reads the peer's limit, which ch_peer_limit reports, whether an
+// answer is owed, and under SUITE=aesgcm the write key's suite and
+// sequence number, and nothing else. ch_write still refuses a session
+// that is not connected, whatever this returns.
 size_t ch_writable_len(const ch_tls *t, size_t cap);
 
 // The wire length of one sealed alert record, 24 bytes: REC_OVERHEAD and
@@ -162,7 +170,7 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 // The end of the peer's stream is its close_notify, which closes the
 // peer's direction and no other (RFC 9846 §6.1). The ch_read that reads
 // it returns 0, wipes the read key and sends nothing. The session stays
-// CH_ST_CONNECTED with ch_tls.read_closed set, so ch_write still sends,
+// CH_ST_CONNECTED and ch_read_closed answers 1, so ch_write still sends,
 // and ch_close sends this side's close_notify. Every later ch_read
 // returns 0 without calling cfg.recv, so a record the peer sends after
 // its close_notify is never read, which is how §6.1's rule to ignore it
@@ -223,8 +231,8 @@ void ch_close(ch_tls *t);
 // an error the caller found itself: a record header it read before
 // ch_read, for example, which RFC 9846 §5.2 answers with record_overflow.
 // It sends the alert, protected under the write key, through cfg.send,
-// writes it to ch_tls.alert_sent, which ch_alert_sent reads, wipes every
-// key and leaves the session CH_ST_FAILED, as a failure of ch_read does.
+// records it for ch_alert_sent, wipes every key and leaves the session
+// CH_ST_FAILED, as a failure of ch_read does.
 //
 // description is one of the error alerts of RFC 9846 §6.2
 // (rfc9846.txt:3796-3823): every AlertDescription but close_notify (0)

@@ -85,7 +85,7 @@ typedef struct {
 
 // The CertificateType values of RFC 9846 §4.5.1 (RFC 7250 §3). The client
 // offers them in the server_certificate_type extension, and
-// ch_tls.server_cert_type reports the one the server's
+// ch_server_cert_type reports the one the server's
 // EncryptedExtensions selected, or CH_CERT_TYPE_X509 when it sent none.
 #define CH_CERT_TYPE_X509 0
 #define CH_CERT_TYPE_RAW_PUBLIC_KEY 2
