@@ -41,6 +41,30 @@ What moved otherwise:
   18% in each build: a second run on the same tree measured 5.26 µs
   where this one measured 5.44 (docs/decisions.md 207).
 
+## The run of ddff5bce
+
+The four x86-64 CSVs now hold one run of 2026-11-10 and 11 on ddff5bce
+(bench run 42920340913): the EPYC 7763 and, after 19 re-runs, a Xeon
+Platinum 8573C. The tree adds docs/decisions.md 208 to 217, and the
+timed values add `CH_CPU_BMI1`: 0xc3f on the EPYC and 0xf3f on the
+8573C. bench/primitives.sh now compiles with the library's flags
+(decision 213's note), so gcc's ML-KEM and P-256 rows no longer read
+fast by 4 to 6%.
+
+What moved by design, as ratios to OpenSSL on the EPYC 7763:
+
+- **SHA3-256 over 16 KiB**: 1.22 to 1.03 under gcc and 1.11 to 1.04
+  under clang (decisions 216 and 217).
+- **ChaCha20-Poly1305's seal under gcc**: 1.18 to 0.86 (decisions 210
+  and 211).
+- **P-256's shared secret**: 1.12 to 1.10 under gcc and 1.08 to 1.05
+  under clang (decision 212).
+- **RSA-2048 PKCS#1 v1.5 verification under gcc**: 1.10 to 1.03
+  (decision 209).
+
+On the 8573C, SHA3-256 over 16 KiB moved from 1.23 to 0.93 under gcc
+and from 1.10 to 0.94 under clang.
+
 ## The M1 Pro's run of 49796323
 
 The M1 Pro's CSVs now hold a run of 2026-11-09 on 49796323, against a
