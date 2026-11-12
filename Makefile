@@ -6683,10 +6683,12 @@ wycheproof:
 	  bin/wycheproof_mldsa_sign_vectors.h && \
 	python3 test/gen_wycheproof_ed25519.py $(WYCHEPROOF_DIR) bin/wycheproof_ed25519_vectors.h && \
 	python3 test/gen_wycheproof_jws.py $(WYCHEPROOF_DIR) bin/wycheproof_jws_vectors.h && \
+	python3 test/gen_wycheproof_jws_sign.py $(WYCHEPROOF_DIR) bin/wycheproof_jws_sign_vectors.h && \
 	python3 test/gen_wycheproof_scram.py $(WYCHEPROOF_DIR) bin/wycheproof_scram_vectors.h && \
 	$(MAKE) --no-print-directory -j4 wycheproof-default wycheproof-host wycheproof-aes-extern wycheproof-mldsa-library \
 	  wycheproof-mldsa-library-host wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-mlkem1024-two-ranks \
-	  wycheproof-mlkem1024-two-ranks-host wycheproof-mldsa-sign wycheproof-ed25519 wycheproof-jws wycheproof-scram
+	  wycheproof-mlkem1024-two-ranks-host wycheproof-mldsa-sign wycheproof-ed25519 wycheproof-jws wycheproof-jws-sign \
+	  wycheproof-scram
 # The three tests build and run at once, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
@@ -6860,6 +6862,35 @@ else
 endif
 wycheproof-run-jws:
 	@$(WYCHEPROOF_JWS) -o bin/wycheproof_jws_test && ./bin/wycheproof_jws_test
+# ch_jws_sign, held to the SHA-256 groups of Wycheproof's five
+# RSASSA-PKCS1-v1_5 signature generation suites and to the private keys of
+# its JWS suite (test/gen_wycheproof_jws_sign.py, docs/decisions.md 223).
+# It builds as bin/jws_sign_test does, as a host object with CH_JWS and a
+# server role. It runs once under each ch_cfg.cpu value that picks another
+# signer:
+#
+#   0x1    the ladder and the 32-bit P-256 files
+#   0x5    the CRT signer and the wide P-256 files
+#   0x11f  the CRT signer on rsa_ifma_sign.c, on x86-64
+#   0x41f  the CRT signer on rsa_mont64_adx.c and P-256 on p256_adx.h's
+#          copy, on x86-64
+JWS_SIGN_WYCHEPROOF_CPU := 0x1 0x5 $(if $(X86_KERNEL_PROBE),0x11f 0x41f)
+WYCHEPROOF_JWS_SIGN = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER -DCH_ROLE_BOTH $(RSA_WIDE_DEF) \
+  -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -Ibin test/wycheproof_jws_sign_test.c $(sort $(JWS_SIGN_TEST_SRCS))
+.PHONY: wycheproof-jws-sign wycheproof-run-jws-sign
+wycheproof-jws-sign:
+ifeq ($(HOST_TARGET),)
+	$(call REQUIRE_ON_CI,wycheproof-jws-sign)
+	@echo "SKIP the Wycheproof JWS signer test: $(CC) fails the host test"
+else
+	@python3 tools/stamp.py wycheproof-jws-sign $(WYCHEPROOF_STAMP_INPUTS) \
+	  --output '$(WYCHEPROOF_JWS_SIGN) -E' -- $(MAKE) --no-print-directory wycheproof-run-jws-sign
+endif
+wycheproof-run-jws-sign:
+	@set -e; $(WYCHEPROOF_JWS_SIGN) -o bin/wycheproof_jws_sign_test; \
+	for bits in $(JWS_SIGN_WYCHEPROOF_CPU); do \
+	  ./bin/wycheproof_jws_sign_test $$bits; \
+	done
 # scram.h's HMAC-SHA-256 and PBKDF2, held to Wycheproof's two suites
 # (test/gen_wycheproof_scram.py, docs/decisions.md 222). It builds as a
 # host object with CH_SCRAM, as bin/scram_test does, so a compiler that

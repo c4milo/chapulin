@@ -18811,8 +18811,13 @@ does nothing more.
       section 7.1's five, and each ES256 signature to verify under RFC
       7515 A.3's key. The `jws_sign` proof holds the dispatcher over
       stubs of the signers, and `x25519_wide_ed25519_sign` the
-      arithmetic modulo L. Wycheproof's Ed25519 suite at the pinned
-      commit holds public keys alone, so it cannot test signing.
+      arithmetic modulo L. `bin/wycheproof_jws_sign_test` holds RS256 to
+      Wycheproof's signature generation suites and to the private keys
+      of its JWS tokens: 31 signatures byte for byte at 2048, 3072 and
+      4096 bits, and a refusal for each of 20 cases under a shorter key
+      or a key with the public exponent 3. Two ES256 signatures under
+      the tokens' keys verify. Wycheproof's Ed25519 suite at the pinned
+      commit holds public keys alone, so it cannot test EdDSA signing.
     - **The taint lane.** `bin/ct_taint_jws_test` runs the three signers
       with each private key and the noise marked secret, under each
       `ch_cfg.cpu` value the lane takes. Its first run found three things.

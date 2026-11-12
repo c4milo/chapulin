@@ -1789,6 +1789,8 @@ The entries are grouped by area:
 - **Not proved:** the signatures, which contract stubs answer here.
   `bin/jws_sign_test` holds RS256 to RFC 7515 A.2's signature and EdDSA
   to RFC 8032's five, and verifies each ES256 signature.
+  `bin/wycheproof_jws_sign_test` holds RS256 to 31 of Wycheproof's
+  signatures at 2048, 3072 and 4096 bits.
 
 #### x25519_wide_ed25519_sign
 
@@ -8301,6 +8303,22 @@ algorithm with no call, or a header that names another algorithm. 24
 true signatures of PS256, PS384, PS512, RS384 or RS512 do not verify as
 RS256. 42 tokens under an HMAC secret or a P-521 key have no form the
 call takes, and do not run. None of these cases is in the 6,364.
+
+`bin/wycheproof_jws_sign_test` holds `ch_jws_sign` to the suites that
+carry private keys, in a host object with `CH_JWS` and a server role
+(decision 223). The SHA-256 groups of the five
+`rsa_pkcs1_*_sig_gen_test.json` suites give 44 cases. The call writes the
+24 signatures of the 2048-, 3072- and 4096-bit keys byte for byte. It
+refuses the other 20 and writes no byte: 17 under a key of 1024 or 1536
+bits, and 3 under a longer key with the public exponent 3. The valid
+tokens of `json_web_signature_test.json` under a private JWK that a
+caller signs RS256 or ES256 with give 9 more. The call writes the 7 RS256
+signatures byte for byte, and its 2 ES256 signatures verify under the
+JWK's public key. 37 valid tokens under any other JWK do not run. The
+test runs once under each `ch_cfg.cpu` value that picks another signer.
+`ed25519_test.json` holds public keys alone, so the EdDSA signer rests on
+RFC 8032's vectors in `bin/jws_sign_test`. None of these cases is in the
+6,364.
 
 `bin/wycheproof_scram_test` holds `ch_hmac_sha256` to every case of
 `hmac_sha256_test.json`, 174 in all, 66 valid and 108 invalid, with each
