@@ -277,6 +277,12 @@ Home: github.com/c4milo.
   stays the reference, docs/decisions.md 206 and 211) and
   `chacha20_avx512.[ch]` (sixteen blocks a pass in 512-bit vectors, an
   x86-64 session whose caller sets CH_CPU_AVX512_IFMA) +
+  `aead_avx512.[ch]` (the ChaCha20-Poly1305 seal and open in one pass on
+  AVX-512: `chacha20_avx512_lanes.h`'s pass with four of
+  `poly1305_ifma_group.h`'s IFMA groups between its double rounds, for an
+  x86-64 session whose caller sets CH_CPU_AVX512_IFMA and
+  CH_CPU_CONSTANT_TIME_MULTIPLY, from 2,048 bytes; the open wipes the
+  plaintext on a bad tag; docs/decisions.md 226) +
   `poly1305.[ch]` with `poly1305_vector.[ch]` (four blocks a pass in
   two NEON or SSE2 lanes, eight on NEON from 2,048 bytes,
   docs/decisions.md 194, a host session whose caller sets
@@ -1037,8 +1043,9 @@ Home: github.com/c4milo.
   bounded sizes, plus RFC test vectors in `test/unit_test.c`. A file of
   intrinsics carries no harness, because CBMC cannot read an intrinsic,
   unless the harness compiles it over a model of each instruction in
-  portable C, as `rsa_ifma.c`'s, `rsa_ifma_sign.c`'s, `poly1305_ifma.c`'s
-  and `rsa_avx2.c`'s do: an equivalence test holds it to the proven
+  portable C, as `rsa_ifma.c`'s, `rsa_ifma_sign.c`'s, `poly1305_ifma.c`'s,
+  `rsa_avx2.c`'s, `chacha20_avx512.c`'s and `aead_avx512.c`'s do: an
+  equivalence test holds it to the proven
   portable code, and
   docs/verification.md lists each source no harness compiles and what
   holds it. `avx512_wipe.c`'s block of assembly carries none either, nor
