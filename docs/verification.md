@@ -5905,9 +5905,9 @@ What none of this shows: the copy at the cap, where an entry's stream
 gives `MLK_SAMPLE_GROUPS` groups without 256 coefficients. No seed reaches
 it in practice, so no test runs it, and the copy stops at the cap's group
 by the arithmetic its entry in `tools/proof-cover.py` reads. There a step
-of `mlk_sample_groups_avx2` leaves zeros from the count on, where
-`mlk_sample_groups` leaves what the entry held, and the copy's callers
-held no value there.
+of `mlk_sample_groups_avx2` leaves zeros in up to 16 coefficients from the
+count on, where `mlk_sample_groups` leaves what the entry held, and the
+copy's callers held no value there.
 
 ### The two-way Keccak
 

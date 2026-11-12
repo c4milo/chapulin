@@ -18856,11 +18856,11 @@ does nothing more.
       or address reads a count. A device object calls `mlk_sample_cbd` as
       before, and `mlkem_poly.c` does not change.
     - **The noise's stores.** The first form filled an array of four
-      vectors, and its caller stored them. gcc 15 for arm64 kept the
-      array in a stack slot, so the last 32 coefficients of the noise
-      stayed below the caller's frame after the call. `lanes_noise` now
-      stores each vector into the polynomial itself, and the function
-      holds no array.
+      vectors, and its caller stored them. gcc 15 for arm64 and for
+      x86-64 kept the array in a stack slot, so the last 32 coefficients
+      of the noise stayed below the caller's frame after the call.
+      `lanes_noise` now stores each vector into the polynomial itself,
+      and the function holds no array.
     - **The candidates.** `mlk_sample_groups_avx2` in `mlkem_avx2.c` reads
       eight groups a step. One VPSHUFB writes the 16 candidates into
       16-bit lanes, VPCMPGTW marks each one below q, and VPMOVMSKB gives
@@ -18873,7 +18873,7 @@ does nothing more.
       `mlk_sample_groups` keeps, in the same order. A step writes zeros
       after the candidates it keeps. Where a stream gives
       `MLK_SAMPLE_GROUPS` groups without 256 candidates below q, which no
-      seed does in practice, the coefficients from the count on are then
+      seed does in practice, up to 16 coefficients from the count on hold
       zeros where `mlk_sample_groups` leaves what the entry held, and the
       copy's callers held no value there. The candidates and the table
       indices come from the public seed rho.
@@ -18918,23 +18918,25 @@ does nothing more.
       rho.
     - **Numbers.** In the lab driver, on one 8573C under 0xf3f, the two
       changes took gcc's encapsulation to 0.82 of the library's time in
-      the same binary, and clang's to 0.92. `bench.yml` run 43158051889
-      timed the first form of `lanes_noise`, which wrote its vectors
-      through an array and computed the same coefficients. Each cell is
-      the ratio to OpenSSL 3.6.4 in the same run, before (the recorded run
-      of ddff5bce) and after:
+      the same binary, and clang's to 0.92. `bench.yml` run 43167193452
+      timed this tree, and docs/performance.md records its ML-KEM rows.
+      Each cell is the ratio to OpenSSL 3.6.4 in the same run, before
+      (the recorded run of ddff5bce) and after:
 
       | ML-KEM-768 | EPYC 7763, gcc | EPYC 7763, clang | 8573C, gcc | 8573C, clang |
       | --- | --- | --- | --- | --- |
-      | key generation | 0.52 to 0.42 | 0.45 to 0.40 | 0.57 to 0.44 | 0.46 to 0.38 |
-      | encapsulation | 0.99 to 0.81 | 0.84 to 0.75 | 1.10 to 0.90 | 0.93 to 0.77 |
-      | decapsulation | 0.75 to 0.63 | 0.61 to 0.55 | 0.81 to 0.67 | 0.65 to 0.55 |
+      | key generation | 0.52 to 0.42 | 0.45 to 0.40 | 0.57 to 0.45 | 0.46 to 0.43 |
+      | encapsulation | 0.99 to 0.82 | 0.84 to 0.76 | 1.10 to 0.92 | 0.93 to 0.85 |
+      | decapsulation | 0.75 to 0.63 | 0.61 to 0.55 | 0.81 to 0.68 | 0.65 to 0.60 |
 
-      On that run's 8573C gcc's encapsulation took 15.8 µs and OpenSSL's
-      17.6, where the recorded run's runner timed OpenSSL at 21.2 µs. So
-      only the ratios compare across the two runs. On the M1 Pro, Apple
-      clang 21's object under 0xe7 retires 133,401 instructions for a key
-      generation where it retired 137,662, 155,325 for an encapsulation
-      where it retired 158,239, and 168,623 for a decapsulation where it
-      retired 172,750. No M1 was free to time: the load average stayed
+      On the 8573C gcc's encapsulation took 19.5 µs where it took 23.2,
+      and OpenSSL's 21.2 µs in both runs. Run 43158051889 timed the first
+      form of `lanes_noise`, which wrote its vectors through an array and
+      computed the same coefficients. It read the encapsulation at 0.81
+      and 0.75 on the EPYC 7763 and at 0.90 and 0.77 on the 8573C, whose
+      runner timed OpenSSL's at 17.6 µs. On the M1 Pro, Apple clang 21's
+      object under 0xe7 retires 134,085 instructions for a key
+      generation where it retired 136,542, 151,919 for an encapsulation
+      where it retired 157,800, and 168,380 for a decapsulation where it
+      retired 173,410. No M1 was free to time: the load average stayed
       above 20.
