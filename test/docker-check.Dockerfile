@@ -47,6 +47,40 @@ RUN apt-get update -q \
     && mkdir -p /ci "$RUNNER_TEMP" \
     && touch "$GITHUB_ENV" "$GITHUB_PATH"
 
+# A tar that unpacks under Rosetta. Ubuntu 26.04's GNU tar opens each
+# path inside a directory with the openat2 call, since its fix for
+# CVE-2025-45582, and tries no other call. Rosetta, which runs this
+# image's x86-64 code on an Apple silicon Mac, returns ENOSYS for
+# openat2. So there tar stops at "Cannot open: Function not implemented",
+# and the Zig, cppcheck and Valgrind steps below unpack nothing.
+#
+# The lines below pack a file inside a directory and unpack it. Where
+# that fails, apt installs bsdtar, which calls no openat2 and takes the
+# options those steps and test/docker-check.sh pass, and /ci/bin/tar
+# names it. Each step below that unpacks an archive reads /ci/bin ahead
+# of PATH, and GITHUB_PATH carries the directory to test/docker-check.sh.
+#
+# No other step reads it, and it is not /usr/local/bin, because dpkg
+# must find GNU tar. dpkg-deb unpacks a package's control files with `tar
+# --warning=no-timestamp`, an option bsdtar refuses, and the CBMC step's
+# `dpkg -i` takes tar from PATH. GNU tar unpacks those files under
+# Rosetta too, because none is inside a directory. On a kernel with
+# openat2, /ci/bin is empty and every step runs GNU tar, as a runner does
+# (docs/decisions.md 92).
+RUN mkdir -p /ci/bin /tmp/tar-probe/in/d /tmp/tar-probe/out \
+    && echo /ci/bin >> "$GITHUB_PATH" \
+    && touch /tmp/tar-probe/in/d/f \
+    && tar -cf /tmp/tar-probe/in.tar -C /tmp/tar-probe/in d \
+    && if ! tar -xf /tmp/tar-probe/in.tar -C /tmp/tar-probe/out 2>/dev/null; then \
+        apt-get update -q \
+        && apt-get install -y -q --no-install-recommends libarchive-tools \
+        && rm -rf /var/lib/apt/lists/* \
+        && ln -s /usr/bin/bsdtar /ci/bin/tar \
+        && /ci/bin/tar -xf /tmp/tar-probe/in.tar -C /tmp/tar-probe/out; \
+    fi \
+    && test -f /tmp/tar-probe/out/d/f \
+    && rm -rf /tmp/tar-probe
+
 # clang, clang-tidy, clang-format and llvm-nm at the pinned major, with
 # the flags the check job passes .github/actions/install-llvm. The script
 # writes CLANG_RV, CLANG_TIDY and CLANG_FORMAT to GITHUB_ENV itself.
@@ -62,7 +96,8 @@ RUN MAJOR="$LLVM_MAJOR" SHA256="$LLVM_KEY_SHA256" \
 COPY .github/actions/install-zig/install.sh /ci/install-zig.sh
 ARG ZIG_VERSION
 ARG ZIG_LINUX_X86_64_SHA256
-RUN VERSION="$ZIG_VERSION" SHA256="$ZIG_LINUX_X86_64_SHA256" bash /ci/install-zig.sh \
+RUN PATH="/ci/bin:$PATH" VERSION="$ZIG_VERSION" SHA256="$ZIG_LINUX_X86_64_SHA256" \
+        bash /ci/install-zig.sh \
     && rm -f /tmp/zig.tar.xz \
     && echo "$HOME/zig" >> "$GITHUB_PATH"
 
@@ -71,7 +106,8 @@ RUN VERSION="$ZIG_VERSION" SHA256="$ZIG_LINUX_X86_64_SHA256" bash /ci/install-zi
 COPY .github/actions/install-cppcheck/install.sh /ci/install-cppcheck.sh
 ARG CPPCHECK_VERSION
 ARG CPPCHECK_SHA256
-RUN VERSION="$CPPCHECK_VERSION" SHA256="$CPPCHECK_SHA256" bash /ci/install-cppcheck.sh \
+RUN PATH="/ci/bin:$PATH" VERSION="$CPPCHECK_VERSION" SHA256="$CPPCHECK_SHA256" \
+        bash /ci/install-cppcheck.sh \
     && rm -rf "${RUNNER_TEMP:?}"/* \
     && echo "CPPCHECK=$HOME/cppcheck-inst/bin/cppcheck" >> "$GITHUB_ENV"
 
@@ -87,7 +123,8 @@ RUN curl -fsSL -o "$RUNNER_TEMP/shellcheck.tar.xz" \
     "https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/shellcheck-v$SHELLCHECK_VERSION.linux.x86_64.tar.xz"
 RUN echo "$SHELLCHECK_SHA256  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum -c -
 RUN mkdir -p "$HOME/shellcheck-inst" \
-    && tar xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$HOME/shellcheck-inst" --strip-components=1 \
+    && PATH="/ci/bin:$PATH" tar xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$HOME/shellcheck-inst" \
+        --strip-components=1 \
         "shellcheck-v$SHELLCHECK_VERSION/shellcheck" \
     && rm "$RUNNER_TEMP/shellcheck.tar.xz" \
     && echo "SHELLCHECK=$HOME/shellcheck-inst/shellcheck" >> "$GITHUB_ENV"
@@ -125,7 +162,8 @@ RUN SHA256="$ELAN_INIT_SHA256" bash /ci/install-elan.sh \
 COPY .github/actions/install-valgrind/install.sh /ci/install-valgrind.sh
 ARG VALGRIND_VERSION
 ARG VALGRIND_SHA256
-RUN VERSION="$VALGRIND_VERSION" SHA256="$VALGRIND_SHA256" bash /ci/install-valgrind.sh \
+RUN PATH="/ci/bin:$PATH" VERSION="$VALGRIND_VERSION" SHA256="$VALGRIND_SHA256" \
+        bash /ci/install-valgrind.sh \
     && rm -rf "${RUNNER_TEMP:?}"/* \
     && { echo "VALGRIND=$HOME/valgrind-inst/bin/valgrind"; \
          echo "VALGRIND_INCLUDE=$HOME/valgrind-inst/include"; } >> "$GITHUB_ENV"

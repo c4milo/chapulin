@@ -5365,9 +5365,39 @@ does nothing more.
       `Proto` or `Auth`; the cause is not known. The script reads the
       CPU's name, which Rosetta gives as VirtualApple, and passes `-o
       lint-zig-build` there. The lint's verdict for Linux on x86-64
-      stays with CI. Rosetta's CPU also has no AVX2, VAES or
+      stays with CI. Rosetta's CPU also has no AVX2, ADX, VAES or
       VPCLMULQDQ, so each run of a kernel built on them skips, as the
       check job lets it on a runner without the instructions.
+    - **Under Rosetta the image's tar is bsdtar.** On Ubuntu 26.04 the
+      image did not build on an Apple silicon Mac: the Zig step's tar
+      stopped at "Cannot open: Function not implemented" for each file
+      inside a directory. Since its fix for CVE-2025-45582
+      (1.35+dfsg-4ubuntu0.2), Ubuntu's GNU tar opens each such path with
+      the openat2 call and tries no other call. In the pinned image under
+      Rosetta, a probe got ENOSYS from openat2, faccessat2, fchmodat2 and
+      close_range, and mkdirat and statx succeeded. Ten options of tar
+      changed nothing, `-P` and `--no-same-owner` among them, and on
+      2026-11-12 apt held no later tar. bsdtar 3.8.5, from apt's
+      libarchive-tools, unpacked the same archives with the options the
+      install scripts and the script's copy pass. So the Dockerfile packs
+      a file inside a directory and unpacks it. Where that fails, it
+      installs bsdtar and names it /ci/bin/tar. Each step that unpacks an
+      archive reads /ci/bin ahead of `PATH`, and `GITHUB_PATH` carries
+      the directory to the script's copy and to make. The test reads the
+      call's effect and not the CPU's name, so an image built on a kernel
+      with openat2 keeps GNU tar alone, as a runner does.
+
+      dpkg must still find GNU tar. dpkg-deb unpacks a package's control
+      files with `tar --warning=no-timestamp`, which bsdtar refuses. A
+      first form named bsdtar /usr/local/bin/tar, and the CBMC step's
+      `dpkg -i` failed there. apt's own installs passed, because apt
+      gives dpkg a `PATH` without /usr/local/bin. GNU tar unpacks the
+      control files under Rosetta, because none is inside a directory.
+
+      Three other ways were refused. An older tar package lacks the fix
+      and is one more download to pin. QEMU in place of Rosetta is a
+      setting of the machine, and it is slower. And CI's install scripts
+      need no change, because a runner's kernel has the call.
     - **What `make check` does not read.** The check job also installs
       Go, the pinned OpenSSL, kissat, the Arm GNU toolchain,
       qemu-system-arm and actionlint. A run with a stand-in for each on

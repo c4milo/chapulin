@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs CI's `make check` locally: Ubuntu 24.04 on x86-64, its gcc as cc,
-# GNU make 4.3 and the pinned tools, in the image
+# Runs CI's `make check` locally: Ubuntu 26.04 on x86-64, its gcc as cc,
+# GNU make 4.4 and the pinned tools, in the image
 # test/docker-check.Dockerfile describes. Mirrors the `make check` half of
 # the check job in .github/workflows/check.yml, so a failure that only
 # CI's compiler, its x86-64 cppcheck or its make finds shows before a
@@ -23,7 +23,9 @@
 # and `make check` on the development machine runs both. On an Apple
 # silicon Mac a third does not run, lint-zig-build: Rosetta, which runs
 # the container's x86-64 code there, cannot load the translate-c program
-# Zig links. That lint's verdict for Linux x86-64 stays with CI.
+# Zig links. That lint's verdict for Linux x86-64 stays with CI. There
+# the image's tar is bsdtar too: Rosetta has no openat2 call, and without
+# it Ubuntu 26.04's GNU tar unpacks no file inside a directory.
 # docs/decisions.md 92 has the measurements behind each choice here.
 #
 # Beside check, make builds the binaries check-slow builds and check does
@@ -110,6 +112,15 @@ set +a
 while IFS= read -r dir; do
     PATH=$dir:$PATH
 done < "$GITHUB_PATH"
+
+# Where the image build found that GNU tar unpacks no file inside a
+# directory, /ci/bin/tar names bsdtar, and GITHUB_PATH holds /ci/bin
+# (test/docker-check.Dockerfile).
+case "$(tar --version)" in
+*bsdtar*)
+    echo "docker-check: tar is bsdtar here, because Rosetta has no openat2 call, which Ubuntu's GNU tar needs to unpack" >&2
+    ;;
+esac
 
 git -c init.defaultBranch=check init -q /work
 cd /work
