@@ -196,12 +196,15 @@ Home: github.com/c4milo.
   builds and every server role package them with `sha3.[ch]`, other
   builds keep them test-only) with `mlkem_zetas.h` (the NTT's twiddle
   factors), with `mlkem_vector.[ch]` and `mlkem_lanes.h` (the NTT, the
-  base multiplication and the sum of two polynomials on eight 16-bit
-  lanes, NEON or SSE2, every session of a host object), with
+  base multiplication, the sum of two polynomials and the centered
+  binomial step of the noise on eight 16-bit lanes, NEON or SSE2, every
+  session of a host object), with
   `keccak_avx2.[ch]` and `mlkem_avx2.[ch]`
   (Keccak on four states at once in AVX2, and `mlkem.c` compiled once
-  more to sample the matrix on it, an x86-64 session whose caller sets
-  CH_CPU_AVX2), and with `keccak_hw.h`, `mlkem_hw.c` and
+  more to sample the matrix on it and to keep its candidates eight
+  groups at a time in AVX2 through `mlkem_rejection_table.h`, which
+  `tools/mlkem_rejection_table.py` writes, an x86-64 session whose
+  caller sets CH_CPU_AVX2, docs/decisions.md 225), and with `keccak_hw.h`, `mlkem_hw.c` and
   `mlkem_poly_hw.c` (the two files compiled once more over
   `sha3_hw.c`) + `mldsa.[ch]`/`mldsa_poly.[ch]` with `mldsa_zetas.h`
   (ML-DSA-87 verification, FIPS 204, over public inputs alone and so
@@ -660,6 +663,9 @@ Home: github.com/c4milo.
   object's path (docs/decisions.md 101). The sum of two polynomials runs
   on the same lanes in every session of a host object, through
   `mlk_vector_add`, because it multiplies nothing (docs/decisions.md 214).
+  So does the centered binomial step of ML-KEM's noise, through
+  `mlk_vector_noise`, on the PRF stream `mlkem.c` squeezes as
+  `mlk_sample_cbd` does (docs/decisions.md 225).
   ML-DSA-87's transforms and products run on `mldsa_vector.c`'s four
   32-bit lanes in an arm64 host object: a verification in every session,
   because its inputs are public, and a signature or a key generation
