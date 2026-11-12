@@ -767,7 +767,13 @@ Home: github.com/c4milo.
   refused pair is never encoded (docs/decisions.md 155).
   `ch_p256_key_from_pem` computes a key's point on the wide P-256 field
   under `CH_CPU_CONSTANT_TIME_MULTIPLY`, as `p256_sign_cpu` signs
-  (docs/decisions.md 131). CBMC cannot read an
+  (docs/decisions.md 131). A host object's key exchange converts its
+  eight multiples to affine coordinates with one inverse, Montgomery's
+  trick, and adds windows 62 to 1 through
+  `p256_wide_point_add_jacobian_affine_incomplete` (docs/decisions.md
+  224). With `P256_WIDE_HOLD`, gcc for x86-64 computes each mask and
+  shift before the carry chain that reads it, and saves no carry inside
+  the chain. CBMC cannot read an
   intrinsic, so the vector
   paths are held to the portable one by `bin/chacha20_equiv_test`, the RFC
   8439 vectors and the Wycheproof suite, on a CPU with their instructions
