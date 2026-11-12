@@ -8,6 +8,9 @@
 // third and proves that each point it returns is the one the key encodes.
 // spec/lean/Spec/Ed25519Verify.lean models the check's loop and proves
 // that it computes [S]B - [h]A; its verifyR is the whole check.
+// spec/lean/Spec/Ed25519Sign.lean models the signer's scalar_reduce and
+// scalar_muladd in x25519_wide_ed25519_sign.h, and proves that they write
+// h mod L and r + k a mod L.
 // These rows are what make those proofs about the C: an error in the
 // transcription on either side fails a row.
 //
@@ -25,7 +28,10 @@
 // one below L: where the spec names the R the check accepts, the C must
 // accept that R and refuse it with its low bit or its sign bit flipped,
 // and where the spec refuses, the C must refuse each R it is given,
-// the R of the point its loop computes among them. Seven of eight random
+// the R of the point its loop computes among them. scalar_reduce takes
+// reduce_mod_l's hashes. scalar_muladd takes each r and k of 0, 1 and
+// L - 1 with each a of 0, 1 and 2^256 - 1, and random r and k below 2^252
+// with random a. Seven of eight random
 // points are outside the subgroup of prime order, and the check refuses
 // their keys (docs/decisions.md 227): the R of the loop's point meets the
 // equation under such a key, so that row fails a C with no test of the
@@ -48,8 +54,8 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     abort();
 }
 
-#if !defined(CH_CPU_RUNTIME) || !defined(CH_DNSSEC)
-#error "test/diff_ed25519_test.c diffs the wide field's Ed25519 code: build it with -DCH_CPU_RUNTIME -DCH_DNSSEC"
+#if !defined(CH_CPU_RUNTIME) || !defined(CH_DNSSEC) || !defined(CH_JWS)
+#error "test/diff_ed25519_test.c diffs the wide field's Ed25519 code: build it with -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_JWS"
 #endif
 #include "x25519_wide.c"
 
@@ -268,6 +274,42 @@ static void diff_mod_l(const uint8_t h[64]) {
     expect(cmd, want);
 }
 
+// scalar_reduce, the signer's reduction of a 64-byte hash, against the
+// model's reduce.
+static void diff_sign_reduce(const uint8_t h[64]) {
+    char cmd[COMMAND_SIZE];
+    char want[65];
+    size_t at = (size_t)snprintf(cmd, sizeof cmd, "ed25519_sign_reduce ");
+    (void)hex_encode(cmd + at, h, 64);
+    uint64_t out[4];
+    scalar_reduce(out, h);
+    uint8_t bytes[32];
+    words_to_bytes(bytes, out);
+    (void)hex_encode(want, bytes, 32);
+    expect(cmd, want);
+}
+
+// scalar_muladd, r + k a modulo L, against the model's mulAdd, for r and k
+// below L and an a of 32 bytes.
+static void diff_muladd(const uint64_t r[4], const uint64_t k[4], const uint8_t a[32]) {
+    char cmd[32 + 3 * 65];
+    char want[65];
+    uint8_t bytes[32];
+    size_t at = (size_t)snprintf(cmd, sizeof cmd, "ed25519_sign_muladd ");
+    words_to_bytes(bytes, r);
+    at += hex_encode(cmd + at, bytes, 32);
+    cmd[at++] = ' ';
+    words_to_bytes(bytes, k);
+    at += hex_encode(cmd + at, bytes, 32);
+    cmd[at++] = ' ';
+    (void)hex_encode(cmd + at, a, 32);
+    uint64_t out[4];
+    scalar_muladd(out, r, k, a);
+    words_to_bytes(bytes, out);
+    (void)hex_encode(want, bytes, 32);
+    expect(cmd, want);
+}
+
 // L less a, for a below L's word 0, which leaves words 1 to 3 as L's.
 static void l_less(uint64_t o[4], uint64_t a) {
     memcpy(o, ED25519_L, 4 * sizeof o[0]);
@@ -308,11 +350,42 @@ static void diff_steps(void) {
     }
 }
 
+// Each r and k of 0, 1 and L - 1 with each a of 0, 1 and 2^256 - 1, then
+// random r and k below 2^252 with random a.
+static void diff_muladds(void) {
+    uint64_t scalars[3][4] = {{0}, {1}};
+    l_less(scalars[2], 1);
+    uint8_t as[3][32] = {{0}, {1}};
+    memset(as[2], 0xff, sizeof as[2]);
+    for (size_t r = 0; r < 3; r++) {
+        for (size_t k = 0; k < 3; k++) {
+            for (size_t a = 0; a < 3; a++) {
+                diff_muladd(scalars[r], scalars[k], as[a]);
+            }
+        }
+    }
+    for (int row = 0; row < RANDOM_ROWS; row++) {
+        uint64_t r[4];
+        uint64_t k[4];
+        uint8_t a[32];
+        for (size_t i = 0; i < 4; i++) {
+            r[i] = rng_next();
+            k[i] = rng_next();
+        }
+        r[3] &= UINT64_C(0x0fffffffffffffff);
+        k[3] &= UINT64_C(0x0fffffffffffffff);
+        rng_fill(a, sizeof a);
+        diff_muladd(r, k, a);
+    }
+}
+
 static void diff_reductions(void) {
     uint8_t h[64] = {0};
     diff_mod_l(h);
+    diff_sign_reduce(h);
     memset(h, 0xff, sizeof h);
     diff_mod_l(h);
+    diff_sign_reduce(h);
     for (uint64_t delta = 0; delta < 3; delta++) {
         uint64_t l_words[4];
         memcpy(l_words, ED25519_L, sizeof l_words);
@@ -321,10 +394,12 @@ static void diff_reductions(void) {
         memset(h, 0, sizeof h);
         words_to_bytes(h, l_words);
         diff_mod_l(h);
+        diff_sign_reduce(h);
     }
     for (int r = 0; r < RANDOM_ROWS; r++) {
         rng_fill(h, sizeof h);
         diff_mod_l(h);
+        diff_sign_reduce(h);
     }
 }
 
@@ -335,6 +410,7 @@ int main(int argc, char **argv) {
     expect("selftest", "ok");
     diff_steps();
     diff_reductions();
+    diff_muladds();
     diff_decodes();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");

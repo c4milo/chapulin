@@ -16,6 +16,7 @@ import Spec.Prime25519
 import Spec.Ed25519ModL
 import Spec.Ed25519Decode
 import Spec.Ed25519Verify
+import Spec.Ed25519Sign
 import Spec.X25519Base
 import Spec.X25519Ladder
 import Spec.Weierstrass

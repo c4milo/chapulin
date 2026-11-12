@@ -6331,12 +6331,15 @@ bin/diff_rsa_exp: test/diff_rsa_exp_test.c $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TEST
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  test/diff_rsa_exp_test.c $(RSA_EQUIV_TEST_SRCS)
 # The DNSSEC Ed25519 arm: reduce_step and reduce_mod_l against
-# spec/lean/Spec/Ed25519ModL.lean. The unit includes x25519_wide.c, as
-# bin/diff_x25519_wide's does, for its static functions.
-bin/diff_ed25519: test/diff_ed25519_test.c src/x25519.c src/x25519_wide.c src/ct.c src/ct_wipe.c $(HDRS) $(TESTH)
+# spec/lean/Spec/Ed25519ModL.lean, and the signer's scalar_reduce and
+# scalar_muladd against spec/lean/Spec/Ed25519Sign.lean. The unit includes
+# x25519_wide.c, as bin/diff_x25519_wide's does, for its static functions.
+# CH_JWS adds the signer's header to that file, which hashes with SHA-512.
+DIFF_ED25519_SRCS := src/ct.c src/ct_wipe.c src/sha512.c src/sha512_compress_blocks.c
+bin/diff_ed25519: test/diff_ed25519_test.c src/x25519.c src/x25519_wide.c $(DIFF_ED25519_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ test/diff_ed25519_test.c \
-	  src/ct.c src/ct_wipe.c
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_JWS -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/diff_ed25519_test.c $(DIFF_ED25519_SRCS)
 # The radix-2^64 X25519 arm: x25519_adx.c's five operations, its final
 # reduction and its shared secret, compiled over its model as
 # bin/x25519_adx_model_test compiles them, against

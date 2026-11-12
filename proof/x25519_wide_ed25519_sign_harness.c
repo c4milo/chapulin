@@ -9,8 +9,12 @@
 //   zero by mask, keeps the sum below L. The loop starts from 0, so by
 //   induction its 256 steps end below L.
 // The reference sums below are plain word arithmetic with branches, apart
-// from the code under proof, which selects by mask. bin/jws_sign_test
-// holds the whole signature to RFC 8032 section 7.1's five, byte for byte.
+// from the code under proof, which selects by mask. What the two loops
+// compute is not proved here: spec/lean/Spec/Ed25519Sign.lean proves on a
+// model of the C that scalar_reduce writes h mod L and scalar_muladd
+// r + k a mod L, and bin/diff_ed25519 holds the C to the model.
+// bin/jws_sign_test holds the whole signature to RFC 8032 section 7.1's
+// five, byte for byte.
 #define CH_JWS 1
 #include "x25519_wide_stubs.h"
 

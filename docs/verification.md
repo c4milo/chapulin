@@ -1804,11 +1804,22 @@ The entries are grouped by area:
   `scalar_double` gives 2 o + bit modulo L. One step of `scalar_muladd`'s
   loop keeps the sum below L, so by induction its 256 steps end below L.
 - **Bound:** every value below L, one step at a time.
-- **Not proved:** that the loop's sum is r + k a modulo L. The steps'
-  values make it a double-and-add over a's bits, and `bin/jws_sign_test`
-  holds the whole signature to RFC 8032 section 7.1's five, byte for
-  byte. No branch on a secret is proved here: the selects are masks, and
-  the taint lane runs the signer (INV-60).
+- **Lean:** `spec/lean/Spec/Ed25519Sign.lean` models `scalar_settle()`,
+  `scalar_double()`, `scalar_add()`, `scalar_reduce()` and
+  `scalar_muladd()` from the C, with the four words of a scalar as one
+  number. `reduce_eq` proves that `scalar_reduce()` writes h mod L for
+  every 512-bit h. `mulAdd_eq` proves that `scalar_muladd()` writes
+  (r + k a) mod L, RFC 8032 section 5.1.6's S, for r and k below L and
+  every 256-bit a. `bin/diff_ed25519`, in `make diff`, holds the C to
+  both models in 432 comparisons: `scalar_reduce()` on the hashes 0,
+  2^512 - 1, L - 1, L, L + 1 and 200 random ones, and `scalar_muladd()`
+  on each r and k of 0, 1 and L - 1 with each a of 0, 1 and 2^256 - 1,
+  and on 200 random rows.
+- **Not proved:** that the C is the model on every input, which
+  `bin/diff_ed25519` samples. `bin/jws_sign_test` holds the whole
+  signature to RFC 8032 section 7.1's five, byte for byte. No branch on
+  a secret is proved here: the model's `if` states the value a masked
+  select writes, and the taint lane runs the signer (INV-60).
 
 #### base64_codec
 
@@ -1954,8 +1965,10 @@ The entries are grouped by area:
   check accepts comes with an S below L, a key that decodes to a point A
   whose image L takes to zero, and a point P whose image is S B - h A and
   whose encoding is R.
-  `bin/diff_ed25519`, in `make diff`, holds the C to the models in 2,036
-  comparisons: each bit from fixed and random remainders up to L - 1; the
+  `bin/diff_ed25519`, in `make diff`, holds the C to the models in 2,043
+  of its 2,475 comparisons; the other 432 are the signer's
+  ([x25519_wide_ed25519_sign](#x25519_wide_ed25519_sign)). They are:
+  each bit from fixed and random remainders up to L - 1; the
   hashes 0, 2^512 - 1, L - 1, L, L + 1 and random ones; with each sign
   bit, the y values 0, 1, p - 1, p, 2^255 - 1 and B's, and random keys;
   and the whole check over 62 of those keys and an S of 0, L - 1, L and a

@@ -18811,7 +18811,11 @@ does nothing more.
       section 7.1's five, and each ES256 signature to verify under RFC
       7515 A.3's key. The `jws_sign` proof holds the dispatcher over
       stubs of the signers, and `x25519_wide_ed25519_sign` the
-      arithmetic modulo L. `bin/wycheproof_jws_sign_test` holds RS256 to
+      arithmetic modulo L, one step at a time.
+      `Spec.Ed25519Sign.mulAdd_eq` proves on a model of the C that
+      `scalar_muladd` writes r + k a modulo L, and `reduce_eq` that
+      `scalar_reduce` writes h modulo L. `bin/diff_ed25519` holds the C
+      to both models. `bin/wycheproof_jws_sign_test` holds RS256 to
       Wycheproof's signature generation suites and to the private keys
       of its JWS tokens: 31 signatures byte for byte at 2048, 3072 and
       4096 bits, and a refusal for each of 20 cases under a shorter key

@@ -1048,6 +1048,24 @@ def dispatch : List String → Option String
     let hb ← hexArg? hash
     guard (hb.size == 64)
     return bytesToHex (natToBytesLE (Spec.Ed25519ModL.reduceModL (bytesToNatLE hb)) 32)
+  | ["ed25519_sign_reduce", hash] => do
+    -- scalar_reduce in x25519_wide_ed25519_sign.h: a 64-byte little-endian hash. The answer is
+    -- the model's reduce (Spec/Ed25519Sign.lean) in 32 little-endian bytes.
+    let hb ← hexArg? hash
+    guard (hb.size == 64)
+    return bytesToHex (natToBytesLE (Spec.Ed25519Sign.reduce (bytesToNatLE hb)) 32)
+  | ["ed25519_sign_muladd", r, k, a] => do
+    -- scalar_muladd in x25519_wide_ed25519_sign.h: r, k and a in 32 little-endian bytes each.
+    -- The answer is the model's mulAdd (Spec/Ed25519Sign.lean) in 32 little-endian bytes. The
+    -- guard is mulAdd_eq's hypotheses on r and k, which the C's callers meet.
+    let rb ← hexArg? r
+    let kb ← hexArg? k
+    let ab ← hexArg? a
+    guard (rb.size == 32 && kb.size == 32 && ab.size == 32)
+    let rn := bytesToNatLE rb
+    let kn := bytesToNatLE kb
+    guard (rn < Spec.Ed25519ModL.L && kn < Spec.Ed25519ModL.L)
+    return bytesToHex (natToBytesLE (Spec.Ed25519Sign.mulAdd rn kn (bytesToNatLE ab)) 32)
   | ["ed25519_decode", key] => do
     -- decode_point in x25519_wide_ed25519.h: a 32-byte public key. The answer is the model's
     -- decode (Spec/Ed25519Decode.lean), x then y in 32 little-endian bytes each, or FAIL for a
