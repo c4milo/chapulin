@@ -30,18 +30,27 @@
 //
 // And for the sum: the same pairs, with the output apart from both
 // operands, on the first and on the second, which is how mlkem.c calls it.
+//
+// And for the noise: mlk_vector_noise over the PRF stream of each of
+// NOISE_SEEDS random seeds and each of the 256 nonces, against
+// mlk_sample_cbd on the same seed and nonce (docs/decisions.md 225). Each
+// pair of coefficients comes from one byte of the stream, so the binary
+// requires that the streams held every byte value at every one of the
+// MLK_CBD_BYTES positions.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "mlkem_poly.h"
 #include "mlkem_vector.h"
+#include "sha3.h"
 
 #ifndef CH_CPU_RUNTIME
 #error "bin/mlkem_vector_equiv_test links a host object's ML-KEM sources: -DCH_CPU_RUNTIME"
 #endif
 
 #define CASES 2000
+#define NOISE_SEEDS 100
 
 // xorshift64 from a fixed seed, so a run replays the same cases.
 static uint64_t rng_state = UINT64_C(0x9e3779b97f4a7c15);
@@ -114,7 +123,7 @@ static void require_same(const char *what, const char *shape, const mlk_poly *po
         if (portable->coeffs[i] != vector->coeffs[i]) {
             failures++;
             (void)fprintf(stderr,
-                          "mlkem vector equivalence: sum %s, %s: coefficient %zu is %d on the "
+                          "mlkem vector equivalence: %s, %s: coefficient %zu is %d on the "
                           "vector path and %d on the portable loop\n",
                           what, shape, i, vector->coeffs[i], portable->coeffs[i]);
             return;
@@ -131,13 +140,13 @@ static void compare_sum(const char *what, const mlk_poly *a, const mlk_poly *b) 
     memset(&vector, 0, sizeof vector);
     mlk_poly_add(&portable, a, b);
     mlk_vector_add(&vector, a, b);
-    require_same(what, "output apart", &portable, &vector);
+    require_same(what, "sum, output apart", &portable, &vector);
     vector = *a;
     mlk_vector_add(&vector, &vector, b);
-    require_same(what, "output on the first operand", &portable, &vector);
+    require_same(what, "sum, output on the first operand", &portable, &vector);
     vector = *b;
     mlk_vector_add(&vector, a, &vector);
-    require_same(what, "output on the second operand", &portable, &vector);
+    require_same(what, "sum, output on the second operand", &portable, &vector);
 }
 
 static void fill(mlk_poly *p, int16_t value) {
@@ -246,21 +255,69 @@ static void random_cases(void) {
     }
 }
 
+// mlk_sample_cbd's PRF stream for seed and nonce: SHAKE256(seed || nonce).
+static void noise_stream(uint8_t out[MLK_CBD_BYTES], const uint8_t seed[32], uint8_t nonce) {
+    shake s;
+    shake256_init(&s);
+    shake_absorb(&s, seed, 32);
+    shake_absorb(&s, &nonce, 1);
+    shake_squeeze(&s, out, MLK_CBD_BYTES);
+}
+
+static uint8_t noise_seen[MLK_CBD_BYTES][256];
+
+static void noise_cases(void) {
+    for (int c = 0; c < NOISE_SEEDS; c++) {
+        uint8_t seed[32];
+        for (size_t i = 0; i < sizeof seed; i++) {
+            seed[i] = (uint8_t)rng_next();
+        }
+        for (unsigned nonce = 0; nonce < 256; nonce++) {
+            uint8_t stream[MLK_CBD_BYTES];
+            mlk_poly portable;
+            mlk_poly vector;
+            noise_stream(stream, seed, (uint8_t)nonce);
+            for (size_t i = 0; i < MLK_CBD_BYTES; i++) {
+                noise_seen[i][stream[i]] = 1;
+            }
+            memset(&portable, 0, sizeof portable);
+            memset(&vector, 0x5a, sizeof vector);
+            mlk_sample_cbd(&portable, seed, (uint8_t)nonce);
+            mlk_vector_noise(&vector, stream);
+            require_same("the noise of a random seed", "one nonce", &portable, &vector);
+        }
+    }
+    for (size_t i = 0; i < MLK_CBD_BYTES; i++) {
+        for (size_t value = 0; value < 256; value++) {
+            if (!noise_seen[i][value]) {
+                (void)fprintf(stderr,
+                              "mlkem vector equivalence: no stream held byte value %zu at "
+                              "position %zu; raise NOISE_SEEDS\n",
+                              value, i);
+                failures++;
+                return;
+            }
+        }
+    }
+}
+
 int main(void) {
     constant_cases();
     single_coefficient_cases();
     random_cases();
     product_edge_cases();
     product_random_cases();
+    noise_cases();
     if (failures != 0) {
         (void)fprintf(stderr,
-                      "mlkem vector equivalence: %d of %lu transforms, products and sums differ\n",
+                      "mlkem vector equivalence: %d of %lu transforms, products, sums and "
+                      "noise polynomials differ\n",
                       failures, compared);
         return 1;
     }
     (void)printf(
-        "mlkem vector equivalence: %lu transforms, products and sums, the same coefficients on "
-        "the vector path and the portable loops\n",
+        "mlkem vector equivalence: %lu transforms, products, sums and noise polynomials, the "
+        "same coefficients on the vector path and the portable loops\n",
         compared);
     return 0;
 }

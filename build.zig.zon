@@ -160,6 +160,7 @@
         "src/mlkem_poly.h",
         "src/mlkem_poly_hw.c",
         "src/mlkem_poly_native.c",
+        "src/mlkem_rejection_table.h",
         "src/mlkem_vector.c",
         "src/mlkem_vector.h",
         "src/mlkem_zetas.h",

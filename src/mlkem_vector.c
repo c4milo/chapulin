@@ -244,4 +244,16 @@ void mlk_vector_add(mlk_poly *r, const mlk_poly *a, const mlk_poly *b) {
     }
 }
 
+// Sixteen bytes of the stream a step, 32 coefficients. gcc 13 at -O2 kept
+// mlk_sample_cbd's inner loop over the eight coefficients of a 32-bit word,
+// with a shift by a register for each of them (docs/decisions.md 202 and
+// 225). lanes_noise stores each vector into p itself: given an array of
+// four vectors to fill, gcc 15 for arm64 kept the array in a stack slot,
+// and the last 32 coefficients of the noise stayed in it after the call.
+void mlk_vector_noise(mlk_poly *p, const uint8_t in[MLK_CBD_BYTES]) {
+    for (size_t at = 0; at < MLK_CBD_BYTES; at += 16) {
+        lanes_noise(p->coeffs + 2 * at, in + at);
+    }
+}
+
 #endif // CH_CPU_RUNTIME

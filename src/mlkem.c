@@ -87,6 +87,27 @@ static void mlk_add(mlk_poly *r, const mlk_poly *a, const mlk_poly *b) {
 #endif
 }
 
+// The noise of nonce into p: SamplePolyCBD_2 of PRF(seed, nonce) (FIPS 203
+// Algorithm 8). A device object runs mlk_sample_cbd. A host object
+// squeezes the same PRF stream as mlk_sample_cbd and runs the centered
+// binomial step on lanes (mlk_vector_noise, docs/decisions.md 225). The
+// stream and the sponge hold the secret seed's output, so both are wiped.
+static void mlk_noise(mlk_poly *p, const uint8_t seed[32], uint8_t nonce) {
+#ifdef CH_CPU_RUNTIME
+    shake s;
+    uint8_t stream[MLK_CBD_BYTES];
+    shake256_init(&s);
+    shake_absorb(&s, seed, 32);
+    shake_absorb(&s, &nonce, 1);
+    shake_squeeze(&s, stream, sizeof stream);
+    mlk_vector_noise(p, stream);
+    ct_wipe(stream, sizeof stream);
+    ct_wipe(&s, sizeof s);
+#else
+    mlk_sample_cbd(p, seed, nonce);
+#endif
+}
+
 // out = a o b for the first term of an NTT-domain dot product, and out +=
 // a o b for each later one. The result keeps the Montgomery R^-1 factor
 // that basemul introduces. prod holds a product with a secret operand, so
@@ -185,7 +206,7 @@ static void mlk_pke_keygen(unsigned rank, uint8_t *ek, uint8_t *dkpke, const uin
     // the bytes it expands to.
     CT_DECLASSIFY(g, 32);
     for (unsigned i = 0; i < rank; i++) {
-        mlk_sample_cbd(&s.vec[i], sigma, (uint8_t)i);
+        mlk_noise(&s.vec[i], sigma, (uint8_t)i);
         mlk_ntt(&s.vec[i]);
     }
     // Row i of t needs entry i of e alone, so e and t take one poly at a
@@ -194,7 +215,7 @@ static void mlk_pke_keygen(unsigned rank, uint8_t *ek, uint8_t *dkpke, const uin
     for (unsigned i = 0; i < rank; i++) {
         mlk_matvec_row(&t, rho, i, 0, &s, rank); // t = A o s (with R^-1)
         mlk_poly_tomont(&t);                     // undo the R^-1
-        mlk_sample_cbd(&e, sigma, (uint8_t)(rank + i));
+        mlk_noise(&e, sigma, (uint8_t)(rank + i));
         mlk_ntt(&e);
         mlk_add(&t, &t, &e);
         mlk_poly_reduce(&t);
@@ -223,7 +244,7 @@ static void mlk_pke_encrypt(uint8_t widemul, unsigned rank, uint8_t *ct, const u
     // sampled, so t takes one poly at a time.
     for (unsigned i = 0; i < rank; i++) {
         mlk_poly_frombytes(&t, ek + (size_t)384 * i);
-        mlk_sample_cbd(&r.vec[i], coins, (uint8_t)i);
+        mlk_noise(&r.vec[i], coins, (uint8_t)i);
         mlk_ntt(&r.vec[i]);
         mlk_dot_term(&v, &t, &r.vec[i], i);
     }
@@ -232,13 +253,13 @@ static void mlk_pke_encrypt(uint8_t widemul, unsigned rank, uint8_t *ct, const u
     for (unsigned i = 0; i < rank; i++) {
         mlk_matvec_row(&u, rho, i, 1, &r, rank); // A^T o r (with R^-1)
         mlk_invntt(&u);                          // inverse NTT absorbs R^-1
-        mlk_sample_cbd(&noise, coins, (uint8_t)(rank + i));
+        mlk_noise(&noise, coins, (uint8_t)(rank + i));
         mlk_add(&u, &u, &noise); // + e1
         mlk_poly_reduce(&u);
         widemul_mlk_poly_compress_du(widemul, ct + mlk_poly_comp_du_bytes(rank) * i, &u, rank);
     }
     mlk_invntt(&v);
-    mlk_sample_cbd(&noise, coins, (uint8_t)(2 * rank)); // e2
+    mlk_noise(&noise, coins, (uint8_t)(2 * rank)); // e2
     mlk_add(&v, &v, &noise);
     mlk_poly_frommsg(&noise, m); // Decompress1(m)
     mlk_add(&v, &v, &noise);

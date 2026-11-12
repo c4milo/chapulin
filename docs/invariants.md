@@ -2811,11 +2811,15 @@ last `ROLE=server` stub, as the entry said it would.
   forward and inverse transforms and its base multiplication in every
   session, writes for every input of int16 coefficients the coefficients
   `mlkem_poly.c`'s loops write, which stay the reference and a device
-  object's path.
+  object's path. Its noise step, which a host object runs on the PRF
+  stream of each call of `mlkem.c`'s noise, writes for every stream the
+  coefficients `mlk_sample_cbd` writes (decision 225).
 - **Mechanism.** `mlkem.c` calls the three through static functions,
   which call `mlk_vector_ntt`, `mlk_vector_invntt` and
   `mlk_vector_basemul` under `-DCH_CPU_RUNTIME` and `mlkem_poly.c`'s
-  three without it, so an object runs one of the two. Each lane computes
+  three without it, so an object runs one of the two. `mlk_noise` calls
+  `mlk_vector_noise` on the PRF stream `mlk_sample_cbd` squeezes under
+  `-DCH_CPU_RUNTIME`, and `mlk_sample_cbd` without it. Each lane computes
   the scalar Montgomery and Barrett values exactly, by the identities
   decision 101 states, and each step reads the twiddle factors the loops
   read from the one table in `mlkem_zetas.h`. The path runs no branch and
@@ -2829,7 +2833,9 @@ last `ROLE=server` stub, as the entry said it would.
   values, among them -32768 times -32768, one coefficient at an edge
   value at each position against another edge value, and 2,000 random
   pairs from all of int16 and 2,000 from the ranges an NTT's output and
-  a matrix entry hold. `make check` runs it on
+  a matrix entry hold. It runs the noise both ways on the PRF streams of
+  100 random seeds under each of the 256 nonces, and requires that the
+  streams held every byte value at every position. `make check` runs it on
   the host's instruction set, `make san-check` under the sanitizers, and
   `test/aes-runtime-qemu.sh mlkem-vector` on SSE2 and NEON under qemu.
   `bin/mlkem_test_host` and the host Wycheproof test run the published
@@ -2837,7 +2843,8 @@ last `ROLE=server` stub, as the entry said it would.
   `mlkem.c` both ways, and `make lint-trust-separation` holds
   `mlkem_vector.c` to the host object.
 - **Violation.** A PR has `mlkem.c` call a loop in a host object, for
-  either transform or the base multiplication; reads the twiddle factor
+  either transform, the base multiplication or the noise; stops the sum
+  short; reads the twiddle factor
   one entry off in the layer of span 8, or four entries off in the base
   multiplication; gives the two blocks of the layer of span 16 each
   other's factor; drops the forward transform's last reduction; ends the
@@ -2845,12 +2852,13 @@ last `ROLE=server` stub, as the entry said it would.
   coefficients with the even ones' constant; or, in one instruction set,
   drops the halving or the rounding of a reduction, splits coefficients
   into the wrong lanes, subtracts the wrong half of a product, keeps the
-  low halves of the wide products, or multiplies two coefficients on
-  SQDMULH, which saturates. The eighteen `inv46-*` violations are these.
-  Three fail `test/mlkem-builds.sh`, six `bin/mlkem_vector_equiv_test` on
-  either instruction set, and nine `test/docker-aes-runtime-qemu.sh
-  mlkem-vector`, which runs the arm a machine's own compiler does not
-  read.
+  low halves of the wide products, multiplies two coefficients on
+  SQDMULH, which saturates, widens the noise without its sign, or trades
+  the places of a noise coefficient pair. The twenty-two `inv46-*`
+  violations are these. Four fail `test/mlkem-builds.sh`, seven
+  `bin/mlkem_vector_equiv_test` on either instruction set, and eleven
+  `test/docker-aes-runtime-qemu.sh mlkem-vector`, which runs the arm a
+  machine's own compiler does not read.
 
 ### INV-48 — the four-way Keccak takes public input alone and gives sha3.c's streams
 
@@ -2872,9 +2880,12 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** The round in `keccak_avx2.c` is `sha3.c`'s, line for
   line, on four lanes at once, and reads the round constants `sha3.c`
   reads, from `keccak_round_constants.h`. The row sampler runs each block
-  of each stream through `mlk_sample_groups`, the rejection step
-  `mlk_sample_ntt` runs, until every entry holds 256 coefficients or its
-  stream has given `MLK_SAMPLE_GROUPS` groups. `mlkem.c` leaves
+  of each stream through `mlk_sample_groups_avx2` until every entry holds
+  256 coefficients or its stream has given `MLK_SAMPLE_GROUPS` groups.
+  That step keeps, eight groups at a time on AVX2, the candidates
+  `mlk_sample_groups` keeps, the rejection step `mlk_sample_ntt` runs,
+  and runs `mlk_sample_groups` on the groups it leaves
+  (decision 225). `mlkem.c` leaves
   `mlk_matvec_row` alone to the copy (`CH_MLKEM_AVX2_COPY`), so the
   copy's noise, hashes and arithmetic are `mlkem.c`'s text on `sha3.c`,
   and `mlkem.h`'s entries run the copy exactly where the value holds
@@ -2892,12 +2903,18 @@ last `ROLE=server` stub, as the entry said it would.
   under each answer a compression runs under, the implicit-reject secret
   included; and the three session calls under a value with
   `CH_CPU_AVX2` and one without. It counts the sampled entries whose
-  stream needs a fourth block and fails if there are none. `make check`
+  stream needs a fourth block and fails if there are none. It compares
+  `mlk_sample_groups_avx2` with `mlk_sample_groups` for every pattern of
+  kept and dropped candidates in each half of a step, from counts on
+  both sides of 240, the last count at which a step runs, and on random
+  blocks, and each entry of `mlkem_rejection_table.h` with the rule its
+  comment states. `make check`
   runs it on an x86-64 host with AVX2, `make san-check` under the
   sanitizers, and `test/aes-runtime-qemu.sh mlkem-avx2` under qemu on
   any machine. `bin/x86_kernels_test` counts the copy's calls under
   thirty-three values. `test/mlkem-builds.sh` requires the copy's rows to
-  call the four-way Keccak and not `mlk_sample_ntt`, both files to hold
+  call the four-way Keccak and `mlk_sample_groups_avx2` and not
+  `mlk_sample_ntt`, both files to hold
   nothing on arm64, and no other source in src/ to include
   `keccak_avx2.h` or call its entries, and `make lint-trust-separation`
   holds both files to the host object. For ML-DSA-87,
@@ -2914,17 +2931,21 @@ last `ROLE=server` stub, as the entry said it would.
   wrong bytes for the rotation by 8; drops chi's complement or iota;
   writes the wrong domain bits or pad bit at the start; hands a state the
   wrong index; reads a block's bytes from the wrong state; parses one
-  group too few of a block; swaps the indices of A and A^T in the copy;
+  group too few of a block; reads each candidate of a group from the
+  other's bits, runs a step of the rejection on AVX2 where fewer than 16
+  coefficients fit, or keeps the candidates one group at a time; swaps
+  the indices of A and A^T in the copy;
   has `mlkem.h`'s entries run the copy without the bit or the portable
   calls with it; samples the copy's rows on `sha3.c`; or includes
   `keccak_avx2.h` in a source that reads secrets. For ML-DSA-87, it
   exchanges A's two indices, reads every entry from state 0, stops each
   stream after four blocks, picks the sampler on another bit in the
-  verifier, or leaves the signer's rows on `sha3.c`. The twenty `inv48-*`
-  violations are these. Eleven fail `test/docker-aes-runtime-qemu.sh
-  mlkem-avx2`, three `test/docker-aes-runtime-qemu.sh mldsa-avx2`, two
+  verifier, or leaves the signer's rows on `sha3.c`. The twenty-three
+  `inv48-*` violations are these. Thirteen fail
+  `test/docker-aes-runtime-qemu.sh mlkem-avx2`, three
+  `test/docker-aes-runtime-qemu.sh mldsa-avx2`, two
   `test/docker-aes-runtime-qemu.sh mldsa-vector`, two
-  `test/docker-aes-runtime-qemu.sh x86-kernels`, and two
+  `test/docker-aes-runtime-qemu.sh x86-kernels`, and three
   `test/mlkem-builds.sh`.
 
 ### INV-50 — a host object's SHA-512 gives the portable code's digests

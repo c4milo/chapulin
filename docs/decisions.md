@@ -18825,3 +18825,116 @@ does nothing more.
       in constant time by then, and a ladder signature is no CRT signature,
       so a faulted one gives no prime away. A faulted Ed25519 signature's
       timing is the one leak this leaves.
+
+225. **A host object computes ML-KEM's noise on lanes, and an x86-64
+    host object keeps the matrix's candidates on AVX2.** On the Xeon
+    Platinum 8573C an ML-KEM-768 encapsulation took 23.2 µs under gcc 13.3
+    and 19.3 µs under clang 23, 1.10 and 0.93 of OpenSSL 3.6.4's time
+    (bench run on ddff5bce). Camilo asked for the gcc cell below 1.00.
+
+    - **The cause.** A lab driver timed each phase of the AVX2 copy's
+      encapsulation with RDTSC between LFENCEs, on an 8573C under
+      `ch_cfg.cpu` 0xf3f. The phases took 23.1 µs under gcc and 19.3 under
+      clang. The noise, seven calls of `mlk_sample_cbd`, took 4.48 µs under
+      gcc and 2.79 under clang, and the matrix's three rows 9.51 and 7.96.
+      The other phases differ by 0.6 µs in all. In one call of
+      `mlk_sample_cbd` the PRF took 326 ns under both compilers. gcc 13.3
+      at -O2 keeps the loop over the eight coefficients of a word, with a
+      shift by a register for each, and the centered binomial step took
+      287 ns, where clang's took 59. In the rows, `mlk_sample_groups` read
+      the candidates with a branch on each, on public bytes: 2.68 µs for
+      the nine entries under gcc and 1.94 under clang. The four-way
+      permutation took 712 ns under gcc and 660 under clang, nine of them
+      an encapsulation.
+    - **The noise.** `mlk_noise` in `mlkem.c` squeezes the PRF stream as
+      `mlk_sample_cbd` does, and in a host object hands the 128 bytes to
+      `mlk_vector_noise` in `mlkem_vector.c`. `lanes_noise` in
+      `mlkem_lanes.h` takes 16 bytes a step, on NEON or SSE2. In each byte
+      it counts the set bits of each pair of bits, subtracts the counts
+      that make each coefficient, and widens the bytes to 16-bit lanes
+      with their sign. Every operation runs on every byte, and no branch
+      or address reads a count. A device object calls `mlk_sample_cbd` as
+      before, and `mlkem_poly.c` does not change.
+    - **The noise's stores.** The first form filled an array of four
+      vectors, and its caller stored them. gcc 15 for arm64 kept the
+      array in a stack slot, so the last 32 coefficients of the noise
+      stayed below the caller's frame after the call. `lanes_noise` now
+      stores each vector into the polynomial itself, and the function
+      holds no array.
+    - **The candidates.** `mlk_sample_groups_avx2` in `mlkem_avx2.c` reads
+      eight groups a step. One VPSHUFB writes the 16 candidates into
+      16-bit lanes, VPCMPGTW marks each one below q, and VPMOVMSKB gives
+      the marks of each half of eight as one byte. A table of 256 byte
+      orders in `mlkem_rejection_table.h`, which
+      `tools/mlkem_rejection_table.py` writes, moves the kept candidates
+      of a half to its front, and a table of counts moves j. The steps
+      run while 16 more coefficients fit, and `mlk_sample_groups` reads
+      the groups that are left. So the call keeps the candidates
+      `mlk_sample_groups` keeps, in the same order. A step writes zeros
+      after the candidates it keeps. Where a stream gives
+      `MLK_SAMPLE_GROUPS` groups without 256 candidates below q, which no
+      seed does in practice, the coefficients from the count on are then
+      zeros where `mlk_sample_groups` leaves what the entry held, and the
+      copy's callers held no value there. The candidates and the table
+      indices come from the public seed rho.
+    - **Rejected: the BMI sponge.** Under `CH_CPU_BMI1` and
+      `CH_CPU_BMI2_ADX`, `sha3_hw.c`'s copy took H(ek) from 2.80 to 2.57
+      µs and a PRF call from 326 to 296 ns: 1.5% of gcc's encapsulation
+      beside the two changes above. ML-KEM's hashes would need a third
+      copy of `mlkem.c` and `mlkem_poly.c`. Not built.
+    - **Not changed: the four-way permutation.** It is the largest phase
+      that is left, 6.4 µs of gcc's encapsulation. AVX-512's VPROLQ and
+      VPTERNLOGQ would shorten each round on the 8573C, and that needs a
+      ruling on what `CH_CPU_AVX512` picks.
+    - **OpenSSL's encapsulation.** chapulin hashes ek and samples A in
+      each call, because a TLS server gets a fresh ek in each handshake.
+      OpenSSL's timed call does neither. On the 8573C its encapsulation
+      against a held key object took 20.9 µs. A key object decoded from
+      the raw ek took 17.5 µs, and a decode and an encapsulation 39.6 µs.
+      `perf record` put 11.6% of the held call in `KeccakF1600`, about
+      eight permutations: G and the seven PRF calls. It put 61% of the
+      decode in `KeccakF1600` and 11% in `matrix_expand`. The M1 Pro's
+      instruction counts agree: 178,961 for the held call, 186,419 for
+      the decode and 383,331 for both. So the scoreboard compares
+      chapulin's whole encapsulation with OpenSSL's call less H(ek) and A.
+      A program that times OpenSSL's public EVP calls measured this, and
+      no source of OpenSSL was read.
+    - **What holds it.** `bin/mlkem_vector_equiv_test` runs the noise
+      both ways on the PRF streams of 100 random seeds under each of the
+      256 nonces, and requires every byte value at every position of the
+      streams. `bin/mlkem_avx2_equiv_test` compares
+      `mlk_sample_groups_avx2` with `mlk_sample_groups` for each of the
+      256 patterns of kept candidates in each half of a step, from 13
+      counts on both sides of 240 and on 11 counts of groups, and on
+      4,000 random blocks, and computes each entry of the table by its
+      rule. `test/mlkem-builds.sh` requires a host object's `mlkem.c` and
+      its copies to call `mlk_vector_noise` and not `mlk_sample_cbd`, and
+      the AVX2 copy to call `mlk_sample_groups_avx2`. Six violations,
+      three of INV-46 and three of INV-48, break each rule. `make
+      ct-taint` passed under gcc 15 and clang 23 on arm64 and x86-64.
+      `lint-wide-multiply` counts 9 branches in `mlkem_vector.c` on each
+      architecture, one more loop, and 29 in `mlkem_avx2.c` on x86-64,
+      where it counted 24: each reads a count, a loop or a candidate of
+      rho.
+    - **Numbers.** In the lab driver, on one 8573C under 0xf3f, the two
+      changes took gcc's encapsulation to 0.82 of the library's time in
+      the same binary, and clang's to 0.92. `bench.yml` run 43158051889
+      timed the first form of `lanes_noise`, which wrote its vectors
+      through an array and computed the same coefficients. Each cell is
+      the ratio to OpenSSL 3.6.4 in the same run, before (the recorded run
+      of ddff5bce) and after:
+
+      | ML-KEM-768 | EPYC 7763, gcc | EPYC 7763, clang | 8573C, gcc | 8573C, clang |
+      | --- | --- | --- | --- | --- |
+      | key generation | 0.52 to 0.42 | 0.45 to 0.40 | 0.57 to 0.44 | 0.46 to 0.38 |
+      | encapsulation | 0.99 to 0.81 | 0.84 to 0.75 | 1.10 to 0.90 | 0.93 to 0.77 |
+      | decapsulation | 0.75 to 0.63 | 0.61 to 0.55 | 0.81 to 0.67 | 0.65 to 0.55 |
+
+      On that run's 8573C gcc's encapsulation took 15.8 µs and OpenSSL's
+      17.6, where the recorded run's runner timed OpenSSL at 21.2 µs. So
+      only the ratios compare across the two runs. On the M1 Pro, Apple
+      clang 21's object under 0xe7 retires 133,401 instructions for a key
+      generation where it retired 137,662, 155,325 for an encapsulation
+      where it retired 158,239, and 168,623 for a decapsulation where it
+      retired 172,750. No M1 was free to time: the load average stayed
+      above 20.

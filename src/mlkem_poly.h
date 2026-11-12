@@ -153,6 +153,16 @@ static inline unsigned mlk_sample_groups(mlk_poly *p, unsigned j, const uint8_t 
     return j;
 }
 
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+// mlk_sample_groups on AVX2, eight groups a step, which an x86-64 host
+// object's mlkem_avx2.c runs on each block of its streams
+// (docs/decisions.md 225). It keeps the candidates mlk_sample_groups keeps,
+// in the same order, and returns the same count. Where that count is below
+// 256, the coefficients from it on are not the ones p held: a step writes
+// zeros past the ones it keeps. Requires: a CPU with AVX2.
+unsigned mlk_sample_groups_avx2(mlk_poly *p, unsigned j, const uint8_t *buf, size_t groups);
+#endif
+
 // SamplePolyCBD_eta: centered binomial noise from PRF(seed, nonce) =
 // SHAKE256(seed || nonce).
 void mlk_sample_cbd(mlk_poly *p, const uint8_t seed[32], uint8_t nonce);

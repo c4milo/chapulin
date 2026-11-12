@@ -1,0 +1,16 @@
+invariant: INV-48
+file: src/mlkem_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: a step of the rejection step on AVX2 runs while eight more
+  coefficients fit, not sixteen, so from a count of 241 to 248 it keeps
+  up to 16 candidates, writes past coefficient 255 and returns a count
+  above 256. bin/mlkem_avx2_equiv_test starts the step at 247, 248 and
+  249 and requires mlk_sample_groups's count. Only an x86-64 compiler
+  reads the line, so the script builds the test for x86-64 and runs it
+  under qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+    for (; group + 8 <= groups && j <= MLKEM_N - 16; group += 8) {
+--- new
+    for (; group + 8 <= groups && j <= MLKEM_N - 8; group += 8) {

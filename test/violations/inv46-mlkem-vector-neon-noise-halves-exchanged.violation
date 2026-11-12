@@ -1,0 +1,14 @@
+invariant: INV-46
+file: src/mlkem_lanes.h
+catches: test/docker-aes-runtime-qemu.sh mlkem-vector
+reason: the NEON noise interleaves the high halves of the bytes ahead of
+  the low halves, so coefficients 2k and 2k + 1 of the first sixteen of
+  each step trade places. Only an arm64 compiler reads the line, so the
+  script builds bin/mlkem_vector_equiv_test for arm64 and runs it under
+  qemu-aarch64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+    int8x16_t first = vzip1q_s8(low, high);
+--- new
+    int8x16_t first = vzip1q_s8(high, low);

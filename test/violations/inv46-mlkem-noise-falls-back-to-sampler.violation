@@ -1,0 +1,14 @@
+invariant: INV-46
+file: src/mlkem.c
+catches: test/mlkem-builds.sh
+reason: a host object's mlk_noise squeezes the PRF stream and then runs
+  mlk_sample_cbd, which squeezes it again and writes the same noise with
+  gcc's loop of shifts by a register. Every comparison passes, because the
+  coefficients are the same, so the script compiles mlkem.c for each host
+  target and requires it to call mlk_vector_noise and not mlk_sample_cbd
+  (docs/decisions.md 225).
+
+--- old
+    mlk_vector_noise(p, stream);
+--- new
+    mlk_sample_cbd(p, seed, nonce);

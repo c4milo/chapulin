@@ -1,0 +1,14 @@
+invariant: INV-48
+file: src/mlkem_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: the rejection step on AVX2 takes the even lanes from the shifted
+  pairs and the odd ones from the masked pairs, so each group's d1 and d2
+  are each read from the other's bits. Only an x86-64 compiler reads the
+  line, so the script builds bin/mlkem_avx2_equiv_test for x86-64 and
+  runs it under qemu-x86_64. The lane skips without docker, and this then
+  reports unguarded rather than caught.
+
+--- old
+    return _mm256_blend_epi16(low, high, 0xaa);
+--- new
+    return _mm256_blend_epi16(low, high, 0x55);

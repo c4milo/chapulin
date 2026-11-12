@@ -1,0 +1,13 @@
+invariant: INV-48
+file: src/mlkem_avx2.c
+catches: test/mlkem-builds.sh
+reason: the copy's row sampler runs mlk_sample_groups on each block, one
+  group a step with a branch on each candidate, in place of
+  mlk_sample_groups_avx2. Every comparison passes, because the
+  coefficients are the same, so the script compiles the copy for x86-64
+  and requires a call of mlk_sample_groups_avx2 (docs/decisions.md 225).
+
+--- old
+            count[j] = mlk_sample_groups_avx2(&a->vec[j], count[j], block, groups);
+--- new
+            count[j] = mlk_sample_groups(&a->vec[j], count[j], block, groups);

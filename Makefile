@@ -366,7 +366,7 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
 
 HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/poly1305_wide.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont_division.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
         src/pem.h src/base64.h src/base64_codec.h src/pbkdf2.h src/rsa_key_field.h src/ed25519_sign.h src/x25519_wide_ed25519_sign.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
-        include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/sha3_andn.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h include/chapulin/jws.h include/chapulin/scram.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
+        include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/sha3_andn.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h include/chapulin/jws.h include/chapulin/scram.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mlkem_rejection_table.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
         src/keccak_neon.h src/keccak_neon_round.h src/mlkem_neon.h src/mldsa_neon.h \
         src/p256_wide_word.h src/p256_wide_field.h src/p256_wide_scalar.h src/p256_wide_inverse.h src/p256_wide_point.h \
         src/p256_wide_mul.h src/p256_wide_table.h src/p256_wide_wipe.h src/p256_wide_verify.h src/p256_wide_verify_point.h \
@@ -9717,12 +9717,18 @@ WIDEMUL_SPECS := \
 #   loop of mlkem_encaps_derand's check of an encapsulation key and its two
 #   tests of a coefficient against q, which read a public key, and the test
 #   of the session's multiply answer in mlk_pke_encrypt and in
-#   decapsulation. mlkem_avx2.c holds 23 more in mlk_matvec_row, the row
-#   sampler's tests of the three streams' blocks, of each entry's count of
-#   coefficients and of each candidate against q.
-# mlkem_vector.c, 8 and 8: the loops over the layers and blocks of the two
-#   transforms, the base multiplication's 16 blocks and the sum's 32 steps
-#   (docs/decisions.md 214), all constants.
+#   decapsulation. mlkem_avx2.c holds 11 more in mlk_matvec_row, the row
+#   sampler's tests of the three streams' blocks and of each entry's count
+#   of coefficients, and 10 in mlk_sample_groups_avx2: its test of whether
+#   a step of eight groups runs, the step loop's two tests, on the groups
+#   left and on the count, and the seven of the loop over the groups left,
+#   which test a candidate against q and the count and the groups
+#   (docs/decisions.md 225). The candidates come from the public matrix
+#   seed.
+# mlkem_vector.c, 9 and 9: the loops over the layers and blocks of the two
+#   transforms, the base multiplication's 16 blocks, the sum's 32 steps
+#   (docs/decisions.md 214) and the noise's 8 (docs/decisions.md 225), all
+#   constants.
 # mldsa_vector.c, 13 and 13: the loops over the layers, the blocks and
 #   the coefficients of the two transforms and the two products, all over
 #   constants. On arm64 they are the NEON arm's, and on x86-64 the AVX2
@@ -10529,9 +10535,9 @@ BRANCH_CEILING := \
   arm64/src/rsa_sign64_wipe.c:0 x86-64/src/rsa_sign64_wipe.c:0 \
   arm64/src/rsa_ifma.c:0 x86-64/src/rsa_ifma.c:41 arm64/src/rsa_ifma.c@512:0 x86-64/src/rsa_ifma.c@512:45 \
   arm64/src/rsa_avx2.c:0 x86-64/src/rsa_avx2.c:49 arm64/src/rsa_avx2.c@512:0 x86-64/src/rsa_avx2.c@512:86 \
-  arm64/src/mlkem_vector.c:8 x86-64/src/mlkem_vector.c:8 \
+  arm64/src/mlkem_vector.c:9 x86-64/src/mlkem_vector.c:9 \
   arm64/src/mldsa_vector.c:13 x86-64/src/mldsa_vector.c:13 \
-  arm64/src/keccak_avx2.c:0 x86-64/src/keccak_avx2.c:1 arm64/src/mlkem_avx2.c:0 x86-64/src/mlkem_avx2.c:24 \
+  arm64/src/keccak_avx2.c:0 x86-64/src/keccak_avx2.c:1 arm64/src/mlkem_avx2.c:0 x86-64/src/mlkem_avx2.c:29 \
   arm64/src/mldsa_avx2.c:0 x86-64/src/mldsa_avx2.c:8 \
   arm64/src/keccak_neon.c:2 x86-64/src/keccak_neon.c:0 arm64/src/mlkem_neon.c:17 x86-64/src/mlkem_neon.c:0 \
   arm64/src/mldsa_neon.c:9 x86-64/src/mldsa_neon.c:0 \

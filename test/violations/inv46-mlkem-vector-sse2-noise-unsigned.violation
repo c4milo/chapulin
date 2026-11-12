@@ -1,0 +1,14 @@
+invariant: INV-46
+file: src/mlkem_lanes.h
+catches: test/docker-aes-runtime-qemu.sh mlkem-vector
+reason: the SSE2 noise widens the first eight coefficients with a logical
+  shift, so -1 and -2 become 255 and 254 where mlk_sample_cbd writes -1
+  and -2. Only an x86-64 compiler reads the line, so the script builds
+  bin/mlkem_vector_equiv_test for x86-64 and runs it under qemu-x86_64.
+  The lane skips without docker, and this then reports unguarded rather
+  than caught.
+
+--- old
+    lanes_store(out, _mm_srai_epi16(_mm_unpacklo_epi8(first, first), 8));
+--- new
+    lanes_store(out, _mm_srli_epi16(_mm_unpacklo_epi8(first, first), 8));

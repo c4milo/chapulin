@@ -325,12 +325,12 @@ for target in "$x86" "$arm64"; do
     calls "src/mlkem_hw.c for $target" _hw "${mlkem_keccak_calls[@]}"
     defines mlkem_decaps_hw || fail "src/mlkem_hw.c for $target does not define mlkem_decaps_hw"
     defines mlkem_decaps && fail "src/mlkem_hw.c for $target defines mlkem_decaps, which src/mlkem.c defines"
-    # mlkem_vector.c's two transforms, its base multiplication and its sum
-    # hash nothing, and both copies of mlkem.c call them (docs/decisions.md
-    # 101 and 214). Both copies call the sampler on the two-way Keccak too,
-    # the copy with the SHA-3 form (docs/decisions.md 198).
+    # mlkem_vector.c's two transforms, its base multiplication, its sum and
+    # its noise step hash nothing, and both copies of mlkem.c call them
+    # (docs/decisions.md 101, 214 and 225). Both copies call the sampler on
+    # the two-way Keccak too, the copy with the SHA-3 form (docs/decisions.md 198).
     stray=$(nm "$work/cross.o" | awk '$1 == "U" { print $2 }' | grep -E '^_?mlk_' | grep -vE '_(hw|native)$' |
-        grep -vxE '_?mlk_vector_(ntt|invntt|basemul|add)|_?mlk_sample_pair_neon' || true)
+        grep -vxE '_?mlk_vector_(ntt|invntt|basemul|add|noise)|_?mlk_sample_pair_neon' || true)
     [ -z "$stray" ] || fail "src/mlkem_hw.c for $target calls $stray, which the copy of src/mlkem_poly.c does not define"
     cross_object "$target" src/mlkem_poly_hw.c
     calls "src/mlkem_poly_hw.c for $target" _hw "${mlkem_poly_keccak_calls[@]}"

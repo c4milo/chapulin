@@ -17,7 +17,15 @@
 //     decapsulation recovers, and the one it writes for a ciphertext with
 //     one bit changed, which is FIPS 203's implicit rejection;
 //   - the three calls a session makes, under a ch_cfg.cpu value with
-//     CH_CPU_AVX2 and one without.
+//     CH_CPU_AVX2 and one without;
+//   - the rejection step on AVX2, mlk_sample_groups_avx2, with
+//     mlk_sample_groups (docs/decisions.md 225): the count and the
+//     coefficients below it, for every pattern of kept and dropped
+//     candidates in each half of a step of eight groups, candidates at
+//     0, 1, q - 2, q - 1, q, q + 1, 4094 and 4095, from counts on both
+//     sides of 240, the last count at which a step runs, and on counts
+//     of groups that leave a tail; then random blocks. It also computes
+//     each entry of mlkem_rejection_table.h by the rule the header states.
 //
 // The row sampler reads a fourth block of an entry's stream for about one
 // entry in a hundred. The binary counts, from sha3.c's streams, the
@@ -50,6 +58,7 @@ int main(void) {
 
 #include "keccak_avx2.h"
 #include "mlkem_poly.h"
+#include "mlkem_rejection_table.h"
 #include "widemul.h"
 
 #define STREAM_CASES 200
@@ -198,6 +207,104 @@ static void compare_kem(uint8_t widemul) {
     check(memcmp(back, back_avx2, sizeof back) == 0, "the implicit-reject secret");
 }
 
+// Candidates on each side of q: the two lowest and the two highest kept,
+// and the two lowest and the two highest dropped.
+static const uint16_t KEPT[] = {0, 1, MLKEM_Q - 2, MLKEM_Q - 1};
+static const uint16_t DROPPED[] = {MLKEM_Q, MLKEM_Q + 1, 4094, 4095};
+
+// Group g of buf with the candidates d1 and d2, as mlk_sample_groups reads
+// them.
+static void put_group(uint8_t *buf, size_t g, uint16_t d1, uint16_t d2) {
+    buf[3 * g] = (uint8_t)d1;
+    buf[3 * g + 1] = (uint8_t)((d1 >> 8) | ((d2 & 0x0f) << 4));
+    buf[3 * g + 2] = (uint8_t)(d2 >> 4);
+}
+
+// A candidate kept where keep is 1 and dropped where it is 0, of the four
+// on that side.
+static uint16_t candidate(int keep) {
+    uint8_t draw;
+    rng_bytes(&draw, 1);
+    return keep ? KEPT[draw & 3] : DROPPED[draw & 3];
+}
+
+// mlk_sample_groups_avx2 against mlk_sample_groups on groups groups at buf
+// from the count j: the same count, and the same coefficients below it,
+// which holds the ones below j that neither may write.
+static void compare_rejection(const uint8_t *buf, size_t groups, unsigned j) {
+    mlk_poly portable;
+    mlk_poly vector;
+    rng_bytes((uint8_t *)portable.coeffs, sizeof portable.coeffs);
+    vector = portable;
+    unsigned count = mlk_sample_groups(&portable, j, buf, groups);
+    unsigned count_avx2 = mlk_sample_groups_avx2(&vector, j, buf, groups);
+    check(count == count_avx2 &&
+              memcmp(portable.coeffs, vector.coeffs, sizeof portable.coeffs[0] * count) == 0,
+          "the rejection step on AVX2");
+}
+
+// The first count at which the AVX2 step stops, MLKEM_N - 16 + 1, is the
+// boundary: 240 runs a step of eight groups and 241 none.
+#define START_CASES 13
+static const unsigned STARTS[START_CASES] = {0,   1,   2,   100, 224, 239, 240,
+                                             241, 247, 248, 249, 255, 256};
+#define GROUP_CASES 11
+static const size_t GROUP_COUNTS[GROUP_CASES] = {0, 1, 7, 8, 9, 15, 16, 17, 48, 55, 56};
+
+// Every pattern of kept and dropped candidates in each half of a step: the
+// first half of step s of mask m keeps candidate k where bit k of m is set,
+// and the second half where bit k of m + 37 s + 101 is, so each mask meets
+// many others in one step. Each pattern runs from every count in STARTS on
+// every count of groups in GROUP_COUNTS. Then random blocks of 56 groups,
+// as the row sampler hands over, from random counts.
+static void rejection_cases(void) {
+    static uint8_t buf[3 * 56];
+    for (unsigned mask = 0; mask < 256; mask++) {
+        for (size_t step = 0; step < 7; step++) {
+            unsigned first = mask;
+            unsigned second = (mask + 37 * (unsigned)step + 101) & 0xffU;
+            for (unsigned k = 0; k < 4; k++) {
+                put_group(buf, 8 * step + k, candidate((first >> (2 * k)) & 1),
+                          candidate((first >> (2 * k + 1)) & 1));
+                put_group(buf, 8 * step + 4 + k, candidate((second >> (2 * k)) & 1),
+                          candidate((second >> (2 * k + 1)) & 1));
+            }
+        }
+        for (size_t s = 0; s < START_CASES; s++) {
+            for (size_t g = 0; g < GROUP_CASES; g++) {
+                compare_rejection(buf, GROUP_COUNTS[g], STARTS[s]);
+            }
+        }
+    }
+    for (int c = 0; c < 4000; c++) {
+        uint8_t start;
+        rng_bytes(buf, sizeof buf);
+        rng_bytes(&start, 1);
+        compare_rejection(buf, 56, start);
+    }
+}
+
+// Each entry of mlkem_rejection_table.h against the rule its comment
+// states: the bytes 2k and 2k + 1 of each kept candidate k in turn, then
+// 0x80, and the count of set bits.
+static void table_cases(void) {
+    for (unsigned mask = 0; mask < 256; mask++) {
+        uint8_t order[16];
+        unsigned kept = 0;
+        memset(order, 0x80, sizeof order);
+        for (unsigned k = 0; k < 8; k++) {
+            if ((mask >> k) & 1U) {
+                order[2 * kept] = (uint8_t)(2 * k);
+                order[2 * kept + 1] = (uint8_t)(2 * k + 1);
+                kept++;
+            }
+        }
+        check(memcmp(order, MLK_REJECTION_ORDER[mask], sizeof order) == 0 &&
+                  kept == MLK_REJECTION_COUNT[mask],
+              "an entry of mlkem_rejection_table.h");
+    }
+}
+
 // The three calls a session makes, under a value with CH_CPU_AVX2 and one
 // without, against the calls they are named for.
 static void compare_session_calls(void) {
@@ -243,6 +350,8 @@ int main(void) {
         return 0;
     }
     stream_cases();
+    table_cases();
+    rejection_cases();
     for (int c = 0; c < KEM_CASES; c++) {
         compare_kem(WIDEMUL_CONSTANT_TIME);
         compare_kem(WIDEMUL_NOT_STATED);

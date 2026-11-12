@@ -178,6 +178,31 @@ static inline lanes lanes_alternate_signs(void) {
     return vld1q_s16(signs);
 }
 
+// mlk_sample_cbd's 32 coefficients of 16 bytes of its stream, written to
+// out. Byte k gives coefficient 2k from its low four bits and
+// coefficient 2k + 1 from its high four, as mlkem_poly.c's loop reads them.
+// d holds in each two-bit field the count of the set bits of the same field
+// of the byte, 0, 1 or 2. A coefficient is the first count of its four bits
+// minus the second, from -2 to 2 in one byte, and SXTL widens it to 16 bits
+// with its sign. Each operation works on every byte, and none reads a
+// count to choose a step.
+static inline void lanes_noise(int16_t out[32], const uint8_t in[16]) {
+    uint8x16_t bits = vld1q_u8(in);
+    uint8x16_t odd_bits = vdupq_n_u8(0x55);
+    uint8x16_t field = vdupq_n_u8(0x03);
+    uint8x16_t d = vaddq_u8(vandq_u8(bits, odd_bits), vandq_u8(vshrq_n_u8(bits, 1), odd_bits));
+    int8x16_t low = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(d, field)),
+                             vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(d, 2), field)));
+    int8x16_t high = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(d, 4), field)),
+                              vreinterpretq_s8_u8(vshrq_n_u8(d, 6)));
+    int8x16_t first = vzip1q_s8(low, high);
+    int8x16_t second = vzip2q_s8(low, high);
+    lanes_store(out, vmovl_s8(vget_low_s8(first)));
+    lanes_store(out + 8, vmovl_high_s8(first));
+    lanes_store(out + 16, vmovl_s8(vget_low_s8(second)));
+    lanes_store(out + 24, vmovl_high_s8(second));
+}
+
 #else
 
 // Eight 16-bit lanes in one SSE2 register.
@@ -318,6 +343,30 @@ static inline void lanes_join_even_odd(lanes even, lanes odd, lanes *a, lanes *b
 // (1, -1, 1, -1, 1, -1, 1, -1).
 static inline lanes lanes_alternate_signs(void) {
     return _mm_setr_epi16(1, -1, 1, -1, 1, -1, 1, -1);
+}
+
+// mlk_sample_cbd's 32 coefficients of 16 bytes of its stream, as the NEON
+// version above computes them. SSE2 shifts 16-bit lanes and no bytes, so a
+// shift moves the low bits of a lane's high byte into the high bits of its
+// low byte, and the masks drop them: the mask after a shift by 1 keeps bits
+// 0, 2, 4 and 6, and the one after a shift by 2, 4 or 6 keeps bits 0 and 1.
+// PUNPCKLBW of a byte with itself puts the byte in both halves of a 16-bit
+// lane, and PSRAW by 8 leaves the byte widened with its sign.
+static inline void lanes_noise(int16_t out[32], const uint8_t in[16]) {
+    __m128i bits = _mm_loadu_si128((const __m128i *)(const void *)in);
+    __m128i odd_bits = _mm_set1_epi8(0x55);
+    __m128i field = _mm_set1_epi8(0x03);
+    __m128i d = _mm_add_epi8(_mm_and_si128(bits, odd_bits),
+                             _mm_and_si128(_mm_srli_epi16(bits, 1), odd_bits));
+    __m128i low = _mm_sub_epi8(_mm_and_si128(d, field), _mm_and_si128(_mm_srli_epi16(d, 2), field));
+    __m128i high = _mm_sub_epi8(_mm_and_si128(_mm_srli_epi16(d, 4), field),
+                                _mm_and_si128(_mm_srli_epi16(d, 6), field));
+    __m128i first = _mm_unpacklo_epi8(low, high);
+    __m128i second = _mm_unpackhi_epi8(low, high);
+    lanes_store(out, _mm_srai_epi16(_mm_unpacklo_epi8(first, first), 8));
+    lanes_store(out + 8, _mm_srai_epi16(_mm_unpackhi_epi8(first, first), 8));
+    lanes_store(out + 16, _mm_srai_epi16(_mm_unpacklo_epi8(second, second), 8));
+    lanes_store(out + 24, _mm_srai_epi16(_mm_unpackhi_epi8(second, second), 8));
 }
 
 #endif

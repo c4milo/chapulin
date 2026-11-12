@@ -77,7 +77,7 @@ The other 46 sources are in no such harness:
 | `sha512_hw.c` | Its arm64 arm runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics. Its x86-64 arm is `sha512.c`'s first arm compiled once more over `sha512_avx2.c`. | `bin/sha2_equiv_test` holds each arm to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions), [SHA-512 on AVX2](#sha-512-on-avx2)). The `sha512_host` harness proves the text of the x86-64 arm under its own names, over `sha512_compress_blocks.c`. |
 | `sha512_avx2.c` | It runs SHA-512's compression function with its message schedule on AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/sha2_equiv_test` holds it, under `sha512_hw.c`'s five calls, to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, searches the stack each kind of call leaves and reads ymm0 to ymm15 back as zero after a call, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it. `make lint-schedule-order` reads the order of its instructions as each compiler wrote them ([SHA-512 on AVX2](#sha-512-on-avx2)). |
 | `sha3_hw.c` | Its arm64 arm runs Keccak-f[1600] on arm64's SHA-3 intrinsics, and has no body under a compiler other than clang, because gcc 13 keeps lanes of the state in stack slots it picks (decision 99). Its x86-64 arm is `sha3.c` compiled once more under `target("bmi,bmi2")`, whose round `sha3_round` proves as C (decision 217). | Where it has a body, `bin/sha3_hw_equiv_test` holds it to `sha3.c`'s proven code, compares it with FIPS 202 as `proof/sha3_reference.h` writes it, and searches the stack each kind of call leaves for any lane the call computed. |
-| `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, but for the host arms of `mlkem.c`'s three NTT wrappers, each one call into `mlkem_vector.c` ([The vector NTT](#the-vector-ntt)), and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
+| `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, but for the host arms of `mlkem.c`'s four NTT wrappers, each one call into `mlkem_vector.c`, and of its noise wrapper, which squeezes the PRF stream and calls `mlkem_vector.c` once ([The vector NTT](#the-vector-ntt)), and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decisions 93 and 128). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
 | `session_report.c` | Each call converts the caller's storage once and reads one field of it, with no branch and no index (decision 185). | The loop tests read the calls against the fields after each handshake, and `lib-check` requires each call in the object's export list. |
@@ -5762,7 +5762,12 @@ intrinsic, so no harness compiles the file, and these hold it (INV-46):
   value at each position against b at another, and 2,000 random pairs
   from all of int16 and 2,000 from an NTT's output range and a matrix
   entry's. Each lane formula is exact for every int16 input, so the test
-  requires the same coefficients, not coefficients equal modulo q.
+  requires the same coefficients, not coefficients equal modulo q. It
+  runs the noise step, `mlk_vector_noise`, against `mlk_sample_cbd` on
+  the PRF streams of 100 random seeds under each of the 256 nonces, and
+  requires that the streams held every byte value at every one of the
+  128 positions: a pair of coefficients comes from one byte
+  (decision 225).
 - `test/aes-runtime-qemu.sh mlkem-vector`, in CI's mips job on every
   push, builds the same binary for x86-64 and for arm64 and runs both
   under qemu, so the arm a machine's own compiler does not read runs
@@ -5772,12 +5777,13 @@ intrinsic, so no harness compiles the file, and these hold it (INV-46):
   Wycheproof's ML-KEM-768 suites on it. `bin/mlkem_test_1024_host` and
   the host ML-KEM-1024 Wycheproof test do the same at ML-KEM-1024.
 - `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
-  the pinned clang and holds its conditional branches at 7 on each:
+  the pinned clang and holds its conditional branches at 9 on each:
   every one closes a loop whose count is a constant.
 - `test/mlkem-builds.sh` compiles `mlkem.c` both ways. A host object's
   `mlkem.c`, and its copy over the SHA-3 instructions on arm64, must call
-  the three vector entries and none of the loops, and a device object's
-  must call the loops and no vector entry.
+  the five vector entries and none of the loops or `mlk_sample_cbd`, and
+  a device object's must call the loops and `mlk_sample_cbd` and no
+  vector entry.
 - `make lint-trust-separation` requires `mlkem_vector.c` in every host
   object that carries ML-KEM and bans it from every device object.
 
@@ -5853,9 +5859,11 @@ vector register there.
 ML-KEM's matrix on it for an x86-64 session whose `ch_cfg.cpu` holds
 `CH_CPU_AVX2` (decision 107). Its input is public: the matrix's seed and
 indices. CBMC cannot unwind an intrinsic, and both files have a body on
-x86-64 alone, so no harness compiles either. `mlk_sample_groups`, the
-rejection step the copy runs on each block, is the loop the `mlkem_poly`
-proof covers inside `mlk_sample_ntt`. These hold the rest (INV-48):
+x86-64 alone, so no harness compiles either. The copy runs
+`mlk_sample_groups_avx2` on each block: eight groups a step on AVX2, then
+`mlk_sample_groups`, the loop the `mlkem_poly` proof covers inside
+`mlk_sample_ntt`, on the groups the steps leave (decision 225). These
+hold the rest (INV-48):
 
 - `bin/mlkem_avx2_equiv_test`, in `make check` on an x86-64 host with
   AVX2 and in `make san-check`, compares ten blocks of each of the four
@@ -5866,8 +5874,15 @@ proof covers inside `mlk_sample_ntt`. These hold the rest (INV-48):
   ciphertext, the shared secret, the secret a decapsulation recovers and
   the one it writes for a changed ciphertext. It runs the three session
   calls with `CH_CPU_AVX2` and without. It counts the sampled entries
-  whose stream needs a fourth block, and fails if there are none. On an
-  arm64 host it has nothing to run and says so.
+  whose stream needs a fourth block, and fails if there are none. It
+  compares `mlk_sample_groups_avx2` with `mlk_sample_groups`, the count
+  and the coefficients below it, for each of the 256 patterns of kept and
+  dropped candidates in each half of a step, with candidates at 0, 1,
+  q - 2, q - 1, q, q + 1, 4094 and 4095, from 13 counts on both sides of
+  240, the last count at which a step runs, on 11 counts of groups, and
+  on 4,000 random blocks of 56 groups. It computes each entry of
+  `mlkem_rejection_table.h` by the rule the header states and compares.
+  On an arm64 host it has nothing to run and says so.
 - `test/aes-runtime-qemu.sh mlkem-avx2`, in CI's mips job on every push,
   builds the same binary for x86-64 and runs it under qemu with AVX2, so
   an arm64 machine runs it too. The lane's loops with one end stating
@@ -5877,18 +5892,22 @@ proof covers inside `mlk_sample_ntt`. These hold the rest (INV-48):
   `ch_cfg.cpu` values: a session call runs it exactly where the value
   holds `CH_CPU_AVX2`.
 - `test/mlkem-builds.sh` requires the copy's rows to call the four-way
-  Keccak and not `mlk_sample_ntt`, both files to hold nothing on arm64,
+  Keccak and `mlk_sample_groups_avx2` and not `mlk_sample_ntt`, both
+  files to hold nothing on arm64,
   and no other source in src/ to include `keccak_avx2.h` or call its
   entries.
 - `make lint-wide-multiply` holds `keccak_avx2.c` at 1 conditional
-  branch, the loop over its rounds, and `mlkem_avx2.c` at 28 on x86-64,
-  and `make
+  branch, the loop over its rounds, and `mlkem_avx2.c` at 29 on x86-64,
+  each on a count, a loop or a public candidate, and `make
   lint-trust-separation` holds both to the host object.
 
 What none of this shows: the copy at the cap, where an entry's stream
 gives `MLK_SAMPLE_GROUPS` groups without 256 coefficients. No seed reaches
 it in practice, so no test runs it, and the copy stops at the cap's group
-by the arithmetic its entry in `tools/proof-cover.py` reads.
+by the arithmetic its entry in `tools/proof-cover.py` reads. There a step
+of `mlk_sample_groups_avx2` leaves zeros from the count on, where
+`mlk_sample_groups` leaves what the entry held, and the copy's callers
+held no value there.
 
 ### The two-way Keccak
 
