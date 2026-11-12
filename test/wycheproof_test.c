@@ -171,6 +171,29 @@ static void run_aead(void) {
            COUNT(wp_aead), WP_AEAD_SKIPPED, WP_AEAD_OVERSIZE);
 }
 
+// ChaCha20 at block counters next to 2^32 - 1, the ChaCha20-IETF group of
+// chacha20_counter_test.json: each valid case is the keystream of the
+// last blocks a 32-bit counter names. test/gen_wycheproof.py says why the
+// cases that ask for a refusal are counted and not run.
+static void run_chacha20_counter(void) {
+    for (size_t i = 0; i < COUNT(wp_chacha20_counter); i++) {
+        const uint8_t *p = wp_chacha20_counter_data + wp_chacha20_counter[i].off;
+        const uint8_t *key = p;
+        const uint8_t *iv = p + 32;
+        const uint8_t *msg = p + 44;
+        size_t n = wp_chacha20_counter[i].msg_len;
+        const uint8_t *ct = msg + n;
+        uint8_t got[WP_CHACHA20_COUNTER_MSG_MAX];
+        TEST_CHACHA20_XOR(key, iv, wp_chacha20_counter[i].counter, msg, got, n);
+        if (memcmp(got, ct, n) != 0) {
+            fail("chacha20 counter", wp_chacha20_counter[i].tc, "the keystream differs");
+        }
+    }
+    printf("wycheproof chacha20 counter: %zu cases, %d skipped (a refusal before the counter "
+           "wraps, which chacha20_xor's callers make), %d skipped (XChaCha20)\n",
+           COUNT(wp_chacha20_counter), WP_CHACHA20_COUNTER_WRAP, WP_CHACHA20_COUNTER_OTHER);
+}
+
 #include "wycheproof_aes_gcm.h"
 
 static void run_hkdf(void) {
@@ -403,6 +426,7 @@ int main(int argc, char **argv) {
     run_x25519();
     run_ecdh_p256();
     run_aead();
+    run_chacha20_counter();
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     run_aes_gcm();
 #ifdef CH_AES_256

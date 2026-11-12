@@ -32,6 +32,8 @@ from pathlib import Path
 # The AEAD test drives fixed 1024-byte stack buffers; a longer message
 # is skipped, not overflowed. Kept in sync with wycheproof_test.c.
 WP_AEAD_MSG_MAX = 1024
+# The longest message of the ChaCha20 counter suite's cases, two blocks.
+WP_CHACHA20_COUNTER_MSG_MAX = 128
 
 
 def bytes_of(hexstr, expect_len=None, what=""):
@@ -134,6 +136,58 @@ def gen_aead(d, out):
     out.append("")
     out.append(f"#define WP_AEAD_SKIPPED {skipped} // key/nonce/tag sizes the fixed API cannot express")
     out.append(f"#define WP_AEAD_OVERSIZE {oversize} // messages larger than the test's 1 KB buffers")
+    out.append("")
+    return len(rows)
+
+
+# chacha20_counter_test.json: ChaCha20 at block counters next to the top of
+# the counter. The ChaCha20-IETF group is RFC 8439's cipher, a 96-bit nonce
+# and a 32-bit counter, which chacha20_xor runs. A valid case names the
+# keystream of the last blocks the counter can name. An invalid case asks
+# for a refusal of a message that would take the counter past 2^32 - 1.
+# chacha20_xor returns nothing and refuses nothing: its callers bound the
+# length, since a record or a packet is under 2^16 bytes and its counter
+# starts at 0 or 1. So those cases are counted and not run. The XChaCha20
+# group has a 192-bit nonce and a 64-bit counter, which nothing here runs.
+def gen_chacha20_counter(d, out):
+    blob = Blob()
+    rows = []
+    other = 0
+    wrap = 0
+    for g in d["testGroups"]:
+        if (g["algorithm"], g["keySize"], g["ivSize"], g["counterSize"]) != ("ChaCha20-IETF", 256,
+                                                                             96, 32):
+            other += len(g["tests"])
+            continue
+        for t in g["tests"]:
+            if t["result"] != "valid":
+                wrap += 1
+                continue
+            key = bytes_of(t["key"], 32, f"chacha20 counter tc{t['tcId']} key")
+            iv = bytes_of(t["iv"], 12, f"chacha20 counter tc{t['tcId']} iv")
+            counter = int.from_bytes(bytes_of(t["initialCounter"], 4,
+                                              f"chacha20 counter tc{t['tcId']} counter"), "little")
+            msg = bytes_of(t["msg"])
+            ct = bytes_of(t["ct"])
+            if len(ct) != len(msg):
+                raise SystemExit(f"chacha20 counter tc{t['tcId']}: ct/msg length mismatch")
+            if len(msg) > WP_CHACHA20_COUNTER_MSG_MAX:
+                raise SystemExit(f"chacha20 counter tc{t['tcId']}: a message over the test's room")
+            # The case stays inside the counter: its last block is 2^32 - 1 or below.
+            if counter + max(len(msg) - 1, 0) // 64 > 0xffffffff:
+                raise SystemExit(f"chacha20 counter tc{t['tcId']}: a valid case past the counter")
+            rows.append((uint_of(t["tcId"], 0xffffffff, "chacha20 counter tcId"),
+                         blob.add(key + iv + msg + ct), counter, len(msg)))
+    emit_blob(out, "wp_chacha20_counter_data", blob)
+    out.append("static const struct { uint32_t tc; uint32_t off; uint32_t counter;"
+               " uint16_t msg_len; } wp_chacha20_counter[] = {")
+    for tc, off, counter, mlen in rows:
+        out.append(f"    {{{tc}, {off}, 0x{counter:08x}u, {mlen}}},")
+    out.append("};")
+    out.append("")
+    out.append(f"#define WP_CHACHA20_COUNTER_MSG_MAX {WP_CHACHA20_COUNTER_MSG_MAX}")
+    out.append(f"#define WP_CHACHA20_COUNTER_WRAP {wrap} // a refusal before the counter wraps")
+    out.append(f"#define WP_CHACHA20_COUNTER_OTHER {other} // XChaCha20, which nothing here runs")
     out.append("")
     return len(rows)
 
@@ -808,6 +862,7 @@ def main():
     n_x = gen_x25519(json.load(open(v1 / "x25519_test.json")), out)
     n_d = gen_ecdh_p256(json.load(open(v1 / "ecdh_secp256r1_ecpoint_test.json")), out)
     n_a = gen_aead(json.load(open(v1 / "chacha20_poly1305_test.json")), out)
+    n_c = gen_chacha20_counter(json.load(open(v1 / "chacha20_counter_test.json")), out)
     n_h = gen_hkdf(json.load(open(v1 / "hkdf_sha256_test.json")), out)
     n_m = gen_hmac(json.load(open(v1 / "hmac_sha256_test.json")), out)
     n_h384 = gen_hkdf(json.load(open(v1 / "hkdf_sha384_test.json")), out, 48, "wp_hkdf384",
@@ -856,11 +911,12 @@ def main():
                                  v1 / "mldsa_87_sign_noseed_test.json"], out)
     # Every case above, summed: docs/verification.md states this total,
     # and tools/wycheproof-total.py holds the page to it.
-    total = (n_x + n_d + n_a + n_h + n_m + n_h384 + n_m384 + n_g + n_g256 + n_e + n_e384
+    total = (n_x + n_d + n_a + n_c + n_h + n_m + n_h384 + n_m384 + n_g + n_g256 + n_e + n_e384
              + n_e384_256 + n_e256_512 + n_r + n_rp + n_rs + n_kk + n_ke + n_kf + n_dv + n_ds)
     out.append(f"#define WP_CASES_TOTAL {total}")
     dst.write_text("\n".join(out) + "\n")
-    print(f"wycheproof vectors: x25519 {n_x}, ecdh-p256 {n_d}, aead {n_a}, hkdf {n_h}, hmac {n_m},"
+    print(f"wycheproof vectors: x25519 {n_x}, ecdh-p256 {n_d}, aead {n_a}, chacha20-counter {n_c},"
+          f" hkdf {n_h}, hmac {n_m},"
           f" hkdf-sha384 {n_h384}, hmac-sha384 {n_m384},"
           f" aes-128-gcm {n_g}, aes-256-gcm {n_g256},"
           f" ecdsa p256-sha256 {n_e} p384-sha384 {n_e384} p384-sha256 {n_e384_256}"

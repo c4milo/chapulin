@@ -8250,10 +8250,17 @@ Three more suites run on every push and add evidence rather than proof.
 ### Wycheproof
 
 [Wycheproof](https://github.com/C2SP/wycheproof)'s attack-derived cases
-(`make wycheproof`), 6,364 across:
+(`make wycheproof`), 6,375 across:
 
 - x25519 and ECDH over P-256;
 - ChaCha20-Poly1305, AES-128-GCM and AES-256-GCM;
+- ChaCha20 at block counters next to 2^32 - 1: the 11 valid cases of
+  `chacha20_counter_test.json`'s ChaCha20-IETF group, the keystream of
+  the last blocks a 32-bit counter names. Its 3 other cases ask for a
+  refusal before the counter wraps. `chacha20_xor` returns nothing: its
+  callers bound the length, since a record or a packet is under 2^16
+  bytes and its counter starts at 0 or 1. So those 3 do not run, and the
+  28 XChaCha20 cases have no cipher here;
 - HKDF-SHA256, HMAC-SHA256, HKDF-SHA384 and HMAC-SHA384;
 - ECDSA over P-256 and P-384, at every digest length a certificate
   signature can pair with either curve;
@@ -8270,7 +8277,7 @@ for each one the signer's public key and signature match Wycheproof's
 byte for byte, and `mldsa87_verify` accepts the signature. The mock
 servers of the `PROFILE=cnsa2` tests sign with that signer, so their
 CertificateVerify and their certificates carry FIPS 204's signatures
-(decision 157). No library source calls the signer, and the 6,364 do
+(decision 157). No library source calls the signer, and the 6,375 do
 not count its cases.
 
 `bin/wycheproof_mldsa_library_test` holds the library's ML-DSA-87
@@ -8285,24 +8292,29 @@ context of 256 bytes, a key of 4,895 or 4,897 bytes, and a key whose s1
 or s2 is out of range. The seeded suite's seeds of 0, 31 and 33 bytes go
 to `x509_pem_read_mldsa87_pkcs8` in a seed form of that length, which
 refuses each. The binary runs again over ct.h's 16x16 decomposition in
-`ct-widemul-check` (decision 159). These cases are not in the 6,364
+`ct-widemul-check` (decision 159). These cases are not in the 6,375
 either.
 
 `bin/wycheproof_ed25519_test` holds the DNSSEC Ed25519 check,
-algorithm 15, to every case of `ed25519_test.json`, 151 in all: 88 valid
-and 63 invalid. Each case runs through the public calls a validator
+algorithm 15, to every case of `ed25519_test.json`, 210 in all: 117
+valid, 64 invalid, and 29 that Wycheproof leaves to the implementation.
+Each case runs through the public calls a validator
 makes, `ch_dnssec_hash_init` with the key and the signature, an update
 with the message, `ch_dnssec_hash_final` and `ch_dnssec_verify`, in a
 host object with `CH_DNSSEC`. Every valid case verifies and no invalid
-one does (decision 169). These cases are not in the 6,364 either.
+one does (decision 169). The 29 are 8 signatures under a small-order key
+and 21 under a key outside the subgroup of prime order, and the check
+refuses each (decision 227). `test/gen_wycheproof_ed25519.py` stops on
+such a case with any other flag, so a new kind of case gets a rule before
+it gets a verdict. These cases are not in the 6,375 either.
 
 `bin/wycheproof_jws_test` holds `ch_jws_verify` to five suites, in a
-host object with `CH_JWS` (decision 221). They are 1,189 signature
+host object with `CH_JWS` (decision 221). They are 1,248 signature
 cases: `ecdsa_secp256r1_sha256_p1363_test.json` under ES256, 262 cases
 with the signature as R then S; the three
 `rsa_signature_*_sha256_test.json` suites under RS256, 776 cases; and
-`ed25519_test.json` under EdDSA, 151 cases. 285 are valid and 901
-invalid, and the call refuses the 3 that Wycheproof leaves to the
+`ed25519_test.json` under EdDSA, 210 cases. 314 are valid and 902
+invalid, and the call refuses the 32 that Wycheproof leaves to the
 implementation. And they are 359 whole tokens of
 `json_web_signature_test.json`, which the test checks as a caller does:
 `test/gen_wycheproof_jws.py` checks the JWK and the token's header, and
@@ -8314,7 +8326,7 @@ any C call: a key registered for encryption, a key registered for an
 algorithm with no call, or a header that names another algorithm. 24
 true signatures of PS256, PS384, PS512, RS384 or RS512 do not verify as
 RS256. 42 tokens under an HMAC secret or a P-521 key have no form the
-call takes, and do not run. None of these cases is in the 6,364.
+call takes, and do not run. None of these cases is in the 6,375.
 
 `bin/wycheproof_jws_sign_test` holds `ch_jws_sign` to the suites that
 carry private keys, in a host object with `CH_JWS` and a server role
@@ -8330,7 +8342,7 @@ JWK's public key. 37 valid tokens under any other JWK do not run. The
 test runs once under each `ch_cfg.cpu` value that picks another signer.
 `ed25519_test.json` holds public keys alone, so the EdDSA signer rests on
 RFC 8032's vectors in `bin/jws_sign_test`. None of these cases is in the
-6,364.
+6,375.
 
 `bin/wycheproof_scram_test` holds `ch_hmac_sha256` to every case of
 `hmac_sha256_test.json`, 174 in all, 66 valid and 108 invalid, with each
@@ -8338,13 +8350,13 @@ tag cut to its group's length. It holds `ch_pbkdf2_hmac_sha256` to the
 60 keys of `pbkdf2_hmacsha256_test.json`, of up to 80,000 iterations, in
 a host object with `CH_SCRAM` (decision 222). `ch_ct_compare` makes
 each compare. Wycheproof has no suite for SHA-256 alone, for base64 or
-for the tls-server-end-point value. None of these cases is in the 6,364.
+for the tls-server-end-point value. None of these cases is in the 6,375.
 
 ML-KEM-1024's three suites, 511 cases, run in a binary of their own,
 `bin/wycheproof_mlkem1024_test`, built under `-DCH_MLKEM_1024` with the
 same runners (decision 150), and once more on an object that runs both
 ranks, `bin/wycheproof_mlkem1024_two_ranks_test` (decision 177). The
-6,364 do not count them. They run in each lane that
+6,375 do not count them. They run in each lane that
 builds `test/wycheproof_test.c`: the device object, the host object under
 both values of the multiply bit, the decomposed multiply, the sanitizers
 on both objects, and the cross-compiled lane.
