@@ -337,8 +337,18 @@ jobs:
             echo "lists. Nothing is measured yet: the checks on this pull request are what"
             echo "the new versions cost."
             echo
+            # commitlint refuses a body line over 100 characters. Two SHA-256
+            # values or two commit ids on one line are longer, so each of
+            # those takes a line of its own.
             while IFS=$'\t' read -r name old new url; do
-              echo "- $name: $old -> $new"
+              line="- $name: $old -> $new"
+              if [ "${#line}" -le 100 ]; then
+                echo "$line"
+              else
+                echo "- $name:"
+                echo "  $old ->"
+                echo "  $new"
+              fi
             done < "$bumps"
           } > "$RUNNER_TEMP/commit-msg.txt"
 
