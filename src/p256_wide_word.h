@@ -61,6 +61,22 @@
 #error "P256_WIDE_CARRY names none of the three forms of the carry steps"
 #endif
 
+// P256_WIDE_HOLD(x) makes x the output of an empty statement that reads it in a register. The
+// statement emits no instruction. After it the compiler knows nothing of the value, so it
+// computes the value before the statement and cannot move that work to a later line.
+//
+// A carry chain needs it under the intrinsic form. gcc expands a value that one step of a chain
+// alone reads at that step, so a shift, an exclusive or or a mask that sets the flags lands
+// between two steps. gcc then saves the carry with SETC and puts it back with an ADD: two
+// instructions on the chain's path for each such value, 15 of them in a key exchange's doubling
+// under gcc 13.3 for x86-64 (docs/decisions.md 224). The other two forms read no flag across
+// steps, and the harnesses in proof/ name the sum form, so they compile no such statement.
+#if P256_WIDE_CARRY == P256_WIDE_CARRY_INTRINSIC
+#define P256_WIDE_HOLD(x) __asm__("" : "+r"(x))
+#else
+#define P256_WIDE_HOLD(x) ((void)0)
+#endif
+
 // All ones when bit is 1 and zero when it is 0. The bit moves to the top and an arithmetic
 // shift spreads it down, the form x25519.c's cswap takes: gcc rewrites `x & -bit` as a multiply
 // by the bit (https://github.com/c4milo/chapulin/issues/106).
@@ -113,6 +129,26 @@ static inline uint64_t p256_wide_sub_borrow(uint64_t *borrow, uint64_t a, uint64
     // if-conversion passes to remove (docs/decisions.md 94).
     ct_u128 difference = (((ct_u128)1 << 64) | a) - b - *borrow;
     *borrow = (uint64_t)(difference >> 64) ^ 1U;
+    return (uint64_t)difference;
+#endif
+}
+
+// a - b mod 2^64, for a caller that drops the borrow out on purpose. The builtins' form, which
+// the proofs compile, and the sum form state the wrap, so CBMC's check of unsigned wrap holds:
+// __builtin_sub_overflow defines it, and the sum form returns the low word of 2^64 + a - b,
+// which is never below zero. The intrinsics' form subtracts the words. On the 128 bits gcc 13.3
+// for x86-64 allocated the registers of the point formulas another way, and a key generation
+// on a Xeon 8573C took 1% longer (docs/decisions.md 224). gcc 13.3 and clang 18 at -O2 write
+// one subtraction for each form they compile.
+static inline uint64_t p256_wide_sub_wrap(uint64_t a, uint64_t b) {
+#if P256_WIDE_CARRY == P256_WIDE_CARRY_BUILTIN
+    uint64_t difference;
+    (void)__builtin_sub_overflow(a, b, &difference);
+    return difference;
+#elif P256_WIDE_CARRY == P256_WIDE_CARRY_INTRINSIC
+    return a - b;
+#else
+    ct_u128 difference = (((ct_u128)1 << 64) | a) - b;
     return (uint64_t)difference;
 #endif
 }

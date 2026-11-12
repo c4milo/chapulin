@@ -9,11 +9,11 @@ reason: multiple_select loads the one multiple of the peer's point its
   inv-16-p256-wide-no-subscript-by-digit refuses the subscript.
 
 --- old
-static void multiple_select(p256_wide_jacobian *o, const p256_wide_jacobian row[ENTRIES],
+static void multiple_select(p256_wide_affine *o, const p256_wide_affine row[ENTRIES],
                             uint64_t index) {
     word_pair x_low = {0, 0};
 --- new
-static void multiple_select(p256_wide_jacobian *o, const p256_wide_jacobian row[ENTRIES],
+static void multiple_select(p256_wide_affine *o, const p256_wide_affine row[ENTRIES],
                             uint64_t index) {
     *o = row[index];
     return;

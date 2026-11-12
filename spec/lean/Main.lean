@@ -739,6 +739,13 @@ def dispatch : List String → Option String
     let o := Spec.P256WidePoint.addJacobianIncomplete ⟨field[0]!, field[1]!, field[2]!⟩
       ⟨field[3]!, field[4]!, field[5]!⟩
     return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
+  | ["p256_add_jacobian_affine_incomplete", x, y, z, x2, y2] => do
+    -- p256_wide_point_add_jacobian_affine_incomplete's Jacobian X, Y and Z and affine x and y,
+    -- the same way.
+    let field ← p256Coordinates? [x, y, z, x2, y2]
+    let o := Spec.P256WidePoint.addJacobianAffineIncomplete ⟨field[0]!, field[1]!, field[2]!⟩
+      ⟨field[3]!, field[4]!⟩
+    return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
   | ["p256_add_affine_incomplete", x, y, z, x2, y2] => do
     -- p256_wide_point_add_affine_incomplete's projective X, Y and Z and affine x and y, each
     -- 32 big-endian bytes below p, out of the Montgomery domain on both sides

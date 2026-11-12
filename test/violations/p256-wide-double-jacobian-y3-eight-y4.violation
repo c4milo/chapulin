@@ -8,10 +8,10 @@ reason: the Jacobian doubling subtracts the database's 8 Y1^4 from Y3,
 
 --- old
     p256_wide_fe_sqr(&yyyy, &yy);
-    p256_wide_fe_sub(&y3, &y3, &yyyy);
+    // X3 = m^2 - 2 * s.
 --- new
     p256_wide_fe_sqr(&yyyy, &yy);
     p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
     p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
     p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
-    p256_wide_fe_sub(&y3, &y3, &yyyy);
+    // X3 = m^2 - 2 * s.

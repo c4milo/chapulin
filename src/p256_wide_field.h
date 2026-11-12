@@ -94,6 +94,9 @@ void p256_wide_fe_inv(p256_wide_fe *o, const p256_wide_fe *a);
 // o = (high : t3 : t2 : t1 : t0) - p when that 257-bit value is at or above p, o = t otherwise.
 // high is 0 or 1: a sum of two elements below p carries at most one bit past the four words,
 // and so does each round of p256_wide_field.c's reduce() (proof/p256_wide_field_harness.c).
+// The subtraction runs over the five words, so it borrows out of high exactly when the value is
+// below p, and that one borrow is the mask. Under gcc 13.3 for x86-64 the mask was six
+// instructions from two flags, and one subtraction with borrow from one (docs/decisions.md 224).
 static inline void p256_wide_fe_reduce_once(uint64_t o[P256_WIDE_FE_WORDS], uint64_t t0,
                                             uint64_t t1, uint64_t t2, uint64_t t3, uint64_t high) {
     uint64_t borrow = 0;
@@ -101,8 +104,8 @@ static inline void p256_wide_fe_reduce_once(uint64_t o[P256_WIDE_FE_WORDS], uint
     uint64_t r1 = p256_wide_sub_borrow(&borrow, t1, P256_WIDE_P1);
     uint64_t r2 = p256_wide_sub_borrow(&borrow, t2, P256_WIDE_P2);
     uint64_t r3 = p256_wide_sub_borrow(&borrow, t3, P256_WIDE_P3);
-    // high : t is below p exactly when high is 0 and the subtraction borrowed out.
-    uint64_t keep = p256_wide_mask(borrow & (high ^ 1U));
+    (void)p256_wide_sub_borrow(&borrow, high, 0);
+    uint64_t keep = p256_wide_mask(borrow);
     o[0] = (t0 & keep) | (r0 & ~keep);
     o[1] = (t1 & keep) | (r1 & ~keep);
     o[2] = (t2 & keep) | (r2 & ~keep);
@@ -120,40 +123,61 @@ static inline void p256_wide_fe_add(p256_wide_fe *o, const p256_wide_fe *a, cons
 }
 
 // o = a - b mod p.
+//
+// a < b wrapped the difference by 2^256, and adding p once brings it back into [0, p), because
+// both inputs are below p. Under the mask p's words are the mask itself, its low half, zero, and
+// P3 & wrapped, which is minus the low half mod 2^64. The carry out of the last word is the 2^256
+// that the wrap took, so the last word adds the carry and then subtracts the low half mod 2^64.
+// So no mask step sets the flags between two steps of the chain: under gcc 13.3 for x86-64 the
+// AND of P3 landed there and cost a save and a restore of the carry (docs/decisions.md 224).
 static inline void p256_wide_fe_sub(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b) {
     uint64_t borrow = 0;
     uint64_t d0 = p256_wide_sub_borrow(&borrow, a->word[0], b->word[0]);
     uint64_t d1 = p256_wide_sub_borrow(&borrow, a->word[1], b->word[1]);
     uint64_t d2 = p256_wide_sub_borrow(&borrow, a->word[2], b->word[2]);
     uint64_t d3 = p256_wide_sub_borrow(&borrow, a->word[3], b->word[3]);
-    // a < b wrapped the difference by 2^256, and adding p once brings it back into [0, p),
-    // because both inputs are below p. The carry out of that sum is the 2^256 the wrap took.
     uint64_t wrapped = p256_wide_mask(borrow);
+    uint64_t low_half = wrapped & P256_WIDE_P1;
     uint64_t carry = 0;
-    o->word[0] = p256_wide_add_carry(&carry, d0, P256_WIDE_P0 & wrapped);
-    o->word[1] = p256_wide_add_carry(&carry, d1, P256_WIDE_P1 & wrapped);
-    o->word[2] = p256_wide_add_carry(&carry, d2, P256_WIDE_P2 & wrapped);
-    o->word[3] = p256_wide_add_carry(&carry, d3, P256_WIDE_P3 & wrapped);
+    o->word[0] = p256_wide_add_carry(&carry, d0, wrapped);
+    o->word[1] = p256_wide_add_carry(&carry, d1, low_half);
+    o->word[2] = p256_wide_add_carry(&carry, d2, 0);
+    uint64_t top = p256_wide_add_carry(&carry, d3, 0);
+    o->word[3] = p256_wide_sub_wrap(top, low_half);
 }
 
+// (p + 1) / 2 = 2^255 - 2^223 + 2^191 + 2^95, the half of p256_wide_fe_half's odd case. Its
+// words, least significant first, are 0, 2^31, 2^63 and 2^63 - 2^31, which is HALF_P2 less
+// HALF_P1. tools/p256_wide.py recomputes them and stops if a word differs.
+#define P256_WIDE_HALF_P1 UINT64_C(0x0000000080000000)
+#define P256_WIDE_HALF_P2 UINT64_C(0x8000000000000000)
+
 // o = a / 2 mod p, the element whose double is a. p is odd, so a + p is even when a is odd:
-// o = (a + p) / 2 for an odd a and a / 2 for an even a, and both are below p. The sum of a and
-// p is below 2^257, and the carry out of the four words is its bit 256. A shift of the five
-// words by one bit divides by 2. The low bit of a is a secret's, so it is read back from a
-// volatile object before the mask is built: a compiler that knows a mask is all ones or zero
-// may write the choice as a jump (docs/decisions.md 125 and 196).
+// o = (a + p) / 2 = (a - 1) / 2 + (p + 1) / 2 for an odd a and a / 2 for an even a, and both
+// are below p. (a - 1) / 2 and a / 2 are both a shifted right by one bit, so o is that shift
+// plus (p + 1) / 2 under a mask. Neither term reaches 2^255, so the sum carries nothing out of
+// the four words. The low bit of a is a secret's, so it is read back from a volatile object
+// before the mask is built: a compiler that knows a mask is all ones or zero may write the
+// choice as a jump (docs/decisions.md 125 and 196). The shifts and the masks set the flags, so
+// they come before the chain's empty statements (p256_wide_word.h).
 static inline void p256_wide_fe_half(p256_wide_fe *o, const p256_wide_fe *a) {
     volatile uint64_t low_bit = a->word[0] & 1U;
     uint64_t odd = p256_wide_mask(low_bit);
+    uint64_t s0 = (a->word[0] >> 1) | (a->word[1] << 63);
+    uint64_t s1 = (a->word[1] >> 1) | (a->word[2] << 63);
+    uint64_t s2 = (a->word[2] >> 1) | (a->word[3] << 63);
+    uint64_t s3 = a->word[3] >> 1;
+    uint64_t half1 = P256_WIDE_HALF_P1 & odd;
+    uint64_t half2 = P256_WIDE_HALF_P2 & odd;
+    P256_WIDE_HOLD(s2);
+    P256_WIDE_HOLD(s3);
+    P256_WIDE_HOLD(half1);
+    P256_WIDE_HOLD(half2);
     uint64_t carry = 0;
-    uint64_t s0 = p256_wide_add_carry(&carry, a->word[0], P256_WIDE_P0 & odd);
-    uint64_t s1 = p256_wide_add_carry(&carry, a->word[1], P256_WIDE_P1 & odd);
-    uint64_t s2 = p256_wide_add_carry(&carry, a->word[2], P256_WIDE_P2 & odd);
-    uint64_t s3 = p256_wide_add_carry(&carry, a->word[3], P256_WIDE_P3 & odd);
-    o->word[0] = (s0 >> 1) | (s1 << 63);
-    o->word[1] = (s1 >> 1) | (s2 << 63);
-    o->word[2] = (s2 >> 1) | (s3 << 63);
-    o->word[3] = (s3 >> 1) | (carry << 63);
+    o->word[0] = s0;
+    o->word[1] = p256_wide_add_carry(&carry, s1, half1);
+    o->word[2] = p256_wide_add_carry(&carry, s2, half2);
+    o->word[3] = p256_wide_add_carry(&carry, s3, 0) + (half2 - half1);
 }
 
 #endif // CH_CPU_RUNTIME

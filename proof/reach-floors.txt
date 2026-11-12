@@ -207,7 +207,13 @@ p256_point 174
 p256_point_ladder 99
 p256_scalar 252
 p256_sign 399
-p256_wide_digit 147
+# Decision 224 scans the eight multiples in affine coordinates, with four
+# sums where there were six, and makes each scan's mask by one vector
+# comparison. The functions the harness runs lost 9 locations, and it
+# reaches every location in them that is left: 145 of 283 under the amd64
+# cbmc of the pinned proof image and on arm64 macOS. The tree before the
+# change read 154 of 231 under both.
+p256_wide_digit 145
 p256_wide_field 303
 p256_wide_field_mul 134
 p256_wide_inverse 119

@@ -8,8 +8,8 @@ reason: the incomplete addition adds vvv * Y1 to Y3 where the formula
   Lean proof that the steps add two points a proof about this file.
 
 --- old
-    p256_wide_fe_mul(&t, &vvv, &a->y);
-    p256_wide_fe_sub(&y3, &y3, &t);
+    p256_wide_fe_mul(&t, &u, &t);
+    p256_wide_fe_sub(&y3, &t, &y3);
 --- new
-    p256_wide_fe_mul(&t, &vvv, &a->y);
-    p256_wide_fe_add(&y3, &y3, &t);
+    p256_wide_fe_mul(&t, &u, &t);
+    p256_wide_fe_add(&y3, &t, &y3);

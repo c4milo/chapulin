@@ -1,12 +1,12 @@
 invariant: INV-16
 file: src/p256_wide_mul.c
 catches: p256_equiv_test
-reason: multiple_select never adds the high half of a multiple's Z into its
-  sum, so every point it returns has Z's two high words zero and the
+reason: multiple_select never adds the high half of a multiple's y into its
+  sum, so every point it returns has y's two high words zero and the
   multiplication adds a point that is not the multiple in every window.
   bin/p256_equiv_test holds the multiplication to p256_point_mul.
 
 --- old
-        z_high |= multiple_z_high & keep;
+        y_high |= multiple_y_high & keep;
 --- new
-        (void)multiple_z_high;
+        (void)multiple_y_high;

@@ -30,6 +30,8 @@
 #define p256_wide_point_from_jacobian p256_arm64_point_from_jacobian
 #define p256_wide_point_double_jacobian p256_arm64_point_double_jacobian
 #define p256_wide_point_add_jacobian_incomplete p256_arm64_point_add_jacobian_incomplete
+#define p256_wide_point_add_jacobian_affine_incomplete                                             \
+    p256_arm64_point_add_jacobian_affine_incomplete
 #define p256_wide_point_from_bytes p256_arm64_point_from_bytes
 #define p256_wide_point_on_curve p256_arm64_point_on_curve
 #define p256_wide_point_affine p256_arm64_point_affine

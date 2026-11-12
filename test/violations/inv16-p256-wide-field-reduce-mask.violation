@@ -9,6 +9,6 @@ reason: inverting the mask inverts the conditional subtraction of the
   proof/p256_wide_field_harness.c fails on it for any words at all.
 
 --- old
-    uint64_t keep = p256_wide_mask(borrow & (high ^ 1U));
+    uint64_t keep = p256_wide_mask(borrow);
 --- new
-    uint64_t keep = p256_wide_mask((borrow & (high ^ 1U)) ^ 1U);
+    uint64_t keep = p256_wide_mask(borrow ^ 1U);

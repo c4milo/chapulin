@@ -95,6 +95,14 @@ void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jaco
 void p256_wide_point_add_jacobian_incomplete(p256_wide_jacobian *o, const p256_wide_jacobian *a,
                                              const p256_wide_jacobian *b);
 
+// o = a + b for an affine b, under the same condition: add-1998-cmo-2 with Z2 = 1, 8 products and
+// 3 squares. The steps are p256_wide_point_add_jacobian_incomplete's less its products by Z2 and
+// Z2^2, and spec/lean/Spec/P256WidePoint.lean proves that they compute what it computes for
+// (x, y, 1). o may alias a.
+void p256_wide_point_add_jacobian_affine_incomplete(p256_wide_jacobian *o,
+                                                    const p256_wide_jacobian *a,
+                                                    const p256_wide_affine *b);
+
 // p256_point_from_bytes on the wide field: reads an uncompressed point and returns all ones
 // when the leading byte is 0x04, X and Y are both below p, and the pair satisfies
 // y^2 = x^3 - 3x + b. o holds the point on all ones and nothing a caller may use on zero. The

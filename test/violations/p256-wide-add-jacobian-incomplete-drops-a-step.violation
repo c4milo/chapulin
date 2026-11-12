@@ -8,7 +8,7 @@ reason: the incomplete Jacobian addition leaves out the step that
   one on multiples of G with the Z the additions before left.
 
 --- old
-    p256_wide_fe_mul(&s1, &a->y, &b->z);
+    p256_wide_fe_mul(&z3, &a->z, &b->z);
     p256_wide_fe_mul(&s1, &s1, &z2z2);
 --- new
-    p256_wide_fe_mul(&s1, &a->y, &b->z);
+    p256_wide_fe_mul(&z3, &a->z, &b->z);

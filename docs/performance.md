@@ -499,10 +499,10 @@ Zig 0.16's clang 21, which `build.zig` compiles the object with for a Zig projec
 | SHA3-256, 64 bytes | 166 ns | 340 ns | 0.49 | 361 ns | 489 ns | 0.74 | 359 ns | 490 ns | 0.73 | 300 ns | 471 ns | 0.64 | 305 ns | 466 ns | 0.65 |
 | X25519 key generation | 9.94 µs | 27.1 µs | 0.37 | 14.8 µs | 33.9 µs | 0.44 | 14.1 µs | 33.9 µs | 0.42 | 13.8 µs | 32.5 µs | 0.42 | 12.7 µs | 32.1 µs | 0.40 |
 | X25519 shared secret | 27.7 µs | 28.1 µs | 0.98 | 34.5 µs | 37.1 µs | 0.93 | 33.6 µs | 37.1 µs | 0.91 | 34.6 µs | 35.9 µs | 0.96 | 32.5 µs | 35.6 µs | 0.91 |
-| P-256 key generation | 8.45 µs | 9.42 µs | 0.90 | 13.3 µs | 12.3 µs | **1.09** | 11.9 µs | 12.2 µs | 0.97 | 13.4 µs | 12.7 µs | **1.06** | 12.2 µs | 12.6 µs | 0.97 |
-| P-256 shared secret | 35.7 µs | 40.8 µs | 0.87 | 57.1 µs | 51.7 µs | **1.10** | 54.1 µs | 51.6 µs | **1.05** | 56.2 µs | 59.0 µs | 0.95 | 53.3 µs | 58.9 µs | 0.90 |
-| ECDSA P-256 sign | 13.3 µs | 17.7 µs | 0.75 | 21.0 µs | 22.1 µs | 0.95 | 19.1 µs | 22.1 µs | 0.86 | 21.5 µs | 23.8 µs | 0.90 | 19.5 µs | 23.7 µs | 0.82 |
-| ECDSA P-256 verify | 38.0 µs | 54.1 µs | 0.70 | 58.4 µs | 67.7 µs | 0.86 | 54.7 µs | 67.8 µs | 0.81 | 57.9 µs | 76.4 µs | 0.76 | 55.1 µs | 76.0 µs | 0.73 |
+| P-256 key generation | 8.45 µs | 9.42 µs | 0.90 | 12.3 µs | 12.4 µs | 0.99 | 11.4 µs | 12.3 µs | 0.93 | 12.5 µs | 12.5 µs | 1.00 | 11.8 µs | 12.4 µs | 0.96 |
+| P-256 shared secret | 35.7 µs | 40.8 µs | 0.87 | 51.4 µs | 51.7 µs | 0.99 | 47.5 µs | 51.8 µs | 0.92 | 48.7 µs | 57.7 µs | 0.84 | 46.0 µs | 57.7 µs | 0.80 |
+| ECDSA P-256 sign | 13.3 µs | 17.7 µs | 0.75 | 19.9 µs | 22.1 µs | 0.90 | 18.6 µs | 22.2 µs | 0.84 | 20.2 µs | 23.1 µs | 0.87 | 19.0 µs | 23.1 µs | 0.82 |
+| ECDSA P-256 verify | 38.0 µs | 54.1 µs | 0.70 | 55.1 µs | 67.8 µs | 0.81 | 52.0 µs | 67.8 µs | 0.77 | 52.6 µs | 74.7 µs | 0.70 | 50.7 µs | 74.7 µs | 0.68 |
 | ECDSA P-384 verify | 267 µs | 477 µs | 0.56 | 463 µs | 734 µs | 0.63 | 365 µs | 729 µs | 0.50 | 468 µs | 618 µs | 0.76 | 320 µs | 617 µs | 0.52 |
 | RSA-2048 PSS sign | 652 µs | 544 µs, PKCS#1 v1.5 sign | — | 1.02 ms | 661 µs, PKCS#1 v1.5 sign | — | 951 µs | 661 µs, PKCS#1 v1.5 sign | — | 342 µs | 344 µs, PKCS#1 v1.5 sign | — | 320 µs | 337 µs, PKCS#1 v1.5 sign | — |
 | RSA-2048 PSS verify | 17.1 µs | 14.2 µs, PKCS#1 v1.5 verify | — | 22.8 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 21.5 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 12.4 µs | 19.2 µs, PKCS#1 v1.5 verify | — | 12.0 µs | 19.0 µs, PKCS#1 v1.5 verify | — |
@@ -787,10 +787,14 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   0.87 of it under gcc, and 1.12 times and 0.76 of it under clang, with six lanes kept inverted
   between rounds (decision 195). The plain round took 1.33 and 0.93 times under gcc and 1.23 and
   0.87 times under clang, and `sha3.c`'s loops 7.68 and 5.02 times under gcc (decision 98).
-- P-256's key generation and shared secret take 1.24 and 1.25 times OpenSSL's time under gcc, and
-  its signature 1.08 times, on the wide files with the table of decision 109, the additions of
-  decision 111, the Jacobian key exchange of decision 112, the inline additions of decision 114 and
-  the binary GCD of decision 115, where the native copies of the 32-bit files took 21 to 90 times.
+- P-256's key generation and shared secret take 0.99 of OpenSSL's time under gcc and 0.93 and 0.92
+  under clang, and its signature 0.90 and 0.84 of it, in bench run 43168650929, which the four
+  P-256 rows of the two CSVs hold (decision 224). Before decision 224 they took 1.09, 1.10 and 0.95
+  times under gcc. They run on the wide files with the table of decision 109, the additions of
+  decision 111, the Jacobian key exchange of decision 112, the inline additions of decision 114,
+  the binary GCD of decision 115, and since decision 224 the affine multiples and the step orders
+  that let a core run two products at once. The native copies of the 32-bit files took 21 to 90
+  times.
   Under `CH_CPU_BMI2_ADX` beside the multiply bit the points run on `p256_adx.h`'s copy of those
   files, whose product and square are MULX, ADCX and ADOX in inline assembly that reduces in the
   same statement (decision 171), inline in each point formula (decision 175). In the run of
@@ -837,9 +841,11 @@ What the AVX-512 machine's columns show:
   both CPUs and both compilers, are bench run 43167193452 on the tree of d96ff6e2, where the noise
   runs on lanes and the matrix's candidates on AVX2 (decision 225); the run of ddff5bce read 1.10
   and 0.93 for the encapsulation.
-- P-256's shared secret takes 0.95 of OpenSSL's time under gcc and 0.90 under clang, its key
-  generation 1.06 times and 0.97 of it, its signature 0.90 and 0.82 of it, and its verification
-  0.76 and 0.73 of it (decisions 196, 204, 205 and 212). P-384 verifies in 0.76 and 0.52 of it.
+- P-256's shared secret takes 0.84 of OpenSSL's time under gcc and 0.80 under clang, its key
+  generation 1.00 and 0.96 of it, its signature 0.87 and 0.82 of it, and its verification 0.70
+  and 0.68 of it, in bench run 43168650929, which the four P-256 rows of the two CSVs hold
+  (decisions 196, 204, 205, 212 and 224). Before decision 224 its key generation took 1.06 times
+  under gcc. P-384 verifies in 0.76 and 0.52 of it.
   Under `CH_CPU_BMI2_ADX` P-256's product and square run on MULX, ADCX and ADOX (decision 171).
 - X25519 takes 0.42 of OpenSSL's time for key generation and 0.96 of it for a shared secret under
   gcc, and 0.40 and 0.91 under clang. Under `CH_CPU_BMI2_ADX` a shared secret runs on
@@ -1770,7 +1776,7 @@ property, never a cost to trade (`ct.[ch]`).
 ### Patterns of a fast primitive
 
 pepegrillo's [performance_hardware.md](https://github.com/c4milo/pepegrillo/blob/main/docs/performance/performance_hardware.md)
-gives the patterns of any fast loop. A new primitive or kernel here follows them, and the three
+gives the patterns of any fast loop. A new primitive or kernel here follows them, and the four
 patterns of multi-word arithmetic below, before its first measurement.
 
 1. Count every operation of a formula: its additions, subtractions and halvings as well as its
@@ -1787,6 +1793,13 @@ patterns of multi-word arithmetic below, before its first measurement.
    output for a call to it. `x25519_adx.c` reads the ladder bit from a volatile object in each of
    its two swaps of a step. Both were measured and did not win on the EPYC 7763: gcc's calls run
    beside the products (decision 197).
+
+4. Order a formula's products in pairs that read nothing of each other, and put the products of
+   the value the formula before wrote last after the products of older values. A product reads
+   its operands from memory and writes its result there, and on an EPYC 7763 about two products
+   fit in the core's window. A form of `p256_wide_fe_reduce_once` with 21% fewer instructions in
+   gcc's doubling made the doubling slower, 334 cycles where it took 330, and the order of its
+   products took it to 314 (decision 224).
 
 This tree refuses these patterns, whatever they save:
 

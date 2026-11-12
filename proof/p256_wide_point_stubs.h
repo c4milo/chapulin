@@ -97,4 +97,14 @@ void p256_wide_point_add_jacobian_incomplete(p256_wide_jacobian *o, const p256_w
     havoc_wide_jacobian(o);
 }
 
+void p256_wide_point_add_jacobian_affine_incomplete(p256_wide_jacobian *o,
+                                                    const p256_wide_jacobian *a,
+                                                    const p256_wide_affine *b) {
+    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a),
+                     "add_jacobian_affine_incomplete: Jacobian point readable");
+    __CPROVER_assert(__CPROVER_r_ok(b, sizeof *b),
+                     "add_jacobian_affine_incomplete: affine point readable");
+    havoc_wide_jacobian(o);
+}
+
 #endif

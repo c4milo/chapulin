@@ -1,13 +1,14 @@
 invariant: INV-16
 file: src/p256_wide_field.h
 catches: diff_p256_wide
-reason: p256_wide_fe_half shifts the four words of a + p and drops the
-  carry out of them, bit 256 of the sum. An odd element whose sum with p
-  passes 2^256 then halves to a value 2^255 too small. The differential
-  halves p - 2, whose sum with p carries, against the Lean product of it
-  and the inverse of 2.
+reason: p256_wide_fe_half adds (p + 1) / 2 to the shifted words and drops
+  the carry out of the third word. An odd element whose third shifted word
+  has its top bit set, which is bit 0 of its fourth word, then halves to a
+  value 2^192 too small. The differential halves p - 2, an odd element
+  whose fourth word is odd, against the Lean product of it and the inverse
+  of 2.
 
 --- old
-    o->word[3] = (s3 >> 1) | (carry << 63);
+    o->word[3] = p256_wide_add_carry(&carry, s3, 0) + (half2 - half1);
 --- new
-    o->word[3] = s3 >> 1;
+    o->word[3] = s3 + (half2 - half1);

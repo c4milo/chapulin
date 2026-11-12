@@ -13,11 +13,11 @@ reason: table_select tests the mask and moves on when the entry is not
   is the one that objects.
 
 --- old
-        uint64_t mask = equal_mask(j, index);
-        word_pair masks = {mask, mask};
+        word_pair masks = equal_mask_pair(position, wanted);
+        position += one;
 --- new
-        uint64_t mask = equal_mask(j, index);
-        if (mask == 0) {
+        word_pair masks = equal_mask_pair(position, wanted);
+        position += one;
+        if (masks[0] == 0) {
             continue;
         }
-        word_pair masks = {mask, mask};

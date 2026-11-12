@@ -1,0 +1,16 @@
+invariant: INV-16
+file: src/p256_wide_field.h
+catches: p256_equiv_test
+reason: p256_wide_fe_reduce_once subtracts p from the four low words alone
+  and takes its mask from their borrow, so a sum that carried past 2^256
+  keeps its four low words where it needs p taken off. Such a sum then
+  leaves the field 2^256 - p too small. bin/p256_equiv_test compares every
+  wide field routine with p256_field.c's on the same words, edge values
+  that carry among them.
+
+--- old
+    (void)p256_wide_sub_borrow(&borrow, high, 0);
+    uint64_t keep = p256_wide_mask(borrow);
+--- new
+    (void)high;
+    uint64_t keep = p256_wide_mask(borrow);

@@ -10,15 +10,18 @@
 //   scan, and the eight multiples of the point;
 //
 //   that every mask handed to p256_wide_fe_cmov is 0 or all ones, which
-//   proof/p256_wide_field_stubs.h asserts: the sign of each digit, and the
-//   mask of the correction for an even scalar;
+//   proof/p256_wide_field_stubs.h asserts: the mask of the correction for an
+//   even scalar, and the mask of a point at infinity;
 //
 //   that the wipes at the end of each multiplication stay inside the objects
 //   they name, the eight multiples among them (ct_wipe's stub).
 //
-// The point formulas are the stubs in proof/p256_wide_point_stubs.h and the
-// field's negation and conditional move the stubs in
-// proof/p256_wide_field_stubs.h, so nothing here depends on a coordinate.
+// The point formulas are the stubs in proof/p256_wide_point_stubs.h, and the
+// field's arithmetic, the batch inverse's products and inverse among it, the
+// stubs in proof/p256_wide_field_stubs.h, so nothing here depends on a
+// coordinate. Both multiplications negate a digit's y inline, by a
+// subtraction from zero and a select on the digit's sign, which
+// p256_wide_mask makes.
 // The digits, the scans and p256_wide_mask run on their real bodies, and
 // the table is the shipped p256_wide_table.c, which the launch line links.
 // proof/p256_wide_digit_harness.c proves what the digits and the scans

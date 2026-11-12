@@ -5,5 +5,7 @@
 #if defined(CH_CPU_RUNTIME) && (defined(__aarch64__) || defined(CH_P256_ARM64_MODEL))
 // After the renames, so they apply to every declaration the source includes.
 #include "p256_arm64_names.h"
+// The products and squares the renames name: the multiples move to affine coordinates.
+#include "p256_arm64_field_inline.h"
 #include "p256_wide_mul.c"
 #endif

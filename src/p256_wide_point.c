@@ -176,28 +176,28 @@ void p256_wide_point_add_affine_incomplete(p256_wide_point *o, const p256_wide_p
     p256_wide_fe z3;
 
     // u = Y2 * Z1 - Y1 and v = X2 * Z1 - X1: the slope is u / v.
-    p256_wide_fe_mul(&u, &b->y, &a->z);
-    p256_wide_fe_sub(&u, &u, &a->y);
+    // v = X2 * Z1 - X1 and u = Y2 * Z1 - Y1: the slope is u / v.
     p256_wide_fe_mul(&v, &b->x, &a->z);
+    p256_wide_fe_mul(&u, &b->y, &a->z);
     p256_wide_fe_sub(&v, &v, &a->x);
-    // uu = u^2, vv = v^2, vvv = v * vv, r = vv * X1.
-    p256_wide_fe_sqr(&uu, &u);
+    p256_wide_fe_sub(&u, &u, &a->y);
+    // vv = v^2, uu = u^2, vvv = v * vv, r = vv * X1, and Z3 = vvv * Z1.
     p256_wide_fe_sqr(&vv, &v);
+    p256_wide_fe_sqr(&uu, &u);
     p256_wide_fe_mul(&vvv, &v, &vv);
-    p256_wide_fe_mul(&r, &vv, &a->x);
-    // A = uu * Z1 - vvv - 2 * r, X3 = v * A.
     p256_wide_fe_mul(&x3_numerator, &uu, &a->z);
+    p256_wide_fe_mul(&r, &vv, &a->x);
+    p256_wide_fe_mul(&z3, &vvv, &a->z);
+    // A = uu * Z1 - vvv - 2 * r, X3 = v * A.
     p256_wide_fe_sub(&x3_numerator, &x3_numerator, &vvv);
     p256_wide_fe_add(&t, &r, &r);
     p256_wide_fe_sub(&x3_numerator, &x3_numerator, &t);
+    p256_wide_fe_mul(&y3, &vvv, &a->y);
     p256_wide_fe_mul(&x3, &v, &x3_numerator);
-    // Y3 = u * (r - A) - vvv * Y1.
+    // Y3 = u * (r - A) - vvv * Y1, with vvv * Y1 in y3.
     p256_wide_fe_sub(&t, &r, &x3_numerator);
-    p256_wide_fe_mul(&y3, &u, &t);
-    p256_wide_fe_mul(&t, &vvv, &a->y);
-    p256_wide_fe_sub(&y3, &y3, &t);
-    // Z3 = vvv * Z1.
-    p256_wide_fe_mul(&z3, &vvv, &a->z);
+    p256_wide_fe_mul(&t, &u, &t);
+    p256_wide_fe_sub(&y3, &t, &y3);
 
     // o may alias a, so the three coordinates move only now.
     o->x = x3;
@@ -235,10 +235,17 @@ void p256_wide_point_from_jacobian(p256_wide_point *o, const p256_wide_jacobian 
 // the database's X3 / 4, and Y3 = m (s - X3) - Y1^4 is its Y3 / 8. The database's form takes 14
 // additions and subtractions: three for 8 Y1^4, two for S and one for Z3. This form takes 4
 // products, 4 squares, 3 additions, 4 subtractions and 1 halving (docs/decisions.md 196). zz,
-// yy and yyyy hold Z1^2, Y1^2 and Y1^4. Z3 comes first: the next doubling squares it first,
-// and with Z3 last each of a key exchange's 253 doublings waited for it (docs/decisions.md
-// 112). spec/lean/Spec/P256WidePoint.lean holds the same steps, one definition per local, and
-// proves what they compute.
+// yy and yyyy hold Z1^2, Y1^2 and Y1^4. spec/lean/Spec/P256WidePoint.lean holds the same steps,
+// one definition per local, and proves what they compute.
+//
+// The order of the steps. Each product reads its operands from memory and writes its result
+// there, so a product that reads the one before it waits for it. A core runs two products at
+// once only when neither reads the other and the two are near in the text: on an EPYC 7763
+// about two products fit in its window. So the steps come in pairs that read nothing of each
+// other: zz and yy first, which read Z1 and Y1 alone, then the product of m beside s, Z3 beside
+// m^2, and yy^2 before the steps that end X3 and Y3. With Z3 first (docs/decisions.md 112), a
+// doubling took 330 cycles under gcc 13.3 and 317.5 under clang 23. In this order, with the
+// field's forms of the same decision, it takes 314 and 296 (docs/decisions.md 224).
 void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jacobian *a) {
     p256_wide_fe zz;
     p256_wide_fe yy;
@@ -251,30 +258,30 @@ void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jaco
     p256_wide_fe y3;
     p256_wide_fe z3;
 
-    // Z3 = Y1 * Z1.
-    p256_wide_fe_mul(&z3, &a->y, &a->z);
-    // zz = Z1^2, and m = 3/2 * (X1 - zz) * (X1 + zz), the tangent's slope times Z3: the
-    // product plus half the product. The half has a local of its own, which no product reads,
-    // so a compiler keeps its four words in registers. In t, which the products read from
-    // memory, gcc 13 built the half in two vector registers and stored 16 bytes at a time, and
-    // the sum then read them back 8 bytes at a time (docs/decisions.md 212).
+    // zz = Z1^2 and yy = Y1^2.
     p256_wide_fe_sqr(&zz, &a->z);
+    p256_wide_fe_sqr(&yy, &a->y);
+    // m = 3/2 * (X1 - zz) * (X1 + zz), the tangent's slope times Z3: the product plus half the
+    // product. The half has a local of its own, which no product reads, so a compiler keeps its
+    // four words in registers. In t, which the products read from memory, gcc 13 built the half
+    // in two vector registers and stored 16 bytes at a time, and the sum then read them back 8
+    // bytes at a time (docs/decisions.md 212). s = X1 * yy comes beside the product.
     p256_wide_fe_sub(&t, &a->x, &zz);
     p256_wide_fe_add(&m, &a->x, &zz);
     p256_wide_fe_mul(&m, &t, &m);
+    p256_wide_fe_mul(&s, &a->x, &yy);
     p256_wide_fe_half(&half, &m);
     p256_wide_fe_add(&m, &m, &half);
-    // yy = Y1^2, and s = X1 * yy.
-    p256_wide_fe_sqr(&yy, &a->y);
-    p256_wide_fe_mul(&s, &a->x, &yy);
-    // X3 = m^2 - 2 * s.
+    // Z3 = Y1 * Z1, beside m^2, and yy^2.
+    p256_wide_fe_mul(&z3, &a->y, &a->z);
     p256_wide_fe_sqr(&x3, &m);
+    p256_wide_fe_sqr(&yyyy, &yy);
+    // X3 = m^2 - 2 * s.
     p256_wide_fe_add(&t, &s, &s);
     p256_wide_fe_sub(&x3, &x3, &t);
     // Y3 = m * (s - X3) - yy^2.
     p256_wide_fe_sub(&t, &s, &x3);
     p256_wide_fe_mul(&y3, &m, &t);
-    p256_wide_fe_sqr(&yyyy, &yy);
     p256_wide_fe_sub(&y3, &y3, &yyyy);
 
     // o may alias a, so the three coordinates move only now.
@@ -284,11 +291,13 @@ void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jaco
 }
 
 // The Explicit-Formulas Database's add-1998-cmo-2, with the database's names in lower case:
-// h = u2 - u1 is zero where the two x are equal, and Z3 = Z1 Z2 h. Z3 comes as soon as h does,
-// where the database computes it last, for the doubling's reason: the doubling that follows
-// squares it first. spec/lean/Spec/P256WidePoint.lean holds the same steps and proves that
-// they add two finite points whose x differ, and p256_wide_mul.c says why p256_wide_mul meets
-// that condition.
+// h = u2 - u1 is zero where the two x are equal, and Z3 = Z1 Z2 h. The steps come in pairs
+// that read nothing of each other, for the doubling's reason: the products of the a that a
+// doubling has just written come after the products of b and of Z1. On an EPYC 7763 the
+// addition took 616 cycles under gcc 13.3 and 607 under clang 23 with each pair of products of
+// s1 and of s2 together, and 559 and 560 in this order (docs/decisions.md 224).
+// spec/lean/Spec/P256WidePoint.lean holds the same steps and proves that they add two finite
+// points whose x differ, and p256_wide_mul.c says why p256_wide_mul meets that condition.
 void p256_wide_point_add_jacobian_incomplete(p256_wide_jacobian *o, const p256_wide_jacobian *a,
                                              const p256_wide_jacobian *b) {
     p256_wide_fe z1z1;
@@ -311,22 +320,23 @@ void p256_wide_point_add_jacobian_incomplete(p256_wide_jacobian *o, const p256_w
     // Z1^2 Z2^2.
     p256_wide_fe_sqr(&z1z1, &a->z);
     p256_wide_fe_sqr(&z2z2, &b->z);
-    p256_wide_fe_mul(&u1, &a->x, &z2z2);
+    // u2 = X2 * z1z1 and u1 = X1 * z2z2: the two x, each times Z1^2 Z2^2. s2 = Y2 * Z1 * z1z1
+    // and s1 = Y1 * Z2 * z2z2: the two y, each times Z1^3 Z2^3.
     p256_wide_fe_mul(&u2, &b->x, &z1z1);
-    // s1 = Y1 * Z2 * z2z2 and s2 = Y2 * Z1 * z1z1: the two y, each times Z1^3 Z2^3.
-    p256_wide_fe_mul(&s1, &a->y, &b->z);
-    p256_wide_fe_mul(&s1, &s1, &z2z2);
     p256_wide_fe_mul(&s2, &b->y, &a->z);
+    p256_wide_fe_mul(&u1, &a->x, &z2z2);
     p256_wide_fe_mul(&s2, &s2, &z1z1);
-    // h = u2 - u1, and Z3 = Z1 * Z2 * h.
+    // h = u2 - u1, hh = h^2, hhh = h * hh, v = u1 * hh and Z3 = Z1 * Z2 * h.
     p256_wide_fe_sub(&h, &u2, &u1);
-    p256_wide_fe_mul(&z3, &a->z, &b->z);
-    p256_wide_fe_mul(&z3, &z3, &h);
-    // hh = h^2, hhh = h * hh, r = s2 - s1 and v = u1 * hh: r is the slope times Z3.
+    p256_wide_fe_mul(&s1, &a->y, &b->z);
     p256_wide_fe_sqr(&hh, &h);
+    p256_wide_fe_mul(&z3, &a->z, &b->z);
+    p256_wide_fe_mul(&s1, &s1, &z2z2);
     p256_wide_fe_mul(&hhh, &h, &hh);
-    p256_wide_fe_sub(&r, &s2, &s1);
     p256_wide_fe_mul(&v, &u1, &hh);
+    p256_wide_fe_mul(&z3, &z3, &h);
+    // r = s2 - s1: the slope times Z3.
+    p256_wide_fe_sub(&r, &s2, &s1);
     // X3 = r^2 - hhh - 2 * v.
     p256_wide_fe_sqr(&x3, &r);
     p256_wide_fe_sub(&x3, &x3, &hhh);
@@ -339,6 +349,58 @@ void p256_wide_point_add_jacobian_incomplete(p256_wide_jacobian *o, const p256_w
     p256_wide_fe_sub(&y3, &y3, &t);
 
     // o may alias a or b, so the three coordinates move only now.
+    o->x = x3;
+    o->y = y3;
+    o->z = z3;
+}
+
+// add-1998-cmo-2 with Z2 = 1, with the database's names in lower case: u1 is X1 and s1 is Y1, and
+// h = u2 - X1 is zero where the two x are equal. Z3 = Z1 h. p256_wide_mul adds the multiples of
+// its point in affine coordinates by this addition, 11 products where the Jacobian one runs 16
+// (docs/decisions.md 224). The steps come in pairs that read nothing of each other, as in the
+// doubling. spec/lean/Spec/P256WidePoint.lean holds the same steps, proves that they compute
+// what p256_wide_point_add_jacobian_incomplete computes for (x, y, 1), and so that they add two
+// finite points whose x differ.
+void p256_wide_point_add_jacobian_affine_incomplete(p256_wide_jacobian *o,
+                                                    const p256_wide_jacobian *a,
+                                                    const p256_wide_affine *b) {
+    p256_wide_fe z1z1;
+    p256_wide_fe u2;
+    p256_wide_fe s2;
+    p256_wide_fe h;
+    p256_wide_fe hh;
+    p256_wide_fe hhh;
+    p256_wide_fe r;
+    p256_wide_fe v;
+    p256_wide_fe t;
+    p256_wide_fe x3;
+    p256_wide_fe y3;
+    p256_wide_fe z3;
+
+    // z1z1 = Z1^2, u2 = x2 * z1z1 and s2 = y2 * Z1 * z1z1: b's x and y, times Z1^2 and Z1^3.
+    p256_wide_fe_sqr(&z1z1, &a->z);
+    p256_wide_fe_mul(&s2, &b->y, &a->z);
+    p256_wide_fe_mul(&u2, &b->x, &z1z1);
+    p256_wide_fe_mul(&s2, &s2, &z1z1);
+    // h = u2 - X1, Z3 = Z1 * h, hh = h^2, hhh = h * hh and v = X1 * hh.
+    p256_wide_fe_sub(&h, &u2, &a->x);
+    p256_wide_fe_mul(&z3, &a->z, &h);
+    p256_wide_fe_sqr(&hh, &h);
+    p256_wide_fe_mul(&hhh, &h, &hh);
+    p256_wide_fe_mul(&v, &a->x, &hh);
+    // r = s2 - Y1, and X3 = r^2 - hhh - 2 * v.
+    p256_wide_fe_sub(&r, &s2, &a->y);
+    p256_wide_fe_sqr(&x3, &r);
+    p256_wide_fe_sub(&x3, &x3, &hhh);
+    p256_wide_fe_add(&t, &v, &v);
+    p256_wide_fe_sub(&x3, &x3, &t);
+    // Y3 = r * (v - X3) - Y1 * hhh, with Y1 * hhh in y3.
+    p256_wide_fe_mul(&y3, &hhh, &a->y);
+    p256_wide_fe_sub(&t, &v, &x3);
+    p256_wide_fe_mul(&t, &r, &t);
+    p256_wide_fe_sub(&y3, &t, &y3);
+
+    // o may alias a, so the three coordinates move only now.
     o->x = x3;
     o->y = y3;
     o->z = z3;

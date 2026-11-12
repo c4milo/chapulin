@@ -22,9 +22,8 @@
 //   contents. A scan that skips an entry, stops early or keeps two entries
 //   fails here;
 //
-//   equal_mask gives all ones exactly when its two values are the same, for
-//   any two 64-bit values, and wraps nothing (--unsigned-overflow-check on
-//   the launch line).
+//   equal_mask_pair gives all ones in a word exactly when its two values are
+//   the same there, for any two 64-bit values.
 //
 // Not proven here, and not a claim a formula over values can state: that
 // the scan reads every entry whatever the index holds. The code reads
@@ -105,15 +104,14 @@ static void fe_nondet(p256_wide_fe *f) {
 // row index in table_select and multiple_select is a loop counter.
 static void prove_selects(void) {
     p256_wide_affine affine_row[P256_WIDE_TABLE_ENTRIES];
-    p256_wide_point point_row[ENTRIES];
+    p256_wide_affine multiple_row[ENTRIES];
     for (size_t j = 0; j < P256_WIDE_TABLE_ENTRIES; j++) {
         fe_nondet(&affine_row[j].x);
         fe_nondet(&affine_row[j].y);
     }
     for (size_t j = 0; j < ENTRIES; j++) {
-        fe_nondet(&point_row[j].x);
-        fe_nondet(&point_row[j].y);
-        fe_nondet(&point_row[j].z);
+        fe_nondet(&multiple_row[j].x);
+        fe_nondet(&multiple_row[j].y);
     }
     uint64_t entry_index = nondet_u64();
     uint64_t multiple_index = nondet_u64();
@@ -121,25 +119,26 @@ static void prove_selects(void) {
     __CPROVER_assume(multiple_index < ENTRIES);
 
     p256_wide_affine affine;
-    p256_wide_point point;
+    p256_wide_affine multiple;
     table_select(&affine, affine_row, entry_index);
-    multiple_select(&point, point_row, multiple_index);
+    multiple_select(&multiple, multiple_row, multiple_index);
     for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
         __CPROVER_assert(affine.x.word[i] == affine_row[entry_index].x.word[i] &&
                              affine.y.word[i] == affine_row[entry_index].y.word[i],
                          "table_select: the entry at the index, and no other");
-        __CPROVER_assert(point.x.word[i] == point_row[multiple_index].x.word[i] &&
-                             point.y.word[i] == point_row[multiple_index].y.word[i] &&
-                             point.z.word[i] == point_row[multiple_index].z.word[i],
+        __CPROVER_assert(multiple.x.word[i] == multiple_row[multiple_index].x.word[i] &&
+                             multiple.y.word[i] == multiple_row[multiple_index].y.word[i],
                          "multiple_select: the multiple at the index, and no other");
     }
 }
 
 static void prove_equal_mask(void) {
-    uint64_t a = nondet_u64();
-    uint64_t b = nondet_u64();
-    __CPROVER_assert(equal_mask(a, b) == (a == b ? UINT64_MAX : 0),
-                     "equal_mask: all ones for the same value and nothing else");
+    word_pair a = {nondet_u64(), nondet_u64()};
+    word_pair b = {nondet_u64(), nondet_u64()};
+    word_pair mask = equal_mask_pair(a, b);
+    __CPROVER_assert(mask[0] == (a[0] == b[0] ? UINT64_MAX : 0) &&
+                         mask[1] == (a[1] == b[1] ? UINT64_MAX : 0),
+                     "equal_mask_pair: all ones in a word for the same value and nothing else");
 }
 
 int main(void) {

@@ -11,8 +11,8 @@ reason: multiple_select starts its scan at the second of the eight
   every index.
 
 --- old
-    word_pair z_high = {0, 0};
     for (uint64_t j = 0; j < ENTRIES; j++) {
+        word_pair keep = equal_mask_pair(position, wanted);
 --- new
-    word_pair z_high = {0, 0};
     for (uint64_t j = 1; j < ENTRIES; j++) {
+        word_pair keep = equal_mask_pair(position, wanted);

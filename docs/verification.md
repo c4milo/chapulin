@@ -4423,6 +4423,20 @@ that the C is the model on every input, which the differential samples,
 and anything about the complete additions, the top window of k·G, window 0
 of the key exchange or the corrections, which stay tested.
 
+Since docs/decisions.md 224 the key exchange moves its eight multiples to
+affine coordinates with one inverse and adds windows 62 to 1 by
+`p256_wide_point_add_jacobian_affine_incomplete`. The same module holds its
+steps and proves that they compute what `p256_wide_point_add_jacobian_incomplete`
+computes for (x : y : 1), so the proof of the windows covers the loop on
+the affine entries (`ladderSumAffine_eq`). It also proves Montgomery's trick
+as `multiples_to_affine` runs it: where no Z of the eight is zero, each
+inverse it takes is its Z's inverse, and the affine entries hold the same
+points. `bin/diff_p256_wide` holds the steps of the mixed addition to the
+model's on random coordinates, at Z1 = 0 and where the two x are equal.
+What none of this shows: that the C runs the trick as the model does, which
+`bin/p256_equiv_test` tests on edge and random scalars and on the point at
+infinity, whose zero Z the C answers by a mask.
+
 The incomplete addition a host object's k·G runs in windows 1 to 41,
 `p256_wide_point_add_affine_incomplete` (docs/decisions.md 111), is
 machine checked the same way. The same module holds its steps and proves
@@ -8437,7 +8451,11 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    Z = 0 with Y = 0; 125 doublings, 25 on random coordinates and 25 each
    where Z, Y, X - Z^2 and X + Z^2 is zero; and 125 incomplete
    additions, 25 on random coordinates, 25 each at Z1 = 0 and at Z2 = 0,
-   25 with the same x and Z, and 25 on one point twice. Then 1,838
+   25 with the same x and Z, and 25 on one point twice; and 75 incomplete
+   mixed Jacobian additions through
+   `p256_wide_point_add_jacobian_affine_incomplete` against
+   `addJacobianAffineIncomplete`: 25 on random coordinates, 25 at Z1 = 0,
+   and 25 at Z1 = 1 with the two x equal. Then 1,838
    inverses through `p256_wide_inverse` against `Spec/P256WideInverse.lean`'s
    `inverse`, 919 at the field prime and 919 at the group order: 0 to 3
    and m - 1 to m - 3, every power of two and every power of two less one

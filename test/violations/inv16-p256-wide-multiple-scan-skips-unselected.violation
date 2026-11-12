@@ -11,11 +11,11 @@ reason: multiple_select tests the mask and moves on when the multiple is
   ceiling.
 
 --- old
-        uint64_t mask = equal_mask(j, index);
-        word_pair keep = {mask, mask};
+        word_pair keep = equal_mask_pair(position, wanted);
+        position += one;
 --- new
-        uint64_t mask = equal_mask(j, index);
-        if (mask == 0) {
+        word_pair keep = equal_mask_pair(position, wanted);
+        position += one;
+        if (keep[0] == 0) {
             continue;
         }
-        word_pair keep = {mask, mask};

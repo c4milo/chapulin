@@ -462,6 +462,7 @@ static void diff_add_jacobian_incomplete(void) {
 
 #include "diff_p256_wide_half.h"
 #include "diff_p256_wide_inverse.h"
+#include "diff_p256_wide_mixed.h"
 
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "spec/lean/.lake/build/bin/diffspec";
@@ -481,6 +482,7 @@ int main(int argc, char **argv) {
         diff_add_affine_incomplete();
         diff_jacobian_one_point();
         diff_add_jacobian_incomplete();
+        diff_add_jacobian_affine_incomplete();
     }
     diff_half();
     diff_inverse();

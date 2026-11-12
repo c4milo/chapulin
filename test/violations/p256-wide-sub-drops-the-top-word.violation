@@ -1,0 +1,14 @@
+invariant: INV-16
+file: src/p256_wide_field.h
+catches: p256_equiv_test
+reason: p256_wide_fe_sub adds p back to a difference that wrapped, and its
+  last word takes the chain's carry and no longer subtracts p's low half
+  under the mask, which adds p's top word mod 2^64. Every difference of a
+  smaller element less a larger one then comes out wrong in its top word.
+  bin/p256_equiv_test compares every wide field routine with p256_field.c's
+  on the same words.
+
+--- old
+    o->word[3] = p256_wide_sub_wrap(top, low_half);
+--- new
+    o->word[3] = p256_wide_sub_wrap(top, 0);

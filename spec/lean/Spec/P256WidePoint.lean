@@ -42,8 +42,13 @@ addition computes `P + Q` for two finite points whose x differ, over every
 field.
 `toJacobian_represents` and `fromJacobian_represents` prove that the
 conversions keep every point. `p256_wide_mul` computes the odd multiples of its
-point by `addJacobianIncomplete`, which `multiples` is, and adds windows 62 to
-1 by it, which `ladderSum` is. `multiples_represents` and
+point by `addJacobianIncomplete`, which `multiples` is. Since docs/decisions.md
+224 it moves them to affine coordinates with one inverse, which
+`batchInverse_mul_z` and `toAffineWith_represents` prove, and adds windows 62 to
+1 by `addJacobianAffineIncomplete`, which `ladderSumAffine` is.
+`addJacobianAffineIncomplete_eq` proves that the mixed addition computes what
+`addJacobianIncomplete` computes for `(x : y : 1)`, and `ladderSumAffine_eq` that
+the loop is `ladderSum` on those entries. `multiples_represents` and
 `ladderSum_represents` prove that every one of those additions meets the
 condition, for digits that are odd and at most 15 in size, wherever the
 point's order is at least `16 ^ 63 = 2 ^ 252`, and the `_p256` theorems state
@@ -232,6 +237,45 @@ def addJacobianIncomplete {R : Type*} [CommRing R] (a b : Jacobian R) : Jacobian
   let y3 := y3 - t
   ⟨x3, y3, z3⟩
 
+/-- `p256_wide_point_add_jacobian_affine_incomplete` (`p256_wide_point.c`): add-1998-cmo-2 with
+`Z2 = 1`, its products by `Z2` and `Z2^2` gone, so `u1` is `X1` and `s1` is `Y1`. `b` is
+`(x2, y2)`. The `let`s run in the C's order, which differs from `addJacobianIncomplete`'s. -/
+def addJacobianAffineIncomplete {R : Type*} [CommRing R] (a : Jacobian R) (b : Affine R) :
+    Jacobian R :=
+  let z1z1 := a.z ^ 2
+  let s2 := b.y * a.z
+  let u2 := b.x * z1z1
+  let s2 := s2 * z1z1
+  let h := u2 - a.x
+  let z3 := a.z * h
+  let hh := h ^ 2
+  let hhh := h * hh
+  let v := a.x * hh
+  let r := s2 - a.y
+  let x3 := r ^ 2
+  let x3 := x3 - hhh
+  let t := v + v
+  let x3 := x3 - t
+  let y3 := hhh * a.y
+  let t := v - x3
+  let t := r * t
+  let y3 := t - y3
+  ⟨x3, y3, z3⟩
+
+/-- An affine point as a Jacobian one, `(x : y : 1)`. `p256_wide_mul` starts its sum so from its
+top window's affine entry. -/
+def ofAffine {R : Type*} [CommRing R] (b : Affine R) : Jacobian R :=
+  ⟨b.x, b.y, 1⟩
+
+/-- The mixed addition computes what the Jacobian addition computes for `(x2 : y2 : 1)`: the
+products by `Z2 = 1` are the factors they multiply. -/
+theorem addJacobianAffineIncomplete_eq {R : Type*} [CommRing R] (a : Jacobian R) (b : Affine R) :
+    addJacobianAffineIncomplete a b = addJacobianIncomplete a (ofAffine b) := by
+  obtain ⟨X, Y, Z⟩ := a
+  obtain ⟨x, y⟩ := b
+  simp only [addJacobianAffineIncomplete, addJacobianIncomplete, ofAffine, Jacobian.mk.injEq]
+  refine ⟨by ring, by ring, by ring⟩
+
 /-- The odd multiples `p256_wide_mul` (`p256_wide_mul.c`) computes first: `multiples a 0` is `a`,
 and `multiples a (j + 1)` is `multiples a j` plus `doubleJacobian a`, by
 `addJacobianIncomplete`. The C computes them for `j` up to 7. -/
@@ -251,6 +295,25 @@ def ladderSum {R : Type*} [CommRing R] [Invertible (2 : R)] (entry : ℕ → Jac
     addJacobianIncomplete
       (doubleJacobian (doubleJacobian (doubleJacobian (doubleJacobian (ladderSum entry m)))))
       (entry (m + 1))
+
+/-- `ladderSum` as `p256_wide_mul` runs it since docs/decisions.md 224: the entries are affine,
+the sum starts as `(x : y : 1)` from window 63's entry, and each later window's entry is added by
+`addJacobianAffineIncomplete`. -/
+def ladderSumAffine {R : Type*} [CommRing R] [Invertible (2 : R)] (entry : ℕ → Affine R) :
+    ℕ → Jacobian R
+  | 0 => ofAffine (entry 0)
+  | m + 1 =>
+    addJacobianAffineIncomplete
+      (doubleJacobian (doubleJacobian (doubleJacobian (doubleJacobian (ladderSumAffine entry m)))))
+      (entry (m + 1))
+
+/-- The C's loop on affine entries is `ladderSum` on the same entries as `(x : y : 1)`, so
+`ladderSum_represents` covers it. -/
+theorem ladderSumAffine_eq {R : Type*} [CommRing R] [Invertible (2 : R)] (entry : ℕ → Affine R)
+    (m : ℕ) : ladderSumAffine entry m = ladderSum (fun j => ofAffine (entry j)) m := by
+  induction m with
+  | zero => rfl
+  | succ m ih => simp only [ladderSumAffine, ladderSum, ih, addJacobianAffineIncomplete_eq]
 
 /-- The multiple of its point `ladderSum` holds, for the digit `e j` of window `63 - j`: `e 0`, and
 then sixteen times the multiple so far plus each next digit. -/
@@ -732,6 +795,82 @@ theorem ladderSum_represents [Invertible (2 : F)] {b : F} {P : (curve b).Point} 
         (by rw [sub_eq_add_neg]; exact h_minus_lt.trans_le h_order_int)⟩
     simpa only [ladderSum, ladderScalar] using h_sum
 
+/-- `prefix[j]` of `multiples_to_affine` (`p256_wide_mul.c`), the product of `z 0` to `z j` for
+`z i` the `Z` of multiple `i`. The C's first loop sets `prefix[0] = z 0` and
+`prefix[j] = prefix[j - 1] * z j`, which `prefixProduct_succ` states. -/
+def prefixProduct (z : ℕ → F) (j : ℕ) : F :=
+  ∏ i ∈ Finset.range (j + 1), z i
+
+omit [DecidableEq F] in
+theorem prefixProduct_succ (z : ℕ → F) (j : ℕ) :
+    prefixProduct z (j + 1) = prefixProduct z j * z (j + 1) := by
+  simp only [prefixProduct]
+  rw [Finset.prod_range_succ]
+
+/-- `inverse` in `multiples_to_affine`'s second loop as the loop reaches index `j`: the inverse of
+`prefix[7]`, which `p256_wide_fe_inv` computes, times the `z` of each index above `j`, which the
+steps before multiplied in. `runningInverse_step` states that step. -/
+def runningInverse (z : ℕ → F) (j : ℕ) : F :=
+  (prefixProduct z 7)⁻¹ * ∏ i ∈ Finset.Ico (j + 1) 8, z i
+
+omit [DecidableEq F] in
+theorem runningInverse_step (z : ℕ → F) {j : ℕ} (h_j : 1 ≤ j) (h_top : j ≤ 7) :
+    runningInverse z (j - 1) = runningInverse z j * z j := by
+  simp only [runningInverse]
+  rw [show j - 1 + 1 = j by omega, mul_assoc]
+  congr 1
+  rw [← Finset.prod_Ico_consecutive z (show j ≤ j + 1 by omega) (show j + 1 ≤ 8 by omega),
+    Nat.Ico_succ_singleton, Finset.prod_singleton, mul_comm]
+
+/-- `Z_j^-1` as the second loop takes it: `inverse` times `prefix[j - 1]` for `j` from 7 down to 1,
+and `inverse` itself for `j = 0`, where the product of no `z` is 1. -/
+def zInverse (z : ℕ → F) (j : ℕ) : F :=
+  runningInverse z j * ∏ i ∈ Finset.range j, z i
+
+omit [DecidableEq F] in
+/-- Montgomery's trick: where no `Z` of the eight multiples is zero, each `zInverse` is the inverse
+of its `Z`. `prefix[7]` is the product before `j`, `z j` and the product after `j`, and
+`zInverse z j` is the inverse of `prefix[7]` times the first and the last of those three. -/
+theorem batchInverse_mul_z (z : ℕ → F) (h_z : ∀ i ≤ 7, z i ≠ 0) {j : ℕ} (h_j : j ≤ 7) :
+    zInverse z j * z j = 1 := by
+  have h_split : prefixProduct z 7 =
+      (∏ i ∈ Finset.range j, z i) * z j * ∏ i ∈ Finset.Ico (j + 1) 8, z i := by
+    simp only [prefixProduct, show (7 : ℕ) + 1 = 8 by rfl]
+    rw [← Finset.prod_range_mul_prod_Ico z (show j ≤ 8 by omega),
+      ← Finset.prod_Ico_consecutive z (show j ≤ j + 1 by omega) (show j + 1 ≤ 8 by omega),
+      Nat.Ico_succ_singleton, Finset.prod_singleton, mul_assoc]
+  have h_ne : prefixProduct z 7 ≠ 0 := by
+    simp only [prefixProduct]
+    exact Finset.prod_ne_zero_iff.mpr fun i h_i => h_z i (by simp at h_i; omega)
+  simp only [zInverse, runningInverse]
+  calc (prefixProduct z 7)⁻¹ * (∏ i ∈ Finset.Ico (j + 1) 8, z i) * (∏ i ∈ Finset.range j, z i) *
+        z j = (prefixProduct z 7)⁻¹ *
+          ((∏ i ∈ Finset.range j, z i) * z j * ∏ i ∈ Finset.Ico (j + 1) 8, z i) := by ring
+    _ = (prefixProduct z 7)⁻¹ * prefixProduct z 7 := by rw [← h_split]
+    _ = 1 := inv_mul_cancel₀ h_ne
+
+/-- The affine coordinates `multiples_to_affine` writes for a multiple `a` from `w`, its `Z^-1`:
+`zz = w^2`, `x = X * zz`, `zz = zz * w` and `y = Y * zz`. -/
+def toAffineWith (a : Jacobian F) (w : F) : Affine F :=
+  let zz := w ^ 2
+  let x := a.x * zz
+  let zz := zz * w
+  let y := a.y * zz
+  ⟨x, y⟩
+
+omit [DecidableEq F] in
+/-- With `w` the inverse of `a`'s `Z`, `toAffineWith` keeps a finite point: `(x : y : 1)` from its
+coordinates holds the point `a` holds. -/
+theorem toAffineWith_represents {b : F} {a : Jacobian F} {x y : F}
+    {h : (curve b).Nonsingular x y} (h_represents : RepresentsJacobian b a (.some x y h)) {w : F}
+    (h_w : w * a.z = 1) : RepresentsJacobian b (ofAffine (toAffineWith a w)) (.some x y h) := by
+  obtain ⟨X, Y, Z⟩ := a
+  obtain ⟨h_z, rfl, rfl⟩ := h_represents
+  dsimp only at h_z h_w
+  obtain rfl : w = Z⁻¹ := eq_inv_of_mul_eq_one_left h_w
+  simp only [RepresentsJacobian, ofAffine, toAffineWith]
+  refine ⟨one_ne_zero, ?_, ?_⟩ <;> field_simp
+
 end Curve
 
 /-- `(n : ZMod Spec.P256.p) ≠ m` for two numbers whose difference `p` does not divide, which
@@ -793,7 +932,8 @@ set_option compiler.extract_closed false in
 different x, and on a point and itself, where it writes zero to every coordinate. Then the
 Jacobian routines against the same law: `doubleJacobian` on the generator with `Z = 1` and with
 another `Z`, a point `Spec.P256.smul` computes, and the point at infinity as `(5 : 7 : 0)`;
-`addJacobianIncomplete` on the same three pairs; and each conversion on the same points, with the
+`addJacobianIncomplete` and `addJacobianAffineIncomplete` on the same three pairs; and each
+conversion on the same points, with the
 point at infinity's `Y` moved to 1 where it is 0. -/
 def selftest (_ : Unit) : Bool :=
   let affine := fun (a : Projective (ZMod Spec.P256.p)) =>
@@ -831,6 +971,9 @@ def selftest (_ : Unit) : Bool :=
     affineJacobian (doubleJacobian (jacobian q scale)) == Spec.P256.add q q) &&
   pairs.all (fun (q, scale, r) =>
     affineJacobian (addJacobianIncomplete (jacobian q scale) (jacobian r 3)) ==
+      Spec.P256.add q r) &&
+  pairs.all (fun (q, scale, r) =>
+    affineJacobian (addJacobianAffineIncomplete (jacobian q scale) (finite r)) ==
       Spec.P256.add q r) &&
   cases.all (fun (q, scale) =>
     affineJacobian (toJacobian (projective q scale)) == q &&

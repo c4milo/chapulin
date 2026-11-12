@@ -40,11 +40,24 @@
 #include <stdint.h>
 
 // o = (w3 : w2 : w1 : w0), the four words a statement leaves in r8 to r11.
-// Between each two stores is an empty statement that clobbers memory, so no
-// compiler merges the four stores, as x25519_adx_asm.h's adx_store does
-// (docs/decisions.md 205). The empty statements emit no instruction.
+// Under gcc, between each two stores is an empty statement that clobbers
+// memory, so gcc does not merge the four stores into two from vector
+// registers, as x25519_adx_asm.h's adx_store does (docs/decisions.md 205).
+// The statements emit no instruction. clang merges no such stores, so under
+// clang the stores stand alone, and the C after a product reads the words
+// it needs from registers, where after a statement that clobbers memory it
+// loaded each word that the store before had written. On an EPYC 7763 a
+// doubling under clang took 305 to 313 cycles where it took 317.5. Under gcc
+// an empty statement that names one word in place of all memory took it to
+// 346 cycles from 330 (docs/decisions.md 224).
 static inline __attribute__((always_inline)) void
 p256_adx_store(uint64_t o[4], uint64_t w0, uint64_t w1, uint64_t w2, uint64_t w3) {
+#ifdef __clang__
+    o[0] = w0;
+    o[1] = w1;
+    o[2] = w2;
+    o[3] = w3;
+#else
     o[0] = w0;
     __asm__ volatile("" ::: "memory");
     o[1] = w1;
@@ -52,6 +65,7 @@ p256_adx_store(uint64_t o[4], uint64_t w0, uint64_t w1, uint64_t w2, uint64_t w3
     o[2] = w2;
     __asm__ volatile("" ::: "memory");
     o[3] = w3;
+#endif
 }
 
 // o = a * b / 2^256 mod p. o may be a or b: every word of both is read

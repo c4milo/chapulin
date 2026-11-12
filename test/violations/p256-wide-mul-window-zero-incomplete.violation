@@ -10,8 +10,7 @@ reason: window 0 adds its entry by the incomplete Jacobian addition in
 
 --- old
     p256_wide_point_from_jacobian(&total, &sum);
-    p256_wide_point_from_jacobian(&last, &entry);
-    p256_wide_point_add(&total, &total, &last);
+    p256_wide_point_add_affine(&total, &total, &entry);
 --- new
-    p256_wide_point_add_jacobian_incomplete(&sum, &sum, &entry);
+    p256_wide_point_add_jacobian_affine_incomplete(&sum, &sum, &entry);
     p256_wide_point_from_jacobian(&total, &sum);

@@ -397,13 +397,15 @@ HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/t
 # link a host object's P-256 and for the lints.
 P256_ADX_SRCS := src/p256_adx_field.c src/p256_adx_point.c src/p256_adx_mul.c src/p256_adx_verify_point.c \
                  src/p256_adx_verify.c
-# The three that include p256_adx_asm.h, through p256_adx_field_inline.h
-# (docs/decisions.md 175).
-P256_ADX_INLINE_SRCS := src/p256_adx_field.c src/p256_adx_point.c src/p256_adx_verify_point.c
+# The four that include p256_adx_asm.h, through p256_adx_field_inline.h
+# (docs/decisions.md 175 and 224).
+P256_ADX_INLINE_SRCS := src/p256_adx_field.c src/p256_adx_point.c src/p256_adx_mul.c \
+                        src/p256_adx_verify_point.c
 P256_ARM64_SRCS := src/p256_arm64_field.c src/p256_arm64_point.c src/p256_arm64_mul.c \
                    src/p256_arm64_verify_point.c src/p256_arm64_verify.c
-# The three that include p256_arm64_asm.h, through p256_arm64_field_inline.h.
-P256_ARM64_INLINE_SRCS := src/p256_arm64_field.c src/p256_arm64_point.c src/p256_arm64_verify_point.c
+# The four that include p256_arm64_asm.h, through p256_arm64_field_inline.h.
+P256_ARM64_INLINE_SRCS := src/p256_arm64_field.c src/p256_arm64_point.c src/p256_arm64_mul.c \
+                          src/p256_arm64_verify_point.c
 P256_WIDE_SRCS := src/p256_wide_field.c src/p256_wide_scalar.c src/p256_wide_inverse.c src/p256_wide_point.c \
                   src/p256_wide_mul.c src/p256_wide_table.c src/p256_wide_wipe.c src/p256_wide_verify.c \
                   src/p256_wide_verify_point.c $(P256_ADX_SRCS) $(P256_ARM64_SRCS)
@@ -805,7 +807,7 @@ TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wych
          test/rsa_ifma_count.h test/aead_avx512_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/aes_equiv_gcm.h test/aes_equiv_residue.h test/ghash_equiv_eor3.h test/ghash_equiv_lengths.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/gcm_avx512_residue.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
-         test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_p256_wide_half.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
+         test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_p256_wide_half.h test/diff_p256_wide_mixed.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8439_tests.h test/rfc8448_vectors.h \
          test/cnsa2_mock.h test/cnsa2_cases.h test/cnsa2_mldsa_cases.h test/cnsa2_mldsa_fixture.h \
@@ -9928,7 +9930,9 @@ WIDEMUL_SPECS := \
 # p256_wide_mul.c, 14 and 14: the 42 windows of the table's multiplication
 #   and the 32 entries a table scan reads, twice, once in p256_wide_base_mul
 #   and once in digit_entry; the windows of a point's multiplication and
-#   the eight multiples its scan reads; and nine tests of a bit's position
+#   the eight multiples its scan reads, and the loops that move them to
+#   affine coordinates, which each copy unrolls in part (docs/decisions.md
+#   224); and nine tests of a bit's position
 #   against 255 or of a window's number against the top window's, which
 #   read a window's number and never the scalar. Every scan reads all its
 #   entries and keeps one by mask.
@@ -9943,7 +9947,7 @@ WIDEMUL_SPECS := \
 #   the wide file it copies, read above, and the product and square of
 #   p256_adx_asm.h hold none.
 # p256_arm64_field.c, 0 and 0; p256_arm64_point.c, 3 and 0;
-#   p256_arm64_mul.c, 13 and 0; p256_arm64_verify_point.c, 31 and 0;
+#   p256_arm64_mul.c, 15 and 0; p256_arm64_verify_point.c, 31 and 0;
 #   p256_arm64_verify.c, 6 and 0: the arm64 copy of the wide files
 #   (docs/decisions.md 215), which compiles to nothing on x86-64. On arm64
 #   each copy holds the branches of the wide file it copies, read above,
@@ -10158,17 +10162,17 @@ P256_WIDE_BRANCH_CEILING := \
   arm64/src/p256_wide_scalar.c:0 x86-64/src/p256_wide_scalar.c:0 \
   arm64/src/p256_wide_inverse.c:3 x86-64/src/p256_wide_inverse.c:3 \
   arm64/src/p256_wide_point.c:3 x86-64/src/p256_wide_point.c:3 \
-  arm64/src/p256_wide_mul.c:13 x86-64/src/p256_wide_mul.c:13 \
+  arm64/src/p256_wide_mul.c:14 x86-64/src/p256_wide_mul.c:14 \
   arm64/src/p256_wide_table.c:0 x86-64/src/p256_wide_table.c:0 \
   arm64/src/p256_wide_wipe.c:0 x86-64/src/p256_wide_wipe.c:0 \
   arm64/src/p256_wide_verify.c:6 x86-64/src/p256_wide_verify.c:6 \
   arm64/src/p256_wide_verify_point.c:30 x86-64/src/p256_wide_verify_point.c:30 \
   arm64/src/p256_adx_field.c:0 x86-64/src/p256_adx_field.c:0 arm64/src/p256_adx_point.c:0 \
-  x86-64/src/p256_adx_point.c:3 arm64/src/p256_adx_mul.c:0 x86-64/src/p256_adx_mul.c:13 \
+  x86-64/src/p256_adx_point.c:3 arm64/src/p256_adx_mul.c:0 x86-64/src/p256_adx_mul.c:14 \
   arm64/src/p256_adx_verify_point.c:0 x86-64/src/p256_adx_verify_point.c:30 arm64/src/p256_adx_verify.c:0 \
   x86-64/src/p256_adx_verify.c:6 \
   arm64/src/p256_arm64_field.c:0 x86-64/src/p256_arm64_field.c:0 arm64/src/p256_arm64_point.c:3 \
-  x86-64/src/p256_arm64_point.c:0 arm64/src/p256_arm64_mul.c:13 x86-64/src/p256_arm64_mul.c:0 \
+  x86-64/src/p256_arm64_point.c:0 arm64/src/p256_arm64_mul.c:15 x86-64/src/p256_arm64_mul.c:0 \
   arm64/src/p256_arm64_verify_point.c:31 x86-64/src/p256_arm64_verify_point.c:0 \
   arm64/src/p256_arm64_verify.c:6 x86-64/src/p256_arm64_verify.c:0
 P256_SCALAR_BRANCH_CEILING := \

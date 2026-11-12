@@ -18,7 +18,7 @@ each constant out of the C source that carries it, recomputes it, and stops
 with a message that names the file and the constant when a word differs:
 
 - p256_wide_field.h: the prime p, whose words the header's inline addition and
-  subtraction read.
+  subtraction read, and (p + 1) / 2, whose words the halving adds.
 - p256_wide_field.c: 2^512 mod p, 2^256 mod p and 2^768 mod p, the word
   -p^-1 mod 2^64 its modulus for p256_wide_inverse carries, and the facts its
   reduction rests on: -p^-1 mod 2^64 is 1, and (p + 1) / 2^64 is
@@ -106,6 +106,13 @@ def check_field():
     header = "src/p256_wide_field.h"
     expect(header, "the prime P256_WIDE_P0..P3",
            [defined(source(header), f"P256_WIDE_P{i}") for i in range(4)], words(P))
+    # p256_wide_fe_half adds (p + 1) / 2 as its words 0, HALF_P1, HALF_P2 and HALF_P2 less
+    # HALF_P1.
+    half = [0, defined(source(header), "P256_WIDE_HALF_P1"),
+            defined(source(header), "P256_WIDE_HALF_P2")]
+    half.append((half[2] - half[1]) % WORD)
+    expect(header, "(p + 1) / 2 from P256_WIDE_HALF_P1 and P256_WIDE_HALF_P2", half,
+           words((P + 1) // 2))
     name = "src/p256_wide_field.c"
     text = source(name)
     expect(name, "RR, 2^512 mod p", initialized(text, "RR"), words(R * R % P))

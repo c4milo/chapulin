@@ -8,8 +8,8 @@ reason: the Jacobian doubling writes the database's Z3 = 2 Y1 Z1 beside
 
 --- old
     p256_wide_fe_mul(&z3, &a->y, &a->z);
-    // zz = Z1^2
+    p256_wide_fe_sqr(&x3, &m);
 --- new
     p256_wide_fe_mul(&z3, &a->y, &a->z);
     p256_wide_fe_add(&z3, &z3, &z3);
-    // zz = Z1^2
+    p256_wide_fe_sqr(&x3, &m);

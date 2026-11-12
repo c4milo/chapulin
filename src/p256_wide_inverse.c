@@ -179,12 +179,22 @@ static void multiply_word(uint64_t o[WORDS + 1], const uint64_t x[WORDS], uint64
     o[4] = p256_wide_mul_row(&o[0], &o[1], &o[2], &o[3], k, x[0], x[1], x[2], x[3]);
 }
 
-// o = -o modulo 2^320 where mask is all ones, and o where it is zero.
-static void negate_masked(uint64_t o[WORDS + 1], uint64_t mask) {
+// o = -o modulo 2^320 where mask is all ones, and o where it is zero. The exclusive ors come
+// first and the chain after them: under gcc an exclusive or between two steps of the chain
+// costs a save and a restore of the carry (p256_wide_word.h, P256_WIDE_HOLD). With three
+// callers in combine_exact, gcc 13 called it out of line, so it carries always_inline.
+static inline __attribute__((always_inline)) void negate_masked(uint64_t o[WORDS + 1],
+                                                                uint64_t mask) {
+    uint64_t flipped[WORDS + 1];
+#pragma GCC unroll 5
+    for (size_t i = 0; i < WORDS + 1; i++) {
+        flipped[i] = o[i] ^ mask;
+        P256_WIDE_HOLD(flipped[i]);
+    }
     uint64_t carry = mask & 1;
 #pragma GCC unroll 5
     for (size_t i = 0; i < WORDS + 1; i++) {
-        o[i] = p256_wide_add_carry(&carry, o[i] ^ mask, 0);
+        o[i] = p256_wide_add_carry(&carry, flipped[i], 0);
     }
 }
 
@@ -234,16 +244,27 @@ static void combine_modular(uint64_t o[WORDS], const uint64_t x[WORDS], const ui
     uint64_t g_magnitude = magnitude(g, &g_negative);
     f_negative ^= negate;
     g_negative ^= negate;
-    uint64_t operand_x[WORDS];
-    uint64_t operand_y[WORDS];
+    // m - x and m - y, one chain after the other, and the choices after both: under gcc two
+    // chains side by side, or a choice between two steps, cost a save and a restore of the
+    // carry for each word (p256_wide_word.h, P256_WIDE_HOLD).
+    uint64_t negated_x[WORDS];
+    uint64_t negated_y[WORDS];
     uint64_t borrow_x = 0;
+#pragma GCC unroll 4
+    for (size_t i = 0; i < WORDS; i++) {
+        negated_x[i] = p256_wide_sub_borrow(&borrow_x, m->word[i], x[i]);
+    }
     uint64_t borrow_y = 0;
 #pragma GCC unroll 4
     for (size_t i = 0; i < WORDS; i++) {
-        uint64_t negated_x = p256_wide_sub_borrow(&borrow_x, m->word[i], x[i]);
-        uint64_t negated_y = p256_wide_sub_borrow(&borrow_y, m->word[i], y[i]);
-        operand_x[i] = (negated_x & f_negative) | (x[i] & ~f_negative);
-        operand_y[i] = (negated_y & g_negative) | (y[i] & ~g_negative);
+        negated_y[i] = p256_wide_sub_borrow(&borrow_y, m->word[i], y[i]);
+    }
+    uint64_t operand_x[WORDS];
+    uint64_t operand_y[WORDS];
+#pragma GCC unroll 4
+    for (size_t i = 0; i < WORDS; i++) {
+        operand_x[i] = (negated_x[i] & f_negative) | (x[i] & ~f_negative);
+        operand_y[i] = (negated_y[i] & g_negative) | (y[i] & ~g_negative);
     }
     // t, five words: the two products and q m, each row's word above the four added to t[4].
     uint64_t t[WORDS + 1] = {0, 0, 0, 0, 0};
@@ -259,6 +280,9 @@ static void combine_modular(uint64_t o[WORDS], const uint64_t x[WORDS], const ui
 #pragma GCC unroll 4
     for (size_t i = 0; i < WORDS; i++) {
         s[i] = (t[i] >> STEPS) | (t[i + 1] << (64 - STEPS));
+        // gcc 13 built the four words in vector registers and moved each one back for the
+        // chain below.
+        P256_WIDE_HOLD(s[i]);
     }
     s[WORDS] = t[WORDS] >> STEPS;
     uint64_t reduced[WORDS];

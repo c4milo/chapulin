@@ -18826,6 +18826,115 @@ does nothing more.
       so a faulted one gives no prime away. A faulted Ed25519 signature's
       timing is the one leak this leaves.
 
+224. **The variable-base P-256 multiplication adds its multiples in affine coordinates, and the
+    point formulas run their steps in pairs that a core can overlap.** On an EPYC 7763 under gcc
+    13.3, P-256 key generation took 1.09 of OpenSSL 3.6.4's time and a shared secret 1.10. Under
+    clang 23 the shared secret took 1.05. Camilo asked for both gcc rows below 1.00.
+
+    - **The measurement.** A lab bench timed each step in TSC cycles, beside OpenSSL's
+      `ecp_nistz256` routines from its static library, in one job (run 43154196172). On the EPYC
+      7763, gcc then clang then OpenSSL: a doubling 330, 317.5 and 310; a Jacobian addition 616,
+      607 and 553; a mixed addition 401, 406 and 399; the inverse 6,800 and 5,380 cycles. A
+      product took 38 cycles in all three. A shared secret ran 252 doublings and 69 Jacobian
+      additions.
+    - **The doubling waits on its products, not on its instructions.** A form of
+      `p256_wide_fe_reduce_once` that adds p back under a mask, in place of the choice, took
+      21% of the instructions off gcc's doubling outside its products. The doubling took 334
+      cycles where it took 330 (run 43155910982): the form adds a chain of four carries after the
+      mask. A product reads its operands from memory and writes its result there, and a core
+      keeps about two products in flight. So the order of the steps sets the time.
+    - **The order of the steps.** Each formula now runs its products in pairs that read nothing
+      of each other: the doubling squares Z1 and Y1 first and computes Z3 beside m^2, the
+      Jacobian addition runs the products of b and of Z1 before those of the a that a doubling
+      has just written, and the mixed addition of k G computes Z3 = vvv Z1 early. Under gcc the
+      doubling took 314 cycles and the Jacobian addition 559. Under clang the doubling took 296
+      (runs 43159405879 and 43162051804). `spec/lean/Spec/P256WidePoint.lean` models each
+      formula as `let`s, so the order changes no theorem.
+    - **The affine multiples.** `p256_wide_mul` moves its eight multiples to affine coordinates
+      with one inverse, by Montgomery's trick in `multiples_to_affine`. Each window then adds its
+      multiple by `p256_wide_point_add_jacobian_affine_incomplete`, add-1998-cmo-2 with Z2 = 1:
+      11 products where the Jacobian addition runs 16. The one inverse and 53 products cost less
+      than the 62 additions save: a shared secret took 124,300 to 125,200 cycles under gcc where
+      it took 126,800 to 127,000 without the affine multiples, and 115,900 to 116,000 under clang
+      where it took 119,600 (run 43163657186, two jobs). A point at infinity gives every multiple
+      a zero Z, and a mask on p's Z makes the answer the point at infinity. The scan reads entries
+      of 64 bytes where it read 96.
+    - **gcc's carry chains.** gcc expands a value that one step of a chain alone reads at that
+      step. So a mask, a shift or an exclusive or that sets the flags lands between two steps,
+      and gcc saves the carry with SETC and puts it back with an ADD. Three forms take that off
+      gcc's paths: `p256_wide_fe_reduce_once` subtracts p over five words, so one borrow is its
+      mask; `p256_wide_fe_sub` subtracts p's low half under the mask from its last word after the
+      chain, through `p256_wide_sub_wrap`, which adds p's top word mod 2^64; and
+      `p256_wide_fe_half` adds (p + 1) / 2 to the shifted words under the mask. `P256_WIDE_HOLD`,
+      an empty statement with a register operand under gcc for x86-64 alone, keeps the shifts
+      and the masks before the chain. The inverse runs its two subtractions in `combine_modular`
+      one after the other, and `negate_masked` computes its exclusive ors before its chain.
+    - **Two smaller changes.** Under clang the four stores after a product stand alone, without
+      the statements that clobber memory, which made clang load each word back (decision 205).
+      The scans make their masks by a vector comparison, `equal_mask_pair`, in the registers that
+      hold their sums. With the mask from a 128-bit sum, gcc moved each entry's mask from a
+      general register, and a key generation took 1.055 of its time (run 43167575900). The
+      digit's negation of y is inline, where two calls took 2.4% of a shared secret under gcc.
+    - **Numbers.** Lab run 43178025176, the base tree and this one, seven passes of each binary,
+      each the median of 31 batches, on three EPYC 7763 jobs, in µs on the CPU clock, with
+      OpenSSL in the same job:
+
+      | row | gcc 13.3 before | gcc after | clang 23 before | clang after | OpenSSL |
+      | --- | --- | --- | --- | --- | --- |
+      | P-256 shared secret | 57.01 to 57.11 | 51.04 to 51.37 | 54.20 to 54.26 | 47.37 to 47.43 | 51.73 to 51.76 |
+      | P-256 key generation | 13.25 to 13.26 | 12.10 to 12.12 | 11.81 to 11.84 | 11.43 to 11.45 | 12.34 to 12.46 |
+
+      On the Xeon 8573C of that run, gcc's key generation took 12.42 µs and OpenSSL's 12.36 µs,
+      where the base tree took 12.98 µs.
+
+      On the M1 Pro under `0xe7` a key generation retires 102,345 instructions where it retired
+      104,903, a shared secret 392,980 where it retired 403,461, and a verification 422,868 where
+      it retired 418,768.
+
+      Bench runs 43168646213, 43168650929 and 43168655137 of `bench.yml`, each on an EPYC 7763 and
+      on this code before its last change, put key generation at 0.976 to 0.993 of OpenSSL's time
+      under gcc and 0.915 to 0.929 under clang, and a shared secret at 0.991 to 0.993 and 0.918. A
+      signature took 0.895 to 0.898 and 0.836 to 0.839 of it, and a verification 0.810 to 0.813 and
+      0.764 to 0.767. That code subtracted the low half with `-`, and gcc 13.3 and clang 18 write
+      the same x86-64 instructions for it and for `p256_wide_sub_wrap`. On the Xeon 8573C that run
+      43168650929 drew as well, key generation took 0.998 of OpenSSL's time under gcc and 0.956
+      under clang, where the scoreboard had 1.06 and 0.97, and a shared secret 0.844 and 0.797. The
+      scoreboard's P-256 rows are that run's.
+    - **What holds it.** `addJacobianAffineIncomplete_eq` proves that the mixed addition computes
+      what `addJacobianIncomplete` computes for (x : y : 1), and `ladderSumAffine_eq` that the
+      loop is `ladderSum` on those entries, so `ladderSum_represents_p256` covers it.
+      `batchInverse_mul_z` proves Montgomery's trick for eight values with no zero, and
+      `toAffineWith_represents` that the affine entries hold the same points. `bin/diff_p256_wide`
+      holds the mixed addition to the model, on random coordinates, at Z1 = 0 and at equal x.
+      `bin/p256_equiv_test` holds the multiplication to `p256_point_mul`, the point at infinity
+      among its inputs. `tools/p256_wide.py` checks the words of (p + 1) / 2. The CBMC harnesses
+      of the field, the scans and the multiplication run on the new text. Two mutants are new,
+      and twelve moved to the new text.
+    - **Measured and not kept:**
+      - **gcc on the 128-bit sums.** The shared secret took 151,000 cycles where it took 125,000
+        on the intrinsics (run 43164602334).
+      - **Statements that name one word, under gcc.** An empty statement that reads and writes
+        the next word, in place of one that clobbers memory, took gcc's doubling to 346 cycles
+        from 330 (run 43156814455).
+      - **A row with nothing to add to.** `p256_wide_mul_row` on four zero words, without the
+        additions of zero, took 40% of the instructions off gcc's `combine_exact`, and the
+        inverse took the same time (run 43162051804). With `combine_exact` and `combine_modular`
+        inline in the round, gcc's inverse took 6,800 cycles where it took 6,630 (run
+        43172287767). The inverse is the one step where gcc stays behind clang: 6,630 cycles
+        against 5,410.
+      - **Other last words of the subtraction.** P3 under the mask added after the chain took gcc's
+        shared secret to 51.75 to 51.83 µs from 51.07 µs on an EPYC 7763 (run 43175093971), and a
+        subtraction with a borrow to 51.32 to 52.05 µs from 51.02 to 51.07 µs (run 43176274954). P3
+        under the mask held before the chain took clang's shared secret to 48.04 to 48.08 µs from
+        47.37 to 47.43 µs, because `P256_WIDE_HOLD` is empty under clang (run 43178025176). CBMC's
+        check of unsigned wrap refuses a plain `- low_half`, so the builtins' form, which the proofs
+        compile, subtracts through `__builtin_sub_overflow`, and the sum form takes the low word of
+        a 128-bit difference. That low word in every form took gcc's key generation on the Xeon
+        8573C to 12.52 µs from 12.42 µs (run 43178025176), and bench runs 43178954867 and
+        43178969875 put it at 1.018 and 1.034 of OpenSSL's time.
+      - **A mask from a wrapping vector sum.** Zero less the top bit of one less the exclusive
+        or ran as fast as the comparison, and CBMC's check of unsigned wrap refused it.
+
 225. **A host object computes ML-KEM's noise on lanes, and an x86-64
     host object keeps the matrix's candidates on AVX2.** On the Xeon
     Platinum 8573C an ML-KEM-768 encapsulation took 23.2 µs under gcc 13.3
