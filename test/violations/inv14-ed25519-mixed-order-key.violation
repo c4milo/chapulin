@@ -1,0 +1,16 @@
+invariant: INV-14
+file: src/x25519_wide_ed25519.h
+catches: dnssec_test
+reason: ed25519_verify_hram accepts a key outside the subgroup of prime
+  order L. Such a key is a sum A + T with T of order 2, 4 or 8, and a
+  signature made with A's scalar meets the equation under it whenever the
+  order of T divides h. RFC 8032 permits that key, and
+  docs/decisions.md 227 refuses it. bin/dnssec_test presents seven such
+  signatures (test/gen_ed25519_mixed_order_vectors.py), and fails on this
+  edit.
+
+--- old
+    if (!fe_equal(acc.x, FE_ZERO) || !fe_equal(acc.y, acc.z)) {
+        return 0;
+    }
+--- new

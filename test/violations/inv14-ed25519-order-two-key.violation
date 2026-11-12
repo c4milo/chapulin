@@ -1,0 +1,13 @@
+invariant: INV-14
+file: src/x25519_wide_ed25519.h
+catches: dnssec_test
+reason: ed25519_verify_hram reads [L]A as the identity from its X alone.
+  The point of order 2, (0, -1), has X = 0 too, and [L](A + T) is that
+  point when T is. So a key whose part outside the subgroup of prime order
+  has order 2 passes the test of its order. bin/dnssec_test presents a
+  signature under such a key, and fails on this edit.
+
+--- old
+    if (!fe_equal(acc.x, FE_ZERO) || !fe_equal(acc.y, acc.z)) {
+--- new
+    if (!fe_equal(acc.x, FE_ZERO)) {

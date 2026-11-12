@@ -17,8 +17,11 @@
 // else. The rule is RFC 8032's cofactorless equation [S]B = R + [h]A, where
 // h is hram mod L, and it refuses as libsodium does: an S at or above L, an
 // encoding of A or R whose y is not below p or that names no point, and an
-// A of small order. R is refused by the comparison itself: the call
-// compares R's bytes with the canonical encoding of [S]B - [h]A.
+// A of small order. It also refuses an A outside the subgroup of prime
+// order L, which libsodium takes: every key [a]B is in that subgroup, so
+// only a key made to be outside it is refused (docs/decisions.md 227). R
+// is refused by the comparison itself: the call compares R's bytes with
+// the canonical encoding of [S]B - [h]A.
 int ed25519_verify_hram(const uint8_t key[32], const uint8_t hram[64], const uint8_t sig[64]);
 #endif
 

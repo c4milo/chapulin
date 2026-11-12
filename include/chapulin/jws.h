@@ -129,8 +129,8 @@ int CH_MUST_USE ch_base64url_decode(const uint8_t *text, size_t text_len, uint8_
 //    section 6.2.1). A valid sig is 64 bytes, R then S (section 3.4).
 //  - CH_JWS_EDDSA: 32 bytes, the JWK's "x" (RFC 8037 section 2). A valid
 //    sig is 64 bytes, R then S. The rule is RFC 8032's cofactorless
-//    equation, and it refuses what libsodium refuses, as dnssec.h's
-//    algorithm 15 does.
+//    equation. It refuses what libsodium refuses, and a key outside the
+//    subgroup of prime order too, as dnssec.h's algorithm 15 does.
 //
 // Take algorithm from the configuration that holds the key, never from
 // the token's header alone (RFC 8725 section 3.1). A caller that lets the

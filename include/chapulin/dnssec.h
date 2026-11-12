@@ -123,7 +123,8 @@ size_t ch_dnssec_hash_final(ch_dnssec_hash *h, uint8_t digest[CH_DNSSEC_DIGEST_M
 // for 10 and 15. sig is the RRSIG's signature field: the modulus's length
 // for RSA, r then s, 64 bytes, for algorithm 13 and 96 for 14, and R then
 // S, 64 bytes, for 15. Algorithm 15 follows RFC 8032's
-// cofactorless rule and refuses what libsodium refuses (ed25519_verify.h).
+// cofactorless rule. It refuses what libsodium refuses, and a key outside
+// the subgroup of prime order too (ed25519_verify.h).
 //
 // Returns CH_OK for a valid signature. Returns CH_EAUTH for a signature
 // the key does not verify, and CH_EINVAL for an algorithm the call does

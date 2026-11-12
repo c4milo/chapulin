@@ -13,6 +13,7 @@
 #include "dnssec.h"
 #include "dnssec_rfc_vectors.h"
 #include "dnssec_vectors.h"
+#include "ed25519_mixed_order_vectors.h"
 #include "sha512.h"
 #include "tls.h"
 
@@ -131,6 +132,20 @@ static void ed25519_edges(void) {
     forged[32] = 1;   // S = 1
     expect(ch_dnssec_verify(15, identity, 32, v->digest, 64, forged, 64), CH_EAUTH,
            "a small-order key is refused");
+    // Each signature of test/gen_ed25519_mixed_order_vectors.py meets the
+    // equation under its key, so only the refusal of a key outside the
+    // subgroup of prime order stops it. Row 0's key is in the subgroup.
+    for (size_t i = 0;
+         i < sizeof ed25519_mixed_order_vectors / sizeof ed25519_mixed_order_vectors[0]; i++) {
+        const ed25519_mixed_order_vector *m = &ed25519_mixed_order_vectors[i];
+        if (m->torsion_order == 1) {
+            expect(ch_dnssec_verify(15, m->key, 32, m->hram, 64, m->sig, 64), CH_OK,
+                   "a key in the prime-order subgroup verifies");
+        } else {
+            expect(ch_dnssec_verify(15, m->key, 32, m->hram, 64, m->sig, 64), CH_EAUTH,
+                   "a key outside the prime-order subgroup is refused");
+        }
+    }
     uint8_t p_encoding[32];
     memset(p_encoding, 0xff, sizeof p_encoding);
     p_encoding[0] = 0xed;

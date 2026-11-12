@@ -22,8 +22,12 @@ C, and proves what it computes.
   `bin/diff_ed25519`: `decode`, `reduceModL`, `loopExtended` from the
   identity over 253 bits, and the point's y with its x's low bit as bit
   255. `verifyR` is the whole check: the refusals of an S at or above L,
-  of a key `decode` refuses and of a key of small order, then `pointR`.
-  It is the R that the C accepts, and nothing for a refusal.
+  of a key `decode` refuses, of a key of small order and of a key outside
+  the subgroup of prime order, then `pointR`. It is the R that the C
+  accepts, and nothing for a refusal.
+* `outsidePrimeOrder` is the C's test of the key's order
+  (docs/decisions.md 227): the same loop with S = 0 and h = L does not
+  end at the identity, X = 0 and Y = Z.
 
 `toMont_loop` proves that the image of `loop` under
 `Spec.X25519Edwards.toMont`, a map to a group of Mathlib that takes sums
@@ -37,10 +41,13 @@ hold in every field in which 2 is not zero, d is not a square and -1 is.
 `ZMod p`, with p = 2^255 - 19, is such a field, since p is prime
 (`Spec.Prime25519`), and `edwards25519` is its `Params`. `verifyR_spec`
 puts the parts together over it: an R that `verifyR` accepts comes with
-an S below L, a key that `decode` reads as a point A, and a point P whose
-image is S B - h A and whose encoding is R. `bin/diff_ed25519` holds the
-C to `verifyR`, and the Wycheproof suite holds both to RFC 8032's
-verdicts.
+an S below L, a key that `decode` reads as a point A whose image L takes
+to zero, and a point P whose image is S B - h A and whose encoding is R.
+`order_test` proves that the loop with S = 0 and h = L ends at the
+identity exactly when L times A's image is zero, so `outsidePrimeOrder`
+refuses the keys outside the subgroup of order L and no other
+(`not_outsidePrimeOrder_iff`). `bin/diff_ed25519` holds the C to
+`verifyR`, and the Wycheproof suite holds both to RFC 8032's verdicts.
 
 This module is written from the C, not from a standard, and CONTRACT.md
 says why.
@@ -142,6 +149,42 @@ theorem verify_point (B A : EdPoint c) {s h : ℕ} (h_s : s < 2 ^ 253) (h_h : h 
   · rw [toMont_loop, toMont_identity', smul_zero, zero_add, Nat.mod_eq_of_lt h_s,
       Nat.mod_eq_of_lt h_h]
 
+omit [DecidableEq F] in
+/-- The map takes a point to zero exactly when the point is the identity. -/
+theorem toMont_eq_zero_iff (P : EdPoint c) : toMont P = 0 ↔ P.x = 0 ∧ P.y = 1 := by
+  refine ⟨fun h => ?_, fun h => toMont_identity h.1 h.2⟩
+  by_cases h_x : P.x = 0
+  · by_cases h_y : P.y = 1
+    · exact ⟨h_x, h_y⟩
+    · simp only [toMont, dif_pos h_x, if_neg h_y] at h
+      cases h
+  · rw [toMont_generic h_x] at h
+    cases h
+
+/-- The C's test of a key's order: from the identity, the loop with S = 0 and h = l ends at the
+identity, X = 0 and Y = Z, exactly when l times A's image is zero. -/
+theorem order_test (B A : EdPoint c) {l : ℕ} (h_l : l < 2 ^ 253) :
+    let a := loopExtended (entryOf c.d B.x B.y) (entryOf c.d (-A.x) A.y) 0 l 253 ⟨0, 1, 1, 0⟩
+    (a.x = 0 ∧ a.y = a.z) ↔ (l : ℤ) • toMont A = 0 := by
+  intro a
+  obtain ⟨h_z, h_x, h_y, -⟩ := loopExtended_represents B A 0 l 253 EdPoint.identity _
+    identity_represents
+  have h_x : a.x = (loop B A 0 l 253 EdPoint.identity).x * a.z := h_x
+  have h_y : a.y = (loop B A 0 l 253 EdPoint.identity).y * a.z := h_y
+  have h_mont : toMont (loop B A 0 l 253 EdPoint.identity) = -((l : ℤ) • toMont A) := by
+    rw [toMont_loop, toMont_identity', smul_zero, zero_add, Nat.zero_mod, Nat.mod_eq_of_lt h_l]
+    simp
+  have h_zero : (l : ℤ) • toMont A = 0 ↔ (loop B A 0 l 253 EdPoint.identity).x = 0 ∧
+      (loop B A 0 l 253 EdPoint.identity).y = 1 := by
+    rw [← toMont_eq_zero_iff, h_mont, neg_eq_zero]
+  rw [h_zero]
+  constructor
+  · rintro ⟨h_ax, h_ay⟩
+    exact ⟨(mul_eq_zero.mp (h_x.symm.trans h_ax)).resolve_right h_z,
+      mul_right_cancel₀ h_z ((h_y.symm.trans h_ay).trans (one_mul _).symm)⟩
+  · rintro ⟨h_px, h_py⟩
+    exact ⟨by rw [h_x, h_px, zero_mul], by rw [h_y, h_py, one_mul]⟩
+
 end Loop
 
 section Check
@@ -178,15 +221,30 @@ instance (ax ay : ZMod Ed25519Decode.p) : Decidable (smallOrder ax ay) := by
   unfold smallOrder
   infer_instance
 
+/-- The C's refusal of a key outside the subgroup of prime order: its loop with S = 0 and h = L,
+from the identity, does not end at the identity, X = 0 and Y = Z. -/
+def outsidePrimeOrder (ax ay : ZMod Ed25519Decode.p) : Prop :=
+  let acc := loopExtended (entryOf Ed25519Decode.d baseX baseY)
+    (entryOf Ed25519Decode.d (-ax) ay) 0 Spec.Ed25519ModL.L 253 ⟨0, 1, 1, 0⟩
+  ¬(acc.x = 0 ∧ acc.y = acc.z)
+
+instance (ax ay : ZMod Ed25519Decode.p) : Decidable (outsidePrimeOrder ax ay) := by
+  unfold outsidePrimeOrder
+  infer_instance
+
 /-- The whole check, as `ed25519_verify_hram` runs it: the R it accepts for the key's 32 bytes,
 the 64 bytes of SHA-512(R ‖ A ‖ M) and S, all little-endian, or nothing for a refusal of an S at
-or above L, a key `decode` refuses or a key of small order. -/
+or above L, a key `decode` refuses, a key of small order or a key outside the subgroup of prime
+order. -/
 def verifyR (key hram sigS : ℕ) : Option ℕ :=
   if Spec.Ed25519ModL.L ≤ sigS then none
   else
     match Ed25519Decode.decode key with
     | none => none
-    | some (ax, ay) => if smallOrder ax ay then none else pointR key hram sigS
+    | some (ax, ay) =>
+      if smallOrder ax ay then none
+      else if outsidePrimeOrder ax ay then none
+      else pointR key hram sigS
 
 /-! ## Over edwards25519's field -/
 
@@ -203,13 +261,22 @@ def base : EdPoint edwards25519 :=
   ⟨baseX, baseY, by unfold OnCurve; exact (by decide +kernel :
     -baseX ^ 2 + baseY ^ 2 = 1 + Ed25519Decode.d * baseX ^ 2 * baseY ^ 2)⟩
 
+/-- Over edwards25519: the test of a key's order passes exactly the keys whose image L takes to
+zero, the keys in the subgroup of order L. -/
+theorem not_outsidePrimeOrder_iff (A : EdPoint edwards25519) :
+    ¬outsidePrimeOrder A.x A.y ↔ (Spec.Ed25519ModL.L : ℤ) • toMont A = 0 := by
+  unfold outsidePrimeOrder
+  rw [not_not]
+  exact order_test base A (by norm_num [Spec.Ed25519ModL.L])
+
 /-- What `verifyR` accepts, over edwards25519's field: an S below L, a key `decode` reads as a
-point A, and R the encoding of a point P whose image is S B - h A, h the hash reduced modulo L.
-The C's check is this check by `bin/diff_ed25519`. -/
+point A whose image L takes to zero, and R the encoding of a point P whose image is S B - h A, h
+the hash reduced modulo L. The C's check is this check by `bin/diff_ed25519`. -/
 theorem verifyR_spec {key hram sigS r : ℕ} (h_hram : hram < 2 ^ 512)
     (h_verify : verifyR key hram sigS = some r) :
     sigS < Spec.Ed25519ModL.L ∧ ∃ A P : EdPoint edwards25519,
       Ed25519Decode.decode key = some (A.x, A.y) ∧
+      (Spec.Ed25519ModL.L : ℤ) • toMont A = 0 ∧
       toMont P = (sigS : ℤ) • toMont base -
         (Spec.Ed25519ModL.reduceModL hram : ℤ) • toMont A ∧
       r = P.y.val + 2 ^ 255 * (P.x.val % 2) := by
@@ -228,6 +295,10 @@ theorem verifyR_spec {key hram sigS r : ℕ} (h_hram : hram < 2 ^ 512)
   · rw [if_pos h_small] at h_verify
     cases h_verify
   rw [if_neg h_small] at h_verify
+  by_cases h_outside : outsidePrimeOrder ax ay
+  · rw [if_pos h_outside] at h_verify
+    cases h_verify
+  rw [if_neg h_outside] at h_verify
   unfold pointR at h_verify
   rw [h_decode] at h_verify
   let A : EdPoint edwards25519 := ⟨ax, ay, Ed25519Decode.decode_onCurve h_decode⟩
@@ -236,7 +307,7 @@ theorem verifyR_spec {key hram sigS r : ℕ} (h_hram : hram < 2 ^ 512)
     rw [Spec.Ed25519ModL.reduceModL_eq h_hram]
     exact (Nat.mod_lt _ (by norm_num [Spec.Ed25519ModL.L])).trans h_L
   obtain ⟨P, h_x, h_y, h_mont⟩ := verify_point (s := sigS) base A (by omega) h_h
-  refine ⟨by omega, A, P, h_decode, h_mont, ?_⟩
+  refine ⟨by omega, A, P, h_decode, (not_outsidePrimeOrder_iff A).mp h_outside, h_mont, ?_⟩
   rw [← Option.some_inj.mp h_verify]
   exact congrArg₂ (fun y x => ZMod.val y + 2 ^ 255 * (ZMod.val x % 2)) h_y h_x
 

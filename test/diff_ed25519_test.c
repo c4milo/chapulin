@@ -25,7 +25,13 @@
 // one below L: where the spec names the R the check accepts, the C must
 // accept that R and refuse it with its low bit or its sign bit flipped,
 // and where the spec refuses, the C must refuse each R it is given,
-// the R of the point its loop computes among them.
+// the R of the point its loop computes among them. Seven of eight random
+// points are outside the subgroup of prime order, and the check refuses
+// their keys (docs/decisions.md 227): the R of the loop's point meets the
+// equation under such a key, so that row fails a C with no test of the
+// key's order. For each random key that encodes a point P, the check
+// takes the key of 8 P too, which is in the subgroup, so the rows that
+// accept an R stay.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -99,6 +105,31 @@ static void diff_decode(const uint8_t key[32]) {
 
 static void diff_verifies(const uint8_t key[32]);
 
+// key8 = the encoding of 8 P for the point P that key encodes: three
+// doublings, then the affine y with x's low bit as bit 255. 8 P is in the
+// subgroup of prime order. Returns 0 when key encodes no point.
+static int eight_times(uint8_t key8[32], const uint8_t key[32]) {
+    fe x;
+    fe y;
+    if (!decode_point(x, y, key)) {
+        return 0;
+    }
+    edwards_point p = {.z = {1}};
+    memcpy(p.x, x, sizeof x);
+    memcpy(p.y, y, sizeof y);
+    mul(p.t, x, y);
+    for (int i = 0; i < 3; i++) {
+        double_in_place(&p);
+    }
+    fe zi;
+    invert(zi, p.z);
+    mul(x, p.x, zi);
+    mul(y, p.y, zi);
+    pack(key8, y);
+    key8[31] |= (uint8_t)(fe_negative(x) << 7);
+    return 1;
+}
+
 static void diff_decodes(void) {
     // p - 1 in 32 little-endian bytes; the rows below write the others
     // from it.
@@ -128,6 +159,10 @@ static void diff_decodes(void) {
         diff_decode(key);
         if (r < VERIFY_KEYS) {
             diff_verifies(key);
+            uint8_t key8[32];
+            if (eight_times(key8, key)) {
+                diff_verifies(key8);
+            }
         }
         key[31] ^= 0x80;
         diff_decode(key);

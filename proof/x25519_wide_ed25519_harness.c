@@ -6,9 +6,11 @@
 // ed25519_verify_hram() runs double_point() and add_entry() on these
 // entries and on the identity, the inductive step x25519_wide_edwards
 // proves, so its loop of 253 steps stays inside INV-34's bounds by
-// induction. x25519_wide_invert and x25519_wide_tail prove the invert, mul
-// and pack that end it, and x25519_wide_ed25519_mod_l proves the scalar's
-// reduction.
+// induction. It runs that loop twice from the identity on the same two
+// entries, once for the key's order and once for the equation, and the
+// induction holds for each run. x25519_wide_invert and x25519_wide_tail
+// prove the invert, mul and pack that end it, and
+// x25519_wide_ed25519_mod_l proves the scalar's reduction.
 //
 // Not proved by a line of its own: decode_point(). Its chain of squarings
 // and products to z^((p - 5) / 8) is mul() and sqr() alone, whose bounds
@@ -16,7 +18,8 @@
 // every add() and sub() in it takes a result of those or of reduce(). With
 // to_entry() and the reduction in one formula, cbmc gave no verdict in 25
 // minutes. bin/dnssec_test and the Zig API's test run it on OpenSSL's and
-// std.crypto's keys, on a key whose y is p, and on a small-order key.
+// std.crypto's keys, on a key whose y is p, on a small-order key, and on
+// seven keys outside the subgroup of prime order.
 //
 // The multiply is the contract in proof/x25519_wide_stubs.h, which
 // x25519_wide_mul128 discharges on the real ct_mul128.

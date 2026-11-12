@@ -228,6 +228,24 @@ static int bit_of(const uint64_t w[4], size_t i) {
     return (int)((w[i >> 6] >> (i & 63)) & 1);
 }
 
+// acc = [s]B + [h](-A) for s and h below 2^253, from the identity, left
+// to right over the 253 bits below L's top: each step doubles the sum,
+// adds B where s has the bit, and adds -A where h has it.
+static void two_scalar_mul(edwards_point *acc, const uint64_t s[4], const uint64_t h[4],
+                           const edwards_entry *b, const edwards_entry *minus_a) {
+    static const edwards_point identity = {.y = {1}, .z = {1}};
+    *acc = identity;
+    for (size_t i = 253; i-- > 0;) {
+        double_in_place(acc);
+        if (bit_of(s, i)) {
+            add_in_place(acc, b);
+        }
+        if (bit_of(h, i)) {
+            add_in_place(acc, minus_a);
+        }
+    }
+}
+
 int ed25519_verify_hram(const uint8_t key[32], const uint8_t hram[64], const uint8_t sig[64]) {
     uint64_t s[4];
     words_of(s, sig + 32);
@@ -239,7 +257,9 @@ int ed25519_verify_hram(const uint8_t key[32], const uint8_t hram[64], const uin
     if (!decode_point(ax, ay, key)) {
         return 0;
     }
-    // A small-order A: [8]A is the identity, whose X is 0.
+    // A small-order A: [8]A is the identity, whose X is 0. Of the 8 such
+    // points, the test of [L]A below passes the identity, so this test is
+    // what refuses that key.
     edwards_point a = {.z = {1}};
     memcpy(a.x, ax, sizeof ax);
     memcpy(a.y, ay, sizeof ay);
@@ -250,26 +270,29 @@ int ed25519_verify_hram(const uint8_t key[32], const uint8_t hram[64], const uin
     if (fe_equal(a.x, FE_ZERO)) {
         return 0;
     }
-    uint64_t h[4];
-    reduce_mod_l(h, hram);
-
-    // [S]B + [h](-A), left to right over the 253 bits below L's top.
     edwards_entry b;
     memcpy(&b, X25519_WIDE_TABLE[0][0], sizeof b);
     edwards_entry minus_a;
     fe nx;
     negate(nx, ax);
     to_entry(&minus_a, nx, ay);
-    edwards_point acc = {.y = {1}, .z = {1}};
-    for (size_t i = 253; i-- > 0;) {
-        double_in_place(&acc);
-        if (bit_of(s, i)) {
-            add_in_place(&acc, &b);
-        }
-        if (bit_of(h, i)) {
-            add_in_place(&acc, &minus_a);
-        }
+
+    // An A outside the subgroup of prime order L: [L]A is not the
+    // identity (docs/decisions.md 227). The loop computes [0]B + [L](-A),
+    // which is the identity exactly when [L]A is. The identity has X = 0
+    // and Y = Z. The point of order 2 has X = 0 and Y = -Z, so X alone
+    // does not tell the two apart.
+    static const uint64_t zero[4] = {0};
+    edwards_point acc;
+    two_scalar_mul(&acc, zero, ED25519_L, &b, &minus_a);
+    if (!fe_equal(acc.x, FE_ZERO) || !fe_equal(acc.y, acc.z)) {
+        return 0;
     }
+    uint64_t h[4];
+    reduce_mod_l(h, hram);
+
+    // [S]B + [h](-A).
+    two_scalar_mul(&acc, s, h, &b, &minus_a);
     fe zi;
     fe x;
     fe y;

@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "ed25519_mixed_order_vectors.h"
 #include "jws.h"
 #include "jws_rfc_vectors.h"
 #include "jws_vectors.h"
@@ -159,6 +160,24 @@ static void algorithms(void) {
            CH_EINVAL, "an Ed25519 key one byte long is refused");
     expect(ch_jws_verify(CH_JWS_ES256, NULL, 0, input, ec->input_len, ec->sig, ec->sig_len),
            CH_EINVAL, "an empty key is refused");
+}
+
+// EdDSA under the keys of test/gen_ed25519_mixed_order_vectors.py. Each
+// signature meets RFC 8032's equation under its key, so only the refusal
+// of a key outside the subgroup of prime order stops it. Row 0's key is
+// in the subgroup.
+static void ed25519_key_orders(void) {
+    for (size_t i = 0;
+         i < sizeof ed25519_mixed_order_vectors / sizeof ed25519_mixed_order_vectors[0]; i++) {
+        const ed25519_mixed_order_vector *m = &ed25519_mixed_order_vectors[i];
+        int rc = ch_jws_verify(CH_JWS_EDDSA, m->key, 32, (const uint8_t *)m->msg, m->msg_len,
+                               m->sig, 64);
+        if (m->torsion_order == 1) {
+            expect(rc, CH_OK, "an Ed25519 key in the prime-order subgroup verifies");
+        } else {
+            expect(rc, CH_EAUTH, "an Ed25519 key outside the prime-order subgroup is refused");
+        }
+    }
 }
 
 // An RS256 key field with the exponent bytes given and vector 0's
@@ -381,6 +400,7 @@ int main(void) {
     tokens();
     signature_lengths();
     algorithms();
+    ed25519_key_orders();
     refused_rsa_keys();
     base64url_vectors();
     base64url_round_trip();

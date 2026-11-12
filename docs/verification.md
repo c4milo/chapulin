@@ -1946,17 +1946,27 @@ The entries are grouped by area:
   x and y are those of a point whose image under `toMont` is S B - h A.
   That holds in every field in which 2 is not zero, d is not a square
   and -1 is, and `edwards25519` is `ZMod p` with those facts.
+  `order_test` proves that the same loop with S = 0 and h = L ends at the
+  identity exactly when L times A's image is zero, so the model's test of
+  a key's order, `outsidePrimeOrder`, refuses the keys outside the
+  subgroup of order L and no other key (decision 227).
   `verifyR_spec` puts the parts together over it: an R that the model's
-  check accepts comes with an S below L, a key that decodes to a point A,
-  and a point P whose image is S B - h A and whose encoding is R.
-  `bin/diff_ed25519`, in `make diff`, holds the C to the models in 1,847
+  check accepts comes with an S below L, a key that decodes to a point A
+  whose image L takes to zero, and a point P whose image is S B - h A and
+  whose encoding is R.
+  `bin/diff_ed25519`, in `make diff`, holds the C to the models in 2,036
   comparisons: each bit from fixed and random remainders up to L - 1; the
   hashes 0, 2^512 - 1, L - 1, L, L + 1 and random ones; with each sign
   bit, the y values 0, 1, p - 1, p, 2^255 - 1 and B's, and random keys;
   and the whole check over 62 of those keys and an S of 0, L - 1, L and a
-  random one. Where the spec's `verifyR` names an R, the C accepts it and
-  refuses it with its low bit or its sign bit flipped. Where the spec
-  refuses, the C refuses too, the R of the loop's point included.
+  random one. Seven of eight random points are outside the subgroup of
+  prime order, so for each random key of the 62 that encodes a point P
+  the check takes the key of 8 P too, which is in it. Where the spec's
+  `verifyR` names an R, the C accepts it and refuses it with its low bit
+  or its sign bit flipped. Where the spec refuses, the C refuses too, the
+  R of the loop's point included: that R meets the equation under a key
+  outside the subgroup, so the row fails a C with no test of the key's
+  order.
 - **Not proved:** that the C is the model on every input, which
   `bin/diff_ed25519` samples, and `decode_point()` by a harness line of
   its own. Its power chain
@@ -1965,8 +1975,10 @@ The entries are grouped by area:
   minutes. The mod-L step runs without `--unsigned-overflow-check`,
   because its borrow chain wraps on purpose. No point value is proved:
   `bin/dnssec_test` runs OpenSSL's Ed25519 signatures, a forgery under a
-  small-order key, a key whose y is p and an S above L, and the Zig
-  API's test verifies `std.crypto`'s signatures.
+  small-order key, seven signatures that meet the equation under keys
+  outside the subgroup of prime order
+  (`test/gen_ed25519_mixed_order_vectors.py`), a key whose y is p and an
+  S above L, and the Zig API's test verifies `std.crypto`'s signatures.
 
 #### rsa_mont64_blocks
 

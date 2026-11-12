@@ -19054,3 +19054,43 @@ does nothing more.
       where it retired 157,800, and 168,380 for a decapsulation where it
       retired 173,410. No M1 was free to time: the load average stayed
       above 20.
+
+227. **An Ed25519 check refuses a public key outside the subgroup of prime order.** Decision 169
+    took libsodium's rule for `ed25519_verify_hram`: RFC 8032's equation without the cofactor, and
+    a refusal of a small-order key. Wycheproof's newer Ed25519 suite adds 21 signatures under keys
+    of mixed order, which that rule accepts and the suite leaves to the implementation. Camilo
+    ruled on 2026-11-12: refuse those keys.
+
+    - **The keys.** Every point of edwards25519 is a sum P + T, with P in the subgroup of prime
+      order L and T one of the 8 points whose order divides 8. An honest key is [a]B, whose T is
+      the identity. A key with another T is one its owner made on purpose. A signature made with
+      the scalar of P meets the equation under P + T whenever the order of T divides h. So its
+      owner signs one message in two, four or eight under it, as the order of T is 2, 4 or 8.
+      No other party can forge under such a key: the owner alone holds the scalar.
+    - **Why refuse them.** The verdict on such a key depends on h, and so on the message, and a
+      verifier that multiplies by the cofactor gives another verdict. A check that serves DNSSEC
+      and JWS for more than one caller should give one verdict for one key. A key outside the
+      subgroup has no honest use, so the refusal costs no honest caller a signature.
+    - **The test.** `two_scalar_mul` holds the loop that computed [S]B + [h](-A). The check runs
+      it once more with S = 0 and h = L, which gives [L](-A), and refuses a key for which that
+      point is not the identity. The identity is X = 0 and Y = Z. The point of order 2 has X = 0
+      and Y = -Z, so the test reads both. The test of [8]A stays: of the 8 small-order points it
+      alone refuses the identity, which [L]A passes.
+    - **What it costs.** L has 73 bits set, so the test runs 253 doublings and 73 additions. The
+      equation's loop runs 253 doublings and one addition for each bit set in S and in h, about
+      253. No bench row times this check. `ch_jws_sign` verifies each EdDSA signature with the
+      same function, so a signature runs the test once too.
+    - **Lean.** `Spec.Ed25519Verify.order_test` proves that the loop with S = 0 and h = l, from
+      the identity, ends at the identity exactly when l times A's image is zero. So
+      `outsidePrimeOrder`, the model of the test, refuses the keys outside the subgroup of order
+      L and no other key (`not_outsidePrimeOrder_iff`), and `verifyR_spec` now states that an
+      accepted key's image is one L takes to zero. `bin/diff_ed25519` holds the C to `verifyR`.
+      Seven of eight random points are outside the subgroup, so the test also takes the key of
+      8 P for each random point P, which keeps the rows that accept an R.
+    - **Tests.** `test/gen_ed25519_mixed_order_vectors.py` writes one honest key A and the keys
+      A + T for the 7 other points T, each with a signature that meets the equation under it.
+      `bin/dnssec_test` and `bin/jws_test` require CH_EAUTH for the 7 and CH_OK for A. Two
+      mutants land: one drops the test, and one reads X alone, which the key with T of order 2
+      then passes. `bin/dnssec_test` fails on each.
+    - **Callers.** No signature changes and no result code is new: `ch_dnssec_verify` and
+      `ch_jws_verify` return CH_EAUTH for such a key, as for any signature that fails.

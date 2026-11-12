@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Regenerates test/ed25519_mixed_order_vectors.h.
+
+Usage: python3 test/gen_ed25519_mixed_order_vectors.py
+
+ed25519_verify_hram refuses a public key outside the subgroup of prime
+order L (docs/decisions.md 227). This script makes the signatures that
+only that refusal stops.
+
+Every point of edwards25519 is a sum P + T, with P in the subgroup of
+order L and T one of the 8 points whose order divides 8. An honest key
+is A = [a]B, which has T the identity. The script takes one honest key
+and writes the keys A + T for the 8 points T. Row 0 has T the identity,
+so its key is A itself and its signature must verify.
+
+A signature (R, S) of a message M under A + T, made with the scalar a:
+
+    r = SHA-512(prefix, M) mod L        R = [r]B
+    h = SHA-512(R, A + T, M) mod L      S = r + h a mod L
+
+RFC 8032 section 5.1.7's equation without the cofactor asks for
+[S]B = R + [h](A + T). The left side is R + [h]A, so the equation holds
+exactly when [h]T is the identity: when the order of T divides h. The
+script tries the messages "mixed-order key <j>, message <n>" for n = 0,
+1, 2 and so on, and keeps the first whose h the order of T divides. So
+each signature meets the equation under its key, and a verifier with no
+test of the key's order accepts it.
+
+The script computes with RFC 8032's formulas over Python integers, and
+checks each row before it writes it: the equation holds, [L](A + T) is
+the identity for row 0 alone, and the order of T is the one the row
+states. The seed is fixed, so every run writes the same bytes.
+"""
+
+import hashlib
+import pathlib
+
+P = 2**255 - 19
+L = 2**252 + 27742317777372353535851937790883648493
+D = -121665 * pow(121666, P - 2, P) % P
+SQRT_M1 = pow(2, (P - 1) // 4, P)
+IDENTITY = (0, 1)
+
+# The honest key's seed: 32 bytes that spell their own index.
+SEED = bytes(range(32))
+
+
+def add(p1, p2):
+    """The sum of two affine points (RFC 8032 section 5.1.4's law, which
+    is complete on this curve)."""
+    x1, y1 = p1
+    x2, y2 = p2
+    t = D * x1 * x2 * y1 * y2 % P
+    x3 = (x1 * y2 + x2 * y1) * pow(1 + t, P - 2, P) % P
+    y3 = (y1 * y2 + x1 * x2) * pow(1 - t, P - 2, P) % P
+    return (x3, y3)
+
+
+def mul(k, point):
+    total = IDENTITY
+    for bit in bin(k)[2:]:
+        total = add(total, total)
+        if bit == "1":
+            total = add(total, point)
+    return total
+
+
+def recover_x(y, sign):
+    """RFC 8032 section 5.1.3: the x of a point with this y, or None."""
+    x2 = (y * y - 1) * pow(D * y * y + 1, P - 2, P) % P
+    x = pow(x2, (P + 3) // 8, P)
+    if (x * x - x2) % P != 0:
+        x = x * SQRT_M1 % P
+    if (x * x - x2) % P != 0:
+        return None
+    if x == 0 and sign:
+        return None
+    return P - x if x & 1 != sign else x
+
+
+def encode(point):
+    x, y = point
+    return (y | (x & 1) << 255).to_bytes(32, "little")
+
+
+BASE = (recover_x(4 * pow(5, P - 2, P) % P, 0), 4 * pow(5, P - 2, P) % P)
+
+
+def sha512_mod_l(*parts):
+    return int.from_bytes(hashlib.sha512(b"".join(parts)).digest(), "little") % L
+
+
+def order_of(point):
+    for order in (1, 2, 4, 8):
+        if mul(order, point) == IDENTITY:
+            return order
+    raise SystemExit("a point whose order does not divide 8")
+
+
+def torsion_generator():
+    """A point of order 8: [L]Q for the first y from 2 that names a
+    point Q whose [L]Q has that order."""
+    y = 2
+    while True:
+        x = recover_x(y, 0)
+        if x is not None:
+            candidate = mul(L, (x, y))
+            if order_of(candidate) == 8:
+                return candidate
+        y += 1
+
+
+def c_bytes(data):
+    return ", ".join("0x%02x" % b for b in data)
+
+
+def main():
+    digest = hashlib.sha512(SEED).digest()
+    a = int.from_bytes(digest[:32], "little")
+    a &= (1 << 254) - 8
+    a |= 1 << 254
+    prefix = digest[32:]
+    honest = mul(a, BASE)
+    generator = torsion_generator()
+
+    rows = []
+    for j in range(8):
+        torsion = mul(j, generator)
+        order = order_of(torsion)
+        key = add(honest, torsion)
+        n = 0
+        while True:
+            msg = b"mixed-order key %d, message %d" % (j, n)
+            r = sha512_mod_l(prefix, msg)
+            big_r = mul(r, BASE)
+            h = sha512_mod_l(encode(big_r), encode(key), msg)
+            if h % order == 0:
+                break
+            n += 1
+        s = (r + h * a) % L
+        # The equation without the cofactor holds under the row's key.
+        assert mul(s, BASE) == add(big_r, mul(h, key))
+        # The key is in the subgroup of order L for row 0 alone.
+        assert (mul(L, key) == IDENTITY) == (j == 0)
+        hram = hashlib.sha512(encode(big_r) + encode(key) + msg).digest()
+        sig = encode(big_r) + s.to_bytes(32, "little")
+        rows.append("    {%d,\n     {%s},\n     \"%s\", %d,\n     {%s},\n     {%s}},"
+                    % (order, c_bytes(encode(key)), msg.decode(), len(msg), c_bytes(hram),
+                       c_bytes(sig)))
+
+    lines = [
+        "// Generated by test/gen_ed25519_mixed_order_vectors.py. Regenerate, never edit.",
+        "//",
+        "// Ed25519 signatures under the keys A + T, for one honest key A and the 8",
+        "// points T whose order divides 8. Each signature meets RFC 8032 section",
+        "// 5.1.7's equation without the cofactor under its key. Row 0 has T the",
+        "// identity and must verify. Every other key is outside the subgroup of",
+        "// prime order, and only the refusal of such a key stops its signature",
+        "// (docs/decisions.md 227).",
+        "#ifndef CH_ED25519_MIXED_ORDER_VECTORS_H",
+        "#define CH_ED25519_MIXED_ORDER_VECTORS_H",
+        "",
+        "#include <stddef.h>",
+        "#include <stdint.h>",
+        "",
+        "typedef struct {",
+        "    int torsion_order;   // the order of T: 1 for row 0, else 2, 4 or 8",
+        "    uint8_t key[32];     // the encoding of A + T",
+        "    const char *msg;     // the message, msg_len bytes of text",
+        "    size_t msg_len;",
+        "    uint8_t hram[64];    // SHA-512 of R, the key and the message",
+        "    uint8_t sig[64];     // R then S",
+        "} ed25519_mixed_order_vector;",
+        "",
+        "static const ed25519_mixed_order_vector ed25519_mixed_order_vectors[] = {",
+    ]
+    lines += rows
+    lines += ["};", "", "#endif", ""]
+    out = pathlib.Path(__file__).with_name("ed25519_mixed_order_vectors.h")
+    out.write_text("\n".join(lines))
+    print("gen_ed25519_mixed_order_vectors: %d rows in %s" % (len(rows), out.name))
+
+
+if __name__ == "__main__":
+    main()

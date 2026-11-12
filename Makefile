@@ -3596,7 +3596,8 @@ bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TES
 DNSSEC_TEST_SRCS := src/dnssec.c src/rsa_pkcs1.c src/rsa.c $(RSA_EQUIV_TEST_SRCS) src/p256.c $(P256_WIDE_SRCS) \
                     src/p256_scalar.c src/p256_field.c src/p256_point.c src/buf.c src/sha256.c src/sha512.c \
                     src/sha512_compress_blocks.c src/x25519_wide.c src/p384.c src/p384_field.c $(P384_WIDE_SRCS) src/sha1.c
-bin/dnssec_test: test/dnssec_test.c test/dnssec_vectors.h test/dnssec_rfc_vectors.h $(DNSSEC_TEST_SRCS) $(HDRS) $(TESTH)
+bin/dnssec_test: test/dnssec_test.c test/dnssec_vectors.h test/dnssec_rfc_vectors.h test/ed25519_mixed_order_vectors.h \
+                 $(DNSSEC_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  test/dnssec_test.c $(sort $(DNSSEC_TEST_SRCS))
@@ -3609,7 +3610,8 @@ bin/dnssec_test: test/dnssec_test.c test/dnssec_vectors.h test/dnssec_rfc_vector
 JWS_TEST_SRCS := src/jws.c src/base64.c src/base64_codec.c src/rsa_pkcs1.c src/rsa.c $(RSA_EQUIV_TEST_SRCS) \
                  src/p256.c $(P256_WIDE_SRCS) src/p256_scalar.c src/p256_field.c src/p256_point.c src/buf.c \
                  src/sha256.c src/sha512.c src/sha512_compress_blocks.c src/x25519_wide.c
-bin/jws_test: test/jws_test.c test/jws_vectors.h test/jws_rfc_vectors.h $(JWS_TEST_SRCS) $(HDRS) $(TESTH)
+bin/jws_test: test/jws_test.c test/jws_vectors.h test/jws_rfc_vectors.h test/ed25519_mixed_order_vectors.h \
+              $(JWS_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_JWS -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  test/jws_test.c $(sort $(JWS_TEST_SRCS))

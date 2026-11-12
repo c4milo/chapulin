@@ -2,7 +2,10 @@
 // Wycheproof's ed25519_test.json, through the public calls a validator
 // makes: ch_dnssec_hash_init with the key and the signature, an update
 // with the message, ch_dnssec_hash_final, then ch_dnssec_verify. A valid
-// case must verify and an invalid one must not. The header is
+// case must verify and an invalid one must not. A case that Wycheproof
+// leaves to the implementation has a small-order key or a key outside the
+// subgroup of prime order, and must not verify either
+// (test/gen_wycheproof_ed25519.py, docs/decisions.md 227). The header is
 // bin/wycheproof_ed25519_vectors.h, which make wycheproof writes.
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,20 +40,24 @@ int main(void) {
     size_t count = sizeof wp_ed25519 / sizeof wp_ed25519[0];
     size_t failures = 0;
     size_t valid = 0;
+    size_t left = 0;
     for (size_t i = 0; i < count; i++) {
         int ok = check(i) == CH_OK;
-        valid += (size_t)wp_ed25519[i].valid;
-        if (ok != wp_ed25519[i].valid) {
+        int want = wp_ed25519[i].kind == 1;
+        valid += (size_t)want;
+        left += (size_t)(wp_ed25519[i].kind == 2);
+        if (ok != want) {
             printf("FAIL Wycheproof Ed25519 tcId %d: %s\n", wp_ed25519[i].tc_id,
-                   wp_ed25519[i].valid ? "a valid signature was refused"
-                                       : "an invalid signature verified");
+                   want ? "a valid signature was refused"
+                        : "a signature that must not verify did");
             failures++;
         }
     }
     if (failures != 0) {
         return 1;
     }
-    printf("Wycheproof Ed25519: %zu cases, %zu valid and %zu invalid, every verdict matches\n",
-           count, valid, count - valid);
+    printf("Wycheproof Ed25519: %zu cases, %zu valid, %zu invalid and %zu left to the "
+           "implementation, which the key's order refuses; every verdict matches\n",
+           count, valid, count - valid - left, left);
     return 0;
 }
