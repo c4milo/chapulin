@@ -222,7 +222,7 @@ static void put_group(uint8_t *buf, size_t g, uint16_t d1, uint16_t d2) {
 
 // A candidate kept where keep is 1 and dropped where it is 0, of the four
 // on that side.
-static uint16_t candidate(int keep) {
+static uint16_t candidate(unsigned keep) {
     uint8_t draw;
     rng_bytes(&draw, 1);
     return keep ? KEPT[draw & 3] : DROPPED[draw & 3];
@@ -290,7 +290,7 @@ static void rejection_cases(void) {
 static void table_cases(void) {
     for (unsigned mask = 0; mask < 256; mask++) {
         uint8_t order[16];
-        unsigned kept = 0;
+        size_t kept = 0;
         memset(order, 0x80, sizeof order);
         for (unsigned k = 0; k < 8; k++) {
             if ((mask >> k) & 1U) {
