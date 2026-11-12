@@ -162,6 +162,11 @@ static void test_genkey_file(void) {
 //  - 0, and every defined bit but CH_CPU_PROBED;
 //  - a bit no architecture defines, and the top bit;
 //  - each bit of the other architecture.
+// A value the call takes computes the point. Under CH_CPU_BMI2_ADX and the
+// multiply bit the point runs on p256_adx.h's copy, whose products are
+// MULX, ADCX and ADOX. So test_cpu_value leaves out of such a value each
+// bit whose instructions this CPU lacks, as it does for an init call. A
+// value the call refuses stays whole.
 // Under TEST_WIDEMUL_COUNTED, the point runs on the wide P-256 files when
 // the value holds CH_CPU_CONSTANT_TIME_MULTIPLY. It runs on the files
 // under their own names when the value does not, and never on the other
@@ -170,7 +175,7 @@ static void test_key_cpu(void) {
     corpus_entries r2 = r2_chain_entries();
     uint32_t kept = key_cpu;
     for (size_t i = 0; i < TEST_CPU_VALUES; i++) {
-        key_cpu = test_cpu_values[i];
+        key_cpu = test_cpu_value(i);
         int rc = key_of(pem_fixture_key_sec1, sizeof pem_fixture_key_sec1, r2.cert[0], r2.len[0]);
         CHECK(test_cpu_taken(i) ? (rc == CH_OK && key_is_r2()) : (rc == CH_EINVAL && key_zeroed()));
     }
