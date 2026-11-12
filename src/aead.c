@@ -1,6 +1,7 @@
 #include "aead.h"
 
 #include "aead_avx2.h"
+#include "aead_avx512.h"
 #include "ct.h"
 #include "widemul.h"
 
@@ -76,16 +77,28 @@ int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[
     return 1;
 }
 
-#ifdef CH_AEAD_AVX2
-// Whether a seal or an open of n bytes in a session whose ch_cfg.cpu is
-// cpu runs aead_avx2.c's one pass: where the two-pass AEAD would run
-// chacha20_avx2.c's keystream and poly1305_avx2.c's kernel, that is where
-// cpu holds CH_CPU_AVX2 and CH_CPU_CONSTANT_TIME_MULTIPLY and not
-// CH_CPU_AVX512_IFMA, and n is AEAD_AVX2_MIN or more (docs/decisions.md
-// 199).
-static int use_one_pass(uint32_t cpu, size_t n) {
-    return widemul_poly1305_avx2(cpu, widemul_of_cpu(cpu)) &&
-           !widemul_poly1305_ifma(cpu, widemul_of_cpu(cpu)) && n >= AEAD_AVX2_MIN;
+#if defined(CH_AEAD_AVX2) && defined(CH_AEAD_AVX512)
+// The one pass a seal or an open of n bytes runs in a session whose
+// ch_cfg.cpu is cpu, where the two-pass AEAD would run both of that pass's
+// kernels: aead_avx512.c's where cpu holds CH_CPU_AVX512_IFMA and
+// CH_CPU_CONSTANT_TIME_MULTIPLY and n is AEAD_AVX512_MIN or more
+// (docs/decisions.md 226), aead_avx2.c's where cpu holds CH_CPU_AVX2 and the
+// multiply bit and not CH_CPU_AVX512_IFMA and n is AEAD_AVX2_MIN or more
+// (docs/decisions.md 199), and none for every other session and length,
+// which keeps the two passes, the reference.
+#define ONE_PASS_NONE 0
+#define ONE_PASS_AVX2 1
+#define ONE_PASS_AVX512 2
+
+static int one_pass_of(uint32_t cpu, size_t n) {
+    uint8_t widemul = widemul_of_cpu(cpu);
+    if (widemul_poly1305_ifma(cpu, widemul)) {
+        return n >= AEAD_AVX512_MIN ? ONE_PASS_AVX512 : ONE_PASS_NONE;
+    }
+    if (widemul_poly1305_avx2(cpu, widemul) && n >= AEAD_AVX2_MIN) {
+        return ONE_PASS_AVX2;
+    }
+    return ONE_PASS_NONE;
 }
 
 // The one pass's seal and open stay out of line. Inlined, their poly1305
@@ -93,18 +106,24 @@ static int use_one_pass(uint32_t cpu, size_t n) {
 // gcc 13 and 168 under clang 23, where gcc gave them 32 and 64 before. Every
 // session's two-pass AEAD then saved and restored that frame, and a short
 // message paid for it (docs/decisions.md 207).
-static __attribute__((noinline)) void
-seal_one_pass(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-              size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]) {
+static __attribute__((noinline)) void seal_one_pass(int pass, const uint8_t key[AEAD_KEY],
+                                                    const uint8_t nonce[AEAD_NONCE],
+                                                    const uint8_t *aad, size_t aad_len,
+                                                    const uint8_t *pt, size_t n, uint8_t *ct,
+                                                    uint8_t tag[AEAD_TAG]) {
     poly1305 p;
     mac_start(WIDEMUL_CONSTANT_TIME, &p, key, nonce, aad, aad_len);
-    aead_avx2_seal(key, nonce, &p, pt, n, ct);
+    if (pass == ONE_PASS_AVX512) {
+        aead_avx512_seal(key, nonce, &p, pt, n, ct);
+    } else {
+        aead_avx2_seal(key, nonce, &p, pt, n, ct);
+    }
     mac_end(WIDEMUL_CONSTANT_TIME, &p, aad_len, n, tag);
 }
 
 // The open decrypts while it absorbs, and on a mismatch wipes the n bytes
 // it wrote, as gcm.c's open does (docs/decisions.md 85).
-static __attribute__((noinline)) int open_one_pass(const uint8_t key[AEAD_KEY],
+static __attribute__((noinline)) int open_one_pass(int pass, const uint8_t key[AEAD_KEY],
                                                    const uint8_t nonce[AEAD_NONCE],
                                                    const uint8_t *aad, size_t aad_len,
                                                    const uint8_t *ct, size_t n,
@@ -112,7 +131,11 @@ static __attribute__((noinline)) int open_one_pass(const uint8_t key[AEAD_KEY],
     poly1305 p;
     uint8_t want[AEAD_TAG];
     mac_start(WIDEMUL_CONSTANT_TIME, &p, key, nonce, aad, aad_len);
-    aead_avx2_open(key, nonce, &p, ct, n, pt);
+    if (pass == ONE_PASS_AVX512) {
+        aead_avx512_open(key, nonce, &p, ct, n, pt);
+    } else {
+        aead_avx2_open(key, nonce, &p, ct, n, pt);
+    }
     mac_end(WIDEMUL_CONSTANT_TIME, &p, aad_len, n, want);
     uint32_t ok = ct_memeq_public(want, tag, AEAD_TAG);
     ct_wipe(want, sizeof want);
@@ -128,9 +151,10 @@ static __attribute__((noinline)) int open_one_pass(const uint8_t key[AEAD_KEY],
 void aead_seal_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
                    const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
                    uint8_t tag[AEAD_TAG]) {
-#ifdef CH_AEAD_AVX2
-    if (use_one_pass(cpu, n)) {
-        seal_one_pass(key, nonce, aad, aad_len, pt, n, ct, tag);
+#if defined(CH_AEAD_AVX2) && defined(CH_AEAD_AVX512)
+    int pass = one_pass_of(cpu, n);
+    if (pass != ONE_PASS_NONE) {
+        seal_one_pass(pass, key, nonce, aad, aad_len, pt, n, ct, tag);
         return;
     }
 #endif
@@ -141,9 +165,10 @@ void aead_seal_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonc
 int aead_open_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
                   const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
                   const uint8_t tag[AEAD_TAG], uint8_t *pt) {
-#ifdef CH_AEAD_AVX2
-    if (use_one_pass(cpu, n)) {
-        return open_one_pass(key, nonce, aad, aad_len, ct, n, tag, pt);
+#if defined(CH_AEAD_AVX2) && defined(CH_AEAD_AVX512)
+    int pass = one_pass_of(cpu, n);
+    if (pass != ONE_PASS_NONE) {
+        return open_one_pass(pass, key, nonce, aad, aad_len, ct, n, tag, pt);
     }
 #endif
     if (!tag_matches(cpu, widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag)) {

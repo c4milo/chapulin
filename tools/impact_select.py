@@ -487,7 +487,7 @@ def select_aes_runtime_qemu(out, changed):
 # it with the binary, and the script runs no make, so a source that binary
 # compiles, or the script itself, selects the build of the binary and the
 # run, which carries the violations' catches line as its gate.
-AVX512_RUN_BINARIES = ("gcm_avx512_equiv_test",)
+AVX512_RUN_BINARIES = ("gcm_avx512_equiv_test", "aead_avx512_equiv_test")
 AVX512_RUN_SCRIPT = "test/avx512-run.sh"
 
 
@@ -779,6 +779,14 @@ def select_lints(out, changed, csources, lib):
         out.add("tests", "test/chacha-builds.sh",
                 "chacha20_avx512.c turns AVX-512F on for its own functions, and this "
                 "script compiles it for x86-64 with no instruction flag",
+                ["test/chacha-builds.sh"])
+    # aead_avx512.c turns AVX-512F and IFMA on for its own functions, and
+    # the script requires the register wipe at the end of its seal
+    # (docs/decisions.md 226).
+    if "src/aead_avx512.c" in csources:
+        out.add("tests", "test/chacha-builds.sh",
+                "aead_avx512.c turns AVX-512F and IFMA on for its own functions, and "
+                "this script requires its seal's call to avx512_wipe_registers",
                 ["test/chacha-builds.sh"])
     # avx512_wipe.c holds the one block of assembly that zeros the AVX-512
     # registers, and the script compiles it for x86-64 and requires a zeroing

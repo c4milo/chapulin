@@ -28,8 +28,9 @@
 //     keystream and to Poly1305's update of the ciphertext. chacha20_xor, aead_seal and aead_open
 //     take no value and run no kernel.
 //   - aead_seal_cpu and aead_open_cpu over 1,061 bytes, which run aead_avx2.c's one pass
-//     where the value names the AVX2 Poly1305 and the two-pass AEAD elsewhere
-//     (test/x86_kernels_aead.h, docs/decisions.md 199).
+//     where the value names the AVX2 Poly1305 and the two-pass AEAD elsewhere, and over 2,085
+//     bytes, which run aead_avx512.c's one pass where the value names the AVX-512 IFMA
+//     Poly1305 as well (test/x86_kernels_aead.h, docs/decisions.md 199 and 226).
 //   - a record under each of the three suites, sealed and opened: the direction's cpu picks the
 //     AVX-512 or the AVX2 keystream and the AVX2 Poly1305 under ChaCha20, and the 512-bit
 //     kernel, followed by avx512_wipe_registers, or else the VAES kernels under AES-GCM.
@@ -435,7 +436,9 @@ int main(void) {
             "exponentiations on MULX and ADX where CH_CPU_BMI2_ADX and the multiply bit were and "
             "CH_CPU_AVX512_IFMA was not, a ChaCha20-Poly1305 seal or open of 1,024 bytes or "
             "more on the one pass where CH_CPU_AVX2 and the multiply bit were and "
-            "CH_CPU_AVX512_IFMA was not, SHA-3 and SHAKE on sha3_hw.c's copy on ANDN and RORX "
+            "CH_CPU_AVX512_IFMA was not, and of 2,048 bytes or more on the AVX-512 one pass "
+            "where CH_CPU_AVX512_IFMA and the multiply bit were, SHA-3 and SHAKE on sha3_hw.c's "
+            "copy on ANDN and RORX "
             "where CH_CPU_BMI1 and CH_CPU_BMI2_ADX were, and ML-KEM's hashes never on it, and "
             "none of them anywhere else\n");
     }

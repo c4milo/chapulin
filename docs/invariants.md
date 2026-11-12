@@ -3600,6 +3600,12 @@ last `ROLE=server` stub, as the entry said it would.
   bytes. `inv49-sha512-avx2-sums-alignment-dropped` removes the
   declared alignment, and that check fails in the qemu lane, which
   builds with gcc for x86-64.
+  `aead_avx512.c`'s three passes keep 512-bit values in stack slots under
+  clang, the row pass inside its loop, and carry the attribute; clang
+  aligns their frames to 64 bytes (decision 226). The lint reads the file
+  and requires the aligned frame of `pass_hashing_rows`. Clang 23 aligns
+  that frame for its declared arrays of vectors with the attribute or
+  without it, so no mutant of the attribute fails the lint there.
 - **Violation.** A PR removes an attribute as redundant because gcc's
   code does not change, or moves a loop that holds more than 16 vectors
   into a new function without it, or drops the alignment `sums` is
@@ -6451,7 +6457,18 @@ last `ROLE=server` stub, as the entry said it would.
   general registers (decision 206), which the seal and the open wipe; the
   binary searches for the two limbs side by side, and
   `inv17-aead-avx2-keeps-r-limbs` drops that wipe and is caught the same
-  way. The AVX-512 IFMA Poly1305 computes r^2 to
+  way. The AVX-512 one pass of `aead_avx512.c` computes the AVX-512 IFMA
+  Poly1305's powers through the same steps, in `poly1305_ifma_group.h`,
+  and wipes them, wipes its input words, which hold the key, and ends its
+  seal with `avx512_wipe_registers` and its open with
+  `chacha20_avx512_xor`, which now wipes its own input words and ends the
+  same way (decision 226). `bin/aead_avx512_equiv_test` searches the
+  stack below a seal and an open for the key and r^2 to r^16 and reads
+  zmm0 to zmm31 and k1 to k7 back as zero after each, on a CPU with
+  AVX-512 IFMA or under SDE: `inv17-aead-avx512-seal-keeps-key` and
+  `inv17-aead-avx512-keeps-powers` drop a wipe and are caught there, and
+  `inv17-aead-avx512-seal-keeps-registers` drops the register wipe, which
+  `test/chacha-builds.sh` catches on every machine. The AVX-512 IFMA Poly1305 computes r^2 to
   r^16 into one struct of 1,984 bytes and wipes it the same way, and the
   binary's search reads its digits as well, on the instructions and over
   the lane model. That kernel and the AVX-512 ChaCha20 also hold the key's

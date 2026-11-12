@@ -19089,6 +19089,114 @@ does nothing more.
       retired 173,410. No M1 was free to time: the load average stayed
       above 20.
 
+226. **An x86-64 host object seals and opens a ChaCha20-Poly1305 message
+    of 2,048 bytes or more in one pass on AVX-512, for a session whose
+    `ch_cfg.cpu` holds `CH_CPU_AVX512_IFMA` and the multiply bit.** On the
+    bench machine's Xeon Platinum 8573C the seal of a 16 KiB record took
+    1.09 times OpenSSL 3.6.4's time under gcc and 1.03 times under clang
+    (run 42920340913), and the row varied by 11 to 18% between runs
+    (decision 207). Its two kernels alone took 0.93 of OpenSSL's time.
+    Camilo asked for this row below OpenSSL's in wave 5.
+
+    - **What the seal did.** A lab program timed the seal, its two
+      kernels and other forms in one process on the 8573C (runs
+      43154442294 and 43156272596). After 3 ms of work with no 512-bit
+      instruction, the two-pass seal took 8.4 µs for each of its next 10
+      to 20 calls and 5.1 µs after them. Its keystream then took the AVX2
+      kernel's time, 6.7 µs. The keystream alone, the Poly1305 kernel alone
+      and a one-pass prototype took that extra time on their first call
+      alone. In a loop of seals with nothing between them the two-pass
+      seal took 4.5 µs. bench/record.sh times the seal after rows that
+      copy records, so its batches start that way, and a TLS record often
+      follows such work too. The runners expose no performance counter, so
+      this entry does not name the hardware's reason.
+    - **What runs.** `aead_avx512.c` holds `aead_avx512_seal` and
+      `aead_avx512_open`. Each pass of sixteen ChaCha20 blocks also
+      absorbs four Poly1305 groups of sixteen blocks in the IFMA lanes, one
+      group after each of its double rounds 2, 4, 6 and 8. The seal absorbs
+      the ciphertext the pass before it wrote, and the open absorbs its own
+      pass before it writes the plaintext. A rest of 1 to 256 bytes takes a
+      row pass of four blocks in the loop of the last whole pass, as
+      `chacha20_avx512.c`'s `pass_with_rows` does, and a longer rest takes
+      a last pass of sixteen blocks that absorbs the pass before it. The
+      last pass and the rest are absorbed whole, the last group under the
+      multipliers it is owed, and the open then decrypts them on
+      `chacha20_avx512_xor`. `aead.c`'s `one_pass_of` picks the AVX-512 one
+      pass, the AVX2 one pass of decision 199, or the two passes, which
+      stay the reference and run every shorter message.
+    - **One text.** The pass is `chacha20_avx512_lanes.h`, moved out of
+      `chacha20_avx512.c`, and the groups are `poly1305_ifma_group.h`,
+      moved out of `poly1305_ifma.c`. Under gcc 13.3 and Apple clang both
+      kernels compile to the same instructions as before, but for the
+      line number one `CH_ASSERT` passes. The lane operations of the
+      ChaCha20 kernel are named functions now, so
+      `test/chacha20_avx512_model_lanes.h` can write each in portable C.
+      `chacha20_avx512_xor` now wipes its input words, eight of them the
+      key, because the open's last bytes run there.
+    - **Inline and out of line.** gcc 13 compiled the double round and the
+      end of a pass out of line in `aead_avx512.c`, so the file defines
+      `CHACHA20_AVX512_PASS_INLINE`, under which the header's pieces carry
+      always_inline; `chacha20_avx512.c` defines nothing and keeps its
+      code. The three pass functions carry noinline: inlined into the
+      seal, its first and last pass made clang 23 keep 102 512-bit values
+      in stack slots inside the seal's loops, and its seal took 0.94 to
+      1.01 of OpenSSL's time.
+    - **Secrets.** The file is a native copy alone, so the caller's
+      multiply bit covers its IFMA products, as for `poly1305_ifma.c`
+      (decision 121). Each group reads its multipliers through volatile
+      pointers, the struct of powers is wiped, the input words are wiped,
+      and the seal ends with `avx512_wipe_registers`. The passes carry
+      `force_align_arg_pointer`, so clang aligns their frames to 64 bytes
+      (decision 124).
+    - **What holds it.** `bin/aead_avx512_equiv_test` runs the entries'
+      own text over the two lane models on every machine, and the
+      instructions on a CPU with AVX-512 IFMA, against the two-pass AEAD;
+      on such a CPU it also searches the stack below each entry for the
+      key and r^2 to r^16, and reads zmm0 to zmm31 and k1 to k7 back as
+      zero. The nightly's rsa-ifma-sde job runs it under SDE.
+      `bin/x86_kernels_test` counts the entries' calls at 2,085 bytes. The
+      `aead_avx512` harness proves the memory accesses of both entries,
+      and of `chacha20_avx512.c`, over the models. RFC 8439's AEAD vector
+      and every Wycheproof case are under 2,048 bytes, so the equivalence
+      binary is what holds the one pass. Eight new violations: four are
+      caught by the model run on every machine, one by
+      `test/chacha-builds.sh`, one by the qemu lane's `x86-kernels` part,
+      and two only on a CPU with AVX-512 IFMA or under SDE.
+    - **Gain.** `bench/record.sh` of the tree before and of this change, in turn on
+      one runner, twice each, in run 43160338483 on three Xeon Platinum
+      8573C runners. Each figure is the median of the two runs, in µs, and
+      its ratio to OpenSSL 3.6.4's in the same CSVs; the runs of each
+      build agree within 2%:
+
+      | runner, compiler | seal, before | seal, after | open, before | open, after |
+      | --- | --- | --- | --- | --- |
+      | 1, gcc 13.3 | 4.85 (1.03) | 4.22 (0.90) | 4.42 (0.94) | 4.10 (0.87) |
+      | 1, clang 23 | 4.99 (1.06) | 4.41 (0.94) | 4.44 (0.94) | 4.31 (0.91) |
+      | 2, gcc 13.3 | 4.20 (1.06) | 3.53 (0.89) | 3.66 (0.92) | 3.38 (0.85) |
+      | 2, clang 23 | 3.99 (1.00) | 3.78 (0.95) | 3.65 (0.91) | 3.66 (0.91) |
+      | 3, gcc 13.3 | 4.09 (1.04) | 3.53 (0.89) | 3.67 (0.93) | 3.38 (0.85) |
+      | 3, clang 23 | 4.05 (1.03) | 3.79 (0.96) | 3.64 (0.92) | 3.66 (0.93) |
+
+      The rows are `aead_seal_data` and `aead_open_data` of a 16 KiB
+      record, and OpenSSL took 4.70, 3.97 and 3.94 µs on the three. The
+      1 KiB rows did not move: below 2,048 bytes the two passes run. The
+      EPYC 7763 and the M1 run no code this entry changes.
+
+    Rejected, each measured on the 8573C in run 43154442294, as a whole
+    seal of 16,385 bytes in the lab program:
+
+    - **The two passes in chunks.** Chunks of 8 KiB took 4.71 µs under gcc
+      and 4.60 under clang, and smaller chunks longer: each chunk computes
+      the powers of r again.
+    - **The AVX2 one pass of decision 199 on this CPU.** 8.50 µs and 8.98:
+      its keystream runs eight blocks a pass.
+    - **A scalar Poly1305 beside the AVX-512 rounds**, as decision 206 runs
+      beside the AVX2 rounds: 6.08 µs and 5.95. One accumulator's chain of
+      products takes longer than the sixteen-block rounds.
+    - **Other group layouts.** The group loop written out took longer
+      under clang, and each group split in halves across two double
+      rounds changed nothing past the noise.
+
 227. **An Ed25519 check refuses a public key outside the subgroup of prime order.** Decision 169
     took libsodium's rule for `ed25519_verify_hram`: RFC 8032's equation without the cofactor, and
     a refusal of a small-order key. Wycheproof's newer Ed25519 suite adds 21 signatures under keys

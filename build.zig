@@ -756,8 +756,10 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{ "poly1305_vector_native.c", "poly1305_avx2_native.c", "poly1305_ifma_native.c" } });
     // The one-pass ChaCha20-Poly1305 seal and open run on the AVX2
     // Poly1305's multiply, so a host object holds them beside it, with a
-    // body on x86-64 alone (docs/decisions.md 199).
-    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{"aead_avx2.c"} });
+    // body on x86-64 alone (docs/decisions.md 199). The AVX-512 one pass
+    // runs on the IFMA Poly1305's multiply, and joins them the same way
+    // (docs/decisions.md 226).
+    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{ "aead_avx2.c", "aead_avx512.c" } });
     // hash_hw_of: SHA-256 on the CPU's SHA-256 instructions beside
     // sha256.c, and hkdf.c and keysched.c compiled once more over it, which
     // a session's CH_CPU_CONSTANT_TIME_SHA256 bit picks. With SUITE=aesgcm,

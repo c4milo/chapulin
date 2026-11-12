@@ -54,5 +54,9 @@ extern unsigned long x86_sha3_bmi_calls;
 // ChaCha20-Poly1305 (docs/decisions.md 199).
 extern unsigned long x86_aead_avx2_seal_calls;
 extern unsigned long x86_aead_avx2_open_calls;
+// Calls to aead_avx512.c's aead_avx512_seal and aead_avx512_open, the
+// AVX-512 one pass (docs/decisions.md 226).
+extern unsigned long x86_aead_avx512_seal_calls;
+extern unsigned long x86_aead_avx512_open_calls;
 
 #endif

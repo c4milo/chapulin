@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-138 of the 184 C sources in the tree root are compiled into a
+140 of the 185 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 46 sources are in no such harness:
+The other 45 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -60,7 +60,6 @@ The other 46 sources are in no such harness:
 | `gcm_avx512_kernel.c` | It runs AES-GCM's whole seal and open on the 512-bit VAES, VPCLMULQDQ and AVX-512 intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with what `CH_CPU_AVX512` names, `bin/gcm_avx512_equiv_test` holds every seal and open to `gcm.c` on `gcm_hw.c`'s loops, which `bin/ghash_equiv_test` holds to the proven portable GHASH, at the ends of guarded pages, and `bin/quic_test_hw` and the Wycheproof host binary run the published vectors on it; the nightly's `rsa-ifma-sde` job runs them under Intel SDE ([The 512-bit AES-GCM kernel](#the-512-bit-aes-gcm-kernel)). |
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector ChaCha20](#the-vector-chacha20)). |
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
-| `chacha20_avx512.c` | It runs ChaCha20 on AVX-512F intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with AVX-512F, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it under a `ch_cfg.cpu` value with `CH_CPU_AVX512_IFMA`; the nightly's `rsa-ifma-sde` job runs the first under Intel SDE. |
 | `avx512_wipe.c` | It is one block of inline assembly, which CBMC does not read, and holds no C a harness could drive. It has a body on x86-64 alone. | On a CPU with AVX-512F, `bin/avx512_wipe_test` sets every bit of zmm0 to zmm31 and k1 to k7, calls it, and requires each register to read back as zero; the nightly's `rsa-ifma-sde` job runs the binary under Intel SDE. |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, `bin/diff_poly1305_vector` holds it to the Lean model whose bounds `Spec/Poly1305Vector.lean` proves, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
@@ -506,6 +505,39 @@ The entries are grouped by area:
   instructions in `poly1305_ifma_lanes.h`, which CBMC cannot read, are
   held to `poly1305.c`'s loop only by `bin/poly1305_equiv_test`, on a CPU
   with AVX-512 IFMA or under SDE.
+
+#### aead_avx512
+
+- **Harnesses:** `aead_avx512` (fast), `aead_avx512_row` (fast), `aead_avx512_last` (fast)
+- **Build:** the AVX-512 one-pass ChaCha20-Poly1305 (`aead_avx512.c`,
+  decision 226) and `chacha20_avx512.c`, whose kernel the open runs over
+  its last bytes, under `-DCH_CPU_RUNTIME`, `-DCH_AEAD_AVX512_MODEL`,
+  `-DCH_CHACHA20_AVX512_MODEL` and `-DCH_POLY1305_IFMA_MODEL`, over
+  `test/chacha20_avx512_model_lanes.h` and
+  `test/poly1305_ifma_model_lanes.h`, the models of each instruction in
+  portable C that `bin/aead_avx512_equiv_test` runs on every machine.
+  Each IFMA multiplication adds any value (`proof/poly1305_ifma_stubs.h`),
+  `ct_wipe` is the stub's loop, and `poly1305_update_native`, which the
+  bytes after the last group run, is a stub that reads each byte.
+- **Proves:** `aead_avx512_seal` and `aead_avx512_open` whole read inside
+  their input and the context, and write inside their output, the
+  context, their frames and the struct of powers they wipe, with the
+  output on the input or apart from it, at 2,048 bytes and a rest of 0,
+  37 or 300: a last whole pass, a row pass beside the last whole pass,
+  and a pass of sixteen blocks over the rest. Those run every statement of
+  both files but `chacha20_avx512.c`'s row pass alone, which a message of
+  1 to 256 bytes runs and no message of 2,048 bytes or more does.
+- **Bound:** the three lengths above, one a harness. One harness with
+  the three lengths gave no verdict in 77 minutes of symbolic execution.
+- **Not proved:** any value either file computes. The poly1305_ifma
+  harnesses prove the bounds of a group's sums and of the powers of r on
+  the same text, which `poly1305_ifma_group.h` holds for both files, and
+  `bin/aead_avx512_equiv_test` holds the C over the models to the
+  two-pass AEAD. The instructions in `chacha20_avx512_lanes.h` and
+  `poly1305_ifma_lanes.h`, which CBMC cannot read, are held to the
+  two-pass AEAD by `bin/aead_avx512_equiv_test` alone, on a CPU with
+  AVX-512 IFMA or under SDE
+  ([The AVX-512 one pass](#the-avx-512-one-pass)).
 
 #### aead
 
@@ -5713,6 +5745,36 @@ AES extension: QEMU's arm64 models all implement it, and none turns it
 off. On arm64 the claim rests on the counts and the disassembly. The qemu
 run executes the vectors and the rows the loop binaries hold, and no
 other path.
+
+### The AVX-512 one pass
+
+`aead_avx512.c` seals and opens a ChaCha20-Poly1305 message of 2,048
+bytes or more in one pass for a session whose `ch_cfg.cpu` holds
+`CH_CPU_AVX512_IFMA` and the multiply bit (decision 226): each pass of
+sixteen ChaCha20 blocks also absorbs four groups of sixteen Poly1305
+blocks in the IFMA lanes. The pass is `chacha20_avx512_lanes.h`, the text
+`chacha20_avx512.c` runs, and the groups are `poly1305_ifma_group.h`, the
+text `poly1305_ifma.c` runs.
+
+`bin/aead_avx512_equiv_test` holds both entries to the two-pass AEAD in
+two forms. On every machine it runs the entries' own text over the two
+lane models (`test/aead_avx512_model.c`) at every length from 2,048 to
+5,120 bytes, at the edges of the passes and the rows at 64 alignments,
+and at 16 KiB and 16,385 bytes, with the output apart from the input, on
+it, and 5 bytes below it. On a CPU with AVX-512 IFMA it runs the
+instructions through `aead_seal_cpu` and `aead_open_cpu` at every length
+from 0 to 5,120 bytes, every length from 2,048 to 3,071 bytes at each of
+64 alignments, the edges and the two records, in the same three shapes,
+checks that no byte outside the output changed, and opens each under a
+changed tag, which must return 0 and leave zeros. It then searches the
+stack below a seal and an open for the key's eight words side by side and
+for r^2 to r^16 as three digits 8, 24, 32 or 64 bytes apart, and reads
+zmm0 to zmm31 and k1 to k7 back as zero after each entry. The model run
+searches no stack, for the reason the IFMA Poly1305's model run gives.
+`bin/x86_kernels_test` counts the entries' calls at 2,085 bytes under
+each of its `ch_cfg.cpu` values, and `test/chacha-builds.sh` requires the
+seal to call `avx512_wipe_registers` and the open `chacha20_avx512_xor`,
+which calls it.
 
 ### The host object's AES key expansions
 

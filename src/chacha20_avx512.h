@@ -33,7 +33,9 @@
 
 #include "chacha20.h"
 
-#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+// A test unit that defines CH_CHACHA20_AVX512_MODEL declares the kernel on
+// any host, over the lane model (chacha20_avx512_lanes.h).
+#if (defined(CH_CPU_RUNTIME) && defined(__x86_64__)) || defined(CH_CHACHA20_AVX512_MODEL)
 
 // chacha20_xor's contract, computed sixteen blocks a pass: out = in XOR
 // keystream(key, nonce, counter...), with the 32-bit block counter counter
@@ -54,6 +56,6 @@
 void chacha20_avx512_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                          uint32_t counter, const uint8_t *in, uint8_t *out, size_t n);
 
-#endif // CH_CPU_RUNTIME && __x86_64__
+#endif // (CH_CPU_RUNTIME && __x86_64__) || CH_CHACHA20_AVX512_MODEL
 
 #endif

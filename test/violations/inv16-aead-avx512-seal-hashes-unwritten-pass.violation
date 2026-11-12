@@ -1,0 +1,13 @@
+invariant: INV-16
+file: src/aead_avx512.c
+catches: aead_avx512_equiv_test
+reason: each pass of the AVX-512 seal absorbs the ciphertext of its own pass in
+  place of the pass before it, so it reads bytes it has not yet encrypted
+  and the tag is wrong for every seal of AEAD_AVX512_MIN bytes or more.
+  bin/aead_avx512_equiv_test runs the seal's own text over the lane models
+  on every machine and compares its tag with the two-pass AEAD's.
+
+--- old
+        const uint8_t *hash = ct + offset - PASS_BYTES;
+--- new
+        const uint8_t *hash = ct + offset;

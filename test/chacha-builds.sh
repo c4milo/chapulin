@@ -212,6 +212,20 @@ if ! body_names chacha20_avx512_xor avx512_wipe_registers; then
     echo "chacha-builds: chacha20_avx512_xor for x86-64 does not call avx512_wipe_registers, so the key stays in the vector registers" >&2
     exit 1
 fi
+# The AVX-512 one pass (docs/decisions.md 226): its seal ends with the
+# wipe of the registers, and its open ends on chacha20_avx512_xor, which
+# ends with it.
+cross_object "$x86" src/aead_avx512.c
+if ! grep -q '%zmm' "$work/cross.s" || ! body_names aead_avx512_seal avx512_wipe_registers ||
+    ! body_names aead_avx512_open chacha20_avx512_xor; then
+    echo "chacha-builds: src/aead_avx512.c for x86-64 must run on 512-bit registers, its seal must call avx512_wipe_registers and its open chacha20_avx512_xor, so the key leaves the vector registers" >&2
+    exit 1
+fi
+cross_object "$arm64" src/aead_avx512.c
+if nm "$work/cross.o" | grep -q aead_avx512; then
+    echo "chacha-builds: src/aead_avx512.c for arm64 defines the AVX-512 one pass; it has a body on x86-64 alone" >&2
+    exit 1
+fi
 cross_object "$arm64" src/chacha20_avx512.c
 if nm "$work/cross.o" | grep -q chacha20_avx512_xor; then
     echo "chacha-builds: src/chacha20_avx512.c for arm64 defines chacha20_avx512_xor; it has a body on x86-64 alone" >&2

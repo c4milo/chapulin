@@ -1,0 +1,13 @@
+invariant: INV-17
+file: src/aead_avx512.c
+catches: test/chacha-builds.sh
+reason: aead_avx512_seal returns without calling avx512_wipe_registers, so the
+  key, the keystream, the powers of r and the lanes' sums stay in the
+  512-bit registers after the call. Every tag is still right. The script
+  compiles the file for x86-64 and requires the call in the seal.
+
+--- old
+    // the vector registers, and the compiler clears none of them on return.
+    lanes_wipe_registers();
+--- new
+    // the vector registers, and the compiler clears none of them on return.

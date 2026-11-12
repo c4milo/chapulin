@@ -1,0 +1,13 @@
+invariant: INV-16
+file: src/aead_avx512.c
+catches: aead_avx512_equiv_test
+reason: the last group of the message takes r^16 and r^8 in every lane, as every
+  other group does, in place of the powers each lane's blocks are owed, so
+  the lanes' total is not the message's polynomial and every tag is
+  wrong. bin/aead_avx512_equiv_test runs the text over the lane models on
+  every machine and compares each tag with the two-pass AEAD's.
+
+--- old
+    absorb_group(h, m, &of_r->last_first, &of_r->last_second);
+--- new
+    absorb_group(h, m, &of_r->by_16, &of_r->by_8);

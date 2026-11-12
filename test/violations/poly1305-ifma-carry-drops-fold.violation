@@ -1,5 +1,5 @@
 invariant: INV-16
-file: src/poly1305_ifma.c
+file: src/poly1305_ifma_group.h
 catches: poly1305_equiv_test
 reason: the carry adds t2's bits from 42 up to digit 0 once rather than
   5 times, so every group loses the part of its sums at 2^130 and above

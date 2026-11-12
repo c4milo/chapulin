@@ -1,0 +1,12 @@
+invariant: INV-16
+file: src/aead_avx512.c
+catches: aead_avx512_equiv_test
+reason: a rest of exactly 256 bytes, the most a row pass covers, takes no row
+  pass and no last pass, so those 256 bytes stay unencrypted. The
+  boundary case: bin/aead_avx512_equiv_test seals 2,304 bytes, two passes
+  and 256, over the lane models on every machine.
+
+--- old
+        if (index + 1 == passes && rest > 0 && rest <= ROW_PASS_BYTES) {
+--- new
+        if (index + 1 == passes && rest > 0 && rest < ROW_PASS_BYTES) {

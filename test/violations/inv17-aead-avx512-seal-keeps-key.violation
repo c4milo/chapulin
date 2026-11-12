@@ -1,0 +1,16 @@
+invariant: INV-17
+file: src/aead_avx512.c
+catches: test/avx512-run.sh bin/aead_avx512_equiv_test
+builds: bin/aead_avx512_equiv_test
+reason: aead_avx512_seal returns without wiping its input words, eight of them
+  the key, so its dead frame keeps the key side by side. Every tag is
+  still right. bin/aead_avx512_equiv_test copies the stack below a seal
+  and looks for the key. It needs a CPU with AVX-512 IFMA, or Intel SDE
+  through SDE64, which the nightly's test-invariants job installs; without
+  either this reports unguarded rather than caught.
+
+--- old
+    ct_wipe(words, sizeof words);
+    hash_rest(p, h, &of_r, ct + hashed, n - hashed);
+--- new
+    hash_rest(p, h, &of_r, ct + hashed, n - hashed);

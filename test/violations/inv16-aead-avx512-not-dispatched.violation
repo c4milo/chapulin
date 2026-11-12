@@ -1,0 +1,13 @@
+invariant: INV-16
+file: src/aead.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: aead_seal_cpu and aead_open_cpu never run the AVX-512 one pass, so a
+  session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA and the multiply bit
+  seals a long record in two passes. Every byte is still right.
+  bin/x86_kernels_test counts the one pass's calls at 2,085 bytes; the
+  script builds it for x86-64 and runs it under qemu-x86_64.
+
+--- old
+        return n >= AEAD_AVX512_MIN ? ONE_PASS_AVX512 : ONE_PASS_NONE;
+--- new
+        return ONE_PASS_NONE;

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: src/poly1305_ifma.c
+file: src/poly1305_ifma_group.h
 catches: poly1305_equiv_test
 reason: digits_of_words keeps digit 0's bits from 44 up after it adds them
   to digit 1, so the accumulator the kernel starts from counts those bits

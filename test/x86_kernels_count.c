@@ -14,6 +14,7 @@
 #include "x86_kernels_count.h"
 
 #include "aead_avx2.h"
+#include "aead_avx512.h"
 #include "aes_block.h"
 #include "chacha20_avx2.h"
 #include "chacha20_avx512.h"
@@ -49,6 +50,8 @@ unsigned long x86_poly1305_ifma_calls;
 unsigned long x86_sha512_avx2_calls;
 unsigned long x86_aead_avx2_seal_calls;
 unsigned long x86_aead_avx2_open_calls;
+unsigned long x86_aead_avx512_seal_calls;
+unsigned long x86_aead_avx512_open_calls;
 
 void chacha20_avx2_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                        uint32_t counter, const uint8_t *in, uint8_t *out, size_t n) {
@@ -217,6 +220,21 @@ void aead_avx2_seal(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA2
 void aead_avx2_open(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                     poly1305 *p, const uint8_t *ct, size_t n, uint8_t *pt) {
     x86_aead_avx2_open_calls++;
+    poly1305_update_native(p, ct, n);
+    chacha20_vector_xor(key, nonce, 1, ct, pt, n);
+}
+
+// The AVX-512 one pass the same way (docs/decisions.md 226).
+void aead_avx512_seal(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
+                      poly1305 *p, const uint8_t *pt, size_t n, uint8_t *ct) {
+    x86_aead_avx512_seal_calls++;
+    chacha20_vector_xor(key, nonce, 1, pt, ct, n);
+    poly1305_update_native(p, ct, n);
+}
+
+void aead_avx512_open(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
+                      poly1305 *p, const uint8_t *ct, size_t n, uint8_t *pt) {
+    x86_aead_avx512_open_calls++;
     poly1305_update_native(p, ct, n);
     chacha20_vector_xor(key, nonce, 1, ct, pt, n);
 }

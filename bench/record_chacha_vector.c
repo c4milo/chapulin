@@ -39,7 +39,7 @@ bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonc
     uint32_t words[16];
     setup(words, key, nonce);
     for (size_t off = 0; off < n; off += PASS_BYTES) {
-        lanes x[16];
+        chacha_lanes x[16];
         pass_input(x, words, counter);
         for (int i = 0; i < 10; i++) {
             double_round(x);
@@ -47,7 +47,7 @@ bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonc
         pass_keystream(x, words, counter);
 #pragma GCC unroll 16
         for (size_t b = 0; b < PASS_BLOCKS; b++) {
-            _mm512_storeu_si512((void *)(out + CHACHA20_BLOCK * b), x[b]);
+            chacha_lanes_store(out + CHACHA20_BLOCK * b, x[b]);
         }
         counter += PASS_BLOCKS;
     }

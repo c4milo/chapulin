@@ -8,9 +8,7 @@ reason: chacha20_avx512_xor returns without calling avx512_wipe_registers,
   and requires the call in chacha20_avx512_xor.
 
 --- old
-    xor_passes(words, counter, in, out, n);
-    // The key, the state and the keystream passed through the vector
     // registers, and the compiler clears none of them on return.
-    avx512_wipe_registers();
+    chacha_lanes_wipe_registers();
 --- new
-    xor_passes(words, counter, in, out, n);
+    // registers, and the compiler clears none of them on return.

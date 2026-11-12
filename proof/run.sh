@@ -3491,6 +3491,29 @@ launch fast full poly1305_ifma_lanes 9 "" -DCH_CPU_RUNTIME
 launch fast full poly1305_ifma_sums 257 "" -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Itest --unsigned-overflow-check
 launch fast full poly1305_ifma_product 9 "" -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Itest --unsigned-overflow-check
 launch fast full poly1305_ifma_blocks 513 "poly1305_ifma_blocks.1:2,ct_wipe.0:1945" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Itest
+# aead_avx512.c, the one-pass ChaCha20-Poly1305 of an x86-64 host object on
+# AVX-512 (docs/decisions.md 226), and chacha20_avx512.c, whose kernel the
+# open runs over its last bytes, both over the lane models,
+# test/chacha20_avx512_model_lanes.h and test/poly1305_ifma_model_lanes.h,
+# as bin/aead_avx512_equiv_test builds them. Each line runs a seal or an
+# open whole for its memory accesses at 2,048 bytes and one rest, the three
+# ways a message ends: aead_avx512 a rest of 0, aead_avx512_row 37 and
+# aead_avx512_last 300. Each IFMA product is any value
+# (proof/poly1305_ifma_stubs.h), and ct_wipe is the stub's loop. Each line
+# has one length, so symbolic execution finds where each loop over passes
+# or groups ends. One harness with the three lengths ran 77 minutes in
+# symbolic execution and gave no verdict. Each such loop keeps its own
+# bound: one pass in each entry's loop and in chacha20_avx512.c's
+# whole_passes, and four groups in hash_rest's. The other loops past the
+# global bound of 17 are the input's fill, the wipe of the struct of
+# powers, 1,944 bytes in the model's layout, the stub of the update after
+# the last group, 44 bytes at most, and xor_partial's last bytes, 44 at
+# most. Measured on an M1 Pro on 2026-11-12 at a load average of 20 to 24
+# (cbmc 6.11.0, /usr/bin/time -l): 3,772 properties on each line, in 542,
+# 368 and 827 s, at 2.4, 2.9 and 2.0 GB resident.
+launch fast full aead_avx512 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
+launch fast full aead_avx512_row 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
+launch fast full aead_avx512_last 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
 # rsa_avx2.c, RSA's public operation on AVX2, which an x86-64 host object
 # runs for a session whose ch_cfg.cpu holds CH_CPU_AVX2 and not
 # CH_CPU_AVX512_IFMA (docs/decisions.md 122). As for rsa_ifma.c, the lines

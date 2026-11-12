@@ -1,0 +1,16 @@
+invariant: INV-17
+file: src/aead_avx512.c
+catches: test/avx512-run.sh bin/aead_avx512_equiv_test
+builds: bin/aead_avx512_equiv_test
+reason: hash_rest returns without wiping the struct of powers, r^2 to r^16, so
+  the entries' dead frames keep them. r and a tag seen on the wire give
+  the pad, and r and the pad forge any message under that key. Every tag
+  is still right. bin/aead_avx512_equiv_test copies the stack below each
+  entry and looks for the powers. It needs a CPU with AVX-512 IFMA, or
+  Intel SDE through SDE64; without either this reports unguarded rather
+  than caught.
+
+--- old
+    ct_wipe(of_r, sizeof *of_r);
+--- new
+    (void)of_r;

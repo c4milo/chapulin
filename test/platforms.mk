@@ -86,7 +86,8 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 # there, as the values with CH_CPU_AVX512 do; CH_REQUIRE_AVX512=1 makes it
 # fail, and rsa-ifma-sde-check below runs it under Intel SDE with that set.
 X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test_hw x86_kernels_test \
-                   mlkem_avx2_equiv_test poly1305_equiv_test gcm_avx512_equiv_test
+                   mlkem_avx2_equiv_test poly1305_equiv_test gcm_avx512_equiv_test \
+                   aead_avx512_equiv_test
 
 # AVX-512 IFMA, for the nightly's rsa-ifma-sde job: rsa_ifma.c runs RSA's
 # public operation on it for a session whose ch_cfg.cpu holds
@@ -128,7 +129,10 @@ X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test
 #     CH_CPU_AVX512_IFMA picks, to chacha20.c's loop, and
 #     bin/poly1305_equiv_test poly1305_ifma.c's kernel, which it picks
 #     beside the multiply bit, to poly1305.c's, and searches the stack
-#     below each call for the powers of r.
+#     below each call for the powers of r. bin/aead_avx512_equiv_test holds
+#     aead_avx512.c's one pass on both kernels to the two-pass AEAD, and
+#     searches the stack and the registers its entries leave
+#     (docs/decisions.md 226).
 #   - bin/rsa_test_host and bin/rsa_pkcs1_test_host, under 0x10d, the
 #     second value of X86_UNIT_CPU, run the openssl-minted RSA-PSS and
 #     PKCS#1 v1.5 vectors and every refusal on the kernel.
@@ -167,7 +171,7 @@ SDE_CPU ?= -icx
 RSA_IFMA_SDE_RUNS := rsa_ifma_equiv_test x86_kernels_test avx512_wipe_test chacha20_equiv_test \
                      poly1305_equiv_test rsa_ifma_sign_equiv_test rsa_ifma_sign_equiv_test_384 \
                      rsa_ifma_sign_residue_test rsa_ifma_sign_residue_test_384 rsa_sign_equiv_test \
-                     gcm_avx512_equiv_test quic_test_hw
+                     gcm_avx512_equiv_test quic_test_hw aead_avx512_equiv_test
 RSA_IFMA_SDE_VECTOR_HOST := rsa_test_host rsa_pkcs1_test_host
 RSA_IFMA_SDE_VECTOR_CPU := 0x10d
 RSA_IFMA_SDE_WYCHEPROOF_CPU := 0x31f
@@ -184,6 +188,7 @@ RSA_IFMA_SDE_PASS_rsa_ifma_sign_residue_test_384 := rsa_ifma_sign residue: [0-9]
 RSA_IFMA_SDE_PASS_rsa_sign_equiv_test := rsa_sign_equiv_test: the private operation on AVX-512 IFMA ran
 RSA_IFMA_SDE_PASS_gcm_avx512_equiv_test := gcm_avx512 equivalence: [0-9]* cases agree
 RSA_IFMA_SDE_PASS_quic_test_hw := quic vectors: FIPS 197, SP 800-38D, RFC 9001 Appendix A
+RSA_IFMA_SDE_PASS_aead_avx512_equiv_test := aead avx512 equivalence: [0-9]* checks of the model and [0-9]* of the instructions agree
 RSA_IFMA_SDE_PASS_rsa_test_host := rsa_test: all checks passed
 RSA_IFMA_SDE_PASS_rsa_pkcs1_test_host := rsa_pkcs1_test: all checks passed
 RSA_IFMA_SDE_PASS_wycheproof_test_host := wycheproof: all suites passed

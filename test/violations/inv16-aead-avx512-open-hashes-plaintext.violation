@@ -1,0 +1,13 @@
+invariant: INV-16
+file: src/aead_avx512.c
+catches: aead_avx512_equiv_test
+reason: each pass of the AVX-512 open absorbs its output in place of its input,
+  so a separate output gives the tag of bytes the open has not yet written
+  and every open of AEAD_AVX512_MIN bytes or more into a separate buffer
+  fails. bin/aead_avx512_equiv_test opens into a separate buffer over the
+  lane models on every machine.
+
+--- old
+        pass_hashing(words, pass_counter(index), ct + offset, pt + offset, PASS_BYTES, ct + offset,
+--- new
+        pass_hashing(words, pass_counter(index), ct + offset, pt + offset, PASS_BYTES, pt + offset,
