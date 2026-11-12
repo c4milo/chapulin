@@ -510,7 +510,10 @@ Home: github.com/c4milo.
   with `dnssec.c` its one caller, and the RSA/SHA-1 algorithms 5 and 7
   stay refused. The
   Ed25519 check of algorithm 15 runs on the wide field's Edwards points,
-  in `x25519_wide_ed25519.h`, which `x25519_wide.c` includes. No session
+  in `x25519_wide_ed25519.h`, which `x25519_wide.c` includes. That check
+  follows RFC 8032's equation without the cofactor. It refuses a key of
+  small order and a key outside the subgroup of prime order L, for DNSSEC
+  and for JWS alike (docs/decisions.md 169 and 227). No session
   calls them, and each carries the transport in its symbol name. A fifth
   pair sits off the chain the same way: `jws.[ch]` (JWS=on, a host
   TRUST=webpki object of either transport, docs/decisions.md 221).
