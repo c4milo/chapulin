@@ -94,9 +94,11 @@ Home: github.com/c4milo.
   x509.[ch] and the provisioning reader in x509_ca.[ch] under the ca
   modes. They are also the chain verifier in webpki.[ch] with its pieces
   under TRUST=webpki, and x509_pem.[ch] under a server role and
-  TRUST=webpki. x509_pem.[ch] reads the DER of the PEM files that an
-  operator holds. x509_ca.[ch] and x509_pem.[ch] return no verdict, and
-  no session calls them. Pinned mode hashes the certificate into the
+  TRUST=webpki. They are also x509_end_point.c under SCRAM=on, which
+  reads a certificate's signatureAlgorithm alone. x509_pem.[ch] reads the
+  DER of the PEM files that an operator holds. x509_ca.[ch],
+  x509_pem.[ch] and x509_end_point.c return no verdict, and no session
+  calls them. Pinned mode hashes the certificate into the
   transcript and never reads it. No RFC 7250
   raw-public-key certificate types outside TRUST=webpki (below), no
   0-RTT, no compression, no renegotiation-era anything. Within a mode the client offers exactly one
@@ -389,7 +391,9 @@ Home: github.com/c4milo.
   on six 64-bit words, every session of a host object) +
   `rsa_pkcs1.[ch]` (the chain signatures a public
   CA writes, TRUST=webpki, and under DNSSEC=on the RSA signatures of a
-  DNSSEC key, raised to the key's own exponent by `rsa_mont64_exp.c`) ←
+  DNSSEC key, raised to the key's own exponent by `rsa_mont64_exp.c`,
+  and under JWS=on a JWS's RS256 signature, which `jws_sign.c` also
+  signs) ←
   `pem.[ch]` with `base64.[ch]` (RFC 7468 armour of four labels,
   CERTIFICATE, PRIVATE KEY, EC PRIVATE KEY and EC PARAMETERS, decode
   only. The base64 text of a key file spells its scalar. So base64.c
@@ -504,8 +508,23 @@ Home: github.com/c4milo.
   stay refused. The
   Ed25519 check of algorithm 15 runs on the wide field's Edwards points,
   in `x25519_wide_ed25519.h`, which `x25519_wide.c` includes. No session
-  calls them, and each carries the transport in its symbol name. The
-  Makefile TRANSPORT variable names
+  calls them, and each carries the transport in its symbol name. A fifth
+  pair sits off the chain the same way: `jws.[ch]` (JWS=on, a host
+  TRUST=webpki object of either transport, docs/decisions.md 221).
+  `ch_jws_verify` checks a JSON Web Signature under RS256, ES256 or EdDSA
+  against a public key, and runs the verifiers `dnssec.c` runs. It reads
+  no token header and no JWK. An RS256 key has RFC 3110's form, which
+  `rsa_key_field.h` reads for both files, and a modulus of 256 to 512
+  bytes. `jws_sign.c` holds `ch_jws_sign` in an object with a server role
+  (docs/decisions.md 223): ES256 and RS256 on a server's signers, and
+  Ed25519 on the wide field in `x25519_wide_ed25519_sign.h`, whose
+  arithmetic modulo L selects by mask. A sixth pair is `scram.[ch]`
+  (SCRAM=on, docs/decisions.md 222): `ch_sha256`, `ch_hmac_sha256`,
+  `ch_pbkdf2_hmac_sha256` over `pbkdf2.[ch]`, `ch_ct_compare` and base64.
+  `x509_end_point.c` defines `ch_tls_server_end_point`, RFC 5929's hash of
+  a certificate. `base64_codec.[ch]` holds both axes' base64 loops. No
+  session calls them, and each carries the transport in its symbol name.
+  The Makefile TRANSPORT variable names
   what TLS runs over and who does the I/O: `tcp-blocking` (default),
   `tcp-nonblocking` or `quic-nonblocking` (docs/decisions.md 62). Each
   public header declares a call only under the defines of the objects
