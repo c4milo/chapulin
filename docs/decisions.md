@@ -19416,7 +19416,13 @@ does nothing more.
       0.923 to 0.924, on the three runners that timed that form. Under clang the row took 17.70 to
       17.74 µs before and 16.68 to 16.71 µs after, 0.880 to 0.882; the window took 0.1 to 0.3%
       more than the power alone. At RSA-3072 gcc's row took 33.8 to 33.9 µs where it took 36.4,
-      and clang's 32.8 to 32.9 where it took 34.2.
+      and clang's 32.8 to 32.9 where it took 34.2. Bench run 43469840842 recorded the rows on an
+      EPYC 7763 at a load average of 1.2: an RSA-2048 PKCS#1 v1.5 verification takes 17.5 µs under
+      gcc and 16.7 µs under clang, 0.92 and 0.88 of OpenSSL's 18.9 µs, and an RSA-3072 one 33.8
+      and 32.9 µs, 0.84 and 0.82 of its 40.2 µs.
+    - **Other cells.** No code that the M1 Pro or a session with `CH_CPU_AVX512_IFMA` runs for a
+      verification changed: arm64 has no AVX2 kernel, and the IFMA dispatch only names its array
+      anew. No device object compiles the changed code, so no figure of `bench/sram.sh` moves.
     - **Rejected.** A power of two from squares in the kernel. 2^259 R' mod m takes five steps of
       the division, and three squares raise it to R'^2 mod m. By the parts' times above, three
       squares take 2.7 µs where the 28 steps they save take 1.7 µs. And the memset kept with gcc's

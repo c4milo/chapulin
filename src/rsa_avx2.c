@@ -351,8 +351,8 @@ static inline __attribute__((always_inline)) void product_core(uint64_t *out, co
     size_t n = mod->digit_count;
     _Alignas(32) uint64_t window[WINDOW_LANES];
     CH_ASSERT(groups >= 2 && groups <= GROUPS_MAX && n > 4 * (groups - 1) && n <= 4 * groups);
-    // Group 0 reads no register of the window, and no group but the last
-    // writes the top one, which every group reads.
+    // Group 0 reads no register of the window. No group but the last writes
+    // the top one, which every later group reads.
     lanes_store(window + 4 * groups, lanes_zero());
     uint64_t y[4];
     uint64_t carry = 0;

@@ -514,11 +514,11 @@ Zig 0.16's clang 21, which `build.zig` compiles the object with for a Zig projec
 | ECDSA P-256 verify | 37.8 µs | 55.1 µs | 0.69 | 54.9 µs | 67.7 µs | 0.81 | 52.4 µs | 67.6 µs | 0.77 | 52.7 µs | 75.6 µs | 0.70 | 51.4 µs | 76.0 µs | 0.68 |
 | ECDSA P-384 verify | 275 µs | 492 µs | 0.56 | 464 µs | 741 µs | 0.63 | 366 µs | 742 µs | 0.49 | 451 µs | 614 µs | 0.73 | 316 µs | 613 µs | 0.52 |
 | RSA-2048 PSS sign | 672 µs | 561 µs, PKCS#1 v1.5 sign | — | 1.01 ms | 660 µs, PKCS#1 v1.5 sign | — | 938 µs | 662 µs, PKCS#1 v1.5 sign | — | 332 µs | 335 µs, PKCS#1 v1.5 sign | — | 315 µs | 332 µs, PKCS#1 v1.5 sign | — |
-| RSA-2048 PSS verify | 17.7 µs | 14.6 µs, PKCS#1 v1.5 verify | — | 22.7 µs | 19.0 µs, PKCS#1 v1.5 verify | — | 21.5 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 12.4 µs | 19.1 µs, PKCS#1 v1.5 verify | — | 11.9 µs | 19.2 µs, PKCS#1 v1.5 verify | — |
-| RSA-2048 PKCS#1 v1.5 verify | 14.0 µs | 14.6 µs | 0.96 | 19.4 µs | 19.0 µs | **1.02** | 18.0 µs | 18.9 µs | 0.95 | 8.79 µs | 19.1 µs | 0.46 | 8.59 µs | 19.2 µs | 0.45 |
+| RSA-2048 PSS verify | 17.7 µs | 14.6 µs, PKCS#1 v1.5 verify | — | 20.9 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 20.4 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 12.4 µs | 19.1 µs, PKCS#1 v1.5 verify | — | 11.9 µs | 19.2 µs, PKCS#1 v1.5 verify | — |
+| RSA-2048 PKCS#1 v1.5 verify | 14.0 µs | 14.6 µs | 0.96 | 17.5 µs | 18.9 µs | 0.92 | 16.7 µs | 18.9 µs | 0.88 | 8.79 µs | 19.1 µs | 0.46 | 8.59 µs | 19.2 µs | 0.45 |
 | RSA-3072 PSS sign | 2.00 ms | 1.64 ms, PKCS#1 v1.5 sign | — | 2.93 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 2.76 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 773 µs | 895 µs, PKCS#1 v1.5 sign | — | 738 µs | 894 µs, PKCS#1 v1.5 sign | — |
-| RSA-3072 PSS verify | 33.8 µs | 31.2 µs, PKCS#1 v1.5 verify | — | 40.6 µs | 40.2 µs, PKCS#1 v1.5 verify | — | 39.2 µs | 40.2 µs, PKCS#1 v1.5 verify | — | 20.2 µs | 40.9 µs, PKCS#1 v1.5 verify | — | 20.1 µs | 41.1 µs, PKCS#1 v1.5 verify | — |
-| RSA-3072 PKCS#1 v1.5 verify | 28.9 µs | 31.2 µs | 0.93 | 36.6 µs | 40.2 µs | 0.91 | 34.8 µs | 40.2 µs | 0.86 | 15.7 µs | 40.9 µs | 0.39 | 16.4 µs | 41.1 µs | 0.40 |
+| RSA-3072 PSS verify | 33.8 µs | 31.2 µs, PKCS#1 v1.5 verify | — | 37.7 µs | 40.2 µs, PKCS#1 v1.5 verify | — | 36.9 µs | 40.2 µs, PKCS#1 v1.5 verify | — | 20.2 µs | 40.9 µs, PKCS#1 v1.5 verify | — | 20.1 µs | 41.1 µs, PKCS#1 v1.5 verify | — |
+| RSA-3072 PKCS#1 v1.5 verify | 28.9 µs | 31.2 µs | 0.93 | 33.8 µs | 40.2 µs | 0.84 | 32.9 µs | 40.2 µs | 0.82 | 15.7 µs | 40.9 µs | 0.39 | 16.4 µs | 41.1 µs | 0.40 |
 | ML-KEM-768 key generation | 9.50 µs | 22.0 µs | 0.43 | 15.3 µs | 38.5 µs | 0.40 | 14.6 µs | 38.4 µs | 0.38 | 16.1 µs | 37.3 µs | 0.43 | 15.6 µs | 37.4 µs | 0.42 |
 | ML-KEM-768 encapsulation | 10.7 µs | 13.1 µs | 0.82 | 17.6 µs | 22.0 µs | 0.80 | 16.4 µs | 22.1 µs | 0.74 | 18.3 µs | 18.2 µs | **1.00** | 17.5 µs | 18.3 µs | 0.96 |
 | ML-KEM-768 decapsulation | 11.7 µs | 18.5 µs | 0.63 | 21.0 µs | 34.1 µs | 0.61 | 18.4 µs | 34.1 µs | 0.54 | 21.7 µs | 29.6 µs | 0.73 | 19.4 µs | 29.7 µs | 0.65 |
@@ -689,6 +689,9 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
 
 - Both compilers' columns are one run of 2026-11-13 on the tree of fb5a0c21 (bench run
   43385076493), beside OpenSSL 3.6.5, on an AMD EPYC 7763. Its rows run under `ch_cfg.cpu 0xc3f`.
+  The RSA verification rows, chapulin's under each value and OpenSSL's, are a later run of the same
+  day on an EPYC 7763, bench run 43469840842 on the tree of 157ec804 (decision 233), as a comment
+  line in each CSV states.
   OpenSSL 3.6.5's X25519 shared secret took 0.95 of 3.6.4's time here, so that ratio moved from
   0.93 to 0.99 under gcc and from 0.91 to 0.95 under clang. `bench/notes-primitives.md` lists what
   moved since the run of ddff5bce.
@@ -757,7 +760,7 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   which puts its signature at 0.86 of OpenSSL's time and its verification at 0.88, and P-384
   verifies in 0.52 of gcc's time. It is also faster for ML-KEM-768, 0.80 to 0.83 of gcc's time,
   AES-GCM, 0.89 to 0.94, and ML-DSA-87, 0.56 to 0.90, and every ML-KEM-768, ML-DSA-87 and AES-GCM
-  row is ahead of OpenSSL. RSA verifies in 0.89 to 0.92 of gcc's time, both on `rsa_avx2.c`. RSA-3072 signs in 1.17 times gcc's time: gcc
+  row is ahead of OpenSSL. RSA verifies in 0.95 to 0.97 of gcc's time, both on `rsa_avx2.c`. RSA-3072 signs in 1.17 times gcc's time: gcc
   runs the signer's products in rows of four words on `_addcarry_u64` chains, and clang keeps
   `rsa_mont64.c`'s loops (decision 122). RSA-2048 signs in 1.04 times gcc's time in this run, 0.94
   of it in the run on the tree of 531fa3da, where gcc's signature ran at its slower speed, and 1.08
@@ -819,11 +822,14 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   2026-11-01, with each product a call, the shared secret took 1.44 times. On the wide files, in the
   run of 2026-10-29, the three took 1.54, 1.81 and 1.26 times. gcc compiles the wide files' carry
   steps from the two x86-64 intrinsics (decision 94).
-- RSA verifies in 1.09 and 0.96 times OpenSSL's time under gcc and in 0.97 and 0.88 of it under
+- RSA verifies in 0.92 and 0.84 of OpenSSL's time under gcc and in 0.88 and 0.82 of it under
   clang. This CPU has no AVX-512 IFMA, so under `CH_CPU_AVX2` the public operation runs in
-  `rsa_avx2.c`'s 28-bit digits, four to a 256-bit register (decision 122). On the tree of decision
-  119 it ran on `rsa_mont64.c`'s loops and took 1.87 and 1.99 times under gcc (decisions 95 and
-  117). An RSA-2048 PSS signature takes 1.33 ms under gcc and 1.38 ms under clang, where OpenSSL's
+  `rsa_avx2.c`'s 28-bit digits, four to a 256-bit register (decision 122). It starts from the
+  signature times 2^(Dn) mod m, which the long division writes, so it runs seventeen products, and
+  each product zeroes one register of its window (decision 233). Before decision 233 it took 1.02
+  and 0.91 times under gcc and 0.95 and 0.86 under clang, in bench run 43385076493. On the tree of
+  decision 119 it ran on `rsa_mont64.c`'s loops and took 1.87 and 1.99 times under gcc (decisions
+  95 and 117). An RSA-2048 PSS signature takes 1.33 ms under gcc and 1.38 ms under clang, where OpenSSL's
   PKCS#1 v1.5 signature takes 661 µs under both. Under gcc it took 1.53 ms in the run on the tree of
   531fa3da, on the same code, 1.28 ms in the run of 2026-11-01
   and 1.38 ms in the run of 2026-10-29, on the same code, 1.35 ms in the run of 2026-10-28, 1.27 ms
