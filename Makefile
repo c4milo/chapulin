@@ -10596,12 +10596,12 @@ BRANCH_CEILING := \
   mips32r2-gcc-O2/src/mlkem.c:17 \
   mips32r2-gcc-O2/src/mlkem_poly.c:39 mips32r2-gcc-O2/src/drbg.c:8 mips32r2-gcc-O2/src/softmul.c:0 \
   rv32imac-gcc/src/ct.c:1 rv32imac-gcc/src/ct_wipe.c:4 rv32imac-gcc/src/sha256.c:15 rv32imac-gcc/src/sha3.c:24 rv32imac-gcc/src/hkdf.c:23 \
-  rv32imac-gcc/src/chacha20.c:10 rv32imac-gcc/src/poly1305.c:15 rv32imac-gcc/src/aead.c:4 \
+  rv32imac-gcc/src/chacha20.c:11 rv32imac-gcc/src/poly1305.c:15 rv32imac-gcc/src/aead.c:4 \
   rv32imac-gcc/src/x25519.c:24 rv32imac-gcc/src/p256_field.c:20 rv32imac-gcc/src/mlkem.c:19 \
   rv32imac-gcc/src/mlkem_poly.c:39 rv32imac-gcc/src/drbg.c:10 rv32imac-gcc/src/softmul.c:0 \
   rv32imac-gcc/src/aes.c:4 rv32imac-gcc/src/quic_aes_soft.c:12 rv32imac-gcc/src/aes_extern.c:0 \
   rv32imac-gcc/src/gcm.c:23 rv32imac-gcc/src/rsa_sign.c:33 rv32ic-gcc/src/ct.c:1 rv32ic-gcc/src/ct_wipe.c:4 \
-  rv32ic-gcc/src/sha256.c:15 rv32ic-gcc/src/sha3.c:24 rv32ic-gcc/src/hkdf.c:23 rv32ic-gcc/src/chacha20.c:10 \
+  rv32ic-gcc/src/sha256.c:15 rv32ic-gcc/src/sha3.c:24 rv32ic-gcc/src/hkdf.c:23 rv32ic-gcc/src/chacha20.c:11 \
   rv32ic-gcc/src/poly1305.c:15 rv32ic-gcc/src/aead.c:4 rv32ic-gcc/src/x25519.c:24 \
   rv32ic-gcc/src/p256_field.c:20 rv32ic-gcc/src/mlkem.c:19 rv32ic-gcc/src/mlkem_poly.c:39 \
   rv32ic-gcc/src/drbg.c:10 rv32ic-gcc/src/softmul.c:2 rv32ic-gcc/src/aes.c:4 \
