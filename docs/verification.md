@@ -430,9 +430,7 @@ The entries are grouped by area:
 #### chacha20
 
 - **Harness:** `chacha20` (fast)
-- **Proves:** safe at any counter, in place and into a distinct buffer,
-  and each wipe of the state, the rounds' words and the keystream writes
-  inside its array, over the stub's loop (decision 229).
+- **Proves:** safe at any counter, in place and into a distinct buffer.
 - **Bound:** ≤ 160 B: three blocks, full, full and partial.
 - **Not proved:** a host object's vector path, whose intrinsics CBMC
   cannot unwind. The harness compiles `chacha20.c` without

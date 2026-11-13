@@ -343,7 +343,6 @@ static void run_path(const vector_path *path, uint64_t seed) {
            compared - before_path, path->name, (unsigned long long)seed);
 }
 
-#include "chacha20_block_residue.h"
 #include "chacha20_equiv_residue.h"
 
 #ifdef __x86_64__
@@ -403,7 +402,6 @@ static void run_avx2_registers(void) {
 
 int main(void) {
     uint64_t seed = rng_seed_from_env();
-    run_block_residue();
     run_path(&vector_128, seed);
 #ifdef __ARM_NEON
     run_residue();

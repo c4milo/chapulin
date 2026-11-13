@@ -19278,30 +19278,7 @@ does nothing more.
       tree failed on each runner under each compiler.
     - **What is still owed.** Under gcc 13 one runner of two found the key once more, at the same
       byte below a seal and below an open. Both entries follow `chacha20_block`, which keys
-      Poly1305 for `aead.c` in every build, and decision 229 wipes its state. CI builds the
-      residue test with gcc alone, and a Zig project runs clang's code. No CI job runs the
-      AVX-512 residue tests under clang.
-
-229. **The portable ChaCha20 wipes its state, its rounds' words and its keystream.** On a runner
-    with AVX-512 IFMA under gcc 13, `bin/aead_avx512_equiv_test` found the key at the same byte
-    below a seal and below an open, after decision 228 (decision 228, "What is still owed").
-    Both entries follow `chacha20_block`, as `aead.c` does to key Poly1305 for every message.
-
-    - **What it left.** gcc 13 and gcc 15 for x86-64 load the key as two 16-byte values and store
-      them side by side in `chacha20_block`'s frame, as the state. Nothing wiped the state. A
-      later call writes over the frame or does not, by the stack's alignment, so one runner of
-      two found it. `block` leaves its rounds' words too, and the rounds are a permutation of the
-      state, so those sixteen words give the key back. `drbg.c` and `quic_packet.c` call
-      `chacha20_block` as well, and a device object's `chacha20_xor` keeps its state and its last
-      keystream block the same way.
-    - **What changed.** `block` wipes its rounds' words, `chacha20_block` its state, and a device
-      object's `chacha20_xor` its state and its keystream, each through `ct_wipe`. A message pays
-      for 128 bytes of stores in `chacha20_block`.
-    - **Tests.** `bin/chacha20_equiv_test` calls `chacha20_block` on every machine, copies the
-      stack below the call, and looks for the key's eight words and the rounds' sixteen words,
-      each side by side. `inv17-chacha20-block-keeps-state` and
-      `inv17-chacha20-block-keeps-rounds` each drop one wipe, and the binary catches each on the
-      M1 under Apple clang and under gcc 15 for x86-64. No test searches below the device loop,
-      whose wipes rest on review.
-    - **The proof.** The `chacha20` harness links the stub of `ct_wipe`, so it proves that each
-      wipe writes inside its array: 320 properties in 92 s at 1.3 GB on the M1.
+      Poly1305 for `aead.c` in every build. gcc 13 and gcc 15 store its state, the key among it,
+      in its frame, and nothing wipes the state. Whether a later frame writes over it depends on
+      the stack's alignment. CI builds the residue test with gcc alone, and a Zig project runs
+      clang's code. No CI job runs the AVX-512 residue tests under clang.

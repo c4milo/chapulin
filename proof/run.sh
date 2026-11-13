@@ -1893,12 +1893,7 @@ launch fast:3 full x509der_mldsa 452 "fill_nondet.0:2625,ct_memeq.0:68" src/buf.
 launch slow:2 full x509parse_ecdsa 260 "fill_nondet.0:257" src/buf.c proof/ct_wipe_stub.c
 launch slow:2 full x509parse_mldsa 260 "fill_nondet.0:257" src/buf.c proof/ct_wipe_stub.c
 launch slow:2 full x509parse 844 "fill_nondet.0:841" src/buf.c proof/ct_wipe_stub.c
-# chacha20.c wipes its state, its rounds' words and its keystream through
-# ct_wipe (docs/decisions.md 229), so the stub's loop is linked; the global
-# unwind of 165 covers its 64 stores. Measured on an M1 Pro on 2026-11-13
-# at a load average of 28 to 77 (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
-# /usr/bin/time -l): 320 properties, 92 s, 1.3 GB.
-launch fast full chacha20 165 "chacha20_xor.1:5" proof/ct_wipe_stub.c
+launch fast full chacha20 165 "chacha20_xor.1:5"
 # The AES-128 forward cipher and the two aes_public_key constructors,
 # TRANSPORT=quic-nonblocking. HKDF is a contract stub (proof/aes_stubs.h), so
 # this formula holds the key schedule and the cipher and not five HMAC

@@ -53,9 +53,9 @@ static __attribute__((noinline)) void residue_call(void) {
                         RESIDUE_LENGTH);
 }
 
-// stack_residue_take and stack_residue_unsearched, test/stack_residue.c's,
-// are declared in test/chacha20_block_residue.h, which the test includes
-// first.
+// test/stack_residue.c, compiled as a source of its own.
+void stack_residue_take(volatile uint8_t *below, size_t n, uint8_t *copy);
+const char *stack_residue_unsearched(void);
 
 static __attribute__((noinline)) void residue_snapshot(void) {
     volatile uint8_t below[RESIDUE_BYTES];
