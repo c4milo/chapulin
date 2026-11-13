@@ -141,7 +141,7 @@ STACK_PROSE = [
      [["stack_connect_webpki"]]),
     ("(`STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank,mlkem_decaps_rank_hw,"
      "mlkem_keygen_dk_rank_hw`) "
-     "the deepest chain is the chain walk into a P-384 verify, at {} bytes",
+     "the deepest chain is the chain walk into an RSA verify on 64-bit words, at {} bytes",
      [["stack_connect_webpki_without_mlkem"]]),
     ("(`STACK_MAKE='TRUST=webpki HOST_TARGET=' STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank`) "
      "its deepest chain is the chain walk into an RSA-4096 verify on 32-bit words, at {} bytes",

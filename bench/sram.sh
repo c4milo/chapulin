@@ -234,7 +234,7 @@ grep '^ch_anchors_from_pem' "$TMP/webpki.stack"
 # functions of the deepest chain, so the walk gives the next deepest one.
 # HOST_TARGET= clears the Makefile's host test, so make packages the
 # device object, which holds no copies over the SHA-3 instructions.
-echo "-- TRUST=webpki without ML-KEM; ch_connect peak = chain walk into a P-384 verify --"
+echo "-- TRUST=webpki without ML-KEM; ch_connect peak = chain walk into an RSA verify on 64-bit words --"
 stack_report webpki_without_mlkem STACK_MAKE=TRUST=webpki \
     STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank,mlkem_decaps_rank_hw,mlkem_keygen_dk_rank_hw
 head -1 "$TMP/webpki_without_mlkem.stack"

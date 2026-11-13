@@ -27,22 +27,22 @@ and `size_t` lengths, so that build needs 120 bytes less than the host figure on
 | **total static working set, `KEX=pq`** (2048 buffer) | **4384** | **4304** |
 | `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3072 | 2952 |
 | **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15410** | **15290** |
-| `ch_tls` under `ROLE=server` (includes 1669 B TX staging) | 2440 | 2272 |
-| **total static working set, `ROLE=server`** (2048 buffer) | **4488** | **4320** |
-| `ch_tls` under `ROLE=server SUITE=aesgcm` | 3256 | — |
-| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **5304** | — |
+| `ch_tls` under `ROLE=server` (includes 1669 B TX staging) | 2448 | 2272 |
+| **total static working set, `ROLE=server`** (2048 buffer) | **4496** | **4320** |
+| `ch_tls` under `ROLE=server SUITE=aesgcm` | 3264 | — |
+| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **5312** | — |
 | `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3856 | — |
 | **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **16194** | — |
 | `ch_tls` under `TRUST=webpki`, host object | 3072 | — |
 | **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15410** | — |
-| `ch_tls` under `ROLE=server`, host object | 2488 | — |
-| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4536** | — |
+| `ch_tls` under `ROLE=server`, host object | 2496 | — |
+| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4544** | — |
 | `ch_tls` under `PROFILE=cnsa2 TRUST=raw-mldsa` | 2992 | — |
 | **total static working set, `PROFILE=cnsa2 TRUST=raw-mldsa`** (7843 buffer, its floor) | **10835** | — |
 | `ch_tls` under `PROFILE=cnsa2 TRUST=ca-mldsa` | 2992 | — |
 | **total static working set, `PROFILE=cnsa2 TRUST=ca-mldsa`** (15656 buffer, its floor) | **18648** | — |
-| `ch_tls` under `PROFILE=cnsa2 ROLE=server` (host object) | 3160 | — |
-| **total static working set, `PROFILE=cnsa2 ROLE=server`** (2179 buffer, its floor) | **5339** | — |
+| `ch_tls` under `PROFILE=cnsa2 ROLE=server` (host object) | 3168 | — |
+| **total static working set, `PROFILE=cnsa2 ROLE=server`** (2179 buffer, its floor) | **5347** | — |
 
 ### Peak stack
 
@@ -91,11 +91,11 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3120 |
 | peak stack, `ch_connect` (PSK) | 2784 |
 | peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5472 / 3264 |
-| peak stack, `ch_connect` (`TRUST=webpki`) | 13920 |
-| peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 14048 |
+| peak stack, `ch_connect` (`TRUST=webpki`) | 14288 |
+| peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 14416 |
 | peak stack, `ch_connect` (`KEX=pq`) | 12720 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1888 |
-| peak stack, `ch_write` / `ch_close` | 1616 / 896 |
+| peak stack, `ch_write` / `ch_close` | 1616 / 880 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 112864 |
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 113024 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 14576 |
@@ -140,13 +140,15 @@ P-256 scalar and point a retry to secp256r1 draws
 larger TX staging array for the `server_name` and ALPN extensions and
 for both key shares, the 1,216-byte hybrid one and a 32-byte x25519 one
 ([`docs/decisions.md`](decisions.md) 51), and for the third group it
-lists, secp256r1 (63). Its `ch_connect` peaks at 13,920 bytes, through
+lists, secp256r1 (63). Its `ch_connect` peaks at 14,288 bytes, through
 ML-KEM's decapsulation. With ML-KEM and its copies over the SHA-3
 instructions pruned from the call graph
 (`STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank,mlkem_decaps_rank_hw,mlkem_keygen_dk_rank_hw`)
-the deepest chain is the chain walk into a P-384 verify, at 8,304 bytes:
-this host builds the host object, whose P-384 verifier runs on six
-64-bit words ([`docs/decisions.md`](decisions.md) 97). A device object
+the deepest chain is the chain walk into an RSA verify on 64-bit words, at 9,792 bytes:
+this host builds the host object, whose RSA verifier squares on
+`rsa_mont64_blocks.c`'s rows of four words ([`docs/decisions.md`](decisions.md)
+209). On the tree of 90415b30 the deepest was the walk into a P-384
+verify, at 8,304 bytes. A device object
 holds no copies over the SHA-3 instructions, and with ML-KEM pruned
 (`STACK_MAKE='TRUST=webpki HOST_TARGET='
 STACK_PRUNE=mlkem_decaps_rank,mlkem_keygen_dk_rank`) its deepest chain is the chain
@@ -176,7 +178,7 @@ of 2a (106) and calls `rsa_mont64_blocks.c`'s square, which multiplies in
 blocks of four words under clang for arm64 (118). With the RSA signer
 pruned too (`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss`) it is the
 encapsulation to the client's key into K-PKE encrypt and Keccak, at
-10,288 bytes. With the encapsulation pruned as well
+10,672 bytes. With the encapsulation pruned as well
 (`STACK_PRUNE=srv_mldsa_send_certificate_verify,rsa_sign64_pss,srv_kex_share`) it is
 `rsa_sign.c`'s ladder, at 6,240 bytes, which a session without the
 multiply bit runs and whose blinded exponent takes two arrays of 99 words
