@@ -19236,3 +19236,49 @@ does nothing more.
       then passes. `bin/dnssec_test` fails on each.
     - **Callers.** No signature changes and no result code is new: `ch_dnssec_verify` and
       `ch_jws_verify` return CH_EAUTH for such a key, as for any signature that fails.
+
+228. **The AVX-512 ChaCha20 kernel holds no key word in a frame that no wipe names.** Decision 226
+    landed on main as 5f2a74a9, and `check.yml` run 43361141856 failed on it. On a runner with
+    AVX-512 IFMA under gcc 15, `bin/aead_avx512_equiv_test` found the key's 32 bytes in order on
+    the stack below a seal and below an open, and the `aead_avx512_last` proof died at its memory
+    cap. No check before the push read either: the M1, Rosetta and the qemu lane have no AVX-512,
+    and the Mac's proof ran under no cap. Camilo chose to fix forward and keep main red until
+    then.
+
+    - **The array of rows.** A row pass holds the key's words 0 to 3 in every quarter of one
+      vector and words 4 to 7 in every quarter of the next. `rows_keystream` built the four input
+      rows in an array and added them in a loop, and gcc 15 kept the array in the pass's frame,
+      where rows 1 and 2 spell the key. Both `aead_avx512.c`'s last pass and
+      `chacha20_avx512.c`'s `pass_with_rows` run it, and the second has since decision 121. Each
+      row is now the operand of its own sum, and no array holds the four.
+    - **The copy of the key.** `chacha20_avx512_xor` loads the key as one 32-byte value to write
+      the input words. gcc 13 inlined `row_pass`, and clang 23 inlined `row_pass` and
+      `pass_with_rows`. Their reads of the words then let each compiler keep the loaded value in a
+      register, and each saved it in the entry's frame across the calls of `pass`. The entry
+      wipes the words and not that copy. On main's tree a lab run found it below an open under
+      gcc 13 and clang 23 on four CPU models: an EPYC 9V74, an EPYC 9V45, a Xeon 8370C and a
+      Xeon 8573C. `pass`, `row_pass` and `pass_with_rows` now carry noinline, so the entry reads
+      no word, and the value is dead once it is stored. In the assembly of gcc 13, gcc 15 and
+      clang 23 the entry now stores the key once, into the words it wipes.
+    - **Tests.** The binary also searches the stack below one row pass of `chacha20_avx512_xor`
+      over 229 bytes, and reads the vector registers back as zero after it.
+      `inv17-chacha-avx512-rows-keep-key` restores the array; the binary catches it under gcc 15
+      on a CPU with AVX-512 IFMA or under SDE. `test/chacha-builds.sh` compiles the kernel with
+      the pinned clang and requires the entry to call `row_pass` and `pass_with_rows`, and
+      catches `inv17-chacha-avx512-row-pass-inline` and
+      `inv17-chacha-avx512-pass-with-rows-inline` on every machine. gcc 15 kept the copy out of
+      the frame with the readers inlined, so no residue run in CI sees those two.
+    - **The proof.** On an x86-64 runner under the fast tier's default weight of 2, whose cap is
+      6 GB of address space, cbmc peaked at 5.3 and 5.9 GB on `aead_avx512` and
+      `aead_avx512_row`, and `aead_avx512_last` died at the cap. The Mac read 2.0 to 2.9 GB
+      resident. Each line now takes a weight of 6, a cap of 10 GB. Under it `aead_avx512_last`
+      proved in 116 s with cbmc at 7.6 GB.
+    - **The lab runs.** On this tree the binary passed under gcc 15 and clang 23 on runners with
+      an EPYC 9V74, an EPYC 9V45 and a Xeon 8573C, and so did the five mutants' checks. Main's
+      tree failed on each runner under each compiler.
+    - **What is still owed.** Under gcc 13 one runner of two found the key once more, at the same
+      byte below a seal and below an open. Both entries follow `chacha20_block`, which keys
+      Poly1305 for `aead.c` in every build. gcc 13 and gcc 15 store its state, the key among it,
+      in its frame, and nothing wipes the state. Whether a later frame writes over it depends on
+      the stack's alignment. CI builds the residue test with gcc alone, and a Zig project runs
+      clang's code. No CI job runs the AVX-512 residue tests under clang.

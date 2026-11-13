@@ -5767,14 +5767,20 @@ from 0 to 5,120 bytes, every length from 2,048 to 3,071 bytes at each of
 64 alignments, the edges and the two records, in the same three shapes,
 checks that no byte outside the output changed, and opens each under a
 changed tag, which must return 0 and leave zeros. It then searches the
-stack below a seal and an open for the key's eight words side by side and
-for r^2 to r^16 as three digits 8, 24, 32 or 64 bytes apart, and reads
-zmm0 to zmm31 and k1 to k7 back as zero after each entry. The model run
+stack below a seal, an open and one row pass of `chacha20_avx512_xor`
+over 229 bytes for the key's eight words side by side and for r^2 to r^16
+as three digits 8, 24, 32 or 64 bytes apart, and reads zmm0 to zmm31 and
+k1 to k7 back as zero after each of the three. On runners with AVX-512
+IFMA the search found the key below both entries: under gcc 15 in an
+array of a row pass's input rows, and under gcc 13 and clang 23 in a copy
+of the key that `chacha20_avx512_xor` saved in its own frame. Decision 228
+removed both. The model run
 searches no stack, for the reason the IFMA Poly1305's model run gives.
 `bin/x86_kernels_test` counts the entries' calls at 2,085 bytes under
 each of its `ch_cfg.cpu` values, and `test/chacha-builds.sh` requires the
 seal to call `avx512_wipe_registers` and the open `chacha20_avx512_xor`,
-which calls it.
+which calls it, and `row_pass` and `pass_with_rows`, which read the input
+words out of line.
 
 ### The host object's AES key expansions
 

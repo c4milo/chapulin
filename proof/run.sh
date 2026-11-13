@@ -3510,10 +3510,17 @@ launch fast full poly1305_ifma_blocks 513 "poly1305_ifma_blocks.1:2,ct_wipe.0:19
 # the last group, 44 bytes at most, and xor_partial's last bytes, 44 at
 # most. Measured on an M1 Pro on 2026-11-12 at a load average of 20 to 24
 # (cbmc 6.11.0, /usr/bin/time -l): 3,772 properties on each line, in 542,
-# 368 and 827 s, at 2.4, 2.9 and 2.0 GB resident.
-launch fast full aead_avx512 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
-launch fast full aead_avx512_row 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
-launch fast full aead_avx512_last 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
+# 368 and 827 s, at 2.4, 2.9 and 2.0 GB resident. On an x86-64 runner the
+# formulas are larger: under the fast tier's default weight of 2, whose
+# address-space cap is 6 GB, cbmc's address space peaked at 5.3 and 5.9 GB
+# on the first two lines, and the third died at the cap (check.yml run
+# 43361141856; sampled from /proc in a lab run, 3,865 properties on each
+# line). So each line takes a weight of 6, a cap of 10 GB, under which the
+# third proved in 116 s with cbmc's address space at 7.6 GB and kissat's at
+# 6.3 GB (docs/decisions.md 228).
+launch fast:6 full aead_avx512 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
+launch fast:6 full aead_avx512_row 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
+launch fast:6 full aead_avx512_last 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
 # rsa_avx2.c, RSA's public operation on AVX2, which an x86-64 host object
 # runs for a session whose ch_cfg.cpu holds CH_CPU_AVX2 and not
 # CH_CPU_AVX512_IFMA (docs/decisions.md 122). As for rsa_ifma.c, the lines

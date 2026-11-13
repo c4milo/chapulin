@@ -19,12 +19,22 @@
 // and requires every bit of them zero after it, since they held the key's
 // words, the keystream, the powers of r and the lanes' sums
 // (docs/decisions.md 121 and 226).
+//
+// A third call runs chacha20_avx512_xor over RESIDUE_ROW_LENGTH bytes, one
+// row pass alone, with the same two checks. A row pass holds the key's
+// words 0 to 3 in every quarter of one vector and words 4 to 7 in every
+// quarter of the next, so two such vectors side by side in a frame spell
+// the key. The seal's last pass and the open's last bytes run a row pass
+// beside a pass of sixteen blocks, and this call runs the row pass that
+// chacha20_avx512.c gives a short message (docs/decisions.md 228).
 #ifndef CH_AEAD_AVX512_EQUIV_RESIDUE_H
 #define CH_AEAD_AVX512_EQUIV_RESIDUE_H
 
 // Four passes and 37 bytes: two passes absorb, and the last bytes run on a
 // row pass beside the last whole pass.
 #define RESIDUE_LENGTH ((size_t)4096 + 37)
+// Three blocks and 37 bytes, on one row pass.
+#define RESIDUE_ROW_LENGTH ((size_t)3 * 64 + 37)
 // Deep enough for an entry's frame, which holds its struct of powers,
 // 1,984 bytes, beside the pass's spills.
 #define RESIDUE_BYTES 12288
@@ -98,6 +108,14 @@ static __attribute__((noinline)) void residue_entry(int seal) {
     } else {
         aead_avx512_open(key, nonce, &state, sealed, RESIDUE_LENGTH, buffer);
     }
+    store_registers();
+}
+
+// chacha20_avx512_xor called alone over one row pass, with the registers
+// set before it and stored after it.
+static __attribute__((noinline)) void residue_row_pass(void) {
+    set_registers();
+    chacha20_avx512_xor(key, nonce, 1, message, buffer, RESIDUE_ROW_LENGTH);
     store_registers();
 }
 
@@ -238,6 +256,12 @@ static void run_residue(void) {
         residue_search("an open");
     }
     residue_registers("an open");
+    residue_row_pass();
+    residue_snapshot();
+    if (unsearched == NULL) {
+        residue_search("a ChaCha20 row pass");
+    }
+    residue_registers("a ChaCha20 row pass");
     if (unsearched != NULL) {
         printf("aead avx512 equivalence: no search of the stack: %s\n", unsearched);
     }

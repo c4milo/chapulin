@@ -1,0 +1,24 @@
+invariant: INV-17
+file: src/chacha20_avx512_lanes.h
+catches: test/avx512-run.sh bin/aead_avx512_equiv_test
+builds: bin/aead_avx512_equiv_test
+reason: rows_keystream holds the four input rows of a row pass in an array.
+  Rows 1 and 2 are the key's eight words, so the array's two entries spell
+  the key in the pass's frame, which no wipe names: gcc 15 kept the array
+  there. Every byte the pass writes is still right. bin/aead_avx512_equiv_test
+  copies the stack below a seal, an open and a ChaCha20 row pass and looks
+  for the key. It needs a CPU with AVX-512 IFMA, or Intel SDE through SDE64,
+  which the nightly's test-invariants job installs; without either this
+  reports unguarded rather than caught.
+
+--- old
+    y[0] = chacha_lanes_add(y[0], chacha_lanes_row(&words[0]));
+    y[1] = chacha_lanes_add(y[1], chacha_lanes_row(&words[4]));
+    y[2] = chacha_lanes_add(y[2], chacha_lanes_row(&words[8]));
+    y[3] = chacha_lanes_add(y[3], chacha_lanes_row_counters(counter, &words[13]));
+--- new
+    chacha_lanes input[4];
+    rows_input(input, words, counter);
+    for (size_t r = 0; r < 4; r++) {
+        y[r] = chacha_lanes_add(y[r], input[r]);
+    }

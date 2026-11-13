@@ -371,14 +371,17 @@ static inline __attribute__((PASS_INLINE_ATTRIBUTE)) void double_round_rows(chac
 }
 
 // The input added back, and the quarters transposed: y[k] holds block k's
-// 64 bytes in order.
+// 64 bytes in order. Each input row is the operand of its own sum, and no
+// array holds the four. Rows 1 and 2 are the key's eight words, and in an
+// array they lie side by side: gcc 15 kept such an array in the pass's
+// frame, which no wipe names, and the key stayed there after the call
+// (docs/decisions.md 228).
 static inline __attribute__((PASS_INLINE_ATTRIBUTE)) void
 rows_keystream(chacha_lanes y[4], const uint32_t words[16], uint32_t counter) {
-    chacha_lanes input[4];
-    rows_input(input, words, counter);
-    for (size_t r = 0; r < 4; r++) {
-        y[r] = chacha_lanes_add(y[r], input[r]);
-    }
+    y[0] = chacha_lanes_add(y[0], chacha_lanes_row(&words[0]));
+    y[1] = chacha_lanes_add(y[1], chacha_lanes_row(&words[4]));
+    y[2] = chacha_lanes_add(y[2], chacha_lanes_row(&words[8]));
+    y[3] = chacha_lanes_add(y[3], chacha_lanes_row_counters(counter, &words[13]));
     transpose_quarters(&y[0], &y[1], &y[2], &y[3]);
 }
 

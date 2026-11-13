@@ -252,6 +252,9 @@ def full_plan(mapping, why):
     gates |= {f"proof/prove-one.sh {n}" for n in mapping.harnesses}
     gates |= {f"test/{p.name}" for p in ROOT.glob("test/*.sh")}
     gates |= set(AES_RUNTIME_QEMU_GATES)
+    # test/avx512-run.sh takes its binary as an argument, and a violation
+    # of a library header names both in its catches line.
+    gates |= {f"{AVX512_RUN_SCRIPT} bin/{name}" for name in AVX512_RUN_BINARIES}
     for tier, command, reason in FULL_COMMANDS:
         entries.append(Entry("everything", command, reason, (), tier))
     # Every gate the tree holds, carried by the first command so a

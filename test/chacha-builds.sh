@@ -31,7 +31,9 @@
 #     chacha20_avx2_xor and hold 256-bit instructions, which its target
 #     attribute turns on, and chacha20_avx512.c must define
 #     chacha20_avx512_xor on 512-bit registers and call
-#     avx512_wipe_registers, while chacha20.c and chacha20_vector.c hold
+#     avx512_wipe_registers, row_pass and pass_with_rows, so the key the
+#     entry loads is dead once it is stored (docs/decisions.md 228), while
+#     chacha20.c and chacha20_vector.c hold
 #     neither, so the rest of the object runs on any x86-64 CPU; and for
 #     arm64, the two kernels' files must define nothing (docs/decisions.md
 #     90);
@@ -212,6 +214,17 @@ if ! body_names chacha20_avx512_xor avx512_wipe_registers; then
     echo "chacha-builds: chacha20_avx512_xor for x86-64 does not call avx512_wipe_registers, so the key stays in the vector registers" >&2
     exit 1
 fi
+# The functions that read the input words run out of line, so the entry
+# reads none of them. Where clang inlined row_pass and pass_with_rows, it
+# kept the key the entry loaded in a register for their reads, and saved
+# a copy of it in the entry's frame across the calls of pass
+# (docs/decisions.md 228).
+for reader in row_pass pass_with_rows; do
+    if ! body_names chacha20_avx512_xor "$reader"; then
+        echo "chacha-builds: chacha20_avx512_xor for x86-64 does not call $reader; inlined, its reads of the words let the compiler keep the key in a register and save it in the entry's frame" >&2
+        exit 1
+    fi
+done
 # The AVX-512 one pass (docs/decisions.md 226): its seal ends with the
 # wipe of the registers, and its open ends on chacha20_avx512_xor, which
 # ends with it.

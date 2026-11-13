@@ -1,0 +1,14 @@
+invariant: INV-17
+file: src/chacha20_avx512.c
+catches: test/chacha-builds.sh
+reason: row_pass loses its noinline, so the pinned clang inlines it into
+  chacha20_avx512_xor. Its reads of the input words then let the compiler
+  keep the key the entry loaded in a register, and gcc 13 saved a copy of
+  that register in the entry's frame, which no wipe names. Every byte the
+  kernel writes is still right. The script compiles the kernel for x86-64
+  and requires chacha20_avx512_xor to call row_pass.
+
+--- old
+static __attribute__((noinline)) void row_pass(const uint32_t words[16], uint32_t counter,
+--- new
+static void row_pass(const uint32_t words[16], uint32_t counter,

@@ -38,8 +38,9 @@
 // one alignment, the edges and the two records, in the same three shapes.
 //
 // On a CPU with AVX-512 IFMA the binary then searches the stack below a
-// seal and an open for the key's eight words side by side and for r^2 to
-// r^16, and reads zmm0 to zmm31 and k1 to k7 back as zero after each entry
+// seal, an open and one row pass of chacha20_avx512_xor for the key's eight
+// words side by side and for r^2 to r^16, and reads zmm0 to zmm31 and k1 to
+// k7 back as zero after each of the three
 // (test/aead_avx512_equiv_residue.h). A CPU without AVX-512 IFMA skips
 // those cases, unless CH_REQUIRE_AVX512_IFMA or CH_REQUIRE_AVX512 is 1, as
 // the nightly's SDE runs and test/avx512-run.sh set them.
@@ -50,6 +51,7 @@
 #include "aead.h"
 #include "aead_avx512.h"
 #include "ch_assert.h"
+#include "chacha20_avx512.h"
 #include "cpu_cfg.h"
 #include "ct.h"
 #include "widemul.h"

@@ -6468,7 +6468,21 @@ last `ROLE=server` stub, as the entry said it would.
   AVX-512 IFMA or under SDE: `inv17-aead-avx512-seal-keeps-key` and
   `inv17-aead-avx512-keeps-powers` drop a wipe and are caught there, and
   `inv17-aead-avx512-seal-keeps-registers` drops the register wipe, which
-  `test/chacha-builds.sh` catches on every machine. The AVX-512 IFMA Poly1305 computes r^2 to
+  `test/chacha-builds.sh` catches on every machine. A row pass holds the
+  key's words 0 to 3 in every quarter of one vector and words 4 to 7 in
+  every quarter of the next, so two such vectors side by side in a frame
+  spell the key. `rows_keystream` gives each input row to its own sum and
+  holds no array of the four (decision 228). `chacha20_avx512_xor` loads
+  the key once to write the input words, and each function that reads
+  the words is out of line, so the loaded key is dead once it is stored;
+  inlined readers let gcc 13 and clang 23 keep it in a register and save
+  it in the entry's frame. The binary also searches the stack below one
+  row pass of `chacha20_avx512_xor`.
+  `inv17-chacha-avx512-rows-keep-key` restores the array and is caught
+  there under gcc. `test/chacha-builds.sh` requires the entry to call
+  `row_pass` and `pass_with_rows`, and catches
+  `inv17-chacha-avx512-row-pass-inline` and
+  `inv17-chacha-avx512-pass-with-rows-inline` on every machine. The AVX-512 IFMA Poly1305 computes r^2 to
   r^16 into one struct of 1,984 bytes and wipes it the same way, and the
   binary's search reads its digits as well, on the instructions and over
   the lane model. That kernel and the AVX-512 ChaCha20 also hold the key's

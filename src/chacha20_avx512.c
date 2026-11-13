@@ -27,13 +27,21 @@
 
 #include "chacha20_avx512_lanes.h"
 
+// Each function that reads the input words is out of line: pass, row_pass
+// and pass_with_rows. chacha20_avx512_xor writes the words and reads none,
+// so the key it loads is dead once it is stored. Where row_pass or
+// pass_with_rows was inlined, gcc 13 and clang 23 kept the loaded key in
+// one register for those reads, and saved a copy of the register in the
+// entry's frame across the calls of pass. The copy held the key in order,
+// and no wipe names it (docs/decisions.md 228).
+
 // One pass: the sixteen blocks whose counters start at counter, their ten
 // double rounds, and their keystream XORed into each whole block of
 // out[0..limit), for a limit of 1 to PASS_BYTES. Returns the keystream of
 // the block the limit ends inside, whose first limit % 64 bytes the caller
 // XORs when limit % 64 is not 0.
-static chacha_lanes pass(const uint32_t words[16], uint32_t counter, const uint8_t *in,
-                         uint8_t *out, size_t limit) {
+static __attribute__((noinline)) chacha_lanes pass(const uint32_t words[16], uint32_t counter,
+                                                   const uint8_t *in, uint8_t *out, size_t limit) {
     chacha_lanes x[16];
     pass_input(x, words, counter);
     for (int i = 0; i < 10; i++) {
@@ -70,8 +78,8 @@ static void last_pass(const uint32_t words[16], uint32_t counter, const uint8_t 
 }
 
 // A message of 1 to ROW_PASS_BYTES bytes: one row pass.
-static void row_pass(const uint32_t words[16], uint32_t counter, const uint8_t *in, uint8_t *out,
-                     size_t n) {
+static __attribute__((noinline)) void row_pass(const uint32_t words[16], uint32_t counter,
+                                               const uint8_t *in, uint8_t *out, size_t n) {
     chacha_lanes y[4];
     rows_input(y, words, counter);
     for (int i = 0; i < 10; i++) {
@@ -86,8 +94,8 @@ static void row_pass(const uint32_t words[16], uint32_t counter, const uint8_t *
 // rounds do not depend on each other, so the CPU runs the second while the
 // first waits on its own results. The pass's 1,024 bytes are written before
 // the rest is read, so out <= in stays safe.
-static void pass_with_rows(const uint32_t words[16], uint32_t counter, const uint8_t *in,
-                           uint8_t *out, size_t rest) {
+static __attribute__((noinline)) void pass_with_rows(const uint32_t words[16], uint32_t counter,
+                                                     const uint8_t *in, uint8_t *out, size_t rest) {
     chacha_lanes x[16];
     chacha_lanes y[4];
     pass_input(x, words, counter);
