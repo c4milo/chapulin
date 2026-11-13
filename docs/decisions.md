@@ -19364,6 +19364,72 @@ does nothing more.
       blocks at once, which halves the vector instructions a round. Decision 128 measured both
       and refused them. Inside its rules the kernel stays 0.36 to 0.55 cycles a round behind.
 
+231. **No form of the Keccak round measured makes SHA3-256 faster on the EPYC 7763 or the M1 Pro.**
+    On the EPYC 7763 SHA3-256 of 16 KiB took 1.03 times OpenSSL 3.6.5's time under gcc and 1.04
+    times under clang, on decision 217's round. The Xeon 8573C took 0.92 and 0.93 times, and the
+    M1 Pro 1.01 times on `sha3_hw.c`. Camilo asked why Zen 3 gains less from ANDN and RORX, and for
+    a lever on the EPYC and on the M1. This entry records the measurement. No code changed.
+
+    - **How it was measured.** Lab runs 43440288558, 43457160430 and 43457629740 drew an EPYC 7763,
+      and runs 43437835868 and 43457167129 an 8573C. Each built one binary for each compiler, gcc
+      13.3 and clang 23. It times each form of the permutation in turn, and loops of single
+      instructions beside them. Each form first agrees with FIPS 202 over seeded states.
+    - **What binds each CPU.** Decision 217's round runs 130 ALU operations, 51 loads and 25 stores.
+      On the 8573C it takes 32.6 to 33.5 cycles, so it runs 4.0 ALU operations a cycle, and a loop
+      of XOR alone runs 4.5. That round is bound by its ALUs, and each operation that ANDN or RORX
+      removes is time saved. On the EPYC the round takes 43.0 to 43.6 cycles, 3.0 operations a
+      cycle, where a long loop of the same operations runs 4.0. A quarter of its ALU time is idle.
+      That is why Zen 3 gained less.
+    - **Not the round's latency, and not the front end.** Two independent states, a round of one and
+      then a round of the other, take 0.96 to 0.98 of one state's time for each permutation. On the
+      EPYC a loop of 1,024 instructions, eight loads in each 16, runs 6.0 instructions a cycle. It
+      runs the same with offsets of one byte and of four.
+    - **Loads of words just stored.** A loop that reads four words the pass before stored runs 2.3
+      to 2.6 ALU operations a cycle on the EPYC. The same loop at addresses that no store writes
+      runs 3.0 to 3.4. On the 8573C the two run 3.7 and 4.3 under gcc. Each load of a round reads a
+      lane that the round before stored.
+    - **Forms measured.** Each cell is a permutation's time as a part of decision 217's in the same
+      binary, gcc then clang. The noisier 8573C run (43457167129) moved its cells by up to 0.02.
+
+      | form | EPYC 7763 | Xeon 8573C |
+      | --- | --- | --- |
+      | parities carried from round to round as values | 0.98, 1.00 to 1.01 | 1.08 to 1.10, 1.07 |
+      | parities of rows 0 to 3 loaded after row 4's lanes, row 4's added from registers | 0.96 to 0.97, 1.08 to 1.10 | 0.99 to 1.00, 1.27 to 1.29 |
+      | parities summed in XMM registers by MOVQ and PXOR | 1.11 to 1.29, 1.10 to 1.13 | 1.38 to 1.46, 1.34 to 1.48 |
+      | both states on the frame, each lane addressed from rsp | 1.04, 1.04 | not run |
+      | every offset in one byte | 1.00, 1.00 | not run |
+      | no wipe of the scratch state after the rounds | 0.99, 0.99 | 0.98, 0.97 |
+
+    - **Why none wins.** A round that loads each lane once carries five parities from round to
+      round. It then holds 19 values: two states, the constants' address, five values of theta, five
+      parities, five lanes of a row and one more. x86-64 has 15 general registers, so each compiler
+      keeps some in stack slots, and each reload is again a load of a word just stored. MOVQ between
+      a general and an XMM register runs once a cycle each way on both CPUs. That is slower than the
+      loads it replaces. One form wins under gcc alone and loses more under clang. The wipe of the
+      scratch state after each permutation costs 1% on the EPYC and 2% to 3% on the 8573C. One wipe
+      after a run of blocks would recover that, but 1% is under the EPYC's noise, and it was not
+      built.
+    - **The M1 Pro.** `sha3_hw.c`'s round runs 66 SHA-3 and EOR instructions. On this core EOR3,
+      BCAX, XAR, RAX1 and EOR each run four a cycle, two cycles after their inputs. So 66 need 16.5
+      cycles, and a round takes about 20.5. Each chi line needs all five parities of the round
+      before. After the last chi line of a round, an EOR3, a RAX1 and an XAR run one after another.
+      Few other instructions are ready then. From the same C, Apple clang 21 and clang 21 to 23 for
+      macOS write 175 instructions in `permute_blocks`, 14 of them vector moves. clang 21 to 23 for
+      Linux write 160, with no move. Two runs under the bench lock, at a load average of 7 to 8,
+      timed SHA3-256's 121 permutations over 16 KiB. Each cell is a form's time as a part of the
+      tree's. It is the median of 9 or of 11 passes, whose spread was 2% to 6%:
+
+      | form | M1 Pro |
+      | --- | --- |
+      | the tree's C compiled with `-mcpu=generic`, no vector move | 0.986, 0.993 |
+      | two rounds a pass: no move on macOS, eight vector registers stored on Linux | 0.999, 1.003 |
+      | lane 0 last into column 0's parity | 0.990, 0.999 |
+      | iota added in the next round's EOR3 | 1.016 |
+      | two orders of chi's lines with no move, of 300 drawn at random | 1.001 to 1.011, 1.033 to 1.044 |
+
+      The moves cost no time. OpenSSL 3.6.5 took 18.9 to 19.5 µs in the same runs, and
+      `sha3_256_hw` 19.4 µs. No form wins past the spread.
+
 232. **The P-256 binary GCD runs fewer instructions a round, and ML-KEM decodes, reduces,
     expands its message and compresses on vectors.** On the Xeon Platinum 8573C under gcc 13.3
     a P-256 key generation took 1.01 of OpenSSL 3.6.5's time and an ML-KEM-768 encapsulation
