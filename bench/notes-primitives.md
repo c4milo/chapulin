@@ -16,6 +16,37 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of fb5a0c21
+
+All five column groups now hold one tree, fb5a0c21, beside OpenSSL 3.6.5,
+the release `tools/toolchain.env` pins since ba60e7c3. The four x86-64
+CSVs are bench run 43385076493 of 2026-11-13: the EPYC 7763 and, after
+20 re-runs, a Xeon Platinum 8573C. The M1 Pro's CSVs are a run of the
+same day against a build of 3.6.5, with every pass started below a
+1-minute load of 8. The tree adds docs/decisions.md 224 to 228 to the
+runs of ddff5bce and cffe66b2.
+
+What moved by design, as ratios to OpenSSL on the 8573C:
+
+- **ChaCha20-Poly1305's seal**: 1.09 to 0.89 under gcc and 1.03 to 0.93
+  under clang, and its open 1.01 to 0.86 and 0.98 to 0.91, on the one
+  AVX-512 pass (decisions 226 and 228).
+
+What moved with OpenSSL, whose 3.6.5 took less time than 3.6.4 on some
+rows:
+
+- **ML-KEM-768 on the 8573C**: OpenSSL's encapsulation and decapsulation
+  took 0.86 and 0.89 of 3.6.4's time, so the encapsulation reads 1.00
+  under gcc and 0.96 under clang, where it read 0.92 and 0.85 in bench
+  run 43167193452 (decision 225).
+- **X25519's shared secret**: OpenSSL's took 0.94 and 0.95 of 3.6.4's
+  time on the two CPUs, so the ratio reads 0.99 under gcc on both, and
+  0.95 and 0.94 under clang.
+
+On the M1 Pro no OpenSSL row moved by 5% or more, and both sides of each
+row took about 3% more time than in the run of cffe66b2, at a higher load.
+P-256's shared secret reads 0.82 there, where it read 0.87.
+
 ## The run of 3322aa42
 
 The four x86-64 CSVs now hold one run of 2026-11-09 on 3322aa42 (bench
