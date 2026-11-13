@@ -125,6 +125,13 @@ STACK_BUDGET_SHA512_AVX2 := 384
 # write, and requires that inside the length.
 SHA3_BELOW_LEN := $(shell sed -n 's/^.define SHA3_BELOW_LEN \([0-9][0-9]*\)$$/\1/p' src/sha3.c)
 STACK_BUDGET_SHA3 := $(shell expr $(SHA3_BELOW_LEN) + 512)
+# chacha20.c gets a ceiling of its own the same way: chacha20_block and a
+# device object's chacha20_xor wipe CHACHA20_BELOW_LEN bytes, 512, of the
+# stack below their bodies, and the array of that wipe is a frame of this
+# file (docs/decisions.md 229). bin/chacha20_wipe_test measures how deep the
+# bodies write, and requires that inside the length.
+CHACHA20_BELOW_LEN := $(shell sed -n 's/^.define CHACHA20_BELOW_LEN \([0-9][0-9]*\)$$/\1/p' src/chacha20.c)
+STACK_BUDGET_CHACHA20 := $(shell expr $(CHACHA20_BELOW_LEN) + 512)
 # gcm_avx512_kernel.c, the 512-bit AES-GCM kernel, which only an x86-64
 # host object holds, gets a ceiling of its own for the same reason:
 # gcm_avx512.c's entries wipe GCM_AVX512_BELOW_LEN bytes of the stack below
@@ -742,7 +749,7 @@ RSA_HOST_LINT_C := src/rsa_mont64.c src/rsa_mont64_blocks.c src/rsa_mont64_addca
                    test/rsa_avx2_instructions.c test/diff_rsa_avx2_test.c \
                    test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c
 LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c src/sha3.c src/sha512.c src/sha512_compress.c src/p384.c src/p384_field.c src/p256_field.c src/p256_scalar.c src/p256_point.c src/p256_sign.c src/p256_ecdh.c src/rsa_pkcs1.c src/rsa_sign.c src/webpki_sigalg.c src/webpki_cert.c src/webpki.c src/webpki_ticket.c src/webpki_pin.c src/webpki_cfg.c src/mlkem.c src/mlkem_poly.c src/mldsa.c src/mldsa_poly.c $(MLDSA_SIGN_SRCS) test/mldsa_signer_test.c test/unit_test.c test/tls_client.c \
-          test/diff_test.c test/diff_mldsa_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_sign_fault_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
+          test/diff_test.c test/diff_mldsa_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/chacha20_wipe_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_sign_fault_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c test/webpki_encrypted_exts_test.c \
           test/mlkem_test.c test/mldsa_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
@@ -3234,6 +3241,17 @@ bin/sha3_equiv_test: $(SHA3_EQUIV_SRCS) src/sha3.c test/sha3_residue.h test/sha3
                      proof/sha3_reference.h $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ $(SHA3_EQUIV_SRCS)
+# What chacha20.c's portable entries leave on the stack: the depth of each
+# body under its entry, inside CHACHA20_BELOW_LEN, and no key and no
+# block's rounds below chacha20_block and a device object's chacha20_xor
+# after the wipe below them (docs/decisions.md 229). The test includes
+# chacha20.c itself, to call the bodies that file keeps static. This is a
+# device object's build, and the cross-check lines and m3-check build it
+# for the targets of their own compilers.
+CHACHA20_WIPE_SRCS := test/chacha20_wipe_test.c test/stack_residue.c src/ct.c src/ct_wipe.c
+bin/chacha20_wipe_test: $(CHACHA20_WIPE_SRCS) src/chacha20.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ $(CHACHA20_WIPE_SRCS)
 # The same test as a host object builds it. test/rosetta-check.sh builds
 # it for x86-64 on an Apple silicon Mac. test/aes-runtime-qemu.sh's
 # sha3-stack part builds it with the frame pointer. Both read the lists
@@ -5374,6 +5392,7 @@ CHECK_BUILDS := bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient
 # The binaries check runs. The host object's are named only where the
 # host test passed; check-skips says which were left out.
 CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_test sha3_test sha3_equiv_test \
+                  chacha20_wipe_test \
                   sha512_test \
                   hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test p256_sign_fault_test \
                   rsa_pkcs1_test \
@@ -7099,6 +7118,7 @@ san-check:
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/sha3_equiv_test $(SHA3_EQUIV_SRCS)
+	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/chacha20_wipe_test $(CHACHA20_WIPE_SRCS)
 	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_HASH_SHA384 -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
 	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/p384_test test/p384_test.c $(P384_TEST_SRCS)
@@ -7132,7 +7152,7 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
 	$(CC) $(SAN_CFLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(HANDSHAKE_SEQUENCE_SRCS)
-	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 mlkem_test_two_ranks mlkem_test_two_ranks_1024 mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha3_equiv_test chacha20_wipe_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test mlkem_test_1024 mlkem_test_two_ranks mlkem_test_two_ranks_1024 mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h bin/wycheproof_mlkem1024_vectors.h && \
@@ -7380,6 +7400,7 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/sha3_equiv_test $(SHA3_EQUIV_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/chacha20_wipe_test $(CHACHA20_WIPE_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_HASH_SHA384 -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/cross/p384_test test/p384_test.c $(P384_TEST_SRCS)
@@ -7418,7 +7439,7 @@ cross-check:
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mlkem_test_1024 mlkem_test_two_ranks mlkem_test_two_ranks_1024 mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha3_equiv_test chacha20_wipe_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mlkem_test_1024 mlkem_test_two_ranks mlkem_test_two_ranks_1024 mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi; \
 	if [ -x wycheproof_mlkem1024_test ]; then echo "== wycheproof_mlkem1024_test ($(RUNNER))"; \
@@ -7588,6 +7609,7 @@ lint-stack-run:
 	  case "$$f" in src/rsa_ifma_sign.c) budget=$(STACK_BUDGET_RSA_IFMA_SIGN) ;; esac; \
 	  case "$$f" in src/sha512_compress_blocks.c) budget=$(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) ;; esac; \
 	  case "$$f" in src/sha3.c) budget=$(STACK_BUDGET_SHA3) ;; esac; \
+	  case "$$f" in src/chacha20.c) budget=$(STACK_BUDGET_CHACHA20) ;; esac; \
 	  case "$$f" in src/sha512_avx2.c) budget=$(STACK_BUDGET_SHA512_AVX2); apart="$(call unit_cflags,src/sha512_avx2.c)" ;; esac; \
 	  case "$$f" in src/gcm_avx512_kernel.c) budget=$(STACK_BUDGET_GCM_AVX512) ;; esac; \
 	  case "$$f" in src/gcm_avx512.c) budget=$(STACK_BUDGET_GCM_AVX512_WIPE) ;; esac; \

@@ -1,5 +1,7 @@
 #include "chacha20.h"
 
+#include "ct.h"
+
 #ifdef CH_CPU_RUNTIME
 #include "chacha20_avx2.h"
 #include "chacha20_avx512.h"
@@ -85,22 +87,64 @@ static void setup(uint32_t state[16], const uint8_t key[CHACHA20_KEY],
     state[15] = load32(nonce + 8);
 }
 
-void chacha20_block(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
-                    uint32_t counter, uint8_t out[CHACHA20_BLOCK]) {
+// The wipe of the stack below chacha20_block, and below a device object's
+// chacha20_xor (docs/decisions.md 229). The state holds the key, and the
+// rounds are a permutation of it, so a copy of either gives the key back.
+// Each compiler keeps such copies in stack slots of its own, which no
+// ct_wipe can name: gcc 15 for arm64 kept the whole state in a slot of
+// block's frame. aead.c keys Poly1305 through chacha20_block for every
+// message, and drbg.c and quic_packet.c call it too.
+//
+// So each entry calls a body that is never inlined, and then calls
+// wipe_frame through wipe_frame_call, in sha3.c's form (docs/decisions.md
+// 219). The frames of the body and of every call it made lay right under
+// the entry's frame. wipe_frame's array lies in the same place, and the
+// call writes zero over it. CHACHA20_BELOW_LEN has to cover the deepest of
+// those frames under every compiler: bin/chacha20_wipe_test measures it and
+// requires it inside the length, and lint-stack holds every frame of this
+// file under the length and 512 bytes more. What no wipe clears: a
+// register, which holds what the last instruction left in it until another
+// writes it.
+#define CHACHA20_BELOW_LEN 512
+
+// The frame of this function is the array. ct_wipe is compiled apart from
+// it and takes the array's address, so the compiler keeps the array in
+// memory and cannot delete the call.
+static void wipe_frame(void) {
+    uint8_t below[CHACHA20_BELOW_LEN];
+    ct_wipe(below, sizeof below);
+}
+
+// The entries call wipe_frame through this pointer, which is a volatile
+// object (docs/decisions.md 91). So the compiler cannot tell which function
+// the call runs and cannot compile it into the entry, where the array would
+// join the entry's frame and lie above the frames it is there to wipe.
+static void (*const volatile wipe_frame_call)(void) = wipe_frame;
+
+// The body of chacha20_block, never inlined, so that its frame and block's
+// lie under the entry's frame.
+static __attribute__((noinline)) void block_body(const uint8_t key[CHACHA20_KEY],
+                                                 const uint8_t nonce[CHACHA20_NONCE],
+                                                 uint32_t counter, uint8_t out[CHACHA20_BLOCK]) {
     uint32_t state[16];
     setup(state, key, nonce, counter);
     block(state, out);
 }
 
-void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
-                  uint32_t counter, const uint8_t *in, uint8_t *out, size_t n) {
-#ifdef CH_CPU_RUNTIME
-    // A host object: the same keystream, several blocks at a time in
-    // 128-bit vectors (chacha20_vector.h), which every CPU a host object
-    // targets has. The loop below is a device object's, and the reference
-    // that bin/chacha20_equiv_test compares the vector paths with.
-    chacha20_vector_xor(key, nonce, counter, in, out, n);
-#else
+void chacha20_block(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
+                    uint32_t counter, uint8_t out[CHACHA20_BLOCK]) {
+    block_body(key, nonce, counter, out);
+    wipe_frame_call();
+}
+
+#ifndef CH_CPU_RUNTIME
+// The body of a device object's chacha20_xor, never inlined for the
+// reason block_body is. Its keystream is the last block's, which the wipe
+// below the entry clears with the state.
+static __attribute__((noinline)) void xor_body(const uint8_t key[CHACHA20_KEY],
+                                               const uint8_t nonce[CHACHA20_NONCE],
+                                               uint32_t counter, const uint8_t *in, uint8_t *out,
+                                               size_t n) {
     uint32_t state[16];
     uint8_t keystream[CHACHA20_BLOCK];
     setup(state, key, nonce, counter);
@@ -115,6 +159,20 @@ void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_
         out += take;
         n -= take;
     }
+}
+#endif
+
+void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
+                  uint32_t counter, const uint8_t *in, uint8_t *out, size_t n) {
+#ifdef CH_CPU_RUNTIME
+    // A host object: the same keystream, several blocks at a time in
+    // 128-bit vectors (chacha20_vector.h), which every CPU a host object
+    // targets has. The loop below is a device object's, and the reference
+    // that bin/chacha20_equiv_test compares the vector paths with.
+    chacha20_vector_xor(key, nonce, counter, in, out, n);
+#else
+    xor_body(key, nonce, counter, in, out, n);
+    wipe_frame_call();
 #endif
 }
 

@@ -1893,7 +1893,16 @@ launch fast:3 full x509der_mldsa 452 "fill_nondet.0:2625,ct_memeq.0:68" src/buf.
 launch slow:2 full x509parse_ecdsa 260 "fill_nondet.0:257" src/buf.c proof/ct_wipe_stub.c
 launch slow:2 full x509parse_mldsa 260 "fill_nondet.0:257" src/buf.c proof/ct_wipe_stub.c
 launch slow:2 full x509parse 844 "fill_nondet.0:841" src/buf.c proof/ct_wipe_stub.c
-launch fast full chacha20 165 "chacha20_xor.1:5"
+# chacha20_block and a device object's chacha20_xor call their bodies and
+# then wipe CHACHA20_BELOW_LEN bytes, 512, through wipe_frame
+# (docs/decisions.md 229). CBMC reads the volatile pointer as the value it
+# was initialized with, wipe_frame, as proof/ct_wipe_harness.c says of
+# ct_wipe.c's pointer, and the stub's loop proves that wipe writes inside
+# wipe_frame's array; its 512 stores take an unwinding of their own.
+# Measured on an M1 Pro on 2026-11-13 at a load average of 64 to 80 (cbmc
+# 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l): 320 properties,
+# 345 s, 0.96 GB.
+launch fast full chacha20 165 "xor_body.1:5,ct_wipe.0:513" proof/ct_wipe_stub.c
 # The AES-128 forward cipher and the two aes_public_key constructors,
 # TRANSPORT=quic-nonblocking. HKDF is a contract stub (proof/aes_stubs.h), so
 # this formula holds the key schedule and the cipher and not five HMAC

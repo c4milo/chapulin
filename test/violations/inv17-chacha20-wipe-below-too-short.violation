@@ -1,0 +1,12 @@
+invariant: INV-17
+file: src/chacha20.c
+catches: chacha20_wipe_test
+reason: the wipe below chacha20_block and chacha20_xor covers 128 bytes,
+  less than the frames of their bodies, so the deepest of those frames
+  keep what the body left there. bin/chacha20_wipe_test measures how far
+  below its caller each body writes and requires that inside the length.
+
+--- old
+#define CHACHA20_BELOW_LEN 512
+--- new
+#define CHACHA20_BELOW_LEN 128

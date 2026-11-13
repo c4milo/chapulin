@@ -29,9 +29,9 @@ FREERTOS_SRCS = $(filter-out src/webpki_%.c,$(SRCS))
 # re-building the whole lint toolchain buys nothing. The roster is
 # check's own prerequisite list.
 .PHONY: suite-check
-suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/mlkem_test bin/mldsa_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa $(X86_KERNEL_BINS) \
+suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/chacha20_wipe_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/mlkem_test bin/mldsa_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa $(X86_KERNEL_BINS) \
              $(HOST_BINS) $(HOST_VECTOR_BINS)
-	@set -e; for b in unit unit_ca unit_pq drbg_test softmul_test rsa_test sha3_test sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mldsa_test \
+	@set -e; for b in unit unit_ca unit_pq drbg_test chacha20_wipe_test softmul_test rsa_test sha3_test sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mldsa_test \
 	  handshake_strict_test handshake_strict_pq x509strict x509strict_ecdsa; do \
 	  echo "== $$b (native)"; ./bin/$$b; done
 	@set -e; for b in $(notdir $(X86_KERNEL_BINS) $(HOST_BINS)); do echo "== $$b (host object)"; ./bin/$$b; done
@@ -324,6 +324,7 @@ m3-check:
 	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/sha3_equiv_test $(SHA3_EQUIV_SRCS)
+	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/chacha20_wipe_test $(CHACHA20_WIPE_SRCS)
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/p384_test test/p384_test.c $(P384_TEST_SRCS)
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -o bin/m3/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
@@ -351,7 +352,7 @@ m3-check:
 	  -o bin/m3/wycheproof_test test/wycheproof_test.c $(filter-out src/aes.c src/gcm.c,$(WYCHEPROOF_SRCS)) && \
 	$(M3_CC) $(M3_FLAGS) -Isrc -Iinclude/chapulin -Iinclude -I. -Ibin -Itest -o bin/m3/wycheproof_mldsa_test test/wycheproof_mldsa_test.c \
 	  $(MLDSA_TEST_SRCS)
-	@set -e; for b in unit rsa_test sha3_test sha3_equiv_test sha512_test p384_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test sha3_test sha3_equiv_test chacha20_wipe_test sha512_test p384_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test mldsa_test mldsa_signer_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (m3/qemu)"; $(M3_RUN) bin/m3/$$b; done; \
 	if [ -x bin/m3/wycheproof_test ]; then echo "== wycheproof_test (m3/qemu)"; $(M3_RUN) bin/m3/wycheproof_test; fi; \
 	if [ -x bin/m3/wycheproof_mldsa_test ]; then echo "== wycheproof_mldsa_test (m3/qemu)"; \

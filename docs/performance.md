@@ -95,7 +95,7 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 14416 |
 | peak stack, `ch_connect` (`KEX=pq`) | 12720 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1888 |
-| peak stack, `ch_write` / `ch_close` | 1616 / 880 |
+| peak stack, `ch_write` / `ch_close` | 1616 / 1072 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 112864 |
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 113024 |
 | peak stack, `ch_connect` (`PROFILE=cnsa2 TRUST=raw-mldsa`) | 14576 |
@@ -113,6 +113,13 @@ frame each time:
 - `ch_write`, 1,520 to 1,616 bytes. `ch_write` is `ch_write_parts` over
   one part (docs/decisions.md 167), so the KeyUpdate path runs under one
   more frame, 96 bytes.
+
+One more grew in November 2026:
+
+- `ch_close`, 880 to 1,072 bytes. The close_notify record's seal keys
+  Poly1305 through `chacha20_block`, which then wipes 512 bytes of the
+  stack below it, `wipe_frame`'s array (docs/decisions.md 229). Before
+  it, the deepest chain ran through Poly1305's blocks.
 
 ### What the larger builds pay for
 

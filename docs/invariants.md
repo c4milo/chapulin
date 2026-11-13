@@ -6482,7 +6482,16 @@ last `ROLE=server` stub, as the entry said it would.
   there under gcc. `test/chacha-builds.sh` requires the entry to call
   `row_pass` and `pass_with_rows`, and catches
   `inv17-chacha-avx512-row-pass-inline` and
-  `inv17-chacha-avx512-pass-with-rows-inline` on every machine. The AVX-512 IFMA Poly1305 computes r^2 to
+  `inv17-chacha-avx512-pass-with-rows-inline` on every machine.
+  `chacha20_block`, which keys Poly1305 for `aead.c` in every build, and a
+  device object's `chacha20_xor` each call a body that is never inlined
+  and then wipe `CHACHA20_BELOW_LEN` bytes of the stack below, in
+  `sha3.c`'s form (decision 229). `bin/chacha20_wipe_test` measures each
+  body's depth against the length and searches the stack below each
+  entry for the key and for any block's rounds, and catches
+  `inv17-chacha20-block-skips-wipe-below`,
+  `inv17-chacha20-xor-skips-wipe-below` and
+  `inv17-chacha20-wipe-below-too-short`. The AVX-512 IFMA Poly1305 computes r^2 to
   r^16 into one struct of 1,984 bytes and wipes it the same way, and the
   binary's search reads its digits as well, on the instructions and over
   the lane model. That kernel and the AVX-512 ChaCha20 also hold the key's

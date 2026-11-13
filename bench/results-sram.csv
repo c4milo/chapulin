@@ -24,7 +24,7 @@ stack_connect_webpki_device_without_mlkem,7344
 stack_read,1888
 stack_connect_pq,12720
 stack_write,1616
-stack_close,880
+stack_close,1072
 session_struct_server_arm64,2448
 session_struct_server_rv32,2272
 static_working_set_server_arm64,4496

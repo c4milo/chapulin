@@ -1,0 +1,14 @@
+invariant: INV-17
+file: src/chacha20.c
+catches: chacha20_wipe_test
+reason: chacha20_block returns without the wipe of the stack below it, so
+  the dead frames of its body keep the state, whose words 4 to 11 are the
+  key. aead.c keys Poly1305 through it for every message. Every block it
+  writes is still right. bin/chacha20_wipe_test copies the stack below a
+  call and looks for the key.
+
+--- old
+    block_body(key, nonce, counter, out);
+    wipe_frame_call();
+--- new
+    block_body(key, nonce, counter, out);

@@ -1,0 +1,14 @@
+invariant: INV-17
+file: src/chacha20.c
+catches: chacha20_wipe_test
+reason: a device object's chacha20_xor returns without the wipe of the
+  stack below it, so the dead frames of its body keep the state, whose
+  words 4 to 11 are the key. Every byte it writes is still right.
+  bin/chacha20_wipe_test copies the stack below a call and looks for the
+  key.
+
+--- old
+    xor_body(key, nonce, counter, in, out, n);
+    wipe_frame_call();
+--- new
+    xor_body(key, nonce, counter, in, out, n);

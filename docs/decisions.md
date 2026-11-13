@@ -19278,7 +19278,40 @@ does nothing more.
       tree failed on each runner under each compiler.
     - **What is still owed.** Under gcc 13 one runner of two found the key once more, at the same
       byte below a seal and below an open. Both entries follow `chacha20_block`, which keys
-      Poly1305 for `aead.c` in every build. gcc 13 and gcc 15 store its state, the key among it,
-      in its frame, and nothing wipes the state. Whether a later frame writes over it depends on
-      the stack's alignment. CI builds the residue test with gcc alone, and a Zig project runs
-      clang's code. No CI job runs the AVX-512 residue tests under clang.
+      Poly1305 for `aead.c` in every build, and decision 229 wipes the stack below it. CI builds
+      the residue test with gcc alone, and a Zig project runs clang's code. No CI job runs the
+      AVX-512 residue tests under clang.
+
+229. **chacha20_block and a device object's chacha20_xor wipe the stack below their bodies.** On a
+    runner with AVX-512 IFMA under gcc 13, `bin/aead_avx512_equiv_test` found the key at the same
+    byte below a seal and below an open, after decision 228. Both entries follow
+    `chacha20_block`, as `aead.c` does to key Poly1305 for every message. Camilo chose this form
+    on 2026-11-13.
+
+    - **What it left.** `chacha20_block`'s state holds the key, and nothing wiped it. gcc 13 and
+      gcc 15 for x86-64 store the state in the function's frame, and in a device object's build
+      gcc 15 for arm64 kept a second copy of the state in a slot of `block`'s frame. The rounds
+      are a permutation of the state, so their sixteen words give the key back as well.
+      `drbg.c` and `quic_packet.c` call `chacha20_block` too, and a device object's
+      `chacha20_xor` keeps its state the same way.
+    - **The first fix failed.** b5c6ab69 wiped the state, the rounds' words and the keystream by
+      name, and CI's arm64 job found gcc 15's second copy, which no wipe names. fb5a0c21
+      reverted it.
+    - **What changed.** Each entry calls a body that is never inlined, and then calls
+      `wipe_frame` through a volatile pointer, in `sha3.c`'s form (decision 219). `wipe_frame`'s
+      array of `CHACHA20_BELOW_LEN` bytes, 512, lies where the body's frames lay, and the call
+      writes zero over it. A message pays for 512 bytes of stores in `chacha20_block`. Of the
+      figures `bench/sram.sh` measures, `ch_close`'s peak stack alone moved, from 880 to 1,072
+      bytes on arm64: its deepest chain now ends in `wipe_frame`.
+    - **Tests.** `bin/chacha20_wipe_test`, a device object's build, paints the stack, calls each
+      body with no wipe after it, and requires the lowest byte it wrote within the length. The
+      deepest was 360 bytes, `xor_body` under gcc 15 for arm64 at `-O2`; gcc 13 and gcc 15 for
+      x86-64 wrote 340 to 356, and Apple clang 21 for arm64 280. It then requires the search to
+      find a key a function left one frame down, and finds neither the key nor any block's
+      rounds below either entry. `inv17-chacha20-block-skips-wipe-below`,
+      `inv17-chacha20-xor-skips-wipe-below` and `inv17-chacha20-wipe-below-too-short` each break
+      one rule, and the binary catches each. check, the arm64 job, the sanitizer lane, the
+      cross-check lines and m3-check run it.
+    - **The proof.** The `chacha20` harness links the stub of `ct_wipe` and proves that the wipe
+      writes inside `wipe_frame`'s array. lint-stack holds every frame of the file under the
+      length and 512 bytes more.
