@@ -1,5 +1,7 @@
 #include "chacha20.h"
 
+#include "ct.h"
+
 #ifdef CH_CPU_RUNTIME
 #include "chacha20_avx2.h"
 #include "chacha20_avx512.h"
@@ -46,6 +48,8 @@ static uint32_t load32(const uint8_t *p) {
         (b) = rotate_left((b) ^ (c), 7);                                                           \
     } while (0)
 
+// The rounds are a permutation of the 16 words, so their output gives the
+// input back, the key among it. The function wipes x before it returns.
 static void block(const uint32_t state[16], uint8_t out[CHACHA20_BLOCK]) {
     uint32_t x[16];
     for (int i = 0; i < 16; i++) {
@@ -68,6 +72,7 @@ static void block(const uint32_t state[16], uint8_t out[CHACHA20_BLOCK]) {
         out[4 * i + 2] = (uint8_t)(v >> 16);
         out[4 * i + 3] = (uint8_t)(v >> 24);
     }
+    ct_wipe(x, sizeof x);
 }
 
 static void setup(uint32_t state[16], const uint8_t key[CHACHA20_KEY],
@@ -85,11 +90,15 @@ static void setup(uint32_t state[16], const uint8_t key[CHACHA20_KEY],
     state[15] = load32(nonce + 8);
 }
 
+// The state holds the key, and aead.c, drbg.c and quic_packet.c call this
+// for every message, so the call wipes it. gcc 13 and gcc 15 stored the key
+// in order in this frame (docs/decisions.md 229).
 void chacha20_block(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                     uint32_t counter, uint8_t out[CHACHA20_BLOCK]) {
     uint32_t state[16];
     setup(state, key, nonce, counter);
     block(state, out);
+    ct_wipe(state, sizeof state);
 }
 
 void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
@@ -115,6 +124,8 @@ void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_
         out += take;
         n -= take;
     }
+    ct_wipe(state, sizeof state);
+    ct_wipe(keystream, sizeof keystream);
 #endif
 }
 
