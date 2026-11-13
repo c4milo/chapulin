@@ -508,10 +508,10 @@ Zig 0.16's clang 21, which `build.zig` compiles the object with for a Zig projec
 | SHA3-256, 64 bytes | 171 ns | 349 ns | 0.49 | 361 ns | 476 ns | 0.76 | 358 ns | 474 ns | 0.75 | 292 ns | 468 ns | 0.62 | 300 ns | 466 ns | 0.64 |
 | X25519 key generation | 10.2 µs | 27.8 µs | 0.37 | 15.0 µs | 34.5 µs | 0.43 | 14.1 µs | 34.2 µs | 0.41 | 13.5 µs | 32.4 µs | 0.42 | 12.6 µs | 32.4 µs | 0.39 |
 | X25519 shared secret | 28.5 µs | 29.0 µs | 0.98 | 34.7 µs | 35.1 µs | 0.99 | 33.5 µs | 35.2 µs | 0.95 | 33.6 µs | 33.8 µs | 0.99 | 32.1 µs | 34.1 µs | 0.94 |
-| P-256 key generation | 8.83 µs | 9.71 µs | 0.91 | 12.2 µs | 12.3 µs | 0.99 | 11.4 µs | 12.3 µs | 0.93 | 12.5 µs | 12.4 µs | **1.01** | 12.0 µs | 12.5 µs | 0.96 |
-| P-256 shared secret | 34.2 µs | 41.7 µs | 0.82 | 51.3 µs | 51.6 µs | 0.99 | 47.4 µs | 51.7 µs | 0.92 | 48.8 µs | 58.6 µs | 0.83 | 46.6 µs | 58.8 µs | 0.79 |
-| ECDSA P-256 sign | 13.9 µs | 18.3 µs | 0.76 | 19.9 µs | 22.1 µs | 0.90 | 18.4 µs | 22.2 µs | 0.83 | 20.3 µs | 23.4 µs | 0.86 | 19.2 µs | 23.5 µs | 0.82 |
-| ECDSA P-256 verify | 37.8 µs | 55.1 µs | 0.69 | 54.9 µs | 67.7 µs | 0.81 | 52.4 µs | 67.6 µs | 0.77 | 52.7 µs | 75.6 µs | 0.70 | 51.4 µs | 76.0 µs | 0.68 |
+| P-256 key generation | 8.83 µs | 9.71 µs | 0.91 | 11.8 µs | 12.3 µs | 0.96 | 11.6 µs | 12.3 µs | 0.94 | 12.5 µs | 12.7 µs | 0.98 | 12.3 µs | 12.6 µs | 0.98 |
+| P-256 shared secret | 34.2 µs | 41.7 µs | 0.82 | 50.4 µs | 51.7 µs | 0.97 | 47.5 µs | 51.6 µs | 0.92 | 49.4 µs | 59.6 µs | 0.83 | 47.5 µs | 59.5 µs | 0.80 |
+| ECDSA P-256 sign | 13.9 µs | 18.3 µs | 0.76 | 19.0 µs | 22.2 µs | 0.86 | 18.7 µs | 22.2 µs | 0.84 | 20.0 µs | 23.8 µs | 0.84 | 19.7 µs | 23.7 µs | 0.83 |
+| ECDSA P-256 verify | 37.8 µs | 55.1 µs | 0.69 | 54.6 µs | 67.6 µs | 0.81 | 52.5 µs | 67.7 µs | 0.78 | 54.0 µs | 77.1 µs | 0.70 | 52.4 µs | 76.9 µs | 0.68 |
 | ECDSA P-384 verify | 275 µs | 492 µs | 0.56 | 464 µs | 741 µs | 0.63 | 366 µs | 742 µs | 0.49 | 451 µs | 614 µs | 0.73 | 316 µs | 613 µs | 0.52 |
 | RSA-2048 PSS sign | 672 µs | 561 µs, PKCS#1 v1.5 sign | — | 1.01 ms | 660 µs, PKCS#1 v1.5 sign | — | 938 µs | 662 µs, PKCS#1 v1.5 sign | — | 332 µs | 335 µs, PKCS#1 v1.5 sign | — | 315 µs | 332 µs, PKCS#1 v1.5 sign | — |
 | RSA-2048 PSS verify | 17.7 µs | 14.6 µs, PKCS#1 v1.5 verify | — | 20.9 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 20.4 µs | 18.9 µs, PKCS#1 v1.5 verify | — | 12.4 µs | 19.1 µs, PKCS#1 v1.5 verify | — | 11.9 µs | 19.2 µs, PKCS#1 v1.5 verify | — |
@@ -519,9 +519,9 @@ Zig 0.16's clang 21, which `build.zig` compiles the object with for a Zig projec
 | RSA-3072 PSS sign | 2.00 ms | 1.64 ms, PKCS#1 v1.5 sign | — | 2.93 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 2.76 ms | 2.01 ms, PKCS#1 v1.5 sign | — | 773 µs | 895 µs, PKCS#1 v1.5 sign | — | 738 µs | 894 µs, PKCS#1 v1.5 sign | — |
 | RSA-3072 PSS verify | 33.8 µs | 31.2 µs, PKCS#1 v1.5 verify | — | 37.7 µs | 40.2 µs, PKCS#1 v1.5 verify | — | 36.9 µs | 40.2 µs, PKCS#1 v1.5 verify | — | 20.2 µs | 40.9 µs, PKCS#1 v1.5 verify | — | 20.1 µs | 41.1 µs, PKCS#1 v1.5 verify | — |
 | RSA-3072 PKCS#1 v1.5 verify | 28.9 µs | 31.2 µs | 0.93 | 33.8 µs | 40.2 µs | 0.84 | 32.9 µs | 40.2 µs | 0.82 | 15.7 µs | 40.9 µs | 0.39 | 16.4 µs | 41.1 µs | 0.40 |
-| ML-KEM-768 key generation | 9.50 µs | 22.0 µs | 0.43 | 15.3 µs | 38.5 µs | 0.40 | 14.6 µs | 38.4 µs | 0.38 | 16.1 µs | 37.3 µs | 0.43 | 15.6 µs | 37.4 µs | 0.42 |
-| ML-KEM-768 encapsulation | 10.7 µs | 13.1 µs | 0.82 | 17.6 µs | 22.0 µs | 0.80 | 16.4 µs | 22.1 µs | 0.74 | 18.3 µs | 18.2 µs | **1.00** | 17.5 µs | 18.3 µs | 0.96 |
-| ML-KEM-768 decapsulation | 11.7 µs | 18.5 µs | 0.63 | 21.0 µs | 34.1 µs | 0.61 | 18.4 µs | 34.1 µs | 0.54 | 21.7 µs | 29.6 µs | 0.73 | 19.4 µs | 29.7 µs | 0.65 |
+| ML-KEM-768 key generation | 9.50 µs | 22.0 µs | 0.43 | 15.2 µs | 38.5 µs | 0.39 | 14.7 µs | 38.6 µs | 0.38 | 17.1 µs | 37.9 µs | 0.45 | 16.2 µs | 37.5 µs | 0.43 |
+| ML-KEM-768 encapsulation | 10.7 µs | 13.1 µs | 0.82 | 15.9 µs | 22.0 µs | 0.72 | 14.9 µs | 21.9 µs | 0.68 | 17.3 µs | 18.6 µs | 0.93 | 16.5 µs | 18.6 µs | 0.89 |
+| ML-KEM-768 decapsulation | 11.7 µs | 18.5 µs | 0.63 | 19.2 µs | 34.2 µs | 0.56 | 17.0 µs | 34.2 µs | 0.50 | 20.8 µs | 30.0 µs | 0.70 | 18.6 µs | 30.0 µs | 0.62 |
 | ML-DSA-87 key generation | 130 µs | 172 µs | 0.75 | 164 µs | 280 µs | 0.59 | 191 µs | 280 µs | 0.68 | 164 µs | 255 µs | 0.64 | 204 µs | 254 µs | 0.80 |
 | ML-DSA-87 sign | 407 µs | 714 µs | 0.57 | 681 µs | 1.23 ms | 0.55 | 626 µs | 1.25 ms | 0.50 | 765 µs | 1.04 ms | 0.74 | 717 µs | 1.03 ms | 0.69 |
 | ML-DSA-87 verify | 61.6 µs | 180 µs | 0.34 | 101 µs | 305 µs | 0.33 | 89.5 µs | 305 µs | 0.29 | 110 µs | 270 µs | 0.41 | 103 µs | 268 µs | 0.38 |
@@ -694,7 +694,9 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   line in each CSV states.
   OpenSSL 3.6.5's X25519 shared secret took 0.95 of 3.6.4's time here, so that ratio moved from
   0.93 to 0.99 under gcc and from 0.91 to 0.95 under clang. `bench/notes-primitives.md` lists what
-  moved since the run of ddff5bce.
+  moved since the run of ddff5bce. The P-256 and ML-KEM-768 rows of both CSVs are bench run
+  43467140860 of the same day, on the code of decision 232, where OpenSSL's rows took 0.99 to 1.01 of
+  their time in the first run (decision 232).
 - The run of 2026-11-02 on the tree of 2cd2c9e4 drew an AMD EPYC 7763 too, the CPU the runs on the
   trees of decisions 107, 109, 110, 113, 116, 117, 119, 123, 124, 128 and 130 and on 0b1608d1,
   38f9a395, 401cb38b, 129bdc75 and 531fa3da drew as well. Its rows ran under `ch_cfg.cpu 0x43f`,
@@ -776,10 +778,12 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   (decision 90) and its Poly1305 eight blocks at a time in four AVX2 lanes (decision 110). Of the
   9.23 µs that sealing a 16 KiB record takes under gcc, less the tag's fixed work, the keystream is
   6.58 and Poly1305 2.66, where OpenSSL takes 7.46.
-- ML-KEM-768's key generation, encapsulation and decapsulation take 0.56, 1.06 and 0.79 of OpenSSL's
-  time under gcc, against rows that hold a key's expanded matrix (decision 100). Under `CH_CPU_AVX2`
-  its matrix runs on four Keccak states side by side (decision 107), and its NTT and base
-  multiplication run on SSE2 (decision 101).
+- ML-KEM-768's key generation, encapsulation and decapsulation take 0.39, 0.72 and 0.56 of OpenSSL's
+  time under gcc, and 0.38, 0.68 and 0.50 under clang, against rows that hold a key's expanded
+  matrix (decision 100). Before decision 232 its encapsulation and decapsulation took 0.80 and 0.61
+  under gcc. Under `CH_CPU_AVX2` its matrix runs on four Keccak states side by side (decision 107),
+  and its NTT and base multiplication run on SSE2 (decision 101), as do its reduction and message
+  expansion. Its decode, key check and rank 3's compressions run on AVX2 (decision 232).
 - ML-DSA-87's key generation, signature and verification take 1.28, 0.58 and 0.33 of OpenSSL's
   time under gcc, and 0.72, 0.53 and 0.30 of it under clang. A host object's signer computes A and
   the NTTs of s1, s2 and t0 once for each signature, not in each round (decision 191). The run of
@@ -808,14 +812,15 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   0.87 of it under gcc, and 1.12 times and 0.76 of it under clang, with six lanes kept inverted
   between rounds (decision 195). The plain round took 1.33 and 0.93 times under gcc and 1.23 and
   0.87 times under clang, and `sha3.c`'s loops 7.68 and 5.02 times under gcc (decision 98).
-- P-256's key generation and shared secret take 0.99 of OpenSSL's time under gcc and 0.93 and 0.92
-  under clang, and its signature 0.90 and 0.84 of it, in bench run 43168650929, which the four
-  P-256 rows of the two CSVs hold (decision 224). Before decision 224 they took 1.09, 1.10 and 0.95
-  times under gcc. They run on the wide files with the table of decision 109, the additions of
-  decision 111, the Jacobian key exchange of decision 112, the inline additions of decision 114,
-  the binary GCD of decision 115, and since decision 224 the affine multiples and the step orders
-  that let a core run two products at once. The native copies of the 32-bit files took 21 to 90
-  times.
+- P-256's key generation and shared secret take 0.96 and 0.97 of OpenSSL's time under gcc and 0.94
+  and 0.92 under clang, and its signature 0.86 and 0.84 of it (decision 232). Before decision 232
+  they took 0.99, 0.99 and 0.90 of it under gcc and 0.93, 0.92 and 0.83 under clang, and before
+  decision 224 1.09, 1.10 and 0.95 times under gcc. They run on the wide files with the table of
+  decision 109, the additions of decision 111, the Jacobian key exchange of decision 112, the
+  inline additions of decision 114, the binary GCD of decision 115, since decision 224 the affine
+  multiples and the step orders that let a core run two products at once, and since decision 232
+  fewer instructions in each round of the binary GCD. The native copies of the 32-bit files took
+  21 to 90 times.
   Under `CH_CPU_BMI2_ADX` beside the multiply bit the points run on `p256_adx.h`'s copy of those
   files, whose product and square are MULX, ADCX and ADOX in inline assembly that reduces in the
   same statement (decision 171), inline in each point formula (decision 175). In the run of
@@ -855,7 +860,9 @@ What the AVX-512 machine's columns show:
   `0x31f`. The runs before it drew the same model on other hosts, so the runs compare by their
   ratios to OpenSSL alone. OpenSSL 3.6.5's ML-KEM-768 encapsulation and decapsulation took 0.86
   and 0.89 of 3.6.4's time here, and its X25519 shared secret 0.94, so those ratios moved with
-  OpenSSL.
+  OpenSSL. The P-256 and ML-KEM-768 rows of both CSVs are bench run 43467140860 of the same day on
+  another 8573C, on the code of decision 232, where OpenSSL's rows took 1.00 to 1.02 times their time
+  in the first run (decision 232).
 - ChaCha20-Poly1305 takes 0.89 of OpenSSL's time to seal under gcc and 0.93 under clang, and 0.86
   and 0.91 of it to open. Each seal and open of 2,048 bytes or more runs in one pass: each pass of
   sixteen blocks in 512-bit vectors also absorbs four Poly1305 groups in eight AVX-512 IFMA lanes
@@ -868,14 +875,16 @@ What the AVX-512 machine's columns show:
   `sha512_avx2.c` (decision 128).
 - ML-DSA-87's key generation, signature and verification take 0.64, 0.74 and 0.41 of OpenSSL's
   time under gcc, and 0.80, 0.69 and 0.38 under clang. Key generation takes 164 µs under gcc and
-  204 µs under clang. ML-KEM-768's encapsulation takes 1.00 of OpenSSL 3.6.5's time under gcc and
-  0.96 of it under clang, where it took 0.92 and 0.85 of 3.6.4's on the tree of decision 225, and
-  its key generation and decapsulation 0.42 to 0.73 of it.
-- P-256's shared secret takes 0.83 of OpenSSL's time under gcc and 0.79 under clang, its key
-  generation 1.01 and 0.96 of it, its signature 0.86 and 0.82 of it, and its verification 0.70
-  and 0.68 of it (decisions 196, 204, 205, 212 and 224). Before decision 224 its key generation
-  took 1.06 times under gcc. P-384 verifies in 0.73 and 0.52 of it. Under `CH_CPU_BMI2_ADX`
-  P-256's product and square run on MULX, ADCX and ADOX (decision 171).
+  204 µs under clang. ML-KEM-768's encapsulation takes 0.93 of OpenSSL 3.6.5's time under gcc and
+  0.89 of it under clang, where it took 1.00 and 0.96 before decision 232 and 0.92 and 0.85 of
+  3.6.4's on the tree of decision 225, and its key generation and decapsulation 0.43 to 0.70 of
+  it. Its decode, key check and rank 3's compressions run on AVX2 (decision 232).
+- P-256's shared secret takes 0.83 of OpenSSL's time under gcc and 0.80 under clang, its key
+  generation 0.98 and 0.98 of it, its signature 0.84 and 0.83 of it, and its verification 0.70
+  and 0.68 of it (decisions 196, 204, 205, 212, 224 and 232). Its key generation took 1.01 times
+  under gcc before decision 232, and 1.06 times before decision 224. P-384 verifies in 0.73 and
+  0.52 of it. Under `CH_CPU_BMI2_ADX` P-256's product and square run on MULX, ADCX and ADOX
+  (decision 171).
 - X25519 takes 0.42 of OpenSSL's time for key generation and 0.99 of it for a shared secret under
   gcc, and 0.39 and 0.94 under clang. Under `CH_CPU_BMI2_ADX` a shared secret runs on
   `x25519_adx.c`'s four 64-bit words, whose products are MULX's (decision 165).

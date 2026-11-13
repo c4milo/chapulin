@@ -19391,18 +19391,18 @@ does nothing more.
       its shifted words the same way, as `combine_modular` held its own, and both combinations
       carry always_inline. One inverse now runs 26,467 instructions of gcc's code and 28,074 of
       clang 18's, 0.72 and 0.90 of the counts before.
-    - **What changed in ML-KEM.** In every session of a host object, `mlk_vector_reduce` runs
-      the Barrett reduction on `lanes_barrett_reduce`, whose multiplies are 16x16 as the NTT's
-      are, and `mlk_vector_frommsg` expands the message by a compare of each lane with its own
-      bit. In the AVX2 copy, `mlk_poly_frombytes_avx2` reads ByteDecode12's 16 fields of 24 bytes a step
-      with `mlk_candidates`, the shuffle the rejection step of decision 225 reads its candidates
-      with, and `mlk_field_at_or_above_q_avx2` checks an ek's fields against q 16 a step. Under
-      the multiply answer the copy compresses u and v at rank 3 by `mlk_poly_compress_10_avx2`
-      and `mlk_poly_compress_4_avx2`: `mlk_compress`'s own formula, ((x << d) + 1664) times
-      1290168 and its high 32 bits, on VPMULUDQ's 32x32 products, eight a step, with the bytes
-      written as the scalar functions write them. The answer states every widening multiply a
-      session runs, vector ones among them (`ct.h`), and without it the copy calls the
-      decomposed compressions as before. The values are the ciphertext's.
+    - **What changed in ML-KEM.** In every session of a host object, `mlk_vector_reduce` runs the
+      Barrett reduction on `lanes_barrett_reduce`, whose multiplies are 16x16 as the NTT's are, and
+      `mlk_vector_frommsg` expands the message by a compare of each lane with its own bit. In the
+      AVX2 copy, `mlk_poly_frombytes_avx2` reads ByteDecode12's 16 fields of 24 bytes a step with
+      `mlk_candidates`, the shuffle the rejection step of decision 225 reads its candidates with,
+      and `mlk_field_at_or_above_q_avx2` checks an ek's fields against q 16 a step. Under the
+      multiply answer the copy compresses u and v at rank 3 by `mlk_poly_compress_10_avx2` and
+      `mlk_poly_compress_4_avx2`: `mlk_compress`'s own formula, ((x << d) + 1664) times 1290168 and
+      its high 32 bits, on VPMULUDQ's 32x32 products, eight a step, with the bytes written as the
+      scalar functions write them. The answer states every widening multiply a session runs, vector
+      ones among them (`ct.h`), and without it the copy calls the decomposed compressions as before.
+      The values are the ciphertext's.
     - **Constant time.** The decode of a dk's s-hat, the reduction, the expansion and the
       compressions read secret values: the compressions read u and v, whose low bits depend on
       the secret noise. Each runs the same shuffles, masks, compares and multiplies on every
@@ -19437,6 +19437,24 @@ does nothing more.
 
       The inverse took 4,473 TSC cycles of gcc's code there, where it took 5,116, and 4,521 of
       clang's, where it took 4,426.
+
+      Bench runs 43467140860 and 43467163097 timed the code of decision 232. The table gives the ratio
+      to OpenSSL 3.6.5's time before, in run 43385076493, and in each run after, with OpenSSL in
+      the same job. Each run drew another host. The second run's 8573C job is its second attempt:
+      the first drew a host where the rows spread 10% to 21% between passes.
+
+      | | 8573C gcc | 8573C clang | EPYC 7763 gcc | EPYC 7763 clang |
+      | --- | --- | --- | --- | --- |
+      | P-256 key generation | 1.01; 0.98, 0.98 | 0.96; 0.98, 0.95 | 0.99; 0.96, 0.96 | 0.93; 0.94, 0.95 |
+      | ECDSA P-256 signature | 0.86; 0.84, 0.84 | 0.82; 0.83, 0.82 | 0.90; 0.86, 0.86 | 0.83; 0.84, 0.85 |
+      | ML-KEM-768 encapsulation | 1.00; 0.93, 0.95 | 0.96; 0.89, 0.87 | 0.80; 0.72, 0.73 | 0.74; 0.68, 0.68 |
+      | ML-KEM-768 decapsulation | 0.73; 0.70, 0.71 | 0.65; 0.62, 0.59 | 0.61; 0.56, 0.56 | 0.54; 0.50, 0.50 |
+
+      The rows of the first run are the CSVs'. Its 8573C rows spread 2% or less between passes,
+      and the second run's 6% to 13%. Bench runs 43446699758 and 43456581462, on trees without the
+      compressions, timed gcc's P-256 key generation at 0.99 and 0.99 of OpenSSL's time on the
+      8573C. ML-KEM-768's key generation took 0.45 and 0.46 of it under gcc on the 8573C, where it
+      took 0.43, and on the EPYC 0.39 in all three runs; the 8573C's row spread 5.8% before.
 
       The key check took 338 ns of gcc's encapsulation, and 34 ns on AVX2. On the M1 Pro under
       `0xe7`, Apple clang 21's object retires 100,563 instructions for a key generation where it
