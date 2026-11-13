@@ -3650,7 +3650,9 @@ last `ROLE=server` stub, as the entry said it would.
   which reads the function's assembly, finds the innermost loop that
   holds a vector shift, and requires at least 100 vector instructions in
   it and at most 40 instructions on general registers between two of
-  them. It reads the file three ways. On every machine it compiles it
+  them. The run after the loop's last vector instruction and the run
+  before its first are one run, from one pass to the next, and it counts
+  too. It reads the file three ways. On every machine it compiles it
   for x86-64 with the pinned clang at `-O2`, as `make lint-frame-align`
   does. On every machine it asks make for the two commands that compile
   the file, as a gcc build for x86-64 runs them and as any other build
@@ -3663,6 +3665,10 @@ last `ROLE=server` stub, as the entry said it would.
   docker reads gcc's order too.
   `inv51-sha512-avx2-step-after-four-rounds` writes one step whole after
   its four rounds, and the clang reading fails.
+  `inv51-sha512-avx2-schedule-at-loop-end` adds a round's T1 and Maj
+  first and Sigma0 last. clang 23 then writes all 145 vector instructions
+  after the loop's last round, so only the run from one pass to the next
+  is long, and the clang reading fails (decision 230).
   `inv51-sha512-avx2-gcc-flag-dropped` empties the flag and
   `inv51-sha512-avx2-flag-to-every-source` gives it to every source, and
   the reading of the commands fails for each.

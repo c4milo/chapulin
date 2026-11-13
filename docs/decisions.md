@@ -19318,3 +19318,48 @@ does nothing more.
     - **The proof.** The `chacha20` harness links the stub of `ct_wipe` and proves that the wipe
       writes inside `wipe_frame`'s array. lint-stack holds every frame of the file under the
       length and 512 bytes more.
+
+230. **The AVX2 SHA-512 kernel keeps decision 128's text, and `make lint-schedule-order` counts
+    the run from one pass of its loop to the next.** SHA-384 over 16 KiB took 1.03 to 1.06 times OpenSSL 3.6.5's time
+    on the EPYC 7763 and the Xeon Platinum 8573C in run 43385076493, the widest gap of the table.
+    Three designs inside decision 128's rules, C with AVX2 intrinsics and no BMI2, were timed in
+    runs 43437083683, 43441602768 and 43452298620. Each job linked every form in one program and
+    timed OpenSSL beside it. No form won past the noise on both CPUs under both compilers, so
+    `sha512_avx2.c` did not change.
+
+    - **Where the time goes.** On the EPYC 7763 at 3.21 GHz the kernel takes 7.16 cycles a round
+      under clang 23 and 7.28 under gcc 13.3, and OpenSSL 6.79. On the 8573C at 2.98 GHz they
+      take 7.86, 8.05 and 7.50. A round is 30 to 31 instructions on general registers. Eight of
+      them copy a register: six for the rotations of the two Sigma functions, one for Ch and one
+      for Maj. The schedule adds about 9 vector instructions a round. The longest chain of
+      dependent operations is 5 cycles a round.
+    - **Fewer instructions.** Each Sigma function was written with one copy fewer, as
+      `ror(x ^ ror(x, p) ^ ror(x, q), r)`, and with two fewer, as nested rotates. The loop of
+      sixteen rounds fell from 641 instructions to as few as 591 under clang. Each such form
+      made a chain longer. On the EPYC 7763 they took 1.02 to 1.13 times the kernel's time under
+      gcc, and 1.02 to 1.14 under clang where clang kept the schedule among the rounds.
+      `lower_sigma1` on VPSRLVQ and VPSLLVQ took 1.23 under gcc, 0.99 to 1.00 under clang, and
+      1.01 to 1.02 on the 8573C.
+    - **Order and frame.** These forms were timed: a round's T1 and `d += T1` before the
+      previous round's a, T1 and Maj added before Sigma0, the sums at 16-byte alignment in two
+      stores each so that clang keeps rbp free, and each `one_word_on` kept two steps for reuse.
+      The best took 0.99 of the kernel's time under clang and 1.00 under gcc, on both CPUs.
+      Under clang on the EPYC 7763 the last two made a call of one block 4 to 11 percent slower
+      in one program and not in another, which reads as placement.
+    - **Per block.** A form that starts each block from the registers, where the kernel reads
+      the state back from memory, took 0.98 of the kernel's time under gcc on the EPYC 7763 and
+      1.00 in the other three cells. The loop of sixteen rounds unrolled whole took 1.04 to 1.20
+      times as long: gcc then adds no loop's h last in a round, but the code is three times as
+      long.
+    - **What clang does.** For six forms, among them T1 and Maj added before Sigma0, clang 23
+      wrote all 145 vector instructions of the loop after its last round. The kernel then took
+      1.26 to 1.30 times as long on the EPYC 7763, and the two forms timed on the 8573C 1.16 to
+      1.17. No run between two vector instructions in the loop was long, so `make
+      lint-schedule-order` passed them. `tools/schedule-order.py` now also counts the run from
+      the loop's last vector instruction to its first one in the next pass. That run is 36
+      instructions in the kernel under clang 23, gcc 13.3 and gcc 15.2, where INV-51 allows 40.
+      `inv51-sha512-avx2-schedule-at-loop-end` adds T1 and Maj before Sigma0: the old reading
+      passed it, and the new one fails.
+    - **What is left.** OpenSSL rotates with RORX, which copies no register, and schedules two
+      blocks at once, which halves the vector instructions a round. Decision 128 measured both
+      and refused them. Inside its rules the kernel stays 0.36 to 0.55 cycles a round behind.

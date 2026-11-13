@@ -1,0 +1,16 @@
+invariant: INV-51
+file: src/sha512_avx2.c
+catches: test/lint-schedule-order.sh
+reason: one_round adds T1 and Maj first and Sigma0 last. Every digest is
+  the same. clang 23 then writes all 145 vector instructions of the loop
+  of sixteen rounds after its last round, and SHA-384 over 16 KiB took
+  1.28 times as long on an EPYC 7763 (docs/decisions.md 230). No two
+  vector instructions of the loop then have a long run between them: the
+  long run is the one from the loop's last vector instruction to its
+  first one in the next pass. make lint-schedule-order counts that run
+  and requires at most 40.
+
+--- old
+    *h = t1 + (upper_sigma0(a) + majority(a, b, c));
+--- new
+    *h = (t1 + majority(a, b, c)) + upper_sigma0(a);

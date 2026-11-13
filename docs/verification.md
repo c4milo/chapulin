@@ -6812,11 +6812,17 @@ innermost loop that holds a vector shift, which is the loop of sixteen
 rounds and four steps, and requires at least 100 vector instructions in
 it and at most 40 instructions on general registers between two of
 them. A round is 30 instructions under gcc 13.3 and 29 to 31 under
-clang 18.1.3 and 23.1.3. The lint reads three things:
+clang 18.1.3 and 23.1.3. The run after the loop's last vector
+instruction and the run before its first are one run, from one pass to
+the next, and the lint counts it as it counts the others: clang 23 wrote
+all 145 vector instructions after the loop's last round for a source
+that adds a round's terms in another order, and every run inside the
+loop was short (decision 230). The lint reads three things:
 
 - The pinned clang's code for x86-64 at `-O2`, on every machine: 145
-  vector instructions in 24 runs, and at most 31 on general registers
-  between two. Before the change clang's code left 106.
+  vector instructions in 24 runs, and at most 36 on general registers
+  between two, 31 inside a pass and 36 from one pass to the next. Before
+  the change clang's code left 106.
 - The commands of the two rules that compile the file, as make prints
   them for a gcc build of a host object for x86-64 and for another
   build, on every machine: `make print-sha512-avx2-commands` with
@@ -6827,7 +6833,8 @@ clang 18.1.3 and 23.1.3. The lint reads three things:
 - Where `$(CC)` is gcc for x86-64, the assembly those two commands
   write with `-S` in place of `-c` (`make lint-schedule-order-gcc`).
   Under gcc 13.3 each wrote 144 vector instructions in 16 runs with 30
-  on general registers between each two. Without the flag gcc 13.3
+  on general registers between each two inside a pass, and 36 from one
+  pass to the next. Without the flag gcc 13.3
   wrote them in 92 runs and left 99 in a row with none.
 
 The qemu lane's `sha512-avx2` part runs `make lint-schedule-order-gcc`

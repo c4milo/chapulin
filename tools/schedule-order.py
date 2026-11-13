@@ -43,6 +43,10 @@ instruction, and any other is one on general registers. The script requires:
   to 31 under clang 18 and 23, and a kernel with a quarter of a step after
   each round has one round between two quarters. A step written after four
   rounds leaves 106 to 120 in a row, and gcc's second scheduling pass 99.
+  The run from the loop's last vector instruction to its first one in the
+  next pass counts too: with the additions of a round in another order,
+  clang 23 wrote all 145 vector instructions after the loop's last round,
+  and no run inside the loop was long (docs/decisions.md 230).
 
 What it does not check: the order of the instructions inside a round or a
 quarter, and the time any order takes. docs/decisions.md 128 holds the
@@ -128,9 +132,13 @@ def schedule_loop(instructions, loops):
 
 def runs_between(loop):
     """The count of vector instructions, and the lengths of the runs of instructions on
-    general registers that lie between two vector instructions."""
+    general registers that lie between two vector instructions. The loop runs again after its
+    last instruction, so the instructions after its last vector instruction and those before
+    its first one are one run, which lies between the last vector instruction of one pass and
+    the first of the next."""
     vector = sum(1 for _, is_vector in loop if is_vector)
     between = []
+    before_first = 0
     run = None
     for _, is_vector in loop:
         if is_vector:
@@ -139,6 +147,10 @@ def runs_between(loop):
             run = 0
         elif run is not None:
             run += 1
+        else:
+            before_first += 1
+    if run is not None and run + before_first > 0:
+        between.append(run + before_first)
     return vector, between
 
 
@@ -167,7 +179,7 @@ def check(assembly, compiled_by):
             "a quarter of a schedule step no longer follows each round. Under gcc the file "
             "compiles with -fno-schedule-insns2 (the Makefile's SHA512_AVX2_GCC_CFLAGS, "
             "docs/decisions.md 128)")
-    said = (f"{compiled_by}: {vector} vector instructions in {len(between) + 1} runs, at most "
+    said = (f"{compiled_by}: {vector} vector instructions in {max(len(between), 1)} runs, at most "
             f"{longest} instructions on general registers between two")
     return failures, said
 
