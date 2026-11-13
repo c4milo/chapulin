@@ -1791,8 +1791,11 @@ last `ROLE=server` stub, as the entry said it would.
   adds each cross product once, from a multiplier of twice the row's
   digit, and so puts in each lane what the multiplication of a by itself
   puts there. A product of a and b is below a * b / R' + m, so below 2m,
-  and one subtraction of m ends the operation, with 2^(2Dn) mod m from
-  the same `power_of_two_mod`.
+  and one subtraction of m ends the operation. The chain starts from the
+  signature times 2^(Dn) mod m, which `rsa_mont.c`'s
+  `base_times_power_of_two_mod` computes on the same long division and
+  one division by a power of two, so it computes no product by 2^(2Dn)
+  mod m (decision 233).
 - **Check.** CBMC, with `--unsigned-overflow-check` on the lines whose
   claim is a sum: `rsa_mont64_sums` runs the shipped multiplication at
   four words over any operands, `rsa_mont64_ops` the comparison, the
@@ -1921,13 +1924,14 @@ last `ROLE=server` stub, as the entry said it would.
   its arrays at the smallest and the largest word count of each copy of
   the product, the conversions between words and digits at every word
   count, that no sum of a product wraps at 2 and 3 groups, and that
-  `power_of_two_mod` reads and writes inside its arrays at the exponents
-  `rsa_vp1_cpu` passes the kernel. `spec/lean/Spec/RsaAvx2.lean`
+  `base_times_power_of_two_mod` reads and writes inside its arrays at the
+  exponents `rsa_vp1_cpu` passes. `spec/lean/Spec/RsaAvx2.lean`
   models the product lane by lane and proves that a square's rows put in
   each lane what the multiplication of a by itself puts there, that no
   lane passes 2^64 at the C's digit widths and counts, that a product of
-  operands below 2m is below 2m and congruent to a b / 2^(Dn) mod m, and
-  that the chain `rsa_avx2_public` runs writes base^65537 mod m.
+  operands below 2m is below 2m and congruent to a b / 2^(Dn) mod m, that
+  `base_times_power_of_two_mod` writes base 2^(Dn) mod m, and that the
+  chain `rsa_avx2_public` runs from it writes base^65537 mod m.
   `bin/diff_rsa_avx2`, in `make diff`, holds the C over the model to the
   spec's operations. `bin/rsa_avx2_model_test` and
   `bin/rsa_avx2_model_test_384` compile it and `rsa_mont.c`'s dispatch over
@@ -2120,16 +2124,22 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/diff_rsa_ifma` catches. Or, in the AVX2 kernel, a PR drops the
   carry out of a lane in the triangle, gives a row past the digit count a
   y, doubles a square's row at its own digit, moves the window down in
-  the last group, drops the last triangle's lanes, drops the bits of a
+  the last group, leaves the window's top register unzeroed, drops the
+  last triangle's lanes, drops the bits of a
   digit that run into the next word when it writes words, or, in
-  `rsa_mont.c`, runs `power_of_two_mod` one step short or hands the
-  kernel an even modulus: `inv41-rsa-avx2-triangle-drops-carry`,
+  `rsa_mont.c`, runs `base_times_power_of_two_mod` one step short,
+  drops the top word of its division by a power of two, leaves out its
+  subtraction of m, or hands the kernel an even modulus:
+  `inv41-rsa-avx2-triangle-drops-carry`,
   `inv41-rsa-avx2-row-past-n-takes-y`,
   `inv41-rsa-avx2-square-doubles-own-digit`,
   `inv41-rsa-avx2-last-group-moves-down`,
+  `inv41-rsa-avx2-window-top-not-zeroed`,
   `inv41-rsa-avx2-last-triangle-lanes-dropped`,
   `inv41-rsa-avx2-digits-to-words-drops-spill`,
-  `inv41-rsa-mont-avx2-power-one-step-short` and
+  `inv41-rsa-mont-avx2-power-one-step-short`,
+  `inv41-rsa-mont-avx2-divide-drops-top-word`,
+  `inv41-rsa-mont-avx2-base-not-below-m` and
   `inv41-rsa-mont-avx2-takes-even-modulus`, which `bin/rsa_avx2_model_test`
   catches, as it catches `inv41-rsa-avx2-runs-without-cpu-bit` and
   `inv41-rsa-avx2-ignores-cpu-bit` through its count of the calls. Or the

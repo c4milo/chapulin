@@ -1,0 +1,13 @@
+invariant: INV-41
+file: src/rsa_mont.c
+catches: rsa_avx2_model_test
+reason: divide_by_power_of_two drops the carry out of the sum's top word,
+  so the quotient's top word loses the bits of x + u m above 2^(64k), and
+  the chain starts from a power that is not sig 2^(Dn) mod m.
+  bin/rsa_avx2_model_test compares rsa_vp1_cpu under CH_CPU_AVX2 with
+  rsa_vp1 at every word count.
+
+--- old
+    sum[k] = carry;
+--- new
+    sum[k] = 0;

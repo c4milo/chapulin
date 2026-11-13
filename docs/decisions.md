@@ -19363,3 +19363,62 @@ does nothing more.
     - **What is left.** OpenSSL rotates with RORX, which copies no register, and schedules two
       blocks at once, which halves the vector instructions a round. Decision 128 measured both
       and refused them. Inside its rules the kernel stays 0.36 to 0.55 cycles a round behind.
+
+233. **The AVX2 verifier starts from the signature times R', and its products zero one register of
+    the window.** On the EPYC 7763 under gcc 13, an RSA-2048 PKCS#1 v1.5 verification took 19.4 µs
+    where OpenSSL 3.6.5 took 19.0, 1.02 times its time, under `ch_cfg.cpu 0xc3f` (bench run
+    43385076493). That CPU has no AVX-512 IFMA, so its public operation runs `rsa_avx2.c`
+    (decision 122).
+
+    - **Where the time went.** Lab run 43437423491 timed the parts of one verification on a 7763
+      runner. Under gcc the kernel took 17.0 µs of 19.3: a square 0.91 µs and a product 1.03 µs.
+      `power_of_two_mod`'s 33 steps took 2.04 µs. Under clang the kernel took 15.4 µs and a square
+      0.82 µs. So gcc's extra time is in the kernel, most of it in the sixteen squares. The chain
+      ran eighteen products: one by 2^(2Dn) mod m, sixteen squares and one by the signature. In
+      gcc's square, perf put 3.8% of the samples on one `rep stosq`, the memset that zeroed the
+      window at the start of each product.
+    - **The power.** `rsa_mont.c`'s `base_times_power_of_two_mod` writes sig 2^(Dn) mod m, the
+      signature in the Montgomery form of R' = 2^(Dn). `rsa_avx2_public` takes it in place of
+      2^(2Dn) mod m, so its chain starts with the squares and runs seventeen products. The function
+      subtracts m from the signature once, as `public_by_division` does (decision 208), and runs
+      ceil(Dn / 64) steps of `times_word_mod`: 33, 49 and 65 at RSA-2048, RSA-3072 and RSA-4096,
+      as many as `power_of_two_mod` ran for 2^(2Dn). Dn is no multiple of 64, so the steps
+      multiply by 2^40 or 2^56 more than R'. `divide_by_power_of_two` divides that factor out: for
+      u = x m0inv mod 2^s, x + u m is a multiple of 2^s, and the quotient is below m. That is one
+      pass of k products in place of a product of the kernel.
+    - **The window.** `product_core` zeroed the whole window, 4(G + 1) words, before each product.
+      gcc 13 compiles that memset of a length it cannot know to `rep stosq`, and clang to a call of
+      glibc's `memset`. Group 0 now reads no register of the window: `window_register` gives it
+      zeros, and `product_core` runs a copy of the group with a constant that says so. The top
+      register is the one that no group but the last writes and every later group reads, so the
+      start zeroes it alone, with one store. The copy adds three conditional branches, which test
+      the group count and a register's index: `lint-wide-multiply` holds the file at 52 under
+      clang for x86-64 where it held 49, and at 92 at the 512-byte bound where it held 86.
+    - **What holds it.** `spec/lean/Spec/RsaAvx2.lean`: `divideByPowerOfTwo_lt` and
+      `divideByPowerOfTwo_mul` prove the division's bound and value for the C's m0inv.
+      `baseTimesPowerOfTwoMod_spec` proves that the function writes sig 2^e mod m, below m, for
+      every exponent. `publicOp_eq` proves that the chain computes sig^65537 mod m from any power
+      below 2m that is sig 2^(Dn) modulo m, and `vp1Avx2_eq` joins the two. `bin/diff_rsa_avx2`
+      holds the C's words to `baseTimesPowerOfTwoMod` in rows of their own, 1,840 comparisons in
+      all.
+    - **Tests and proofs.** `bin/rsa_avx2_model_test` and its 384-byte twin now hand `rsa_vp1_cpu`
+      the signatures m and 2^(64k) - 1, which the verifiers refuse and the call takes.
+      `rsa_mont_power_avx2` and its `_webpki` line prove the function's memory accesses and
+      shifts, and the `rsa_avx2_sums` and `rsa_avx2_chain` lines run the product's new first
+      group. Four violations break the change, and the model test catches each under clang for
+      arm64 and under gcc 13 and gcc 15 for x86-64: one step short, the sum's top word dropped, the
+      subtraction of m left out, which only those two signatures show, and the window's top
+      register left as the stack held it.
+    - **Gain.** Lab runs 43440259806 and 43445824518 timed `bench/primitives.c`'s RSA-2048 row on
+      six EPYC 7763 runners, beside `openssl speed` in the same job, seven runs each. Under gcc the
+      row took 19.28 to 19.35 µs before, 1.013 to 1.020 times OpenSSL's time. With the power alone
+      it took 18.12 to 18.19 µs, 0.953 to 0.959, and with the window as well 17.47 to 17.51 µs,
+      0.923 to 0.924, on the three runners that timed that form. Under clang the row took 17.70 to
+      17.74 µs before and 16.68 to 16.71 µs after, 0.880 to 0.882; the window took 0.1 to 0.3%
+      more than the power alone. At RSA-3072 gcc's row took 33.8 to 33.9 µs where it took 36.4,
+      and clang's 32.8 to 32.9 where it took 34.2.
+    - **Rejected.** A power of two from squares in the kernel. 2^259 R' mod m takes five steps of
+      the division, and three squares raise it to R'^2 mod m. By the parts' times above, three
+      squares take 2.7 µs where the 28 steps they save take 1.7 µs. And the memset kept with gcc's
+      pass that writes a loop of stores as a memset turned off for the products: an attribute of
+      gcc alone, which gained 0.29 to 0.35 µs where the window's copy gains 0.61 to 0.69.

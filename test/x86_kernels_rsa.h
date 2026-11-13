@@ -8,10 +8,10 @@
 // for a modulus either call takes: at least 32 words, its top bit set,
 // and odd. The entries that take no value run rsa_mont64.c.
 // test/rsa_ifma_count.c and test/rsa_avx2_count.c count each call to the
-// two and compute its bytes on rsa_mont64.c from the power of two the call
-// passed, 2^(104n) mod m and 2^(2Dn) mod m, so these rows also fail where
-// rsa_vp1_cpu computed that power of two wrongly: a wrong count of steps
-// at RSA-2048 and RSA-3072, and a wrong start bit at RSA-3072 alone
+// two and compute its bytes on rsa_mont64.c from the power the call
+// passed, 2^(104n) mod m and sig 2^(Dn) mod m, so these rows also fail
+// where rsa_vp1_cpu computed that power wrongly: a wrong count of steps at
+// RSA-2048 and RSA-3072, and a wrong start bit at RSA-3072 alone
 // (check_rsa_moduli).
 #ifndef CH_TEST_X86_KERNELS_RSA_H
 #define CH_TEST_X86_KERNELS_RSA_H

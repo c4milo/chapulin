@@ -37,10 +37,18 @@
 unsigned long rsa_avx2_model_public_calls;
 
 void rsa_avx2_model_public(uint8_t *out, const uint8_t *base, size_t len,
-                           const rsa_mont64_modulus *mod, const uint64_t *digit_r2) {
+                           const rsa_mont64_modulus *mod, const uint64_t *power_words) {
     rsa_avx2_model_public_calls++;
-    rsa_avx2_model_kernel_public(out, base, len, mod, digit_r2);
+    rsa_avx2_model_kernel_public(out, base, len, mod, power_words);
 }
 
 #define RSA_AVX2_ENTRY(name) rsa_avx2_model_##name
 #include "rsa_avx2_entries.h"
+
+// rsa_mont.c's base_times_power_of_two_mod, which is static there, for the
+// rows of bin/diff_rsa_avx2 (test/diff_rsa_avx2_test.c): power = base
+// 2^exponent mod m for the len big-endian bytes at base.
+void rsa_avx2_model_base_times_power_of_two_mod(uint64_t *power, const uint8_t *base, size_t len,
+                                                const rsa_mont64_modulus *mod, size_t exponent) {
+    base_times_power_of_two_mod(power, base, len, mod, exponent);
+}

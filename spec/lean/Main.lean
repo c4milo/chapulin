@@ -1002,8 +1002,8 @@ def dispatch : List String → Option String
   | ["rsa_avx2_public", words, modulus, base] => do
     -- rsa_vp1_cpu's AVX2 path: base^65537 mod m for an odd m of `words` 64-bit words, two or
     -- more, whose top bit is set and a base of the same 8 * words big-endian bytes. The answer
-    -- is the model's publicOp under m's -m⁻¹ mod 2^D and the model's power_of_two_mod for
-    -- 2^(2Dn) (Spec/RsaAvx2.lean, Spec/RsaIfma.lean).
+    -- is the model's publicOp under m's -m⁻¹ mod 2^D, from the model's
+    -- base_times_power_of_two_mod for 2^(Dn) under m's -m⁻¹ mod 2^64 (Spec/RsaAvx2.lean).
     let k ← words.toNat?
     let mb ← hexArg? modulus
     let bb ← hexArg? base
@@ -1013,9 +1013,24 @@ def dispatch : List String → Option String
     let D := Spec.RsaAvx2.digitBits k
     let inverse := Spec.RsaAvx2.k0Of D m
     guard ((inverse * m + 1) % 2 ^ D == 0)
-    let digitR2 := Spec.RsaIfma.powerOfTwoMod m k (2 * D * Spec.RsaAvx2.digitCount k)
-    return bytesToHex
-      (natToBytesBE (Spec.RsaAvx2.publicOp k inverse m (bytesToNatBE bb) digitR2) (8 * k))
+    let b := bytesToNatBE bb
+    let power := Spec.RsaAvx2.baseTimesPowerOfTwoMod m (Spec.RsaAvx2.k0Of 64 m)
+      (D * Spec.RsaAvx2.digitCount k) b
+    return bytesToHex (natToBytesBE (Spec.RsaAvx2.publicOp k inverse m b power) (8 * k))
+  | ["rsa_avx2_base_power", words, modulus, base] => do
+    -- rsa_mont.c's base_times_power_of_two_mod for rsa_avx2_public: base 2^(Dn) mod m in 8 *
+    -- words big-endian bytes, for an odd m of `words` 64-bit words, two or more, whose top bit
+    -- is set, and a base of the same bytes. The answer is the model's
+    -- baseTimesPowerOfTwoMod under m's -m⁻¹ mod 2^64 (Spec/RsaAvx2.lean).
+    let k ← words.toNat?
+    let mb ← hexArg? modulus
+    let bb ← hexArg? base
+    guard (2 ≤ k && mb.size == 8 * k && bb.size == 8 * k)
+    let m := bytesToNatBE mb
+    guard (m % 2 == 1 && 2 ^ (64 * k - 1) ≤ m)
+    let e := Spec.RsaAvx2.digitBits k * Spec.RsaAvx2.digitCount k
+    return bytesToHex (natToBytesBE
+      (Spec.RsaAvx2.baseTimesPowerOfTwoMod m (Spec.RsaAvx2.k0Of 64 m) e (bytesToNatBE bb)) (8 * k))
   | ["rsa_exp", modulus, base, exponent] => do
     -- rsa_mont64_public_exp: base^e mod m for an odd m > 1 and a base below m, both in the
     -- same big-endian bytes, and a decimal e, odd and at least 3. The answer is the model's

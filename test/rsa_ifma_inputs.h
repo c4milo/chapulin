@@ -98,6 +98,21 @@ static inline void power_of_two_by_doubling(uint64_t *power, const rsa_mont64_mo
     }
 }
 
+// base 2^exponent mod m for the len big-endian bytes at base, below R: the
+// base less m once, which is below m, and then one doubling modulo m for
+// each power of two. It shares nothing with rsa_mont.c's division, which
+// writes the same power for rsa_avx2_public.
+static inline void base_times_power_of_two_by_doubling(uint64_t *power, const uint8_t *base,
+                                                       size_t len, const rsa_mont64_modulus *mod,
+                                                       size_t exponent) {
+    memset(power, 0, mod->words * sizeof(uint64_t));
+    rsa_mont64_from_bytes(power, mod->words, base, len);
+    rsa_mont64_reduce_once(power, power, mod);
+    for (size_t i = 0; i < exponent; i++) {
+        rsa_mont64_add(power, power, power, mod);
+    }
+}
+
 // Lanes that normalize_digits's rare steps act on: lanes at 2^52 - 1,
 // which pass a carry on, in runs that cross a register's edge, lanes just
 // below and just above 2^52, lanes with carry bits above 52 and all ones

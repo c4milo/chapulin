@@ -23,7 +23,7 @@
 // ch_cfg.cpu. On x86-64 it hands the public operation to rsa_ifma.h's
 // rsa_ifma_public where the value holds CH_CPU_AVX512_IFMA, and else to
 // rsa_avx2.h's rsa_avx2_public where it holds CH_CPU_AVX2, with the power
-// of two each call needs, which the same division computes. Every other
+// each call takes, which the same division computes. Every other
 // session, and every call of rsa_vp1, which takes no value, runs
 // rsa_mont64.c (docs/decisions.md 119 and 122).
 #include "rsa.h"
@@ -141,6 +141,57 @@ static int use_ifma(uint32_t cpu) {
 static int use_avx2(uint32_t cpu) {
     return (cpu & CH_CPU_AVX2) != 0;
 }
+
+// x = x / 2^shift mod m, for x below m, an odd m of k words, mod->m0inv =
+// -m^-1 mod 2^64 and a shift below 64. u = x m0inv mod 2^shift makes
+// x + u m a multiple of 2^shift. u is below 2^shift, so x + u m is below
+// 2^shift m, and the quotient is below m. The sum takes k + 1 words, and
+// each word of the quotient is read from two words of the sum shift bits
+// up. The shift left by 64 - shift is two shifts, so a shift of 0 moves the
+// word above out whole, where one shift by 64 would be undefined.
+// spec/lean/Spec/RsaAvx2.lean proves the value, as divideByPowerOfTwo_lt
+// and divideByPowerOfTwo_mul.
+static void divide_by_power_of_two(uint64_t *x, const rsa_mont64_modulus *mod, unsigned shift) {
+    size_t k = mod->words;
+    uint64_t u = (x[0] * mod->m0inv) & (((uint64_t)1 << shift) - 1);
+    uint64_t sum[RSA_MONT64_WORDS_MAX + 1];
+    uint64_t carry = 0;
+    for (size_t j = 0; j < k; j++) {
+        ct_u128 word = ct_mul128(u, mod->m[j]) + x[j] + carry;
+        sum[j] = (uint64_t)word;
+        carry = (uint64_t)(word >> 64);
+    }
+    sum[k] = carry;
+    for (size_t j = 0; j < k; j++) {
+        x[j] = (sum[j] >> shift) | (sum[j + 1] << (63 - shift) << 1);
+    }
+}
+
+// power = base 2^exponent mod m in k words, below m, for the len <= 8k
+// big-endian bytes at base, an odd m of k >= 2 words whose top bit is set,
+// and mod->m0inv. The base is below R = 2^(64k), and m is at least R / 2,
+// so the base less m once is below m. ceil(exponent / 64) steps of the
+// division multiply it by 2^(64 steps) modulo m: 2^exponent times a factor
+// 2^(64 steps - exponent) of at most 2^63, which divide_by_power_of_two
+// divides out again.
+//
+// rsa_avx2_public takes base R' mod m, R' = 2^(Dn), in place of R'^2 mod
+// m, so its chain starts with the squares, and computes no product by
+// R'^2 (docs/decisions.md 233). The steps are as many as the 2^(2Dn) mod m
+// that took: 33, 49 and 65 at RSA-2048, RSA-3072 and RSA-4096.
+// spec/lean/Spec/RsaAvx2.lean proves that the power is base 2^exponent mod
+// m, as baseTimesPowerOfTwoMod_spec.
+static void base_times_power_of_two_mod(uint64_t *power, const uint8_t *base, size_t len,
+                                        const rsa_mont64_modulus *mod, size_t exponent) {
+    size_t k = mod->words;
+    size_t steps = (exponent + 63) / 64;
+    rsa_mont64_from_bytes(power, k, base, len);
+    rsa_mont64_reduce_once(power, power, mod);
+    for (size_t i = 0; i < steps; i++) {
+        times_word_mod(power, mod->m, k);
+    }
+    divide_by_power_of_two(power, mod, (unsigned)(64 * steps - exponent));
+}
 #endif
 
 #if defined(__x86_64__) || defined(CH_RSA_IFMA_MODEL) || defined(CH_RSA_AVX2_MODEL)
@@ -151,7 +202,9 @@ static int kernel_takes(const uint8_t *n, size_t n_len, size_t words_min) {
     size_t k = (n_len + 7) / 8;
     return k >= words_min && bit_length(n, n_len) == 64 * k && (n[n_len - 1] & 1) == 1;
 }
+#endif
 
+#if defined(__x86_64__) || defined(CH_RSA_IFMA_MODEL)
 // rem = 2^exponent mod m, for an odd m of k >= 2 words whose top bit is
 // set and an exponent of at least 64(k - 1). It writes the k words of rem
 // and reads the k words of m.
@@ -161,8 +214,7 @@ static int kernel_takes(const uint8_t *n, size_t n_len, size_t words_min) {
 // that bit and is odd. Each step of times_word_mod multiplies rem by 2^64
 // modulo m, so floor(exponent / 64) - (k - 1) steps end at 2^exponent mod
 // m. For rsa_ifma_public's 2^(104n) that is 34, 50 and 65 steps at
-// RSA-2048, RSA-3072 and RSA-4096, and for rsa_avx2_public's 2^(2Dn) 33,
-// 49 and 65, where times_r_mod takes 32, 48 and 64.
+// RSA-2048, RSA-3072 and RSA-4096, where times_r_mod takes 32, 48 and 64.
 static void power_of_two_mod(uint64_t *rem, const uint64_t *m, size_t k, size_t exponent) {
     for (size_t j = 0; j + 1 < k; j++) {
         rem[j] = 0;
@@ -180,28 +232,29 @@ static void power_of_two_mod(uint64_t *rem, const uint64_t *m, size_t k, size_t 
 // RSA_IFMA_WORDS_MIN words, its top bit set, and odd. Else a session whose
 // value holds CH_CPU_AVX2 takes rsa_avx2_public for a modulus that call
 // takes, the same moduli from RSA_AVX2_WORDS_MIN words. The division above
-// computes the power of two each needs, and mod.r2 stays unwritten,
-// because neither call reads it. Every other modulus and every other value
-// take rsa_vp1, so each input gets rsa_vp1's bytes.
+// computes the power each takes: 2^(104n) mod m for rsa_ifma_public, and
+// sig 2^(Dn) mod m for rsa_avx2_public. mod.r2 stays unwritten, because
+// neither call reads it. Every other modulus and every other value take
+// rsa_vp1, so each input gets rsa_vp1's bytes.
 void rsa_vp1_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em) {
 #if defined(__x86_64__) || defined(CH_RSA_IFMA_MODEL) || defined(CH_RSA_AVX2_MODEL)
     size_t k = (n_len + 7) / 8;
     rsa_mont64_modulus mod;
-    uint64_t digit_r2[RSA_MONT64_WORDS_MAX];
+    uint64_t power[RSA_MONT64_WORDS_MAX];
 #endif
 #if defined(__x86_64__) || defined(CH_RSA_IFMA_MODEL)
     if (use_ifma(cpu) && kernel_takes(n, n_len, RSA_IFMA_WORDS_MIN)) {
         rsa_mont64_modulus_load(&mod, n, n_len);
-        power_of_two_mod(digit_r2, mod.m, k, 104 * rsa_ifma_digit_count(k));
-        rsa_ifma_public(em, sig, n_len, &mod, digit_r2);
+        power_of_two_mod(power, mod.m, k, 104 * rsa_ifma_digit_count(k));
+        rsa_ifma_public(em, sig, n_len, &mod, power);
         return;
     }
 #endif
 #if defined(__x86_64__) || defined(CH_RSA_AVX2_MODEL)
     if (use_avx2(cpu) && kernel_takes(n, n_len, RSA_AVX2_WORDS_MIN)) {
         rsa_mont64_modulus_load(&mod, n, n_len);
-        power_of_two_mod(digit_r2, mod.m, k, rsa_avx2_r2_exponent(k));
-        rsa_avx2_public(em, sig, n_len, &mod, digit_r2);
+        base_times_power_of_two_mod(power, sig, n_len, &mod, rsa_avx2_r_exponent(k));
+        rsa_avx2_public(em, sig, n_len, &mod, power);
         return;
     }
 #endif

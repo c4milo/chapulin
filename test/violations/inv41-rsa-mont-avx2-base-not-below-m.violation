@@ -1,0 +1,16 @@
+invariant: INV-41
+file: src/rsa_mont.c
+catches: rsa_avx2_model_test
+reason: base_times_power_of_two_mod leaves out the subtraction that brings a
+  base at or above m below m. times_word_mod's estimate then can pass the
+  quotient by more than 2, and the two passes that add m back leave a
+  remainder that is not the base times 2^64 mod m. Only a signature at or
+  above m shows it, and the verifiers refuse one before rsa_vp1_cpu, so
+  bin/rsa_avx2_model_test hands rsa_vp1_cpu the signatures m and
+  2^(64k) - 1 under CH_CPU_AVX2 and requires rsa_vp1's bytes.
+
+--- old
+    rsa_mont64_reduce_once(power, power, mod);
+    for (size_t i = 0; i < steps; i++) {
+--- new
+    for (size_t i = 0; i < steps; i++) {

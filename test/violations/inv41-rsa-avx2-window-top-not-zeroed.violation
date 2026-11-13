@@ -1,0 +1,13 @@
+invariant: INV-41
+file: src/rsa_avx2.c
+catches: rsa_avx2_model_test
+reason: product_core no longer zeroes the window's top register, which no
+  group but the last writes and every group after group 0 reads. Group 1
+  then adds its rows to whatever the stack held there, and the product
+  is wrong. bin/rsa_avx2_model_test compares every product along a public
+  operation with rsa_mont64.c at every word count.
+
+--- old
+    lanes_store(window + 4 * groups, lanes_zero());
+--- new
+    (void)window;

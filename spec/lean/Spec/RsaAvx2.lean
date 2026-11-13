@@ -168,14 +168,30 @@ def square (D n k0 a m : Nat) : Array Nat :=
 def reduceOnce (m x : Nat) : Nat :=
   if m ≤ x then x - m else x
 
-/-- `rsa_avx2_public` on numbers, for a modulus of `k` words: the product of `base` and
-`digitR2`, sixteen squares, the product of `base` and that power, and one subtraction of `m`. -/
-def publicOp (k k0 m base digitR2 : Nat) : Nat :=
+/-- `rsa_avx2_public` on numbers, for a modulus of `k` words: sixteen squares from `power`, the
+product of `base` and that power, and one subtraction of `m`. `rsa_vp1_cpu` passes
+`base 2 ^ (D n) mod m` as `power` (`baseTimesPowerOfTwoMod`). -/
+def publicOp (k k0 m base power : Nat) : Nat :=
   let D := digitBits k
   let n := digitCount k
-  let power := value D n (lanesOf (multiply D n k0 base digitR2 m))
   let power := (fun p => value D n (lanesOf (square D n k0 p m)))^[16] power
   reduceOnce m (value D n (lanesOf (multiply D n k0 base power m)))
+
+/-- `rsa_mont.c`'s `divide_by_power_of_two`: `x` plus `u m`, over `2 ^ shift`, where `u` is the
+low word of `x` times `m0inv`, modulo `2 ^ 64` and then modulo `2 ^ shift`, as the C computes it.
+-/
+def divideByPowerOfTwo (m m0inv shift x : Nat) : Nat :=
+  (x + x % 2 ^ 64 * m0inv % 2 ^ 64 % 2 ^ shift * m) / 2 ^ shift
+
+/-- The steps of `times_word_mod` that `base_times_power_of_two_mod` runs: `⌈e / 64⌉`. -/
+def powerSteps (e : Nat) : Nat :=
+  (e + 63) / 64
+
+/-- `rsa_mont.c`'s `base_times_power_of_two_mod`: the base less `m` once, `powerSteps e` steps of
+`times_word_mod`, and `divide_by_power_of_two` by `2 ^ (64 powerSteps e - e)`. -/
+def baseTimesPowerOfTwoMod (m m0inv e base : Nat) : Nat :=
+  divideByPowerOfTwo m m0inv (64 * powerSteps e - e)
+    ((Spec.RsaIfma.timesWordMod m)^[powerSteps e] (reduceOnce m base))
 
 /-- The `k0` of `rsa_avx2_modulus`: `-m⁻¹ mod 2 ^ D`, for an odd `m`. -/
 def k0Of (D m : Nat) : Nat :=
@@ -865,16 +881,115 @@ theorem multiply_fits {k k0 a b m : Nat} (h_k : k ≤ 64) :
   have h_D : D ≤ 32 := by simp only [D, digitBits]; split_ifs <;> omega
   exact lanes_fit h_D h_room (fun p => multiplyRows_le D n a b p) (fun j => toDigits_lt D n m j)
 
+/-! ## `base_times_power_of_two_mod` -/
+
+/-- A modulus that has the C's `m0inv`, `-m⁻¹ mod 2 ^ 64`, is odd. -/
+private theorem odd_of_m0inv {m m0inv : Nat} (h_inv : (m * m0inv + 1) % 2 ^ 64 = 0) :
+    m % 2 = 1 := by
+  have h_two : (m * m0inv + 1) % 2 = 0 := by
+    rw [← Nat.mod_mod_of_dvd _ (show 2 ∣ 2 ^ 64 by norm_num), h_inv]
+  rcases Nat.mod_two_eq_zero_or_one m with h_even | h_one
+  · have : m * m0inv % 2 = 0 := by rw [Nat.mul_mod, h_even, zero_mul, Nat.zero_mod]
+    omega
+  · exact h_one
+
+/-- Every power of 2 is a unit modulo an odd `m`. -/
+private theorem two_pow_unit {m : Nat} (h_odd : m % 2 = 1) (e : Nat) :
+    IsUnit ((2 : ZMod m) ^ e) := by
+  have h_two : IsUnit ((2 : ℕ) : ZMod m) :=
+    (ZMod.isUnit_iff_coprime 2 m).mpr (Nat.coprime_two_left.mpr (Nat.odd_iff.mpr h_odd))
+  exact (by exact_mod_cast h_two : IsUnit (2 : ZMod m)).pow _
+
+/-- `divide_by_power_of_two`'s sum is a multiple of `2 ^ shift`: `u` is `x m0inv` modulo
+`2 ^ shift`, so the sum is `x (m m0inv + 1)` modulo `2 ^ shift`, which `2 ^ 64` divides. -/
+private theorem divide_dvd {m m0inv shift x : Nat} (h_inv : (m * m0inv + 1) % 2 ^ 64 = 0)
+    (h_shift : shift ≤ 64) : 2 ^ shift ∣ x + x % 2 ^ 64 * m0inv % 2 ^ 64 % 2 ^ shift * m := by
+  have h_dvd : 2 ^ shift ∣ 2 ^ 64 := pow_dvd_pow 2 h_shift
+  have h_u : x % 2 ^ 64 * m0inv % 2 ^ 64 % 2 ^ shift ≡ x % 2 ^ 64 * m0inv [MOD 2 ^ shift] :=
+    (Nat.mod_modEq _ _).trans ((Nat.mod_modEq _ _).of_dvd h_dvd)
+  have h_x : x ≡ x % 2 ^ 64 [MOD 2 ^ shift] := (Nat.mod_modEq x (2 ^ 64)).symm.of_dvd h_dvd
+  have h_zero : x % 2 ^ 64 * (m * m0inv + 1) ≡ 0 [MOD 2 ^ shift] := by
+    have h_wide : x % 2 ^ 64 * (m * m0inv + 1) ≡ 0 [MOD 2 ^ 64] := by
+      unfold Nat.ModEq
+      rw [Nat.mul_mod, h_inv, mul_zero, Nat.zero_mod]
+    exact h_wide.of_dvd h_dvd
+  have h_sum := (h_x.add (h_u.mul_right m)).trans (by
+    rw [show x % 2 ^ 64 + x % 2 ^ 64 * m0inv * m = x % 2 ^ 64 * (m * m0inv + 1) by ring]) |>.trans
+    h_zero
+  exact Nat.dvd_of_mod_eq_zero (by simpa [Nat.ModEq] using h_sum)
+
+/-- `divide_by_power_of_two` writes a number below `m` for an `x` below `m`: the sum is below
+`m + (2 ^ shift - 1) m`. -/
+theorem divideByPowerOfTwo_lt {m m0inv shift x : Nat} (h_x : x < m) :
+    divideByPowerOfTwo m m0inv shift x < m := by
+  unfold divideByPowerOfTwo
+  set u := x % 2 ^ 64 * m0inv % 2 ^ 64 % 2 ^ shift
+  have h_u : u + 1 ≤ 2 ^ shift := Nat.mod_lt _ (by positivity)
+  rw [Nat.div_lt_iff_lt_mul (by positivity)]
+  calc x + u * m < (u + 1) * m := by nlinarith
+    _ ≤ 2 ^ shift * m := Nat.mul_le_mul_right m h_u
+    _ = m * 2 ^ shift := by ring
+
+/-- `divide_by_power_of_two` divides by `2 ^ shift` modulo `m`, for the C's `m0inv` and a shift
+of at most 64. -/
+theorem divideByPowerOfTwo_mul {m m0inv shift x : Nat} (h_inv : (m * m0inv + 1) % 2 ^ 64 = 0)
+    (h_shift : shift ≤ 64) : (divideByPowerOfTwo m m0inv shift x : ZMod m) * 2 ^ shift = x := by
+  have h_exact := Nat.div_mul_cancel (divide_dvd (x := x) h_inv h_shift)
+  have h_cast := congrArg (fun z : Nat => (z : ZMod m)) h_exact
+  simp only [Nat.cast_mul, Nat.cast_add, Nat.cast_pow, Nat.cast_ofNat, ZMod.natCast_self,
+    mul_zero, add_zero] at h_cast
+  exact h_cast
+
+/-- Steps of `times_word_mod` keep a number below `m` and multiply it by `2 ^ 64` each, modulo
+`m`. -/
+private theorem iterate_timesWordMod {m x : Nat} (h_x : x < m) :
+    ∀ i, (Spec.RsaIfma.timesWordMod m)^[i] x < m ∧
+      ((Spec.RsaIfma.timesWordMod m)^[i] x : ZMod m) = x * 2 ^ (64 * i)
+  | 0 => by simp [h_x]
+  | i + 1 => by
+    obtain ⟨_, h_value⟩ := iterate_timesWordMod h_x i
+    rw [Function.iterate_succ_apply', Spec.RsaIfma.timesWordMod]
+    refine ⟨Nat.mod_lt _ (by omega), ?_⟩
+    rw [ZMod.natCast_mod, Nat.cast_mul, h_value]
+    push_cast
+    ring
+
+/-- `base_times_power_of_two_mod` writes `base 2 ^ e mod m`, below `m`, for a base below `2 m`,
+an `m` that has the C's `m0inv`, and any exponent: the base less `m` once is below `m`, the steps
+multiply it by `2 ^ (64 powerSteps e)`, and the division takes the `2 ^ (64 powerSteps e - e)`
+the steps put past `2 ^ e` off again. -/
+theorem baseTimesPowerOfTwoMod_spec {m m0inv e base : Nat}
+    (h_inv : (m * m0inv + 1) % 2 ^ 64 = 0) (h_base : base < 2 * m) :
+    baseTimesPowerOfTwoMod m m0inv e base < m ∧
+      (baseTimesPowerOfTwoMod m m0inv e base : ZMod m) = base * 2 ^ e := by
+  have h_reduce_lt : reduceOnce m base < m := by
+    unfold reduceOnce
+    split_ifs <;> omega
+  have h_reduce : (reduceOnce m base : ZMod m) = base := by
+    unfold reduceOnce
+    split_ifs with h_ge
+    · rw [Nat.cast_sub h_ge, ZMod.natCast_self, sub_zero]
+    · rfl
+  have h_shift : 64 * powerSteps e - e ≤ 64 := by unfold powerSteps; omega
+  obtain ⟨h_lt, h_value⟩ := iterate_timesWordMod h_reduce_lt (powerSteps e)
+  refine ⟨divideByPowerOfTwo_lt h_lt,
+    (two_pow_unit (odd_of_m0inv h_inv) (64 * powerSteps e - e)).mul_right_cancel ?_⟩
+  unfold baseTimesPowerOfTwoMod
+  rw [divideByPowerOfTwo_mul h_inv h_shift, h_value, h_reduce, mul_assoc, ← pow_add]
+  congr 2
+  unfold powerSteps
+  omega
+
 /-! ## `rsa_avx2_public` -/
 
 /-- `rsa_avx2_public`'s chain of products computes RSAVP1 (RFC 8017 5.2.2) for every base below
 `2 ^ (64 k)`: `base ^ 65537 mod m`, for an `m` of `k` words, two or more, whose top bit is set,
-`k0` the C's `-m⁻¹ mod 2 ^ D`, and `digitR2 = 2 ^ (2 D n) mod m`, the power of two
-`rsa_vp1_cpu` passes. -/
-theorem publicOp_eq {k k0 m base : Nat} (h_k0 : (k0 * m + 1) % 2 ^ digitBits k = 0)
+`k0` the C's `-m⁻¹ mod 2 ^ D`, and a `power` below `2 m` that is `base 2 ^ (D n)` modulo `m`. -/
+theorem publicOp_eq {k k0 m base power : Nat} (h_k0 : (k0 * m + 1) % 2 ^ digitBits k = 0)
     (h_top : 2 ^ (64 * k - 1) ≤ m) (h_m : m < 2 ^ (64 * k)) (h_k : 2 ≤ k)
-    (h_base : base < 2 ^ (64 * k)) :
-    publicOp k k0 m base (2 ^ (2 * digitBits k * digitCount k) % m) = base ^ 65537 % m := by
+    (h_base : base < 2 ^ (64 * k)) (h_power : power < 2 * m)
+    (h_value : (power : ZMod m) = base * 2 ^ (digitBits k * digitCount k)) :
+    publicOp k k0 m base power = base ^ 65537 % m := by
   set D := digitBits k with h_D
   set n := digitCount k with h_n_def
   have h_room : 4 * m ≤ 2 ^ (D * n) := (digitCount_room h_m).le
@@ -894,35 +1009,23 @@ theorem publicOp_eq {k k0 m base : Nat} (h_k0 : (k0 * m + 1) % 2 ^ digitBits k =
     · have : k0 * m % 2 = 0 := by rw [Nat.mul_mod, h_even, mul_zero, Nat.zero_mod]
       omega
     · exact h_one
-  have h_unit : IsUnit ((2 : ZMod m) ^ (D * n)) := by
-    have h_two : IsUnit ((2 : ℕ) : ZMod m) :=
-      (ZMod.isUnit_iff_coprime 2 m).mpr (Nat.coprime_two_left.mpr (Nat.odd_iff.mpr h_odd))
-    exact (by exact_mod_cast h_two : IsUnit (2 : ZMod m)).pow _
+  have h_unit : IsUnit ((2 : ZMod m) ^ (D * n)) := two_pow_unit h_odd _
   have h_product : ∀ x y, x < 2 * m → y < 2 * m →
       value D n (lanesOf (multiply D n k0 x y m)) < 2 * m ∧
         (value D n (lanesOf (multiply D n k0 x y m)) : ZMod m) * 2 ^ (D * n) = x * y :=
     fun x y h_x h_y =>
       ⟨product_lt h_k0 h_room h_n h_x h_y, product_mul h_k0 h_room h_n h_x h_y⟩
-  have h_r2_lt : 2 ^ (2 * D * n) % m < 2 * m := by
-    have := Nat.mod_lt (2 ^ (2 * D * n)) (show 0 < m by omega)
-    omega
-  have h_r2 : ((2 ^ (2 * D * n) % m : ℕ) : ZMod m) = 2 ^ (D * n) * 2 ^ (D * n) := by
-    rw [ZMod.natCast_mod, ← pow_add, show D * n + D * n = 2 * D * n by ring]
-    push_cast
-    rfl
   set squareOf := fun p => value D n (lanesOf (square D n k0 p m)) with h_squareOf
   have h_square : ∀ p, squareOf p = value D n (lanesOf (multiply D n k0 p p m)) := by
     intro p
     simp only [h_squareOf, square_eq_multiply]
-  obtain ⟨h_first_lt, h_first⟩ := h_product base _ h_base_lt h_r2_lt
-  set first := value D n (lanesOf (multiply D n k0 base (2 ^ (2 * D * n) % m) m))
-  have h_squares : ∀ j, squareOf^[j] first < 2 * m ∧
-      (squareOf^[j] first : ZMod m) = base ^ 2 ^ j * 2 ^ (D * n) := by
+  have h_squares : ∀ j, squareOf^[j] power < 2 * m ∧
+      (squareOf^[j] power : ZMod m) = base ^ 2 ^ j * 2 ^ (D * n) := by
     intro j
     induction j with
     | zero =>
-      refine ⟨h_first_lt, h_unit.mul_right_cancel ?_⟩
-      rw [Function.iterate_zero_apply, h_first, h_r2]
+      refine ⟨h_power, ?_⟩
+      rw [Function.iterate_zero_apply, h_value]
       ring
     | succ j ih =>
       obtain ⟨h_lt, h_eq⟩ := ih
@@ -931,12 +1034,12 @@ theorem publicOp_eq {k k0 m base : Nat} (h_k0 : (k0 * m + 1) % 2 ^ digitBits k =
       refine ⟨h_next_lt, h_unit.mul_right_cancel ?_⟩
       rw [h_next, h_eq]
       ring
-  obtain ⟨h_power_lt, h_power⟩ := h_squares 16
+  obtain ⟨h_power_lt, h_power_value⟩ := h_squares 16
   obtain ⟨h_last_lt, h_last⟩ := h_product base _ h_base_lt h_power_lt
-  set last := value D n (lanesOf (multiply D n k0 base (squareOf^[16] first) m))
+  set last := value D n (lanesOf (multiply D n k0 base (squareOf^[16] power) m))
   have h_last' : (last : ZMod m) = base ^ 65537 := by
     refine h_unit.mul_right_cancel ?_
-    rw [h_last, h_power]
+    rw [h_last, h_power_value]
     ring
   have h_reduce_lt : reduceOnce m last < m := by
     unfold reduceOnce
@@ -951,6 +1054,25 @@ theorem publicOp_eq {k k0 m base : Nat} (h_k0 : (k0 * m + 1) % 2 ^ digitBits k =
   rw [← Nat.mod_eq_of_lt h_reduce_lt]
   exact (ZMod.natCast_eq_natCast_iff' _ _ m).mp (by push_cast; exact h_reduce)
 
+/-- `rsa_vp1_cpu` under `CH_CPU_AVX2` computes RSAVP1 for every base below `2 ^ (64 k)`: the
+power `base_times_power_of_two_mod` writes for `2 ^ (D n)`, then `rsa_avx2_public`'s chain, for
+the hypotheses of `publicOp_eq` and `m0inv` the C's `-m⁻¹ mod 2 ^ 64`. -/
+theorem vp1Avx2_eq {k k0 m m0inv base : Nat} (h_k0 : (k0 * m + 1) % 2 ^ digitBits k = 0)
+    (h_inv : (m * m0inv + 1) % 2 ^ 64 = 0) (h_top : 2 ^ (64 * k - 1) ≤ m)
+    (h_m : m < 2 ^ (64 * k)) (h_k : 2 ≤ k) (h_base : base < 2 ^ (64 * k)) :
+    publicOp k k0 m base
+        (baseTimesPowerOfTwoMod m m0inv (digitBits k * digitCount k) base) =
+      base ^ 65537 % m := by
+  have h_base_lt : base < 2 * m := by
+    have h_double : 2 ^ (64 * k) = 2 * 2 ^ (64 * k - 1) := by
+      rw [← pow_succ']
+      congr 1
+      omega
+    omega
+  obtain ⟨h_lt, h_value⟩ :=
+    baseTimesPowerOfTwoMod_spec (e := digitBits k * digitCount k) h_inv h_base_lt
+  exact publicOp_eq h_k0 h_top h_m h_k h_base (by omega) h_value
+
 /-! ## Selftest -/
 
 /-- `base ^ 65537 mod m` by sixteen squares and a product modulo `m`, which shares nothing with
@@ -960,26 +1082,26 @@ private def referencePublic (m base : Nat) : Nat :=
 
 set_option compiler.extract_closed false in
 /-- The digit widths and counts at RSA-2048, RSA-3072 and RSA-4096, the lanes their triangles
-run, and `power_of_two_mod`'s steps for `2 ^ (2 D n)`; a square's rows against a
+run, and `base_times_power_of_two_mod`'s steps for `2 ^ (D n)`; a square's rows against a
 multiplication's on the digits of one number; and at RSA-2048, under `2 ^ 2048 - 1`,
-`2 ^ 2047 + 1` and a third odd modulus with the top bit set, `power_of_two_mod` against
-`2 ^ (2 D n) mod m` and `rsa_avx2_public` against `base ^ 65537 mod m` for the bases 2, `m - 1`
-and `2 ^ 2048 - 1`. -/
+`2 ^ 2047 + 1` and a third odd modulus with the top bit set, for the bases 2, `m - 1` and
+`2 ^ 2048 - 1`, `base_times_power_of_two_mod` against `base 2 ^ (D n) mod m` and
+`rsa_avx2_public` against `base ^ 65537 mod m`. -/
 def selftest (_ : Unit) : Bool :=
   let widths := [32, 48, 64].map digitBits == [28, 28, 27]
   let counts := [32, 48, 64].map digitCount == [74, 110, 152]
   let lanes := [74, 110, 152].map triangleLanes == [76, 112, 152]
-  let steps := [32, 48, 64].map (fun k =>
-    Spec.RsaIfma.powerOfTwoSteps k (2 * digitBits k * digitCount k)) == [33, 49, 65]
+  let steps := [32, 48, 64].map (fun k => powerSteps (digitBits k * digitCount k)) == [33, 49, 65]
   let a := lanesOf (toDigits 28 9 (2 ^ 250 - 12345))
   let squares := (List.range 18).all fun p => squareRows a p == multiplyRows a a p
   let moduli := [2 ^ 2048 - 1, 2 ^ 2047 + 1,
     2 ^ 2047 + 0x9f3a5c7e1b2d4f60 * 2 ^ 1500 + 0x5ad1c3e2f4b60718 * 2 ^ 700 + 0x2b]
   let check := fun m =>
-    let exponent := 2 * digitBits 32 * digitCount 32
-    let digitR2 := Spec.RsaIfma.powerOfTwoMod m 32 exponent
-    digitR2 == 2 ^ exponent % m && [2, m - 1, 2 ^ 2048 - 1].all fun base =>
-      publicOp 32 (k0Of (digitBits 32) m) m base digitR2 == referencePublic m base
+    let exponent := digitBits 32 * digitCount 32
+    [2, m - 1, 2 ^ 2048 - 1].all fun base =>
+      let power := baseTimesPowerOfTwoMod m (k0Of 64 m) exponent base
+      power == base * 2 ^ exponent % m &&
+        publicOp 32 (k0Of (digitBits 32) m) m base power == referencePublic m base
   widths && counts && lanes && steps && squares && moduli.all check
 
 end Spec.RsaAvx2

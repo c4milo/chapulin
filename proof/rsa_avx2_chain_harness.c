@@ -1,13 +1,12 @@
 // Proves: each step of rsa_avx2_public reads and writes inside its arrays
 // at CHAIN_WORDS words, over any base bytes, any modulus words, any m0inv
-// and any digit_r2 words. main below makes the calls rsa_avx2_public
-// makes, in its order and on arrays of the sizes it passes, and makes each
-// once: modulus_from_words; words_to_digits on digit_r2; multiply_by_base,
-// which marshals the base, converts it into digits and multiplies; one
-// square; and write_result, which converts the digits back to words,
+// and any power words. main below makes the calls rsa_avx2_public makes,
+// in its order and on arrays of the sizes it passes, and makes each once:
+// modulus_from_words; words_to_digits on the power words; one square;
+// multiply_by_base, which marshals the base, converts it into digits and
+// multiplies; and write_result, which converts the digits back to words,
 // subtracts m once and marshals the bytes out. rsa_avx2_public runs the
-// same calls on the same arrays, with sixteen squares where this runs one
-// and multiply_by_base a second time before write_result.
+// same calls on the same arrays, with sixteen squares where this runs one.
 //
 // The lines run the smallest and the largest word count of each copy of
 // the product:
@@ -33,12 +32,12 @@
 // execution. One multiplication at 19 groups took 12 s, and four 114 s:
 // each product's symbolic execution costs more than the last.
 //
-// The base, the output and digit_r2 are arrays of exactly the length the
-// calls read or write, so a read or a write past one fails. The length is
-// 8 * CHAIN_WORDS bytes, the one length rsa_vp1_cpu passes: it takes the
-// kernel only for a modulus whose bit length is 64 times its word count,
-// which is a modulus of 8k bytes. The output is apart from the base, as
-// rsa_vp1_cpu's callers pass them.
+// The base, the output and the power words are arrays of exactly the
+// length the calls read or write, so a read or a write past one fails. The
+// length is 8 * CHAIN_WORDS bytes, the one length rsa_vp1_cpu passes: it
+// takes the kernel only for a modulus whose bit length is 64 times its
+// word count, which is a modulus of 8k bytes. The output is apart from the
+// base, as rsa_vp1_cpu's callers pass them.
 //
 // Every lane operation is the contract proof/rsa_avx2_stubs.h states under
 // RSA_AVX2_STUB_EVERY_LANE_OPERATION, which rsa_avx2_lanes_harness.c
@@ -66,19 +65,19 @@
 
 int main(void) {
     rsa_mont64_modulus mod;
-    uint64_t digit_r2[CHAIN_WORDS];
+    uint64_t power_words[CHAIN_WORDS];
     uint8_t base[8 * CHAIN_WORDS];
     uint8_t out[8 * CHAIN_WORDS];
     havoc_modulus(&mod, CHAIN_WORDS);
-    havoc_words(digit_r2, CHAIN_WORDS);
+    havoc_words(power_words, CHAIN_WORDS);
     fill_nondet(base, sizeof base);
 
     rsa_avx2_modulus modulus;
     modulus_from_words(&modulus, &mod);
     _Alignas(32) uint64_t power[NUMBER_LANES];
-    words_to_digits(power, digit_r2, CHAIN_WORDS, modulus.digit_count, modulus.bits);
-    multiply_by_base(power, base, sizeof base, CHAIN_WORDS, &modulus);
+    words_to_digits(power, power_words, CHAIN_WORDS, modulus.digit_count, modulus.bits);
     square(power, power, &modulus);
+    multiply_by_base(power, base, sizeof base, CHAIN_WORDS, &modulus);
     write_result(out, sizeof out, power, &modulus, &mod);
     return 0;
 }

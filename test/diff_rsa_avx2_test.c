@@ -23,10 +23,10 @@
 // random ones below m and below 2m, and of the squares of 2m - 1 and of
 // the random ones. At the word counts where the group count or the digit
 // width changes, and at the first and the last, rsa_vp1_cpu's bytes under
-// CH_CPU_AVX2, which run power_of_two_mod and rsa_avx2_public, for a
-// random base and in turn for 0, 1, m - 1, m and 2^(64k) - 1. At RSA-2048,
-// RSA-3072 and RSA-4096, each product of rsa_avx2_public's chain for a
-// random base.
+// CH_CPU_AVX2, which run base_times_power_of_two_mod and rsa_avx2_public,
+// and the words of base_times_power_of_two_mod, for a random base and in
+// turn for 0, 1, m - 1, m and 2^(64k) - 1. At RSA-2048, RSA-3072 and
+// RSA-4096, each product of rsa_avx2_public's chain for a random base.
 #define CH_RSA_AVX2_MODEL 1
 
 #include <stdio.h>
@@ -251,11 +251,31 @@ static void diff_products(const rsa_mont64_modulus *mod) {
     }
 }
 
+// base_times_power_of_two_mod's k words for one base, base 2^(Dn) mod m,
+// against the spec's model of it, as 8k big-endian bytes.
+static void diff_base_power_row(const uint8_t *n, size_t k, const uint8_t *base) {
+    static char cmd[COMMAND_SIZE];
+    static char want[HEX_LEN(8 * WORDS_MAX)];
+    size_t n_len = 8 * k;
+    rsa_mont64_modulus mod;
+    uint64_t power[WORDS_MAX];
+    uint8_t power_bytes[8 * WORDS_MAX];
+    rsa_mont64_modulus_load(&mod, n, n_len);
+    rsa_avx2_model_base_times_power_of_two_mod(power, base, n_len, &mod, rsa_avx2_r_exponent(k));
+    words_to_bytes(power_bytes, power, k);
+    size_t len = (size_t)snprintf(cmd, sizeof cmd, "rsa_avx2_base_power %zu ", k);
+    len += hex_encode(cmd + len, n, n_len);
+    cmd[len++] = ' ';
+    (void)hex_encode(cmd + len, base, n_len);
+    (void)hex_encode(want, power_bytes, n_len);
+    expect(cmd, want);
+}
+
 // rsa_vp1_cpu's n_len bytes under CH_CPU_AVX2 for one base, which runs
-// power_of_two_mod and rsa_avx2_public for the moduli these rows draw,
-// against the spec's public operation, which computes its power of two
-// with its own model of power_of_two_mod. The call must also run the
-// kernel once.
+// base_times_power_of_two_mod and rsa_avx2_public for the moduli these
+// rows draw, against the spec's public operation, which computes its power
+// with its own model of base_times_power_of_two_mod. The call must also
+// run the kernel once. The power's words get a row of their own.
 static void diff_public_row(const uint8_t *n, size_t k, const uint8_t *base) {
     static char cmd[COMMAND_SIZE];
     static char want[HEX_LEN(8 * WORDS_MAX)];
@@ -274,6 +294,7 @@ static void diff_public_row(const uint8_t *n, size_t k, const uint8_t *base) {
     (void)hex_encode(cmd + len, base, n_len);
     (void)hex_encode(want, out, n_len);
     expect(cmd, want);
+    diff_base_power_row(n, k, base);
 }
 
 // A random base, and in turn by kind 0, 1, m - 1, m and 2^(64k) - 1: every
@@ -304,21 +325,21 @@ static void diff_publics(const uint8_t *n, size_t k, int kind) {
     diff_public_row(n, k, base);
 }
 
-// rem = 2^(2Dn) mod m by doublings, which share nothing with rsa_mont.c's
-// division: the digit_r2 rsa_avx2_public takes.
-static void power_by_doublings(uint64_t *rem, const rsa_mont64_modulus *mod) {
+// rem = base 2^(Dn) mod m by doublings, for the k words of base, which
+// share nothing with rsa_mont.c's division: the power rsa_avx2_public
+// takes.
+static void power_by_doublings(uint64_t *rem, const uint64_t *base, const rsa_mont64_modulus *mod) {
     size_t k = mod->words;
-    memset(rem, 0, k * sizeof(uint64_t));
-    rem[0] = 1;
-    for (size_t e = 0; e < rsa_avx2_r2_exponent(k); e++) {
+    rsa_mont64_reduce_once(rem, base, mod);
+    for (size_t e = 0; e < rsa_avx2_r_exponent(k); e++) {
         rsa_mont64_add(rem, rem, rem, mod);
     }
 }
 
 // rsa_avx2_public's chain of products for a random base, each product a
-// row: the first of the base and digit_r2, sixteen squares and the last of
-// the base and the power. Each row reads the number the product before it
-// wrote, and the spec reads the number it holds.
+// row: sixteen squares from the power and the last product, of the base
+// and the power. Each row reads the number the product before it wrote,
+// and the spec reads the number it holds.
 static void diff_chain(const rsa_mont64_modulus *mod) {
     size_t k = mod->words;
     uint64_t base[WORDS_MAX + 1];
@@ -330,12 +351,12 @@ static void diff_chain(const rsa_mont64_modulus *mod) {
         base[i] = rng_next();
     }
     base[k] = 0;
-    power_by_doublings(power, mod);
+    power_by_doublings(power, base, mod);
     power[k] = 0;
     rsa_avx2_model_to_digits(base_number, base, k + 1, k);
     rsa_avx2_model_to_digits(power_number, power, k + 1, k);
-    for (int step = 0; step < 18; step++) {
-        if (step == 0 || step == 17) {
+    for (int step = 0; step < 17; step++) {
+        if (step == 16) {
             diff_product_row(mod, base, base_number, power, power_number, 0, out);
         } else {
             diff_product_row(mod, power, power_number, power, power_number, 1, out);

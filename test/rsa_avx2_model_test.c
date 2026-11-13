@@ -18,10 +18,12 @@
 //     their own 65537th powers, so those three are checked against the
 //     known answer too. Under the bit rsa_vp1_cpu must call
 //     rsa_avx2_public once, and without it never
-//     (rsa_avx2_model_public_calls);
+//     (rsa_avx2_model_public_calls). The same for the signatures m and
+//     2^(64k) - 1, which the verifiers refuse and the call takes;
 //   - rsa_avx2_public with rsa_mont64_public for bases at or above m,
-//     which the verifiers never pass and the call takes. Its digit_r2
-//     comes from doublings, which share nothing with rsa_mont.c's division;
+//     which the verifiers never pass and the call takes. Its power, base
+//     2^(Dn) mod m, comes from doublings, which share nothing with
+//     rsa_mont.c's division;
 //   - each product of rsa_avx2_public's chain for a random base: every
 //     digit below 2^D, every lane below digit 0 and from digit n up zero,
 //     and the number below 2m, and the chain's last number, less m once,
@@ -161,47 +163,59 @@ static void signatures_below_m(const uint8_t *n, size_t n_len) {
     }
 }
 
-static void compare_public(const uint8_t *base, const rsa_mont64_modulus *mod,
-                           const uint64_t *digit_r2) {
+// The signatures m, the first at or above m, and 2^(64k) - 1, the last
+// below R. The verifiers refuse both before rsa_vp1_cpu, and the call
+// takes them: rsa_mont.c's base_times_power_of_two_mod subtracts m from
+// the base once before its division, which needs a base below m.
+static void signatures_at_or_above_m(const uint8_t *n, size_t n_len) {
+    uint8_t sig[CH_RSA_MODULUS_MAX];
+    compare_vp1(n, n_len, n, NULL, 1);
+    memset(sig, 0xff, n_len);
+    compare_vp1(n, n_len, sig, NULL, 1);
+}
+
+static void compare_public(const uint8_t *base, const rsa_mont64_modulus *mod) {
     size_t n_len = 8 * mod->words;
     uint8_t kernel[CH_RSA_MODULUS_MAX];
     uint8_t words[CH_RSA_MODULUS_MAX];
+    uint64_t power[WORDS_MAX];
     memset(kernel, 0x55, sizeof kernel);
     memset(words, 0xaa, sizeof words);
-    rsa_avx2_model_public(kernel, base, n_len, mod, digit_r2);
+    base_times_power_of_two_by_doubling(power, base, n_len, mod, rsa_avx2_r_exponent(mod->words));
+    rsa_avx2_model_public(kernel, base, n_len, mod, power);
     rsa_mont64_public(words, base, n_len, mod);
     check(memcmp(kernel, words, n_len) == 0, "rsa_avx2_public against rsa_mont64_public",
           mod->words);
 }
 
-static void bases_at_or_above_m(const uint8_t *n, const rsa_mont64_modulus *mod,
-                                const uint64_t *digit_r2) {
+static void bases_at_or_above_m(const uint8_t *n, const rsa_mont64_modulus *mod) {
     size_t n_len = 8 * mod->words;
     uint8_t base[CH_RSA_MODULUS_MAX];
-    compare_public(n, mod, digit_r2);
+    compare_public(n, mod);
     for (int c = 0; c < 2; c++) {
         rng_fill(base, n_len);
         memset(base, 0xff, 8);
-        compare_public(base, mod, digit_r2);
+        compare_public(base, mod);
     }
     memset(base, 0xff, n_len);
-    compare_public(base, mod, digit_r2);
+    compare_public(base, mod);
 }
 
-// rsa_avx2_public's chain of products for one random base, with each
-// product's digits checked, and its end against rsa_mont64_public's.
-static void product_chain(const rsa_mont64_modulus *mod, const uint64_t *digit_r2) {
+// rsa_avx2_public's chain of products for one random base, from base
+// 2^(Dn) mod m by doublings, with each product's digits checked, and its
+// end against rsa_mont64_public's.
+static void product_chain(const rsa_mont64_modulus *mod) {
     size_t k = mod->words;
     uint8_t base[CH_RSA_MODULUS_MAX];
     uint64_t base_words[WORDS_MAX];
+    uint64_t power_words[WORDS_MAX];
     uint64_t base_digits[RSA_AVX2_TEST_LANES] = {0};
     uint64_t power[RSA_AVX2_TEST_LANES] = {0};
     rng_fill(base, 8 * k);
     rsa_mont64_from_bytes(base_words, k, base, 8 * k);
     rsa_avx2_model_to_digits(base_digits, base_words, k, k);
-    rsa_avx2_model_to_digits(power, digit_r2, k, k);
-    rsa_avx2_model_multiply(power, base_digits, power, mod);
-    check_product_digits("the first product's digits", power, mod);
+    base_times_power_of_two_by_doubling(power_words, base, 8 * k, mod, rsa_avx2_r_exponent(k));
+    rsa_avx2_model_to_digits(power, power_words, k, k);
     for (int i = 0; i < 16; i++) {
         rsa_avx2_model_square(power, power, mod);
         check_product_digits("a square's digits", power, mod);
@@ -283,12 +297,11 @@ static void products_up_to_two_m(const rsa_mont64_modulus *mod) {
 static void run_modulus(const uint8_t *n, size_t k) {
     size_t n_len = 8 * k;
     rsa_mont64_modulus mod;
-    uint64_t digit_r2[WORDS_MAX];
     rsa_mont64_modulus_init(&mod, n, n_len, 8 * n_len);
-    power_of_two_by_doubling(digit_r2, &mod, rsa_avx2_r2_exponent(k));
     signatures_below_m(n, n_len);
-    bases_at_or_above_m(n, &mod, digit_r2);
-    product_chain(&mod, digit_r2);
+    signatures_at_or_above_m(n, n_len);
+    bases_at_or_above_m(n, &mod);
+    product_chain(&mod);
     products_up_to_two_m(&mod);
 }
 

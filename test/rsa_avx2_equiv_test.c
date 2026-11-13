@@ -165,15 +165,18 @@ static void compare_products(const rsa_mont64_modulus *mod) {
     }
 }
 
-static void compare_public(const uint8_t *base, const rsa_mont64_modulus *mod,
-                           const uint64_t *digit_r2) {
+// rsa_avx2_public's bytes for one base on the model and on the
+// instructions, from base 2^(Dn) mod m by doublings.
+static void compare_public(const uint8_t *base, const rsa_mont64_modulus *mod) {
     size_t n_len = 8 * mod->words;
     uint8_t model[CH_RSA_MODULUS_MAX];
     uint8_t instructions[CH_RSA_MODULUS_MAX];
+    uint64_t power[WORDS_MAX];
     memset(model, 0x55, sizeof model);
     memset(instructions, 0xaa, sizeof instructions);
-    rsa_avx2_model_public(model, base, n_len, mod, digit_r2);
-    rsa_avx2_public(instructions, base, n_len, mod, digit_r2);
+    base_times_power_of_two_by_doubling(power, base, n_len, mod, rsa_avx2_r_exponent(mod->words));
+    rsa_avx2_model_public(model, base, n_len, mod, power);
+    rsa_avx2_public(instructions, base, n_len, mod, power);
     check(memcmp(model, instructions, n_len) == 0, "rsa_avx2_public", mod->words);
 }
 
@@ -191,16 +194,14 @@ static void compare_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig) {
 static void run_modulus(const uint8_t *n, size_t k) {
     size_t n_len = 8 * k;
     rsa_mont64_modulus mod;
-    uint64_t digit_r2[WORDS_MAX];
     rsa_mont64_modulus_init(&mod, n, n_len, 8 * n_len);
-    power_of_two_by_doubling(digit_r2, &mod, rsa_avx2_r2_exponent(k));
     compare_products(&mod);
     uint8_t base[CH_RSA_MODULUS_MAX];
-    compare_public(n, &mod, digit_r2);
+    compare_public(n, &mod);
     memset(base, 0xff, n_len);
-    compare_public(base, &mod, digit_r2);
+    compare_public(base, &mod);
     rng_fill(base, n_len);
-    compare_public(base, &mod, digit_r2);
+    compare_public(base, &mod);
     base[0] = (uint8_t)(base[0] % n[0]); // below n's top byte, so below n
     compare_vp1(n, n_len, base);
     memcpy(base, n, n_len);

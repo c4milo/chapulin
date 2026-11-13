@@ -62,13 +62,18 @@ void rsa_avx2_model_multiply(uint64_t *out, const uint64_t *a, const uint64_t *b
                              const rsa_mont64_modulus *mod);
 void rsa_avx2_model_square(uint64_t *out, const uint64_t *a, const rsa_mont64_modulus *mod);
 void rsa_avx2_model_public(uint8_t *out, const uint8_t *base, size_t len,
-                           const rsa_mont64_modulus *mod, const uint64_t *digit_r2);
+                           const rsa_mont64_modulus *mod, const uint64_t *power_words);
 void rsa_avx2_model_kernel_public(uint8_t *out, const uint8_t *base, size_t len,
-                                  const rsa_mont64_modulus *mod, const uint64_t *digit_r2);
+                                  const rsa_mont64_modulus *mod, const uint64_t *power_words);
 extern unsigned long rsa_avx2_model_public_calls;
 void rsa_avx2_model_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
 void rsa_avx2_model_vp1_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t *sig,
                             uint8_t *em);
+// rsa_mont.c's base_times_power_of_two_mod over the model's build, which
+// test/rsa_avx2_model.c alone defines: base 2^exponent mod m in mod->words
+// words, for the len big-endian bytes at base.
+void rsa_avx2_model_base_times_power_of_two_mod(uint64_t *power, const uint8_t *base, size_t len,
+                                                const rsa_mont64_modulus *mod, size_t exponent);
 
 // The same entries on the instructions, which an x86-64 CPU with AVX2
 // runs. rsa_avx2_public, rsa_vp1 and rsa_vp1_cpu keep their own names there

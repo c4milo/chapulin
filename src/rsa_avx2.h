@@ -10,8 +10,9 @@
 //
 // rsa_avx2.c writes rsa_mont64_public's bytes for every base. Its
 // Montgomery products divide by R' = 2^(Dn), for n digits of D bits, in
-// place of rsa_mont64.c's R = 2^(64k), which is why it takes 2^(2Dn) mod
-// m, R'^2, where rsa_mont64.c takes R^2 (docs/decisions.md 122).
+// place of rsa_mont64.c's R = 2^(64k), so it takes the base in the
+// Montgomery form of R', base R' mod m, which rsa_mont.c's long division
+// computes (docs/decisions.md 122 and 233).
 //
 // The declarations exist in a host object (-DCH_CPU_RUNTIME) on x86-64,
 // and in a test unit that defines CH_RSA_AVX2_MODEL, which compiles
@@ -51,25 +52,25 @@ static inline size_t rsa_avx2_digit_count(size_t words) {
     return RSA_AVX2_DIGIT_COUNT(words);
 }
 
-// The exponent of R'^2 = 2^(2Dn), which rsa_avx2_public takes mod m as
-// digit_r2: 4144, 6160 and 8208 for RSA-2048, RSA-3072 and RSA-4096.
-static inline size_t rsa_avx2_r2_exponent(size_t words) {
-    return 2 * (size_t)RSA_AVX2_DIGIT_BITS(words) * RSA_AVX2_DIGIT_COUNT(words);
+// The exponent of R' = 2^(Dn), whose product with the base rsa_avx2_public
+// takes mod m: 2072, 3080 and 4104 for RSA-2048, RSA-3072 and RSA-4096.
+static inline size_t rsa_avx2_r_exponent(size_t words) {
+    return (size_t)RSA_AVX2_DIGIT_BITS(words) * RSA_AVX2_DIGIT_COUNT(words);
 }
 
 // out = base^65537 mod m (RSAVP1, RFC 8017 5.2.2), base and out both len
 // big-endian bytes, len <= 8 * mod->words: the bytes rsa_mont64_public
 // writes, for any base of that length. It needs an odd m of k =
 // mod->words words, RSA_AVX2_WORDS_MIN <= k <= RSA_MONT64_WORDS_MAX, whose
-// top bit is set, and digit_r2 = 2^rsa_avx2_r2_exponent(k) mod m in k
-// words. It reads mod->m, mod->m0inv and mod->words, and not mod->r2,
-// which rsa_vp1_cpu leaves unwritten.
+// top bit is set, and power_words = base 2^rsa_avx2_r_exponent(k) mod m in k
+// words, below m. It reads mod->m, mod->m0inv and mod->words, and not
+// mod->r2, which rsa_vp1_cpu leaves unwritten.
 //
 // Requires: a CPU with AVX2 whose operating system saves the 256-bit
 // registers. rsa_vp1_cpu decides that from the session's CH_CPU_AVX2 bit;
 // on a CPU without them the first instruction faults.
 void rsa_avx2_public(uint8_t *out, const uint8_t *base, size_t len, const rsa_mont64_modulus *mod,
-                     const uint64_t *digit_r2);
+                     const uint64_t *power_words);
 
 #endif // CH_CPU_RUNTIME && (__x86_64__ || CH_RSA_AVX2_MODEL)
 

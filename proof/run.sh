@@ -3551,8 +3551,8 @@ launch fast:6 full aead_avx512_last 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_a
 # processor time for one multiplication at 19 groups and 114 s for four.
 # A line that ran a multiplication and a square at a word count that was
 # any value from 32 to 48 passed 8 GB in symbolic execution.
-# rsa_mont_power_avx2 runs power_of_two_mod with the exponents of
-# rsa_avx2_public's 2^(2Dn) mod m.
+# rsa_mont_power_avx2 runs base_times_power_of_two_mod with the exponents
+# of the base 2^(Dn) mod m rsa_avx2_public takes.
 # Measured one line at a time through proof/prove-one.sh on 2026-10-09 (cbmc
 # 6.11.0, kissat 4.0.4, an M1 Pro) at a load average of 5 to 30, under a
 # sampler that summed the resident size of every process in the run. The
@@ -3574,8 +3574,10 @@ launch fast:6 full aead_avx512_last 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_a
 #   rsa_avx2_chain                   1747 properties,  91 s, 1.0 GB, 1.0 GB
 #   rsa_avx2_chain_49_webpki         1759 properties, 102 s, 1.2 GB, 1.2 GB
 #   rsa_avx2_chain_webpki            1759 properties, 197 s, 1.8 GB, 1.9 GB
-#   rsa_mont_power_avx2               870 properties,  22 s, 1.6 GB, 3.2 GB, hence fast:4
-#   rsa_mont_power_avx2_webpki        870 properties,  34 s, 2.5 GB, 4.4 GB, hence fast:5
+#   rsa_mont_power_avx2              1127 properties,  27 s, 1.1 GB, hence fast:4 (decision 233)
+#   rsa_mont_power_avx2_webpki       1127 properties,  50 s, 0.6 GB, hence fast:5 (decision 233)
+# The two rsa_mont_power_avx2 rows were measured again on 2026-11-13, after
+# decision 233, at a load average of 27 to 40, with /usr/bin/time -l alone.
 launch fast full rsa_avx2_lanes 5 "" --unsigned-overflow-check
 launch fast full rsa_avx2_sums_multiply_2 21 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest --unsigned-overflow-check
 launch fast:3 full rsa_avx2_sums_multiply_3 21 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest --unsigned-overflow-check

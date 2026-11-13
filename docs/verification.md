@@ -1616,7 +1616,9 @@ The entries are grouped by area:
   `rsa_ifma.c`; see
   [The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation).
   `power_of_two_mod`, which computes the power of two that call takes,
-  has lines of its own under [rsa_ifma](#rsa_ifma).
+  has lines of its own under [rsa_ifma](#rsa_ifma), and
+  `base_times_power_of_two_mod`, which computes the power `rsa_avx2.c`
+  takes, under [rsa_avx2](#rsa_avx2).
 
 #### rsa_mont64
 
@@ -2279,8 +2281,8 @@ The entries are grouped by area:
   `rsa_avx2_number.h`), under `-DCH_CPU_RUNTIME` and
   `-DCH_RSA_AVX2_MODEL`, over `test/rsa_avx2_model_lanes.h`, the model of
   each instruction in portable C that `bin/rsa_avx2_model_test` runs; and
-  `rsa_mont.c`'s `power_of_two_mod`, which computes the 2^(2Dn) mod m that
-  call takes. The lane multiplication and, in the memory lines, every
+  `rsa_mont.c`'s `base_times_power_of_two_mod`, which computes the base
+  2^(Dn) mod m that call takes. The lane multiplication and, in the memory lines, every
   lane operation are contracts (`proof/rsa_avx2_stubs.h`).
   `rsa_avx2_lanes` and the `rsa_avx2_sums` lines add
   `--unsigned-overflow-check`.
@@ -2311,18 +2313,20 @@ The entries are grouped by area:
     base and of the result, a multiplication, a square and the last
     subtraction.
   - `rsa_mont_power_avx2` and `rsa_mont_power_avx2_webpki`:
-    `power_of_two_mod` reads and writes inside its arrays and divides by
-    no zero, at 32 words and at the build's largest count, with the
-    exponents `rsa_vp1_cpu` passes the AVX2 kernel, for any modulus words
-    whose top bit is set and whose bottom bit is 1.
+    `base_times_power_of_two_mod` reads and writes inside its arrays,
+    divides by no zero and shifts by no amount outside a word, at 32 words
+    and at the build's largest count, with the exponents `rsa_vp1_cpu`
+    passes, for any base bytes, any m0inv and any modulus words whose top
+    bit is set and whose bottom bit is 1: the base's one subtraction, the
+    steps of the division and `divide_by_power_of_two`.
 - **Bound:** 2 and 3 groups for the `rsa_avx2_sums` lines, every word
   count for the `rsa_avx2_number` lines, and 32, 48, 49 and 64 words for
   the `rsa_avx2_chain` lines.
 - **Not proved:** `rsa_avx2_public` itself. No line calls it: at 32 words
-  its eighteen products returned no verdict in 1,200 s, all of it
-  symbolic execution, because each product cost cbmc more than the one
-  before. It makes the calls a chain line makes, with fifteen more
-  squares and a second `multiply_by_base` on the same arrays. The
+  its eighteen products, before decision 233 took one away, returned no
+  verdict in 1,200 s, all of it symbolic execution, because each product
+  cost cbmc more than the one before. It makes the calls a chain line
+  makes, with fifteen more squares on the same arrays. The
   products' memory at the group counts between the ones the chain lines
   run, 20 to 27 and 31 to 37, rests on an argument the harness states:
   the product runs the same statements at every count, and each index of
@@ -7939,8 +7943,9 @@ above RSA-3072, four to a 256-bit register, on AVX2's VPMULUDQ (decision
 122). `rsa_mont.c`'s `rsa_vp1_cpu` calls it on x86-64 for a session
 whose `ch_cfg.cpu` holds `CH_CPU_AVX2` and not `CH_CPU_AVX512_IFMA`, and
 an odd modulus whose bit length is a multiple of 64, at least 2,048,
-with 2^(2Dn) mod m from `power_of_two_mod`, for n digits of D bits. For
-every input it must write the bytes `rsa_vp1` writes.
+with the signature times 2^(Dn) mod m from `base_times_power_of_two_mod`,
+for n digits of D bits (decision 233). For every input it must write the
+bytes `rsa_vp1` writes.
 
 CBMC and Lean prove parts of the arithmetic over the lane model below,
 and nothing proves the instructions equal to that model. CBMC cannot
@@ -7951,8 +7956,8 @@ They prove that each step of `rsa_avx2_public`, made once, reads and
 writes inside its arrays at the smallest and the largest word count of
 each copy of the product, that the conversions between words and digits
 do at every word count, that no sum in a product wraps at 2 and 3
-groups, and that `power_of_two_mod` reads and writes inside its arrays
-at the exponents `rsa_vp1_cpu` passes the kernel. No line calls
+groups, and that `base_times_power_of_two_mod` reads and writes inside
+its arrays at the exponents `rsa_vp1_cpu` passes. No line calls
 `rsa_avx2_public` itself, and they prove no value.
 
 [`spec/lean/Spec/RsaAvx2.lean`](../spec/lean/Spec/RsaAvx2.lean) models
@@ -7970,18 +7975,26 @@ the model states nothing about that order. Its theorems state that:
 - `RSA_AVX2_DIGIT_COUNT` leaves 4m < 2^(Dn) for every m below 2^(64k);
 - a product of operands below 2m is below 2m, and is a b / 2^(Dn) mod m,
   for a k0 with k0 × m + 1 a multiple of 2^D;
-- the chain `rsa_avx2_public` runs, a product, sixteen squares, a product
-  and one subtraction of m, writes base^65537 mod m for every base below
-  2^(64k), with 2^(2Dn) mod m as its power of two.
+- `rsa_mont.c`'s `base_times_power_of_two_mod`, the base less m once,
+  ceil(Dn / 64) steps of the division and one division by
+  2^(64 ceil(Dn / 64) - Dn) modulo m, writes base 2^(Dn) mod m, below m,
+  for the C's -m^-1 mod 2^64. The model takes each step's value,
+  rem 2^64 mod m, which `Spec.RsaDivision`'s `timesWord_eq` proves of the
+  C's step;
+- the chain `rsa_avx2_public` runs, sixteen squares, a product and one
+  subtraction of m, writes base^65537 mod m for every base below 2^(64k),
+  from any power below 2m that is base 2^(Dn) modulo m, and so from the
+  one above (`vp1Avx2_eq`).
 
 `bin/diff_rsa_avx2`, in `make diff`, holds the C over the lane model to
-the spec's operations in 1,545 comparisons: every digit of
+the spec's operations in 1,840 comparisons: every digit of
 multiplications and squares at every word count from 32 to 64,
-`rsa_vp1_cpu`'s bytes under `CH_CPU_AVX2` where the group count or the
-digit width changes, and each product of the chain at 32, 48 and 64
-words. Its public rows hold the C's `power_of_two_mod` to the spec's
-model of it, `Spec.RsaIfma.powerOfTwoMod`. It checks on each row that the
-C's k0 meets the theorems' hypothesis, which no proof covers.
+`rsa_vp1_cpu`'s bytes under `CH_CPU_AVX2` and the words of
+`base_times_power_of_two_mod` where the group count or the digit width
+changes, and each product of the chain at 32, 48 and 64 words. Its public
+rows hold the C's `base_times_power_of_two_mod` to the spec's model of
+it, `baseTimesPowerOfTwoMod`. It checks on each row that the C's k0 meets
+the theorems' hypothesis, which no proof covers.
 
 What the kernel computes rests on these too:
 
@@ -7998,11 +8011,12 @@ What the kernel computes rests on these too:
   under the moduli the IFMA kernel's tests draw, it requires `rsa_vp1`'s
   bytes from `rsa_vp1_cpu` under `CH_CPU_AVX2` and under `CH_CPU_PROBED`
   alone for the signatures 0, 1, m - 1 and random ones, and the known
-  answer for the first three, and counts the calls into
+  answer for the first three, and for m and 2^(64k) - 1, which the
+  verifiers refuse and the call takes. It counts the calls into
   `rsa_avx2_public`: one under the bit and none without it. It requires
   `rsa_mont64_public`'s bytes from `rsa_avx2_public` for bases at or
-  above m, under a power of two it computes by doublings that share
-  nothing with `rsa_mont.c`'s division. For each product along a public
+  above m, under a power, base 2^(Dn) mod m, that it computes by
+  doublings that share nothing with `rsa_mont.c`'s division. For each product along a public
   operation, and for products of operands up to 2m, it requires every
   digit below 2^D, zeros below digit 0 and from digit n up, and a number
   below 2m equal, less m, to `rsa_mont64.c`'s. It requires each square
@@ -8036,7 +8050,7 @@ What the kernel computes rests on these too:
 
 Which calls run it rests on `bin/x86_kernels_test`, which counts the
 calls each value sends to it on a stand-in, `test/rsa_avx2_count.c`,
-that runs `rsa_mont64.c` from the power of two the call passed
+that runs `rsa_mont64.c` from the power the call passed
 ([The x86-64 kernels](#the-x86-64-kernels)).
 
 The build rests on these:
@@ -8055,9 +8069,9 @@ The build rests on these:
   library source that defines `CH_RSA_AVX2_MODEL`, a host object's defines
   from make or `build.zig` that name it, and a device object that lists
   the file.
-- `make lint-wide-multiply` holds `rsa_avx2.c` at 49 conditional
+- `make lint-wide-multiply` holds `rsa_avx2.c` at 52 conditional
   branches under clang for x86-64 at the 384-byte bound, and, as
-  `rsa_avx2.c@512`, at 86 at the 512-byte bound, whose copies for 27-bit
+  `rsa_avx2.c@512`, at 92 at the 512-byte bound, whose copies for 27-bit
   digits the first build does not compile. Each branch tests a count or
   an index. It holds both at 0 for arm64, where the file compiles to
   nothing, and at no division and no 128-bit runtime call.
@@ -8065,18 +8079,24 @@ The build rests on these:
   2,080 bytes under gcc 13 at `-O2` at the 384-byte bound and 2,752 at
   the 512-byte bound, where each product's is at most 1,600 and 1,920.
 
-Twenty-one violations break the kernel, its dispatch or its build, and
-each is caught. `bin/rsa_avx2_model_test` catches ten on every machine:
+Twenty-four violations break the kernel, its dispatch or its build, and
+each is caught. `bin/rsa_avx2_model_test` catches thirteen on every machine:
 `inv41-rsa-avx2-triangle-drops-carry`, whose triangle drops the carry
 out of a lane; `inv41-rsa-avx2-row-past-n-takes-y`, which gives a row
 past the digit count a y; `inv41-rsa-avx2-square-doubles-own-digit`,
 whose square doubles a row's own digit;
 `inv41-rsa-avx2-last-group-moves-down`, whose last group moves the
-window down; `inv41-rsa-avx2-last-triangle-lanes-dropped`, which drops
+window down; `inv41-rsa-avx2-window-top-not-zeroed`, which leaves the
+window's top register as the stack held it;
+`inv41-rsa-avx2-last-triangle-lanes-dropped`, which drops
 the last triangle's lanes; `inv41-rsa-avx2-digits-to-words-drops-spill`,
 whose conversion to words drops the bits of a digit that run into the
-next word; the two in `rsa_mont.c`, `inv41-rsa-mont-avx2-power-one-step-short`
-and `inv41-rsa-mont-avx2-takes-even-modulus`; and the two whose
+next word; the four in `rsa_mont.c`, `inv41-rsa-mont-avx2-power-one-step-short`,
+`inv41-rsa-mont-avx2-takes-even-modulus`,
+`inv41-rsa-mont-avx2-divide-drops-top-word`, whose division by a power of
+two drops the sum's top word, and `inv41-rsa-mont-avx2-base-not-below-m`,
+whose power leaves out the subtraction of m, which only the signatures m
+and 2^(64k) - 1 show; and the two whose
 `use_avx2` answers 1 or 0 for every value,
 `inv41-rsa-avx2-runs-without-cpu-bit` and `inv41-rsa-avx2-ignores-cpu-bit`,
 through its count of the calls into the kernel. `test/widemul-builds.sh`

@@ -8225,8 +8225,9 @@ else
 	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# RSA's public operation on AVX-512 IFMA and on AVX2, which have a body
 	# on x86-64 alone, with rsa_mont.c, whose x86-64 host arm holds use_ifma,
-	# use_avx2, power_of_two_mod and the dispatch in rsa_vp1_cpu that calls
-	# them, and test/rsa_ifma_count.c and test/rsa_avx2_count.c, the counts
+	# use_avx2, power_of_two_mod, base_times_power_of_two_mod and the
+	# dispatch in rsa_vp1_cpu that calls them, and test/rsa_ifma_count.c and
+	# test/rsa_avx2_count.c, the counts
 	# the test binaries link in their place, read for an x86-64 target
 	# whatever the host, as the kernels' passes above are. The signer's
 	# exponentiations on AVX-512 IFMA join them, with rsa_sign64.c, whose
@@ -10119,8 +10120,8 @@ WIDEMUL_SPECS := \
 #   one branch reads data: mont_r2's subtraction of the modulus, a mask in
 #   the C, is a jump on the trial subtraction's borrow for the last word of
 #   an odd count. The modulus is public, and so is R^2 modulo it.
-# rsa_ifma.c, 0 and 41; rsa_ifma.c@512, 0 and 45; rsa_avx2.c, 0 and 49;
-#   rsa_avx2.c@512, 0 and 86: the public operation, whose every input is
+# rsa_ifma.c, 0 and 41; rsa_ifma.c@512, 0 and 45; rsa_avx2.c, 0 and 52;
+#   rsa_avx2.c@512, 0 and 92: the public operation, whose every input is
 #   public. They test word, digit, group and register counts, a digit's or
 #   a word's index, and the digit width that picks a copy.
 # rsa_ifma_sign.c, 0 and 62; rsa_ifma_sign.c@512, 0 and 65: the CH_ASSERTs
@@ -10633,7 +10634,7 @@ BRANCH_CEILING := \
   arm64/src/rsa_sign64.c@512:46 x86-64/src/rsa_sign64.c@512:42 \
   arm64/src/rsa_sign64_wipe.c:0 x86-64/src/rsa_sign64_wipe.c:0 \
   arm64/src/rsa_ifma.c:0 x86-64/src/rsa_ifma.c:41 arm64/src/rsa_ifma.c@512:0 x86-64/src/rsa_ifma.c@512:45 \
-  arm64/src/rsa_avx2.c:0 x86-64/src/rsa_avx2.c:49 arm64/src/rsa_avx2.c@512:0 x86-64/src/rsa_avx2.c@512:86 \
+  arm64/src/rsa_avx2.c:0 x86-64/src/rsa_avx2.c:52 arm64/src/rsa_avx2.c@512:0 x86-64/src/rsa_avx2.c@512:92 \
   arm64/src/mlkem_vector.c:9 x86-64/src/mlkem_vector.c:9 \
   arm64/src/mldsa_vector.c:13 x86-64/src/mldsa_vector.c:13 \
   arm64/src/keccak_avx2.c:0 x86-64/src/keccak_avx2.c:1 arm64/src/mlkem_avx2.c:0 x86-64/src/mlkem_avx2.c:29 \

@@ -231,15 +231,24 @@ static inline __attribute__((always_inline)) void triangle(uint64_t *lanes, uint
     y[3] = y3;
 }
 
+// Register j of the window as group g reads it: zero in group 0, which
+// every caller names with a constant first, and the window's lanes 4j in
+// every other group. So no group reads a register no group wrote, and the
+// window needs only its top register zeroed before group 0.
+static inline __attribute__((always_inline)) rsa_avx2_lanes window_register(const uint64_t *window,
+                                                                            size_t j, int first) {
+    return first ? lanes_zero() : lanes_load(window + 4 * j);
+}
+
 // The registers g + 2 to g + groups of a multiplication: group g's rows of
 // m and of b. Register g + j is window lanes 4j on entry and 4(j - shift)
 // on return.
 static inline __attribute__((always_inline)) void
 multiply_registers(uint64_t *window, const uint64_t *a, const uint64_t *m,
                    const rsa_avx2_lanes y[4], const rsa_avx2_lanes digit[4], size_t groups,
-                   size_t shift) {
+                   size_t shift, int first) {
     for (size_t j = 2; j <= groups; j++) {
-        rsa_avx2_lanes acc = lanes_load(window + 4 * j);
+        rsa_avx2_lanes acc = window_register(window, j, first);
         acc = add_rows(acc, m, y, j);
         acc = add_rows(acc, a, digit, j);
         lanes_store(window + 4 * (j - shift), acc);
@@ -253,19 +262,19 @@ multiply_registers(uint64_t *window, const uint64_t *a, const uint64_t *m,
 static inline __attribute__((always_inline)) void
 square_registers(uint64_t *window, const uint64_t *a, const uint64_t *m, const rsa_avx2_lanes y[4],
                  const rsa_avx2_lanes digit[4], const rsa_avx2_lanes twice[4], size_t g,
-                 size_t groups, size_t shift) {
+                 size_t groups, size_t shift, int first) {
     size_t j = 2;
     for (; j < g && j <= groups; j++) {
-        rsa_avx2_lanes acc = lanes_load(window + 4 * j);
+        rsa_avx2_lanes acc = window_register(window, j, first);
         lanes_store(window + 4 * (j - shift), add_rows(acc, m, y, j));
     }
     for (; j < g + 2 && j <= groups; j++) {
-        rsa_avx2_lanes acc = lanes_load(window + 4 * j);
+        rsa_avx2_lanes acc = window_register(window, j, first);
         acc = add_rows(acc, m, y, j);
         lanes_store(window + 4 * (j - shift), add_square_rows(acc, a, digit, twice, g, j));
     }
     for (; j <= groups; j++) {
-        rsa_avx2_lanes acc = lanes_load(window + 4 * j);
+        rsa_avx2_lanes acc = window_register(window, j, first);
         acc = add_rows(acc, m, y, j);
         lanes_store(window + 4 * (j - shift), add_rows(acc, a, twice, j));
     }
@@ -280,7 +289,7 @@ square_registers(uint64_t *window, const uint64_t *a, const uint64_t *m, const r
 // place.
 static inline __attribute__((always_inline)) void
 product_group(uint64_t *window, const uint64_t *a, const uint64_t *b, const rsa_avx2_modulus *mod,
-              uint64_t y[4], uint64_t *carry, size_t g, unsigned bits, int square) {
+              uint64_t y[4], uint64_t *carry, size_t g, unsigned bits, int square, int first) {
     size_t groups = mod->groups;
     size_t next = g + 1;
     size_t shift = next < groups ? 1 : 0;
@@ -293,7 +302,7 @@ product_group(uint64_t *window, const uint64_t *a, const uint64_t *b, const rsa_
     if (square) {
         broadcast_twice_four(twice, b + PAD + 4 * g, mask);
     }
-    rsa_avx2_lanes acc = lanes_load(window + 4);
+    rsa_avx2_lanes acc = window_register(window, 1, first);
     acc = add_rows(acc, mod->digits, y_lanes, 1);
     if (square) {
         // A square's next group adds nothing at its own register.
@@ -322,9 +331,9 @@ product_group(uint64_t *window, const uint64_t *a, const uint64_t *b, const rsa_
         lanes_store(window + 4, acc);
     }
     if (square) {
-        square_registers(window, a, mod->digits, y_lanes, digit, twice, g, groups, shift);
+        square_registers(window, a, mod->digits, y_lanes, digit, twice, g, groups, shift, first);
     } else {
-        multiply_registers(window, a, mod->digits, y_lanes, digit, groups, shift);
+        multiply_registers(window, a, mod->digits, y_lanes, digit, groups, shift, first);
     }
 }
 
@@ -342,7 +351,9 @@ static inline __attribute__((always_inline)) void product_core(uint64_t *out, co
     size_t n = mod->digit_count;
     _Alignas(32) uint64_t window[WINDOW_LANES];
     CH_ASSERT(groups >= 2 && groups <= GROUPS_MAX && n > 4 * (groups - 1) && n <= 4 * groups);
-    memset(window, 0, 4 * (groups + 1) * sizeof(uint64_t));
+    // Group 0 reads no register of the window, and no group but the last
+    // writes the top one, which every group reads.
+    lanes_store(window + 4 * groups, lanes_zero());
     uint64_t y[4];
     uint64_t carry = 0;
     // Register 0: group 0's rows of b there, then its triangle, on a copy
@@ -361,8 +372,9 @@ static inline __attribute__((always_inline)) void product_core(uint64_t *out, co
     _Alignas(32) uint64_t lanes[4];
     lanes_store(lanes, first);
     triangle(lanes, &carry, y, mod, 0, bits);
-    for (size_t g = 0; g < groups; g++) {
-        product_group(window, a, b, mod, y, &carry, g, bits, square);
+    product_group(window, a, b, mod, y, &carry, 0, bits, square, 1);
+    for (size_t g = 1; g < groups; g++) {
+        product_group(window, a, b, mod, y, &carry, g, bits, square, 0);
     }
     // The window holds registers groups - 1 to 2 groups - 1, so the sum's
     // lane 4 groups, which takes the last triangle's carry, is its lane 4,
@@ -456,20 +468,19 @@ static __attribute__((noinline)) void write_result(uint8_t *out, size_t len, con
     rsa_mont64_to_bytes(out, len, words);
 }
 
+// Sixteen squares from power_words, base R' mod m and below m, and a last
+// product by the base, outside the Montgomery form: base^(2^16) R' base /
+// R'. Each square's operand is below 2m. base is below 2^(64k), which is
+// below R' / 4, so the last product, base * power / R', is below 2m / 4,
+// and it too is below 2m. base is read for it before out is written.
 void rsa_avx2_public(uint8_t *out, const uint8_t *base, size_t len, const rsa_mont64_modulus *mod,
-                     const uint64_t *digit_r2) {
+                     const uint64_t *power_words) {
     size_t k = mod->words;
     CH_ASSERT(k >= RSA_AVX2_WORDS_MIN && k <= RSA_MONT64_WORDS_MAX && len <= 8 * k);
     rsa_avx2_modulus modulus;
     modulus_from_words(&modulus, mod);
     _Alignas(32) uint64_t power[NUMBER_LANES];
-    words_to_digits(power, digit_r2, k, modulus.digit_count, modulus.bits);
-
-    // base is below 2^(64k), which is below R' / 4, and digit_r2 below m.
-    // Each square's operand is below 2m. The last product's base * power
-    // / R' is below 2m / 4, so it too is below 2m. base is read again for
-    // the last product, before out is written.
-    multiply_by_base(power, base, len, k, &modulus);
+    words_to_digits(power, power_words, k, modulus.digit_count, modulus.bits);
     for (int i = 0; i < 16; i++) {
         square(power, power, &modulus);
     }

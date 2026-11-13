@@ -8,6 +8,6 @@ reason: rsa_vp1_cpu hands rsa_ifma_public 2^(52n) mod m in place of
   model and compares rsa_vp1_cpu under the bit with rsa_vp1.
 
 --- old
-        power_of_two_mod(digit_r2, mod.m, k, 104 * rsa_ifma_digit_count(k));
+        power_of_two_mod(power, mod.m, k, 104 * rsa_ifma_digit_count(k));
 --- new
-        power_of_two_mod(digit_r2, mod.m, k, 52 * rsa_ifma_digit_count(k));
+        power_of_two_mod(power, mod.m, k, 52 * rsa_ifma_digit_count(k));

@@ -5,13 +5,13 @@
 //   - modulus_from_words reads the k words of the modulus and writes the
 //     record, its digit width, digit count and group count included;
 //   - words_to_digits reads the k words of a number, as rsa_avx2_public
-//     reads digit_r2 and multiply_by_base reads the base's words, and
+//     reads the power words and multiply_by_base reads the base's words, and
 //     writes a number's lanes;
 //   - digits_to_words reads a number's n digits and writes k words and the
 //     word above them, as write_result does.
 // Each array of words is a heap object of exactly the words the call reads
 // or writes, so a read or a write one word past the count fails at every
-// count, as docs/proofs.md says of a read at p[n]: digit_r2's k words, and
+// count, as docs/proofs.md says of a read at p[n]: the power's k words, and
 // write_result's k + 1. The modulus's words sit in rsa_mont64_modulus,
 // whose array holds the build's largest count, so there a read past the
 // count fails at that count, which the range holds.
@@ -38,11 +38,11 @@ int main(void) {
     havoc_modulus(&mod, words);
     modulus_from_words(&modulus, &mod);
 
-    uint64_t *digit_r2 = malloc(words * sizeof(uint64_t));
-    __CPROVER_assume(digit_r2 != NULL);
-    havoc_words(digit_r2, words);
+    uint64_t *power_words = malloc(words * sizeof(uint64_t));
+    __CPROVER_assume(power_words != NULL);
+    havoc_words(power_words, words);
     _Alignas(32) uint64_t number[NUMBER_LANES];
-    words_to_digits(number, digit_r2, words, modulus.digit_count, modulus.bits);
+    words_to_digits(number, power_words, words, modulus.digit_count, modulus.bits);
 
     uint64_t *out = malloc((words + 1) * sizeof(uint64_t));
     __CPROVER_assume(out != NULL);
