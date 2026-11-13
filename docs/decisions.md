@@ -19278,9 +19278,12 @@ does nothing more.
       tree failed on each runner under each compiler.
     - **What is still owed.** Under gcc 13 one runner of two found the key once more, at the same
       byte below a seal and below an open. Both entries follow `chacha20_block`, which keys
-      Poly1305 for `aead.c` in every build, and decision 229 wipes the stack below it. CI builds
-      the residue test with gcc alone, and a Zig project runs clang's code. No CI job runs the
-      AVX-512 residue tests under clang.
+      Poly1305 for `aead.c` in every build, and decision 229 wipes the stack below it.
+    - **Under clang.** CI built the residue tests with gcc alone, and a Zig project runs clang's
+      code. `make avx512-residue-clang-check` builds the three AVX-512 residue tests with the
+      pinned clang into `bin/clang/`. The x86-64-kernels job runs it on its runner's CPU, and the
+      nightly's rsa-ifma-sde job under SDE, with each pass line required. Camilo approved the
+      lane on 2026-11-13.
 
 229. **chacha20_block and a device object's chacha20_xor wipe the stack below their bodies.** On a
     runner with AVX-512 IFMA under gcc 13, `bin/aead_avx512_equiv_test` found the key at the same

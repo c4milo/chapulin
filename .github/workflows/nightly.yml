@@ -745,6 +745,15 @@ jobs:
           download-id: ${{ env.SDE_DOWNLOAD_ID }}
           sha256: ${{ env.SDE_SHA256 }}
       - run: make -j"$(nproc)" rsa-ifma-sde-check SDE64="$HOME/sde/sde64"
+      - name: Install clang (apt.llvm.org, pinned major)
+        uses: ./.github/actions/install-llvm
+        with:
+          major: ${{ env.LLVM_MAJOR }}
+          sha256: ${{ env.LLVM_KEY_SHA256 }}
+      - name: Run the AVX-512 residue tests under the pinned clang and SDE
+        # The same binaries as above, built with clang, which a Zig project
+        # runs (docs/decisions.md 228).
+        run: make avx512-residue-clang-check SDE64="$HOME/sde/sde64"
 
   # A red nightly must be triaged, not scrolled past: file one issue
   # per broken night unless an open nightly-failure issue already

@@ -199,6 +199,39 @@ RSA_IFMA_SDE_EXPECT = sde_expect() { \
 	  printf '%s\n' "$$out" | grep -q "^$$pass" && return 0; \
 	  echo "rsa-ifma-sde-check: no line of the output starts '$$pass', so the program ran no check"; \
 	  return 1; }
+# The AVX-512 residue tests under the pinned clang (docs/decisions.md 228).
+# Every other run of them in CI builds with gcc, and a Zig project runs the
+# code clang 21 and 23 emit: clang 23 left the ChaCha20 key in a frame of
+# chacha20_avx512_xor that gcc 15 did not, and only a lab run on a runner
+# with AVX-512 IFMA found it. Each binary is built into bin/clang/ from its
+# own rule's sources and flags, as san-check builds bin/san/. Where SDE64
+# names an sde64 the binaries run under it, AVX-512 IFMA and what
+# CH_CPU_AVX512 names required, and each must print its pass line, as
+# rsa-ifma-sde-check requires; the nightly's rsa-ifma-sde job runs it so.
+# Without SDE they run on this CPU, and a CPU without AVX-512 IFMA runs
+# their models alone, as the x86-64-kernels job may draw.
+AVX512_RESIDUE_CLANG_RUNS := aead_avx512_equiv_test gcm_avx512_equiv_test rsa_ifma_sign_residue_test
+.PHONY: avx512-residue-clang-check
+avx512-residue-clang-check:
+	@[ -n "$(CLANG_RV)" ] || \
+	  { echo "avx512-residue-clang-check: the pinned clang-$(LLVM_MAJOR) is missing"; exit 1; }
+	@mkdir -p bin/clang
+	$(CLANG_RV) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Itest \
+	  -o bin/clang/aead_avx512_equiv_test test/aead_avx512_equiv_test.c $(AEAD_AVX512_EQUIV_TEST_SRCS)
+	$(CLANG_RV) $(HOST_CFLAGS) $(HOST_SUITE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest \
+	  -o bin/clang/gcm_avx512_equiv_test test/gcm_avx512_equiv_test.c $(GCM_AVX512_EQUIV_SRCS)
+	$(CLANG_RV) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest \
+	  -o bin/clang/rsa_ifma_sign_residue_test test/rsa_ifma_sign_residue_test.c $(RSA_IFMA_SIGN_RESIDUE_SRCS)
+	@set -e; $(RSA_IFMA_SDE_EXPECT); \
+	if command -v "$(SDE64)" > /dev/null; then \
+	  $(foreach b,$(AVX512_RESIDUE_CLANG_RUNS), \
+	    echo "== $(b) under $(CLANG_RV) (sde64 $(SDE_CPU), AVX-512 IFMA required)"; \
+	    sde_expect '$(RSA_IFMA_SDE_PASS_$(b))' \
+	      env CH_REQUIRE_AVX512_IFMA=1 CH_REQUIRE_AVX512=1 "$(SDE64)" $(SDE_CPU) -- ./bin/clang/$(b);) \
+	else \
+	  $(foreach b,$(AVX512_RESIDUE_CLANG_RUNS), \
+	    echo "== $(b) under $(CLANG_RV) (this CPU)"; ./bin/clang/$(b);) \
+	fi
 .PHONY: rsa-ifma-sde-check
 rsa-ifma-sde-check: $(addprefix bin/,$(RSA_IFMA_SDE_RUNS) $(RSA_IFMA_SDE_VECTOR_HOST)) bin/webpki_loop_aes
 	@[ -n "$(X86_KERNEL_BINS)" ] || \

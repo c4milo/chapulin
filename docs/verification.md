@@ -5782,7 +5782,10 @@ searches no stack, for the reason the IFMA Poly1305's model run gives.
 each of its `ch_cfg.cpu` values, and `test/chacha-builds.sh` requires the
 seal to call `avx512_wipe_registers` and the open `chacha20_avx512_xor`,
 which calls it, and `row_pass` and `pass_with_rows`, which read the input
-words out of line.
+words out of line. `make avx512-residue-clang-check` builds the binary,
+`bin/gcm_avx512_equiv_test` and `bin/rsa_ifma_sign_residue_test` with the
+pinned clang as well, and the nightly runs the three under SDE
+(decision 228).
 
 ### The host object's AES key expansions
 
