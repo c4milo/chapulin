@@ -10629,7 +10629,7 @@ BRANCH_CEILING := \
   arm64/src/rsa_mont64_adx.c:0 x86-64/src/rsa_mont64_adx.c:32 \
   arm64/src/chacha20_vector.c:45 x86-64/src/chacha20_vector.c:26 \
   arm64/src/chacha20_avx2.c:0 x86-64/src/chacha20_avx2.c:31 \
-  arm64/src/chacha20_avx512.c:0 x86-64/src/chacha20_avx512.c:77 \
+  arm64/src/chacha20_avx512.c:0 x86-64/src/chacha20_avx512.c:75 \
   arm64/src/poly1305_vector.c:0 x86-64/src/poly1305_vector.c:0 \
   arm64/src/poly1305_avx2.c:0 x86-64/src/poly1305_avx2.c:0 \
   arm64/src/poly1305_ifma.c:0 x86-64/src/poly1305_ifma.c:0 \
