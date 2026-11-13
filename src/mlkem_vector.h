@@ -45,6 +45,13 @@ void mlk_vector_basemul(mlk_poly *r, const mlk_poly *a, const mlk_poly *b);
 // be a or b.
 void mlk_vector_add(mlk_poly *r, const mlk_poly *a, const mlk_poly *b);
 
+// mlk_poly_reduce of p: each coefficient Barrett-reduced, to the same int16 value.
+void mlk_vector_reduce(mlk_poly *p);
+
+// mlk_poly_frommsg of msg into p: Decompress_1 of each bit, (q + 1) / 2 for
+// a set bit and 0 for a clear one.
+void mlk_vector_frommsg(mlk_poly *p, const uint8_t msg[32]);
+
 // The noise mlk_sample_cbd writes into p for the MLK_CBD_BYTES bytes of its
 // PRF stream at in: the centered binomial step of FIPS 203's
 // SamplePolyCBD_2, which mlkem_poly.c's loop runs after the stream.

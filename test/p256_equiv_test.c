@@ -471,6 +471,7 @@ int main(void) {
     }
 #endif
     run_field();
+    run_word_products();
     run_field_vectors();
     run_scalar();
     run_points();

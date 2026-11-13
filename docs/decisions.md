@@ -19364,6 +19364,114 @@ does nothing more.
       blocks at once, which halves the vector instructions a round. Decision 128 measured both
       and refused them. Inside its rules the kernel stays 0.36 to 0.55 cycles a round behind.
 
+232. **The P-256 binary GCD runs fewer instructions a round, and ML-KEM decodes, reduces,
+    expands its message and compresses on vectors.** On the Xeon Platinum 8573C under gcc 13.3
+    a P-256 key generation took 1.01 of OpenSSL 3.6.5's time and an ML-KEM-768 encapsulation
+    1.00, where clang 23's took 0.96 of it for both (bench run 43385076493). Camilo asked for
+    the two gcc cells below 1.00.
+
+    - **The inverse runs at the core's width.** In wave 5's lab on an 8573C the inverse took
+      6,085 TSC cycles under gcc and 5,130 under clang. Under qemu-x86_64 one inverse runs 36,650
+      instructions of gcc 13.3's code and 31,219 of clang 18's: six a cycle for both, the core's
+      rename width. So each instruction the inverse sheds takes a sixth of a cycle off it. The
+      31 steps of a round were 27 instructions each under gcc, 39% of its count, and the
+      combinations held most of the rest: gcc added each word of a product to a zero register,
+      kept each 128-bit product that lived across the next multiply in a stack slot, and saved
+      carries to the stack across its multiplies.
+    - **What changed in the inverse.** Under gcc the step loop carries `#pragma GCC unroll 31`:
+      gcc then keeps no counter, drops a store of each difference, and runs 21 instructions a
+      step. clang's written-out steps took 1.07 times its loop's time, so clang keeps the loop.
+      A step moves xb and pair1 by adding the masked difference, where an exclusive or swapped
+      them. The approximations count the zeros above the top bit of a | b by six masked steps on
+      that one word, and shift each pair once by the count, where six masked shifts of both
+      pairs ran. A shift by a register takes the same time for every amount on the cores a host
+      object runs on (decision 115). `p256_wide_mul_word` in `p256_wide_word.h` computes a word
+      times four words with nothing added, and under gcc for x86-64 each half of each product is
+      the output of an empty statement as soon as its multiply writes it. `combine_exact` holds
+      its shifted words the same way, as `combine_modular` held its own, and both combinations
+      carry always_inline. One inverse now runs 26,467 instructions of gcc's code and 28,074 of
+      clang 18's, 0.72 and 0.90 of the counts before.
+    - **What changed in ML-KEM.** In every session of a host object, `mlk_vector_reduce` runs
+      the Barrett reduction on `lanes_barrett_reduce`, whose multiplies are 16x16 as the NTT's
+      are, and `mlk_vector_frommsg` expands the message by a compare of each lane with its own
+      bit. In the AVX2 copy, `mlk_poly_frombytes_avx2` reads ByteDecode12's 16 fields of 24 bytes a step
+      with `mlk_candidates`, the shuffle the rejection step of decision 225 reads its candidates
+      with, and `mlk_field_at_or_above_q_avx2` checks an ek's fields against q 16 a step. Under
+      the multiply answer the copy compresses u and v at rank 3 by `mlk_poly_compress_10_avx2`
+      and `mlk_poly_compress_4_avx2`: `mlk_compress`'s own formula, ((x << d) + 1664) times
+      1290168 and its high 32 bits, on VPMULUDQ's 32x32 products, eight a step, with the bytes
+      written as the scalar functions write them. The answer states every widening multiply a
+      session runs, vector ones among them (`ct.h`), and without it the copy calls the
+      decomposed compressions as before. The values are the ciphertext's.
+    - **Constant time.** The decode of a dk's s-hat, the reduction, the expansion and the
+      compressions read secret values: the compressions read u and v, whose low bits depend on
+      the secret noise. Each runs the same shuffles, masks, compares and multiplies on every
+      lane, with no branch and no address that a value chooses. The expansion's compares write
+      each lane's mask in a vector register, where `mlk_poly_frommsg` reads each bit back
+      through a volatile object so that no compiler builds a jump on it (decision 125). The
+      compressions' 32x32 products run only under the multiply answer. `make ct-taint` passed
+      under gcc 13.3, gcc 15.2 and clang 23 for x86-64, under every `ch_cfg.cpu` value through
+      0xf, which holds `CH_CPU_AVX2` and the multiply bit, and under gcc and clang for arm64.
+      The approximations' count is a shift amount from secret words, which decision 115 admits
+      in a host object.
+    - **Numbers.** Lab run 43441281764 on one 8573C (load 0.7), each the median of seven passes,
+      in TSC cycles for the inverse and in ns on the CPU clock for the rows, with OpenSSL in the
+      same job. "After" is a tree whose combine_modular ran its last two rows on a row of its
+      own, 300 instructions fewer than this one, and whose ML-KEM had no vector expansion:
+
+      | | gcc before | gcc after | clang before | OpenSSL |
+      | --- | --- | --- | --- | --- |
+      | inverse, cycles | 5,156 | 4,428 | 4,422 | — |
+      | P-256 key generation | 10,794 to 10,970 | 10,396 | 10,218 | 10,561 |
+      | ML-KEM-768 encapsulation | 15,894 | 15,189 | 13,772 | 15,597 |
+
+      Lab run 43462210995 on another 8573C (load 1.0) timed this tree before and after the
+      compressions on AVX2, in ns, with OpenSSL in the same job:
+
+      | | gcc base | gcc, without the compressions | gcc, with them | clang base | clang, with them | OpenSSL |
+      | --- | --- | --- | --- | --- | --- | --- |
+      | P-256 key generation | 10,745 | 10,427 | 10,463 | 10,252 | 10,281 | 10,505 |
+      | ECDSA P-256 signature | 17,423 | 16,710 | 16,692 | 16,344 | 16,454 | 19,770 |
+      | ML-KEM-768 encapsulation | 15,921 | 14,949 | 13,261 | 13,774 | 12,508 | 15,530 |
+      | ML-KEM-768 decapsulation | 18,396 | 17,355 | 15,901 | 15,392 | 14,295 | 25,058 |
+
+      The inverse took 4,473 TSC cycles of gcc's code there, where it took 5,116, and 4,521 of
+      clang's, where it took 4,426.
+
+      The key check took 338 ns of gcc's encapsulation, and 34 ns on AVX2. On the M1 Pro under
+      `0xe7`, Apple clang 21's object retires 100,563 instructions for a key generation where it
+      retired 102,312, 386,964 for a shared secret where 390,969, 155,905 for a signature where
+      160,021 and 421,001 for a verification where 419,909; and 132,813, 151,856 and 164,897 for
+      ML-KEM's three rows where 133,921, 153,109 and 168,809.
+    - **What holds it.** The `p256_wide_inverse_steps` harness holds the new approximations and
+      step to its references that branch, over every input. It reaches 150 locations where its
+      floor was 153: `shift_left_masked` and its 4 are gone, and every location left is reached.
+      `p256_wide_inverse_round` runs a round whole over the stubs of the row and of
+      `p256_wide_mul_word`, which `proof/p256_wide_stubs.h` now holds, `p256_wide_row` proves on
+      the real multiply that `p256_wide_mul_word` wraps nothing, and `p256_wide_inverse` proves
+      the combinations with the check of unsigned wraps over the bounded row contract, which the
+      word product takes too. `spec/lean/Spec/P256WideInverse.lean` models a step and the
+      approximations by what they compute, so no statement changes. `bin/p256_equiv_test` holds
+      both inverses to the 32-bit files' Fermat inverses and searches the stack each call
+      leaves, in the three carry forms, under Apple clang 21 on the M1, under gcc 13.3 in the
+      qemu lane, and under gcc 13.3, gcc 15.2 and clang 23 on x86-64 runners. It also holds
+      `p256_wide_mul_word` to a reference on edge and random full words: the inverse's factors
+      are below 2^32, and their products carry into the top word about once in 2^33 calls.
+      `bin/mlkem_vector_equiv_test` runs every int16 value through both reductions and every
+      byte value at every position of a message through both expansions, on NEON and on SSE2.
+      `bin/mlkem_avx2_equiv_test` compares the AVX2 decode with `mlk_poly_frombytes` on
+      random blocks and on each byte value, and at each field of an ek sets q - 1, q, q + 1
+      and 4095 and requires both copies to take the first and refuse the rest. It holds both
+      compressions to the native copy's on every coefficient from -(q - 1) to q - 1 at every
+      lane position, and `inv48-mlkem-avx2-compress-factor-low` multiplies by the floor of
+      2^32 / q. `test/mlkem-builds.sh` requires each host copy of `mlkem.c` to call the seven
+      vector entries, and the AVX2 copy its two decoders and its two compressions. Eleven
+      violations are new, `p256-wide-inverse-approximation-top-bit` moved to the count's
+      shifts, and `inv16-widemul-mlkem-encrypt-constant` edits the new call of the
+      compression of u. lint-wide-multiply holds `mlkem_vector.c` at 11 branches on both
+      machines, the two new loops, and `mlkem_avx2.c` at 34 on x86-64: the key check's test
+      of an empty length and its loop, the decode's loop, and two loops in each compression.
+
 233. **The AVX2 verifier starts from the signature times R', and its products zero one register of
     the window.** On the EPYC 7763 under gcc 13, an RSA-2048 PKCS#1 v1.5 verification took 19.4 µs
     where OpenSSL 3.6.5 took 19.0, 1.02 times its time, under `ch_cfg.cpu 0xc3f` (bench run

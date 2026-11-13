@@ -1,0 +1,17 @@
+invariant: INV-48
+file: src/mlkem.c
+catches: test/mlkem-builds.sh
+reason: the AVX2 copy's Compress_10 is guarded on a macro no build defines,
+  so a session with CH_CPU_AVX2 and the multiply answer compresses u one
+  coefficient at a time. Nothing else objects: the native copy writes the
+  same bytes, and only the time is wrong. The script requires the copy for
+  x86-64 to call mlk_poly_compress_10_avx2.
+
+--- old
+#if defined(CH_MLKEM_AVX2_COPY) && MLK_HOLDS_768
+    if (widemul_native(widemul) && rank == MLKEM_RANK_768) {
+        mlk_poly_compress_10_avx2(out, p);
+--- new
+#if defined(CH_MLKEM_AVX2_COPY_PATH) && MLK_HOLDS_768
+    if (widemul_native(widemul) && rank == MLKEM_RANK_768) {
+        mlk_poly_compress_10_avx2(out, p);

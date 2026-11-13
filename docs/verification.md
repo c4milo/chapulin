@@ -1149,8 +1149,11 @@ The entries are grouped by area:
   - `p256_wide_row`: on the real 64x64->128 multiply, one row of a
     product, x times four words plus four words, wraps nothing for any
     operands, so the word it returns holds everything above the four.
-    The add with carry and the subtract with borrow each match a
-    128-bit reference, and each carry out is 0 or 1.
+    So does `p256_wide_mul_word`, x times four words with nothing added,
+    the inverse's products (decision 232), whose value `bin/p256_equiv_test`
+    holds to a reference on edge and random full words. The add with carry and the
+    subtract with borrow each match a 128-bit reference, and each carry
+    out is 0 or 1.
   - `p256_wide_row_sum`: `p256_wide_row` once more, on another form of
     those two steps. `p256_wide_word.h` holds three forms and picks one
     by the compiler: the overflow builtins under clang, a 128-bit sum
@@ -1213,11 +1216,13 @@ The entries are grouped by area:
     nothing: the exact one for any operands and factors, and the one
     modulo m for any modulus and operands when the factors' sizes add
     to at most 2^31, over a row contract whose word above the four is at
-    most the multiplier. That bound follows from the row's value, four
-    words plus the multiplier times four words, which is a product's value
-    and rests on the tests below.
+    most the multiplier, which `p256_wide_mul_word` takes too. That bound
+    follows from the row's value, four words plus the multiplier times
+    four words, which is a product's value and rests on the tests below.
   - `p256_wide_inverse_round`: one round whole, for any state and modulus,
-    over `proof/p256_wide_stubs.h`'s rows: every access and every shift.
+    over `proof/p256_wide_stubs.h`'s rows and word products: every access
+    and every shift, the approximations' shift by the count of zeros above
+    the top bit of a | b among them.
     `p256_wide_inverse` runs that round 17 times on one state and wipes it
     once, and `p256_wide_inverse_public` runs it at most 17 times and
     stops at a zero a. 17 rounds in one formula left cbmc's symbolic
@@ -5885,7 +5890,8 @@ intrinsic, so no harness compiles the file, and these hold it (INV-46):
   the PRF streams of 100 random seeds under each of the 256 nonces, and
   requires that the streams held every byte value at every one of the
   128 positions: a pair of coefficients comes from one byte
-  (decision 225).
+  (decision 225). It runs the Barrett reduction, `mlk_vector_reduce`,
+  against `mlk_poly_reduce` on every int16 value (decision 232).
 - `test/aes-runtime-qemu.sh mlkem-vector`, in CI's mips job on every
   push, builds the same binary for x86-64 and for arm64 and runs both
   under qemu, so the arm a machine's own compiler does not read runs
@@ -5980,8 +5986,13 @@ indices. CBMC cannot unwind an intrinsic, and both files have a body on
 x86-64 alone, so no harness compiles either. The copy runs
 `mlk_sample_groups_avx2` on each block: eight groups a step on AVX2, then
 `mlk_sample_groups`, the loop the `mlkem_poly` proof covers inside
-`mlk_sample_ntt`, on the groups the steps leave (decision 225). These
-hold the rest (INV-48):
+`mlk_sample_ntt`, on the groups the steps leave (decision 225). It reads
+an ek's t-hat and a dk's s-hat, ByteDecode12, by `mlk_poly_frombytes_avx2`,
+and checks an ek's fields against q by `mlk_field_at_or_above_q_avx2`, 16
+fields a step on the same shuffle. Under the multiply answer it compresses
+u and v at rank 3 by `mlk_poly_compress_10_avx2` and
+`mlk_poly_compress_4_avx2`, mlk_compress's formula on VPMULUDQ's 32x32
+products (decision 232). These hold the rest (INV-48):
 
 - `bin/mlkem_avx2_equiv_test`, in `make check` on an x86-64 host with
   AVX2 and in `make san-check`, compares ten blocks of each of the four
@@ -6000,7 +6011,14 @@ hold the rest (INV-48):
   240, the last count at which a step runs, on 11 counts of groups, and
   on 4,000 random blocks of 56 groups. It computes each entry of
   `mlkem_rejection_table.h` by the rule the header states and compares.
-  On an arm64 host it has nothing to run and says so.
+  It compares `mlk_poly_frombytes_avx2` with `mlk_poly_frombytes` on
+  1,000 random blocks and on blocks of each of the 256 byte values. At
+  each of the ek's fields in turn it sets the field to q - 1, q, q + 1
+  and 4095, and requires the copy's encapsulation and `mlkem.c`'s to take
+  the first and refuse the other three. It compares both compressions on
+  AVX2 with the native copy's on every coefficient from -(q - 1) to q - 1
+  at every lane position and on 2,000 random reduced polynomials. On an
+  arm64 host it has nothing to run and says so.
 - `test/aes-runtime-qemu.sh mlkem-avx2`, in CI's mips job on every push,
   builds the same binary for x86-64 and runs it under qemu with AVX2, so
   an arm64 machine runs it too. The lane's loops with one end stating
@@ -6010,8 +6028,10 @@ hold the rest (INV-48):
   `ch_cfg.cpu` values: a session call runs it exactly where the value
   holds `CH_CPU_AVX2`.
 - `test/mlkem-builds.sh` requires the copy's rows to call the four-way
-  Keccak and `mlk_sample_groups_avx2` and not `mlk_sample_ntt`, both
-  files to hold nothing on arm64,
+  Keccak and `mlk_sample_groups_avx2` and not `mlk_sample_ntt`, the copy
+  to call `mlk_poly_frombytes_avx2`, `mlk_field_at_or_above_q_avx2` and
+  the two compressions on AVX2 and not `mlk_poly_frombytes`, both files to
+  hold nothing on arm64,
   and no other source in src/ to include `keccak_avx2.h` or call its
   entries.
 - `make lint-wide-multiply` holds `keccak_avx2.c` at 1 conditional

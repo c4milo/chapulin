@@ -219,7 +219,12 @@ p256_wide_field_mul 134
 p256_wide_inverse 119
 p256_wide_inverse_range 30
 p256_wide_inverse_round 174
-p256_wide_inverse_steps 153
+# Decision 232 finds the approximations' shift as one count and shifts each
+# pair once, so shift_left_masked and its 4 locations are gone and
+# approximations has 24 where it had 23. The harness reaches every location
+# of both: 150 of 338 on arm64 macOS, where the tree before the change read
+# 153 of 329, the floor the nightly recorded.
+p256_wide_inverse_steps 150
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.

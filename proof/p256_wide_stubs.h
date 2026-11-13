@@ -6,11 +6,12 @@
 // multiplier widened to 128 bits, and one scalar multiply runs 36. Each of
 // the inverse's 17 rounds runs 10 rows, 40 products, and two more for its
 // Montgomery multipliers. A formula over the real products at those counts
-// is the shape docs/proofs.md says does not converge. So the one
-// routine every product goes through, p256_wide_mul_row, is the contract
-// below. The harness reads p256_wide_word.h first under its own name, the
-// #define renames every later use, and the header's include guard keeps the
-// wide files' own #include from reading the real definition again.
+// is the shape docs/proofs.md says does not converge. So the two
+// routines every product goes through, p256_wide_mul_row and
+// p256_wide_mul_word, are the contracts below. The harness reads
+// p256_wide_word.h first under its own name, the #define renames every
+// later use, and the header's include guard keeps the wide files' own
+// #include from reading the real definition again.
 //
 // WHAT THE STUB MODELS: p256_wide_mul_row writes any four words and returns
 // any word. A word here has no bound to keep: the four words are 64 bits
@@ -38,8 +39,10 @@
 // this header proves holds on both.
 #define P256_WIDE_CARRY P256_WIDE_CARRY_BUILTIN
 #include "p256_wide_word.h"
-// From here on the row and the square the wide files call are the contracts below.
+// From here on the row, the product of a word and four words, and the square the wide files call
+// are the contracts below.
 #define p256_wide_mul_row stub_mul_row
+#define p256_wide_mul_word stub_mul_word
 #define p256_wide_sqr_product stub_sqr_product
 
 uint64_t nondet_u64(void);
@@ -54,6 +57,25 @@ static uint64_t stub_mul_row(uint64_t *t0, uint64_t *t1, uint64_t *t2, uint64_t 
     __CPROVER_assert(__CPROVER_w_ok(t0, sizeof *t0) && __CPROVER_w_ok(t1, sizeof *t1) &&
                          __CPROVER_w_ok(t2, sizeof *t2) && __CPROVER_w_ok(t3, sizeof *t3),
                      "p256_wide_mul_row: the four words are writable");
+    *t0 = nondet_u64();
+    *t1 = nondet_u64();
+    *t2 = nondet_u64();
+    *t3 = nondet_u64();
+    return nondet_u64();
+}
+
+// p256_wide_mul_word writes any four words and returns any word, as the row does. The real
+// product's wrap is p256_wide_row_harness.c's to prove.
+static uint64_t stub_mul_word(uint64_t *t0, uint64_t *t1, uint64_t *t2, uint64_t *t3, uint64_t x,
+                              uint64_t b0, uint64_t b1, uint64_t b2, uint64_t b3) {
+    (void)x;
+    (void)b0;
+    (void)b1;
+    (void)b2;
+    (void)b3;
+    __CPROVER_assert(__CPROVER_w_ok(t0, sizeof *t0) && __CPROVER_w_ok(t1, sizeof *t1) &&
+                         __CPROVER_w_ok(t2, sizeof *t2) && __CPROVER_w_ok(t3, sizeof *t3),
+                     "p256_wide_mul_word: the four words are writable");
     *t0 = nondet_u64();
     *t1 = nondet_u64();
     *t2 = nondet_u64();

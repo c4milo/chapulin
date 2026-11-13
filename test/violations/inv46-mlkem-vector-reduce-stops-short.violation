@@ -1,0 +1,15 @@
+invariant: INV-46
+file: src/mlkem_vector.c
+catches: mlkem_vector_equiv_test
+reason: mlk_vector_reduce stops eight coefficients short, so the last
+  eight coefficients of each reduced polynomial keep their unreduced
+  values and the compression after it reads values outside its range.
+  bin/mlkem_vector_equiv_test runs every int16 value through both
+  reductions and compares the coefficients.
+
+--- old
+    for (size_t at = 0; at < MLKEM_N; at += 8) {
+        lanes_store(p->coeffs + at, lanes_barrett_reduce(
+--- new
+    for (size_t at = 0; at < MLKEM_N - 8; at += 8) {
+        lanes_store(p->coeffs + at, lanes_barrett_reduce(

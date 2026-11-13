@@ -61,28 +61,20 @@ static inline uint64_t magnitude(uint64_t f, uint64_t *negative) {
     return (f ^ *negative) + (*negative & 1);
 }
 
-// Shifts the 128 bits (*high : *low) left by s where mask is all ones, and leaves them where it
-// is zero. s is from 1 to 32.
-static inline void shift_left_masked(uint64_t *high, uint64_t *low, unsigned s, uint64_t mask) {
-    uint64_t shifted_high = (*high << s) | (*low >> (64 - s));
-    uint64_t shifted_low = *low << s;
-    *high = (shifted_high & mask) | (*high & ~mask);
-    *low = (shifted_low & mask) | (*low & ~mask);
-}
-
 // The approximations of a and b that a round's steps run on. For n the bit length of a | b:
 // a's and b's low words when n is at most 64, and otherwise each one's STEPS low bits beside its
 // 33 bits from bit n - 33 up. For the second, the loop finds the top nonzero word of a | b above
-// the low word, and the word under it, in a and in b, and the shifts move both pairs left until
+// the low word, and the word under it, in a and in b, and one shift moves both pairs left until
 // bit n - 1 is bit 127.
 //
-// The C chooses each shift with masks, and clang turns some of those choices into a shift by a
-// register whose value the mask chose: at -O2 the last step shifts by 0 or 1, and at -Os every
-// step shifts by 0 or s. A shift by a register takes the same time for every amount on the cores
-// a host object runs on: Arm lists LSLV and LSRV among the instructions whose timing does not
-// depend on their data, and Intel lists the shifts among its data operand independent timing
-// instructions. Reading each mask through a volatile kept the masks but cost 0.34 µs of an
-// inverse's 1.42 on the M1 Pro (docs/decisions.md 115).
+// The shift is by a count the C computes from the secret words: the zeros above the top set
+// bit of a_high | b_high, which six masked steps on that word alone find. A shift by a register
+// takes the same time for every amount on the cores a host object runs on: Arm lists LSLV and
+// LSRV among the instructions whose timing does not depend on their data, and Intel lists the
+// shifts among its data operand independent timing instructions. Reading each mask through a
+// volatile kept the masks but cost 0.34 µs of an inverse's 1.42 on the M1 Pro (docs/decisions.md
+// 115). Six masked shifts of both pairs, where clang already shifted by a register at -Os, took
+// 1,500 more instructions of an inverse under gcc 13.3 for x86-64 (docs/decisions.md 232).
 static void approximations(uint64_t *xa, uint64_t *xb, const uint64_t a[WORDS],
                            const uint64_t b[WORDS]) {
     uint64_t a_high = a[0];
@@ -99,14 +91,21 @@ static void approximations(uint64_t *xa, uint64_t *xb, const uint64_t a[WORDS],
         b_low = (b[i - 1] & nonzero) | (b_low & ~nonzero);
         above_64 |= nonzero;
     }
-    // Shifts of 32, 16, 8, 4, 2 and 1 bits, each where the bits it moves out of a_high | b_high
-    // are zero.
+    // The zeros above the top set bit of a_high | b_high: shifts of 32, 16, 8, 4, 2 and 1 bits of
+    // that word, each where the bits it moves out are zero, summed. The count is at most 63, the
+    // sum of the six.
+    uint64_t top = a_high | b_high;
+    uint64_t count = 0;
 #pragma GCC unroll 6
     for (unsigned s = 32; s > 0; s >>= 1) {
-        uint64_t mask = ~nonzero_mask((a_high | b_high) >> (64 - s));
-        shift_left_masked(&a_high, &a_low, s, mask);
-        shift_left_masked(&b_high, &b_low, s, mask);
+        uint64_t shift = s & ~nonzero_mask(top >> (64 - s));
+        top <<= shift;
+        count += shift;
     }
+    // (low >> 1) >> (63 - count) is low >> (64 - count), and 0 where count is 0, with each shift
+    // below 64.
+    a_high = (a_high << count) | ((a_low >> 1) >> (63 - count));
+    b_high = (b_high << count) | ((b_low >> 1) >> (63 - count));
     uint64_t wide_a = (a[0] & LOW_BITS) | (a_high & ~LOW_BITS);
     uint64_t wide_b = (b[0] & LOW_BITS) | (b_high & ~LOW_BITS);
     *xa = (wide_a & above_64) | (a[0] & ~above_64);
@@ -126,8 +125,11 @@ static inline void step(uint64_t *xa, uint64_t *xb, uint64_t *pair0, uint64_t *p
     uint64_t difference = p256_wide_sub_borrow(&borrow, *xa, *xb & *odd);
     uint64_t swap = p256_wide_mask(borrow);
     uint64_t pair_difference = *pair0 - (*pair1 & *odd);
-    *xb ^= (*xa ^ *xb) & swap;
-    *pair1 ^= (*pair0 ^ *pair1) & swap;
+    // A step swaps only where xa is odd, and there difference is xa - xb and pair_difference is
+    // pair0 - pair1 modulo 2^64, so the sums below give xb the old xa and pair1 the old pair0.
+    // Each is two instructions where a swap by exclusive ors is three.
+    *xb += difference & swap;
+    *pair1 += pair_difference & swap;
     *xa = ((difference ^ swap) - swap) >> 1;
     // The next xa is |difference| / 2. Where xa was odd, difference is a difference of two odd
     // words, so it is even, and an even word and its negation agree in bit 1. Where xa was
@@ -164,6 +166,13 @@ static void step_factors(uint64_t factor[4], uint64_t xa, uint64_t xb) {
     uint64_t pair0 = 1;                 // f0 + 2^32 g0
     uint64_t pair1 = UINT64_C(1) << 32; // f1 + 2^32 g1
     uint64_t odd = p256_wide_mask(xa & 1);
+    // Written out, the 31 steps take no loop counter and keep each value in a register: gcc 13.3
+    // ran 27 instructions a step in the loop, one of them a store, and 21 written out. clang 23's
+    // written-out steps took 1.07 times its loop's time on a Xeon 8573C, so the pragma is gcc's
+    // alone (docs/decisions.md 232).
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC unroll 31
+#endif
     for (int i = 0; i < STEPS; i++) {
         step(&xa, &xb, &pair0, &pair1, &odd);
     }
@@ -171,12 +180,8 @@ static void step_factors(uint64_t factor[4], uint64_t xa, uint64_t xb) {
 }
 
 // o = x * k, five words, for a word k.
-static void multiply_word(uint64_t o[WORDS + 1], const uint64_t x[WORDS], uint64_t k) {
-    o[0] = 0;
-    o[1] = 0;
-    o[2] = 0;
-    o[3] = 0;
-    o[4] = p256_wide_mul_row(&o[0], &o[1], &o[2], &o[3], k, x[0], x[1], x[2], x[3]);
+static inline void multiply_word(uint64_t o[WORDS + 1], const uint64_t x[WORDS], uint64_t k) {
+    o[4] = p256_wide_mul_word(&o[0], &o[1], &o[2], &o[3], k, x[0], x[1], x[2], x[3]);
 }
 
 // o = -o modulo 2^320 where mask is all ones, and o where it is zero. The exclusive ors come
@@ -202,8 +207,14 @@ static inline __attribute__((always_inline)) void negate_masked(uint64_t o[WORDS
 // and all ones returned when x f + y g is below zero. A round's factors make the sum's STEPS
 // low bits zero and its quotient below 2^256, so the division drops no bit and o holds all of
 // it. |x f + y g| is below 2^(256 + STEPS), so five words hold the sum and its sign.
-static uint64_t combine_exact(uint64_t o[WORDS], const uint64_t x[WORDS], const uint64_t y[WORDS],
-                              uint64_t f, uint64_t g) {
+//
+// Both combinations carry always_inline, so that the round holds them: out of line, gcc 13.3
+// spent 3,200 more instructions of an inverse on the calls, their arguments and its loads of
+// the values each call wrote (docs/decisions.md 232).
+static inline __attribute__((always_inline)) uint64_t combine_exact(uint64_t o[WORDS],
+                                                                    const uint64_t x[WORDS],
+                                                                    const uint64_t y[WORDS],
+                                                                    uint64_t f, uint64_t g) {
     uint64_t f_negative;
     uint64_t g_negative;
     uint64_t f_magnitude = magnitude(f, &f_negative);
@@ -222,9 +233,17 @@ static uint64_t combine_exact(uint64_t o[WORDS], const uint64_t x[WORDS], const 
     }
     uint64_t negative = p256_wide_mask(sum[WORDS] >> 63);
     negate_masked(sum, negative);
+    // gcc 13.3 built the four words below in vector registers from the five, as it did
+    // combine_modular's (docs/decisions.md 232).
+#pragma GCC unroll 5
+    for (size_t i = 0; i < WORDS + 1; i++) {
+        P256_WIDE_HOLD(sum[i]);
+    }
 #pragma GCC unroll 4
     for (size_t i = 0; i < WORDS; i++) {
-        o[i] = (sum[i] >> STEPS) | (sum[i + 1] << (64 - STEPS));
+        uint64_t word = (sum[i] >> STEPS) | (sum[i + 1] << (64 - STEPS));
+        P256_WIDE_HOLD(word);
+        o[i] = word;
     }
     return negative;
 }
@@ -236,8 +255,9 @@ static uint64_t combine_exact(uint64_t o[WORDS], const uint64_t x[WORDS], const 
 // reduction adds q m, for the q below 2^STEPS that makes the low STEPS bits zero, and drops
 // them: (t + q m) / 2^STEPS is below 2m, and one subtraction of m chosen by a mask leaves it
 // below m.
-static void combine_modular(uint64_t o[WORDS], const uint64_t x[WORDS], const uint64_t y[WORDS],
-                            uint64_t f, uint64_t g, uint64_t negate, const p256_wide_modulus *m) {
+static inline __attribute__((always_inline)) void
+combine_modular(uint64_t o[WORDS], const uint64_t x[WORDS], const uint64_t y[WORDS], uint64_t f,
+                uint64_t g, uint64_t negate, const p256_wide_modulus *m) {
     uint64_t f_negative;
     uint64_t g_negative;
     uint64_t f_magnitude = magnitude(f, &f_negative);
@@ -266,10 +286,10 @@ static void combine_modular(uint64_t o[WORDS], const uint64_t x[WORDS], const ui
         operand_x[i] = (negated_x[i] & f_negative) | (x[i] & ~f_negative);
         operand_y[i] = (negated_y[i] & g_negative) | (y[i] & ~g_negative);
     }
-    // t, five words: the two products and q m, each row's word above the four added to t[4].
-    uint64_t t[WORDS + 1] = {0, 0, 0, 0, 0};
-    t[4] = p256_wide_mul_row(&t[0], &t[1], &t[2], &t[3], f_magnitude, operand_x[0], operand_x[1],
-                             operand_x[2], operand_x[3]);
+    // t, five words: the two products and q m, each later row's word above the four added to
+    // t[4].
+    uint64_t t[WORDS + 1];
+    multiply_word(t, operand_x, f_magnitude);
     t[4] += p256_wide_mul_row(&t[0], &t[1], &t[2], &t[3], g_magnitude, operand_y[0], operand_y[1],
                               operand_y[2], operand_y[3]);
     // The low 64 bits of the product: the cast drops the high half on purpose.

@@ -161,6 +161,24 @@ static inline unsigned mlk_sample_groups(mlk_poly *p, unsigned j, const uint8_t 
 // 256, the coefficients from it on are not the ones p held: a step writes
 // zeros past the ones it keeps. Requires: a CPU with AVX2.
 unsigned mlk_sample_groups_avx2(mlk_poly *p, unsigned j, const uint8_t *buf, size_t groups);
+
+// mlk_poly_frombytes on AVX2: the same 256 coefficients from the same 384 bytes. Requires: a
+// CPU with AVX2.
+void mlk_poly_frombytes_avx2(mlk_poly *p, const uint8_t in[MLK_POLY_BYTES]);
+
+// 1 when a 12-bit field of the bytes bytes at in is at or above q, and 0 when none is: the
+// fields ByteDecode12 reads, two from each three bytes, as mlkem.c's modulus check reads them.
+// bytes is a multiple of 24. Requires: a CPU with AVX2.
+int mlk_field_at_or_above_q_avx2(const uint8_t *in, size_t bytes);
+
+#if MLK_HOLDS_768
+// mlk_poly_compress_du and mlk_poly_compress at rank 3, Compress_10 into 320 bytes and Compress_4
+// into 128, on AVX2's 32x32 products: a caller runs them under the multiply answer
+// WIDEMUL_CONSTANT_TIME alone (widemul.h). The same bytes as the native copy's. Requires: a CPU
+// with AVX2.
+void mlk_poly_compress_10_avx2(uint8_t out[320], const mlk_poly *p);
+void mlk_poly_compress_4_avx2(uint8_t out[128], const mlk_poly *p);
+#endif
 #endif
 
 // SamplePolyCBD_eta: centered binomial noise from PRF(seed, nonce) =

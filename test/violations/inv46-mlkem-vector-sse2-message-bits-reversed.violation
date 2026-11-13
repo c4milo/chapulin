@@ -1,0 +1,15 @@
+invariant: INV-46
+file: src/mlkem_lanes.h
+catches: test/docker-aes-runtime-qemu.sh mlkem-vector
+reason: the SSE2 message expansion gives lane j the bit 7 - j of its byte,
+  so each byte's eight coefficients come out in the reverse order and an
+  encapsulation encrypts another message. bin/mlkem_vector_equiv_test runs
+  every byte value at every position through both expansions. Only an
+  x86-64 compiler reads the line, so the script builds the test for
+  x86-64 and runs it under qemu-x86_64. The lane skips without docker, and
+  this then reports unguarded rather than caught.
+
+--- old
+    __m128i bits = _mm_setr_epi16(1, 2, 4, 8, 16, 32, 64, 128);
+--- new
+    __m128i bits = _mm_setr_epi16(128, 64, 32, 16, 8, 4, 2, 1);

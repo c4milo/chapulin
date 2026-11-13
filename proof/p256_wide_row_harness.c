@@ -1,4 +1,4 @@
-// Proves, for p256_wide_word.h's four steps, on the real 64x64->128 multiply:
+// Proves, for p256_wide_word.h's five steps, on the real 64x64->128 multiply:
 //
 //   p256_wide_mul_row wraps no unsigned value, over any words at all. Its
 //   last line adds two carries to the high half of the top product, and that
@@ -7,6 +7,10 @@
 //   launch line, which makes that sum a property. This is the contract
 //   proof/p256_wide_stubs.h replaces the row with: any four words and any
 //   word above them, and no wrap.
+//
+//   p256_wide_mul_word wraps no unsigned value, over any words at all: its
+//   last line adds a carry to the high half of the top product, which is at
+//   most 2^64 - 2. proof/p256_wide_stubs.h replaces it the same way.
 //
 //   p256_wide_add_carry and p256_wide_sub_borrow against a 128-bit
 //   reference, for any two words and either carry: the word they return, and
@@ -45,6 +49,13 @@ int main(void) {
     uint64_t above = p256_wide_mul_row(&t0, &t1, &t2, &t3, nondet_u64(), nondet_u64(), nondet_u64(),
                                        nondet_u64(), nondet_u64());
     (void)above;
+    uint64_t w0;
+    uint64_t w1;
+    uint64_t w2;
+    uint64_t w3;
+    uint64_t word_above = p256_wide_mul_word(&w0, &w1, &w2, &w3, nondet_u64(), nondet_u64(),
+                                             nondet_u64(), nondet_u64(), nondet_u64());
+    (void)word_above;
 
     uint64_t a = nondet_u64();
     uint64_t b = nondet_u64();

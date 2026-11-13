@@ -1,0 +1,16 @@
+invariant: INV-48
+file: src/mlkem_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: the compression on AVX2 multiplies by 1290167, the floor of
+  2^32 / q, where mlk_compress multiplies by the ceiling, and the rounding
+  is exact only with the ceiling: some coefficients compress one lower and
+  the ciphertext differs from FIPS 203's. bin/mlkem_avx2_equiv_test runs
+  every coefficient from -(q - 1) to q - 1 through both compressions. Only
+  an x86-64 compiler reads the line, so the script builds the test for
+  x86-64 and runs it under qemu-x86_64. The lane skips without docker, and
+  this then reports unguarded rather than caught.
+
+--- old
+    const __m256i factor = _mm256_set1_epi64x(1290168);
+--- new
+    const __m256i factor = _mm256_set1_epi64x(1290167);

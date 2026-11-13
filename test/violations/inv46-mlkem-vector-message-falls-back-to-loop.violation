@@ -1,0 +1,16 @@
+invariant: INV-46
+file: src/mlkem.c
+catches: test/mlkem-builds.sh
+reason: mlkem.c's message expansion calls mlkem_poly.c's loop in a host
+  object, so every session reads each bit of the message through a
+  volatile object. Nothing else objects: the loop writes the same
+  coefficients, and only the time is wrong. The script compiles mlkem.c as
+  a host object does and requires it to call mlk_vector_frommsg and not
+  mlk_poly_frommsg.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    mlk_vector_frommsg(p, msg);
+--- new
+#ifdef CH_CPU_RUNTIME
+    mlk_poly_frommsg(p, msg);

@@ -17,8 +17,9 @@
 //
 // The products are a row contract of this file's own, which keeps one more
 // property than proof/p256_wide_stubs.h's: the word above the four is at
-// most x. combine_modular adds three of those words, and the bound is what
-// holds their sum inside a word. It follows from the row's value: four words
+// most x. combine_modular adds three of those words, the first from
+// p256_wide_mul_word under the same contract, and the bound is what holds
+// their sum inside a word. It follows from the row's value: four words
 // plus x times four words is below (x + 1) 2^256. That value is a product's,
 // which no harness here proves, as proof/p256_wide_row_harness.c says;
 // bin/p256_equiv_test and the vectors hold it.
@@ -34,10 +35,13 @@
 #define P256_WIDE_CARRY P256_WIDE_CARRY_BUILTIN
 #include "p256_wide_word.h"
 #define p256_wide_mul_row stub_mul_row_bounded
+#define p256_wide_mul_word stub_mul_row_bounded
 
 uint64_t nondet_u64(void);
 
-// p256_wide_mul_row writes any four words and returns any word up to x.
+// p256_wide_mul_row writes any four words and returns any word up to x. p256_wide_mul_word, a
+// row onto four zero words, takes the same contract: its five words are x times four words, so
+// the word above the four is below x where x is not zero.
 static uint64_t stub_mul_row_bounded(uint64_t *t0, uint64_t *t1, uint64_t *t2, uint64_t *t3,
                                      uint64_t x, uint64_t b0, uint64_t b1, uint64_t b2,
                                      uint64_t b3) {

@@ -1,0 +1,19 @@
+invariant: INV-46
+file: src/mlkem.c
+catches: test/mlkem-builds.sh
+reason: mlkem.c's reduction calls mlkem_poly.c's loop in a host object, so
+  every session runs it one coefficient at a time. Nothing else objects:
+  the loop computes the same coefficients, and only the time is wrong.
+  The script compiles mlkem.c as a host object does and requires it to
+  call mlk_vector_reduce and not mlk_poly_reduce.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    mlk_vector_reduce(p);
+#else
+    mlk_poly_reduce(p);
+--- new
+#ifdef CH_CPU_RUNTIME
+    mlk_poly_reduce(p);
+#else
+    mlk_poly_reduce(p);

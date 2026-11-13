@@ -203,6 +203,17 @@ static inline void lanes_noise(int16_t out[32], const uint8_t in[16]) {
     lanes_store(out + 24, vmovl_high_s8(second));
 }
 
+// mlk_poly_frommsg's eight coefficients of one byte of the message, written
+// to out: coefficient j is (q + 1) / 2 where bit j of the byte is set and
+// 0 where it is clear. CMTST sets a lane to all ones where the byte and the
+// lane's own bit share a set bit. The message is secret, and every lane runs
+// the same three instructions on it (docs/decisions.md 232).
+static inline void lanes_message(int16_t out[8], uint8_t byte) {
+    const int16_t bits[8] = {1, 2, 4, 8, 16, 32, 64, 128};
+    uint16x8_t set = vtstq_s16(vdupq_n_s16((int16_t)byte), vld1q_s16(bits));
+    lanes_store(out, vandq_s16(vreinterpretq_s16_u16(set), vdupq_n_s16(1665)));
+}
+
 #else
 
 // Eight 16-bit lanes in one SSE2 register.
@@ -367,6 +378,16 @@ static inline void lanes_noise(int16_t out[32], const uint8_t in[16]) {
     lanes_store(out + 8, _mm_srai_epi16(_mm_unpackhi_epi8(first, first), 8));
     lanes_store(out + 16, _mm_srai_epi16(_mm_unpacklo_epi8(second, second), 8));
     lanes_store(out + 24, _mm_srai_epi16(_mm_unpackhi_epi8(second, second), 8));
+}
+
+// mlk_poly_frommsg's eight coefficients of one byte of the message, as the
+// NEON version above computes them: PCMPEQW sets a lane to all ones where
+// the byte ANDed with the lane's own bit is that bit (docs/decisions.md
+// 232).
+static inline void lanes_message(int16_t out[8], uint8_t byte) {
+    __m128i bits = _mm_setr_epi16(1, 2, 4, 8, 16, 32, 64, 128);
+    __m128i set = _mm_cmpeq_epi16(_mm_and_si128(_mm_set1_epi16((int16_t)byte), bits), bits);
+    lanes_store(out, _mm_and_si128(set, _mm_set1_epi16(1665)));
 }
 
 #endif

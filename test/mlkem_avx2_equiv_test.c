@@ -25,7 +25,14 @@
 //     0, 1, q - 2, q - 1, q, q + 1, 4094 and 4095, from counts on both
 //     sides of 240, the last count at which a step runs, and on counts
 //     of groups that leave a tail; then random blocks. It also computes
-//     each entry of mlkem_rejection_table.h by the rule the header states.
+//     each entry of mlkem_rejection_table.h by the rule the header states;
+//   - ByteDecode12 on AVX2, mlk_poly_frombytes_avx2, with
+//     mlk_poly_frombytes on random bytes and on bytes of one value, each
+//     of the 256 (docs/decisions.md 232);
+//   - the modulus check on AVX2, mlk_field_at_or_above_q_avx2, through
+//     the copy's encapsulation, against mlkem.c's: at each of the 768
+//     fields of an ek's t-hat in turn, with the field at q - 1, which
+//     both take, and at q, q + 1 and 4095, which both refuse.
 //
 // The row sampler reads a fourth block of an entry's stream for about one
 // entry in a hundred. The binary counts, from sha3.c's streams, the
@@ -305,6 +312,107 @@ static void table_cases(void) {
     }
 }
 
+// mlk_poly_frombytes_avx2 against mlk_poly_frombytes: random bytes, and
+// bytes of one value, each of the 256, so every field holds each value its
+// bytes can spell in each of its two places.
+static void frombytes_cases(void) {
+    uint8_t bytes[MLK_POLY_BYTES];
+    for (int c = 0; c < 1000 + 256; c++) {
+        if (c < 1000) {
+            rng_bytes(bytes, sizeof bytes);
+        } else {
+            memset(bytes, c - 1000, sizeof bytes);
+        }
+        mlk_poly portable;
+        mlk_poly vector;
+        mlk_poly_frombytes(&portable, bytes);
+        mlk_poly_frombytes_avx2(&vector, bytes);
+        check(memcmp(&portable, &vector, sizeof portable) == 0, "ByteDecode12 on AVX2");
+    }
+}
+
+// Field second of the three bytes at group set to value, as ByteDecode12
+// reads it: the first field from byte 0 and the low half of byte 1, and
+// the second from the high half of byte 1 and byte 2.
+static void put_field(uint8_t group[3], int second, uint16_t value) {
+    if (!second) {
+        group[0] = (uint8_t)value;
+        group[1] = (uint8_t)((group[1] & 0xf0) | (value >> 8));
+    } else {
+        group[1] = (uint8_t)((group[1] & 0x0f) | ((value & 0x0f) << 4));
+        group[2] = (uint8_t)(value >> 4);
+    }
+}
+
+// The copy's modulus check against mlkem.c's, through the encapsulation
+// each runs it in: at each field of t-hat, q - 1 is taken and q, q + 1
+// and 4095 are refused by both, so the boundary sits at q on AVX2 too.
+static void modulus_check_cases(void) {
+    uint8_t d[32];
+    uint8_t z[32];
+    uint8_t m[32];
+    rng_bytes(d, sizeof d);
+    rng_bytes(z, sizeof z);
+    rng_bytes(m, sizeof m);
+    static uint8_t ek[MLKEM_EK_LEN];
+    static uint8_t dk[MLKEM_DK_LEN];
+    mlkem_keygen_derand(ek, dk, d, z);
+    static const uint16_t values[4] = {MLKEM_Q - 1, MLKEM_Q, MLKEM_Q + 1, 4095};
+    uint8_t ct[MLKEM_CT_LEN];
+    uint8_t ss[MLKEM_SS_LEN];
+    for (size_t at = 0; at < (size_t)MLKEM_K * MLK_POLY_BYTES; at += 3) {
+        for (int second = 0; second < 2; second++) {
+            uint8_t saved[3];
+            memcpy(saved, ek + at, sizeof saved);
+            for (size_t v = 0; v < 4; v++) {
+                put_field(ek + at, second, values[v]);
+                int refused = mlkem_encaps_derand(WIDEMUL_NOT_STATED, ct, ss, ek, m) != 0;
+                int refused_avx2 = mlkem_encaps_derand_avx2(WIDEMUL_NOT_STATED, ct, ss, ek, m) != 0;
+                check(refused == (values[v] >= MLKEM_Q) && refused_avx2 == refused,
+                      "the modulus check on AVX2");
+            }
+            memcpy(ek + at, saved, sizeof saved);
+        }
+    }
+}
+
+#if MLK_HOLDS_768
+// Compress_10 and Compress_4 on AVX2 against the native copy's, which runs the same formula on
+// the scalar multiply: every coefficient from -(q - 1) to q - 1 at every lane position, in 27
+// polynomials that run through them in turn, then random polynomials of reduced coefficients.
+static void compress_poly_case(const mlk_poly *p) {
+    uint8_t want[320];
+    uint8_t got[320];
+    mlk_poly_compress_du_native(want, p, MLKEM_RANK_768);
+    mlk_poly_compress_10_avx2(got, p);
+    check(memcmp(want, got, sizeof want) == 0, "Compress_10 on AVX2");
+    mlk_poly_compress_native(want, p, MLKEM_RANK_768);
+    mlk_poly_compress_4_avx2(got, p);
+    check(memcmp(want, got, 128) == 0, "Compress_4 on AVX2");
+}
+
+static void compress_cases(void) {
+    mlk_poly p;
+    int16_t value = -(MLKEM_Q - 1);
+    for (int k = 0; k < 27; k++) {
+        for (size_t i = 0; i < MLKEM_N; i++) {
+            p.coeffs[i] = value;
+            value = value == MLKEM_Q - 1 ? (int16_t)-(MLKEM_Q - 1) : (int16_t)(value + 1);
+        }
+        compress_poly_case(&p);
+    }
+    for (int k = 0; k < 2000; k++) {
+        uint8_t bytes[2 * MLKEM_N];
+        rng_bytes(bytes, sizeof bytes);
+        for (size_t i = 0; i < MLKEM_N; i++) {
+            p.coeffs[i] = (int16_t)(bytes[2 * i] | (bytes[2 * i + 1] << 8));
+        }
+        mlk_poly_reduce(&p);
+        compress_poly_case(&p);
+    }
+}
+#endif
+
 // The three calls a session makes, under a value with CH_CPU_AVX2 and one
 // without, against the calls they are named for.
 static void compare_session_calls(void) {
@@ -352,6 +460,11 @@ int main(void) {
     stream_cases();
     table_cases();
     rejection_cases();
+    frombytes_cases();
+    modulus_check_cases();
+#if MLK_HOLDS_768
+    compress_cases();
+#endif
     for (int c = 0; c < KEM_CASES; c++) {
         compare_kem(WIDEMUL_CONSTANT_TIME);
         compare_kem(WIDEMUL_NOT_STATED);

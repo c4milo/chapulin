@@ -87,6 +87,63 @@ static void mlk_add(mlk_poly *r, const mlk_poly *a, const mlk_poly *b) {
 #endif
 }
 
+// The Barrett reduction of every coefficient. A host object runs it on
+// eight lanes at a time, whose 16x16 multiplies are those of the NTT
+// (docs/decisions.md 232).
+static void mlk_reduce(mlk_poly *p) {
+#ifdef CH_CPU_RUNTIME
+    mlk_vector_reduce(p);
+#else
+    mlk_poly_reduce(p);
+#endif
+}
+
+// Decompress_1 of the message into p. A host object runs it on eight lanes
+// at a time, one byte of the message a step (docs/decisions.md 232).
+static void mlk_frommsg(mlk_poly *p, const uint8_t msg[32]) {
+#ifdef CH_CPU_RUNTIME
+    mlk_vector_frommsg(p, msg);
+#else
+    mlk_poly_frommsg(p, msg);
+#endif
+}
+
+// Compress_du and Compress_dv of a polynomial into the ciphertext under the
+// answer widemul. mlkem_avx2.c's copy runs rank 3's on AVX2's 32x32
+// products where the answer states the multiply (docs/decisions.md 232).
+// The answer and the rank are public.
+static void mlk_compress_du(uint8_t widemul, uint8_t *out, const mlk_poly *p, unsigned rank) {
+#if defined(CH_MLKEM_AVX2_COPY) && MLK_HOLDS_768
+    if (widemul_native(widemul) && rank == MLKEM_RANK_768) {
+        mlk_poly_compress_10_avx2(out, p);
+        return;
+    }
+#endif
+    widemul_mlk_poly_compress_du(widemul, out, p, rank);
+}
+
+static void mlk_compress_dv(uint8_t widemul, uint8_t *out, const mlk_poly *p, unsigned rank) {
+#if defined(CH_MLKEM_AVX2_COPY) && MLK_HOLDS_768
+    if (widemul_native(widemul) && rank == MLKEM_RANK_768) {
+        mlk_poly_compress_4_avx2(out, p);
+        return;
+    }
+#endif
+    widemul_mlk_poly_compress(widemul, out, p, rank);
+}
+
+// ByteDecode12 of 384 bytes into p: t-hat from an ek and s-hat from a dk.
+// mlkem_avx2.c's copy reads 16 fields a step on AVX2 (docs/decisions.md
+// 232). Both read the fields as shifts and masks of bytes, with no
+// branch, so a secret s-hat takes either.
+static void mlk_frombytes(mlk_poly *p, const uint8_t in[MLK_POLY_BYTES]) {
+#ifdef CH_MLKEM_AVX2_COPY
+    mlk_poly_frombytes_avx2(p, in);
+#else
+    mlk_poly_frombytes(p, in);
+#endif
+}
+
 // The noise of nonce into p: SamplePolyCBD_2 of PRF(seed, nonce) (FIPS 203
 // Algorithm 8). A device object runs mlk_sample_cbd. A host object
 // squeezes the same PRF stream as mlk_sample_cbd and runs the centered
@@ -218,7 +275,7 @@ static void mlk_pke_keygen(unsigned rank, uint8_t *ek, uint8_t *dkpke, const uin
         mlk_noise(&e, sigma, (uint8_t)(rank + i));
         mlk_ntt(&e);
         mlk_add(&t, &t, &e);
-        mlk_poly_reduce(&t);
+        mlk_reduce(&t);
         mlk_poly_tobytes(ek + (size_t)384 * i, &t);
         mlk_poly_tobytes(dkpke + (size_t)384 * i, &s.vec[i]);
     }
@@ -243,7 +300,7 @@ static void mlk_pke_encrypt(uint8_t widemul, unsigned rank, uint8_t *ct, const u
     // v starts as t o r (with R^-1), one term for each entry of r as it is
     // sampled, so t takes one poly at a time.
     for (unsigned i = 0; i < rank; i++) {
-        mlk_poly_frombytes(&t, ek + (size_t)384 * i);
+        mlk_frombytes(&t, ek + (size_t)384 * i);
         mlk_noise(&r.vec[i], coins, (uint8_t)i);
         mlk_ntt(&r.vec[i]);
         mlk_dot_term(&v, &t, &r.vec[i], i);
@@ -255,16 +312,16 @@ static void mlk_pke_encrypt(uint8_t widemul, unsigned rank, uint8_t *ct, const u
         mlk_invntt(&u);                          // inverse NTT absorbs R^-1
         mlk_noise(&noise, coins, (uint8_t)(rank + i));
         mlk_add(&u, &u, &noise); // + e1
-        mlk_poly_reduce(&u);
-        widemul_mlk_poly_compress_du(widemul, ct + mlk_poly_comp_du_bytes(rank) * i, &u, rank);
+        mlk_reduce(&u);
+        mlk_compress_du(widemul, ct + mlk_poly_comp_du_bytes(rank) * i, &u, rank);
     }
     mlk_invntt(&v);
     mlk_noise(&noise, coins, (uint8_t)(2 * rank)); // e2
     mlk_add(&v, &v, &noise);
-    mlk_poly_frommsg(&noise, m); // Decompress1(m)
+    mlk_frommsg(&noise, m); // Decompress1(m)
     mlk_add(&v, &v, &noise);
-    mlk_poly_reduce(&v);
-    widemul_mlk_poly_compress(widemul, ct + mlk_polyvec_comp_bytes(rank), &v, rank);
+    mlk_reduce(&v);
+    mlk_compress_dv(widemul, ct + mlk_polyvec_comp_bytes(rank), &v, rank);
     // u and v are published only compressed; the low bits the
     // compression drops depend on the secret noise, so both are wiped.
     ct_wipe(&r, sizeof r);
@@ -288,12 +345,12 @@ static void mlk_pke_decrypt(uint8_t widemul, unsigned rank, uint8_t m[32], const
     for (unsigned i = 0; i < rank; i++) {
         mlk_poly_decompress_du(&u, ct + mlk_poly_comp_du_bytes(rank) * i, rank);
         mlk_ntt(&u);
-        mlk_poly_frombytes(&s, dkpke + (size_t)384 * i);
+        mlk_frombytes(&s, dkpke + (size_t)384 * i);
         mlk_dot_term(&w, &s, &u, i);
     }
     mlk_invntt(&w);           // inverse NTT absorbs R^-1
     mlk_poly_sub(&w, &v, &w); // v - s o u
-    mlk_poly_reduce(&w);
+    mlk_reduce(&w);
     widemul_mlk_poly_tomsg(widemul, m, &w);
     ct_wipe(&s, sizeof s);
     ct_wipe(&w, sizeof w);
@@ -303,8 +360,13 @@ static void mlk_pke_decrypt(uint8_t widemul, unsigned rank, uint8_t m[32], const
 // t-hat must be a valid Z_q element. ByteDecode12 reduces mod q, so a
 // field at or above q would not round-trip. Reads only the public ek, so
 // the value-dependent branch leaks nothing. Returns nonzero on failure.
+// mlkem_avx2.c's copy reads 16 fields a step on AVX2 (docs/decisions.md
+// 232).
 static int mlk_modulus_check(const uint8_t *ek, unsigned rank) {
     size_t t_bytes = mlk_polyvec_bytes(rank);
+#ifdef CH_MLKEM_AVX2_COPY
+    return mlk_field_at_or_above_q_avx2(ek, t_bytes);
+#else
     for (size_t i = 0; i < t_bytes; i += 3) {
         uint16_t lo = (uint16_t)((ek[i] | ((uint16_t)ek[i + 1] << 8)) & 0xfff);
         uint16_t hi = (uint16_t)(((ek[i + 1] >> 4) | ((uint16_t)ek[i + 2] << 4)) & 0xfff);
@@ -313,6 +375,7 @@ static int mlk_modulus_check(const uint8_t *ek, unsigned rank) {
         }
     }
     return 0;
+#endif
 }
 
 // K_bar = J(z || ct) = SHAKE256(z || ct, 32), the implicit-reject secret.

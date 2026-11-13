@@ -1,0 +1,14 @@
+invariant: INV-16
+file: src/p256_wide_word.h
+catches: p256_equiv_test
+reason: p256_wide_mul_word drops the carry into the word above the four, so
+  a product whose third high half and top low half carry loses 2^256 of
+  its value. The inverse multiplies by factors below 2^32, whose products
+  carry there about once in 2^33 calls, so the inverses' cases alone pass.
+  bin/p256_equiv_test holds the word product to a reference on edge and
+  random full words, whose products carry there in about half the cases.
+
+--- old
+    return high3 + carry;
+--- new
+    return high3;

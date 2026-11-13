@@ -8,7 +8,6 @@ reason: the compression of u in ML-KEM encryption runs under
   constant-time answer.
 
 --- old
-        widemul_mlk_poly_compress_du(widemul, ct + mlk_poly_comp_du_bytes(rank) * i, &u, rank);
+        mlk_compress_du(widemul, ct + mlk_poly_comp_du_bytes(rank) * i, &u, rank);
 --- new
-        widemul_mlk_poly_compress_du(WIDEMUL_NOT_STATED, ct + mlk_poly_comp_du_bytes(rank) * i, &u,
-                                     rank);
+        mlk_compress_du(WIDEMUL_NOT_STATED, ct + mlk_poly_comp_du_bytes(rank) * i, &u, rank);

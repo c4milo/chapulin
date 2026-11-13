@@ -1,0 +1,15 @@
+invariant: INV-48
+file: src/mlkem.c
+catches: test/mlkem-builds.sh
+reason: the AVX2 copy's modulus check is guarded on a macro no build
+  defines, so a session with CH_CPU_AVX2 reads an ek's fields one group
+  at a time. Nothing else objects: the loop refuses the same keys, and
+  only the time is wrong. The script requires the copy for x86-64 to call
+  mlk_field_at_or_above_q_avx2.
+
+--- old
+#ifdef CH_MLKEM_AVX2_COPY
+    return mlk_field_at_or_above_q_avx2(ek, t_bytes);
+--- new
+#ifdef CH_MLKEM_AVX2_COPY_PATH
+    return mlk_field_at_or_above_q_avx2(ek, t_bytes);

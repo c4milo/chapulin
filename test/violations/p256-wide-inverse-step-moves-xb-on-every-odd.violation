@@ -1,0 +1,14 @@
+invariant: INV-16
+file: src/p256_wide_inverse.c
+catches: p256_equiv_test
+reason: a step adds difference to xb wherever xa is odd, not only where the
+  step swaps, so a subtraction that does not swap also moves xb to the old
+  xa. The factors no longer describe the steps the approximations took,
+  and the inverse is wrong. bin/p256_equiv_test holds both wide inverses to
+  the 32-bit files' Fermat inverses, and p256_wide_inverse_steps holds a
+  step to a reference that branches.
+
+--- old
+    *xb += difference & swap;
+--- new
+    *xb += difference & *odd;

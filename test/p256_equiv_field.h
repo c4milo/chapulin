@@ -176,6 +176,44 @@ static void run_field(void) {
     report("field", "the Montgomery form of 1", same_fe(&p256_wide_fe_one_mont, &p256_fe_one_mont));
 }
 
+// p256_wide_mul_word, the inverse's product of a word and four words (docs/decisions.md 232),
+// against a reference that carries each 128-bit product's high word into the next one. The
+// inverse multiplies by factors below 2^32, whose products carry into the top word about once
+// in 2^33 calls, so these cases take full words: the edges 0, 1, 2^63, 2^64 - 2 and 2^64 - 1
+// in every place, and random words.
+static void word_product_case(uint64_t x, const uint64_t b[4]) {
+    uint64_t want[5];
+    uint64_t carry = 0;
+    for (size_t i = 0; i < 4; i++) {
+        ct_u128 product = (ct_u128)x * b[i] + carry;
+        want[i] = (uint64_t)product;
+        carry = (uint64_t)(product >> 64);
+    }
+    want[4] = carry;
+    uint64_t got[5];
+    got[4] = p256_wide_mul_word(&got[0], &got[1], &got[2], &got[3], x, b[0], b[1], b[2], b[3]);
+    report("word products", "x times four words", memcmp(got, want, sizeof got) == 0);
+}
+
+static void run_word_products(void) {
+    static const uint64_t edges[5] = {0, 1, UINT64_C(1) << 63, UINT64_MAX - 1, UINT64_MAX};
+    // 3,125 = 5^5: every edge for x and for each of the four words.
+    for (size_t i = 0; i < 3125; i++) {
+        size_t at = i;
+        uint64_t x = edges[at % 5];
+        uint64_t b[4];
+        for (size_t k = 0; k < 4; k++) {
+            at /= 5;
+            b[k] = edges[at % 5];
+        }
+        word_product_case(x, b);
+    }
+    for (int i = 0; i < 20000; i++) {
+        uint64_t b[4] = {rng_next(), rng_next(), rng_next(), rng_next()};
+        word_product_case(rng_next(), b);
+    }
+}
+
 // The wide field on the values Python computed.
 static int wide_bytes_are(const p256_wide_fe *a, const uint8_t want[P256_FE_LEN]) {
     uint8_t got[P256_FE_LEN];

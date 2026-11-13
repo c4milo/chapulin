@@ -244,6 +244,23 @@ void mlk_vector_add(mlk_poly *r, const mlk_poly *a, const mlk_poly *b) {
     }
 }
 
+// mlk_poly_reduce on eight coefficients a step.
+void mlk_vector_reduce(mlk_poly *p) {
+    for (size_t at = 0; at < MLKEM_N; at += 8) {
+        lanes_store(p->coeffs + at, lanes_barrett_reduce(lanes_load(p->coeffs + at)));
+    }
+}
+
+// One byte of the message a step, eight coefficients. mlk_poly_frommsg reads
+// each bit through a volatile object, so that no compiler builds a branch on
+// it (docs/decisions.md 125), and under gcc 13.3 took 266 ns of an
+// encapsulation on a Xeon 8573C.
+void mlk_vector_frommsg(mlk_poly *p, const uint8_t msg[32]) {
+    for (size_t i = 0; i < 32; i++) {
+        lanes_message(p->coeffs + 8 * i, msg[i]);
+    }
+}
+
 // Sixteen bytes of the stream a step, 32 coefficients. gcc 13 at -O2 kept
 // mlk_sample_cbd's inner loop over the eight coefficients of a 32-bit word,
 // with a shift by a register for each of them (docs/decisions.md 202 and

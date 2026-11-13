@@ -31,6 +31,13 @@
 // And for the sum: the same pairs, with the output apart from both
 // operands, on the first and on the second, which is how mlkem.c calls it.
 //
+// And for the reduction: mlk_vector_reduce against mlk_poly_reduce on
+// every int16 value, 256 polynomials whose coefficients run through all
+// 65,536 in turn; and for the message expansion: mlk_vector_frommsg
+// against mlk_poly_frommsg on 256 messages, the kth of which holds byte
+// value k + i at each position i, so each position takes every value
+// (docs/decisions.md 232).
+//
 // And for the noise: mlk_vector_noise over the PRF stream of each of
 // NOISE_SEEDS random seeds and each of the 256 nonces, against
 // mlk_sample_cbd on the same seed and nonce (docs/decisions.md 225). Each
@@ -147,6 +154,38 @@ static void compare_sum(const char *what, const mlk_poly *a, const mlk_poly *b) 
     vector = *b;
     mlk_vector_add(&vector, a, &vector);
     require_same(what, "sum, output on the second operand", &portable, &vector);
+}
+
+// Every int16 value through both reductions: polynomial k holds the
+// 256 values from 256 k - 32768 up.
+static void reduce_cases(void) {
+    for (int k = 0; k < 256; k++) {
+        mlk_poly portable;
+        mlk_poly vector;
+        for (size_t i = 0; i < MLKEM_N; i++) {
+            portable.coeffs[i] = (int16_t)(256 * k + (int)i - 32768);
+            vector.coeffs[i] = portable.coeffs[i];
+        }
+        mlk_poly_reduce(&portable);
+        mlk_vector_reduce(&vector);
+        require_same("every int16 value", "reduction", &portable, &vector);
+    }
+}
+
+// Each byte value at each of the 32 positions of a message, through both
+// expansions.
+static void message_cases(void) {
+    for (int k = 0; k < 256; k++) {
+        uint8_t msg[32];
+        for (size_t i = 0; i < sizeof msg; i++) {
+            msg[i] = (uint8_t)(k + (int)i);
+        }
+        mlk_poly portable;
+        mlk_poly vector;
+        mlk_poly_frommsg(&portable, msg);
+        mlk_vector_frommsg(&vector, msg);
+        require_same("every byte at every position", "message expansion", &portable, &vector);
+    }
 }
 
 static void fill(mlk_poly *p, int16_t value) {
@@ -307,17 +346,19 @@ int main(void) {
     random_cases();
     product_edge_cases();
     product_random_cases();
+    reduce_cases();
+    message_cases();
     noise_cases();
     if (failures != 0) {
         (void)fprintf(stderr,
-                      "mlkem vector equivalence: %d of %lu transforms, products, sums and "
-                      "noise polynomials differ\n",
+                      "mlkem vector equivalence: %d of %lu transforms, products, sums, "
+                      "reductions, messages and noise polynomials differ\n",
                       failures, compared);
         return 1;
     }
-    (void)printf(
-        "mlkem vector equivalence: %lu transforms, products, sums and noise polynomials, the "
-        "same coefficients on the vector path and the portable loops\n",
-        compared);
+    (void)printf("mlkem vector equivalence: %lu transforms, products, sums, reductions, messages "
+                 "and noise polynomials, the same coefficients on the vector path and the portable "
+                 "loops\n",
+                 compared);
     return 0;
 }

@@ -9813,11 +9813,18 @@ WIDEMUL_SPECS := \
 #   left and on the count, and the seven of the loop over the groups left,
 #   which test a candidate against q and the count and the groups
 #   (docs/decisions.md 225). The candidates come from the public matrix
-#   seed.
-# mlkem_vector.c, 9 and 9: the loops over the layers and blocks of the two
+#   seed. In the copy the check of an encapsulation key runs on AVX2 in
+#   mlk_field_at_or_above_q_avx2, which tests the key's length for zero and
+#   loops over its 24-byte steps, ByteDecode12 in mlk_poly_frombytes_avx2,
+#   whose one branch is its loop over 16 steps, and Compress_10 and
+#   Compress_4 in mlk_poly_compress_10_avx2 and mlk_poly_compress_4_avx2,
+#   each a loop over 16 steps and a loop over its bytes; the copy is at 34
+#   (docs/decisions.md 232).
+# mlkem_vector.c, 11 and 11: the loops over the layers and blocks of the two
 #   transforms, the base multiplication's 16 blocks, the sum's 32 steps
-#   (docs/decisions.md 214) and the noise's 8 (docs/decisions.md 225), all
-#   constants.
+#   (docs/decisions.md 214), the noise's 8 (docs/decisions.md 225), and the
+#   reduction's 32 steps and the message expansion's 32 (docs/decisions.md
+#   232), all constants.
 # mldsa_vector.c, 13 and 13: the loops over the layers, the blocks and
 #   the coefficients of the two transforms and the two products, all over
 #   constants. On arm64 they are the NEON arm's, and on x86-64 the AVX2
@@ -10018,7 +10025,8 @@ WIDEMUL_SPECS := \
 #   p256_wide_wipe.c hold none: clang unrolls the loops over four words.
 # p256_wide_inverse.c, 3 and 3: the 31 steps of a round, and in
 #   p256_wide_inverse_public the loop over the rounds and its test of a's
-#   words, which it computes from a public y.
+#   words, which it computes from a public y. gcc writes the steps out
+#   (docs/decisions.md 232).
 # p256_wide_point.c, 3 and 3: the leading byte and the range of a peer's
 #   point in p256_wide_point_from_bytes, both public, and whether the
 #   caller of p256_wide_point_affine asked for Y.
@@ -10635,9 +10643,9 @@ BRANCH_CEILING := \
   arm64/src/rsa_sign64_wipe.c:0 x86-64/src/rsa_sign64_wipe.c:0 \
   arm64/src/rsa_ifma.c:0 x86-64/src/rsa_ifma.c:41 arm64/src/rsa_ifma.c@512:0 x86-64/src/rsa_ifma.c@512:45 \
   arm64/src/rsa_avx2.c:0 x86-64/src/rsa_avx2.c:52 arm64/src/rsa_avx2.c@512:0 x86-64/src/rsa_avx2.c@512:92 \
-  arm64/src/mlkem_vector.c:9 x86-64/src/mlkem_vector.c:9 \
+  arm64/src/mlkem_vector.c:11 x86-64/src/mlkem_vector.c:11 \
   arm64/src/mldsa_vector.c:13 x86-64/src/mldsa_vector.c:13 \
-  arm64/src/keccak_avx2.c:0 x86-64/src/keccak_avx2.c:1 arm64/src/mlkem_avx2.c:0 x86-64/src/mlkem_avx2.c:29 \
+  arm64/src/keccak_avx2.c:0 x86-64/src/keccak_avx2.c:1 arm64/src/mlkem_avx2.c:0 x86-64/src/mlkem_avx2.c:34 \
   arm64/src/mldsa_avx2.c:0 x86-64/src/mldsa_avx2.c:8 \
   arm64/src/keccak_neon.c:2 x86-64/src/keccak_neon.c:0 arm64/src/mlkem_neon.c:17 x86-64/src/mlkem_neon.c:0 \
   arm64/src/mldsa_neon.c:9 x86-64/src/mldsa_neon.c:0 \

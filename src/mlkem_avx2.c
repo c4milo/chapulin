@@ -112,6 +112,90 @@ unsigned mlk_sample_groups_avx2(mlk_poly *p, unsigned j, const uint8_t *buf, siz
     return mlk_sample_groups(p, j, buf + 3 * group, groups - group);
 }
 
+// ByteDecode12 of 24 bytes a step: mlk_candidates reads the 16 fields of eight groups, the
+// fields mlk_poly_frombytes reads, in its order, each in a 16-bit lane. gcc 13.3 ran
+// mlk_poly_frombytes as 128 steps of byte loads and shifts (docs/decisions.md 232). The fields
+// of a dk's s-hat are secret, and each step reads every byte with the same shuffle, mask and
+// shift.
+void mlk_poly_frombytes_avx2(mlk_poly *p, const uint8_t in[MLK_POLY_BYTES]) {
+    const uint8_t *bytes = in;
+    for (size_t at = 0; at < MLKEM_N; at += 16) {
+        _mm256_storeu_si256((__m256i *)(void *)&p->coeffs[at], mlk_candidates(bytes));
+        bytes += 24;
+    }
+}
+
+// mlkem.c's modulus check on 16 fields a step: VPCMPGTW marks each field below q, the marks of
+// every step go into one AND, and VPMOVMSKB reads them once at the end. The fields are those of
+// a public ek, and the call reads all of them.
+int mlk_field_at_or_above_q_avx2(const uint8_t *in, size_t bytes) {
+    const __m256i q = _mm256_set1_epi16(MLKEM_Q);
+    __m256i below = _mm256_set1_epi16(-1);
+    for (size_t at = 0; at < bytes; at += 24) {
+        below = _mm256_and_si256(below, _mm256_cmpgt_epi16(q, mlk_candidates(in + at)));
+    }
+    return _mm256_movemask_epi8(below) != -1;
+}
+
+#if MLK_HOLDS_768
+// Compress_d of eight coefficients below q in 32-bit lanes, as mlkem_poly.c's mlk_compress
+// computes each: ((x << d) + 1664) * 1290168, its high 32 bits, below 2^d. VPMULUDQ multiplies
+// the even lanes, and the odd lanes after a shift of 32, each into 64 bits, so the high words
+// of the even products shift down and those of the odd ones stay where they are. The products
+// are 32x32, which the multiply answer states (widemul.h).
+static inline __m256i mlk_compress_lanes(__m256i x, int d) {
+    const __m256i factor = _mm256_set1_epi64x(1290168);
+    __m256i y = _mm256_add_epi32(_mm256_slli_epi32(x, d), _mm256_set1_epi32(1664));
+    __m256i even = _mm256_srli_epi64(_mm256_mul_epu32(y, factor), 32);
+    __m256i odd = _mm256_mul_epu32(_mm256_srli_epi64(y, 32), factor);
+    // Immediate 0xaa takes the odd 32-bit lanes from odd.
+    __m256i high = _mm256_blend_epi32(even, odd, 0xaa);
+    return _mm256_and_si256(high, _mm256_set1_epi32((1 << d) - 1));
+}
+
+// Compress_d of the 256 coefficients of p into t, 16 a step: mlk_freeze's mask of q under each
+// negative coefficient, the coefficients in two halves of eight 32-bit lanes, and the two
+// halves' values back in 16-bit lanes in their order. VPACKUSDW interleaves the halves by 128
+// bits, and VPERMQ under the immediate 0xd8 puts them back in order. The values are the
+// ciphertext's, which a caller publishes.
+static inline void mlk_compress_poly(uint16_t t[MLKEM_N], const mlk_poly *p, int d) {
+    const __m256i q = _mm256_set1_epi16(MLKEM_Q);
+    for (size_t at = 0; at < MLKEM_N; at += 16) {
+        __m256i a = _mm256_loadu_si256((const __m256i *)(const void *)&p->coeffs[at]);
+        __m256i frozen = _mm256_add_epi16(a, _mm256_and_si256(_mm256_srai_epi16(a, 15), q));
+        __m256i low = mlk_compress_lanes(_mm256_cvtepu16_epi32(_mm256_castsi256_si128(frozen)), d);
+        __m256i high =
+            mlk_compress_lanes(_mm256_cvtepu16_epi32(_mm256_extracti128_si256(frozen, 1)), d);
+        __m256i values = _mm256_permute4x64_epi64(_mm256_packus_epi32(low, high), 0xd8);
+        _mm256_storeu_si256((__m256i *)(void *)&t[at], values);
+    }
+}
+
+// mlkem_poly.c's ByteEncode_10 of Compress_10 under the multiply answer WIDEMUL_CONSTANT_TIME,
+// with each value on AVX2 and the bytes written as mlk_poly_compress_10 writes them.
+void mlk_poly_compress_10_avx2(uint8_t out[320], const mlk_poly *p) {
+    uint16_t t[MLKEM_N];
+    mlk_compress_poly(t, p, 10);
+    for (size_t j = 0; j < 64; j++) {
+        const uint16_t *v = &t[4 * j];
+        out[5 * j + 0] = (uint8_t)v[0];
+        out[5 * j + 1] = (uint8_t)((v[0] >> 8) | (v[1] << 2));
+        out[5 * j + 2] = (uint8_t)((v[1] >> 6) | (v[2] << 4));
+        out[5 * j + 3] = (uint8_t)((v[2] >> 4) | (v[3] << 6));
+        out[5 * j + 4] = (uint8_t)(v[3] >> 2);
+    }
+}
+
+// The same for ByteEncode_4 of Compress_4, two values in a byte.
+void mlk_poly_compress_4_avx2(uint8_t out[128], const mlk_poly *p) {
+    uint16_t t[MLKEM_N];
+    mlk_compress_poly(t, p, 4);
+    for (size_t i = 0; i < 128; i++) {
+        out[i] = (uint8_t)(t[2 * i] | (t[2 * i + 1] << 4));
+    }
+}
+#endif
+
 #ifdef __clang__
 #pragma clang attribute pop
 #else

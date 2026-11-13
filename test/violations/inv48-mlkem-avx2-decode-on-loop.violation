@@ -1,0 +1,15 @@
+invariant: INV-48
+file: src/mlkem.c
+catches: test/mlkem-builds.sh
+reason: the AVX2 copy's ByteDecode12 calls mlkem_poly.c's loop, so a
+  session with CH_CPU_AVX2 reads t-hat and s-hat one field at a time.
+  Nothing else objects: the loop gives the same coefficients, and only
+  the time is wrong. The script requires the copy for x86-64 to call
+  mlk_poly_frombytes_avx2 and not mlk_poly_frombytes.
+
+--- old
+#ifdef CH_MLKEM_AVX2_COPY
+    mlk_poly_frombytes_avx2(p, in);
+--- new
+#ifdef CH_MLKEM_AVX2_COPY
+    mlk_poly_frombytes(p, in);

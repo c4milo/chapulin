@@ -1,8 +1,8 @@
 // The steps on 64-bit words that the wide P-256 arithmetic is built from: an add with carry, a
-// subtract with borrow, one row of a product, the square of four words, and a mask from a bit.
-// The wide files include this header: p256_wide_field.h, so every file that includes it,
-// p256_wide_scalar.c and p256_wide_inverse.c. The two moduli share these five steps and no
-// constant, as p256_field.c and p256_scalar.c share none.
+// subtract with borrow, one row of a product, the product of a word and four words, the square
+// of four words, and a mask from a bit. The wide files include this header: p256_wide_field.h,
+// so every file that includes it, p256_wide_scalar.c and p256_wide_inverse.c. The two moduli
+// share these six steps and no constant, as p256_field.c and p256_scalar.c share none.
 //
 // Every step runs the same instructions whatever its operands hold. No branch and no index
 // reads a word. The one instruction whose timing the C cannot state is the 64x64->128 multiply,
@@ -177,6 +177,48 @@ static inline uint64_t p256_wide_mul_row(uint64_t *t0, uint64_t *t1, uint64_t *t
     *t2 = p256_wide_add_carry(&high_carry, *t2, (uint64_t)(p1 >> 64));
     *t3 = p256_wide_add_carry(&high_carry, *t3, (uint64_t)(p2 >> 64));
     return (uint64_t)(p3 >> 64) + low_carry + high_carry;
+}
+
+// x * (b3 : b2 : b1 : b0): writes the four low words to (*t3 : *t2 : *t1 : *t0) and returns the
+// word above them. It is p256_wide_mul_row on four zero words, with no sum of zero: the high
+// half of each product and the low half of the next go down one carry chain. Under gcc for
+// x86-64 each half is the output of an empty statement as soon as its multiply writes it. gcc
+// 13.3 kept a 128-bit product that lived across the next multiply in a stack slot, and with the
+// zeros it added each word to a zero register, which took 3,700 instructions more of a P-256
+// inverse (docs/decisions.md 232).
+//
+// The product is below 2^64 * 2^256, so the word returned holds everything above the four: the
+// high half of the top product is at most 2^64 - 2, and the last line cannot wrap.
+// proof/p256_wide_row_harness.c proves that on the real multiply.
+static inline uint64_t p256_wide_mul_word(uint64_t *t0, uint64_t *t1, uint64_t *t2, uint64_t *t3,
+                                          uint64_t x, uint64_t b0, uint64_t b1, uint64_t b2,
+                                          uint64_t b3) {
+    ct_u128 p0 = ct_mul128(x, b0);
+    uint64_t low0 = (uint64_t)p0;
+    uint64_t high0 = (uint64_t)(p0 >> 64);
+    P256_WIDE_HOLD(low0);
+    P256_WIDE_HOLD(high0);
+    ct_u128 p1 = ct_mul128(x, b1);
+    uint64_t low1 = (uint64_t)p1;
+    uint64_t high1 = (uint64_t)(p1 >> 64);
+    P256_WIDE_HOLD(low1);
+    P256_WIDE_HOLD(high1);
+    ct_u128 p2 = ct_mul128(x, b2);
+    uint64_t low2 = (uint64_t)p2;
+    uint64_t high2 = (uint64_t)(p2 >> 64);
+    P256_WIDE_HOLD(low2);
+    P256_WIDE_HOLD(high2);
+    ct_u128 p3 = ct_mul128(x, b3);
+    uint64_t low3 = (uint64_t)p3;
+    uint64_t high3 = (uint64_t)(p3 >> 64);
+    P256_WIDE_HOLD(low3);
+    P256_WIDE_HOLD(high3);
+    uint64_t carry = 0;
+    *t0 = low0;
+    *t1 = p256_wide_add_carry(&carry, high0, low1);
+    *t2 = p256_wide_add_carry(&carry, high1, low2);
+    *t3 = p256_wide_add_carry(&carry, high2, low3);
+    return high3 + carry;
 }
 
 // The square of (a3 : a2 : a1 : a0) as the eight words (*t7 : ... : *t0): the six products
