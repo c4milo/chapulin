@@ -203,8 +203,11 @@ Home: github.com/c4milo.
   (Keccak on four states at once in AVX2, and `mlkem.c` compiled once
   more to sample the matrix on it and to keep its candidates eight
   groups at a time in AVX2 through `mlkem_rejection_table.h`, which
-  `tools/mlkem_rejection_table.py` writes, an x86-64 session whose
-  caller sets CH_CPU_AVX2, docs/decisions.md 225), and with `keccak_hw.h`, `mlkem_hw.c` and
+  `tools/mlkem_rejection_table.py` writes, to read ByteDecode12's
+  fields and an ek's modulus check 16 fields a step on the same
+  shuffle, and under CH_CPU_CONSTANT_TIME_MULTIPLY to compress u and v
+  at rank 3 on VPMULUDQ, an x86-64 session whose caller sets
+  CH_CPU_AVX2, docs/decisions.md 225 and 232), and with `keccak_hw.h`, `mlkem_hw.c` and
   `mlkem_poly_hw.c` (the two files compiled once more over
   `sha3_hw.c`) + `mldsa.[ch]`/`mldsa_poly.[ch]` with `mldsa_zetas.h`
   (ML-DSA-87 verification, FIPS 204, over public inputs alone and so
@@ -674,7 +677,11 @@ Home: github.com/c4milo.
   `mlk_vector_add`, because it multiplies nothing (docs/decisions.md 214).
   So does the centered binomial step of ML-KEM's noise, through
   `mlk_vector_noise`, on the PRF stream `mlkem.c` squeezes as
-  `mlk_sample_cbd` does (docs/decisions.md 225).
+  `mlk_sample_cbd` does (docs/decisions.md 225). So do the Barrett
+  reduction, through `mlk_vector_reduce`, whose multiplies are 16x16 as
+  the NTT's are, and Decompress_1 of the message, through
+  `mlk_vector_frommsg`, a compare of each lane with its own bit
+  (docs/decisions.md 232).
   ML-DSA-87's transforms and products run on `mldsa_vector.c`'s four
   32-bit lanes in an arm64 host object: a verification in every session,
   because its inputs are public, and a signature or a key generation
