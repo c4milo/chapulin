@@ -314,7 +314,8 @@ Home: github.com/c4milo.
   under a traffic key, SUITE=aesgcm) with `gcm_ghash.h` (GHASH's bodies
   and the choice between them, which `gcm.c` alone includes) and with
   `ghash_hw.[ch]`
-  (GHASH's multiply and data loop on the carry-less multiply),
+  (GHASH's multiply and data loop on the carry-less multiply, and
+  `gcm_powers_hw`, which writes the powers of H that a key's owner stores),
   `gcm_hw.[ch]` (counter mode over whole blocks, and on x86-64 the seal's
   and the open's counter mode and GHASH in one loop) and `gcm_vaes.[ch]` (the
   same three loops two blocks to a 256-bit register on VAES and
@@ -810,7 +811,12 @@ Home: github.com/c4milo.
   access, measures its frames' depth against the wipe, and searches the
   stack and reads zmm0 to zmm31 and k1 to k7 back as zero after its
   entries, on a CPU with what CH_CPU_AVX512 names and in the nightly
-  under SDE (docs/decisions.md 130, INV-52). The `gcm_avx512_wipe`
+  under SDE (docs/decisions.md 130, INV-52). `bin/aes_suite_test` and
+  `bin/quic_suite_test` hold the stored powers to
+  `test/ghash_powers_soft.h`'s bit arithmetic, and `bin/aes_equiv_test`,
+  `bin/ghash_equiv_test` and `bin/gcm_avx512_equiv_test` run each case
+  and each stack search a second time on stored powers
+  (docs/decisions.md 234). The `gcm_avx512_wipe`
   harnesses prove the entries over stubs of the kernel: the kernel's
   function for the round count, then the stack wipe of that length, then
   the register wipe. `bin/x86_kernels_test` counts
@@ -950,7 +956,20 @@ Home: github.com/c4milo.
   `aes.c`, `gcm.c`, `record.c`, `quic_packet.c` and `srv_ticket.c`
   include, so
   a traffic key and a public key never pass for each other and only the
-  traffic path builds one. INV-26 states the rule and what review still owes, the
+  traffic path builds one. A host object keeps each AES traffic key's
+  schedule beside the key, and beside the schedule of a key that runs
+  AES-GCM the powers H to H^8 of its hash subkey, 256 bytes in `rec_dir`
+  and `quic_keys`. `gcm_traffic_key_store` writes both when the key is
+  derived or updated, only under `CH_CPU_CONSTANT_TIME_AES`, and every wipe
+  of the key wipes both. A record or a packet copies the schedule to its
+  frame and hands the AEAD the pointer to the powers that
+  `aes_traffic_key_load` writes, so its frame holds no power. `ghash_hw.c`
+  reads the powers there. A kernel's whole passes copy them into the
+  kernel's own frame, which its entry wipes: `gcm_hw.c`'s loops read that
+  copy through the member, so gcc 15 keeps a pass's keystream in
+  registers. The set `quic_keys_select` chose and a header protection key
+  hold none. A device object stores neither (docs/decisions.md 160 and
+  234). INV-26 states the rule and what review still owes, the
   Semgrep rule holds the calls, and `.violation` mutants prove each check
   fires. `aes.c`, `quic_aes_soft.c`, `aes_extern.c` and
   `gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
