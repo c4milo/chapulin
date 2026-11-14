@@ -18,8 +18,8 @@ _Static_assert(SUITE_KEY_MAX == AEAD_KEY, "rec_dir.key holds the longest suite k
 // Seals and opens one AES-GCM record body in place, the two AES arms of
 // seal_body and open_body below. The round keys live on this frame and
 // are wiped before it returns. In a host object k points at d's stored
-// powers of the hash subkey, which the AEAD reads where they lie, so
-// this frame holds no power.
+// powers of the hash subkey, which the AEAD reads from d, so this frame
+// holds no power.
 static void seal_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE],
                          const uint8_t hdr[REC_HDR], uint8_t *body, size_t len) {
     aes_traffic_key k;

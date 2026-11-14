@@ -76,7 +76,7 @@ typedef struct {
     uint8_t stored;
     // The powers H^1 to H^8 of key's hash subkey under an AES-GCM suite,
     // which rec_dir_init_suite writes with schedule, so a KeyUpdate writes
-    // them again, and each record's seal or open reads in place. Zero
+    // them again, and each record's seal or open reads them here. Zero
     // where stored is 0 (suite.h, docs/decisions.md 234).
     uint8_t ghash_powers[SUITE_GHASH_POWERS_LEN];
 #endif

@@ -11,6 +11,6 @@ reason: the host object's one-pass seal hashes each pass's ciphertext beside the
   tags byte for byte.
 
 --- old
-    ghash_hash_pass(&s.ghash, &out[(passes - 1) * GCM_HW_PASS_BYTES]);
+    ghash_hash_pass(&s.ghash, &out[(passes - 1) * GCM_HW_PASS_BYTES], 1);
 --- new
     (void)out;

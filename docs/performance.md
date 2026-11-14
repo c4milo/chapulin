@@ -1105,10 +1105,11 @@ What the numbers show for AES-GCM:
   eight-block loop that took its sums out of the vector registers for each reduction took 2.2 to
   2.8 at 225a890.
 - Since decision 234 a stored key holds those eight powers beside its schedule, and a record's
-  calls read them from the session. A call computes powers only for a key that is not stored: a
-  public key of QUIC, a selected 1-RTT set, and each key of a session without the AES bit.
-  Decision 234's table holds the instructions a record takes before it and after it. The figures
-  of this section are runs from before it.
+  calls read them from the session. `gcm_hw.c`'s two pass functions carry `flatten` since then,
+  so each loop holds its hash under every compiler. A call computes powers only for a key that
+  is not stored: a public key of QUIC, a selected 1-RTT set, and each key of a session without
+  the AES bit. Decision 234's tables hold a record's instructions and times before it and after
+  it. The figures of this section are runs from before it.
 - clang's GHASH is no longer the slower one: 1.1 µs against gcc's 1.4. clang loaded each power of
   H through two general registers; the powers now come from `ghash_state` in one vector load each,
   a volatile read that also keeps the compilers from copying them to stack slots the wipe does not

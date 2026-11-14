@@ -134,9 +134,9 @@ static inline const uint16_t *suite_session_default(const ch_cfg *cfg, size_t *c
 // hash subkey, each times x^-1 and with its two words added, 32 bytes a
 // power, as ghash_hw.h's gcm_powers_hw writes them. The owner writes them
 // with the schedule, through gcm_traffic_key_store, and wipes them with
-// the key. Each seal and open reads them in place and computes none
-// (docs/decisions.md 234). quic_hp_key holds none: a header protection
-// mask runs no GHASH.
+// the key. Each seal and open reads them from the owner and computes
+// none (docs/decisions.md 234). quic_hp_key holds none: a header
+// protection mask runs no GHASH.
 #ifdef CH_SUITE_AES_GCM
 #ifdef CH_CPU_RUNTIME
 #define CH_AES_STORED_SCHEDULE

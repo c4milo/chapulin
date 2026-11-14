@@ -14,9 +14,9 @@ reason: the host object's one-pass open hashes each pass after it has decrypted
             xor_pass_in_place(s.keystream, &in[at], &out[at]);
         }
         if (p < passes) {
-            ghash_hash_pass(&s.ghash, &in[p * GCM_HW_PASS_BYTES]);
+            ghash_hash_pass(&s.ghash, &in[p * GCM_HW_PASS_BYTES], 1);
         }
 --- new
             xor_pass_in_place(s.keystream, &in[at], &out[at]);
-            ghash_hash_pass(&s.ghash, &in[at]);
+            ghash_hash_pass(&s.ghash, &in[at], 1);
         }

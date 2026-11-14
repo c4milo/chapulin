@@ -59,7 +59,7 @@
 // SUITE_GHASH_POWERS_LEN bytes (suite.h), or is NULL where the owner
 // stores none. aes_traffic_key_load writes the pointer,
 // aes_traffic_key_init writes NULL, and gcm.c hands it to the AEAD, which
-// reads the powers in place. So a frame that holds this struct holds no
+// reads the owner's powers. So a frame that holds this struct holds no
 // copy of a power, and the wipe of this struct leaves the owner's powers
 // (docs/decisions.md 234). The pointer is an address in the session, and
 // not secret.

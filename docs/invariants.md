@@ -5708,12 +5708,15 @@ last `ROLE=server` stub, as the entry said it would.
   AES instructions for H and the carry-less multiply for the powers.
   `record.c` and `quic_keys.c` call it when they derive the key, so a
   KeyUpdate and a QUIC key update write the powers again, and every wipe
-  of the struct wipes them. No call copies them. `aes_traffic_key_load`
-  writes a pointer to the owner's powers into the frame's key, and each
-  kernel reads the powers through it. So the frame holds no power, and the
-  wipe of the frame's key is the wipe it was. `quic_hp_key` holds none: a
-  mask runs no GHASH. The set a 1-RTT open chose points at none, and its
-  AEAD computes them.
+  of the struct wipes them. No record copies them to its frame.
+  `aes_traffic_key_load` writes a pointer to the owner's powers into the
+  frame's key, and each kernel reads the powers through it. `ghash_hw.c`
+  reads them where the owner keeps them. A kernel's whole passes read a
+  copy in the kernel's own frame, in the layout its loop takes, and the
+  kernel's entry wipes that frame as before. So the record's frame holds
+  no power, and the wipe of the frame's key is the wipe it was.
+  `quic_hp_key` holds none: a mask runs no GHASH. The set a 1-RTT open
+  chose points at none, and its AEAD computes them.
 
   The mechanism grew with the claim, and the growth is the cost. Two
   headers give a key a body: `aes_public_key.h` for `aes_public_key`, which
@@ -5738,7 +5741,7 @@ last `ROLE=server` stub, as the entry said it would.
   The stored powers add no file to either list. `gcm_traffic_key_store`
   and `aes_traffic_gcm_key_of` are in the two traffic families, and
   `gcm_powers_hw` begins `gcm_`, so the two rules match a call to any of
-  them outside the files above. Five violations hold the stored powers.
+  them outside the files above. Four violations hold the stored powers.
   `inv26-record-update-keeps-ghash-powers` and
   `inv26-quic-update-keeps-ghash-powers` leave the powers of the key
   before in place at a KeyUpdate and at a QUIC key update. Both ends then

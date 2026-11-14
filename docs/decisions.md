@@ -19621,7 +19621,7 @@ does nothing more.
       pass that writes a loop of stores as a memset turned off for the products: an attribute of
       gcc alone, which gained 0.29 to 0.35 µs where the window's copy gains 0.61 to 0.69.
 234. **A host object keeps the powers H to H^8 of each AES-GCM key's hash subkey beside the key's
-    schedule, and each seal and open reads them where they lie.** Decision 160 stored the
+    schedule, and a seal or an open under a stored key computes none.** Decision 160 stored the
     schedule, and each seal and open still computed the powers of the hash subkey. colibri's
     judge runs HTTP/1.1 over TLS 1.3 with TLS_AES_256_GCM_SHA384 on a Neoverse-N2, and opens one
     small record and seals one for each request. Its run 43604640176 read `aead_start` at 1.05%
@@ -19634,20 +19634,38 @@ does nothing more.
     - **The stored form.** `SUITE_GHASH_POWERS_LEN` is 256 bytes (`suite.h`): the bytes of
       `ghash_vector.h`'s eight `ghash_power`. Power i is H^(i + 1) times x^-1 as 16 bytes, and
       then its two words added, twice. `ghash_hw.c`'s `gcm_powers_hw` writes them. It is one form
-      for the four kernels. `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c` and `gcm_arm64.c` read that
-      layout from their own frames before, so they read the stored bytes with no step between.
-      `gcm_avx512_kernel.c` holds each power's two words the other way round and needs up to
-      H^33. It copies the eight into its frame with one permute for each four, and computes the
-      powers past the eighth as before. So does `gcm_arm64.c` for H^9 to H^16, which its paired
-      passes take from 32 passes up.
-    - **No copy on the frame.** A host object's `aes_traffic_key` holds `ghash_powers`, a
-      pointer. `aes_traffic_key_load` copies the schedule, as decision 160 states, and writes the
-      pointer to the owner's powers. `gcm.c` hands the pointer to the kernel, and each multiply
-      reads a power through a volatile lvalue of a type with no alignment, because the owner
-      aligns the bytes to nothing. So a record's frame holds no power, the wipe of the frame's key
-      leaves the owner's powers, and a kernel that read stored powers wipes none. The 512-bit
-      kernel's copy lies in its own frame, which its entry wipes whole (decision 130). The
-      pointer is an address in the session and is not secret.
+      for the four kernels, the layout `ghash_vector.h`'s multiplies read.
+    - **Who reads the owner's bytes.** `ghash_hw.c`'s multiply and data loop hash a record's
+      associated data, its last blocks and its lengths. They read each power where the owner
+      keeps it, through a volatile lvalue of a type with no alignment, because the owner aligns
+      the bytes to nothing. A record of 16 bytes runs nothing else. A kernel's whole passes read
+      the powers from the kernel's own frame, in the layout the loop takes. `gcm_hw.c` copies
+      the eight to its state. `gcm_vaes.c` writes four pairs of them, and `gcm_arm64.c` packs
+      their halves. `gcm_avx512_kernel.c` permutes them into two registers, because it holds
+      each power's two words the other way round. The last two compute the powers past the
+      eighth as before: H^9 to H^16 for arm64's paired passes, and up to H^33 for the 512-bit
+      kernel.
+    - **No copy on the record's frame.** A host object's `aes_traffic_key` holds `ghash_powers`,
+      a pointer. `aes_traffic_key_load` copies the schedule, as decision 160 states, and writes
+      the pointer to the owner's powers. `gcm.c` hands the pointer to the kernel. So a record's
+      frame holds no power, and the wipe of the frame's key leaves the owner's powers.
+      `ghash_hw.c` wipes no power where it read stored ones. A kernel's passes keep their copy
+      in the frame that the kernel's entry wipes, as they did when the call computed the powers
+      there. The pointer is an address in the session and is not secret.
+    - **`gcm_hw.c`'s passes read their own copy.** The first form of this change read the
+      owner's bytes in `gcm_hw.c`'s two pass loops too, and under `ch_cfg.cpu` 0x3 a 16 KiB
+      record took more time than before (the runner table below). gcc 15 for x86-64 stored the
+      eight blocks of a pass to the keystream after each AES round, because it could no longer
+      tell a load of a round key from a load of the keystream. Each of two things caused that
+      alone: a read of a power through a pointer or at a byte offset, and a pass state that held
+      its own address. So the reads in `ghash_vector.h` take `own`, a constant in each caller. `gcm_hw.c` passes 1, and its loops
+      read `s->computed` through the member. Its `pass_hash_start` copies the stored powers
+      there, 16 loads and 16 stores, and no pass state writes `powers`. Every other caller
+      passes 0. gcc 13 and gcc 15 compile `gcm_vaes.c`, `gcm_avx512.c`,
+      `gcm_avx512_kernel.c` and `gcm.c` to the same assembly as before this step, and
+      `ghash_hw.c` and `gcm_arm64.c` to the same instructions in another order. Apple clang 21
+      changes `gcm_hw.c` for x86-64 alone. The two pass functions carry `flatten`, which
+      compiles the hash into each loop under every compiler. gcc 13 called it before.
     - **Which key sets store.** `rec_dir` and `quic_keys` hold the powers after `schedule`.
       `quic_hp_key` holds none, because a header protection mask runs no GHASH. `gcm.c`'s
       `gcm_traffic_key_store` writes the schedule through `aes_traffic_key_store`, computes H
@@ -19670,10 +19688,8 @@ does nothing more.
       build and in both `AES=extern` suite builds. `quic_keys.c`'s differs in the line numbers
       its assertions pass and in nothing else.
     - **The pass bodies' arguments.** `gcm_hw.c`'s and `gcm_vaes.c`'s bodies take the arguments
-      the loop reads first, and the accumulator, the subkey and the powers last. x86-64 passes
-      six arguments in registers. In the entries' order, with the powers as a ninth argument,
-      gcc 13's seal ran about three more instructions a pass, and a 16 KiB seal took 73,989
-      instructions where it takes 73,736.
+      the loop reads first, and the accumulator, the subkey and the powers last, because x86-64
+      passes six arguments in registers.
     - **INV-26.** No file joins a list. `aes_traffic_key.h` keeps its five includers.
       `gcm_traffic_key_store` and `aes_traffic_gcm_key_of` are in the two traffic families, so
       `inv-26-aes-traffic-keys-only` matches them outside `record.c`, `quic_keys.c`,
@@ -19693,19 +19709,47 @@ does nothing more.
     | Call | Payload | arm64 before | arm64 after | x86-64 before | x86-64 after |
     |---|---|---|---|---|---|
     | `rec_seal` | 16 B | 3,309 | 3,162 | 2,505 | 2,362 |
-    | `rec_open` | 16 B | 3,308 | 3,161 | 2,661 | 2,520 |
-    | `rec_seal` | 1 KiB | 10,332 | 9,977 | 7,076 | 6,536 |
-    | `rec_open` | 1 KiB | 10,327 | 9,973 | 7,044 | 6,497 |
-    | `rec_seal` | 16 KiB | 111,091 | 110,746 | 74,036 | 73,736 |
-    | `rec_open` | 16 KiB | 111,035 | 110,690 | 71,484 | 71,057 |
-    | `quic_packet_seal` | 64 B | 6,608 | 6,209 | 3,291 | 2,952 |
-    | `quic_packet_open_handshake` | 64 B | 6,605 | 6,207 | 3,618 | 3,279 |
-    | `quic_packet_seal` | 1,200 B | 14,170 | 13,755 | 8,469 | 7,791 |
-    | `quic_packet_open_handshake` | 1,200 B | 14,164 | 13,749 | 8,818 | 8,130 |
+    | `rec_open` | 16 B | 3,308 | 3,161 | 2,661 | 2,519 |
+    | `rec_seal` | 1 KiB | 10,332 | 9,975 | 7,076 | 6,271 |
+    | `rec_open` | 1 KiB | 10,327 | 9,971 | 7,044 | 6,348 |
+    | `rec_seal` | 16 KiB | 111,091 | 110,744 | 74,036 | 68,791 |
+    | `rec_open` | 16 KiB | 111,035 | 110,688 | 71,484 | 67,908 |
+    | `quic_packet_seal` | 64 B | 6,608 | 6,209 | 3,291 | 2,954 |
+    | `quic_packet_open_handshake` | 64 B | 6,605 | 6,207 | 3,618 | 3,280 |
+    | `quic_packet_seal` | 1,200 B | 14,170 | 13,757 | 8,469 | 7,487 |
+    | `quic_packet_open_handshake` | 1,200 B | 14,164 | 13,751 | 8,818 | 7,956 |
 
-    A 16-byte record takes 4.4% fewer instructions on arm64 and 5.7% fewer on x86-64, a 1 KiB
-    record 3.4% and 7.6% fewer, and a 16 KiB record 0.3% and 0.4% fewer. x86-64 saves more
-    because `gcm.c`'s steps computed the powers in three calls there, and one block of AES for H.
+    A 16-byte record takes 4.4% fewer instructions on arm64 and 5.7% fewer on x86-64, and a
+    1 KiB record 3.5% and 11.4% fewer. A 16 KiB record takes 0.3% fewer on arm64 and 7.1% fewer
+    on x86-64. x86-64 saves more at 16 bytes because `gcm.c`'s steps computed the powers in
+    three calls there, and one block of AES for H. At 1 KiB and 16 KiB the x86-64 counts also
+    hold what `flatten` removes under gcc 13: about 39 instructions a pass, less about 47 a call
+    for the copy of the powers.
+
+    Timed on GitHub runners with `make bench-record` (lab run 43631059286), under `ch_cfg.cpu`
+    0x3 and TLS_AES_256_GCM_SHA384. Each job ran the tree before this change, the first form
+    and the final tree in turn, twice, on one CPU. Each cell is the first form's time over the
+    time before, then the final tree's.
+
+    | Compiler | CPU | Seal 16 B | Seal 1 KiB | Seal 16 KiB | Open 16 KiB |
+    |---|---|---|---|---|---|
+    | clang 23 | EPYC 9V45 | 0.81 / 0.82 | 0.89 / 0.89 | 1.00 / 0.98 | 0.99 / 0.98 |
+    | clang 23 | Xeon 6975P-C | 0.88 / 0.89 | 0.94 / 0.95 | 0.99 / 1.01 | 1.00 / 1.00 |
+    | gcc 13 | EPYC 9V74 | 0.95 / 0.93 | 0.96 / 0.90 | 0.99 / 0.91 | 1.01 / 0.92 |
+    | gcc 13 | Neoverse-N2 | 0.93 / 0.85 | 0.95 / 0.92 | 1.00 / 0.99 | 1.00 / 0.99 |
+    | gcc 13 | Xeon 6975P-C | 0.98 / 0.98 | 0.96 / 0.97 | 1.00 / 1.01 | 1.00 / 1.01 |
+    | gcc 15 | EPYC 7763 | 0.95 / 0.96 | 1.27 / 0.94 | 1.54 / 1.00 | 1.44 / 0.99 |
+    | gcc 15 | EPYC 9V45 | 0.91 / 0.91 | 1.08 / 0.93 | 1.27 / 0.99 | 1.28 / 0.99 |
+    | gcc 15 | Neoverse-N2 | 0.80 / 0.80 | 0.91 / 0.91 | 0.98 / 0.99 | 0.98 / 0.98 |
+    | gcc 15 | Xeon 6975P-C | 0.99 / 0.99 | 1.01 / 0.96 | 1.07 / 1.00 | 1.08 / 1.00 |
+
+    At 16 KiB the final tree takes at most 0.3% more time than before on the three EPYC
+    CPUs and the Neoverse-N2, under either key size. On the Xeon 6975P-C it takes 0.7% to
+    1.2% more under gcc 13 and clang 23, in each of two processes. There the AES-256 seal
+    under gcc 13 read 4,522 and 4,508 ns, against 4,464 and 4,464 before. That cost stays
+    open: this tree does not show whether the loop or the addresses of its code make it. A
+    CPU with VAES, as that Xeon has, runs `ch_cfg.cpu` 0x1f or 0x31f. Under those values, and
+    on arm64 under 0x83, every 16-byte and 1 KiB record took less time than before.
 
     The cost is SRAM. A `SUITE=aesgcm` host `ch_tls` is 512 bytes larger, two directions.
     `bench/sram.sh` moves six figures, three session structs and their static working sets: a
@@ -19731,30 +19775,36 @@ does nothing more.
     one rule, and INV-26 and INV-17 name them. `make ct-taint` runs each AES-GCM case a second
     time on a stored key, with the key marked secret through the store.
 
-    The reads of a stored power stay volatile. With plain reads, gcc 15 and clang 23 for x86-64
-    left a power's added words in the stack below `gcm_hash_data_hw`, and
-    `bin/ghash_equiv_test` found them. `ghash-hw-powers-held-in-registers` is that edit.
+    The reads of a power stay volatile, both the reads of the owner's bytes and the reads of
+    a state's own copy. With plain reads, gcc 13, gcc 15 and clang 23 for x86-64 left a power
+    or its added words in a stack slot that no wipe clears, and `bin/ghash_equiv_test` found
+    them (lab run 43631059286). `ghash-hw-powers-held-in-registers` is that edit. Under each
+    of the three compilers the 23 violations that edit `gcm_hw.c` or `ghash_vector.h`, or hold
+    the stored powers, are caught.
 
     Rejected:
 
     - **A 128-byte form, the eight powers with no words added.** Each call then adds each
-      power's two words, stores both in its own state and wipes them. Measured the same way, a
-      16-byte seal took 3,304 instructions on arm64 and 2,412 on x86-64, a 1 KiB one 10,231 and
+      power's two words, stores both in its own state and wipes them. Measured the same way on
+      the first form of this change, a 16-byte seal took 3,304 instructions on arm64 and 2,412 on x86-64, a 1 KiB one 10,231 and
       6,667, and a 16 KiB one 111,000 and 73,987. It saves 128 bytes a key and keeps 5 of the
       147 instructions a 16-byte record saves on arm64.
     - **A form for each kernel.** On arm64 a form of 320 bytes that also holds the four vectors
       the passes read took 16 to 20 instructions fewer for a record of one pass or more, 9,961
       for a 1 KiB seal, and none fewer for a record with no pass. That is 64 bytes more a key
       for 0.2% of a 1 KiB record, and the store would pick the form from the session's CPU bits.
-    - **A copy of the powers on each call's frame**, as decision 160 copies the schedule. It is
-      a 256-byte copy and a 256-byte wipe on each call, and the frame then holds eight more
-      secret values that the stack searches must find nowhere.
+    - **A copy of the powers on the record's frame**, beside the schedule's copy. Each call
+      would copy 256 bytes and wipe them, a record of 16 bytes too, which runs no pass and
+      reads one power.
+    - **The owner's bytes read in `gcm_hw.c`'s loops.** It saves the 16 loads and 16 stores of
+      the copy. gcc 15 then stored the keystream after each AES round, as the bullet above
+      states, and a 16 KiB record took up to 54% more time.
     - **Powers for the set `quic_keys_select` chose.** A masked copy of three sets of 256 bytes
       costs more than the powers it saves, as decision 160 measured for the schedule.
     - **A session struct aligned to 16 bytes**, so that a multiply reads a stored power as an
       aligned operand. It changes what every caller's storage must satisfy. The reads were
       separate loads before, because they are volatile, so the type with no alignment adds no
-      instruction: gcc 13's GHASH pass grew by the one load of the pointer.
+      instruction to `ghash_hw.c`'s reads.
 
     Open. The three 1-RTT receive sets store a schedule and powers that no call loads, by the
     rule above: 500 bytes each. A type for them with the key and the IV alone would give a QUIC

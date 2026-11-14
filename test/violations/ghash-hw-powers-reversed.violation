@@ -12,6 +12,6 @@ reason: the host object's GHASH pass multiplies its later blocks by the powers o
 
 --- old
         ghash_add_products(s, &s->sums, ghash_load_block(&data[j * AES_BLOCK]),
-                           GHASH_PASS_BLOCKS - 1 - j);
+                           GHASH_PASS_BLOCKS - 1 - j, own);
 --- new
-        ghash_add_products(s, &s->sums, ghash_load_block(&data[j * AES_BLOCK]), j);
+        ghash_add_products(s, &s->sums, ghash_load_block(&data[j * AES_BLOCK]), j, own);

@@ -209,7 +209,7 @@ void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu);
 // powers is the owner's stored powers of the key's hash subkey, which
 // gcm_traffic_key_store wrote with schedule, or NULL for a key that runs
 // no GHASH, a header protection key. The call copies no power: k records
-// the pointer, and the AEAD reads the powers in place (docs/decisions.md
+// the pointer, and the AEAD reads the owner's powers (docs/decisions.md
 // 234).
 //
 // Requires: k points at one whole aes_traffic_key; schedule points at
