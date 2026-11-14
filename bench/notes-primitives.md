@@ -16,6 +16,43 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The x86-64 run of 224e894f
+
+The four x86-64 CSVs now hold one run of 2026-11-14 on 224e894f (bench
+run 43602999116): the EPYC 7763 and, after 2 re-runs, a Xeon Platinum
+8573C, beside OpenSSL 3.6.5. The tree adds docs/decisions.md 229 to 233
+to the run of fb5a0c21. The M1 Pro's CSVs still hold fb5a0c21.
+
+What moved by design, as ratios to OpenSSL:
+
+- **RSA PKCS#1 v1.5 verification on the EPYC 7763**: 1.02 to 0.93 under
+  gcc and 0.95 to 0.88 under clang at 2,048 bits, and 0.91 to 0.84 and
+  0.86 to 0.82 at 3,072 (decision 233).
+- **ML-KEM-768 encapsulation**: 1.00 to 0.93 under gcc and 0.96 to 0.88
+  under clang on the 8573C, and 0.80 to 0.72 and 0.74 to 0.68 on the EPYC
+  7763 (decision 232).
+- **P-256 key generation under gcc on the 8573C**: 1.01 to 0.99
+  (decision 232).
+
+What moved with the host:
+
+- **ChaCha20-Poly1305 on the 8573C**: the seal reads 0.97 under gcc and
+  0.96 under clang, where the run of fb5a0c21 read 0.89 and 0.93. Seven
+  runs of the one pass read 0.89 to 0.99 under gcc. Lab run 43608282872
+  timed this tree, this tree without decision 229's wipe below
+  `chacha20_block`, and the file before that decision, in turn on one
+  8573C: each sealed 16 KiB in 4.51 to 4.57 µs under gcc against
+  OpenSSL's 4.72, and the wipe took 5 to 15 ns a message. So the wipe
+  does not account for the move. Poly1305 alone, which runs no
+  `chacha20_block`, took 1.07 µs on this host and 0.99 on the last one.
+- **AES-256-GCM's seal under clang on the 8573C**: 1.01, 1.54 µs against
+  1.52. Both sides took 8% longer on this host than on the last one.
+
+X25519's shared secret reads 1.00 under gcc on both CPUs. SHA-384 over
+16 KiB stays at 1.04 to 1.07, and SHA3-256 over 16 KiB at 1.04 and 1.05
+on the EPYC 7763; decisions 230 and 231 record why no form measured moves
+either.
+
 ## The run of fb5a0c21
 
 All five column groups now hold one tree, fb5a0c21, beside OpenSSL 3.6.5,

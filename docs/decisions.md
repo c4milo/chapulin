@@ -19303,9 +19303,10 @@ does nothing more.
     - **What changed.** Each entry calls a body that is never inlined, and then calls
       `wipe_frame` through a volatile pointer, in `sha3.c`'s form (decision 219). `wipe_frame`'s
       array of `CHACHA20_BELOW_LEN` bytes, 512, lies where the body's frames lay, and the call
-      writes zero over it. A message pays for 512 bytes of stores in `chacha20_block`. Of the
-      figures `bench/sram.sh` measures, `ch_close`'s peak stack alone moved, from 880 to 1,072
-      bytes on arm64: its deepest chain now ends in `wipe_frame`.
+      writes zero over it. A message pays for 512 bytes of stores in `chacha20_block`: 5 to 15 ns
+      on a Xeon 8573C, where lab run 43608282872 timed the tree with the wipe and without it in
+      turn on one host. Of the figures `bench/sram.sh` measures, `ch_close`'s peak stack alone
+      moved, from 880 to 1,072 bytes on arm64: its deepest chain now ends in `wipe_frame`.
     - **Tests.** `bin/chacha20_wipe_test`, a device object's build, paints the stack, calls each
       body with no wipe after it, and requires the lowest byte it wrote within the length. The
       deepest was 360 bytes, `xor_body` under gcc 15 for arm64 at `-O2`; gcc 13 and gcc 15 for
