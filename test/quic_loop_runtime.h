@@ -24,6 +24,10 @@
 //   - A ticket received with the configuration hash on one SHA-256 path
 //     resumes with it on the other (check_quic_tickets_across).
 //   - test/webpki_ticket_rows.h's rows over ch_quic_init.
+//   - The bytes of a connected session hold each 1-RTT key set's stored
+//     powers of H. A key update stores the next key's, and a failure, the
+//     one CONNECTION_CLOSE and a close wipe them
+//     (check_quic_stored_powers, docs/decisions.md 234).
 //
 // test/quic_loop_cpu.h holds the values every init call refuses. With
 // "absent" as its argument the binary runs test_quic_runtime_absent
@@ -276,7 +280,79 @@ static void check_quic_ticket_binding_cpu(void) {
 }
 #endif
 
+// The powers of H that a key set stores (docs/decisions.md 234), read
+// from the session's bytes.
+static int set_powers_zero(const quic_keys *k) {
+    uint8_t acc = 0;
+    for (size_t i = 0; i < sizeof k->ghash_powers; i++) {
+        acc |= k->ghash_powers[i];
+    }
+    return acc == 0;
+}
+
+static int set_powers_equal(const quic_keys *a, const quic_keys *b) {
+    return memcmp(a->ghash_powers, b->ghash_powers, sizeof a->ghash_powers) == 0;
+}
+
+static int receive_sets_zero(const ch_quic_priv *q) {
+    return set_powers_zero(&q->app_rx[CH_QUIC_KEY_PREVIOUS]) &&
+           set_powers_zero(&q->app_rx[CH_QUIC_KEY_CURRENT]) &&
+           set_powers_zero(&q->app_rx[CH_QUIC_KEY_NEXT]);
+}
+
+// A connected session under AES-256-GCM whose end states the AES
+// instructions. Each 1-RTT send set stores the powers of its key's hash
+// subkey, the ones the other end's current receive set stores. A key
+// update stores the next key's, which the other end's next receive set
+// holds already. A failure wipes the receive sets at once: QUIC refuses a
+// TLS KeyUpdate (RFC 9001 section 6). The send set stays for the one
+// CONNECTION_CLOSE and is zero after it. A close wipes every set.
+static void check_quic_stored_powers(void) {
+    static const uint8_t tls_key_update[5] = {HS_KEY_UPDATE, 0x00, 0x00, 0x01, 0x00};
+    static const uint8_t short_hdr[2] = {0x40, 7};
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    client_cpu = RUNTIME_PRESENT;
+    server_cpu = RUNTIME_PRESENT;
+    webpki_server(&scfg, ticket_key);
+    webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
+    CHECK(run_quic(&ccfg, &scfg));
+    CHECK(client.t.suite == SUITE_AES_256_GCM_SHA384);
+    CHECK(client.app_tx.stored == 1 && !set_powers_zero(&client.app_tx));
+    CHECK(server.app_tx.stored == 1 && !set_powers_zero(&server.app_tx));
+    CHECK(set_powers_equal(&client.app_tx, &server.app_rx[CH_QUIC_KEY_CURRENT]));
+    CHECK(set_powers_equal(&server.app_tx, &client.app_rx[CH_QUIC_KEY_CURRENT]));
+
+    uint8_t before[SUITE_GHASH_POWERS_LEN];
+    memcpy(before, client.app_tx.ghash_powers, sizeof before);
+    CHECK(ch_quic_key_update(quic_public(&client)) == CH_OK);
+    CHECK(memcmp(client.app_tx.ghash_powers, before, sizeof before) != 0);
+    CHECK(set_powers_equal(&client.app_tx, &server.app_rx[CH_QUIC_KEY_NEXT]));
+
+    CHECK(ch_quic_crypto_in(quic_public(&client), CH_LEVEL_APPLICATION, tls_key_update,
+                            sizeof tls_key_update) == CH_EPROTO);
+    CHECK(ch_quic_state(quic_public(&client)) == CH_ST_FAILED);
+    CHECK(receive_sets_zero(&client) && !set_powers_zero(&client.app_tx));
+    uint64_t code = ch_quic_error_code(quic_public(&client));
+    uint8_t frame[5] = {0x1c, (uint8_t)(0x40 | (code >> 8)), (uint8_t)code, 0x06, 0x00};
+    uint8_t pkt[64];
+    size_t pkt_len = 0;
+    CHECK(ch_quic_seal_close(quic_public(&client), CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, 7, 1,
+                             short_hdr, sizeof short_hdr, frame, sizeof frame, pkt, sizeof pkt,
+                             &pkt_len) == CH_OK);
+    CHECK(set_powers_zero(&client.app_tx));
+
+    CHECK(!set_powers_zero(&server.app_tx) && !receive_sets_zero(&server));
+    ch_quic_close(quic_public(&server));
+    CHECK(ch_quic_state(quic_public(&server)) == CH_ST_CLOSED);
+    CHECK(set_powers_zero(&server.app_tx) && receive_sets_zero(&server));
+    ch_quic_close(quic_public(&client));
+    client_cpu = TEST_CPU;
+    server_cpu = TEST_CPU;
+}
+
 static void test_quic_runtime(void) {
+    check_quic_stored_powers();
     check_quic_bits(RUNTIME_PRESENT, RUNTIME_PRESENT, SUITE_AES_256_GCM_SHA384);
     check_quic_bits(RUNTIME_ABSENT, RUNTIME_PRESENT, SUITE_CHACHA20_POLY1305_SHA256);
     check_quic_bits(RUNTIME_PRESENT, RUNTIME_ABSENT, SUITE_CHACHA20_POLY1305_SHA256);

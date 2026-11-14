@@ -106,6 +106,28 @@ void gcm_traffic_seal(const aes_traffic_key *k, const uint8_t nonce[AES_IV], con
 int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
                      size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG],
                      uint8_t *pt);
+
+#ifdef CH_CPU_RUNTIME
+// aes_traffic_key_store for a key that runs AES-GCM: it writes schedule as
+// that call does, and beside it powers, the powers H^1 to H^8 of the
+// key's hash subkey in the form suite.h states, which each seal and open
+// under the key reads in place (docs/decisions.md 234). record.c calls it
+// when it derives a record key and quic_keys.c when it derives a packet
+// protection key, so a KeyUpdate and a QUIC key update write both again. A
+// header protection key runs no GHASH and takes aes_traffic_key_store.
+// The hash subkey and the powers are computed on the AES instructions and
+// the carry-less multiply, so the call writes them only where cpu, the
+// session's ch_cfg.cpu, holds CH_CPU_CONSTANT_TIME_AES.
+//
+// Requires: schedule points at SUITE_AES_SCHEDULE_LEN writable bytes and
+// powers at SUITE_GHASH_POWERS_LEN writable bytes; key points at key_len
+// readable bytes; key_len is AES_128_KEY or AES_256_KEY. Returns 1 when it
+// wrote both, and 0 when cpu lacks the bit and it wrote neither. The owner
+// keeps the answer in its stored byte. It wipes the schedule and the hash
+// subkey it computed on its frame, and cannot fail.
+int gcm_traffic_key_store(uint8_t *schedule, uint8_t *powers, uint32_t cpu, const uint8_t *key,
+                          size_t key_len);
+#endif
 #endif
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

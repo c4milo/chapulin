@@ -29,10 +29,10 @@ and `size_t` lengths, so that build needs 120 bytes less than the host figure on
 | **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15410** | **15290** |
 | `ch_tls` under `ROLE=server` (includes 1669 B TX staging) | 2448 | 2272 |
 | **total static working set, `ROLE=server`** (2048 buffer) | **4496** | **4320** |
-| `ch_tls` under `ROLE=server SUITE=aesgcm` | 3264 | — |
-| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **5312** | — |
-| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3856 | — |
-| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **16194** | — |
+| `ch_tls` under `ROLE=server SUITE=aesgcm` | 3776 | — |
+| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **5824** | — |
+| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 4368 | — |
+| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **16706** | — |
 | `ch_tls` under `TRUST=webpki`, host object | 3072 | — |
 | **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15410** | — |
 | `ch_tls` under `ROLE=server`, host object | 2496 | — |
@@ -41,8 +41,8 @@ and `size_t` lengths, so that build needs 120 bytes less than the host figure on
 | **total static working set, `PROFILE=cnsa2 TRUST=raw-mldsa`** (7843 buffer, its floor) | **10835** | — |
 | `ch_tls` under `PROFILE=cnsa2 TRUST=ca-mldsa` | 2992 | — |
 | **total static working set, `PROFILE=cnsa2 TRUST=ca-mldsa`** (15656 buffer, its floor) | **18648** | — |
-| `ch_tls` under `PROFILE=cnsa2 ROLE=server` (host object) | 3168 | — |
-| **total static working set, `PROFILE=cnsa2 ROLE=server`** (2179 buffer, its floor) | **5347** | — |
+| `ch_tls` under `PROFILE=cnsa2 ROLE=server` (host object) | 3680 | — |
+| **total static working set, `PROFILE=cnsa2 ROLE=server`** (2179 buffer, its floor) | **5859** | — |
 
 ### Peak stack
 
@@ -202,13 +202,17 @@ host object this host builds for it ([`docs/decisions.md`](decisions.md)
 89), so its rows are host figures and have no rv32 column. A suite build
 with `AES=extern` can run on a device with an AES peripheral
 ([`docs/decisions.md`](decisions.md) 68), and no script here measures one
-on a device target yet. Its session struct is 768 bytes larger than the
-same `ROLE=server` host object without the suite, and 784 larger for
+on a device target yet. Its session struct is 1280 bytes larger than the
+same `ROLE=server` host object without the suite, and 1296 larger for
 `TRUST=webpki`:
 
 - each of the two record directions holds its AES key's expanded
   schedule, 243 bytes, so no record expands the key again
   ([`docs/decisions.md`](decisions.md) 160);
+- each direction holds the powers H to H^8 of its key's hash subkey,
+  256 bytes, so no record computes them again
+  ([`docs/decisions.md`](decisions.md) 234). The `PROFILE=cnsa2
+  ROLE=server` row holds them too;
 
 - the transcript runs a SHA-512 context beside SHA-256's;
 - the traffic secrets take SHA-384's 48 bytes;
@@ -1100,6 +1104,11 @@ What the numbers show for AES-GCM:
   1.1 to 1.4 µs of a 16 KiB record, where the one-block loop took 9.2 to 10.4 at 044a49c and the
   eight-block loop that took its sums out of the vector registers for each reduction took 2.2 to
   2.8 at 225a890.
+- Since decision 234 a stored key holds those eight powers beside its schedule, and a record's
+  calls read them from the session. A call computes powers only for a key that is not stored: a
+  public key of QUIC, a selected 1-RTT set, and each key of a session without the AES bit.
+  Decision 234's table holds the instructions a record takes before it and after it. The figures
+  of this section are runs from before it.
 - clang's GHASH is no longer the slower one: 1.1 µs against gcc's 1.4. clang loaded each power of
   H through two general registers; the powers now come from `ghash_state` in one vector load each,
   a volatile read that also keeps the compilers from copying them to stack slots the wipe does not

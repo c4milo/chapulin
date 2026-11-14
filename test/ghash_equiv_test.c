@@ -53,7 +53,7 @@
 #include "aes_public_key.h"
 #include "ch_assert.h"
 #include "gcm.h"
-#include "ghash_hw.h"
+#include "ghash_equiv_stored.h"
 
 #ifndef CH_AES_TWO_CIPHERS
 #error                                                                                             \
@@ -155,7 +155,7 @@ static void compare_multiply(const char *case_name, const uint8_t acc[AES_BLOCK]
     memcpy(soft, acc, AES_BLOCK);
     memcpy(hw, acc, AES_BLOCK);
     ghash_multiply_soft(soft, subkey);
-    gcm_multiply_by_subkey_hw(hw, subkey);
+    multiply_on_both(hw, subkey);
     if (memcmp(soft, hw, AES_BLOCK) != 0) {
         fail(case_name, "the multiplies differ");
         print_hex("acc   ", acc, AES_BLOCK);
@@ -218,7 +218,7 @@ static void run_multiply_squares(void) {
         rng_fill(soft, sizeof soft);
         memcpy(hw, soft, AES_BLOCK);
         ghash_multiply_soft(soft, soft);
-        gcm_multiply_by_subkey_hw(hw, hw);
+        multiply_on_both(hw, hw);
         if (memcmp(soft, hw, AES_BLOCK) != 0) {
             fail("multiply acc == subkey", "the squares differ");
             print_hex("soft", soft, AES_BLOCK);
@@ -262,7 +262,7 @@ static void compare_hash_data(const char *case_name, const uint8_t *bytes, size_
     memcpy(soft, acc, AES_BLOCK);
     memcpy(hw, acc, AES_BLOCK);
     ghash_hash_data_soft(soft, subkey, bytes, n);
-    gcm_hash_data_hw(hw, subkey, bytes, n);
+    hash_data_on_both(hw, subkey, bytes, n);
     if (memcmp(soft, hw, AES_BLOCK) != 0) {
         fail(case_name, "the data loops differ");
         print_hex("acc   ", acc, AES_BLOCK);
@@ -492,8 +492,8 @@ int main(void) {
     printf("ghash equivalence: %lu multiplies, %lu data loops and %lu AEAD cases agree "
            "between the portable GHASH and the carry-less multiply (seed 0x%llx)\n",
            multiplies, loops, aeads, (unsigned long long)seed);
-    if (failures > 0) {
-        printf("ghash equivalence: %d mismatches\n", failures);
+    if (failures > 0 || stored_mismatches > 0) {
+        printf("ghash equivalence: %d mismatches\n", failures + (int)stored_mismatches);
         return 1;
     }
     return 0;

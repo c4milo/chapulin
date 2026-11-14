@@ -13,8 +13,9 @@
 // Element layout. A block reversed byte for byte and read as a 128-bit little-endian integer
 // holds SP 800-38D's x^0 coefficient in bit 127 and x^127 in bit 0. Every element here sits in
 // that order, one per 128-bit lane, with its low 64-bit word in the lane's low half.
-// ghash_vector.h keeps the two words the other way round, so this file computes its own powers
-// and reads none of that header's.
+// ghash_vector.h keeps the two words the other way round, so this file computes its own powers,
+// and exchanges the words of each power it reads from a key's stored powers, which hold that
+// header's form (docs/decisions.md 234).
 //
 // Products. Each power is H^k times x^-1, so the carry-less product of a reversed block and a
 // power is the reversed 256-bit product of the block and H^k (ghash_vector.h states why). A
@@ -177,12 +178,9 @@ static inline __attribute__((always_inline)) void store_power_register(gcm_avx51
     _mm512_storeu_si512((void *)&s->powers[power_slot(top)], v);
 }
 
-// The powers a call's groups meet, H^1 to at least H^top, 1 <= top <= 33, from first_power,
-// which is H times x^-1. Each round multiplies the registers of the round before by the highest
-// power so far, so the multiplies for H^33 wait on each other five deep.
-static inline __attribute__((always_inline)) void compute_powers(gcm_avx512_powers *s,
-                                                                 __m128i first_power, size_t top) {
-    _mm512_storeu_si512((void *)&s->powers[power_slot(0)], _mm512_setzero_si512());
+// H^1 to at least H^top, 1 <= top <= 8, from first_power, which is H times x^-1.
+static inline __attribute__((always_inline)) void
+compute_low_powers(gcm_avx512_powers *s, __m128i first_power, size_t top) {
     if (top < 2) {
         _mm_storeu_si128(&s->powers[power_slot(1)], first_power);
         return;
@@ -195,11 +193,34 @@ static inline __attribute__((always_inline)) void compute_powers(gcm_avx512_powe
     if (top <= 4) {
         return;
     }
-    __m512i up_to_8 = multiply_lanes(up_to_4, _mm512_broadcast_i32x4(fourth));
-    store_power_register(s, 8, up_to_8);
-    if (top <= 8) {
-        return;
-    }
+    store_power_register(s, 8, multiply_lanes(up_to_4, _mm512_broadcast_i32x4(fourth)));
+}
+
+// The bytes of one stored power: ghash_vector.h's ghash_power, a power and its two words added.
+#define STORED_POWER_BYTES ((size_t)32)
+
+// H^top to H^(top - 3) in lanes 0 to 3, top 4 or 8, from stored, a key's stored powers. A stored
+// power holds its high word first, and its two words added after it, which this file does not
+// read. One permute of two loads takes the four powers' words and exchanges each pair.
+static inline __attribute__((always_inline)) __m512i stored_register(const uint8_t *stored,
+                                                                     size_t top) {
+    const __m512i order = _mm512_setr_epi64(13, 12, 9, 8, 5, 4, 1, 0);
+    __m512i low = _mm512_loadu_si512((const void *)&stored[(top - 4) * STORED_POWER_BYTES]);
+    __m512i high = _mm512_loadu_si512((const void *)&stored[(top - 2) * STORED_POWER_BYTES]);
+    return _mm512_permutex2var_epi64(low, order, high);
+}
+
+// H times x^-1 from stored: its first power, with the two words exchanged.
+static inline __attribute__((always_inline)) __m128i stored_first_power(const uint8_t *stored) {
+    return _mm_shuffle_epi32(_mm_loadu_si128((const __m128i *)(const void *)stored), 0x4e);
+}
+
+// H^9 to at least H^top, 8 < top <= 33, from the eight powers s holds. Each round multiplies the
+// registers of the round before by the highest power so far.
+static inline __attribute__((always_inline)) void compute_high_powers(gcm_avx512_powers *s,
+                                                                      size_t top) {
+    __m512i up_to_4 = power_register(s, 4);
+    __m512i up_to_8 = power_register(s, 8);
     __m512i eighth = _mm512_broadcast_i32x4(_mm512_castsi512_si128(up_to_8));
     __m512i up_to_12 = multiply_lanes(up_to_4, eighth);
     __m512i up_to_16 = multiply_lanes(up_to_8, eighth);
@@ -217,8 +238,26 @@ static inline __attribute__((always_inline)) void compute_powers(gcm_avx512_powe
     if (top <= 32) {
         return;
     }
+    __m128i first_power = _mm512_extracti32x4_epi32(up_to_4, 3);
     _mm_storeu_si128(&s->powers[power_slot(33)],
                      multiply_block(_mm512_castsi512_si128(up_to_32), first_power));
+}
+
+// The powers a call's groups meet, H^1 to at least H^top, 1 <= top <= 33. The first eight are the
+// key's stored powers where stored is not NULL, and come from first_power, which is H times
+// x^-1, where it is NULL. A call computes the powers past the eighth in both cases.
+static inline __attribute__((always_inline)) void
+start_powers(gcm_avx512_powers *s, __m128i first_power, const uint8_t *stored, size_t top) {
+    _mm512_storeu_si512((void *)&s->powers[power_slot(0)], _mm512_setzero_si512());
+    if (stored != NULL) {
+        store_power_register(s, 4, stored_register(stored, 4));
+        store_power_register(s, 8, stored_register(stored, 8));
+    } else {
+        compute_low_powers(s, first_power, top);
+    }
+    if (top > 8) {
+        compute_high_powers(s, top);
+    }
 }
 
 // ---------------------------------------------------------------- GHASH

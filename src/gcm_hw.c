@@ -339,19 +339,20 @@ void gcm_hw_wipe_below(void) {
 }
 
 // The body of gcm_seal_passes_hw, which the wrapper below calls and then
-// wipes under. s, the powers and the keystream, lies in this frame.
+// wipes under. s, the powers it computed and the keystream, lies in this
+// frame. The arguments the loop reads come first, so that x86-64's six
+// argument registers hold them, and the three the body reads once come
+// last, on the stack.
 static __attribute__((noinline)) void seal_passes(const uint8_t *round_keys, size_t rounds,
-                                                  uint8_t counter[AES_BLOCK],
-                                                  uint8_t acc[AES_BLOCK],
-                                                  const uint8_t subkey[AES_BLOCK],
-                                                  const uint8_t *in, size_t passes, uint8_t *out) {
+                                                  uint8_t counter[AES_BLOCK], const uint8_t *in,
+                                                  size_t passes, uint8_t *out,
+                                                  uint8_t acc[AES_BLOCK], const uint8_t *subkey,
+                                                  const uint8_t *powers) {
     if (passes == 0) {
         return;
     }
     gcm_hw_state s;
-    s.ghash.subkey = ghash_load_block(subkey);
-    s.ghash.acc = ghash_load_block(acc);
-    ghash_compute_powers(&s.ghash, GHASH_PASS_BLOCKS);
+    (void)ghash_start(&s.ghash, acc, subkey, powers, GHASH_PASS_BLOCKS);
     aes_state prefix = counter_prefix(counter);
     uint32_t count = counter_count(counter);
     for (size_t p = 0; p < passes; p++) {
@@ -371,9 +372,9 @@ static __attribute__((noinline)) void seal_passes(const uint8_t *round_keys, siz
 }
 
 void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out) {
-    seal_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+                        uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                        const uint8_t *in, size_t passes, uint8_t *out) {
+    seal_passes(round_keys, rounds, counter, in, passes, out, acc, subkey, powers);
     gcm_hw_wipe_below();
 }
 
@@ -392,17 +393,15 @@ void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
 // counter from bytes it counted one at a time, and the loop ran about a
 // third slower.
 static __attribute__((noinline)) void open_passes(const uint8_t *round_keys, size_t rounds,
-                                                  uint8_t counter[AES_BLOCK],
-                                                  uint8_t acc[AES_BLOCK],
-                                                  const uint8_t subkey[AES_BLOCK],
-                                                  const uint8_t *in, size_t passes, uint8_t *out) {
+                                                  uint8_t counter[AES_BLOCK], const uint8_t *in,
+                                                  size_t passes, uint8_t *out,
+                                                  uint8_t acc[AES_BLOCK], const uint8_t *subkey,
+                                                  const uint8_t *powers) {
     if (passes == 0) {
         return;
     }
     gcm_hw_state s;
-    s.ghash.subkey = ghash_load_block(subkey);
-    s.ghash.acc = ghash_load_block(acc);
-    ghash_compute_powers(&s.ghash, GHASH_PASS_BLOCKS);
+    (void)ghash_start(&s.ghash, acc, subkey, powers, GHASH_PASS_BLOCKS);
     aes_state prefix = counter_prefix(counter);
     uint32_t count = counter_count(counter);
     for (size_t p = 0; p <= passes; p++) {
@@ -422,9 +421,9 @@ static __attribute__((noinline)) void open_passes(const uint8_t *round_keys, siz
 }
 
 void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out) {
-    open_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+                        uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                        const uint8_t *in, size_t passes, uint8_t *out) {
+    open_passes(round_keys, rounds, counter, in, passes, out, acc, subkey, powers);
     gcm_hw_wipe_below();
 }
 #endif

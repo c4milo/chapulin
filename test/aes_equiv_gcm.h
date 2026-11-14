@@ -30,6 +30,7 @@
 #ifndef CH_CPU_RUNTIME
 #define CH_CPU_RUNTIME 1
 #endif
+#include "ghash_powers_soft.h"
 #include "hash_instructions_cpu.h"
 
 #define GCM_PASS_BYTES ((size_t)8 * AES_BLOCK)
@@ -130,10 +131,29 @@ static const uint8_t *gcm_layout(enum counter_layout layout, size_t n, uint8_t *
     return gcm_input;
 }
 
+// Whether the cases below hand an entry the key's stored powers
+// (docs/decisions.md 234) in place of the hash subkey. The stored powers
+// come from test/ghash_powers_soft.h's bit arithmetic, and the entry then
+// gets a null subkey, so a read of the subkey faults.
+static int gcm_stored;
+static uint8_t gcm_powers[GHASH_POWERS_SOFT_LEN];
+
+// The subkey and the powers a case hands its entry, from the subkey h.
+static const uint8_t *gcm_case_powers(const uint8_t h[AES_BLOCK], const uint8_t **subkey) {
+    *subkey = h;
+    if (!gcm_stored) {
+        return NULL;
+    }
+    ghash_powers_soft(gcm_powers, h);
+    *subkey = NULL;
+    return gcm_powers;
+}
+
 static void gcm_fail(const char *name, const char *what, int aes256, size_t aad_len, size_t n,
                      enum counter_layout layout) {
-    (void)fprintf(stderr, "FAIL %s: %s, AES-%d, aad %zu, text %zu, layout %d\n", name, what,
-                  aes256 ? 256 : 128, aad_len, n, (int)layout);
+    (void)fprintf(stderr, "FAIL %s%s: %s, AES-%d, aad %zu, text %zu, layout %d\n", name,
+                  gcm_stored ? " on stored powers" : "", what, aes256 ? 256 : 128, aad_len, n,
+                  (int)layout);
     failures++;
 }
 
@@ -142,19 +162,19 @@ static void gcm_fail(const char *name, const char *what, int aes256, size_t aad_
 // test/aes_equiv_vaes.c under CH_CPU_RUNTIME, which this binary's main
 // does not define, so gcm_hw.h declares nothing here.
 typedef void (*passes_entry)(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                             uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                             uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
                              const uint8_t *in, size_t passes, uint8_t *out);
 void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out);
+                        uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                        const uint8_t *in, size_t passes, uint8_t *out);
 void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out);
+                        uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                        const uint8_t *in, size_t passes, uint8_t *out);
 void gcm_seal_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                          uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                          uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
                           const uint8_t *in, size_t passes, uint8_t *out);
 void gcm_open_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                          uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                          uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
                           const uint8_t *in, size_t passes, uint8_t *out);
 
 // One passes case. seal says whether the entry is a seal, whose GHASH runs
@@ -183,7 +203,10 @@ static void compare_passes(const char *name, passes_entry entry, int seal, int a
     uint8_t acc[AES_BLOCK];
     memcpy(counter, start, AES_BLOCK);
     memcpy(acc, acc_start, AES_BLOCK);
-    entry(hw_keys, aes256 ? AES_256_ROUNDS : AES_128_ROUNDS, counter, acc, h, in, passes, out);
+    const uint8_t *subkey = NULL;
+    const uint8_t *powers = gcm_case_powers(h, &subkey);
+    entry(hw_keys, aes256 ? AES_256_ROUNDS : AES_128_ROUNDS, counter, acc, subkey, powers, in,
+          passes, out);
     if (memcmp(out, gcm_want, n) != 0 || memcmp(counter, want_counter, AES_BLOCK) != 0 ||
         memcmp(acc, want_acc, AES_BLOCK) != 0) {
         gcm_fail(name, "output, counter or accumulator differs", aes256, 0, n, layout);
@@ -193,7 +216,7 @@ static void compare_passes(const char *name, passes_entry entry, int seal, int a
     gcm_cases++;
 }
 
-static void run_passes_on(const char *name, passes_entry entry, int seal) {
+static void run_passes_cases(const char *name, passes_entry entry, int seal) {
     // The last four bytes of a start: low counts, a carry out of byte 15
     // inside the first pass, and 2^32 within two passes.
     static const uint32_t lows[] = {1U,
@@ -224,6 +247,14 @@ static void run_passes_on(const char *name, passes_entry entry, int seal) {
     }
 }
 
+// Every case with powers the entry computes, then with stored powers.
+static void run_passes_on(const char *name, passes_entry entry, int seal) {
+    for (gcm_stored = 0; gcm_stored <= 1 && failures == 0; gcm_stored++) {
+        run_passes_cases(name, entry, seal);
+    }
+    gcm_stored = 0;
+}
+
 static void run_gcm(void) {
     run_passes_on("gcm_seal_passes_hw", gcm_seal_passes_hw, 1);
     run_passes_on("gcm_open_passes_hw", gcm_open_passes_hw, 0);
@@ -238,21 +269,21 @@ static void run_gcm(void) {
 // The whole AEAD entries, compiled by test/aes_equiv_arm64.c and
 // test/aes_equiv_arm64_eor3.c. A seal and an open take the same shape of
 // arguments.
-typedef void (*aead_entry)(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                           const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t n,
-                           uint8_t *out, uint8_t tag[AES_BLOCK]);
-void gcm_seal_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                    const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                    uint8_t tag[AES_BLOCK]);
-void gcm_open_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                    const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                    uint8_t want[AES_BLOCK]);
-void gcm_seal_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                         const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n,
-                         uint8_t *ct, uint8_t tag[AES_BLOCK]);
-void gcm_open_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                         const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
-                         uint8_t *pt, uint8_t want[AES_BLOCK]);
+typedef void (*aead_entry)(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                           const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                           const uint8_t *in, size_t n, uint8_t *out, uint8_t tag[AES_BLOCK]);
+void gcm_seal_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                    const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                    const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]);
+void gcm_open_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                    const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                    const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]);
+void gcm_seal_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]);
+void gcm_open_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]);
 
 // One case: a fresh key, nonce, associated data and text; the reference
 // seal; then the seal in the layout named, compared with it; then the
@@ -299,9 +330,11 @@ static void compare_aead(const char *name, aead_entry seal, aead_entry open, int
 
     uint8_t tag[AES_BLOCK];
     uint8_t *out = NULL;
+    const uint8_t *unused_subkey = NULL;
+    const uint8_t *powers = gcm_case_powers(h, &unused_subkey);
     if (layout != COUNTER_SHIFTED) {
         const uint8_t *in = gcm_layout(layout, n, &out);
-        seal(hw_keys, rounds, nonce, gcm_aad, aad_len, in, n, out, tag);
+        seal(hw_keys, rounds, powers, nonce, gcm_aad, aad_len, in, n, out, tag);
         if (memcmp(out, gcm_want, n) != 0 || memcmp(tag, want_tag, AES_BLOCK) != 0) {
             gcm_fail(name, "the seal differs", aes256, aad_len, n, layout);
             return;
@@ -312,7 +345,7 @@ static void compare_aead(const char *name, aead_entry seal, aead_entry open, int
     memcpy(gcm_input, gcm_want, n);
     rng_fill(gcm_want, n);
     const uint8_t *in = gcm_layout(layout, n, &out);
-    open(hw_keys, rounds, nonce, gcm_aad, aad_len, in, n, out, tag);
+    open(hw_keys, rounds, powers, nonce, gcm_aad, aad_len, in, n, out, tag);
     // The plaintext is the case's first input: counter mode twice.
     memcpy(counter, first, AES_BLOCK);
     gcm_counter_mode(aes256, soft_keys, counter, n);
@@ -343,12 +376,16 @@ static void run_aead_cases(const char *name, aead_entry seal, aead_entry open, i
     compare_aead(name, seal, open, aes256, GCM_MAX_AAD, 2 * GCM_PASS_BYTES, layout);
 }
 
+// Every case with powers the entry computes, then with stored powers.
 static void run_aead_on(const char *name, aead_entry seal, aead_entry open) {
-    for (int aes256 = 0; aes256 <= 1 && failures == 0; aes256++) {
-        for (int layout = 0; layout < COUNTER_LAYOUTS && failures == 0; layout++) {
-            run_aead_cases(name, seal, open, aes256, (enum counter_layout)layout);
+    for (gcm_stored = 0; gcm_stored <= 1 && failures == 0; gcm_stored++) {
+        for (int aes256 = 0; aes256 <= 1 && failures == 0; aes256++) {
+            for (int layout = 0; layout < COUNTER_LAYOUTS && failures == 0; layout++) {
+                run_aead_cases(name, seal, open, aes256, (enum counter_layout)layout);
+            }
         }
     }
+    gcm_stored = 0;
 }
 
 // Every case on gcm_arm64.c's entries, then on gcm_arm64_eor3.c's where

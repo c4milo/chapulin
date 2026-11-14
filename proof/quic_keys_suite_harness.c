@@ -81,6 +81,26 @@ int aes_traffic_key_store(uint8_t *schedule, uint32_t cpu, const uint8_t *key, s
     fill_nondet(schedule, SUITE_AES_SCHEDULE_LEN);
     return 1;
 }
+
+// The store of a key that runs AES-GCM (gcm.h, docs/decisions.md 234): the
+// schedule as above, and the powers of the hash subkey beside it, both
+// under the AES bit alone.
+static int powers_stored;
+int gcm_traffic_key_store(uint8_t *schedule, uint8_t *powers, uint32_t cpu, const uint8_t *key,
+                          size_t key_len) {
+    __CPROVER_assert(key_len == expected_key_len, "gcm store: the suite's key length");
+    __CPROVER_assert(__CPROVER_r_ok(key, key_len), "gcm store: key readable");
+    __CPROVER_assert(__CPROVER_w_ok(schedule, SUITE_AES_SCHEDULE_LEN),
+                     "gcm store: schedule writable");
+    __CPROVER_assert(__CPROVER_w_ok(powers, SUITE_GHASH_POWERS_LEN), "gcm store: powers writable");
+    if ((cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
+        return 0;
+    }
+    fill_nondet(schedule, SUITE_AES_SCHEDULE_LEN);
+    fill_nondet(powers, SUITE_GHASH_POWERS_LEN);
+    powers_stored = 1;
+    return 1;
+}
 #endif
 
 #include "quic_keys.c"
@@ -105,13 +125,31 @@ int main(void) {
     uint8_t secret[HKDF_HASH_MAX];
     fill_nondet(secret, sizeof secret);
     quic_keys k;
+#ifdef CH_CPU_RUNTIME
+    // Any powers of a key before this one.
+    fill_nondet(k.ghash_powers, sizeof k.ghash_powers);
+    size_t at = nondet_size_t();
+    __CPROVER_assume(at < sizeof k.ghash_powers);
+    int stores = suite != SUITE_CHACHA20_POLY1305_SHA256 && (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
+    powers_stored = 0;
+#endif
     quic_keys_init_suite(cpu, &k, expected_version, secret, suite);
     __CPROVER_assert(k.suite == suite && k.sealed == 0, "init: the set records its suite");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(k.stored == stores && powers_stored == stores,
+                     "init: the powers are stored with the schedule, under the AES bit alone");
+    __CPROVER_assert(k.stored || k.ghash_powers[at] == 0,
+                     "init: a set that stores none holds no power of a key before");
+    powers_stored = 0;
+#endif
 
     fill_nondet(secret, sizeof secret);
     quic_hp_key h;
     quic_hp_key_init_suite(cpu, &h, expected_version, secret, suite);
     __CPROVER_assert(h.suite == suite, "hp: the key records its suite");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(!powers_stored, "hp: a header protection key stores no powers");
+#endif
 
     // The update reads and rewrites the same secret. The set's key bytes
     // and its count are havocked first, its suite is the row's.
@@ -122,5 +160,10 @@ int main(void) {
     quic_keys_update(cpu, secret, &k, expected_version);
     __CPROVER_assert(k.suite == suite && k.sealed == 0,
                      "update: the suite stays, the count restarts");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(k.stored == stores && powers_stored == stores,
+                     "update: a key update stores the new key's powers");
+    __CPROVER_assert(k.stored || k.ghash_powers[at] == 0, "update: no power stays where none is");
+#endif
     return 0;
 }

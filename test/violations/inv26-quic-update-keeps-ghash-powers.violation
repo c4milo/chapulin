@@ -1,0 +1,26 @@
+invariant: INV-26
+file: src/quic_keys.c
+catches: quic_suite_test
+reason: quic_keys_init_suite stores the new key's schedule and leaves the
+  set's stored powers as they were, so after RFC 9001 §6.1's key update
+  each packet runs GHASH on the powers of the key before. Both endpoints
+  derive the same keys and hold the same stale powers, so every packet
+  still opens. bin/quic_suite_test reads the set's bytes after
+  quic_keys_update and requires the powers of the new key's hash subkey
+  (test/ghash_powers_tests.h, docs/decisions.md 234).
+
+--- old
+    ct_wipe(k->ghash_powers, sizeof k->ghash_powers);
+    k->stored = 0;
+    if (suite_runs_aes_gcm(suite)) {
+        k->stored = (uint8_t)gcm_traffic_key_store(k->schedule, k->ghash_powers, cpu, k->key,
+                                                   suite_key_len(suite));
+    }
+--- new
+    uint8_t unused_powers[SUITE_GHASH_POWERS_LEN];
+    int keep = k->stored;
+    k->stored = 0;
+    if (suite_runs_aes_gcm(suite)) {
+        k->stored = (uint8_t)gcm_traffic_key_store(k->schedule, keep ? unused_powers : k->ghash_powers,
+                                                   cpu, k->key, suite_key_len(suite));
+    }

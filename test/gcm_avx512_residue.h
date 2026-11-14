@@ -23,7 +23,10 @@
 //     that runs on eight registers of its own. The same search after a direct call of the
 //     kernel, with no wipe, prints what it finds and counts nothing: it says what the wipes are
 //     there for. The values are computed after both copies of the stack are taken, so the frames
-//     that compute them cannot leave them there first.
+//     that compute them cannot leave them there first. The test main runs every check a
+//     second time with the key's stored powers (docs/decisions.md 234): the kernel then copies
+//     H to H^8 from them into its frame, which the entries wipe as they wipe computed powers,
+//     and the stored powers themselves lie in residue_key, a static object.
 #ifndef CH_TEST_GCM_AVX512_RESIDUE_H
 #define CH_TEST_GCM_AVX512_RESIDUE_H
 
@@ -310,18 +313,19 @@ static int residue_direct;
 static __attribute__((noinline)) void call_under_test(void) {
     const aes_traffic_key *k = &residue_key.kernel;
     int big = k->key.rounds == AES_256_ROUNDS;
+    const uint8_t *powers = k->ghash_powers;
     if (!residue_direct && !residue_open) {
-        gcm_seal_avx512(k->key.round_keys, k->key.rounds, residue_nonce, residue_aad, RESIDUE_AAD,
-                        residue_pt, residue_n, residue_ct, residue_tag);
+        gcm_seal_avx512(k->key.round_keys, k->key.rounds, powers, residue_nonce, residue_aad,
+                        RESIDUE_AAD, residue_pt, residue_n, residue_ct, residue_tag);
     } else if (!residue_direct) {
-        gcm_open_avx512(k->key.round_keys, k->key.rounds, residue_nonce, residue_aad, RESIDUE_AAD,
-                        residue_ct, residue_n, residue_pt, residue_tag);
+        gcm_open_avx512(k->key.round_keys, k->key.rounds, powers, residue_nonce, residue_aad,
+                        RESIDUE_AAD, residue_ct, residue_n, residue_pt, residue_tag);
     } else if (!residue_open) {
-        (big ? gcm_avx512_seal_256 : gcm_avx512_seal_128)(k->key.round_keys, residue_nonce,
+        (big ? gcm_avx512_seal_256 : gcm_avx512_seal_128)(k->key.round_keys, powers, residue_nonce,
                                                           residue_aad, RESIDUE_AAD, residue_pt,
                                                           residue_n, residue_ct, residue_tag);
     } else {
-        (big ? gcm_avx512_open_256 : gcm_avx512_open_128)(k->key.round_keys, residue_nonce,
+        (big ? gcm_avx512_open_256 : gcm_avx512_open_128)(k->key.round_keys, powers, residue_nonce,
                                                           residue_aad, RESIDUE_AAD, residue_ct,
                                                           residue_n, residue_pt, residue_tag);
     }

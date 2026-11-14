@@ -51,7 +51,7 @@ void gcm_counter_blocks_vaes(const uint8_t *round_keys, size_t rounds, uint8_t c
 // Requires: what gcm_seal_passes_hw requires, and the CPU
 // gcm_counter_blocks_vaes requires.
 void gcm_seal_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                          uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                          uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
                           const uint8_t *in, size_t passes, uint8_t *out);
 
 // gcm_open_passes_hw's contract (gcm_hw.h), on the 256-bit instructions:
@@ -60,7 +60,7 @@ void gcm_seal_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t coun
 // Requires: what gcm_open_passes_hw requires, and the CPU
 // gcm_counter_blocks_vaes requires.
 void gcm_open_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                          uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                          uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
                           const uint8_t *in, size_t passes, uint8_t *out);
 
 // Whether a schedule's whole blocks run on the kernels above in place of
@@ -100,24 +100,24 @@ static inline void gcm_counter_blocks_cpu(uint8_t cpu, const uint8_t *round_keys
 #ifdef __x86_64__
 static inline void gcm_seal_passes_cpu(uint8_t cpu, const uint8_t *round_keys, size_t rounds,
                                        uint8_t counter[AES_BLOCK], uint8_t acc[AES_BLOCK],
-                                       const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                                       size_t passes, uint8_t *out) {
+                                       const uint8_t *subkey, const uint8_t *powers,
+                                       const uint8_t *in, size_t passes, uint8_t *out) {
     if (gcm_use_vaes(cpu)) {
-        gcm_seal_passes_vaes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+        gcm_seal_passes_vaes(round_keys, rounds, counter, acc, subkey, powers, in, passes, out);
         return;
     }
-    gcm_seal_passes_hw(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    gcm_seal_passes_hw(round_keys, rounds, counter, acc, subkey, powers, in, passes, out);
 }
 
 static inline void gcm_open_passes_cpu(uint8_t cpu, const uint8_t *round_keys, size_t rounds,
                                        uint8_t counter[AES_BLOCK], uint8_t acc[AES_BLOCK],
-                                       const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                                       size_t passes, uint8_t *out) {
+                                       const uint8_t *subkey, const uint8_t *powers,
+                                       const uint8_t *in, size_t passes, uint8_t *out) {
     if (gcm_use_vaes(cpu)) {
-        gcm_open_passes_vaes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+        gcm_open_passes_vaes(round_keys, rounds, counter, acc, subkey, powers, in, passes, out);
         return;
     }
-    gcm_open_passes_hw(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    gcm_open_passes_hw(round_keys, rounds, counter, acc, subkey, powers, in, passes, out);
 }
 #endif // __x86_64__
 

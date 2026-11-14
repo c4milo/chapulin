@@ -149,7 +149,7 @@ int main(void) {
     uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
     fill_nondet(schedule, sizeof schedule);
     aes_traffic_key loaded;
-    aes_traffic_key_load(&loaded, schedule, key_len, nondet_u32());
+    aes_traffic_key_load(&loaded, schedule, NULL, key_len, nondet_u32());
     __CPROVER_assert(loaded.key.instructions == AES_ON_INSTRUCTIONS,
                      "traffic: a loaded schedule records the instructions");
     aes_traffic_encrypt_block(&loaded, in, out);

@@ -18,7 +18,10 @@
 // hash on one SHA-256 path resumes with it on the other
 // (check_runtime_tickets_across); test/webpki_ticket_rows.h's rows over
 // ch_tcp_init; and ch_srv_check takes a server that holds an RSA-PSS
-// identity beside the r2 one (check_runtime_server_boot).
+// identity beside the r2 one (check_runtime_server_boot). And the bytes
+// of a connected session hold each record key's stored powers of H, which
+// a failure and a close wipe (check_runtime_stored_powers,
+// docs/decisions.md 234).
 //
 // With "absent" as its argument the binary runs check_runtime_absent alone,
 // which test/aes-runtime-qemu.sh does on a CPU model without the AES
@@ -302,8 +305,62 @@ static void check_runtime_ticket_binding_cpu(void) {
 }
 #endif
 
+// The powers of H that a record direction stores (docs/decisions.md 234),
+// read from the session's bytes.
+static int dir_powers_zero(const rec_dir *d) {
+    uint8_t acc = 0;
+    for (size_t i = 0; i < sizeof d->ghash_powers; i++) {
+        acc |= d->ghash_powers[i];
+    }
+    return acc == 0;
+}
+
+static int dir_powers_equal(const rec_dir *a, const rec_dir *b) {
+    return memcmp(a->ghash_powers, b->ghash_powers, sizeof a->ghash_powers) == 0;
+}
+
+// A connected session under AES-256-GCM whose end states the AES
+// instructions. Each direction stores the powers of its key's hash subkey,
+// and one end's write powers are the other end's read powers. A failure
+// wipes both directions: the server reads one record that no key sealed,
+// whose tag does not verify. A close wipes both directions too.
+static void check_runtime_stored_powers(void) {
+    static const uint8_t unsealed[REC_HDR + 32] = {REC_APPDATA, 0x03, 0x03, 0x00, 0x20};
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    client_cpu = RUNTIME_PRESENT;
+    server_cpu = RUNTIME_PRESENT;
+    server_config(&scfg, ticket_key);
+    client_config(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
+    CHECK(run(&ccfg, &scfg));
+    CHECK(client.t.suite == SUITE_AES_256_GCM_SHA384);
+    CHECK(client.t.rd.stored == 1 && client.t.wr.stored == 1);
+    CHECK(server.t.rd.stored == 1 && server.t.wr.stored == 1);
+    CHECK(!dir_powers_zero(&client.t.rd) && !dir_powers_zero(&client.t.wr));
+    CHECK(dir_powers_equal(&client.t.wr, &server.t.rd));
+    CHECK(dir_powers_equal(&client.t.rd, &server.t.wr));
+
+    // Both ends read through held_recv, so the server's next read takes
+    // this record.
+    memcpy(to_client.bytes + to_client.len, unsealed, sizeof unsealed);
+    to_client.len += sizeof unsealed;
+    uint8_t got[16];
+    CHECK(ch_read(ch_tcp_tls(tcp_public(&server)), got, sizeof got) < 0);
+    CHECK(ch_tcp_state(tcp_public(&server)) == CH_ST_FAILED);
+    CHECK(ch_alert_sent(tls_public(&server.t)) == ALERT_BAD_RECORD_MAC);
+    CHECK(dir_powers_zero(&server.t.rd) && dir_powers_zero(&server.t.wr));
+
+    ch_tcp_close(tcp_public(&client));
+    CHECK(ch_tcp_state(tcp_public(&client)) == CH_ST_CLOSED);
+    CHECK(dir_powers_zero(&client.t.rd) && dir_powers_zero(&client.t.wr));
+    ch_tcp_close(tcp_public(&server));
+    client_cpu = TEST_CPU;
+    server_cpu = TEST_CPU;
+}
+
 static void check_runtime(void) {
     check_runtime_edges();
+    check_runtime_stored_powers();
     check_runtime_bits(RUNTIME_PRESENT, RUNTIME_PRESENT, SUITE_AES_256_GCM_SHA384);
     check_runtime_bits(RUNTIME_ABSENT, RUNTIME_PRESENT, SUITE_CHACHA20_POLY1305_SHA256);
     check_runtime_bits(RUNTIME_PRESENT, RUNTIME_ABSENT, SUITE_CHACHA20_POLY1305_SHA256);

@@ -6186,6 +6186,37 @@ skips a kernel's cases on a CPU without its instructions:
   a second time under a key whose schedule names the kernels
   (`test/ghash_equiv_vaes.h`). The stack checks look for H, its powers,
   a pass's sums and a pass's keystream below a seal and an open.
+- A host object's stored powers of H (docs/decisions.md 234) are tested,
+  and no harness reads the kernels that take them.
+  `test/ghash_powers_soft.h` computes the stored form with bit arithmetic
+  alone. `bin/ghash_equiv_test` runs each multiply and each data loop of
+  `ghash_hw.c` on stored powers and a null subkey beside the computed
+  path, and its stack checks once more on stored powers.
+  `bin/aes_equiv_test` runs every case of `gcm_hw.c`'s and `gcm_vaes.c`'s
+  passes and of `gcm_arm64.c`'s two copies a second time on stored
+  powers, against the table. `bin/gcm_avx512_equiv_test` runs every case,
+  the page ends and the stack and register checks a second time with the
+  kernel's key on stored powers. `bin/aes_suite_test` and
+  `bin/quic_suite_test` read a record direction's and a QUIC key set's
+  bytes (`test/ghash_powers_tests.h`): the stored powers equal that
+  reference under both key sizes, a KeyUpdate and a QUIC key update store
+  the new key's, a direction keyed without the AES bit or under ChaCha20
+  holds none, a seal and an open on stored powers agree with the ones
+  that compute them at 49 lengths under each `ch_cfg.cpu` value that
+  names a kernel the CPU has, one changed bit of a stored power changes
+  the tag, and the stack below `gcm_traffic_key_store` holds no round
+  key, no H and no power. `bin/webpki_loop_aes` and `bin/quic_loop_aes`
+  read a connected session's bytes: each end's write powers are the other
+  end's read powers, `ch_quic_key_update` stores the next key's, and a
+  failure and a close leave zero bytes. The `record_suite`,
+  `quic_keys_suite` and
+  `quic_packet_suite` harnesses prove over contract stubs that the powers
+  are stored with the schedule under the AES bit alone, that an owner
+  that stores none holds zero bytes, and that the AEAD's key points at
+  its owner's powers where the owner stored them and at none where it
+  did not. On a CPU without VAES or AVX-512, the halves of these tests
+  that need them print SKIP, and the nightly's SDE job runs the 512-bit
+  one.
 - `bin/quic_test_hw` runs FIPS 197's, SP 800-38D's and RFC 9001's
   vectors a second time on the kernels (`run_vectors_on_kernels`).
 - The Wycheproof host binary runs three times more, under 0xf, 0x1f and

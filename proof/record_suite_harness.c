@@ -66,6 +66,12 @@ void hkdf_expand_label_hw(size_t hash_len, const uint8_t *secret, const char *la
 }
 #endif
 
+#ifdef CH_CPU_RUNTIME
+// The powers the AEAD's key must point at: the direction's own where it
+// stored a schedule, and NULL where it stored none (docs/decisions.md 234).
+static const uint8_t *expected_powers;
+#endif
+
 // A device object expands the key at each record, and so does a host
 // object's direction with no stored schedule. Where one is stored, record.c
 // calls aes_traffic_key_load, whose stub follows the host entries below
@@ -78,12 +84,20 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
     for (size_t i = 0; i < sizeof k->key.round_keys; i++) {
         k->key.round_keys[i] = nondet_u8();
     }
+#ifdef CH_CPU_RUNTIME
+    // A key expanded here points at no stored powers (aes.h).
+    k->ghash_powers = NULL;
+#endif
 }
 
 void gcm_traffic_seal(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
                       size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
                       uint8_t tag[GCM_TAG]) {
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "gcm seal: key readable");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(k->ghash_powers == expected_powers,
+                     "gcm seal: the key points at its owner's stored powers, or at none");
+#endif
     __CPROVER_assert(__CPROVER_r_ok(nonce, AES_IV), "gcm seal: nonce readable");
     __CPROVER_assert(__CPROVER_r_ok(aad, aad_len), "gcm seal: aad readable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(pt, n), "gcm seal: pt readable");
@@ -98,6 +112,10 @@ int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], cons
                      size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG],
                      uint8_t *pt) {
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "gcm open: key readable");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(k->ghash_powers == expected_powers,
+                     "gcm open: the key points at its owner's stored powers, or at none");
+#endif
     __CPROVER_assert(__CPROVER_r_ok(nonce, AES_IV), "gcm open: nonce readable");
     __CPROVER_assert(__CPROVER_r_ok(aad, aad_len), "gcm open: aad readable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(ct, n), "gcm open: ct readable");
@@ -172,29 +190,39 @@ void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
     k->key.cpu_high = (uint8_t)(cpu >> 8);
 }
 
-// A host object stores each key's schedule when it derives the key and
-// loads a copy per use (aes.h, docs/decisions.md 160). Both stubs hold
-// the contract aes.h states: the suite's key length, a key or a schedule
-// of SUITE_AES_SCHEDULE_LEN readable bytes, and a whole destination they
-// write with bytes no caller may assume.
-int aes_traffic_key_store(uint8_t *schedule, uint32_t cpu, const uint8_t *key, size_t key_len) {
-    __CPROVER_assert(key_len == expected_key_len, "aes store: the suite's key length");
-    __CPROVER_assert(__CPROVER_r_ok(key, key_len), "aes store: key readable");
+// A host object stores each key's schedule and the powers of its hash
+// subkey when it derives the key, and loads a copy of the schedule per use
+// (aes.h, gcm.h, docs/decisions.md 160 and 234). Both stubs hold the
+// contracts those headers state: the suite's key length, a key or a
+// schedule of SUITE_AES_SCHEDULE_LEN readable bytes, and whole
+// destinations they write with bytes no caller may assume.
+static int powers_stored;
+int gcm_traffic_key_store(uint8_t *schedule, uint8_t *powers, uint32_t cpu, const uint8_t *key,
+                          size_t key_len) {
+    __CPROVER_assert(key_len == expected_key_len, "gcm store: the suite's key length");
+    __CPROVER_assert(__CPROVER_r_ok(key, key_len), "gcm store: key readable");
     __CPROVER_assert(__CPROVER_w_ok(schedule, SUITE_AES_SCHEDULE_LEN),
-                     "aes store: schedule writable");
+                     "gcm store: schedule writable");
+    __CPROVER_assert(__CPROVER_w_ok(powers, SUITE_GHASH_POWERS_LEN), "gcm store: powers writable");
     if ((cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
         return 0;
     }
     fill_nondet(schedule, SUITE_AES_SCHEDULE_LEN);
+    fill_nondet(powers, SUITE_GHASH_POWERS_LEN);
+    powers_stored = 1;
     return 1;
 }
 
-void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, size_t key_len,
-                          uint32_t cpu) {
+void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, const uint8_t *powers,
+                          size_t key_len, uint32_t cpu) {
     __CPROVER_assert(key_len == expected_key_len, "aes load: the suite's key length");
     __CPROVER_assert(__CPROVER_r_ok(schedule, SUITE_AES_SCHEDULE_LEN),
                      "aes load: schedule readable");
+    __CPROVER_assert(powers == NULL || __CPROVER_r_ok(powers, SUITE_GHASH_POWERS_LEN),
+                     "aes load: the stored powers readable");
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes load: key writable");
+    // The copy points at the owner's powers and holds none (aes.h).
+    k->ghash_powers = powers;
     for (size_t i = 0; i < sizeof k->key.round_keys; i++) {
         k->key.round_keys[i] = nondet_u8();
     }
@@ -229,11 +257,33 @@ int main(void) {
     uint8_t secret[HKDF_HASH_MAX];
     fill_nondet(secret, sizeof secret);
     rec_dir d;
+#ifdef CH_CPU_RUNTIME
+    // Any description of the CPU, and any powers of a key before this one.
+    d.cpu = nondet_u32();
+    fill_nondet(d.ghash_powers, sizeof d.ghash_powers);
+    size_t at = nondet_size_t();
+    __CPROVER_assume(at < sizeof d.ghash_powers);
+    int stores = aes_suite && (d.cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
+    powers_stored = 0;
+#endif
     rec_dir_init_suite(&d, secret, suite);
     __CPROVER_assert(d.suite == suite, "init: the direction records its suite");
     __CPROVER_assert(d.seq == 0, "init: the sequence starts at 0");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(d.stored == stores && powers_stored == stores,
+                     "init: the powers are stored with the schedule, under the AES bit alone");
+    __CPROVER_assert(d.stored || d.ghash_powers[at] == 0,
+                     "init: a direction that stores none holds no power of a key before");
+    powers_stored = 0;
+#endif
     rec_dir_update(secret, &d);
     __CPROVER_assert(d.suite == suite, "update: KeyUpdate keeps the suite");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(d.stored == stores && powers_stored == stores,
+                     "update: KeyUpdate stores the new key's powers");
+    __CPROVER_assert(d.stored || d.ghash_powers[at] == 0, "update: no power stays where none is");
+    expected_powers = d.stored ? d.ghash_powers : NULL;
+#endif
 
     uint8_t pt[RECORD_SUITE_PT_MAX];
     uint8_t out[REC_OVERHEAD + RECORD_SUITE_PT_MAX];

@@ -82,6 +82,9 @@ int main(void) {
     size_t key_len = (nondet_u8() & 1U) ? AES_128_KEY : AES_256_KEY;
     aes_traffic_key k;
     aes_traffic_key_init(&k, key, key_len);
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(k.ghash_powers == NULL, "a key expanded here points at no stored powers");
+#endif
     if (key_len == AES_256_KEY) {
         __CPROVER_assert(ran_expand_256 && !ran_expand_128, "a 32-byte key takes AES-256");
         __CPROVER_assert(k.key.rounds == AES_256_ROUNDS, "a 32-byte key records 14 rounds");
@@ -118,7 +121,13 @@ int main(void) {
     fill_nondet(schedule, sizeof schedule);
     uint32_t cpu = nondet_u32();
     aes_traffic_key loaded;
-    aes_traffic_key_load(&loaded, schedule, key_len, cpu);
+    // The owner's stored powers, or none for a header protection key. The
+    // load records the pointer and reads no byte of them (docs/decisions.md
+    // 234), so the powers need no storage here.
+    uint8_t owner_powers[1];
+    const uint8_t *powers = (nondet_u8() & 1U) ? owner_powers : NULL;
+    aes_traffic_key_load(&loaded, schedule, powers, key_len, cpu);
+    __CPROVER_assert(loaded.ghash_powers == powers, "the load records the owner's powers");
     __CPROVER_assert(loaded.key.rounds ==
                          (key_len == AES_256_KEY ? AES_256_ROUNDS : AES_128_ROUNDS),
                      "the load writes the suite's round count");

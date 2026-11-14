@@ -99,6 +99,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "aes.h"
 
@@ -307,36 +308,58 @@ typedef struct {
 } ghash_power;
 
 // Everything the multiplies compute from the hash subkey, in one object
-// so that one wipe at the end of an entry clears all of it. powers comes
-// last, so an entry that computed only some of them can wipe up to the
-// last one it wrote.
+// so that one wipe at the end of an entry clears all of it. powers points
+// at the powers the multiplies read, each the bytes of one ghash_power:
+// computed below, or the ones a key's owner stores beside the key
+// (docs/decisions.md 234). computed comes last, so an entry wipes up to
+// the last power it computed, and none where it read stored powers.
 typedef struct {
-    ghash_vector subkey; // the hash subkey H
-    ghash_vector acc;    // the accumulator
-    ghash_sums sums;     // the products a multiply or a pass adds up, before ghash_reduce
-    ghash_power powers[GHASH_PASS_BLOCKS]; // powers[i] holds H^(i + 1) * x^-1
+    ghash_vector subkey;   // the hash subkey H, where the entry computes powers
+    ghash_vector acc;      // the accumulator
+    ghash_sums sums;       // the products a multiply or a pass adds up, before ghash_reduce
+    const uint8_t *powers; // the powers the multiplies read
+    ghash_power computed[GHASH_PASS_BLOCKS]; // computed[i] holds H^(i + 1) * x^-1
 } ghash_state;
+
+// A vector at an address of any alignment, as stored powers have.
+#ifdef GHASH_VECTOR_ARM
+typedef uint64x2_t ghash_vector_bytes __attribute__((aligned(1), may_alias));
+#else
+typedef __m128i_u ghash_vector_bytes;
+#endif
 
 // v's two words added, in both lanes.
 static inline ghash_vector ghash_halves_added(ghash_vector v) {
     return ghash_xor(v, ghash_swap_halves(v));
 }
 
-// A power and its halves added, read from s through a volatile lvalue,
-// so the compiler reads the state each time a multiply takes them rather
-// than holding the eight powers in registers across a pass. Held there,
-// they did not fit beside a pass's blocks: clang and gcc both copied some
-// of them, or their halves added, to stack slots of their own, which the
-// wipe of s does not clear, and test/ghash_equiv_residue.h found the
+// Power i of powers and its halves added, read once, for an entry that
+// writes a layout of its own from them.
+static inline ghash_vector ghash_power_of(const uint8_t *powers, size_t i) {
+    ghash_vector v;
+    memcpy(&v, &powers[i * sizeof(ghash_power)], sizeof v);
+    return v;
+}
+
+static inline ghash_vector ghash_halves_of(const uint8_t *powers, size_t i) {
+    return ghash_power_of(&powers[offsetof(ghash_power, halves_added)], i);
+}
+
+// A power and its halves added, read from s's powers through a volatile
+// lvalue, so the compiler reads them each time a multiply takes them
+// rather than holding the eight powers in registers across a pass. Held
+// there, they did not fit beside a pass's blocks: clang and gcc both
+// copied some of them, or their halves added, to stack slots of their
+// own, which no wipe clears, and test/ghash_equiv_residue.h found the
 // copies.
 static inline ghash_vector ghash_power_at(const ghash_state *s, size_t i) {
-    const volatile ghash_vector *power = &s->powers[i].power;
-    return *power;
+    const volatile void *at = &s->powers[i * sizeof(ghash_power)];
+    return *(const volatile ghash_vector_bytes *)at;
 }
 
 static inline ghash_vector ghash_halves_at(const ghash_state *s, size_t i) {
-    const volatile ghash_vector *halves = &s->powers[i].halves_added;
-    return *halves;
+    const volatile void *at = &s->powers[i * sizeof(ghash_power) + sizeof(ghash_vector)];
+    return *(const volatile ghash_vector_bytes *)at;
 }
 
 // sums = the three products of the element x and powers[i], or sums +=
@@ -384,19 +407,20 @@ static inline ghash_vector ghash_reduce(const ghash_sums *sums) {
     return ghash_swap_halves(ghash_xor(upper, second));
 }
 
-// s->powers[i] = power and its two words added.
+// s->computed[i] = power and its two words added.
 static inline void ghash_set_power(ghash_state *s, size_t i, ghash_vector power) {
-    s->powers[i].power = power;
-    s->powers[i].halves_added = ghash_halves_added(power);
+    s->computed[i].power = power;
+    s->computed[i].halves_added = ghash_halves_added(power);
 }
 
-// s->powers[i] holds H^(i + 1) * x^-1 for each i below count, which is at
-// least 1 and at most GHASH_PASS_BLOCKS, from s->subkey. The shift runs in
-// a product's order, between two swaps. H^(i + 1) is H^half times
-// H^(i + 1 - half), half the largest power of two at or below i, so the
-// seven multiplies run in three rounds, H^2, then H^3 and H^4, then H^5 to
-// H^8, and no multiply waits on another of its round.
+// s->computed[i] holds H^(i + 1) * x^-1 for each i below count, which is at
+// least 1 and at most GHASH_PASS_BLOCKS, from s->subkey, and s reads them.
+// The shift runs in a product's order, between two swaps. H^(i + 1) is
+// H^half times H^(i + 1 - half), half the largest power of two at or below
+// i, so the seven multiplies run in three rounds, H^2, then H^3 and H^4,
+// then H^5 to H^8, and no multiply waits on another of its round.
 static inline void ghash_compute_powers(ghash_state *s, size_t count) {
+    s->powers = (const uint8_t *)s->computed;
     ghash_set_power(s, 0, ghash_swap_halves(ghash_times_inverse_x(ghash_swap_halves(s->subkey))));
     for (size_t i = 1; i < count; i++) {
         size_t half = 1;
@@ -408,6 +432,22 @@ static inline void ghash_compute_powers(ghash_state *s, size_t count) {
     }
 }
 
+// s ready for an entry: the accumulator from its bytes, and the powers.
+// Where stored is not NULL they are the key's stored powers, and subkey is
+// not read. Where it is NULL, s computes count of them from subkey.
+// Returns how many powers s computed, which the entry's wipe covers.
+static inline size_t ghash_start(ghash_state *s, const uint8_t acc[AES_BLOCK],
+                                 const uint8_t *subkey, const uint8_t *stored, size_t count) {
+    s->acc = ghash_load_block(acc);
+    if (stored != NULL) {
+        s->powers = stored;
+        return 0;
+    }
+    s->subkey = ghash_load_block(subkey);
+    ghash_compute_powers(s, count);
+    return count;
+}
+
 // SP 800-38D §6.4 over count whole blocks at data, 1 <= count <=
 // GHASH_PASS_BLOCKS: each block is added to the accumulator and the
 // accumulator multiplied by H, which comes to
@@ -417,7 +457,7 @@ static inline void ghash_compute_powers(ghash_state *s, size_t count) {
 // No block's product waits on another's, and their sum takes one
 // reduction. The first block's products are added last: they are the
 // only ones that wait on the last pass's reduction, so the products of
-// the other blocks can run while it finishes. s->powers must hold the
+// the other blocks can run while it finishes. s->powers must point at the
 // first count powers.
 static inline void ghash_hash_blocks(ghash_state *s, const uint8_t *data, size_t count) {
     ghash_vector first = ghash_xor(ghash_load_block(data), s->acc);

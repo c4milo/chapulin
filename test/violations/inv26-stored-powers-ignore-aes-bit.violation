@@ -1,0 +1,18 @@
+invariant: INV-26
+file: src/gcm.c
+catches: aes_runtime_test
+reason: gcm_traffic_key_store computes the hash subkey and its powers whatever
+  aes_traffic_key_store answered, so keying an AES-GCM suite runs the AES
+  instructions and the carry-less multiply in a session whose caller did
+  not set CH_CPU_CONSTANT_TIME_AES, which runs neither otherwise (INV-26),
+  and on a CPU without them it dies of SIGILL. It also answers 1, so the
+  owner then reads a schedule nothing wrote. bin/aes_runtime_test keys a
+  set under a value without the bit, requires stored at 0 and counts the
+  calls of both kinds (docs/decisions.md 160 and 234).
+
+--- old
+    if (!aes_traffic_key_store(schedule, cpu, key, key_len)) {
+        return 0;
+    }
+--- new
+    (void)aes_traffic_key_store(schedule, cpu, key, key_len);

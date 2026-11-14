@@ -251,6 +251,8 @@ static void test_failed_open_bytes(const suite_vector *v, size_t payload) {
     CHECK(memcmp(&datagram[first_len], &before[first_len], second_len) == 0);
 }
 
+#include "ghash_powers_tests.h"
+
 int main(void) {
     test_suite_vector(&aes128);
     test_suite_vector(&aes256);
@@ -260,6 +262,9 @@ int main(void) {
         test_failed_open_bytes(&aes128, payloads[i]);
         test_failed_open_bytes(&aes256, payloads[i]);
     }
+#ifdef CH_AES_STORED_SCHEDULE
+    test_ghash_powers();
+#endif
     if (failures == 0) {
         (void)printf("quic_suite: AES-128-GCM and AES-256-GCM packet and header protection match "
                      "an independent computation, update and count as RFC 9001 says, and a "

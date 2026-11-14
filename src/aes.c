@@ -306,6 +306,9 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
     // No kernel until aes_traffic_key_cpu names the session's CPU.
     k->key.cpu = 0;
     k->key.cpu_high = 0;
+    // No stored powers: the AEAD computes the powers of a key expanded
+    // here (docs/decisions.md 234).
+    k->ghash_powers = NULL;
 #endif
     if (key_len == AES_256_KEY) {
         aes_expand_round_keys_256(key, k->key.round_keys);
@@ -322,13 +325,14 @@ void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
     k->key.cpu_high = (uint8_t)(cpu >> 8);
 }
 
-_Static_assert(sizeof(aes_traffic_key) == SUITE_AES_SCHEDULE_LEN,
-               "a stored schedule holds one aes_traffic_key");
+_Static_assert(sizeof(aes_key_schedule) == SUITE_AES_SCHEDULE_LEN,
+               "a stored schedule holds one aes_key_schedule");
 
-void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, size_t key_len,
-                          uint32_t cpu) {
+void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, const uint8_t *powers,
+                          size_t key_len, uint32_t cpu) {
     CH_ASSERT(key_len == AES_128_KEY || key_len == AES_256_KEY);
-    memcpy(k, schedule, sizeof *k);
+    memcpy(&k->key, schedule, sizeof k->key);
+    k->ghash_powers = powers;
     // key_len is the suite's, which the ServerHello named in the clear.
     k->key.rounds = key_len == AES_256_KEY ? AES_256_ROUNDS : AES_128_ROUNDS;
 #ifdef CH_AES_TWO_CIPHERS
@@ -344,7 +348,7 @@ int aes_traffic_key_store(uint8_t *schedule, uint32_t cpu, const uint8_t *key, s
     }
     aes_traffic_key k;
     aes_traffic_key_init(&k, key, key_len);
-    memcpy(schedule, &k, sizeof k);
+    memcpy(schedule, &k.key, sizeof k.key);
     ct_wipe(&k, sizeof k);
     return 1;
 }

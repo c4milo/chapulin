@@ -265,7 +265,7 @@ static void run_counter_blocks_shifted(bench_state *b) {
 static void run_seal_passes(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
     bench_gcm_seal_passes(b->key.key.round_keys, b->key.key.rounds, b->counter, b->acc, b->subkey,
-                          body, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK), body);
+                          NULL, body, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK), body);
     consume(body[0]);
 }
 
@@ -276,7 +276,8 @@ static void run_seal_passes(bench_state *b) {
 // it reads need not be a record, and it needs no refill.
 static void run_open_passes(bench_state *b) {
     bench_gcm_open_passes(b->key.key.round_keys, b->key.key.rounds, b->counter, b->acc, b->subkey,
-                          b->rec + REC_HDR, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK), b->rec);
+                          NULL, b->rec + REC_HDR, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK),
+                          b->rec);
     consume(b->rec[0]);
 }
 #endif
@@ -287,7 +288,7 @@ static void run_compute_tag(bench_state *b) {
 }
 
 static void run_ghash_data(bench_state *b) {
-    gcm_hash_data_hw(b->acc, b->subkey, b->rec + REC_HDR, b->len);
+    gcm_hash_data_hw(b->acc, b->subkey, NULL, b->rec + REC_HDR, b->len);
     consume(b->acc[0]);
 }
 

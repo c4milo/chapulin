@@ -71,15 +71,16 @@ void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t cou
 // acc first holds GHASH over the associated data and these blocks.
 //
 // Requires: round_keys, rounds and counter as gcm_counter_blocks_hw
-// requires them; acc points at AES_BLOCK readable and writable bytes and
-// subkey at AES_BLOCK readable bytes, H = CIPH_K(0^128) under the same
-// key, neither of them inside in or out; in and out point at
+// requires them; acc points at AES_BLOCK readable and writable bytes;
+// subkey and powers are as ghash_hw.h's entries take them, subkey
+// H = CIPH_K(0^128) under the same key and powers that key's stored
+// powers or NULL, none of the three inside in or out; in and out point at
 // passes * GCM_HW_PASS_BLOCKS * AES_BLOCK readable and writable bytes, and
 // may be NULL when passes is 0, with in == out allowed and no other
 // overlap. Writes out, counter and acc, and cannot fail.
 void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out);
+                        uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                        const uint8_t *in, size_t passes, uint8_t *out);
 
 // The open's GHASH and counter mode over passes * GCM_HW_PASS_BLOCKS whole
 // blocks of ciphertext in one loop: acc goes on through GHASH over every
@@ -93,8 +94,8 @@ void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
 // pass's ciphertext is hashed before any of its plaintext is written.
 // Writes out, counter and acc, and cannot fail.
 void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out);
+                        uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                        const uint8_t *in, size_t passes, uint8_t *out);
 
 // The seal and the open above, and gcm_vaes.c's, hold the hash subkey's
 // powers and a pass's keystream on their frames, and a compiler keeps

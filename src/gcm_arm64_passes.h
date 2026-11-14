@@ -28,8 +28,8 @@
 // below in work.
 //
 // GHASH runs ghash_vector.h's arithmetic in the same element layout:
-// Karatsuba's three products for each block, by the powers of H that
-// ghash_compute_powers wrote, and ghash_reduce's two folds by the
+// Karatsuba's three products for each block, by the powers of H that the
+// call computed or the key's owner stored, and ghash_reduce's two folds by the
 // constant 0xc2. The middle products of 2 blocks share a register: TRN1
 // and TRN2 put the two blocks' low and high words side by side, one
 // exclusive-or adds them, and PMULL and PMULL2 multiply each lane by the
@@ -151,7 +151,7 @@ _Static_assert(sizeof(ghash_power) == 32, "the asm reads power i at 32 * i");
     ghash_vector mid = zero;                                                                       \
     const uint8_t *const keys = at->round_keys;                                                    \
     const uint8_t *hash = args->in;                                                                \
-    const ghash_power *powers = at->powers;                                                        \
+    const uint8_t *powers = at->powers;                                                            \
     const ghash_vector *packed = at->packed
 
 // The pass_args members a macro below reads, which its statement loads first.
@@ -353,13 +353,13 @@ static inline void passes_counters(gcm_arm64_passes *ps, const uint8_t *round_ke
 
 // packed[k]: the halves added of the powers in powers that pair k's two
 // blocks take, in lanes 0 and 1: blocks 2k + 1 and 2k + 2, and block 0 in
-// the last pair's lane 1, where block j takes powers[7 - j].
+// the last pair's lane 1, where block j takes power 7 - j of the eight.
 static inline void passes_pack_set(ghash_vector packed[GCM_ARM64_PASS_BLOCKS / 2],
-                                   const ghash_power powers[GCM_ARM64_PASS_BLOCKS]) {
+                                   const uint8_t *powers) {
     for (size_t k = 0; k < GCM_ARM64_PASS_BLOCKS / 2; k++) {
         size_t j = 2 * k + 1;
         size_t other = (j + 1) % GCM_ARM64_PASS_BLOCKS;
-        packed[k] = vtrn1q_u64(powers[7 - j].halves_added, powers[7 - other].halves_added);
+        packed[k] = vtrn1q_u64(ghash_halves_of(powers, 7 - j), ghash_halves_of(powers, 7 - other));
     }
 }
 
@@ -374,9 +374,9 @@ typedef struct {
     const uint8_t *written;
     uint32_t next;
     const uint8_t *round_keys;
-    const ghash_power *powers;
+    const uint8_t *powers;
     const ghash_vector *packed;
-    const ghash_power *high;
+    const uint8_t *high;
     const ghash_vector *packed_high;
 } pass_cursor;
 
@@ -389,7 +389,7 @@ static inline void passes_begin(pass_args *args, pass_cursor *at, gcm_arm64_pass
     args->first_key = ps->first_key;
     at->powers = g->powers;
     at->packed = ps->packed;
-    at->high = ps->high;
+    at->high = (const uint8_t *)ps->high;
     at->packed_high = ps->packed_high;
     args->constant = GHASH_REDUCTION_WORD;
     args->cur = ps->counters[0];
@@ -480,8 +480,8 @@ static inline void passes_run(ghash_state *g, pass_args *args, pass_cursor *at, 
                               int seal, int paired, size_t count) {
     PASS_VALUES;
     ghash_vector acc = g->acc;
-    const ghash_power *const low_powers = at->powers;
-    const ghash_power *const high_powers = at->high;
+    const uint8_t *const low_powers = at->powers;
+    const uint8_t *const high_powers = at->high;
     const ghash_vector *const low_packed = at->packed;
     const ghash_vector *const high_packed = at->packed_high;
 #ifdef CH_AES_256

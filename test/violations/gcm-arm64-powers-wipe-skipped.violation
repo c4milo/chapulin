@@ -11,7 +11,7 @@ reason: the arm64 AES-GCM seal and open wipe their state only up to the
   arm64 and runs it under qemu-aarch64's max model.
 
 --- old
-    ct_wipe(s, offsetof(aead_state, ghash) + offsetof(ghash_state, powers) +
+    ct_wipe(s, offsetof(aead_state, ghash) + offsetof(ghash_state, computed) +
                    s->powers * sizeof(ghash_power));
 --- new
-    ct_wipe(s, offsetof(aead_state, ghash) + offsetof(ghash_state, powers));
+    ct_wipe(s, offsetof(aead_state, ghash) + offsetof(ghash_state, computed));

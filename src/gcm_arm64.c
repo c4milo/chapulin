@@ -30,7 +30,9 @@
 //   1. One batch of AES rounds over the zero block, the first counter
 //      block J0 and, when the text after its whole passes has at most
 //      BATCH_TEXT_BLOCKS blocks, every counter block of that rest.
-//   2. The powers of H that the longest run of GHASH blocks below takes.
+//   2. The powers of H that the longest run of GHASH blocks below takes,
+//      or none where the key's owner stores H to H^8 (docs/decisions.md
+//      234): the multiplies then read the stored powers in place.
 //   3. GHASH over the associated data, then the text's whole passes on the
 //      assembly, then the rest of the text, then the lengths block. The
 //      blocks outside the passes wait in a buffer of up to 8 blocks, and
@@ -101,9 +103,10 @@
 
 // What a call computes from the key: J0's keystream, the batch's blocks,
 // which hold counter blocks and then their keystream, the blocks waiting
-// for GHASH, the GHASH state with its powers, which comes last so that a
-// wipe can stop after the last power the call computed, and the passes'
-// state, which a call wipes when it ran passes.
+// for GHASH, the GHASH state with the powers the call computed, which
+// comes last so that a wipe can stop after the last of them, and the
+// passes' state, which a call wipes when it ran passes. powers counts the
+// powers the call computed: none where it reads the key's stored ones.
 typedef struct {
     uint8_t mask[AES_BLOCK];
     uint8_t batch[BATCH_BLOCKS][AES_BLOCK];
@@ -191,13 +194,14 @@ static inline ghash_vector multiply_powers(ghash_vector a, ghash_vector b) {
     return ghash_reduce(&sums);
 }
 
-// g->powers[i] = H^(i + 1) * x^-1 for i below count, which is 1, 2, 4 or
-// 8, from g->subkey, as ghash_compute_powers writes them, in fewer steps
-// that wait on each other: H^2 from H, then H^3 and H^4 from those two,
-// then H^5 to H^8 from H^4 and the four before it. Each power stays in a
-// register for the products after it, where ghash_compute_powers reads it
-// back from g.
+// g->computed[i] = H^(i + 1) * x^-1 for i below count, which is 1, 2, 4
+// or 8, from g->subkey, as ghash_compute_powers writes them, and g reads
+// them, in fewer steps that wait on each other: H^2 from H, then H^3 and
+// H^4 from those two, then H^5 to H^8 from H^4 and the four before it.
+// Each power stays in a register for the products after it, where
+// ghash_compute_powers reads it back from g.
 static void compute_powers(ghash_state *g, size_t count) {
+    g->powers = (const uint8_t *)g->computed;
     ghash_vector p1 = ghash_swap_halves(ghash_times_inverse_x(ghash_swap_halves(g->subkey)));
     ghash_set_power(g, 0, p1);
     if (count < 2) {
@@ -221,21 +225,23 @@ static void compute_powers(ghash_state *g, size_t count) {
     ghash_set_power(g, 7, multiply_powers(p4, p4));
 }
 
-// The passes' packed halves for the 8 powers in s's GHASH state, and
+// The passes' packed halves for the 8 powers s's GHASH state reads, and
 // when paired is set, the passes' high powers, H^9 to H^16 times x^-1,
-// each H^8 times one of the 8, and their packed halves.
+// each H^8 times one of the 8, and their packed halves. A call computes
+// the high powers whether or not the key's owner stores the 8.
 static void pack_powers(aead_state *s, int paired) {
-    passes_pack_set(s->passes.packed, s->ghash.powers);
+    const uint8_t *eight = s->ghash.powers;
+    passes_pack_set(s->passes.packed, eight);
     if (!paired) {
         return;
     }
-    ghash_vector eighth = s->ghash.powers[GHASH_PASS_BLOCKS - 1].power;
+    ghash_vector eighth = ghash_power_of(eight, GHASH_PASS_BLOCKS - 1);
     for (size_t i = 0; i < GHASH_PASS_BLOCKS; i++) {
-        ghash_vector power = multiply_powers(eighth, s->ghash.powers[i].power);
+        ghash_vector power = multiply_powers(eighth, ghash_power_of(eight, i));
         s->passes.high[i].power = power;
         s->passes.high[i].halves_added = ghash_halves_added(power);
     }
-    passes_pack_set(s->passes.packed_high, s->passes.high);
+    passes_pack_set(s->passes.packed_high, (const uint8_t *)s->passes.high);
 }
 
 static size_t blocks_of(size_t n) {
@@ -245,12 +251,14 @@ static size_t blocks_of(size_t n) {
 // Steps 1 and 2, and GHASH over the associated data: s's mask holds J0's
 // keystream, and when keystream_in_batch is set, batch[2 + i] holds the
 // keystream of block i of the rest of the text, rest bytes after its whole
-// passes, whose first block takes count first. The powers cover blocks,
-// the longest run of GHASH blocks with one reduction before the caller
-// computes more.
+// passes, whose first block takes count first. Where stored is NULL, the
+// powers the call computes cover blocks, the longest run of GHASH blocks
+// with one reduction before the caller computes more. Where it is not,
+// it is the key's stored powers, and the call computes none here.
 static void aead_start(aead_state *s, const uint8_t *round_keys, size_t rounds,
-                       const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
-                       size_t blocks, uint32_t first, size_t rest, int keystream_in_batch) {
+                       const uint8_t *stored, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                       size_t aad_len, size_t blocks, uint32_t first, size_t rest,
+                       int keystream_in_batch) {
     memset(s->batch, 0, sizeof s->batch);
     counter_block(s->batch[1], nonce, 1U);
     if (keystream_in_batch) {
@@ -260,14 +268,19 @@ static void aead_start(aead_state *s, const uint8_t *round_keys, size_t rounds,
     }
     cipher_batch(round_keys, rounds, s->batch);
     memcpy(s->mask, s->batch[1], AES_BLOCK);
-    s->ghash.subkey = ghash_load_block(s->batch[0]);
     s->ghash.acc = vdupq_n_u64(0);
-    // compute_powers computes 1, 2, 4 or 8.
-    s->powers = 1;
-    while (s->powers < blocks && s->powers < GHASH_PASS_BLOCKS) {
-        s->powers *= 2;
+    s->powers = 0;
+    if (stored != NULL) {
+        s->ghash.powers = stored;
+    } else {
+        s->ghash.subkey = ghash_load_block(s->batch[0]);
+        // compute_powers computes 1, 2, 4 or 8.
+        s->powers = 1;
+        while (s->powers < blocks && s->powers < GHASH_PASS_BLOCKS) {
+            s->powers *= 2;
+        }
+        compute_powers(&s->ghash, s->powers);
     }
-    compute_powers(&s->ghash, s->powers);
     s->staged_count = 0;
     stage_bytes(s, aad, aad_len);
 }
@@ -302,16 +315,16 @@ static void aead_finish(aead_state *s, size_t aad_len, size_t n, size_t passes_l
     // it bytes, and the mask is added to them.
     ghash_vector hashed = s->ghash.acc;
     vst1q_u8(tag, veorq_u8(vrev64q_u8(vreinterpretq_u8_u64(hashed)), vld1q_u8(s->mask)));
-    ct_wipe(s, offsetof(aead_state, ghash) + offsetof(ghash_state, powers) +
+    ct_wipe(s, offsetof(aead_state, ghash) + offsetof(ghash_state, computed) +
                    s->powers * sizeof(ghash_power));
     if (passes_len > 0) {
         ct_wipe(&s->passes, passes_len);
     }
 }
 
-void GCM_ARM64_SEAL(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                    const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                    uint8_t tag[AES_BLOCK]) {
+void GCM_ARM64_SEAL(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                    const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                    const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
     aead_state s;
     size_t passes = n / GCM_ARM64_PASS_BYTES;
     size_t done = passes * GCM_ARM64_PASS_BYTES;
@@ -322,7 +335,7 @@ void GCM_ARM64_SEAL(const uint8_t *round_keys, size_t rounds, const uint8_t nonc
     // With whole passes, the powers the associated data takes now, and the
     // 8 the passes take after the first pass, which takes none.
     size_t blocks = passes > 0 ? blocks_of(aad_len) : blocks_of(aad_len) + blocks_of(n) + 1;
-    aead_start(&s, round_keys, rounds, nonce, aad, aad_len, blocks, first, rest,
+    aead_start(&s, round_keys, rounds, powers, nonce, aad, aad_len, blocks, first, rest,
                keystream_in_batch);
     if (passes > 0) {
         stage_flush(&s);
@@ -331,8 +344,10 @@ void GCM_ARM64_SEAL(const uint8_t *round_keys, size_t rounds, const uint8_t nonc
         pass_cursor at;
         passes_begin(&args, &at, &s.passes, &s.ghash, round_keys, 2U, pt, ct);
         passes_counter_pass(&args, &at, rounds);
-        s.powers = GHASH_PASS_BLOCKS;
-        compute_powers(&s.ghash, s.powers);
+        if (powers == NULL) {
+            s.powers = GHASH_PASS_BLOCKS;
+            compute_powers(&s.ghash, s.powers);
+        }
         int paired = passes >= GCM_ARM64_PAIRED_PASSES;
         pack_powers(&s, paired);
         passes_run(&s.ghash, &args, &at, rounds, 1, paired, passes - 1);
@@ -353,9 +368,9 @@ void GCM_ARM64_SEAL(const uint8_t *round_keys, size_t rounds, const uint8_t nonc
 // keeps the copies until aead_finish hashes them. A plaintext byte at
 // done + i is written after the ciphertext bytes up to done + i are read,
 // so pt == ct and pt below ct work.
-void GCM_ARM64_OPEN(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                    const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                    uint8_t want[AES_BLOCK]) {
+void GCM_ARM64_OPEN(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                    const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                    const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
     aead_state s;
     size_t passes = n / GCM_ARM64_PASS_BYTES;
     size_t done = passes * GCM_ARM64_PASS_BYTES;
@@ -363,8 +378,8 @@ void GCM_ARM64_OPEN(const uint8_t *round_keys, size_t rounds, const uint8_t nonc
     uint32_t first = passes_count(2U, passes, 0);
     int keystream_in_batch = blocks_of(rest) <= BATCH_TEXT_BLOCKS;
     size_t passes_len = 0;
-    aead_start(&s, round_keys, rounds, nonce, aad, aad_len, blocks_of(aad_len) + blocks_of(n) + 1,
-               first, rest, keystream_in_batch);
+    aead_start(&s, round_keys, rounds, powers, nonce, aad, aad_len,
+               blocks_of(aad_len) + blocks_of(n) + 1, first, rest, keystream_in_batch);
     if (passes > 0) {
         stage_flush(&s);
         passes_counters(&s.passes, round_keys, nonce, 2U);

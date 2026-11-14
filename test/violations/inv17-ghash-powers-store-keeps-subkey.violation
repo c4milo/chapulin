@@ -1,0 +1,14 @@
+invariant: INV-17
+file: src/gcm.c
+catches: aes_suite_test
+reason: gcm_traffic_key_store does not wipe the hash subkey it computed on its
+  frame, so H stays on the stack below each call that keys an AES-GCM
+  direction. Every stored byte is right. bin/aes_suite_test copies the
+  stack below the call and requires no hash subkey there
+  (test/ghash_powers_tests.h, docs/decisions.md 234).
+
+--- old
+    gcm_powers_hw(powers, subkey);
+    ct_wipe(subkey, sizeof subkey);
+--- new
+    gcm_powers_hw(powers, subkey);

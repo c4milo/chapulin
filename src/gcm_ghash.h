@@ -28,28 +28,36 @@
 #include "ghash_hw.h"
 #endif
 
-// The objects that run every schedule on the AES instructions, and so
-// hold ghash_hw.c's GHASH alone: a host object with no table beside the
-// instructions, which is a TCP one.
-#if defined(CH_CPU_RUNTIME) && !defined(CH_AES_TWO_CIPHERS)
-#define GCM_GHASH_CARRYLESS_ALONE
+// The objects that hold ghash_hw.c's GHASH, which computes both GHASH
+// steps on the carry-less multiply instruction: host objects.
+#ifdef CH_CPU_RUNTIME
+#define GCM_GHASH_CARRYLESS
 #endif
 
-#ifdef GCM_GHASH_CARRYLESS_ALONE
-// ghash_hw.c computes both GHASH steps on the carry-less multiply
-// instruction, and the portable bodies under #else are not compiled.
-// CBMC cannot read an intrinsic, so the proofs cover the portable bodies
-// alone, and test/ghash_equiv_test.c holds each entry below to its
+// The objects that hold the portable bodies below: a device object, and a
+// QUIC host object, whose table runs public keys. A TCP host object runs
+// every schedule on the instructions and compiles none of them. CBMC
+// cannot read an intrinsic, so the proofs cover the portable bodies alone,
+// and test/ghash_equiv_test.c holds each of ghash_hw.c's entries to its
 // portable twin byte for byte.
-static void multiply_by_subkey(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]) {
-    gcm_multiply_by_subkey_hw(acc, subkey);
-}
+#if !defined(GCM_GHASH_CARRYLESS) || defined(CH_AES_TWO_CIPHERS)
+#define GCM_GHASH_PORTABLE
+#endif
 
-static void hash_data(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *data,
-                      size_t n) {
-    gcm_hash_data_hw(acc, subkey, data, n);
-}
-#else
+// GHASH's state through one AEAD call: the hash subkey H and the
+// accumulator, both functions of the key, so gcm.c's hash_finish wipes
+// them. In a host object powers is the key's stored powers, which the
+// carry-less multiply reads in place of H, or NULL for a key whose owner
+// stores none (docs/decisions.md 234). A device object stores none.
+typedef struct {
+    uint8_t subkey[AES_BLOCK];
+    uint8_t acc[AES_BLOCK];
+#ifdef CH_CPU_RUNTIME
+    const uint8_t *powers;
+#endif
+} gcm_hash;
+
+#ifdef GCM_GHASH_PORTABLE
 // The 128 bits of one block, which is how many steps SP 800-38D §6.3's
 // Algorithm 1 takes. A size_t, because it counts loop iterations.
 #define GCM_BLOCK_BITS ((size_t)8 * AES_BLOCK)
@@ -110,38 +118,54 @@ static void hash_data(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], c
         off += take;
     }
 }
-#endif // GCM_GHASH_CARRYLESS_ALONE
+#endif // GCM_GHASH_PORTABLE
 
-// The GHASH body that runs under k. A QUIC host object holds two (the
-// paragraph at the top of this file): the carry-less multiply for a
+// The GHASH body that runs under k, over h. A QUIC host object holds two
+// (the paragraph at the top of this file): the carry-less multiply for a
 // schedule on the instructions, and the portable one for a schedule on
 // the table, which only QUIC's public keys use. Every other object holds
 // one body, and k chooses nothing. k->instructions comes from the
 // session's CH_CPU_CONSTANT_TIME_AES bit or is a constant
 // (aes_schedule.h), so the branch reads a public value. gcm.c's
-// counter_mode, whole passes and whole AEAD read the same predicate.
+// counter_mode, whole passes and whole AEAD read the same predicate. A
+// key the table runs is public, and no owner stores powers for one.
 #ifdef CH_AES_TWO_CIPHERS
 static int on_instructions(const aes_key_schedule *k) {
     return k->instructions == AES_ON_INSTRUCTIONS;
 }
+#endif
 
-static void ghash_multiply(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
-                           const uint8_t subkey[AES_BLOCK]) {
-    if (on_instructions(k)) {
-        gcm_multiply_by_subkey_hw(acc, subkey);
+// gcm.c writes each call as GHASH_MULTIPLY or GHASH_DATA over its gcm_hash.
+// A host object's functions take the gcm_hash, for its powers. A device
+// object's take the accumulator and the subkey, as they did before a host
+// object stored powers, so a device object compiles the code it compiled
+// then.
+#ifdef GCM_GHASH_CARRYLESS
+static void ghash_multiply(const aes_key_schedule *k, gcm_hash *h) {
+#ifdef CH_AES_TWO_CIPHERS
+    if (!on_instructions(k)) {
+        multiply_by_subkey(h->acc, h->subkey);
         return;
     }
-    multiply_by_subkey(acc, subkey);
+#else
+    (void)k;
+#endif
+    gcm_multiply_by_subkey_hw(h->acc, h->subkey, h->powers);
 }
 
-static void ghash_data(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
-                       const uint8_t subkey[AES_BLOCK], const uint8_t *data, size_t n) {
-    if (on_instructions(k)) {
-        gcm_hash_data_hw(acc, subkey, data, n);
+static void ghash_data(const aes_key_schedule *k, gcm_hash *h, const uint8_t *data, size_t n) {
+#ifdef CH_AES_TWO_CIPHERS
+    if (!on_instructions(k)) {
+        hash_data(h->acc, h->subkey, data, n);
         return;
     }
-    hash_data(acc, subkey, data, n);
+#else
+    (void)k;
+#endif
+    gcm_hash_data_hw(h->acc, h->subkey, h->powers, data, n);
 }
+#define GHASH_MULTIPLY(k, h) ghash_multiply((k), (h))
+#define GHASH_DATA(k, h, data, n) ghash_data((k), (h), (data), (n))
 #else
 static void ghash_multiply(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
                            const uint8_t subkey[AES_BLOCK]) {
@@ -154,6 +178,8 @@ static void ghash_data(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
     (void)k;
     hash_data(acc, subkey, data, n);
 }
+#define GHASH_MULTIPLY(k, h) ghash_multiply((k), (h)->acc, (h)->subkey)
+#define GHASH_DATA(k, h, data, n) ghash_data((k), (h)->acc, (h)->subkey, (data), (n))
 #endif
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
