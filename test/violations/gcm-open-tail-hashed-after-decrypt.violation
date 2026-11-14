@@ -11,8 +11,8 @@ reason: gcm_open runs counter mode over the bytes the whole passes left
   requires them to open.
 
 --- old
-    ghash_data(k, h.acc, h.subkey, &ct[done], n - done);
+    GHASH_DATA(k, &h, &ct[done], n - done);
     counter_mode(k, counter, &ct[done], n - done, &pt[done]);
 --- new
     counter_mode(k, counter, &ct[done], n - done, &pt[done]);
-    ghash_data(k, h.acc, h.subkey, &ct[done], n - done);
+    GHASH_DATA(k, &h, &ct[done], n - done);

@@ -40,6 +40,16 @@
 // The portable multiply and residue_carryless_multiply compute them only
 // after the copy, so their own frames cannot hold them first.
 //
+// Every run is made twice. The first time each entry computes its powers
+// from the subkey. The second time it takes stored powers
+// (docs/decisions.md 234) and a null subkey, and reads the powers where
+// they lie, in a static array of this file: the search then requires that
+// the stack holds no copy of H, of a power or of a power's words added.
+// test/ghash_powers_soft.h computes the stored powers before the call, in
+// a function that is never inlined, and residue_scrub then writes zero
+// over the stack that function used, so the search finds only what the
+// call under test left.
+//
 // Included by test/ghash_equiv_test.c only, which declares the portable
 // multiply and data loop, the generator and the failure count this file
 // uses.
@@ -66,14 +76,20 @@ static uint8_t residue_result[AES_BLOCK];
 static uint8_t residue_subkey[AES_BLOCK];
 static uint8_t residue_round_keys[AES_ROUND_KEYS * AES_BLOCK];
 static uint8_t residue_counter[AES_BLOCK];
+// Whether the runs hand the entries stored powers, the powers, and what a
+// call takes: the subkey and no powers, or no subkey and the powers.
+static int residue_use_stored;
+static uint8_t residue_stored[GHASH_POWERS_SOFT_LEN];
+static const uint8_t *residue_subkey_arg = residue_subkey;
+static const uint8_t *residue_powers_arg;
 
 #ifdef __aarch64__
 // The entries each run's seal and open call: gcm_arm64.c's, unless the
 // test main names gcm_arm64_eor3.c's. A seal and an open take the same
 // shape of arguments.
-typedef void (*residue_aead)(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                             const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t n,
-                             uint8_t *out, uint8_t tag[AES_BLOCK]);
+typedef void (*residue_aead)(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                             const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                             const uint8_t *in, size_t n, uint8_t *out, uint8_t tag[AES_BLOCK]);
 static residue_aead residue_seal_aead = gcm_seal_arm64;
 static residue_aead residue_open_aead = gcm_open_arm64;
 static uint8_t residue_tag[AES_BLOCK];
@@ -81,7 +97,7 @@ static uint8_t residue_tag[AES_BLOCK];
 // The entry each run's seal and open call: gcm_hw.c's, unless the test
 // main names gcm_vaes.c's.
 typedef void (*residue_passes)(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                               uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                               uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
                                const uint8_t *in, size_t passes, uint8_t *out);
 static residue_passes residue_seal_passes = gcm_seal_passes_hw;
 static residue_passes residue_open_passes = gcm_open_passes_hw;
@@ -89,27 +105,29 @@ static residue_passes residue_open_passes = gcm_open_passes_hw;
 
 static __attribute__((noinline)) void residue_hash_call(void) {
     memcpy(residue_result, residue_acc, AES_BLOCK);
-    gcm_hash_data_hw(residue_result, residue_subkey, residue_data, sizeof residue_data);
+    gcm_hash_data_hw(residue_result, residue_subkey_arg, residue_powers_arg, residue_data,
+                     sizeof residue_data);
 }
 
 #ifdef __aarch64__
 // residue_counter's first twelve bytes are the nonce.
 static __attribute__((noinline)) void residue_seal_call(void) {
-    residue_seal_aead(residue_round_keys, AES_128_ROUNDS, residue_counter, NULL, 0, residue_data,
-                      sizeof residue_data, residue_sealed, residue_tag);
+    residue_seal_aead(residue_round_keys, AES_128_ROUNDS, residue_powers_arg, residue_counter, NULL,
+                      0, residue_data, sizeof residue_data, residue_sealed, residue_tag);
 }
 
 static __attribute__((noinline)) void residue_open_call(void) {
-    residue_open_aead(residue_round_keys, AES_128_ROUNDS, residue_counter, NULL, 0, residue_data,
-                      sizeof residue_data, residue_opened, residue_tag);
+    residue_open_aead(residue_round_keys, AES_128_ROUNDS, residue_powers_arg, residue_counter, NULL,
+                      0, residue_data, sizeof residue_data, residue_opened, residue_tag);
 }
 #else
 static __attribute__((noinline)) void residue_seal_call(void) {
     memcpy(residue_result, residue_acc, AES_BLOCK);
     uint8_t counter[AES_BLOCK];
     memcpy(counter, residue_counter, AES_BLOCK);
-    residue_seal_passes(residue_round_keys, AES_128_ROUNDS, counter, residue_result, residue_subkey,
-                        residue_data, RESIDUE_PASSES, residue_sealed);
+    residue_seal_passes(residue_round_keys, AES_128_ROUNDS, counter, residue_result,
+                        residue_subkey_arg, residue_powers_arg, residue_data, RESIDUE_PASSES,
+                        residue_sealed);
 }
 
 // residue_data read as ciphertext, opened into a second buffer.
@@ -117,17 +135,43 @@ static __attribute__((noinline)) void residue_open_call(void) {
     memcpy(residue_result, residue_acc, AES_BLOCK);
     uint8_t counter[AES_BLOCK];
     memcpy(counter, residue_counter, AES_BLOCK);
-    residue_open_passes(residue_round_keys, AES_128_ROUNDS, counter, residue_result, residue_subkey,
-                        residue_data, RESIDUE_PASSES, residue_opened);
+    residue_open_passes(residue_round_keys, AES_128_ROUNDS, counter, residue_result,
+                        residue_subkey_arg, residue_powers_arg, residue_data, RESIDUE_PASSES,
+                        residue_opened);
 }
 #endif
 
 // test/stack_residue.c, compiled as a source of its own.
 void stack_residue_take(volatile uint8_t *below, size_t n, uint8_t *copy);
+void stack_residue_fill(volatile uint8_t *below, size_t n, uint8_t value);
 
 static __attribute__((noinline)) void residue_snapshot(void) {
     volatile uint8_t below[RESIDUE_BYTES];
     stack_residue_take(below, RESIDUE_BYTES, residue_copy);
+}
+
+// Zero over the stack below the caller, as deep as the snapshot reads.
+// test/stack_residue.c writes it, for the reason that file gives.
+static __attribute__((noinline)) void residue_scrub(void) {
+    volatile uint8_t below[RESIDUE_BYTES];
+    stack_residue_fill(below, RESIDUE_BYTES, 0);
+}
+
+// The stored powers of residue_subkey, from bit arithmetic.
+static __attribute__((noinline)) void residue_store_powers(void) {
+    ghash_powers_soft(residue_stored, residue_subkey);
+}
+
+// What the next call takes for its subkey and its powers.
+static void residue_choose_powers(void) {
+    residue_subkey_arg = residue_subkey;
+    residue_powers_arg = NULL;
+    if (residue_use_stored) {
+        residue_store_powers();
+        residue_scrub();
+        residue_subkey_arg = NULL;
+        residue_powers_arg = residue_stored;
+    }
 }
 
 // x^-1 in SP 800-38D's bytes: x^127 + x^6 + x + 1, the element ghash_hw.c
@@ -174,8 +218,9 @@ static int residue_found(const char *run, const char *what, size_t index, const 
     if (!residue_holds(p, n)) {
         return 0;
     }
-    char case_name[96];
-    (void)snprintf(case_name, sizeof case_name, "%s residue, %s %zu", run, what, index);
+    char case_name[128];
+    (void)snprintf(case_name, sizeof case_name, "%s residue%s, %s %zu", run,
+                   residue_use_stored ? " on stored powers" : "", what, index);
     fail(case_name, "the stack below the call still holds this value");
     return 1;
 }
@@ -278,6 +323,7 @@ static void residue_fresh_inputs(void) {
     aes_cipher_block(residue_round_keys, zero, residue_subkey);
     memset(residue_acc, 0, sizeof residue_acc);
 #endif
+    residue_choose_powers();
 }
 
 #ifdef __aarch64__
@@ -300,10 +346,11 @@ static int residue_mask(const char *run) {
 #define RESIDUE_MASK(run) 0
 #endif
 
-static void run_residue(void) {
+static void run_residue_runs(void) {
     rng_fill(residue_subkey, sizeof residue_subkey);
     rng_fill(residue_acc, sizeof residue_acc);
     rng_fill(residue_data, sizeof residue_data);
+    residue_choose_powers();
     residue_hash_call();
     residue_snapshot();
     if (residue_look("data loop", residue_data)) {
@@ -328,6 +375,15 @@ static void run_residue(void) {
         return;
     }
     (void)residue_keystream("one-pass open", residue_data, residue_opened);
+}
+
+// The runs with powers each entry computes, then with stored powers.
+static void run_residue(void) {
+    for (residue_use_stored = 0; residue_use_stored <= 1 && failures == 0; residue_use_stored++) {
+        run_residue_runs();
+    }
+    residue_use_stored = 0;
+    residue_choose_powers();
 }
 
 #endif

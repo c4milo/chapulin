@@ -5698,6 +5698,23 @@ last `ROLE=server` stub, as the entry said it would.
   masking three schedules costs more than one expansion
   (docs/decisions.md 160).
 
+  Beside each schedule that runs AES-GCM, a host object keeps the powers
+  H^1 to H^8 of the key's hash subkey, `SUITE_GHASH_POWERS_LEN` bytes in
+  `rec_dir` and `quic_keys` (docs/decisions.md 234). The hash subkey is
+  the forward cipher of a zero block under the traffic key, so the powers
+  are as secret as the key. `gcm.c`'s `gcm_traffic_key_store` writes them
+  after `aes_traffic_key_store` wrote the schedule, and writes neither
+  without the session's `CH_CPU_CONSTANT_TIME_AES`, because it runs the
+  AES instructions for H and the carry-less multiply for the powers.
+  `record.c` and `quic_keys.c` call it when they derive the key, so a
+  KeyUpdate and a QUIC key update write the powers again, and every wipe
+  of the struct wipes them. No call copies them. `aes_traffic_key_load`
+  writes a pointer to the owner's powers into the frame's key, and each
+  kernel reads the powers through it. So the frame holds no power, and the
+  wipe of the frame's key is the wipe it was. `quic_hp_key` holds none: a
+  mask runs no GHASH. The set a 1-RTT open chose points at none, and its
+  AEAD computes them.
+
   The mechanism grew with the claim, and the growth is the cost. Two
   headers give a key a body: `aes_public_key.h` for `aes_public_key`, which
   `aes.c`, `quic_initial.c`, `quic_retry.c` and `gcm.c`
@@ -5718,6 +5735,23 @@ last `ROLE=server` stub, as the entry said it would.
   and requires `test/lint-invariants.sh` to fail, and
   `inv26-ticket-key-header-in-resume` includes `aes_traffic_key.h` there
   and requires `test/lint-quic-surface.sh` to fail.
+  The stored powers add no file to either list. `gcm_traffic_key_store`
+  and `aes_traffic_gcm_key_of` are in the two traffic families, and
+  `gcm_powers_hw` begins `gcm_`, so the two rules match a call to any of
+  them outside the files above. Five violations hold the stored powers.
+  `inv26-record-update-keeps-ghash-powers` and
+  `inv26-quic-update-keeps-ghash-powers` leave the powers of the key
+  before in place at a KeyUpdate and at a QUIC key update. Both ends then
+  hold the same stale powers and every record still opens, so
+  `bin/aes_suite_test` and `bin/quic_suite_test` read the owner's bytes
+  and require the powers of the new key, which
+  `test/ghash_powers_soft.h` computes with bit arithmetic.
+  `inv26-stored-powers-ignore-aes-bit` computes the powers without the
+  AES bit, and `bin/aes_runtime_test` counts the instruction calls.
+  `inv26-load-drops-ghash-powers` hands the AEAD no pointer, so each call
+  computes its powers again with the same bytes. `bin/aes_suite_test`
+  changes one bit of a stored power and requires another tag, under each
+  `ch_cfg.cpu` value that names a kernel.
 
   A TLS cipher suite whose AEAD is AES-GCM encrypts application data
   under `hkdf_expand_label(hash_len, secret, "key", ...)` over a traffic
@@ -6459,6 +6493,29 @@ last `ROLE=server` stub, as the entry said it would.
   catches each. The accumulator's wipe rests on review. The accumulator
   holds 4 bytes at most, and clang for arm64 keeps it in registers, where
   no search of the stack finds it.
+  A host object's stored powers of an AES-GCM key's hash subkey are wiped
+  with the key (docs/decisions.md 234). `rec_dir_init_suite` and
+  `quic_keys_init_suite` wipe them before they key, so a direction keyed
+  under ChaCha20, or without the AES bit, after an AES-GCM key holds none.
+  `inv17-record-rekey-keeps-ghash-powers` and
+  `inv17-quic-rekey-keeps-ghash-powers` drop those wipes, and
+  `bin/aes_suite_test` and `bin/quic_suite_test` catch each.
+  A failure and a close wipe the powers with the direction or the key set
+  that holds them. `bin/webpki_loop_aes` and `bin/quic_loop_aes` read a
+  session's bytes after each: 256 zero bytes in each direction, in the
+  three receive sets at a failure, and in the send set after its one
+  CONNECTION_CLOSE. `inv17-session-wipe-keeps-ghash-powers` and
+  `inv17-quic-close-keeps-ghash-powers` each stop a wipe at the powers,
+  and each binary catches its own.
+  `gcm_traffic_key_store` wipes the schedule and the hash subkey it
+  computed on its frame, and `gcm_powers_hw` the state it computed the
+  powers in. `test/ghash_powers_tests.h` copies the stack below a store
+  and requires no round key, no hash subkey and no power there, and
+  `inv17-ghash-powers-store-keeps-state` and
+  `inv17-ghash-powers-store-keeps-subkey` each drop one wipe. A seal and
+  an open on stored powers leave no copy of a power: the stack searches of
+  `bin/ghash_equiv_test`, `bin/aes_equiv_test` and
+  `bin/gcm_avx512_equiv_test` run a second time with stored powers.
   The AVX2 Poly1305 computes r^2 to r^8 and wipes them the same way
   (decision 110). The same binary searches the stack below its calls, and
   `poly1305-avx2-keeps-powers` drops that wipe and the binary's x86-64

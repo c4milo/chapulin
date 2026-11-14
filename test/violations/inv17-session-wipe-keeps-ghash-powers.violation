@@ -1,0 +1,19 @@
+invariant: INV-17
+file: src/session.c
+catches: webpki_loop_aes
+reason: tlsi_wipe, which a failure and a close run, wipes each record
+  direction as far as its stored powers and leaves the powers, so a dead
+  session holds the powers of each key's hash subkey, which is as secret as
+  the key. No record reads them after that, so every result is right.
+  bin/webpki_loop_aes fails one session and closes another and requires
+  256 zero bytes in each direction (test/webpki_loop_runtime.h,
+  docs/decisions.md 234).
+
+--- old
+void tlsi_wipe(ch_tls_priv *t) {
+    ct_wipe(&t->rd, sizeof t->rd);
+    ct_wipe(&t->wr, sizeof t->wr);
+--- new
+void tlsi_wipe(ch_tls_priv *t) {
+    ct_wipe(&t->rd, offsetof(rec_dir, ghash_powers));
+    ct_wipe(&t->wr, offsetof(rec_dir, ghash_powers));

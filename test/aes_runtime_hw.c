@@ -25,6 +25,7 @@
 #define gcm_open_arm64 instruction_open_arm64
 #define gcm_multiply_by_subkey_hw clmul_multiply_by_subkey
 #define gcm_hash_data_hw clmul_hash_data
+#define gcm_powers_hw clmul_powers
 
 #include "aes_hw.c"
 #include "gcm_arm64.c"
@@ -42,6 +43,7 @@
 #undef gcm_open_arm64
 #undef gcm_multiply_by_subkey_hw
 #undef gcm_hash_data_hw
+#undef gcm_powers_hw
 
 #include "aes_runtime_count.h"
 
@@ -63,15 +65,19 @@ void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t cou
                            const uint8_t *in, size_t blocks, uint8_t *out);
 #ifdef __x86_64__
 void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out);
+                        uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                        const uint8_t *in, size_t passes, uint8_t *out);
 void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out);
+                        uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                        const uint8_t *in, size_t passes, uint8_t *out);
 #endif
-void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]);
-void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *data,
-                      size_t n);
+void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t *subkey,
+                               const uint8_t *powers);
+void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                      const uint8_t *data, size_t n);
+#ifdef CH_SUITE_AES_GCM
+void gcm_powers_hw(uint8_t *powers, const uint8_t subkey[AES_BLOCK]);
+#endif
 
 void aes_expand_round_keys(const uint8_t key[AES_128_KEY],
                            uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK]) {
@@ -105,74 +111,84 @@ void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t cou
 
 #ifdef __x86_64__
 void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out) {
+                        uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                        const uint8_t *in, size_t passes, uint8_t *out) {
     aes_runtime_instruction_calls++;
     aes_runtime_clmul_calls++;
-    instruction_seal_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    instruction_seal_passes(round_keys, rounds, counter, acc, subkey, powers, in, passes, out);
 }
 
 void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
-                        size_t passes, uint8_t *out) {
+                        uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                        const uint8_t *in, size_t passes, uint8_t *out) {
     aes_runtime_instruction_calls++;
     aes_runtime_clmul_calls++;
-    instruction_open_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    instruction_open_passes(round_keys, rounds, counter, acc, subkey, powers, in, passes, out);
 }
 #endif
 
 #ifdef __aarch64__
 // gcm_arm64_eor3.c's copy, under the names test/aes_runtime_arm64_eor3.c
 // gives it.
-void instruction_seal_arm64_eor3(const uint8_t *round_keys, size_t rounds,
+void instruction_seal_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
                                  const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
                                  const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]);
-void instruction_open_arm64_eor3(const uint8_t *round_keys, size_t rounds,
+void instruction_open_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
                                  const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
                                  const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]);
 
-void gcm_seal_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                    const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                    uint8_t tag[AES_BLOCK]) {
+void gcm_seal_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                    const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                    const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
     aes_runtime_instruction_calls++;
     aes_runtime_clmul_calls++;
-    instruction_seal_arm64(round_keys, rounds, nonce, aad, aad_len, pt, n, ct, tag);
+    instruction_seal_arm64(round_keys, rounds, powers, nonce, aad, aad_len, pt, n, ct, tag);
 }
 
-void gcm_open_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                    const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                    uint8_t want[AES_BLOCK]) {
+void gcm_open_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                    const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                    const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
     aes_runtime_instruction_calls++;
     aes_runtime_clmul_calls++;
-    instruction_open_arm64(round_keys, rounds, nonce, aad, aad_len, ct, n, pt, want);
+    instruction_open_arm64(round_keys, rounds, powers, nonce, aad, aad_len, ct, n, pt, want);
 }
 
-void gcm_seal_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                         const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n,
-                         uint8_t *ct, uint8_t tag[AES_BLOCK]) {
+void gcm_seal_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
     aes_runtime_instruction_calls++;
     aes_runtime_clmul_calls++;
     aes_runtime_eor3_calls++;
-    instruction_seal_arm64_eor3(round_keys, rounds, nonce, aad, aad_len, pt, n, ct, tag);
+    instruction_seal_arm64_eor3(round_keys, rounds, powers, nonce, aad, aad_len, pt, n, ct, tag);
 }
 
-void gcm_open_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                         const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
-                         uint8_t *pt, uint8_t want[AES_BLOCK]) {
+void gcm_open_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
     aes_runtime_instruction_calls++;
     aes_runtime_clmul_calls++;
     aes_runtime_eor3_calls++;
-    instruction_open_arm64_eor3(round_keys, rounds, nonce, aad, aad_len, ct, n, pt, want);
+    instruction_open_arm64_eor3(round_keys, rounds, powers, nonce, aad, aad_len, ct, n, pt, want);
 }
 #endif
 
-void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]) {
+void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t *subkey,
+                               const uint8_t *powers) {
     aes_runtime_clmul_calls++;
-    clmul_multiply_by_subkey(acc, subkey);
+    clmul_multiply_by_subkey(acc, subkey, powers);
 }
 
-void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *data,
-                      size_t n) {
+void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                      const uint8_t *data, size_t n) {
     aes_runtime_clmul_calls++;
-    clmul_hash_data(acc, subkey, data, n);
+    clmul_hash_data(acc, subkey, powers, data, n);
 }
+
+#ifdef CH_SUITE_AES_GCM
+// The store of a key's powers runs the carry-less multiply too
+// (docs/decisions.md 234).
+void gcm_powers_hw(uint8_t *powers, const uint8_t subkey[AES_BLOCK]) {
+    aes_runtime_clmul_calls++;
+    clmul_powers(powers, subkey);
+}
+#endif

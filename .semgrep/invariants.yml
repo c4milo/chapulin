@@ -604,6 +604,8 @@ rules:
       Handshake and 1-RTT packets and their headers, quic_keys.c,
       which stores each QUIC key's schedule through
       aes_traffic_key_store in a host object (docs/decisions.md 160),
+      and through gcm_traffic_key_store the powers of a packet protection
+      key's hash subkey beside it (docs/decisions.md 234),
       and srv_ticket.c, which seals a PROFILE=cnsa2 server's tickets
       under AES-256-GCM with ch_srv_cfg.ticket_key and opens them with
       it or with ticket_key_previous (docs/decisions.md 162 and 220),

@@ -21,6 +21,7 @@
 #include "quic_version.h"
 #ifdef CH_AES_STORED_SCHEDULE
 #include "aes.h"
+#include "gcm.h"
 #endif
 
 #ifdef CH_SUITE_AES_GCM
@@ -39,12 +40,15 @@ void quic_keys_init_suite(uint32_t cpu, quic_keys *k, uint32_t version, const ui
     k->suite = suite;
     k->sealed = 0;
 #ifdef CH_AES_STORED_SCHEDULE
-    // The schedule of the key just derived, or zero under ChaCha20, so no
-    // schedule of the previous key stays behind (suite.h).
+    // The schedule of the key just derived and the powers of its hash
+    // subkey, or zero under ChaCha20, so neither of the previous key
+    // stays behind (suite.h).
     ct_wipe(k->schedule, sizeof k->schedule);
+    ct_wipe(k->ghash_powers, sizeof k->ghash_powers);
     k->stored = 0;
     if (suite_runs_aes_gcm(suite)) {
-        k->stored = (uint8_t)aes_traffic_key_store(k->schedule, cpu, k->key, suite_key_len(suite));
+        k->stored = (uint8_t)gcm_traffic_key_store(k->schedule, k->ghash_powers, cpu, k->key,
+                                                   suite_key_len(suite));
     }
 #else
     k->stored = 0;

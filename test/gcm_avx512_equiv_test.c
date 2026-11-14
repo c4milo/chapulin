@@ -54,6 +54,7 @@ int main(void) {
 #include "cpu_cfg.h"
 #include "ct.h"
 #include "gcm.h"
+#include "suite.h"
 
 #if !defined(CH_CPU_RUNTIME) || !defined(CH_SUITE_AES_GCM)
 #error                                                                                             \
@@ -102,11 +103,18 @@ static void fail(const char *what, size_t key_len, size_t aad_len, size_t n) {
                   8 * key_len, aad_len, n);
 }
 
-// The two keys of a case: the same bytes, the kernel's description and the loops'.
+// Whether the kernel's key of each case points at the key's stored powers
+// (docs/decisions.md 234). The loops' key never does, so each case holds the kernel on stored
+// powers to the loops on powers they compute.
+static int stored_powers;
+
+// The two keys of a case: the same bytes, the kernel's description and the loops', and the
+// powers gcm_traffic_key_store writes for the key.
 typedef struct {
     aes_traffic_key kernel;
     aes_traffic_key loops;
     size_t key_len;
+    uint8_t powers[SUITE_GHASH_POWERS_LEN];
 } key_pair;
 
 static void key_pair_init(key_pair *k, size_t key_len) {
@@ -117,6 +125,14 @@ static void key_pair_init(key_pair *k, size_t key_len) {
     aes_traffic_key_cpu(&k->kernel, KERNEL_CPU);
     aes_traffic_key_cpu(&k->loops, LOOPS_CPU);
     k->key_len = key_len;
+    if (stored_powers) {
+        uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
+        if (gcm_traffic_key_store(schedule, k->powers, KERNEL_CPU, key, key_len) != 1) {
+            fail("gcm_traffic_key_store stored nothing under the AES bit", key_len, 0, 0);
+        }
+        ct_wipe(schedule, sizeof schedule);
+        k->kernel.ghash_powers = k->powers;
+    }
 }
 
 static uint8_t plaintext[MAX_DATA];
@@ -295,10 +311,13 @@ int main(void) {
         (void)printf("SKIP gcm_avx512 equivalence: this CPU lacks what CH_CPU_AVX512 names\n");
         return 0;
     }
-    run_lengths(AES_128_KEY);
-    run_lengths(AES_256_KEY);
-    run_page_ends();
-    run_residue();
+    // Every check with powers the kernel computes, then with the key's stored powers.
+    for (stored_powers = 0; stored_powers <= 1; stored_powers++) {
+        run_lengths(AES_128_KEY);
+        run_lengths(AES_256_KEY);
+        run_page_ends();
+        run_residue();
+    }
     if (failures != 0) {
         (void)printf("gcm_avx512 equivalence: %d failures\n", failures);
         return 1;

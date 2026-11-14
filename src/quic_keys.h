@@ -55,21 +55,28 @@ typedef struct {
     // (rfc9001.txt:1812-1813); a key update writes a new set and so
     // starts the count again. Both are public.
     uint16_t suite;
-    // 1 when quic_keys_init_suite wrote schedule below, and 0 under
-    // ChaCha20, under a cpu without CH_CPU_CONSTANT_TIME_AES, and in a set
-    // quic_keys_select chose, which copies no schedule: quic_packet.c then
-    // expands the key at each use. Public. A device object stores no
-    // schedule and never reads it.
+    // 1 when quic_keys_init_suite wrote schedule and ghash_powers below,
+    // and 0 under ChaCha20, under a cpu without CH_CPU_CONSTANT_TIME_AES,
+    // and in a set quic_keys_select chose, which copies neither:
+    // quic_packet.c then expands the key at each use, and the AEAD
+    // computes its powers. Public. A device object stores neither and
+    // never reads it.
     uint8_t stored;
     uint64_t sealed;
 #endif
 #ifdef CH_AES_STORED_SCHEDULE
     // The expanded schedule of key under an AES-GCM suite, the bytes of
-    // one aes_traffic_key, which quic_keys_init_suite writes with the key
+    // one aes_key_schedule, which quic_keys_init_suite writes with the key
     // and quic_packet.c copies onto its frame for each packet. Zero under
     // ChaCha20. A host object alone holds it (suite.h, docs/decisions.md
     // 160).
     uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
+    // The powers H^1 to H^8 of key's hash subkey under an AES-GCM suite,
+    // which quic_keys_init_suite writes with schedule, so a key update
+    // writes them again, and each packet's seal or open reads in place.
+    // Zero where stored is 0, and quic_keys_select copies none
+    // (suite.h, docs/decisions.md 234).
+    uint8_t ghash_powers[SUITE_GHASH_POWERS_LEN];
 #endif
 } quic_keys;
 

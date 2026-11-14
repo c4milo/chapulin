@@ -37,6 +37,7 @@
 #include "sha256.h"
 #include "sha3.h"
 #include "sha512.h"
+#include "suite.h"
 #include "test_cpu.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -238,7 +239,12 @@ static void case_chacha20_poly1305(uint32_t cpu) {
 // CH_CPU_CONSTANT_TIME_AES names, over n bytes of text. A session without the bit holds no AES-GCM
 // traffic key (suite.h), so the case runs only under the bit. The table cipher runs QUIC's public
 // keys alone (INV-26), and no case here gives it a key.
-static void case_aes_gcm(uint32_t cpu, size_t key_len, size_t n) {
+//
+// With stored set, the key is one whose owner stores its schedule and the powers of its hash
+// subkey (docs/decisions.md 234). gcm_traffic_key_store computes both from the secret key, and
+// the seal and the open read the powers where they lie. Its answer is the AES bit of cpu, which
+// is public.
+static void case_aes_gcm(uint32_t cpu, size_t key_len, size_t n, int stored) {
     if ((cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
         return;
     }
@@ -254,9 +260,16 @@ static void case_aes_gcm(uint32_t cpu, size_t key_len, size_t n) {
     fill(aad, sizeof aad, 12);
     fill(pt, n, 13);
     aes_traffic_key k;
+    uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
+    uint8_t powers[SUITE_GHASH_POWERS_LEN];
     CT_SECRET(key, sizeof key);
     CT_SECRET(pt, n);
-    aes_traffic_key_init_cpu(&k, cpu, key, key_len);
+    if (stored) {
+        check(gcm_traffic_key_store(schedule, powers, cpu, key, key_len) == 1, "aes-gcm store");
+        aes_traffic_key_load(&k, schedule, powers, key_len, cpu);
+    } else {
+        aes_traffic_key_init_cpu(&k, cpu, key, key_len);
+    }
     gcm_traffic_seal(&k, nonce, aad, sizeof aad, pt, n, ct, tag);
     // Public: the ciphertext and the tag travel in the record.
     CT_PUBLIC(ct, n);
@@ -272,6 +285,8 @@ static void case_aes_gcm(uint32_t cpu, size_t key_len, size_t n) {
     CT_PUBLIC(&opened, sizeof opened);
     check(opened == 0, "aes-gcm refusal");
     ct_wipe(&k, sizeof k);
+    ct_wipe(schedule, sizeof schedule);
+    ct_wipe(powers, sizeof powers);
 }
 
 // base64.c's class of each byte of a P-256 key file in PKCS #8 form, the text that spells the
@@ -303,10 +318,12 @@ int main(int argc, char **argv) {
     case_key_schedule(cpu, SHA256_LEN);
     case_key_schedule(cpu, SHA384_LEN);
     case_chacha20_poly1305(cpu);
-    case_aes_gcm(cpu, AES_128_KEY, 600);
-    case_aes_gcm(cpu, AES_256_KEY, 600);
-    case_aes_gcm(cpu, AES_128_KEY, AES_GCM_TEXT_MAX);
-    case_aes_gcm(cpu, AES_256_KEY, AES_GCM_TEXT_MAX);
+    for (int stored = 0; stored <= 1; stored++) {
+        case_aes_gcm(cpu, AES_128_KEY, 600, stored);
+        case_aes_gcm(cpu, AES_256_KEY, 600, stored);
+        case_aes_gcm(cpu, AES_128_KEY, AES_GCM_TEXT_MAX, stored);
+        case_aes_gcm(cpu, AES_256_KEY, AES_GCM_TEXT_MAX, stored);
+    }
     case_base64_key_file();
     failures += ct_taint_public_key_cases(cpu);
     if (failures != 0) {

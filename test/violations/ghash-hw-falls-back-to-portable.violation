@@ -14,8 +14,8 @@ reason: gcm_ghash.h guards gcm.c's GHASH on the carry-less multiply on a macro n
   defines.
 
 --- old
-#ifdef GCM_GHASH_CARRYLESS_ALONE
-// ghash_hw.c computes both GHASH steps on the carry-less multiply
+#ifdef CH_CPU_RUNTIME
+#define GCM_GHASH_CARRYLESS
 --- new
 #ifdef CH_GHASH_HW
-// ghash_hw.c computes both GHASH steps on the carry-less multiply
+#define GCM_GHASH_CARRYLESS

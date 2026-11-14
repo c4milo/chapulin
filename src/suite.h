@@ -121,12 +121,22 @@ static inline const uint16_t *suite_session_default(const ch_cfg *cfg, size_t *c
 // expands the key. A device object expands the key at each use always,
 // because its SRAM is short (docs/decisions.md 160,
 // https://github.com/c4milo/chapulin/issues/205). The length is
-// sizeof(aes_traffic_key), whose body the files aes_traffic_key.h names
-// alone may see, so it is spelled here as that body's fields: fifteen
+// sizeof(aes_key_schedule), the schedule an aes_traffic_key holds, whose
+// body the files aes_traffic_key.h names alone may see in a traffic key,
+// so it is spelled here as that body's fields: fifteen
 // round keys of 16 bytes, the round count, the two CPU bytes, and in a
 // QUIC object the cipher byte (aes_schedule.h). aes.c asserts the two
 // agree, and aes_traffic_key_load writes the round count, the cipher and
 // the CPU value of each copy itself.
+//
+// Beside each stored schedule that runs AES-GCM, rec_dir and quic_keys
+// hold SUITE_GHASH_POWERS_LEN bytes: the powers H^1 to H^8 of the key's
+// hash subkey, each times x^-1 and with its two words added, 32 bytes a
+// power, as ghash_hw.h's gcm_powers_hw writes them. The owner writes them
+// with the schedule, through gcm_traffic_key_store, and wipes them with
+// the key. Each seal and open reads them in place and computes none
+// (docs/decisions.md 234). quic_hp_key holds none: a header protection
+// mask runs no GHASH.
 #ifdef CH_SUITE_AES_GCM
 #ifdef CH_CPU_RUNTIME
 #define CH_AES_STORED_SCHEDULE
@@ -135,6 +145,7 @@ static inline const uint16_t *suite_session_default(const ch_cfg *cfg, size_t *c
 #else
 #define SUITE_AES_SCHEDULE_LEN (15 * 16 + 3)
 #endif
+#define SUITE_GHASH_POWERS_LEN 256
 #endif
 #endif
 

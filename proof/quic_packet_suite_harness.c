@@ -32,6 +32,11 @@ uint64_t nondet_u64(void);
 static size_t expected_key_len;
 static int aes_ran;
 static int chacha_ran;
+#ifdef CH_CPU_RUNTIME
+// The powers the AEAD's key must point at: the set's own where it stored
+// a schedule, and NULL where it stored none (docs/decisions.md 234).
+static const uint8_t *expected_powers;
+#endif
 
 void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len) {
     __CPROVER_assert(key_len == expected_key_len, "aes: the suite's key length");
@@ -41,11 +46,18 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
     for (size_t i = 0; i < sizeof k->key.round_keys; i++) {
         k->key.round_keys[i] = nondet_u8();
     }
+#ifdef CH_CPU_RUNTIME
+    // A key expanded here points at no stored powers (aes.h).
+    k->ghash_powers = NULL;
+#endif
 }
 
 void aes_traffic_encrypt_block(const aes_traffic_key *k, const uint8_t in[AES_BLOCK],
                                uint8_t out[AES_BLOCK]) {
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "aes block: key readable");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(k->ghash_powers == NULL, "aes block: a mask's key points at no powers");
+#endif
     __CPROVER_assert(__CPROVER_r_ok(in, AES_BLOCK), "aes block: input readable");
     __CPROVER_assert(__CPROVER_w_ok(out, AES_BLOCK), "aes block: output writable");
     aes_ran = 1;
@@ -56,6 +68,10 @@ void gcm_traffic_seal(const aes_traffic_key *k, const uint8_t nonce[AES_IV], con
                       size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
                       uint8_t tag[GCM_TAG]) {
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "gcm seal: key readable");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(k->ghash_powers == expected_powers,
+                     "gcm seal: the key points at its owner's stored powers, or at none");
+#endif
     __CPROVER_assert(__CPROVER_r_ok(nonce, AES_IV), "gcm seal: nonce readable");
     __CPROVER_assert(aad_len == 0 || __CPROVER_r_ok(aad, aad_len), "gcm seal: aad readable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(pt, n), "gcm seal: pt readable");
@@ -70,6 +86,10 @@ int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], cons
                      size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG],
                      uint8_t *pt) {
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "gcm open: key readable");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(k->ghash_powers == expected_powers,
+                     "gcm open: the key points at its owner's stored powers, or at none");
+#endif
     __CPROVER_assert(__CPROVER_r_ok(nonce, AES_IV), "gcm open: nonce readable");
     __CPROVER_assert(aad_len == 0 || __CPROVER_r_ok(aad, aad_len), "gcm open: aad readable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(ct, n), "gcm open: ct readable");
@@ -154,12 +174,16 @@ void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
     k->key.cpu_high = (uint8_t)(cpu >> 8);
 }
 
-void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, size_t key_len,
-                          uint32_t cpu) {
+void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, const uint8_t *powers,
+                          size_t key_len, uint32_t cpu) {
     __CPROVER_assert(key_len == expected_key_len, "aes load: the suite's key length");
     __CPROVER_assert(__CPROVER_r_ok(schedule, SUITE_AES_SCHEDULE_LEN),
                      "aes load: schedule readable");
+    __CPROVER_assert(powers == NULL || __CPROVER_r_ok(powers, SUITE_GHASH_POWERS_LEN),
+                     "aes load: the stored powers readable");
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes load: key writable");
+    // The copy points at the owner's powers and holds none (aes.h).
+    k->ghash_powers = powers;
     for (size_t i = 0; i < sizeof k->key.round_keys; i++) {
         k->key.round_keys[i] = nondet_u8();
     }
@@ -236,6 +260,9 @@ int main(void) {
     fill_nondet(pt, sizeof pt);
     aes_ran = 0;
     chacha_ran = 0;
+#ifdef CH_CPU_RUNTIME
+    expected_powers = k.stored ? k.ghash_powers : NULL;
+#endif
     int rc = quic_packet_seal(nondet_u32(), &k, &h, nondet_u8(), nondet_u8(), nondet_u64(), pn_len,
                               hdr, hdr_len, pt, pt_len, out, cap, &out_len);
     if (rc == CH_OK) {
@@ -260,6 +287,9 @@ int main(void) {
     size_t opened = 0;
     aes_ran = 0;
     chacha_ran = 0;
+#ifdef CH_CPU_RUNTIME
+    expected_powers = k.stored ? k.ghash_powers : NULL;
+#endif
     rc = quic_packet_open_handshake(nondet_u32(), &k, &h, pkt, pkt_len, pn_off, nondet_u64(), &pn,
                                     &opened);
     __CPROVER_assert(!aes_ran || aes, "open: AES runs only under an AES suite");

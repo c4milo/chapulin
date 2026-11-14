@@ -44,15 +44,16 @@
 //
 // Requires: round_keys points at (rounds + 1) * AES_BLOCK readable bytes that
 // aes_expand_round_keys or aes_expand_round_keys_256 wrote, and rounds is AES_128_ROUNDS, or
-// AES_256_ROUNDS in a build with AES-256, to match; nonce points at AES_IV readable bytes; aad at
+// AES_256_ROUNDS in a build with AES-256, to match; powers is the key's stored powers or NULL, as
+// gcm_avx512_kernel.h's functions take it; nonce points at AES_IV readable bytes; aad at
 // aad_len readable bytes, and may be NULL when aad_len is 0; pt at n readable bytes and ct at n
 // writable bytes, either NULL when n is 0, with pt == ct allowed and no other overlap; tag at
 // AES_BLOCK writable bytes outside the others. The CPU has AVX-512F, AVX-512BW, VAES and
 // VPCLMULQDQ, which gcm_use_avx512 decides from the session's bits: on a CPU without them the
 // first instruction faults. Reads and writes no byte outside those ranges, and cannot fail.
-void gcm_seal_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                     const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                     uint8_t tag[AES_BLOCK]);
+void gcm_seal_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                     const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                     const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]);
 
 // SP 800-38D's GCM-AD without the comparison: pt gets the n bytes of plaintext and want the tag
 // the n bytes of ciphertext at ct and the associated data should carry. Every block of ct is
@@ -61,9 +62,9 @@ void gcm_seal_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t non
 // Requires: what gcm_seal_avx512 requires, with ct readable and pt writable for n bytes, and
 // pt == ct, pt below ct or no overlap allowed; want points at AES_BLOCK writable bytes outside
 // the others.
-void gcm_open_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                     const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                     uint8_t want[AES_BLOCK]);
+void gcm_open_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                     const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                     const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]);
 
 // Whether a schedule's whole AEAD runs on the two entries above in place of gcm.c's seal and open
 // over gcm_vaes.c's or gcm_hw.c's loops: where cpu, the description of the CPU the schedule

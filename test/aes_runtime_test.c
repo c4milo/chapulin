@@ -377,10 +377,10 @@ static void check_stored_schedule(void) {
     static const uint8_t zero[SUITE_AES_SCHEDULE_LEN];
     aes_traffic_key k;
     memset(&k, 0xff, sizeof k);
-    aes_traffic_key_load(&k, zero, AES_256_KEY, RUNTIME_PRESENT);
+    aes_traffic_key_load(&k, zero, NULL, AES_256_KEY, RUNTIME_PRESENT);
     CHECK(k.key.rounds == AES_256_ROUNDS && k.key.instructions == AES_ON_INSTRUCTIONS);
     CHECK(k.key.cpu == RUNTIME_PRESENT && k.key.cpu_high == 0);
-    aes_traffic_key_load(&k, zero, AES_128_KEY, 0);
+    aes_traffic_key_load(&k, zero, NULL, AES_128_KEY, 0);
     CHECK(k.key.rounds == AES_128_ROUNDS && k.key.instructions == AES_ON_INSTRUCTIONS);
     CHECK(k.key.cpu == 0);
 

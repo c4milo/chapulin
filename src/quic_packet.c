@@ -42,7 +42,7 @@ static void seal_body(uint32_t cpu, quic_keys *k, const uint8_t nonce[AEAD_NONCE
 #ifdef CH_SUITE_AES_GCM
     if (suite_runs_aes_gcm(k->suite)) {
         aes_traffic_key key;
-        aes_traffic_key_of(&key, cpu, k->stored, k->schedule, k->key, suite_key_len(k->suite));
+        aes_traffic_gcm_key_of(&key, cpu, k);
         gcm_traffic_seal(&key, nonce, aad, aad_len, pt, n, ct, ct + n);
         ct_wipe(&key, sizeof key);
         k->sealed++;
@@ -63,7 +63,7 @@ static int open_body(uint32_t cpu, const quic_keys *k, const uint8_t nonce[AEAD_
 #ifdef CH_SUITE_AES_GCM
     if (suite_runs_aes_gcm(k->suite)) {
         aes_traffic_key key;
-        aes_traffic_key_of(&key, cpu, k->stored, k->schedule, k->key, suite_key_len(k->suite));
+        aes_traffic_gcm_key_of(&key, cpu, k);
         int ok = gcm_traffic_open(&key, nonce, aad, aad_len, ct, n, ct + n, pt);
         ct_wipe(&key, sizeof key);
         return ok;

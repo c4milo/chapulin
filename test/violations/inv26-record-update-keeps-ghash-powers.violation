@@ -1,0 +1,28 @@
+invariant: INV-26
+file: src/record.c
+catches: aes_suite_test
+reason: rec_dir_init_suite stores the new key's schedule and leaves the
+  direction's stored powers as they were, so after a KeyUpdate each record
+  runs GHASH on the powers of the key before. Both ends of a connection
+  derive the same keys, so both hold the same stale powers and every record
+  still opens: no round trip objects. The tag then authenticates under a
+  hash subkey that is not the key's, which SP 800-38D does not define.
+  bin/aes_suite_test reads the direction's bytes after rec_dir_update and
+  requires the powers of the new key's hash subkey, which it computes with
+  bit arithmetic (test/ghash_powers_tests.h, docs/decisions.md 234).
+
+--- old
+    ct_wipe(d->ghash_powers, sizeof d->ghash_powers);
+    d->stored = 0;
+    if (suite_runs_aes_gcm(suite)) {
+        d->stored = (uint8_t)gcm_traffic_key_store(d->schedule, d->ghash_powers, d->cpu, d->key,
+                                                   suite_key_len(suite));
+    }
+--- new
+    uint8_t unused_powers[SUITE_GHASH_POWERS_LEN];
+    int keep = d->stored;
+    d->stored = 0;
+    if (suite_runs_aes_gcm(suite)) {
+        d->stored = (uint8_t)gcm_traffic_key_store(d->schedule, keep ? unused_powers : d->ghash_powers,
+                                                   d->cpu, d->key, suite_key_len(suite));
+    }

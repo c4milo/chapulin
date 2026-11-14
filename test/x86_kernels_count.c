@@ -72,17 +72,17 @@ void gcm_counter_blocks_vaes(const uint8_t *round_keys, size_t rounds, uint8_t c
 }
 
 void gcm_seal_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                          uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                          uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
                           const uint8_t *in, size_t passes, uint8_t *out) {
     x86_vaes_seal_calls++;
-    gcm_seal_passes_hw(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    gcm_seal_passes_hw(round_keys, rounds, counter, acc, subkey, powers, in, passes, out);
 }
 
 void gcm_open_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                          uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                          uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
                           const uint8_t *in, size_t passes, uint8_t *out) {
     x86_vaes_open_calls++;
-    gcm_open_passes_hw(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    gcm_open_passes_hw(round_keys, rounds, counter, acc, subkey, powers, in, passes, out);
 }
 
 // One block through the forward cipher under round keys for rounds rounds.
@@ -103,19 +103,21 @@ static void cipher_block(const uint8_t *round_keys, size_t rounds, const uint8_t
 // gcm_hw.c's counter mode and ghash_hw.c's GHASH: the bytes and the tag
 // gcm_avx512_kernel.c's four functions write, under their contracts. The
 // open hashes the ciphertext before it writes any plaintext, so in place
-// and below works as it does there.
-static void gcm_on_loops(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                         const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t n,
-                         uint8_t *out, uint8_t tag[AES_BLOCK], int seal) {
+// and below works as it does there. powers is the key's stored powers or
+// NULL, which ghash_hw.c's entries take as the kernel's functions do.
+static void gcm_on_loops(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *in, size_t n, uint8_t *out, uint8_t tag[AES_BLOCK],
+                         int seal) {
     static const uint8_t zero[AES_BLOCK] = {0};
     uint8_t subkey[AES_BLOCK];
     uint8_t acc[AES_BLOCK] = {0};
     uint8_t counter[AES_BLOCK] = {0};
     uint8_t block[AES_BLOCK];
     cipher_block(round_keys, rounds, zero, subkey);
-    gcm_hash_data_hw(acc, subkey, aad, aad_len);
+    gcm_hash_data_hw(acc, subkey, powers, aad, aad_len);
     if (!seal) {
-        gcm_hash_data_hw(acc, subkey, in, n);
+        gcm_hash_data_hw(acc, subkey, powers, in, n);
     }
     memcpy(counter, nonce, AES_IV);
     counter[AES_BLOCK - 1] = 1;
@@ -139,46 +141,46 @@ static void gcm_on_loops(const uint8_t *round_keys, size_t rounds, const uint8_t
         }
     }
     if (seal) {
-        gcm_hash_data_hw(acc, subkey, out, n);
+        gcm_hash_data_hw(acc, subkey, powers, out, n);
     }
     const uint64_t bits[2] = {(uint64_t)aad_len * 8U, (uint64_t)n * 8U};
     for (size_t i = 0; i < AES_BLOCK; i++) {
         acc[i] = (uint8_t)(acc[i] ^ (uint8_t)(bits[i / 8] >> (8 * (7 - i % 8))));
     }
-    gcm_multiply_by_subkey_hw(acc, subkey);
+    gcm_multiply_by_subkey_hw(acc, subkey, powers);
     cipher_block(round_keys, rounds, first, block);
     for (size_t i = 0; i < AES_BLOCK; i++) {
         tag[i] = (uint8_t)(acc[i] ^ block[i]);
     }
 }
 
-void gcm_avx512_seal_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                         uint8_t tag[AES_BLOCK]) {
+void gcm_avx512_seal_128(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
     x86_gcm_avx512_seal_calls++;
-    gcm_on_loops(round_keys, AES_128_ROUNDS, nonce, aad, aad_len, pt, n, ct, tag, 1);
+    gcm_on_loops(round_keys, AES_128_ROUNDS, powers, nonce, aad, aad_len, pt, n, ct, tag, 1);
 }
 
-void gcm_avx512_open_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                         uint8_t want[AES_BLOCK]) {
+void gcm_avx512_open_128(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
     x86_gcm_avx512_open_calls++;
-    gcm_on_loops(round_keys, AES_128_ROUNDS, nonce, aad, aad_len, ct, n, pt, want, 0);
+    gcm_on_loops(round_keys, AES_128_ROUNDS, powers, nonce, aad, aad_len, ct, n, pt, want, 0);
 }
 
 #ifdef CH_AES_256
-void gcm_avx512_seal_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                         uint8_t tag[AES_BLOCK]) {
+void gcm_avx512_seal_256(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
     x86_gcm_avx512_seal_calls++;
-    gcm_on_loops(round_keys, AES_256_ROUNDS, nonce, aad, aad_len, pt, n, ct, tag, 1);
+    gcm_on_loops(round_keys, AES_256_ROUNDS, powers, nonce, aad, aad_len, pt, n, ct, tag, 1);
 }
 
-void gcm_avx512_open_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                         uint8_t want[AES_BLOCK]) {
+void gcm_avx512_open_256(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
     x86_gcm_avx512_open_calls++;
-    gcm_on_loops(round_keys, AES_256_ROUNDS, nonce, aad, aad_len, ct, n, pt, want, 0);
+    gcm_on_loops(round_keys, AES_256_ROUNDS, powers, nonce, aad, aad_len, ct, n, pt, want, 0);
 }
 #endif
 

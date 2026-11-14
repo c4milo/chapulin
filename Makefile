@@ -799,7 +799,7 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wycheproof_mldsa.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
+TESTH := test/ghash_powers_soft.h test/ghash_equiv_stored.h test/ghash_powers_tests.h test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wycheproof_mldsa.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
          test/pem_files_bundle_tests.h test/pem_files_parameters_tests.h \
          test/diff_pem_files_calls.h test/timing_pem.h test/timing_mldsa.h test/pem_fixtures_mldsa.h \
          test/diff_webpki_chain_anchors.h \
@@ -3393,9 +3393,12 @@ bin/srv_flight_test_aes: test/srv_flight_test.c $(SRV_FLIGHT_AES_SRCS) $(HDRS) $
 
 AES_SUITE_TEST_SRCS := $(call host_srcs,src/record.c src/gcm.c src/aes.c $(AES_HW_SRCS) src/aead.c src/chacha20.c src/poly1305.c \
                          src/hkdf.c src/sha256.c src/sha512.c src/sha512_compress.c src/ct.c src/ct_wipe.c src/buf.c)
-bin/aes_suite_test: test/aes_suite_test.c $(AES_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
+# test/ghash_powers_tests.h searches the stack gcm_traffic_key_store leaves,
+# through test/stack_residue.c (docs/decisions.md 234).
+bin/aes_suite_test: test/aes_suite_test.c test/stack_residue.c $(AES_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/aes_suite_test.c $(AES_SUITE_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/aes_suite_test.c \
+	  test/stack_residue.c $(AES_SUITE_TEST_SRCS)
 
 # test/aes-runtime-qemu.sh links QUIC_TEST_HW_SRCS too, for x86-64.
 QUIC_TEST_HW_SRCS := $(call host_srcs,src/aes.c $(AES_HW_SRCS) src/quic_aes_soft.c src/gcm.c src/quic_keys.c src/quic_retry.c \
@@ -4315,10 +4318,10 @@ QUIC_SUITE_TEST_DEVICE_SRCS := src/quic_packet.c src/quic_keys.c src/aes.c $(AES
                                src/hkdf.c src/sha256.c src/sha512.c src/sha512_compress.c src/chacha20.c src/poly1305.c src/aead.c src/buf.c src/ct.c \
                                src/ct_wipe.c
 QUIC_SUITE_TEST_SRCS := $(call host_srcs,$(QUIC_SUITE_TEST_DEVICE_SRCS))
-bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
+bin/quic_suite_test: test/quic_suite_test.c test/stack_residue.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/quic_suite_test.c \
-	  $(QUIC_SUITE_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ \
+	  test/quic_suite_test.c test/stack_residue.c $(QUIC_SUITE_TEST_SRCS)
 
 # The AES=extern binaries. An AES=extern object runs every AES block on the
 # image's ch_aes_block, so these binaries link test/aes_extern_hook.c as
@@ -10001,7 +10004,7 @@ WIDEMUL_SPECS := \
 #   xor_partial the tests of the limit, the rest and the byte count. Each
 #   reads n, a loop index or p->fill, which are public; arm64 compiles no
 #   body (docs/decisions.md 226).
-# aes.c@host, 20 and 19; gcm.c@host, 20 and 32: the bytes of a schedule that
+# aes.c@host, 20 and 19; gcm.c@host, 30 and 47: the bytes of a schedule that
 #   record its round count and which cipher expanded it, a key length
 #   against 16 and 32, aes_traffic_key_load's CH_ASSERT on its key_len,
 #   two branches, whose round count is a select, and in
@@ -10018,6 +10021,14 @@ WIDEMUL_SPECS := \
 #   arm64 the seal and the open each test the cipher byte before they run
 #   gcm_arm64.c's whole AEAD, and gcm_use_eor3's two bits before they pick
 #   its EOR3 copy, and run no pass of gcm_hw.c (docs/decisions.md 158).
+#   Since decision 234 the seal's and the open's bodies compile into each
+#   typed entry, so the traffic entries hold the public entries' branches
+#   once more, 5 on arm64 and 12 on x86-64. Three are new on both: in the
+#   traffic seal and the traffic open, hash_start's test of the key's
+#   pointer to its stored powers against NULL, and in
+#   gcm_traffic_key_store the test of aes_traffic_key_store's answer, which
+#   is the AES bit of the caller's cpu. The pointer is an address in the
+#   session, and none of the three reads a byte of a key.
 # p256_field.c@host, 4 and 4; p256_scalar.c@host, 4 and 4: mont_mul's two
 #   loops over the eight words, the inverse's 256 rounds and its test of a
 #   bit of the exponent, which is a build constant.
@@ -10661,7 +10672,7 @@ BRANCH_CEILING := \
   arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:19 \
   arm64/src/mlkem.c@host:12 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:79 x86-64/src/rsa_sign.c@host:67 \
   arm64/src/drbg.c@host:5 x86-64/src/drbg.c@host:5 \
-  arm64/src/aes.c@host:20 x86-64/src/aes.c@host:19 arm64/src/gcm.c@host:22 x86-64/src/gcm.c@host:32 \
+  arm64/src/aes.c@host:20 x86-64/src/aes.c@host:19 arm64/src/gcm.c@host:30 x86-64/src/gcm.c@host:47 \
   arm64/src/p256_field.c@host:4 x86-64/src/p256_field.c@host:4 \
   arm64/src/p256_scalar.c@host:4 x86-64/src/p256_scalar.c@host:4 \
   arm64/src/sha512.c@host:9 x86-64/src/sha512.c@host:9 \

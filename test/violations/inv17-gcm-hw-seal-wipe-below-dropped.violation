@@ -7,7 +7,7 @@ reason: gcm_seal_passes_hw returns without the wipe below its body, so the hash
   CPU with the instructions (docs/decisions.md 182).
 
 --- old
-    seal_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    seal_passes(round_keys, rounds, counter, in, passes, out, acc, subkey, powers);
     gcm_hw_wipe_below();
 --- new
-    seal_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+    seal_passes(round_keys, rounds, counter, in, passes, out, acc, subkey, powers);

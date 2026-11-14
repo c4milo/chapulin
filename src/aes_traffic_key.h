@@ -28,8 +28,8 @@
 //
 // A stored schedule is bytes, SUITE_AES_SCHEDULE_LEN of them (suite.h),
 // so this body stays out of the headers that hold one, and quic_keys.c
-// stores one through aes_traffic_key_store without it (docs/decisions.md
-// 160).
+// stores one through aes_traffic_key_store or gcm_traffic_key_store
+// without it (docs/decisions.md 160 and 234).
 //
 // A build that never defines CH_SUITE_AES_GCM compiles none of it, and
 // ct.h refuses that define unless the build runs AES on the AES
@@ -50,12 +50,24 @@
 #include "aes_schedule.h"
 
 // One AES-128 or AES-256 key from the TLS key schedule, expanded. It holds
-// the round keys and their round count and nothing else: a TLS record's
-// nonce is built from the write IV and the sequence number by record.c,
-// which keeps the IV in rec_dir, and a record carries no header
-// protection.
+// the round keys and their round count: a TLS record's nonce is built
+// from the write IV and the sequence number by record.c, which keeps the
+// IV in rec_dir, and a record carries no header protection.
+//
+// In a host object it also holds ghash_powers, which points at the powers
+// of the key's hash subkey that the key's owner stores beside the key,
+// SUITE_GHASH_POWERS_LEN bytes (suite.h), or is NULL where the owner
+// stores none. aes_traffic_key_load writes the pointer,
+// aes_traffic_key_init writes NULL, and gcm.c hands it to the AEAD, which
+// reads the powers in place. So a frame that holds this struct holds no
+// copy of a power, and the wipe of this struct leaves the owner's powers
+// (docs/decisions.md 234). The pointer is an address in the session, and
+// not secret.
 struct aes_traffic_key {
     aes_key_schedule key;
+#ifdef CH_CPU_RUNTIME
+    const uint8_t *ghash_powers;
+#endif
 };
 
 #endif // CH_SUITE_AES_GCM

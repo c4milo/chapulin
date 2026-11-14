@@ -9,6 +9,7 @@
 #define gcm_ghash bench_gcm_copy_ghash
 #define gcm_traffic_seal bench_gcm_copy_traffic_seal
 #define gcm_traffic_open bench_gcm_copy_traffic_open
+#define gcm_traffic_key_store bench_gcm_copy_traffic_key_store
 
 #include "gcm.c"
 

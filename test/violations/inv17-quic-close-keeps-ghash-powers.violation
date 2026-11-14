@@ -1,0 +1,25 @@
+invariant: INV-17
+file: src/quic_fail.c
+catches: quic_loop_aes
+reason: quic_wipe_write_keys, which runs after a failed session sealed its
+  one CONNECTION_CLOSE at a level, wipes the 1-RTT send set as far as its
+  stored powers and leaves the powers, so the dead session holds the powers
+  of that key's hash subkey. No packet reads them after that, so every
+  result is right. bin/quic_loop_aes fails a connected session, seals the
+  close and requires 256 zero bytes (test/quic_loop_runtime.h,
+  docs/decisions.md 234).
+
+--- old
+    } else {
+        ct_wipe(&q->app_tx, sizeof q->app_tx);
+        ct_wipe(&q->app_hp_tx, sizeof q->app_hp_tx);
+    }
+    q->levels_ready &= (uint8_t)~CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE);
+}
+--- new
+    } else {
+        ct_wipe(&q->app_tx, offsetof(quic_keys, ghash_powers));
+        ct_wipe(&q->app_hp_tx, sizeof q->app_hp_tx);
+    }
+    q->levels_ready &= (uint8_t)~CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE);
+}

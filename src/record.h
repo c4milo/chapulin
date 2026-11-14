@@ -66,7 +66,7 @@ typedef struct {
 #endif
 #ifdef CH_AES_STORED_SCHEDULE
     // The expanded schedule of key under an AES-GCM suite, the bytes of
-    // one aes_traffic_key, which rec_dir_init_suite writes with the key
+    // one aes_key_schedule, which rec_dir_init_suite writes with the key
     // and record.c copies onto its frame for each record. Zero under
     // ChaCha20. stored is 1 when it holds one, and 0 under ChaCha20 or a
     // cpu without CH_CPU_CONSTANT_TIME_AES, where record.c expands the key
@@ -74,6 +74,11 @@ typedef struct {
     // docs/decisions.md 160).
     uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
     uint8_t stored;
+    // The powers H^1 to H^8 of key's hash subkey under an AES-GCM suite,
+    // which rec_dir_init_suite writes with schedule, so a KeyUpdate writes
+    // them again, and each record's seal or open reads in place. Zero
+    // where stored is 0 (suite.h, docs/decisions.md 234).
+    uint8_t ghash_powers[SUITE_GHASH_POWERS_LEN];
 #endif
 } rec_dir;
 

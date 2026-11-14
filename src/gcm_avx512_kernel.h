@@ -39,7 +39,7 @@
 // each kernel's frame under STACK_BUDGET_GCM_AVX512, which the Makefile sets to this length less
 // 512 bytes: the room a kernel takes beside its frame, for the six registers it saves, its
 // return address, the alignment of its frame to 64 bytes, the 128-byte red zone below it and
-// the two arguments its caller passes on the stack. bin/gcm_avx512_equiv_test measures how far
+// the three arguments its caller passes on the stack. bin/gcm_avx512_equiv_test measures how far
 // below its caller each kernel writes and requires that inside this length.
 //
 // For x86-64, -fstack-usage, which counts a frame with the registers saved, the return address
@@ -55,15 +55,17 @@
 // and tag the 16-byte tag over the aad_len bytes at aad and the ciphertext.
 //
 // Requires: round_keys points at AES_ROUND_KEYS * AES_BLOCK readable bytes that
-// aes_expand_round_keys wrote; nonce points at AES_IV readable bytes; aad at aad_len readable
+// aes_expand_round_keys wrote; powers is the key's stored powers, SUITE_GHASH_POWERS_LEN readable
+// bytes that gcm_powers_hw wrote under the same key, outside the other ranges, or NULL for a key
+// whose owner stores none; nonce points at AES_IV readable bytes; aad at aad_len readable
 // bytes, and may be NULL when aad_len is 0; pt at n readable bytes and ct at n writable bytes,
 // either NULL when n is 0, with pt == ct allowed and no other overlap; tag at AES_BLOCK writable
 // bytes outside the others. A CPU with AVX-512F, AVX-512BW, VAES and VPCLMULQDQ, which
 // gcm_use_avx512 decides from the session's bits: on a CPU without them the first instruction
 // faults. Reads and writes no byte outside those ranges, and cannot fail.
-void gcm_avx512_seal_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                         uint8_t tag[AES_BLOCK]);
+void gcm_avx512_seal_128(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]);
 
 // GCM-AD under AES-128 round keys, without the comparison: pt gets the n plaintext bytes of the
 // n ciphertext bytes at ct, and want the tag those bytes and the associated data should carry.
@@ -72,19 +74,19 @@ void gcm_avx512_seal_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV],
 // Requires: what gcm_avx512_seal_128 requires, with ct readable and pt writable for n bytes, and
 // pt == ct, pt below ct or no overlap allowed; want points at AES_BLOCK writable bytes outside
 // the others.
-void gcm_avx512_open_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                         uint8_t want[AES_BLOCK]);
+void gcm_avx512_open_128(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]);
 
 #ifdef CH_AES_256
 // The same two under AES-256 round keys: round_keys points at AES_256_ROUND_KEYS * AES_BLOCK
 // readable bytes that aes_expand_round_keys_256 wrote.
-void gcm_avx512_seal_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                         uint8_t tag[AES_BLOCK]);
-void gcm_avx512_open_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                         uint8_t want[AES_BLOCK]);
+void gcm_avx512_seal_256(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]);
+void gcm_avx512_open_256(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]);
 #endif
 
 #endif // __x86_64__ || CH_GCM_AVX512_MODEL

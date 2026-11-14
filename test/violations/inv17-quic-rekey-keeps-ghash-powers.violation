@@ -1,0 +1,15 @@
+invariant: INV-17
+file: src/quic_keys.c
+catches: quic_suite_test
+reason: quic_keys_init_suite does not wipe the set's stored powers before it
+  keys, so a set keyed under ChaCha20, or under a ch_cfg.cpu without
+  CH_CPU_CONSTANT_TIME_AES, after an AES-GCM key keeps the powers of that
+  key's hash subkey. No packet reads them there, so every packet is right.
+  bin/quic_suite_test keys one set that way and requires 256 zero bytes
+  (test/ghash_powers_tests.h, docs/decisions.md 234).
+
+--- old
+    ct_wipe(k->schedule, sizeof k->schedule);
+    ct_wipe(k->ghash_powers, sizeof k->ghash_powers);
+--- new
+    ct_wipe(k->schedule, sizeof k->schedule);

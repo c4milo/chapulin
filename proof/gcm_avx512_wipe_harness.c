@@ -38,12 +38,17 @@
 // The longest associated data and text the harness takes, 2^32 bytes.
 #define WIPE_LEN_MAX ((size_t)1 << 32)
 
+// suite.h's SUITE_GHASH_POWERS_LEN, the bytes of a key's stored powers
+// (docs/decisions.md 234), which the QUIC build of this harness does not define.
+#define STORED_POWERS_LEN ((size_t)8 * 32)
+
 // The kernel call the stubs saw.
 typedef struct {
     int calls;
     int open;
     size_t rounds;
     const uint8_t *round_keys;
+    const uint8_t *powers;
     const uint8_t *nonce;
     const uint8_t *aad;
     size_t aad_len;
@@ -59,11 +64,13 @@ static size_t wipe_len;
 static int register_wipes;
 
 // What gcm_avx512_kernel.h requires of a call at rounds rounds, asserted, and the call recorded.
-static void kernel_stub(int open, size_t rounds, const uint8_t *round_keys, const uint8_t *nonce,
-                        const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t n,
-                        uint8_t *out, uint8_t *tag) {
+static void kernel_stub(int open, size_t rounds, const uint8_t *round_keys, const uint8_t *powers,
+                        const uint8_t *nonce, const uint8_t *aad, size_t aad_len, const uint8_t *in,
+                        size_t n, uint8_t *out, uint8_t *tag) {
     __CPROVER_assert(__CPROVER_r_ok(round_keys, (rounds + 1) * AES_BLOCK),
                      "kernel: the round keys of its key size readable");
+    __CPROVER_assert(powers == NULL || __CPROVER_r_ok(powers, STORED_POWERS_LEN),
+                     "kernel: the key's stored powers readable, or none");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AES_IV), "kernel: the nonce readable");
     __CPROVER_assert(aad_len == 0 || __CPROVER_r_ok(aad, aad_len),
                      "kernel: the associated data readable");
@@ -75,6 +82,7 @@ static void kernel_stub(int open, size_t rounds, const uint8_t *round_keys, cons
     seen.open = open;
     seen.rounds = rounds;
     seen.round_keys = round_keys;
+    seen.powers = powers;
     seen.nonce = nonce;
     seen.aad = aad;
     seen.aad_len = aad_len;
@@ -84,29 +92,29 @@ static void kernel_stub(int open, size_t rounds, const uint8_t *round_keys, cons
     seen.tag = tag;
 }
 
-void gcm_avx512_seal_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                         uint8_t tag[AES_BLOCK]) {
-    kernel_stub(0, AES_128_ROUNDS, round_keys, nonce, aad, aad_len, pt, n, ct, tag);
+void gcm_avx512_seal_128(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
+    kernel_stub(0, AES_128_ROUNDS, round_keys, powers, nonce, aad, aad_len, pt, n, ct, tag);
 }
 
-void gcm_avx512_open_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                         uint8_t want[AES_BLOCK]) {
-    kernel_stub(1, AES_128_ROUNDS, round_keys, nonce, aad, aad_len, ct, n, pt, want);
+void gcm_avx512_open_128(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
+    kernel_stub(1, AES_128_ROUNDS, round_keys, powers, nonce, aad, aad_len, ct, n, pt, want);
 }
 
 #ifdef CH_AES_256
-void gcm_avx512_seal_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                         uint8_t tag[AES_BLOCK]) {
-    kernel_stub(0, AES_256_ROUNDS, round_keys, nonce, aad, aad_len, pt, n, ct, tag);
+void gcm_avx512_seal_256(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
+    kernel_stub(0, AES_256_ROUNDS, round_keys, powers, nonce, aad, aad_len, pt, n, ct, tag);
 }
 
-void gcm_avx512_open_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                         uint8_t want[AES_BLOCK]) {
-    kernel_stub(1, AES_256_ROUNDS, round_keys, nonce, aad, aad_len, ct, n, pt, want);
+void gcm_avx512_open_256(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
+    kernel_stub(1, AES_256_ROUNDS, round_keys, powers, nonce, aad, aad_len, ct, n, pt, want);
 }
 #endif
 
@@ -150,16 +158,21 @@ int main(void) {
     __CPROVER_assume(round_keys != NULL && (aad != NULL || aad_len == 0) && in != NULL &&
                      out != NULL);
 
+    // The key's stored powers, or none.
+    uint8_t stored[STORED_POWERS_LEN];
+    const uint8_t *powers = (nondet_u8() & 1U) != 0 ? stored : NULL;
+
     int open = (nondet_u8() & 1U) != 0;
     if (open) {
-        gcm_open_avx512(round_keys, rounds, nonce, aad, aad_len, in, n, out, tag);
+        gcm_open_avx512(round_keys, rounds, powers, nonce, aad, aad_len, in, n, out, tag);
     } else {
-        gcm_seal_avx512(round_keys, rounds, nonce, aad, aad_len, in, n, out, tag);
+        gcm_seal_avx512(round_keys, rounds, powers, nonce, aad, aad_len, in, n, out, tag);
     }
 
     __CPROVER_assert(seen.calls == 1, "entry: one call of the kernel");
     __CPROVER_assert(seen.open == open, "entry: the kernel's function for its direction");
     __CPROVER_assert(seen.rounds == rounds, "entry: the kernel's function for its round count");
+    __CPROVER_assert(seen.powers == powers, "entry: the kernel gets the key's stored powers");
     __CPROVER_assert(seen.round_keys == round_keys && seen.nonce == nonce && seen.aad == aad &&
                          seen.aad_len == aad_len && seen.in == in && seen.n == n &&
                          seen.out == out && seen.tag == tag,

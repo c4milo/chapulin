@@ -302,20 +302,31 @@ static inline __attribute__((always_inline)) size_t powers_needed(size_t steps, 
     return steps > 0 && top < STEP_BLOCKS ? STEP_BLOCKS : top;
 }
 
+// H times x^-1: the key's first stored power where stored is not NULL, and where it is NULL,
+// from the hash subkey, which lane 0 of first holds.
+static inline __attribute__((always_inline)) __m128i first_power_of(__m512i first,
+                                                                    const uint8_t *stored) {
+    if (stored != NULL) {
+        return stored_first_power(stored);
+    }
+    return times_inverse_x(reverse_block(_mm512_castsi512_si128(first)));
+}
+
 // The seal's part of the file comment's steps 1 to 5 at one round count.
 static inline __attribute__((always_inline)) void
-seal_body(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV], const uint8_t *aad,
-          size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
+seal_body(const uint8_t *round_keys, size_t rounds, const uint8_t *stored,
+          const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len, const uint8_t *pt,
+          size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
     gcm_avx512_powers s;
     size_t steps = n / STEP_BYTES;
     size_t rest = n - steps * STEP_BYTES;
     __m512i reversed;
     __m512i first =
         cipher_register(round_keys, rounds, first_blocks(nonce, steps * STEP_BLOCKS, &reversed));
-    __m128i first_power = times_inverse_x(reverse_block(_mm512_castsi512_si128(first)));
+    __m128i first_power = first_power_of(first, stored);
     __m128i acc = hash_associated_data(first_power, aad, aad_len);
     size_t blocks = steps > 0 && rest == 0 ? STEP_BLOCKS : (rest + AES_BLOCK - 1) / AES_BLOCK;
-    compute_powers(&s, first_power, powers_needed(steps, blocks));
+    start_powers(&s, first_power, stored, powers_needed(steps, blocks));
     if (steps > 0) {
         seal_steps(round_keys, rounds, &reversed, pt, ct, steps, &s, &acc);
     }
@@ -330,17 +341,17 @@ seal_body(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
     _mm_storeu_si128((__m128i *)(void *)tag, _mm_xor_si128(reverse_block(acc), mask));
 }
 
-void gcm_avx512_seal_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                         uint8_t tag[AES_BLOCK]) {
-    seal_body(round_keys, AES_128_ROUNDS, nonce, aad, aad_len, pt, n, ct, tag);
+void gcm_avx512_seal_128(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
+    seal_body(round_keys, AES_128_ROUNDS, powers, nonce, aad, aad_len, pt, n, ct, tag);
 }
 
 #ifdef CH_AES_256
-void gcm_avx512_seal_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                         uint8_t tag[AES_BLOCK]) {
-    seal_body(round_keys, AES_256_ROUNDS, nonce, aad, aad_len, pt, n, ct, tag);
+void gcm_avx512_seal_256(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
+    seal_body(round_keys, AES_256_ROUNDS, powers, nonce, aad, aad_len, pt, n, ct, tag);
 }
 #endif
 
@@ -406,8 +417,9 @@ open_rest(const uint8_t *round_keys, size_t rounds, __m512i *reversed, __m512i f
 // The open's part of the file comment's steps 1 to 5 at one round count. The ciphertext past the
 // last whole step is read into data before any of its plaintext is written.
 static inline __attribute__((always_inline)) void
-open_body(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV], const uint8_t *aad,
-          size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
+open_body(const uint8_t *round_keys, size_t rounds, const uint8_t *stored,
+          const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len, const uint8_t *ct,
+          size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
     gcm_avx512_powers s;
     size_t steps = n / STEP_BYTES;
     size_t rest = n - steps * STEP_BYTES;
@@ -415,9 +427,9 @@ open_body(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
     __m512i reversed;
     __m512i first =
         cipher_register(round_keys, rounds, first_blocks(nonce, steps * STEP_BLOCKS, &reversed));
-    __m128i first_power = times_inverse_x(reverse_block(_mm512_castsi512_si128(first)));
+    __m128i first_power = first_power_of(first, stored);
     __m128i acc = hash_associated_data(first_power, aad, aad_len);
-    compute_powers(&s, first_power, powers_needed(steps, blocks));
+    start_powers(&s, first_power, stored, powers_needed(steps, blocks));
     for (size_t j = 0; j < steps; j++) {
         open_step(round_keys, rounds, &reversed, &ct[j * STEP_BYTES], &pt[j * STEP_BYTES], &s,
                   &acc);
@@ -435,17 +447,17 @@ open_body(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
     _mm_storeu_si128((__m128i *)(void *)want, _mm_xor_si128(reverse_block(acc), mask));
 }
 
-void gcm_avx512_open_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                         uint8_t want[AES_BLOCK]) {
-    open_body(round_keys, AES_128_ROUNDS, nonce, aad, aad_len, ct, n, pt, want);
+void gcm_avx512_open_128(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
+    open_body(round_keys, AES_128_ROUNDS, powers, nonce, aad, aad_len, ct, n, pt, want);
 }
 
 #ifdef CH_AES_256
-void gcm_avx512_open_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                         uint8_t want[AES_BLOCK]) {
-    open_body(round_keys, AES_256_ROUNDS, nonce, aad, aad_len, ct, n, pt, want);
+void gcm_avx512_open_256(const uint8_t *round_keys, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
+    open_body(round_keys, AES_256_ROUNDS, powers, nonce, aad, aad_len, ct, n, pt, want);
 }
 #endif
 

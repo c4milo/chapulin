@@ -8,10 +8,12 @@
 // and wipes what it computed.
 //
 // The loop over data multiplies up to GHASH_PASS_BLOCKS blocks by powers
-// of H before it reduces once. Each call computes the powers it needs
-// from H first, keeps them in a ghash_state beside H, and wipes them with
-// it when the call ends, the way gcm.c computes H for each call and wipes
-// it.
+// of H before it reduces once. For a key whose owner stores no powers,
+// each call computes the powers it needs from H first, keeps them in a
+// ghash_state beside H, and wipes them with it when the call ends, the way
+// gcm.c computes H for each call and wipes it. For a key whose owner
+// stores them, each call reads the stored powers in place, and
+// gcm_powers_hw is what wrote them (docs/decisions.md 234).
 //
 // The object compiles this file with no instruction flag, as it compiles
 // aes_hw.c: the architecture picks the instruction, and the pragma below
@@ -35,6 +37,9 @@
 
 #include "ct.h"
 #include "ghash_vector.h"
+#ifdef CH_SUITE_AES_GCM
+#include "suite.h"
+#endif
 
 // Every function from here to the pop at the end of this file carries
 // the target attribute that turns the instruction on:
@@ -56,38 +61,36 @@
 #endif
 #endif
 
-void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]) {
+void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t *subkey,
+                               const uint8_t *powers) {
     ghash_state s;
-    s.subkey = ghash_load_block(subkey);
-    s.acc = ghash_load_block(acc);
-    ghash_compute_powers(&s, 1);
+    size_t computed = ghash_start(&s, acc, subkey, powers, 1);
     ghash_start_sums(&s, &s.sums, s.acc, 0);
     s.acc = ghash_reduce(&s.sums);
     ghash_store_block(acc, s.acc);
     // s holds the hash subkey itself, H * x^-1 and the unreduced product,
     // so the frame would hand a later caller the subkey. gcm.c's multiply
-    // wipes its running multiple for the same reason. This entry computes
-    // one power, so the wipe stops after it.
-    ct_wipe(&s, offsetof(ghash_state, powers) + sizeof s.powers[0]);
+    // wipes its running multiple for the same reason. The wipe stops after
+    // the one power this entry computed, or before it where it read the
+    // key's stored powers.
+    ct_wipe(&s, offsetof(ghash_state, computed) + computed * sizeof s.computed[0]);
 }
 
-void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *data,
-                      size_t n) {
+void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                      const uint8_t *data, size_t n) {
     // No data to hash, so no power of H to compute or wipe.
     if (n == 0) {
         return;
     }
     ghash_state s;
-    s.subkey = ghash_load_block(subkey);
-    s.acc = ghash_load_block(acc);
     size_t whole = n / AES_BLOCK;
     // One power for each block of the longest pass, and H alone when the
     // data is one partial block.
-    size_t powers = whole < GHASH_PASS_BLOCKS ? whole : GHASH_PASS_BLOCKS;
-    if (powers == 0) {
-        powers = 1;
+    size_t count = whole < GHASH_PASS_BLOCKS ? whole : GHASH_PASS_BLOCKS;
+    if (count == 0) {
+        count = 1;
     }
-    ghash_compute_powers(&s, powers);
+    size_t computed = ghash_start(&s, acc, subkey, powers, count);
     size_t done = 0;
     while (whole - done >= GHASH_PASS_BLOCKS) {
         ghash_hash_pass(&s, &data[done * AES_BLOCK]);
@@ -112,8 +115,22 @@ void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], c
     // the loop would run per pass for no further gain. It covers every
     // power this call computed. block holds bytes of the data the caller
     // passed, which is associated data or ciphertext.
-    ct_wipe(&s, offsetof(ghash_state, powers) + powers * sizeof s.powers[0]);
+    ct_wipe(&s, offsetof(ghash_state, computed) + computed * sizeof s.computed[0]);
 }
+
+#ifdef CH_SUITE_AES_GCM
+_Static_assert(sizeof(((ghash_state *)0)->computed) == SUITE_GHASH_POWERS_LEN,
+               "a key's stored powers are the bytes of eight ghash_power");
+
+void gcm_powers_hw(uint8_t *powers, const uint8_t subkey[AES_BLOCK]) {
+    ghash_state s;
+    s.subkey = ghash_load_block(subkey);
+    ghash_compute_powers(&s, GHASH_PASS_BLOCKS);
+    memcpy(powers, s.computed, sizeof s.computed);
+    // s holds the subkey, the eight powers and the last product's sums.
+    ct_wipe(&s, sizeof s);
+}
+#endif
 
 #ifdef __clang__
 #pragma clang attribute pop

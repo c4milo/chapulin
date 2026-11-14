@@ -20,7 +20,9 @@
 //
 // GHASH has two bodies, the portable multiply and ghash_hw.c's on the
 // carry-less multiply. gcm_ghash.h holds the first and says which of the
-// two a schedule runs in each object.
+// two a schedule runs in each object. A host object's traffic key whose
+// owner stores the powers of H runs every step on those powers: no call
+// computes H or a power for it (docs/decisions.md 234).
 //
 // Counter mode, the seal and the open have one body with one more step
 // in a host object. A schedule the AES instructions run takes
@@ -81,19 +83,26 @@ static void write_length_bits(uint8_t out[8], size_t len) {
     }
 }
 
-// GHASH's state through one AEAD call: the hash subkey H and the
-// accumulator, both functions of the key, so hash_finish wipes them.
-typedef struct {
-    uint8_t subkey[AES_BLOCK];
-    uint8_t acc[AES_BLOCK];
-} gcm_hash;
-
 // SP 800-38D §7.1 step 1: the hash subkey H is the forward cipher of a
-// block of zeros. Then GHASH over the associated data, from zero.
-static void hash_start(const aes_key_schedule *k, gcm_hash *h, const uint8_t *aad, size_t aad_len) {
+// block of zeros. Then GHASH over the associated data, from zero. powers
+// is the key's stored powers or NULL (gcm_ghash.h). With them no multiply
+// reads H, so a host object runs no forward cipher for it and h's subkey
+// holds zeros. A device object stores no powers and reads none.
+static void hash_start(const aes_key_schedule *k, gcm_hash *h, const uint8_t *powers,
+                       const uint8_t *aad, size_t aad_len) {
+#ifdef CH_CPU_RUNTIME
+    h->powers = powers;
+    if (powers != NULL) {
+        memset(h->subkey, 0, AES_BLOCK);
+    } else {
+        aes_encrypt_schedule(k, ZERO_BLOCK, h->subkey);
+    }
+#else
+    (void)powers;
     aes_encrypt_schedule(k, ZERO_BLOCK, h->subkey);
+#endif
     memset(h->acc, 0, AES_BLOCK);
-    ghash_data(k, h->acc, h->subkey, aad, aad_len);
+    GHASH_DATA(k, h, aad, aad_len);
 }
 
 // GHASH's last block, the two lengths, and out = the GHASH value. h is
@@ -106,7 +115,7 @@ static void hash_finish(const aes_key_schedule *k, gcm_hash *h, size_t aad_len, 
     for (size_t i = 0; i < AES_BLOCK; i++) {
         h->acc[i] = (uint8_t)(h->acc[i] ^ lengths[i]);
     }
-    ghash_multiply(k, h->acc, h->subkey);
+    GHASH_MULTIPLY(k, h);
     memcpy(out, h->acc, AES_BLOCK);
     ct_wipe(h, sizeof *h);
 }
@@ -114,8 +123,8 @@ static void hash_finish(const aes_key_schedule *k, gcm_hash *h, size_t aad_len, 
 static void ghash_schedule(const aes_key_schedule *k, const uint8_t *aad, size_t aad_len,
                            const uint8_t *ct, size_t n, uint8_t out[AES_BLOCK]) {
     gcm_hash h;
-    hash_start(k, &h, aad, aad_len);
-    ghash_data(k, h.acc, h.subkey, ct, n);
+    hash_start(k, &h, NULL, aad, aad_len);
+    GHASH_DATA(k, &h, ct, n);
     hash_finish(k, &h, aad_len, n, out);
 }
 
@@ -196,11 +205,11 @@ static size_t whole_passes(const aes_key_schedule *k, int seal, uint8_t counter[
     size_t passes = n / pass_bytes;
     size_t rounds = instruction_rounds(k);
     if (seal) {
-        gcm_seal_passes_cpu(k->cpu, k->round_keys, rounds, counter, h->acc, h->subkey, in, passes,
-                            out);
+        gcm_seal_passes_cpu(k->cpu, k->round_keys, rounds, counter, h->acc, h->subkey, h->powers,
+                            in, passes, out);
     } else {
-        gcm_open_passes_cpu(k->cpu, k->round_keys, rounds, counter, h->acc, h->subkey, in, passes,
-                            out);
+        gcm_open_passes_cpu(k->cpu, k->round_keys, rounds, counter, h->acc, h->subkey, h->powers,
+                            in, passes, out);
     }
     return passes * pass_bytes;
 }
@@ -289,20 +298,41 @@ void gcm_ghash(const aes_public_key *k, const uint8_t *aad, size_t aad_len, cons
 
 // The AEAD over an expanded key. The typed entries below unwrap their key
 // and call these, so seal and open are written once and the compiler
-// still decides which call sites may hold which key (INV-26).
-static void seal_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV],
-                          const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n,
-                          uint8_t *ct, uint8_t tag[GCM_TAG]) {
+// still decides which call sites may hold which key (INV-26). powers is
+// the key's stored powers, which a host object's traffic key points at, or
+// NULL: for a public key, for a key whose owner stores none, and in a
+// device object always (docs/decisions.md 234).
+//
+// In a host object the two bodies compile into each typed entry. So a
+// traffic entry hands its key's pointer on with no call between, and a
+// public entry, whose pointer is NULL, compiles no test of it. The two
+// declarations below say so, and a device object, which compiles neither
+// declaration, keeps one copy of each body, which its code size asks for.
+#ifdef CH_CPU_RUNTIME
+static inline __attribute__((always_inline)) void
+seal_schedule(const aes_key_schedule *k, const uint8_t *powers, const uint8_t nonce[AES_IV],
+              const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+              uint8_t tag[GCM_TAG]);
+static inline __attribute__((always_inline)) int
+open_schedule(const aes_key_schedule *k, const uint8_t *powers, const uint8_t nonce[AES_IV],
+              const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
+              const uint8_t tag[GCM_TAG], uint8_t *pt);
+#endif
+
+static void seal_schedule(const aes_key_schedule *k, const uint8_t *powers,
+                          const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                          const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[GCM_TAG]) {
 #if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
     if (runs_avx512(k)) {
-        gcm_seal_avx512(k->round_keys, instruction_rounds(k), nonce, aad, aad_len, pt, n, ct, tag);
+        gcm_seal_avx512(k->round_keys, instruction_rounds(k), powers, nonce, aad, aad_len, pt, n,
+                        ct, tag);
         return;
     }
 #endif
 #if defined(CH_CPU_RUNTIME) && defined(__aarch64__)
     if (runs_arm64(k)) {
-        gcm_seal_arm64_cpu(k->cpu, k->round_keys, instruction_rounds(k), nonce, aad, aad_len, pt, n,
-                           ct, tag);
+        gcm_seal_arm64_cpu(k->cpu, k->round_keys, instruction_rounds(k), powers, nonce, aad,
+                           aad_len, pt, n, ct, tag);
         return;
     }
 #endif
@@ -313,7 +343,7 @@ static void seal_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV]
     uint8_t counter[AES_BLOCK];
     memcpy(counter, first_counter, AES_BLOCK);
     gcm_hash h;
-    hash_start(k, &h, aad, aad_len);
+    hash_start(k, &h, powers, aad, aad_len);
     // GHASH runs over the ciphertext in order, so the whole passes, which
     // gcm_hw.c hashes as it writes them, come first, and the rest is
     // hashed once counter mode has written it. done is at most n, so the
@@ -323,7 +353,7 @@ static void seal_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV]
     done = whole_passes(k, 1, counter, &h, pt, n, ct);
 #endif
     counter_mode(k, counter, &pt[done], n - done, &ct[done]);
-    ghash_data(k, h.acc, h.subkey, &ct[done], n - done);
+    GHASH_DATA(k, &h, &ct[done], n - done);
     uint8_t hashed[AES_BLOCK];
     hash_finish(k, &h, aad_len, n, hashed);
     mask_tag(k, first_counter, hashed, tag);
@@ -344,20 +374,21 @@ static int tag_matches(uint8_t want[GCM_TAG], const uint8_t tag[GCM_TAG], uint8_
     return 1;
 }
 
-static int open_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
-                         size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG],
-                         uint8_t *pt) {
+static int open_schedule(const aes_key_schedule *k, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG], uint8_t *pt) {
     uint8_t want[GCM_TAG];
 #if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
     if (runs_avx512(k)) {
-        gcm_open_avx512(k->round_keys, instruction_rounds(k), nonce, aad, aad_len, ct, n, pt, want);
+        gcm_open_avx512(k->round_keys, instruction_rounds(k), powers, nonce, aad, aad_len, ct, n,
+                        pt, want);
         return tag_matches(want, tag, pt, n);
     }
 #endif
 #if defined(CH_CPU_RUNTIME) && defined(__aarch64__)
     if (runs_arm64(k)) {
-        gcm_open_arm64_cpu(k->cpu, k->round_keys, instruction_rounds(k), nonce, aad, aad_len, ct, n,
-                           pt, want);
+        gcm_open_arm64_cpu(k->cpu, k->round_keys, instruction_rounds(k), powers, nonce, aad,
+                           aad_len, ct, n, pt, want);
         return tag_matches(want, tag, pt, n);
     }
 #endif
@@ -366,7 +397,7 @@ static int open_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV],
     uint8_t counter[AES_BLOCK];
     memcpy(counter, first_counter, AES_BLOCK);
     gcm_hash h;
-    hash_start(k, &h, aad, aad_len);
+    hash_start(k, &h, powers, aad, aad_len);
     // The open decrypts while it hashes, as the seal encrypts while it
     // hashes, and compares the tag after both are done. pt may be ct or sit
     // below it (gcm.h), so a plaintext write can overwrite ciphertext.
@@ -377,7 +408,7 @@ static int open_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV],
 #if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
     done = whole_passes(k, 0, counter, &h, ct, n, pt);
 #endif
-    ghash_data(k, h.acc, h.subkey, &ct[done], n - done);
+    GHASH_DATA(k, &h, &ct[done], n - done);
     counter_mode(k, counter, &ct[done], n - done, &pt[done]);
     uint8_t hashed[AES_BLOCK];
     hash_finish(k, &h, aad_len, n, hashed);
@@ -387,15 +418,23 @@ static int open_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV],
 
 void gcm_seal(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
               size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[GCM_TAG]) {
-    seal_schedule(&k->key, nonce, aad, aad_len, pt, n, ct, tag);
+    seal_schedule(&k->key, NULL, nonce, aad, aad_len, pt, n, ct, tag);
 }
 
 int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
              size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG], uint8_t *pt) {
-    return open_schedule(&k->key, nonce, aad, aad_len, ct, n, tag, pt);
+    return open_schedule(&k->key, NULL, nonce, aad, aad_len, ct, n, tag, pt);
 }
 
 #ifdef CH_SUITE_AES_GCM
+// The stored powers k points at, or NULL (aes_traffic_key.h). A device
+// object's key has no such member.
+#ifdef CH_CPU_RUNTIME
+#define TRAFFIC_POWERS(k) ((k)->ghash_powers)
+#else
+#define TRAFFIC_POWERS(k) NULL
+#endif
+
 // The same AEAD over a TLS traffic key, AES-128 or AES-256 as its
 // schedule's round count says. Its own entry rather than a cast,
 // because the type is what keeps a traffic key out of the three public
@@ -403,14 +442,33 @@ int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t
 void gcm_traffic_seal(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
                       size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
                       uint8_t tag[GCM_TAG]) {
-    seal_schedule(&k->key, nonce, aad, aad_len, pt, n, ct, tag);
+    seal_schedule(&k->key, TRAFFIC_POWERS(k), nonce, aad, aad_len, pt, n, ct, tag);
 }
 
 int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
                      size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG],
                      uint8_t *pt) {
-    return open_schedule(&k->key, nonce, aad, aad_len, ct, n, tag, pt);
+    return open_schedule(&k->key, TRAFFIC_POWERS(k), nonce, aad, aad_len, ct, n, tag, pt);
 }
+
+#ifdef CH_CPU_RUNTIME
+int gcm_traffic_key_store(uint8_t *schedule, uint8_t *powers, uint32_t cpu, const uint8_t *key,
+                          size_t key_len) {
+    // Without CH_CPU_CONSTANT_TIME_AES the schedule's store wrote nothing
+    // and ran no instruction, and neither does this call (INV-26).
+    if (!aes_traffic_key_store(schedule, cpu, key, key_len)) {
+        return 0;
+    }
+    aes_traffic_key k;
+    aes_traffic_key_load(&k, schedule, NULL, key_len, cpu);
+    uint8_t subkey[AES_BLOCK];
+    aes_encrypt_schedule(&k.key, ZERO_BLOCK, subkey);
+    gcm_powers_hw(powers, subkey);
+    ct_wipe(subkey, sizeof subkey);
+    ct_wipe(&k, sizeof k);
+    return 1;
+}
+#endif
 #endif // CH_SUITE_AES_GCM
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

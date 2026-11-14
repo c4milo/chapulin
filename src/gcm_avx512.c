@@ -30,19 +30,19 @@ static void wipe_frame(void) {
 // kernel's frames it is there to wipe.
 static void (*const volatile wipe_frame_call)(void) = wipe_frame;
 
-void gcm_seal_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                     const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                     uint8_t tag[AES_BLOCK]) {
+void gcm_seal_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                     const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                     const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
 #ifdef CH_AES_256
     // The round count is the suite's, so this branch reads a public value.
     if (rounds == AES_256_ROUNDS) {
-        gcm_avx512_seal_256(round_keys, nonce, aad, aad_len, pt, n, ct, tag);
+        gcm_avx512_seal_256(round_keys, powers, nonce, aad, aad_len, pt, n, ct, tag);
     } else {
-        gcm_avx512_seal_128(round_keys, nonce, aad, aad_len, pt, n, ct, tag);
+        gcm_avx512_seal_128(round_keys, powers, nonce, aad, aad_len, pt, n, ct, tag);
     }
 #else
     (void)rounds;
-    gcm_avx512_seal_128(round_keys, nonce, aad, aad_len, pt, n, ct, tag);
+    gcm_avx512_seal_128(round_keys, powers, nonce, aad, aad_len, pt, n, ct, tag);
 #endif
     // The kernel's frames lay below this one and its values passed through the vector
     // registers, and the compiler clears neither on return.
@@ -50,18 +50,18 @@ void gcm_seal_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t non
     avx512_wipe_registers();
 }
 
-void gcm_open_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                     const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                     uint8_t want[AES_BLOCK]) {
+void gcm_open_avx512(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                     const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                     const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
 #ifdef CH_AES_256
     if (rounds == AES_256_ROUNDS) {
-        gcm_avx512_open_256(round_keys, nonce, aad, aad_len, ct, n, pt, want);
+        gcm_avx512_open_256(round_keys, powers, nonce, aad, aad_len, ct, n, pt, want);
     } else {
-        gcm_avx512_open_128(round_keys, nonce, aad, aad_len, ct, n, pt, want);
+        gcm_avx512_open_128(round_keys, powers, nonce, aad, aad_len, ct, n, pt, want);
     }
 #else
     (void)rounds;
-    gcm_avx512_open_128(round_keys, nonce, aad, aad_len, ct, n, pt, want);
+    gcm_avx512_open_128(round_keys, powers, nonce, aad, aad_len, ct, n, pt, want);
 #endif
     wipe_frame_call();
     avx512_wipe_registers();

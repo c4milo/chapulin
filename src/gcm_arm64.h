@@ -12,7 +12,8 @@
 // the received tag and wipes the plaintext on a mismatch, as it does on
 // every other path. One call computes the hash subkey and its powers once
 // for all of that, where gcm.c's steps compute them again in each call
-// they make.
+// they make, and computes none of the first eight for a key whose owner
+// stores them.
 //
 // Two copies of each entry. gcm_arm64.c's adds three values with two
 // EORs. gcm_arm64_eor3.c compiles the same file once more with EOR3,
@@ -43,15 +44,20 @@
 // Requires: round_keys points at (rounds + 1) * AES_BLOCK readable bytes
 // that aes_expand_round_keys or aes_expand_round_keys_256 wrote, and rounds
 // is AES_128_ROUNDS, or AES_256_ROUNDS in a build with AES-256, to match;
+// powers is the key's stored powers, SUITE_GHASH_POWERS_LEN readable bytes
+// that gcm_powers_hw wrote under the same key, outside the other ranges,
+// or NULL for a key whose owner stores none: with them the call reads
+// H to H^8 in place and computes only the powers past them, and without
+// them it computes each power it needs (docs/decisions.md 234);
 // nonce points at AES_IV readable bytes; aad at aad_len readable bytes,
 // and may be NULL when aad_len is 0; pt at n readable bytes and ct at n
 // writable bytes, either NULL when n is 0, with pt == ct allowed and no
 // other overlap; tag at AES_BLOCK writable bytes outside the others. n is
 // at most SP 800-38D's 2^36 - 32 bytes. Reads and writes no byte outside
 // those ranges, and cannot fail.
-void gcm_seal_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                    const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                    uint8_t tag[AES_BLOCK]);
+void gcm_seal_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                    const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                    const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]);
 
 // SP 800-38D's GCM-AD without the comparison: pt gets the n bytes of
 // plaintext and want the tag the n bytes of ciphertext at ct and the
@@ -61,17 +67,17 @@ void gcm_seal_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t nonc
 // Requires: what gcm_seal_arm64 requires, with ct readable and pt writable
 // for n bytes, and pt == ct, pt below ct or no overlap allowed; want points
 // at AES_BLOCK writable bytes outside the others.
-void gcm_open_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                    const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                    uint8_t want[AES_BLOCK]);
+void gcm_open_arm64(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                    const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                    const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]);
 
 // The same two on EOR3 as well: the same contracts and the same output.
-void gcm_seal_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                         const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n,
-                         uint8_t *ct, uint8_t tag[AES_BLOCK]);
-void gcm_open_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
-                         const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
-                         uint8_t *pt, uint8_t want[AES_BLOCK]);
+void gcm_seal_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]);
+void gcm_open_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t *powers,
+                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
+                         const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]);
 
 // Whether a schedule's AEAD runs on the EOR3 copy: where cpu, the
 // description of the CPU the schedule records from its session's
@@ -88,25 +94,25 @@ static inline int gcm_use_eor3(uint8_t cpu) {
 // One branch a call, on a value that is not secret, and no function
 // pointer, as widemul.h picks a multiply.
 static inline void gcm_seal_arm64_cpu(uint8_t cpu, const uint8_t *round_keys, size_t rounds,
-                                      const uint8_t nonce[AES_IV], const uint8_t *aad,
-                                      size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
-                                      uint8_t tag[AES_BLOCK]) {
+                                      const uint8_t *powers, const uint8_t nonce[AES_IV],
+                                      const uint8_t *aad, size_t aad_len, const uint8_t *pt,
+                                      size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
     if (gcm_use_eor3(cpu)) {
-        gcm_seal_arm64_eor3(round_keys, rounds, nonce, aad, aad_len, pt, n, ct, tag);
+        gcm_seal_arm64_eor3(round_keys, rounds, powers, nonce, aad, aad_len, pt, n, ct, tag);
         return;
     }
-    gcm_seal_arm64(round_keys, rounds, nonce, aad, aad_len, pt, n, ct, tag);
+    gcm_seal_arm64(round_keys, rounds, powers, nonce, aad, aad_len, pt, n, ct, tag);
 }
 
 static inline void gcm_open_arm64_cpu(uint8_t cpu, const uint8_t *round_keys, size_t rounds,
-                                      const uint8_t nonce[AES_IV], const uint8_t *aad,
-                                      size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
-                                      uint8_t want[AES_BLOCK]) {
+                                      const uint8_t *powers, const uint8_t nonce[AES_IV],
+                                      const uint8_t *aad, size_t aad_len, const uint8_t *ct,
+                                      size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {
     if (gcm_use_eor3(cpu)) {
-        gcm_open_arm64_eor3(round_keys, rounds, nonce, aad, aad_len, ct, n, pt, want);
+        gcm_open_arm64_eor3(round_keys, rounds, powers, nonce, aad, aad_len, ct, n, pt, want);
         return;
     }
-    gcm_open_arm64(round_keys, rounds, nonce, aad, aad_len, ct, n, pt, want);
+    gcm_open_arm64(round_keys, rounds, powers, nonce, aad, aad_len, ct, n, pt, want);
 }
 
 #endif // __aarch64__

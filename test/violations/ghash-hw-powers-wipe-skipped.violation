@@ -10,6 +10,9 @@ reason: the host object's GHASH data loop wipes its state only up to the powers
   of H in the copy.
 
 --- old
-    ct_wipe(&s, offsetof(ghash_state, powers) + powers * sizeof s.powers[0]);
+    // passed, which is associated data or ciphertext.
+    ct_wipe(&s, offsetof(ghash_state, computed) + computed * sizeof s.computed[0]);
 --- new
-    ct_wipe(&s, offsetof(ghash_state, powers));
+    // passed, which is associated data or ciphertext.
+    (void)computed;
+    ct_wipe(&s, offsetof(ghash_state, computed));

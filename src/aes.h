@@ -206,12 +206,19 @@ void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu);
 // key past the schedule. A session writes its cpu after init, so the
 // stored bytes hold none.
 //
+// powers is the owner's stored powers of the key's hash subkey, which
+// gcm_traffic_key_store wrote with schedule, or NULL for a key that runs
+// no GHASH, a header protection key. The call copies no power: k records
+// the pointer, and the AEAD reads the powers in place (docs/decisions.md
+// 234).
+//
 // Requires: k points at one whole aes_traffic_key; schedule points at
 // SUITE_AES_SCHEDULE_LEN readable bytes that are aes_traffic_key_init's
-// output or zero; key_len is AES_128_KEY or AES_256_KEY, the suite's.
-// Writes k whole and cannot fail.
-void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, size_t key_len,
-                          uint32_t cpu);
+// output or zero; powers is NULL or points at SUITE_GHASH_POWERS_LEN
+// bytes that stay readable and unchanged while k is in use; key_len is
+// AES_128_KEY or AES_256_KEY, the suite's. Writes k whole and cannot fail.
+void aes_traffic_key_load(aes_traffic_key *k, const uint8_t *schedule, const uint8_t *powers,
+                          size_t key_len, uint32_t cpu);
 
 // Expands key into schedule as aes_traffic_key_init expands it, for a host
 // object's key owner to store beside the key: record.c when it derives a
@@ -239,13 +246,27 @@ int aes_traffic_key_store(uint8_t *schedule, uint32_t cpu, const uint8_t *key, s
 // than one expansion. stored is public, a fact of the configuration and of
 // the call path. A device object expands key at each use and never
 // evaluates stored or schedule, fields that build does not declare.
+//
+// aes_traffic_key_of is for a key that runs no GHASH, a header protection
+// key, whose owner stores no powers. aes_traffic_gcm_key_of is for a key
+// that runs AES-GCM. It takes the key's owner, a rec_dir or a quic_keys,
+// which name the same five members: stored, schedule, ghash_powers, key
+// and suite. Where the owner stored a schedule it stored the powers of the
+// hash subkey with it, and k then points at them (docs/decisions.md 234).
 #ifdef CH_CPU_RUNTIME
 #define aes_traffic_key_of(k, cpu, stored, schedule, key, key_len)                                 \
-    ((stored) ? aes_traffic_key_load((k), (schedule), (key_len), (cpu))                            \
+    ((stored) ? aes_traffic_key_load((k), (schedule), NULL, (key_len), (cpu))                      \
               : aes_traffic_key_init_cpu((k), (cpu), (key), (key_len)))
+#define aes_traffic_gcm_key_of(k, cpu, owner)                                                      \
+    ((owner)->stored                                                                               \
+         ? aes_traffic_key_load((k), (owner)->schedule, (owner)->ghash_powers,                     \
+                                suite_key_len((owner)->suite), (cpu))                              \
+         : aes_traffic_key_init_cpu((k), (cpu), (owner)->key, suite_key_len((owner)->suite)))
 #else
 #define aes_traffic_key_of(k, cpu, stored, schedule, key, key_len)                                 \
     aes_traffic_key_init_cpu((k), (cpu), (key), (key_len))
+#define aes_traffic_gcm_key_of(k, cpu, owner)                                                      \
+    aes_traffic_key_init_cpu((k), (cpu), (owner)->key, suite_key_len((owner)->suite))
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING

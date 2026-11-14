@@ -1,0 +1,17 @@
+invariant: INV-26
+file: src/aes.c
+catches: aes_suite_test
+reason: aes_traffic_key_load records no pointer to the owner's stored powers,
+  so every seal and open computes the powers of its key again, as before
+  decision 234. Every byte is the same, and only the instructions a record
+  costs are wrong. The design refuses a silent fall back.
+  bin/aes_suite_test changes one bit of a direction's first stored power
+  and requires another tag for the same record, under each ch_cfg.cpu
+  value that names a kernel, which holds only where the seal reads the
+  stored bytes (test/ghash_powers_tests.h).
+
+--- old
+    k->ghash_powers = powers;
+--- new
+    (void)powers;
+    k->ghash_powers = NULL;

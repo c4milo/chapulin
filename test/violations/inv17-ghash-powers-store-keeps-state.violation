@@ -1,0 +1,15 @@
+invariant: INV-17
+file: src/ghash_hw.c
+catches: aes_suite_test
+reason: gcm_powers_hw does not wipe the ghash_state it computed the eight
+  powers in, so the hash subkey and its powers stay on the stack below
+  each call that keys an AES-GCM direction. Every stored byte is right.
+  bin/aes_suite_test copies the stack below gcm_traffic_key_store and
+  requires no round key, no hash subkey and no power there
+  (test/ghash_powers_tests.h, docs/decisions.md 234).
+
+--- old
+    // s holds the subkey, the eight powers and the last product's sums.
+    ct_wipe(&s, sizeof s);
+--- new
+    // s holds the subkey, the eight powers and the last product's sums.

@@ -275,6 +275,8 @@ static void test_aes_gcm_ceiling(void) {
     }
 }
 
+#include "ghash_powers_tests.h"
+
 int main(void) {
     test_rfc8448_client_finished_record();
     test_rfc8448_record_opens();
@@ -283,6 +285,9 @@ int main(void) {
     test_aes256_encrypted_extensions_record();
     test_aes256_key_update();
     test_aes_gcm_ceiling();
+#ifdef CH_AES_STORED_SCHEDULE
+    test_ghash_powers();
+#endif
     if (failures == 0) {
         (void)printf("aes_suite: RFC 8448's AES-128-GCM record and the Illustrated TLS 1.3 "
                      "AES-256-GCM record seal and open, KeyUpdate keeps each suite, an AES-GCM "

@@ -41,21 +41,42 @@
 // coefficient of x^0. It is the function gcm.c's multiply_by_subkey
 // computes.
 //
-// Requires: acc points at AES_BLOCK readable and writable bytes and
-// subkey at AES_BLOCK readable bytes. Both are read before acc is
+// powers is the key's stored powers, which gcm_powers_hw wrote, or NULL
+// for a key whose owner stores none. With powers the entry reads them in
+// place, computes no power and does not read subkey, which may be NULL.
+// Without them it computes the powers it needs from subkey and wipes them
+// (docs/decisions.md 234).
+//
+// Requires: acc points at AES_BLOCK readable and writable bytes; subkey
+// at AES_BLOCK readable bytes, or powers at SUITE_GHASH_POWERS_LEN
+// readable bytes outside acc. acc and subkey are read before acc is
 // written, so acc == subkey works. Writes AES_BLOCK bytes to acc and
 // cannot fail.
-void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]);
+void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t *subkey,
+                               const uint8_t *powers);
 
 // SP 800-38D §6.4, over n bytes of data: for each block, add it to acc
 // and multiply acc by subkey. A last block shorter than AES_BLOCK is
 // padded with zeros on the right. It is the function gcm.c's
 // hash_data computes.
 //
-// Requires: acc and subkey as above; data points at n readable bytes and
-// may be NULL when n is 0. Writes AES_BLOCK bytes to acc and cannot fail.
-void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *data,
-                      size_t n);
+// Requires: acc, subkey and powers as above; data points at n readable
+// bytes and may be NULL when n is 0. Writes AES_BLOCK bytes to acc and
+// cannot fail.
+void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8_t *powers,
+                      const uint8_t *data, size_t n);
+
+#ifdef CH_SUITE_AES_GCM
+// The powers a key's owner stores beside the key: H^1 to H^8 times x^-1,
+// each with its two words added, the bytes of ghash_vector.h's eight
+// ghash_power, from subkey, the hash subkey H. Every entry that takes
+// powers reads this form (docs/decisions.md 234).
+//
+// Requires: powers points at SUITE_GHASH_POWERS_LEN writable bytes and
+// subkey at AES_BLOCK readable bytes outside them. Writes powers whole,
+// wipes what it computed on its frame, and cannot fail.
+void gcm_powers_hw(uint8_t *powers, const uint8_t subkey[AES_BLOCK]);
+#endif
 
 #endif // CH_CPU_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
