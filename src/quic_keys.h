@@ -73,7 +73,7 @@ typedef struct {
     uint8_t schedule[SUITE_AES_SCHEDULE_LEN];
     // The powers H^1 to H^8 of key's hash subkey under an AES-GCM suite,
     // which quic_keys_init_suite writes with schedule, so a key update
-    // writes them again, and each packet's seal or open reads in place.
+    // writes them again, and each packet's seal or open reads them here.
     // Zero where stored is 0, and quic_keys_select copies none
     // (suite.h, docs/decisions.md 234).
     uint8_t ghash_powers[SUITE_GHASH_POWERS_LEN];

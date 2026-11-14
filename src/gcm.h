@@ -111,7 +111,7 @@ int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], cons
 // aes_traffic_key_store for a key that runs AES-GCM: it writes schedule as
 // that call does, and beside it powers, the powers H^1 to H^8 of the
 // key's hash subkey in the form suite.h states, which each seal and open
-// under the key reads in place (docs/decisions.md 234). record.c calls it
+// under the key reads from there (docs/decisions.md 234). record.c calls it
 // when it derives a record key and quic_keys.c when it derives a packet
 // protection key, so a KeyUpdate and a QUIC key update write both again. A
 // header protection key runs no GHASH and takes aes_traffic_key_store.

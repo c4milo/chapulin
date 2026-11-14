@@ -65,7 +65,7 @@ void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t *subkey,
                                const uint8_t *powers) {
     ghash_state s;
     size_t computed = ghash_start(&s, acc, subkey, powers, 1);
-    ghash_start_sums(&s, &s.sums, s.acc, 0);
+    ghash_start_sums(&s, &s.sums, s.acc, 0, 0);
     s.acc = ghash_reduce(&s.sums);
     ghash_store_block(acc, s.acc);
     // s holds the hash subkey itself, H * x^-1 and the unreduced product,
@@ -93,7 +93,7 @@ void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t *subkey, const uint8
     size_t computed = ghash_start(&s, acc, subkey, powers, count);
     size_t done = 0;
     while (whole - done >= GHASH_PASS_BLOCKS) {
-        ghash_hash_pass(&s, &data[done * AES_BLOCK]);
+        ghash_hash_pass(&s, &data[done * AES_BLOCK], 0);
         done += GHASH_PASS_BLOCKS;
     }
     if (done < whole) {
@@ -125,7 +125,8 @@ _Static_assert(sizeof(((ghash_state *)0)->computed) == SUITE_GHASH_POWERS_LEN,
 void gcm_powers_hw(uint8_t *powers, const uint8_t subkey[AES_BLOCK]) {
     ghash_state s;
     s.subkey = ghash_load_block(subkey);
-    ghash_compute_powers(&s, GHASH_PASS_BLOCKS);
+    s.powers = (const uint8_t *)s.computed;
+    ghash_compute_powers(&s, GHASH_PASS_BLOCKS, 0);
     memcpy(powers, s.computed, sizeof s.computed);
     // s holds the subkey, the eight powers and the last product's sums.
     ct_wipe(&s, sizeof s);

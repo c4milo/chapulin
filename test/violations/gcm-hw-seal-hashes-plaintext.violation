@@ -10,6 +10,6 @@ reason: the host object's one-pass seal hashes the pass before's plaintext where
   place, on both paths, and compares the tags.
 
 --- old
-            ghash_hash_pass(&s.ghash, &out[at - GCM_HW_PASS_BYTES]);
+            ghash_hash_pass(&s.ghash, &out[at - GCM_HW_PASS_BYTES], 1);
 --- new
-            ghash_hash_pass(&s.ghash, &in[at - GCM_HW_PASS_BYTES]);
+            ghash_hash_pass(&s.ghash, &in[at - GCM_HW_PASS_BYTES], 1);

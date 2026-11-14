@@ -2,31 +2,44 @@ invariant: INV-17
 file: src/ghash_vector.h
 catches: ghash_equiv_test
 reason: the host object's GHASH reads each power of H and its halves added
-  through an ordinary pointer, so the compiler loads the eight powers once
+  through an ordinary lvalue, so the compiler loads the eight powers once
   and holds them in registers across every pass. They do not fit there
-  beside a pass's blocks, and gcc 15 and clang 23 for x86-64 each copy a
-  power's halves added to a stack slot of the function's own, which the
-  wipe of ghash_state does not clear, so a later caller's uninitialized
-  stack reads a function of the key. No output changes, so no vector
-  notices. bin/ghash_equiv_test copies the stack below one call over three
-  passes and requires no power of H and no power's halves added in the
-  copy. Since the powers lie behind a pointer (docs/decisions.md 234),
-  gcc 15, clang 23 and Apple clang 21 for arm64 make no such copy, so the
-  test catches this edit on x86-64 and not on arm64.
+  beside a pass's blocks, and gcc 13, gcc 15 and clang 23 for x86-64 each
+  copy a power or its halves added to a stack slot of the function's own,
+  which the wipe of ghash_state does not clear, so a later caller's
+  uninitialized stack reads a function of the key. No output changes, so
+  no vector notices. bin/ghash_equiv_test copies the stack below one call
+  over three passes and requires no power of H and no power's halves
+  added in the copy. On arm64 gcm_arm64.c and ghash_hw.c read the powers
+  through s->powers (docs/decisions.md 234), and gcc 13, gcc 15, clang 23
+  and Apple clang 21 make no such copy, so the test catches this edit on
+  x86-64 and not on arm64.
 
 --- old
+    if (own) {
+        return *(const volatile ghash_vector *)&s->computed[i].power;
+    }
     const volatile void *at = &s->powers[i * sizeof(ghash_power)];
     return *(const volatile ghash_vector_bytes *)at;
 }
 
-static inline ghash_vector ghash_halves_at(const ghash_state *s, size_t i) {
+static inline ghash_vector ghash_halves_at(const ghash_state *s, size_t i, int own) {
+    if (own) {
+        return *(const volatile ghash_vector *)&s->computed[i].halves_added;
+    }
     const volatile void *at = &s->powers[i * sizeof(ghash_power) + sizeof(ghash_vector)];
     return *(const volatile ghash_vector_bytes *)at;
 --- new
+    if (own) {
+        return *(const ghash_vector *)&s->computed[i].power;
+    }
     const void *at = &s->powers[i * sizeof(ghash_power)];
     return *(const ghash_vector_bytes *)at;
 }
 
-static inline ghash_vector ghash_halves_at(const ghash_state *s, size_t i) {
+static inline ghash_vector ghash_halves_at(const ghash_state *s, size_t i, int own) {
+    if (own) {
+        return *(const ghash_vector *)&s->computed[i].halves_added;
+    }
     const void *at = &s->powers[i * sizeof(ghash_power) + sizeof(ghash_vector)];
     return *(const ghash_vector_bytes *)at;

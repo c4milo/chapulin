@@ -161,7 +161,7 @@ static void stage_block(aead_state *s, const uint8_t *bytes, size_t len) {
     memcpy(block, bytes, len);
     s->staged_count++;
     if (s->staged_count == GHASH_PASS_BLOCKS) {
-        ghash_hash_pass(&s->ghash, &s->staged[0][0]);
+        ghash_hash_pass(&s->ghash, &s->staged[0][0], 0);
         s->staged_count = 0;
     }
 }

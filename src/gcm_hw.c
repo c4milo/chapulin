@@ -338,21 +338,52 @@ void gcm_hw_wipe_below(void) {
     wipe_frame_call();
 }
 
+// s ready for the passes: the accumulator from its bytes, and the eight
+// powers in s->computed. They are the key's stored powers where powers is
+// not NULL, 16 loads and 16 stores in place of the forward cipher's block
+// and seven multiplies, and else computed from subkey. Either way they lie
+// in the frame of the body that calls this, which the wrappers below wipe.
+//
+// The loops read each power from s->computed through its member, and
+// nothing writes s->powers, so the state never holds its own address.
+// Each of the two made gcc 15 store the eight blocks of a pass to the
+// keystream after each AES round, because it could no longer tell a load
+// of a round key from a load of the keystream: a read through a pointer
+// or at an offset it could not bound within s, and a state that held its
+// own address. A 16 KiB record took 40% more time on an EPYC 7763
+// (docs/decisions.md 234).
+static inline void pass_hash_start(ghash_state *s, const uint8_t acc[AES_BLOCK],
+                                   const uint8_t *subkey, const uint8_t *powers) {
+    s->acc = ghash_load_block(acc);
+    if (powers == NULL) {
+        s->subkey = ghash_load_block(subkey);
+        ghash_compute_powers(s, GHASH_PASS_BLOCKS, 1);
+        return;
+    }
+#pragma GCC unroll 8
+    for (size_t i = 0; i < GHASH_PASS_BLOCKS; i++) {
+        s->computed[i].power = ghash_power_of(powers, i);
+        s->computed[i].halves_added = ghash_halves_of(powers, i);
+    }
+}
+
 // The body of gcm_seal_passes_hw, which the wrapper below calls and then
-// wipes under. s, the powers it computed and the keystream, lies in this
-// frame. The arguments the loop reads come first, so that x86-64's six
-// argument registers hold them, and the three the body reads once come
-// last, on the stack.
-static __attribute__((noinline)) void seal_passes(const uint8_t *round_keys, size_t rounds,
-                                                  uint8_t counter[AES_BLOCK], const uint8_t *in,
-                                                  size_t passes, uint8_t *out,
-                                                  uint8_t acc[AES_BLOCK], const uint8_t *subkey,
-                                                  const uint8_t *powers) {
+// wipes under. s, its eight powers and the keystream, lies in this frame.
+// The arguments the loop reads come first, so that x86-64's six argument
+// registers hold them, and the three the body reads once come last, on
+// the stack. flatten compiles every function the body calls into it, the
+// pass's hash among them, on every compiler: gcc 13 called that hash out
+// of line, and gcc 15 did in one tree and not in the next
+// (docs/decisions.md 234).
+static __attribute__((noinline, flatten)) void
+seal_passes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK], const uint8_t *in,
+            size_t passes, uint8_t *out, uint8_t acc[AES_BLOCK], const uint8_t *subkey,
+            const uint8_t *powers) {
     if (passes == 0) {
         return;
     }
     gcm_hw_state s;
-    (void)ghash_start(&s.ghash, acc, subkey, powers, GHASH_PASS_BLOCKS);
+    pass_hash_start(&s.ghash, acc, subkey, powers);
     aes_state prefix = counter_prefix(counter);
     uint32_t count = counter_count(counter);
     for (size_t p = 0; p < passes; p++) {
@@ -363,10 +394,10 @@ static __attribute__((noinline)) void seal_passes(const uint8_t *round_keys, siz
         // The ciphertext the pass before wrote, which nothing in this pass
         // waits on.
         if (p > 0) {
-            ghash_hash_pass(&s.ghash, &out[at - GCM_HW_PASS_BYTES]);
+            ghash_hash_pass(&s.ghash, &out[at - GCM_HW_PASS_BYTES], 1);
         }
     }
-    ghash_hash_pass(&s.ghash, &out[(passes - 1) * GCM_HW_PASS_BYTES]);
+    ghash_hash_pass(&s.ghash, &out[(passes - 1) * GCM_HW_PASS_BYTES], 1);
     ghash_store_block(acc, s.ghash.acc);
     set_counter_count(counter, count + (uint32_t)(passes * GCM_HW_PASS_BLOCKS));
 }
@@ -392,16 +423,15 @@ void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
 // With the first pass's hash before the loop, gcc 13 at -O2 built each
 // counter from bytes it counted one at a time, and the loop ran about a
 // third slower.
-static __attribute__((noinline)) void open_passes(const uint8_t *round_keys, size_t rounds,
-                                                  uint8_t counter[AES_BLOCK], const uint8_t *in,
-                                                  size_t passes, uint8_t *out,
-                                                  uint8_t acc[AES_BLOCK], const uint8_t *subkey,
-                                                  const uint8_t *powers) {
+static __attribute__((noinline, flatten)) void
+open_passes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK], const uint8_t *in,
+            size_t passes, uint8_t *out, uint8_t acc[AES_BLOCK], const uint8_t *subkey,
+            const uint8_t *powers) {
     if (passes == 0) {
         return;
     }
     gcm_hw_state s;
-    (void)ghash_start(&s.ghash, acc, subkey, powers, GHASH_PASS_BLOCKS);
+    pass_hash_start(&s.ghash, acc, subkey, powers);
     aes_state prefix = counter_prefix(counter);
     uint32_t count = counter_count(counter);
     for (size_t p = 0; p <= passes; p++) {
@@ -413,7 +443,7 @@ static __attribute__((noinline)) void open_passes(const uint8_t *round_keys, siz
             xor_pass_in_place(s.keystream, &in[at], &out[at]);
         }
         if (p < passes) {
-            ghash_hash_pass(&s.ghash, &in[p * GCM_HW_PASS_BYTES]);
+            ghash_hash_pass(&s.ghash, &in[p * GCM_HW_PASS_BYTES], 1);
         }
     }
     ghash_store_block(acc, s.ghash.acc);
