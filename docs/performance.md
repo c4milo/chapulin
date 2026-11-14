@@ -1005,9 +1005,11 @@ reading comes from):
   the tag, under a key set before the loop. chapulin's row for that operation is the AEAD's seal
   or open.
 - OpenSSL 3.6 does the same for AES-GCM and sets the key as well, for every operation. chapulin's
-  row for that operation is the AEAD under a key expanded for the record, which is what
-  `record.c`'s `seal_aes_gcm` and `open_aes_gcm` run: `rec_dir` keeps the key's bytes and no
-  expanded key, so every record pays the expansion.
+  row for that operation is the AEAD under a key expanded for the record. A device object's
+  `seal_aes_gcm` and `open_aes_gcm` in `record.c` run that: its `rec_dir` keeps the key's bytes
+  and no expanded key. A host object's records load the schedule and the GHASH powers that
+  `rec_dir` stores beside the key (decisions 160 and 234), so they pay neither, and the row
+  keeps the expansion to time the operation OpenSSL times.
 - For ChaCha20-Poly1305, OpenSSL 3.6 runs one update over the record's bytes, with no nonce,
   associated data or tag. chapulin's row for that operation is the seal or the open less its
   tag's fixed work.

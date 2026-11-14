@@ -10603,7 +10603,7 @@ BRANCH_CEILING := \
   m3-gcc/src/sha3.c:23 m3-gcc/src/hkdf.c:19 m3-gcc/src/chacha20.c:7 m3-gcc/src/poly1305.c:14 m3-gcc/src/aead.c:2 \
   m3-gcc/src/x25519.c:23 m3-gcc/src/p256_field.c:14 m3-gcc/src/mlkem.c:13 m3-gcc/src/mlkem_poly.c:37 \
   m3-gcc/src/drbg.c:8 m3-gcc/src/softmul.c:0 m3-gcc/src/aes.c:3 m3-gcc/src/quic_aes_soft.c:9 \
-  m3-gcc/src/aes_extern.c:0 m3-gcc/src/gcm.c:15 m3-gcc/src/rsa_sign.c:33 mips32r2-gcc/src/ct.c:1 mips32r2-gcc/src/ct_wipe.c:3 \
+  m3-gcc/src/aes_extern.c:0 m3-gcc/src/gcm.c:15 m3-gcc/src/rsa_sign.c:32 mips32r2-gcc/src/ct.c:1 mips32r2-gcc/src/ct_wipe.c:3 \
   mips32r2-gcc/src/sha256.c:12 mips32r2-gcc/src/sha3.c:19 mips32r2-gcc/src/hkdf.c:18 \
   mips32r2-gcc/src/chacha20.c:6 mips32r2-gcc/src/poly1305.c:14 mips32r2-gcc/src/aead.c:2 \
   mips32r2-gcc/src/x25519.c:20 mips32r2-gcc/src/p256_field.c:13 mips32r2-gcc/src/mlkem.c:13 \

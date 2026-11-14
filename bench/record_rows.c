@@ -198,10 +198,12 @@ static void run_gcm_open(bench_state *b) {
     consume(b->rec[0]);
 }
 
-// One record's AEAD as record.c's seal_aes_gcm runs it: the key expanded
-// for this record, the seal in place, and the wipe of the expanded key.
-// rec_dir keeps the key's bytes and nothing expanded, so every record pays
-// the expansion.
+// One record's AEAD as a device object's seal_aes_gcm runs it: the key
+// expanded for this record, the seal in place, and the wipe of the expanded
+// key. A host object's rec_dir stores the schedule and the GHASH powers
+// beside the key (docs/decisions.md 160 and 234), so its records expand
+// nothing. The row keeps the expansion, as OpenSSL 3.6's operation sets
+// the key.
 static void run_seal_aes_gcm(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
     aes_traffic_key_init_cpu(&b->scratch, BENCH_CPU, b->wr.key, suite_key_len(suite_of(b->aead)));
