@@ -16,6 +16,20 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The M1 Pro's run of 2603ef81
+
+The M1 Pro's CSVs now hold a run of 2026-11-15 on 2603ef81, the code of
+v0.8.0, against a build of OpenSSL 3.6.5, with every pass started below a
+1-minute load of 8. The tree adds docs/decisions.md 229 to 234 to the M1
+Pro's run of fb5a0c21.
+
+No ratio crossed 1.00. SHA3-256 over 16 KiB stays at 1.01, the one M1 Pro
+row behind OpenSSL; decision 231 records why no form measured moves it.
+AES-GCM's 16 KiB rows read 0.97 to 0.99, where they read 0.94 to 0.98:
+decision 234 changes no arm64 pass over whole blocks, and the 16 KiB rows
+time the key's expansion and its powers in every record, as OpenSSL's
+operation sets the key. No other ratio moved by 0.03 or more.
+
 ## The x86-64 run of 224e894f
 
 The four x86-64 CSVs now hold one run of 2026-11-14 on 224e894f (bench
