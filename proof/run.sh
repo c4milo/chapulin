@@ -2029,6 +2029,10 @@ launch fast full quic_keys 45 "fill_nondet.0:177" src/ct.c proof/ct_wipe_stub.c 
 # record_suite's was on 2026-11-14: 202 properties, 21 s, 1.09 GB. On an
 # ubuntu-26.04 runner (run 43617004553): 26 s, and the largest VmPeak of
 # cbmc and kissat 0.98 GB, inside the fast tier's cap.
+# With a 1-RTT receive set's derivation and update (docs/decisions.md 234,
+# the addendum of 2026-11-16), measured the same way on 2026-11-16: 223
+# properties, 60 s of user time (263 s of wall time at a load average of
+# 21 to 27), 0.91 GB.
 launch fast full quic_keys_suite 60 "ct_wipe.0:257,fill_nondet.0:257" src/ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
 # are contract stubs the harness defines, so this formula holds the one

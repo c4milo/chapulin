@@ -19810,3 +19810,23 @@ does nothing more.
     Open. The three 1-RTT receive sets store a schedule and powers that no call loads, by the
     rule above: 500 bytes each. A type for them with the key and the IV alone would give a QUIC
     session 1,500 bytes back.
+
+    Addendum, 2026-11-16. The three 1-RTT receive sets now take a type of their own,
+    `quic_receive_keys`, which holds the key, the IV and the suite. `quic_receive_keys_init_suite`
+    and `quic_receive_keys_update` derive one. `quic_keys_select` copies the key and the IV of the
+    set a packet selects into a `quic_keys`, with `stored` at 0, as before. No call read the
+    other bytes, so no packet changes. A receive set also holds no `stored` byte and no `sealed`
+    count, because no packet is sealed under it.
+
+    `bench/sram.sh` measures a `ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking SUITE=aesgcm`
+    host `ch_quic` at 8,048 bytes, where it was 9,584. The same object without the suite stays at
+    5,088 bytes, because there a receive set and a `quic_keys` hold the same two arrays. A device
+    object under `SUITE=aesgcm` and `AES=extern` drops each receive set's `stored` byte and
+    `sealed` count too, and `bench/sram.sh` does not measure that object.
+
+    What holds it. `bin/quic_suite_test` derives a receive set at each suite and requires the
+    printed key, IV and next key, and `bin/quic_test` opens RFC 9001 Appendix A.5's packet and
+    RFC 9369's under a receive set that `quic_receive_keys_init` derived. `bin/quic_loop_aes` reads
+    a connected session: each end's receive set holds the other end's key, and a failure and a
+    close leave zero bytes. The `quic_keys` and `quic_keys_suite` harnesses prove the two new
+    calls, and `quic_packet`'s proves the select and the open over the new type.

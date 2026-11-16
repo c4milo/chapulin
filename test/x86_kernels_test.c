@@ -354,9 +354,9 @@ static void check_packets(uint16_t suite, uint32_t cpu) {
     CHECK(quic_packet_seal(cpu, &k, &h, CH_LEVEL_APPLICATION, 0, 5, 2, short_hdr, sizeof short_hdr,
                            payload, PAYLOAD, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(sealed_on(suite, cpu));
-    quic_keys sets[CH_QUIC_KEY_SETS];
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
     memset(sets, 0, sizeof sets);
-    sets[CH_QUIC_KEY_CURRENT] = k;
+    quic_receive_keys_init_suite(cpu, &sets[CH_QUIC_KEY_CURRENT], CH_QUIC_VERSION_1, secret, suite);
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;

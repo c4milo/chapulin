@@ -274,17 +274,17 @@ uint8_t quic_key_set_select(uint8_t key_phase, uint8_t packet_key_phase, uint64_
     return (uint8_t)selected;
 }
 
-void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, quic_keys *out) {
+void quic_keys_select(const quic_receive_keys sets[CH_QUIC_KEY_SETS], uint8_t selected,
+                      quic_keys *out) {
     for (size_t i = 0; i < AEAD_KEY; i++) {
         out->key[i] = 0;
     }
     for (size_t i = 0; i < AEAD_NONCE; i++) {
         out->iv[i] = 0;
     }
-    // The loop counter is the index, never selected, so all three sets
-    // are read at the same addresses whichever one wins. A selected
-    // value outside the three names leaves out zero, and zero keys open
-    // no packet.
+    // The loop counter is the index, never selected, so all three sets are read at the same
+    // addresses whichever one wins. A selected value outside the three names leaves out zero, and
+    // zero keys open no packet.
     for (size_t s = 0; s < CH_QUIC_KEY_SETS; s++) {
         uint8_t take = set_in_use((uint8_t)s, selected);
         for (size_t i = 0; i < AEAD_KEY; i++) {
@@ -444,7 +444,7 @@ int quic_packet_open_handshake(uint32_t cpu, const quic_keys *k, const quic_hp_k
     return CH_OK;
 }
 
-int quic_packet_open_application(uint32_t cpu, const quic_keys sets[CH_QUIC_KEY_SETS],
+int quic_packet_open_application(uint32_t cpu, const quic_receive_keys sets[CH_QUIC_KEY_SETS],
                                  const quic_hp_key *h, uint8_t key_phase, uint8_t *pkt,
                                  size_t pkt_len, size_t pn_off, uint64_t largest_pn,
                                  uint64_t current_phase_lowest_pn, uint8_t *key_set, uint64_t *pn,

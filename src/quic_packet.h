@@ -291,23 +291,23 @@ void quic_nonce(const uint8_t iv[AEAD_NONCE], uint64_t pn, uint8_t nonce[AEAD_NO
 uint8_t quic_key_set_select(uint8_t key_phase, uint8_t packet_key_phase, uint64_t pn,
                             uint64_t current_phase_lowest_pn);
 
-// Copies one of the CH_QUIC_KEY_SETS receive key sets into out, without
-// using selected as a memory index. It reads every key and IV byte of all
-// three sets and combines them under a mask built from selected, so the
-// addresses it reads are the same whichever set wins. CLAUDE.md's rule
-// against secret-dependent memory indices requires that here, because
-// selected comes from the Key Phase bit and the recovered packet number,
-// and §9.5 makes both secret (rfc9001.txt:2110-2112).
+// Copies one of the CH_QUIC_KEY_SETS receive key sets into out, without using selected as a memory
+// index. It reads every key and IV byte of all three sets and combines them under a mask built from
+// selected, so the addresses it reads are the same whichever set wins. CLAUDE.md's rule against
+// secret-dependent memory indices requires that here, because selected comes from the Key Phase bit
+// and the recovered packet number, and §9.5 makes both secret (rfc9001.txt:2110-2112).
 //
-// Requires: sets points at CH_QUIC_KEY_SETS readable quic_keys, the
-// three the session holds; selected is CH_QUIC_KEY_PREVIOUS,
+// Requires: sets points at CH_QUIC_KEY_SETS readable quic_receive_keys,
+// the three the session holds; selected is CH_QUIC_KEY_PREVIOUS,
 // CH_QUIC_KEY_CURRENT or CH_QUIC_KEY_NEXT; out points at one writable
 // quic_keys that does not overlap sets. A wiped set reads as zero and
 // opens no packet, which is what ch_quic_drop_previous_keys leaves.
 //
-// Writes out whole but for a host object's schedule, with out->stored 0 (docs/decisions.md 160).
-// It cannot fail. out holds key material, so the caller wipes it with ct_wipe on every path.
-void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, quic_keys *out);
+// Writes out whole but for a host object's schedule and powers, which sets do not hold, with
+// out->stored 0 (docs/decisions.md 160 and 234). It cannot fail. out holds key material, so the
+// caller wipes it with ct_wipe on every path.
+void quic_keys_select(const quic_receive_keys sets[CH_QUIC_KEY_SETS], uint8_t selected,
+                      quic_keys *out);
 
 // Protects one packet under k and h and writes it whole into out:
 // packet protection first (RFC 9001 §5.3), then header protection (§5.4).
@@ -422,8 +422,8 @@ int quic_packet_open_handshake(uint32_t cpu, const quic_keys *k, const quic_hp_k
 // quic_key_set_select picks the set from the packet's Key Phase bit
 // and the recovered packet number, quic_keys_select copies it.
 //
-// Requires: sets points at CH_QUIC_KEY_SETS readable quic_keys, the
-// session's previous, current and next 1-RTT receive sets; h holds the
+// Requires: sets points at CH_QUIC_KEY_SETS readable quic_receive_keys,
+// the session's previous, current and next 1-RTT receive sets; h holds the
 // 1-RTT receive header protection key, which §5.4 keeps for the whole
 // connection (rfc9001.txt:1172-1174); key_phase is the bit the current
 // set carries, 0 or 1; cpu, pkt, pkt_len, pn_off and largest_pn are
@@ -455,7 +455,7 @@ int quic_packet_open_handshake(uint32_t cpu, const quic_keys *k, const quic_hp_k
 // No other code is returned. ch_quic_open refuses a 1-RTT packet that
 // arrives before the handshake completes (RFC 9001 §5.7,
 // rfc9001.txt:1484-1486), so that check does not run here.
-int quic_packet_open_application(uint32_t cpu, const quic_keys sets[CH_QUIC_KEY_SETS],
+int quic_packet_open_application(uint32_t cpu, const quic_receive_keys sets[CH_QUIC_KEY_SETS],
                                  const quic_hp_key *h, uint8_t key_phase, uint8_t *pkt,
                                  size_t pkt_len, size_t pn_off, uint64_t largest_pn,
                                  uint64_t current_phase_lowest_pn, uint8_t *key_set, uint64_t *pn,

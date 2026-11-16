@@ -143,9 +143,11 @@ typedef struct ch_quic_priv {
     // CH_QUIC_KEY_CURRENT and CH_QUIC_KEY_NEXT (public_sizes.h) and by no computed index. §6.3
     // makes the current and the next set a floor (rfc9001.txt:1711-1712); the previous set is this
     // design's choice, so a packet delayed across a key update still opens (§6.5). The header
-    // protection keys are written once and never updated (§6.1, rfc9001.txt:1607).
+    // protection keys are written once and never updated (§6.1, rfc9001.txt:1607). A receive set
+    // holds the key and the IV alone, because a packet opens under a copy that quic_keys_select
+    // makes, which loads no stored schedule and no stored powers (quic_keys.h).
     quic_keys app_tx;
-    quic_keys app_rx[CH_QUIC_KEY_SETS];
+    quic_receive_keys app_rx[CH_QUIC_KEY_SETS];
     quic_hp_key app_hp_rx, app_hp_tx;
     // RFC 9001 §6.6's counts. open_failures counts received packets that failed authentication in
     // this connection, across every level and every key, because the limit is stated that way

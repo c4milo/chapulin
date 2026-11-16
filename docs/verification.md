@@ -3462,14 +3462,14 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 #### quic_keys
 
 - **Harness:** `quic_keys` (fast)
-- **Proves:** `quic_keys_init`, `quic_hp_key_init` and
-  `quic_keys_update` read and write only inside their buffers and commit
-  no undefined behavior, for any traffic secret and any QUIC version, the
-  value that chooses their labels. `quic_keys_update`
-  writes the next secret back over the caller's buffer and derives the
-  key set from it, so the same 32 bytes are an input and an output of
-  one call, and the harness covers that aliasing. HKDF is a contract
-  stub (`proof/aes_stubs.h`).
+- **Proves:** `quic_keys_init`, `quic_hp_key_init`, `quic_keys_update`,
+  `quic_receive_keys_init` and `quic_receive_keys_update` read and write
+  only inside their buffers and commit no undefined behavior, for any
+  traffic secret and any QUIC version, the value that chooses their
+  labels. Each update writes the next secret back over the caller's
+  buffer and derives the key set from it, so the same 32 bytes are an
+  input and an output of one call, and the harness covers that aliasing.
+  HKDF is a contract stub (`proof/aes_stubs.h`).
 - **Bound:** the full domain. Every buffer is a fixed-size array, every
   derivation asks HKDF for a constant number of bytes, and the harness
   varies all 32 secret bytes.
@@ -3711,7 +3711,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   of the three suites:
   - the three §5.1 derivations and the §6.1 update derive at the suite's
     hash and key length, under one of the four labels of the QUIC version
-    they were given;
+    they were given, and so do the derivation and the update of a 1-RTT
+    receive set, which stores no schedule and no powers;
   - the mask, the seal and the Handshake open run the cipher the key
     set's suite names, at its key length;
   - the seal counts and refuses under AES-GCM's §6.6 limit alone.
@@ -6208,7 +6209,9 @@ skips a kernel's cases on a CPU without its instructions:
   key, no H and no power. `bin/webpki_loop_aes` and `bin/quic_loop_aes`
   read a connected session's bytes: each end's write powers are the other
   end's read powers, `ch_quic_key_update` stores the next key's, and a
-  failure and a close leave zero bytes. The `record_suite`,
+  failure and a close leave zero bytes. Over QUIC, a 1-RTT receive set
+  holds no powers, so `bin/quic_loop_aes` requires the other end's key
+  there instead. The `record_suite`,
   `quic_keys_suite` and
   `quic_packet_suite` harnesses prove over contract stubs that the powers
   are stored with the schedule under the AES bit alone, that an owner

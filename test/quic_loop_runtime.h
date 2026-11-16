@@ -24,10 +24,10 @@
 //   - A ticket received with the configuration hash on one SHA-256 path
 //     resumes with it on the other (check_quic_tickets_across).
 //   - test/webpki_ticket_rows.h's rows over ch_quic_init.
-//   - The bytes of a connected session hold each 1-RTT key set's stored
-//     powers of H. A key update stores the next key's, and a failure, the
-//     one CONNECTION_CLOSE and a close wipe them
-//     (check_quic_stored_powers, docs/decisions.md 234).
+//   - The bytes of a connected session hold each 1-RTT send set's stored
+//     powers of H, and no receive set holds any. A key update stores the
+//     next key's, and a failure, the one CONNECTION_CLOSE and a close wipe
+//     them (check_quic_stored_powers, docs/decisions.md 234).
 //
 // test/quic_loop_cpu.h holds the values every init call refuses. With
 // "absent" as its argument the binary runs test_quic_runtime_absent
@@ -290,23 +290,26 @@ static int set_powers_zero(const quic_keys *k) {
     return acc == 0;
 }
 
-static int set_powers_equal(const quic_keys *a, const quic_keys *b) {
-    return memcmp(a->ghash_powers, b->ghash_powers, sizeof a->ghash_powers) == 0;
+// A 1-RTT receive set holds the key and the IV alone (quic_keys.h), so a
+// send set and the other end's receive set hold the same key and IV.
+static int same_key(const quic_keys *send, const quic_receive_keys *receive) {
+    return memcmp(send->key, receive->key, sizeof send->key) == 0 &&
+           memcmp(send->iv, receive->iv, sizeof send->iv) == 0;
 }
 
 static int receive_sets_zero(const ch_quic_priv *q) {
-    return set_powers_zero(&q->app_rx[CH_QUIC_KEY_PREVIOUS]) &&
-           set_powers_zero(&q->app_rx[CH_QUIC_KEY_CURRENT]) &&
-           set_powers_zero(&q->app_rx[CH_QUIC_KEY_NEXT]);
+    static const quic_receive_keys zero[CH_QUIC_KEY_SETS];
+    return memcmp(q->app_rx, zero, sizeof zero) == 0;
 }
 
 // A connected session under AES-256-GCM whose end states the AES
 // instructions. Each 1-RTT send set stores the powers of its key's hash
-// subkey, the ones the other end's current receive set stores. A key
-// update stores the next key's, which the other end's next receive set
-// holds already. A failure wipes the receive sets at once: QUIC refuses a
-// TLS KeyUpdate (RFC 9001 section 6). The send set stays for the one
-// CONNECTION_CLOSE and is zero after it. A close wipes every set.
+// subkey. The other end's current receive set holds the same key and no
+// powers. A key update stores the next key's powers, and the other end's
+// next receive set holds that key already. A failure wipes the receive
+// sets at once: QUIC refuses a TLS KeyUpdate (RFC 9001 section 6). The
+// send set stays for the one CONNECTION_CLOSE and is zero after it. A
+// close wipes every set.
 static void check_quic_stored_powers(void) {
     static const uint8_t tls_key_update[5] = {HS_KEY_UPDATE, 0x00, 0x00, 0x01, 0x00};
     static const uint8_t short_hdr[2] = {0x40, 7};
@@ -320,14 +323,14 @@ static void check_quic_stored_powers(void) {
     CHECK(client.t.suite == SUITE_AES_256_GCM_SHA384);
     CHECK(client.app_tx.stored == 1 && !set_powers_zero(&client.app_tx));
     CHECK(server.app_tx.stored == 1 && !set_powers_zero(&server.app_tx));
-    CHECK(set_powers_equal(&client.app_tx, &server.app_rx[CH_QUIC_KEY_CURRENT]));
-    CHECK(set_powers_equal(&server.app_tx, &client.app_rx[CH_QUIC_KEY_CURRENT]));
+    CHECK(same_key(&client.app_tx, &server.app_rx[CH_QUIC_KEY_CURRENT]));
+    CHECK(same_key(&server.app_tx, &client.app_rx[CH_QUIC_KEY_CURRENT]));
 
     uint8_t before[SUITE_GHASH_POWERS_LEN];
     memcpy(before, client.app_tx.ghash_powers, sizeof before);
     CHECK(ch_quic_key_update(quic_public(&client)) == CH_OK);
     CHECK(memcmp(client.app_tx.ghash_powers, before, sizeof before) != 0);
-    CHECK(set_powers_equal(&client.app_tx, &server.app_rx[CH_QUIC_KEY_NEXT]));
+    CHECK(same_key(&client.app_tx, &server.app_rx[CH_QUIC_KEY_NEXT]));
 
     CHECK(ch_quic_crypto_in(quic_public(&client), CH_LEVEL_APPLICATION, tls_key_update,
                             sizeof tls_key_update) == CH_EPROTO);

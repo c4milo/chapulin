@@ -55,12 +55,13 @@ static void install_application_keys(ch_quic_priv *q) {
     uint32_t version = q->t.quic_negotiated_version;
     QUIC_KEYS_INIT_SUITE(cpu, &q->app_tx, version, q->t.wr_secret, q->t.suite);
     QUIC_HP_KEY_INIT_SUITE(cpu, &q->app_hp_tx, version, q->t.wr_secret, q->t.suite);
-    QUIC_KEYS_INIT_SUITE(cpu, &q->app_rx[CH_QUIC_KEY_CURRENT], version, q->t.rd_secret, q->t.suite);
+    QUIC_RECEIVE_KEYS_INIT_SUITE(cpu, &q->app_rx[CH_QUIC_KEY_CURRENT], version, q->t.rd_secret,
+                                 q->t.suite);
     QUIC_HP_KEY_INIT_SUITE(cpu, &q->app_hp_rx, version, q->t.rd_secret, q->t.suite);
     // The next set starts as the current one, so the update derives it
     // under the suite that set records.
     q->app_rx[CH_QUIC_KEY_NEXT] = q->app_rx[CH_QUIC_KEY_CURRENT];
-    quic_keys_update(cpu, q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT], version);
+    quic_receive_keys_update(cpu, q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT], version);
     announce_level(q, CH_LEVEL_APPLICATION);
 }
 

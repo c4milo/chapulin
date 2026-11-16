@@ -24,7 +24,7 @@
 // What is real and what is a stub. srv_quic.c, quic_fail.c,
 // handshake_record.c and ct.c are real. The fifteen handlers are the
 // contract stubs proof/srv_flight_stubs.h states, and srv_flight proves
-// them. quic_keys.c's three derivations and quic_retry_tag are stubs, as
+// them. quic_keys.c's five derivations and quic_retry_tag are stubs, as
 // in proof/quic_step_harness.c, and ct_wipe writes its zeros with one
 // memset.
 //
@@ -87,6 +87,31 @@ void quic_keys_update(uint32_t cpu, uint8_t secret[SHA256_LEN], quic_keys *k, ui
     fill_nondet(secret, SHA256_LEN);
     fill_nondet(k->key, sizeof k->key);
     fill_nondet(k->iv, sizeof k->iv);
+}
+
+// The same two derivations for a 1-RTT receive set, which holds the key
+// and the IV alone.
+void quic_receive_keys_init(uint32_t cpu, quic_receive_keys *r, uint32_t version,
+                            const uint8_t secret[SHA256_LEN]) {
+    (void)cpu;
+    __CPROVER_assert(__CPROVER_w_ok(r, sizeof *r), "receive keys: set writable");
+    __CPROVER_assert(version == q.t.quic_negotiated_version,
+                     "receive keys: the negotiated version");
+    __CPROVER_assert(__CPROVER_r_ok(secret, SHA256_LEN), "receive keys: secret readable");
+    fill_nondet(r->key, sizeof r->key);
+    fill_nondet(r->iv, sizeof r->iv);
+}
+
+void quic_receive_keys_update(uint32_t cpu, uint8_t secret[SHA256_LEN], quic_receive_keys *r,
+                              uint32_t version) {
+    (void)cpu;
+    __CPROVER_assert(__CPROVER_w_ok(secret, SHA256_LEN), "receive update: secret writable");
+    __CPROVER_assert(__CPROVER_w_ok(r, sizeof *r), "receive update: set writable");
+    __CPROVER_assert(version == q.t.quic_negotiated_version,
+                     "receive update: the negotiated version");
+    fill_nondet(secret, SHA256_LEN);
+    fill_nondet(r->key, sizeof r->key);
+    fill_nondet(r->iv, sizeof r->iv);
 }
 
 // quic_retry.h: the tag over n bytes of pseudo-packet, or a refusal.

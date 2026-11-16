@@ -155,6 +155,16 @@ static void havoc_set(quic_keys *k, quic_hp_key *h) {
     }
 }
 
+// The same for one 1-RTT receive set, which holds the key and the IV
+// alone (quic_keys.h).
+static void havoc_receive_set(quic_receive_keys *r, quic_hp_key *h) {
+    fill_nondet(r->key, sizeof r->key);
+    fill_nondet(r->iv, sizeof r->iv);
+    if (h != NULL) {
+        fill_nondet(h->key, sizeof h->key);
+    }
+}
+
 static void havoc_write_keys(void) {
     havoc_set(&q.handshake_tx, &q.handshake_hp_tx);
     havoc_set(&q.app_tx, &q.app_hp_tx);
@@ -163,9 +173,9 @@ static void havoc_write_keys(void) {
 static void havoc_keys(void) {
     havoc_write_keys();
     havoc_set(&q.handshake_rx, &q.handshake_hp_rx);
-    havoc_set(&q.app_rx[CH_QUIC_KEY_PREVIOUS], NULL);
-    havoc_set(&q.app_rx[CH_QUIC_KEY_CURRENT], &q.app_hp_rx);
-    havoc_set(&q.app_rx[CH_QUIC_KEY_NEXT], NULL);
+    havoc_receive_set(&q.app_rx[CH_QUIC_KEY_PREVIOUS], NULL);
+    havoc_receive_set(&q.app_rx[CH_QUIC_KEY_CURRENT], &q.app_hp_rx);
+    havoc_receive_set(&q.app_rx[CH_QUIC_KEY_NEXT], NULL);
 }
 
 // Any saved state a call can meet, with the two invariants every entry

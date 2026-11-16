@@ -31,6 +31,15 @@ static void a5_keys(quic_keys *k, quic_hp_key *h) {
     quic_hp_key_init(TEST_SESSION_CPU, h, CH_QUIC_VERSION_1, secret);
 }
 
+// The same secret's 1-RTT receive sets: the current one derived from it,
+// the other two zero, which is what ch_quic_drop_previous_keys leaves.
+static void a5_receive_sets(quic_receive_keys sets[CH_QUIC_KEY_SETS]) {
+    uint8_t secret[SHA256_LEN];
+    (void)unhex(A5_SECRET, secret);
+    memset(sets, 0, CH_QUIC_KEY_SETS * sizeof sets[0]);
+    quic_receive_keys_init(TEST_SESSION_CPU, &sets[CH_QUIC_KEY_CURRENT], CH_QUIC_VERSION_1, secret);
+}
+
 // RFC 9001 Appendix A.5's whole 1-RTT packet, sealed and opened again
 // (rfc9001.txt:2529-2555). It is the shortest packet §5.4.2 admits: a
 // 3-byte packet number and a 1-byte payload come to exactly
@@ -59,10 +68,12 @@ static void test_appendix_a5_packet(void) {
     // The same packet opened. Byte 0's Key Phase bit is 0 and the stored
     // phase is 0, so §6.5 picks the current set; the other two sets hold
     // zero bytes, which is what ch_quic_drop_previous_keys leaves, and a
-    // wrong selection would fail the tag.
-    quic_keys sets[CH_QUIC_KEY_SETS];
-    memset(sets, 0, sizeof sets);
-    memcpy(&sets[CH_QUIC_KEY_CURRENT], &k, sizeof k);
+    // wrong selection would fail the tag. The receive set's derivation
+    // writes the key and the IV the send set holds.
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
+    a5_receive_sets(sets);
+    CHECK(memcmp(sets[CH_QUIC_KEY_CURRENT].key, k.key, sizeof k.key) == 0);
+    CHECK(memcmp(sets[CH_QUIC_KEY_CURRENT].iv, k.iv, sizeof k.iv) == 0);
     uint8_t key_set = 0xff;
     uint64_t pn = 0;
     size_t pt_len = 0;
@@ -224,20 +235,22 @@ static void test_key_set_rule(void) {
     CHECK(quic_key_set_select(1, 0, 40, 40) == CH_QUIC_KEY_NEXT);
     CHECK(quic_key_set_select(0, 1, 41, 40) == CH_QUIC_KEY_NEXT);
 
-    quic_keys sets[CH_QUIC_KEY_SETS];
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
     quic_keys got;
     for (size_t s = 0; s < CH_QUIC_KEY_SETS; s++) {
         memset(&sets[s], (int)s + 1, sizeof sets[s]);
     }
     for (size_t s = 0; s < CH_QUIC_KEY_SETS; s++) {
         quic_keys_select(sets, (uint8_t)s, &got);
-        CHECK(memcmp(&got, &sets[s], sizeof got) == 0);
+        CHECK(memcmp(got.key, sets[s].key, sizeof got.key) == 0);
+        CHECK(memcmp(got.iv, sets[s].iv, sizeof got.iv) == 0);
     }
     // A name outside the three leaves zero, and zero keys open no
     // packet, so a caller that lost track fails closed.
     static const quic_keys zero = {{0}, {0}};
     quic_keys_select(sets, CH_QUIC_KEY_SETS, &got);
-    CHECK(memcmp(&got, &zero, sizeof got) == 0);
+    CHECK(memcmp(got.key, zero.key, sizeof got.key) == 0);
+    CHECK(memcmp(got.iv, zero.iv, sizeof got.iv) == 0);
 }
 
 // quic_packet_seal's three refusals, each measured against a call that
@@ -304,10 +317,9 @@ static void test_open_discards(void) {
     uint64_t pn = 0xdead;
     size_t pt_len = 0xbeef;
     uint8_t key_set = 0xff;
-    quic_keys sets[CH_QUIC_KEY_SETS];
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
     a5_keys(&k, &h);
-    memset(sets, 0, sizeof sets);
-    memcpy(&sets[CH_QUIC_KEY_CURRENT], &k, sizeof k);
+    a5_receive_sets(sets);
     (void)unhex("4cfe4189655e5cd55c41f69080575d7999c25a5bfb", packet);
 
     // pn_off + QUIC_PN_MAX_LEN + QUIC_HP_SAMPLE_LEN is 21 here, so the
@@ -378,9 +390,8 @@ static void test_key_phase_written(void) {
     CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 1, A5_PN, A5_PN_LEN, hdr,
                            sizeof hdr, pt, sizeof pt, out, sizeof out, &out_len) == CH_OK);
     CHECK(hdr[0] == 0x42);
-    quic_keys sets[CH_QUIC_KEY_SETS];
-    memset(sets, 0, sizeof sets);
-    memcpy(&sets[CH_QUIC_KEY_CURRENT], &k, sizeof k);
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
+    a5_receive_sets(sets);
     uint8_t key_set = 0xff;
     uint64_t pn = 0;
     size_t pt_len = 0;

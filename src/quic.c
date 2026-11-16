@@ -412,7 +412,8 @@ int quic_key_update(ch_quic_priv *q) {
     // naming the new next set again, which is the invariant quic_session.h states.
     q->app_rx[CH_QUIC_KEY_PREVIOUS] = q->app_rx[CH_QUIC_KEY_CURRENT];
     q->app_rx[CH_QUIC_KEY_CURRENT] = q->app_rx[CH_QUIC_KEY_NEXT];
-    quic_keys_update(CH_CFG_CPU(q->t.cfg), q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT], version);
+    quic_receive_keys_update(CH_CFG_CPU(q->t.cfg), q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT],
+                             version);
     return CH_OK;
 }
 

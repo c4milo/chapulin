@@ -1,6 +1,7 @@
-// Proves: quic_keys_init, quic_hp_key_init and quic_keys_update read and
-// write only inside their buffers and commit no undefined behavior, for
-// any traffic secret.
+// Proves: quic_keys_init, quic_hp_key_init, quic_keys_update and the two
+// calls of a 1-RTT receive set, quic_receive_keys_init and
+// quic_receive_keys_update, read and write only inside their buffers and
+// commit no undefined behavior, for any traffic secret.
 //
 // There is no length to vary here. Every buffer in quic_keys.h is a
 // fixed-size array and every derivation asks HKDF for a constant number
@@ -9,7 +10,7 @@
 // the framing: that each call writes its own object whole and reads
 // nothing past the secret, whatever version chooses its labels.
 //
-// quic_keys_update is the one that can get this wrong. It derives the
+// The two updates are the ones that can get this wrong. Each derives the
 // next secret, writes it back over the caller's buffer, and re-derives
 // the key set from it, so the same 32 bytes are both an input and an
 // output of one call. Deriving straight over the caller's buffer would
@@ -43,5 +44,15 @@ int main(void) {
     fill_nondet(secret, sizeof secret);
     fill_nondet((uint8_t *)&k, sizeof k);
     quic_keys_update(nondet_u32(), secret, &k, nondet_u32());
+
+    // A receive set: the same two derivations into the smaller type, and
+    // the same update, with its operands havocked again first.
+    quic_receive_keys r;
+    fill_nondet(secret, sizeof secret);
+    quic_receive_keys_init(nondet_u32(), &r, nondet_u32(), secret);
+
+    fill_nondet(secret, sizeof secret);
+    fill_nondet((uint8_t *)&r, sizeof r);
+    quic_receive_keys_update(nondet_u32(), secret, &r, nondet_u32());
     return 0;
 }

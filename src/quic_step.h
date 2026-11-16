@@ -92,7 +92,7 @@ typedef struct ch_quic_priv ch_quic_priv;
 // What the HSQ_STEP_AWAIT_FINISHED step derives, and the invariant it
 // leaves true. It writes app_tx from q->t.wr_secret, writes
 // app_rx[CH_QUIC_KEY_CURRENT] from q->t.rd_secret, and then runs one
-// quic_keys_update(q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT]), which
+// quic_receive_keys_update(q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT]), which
 // advances that secret once with the "quic ku" label and writes the
 // next set from it. So the next set exists before any packet arrives
 // under it, and q->t.rd_secret afterwards names the next set rather

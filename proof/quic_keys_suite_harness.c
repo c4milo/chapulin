@@ -1,12 +1,14 @@
 // Proves: in a -DCH_SUITE_AES_GCM QUIC build, quic_keys_init_suite,
-// quic_hp_key_init_suite and quic_keys_update are memory safe over each
+// quic_hp_key_init_suite, quic_keys_update, quic_receive_keys_init_suite
+// and quic_receive_keys_update are memory safe over each
 // of the three suites and a secret as long as that suite's hash, and they
 // derive what RFC 9001 §5.1 and §6.1 say at that suite: every
 // HKDF-Expand-Label runs at suite_hash_len(suite) under one of the four
 // labels of the QUIC version the call was given, "quic key" and "quic
 // hp" write suite_key_len(suite) bytes, "quic ku" writes the hash length,
 // and each set records its suite and starts its §6.6 count at 0. The
-// update keeps the set's suite. The version is any value, and
+// update keeps the set's suite. A 1-RTT receive set records its suite
+// and stores nothing. The version is any value, and
 // quic_version.h names its labels.
 //
 // HKDF is the contract stub below, which asserts those lengths; hkdf's
@@ -164,6 +166,22 @@ int main(void) {
     __CPROVER_assert(k.stored == stores && powers_stored == stores,
                      "update: a key update stores the new key's powers");
     __CPROVER_assert(k.stored || k.ghash_powers[at] == 0, "update: no power stays where none is");
+    powers_stored = 0;
+#endif
+
+    // A receive set, then its update over the same secret. Neither call
+    // stores a schedule or powers, under any value of cpu.
+    fill_nondet(secret, sizeof secret);
+    quic_receive_keys r;
+    quic_receive_keys_init_suite(cpu, &r, expected_version, secret, suite);
+    __CPROVER_assert(r.suite == suite, "receive: the set records its suite");
+    fill_nondet(secret, sizeof secret);
+    fill_nondet(r.key, sizeof r.key);
+    fill_nondet(r.iv, sizeof r.iv);
+    quic_receive_keys_update(cpu, secret, &r, expected_version);
+    __CPROVER_assert(r.suite == suite, "receive update: the suite stays");
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(!powers_stored, "receive: a receive set stores no powers");
 #endif
     return 0;
 }

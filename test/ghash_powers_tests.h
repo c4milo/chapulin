@@ -301,14 +301,16 @@ static void powers_are_read(uint32_t cpu, uint16_t suite) {
     powers_cases++;
 }
 
-// The set quic_keys_select chooses claims no stored schedule and no
-// powers, so its packet computes both (docs/decisions.md 160).
+// A 1-RTT receive set holds no schedule and no powers, and the set
+// quic_keys_select chooses claims none, so its packet computes both
+// (docs/decisions.md 160 and 234).
 static void test_powers_selected_set(void) {
     uint8_t secret[SHA384_LEN];
     memset(secret, 0x5a, sizeof secret);
-    quic_keys sets[CH_QUIC_KEY_SETS];
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
     memset(sets, 0, sizeof sets);
-    quic_keys_init_suite(TEST_CPU, &sets[CH_QUIC_KEY_CURRENT], 1, secret, SUITE_AES_256_GCM_SHA384);
+    quic_receive_keys_init_suite(TEST_CPU, &sets[CH_QUIC_KEY_CURRENT], 1, secret,
+                                 SUITE_AES_256_GCM_SHA384);
     quic_keys chosen;
     memset(&chosen, 0xff, sizeof chosen);
     quic_keys_select(sets, CH_QUIC_KEY_CURRENT, &chosen);

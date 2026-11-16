@@ -956,20 +956,22 @@ Home: github.com/c4milo.
   `aes.c`, `gcm.c`, `record.c`, `quic_packet.c` and `srv_ticket.c`
   include, so
   a traffic key and a public key never pass for each other and only the
-  traffic path builds one. A host object keeps each AES traffic key's
-  schedule beside the key, and beside the schedule of a key that runs
-  AES-GCM the powers H to H^8 of its hash subkey, 256 bytes in `rec_dir`
-  and `quic_keys`. `gcm_traffic_key_store` writes both when the key is
-  derived or updated, only under `CH_CPU_CONSTANT_TIME_AES`, and every wipe
-  of the key wipes both. A record or a packet copies the schedule to its
-  frame and hands the AEAD the pointer to the powers that
-  `aes_traffic_key_load` writes, so its frame holds no power. `ghash_hw.c`
-  reads the powers there. A kernel's whole passes copy them into the
-  kernel's own frame, which its entry wipes: `gcm_hw.c`'s loops read that
-  copy through the member, so gcc 15 keeps a pass's keystream in
-  registers. The set `quic_keys_select` chose and a header protection key
-  hold none. A device object stores neither (docs/decisions.md 160 and
-  234). INV-26 states the rule and what review still owes, the
+  traffic path builds one. A host object keeps the schedule of each AES
+  traffic key in `rec_dir`, `quic_keys` and `quic_hp_key` beside the key,
+  and beside the schedule of a key that runs AES-GCM the powers H to H^8
+  of its hash subkey, 256 bytes in `rec_dir` and `quic_keys`.
+  `gcm_traffic_key_store` writes both when the key is derived or updated,
+  only under `CH_CPU_CONSTANT_TIME_AES`, and every wipe of the key wipes
+  both. A record or a packet copies the schedule to its frame and hands
+  the AEAD the pointer to the powers that `aes_traffic_key_load` writes,
+  so its frame holds no power. `ghash_hw.c` reads the powers there. A
+  kernel's whole passes copy them into the kernel's own frame, which its
+  entry wipes: `gcm_hw.c`'s loops read that copy through the member, so
+  gcc 15 keeps a pass's keystream in registers. A 1-RTT receive set is a
+  `quic_receive_keys`, which holds the key and the IV alone. So the set
+  `quic_keys_select` chose holds neither, and a header protection key
+  holds no powers. A device object stores neither (docs/decisions.md 160
+  and 234). INV-26 states the rule and what review still owes, the
   Semgrep rule holds the calls, and `.violation` mutants prove each check
   fires. `aes.c`, `quic_aes_soft.c`, `aes_extern.c` and
   `gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler

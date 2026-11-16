@@ -24,7 +24,36 @@
 #include "gcm.h"
 #endif
 
+// The packet protection key and IV of §5.1 from one traffic secret, at
+// hash_len and key_len, under the "quic key" and "quic iv" labels of
+// version. quic_keys and quic_receive_keys hold the two alike.
+static void derive_key_iv(uint32_t cpu, uint8_t *key, uint8_t *iv, uint32_t version,
+                          const uint8_t *secret, size_t hash_len, size_t key_len) {
+    (void)cpu; // a device object's HKDF takes no description of the CPU (hkdf.h)
+    quic_labels labels = quic_version_labels(version);
+    HKDF_EXPAND_LABEL_CPU(cpu, hash_len, secret, labels.key, NULL, 0, key, key_len);
+    HKDF_EXPAND_LABEL_CPU(cpu, hash_len, secret, labels.iv, NULL, 0, iv, AEAD_NONCE);
+}
+
+// The next traffic secret of §6.1, written back over secret:
+// secret' = HKDF-Expand-Label(secret, "quic ku", "", Hash.length), under
+// the version's label. The new secret goes to a local first:
+// hkdf_expand_label reads its secret argument while it writes out, so a
+// derivation straight over the caller's buffer would read bytes this call
+// had replaced.
+static void next_secret(uint32_t cpu, uint8_t *secret, size_t hash_len, uint32_t version) {
+    (void)cpu; // as in derive_key_iv
+    uint8_t next[HKDF_HASH_MAX];
+    HKDF_EXPAND_LABEL_CPU(cpu, hash_len, secret, quic_version_labels(version).ku, NULL, 0, next,
+                          hash_len);
+    memcpy(secret, next, hash_len);
+    ct_wipe(next, sizeof next);
+}
+
 #ifdef CH_SUITE_AES_GCM
+// The hash of a set's suite, the length of each secret it is derived from.
+#define SET_HASH_LEN(set) suite_hash_len((set)->suite)
+
 void quic_keys_init_suite(uint32_t cpu, quic_keys *k, uint32_t version, const uint8_t *secret,
                           uint16_t suite) {
     (void)cpu; // a device object's HKDF takes no description of the CPU (hkdf.h)
@@ -33,10 +62,7 @@ void quic_keys_init_suite(uint32_t cpu, quic_keys *k, uint32_t version, const ui
     // The whole key array is written before the shorter derive, so an
     // AES-128 key leaves no bytes of the previous key behind it.
     ct_wipe(k->key, sizeof k->key);
-    size_t hash_len = suite_hash_len(suite);
-    quic_labels labels = quic_version_labels(version);
-    HKDF_EXPAND_LABEL_CPU(cpu, hash_len, secret, labels.key, NULL, 0, k->key, suite_key_len(suite));
-    HKDF_EXPAND_LABEL_CPU(cpu, hash_len, secret, labels.iv, NULL, 0, k->iv, AEAD_NONCE);
+    derive_key_iv(cpu, k->key, k->iv, version, secret, suite_hash_len(suite), suite_key_len(suite));
     k->suite = suite;
     k->sealed = 0;
 #ifdef CH_AES_STORED_SCHEDULE
@@ -73,9 +99,25 @@ void quic_hp_key_init_suite(uint32_t cpu, quic_hp_key *h, uint32_t version, cons
 #endif
 }
 
+void quic_receive_keys_init_suite(uint32_t cpu, quic_receive_keys *r, uint32_t version,
+                                  const uint8_t *secret, uint16_t suite) {
+    CH_ASSERT(r != NULL);
+    CH_ASSERT(secret != NULL);
+    // As in quic_keys_init_suite: an AES-128 key leaves no bytes of the
+    // previous key behind it. r holds no schedule and no powers to write.
+    ct_wipe(r->key, sizeof r->key);
+    derive_key_iv(cpu, r->key, r->iv, version, secret, suite_hash_len(suite), suite_key_len(suite));
+    r->suite = suite;
+}
+
 void quic_keys_init(uint32_t cpu, quic_keys *k, uint32_t version,
                     const uint8_t secret[SHA256_LEN]) {
     quic_keys_init_suite(cpu, k, version, secret, SUITE_CHACHA20_POLY1305_SHA256);
+}
+
+void quic_receive_keys_init(uint32_t cpu, quic_receive_keys *r, uint32_t version,
+                            const uint8_t secret[SHA256_LEN]) {
+    quic_receive_keys_init_suite(cpu, r, version, secret, SUITE_CHACHA20_POLY1305_SHA256);
 }
 
 void quic_hp_key_init(uint32_t cpu, quic_hp_key *h, uint32_t version,
@@ -83,14 +125,21 @@ void quic_hp_key_init(uint32_t cpu, quic_hp_key *h, uint32_t version,
     quic_hp_key_init_suite(cpu, h, version, secret, SUITE_CHACHA20_POLY1305_SHA256);
 }
 #else
+// A build with one suite derives every secret at SHA-256.
+#define SET_HASH_LEN(set) SHA256_LEN
+
 void quic_keys_init(uint32_t cpu, quic_keys *k, uint32_t version,
                     const uint8_t secret[SHA256_LEN]) {
-    (void)cpu; // a device object's HKDF takes no description of the CPU (hkdf.h)
     CH_ASSERT(k != NULL);
     CH_ASSERT(secret != NULL);
-    quic_labels labels = quic_version_labels(version);
-    HKDF_EXPAND_LABEL_CPU(cpu, SHA256_LEN, secret, labels.key, NULL, 0, k->key, AEAD_KEY);
-    HKDF_EXPAND_LABEL_CPU(cpu, SHA256_LEN, secret, labels.iv, NULL, 0, k->iv, AEAD_NONCE);
+    derive_key_iv(cpu, k->key, k->iv, version, secret, SHA256_LEN, AEAD_KEY);
+}
+
+void quic_receive_keys_init(uint32_t cpu, quic_receive_keys *r, uint32_t version,
+                            const uint8_t secret[SHA256_LEN]) {
+    CH_ASSERT(r != NULL);
+    CH_ASSERT(secret != NULL);
+    derive_key_iv(cpu, r->key, r->iv, version, secret, SHA256_LEN, AEAD_KEY);
 }
 
 void quic_hp_key_init(uint32_t cpu, quic_hp_key *h, uint32_t version,
@@ -104,28 +153,22 @@ void quic_hp_key_init(uint32_t cpu, quic_hp_key *h, uint32_t version,
 #endif
 
 void quic_keys_update(uint32_t cpu, uint8_t *secret, quic_keys *k, uint32_t version) {
-    (void)cpu; // a device object's HKDF takes no description of the CPU (hkdf.h)
     CH_ASSERT(secret != NULL);
     CH_ASSERT(k != NULL);
-#ifdef CH_SUITE_AES_GCM
-    size_t hash_len = suite_hash_len(k->suite);
-#else
-    size_t hash_len = SHA256_LEN;
-#endif
-    // secret' = HKDF-Expand-Label(secret, "quic ku", "", Hash.length),
-    // under the version's label. The new secret goes to a local first:
-    // hkdf_expand_label reads its secret argument while it writes out, so
-    // deriving straight over the caller's buffer would read bytes this
-    // call had replaced.
-    uint8_t next[HKDF_HASH_MAX];
-    HKDF_EXPAND_LABEL_CPU(cpu, hash_len, secret, quic_version_labels(version).ku, NULL, 0, next,
-                          hash_len);
-    memcpy(secret, next, hash_len);
-    ct_wipe(next, sizeof next);
+    next_secret(cpu, secret, SET_HASH_LEN(k), version);
     // §6.1 updates the packet protection key and IV and nothing else;
     // no quic_hp_key is in scope here, which is the type system holding
     // that rule rather than a comment. The AEAD stays the set's own.
     QUIC_KEYS_INIT_SUITE(cpu, k, version, secret, k->suite);
+}
+
+void quic_receive_keys_update(uint32_t cpu, uint8_t *secret, quic_receive_keys *r,
+                              uint32_t version) {
+    CH_ASSERT(secret != NULL);
+    CH_ASSERT(r != NULL);
+    next_secret(cpu, secret, SET_HASH_LEN(r), version);
+    // As in quic_keys_update: the key and the IV alone, under r's suite.
+    QUIC_RECEIVE_KEYS_INIT_SUITE(cpu, r, version, secret, r->suite);
 }
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING

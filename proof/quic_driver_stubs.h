@@ -25,6 +25,7 @@
 //                             refuses, and otherwise 1 or 0, over a
 //                             readable pseudo-packet.
 //   quic_keys_update          the secret and the set rewritten.
+//   quic_receive_keys_update  the same, for a 1-RTT receive set.
 //   hspost_trust_holds        1 or 0, over a readable configuration and
 //                             ticket, read before the ticket's PSK is
 //                             written into the configuration, which is
@@ -182,7 +183,7 @@ int quic_packet_open_handshake(uint32_t cpu, const quic_keys *k, const quic_hp_k
     return open_result(pkt, pkt_len, pn_off, pn, pt_len);
 }
 
-int quic_packet_open_application(uint32_t cpu, const quic_keys sets[CH_QUIC_KEY_SETS],
+int quic_packet_open_application(uint32_t cpu, const quic_receive_keys sets[CH_QUIC_KEY_SETS],
                                  const quic_hp_key *h, uint8_t key_phase, uint8_t *pkt,
                                  size_t pkt_len, size_t pn_off, uint64_t largest_pn,
                                  uint64_t current_phase_lowest_pn, uint8_t *key_set, uint64_t *pn,
@@ -228,6 +229,17 @@ void quic_keys_update(uint32_t cpu, uint8_t secret[SHA256_LEN], quic_keys *k, ui
     fill_nondet(secret, SHA256_LEN);
     fill_nondet(k->key, sizeof k->key);
     fill_nondet(k->iv, sizeof k->iv);
+}
+
+void quic_receive_keys_update(uint32_t cpu, uint8_t secret[SHA256_LEN], quic_receive_keys *r,
+                              uint32_t version) {
+    (void)cpu;
+    (void)version;
+    __CPROVER_assert(__CPROVER_w_ok(secret, SHA256_LEN), "receive update: secret writable");
+    __CPROVER_assert(__CPROVER_w_ok(r, sizeof *r), "receive update: set writable");
+    fill_nondet(secret, SHA256_LEN);
+    fill_nondet(r->key, sizeof r->key);
+    fill_nondet(r->iv, sizeof r->iv);
 }
 
 #endif

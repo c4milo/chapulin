@@ -387,12 +387,12 @@ static void check_stored_schedule(void) {
     uint8_t secret[SHA384_LEN];
     memset(secret, 0x5a, sizeof secret);
     quic_keys tx;
-    quic_keys sets[CH_QUIC_KEY_SETS];
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
     quic_hp_key h;
     memset(sets, 0, sizeof sets);
     quic_keys_init_suite(RUNTIME_PRESENT, &tx, 1, secret, SUITE_AES_256_GCM_SHA384);
-    quic_keys_init_suite(RUNTIME_PRESENT, &sets[CH_QUIC_KEY_CURRENT], 1, secret,
-                         SUITE_AES_256_GCM_SHA384);
+    quic_receive_keys_init_suite(RUNTIME_PRESENT, &sets[CH_QUIC_KEY_CURRENT], 1, secret,
+                                 SUITE_AES_256_GCM_SHA384);
     quic_hp_key_init_suite(RUNTIME_PRESENT, &h, 1, secret, SUITE_AES_256_GCM_SHA384);
     // A short header with no connection ID and packet number 0 in two bytes.
     const uint8_t hdr[3] = {0x41, 0x00, 0x00};

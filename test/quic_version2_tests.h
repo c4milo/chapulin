@@ -255,9 +255,9 @@ static void test_v2_a5_packet(void) {
     quic_header_protect(protect, 1, A5_PN_LEN, CH_LEVEL_APPLICATION, mask);
     CHECK(eq_hex(protect, V2_A5_PROTECTED_HEADER) && protect[sizeof hdr] == 0xa5);
 
-    quic_keys sets[CH_QUIC_KEY_SETS];
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
     memset(sets, 0, sizeof sets);
-    memcpy(&sets[CH_QUIC_KEY_CURRENT], &k, sizeof k);
+    quic_receive_keys_init(TEST_SESSION_CPU, &sets[CH_QUIC_KEY_CURRENT], CH_QUIC_VERSION_2, secret);
     uint8_t key_set = 0xff;
     uint64_t pn = 0;
     size_t pt_len = 0;

@@ -133,9 +133,15 @@ static void test_suite_vector(const suite_vector *v) {
     CHECK(eq_hex(pkt, pkt_len, v->packet));
     CHECK(k.sealed == 1);
 
-    quic_keys sets[CH_QUIC_KEY_SETS];
+    // The receive set derives the same key and IV from the same secret,
+    // and records the suite.
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
     memset(sets, 0, sizeof sets);
-    sets[CH_QUIC_KEY_CURRENT] = k;
+    quic_receive_keys_init_suite(TEST_SESSION_CPU, &sets[CH_QUIC_KEY_CURRENT], CH_QUIC_VERSION_1,
+                                 secret, v->suite);
+    CHECK(sets[CH_QUIC_KEY_CURRENT].suite == v->suite);
+    CHECK(eq_hex(sets[CH_QUIC_KEY_CURRENT].key, v->key_len, v->key));
+    CHECK(eq_hex(sets[CH_QUIC_KEY_CURRENT].iv, AEAD_NONCE, v->iv));
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
@@ -144,10 +150,20 @@ static void test_suite_vector(const suite_vector *v) {
     CHECK(key_set == CH_QUIC_KEY_CURRENT && pn == 5 && pt_len == sizeof pt);
     CHECK(memcmp(pkt + sizeof hdr, pt, sizeof pt) == 0);
 
+    // Both updates write the next secret and the next key, each from its
+    // own copy of the secret.
+    uint8_t receive_secret[64];
+    memcpy(receive_secret, secret, sizeof receive_secret);
     quic_keys_update(TEST_SESSION_CPU, secret, &k, CH_QUIC_VERSION_1);
     CHECK(eq_hex(secret, v->hash_len, v->next_secret));
     CHECK(eq_hex(k.key, v->key_len, v->next_key));
     CHECK(k.suite == v->suite && k.sealed == 0);
+    quic_receive_keys_update(TEST_SESSION_CPU, receive_secret, &sets[CH_QUIC_KEY_CURRENT],
+                             CH_QUIC_VERSION_1);
+    CHECK(eq_hex(receive_secret, v->hash_len, v->next_secret));
+    CHECK(eq_hex(sets[CH_QUIC_KEY_CURRENT].key, v->key_len, v->next_key));
+    CHECK(memcmp(sets[CH_QUIC_KEY_CURRENT].iv, k.iv, AEAD_NONCE) == 0);
+    CHECK(sets[CH_QUIC_KEY_CURRENT].suite == v->suite);
 }
 
 // §6.6's confidentiality limit for AES-GCM: the set that has sealed one
@@ -231,9 +247,10 @@ static void test_failed_open_bytes(const suite_vector *v, size_t payload) {
     uint8_t before[sizeof datagram];
     memcpy(before, datagram, sizeof datagram);
 
-    quic_keys sets[CH_QUIC_KEY_SETS];
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
     memset(sets, 0, sizeof sets);
-    sets[CH_QUIC_KEY_CURRENT] = k;
+    quic_receive_keys_init_suite(TEST_SESSION_CPU, &sets[CH_QUIC_KEY_CURRENT], CH_QUIC_VERSION_1,
+                                 secret, v->suite);
     uint8_t key_set = 0xff;
     uint64_t pn = 0xdead;
     size_t pt_len = 0xbeef;

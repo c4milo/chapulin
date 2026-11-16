@@ -80,6 +80,26 @@ typedef struct {
 #endif
 } quic_keys;
 
+// One 1-RTT receive key set: the packet protection key and IV of
+// quic_keys, and the suite in a build with several suites. ch_quic holds
+// three, CH_QUIC_KEY_PREVIOUS, CH_QUIC_KEY_CURRENT and CH_QUIC_KEY_NEXT.
+// quic_keys_select copies the key and the IV of the one a packet selects
+// into a quic_keys on its frame, with stored at 0. RFC 9001 §9.5 makes
+// the selection secret (rfc9001.txt:2110-2112), so a stored schedule or
+// stored powers could be read only through a masked copy of all three
+// sets. That copy costs more than an expansion (docs/decisions.md 160 and
+// 234). So this type holds no schedule and no powers, in any object. It
+// holds no count either, because no packet is sealed under it.
+typedef struct {
+    uint8_t key[AEAD_KEY];
+    uint8_t iv[AEAD_NONCE];
+#ifdef CH_SUITE_AES_GCM
+    // Which AEAD this set runs, as quic_keys records it; key holds
+    // suite_key_len(suite) bytes and zero past them. Public.
+    uint16_t suite;
+#endif
+} quic_receive_keys;
+
 // The header protection key of RFC 9001 §5.1, derived under the label
 // "quic hp", or "quicv2 hp" in QUIC version 2, one per direction per
 // encryption level. It is a type of
@@ -135,6 +155,12 @@ typedef struct {
 // rec_dir_init of this transport.
 void quic_keys_init(uint32_t cpu, quic_keys *k, uint32_t version, const uint8_t secret[SHA256_LEN]);
 
+// quic_keys_init for a 1-RTT receive set: the same two derivations, under
+// the same requirements, written into r whole. It stores no schedule and
+// no powers, because r holds neither.
+void quic_receive_keys_init(uint32_t cpu, quic_receive_keys *r, uint32_t version,
+                            const uint8_t secret[SHA256_LEN]);
+
 // Derives one direction's header protection key from the same traffic
 // secret under the same version's label: HKDF-Expand-Label(secret,
 // "quic hp", "", CHACHA20_KEY) in version 1, and "quicv2 hp" in
@@ -151,19 +177,24 @@ void quic_hp_key_init(uint32_t cpu, quic_hp_key *h, uint32_t version,
                       const uint8_t secret[SHA256_LEN]);
 
 #ifdef CH_SUITE_AES_GCM
-// quic_keys_init and quic_hp_key_init for a build that holds several
-// suites: each derives at the suite's hash from a secret that long, the
-// packet protection key and the header protection key at the suite's
-// key length, and records the suite. RFC 9001 §5.1 derives every one of
-// these with the suite's HKDF (rfc9001.txt:1017-1021) and §5.4.3 keys
-// AES header protection with the AEAD's key size. quic_keys_init and
-// quic_hp_key_init are these calls with TLS_CHACHA20_POLY1305_SHA256.
+// quic_keys_init, quic_hp_key_init and quic_receive_keys_init for a
+// build that holds several suites: each derives at the suite's hash from a
+// secret that long, the packet protection key and the header protection
+// key at the suite's key length, and records the suite. RFC 9001 §5.1
+// derives every one of these with the suite's HKDF (rfc9001.txt:1017-1021)
+// and §5.4.3 keys AES header protection with the AEAD's key size. The
+// three calls without the suffix are these calls with
+// TLS_CHACHA20_POLY1305_SHA256.
 void quic_keys_init_suite(uint32_t cpu, quic_keys *k, uint32_t version, const uint8_t *secret,
                           uint16_t suite);
 void quic_hp_key_init_suite(uint32_t cpu, quic_hp_key *h, uint32_t version, const uint8_t *secret,
                             uint16_t suite);
+void quic_receive_keys_init_suite(uint32_t cpu, quic_receive_keys *r, uint32_t version,
+                                  const uint8_t *secret, uint16_t suite);
 #define QUIC_KEYS_INIT_SUITE(cpu, k, version, secret, suite)                                       \
     quic_keys_init_suite((cpu), (k), (version), (secret), (suite))
+#define QUIC_RECEIVE_KEYS_INIT_SUITE(cpu, r, version, secret, suite)                               \
+    quic_receive_keys_init_suite((cpu), (r), (version), (secret), (suite))
 #define QUIC_HP_KEY_INIT_SUITE(cpu, h, version, secret, suite)                                     \
     quic_hp_key_init_suite((cpu), (h), (version), (secret), (suite))
 #else
@@ -171,6 +202,8 @@ void quic_hp_key_init_suite(uint32_t cpu, quic_hp_key *h, uint32_t version, cons
 // evaluates suite, as REC_DIR_INIT_SUITE does (record.h).
 #define QUIC_KEYS_INIT_SUITE(cpu, k, version, secret, suite)                                       \
     quic_keys_init((cpu), (k), (version), (secret))
+#define QUIC_RECEIVE_KEYS_INIT_SUITE(cpu, r, version, secret, suite)                               \
+    quic_receive_keys_init((cpu), (r), (version), (secret))
 #define QUIC_HP_KEY_INIT_SUITE(cpu, h, version, secret, suite)                                     \
     quic_hp_key_init((cpu), (h), (version), (secret))
 #endif
@@ -201,6 +234,12 @@ void quic_hp_key_init_suite(uint32_t cpu, quic_hp_key *h, uint32_t version, cons
 // because RFC 9001 §6.1 makes an endpoint retain its old keys until a
 // packet under the new keys opens (rfc9001.txt:1637-1638).
 void quic_keys_update(uint32_t cpu, uint8_t *secret, quic_keys *k, uint32_t version);
+
+// quic_keys_update for a 1-RTT receive set: the same next secret, written
+// back over secret, and the key and the IV derived from it into r, under
+// the same requirements. The suite stays r's own.
+void quic_receive_keys_update(uint32_t cpu, uint8_t *secret, quic_receive_keys *r,
+                              uint32_t version);
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

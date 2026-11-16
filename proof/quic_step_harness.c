@@ -10,9 +10,9 @@
 // so the table's proof rests on no protocol rule. The handlers
 // themselves stay with handshake_psk and handshake_pin, which compile
 // handshake_flight.c and handshake_auth.c whole. quic_keys_init,
-// quic_hp_key_init and quic_keys_update are stubs for the same reason:
-// quic_keys.c owns them, and this file only chooses which set each one
-// writes.
+// quic_hp_key_init, quic_keys_update and the two receive calls are stubs
+// for the same reason: quic_keys.c owns them, and this file only chooses
+// which set each one writes.
 //
 // The pairing with quic_driver. That harness stubs hsq_advance to the
 // same contract this one proves, so the two read as a pair: what the
@@ -182,7 +182,7 @@ int hspost_take_ticket(ch_tls_priv *t, const uint8_t *body, size_t n, uint8_t *a
 // can read the version it negotiated.
 static ch_quic_priv q;
 
-// quic_keys.c's three derivations. Each writes the one set it is handed
+// quic_keys.c's five derivations. Each writes the one set it is handed
 // and nothing else; quic_keys_update also advances the secret in place,
 // which is the invariant quic_session.h states. Each is handed the
 // session's negotiated version, the one every Handshake and 1-RTT key is
@@ -214,6 +214,31 @@ void quic_keys_update(uint32_t cpu, uint8_t secret[SHA256_LEN], quic_keys *k, ui
     fill_nondet(secret, SHA256_LEN);
     fill_nondet(k->key, sizeof k->key);
     fill_nondet(k->iv, sizeof k->iv);
+}
+
+// The same two derivations for a 1-RTT receive set, which holds the key
+// and the IV alone.
+void quic_receive_keys_init(uint32_t cpu, quic_receive_keys *r, uint32_t version,
+                            const uint8_t secret[SHA256_LEN]) {
+    (void)cpu;
+    __CPROVER_assert(__CPROVER_w_ok(r, sizeof *r), "receive keys: set writable");
+    __CPROVER_assert(version == q.t.quic_negotiated_version,
+                     "receive keys: the negotiated version");
+    __CPROVER_assert(__CPROVER_r_ok(secret, SHA256_LEN), "receive keys: secret readable");
+    fill_nondet(r->key, sizeof r->key);
+    fill_nondet(r->iv, sizeof r->iv);
+}
+
+void quic_receive_keys_update(uint32_t cpu, uint8_t secret[SHA256_LEN], quic_receive_keys *r,
+                              uint32_t version) {
+    (void)cpu;
+    __CPROVER_assert(__CPROVER_w_ok(secret, SHA256_LEN), "receive update: secret writable");
+    __CPROVER_assert(__CPROVER_w_ok(r, sizeof *r), "receive update: set writable");
+    __CPROVER_assert(version == q.t.quic_negotiated_version,
+                     "receive update: the negotiated version");
+    fill_nondet(secret, SHA256_LEN);
+    fill_nondet(r->key, sizeof r->key);
+    fill_nondet(r->iv, sizeof r->iv);
 }
 
 #include "quic_step.c"

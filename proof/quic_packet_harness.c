@@ -106,7 +106,7 @@ int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[
 // call, so none of them reads a value an earlier call left.
 static void prove_pieces(void) {
     quic_hp_key h;
-    quic_keys sets[CH_QUIC_KEY_SETS];
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
     quic_keys chosen;
     uint8_t pkt[CH_PROOF_PKT_LEN];
     uint8_t sample[QUIC_HP_SAMPLE_LEN];
@@ -195,7 +195,7 @@ static void prove_seal(void) {
 // reached.
 static void prove_open(void) {
     quic_keys k;
-    quic_keys sets[CH_QUIC_KEY_SETS];
+    quic_receive_keys sets[CH_QUIC_KEY_SETS];
     quic_hp_key h;
     uint8_t pkt[CH_PROOF_PKT_LEN];
     uint64_t pn = 0;

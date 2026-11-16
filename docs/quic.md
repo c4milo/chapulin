@@ -1475,7 +1475,7 @@ typedef struct {
     quic_keys handshake_rx, handshake_tx;   // the Handshake level
     quic_hp_key handshake_hp_rx, handshake_hp_tx; // fixed for the connection
     quic_keys app_tx;                       // the 1-RTT send set
-    quic_keys app_rx[CH_QUIC_KEY_SETS];     // previous, current, next
+    quic_receive_keys app_rx[CH_QUIC_KEY_SETS]; // previous, current, next
     quic_hp_key app_hp_rx, app_hp_tx;       // fixed for the connection
     uint64_t open_failures;   // RFC 9001 6.6, connection-wide, every level
     uint64_t initial_sealed;  // RFC 9001 6.6, the Initial keys alone
@@ -1516,7 +1516,11 @@ them. §6.3 makes two of the three a floor
 choice, stated in "The decision" above. `ch_quic_open` never indexes
 `app_rx` by a value a secret chose: it reads all three slots and masks the
 chosen one out, which is what §9.5 and §6.3 require of the selection
-(`rfc9001.txt:2110-2112`, `rfc9001.txt:1684-1686`).
+(`rfc9001.txt:2110-2112`, `rfc9001.txt:1684-1686`). So each slot is a
+`quic_receive_keys`, which holds the key, the IV and the suite alone. A
+packet opens under the copy `quic_keys_select` makes, and that copy loads no
+stored AES schedule and no stored GHASH powers (docs/decisions.md 160 and
+234).
 
 Zero heap holds: one static struct, one caller buffer, no allocation. Under
 `-DCH_TRANSPORT_QUIC_NONBLOCKING` the `ch_tls` inside it drops `rd` and `wr`
@@ -1773,7 +1777,7 @@ and `pt_len`.
 | `tx_level`, `tx_len` | `uint8_t`, `size_t` | `tx_len <= CH_TX_STAGE` | the one message colibri has not taken yet |
 | `alert` | `uint8_t` | any | what `ch_quic_alert` answers after `hs` is wiped |
 | `t.pt_off`, `t.pt_len` | `size_t` each | `pt_off <= pt_len <= cfg.buf_len` | the unread CRYPTO bytes of `rx_level` |
-| `handshake_rx`, `handshake_tx`, `handshake_hp_rx`, `handshake_hp_tx`, `app_tx`, `app_rx`, `app_hp_rx`, `app_hp_tx`, `key_phase`, and `ch_tls`'s own `rd_secret` and `wr_secret` | `quic_keys`, `quic_keys[CH_QUIC_KEY_SETS]`, `quic_hp_key`, `uint8_t`, `uint8_t[32]` | `app_rx`'s three slots are the named indices, never a computed one | written into the fields of one named level; read by the packet calls and by `quic ku`. Each `quic_hp_key` is written once and never rewritten, which is the §6.1 rule (`rfc9001.txt:1607`) |
+| `handshake_rx`, `handshake_tx`, `handshake_hp_rx`, `handshake_hp_tx`, `app_tx`, `app_rx`, `app_hp_rx`, `app_hp_tx`, `key_phase`, and `ch_tls`'s own `rd_secret` and `wr_secret` | `quic_keys`, `quic_receive_keys[CH_QUIC_KEY_SETS]`, `quic_hp_key`, `uint8_t`, `uint8_t[32]` | `app_rx`'s three slots are the named indices, never a computed one | written into the fields of one named level; read by the packet calls and by `quic ku`. Each `quic_hp_key` is written once and never rewritten, which is the §6.1 rule (`rfc9001.txt:1607`) |
 | `initial_dcid`, `initial_dcid_len` | `uint8_t[CH_QUIC_DCID_MAX]`, `uint8_t` | `initial_dcid_len <= CH_QUIC_DCID_MAX`, RFC 9000 §17.2's cap (`rfc9000.txt:4991-4998`) | the Destination Connection ID the Initial keys are derived from, written by `ch_quic_initial_keys` and read by the two Initial packet calls, which build the key they need on their own stack. It holds no key, which is INV-26 |
 | `t.quic_negotiated_version`, `t.cfg.quic_original_version` | `uint32_t` each | any value; each init call refuses an original version `quic_version_derived` does not admit and starts the negotiated version at it | the version each packet call holds its argument to, and the one the Handshake and 1-RTT keys are derived under. After init only a client's `ch_quic_switch_version` and a server's `choose_version` answer write it, once each. Neither is secret, so no wipe clears them |
 | `levels_ready` | `uint8_t` | six bits, one per level per direction at `CH_QUIC_LEVEL_BIT` | the only answer to "installed and not discarded", which the packet calls read on every call. A key set of all-zero bytes is a legitimate derivation, so no call decides that question by comparing key bytes. A failure clears every read bit and keeps the write bits; each one left admits one `ch_quic_seal_close`, which clears it |
@@ -2368,7 +2372,7 @@ its caps.
 | the largest handshake message | `hsr_next_msg` refuses `msg_len > 0x4000` (`handshake_record.c:132`), which is this client's own choice | unchanged. RFC 9000 and RFC 9001 state no per-message limit; the buffer rule of RFC 9000 §7.5 (`rfc9000.txt:2154-2157`) is the only bound they give, and `CH_QUIC_MIN_RXBUF` above is the real bound here |
 | `CH_HELLO_MAX` and `CH_TX_STAGE` | the QUIC hello drops 6 bytes of `record_size_limit` and adds `quic_transport_parameters`, plus ALPN in the device builds, which do not send it over TLS | measured: `session.h` holds 1141 for raw and ca classic, 2325 under `KEX=pq` and 2625 under `TRUST=webpki`, which offers both groups with a key share for each in every build (`docs/decisions.md` 51), each the TLS value plus 254 and, in the two device modes, plus 270 again. `quic.c` asserts `CH_HELLO_MAX` against `CH_TX_STAGE`, so a stale value fails the build |
 | the session struct | `ch_quic` holds a `ch_tls`, the `handshake_state` that lives on a stack frame today, the driver's own fields, the two Initial keys, the two Handshake key sets, the 1-RTT send set, the three 1-RTT receive sets and the four `quic_hp_key` values; the components are measured under "Suspending the driver" | `bench/sram.sh`, with a `-DCH_TRANSPORT_QUIC_NONBLOCKING` probe beside its `-DCH_KEX_PQ` and `-DCH_TRUST_WEBPKI` ones (`bench/sram.sh:28-49`), over the real header. No arithmetic over the components in that section is the answer |
-| the 1-RTT key sets | RFC 9001 §6.3 makes two receive sets a floor, current and next (`rfc9001.txt:1711-1712`); the previous set is this record's policy choice, for the delayed packets §6.5 opens | `CH_QUIC_KEY_SETS` is 3, so the count is fixed and only `sizeof(quic_keys)` and `sizeof(quic_hp_key)` are left to measure; measure the struct again after them |
+| the 1-RTT key sets | RFC 9001 §6.3 makes two receive sets a floor, current and next (`rfc9001.txt:1711-1712`); the previous set is this record's policy choice, for the delayed packets §6.5 opens | `CH_QUIC_KEY_SETS` is 3, so the count is fixed and only `sizeof(quic_keys)`, `sizeof(quic_receive_keys)` and `sizeof(quic_hp_key)` are left to measure; measure the struct again after them |
 | the transport-parameters body, both directions | the client's body is the caller's; the server's arrives in EncryptedExtensions | capture real server bodies, as `docs/webpki.md` captured real chains. This tree holds no QUIC bytes today, and a chapulin server would not close this row: it would see the bodies clients send it, which is the other direction |
 | `STACK_BUDGET` | the `Makefile` sets 2560 by default, raises it to 4096 for `TRUST=webpki` and to 3072 for `KEX=pq`; `STACK_BUDGET_KEX_HYBRID` (`Makefile`, 6656) holds the ML-KEM sources alone, which every `TRUST=webpki` object carries | measure the mode's own object list under `lint-stack`; never carry another mode's ceiling |
 | the SRAM row | `bench/sram.sh` regenerates docs/performance.md's numbers from `sizeof` probes and `bench/stack.py`; `bench/device-ram.sh` sizes the packaged modules from `make print-lib-srcs` (`bench/device-ram.sh:82`) | add a probe for the new axis to each script; `LIB_VARIANT` (`Makefile`) gains the axis. `CLAUDE.md` forbids estimating these |
