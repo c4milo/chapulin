@@ -126,8 +126,16 @@ if [ "$(make -s --no-print-directory print-host-target CC="$CC")" != yes ]; then
     exit 1
 fi
 
-W=$(mktemp -d)
-trap 'rm -rf "$W"' EXIT
+# BENCH_BUILD_DIR names a directory that keeps the programs after --build,
+# and PRIMITIVES_EXTRA_FLAGS adds flags to every build. bench/insn-host.sh
+# sets both to count the programs under callgrind (docs/decisions.md 235).
+if [ -n "${BENCH_BUILD_DIR:-}" ]; then
+    W=$BENCH_BUILD_DIR
+    mkdir -p "$W"
+else
+    W=$(mktemp -d)
+    trap 'rm -rf "$W"' EXIT
+fi
 
 LIB_CFLAGS=$(make -s --no-print-directory print-lib-cflags CC="$CC")
 if [ -z "$LIB_CFLAGS" ]; then
@@ -136,7 +144,8 @@ if [ -z "$LIB_CFLAGS" ]; then
 fi
 # LIB_CFLAGS is a list of flags, so it splits on spaces.
 # shellcheck disable=SC2206
-FLAGS=($LIB_CFLAGS -DCH_RAND_DRBG -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench -Itest)
+FLAGS=($LIB_CFLAGS -DCH_RAND_DRBG -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench -Itest
+    ${PRIMITIVES_EXTRA_FLAGS:-})
 # The primitives program links the Makefile's BENCH_PRIMITIVE_SRCS, which
 # bench/insn-host.sh reads too. CH_RSA_MODULUS_MAX=512 is the bound
 # TRUST=webpki gives rsa.h, so the RSA-4096 rows run.

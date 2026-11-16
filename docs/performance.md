@@ -414,9 +414,11 @@ CI counts every row again and holds it to its CSV (docs/decisions.md
 235). check.yml's `insn-device` job runs `make insn-gate-m3`,
 `insn-gate-rv32` and `insn-gate-mips`, and the `x86-64-kernels` and
 `arm64` jobs run `make insn-gate-host`, which counts each primitive row
-of a host object under valgrind's callgrind against
-`bench/results-insn-host-x86_64.csv` and
-`bench/results-insn-host-arm64.csv`. A count above its recorded value
+and each whole handshake of a host object under valgrind's callgrind
+against `bench/results-insn-host-x86_64.csv` and
+`bench/results-insn-host-arm64.csv`, and each row of the record bench
+against `bench/results-insn-record-x86_64.csv` and
+`bench/results-insn-record-arm64.csv`. A count above its recorded value
 fails. A change that raises one records the fresh CSV and says why in
 its commit, and a change that lowers one records it too.
 

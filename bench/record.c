@@ -10,7 +10,10 @@
 // TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384 on the AES
 // instructions, and chacha20poly1305 runs TLS_CHACHA20_POLY1305_SHA256's.
 // --quick before them takes one short run per row, for a build that only
-// has to show the binary runs, such as an emulated one.
+// has to show the binary runs, such as an emulated one. --count, in a
+// build with -DBENCH_CALLGRIND, times nothing: it runs each row once, then
+// once more between two callgrind client requests, and prints the row
+// (bench/insn-host.sh, docs/decisions.md 235).
 //
 // What a row times. bench/record_rows.c defines one function per row and
 // says what each calls. The whole rows call the library's own objects:
@@ -63,6 +66,10 @@
 
 #include "ch_assert.h"
 #include "record_rows.h"
+
+#ifdef BENCH_CALLGRIND
+#include <valgrind/callgrind.h>
+#endif
 
 #define RUNS 5
 #define SAMPLES 15            // batches per row per run; odd, so the median is one batch
@@ -333,8 +340,50 @@ static int group_named(const char *name) {
     return -1;
 }
 
+#ifdef BENCH_CALLGRIND
+// --count: the instructions of each row's one operation at each size it
+// runs at. The first call leaves the state every later call meets, and
+// bench_reset_batch sets the sequence numbers back before each call. The
+// dump's label is the AEAD, the stage and the plaintext's byte count.
+static void count_group(size_t g) {
+    const bench_group *group = &bench_groups[g];
+    for (size_t s = 0; s < BENCH_SIZE_COUNT; s++) {
+        bench_prepare(&state, group->aead, bench_record_sizes[s]);
+        for (size_t r = 0; r < group->row_count; r++) {
+            const bench_row *row = &group->rows[r];
+            if (!runs_at(row->sizes, s)) {
+                continue;
+            }
+            char label[96];
+            (void)snprintf(label, sizeof label, "%s/%s,%zu", group->name, row->stage,
+                           bench_record_sizes[s]);
+            bench_reset_batch(&state);
+            row->run(&state);
+            bench_reset_batch(&state);
+            CALLGRIND_ZERO_STATS;
+            row->run(&state);
+            CALLGRIND_DUMP_STATS_AT(label);
+            printf("%s,%s\n", label, BUILD_LABEL);
+        }
+    }
+    (void)fflush(stdout);
+}
+#endif
+
 int main(int argc, char **argv) {
     int first = 1;
+#ifdef BENCH_CALLGRIND
+    if (argc > 2 && strcmp(argv[1], "--count") == 0) {
+        for (int i = 2; i < argc; i++) {
+            int g = group_named(argv[i]);
+            if (g < 0) {
+                fail("no AEAD named ", argv[i]);
+            }
+            count_group((size_t)g);
+        }
+        return 0;
+    }
+#endif
     if (argc > 1 && strcmp(argv[1], "--quick") == 0) {
         batch_ns = QUICK_BATCH_NS;
         run_count = 1;

@@ -19855,7 +19855,7 @@ does nothing more.
       option runs each row's operation once, then once more between `CALLGRIND_ZERO_STATS` and
       `CALLGRIND_DUMP_STATS_AT`. Valgrind's callgrind counts under each `ch_cfg.cpu` value its
       virtual CPU runs: 0x1, 0x7, 0xf and 0xc0f on x86-64, and 0x1, 0x7, 0x27 and 0x67 on arm64. The
-      `x86-64-kernels` and `arm64` jobs run `make insn-gate-host`, which took 23 s to 40 s on a
+      `x86-64-kernels` and `arm64` jobs run `make insn-gate-host`, which took 23 s to 40 s for the primitives alone on a
       runner (lab run 43935562056).
     - **The program's own code alone.** `tools/callgrind-own.py` sums the self cost of the
       functions in the program's object. glibc picks its `memcpy` and its `memset` from the CPU
@@ -19870,8 +19870,8 @@ does nothing more.
     The first counts are the runners' of 2026-11-16, on the code of 2e851dc9. The device CSVs
     were last recorded on 2026-10-11, and since then some counts rose. ML-KEM-768 key generation
     rose 1.2% on mips32r2, 2.3% on rv32imac and 3.1% on the Cortex-M3, and the 1 KiB AEAD seal
-    rose 0.8% and 1.3% on mips32r2 and the Cortex-M3. No check caught either. This record does
-    not attribute them.
+    rose 0.8% and 1.3% on mips32r2 and the Cortex-M3. No check caught either. The addendum below
+    attributes the first.
 
     What the gate does not hold:
 
@@ -19881,6 +19881,20 @@ does nothing more.
     - **The order of the instructions.** A count shows more work. It does not show a change in
       how a core runs the same work: a load that waits for a store, a longer chain of dependent
       instructions, or code that moves to another cache line.
-    - **The record and handshake programs.** AES-GCM's rows are in `bench/record.c`, and the
-      handshakes are in a group that takes its own samples. Neither program has a count mode
-      yet.
+
+    Addendum, 2026-11-16. The gate now counts the record and handshake programs too.
+    `bench/primitives.sh --build` and `bench/record.sh --build` compile into `BENCH_BUILD_DIR`
+    with `PRIMITIVES_EXTRA_FLAGS` and `RECORD_EXTRA_FLAGS`, so `bench/insn-host.sh` counts the
+    programs those scripts time and keeps no build of its own. The four handshake programs
+    count one whole handshake, both ends, under each value, as rows of
+    `bench/results-insn-host-<arch>.csv`. `bench/record.c` counts each row it times, the
+    record's protection and its stages, for each AEAD and record size, under the two values
+    `bench/record.sh` builds for every CPU, 0x3 and 0x7, in `bench/results-insn-record-<arch>.csv`.
+    The primitive rows kept their recorded counts. Two x86-64 runs on an EPYC 9V45 and an EPYC
+    9V74 wrote the same files, and the whole count took 70 s to 118 s a job (lab run
+    43977673460).
+
+    The device counts also show where ML-KEM-768's rise came from. On the Cortex-M3, under one
+    compiler, key generation ran 1,006,828 instructions before 90415b30 and 1,035,692 at it, and
+    decapsulation 1,330,100 and 1,360,593. 90415b30 is decision 219's wipe of the stack below
+    each SHA-3 call, so the rise is that wipe's cost, and the counts of 2e851dc9 are 90415b30's.

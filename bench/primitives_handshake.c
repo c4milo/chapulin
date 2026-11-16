@@ -328,6 +328,20 @@ static void measure_identity(const identity *id) {
 }
 
 static void measure_handshakes(void) {
+#ifdef BENCH_CALLGRIND
+    // --count: one handshake after one that leaves the state every later
+    // handshake meets, both ends' work in one count.
+    if (bench_counting()) {
+        for (size_t i = 0; i < IDENTITY_COUNT; i++) {
+            configure(&IDENTITIES[i]);
+            handshake_once();
+            bench_count_start(IDENTITIES[i].name, 0);
+            handshake_once();
+            bench_count_stop();
+        }
+        return;
+    }
+#endif
     for (size_t i = 0; i < IDENTITY_COUNT; i++) {
         measure_identity(&IDENTITIES[i]);
     }

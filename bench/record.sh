@@ -134,8 +134,16 @@ if [ "${#AES_HW_SRCS[@]}" -eq 0 ]; then
     exit 1
 fi
 
-W=$(mktemp -d)
-trap 'rm -rf "$W"' EXIT
+# BENCH_BUILD_DIR names a directory that keeps the binaries after --build,
+# and RECORD_EXTRA_FLAGS adds flags to every build. bench/insn-host.sh sets
+# both to count the binaries under callgrind (docs/decisions.md 235).
+if [ -n "${BENCH_BUILD_DIR:-}" ]; then
+    W=$BENCH_BUILD_DIR
+    mkdir -p "$W"
+else
+    W=$(mktemp -d)
+    trap 'rm -rf "$W"' EXIT
+fi
 
 # sha512_avx2.c compiles apart from every other source: where gcc compiles
 # for x86-64 the Makefile gives that file a flag no other file gets
@@ -149,7 +157,8 @@ fi
 
 # LIB_CFLAGS is a list of flags, so it splits on spaces.
 # shellcheck disable=SC2206
-FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench)
+FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench
+    ${RECORD_EXTRA_FLAGS:-})
 SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     bench/record_chacha_vector.c bench/record_aead.c bench/record_stub.c
     src/record.c src/gcm.c src/aes.c "${AES_HW_SRCS[@]}" src/aead.c src/aead_avx2.c src/aead_avx512.c src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c

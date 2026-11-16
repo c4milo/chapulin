@@ -226,7 +226,8 @@ jobs:
       - name: Hold each primitive's instruction count under callgrind to its recorded value
         # The host half of the instruction gate (docs/decisions.md 235),
         # as the x86-64-kernels job runs it, against
-        # bench/results-insn-host-arm64.csv and under the runner's gcc.
+        # bench/results-insn-host-arm64.csv and
+        # bench/results-insn-record-arm64.csv, under the runner's gcc.
         run: make insn-gate-host
 
   x86-64-kernels:
@@ -279,9 +280,10 @@ jobs:
           make ct-taint
       - name: Hold each primitive's instruction count under callgrind to its recorded value
         # The host half of the instruction gate (docs/decisions.md 235):
-        # a count above bench/results-insn-host-x86_64.csv fails, and one
-        # below it prints a line. It counts under the ch_cfg.cpu values
-        # Valgrind's virtual CPU runs.
+        # a count above bench/results-insn-host-x86_64.csv or
+        # bench/results-insn-record-x86_64.csv fails, and one below it
+        # prints a line. It counts under the ch_cfg.cpu values Valgrind's
+        # virtual CPU runs.
         run: make insn-gate-host
 
   # The device half of the instruction gate (docs/decisions.md 235): each

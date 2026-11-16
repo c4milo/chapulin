@@ -11562,5 +11562,14 @@ insn-gate-rv32:
 	$(call insn_gate,rv32,bench/results-insn-rv32.csv,./bench/insn-rv32.sh)
 insn-gate-mips:
 	$(call insn_gate,mips,bench/results-insn.csv,./bench/insn-mips.sh)
+# bench/insn-host.sh writes two files, the primitives and handshakes and
+# the record rows, and the gate reads both before it fails.
 insn-gate-host:
-	$(call insn_gate,host,bench/results-insn-host-$(INSN_HOST_ARCH).csv,./bench/insn-host.sh)
+	@mkdir -p bin/insn-gate && : > bin/insn-gate/host.csv && : > bin/insn-gate/record.csv \
+	  && INSN_OUT=bin/insn-gate/host.csv INSN_RECORD_OUT=bin/insn-gate/record.csv \
+	     ./bench/insn-host.sh \
+	  && { python3 tools/insn-gate.py bench/results-insn-host-$(INSN_HOST_ARCH).csv \
+	         bin/insn-gate/host.csv; host=$$?; \
+	       python3 tools/insn-gate.py bench/results-insn-record-$(INSN_HOST_ARCH).csv \
+	         bin/insn-gate/record.csv; record=$$?; \
+	       [ $$host -eq 0 ] && [ $$record -eq 0 ]; }

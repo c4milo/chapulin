@@ -217,29 +217,45 @@ static void measure_row(const bench_row *row, size_t n) {
                 (double)instructions / ((double)count * divisor));
 }
 
+int bench_counting(void) {
+    return count_only;
+}
+
 #ifdef BENCH_CALLGRIND
+// The dump's label is the row as bench/insn-host.sh writes it: the name
+// and the byte count. It is written before the counts are zeroed, so the
+// count holds none of its work.
+static char count_label[96];
+
+void bench_count_start(const char *name, size_t n) {
+    (void)snprintf(count_label, sizeof count_label, "%s,%zu", name, n);
+    CALLGRIND_ZERO_STATS;
+}
+
+void bench_count_stop(void) {
+    CALLGRIND_DUMP_STATS_AT(count_label);
+    printf("%s,%s\n", count_label, build_label);
+    (void)fflush(stdout);
+}
+
 // The instructions of one operation, for --count. The first call leaves
 // the state every later call meets, so the counted call is the one a
-// sample repeats. The dump's label is the row as bench/insn-host.sh writes
-// it: the name and the byte count.
+// sample repeats. The two requests stand in this function rather than in
+// calls, so the count holds the operation and no call around it.
 static void count_row(const bench_row *row, size_t n) {
-    char label[96];
     row->prepare(n);
     row->run(n);
-    (void)snprintf(label, sizeof label, "%s,%zu", row->name, n);
+    (void)snprintf(count_label, sizeof count_label, "%s,%zu", row->name, n);
     CALLGRIND_ZERO_STATS;
     row->run(n);
-    CALLGRIND_DUMP_STATS_AT(label);
-    printf("%s,%s,%zu\n", row->name, build_label, n);
+    CALLGRIND_DUMP_STATS_AT(count_label);
+    printf("%s,%s\n", count_label, build_label);
     (void)fflush(stdout);
 }
 #endif
 
 static void measure_group(const bench_group *g) {
     if (g->rows == NULL) {
-        if (count_only) {
-            bench_fail("--count takes no group that takes its own samples");
-        }
         g->measure();
         return;
     }
