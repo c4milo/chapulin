@@ -47,8 +47,11 @@ if [ "${1:-}" != "--inside" ]; then
         -e "INSN_SRCS=$INSN_SRCS" -e "INSN_DEF=$INSN_DEF" \
         -v "$PWD":/src -w /src "ubuntu@$UBUNTU_DIGEST" \
         bash /src/bench/insn-rv32.sh --inside > "$TMPOUT"
-    mv "$TMPOUT" bench/results-insn-rv32.csv
-    echo "wrote bench/results-insn-rv32.csv" >&2
+    # INSN_OUT names another file for the CSV, so make insn-gate can count
+    # without a write to the recorded one.
+    OUT=${INSN_OUT:-bench/results-insn-rv32.csv}
+    mv "$TMPOUT" "$OUT"
+    echo "wrote $OUT" >&2
     exit 0
 fi
 

@@ -1,12 +1,12 @@
 # arm-none-eabi-gcc (Arm GNU Toolchain 15.3.Rel1 (Build arm-15.149)) 15.3.1 20260627; -mcpu=cortex-m3 -mthumb -O2; qemu-system-arm mps2-an385; native_insns adds -DCH_NATIVE_WIDEMUL
 op,insns,native_insns
 sha256_1kib,57086,57086
-hkdf_expand_label_32b,16316,16316
-aead_seal_1kib,67367,34672
-x25519_scalarmult,24363395,11978513
-p256_ecdsa_verify,26660456,26660456
+hkdf_expand_label_32b,16418,16418
+aead_seal_1kib,68237,35542
+x25519_scalarmult,24363675,11978793
+p256_ecdsa_verify,26660453,26660453
 rsa_pss_verify_3072,8400632,8400632
-mlkem_keygen,1004737,1004737
-mlkem_decaps,1324269,1285294
-handshake_crypto,57667891,32898129
-handshake_crypto_pq,61099044,36290304
+mlkem_keygen,1035692,1035692
+mlkem_decaps,1360593,1321615
+handshake_crypto,57670680,32900916
+handshake_crypto_pq,61200064,36391323

@@ -137,14 +137,14 @@ fi
 # LIB_CFLAGS is a list of flags, so it splits on spaces.
 # shellcheck disable=SC2206
 FLAGS=($LIB_CFLAGS -DCH_RAND_DRBG -Isrc -Iinclude/chapulin -Iinclude -I. -Ibench -Itest)
-# The primitives program links each module it times and what that module
-# calls, and nothing else. CH_RSA_MODULUS_MAX=512 is the bound TRUST=webpki
-# gives rsa.h, so the RSA-4096 rows run.
-PRIMITIVE_SRCS=(bench/primitives.c bench/primitives_symmetric.c bench/primitives_public_key.c
-    src/drbg.c src/ct.c src/ct_wipe.c src/buf.c src/sha256.c src/sha512.c src/sha512_compress.c src/sha3.c src/hkdf.c src/chacha20.c src/poly1305.c
-    src/aead.c src/x25519.c src/mlkem.c src/mlkem_poly.c src/p256.c src/p384.c src/p384_field.c src/rsa.c src/rsa_mont.c src/rsa_pkcs1.c
-    src/rsa_sign.c src/p256_ecdh.c src/p256_sign.c src/p256_scalar.c src/p256_point.c src/p256_field.c src/mldsa.c src/mldsa_poly.c
-    src/mldsa_signer.c src/mldsa_sign_round.c src/mldsa_sign_steps.c src/mldsa_sign_poly.c src/mldsa_sign_pack.c)
+# The primitives program links the Makefile's BENCH_PRIMITIVE_SRCS, which
+# bench/insn-host.sh reads too. CH_RSA_MODULUS_MAX=512 is the bound
+# TRUST=webpki gives rsa.h, so the RSA-4096 rows run.
+read -r -a PRIMITIVE_SRCS <<<"$(make -s --no-print-directory print-bench-primitive-srcs)"
+if [ "${#PRIMITIVE_SRCS[@]}" -eq 0 ]; then
+    echo "FAIL primitives bench: make print-bench-primitive-srcs returned no sources" >&2
+    exit 1
+fi
 # The handshake program links what bin/tcp_nonblocking_loop_test links, under
 # the defines of the ROLE=both TRANSPORT=tcp-nonblocking object, at the device
 # RSA bound.

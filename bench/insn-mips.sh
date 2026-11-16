@@ -38,8 +38,11 @@ if [ "${1:-}" != "--inside" ]; then
         > "$TMPOUT"
     # Redirecting straight at the committed file truncated it the moment the
     # run started, so a failing measurement destroyed the last good numbers.
-    mv "$TMPOUT" bench/results-insn.csv
-    echo "wrote bench/results-insn.csv" >&2
+    # INSN_OUT names another file for the CSV, so make insn-gate can count
+    # without a write to the recorded one.
+    OUT=${INSN_OUT:-bench/results-insn.csv}
+    mv "$TMPOUT" "$OUT"
+    echo "wrote $OUT" >&2
     exit 0
 fi
 

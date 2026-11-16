@@ -169,7 +169,7 @@ jobs:
     # Lints stay with the amd64 check job — duplicating that toolchain
     # buys no platform coverage.
     runs-on: ubuntu-26.04-arm
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # suite-check includes the host object's binaries and the host
@@ -223,6 +223,11 @@ jobs:
         run: |
           make ct-taint
           make ct-taint CC="$CLANG_RV"
+      - name: Hold each primitive's instruction count under callgrind to its recorded value
+        # The host half of the instruction gate (docs/decisions.md 235),
+        # as the x86-64-kernels job runs it, against
+        # bench/results-insn-host-arm64.csv and under the runner's gcc.
+        run: make insn-gate-host
 
   x86-64-kernels:
     # The x86-64 kernels every x86-64 host object carries beside its
@@ -239,7 +244,7 @@ jobs:
     # in AVX2 registers: the equivalence test with its checks of the stack
     # and the registers, and the published vectors (docs/decisions.md 128).
     runs-on: ubuntu-26.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: make x86-64-kernels-check
@@ -272,6 +277,42 @@ jobs:
         # symbols from libc6-dbg.
         run: |
           make ct-taint
+      - name: Hold each primitive's instruction count under callgrind to its recorded value
+        # The host half of the instruction gate (docs/decisions.md 235):
+        # a count above bench/results-insn-host-x86_64.csv fails, and one
+        # below it prints a line. It counts under the ch_cfg.cpu values
+        # Valgrind's virtual CPU runs.
+        run: make insn-gate-host
+
+  # The device half of the instruction gate (docs/decisions.md 235): each
+  # device core's count of each operation on QEMU, held to its recorded
+  # CSV. One count takes 13 to 21 minutes on a runner, so the job runs in
+  # the slow half, as the slow job does.
+  insn-device:
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [m3, rv32, mips]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/load-pins
+      - if: matrix.target == 'm3'
+        uses: ./.github/actions/apt-install
+        with:
+          packages: qemu-system-arm
+      - if: matrix.target == 'm3'
+        name: Install the Arm GNU toolchain (pinned)
+        uses: ./.github/actions/install-arm-gnu
+        with:
+          version: ${{ env.ARM_GNU_VERSION }}
+          sha256: ${{ env.ARM_GNU_LINUX_SHA256 }}
+      # bench/insn-rv32.sh and bench/insn-mips.sh run their compilers and
+      # QEMU in containers of pinned images; bench/insn-m3.sh finds the
+      # Arm GNU toolchain on PATH.
+      - run: PATH="$HOME/armtc/bin:$PATH" make insn-gate-${{ matrix.target }}
 
   macos:
     # macOS on Apple silicon as a supported platform: the arm64 job's

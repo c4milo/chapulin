@@ -19830,3 +19830,57 @@ does nothing more.
     a connected session: each end's receive set holds the other end's key, and a failure and a
     close leave zero bytes. The `quic_keys` and `quic_keys_suite` harnesses prove the two new
     calls, and `quic_packet`'s proves the select and the open over the new type.
+
+235. **CI holds each primitive's instruction count to its recorded value.** No check caught a
+    primitive that got slower. `bench.yml` runs only when someone starts it, `make
+    lint-bench-numbers` checks that the documents match the recorded CSVs, and runner timing is
+    too noisy to gate on: one 8573C row read 0.89 to 0.99 of OpenSSL over seven runs. An
+    instruction count does not move with the machine. Camilo ruled on 2026-11-16 for a gate on
+    counts, on the device cores and on the hosts.
+
+    - **The rule.** `tools/insn-gate.py` holds a fresh count to the recorded CSV, as `make
+      lint-wide-multiply` holds its counts to their ceilings. A count above its recorded value
+      fails. A count below it prints a line, and the commit that lowered it records the new
+      value, so the next rise shows. A row in one file alone fails. A compiler line that differs
+      prints a note: a runner image can move a compiler's package revision and leave every count
+      where it was.
+    - **The device half.** `bench/insn-m3.sh`, `bench/insn-rv32.sh` and `bench/insn-mips.sh`
+      write their CSV to `INSN_OUT` when it is set, and `make insn-gate-m3`, `insn-gate-rv32` and
+      `insn-gate-mips` count into `bin/insn-gate/` and run the gate. Each count runs every
+      operation on QEMU, one log line for each instruction. On runners the three took 1,253 s,
+      1,005 s and 775 s (lab run 43929417554). So check.yml's `insn-device` job runs them on
+      main and in its scheduled run, and not on a pull request, as the `slow` job does.
+    - **The host half.** `bench/insn-host.sh` builds `bench/primitives.c` over
+      `BENCH_PRIMITIVE_SRCS` as a host object holds them, with `-DBENCH_CALLGRIND`. Its `--count`
+      option runs each row's operation once, then once more between `CALLGRIND_ZERO_STATS` and
+      `CALLGRIND_DUMP_STATS_AT`. Valgrind's callgrind counts under each `ch_cfg.cpu` value its
+      virtual CPU runs: 0x1, 0x7, 0xf and 0xc0f on x86-64, and 0x1, 0x7, 0x27 and 0x67 on arm64. The
+      `x86-64-kernels` and `arm64` jobs run `make insn-gate-host`, which took 23 s to 40 s on a
+      runner (lab run 43935562056).
+    - **The program's own code alone.** `tools/callgrind-own.py` sums the self cost of the
+      functions in the program's object. glibc picks its `memcpy` and its `memset` from the CPU
+      it starts on, so a count that held them could differ from one runner to the next. The
+      calls into them stay in the count. Three x86-64 runs on an EPYC 9V74 and an EPYC 7763 wrote
+      the same 60 rows, and the arm64 runner wrote the counts an arm64 container on an M1 Pro
+      wrote.
+    - **Fixed inputs.** `bench_fill` and the DRBG take fixed seeds, so ML-DSA-87's rejection
+      loop runs the same rounds in each run. A secret-key operation runs in constant time, so its
+      count does not depend on the bytes it draws.
+
+    The first counts are the runners' of 2026-11-16, on the code of 2e851dc9. The device CSVs
+    were last recorded on 2026-10-11, and since then some counts rose. ML-KEM-768 key generation
+    rose 1.2% on mips32r2, 2.3% on rv32imac and 3.1% on the Cortex-M3, and the 1 KiB AEAD seal
+    rose 0.8% and 1.3% on mips32r2 and the Cortex-M3. No check caught either. This record does
+    not attribute them.
+
+    What the gate does not hold:
+
+    - **The kernels Valgrind does not run.** Its virtual CPU runs no AVX-512, no VAES and no SHA
+      extensions on x86-64, so the rows those bits pick stay on `bench/primitives.sh`'s timed
+      rows and the scoreboard.
+    - **The order of the instructions.** A count shows more work. It does not show a change in
+      how a core runs the same work: a load that waits for a store, a longer chain of dependent
+      instructions, or code that moves to another cache line.
+    - **The record and handshake programs.** AES-GCM's rows are in `bench/record.c`, and the
+      handshakes are in a group that takes its own samples. Neither program has a count mode
+      yet.

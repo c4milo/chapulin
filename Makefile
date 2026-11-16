@@ -2168,6 +2168,20 @@ print-aes-hw-srcs:
 .PHONY: print-tcp-nonblocking-loop-srcs
 print-tcp-nonblocking-loop-srcs:
 	@echo $(TCP_NONBLOCKING_LOOP_SRCS)
+# The primitives program links each module it times and what that module
+# calls, and nothing else. bench/primitives.sh times it and
+# bench/insn-host.sh counts its instructions, and both read this list, so
+# the two programs hold the same sources.
+BENCH_PRIMITIVE_SRCS := bench/primitives.c bench/primitives_symmetric.c bench/primitives_public_key.c \
+  src/drbg.c src/ct.c src/ct_wipe.c src/buf.c src/sha256.c src/sha512.c src/sha512_compress.c \
+  src/sha3.c src/hkdf.c src/chacha20.c src/poly1305.c src/aead.c src/x25519.c src/mlkem.c \
+  src/mlkem_poly.c src/p256.c src/p384.c src/p384_field.c src/rsa.c src/rsa_mont.c src/rsa_pkcs1.c \
+  src/rsa_sign.c src/p256_ecdh.c src/p256_sign.c src/p256_scalar.c src/p256_point.c \
+  src/p256_field.c src/mldsa.c src/mldsa_poly.c src/mldsa_signer.c src/mldsa_sign_round.c \
+  src/mldsa_sign_steps.c src/mldsa_sign_poly.c src/mldsa_sign_pack.c
+.PHONY: print-bench-primitive-srcs
+print-bench-primitive-srcs:
+	@echo $(BENCH_PRIMITIVE_SRCS)
 # bench/primitives.sh builds its host object programs from HOST_SRCS_OF, a
 # list it passes, as a host object holds those sources: with the native
 # copy of each file that has one and the wide X25519 field (host_srcs).
@@ -11524,3 +11538,29 @@ INSN_DEF := -DCH_RAND_EXTERN
 print-insn-lists:
 	@echo $(INSN_SRCS)
 	@echo $(INSN_DEF)
+
+# The instruction gate (docs/decisions.md 235). Each target counts again
+# into bin/insn-gate/ through INSN_OUT and holds the fresh count to the
+# recorded CSV with tools/insn-gate.py: a count above its recorded value
+# fails, and one below it prints a line, so the commit that lowered it
+# records the new value. The recipe empties the fresh file first, so a
+# script that skips for a missing tool leaves an empty file, and the gate
+# then fails: a CI job that lost its tool cannot pass. The device counts
+# run on QEMU and take 13 to 21 minutes each on a runner, and the host
+# counts run under valgrind's callgrind, so no target runs in check.
+# check.yml runs each one in the job that holds its tools.
+define insn_gate
+	@mkdir -p bin/insn-gate && : > bin/insn-gate/$(1).csv \
+	  && INSN_OUT=bin/insn-gate/$(1).csv $(3) \
+	  && python3 tools/insn-gate.py $(2) bin/insn-gate/$(1).csv
+endef
+INSN_HOST_ARCH := $(subst aarch64,arm64,$(shell uname -m))
+.PHONY: insn-gate-m3 insn-gate-rv32 insn-gate-mips insn-gate-host
+insn-gate-m3:
+	$(call insn_gate,m3,bench/results-insn-m3.csv,./bench/insn-m3.sh)
+insn-gate-rv32:
+	$(call insn_gate,rv32,bench/results-insn-rv32.csv,./bench/insn-rv32.sh)
+insn-gate-mips:
+	$(call insn_gate,mips,bench/results-insn.csv,./bench/insn-mips.sh)
+insn-gate-host:
+	$(call insn_gate,host,bench/results-insn-host-$(INSN_HOST_ARCH).csv,./bench/insn-host.sh)

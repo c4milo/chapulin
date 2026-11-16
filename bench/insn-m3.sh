@@ -171,5 +171,8 @@ TMPOUT=$(mktemp)
     row handshake_crypto HANDSHAKE 1
     row handshake_crypto_pq HANDSHAKE_PQ 1
 } > "$TMPOUT"
-mv "$TMPOUT" bench/results-insn-m3.csv
-echo "wrote bench/results-insn-m3.csv" >&2
+# INSN_OUT names another file for the CSV, so make insn-gate can count
+# without a write to the recorded one.
+OUT=${INSN_OUT:-bench/results-insn-m3.csv}
+mv "$TMPOUT" "$OUT"
+echo "wrote $OUT" >&2

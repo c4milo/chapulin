@@ -50,6 +50,12 @@
 //
 // --quick takes three short samples per row, for a build that only has to
 // show the program runs, such as an emulated one.
+//
+// --count, in a build with -DBENCH_CALLGRIND, times nothing. It runs each
+// row's operation once, then once more between two callgrind client
+// requests, CALLGRIND_ZERO_STATS and CALLGRIND_DUMP_STATS_AT, and prints the
+// row. Under valgrind --tool=callgrind each dump holds that one operation's
+// instructions, which bench/insn-host.sh reads (docs/decisions.md 235).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +70,10 @@
 #include "ch_assert.h"
 #include "drbg.h"
 #include "primitives.h"
+
+#ifdef BENCH_CALLGRIND
+#include <valgrind/callgrind.h>
+#endif
 
 #define SAMPLE_NS 2000000.0 // 2 ms per sample
 #define WARMUP_SAMPLES 10
@@ -86,6 +96,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 }
 
 static volatile uint8_t sink;
+static int count_only;
 static double sample_ns = SAMPLE_NS;
 static size_t sample_count = BENCH_SAMPLES;
 static size_t warmup_count = WARMUP_SAMPLES;
@@ -206,13 +217,40 @@ static void measure_row(const bench_row *row, size_t n) {
                 (double)instructions / ((double)count * divisor));
 }
 
+#ifdef BENCH_CALLGRIND
+// The instructions of one operation, for --count. The first call leaves
+// the state every later call meets, so the counted call is the one a
+// sample repeats. The dump's label is the row as bench/insn-host.sh writes
+// it: the name and the byte count.
+static void count_row(const bench_row *row, size_t n) {
+    char label[96];
+    row->prepare(n);
+    row->run(n);
+    (void)snprintf(label, sizeof label, "%s,%zu", row->name, n);
+    CALLGRIND_ZERO_STATS;
+    row->run(n);
+    CALLGRIND_DUMP_STATS_AT(label);
+    printf("%s,%s,%zu\n", row->name, build_label, n);
+    (void)fflush(stdout);
+}
+#endif
+
 static void measure_group(const bench_group *g) {
     if (g->rows == NULL) {
+        if (count_only) {
+            bench_fail("--count takes no group that takes its own samples");
+        }
         g->measure();
         return;
     }
     for (size_t r = 0; r < g->row_count; r++) {
         for (size_t s = 0; s < g->rows[r].size_count; s++) {
+#ifdef BENCH_CALLGRIND
+            if (count_only) {
+                count_row(&g->rows[r], g->rows[r].sizes[s]);
+                continue;
+            }
+#endif
             measure_row(&g->rows[r], g->rows[r].sizes[s]);
         }
     }
@@ -235,10 +273,15 @@ static const bench_group *find_group(const char *name) {
     return NULL;
 }
 
-#ifdef CH_CPU_RUNTIME
-#define USAGE_OPTIONS "[--quick] --cpu VALUE"
+#ifdef BENCH_CALLGRIND
+#define COUNT_OPTION " [--count]"
 #else
-#define USAGE_OPTIONS "[--quick]"
+#define COUNT_OPTION ""
+#endif
+#ifdef CH_CPU_RUNTIME
+#define USAGE_OPTIONS "[--quick]" COUNT_OPTION " --cpu VALUE"
+#else
+#define USAGE_OPTIONS "[--quick]" COUNT_OPTION
 #endif
 
 static void usage(const char *program) {
@@ -265,6 +308,10 @@ static int read_options(int argc, char **argv) {
             sample_ns = QUICK_SAMPLE_NS;
             sample_count = QUICK_SAMPLES;
             warmup_count = 0;
+#ifdef BENCH_CALLGRIND
+        } else if (strcmp(argv[i], "--count") == 0) {
+            count_only = 1;
+#endif
 #ifdef CH_CPU_RUNTIME
         } else if (strcmp(argv[i], "--cpu") == 0 && i + 1 < argc) {
             bench_cpu = (uint32_t)strtoul(argv[++i], NULL, 0);
