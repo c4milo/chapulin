@@ -5,10 +5,10 @@
 [![coverage](https://raw.githubusercontent.com/c4milo/chapulin/badges/.github/badges/coverage.svg)](https://github.com/c4milo/chapulin/actions/workflows/check.yml?query=branch%3Amain)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-A TLS 1.3 library in C11, small enough to prove. On a device it runs in
-a few kilobytes of RAM, with no heap and nothing beyond libc. On a host
-it runs at about OpenSSL's speed. It runs as a client, as a server, or
-as the TLS layer under a QUIC stack.
+A TLS 1.3 library in C11. On a device it runs in a few kilobytes of RAM,
+with no heap and nothing beyond libc. On a host it runs at about
+OpenSSL's speed. It runs as a client, as a server, or as the TLS layer
+under a QUIC stack.
 
 The name comes from El Chapulín Colorado: small, unassuming, and it
 protects you from the bad guys.
