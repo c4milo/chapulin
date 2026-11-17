@@ -11,9 +11,11 @@
 // instructions, and chacha20poly1305 runs TLS_CHACHA20_POLY1305_SHA256's.
 // --quick before them takes one short run per row, for a build that only
 // has to show the binary runs, such as an emulated one. --count, in a
-// build with -DBENCH_CALLGRIND, times nothing: it runs each row once, then
-// once more between two callgrind client requests, and prints the row
-// (bench/insn-host.sh, docs/decisions.md 235).
+// build with -DBENCH_CALLGRIND or -DBENCH_SDE, times nothing: it runs each
+// row once, then once more between the two requests bench_count.h
+// defines, and prints the row (bench/insn-host.sh, bench/insn-sde.sh,
+// docs/decisions.md 235). --only LABEL after it counts the one row whose
+// label is LABEL, and --list prints each label and runs nothing.
 //
 // What a row times. bench/record_rows.c defines one function per row and
 // says what each calls. The whole rows call the library's own objects:
@@ -67,9 +69,7 @@
 #include "ch_assert.h"
 #include "record_rows.h"
 
-#ifdef BENCH_CALLGRIND
-#include <valgrind/callgrind.h>
-#endif
+#include "bench_count.h"
 
 #define RUNS 5
 #define SAMPLES 15            // batches per row per run; odd, so the median is one batch
@@ -340,15 +340,36 @@ static int group_named(const char *name) {
     return -1;
 }
 
-#ifdef BENCH_CALLGRIND
+#if BENCH_COUNTS
 // --count: the instructions of each row's one operation at each size it
 // runs at. The first call leaves the state every later call meets, and
 // bench_reset_batch sets the sequence numbers back before each call. The
-// dump's label is the AEAD, the stage and the plaintext's byte count.
-static void count_group(size_t g) {
+// label is the AEAD, the stage and the plaintext's byte count. wanted is
+// --only's label, or NULL for every row, and list is --list.
+// Whether --only names a row of group at size s, or wanted is NULL.
+static int size_wanted(const bench_group *group, size_t s, const char *wanted) {
+    for (size_t r = 0; wanted != NULL && r < group->row_count; r++) {
+        char label[96];
+        (void)snprintf(label, sizeof label, "%s/%s,%zu", group->name, group->rows[r].stage,
+                       bench_record_sizes[s]);
+        if (runs_at(group->rows[r].sizes, s) && strcmp(label, wanted) == 0) {
+            return 1;
+        }
+    }
+    return wanted == NULL;
+}
+
+static void count_group(size_t g, const char *wanted, int list) {
     const bench_group *group = &bench_groups[g];
     for (size_t s = 0; s < BENCH_SIZE_COUNT; s++) {
-        bench_prepare(&state, group->aead, bench_record_sizes[s]);
+        // The state is prepared before the size's first label is written,
+        // the order the recorded counts were taken in.
+        if (!list && !size_wanted(group, s, wanted)) {
+            continue;
+        }
+        if (!list) {
+            bench_prepare(&state, group->aead, bench_record_sizes[s]);
+        }
         for (size_t r = 0; r < group->row_count; r++) {
             const bench_row *row = &group->rows[r];
             if (!runs_at(row->sizes, s)) {
@@ -357,12 +378,19 @@ static void count_group(size_t g) {
             char label[96];
             (void)snprintf(label, sizeof label, "%s/%s,%zu", group->name, row->stage,
                            bench_record_sizes[s]);
+            if (list) {
+                printf("%s\n", label);
+                continue;
+            }
+            if (wanted != NULL && strcmp(label, wanted) != 0) {
+                continue;
+            }
             bench_reset_batch(&state);
             row->run(&state);
             bench_reset_batch(&state);
-            CALLGRIND_ZERO_STATS;
+            BENCH_COUNT_START();
             row->run(&state);
-            CALLGRIND_DUMP_STATS_AT(label);
+            BENCH_COUNT_STOP(label);
             printf("%s,%s\n", label, BUILD_LABEL);
         }
     }
@@ -372,14 +400,24 @@ static void count_group(size_t g) {
 
 int main(int argc, char **argv) {
     int first = 1;
-#ifdef BENCH_CALLGRIND
+#if BENCH_COUNTS
     if (argc > 2 && strcmp(argv[1], "--count") == 0) {
-        for (int i = 2; i < argc; i++) {
+        const char *wanted = NULL;
+        int list = 0;
+        int i = 2;
+        if (i + 1 < argc && strcmp(argv[i], "--only") == 0) {
+            wanted = argv[i + 1];
+            i += 2;
+        } else if (strcmp(argv[i], "--list") == 0) {
+            list = 1;
+            i++;
+        }
+        for (; i < argc; i++) {
             int g = group_named(argv[i]);
             if (g < 0) {
                 fail("no AEAD named ", argv[i]);
             }
-            count_group((size_t)g);
+            count_group((size_t)g, wanted, list);
         }
         return 0;
     }

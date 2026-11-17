@@ -755,6 +755,23 @@ jobs:
         # runs (docs/decisions.md 228).
         run: make avx512-residue-clang-check SDE64="$HOME/sde/sde64"
 
+  # The instruction gate's kernels that valgrind does not run, VAES, AVX-512
+  # IFMA, AVX-512 and the SHA extensions, counted under SDE one row a
+  # process and held to their recorded counts (docs/decisions.md 235).
+  insn-sde:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/load-pins
+      - name: Install Intel SDE (pinned)
+        uses: ./.github/actions/install-sde
+        with:
+          version: ${{ env.SDE_VERSION }}
+          download-id: ${{ env.SDE_DOWNLOAD_ID }}
+          sha256: ${{ env.SDE_SHA256 }}
+      - run: make insn-gate-sde SDE64="$HOME/sde/sde64"
+
   # A red nightly must be triaged, not scrolled past: file one issue
   # per broken night unless an open nightly-failure issue already
   # exists. Every other job in this file is in the needs list: a job
@@ -763,7 +780,7 @@ jobs:
   # lint-nightly-report (tools/nightly-report.py) holds the list equal
   # to the job set.
   report:
-    needs: [proof-reach, merge-reach-table, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, test-invariants-proof-backed, handshake-sequence-pq, diff-pq, diff-webpki, rsa-ifma-sde]
+    needs: [proof-reach, merge-reach-table, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, test-invariants-proof-backed, handshake-sequence-pq, diff-pq, diff-webpki, rsa-ifma-sde, insn-sde]
     # A job killed by timeout-minutes concludes as cancelled, not
     # failed, so failure() alone skips this job and a timed-out night
     # files nothing. Both prove-slow timeouts so far were reported only

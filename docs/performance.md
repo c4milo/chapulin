@@ -418,7 +418,11 @@ and each whole handshake of a host object under valgrind's callgrind
 against `bench/results-insn-host-x86_64.csv` and
 `bench/results-insn-host-arm64.csv`, and each row of the record bench
 against `bench/results-insn-record-x86_64.csv` and
-`bench/results-insn-record-arm64.csv`. A count above its recorded value
+`bench/results-insn-record-arm64.csv`. The nightly's `insn-sde` job
+runs `make insn-gate-sde`, which counts the AVX-512, VAES, IFMA and SHA
+extension kernels under Intel SDE against
+`bench/results-insn-sde-x86_64.csv` and
+`bench/results-insn-sde-record-x86_64.csv`. A count above its recorded value
 fails. A change that raises one records the fresh CSV and says why in
 its commit, and a change that lowers one records it too.
 

@@ -11590,6 +11590,20 @@ insn-gate-rv32:
 	$(call insn_gate,rv32,bench/results-insn-rv32.csv,./bench/insn-rv32.sh)
 insn-gate-mips:
 	$(call insn_gate,mips,bench/results-insn.csv,./bench/insn-mips.sh)
+# The kernels valgrind does not run, counted under Intel SDE, which SDE64
+# names (test/platforms.mk): bench/insn-sde.sh writes the primitive rows
+# and the record rows, and the gate reads both before it fails. The
+# nightly's insn-sde job runs it.
+.PHONY: insn-gate-sde
+insn-gate-sde:
+	@mkdir -p bin/insn-gate && : > bin/insn-gate/sde.csv && : > bin/insn-gate/sde-record.csv \
+	  && INSN_OUT=bin/insn-gate/sde.csv INSN_RECORD_OUT=bin/insn-gate/sde-record.csv \
+	     SDE64="$(SDE64)" ./bench/insn-sde.sh \
+	  && { python3 tools/insn-gate.py bench/results-insn-sde-x86_64.csv \
+	         bin/insn-gate/sde.csv; primitives=$$?; \
+	       python3 tools/insn-gate.py bench/results-insn-sde-record-x86_64.csv \
+	         bin/insn-gate/sde-record.csv; record=$$?; \
+	       [ $$primitives -eq 0 ] && [ $$record -eq 0 ]; }
 # bench/insn-host.sh writes two files, the primitives and handshakes and
 # the record rows, and the gate reads both before it fails.
 insn-gate-host:

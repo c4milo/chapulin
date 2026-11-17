@@ -51,11 +51,14 @@
 // --quick takes three short samples per row, for a build that only has to
 // show the program runs, such as an emulated one.
 //
-// --count, in a build with -DBENCH_CALLGRIND, times nothing. It runs each
-// row's operation once, then once more between two callgrind client
-// requests, CALLGRIND_ZERO_STATS and CALLGRIND_DUMP_STATS_AT, and prints the
-// row. Under valgrind --tool=callgrind each dump holds that one operation's
-// instructions, which bench/insn-host.sh reads (docs/decisions.md 235).
+// --count, in a build with -DBENCH_CALLGRIND or -DBENCH_SDE, times nothing.
+// It runs each row's operation once, then once more between the two
+// requests bench_count.h defines, and prints the row. Under valgrind's
+// callgrind each request pair holds that one operation's instructions,
+// which bench/insn-host.sh reads, and under SDE bench/insn-sde.sh counts
+// one row a process (docs/decisions.md 235). --only LABEL counts the row
+// whose label, the name and the byte count, is LABEL, and no other.
+// --list prints each row's label and runs nothing.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,9 +74,7 @@
 #include "drbg.h"
 #include "primitives.h"
 
-#ifdef BENCH_CALLGRIND
-#include <valgrind/callgrind.h>
-#endif
+#include "bench_count.h"
 
 #define SAMPLE_NS 2000000.0 // 2 ms per sample
 #define WARMUP_SAMPLES 10
@@ -97,6 +98,10 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 
 static volatile uint8_t sink;
 static int count_only;
+#if BENCH_COUNTS
+static int count_list;
+static const char *count_wanted;
+#endif
 static double sample_ns = SAMPLE_NS;
 static size_t sample_count = BENCH_SAMPLES;
 static size_t warmup_count = WARMUP_SAMPLES;
@@ -221,19 +226,31 @@ int bench_counting(void) {
     return count_only;
 }
 
-#ifdef BENCH_CALLGRIND
-// The dump's label is the row as bench/insn-host.sh writes it: the name
-// and the byte count. It is written before the counts are zeroed, so the
-// count holds none of its work.
+#if BENCH_COUNTS
+// The label is the row as bench/insn-host.sh and bench/insn-sde.sh write
+// it: the name and the byte count. It is written before the count starts,
+// so the count holds none of its work.
 static char count_label[96];
 
+int bench_count_wanted(const char *name, size_t n) {
+    (void)snprintf(count_label, sizeof count_label, "%s,%zu", name, n);
+    if (count_list) {
+        printf("%s\n", count_label);
+        return 0;
+    }
+    return count_wanted == NULL || strcmp(count_label, count_wanted) == 0;
+}
+
+// It writes the label again before the count starts, so the instructions
+// between the start and the stop are the ones they were before --only and
+// --list existed, and the recorded handshake counts hold.
 void bench_count_start(const char *name, size_t n) {
     (void)snprintf(count_label, sizeof count_label, "%s,%zu", name, n);
-    CALLGRIND_ZERO_STATS;
+    BENCH_COUNT_START();
 }
 
 void bench_count_stop(void) {
-    CALLGRIND_DUMP_STATS_AT(count_label);
+    BENCH_COUNT_STOP(count_label);
     printf("%s,%s\n", count_label, build_label);
     (void)fflush(stdout);
 }
@@ -241,14 +258,20 @@ void bench_count_stop(void) {
 // The instructions of one operation, for --count. The first call leaves
 // the state every later call meets, so the counted call is the one a
 // sample repeats. The two requests stand in this function rather than in
-// calls, so the count holds the operation and no call around it.
+// calls, so the count holds the operation and no call around it. The
+// label is written again just before the count starts: gcc for arm64
+// compiles the instructions between the requests differently where it is
+// written earlier, and the recorded counts hold this order.
 static void count_row(const bench_row *row, size_t n) {
+    if (!bench_count_wanted(row->name, n)) {
+        return;
+    }
     row->prepare(n);
     row->run(n);
     (void)snprintf(count_label, sizeof count_label, "%s,%zu", row->name, n);
-    CALLGRIND_ZERO_STATS;
+    BENCH_COUNT_START();
     row->run(n);
-    CALLGRIND_DUMP_STATS_AT(count_label);
+    BENCH_COUNT_STOP(count_label);
     printf("%s,%s\n", count_label, build_label);
     (void)fflush(stdout);
 }
@@ -261,7 +284,7 @@ static void measure_group(const bench_group *g) {
     }
     for (size_t r = 0; r < g->row_count; r++) {
         for (size_t s = 0; s < g->rows[r].size_count; s++) {
-#ifdef BENCH_CALLGRIND
+#if BENCH_COUNTS
             if (count_only) {
                 count_row(&g->rows[r], g->rows[r].sizes[s]);
                 continue;
@@ -289,8 +312,8 @@ static const bench_group *find_group(const char *name) {
     return NULL;
 }
 
-#ifdef BENCH_CALLGRIND
-#define COUNT_OPTION " [--count]"
+#if BENCH_COUNTS
+#define COUNT_OPTION " [--count [--only LABEL | --list]]"
 #else
 #define COUNT_OPTION ""
 #endif
@@ -324,9 +347,13 @@ static int read_options(int argc, char **argv) {
             sample_ns = QUICK_SAMPLE_NS;
             sample_count = QUICK_SAMPLES;
             warmup_count = 0;
-#ifdef BENCH_CALLGRIND
+#if BENCH_COUNTS
         } else if (strcmp(argv[i], "--count") == 0) {
             count_only = 1;
+        } else if (strcmp(argv[i], "--only") == 0 && i + 1 < argc) {
+            count_wanted = argv[++i];
+        } else if (strcmp(argv[i], "--list") == 0) {
+            count_list = 1;
 #endif
 #ifdef CH_CPU_RUNTIME
         } else if (strcmp(argv[i], "--cpu") == 0 && i + 1 < argc) {

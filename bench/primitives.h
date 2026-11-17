@@ -91,13 +91,15 @@ void bench_consume(const uint8_t *p, size_t n);
 // Prints what failed and exits 1.
 void bench_fail(const char *what);
 
-// 1 under --count, which a build with -DBENCH_CALLGRIND takes, and 0
-// otherwise. A group that takes its own samples counts one operation
-// between bench_count_start, which zeroes callgrind's counts, and
-// bench_count_stop, which dumps them under the name and the byte count
-// that bench_count_start took (bench/insn-host.sh, docs/decisions.md 235).
+// 1 under --count, which a build with -DBENCH_CALLGRIND or -DBENCH_SDE
+// takes, and 0 otherwise. A group that takes its own samples counts one
+// operation itself: bench_count_wanted answers whether --only and --list
+// let it run, bench_count_start writes its label and starts the count, and
+// bench_count_stop ends it under that label (bench_count.h,
+// docs/decisions.md 235).
 int bench_counting(void);
-#ifdef BENCH_CALLGRIND
+#if defined(BENCH_CALLGRIND) || defined(BENCH_SDE)
+int bench_count_wanted(const char *name, size_t n);
 void bench_count_start(const char *name, size_t n);
 void bench_count_stop(void);
 #endif

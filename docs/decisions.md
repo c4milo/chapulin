@@ -19876,8 +19876,8 @@ does nothing more.
     What the gate does not hold:
 
     - **The kernels Valgrind does not run.** Its virtual CPU runs no AVX-512, no VAES and no SHA
-      extensions on x86-64, so the rows those bits pick stay on `bench/primitives.sh`'s timed
-      rows and the scoreboard.
+      extensions on x86-64. The nightly counts those under SDE, as the addendum of 2026-11-17
+      below states.
     - **The order of the instructions.** A count shows more work. It does not show a change in
       how a core runs the same work: a load that waits for a store, a longer chain of dependent
       instructions, or code that moves to another cache line.
@@ -19911,6 +19911,22 @@ does nothing more.
     took 21. The counts fell by 0.004% or less, the lines icount had added: x25519 by 742,
     RSA-3072 by 256. The rv32 and mips counts run QEMU in user mode, with no icount, and no run
     of either has differed.
+
+    Addendum, 2026-11-17. The nightly's `insn-sde` job counts the kernels Valgrind does not run,
+    under Intel SDE, which emulates an Ice Lake server (`-icx`). Camilo chose it that day.
+    `bench/bench_count.h` gives `--count` either tool's two requests. Under `-DBENCH_SDE` they
+    are two SSC marks, and `sde64 -icount -start_ssc_mark 111 -stop_ssc_mark 222` prints the
+    count between them. SDE adds the counts of every marked region of a process, so
+    `bench/insn-sde.sh` runs one row in each process: `--list` names the rows, and `--only`
+    counts one. It counts each primitive row under 0x13f, which picks SHA-256 on the SHA
+    extensions and RSA, ChaCha20 and Poly1305 on AVX-512 IFMA, and under 0xd3f, which adds BMI1
+    and BMI2_ADX. It counts each record row under 0x1f, 0x11f and 0x31f, which pick VAES, the
+    IFMA kernels and the 512-bit AES-GCM kernel. SDE gives the program the emulated CPU's CPUID,
+    so glibc picks one `memcpy` on every runner, and the count holds every image. Two runners,
+    an EPYC 7763 and an EPYC 9V74, wrote the same counts in 291 s and 194 s (lab run
+    44022112573), into `bench/results-insn-sde-x86_64.csv` and
+    `bench/results-insn-sde-record-x86_64.csv`. SDE shows which instructions run and nothing of
+    their timing on any CPU.
 
 236. **No wipe of the stack below follows a SHA-3 call on the public stream of a matrix entry.**
     Decision 219 wipes 1,024 bytes of the stack below each SHA-3 call that ran the permutation,
