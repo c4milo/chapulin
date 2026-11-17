@@ -112,23 +112,26 @@ count_once() { # $1 = binary: exec-log line count on stdout
         -icount shift=0,sleep=off -accel tcg,one-insn-per-tb=on \
         -d exec,nochain -D "$W/exec.log" -kernel "$1" \
         || { echo "FAIL: guest exited $? running $1" >&2; exit 1; }
-    wc -l < "$W/exec.log" | tr -d ' '
+    # A translation block that QEMU stops and starts again is logged at
+    # each entry. A host event stops one now and then, and icount stops
+    # one at fixed points in the instruction stream, so the same run
+    # logs some instructions twice. Each block here holds one
+    # instruction, and no Thumb-2 program on v7-M that ends runs one
+    # instruction twice in a row: it has no decrement-and-branch, and CBZ
+    # and CBNZ branch forward alone. So the count reads the guest address
+    # of each line, the second field between the slashes of
+    # "Trace N: HOST [CS_BASE/PC/FLAGS/CFLAGS]", and drops an address that
+    # repeats the one before it. The rest of a restarted line can differ,
+    # because QEMU prints the block's flags, and a restart can run it
+    # under others. cut and uniq read the log at the speed of the disk.
+    cut -s -d/ -f2 "$W/exec.log" | uniq | wc -l | tr -d ' '
     rm -f "$W/exec.log"
 }
 
 count() { # $1 = binary: executed-instruction count on stdout
-    # icount pins the virtual clock to the instruction stream, but a
-    # translation block a host event interrupts is still logged at
-    # entry, restarted, and logged again — a busy host adds a line or
-    # two. A restart only ever adds lines, so the clean count is the
-    # minimum over three runs; the determinism check below holds the
-    # method to that.
-    local best=""
-    for _ in 1 2 3; do
-        c=$(count_once "$1")
-        [ -n "$best" ] && [ "$best" -le "$c" ] || best=$c
-    done
-    echo "$best"
+    # One run: count_once drops the lines a restart adds, and the
+    # determinism check below holds the method to that.
+    count_once "$1"
 }
 
 # Determinism spot check: identical counts or the method is broken.

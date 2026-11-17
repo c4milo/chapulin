@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Holds a fresh count of instructions to the recorded one.
 
-Usage: insn-gate.py [--slack N] RECORDED FRESH
+Usage: insn-gate.py RECORDED FRESH
 
 RECORDED is a committed CSV, such as bench/results-insn-m3.csv, and FRESH
 is the same script's output for the tree under test. Each file starts with
@@ -13,11 +13,7 @@ The rule is the ratchet of make lint-wide-multiply (docs/decisions.md
 235):
 
 - A count above its recorded value fails. The change that raised it
-  records the new value, and its commit says why. --slack N lets a count
-  rise by N instructions or fewer and prints a note. bench/insn-m3.sh's
-  count varies by a few instructions from one run to the next, because a
-  busy host restarts a translation block now and then and QEMU logs it
-  twice, so make insn-gate-m3 passes it.
+  records the new value, and its commit says why.
 - A count below its recorded value passes and prints a line. The change
   that lowered it records the new value in the same commit, so the next
   rise shows.
@@ -71,15 +67,10 @@ def read(path):
 
 
 def main():
-    args = sys.argv[1:]
-    slack = 0
-    if len(args) == 4 and args[0] == "--slack" and args[1].isdigit():
-        slack = int(args[1])
-        args = args[2:]
-    if len(args) != 2:
-        print("usage: insn-gate.py [--slack N] RECORDED FRESH")
+    if len(sys.argv) != 3:
+        print("usage: insn-gate.py RECORDED FRESH")
         return 2
-    recorded_path, fresh_path = args
+    recorded_path, fresh_path = sys.argv[1], sys.argv[2]
     recorded_compiler, recorded_columns, recorded = read(recorded_path)
     fresh_compiler, fresh_columns, fresh = read(fresh_path)
     failed = False
@@ -107,13 +98,10 @@ def main():
                       % (op, column, was, now))
                 failed = True
                 continue
-            if now_n > was_n + slack:
+            if now_n > was_n:
                 print("insn-gate: FAIL %s %s rose from %d to %d (+%.2f%%)"
                       % (op, column, was_n, now_n, 100.0 * (now_n - was_n) / was_n))
                 failed = True
-            elif now_n > was_n:
-                print("insn-gate: note: %s %s rose from %d to %d, inside the slack of %d"
-                      % (op, column, was_n, now_n, slack))
             elif now_n < was_n:
                 print("insn-gate: %s %s fell from %d to %d (%.2f%%); record the new count"
                       % (op, column, was_n, now_n, 100.0 * (now_n - was_n) / was_n))
@@ -124,8 +112,8 @@ def main():
               % recorded_path)
         print("  cost, record the fresh file over it and say why in the commit.")
         return 1
-    print("insn-gate: %s: %d rows, no count more than %d above its recorded value, %d below"
-          % (recorded_path, len(recorded), slack, lowered))
+    print("insn-gate: %s: %d rows, no count above its recorded value, %d below"
+          % (recorded_path, len(recorded), lowered))
     return 0
 
 

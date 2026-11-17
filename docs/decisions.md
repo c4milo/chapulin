@@ -19899,9 +19899,15 @@ does nothing more.
     decapsulation 1,330,100 and 1,360,593. 90415b30 is decision 219's wipe of the stack below
     each SHA-3 call, so the rise is that wipe's cost, and the counts of 2e851dc9 are 90415b30's.
 
-    The Cortex-M3 count is not exact. On 185de672, which changed no library source, RSA-3072's
-    native count rose by 2 and the hybrid handshake's fell by 2. `bench/insn-m3.sh` keeps the
-    least of three runs, because a busy host restarts a translation block now and then and QEMU
-    logs it twice, and three runs do not always hold one clean run. So `make insn-gate-m3`
-    passes `--slack 16` to the gate: a rise of 16 instructions or fewer prints a note and fails
-    nothing. The rv32 and mips counts run QEMU in user mode, and no run of either has differed.
+    The Cortex-M3 count was not exact. On 185de672, which changed no library source, RSA-3072's
+    native count rose by 2 and the hybrid handshake's fell by 2. QEMU logs a translation block
+    at each entry, and a block it stops and starts again is logged twice: a host event stops
+    one now and then, and icount stops one at fixed points in the instruction stream.
+    `bench/insn-m3.sh` kept the least of three runs, which removed neither kind every time.
+    Each block holds one instruction, and no Thumb-2 program on v7-M that ends runs one
+    instruction twice in a row, so the count now reads the guest address of each line with
+    `cut` and drops an address that repeats the one before it. Two runners wrote the same
+    counts, and one run of each build replaces the three. The job took 4 to 11 minutes, where it
+    took 21. The counts fell by 0.004% or less, the lines icount had added: x25519 by 742,
+    RSA-3072 by 256. The rv32 and mips counts run QEMU in user mode, with no icount, and no run
+    of either has differed.
