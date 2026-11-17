@@ -19898,3 +19898,10 @@ does nothing more.
     compiler, key generation ran 1,006,828 instructions before 90415b30 and 1,035,692 at it, and
     decapsulation 1,330,100 and 1,360,593. 90415b30 is decision 219's wipe of the stack below
     each SHA-3 call, so the rise is that wipe's cost, and the counts of 2e851dc9 are 90415b30's.
+
+    The Cortex-M3 count is not exact. On 185de672, which changed no library source, RSA-3072's
+    native count rose by 2 and the hybrid handshake's fell by 2. `bench/insn-m3.sh` keeps the
+    least of three runs, because a busy host restarts a translation block now and then and QEMU
+    logs it twice, and three runs do not always hold one clean run. So `make insn-gate-m3`
+    passes `--slack 16` to the gate: a rise of 16 instructions or fewer prints a note and fails
+    nothing. The rv32 and mips counts run QEMU in user mode, and no run of either has differed.

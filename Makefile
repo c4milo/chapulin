@@ -11564,8 +11564,10 @@ define insn_gate
 endef
 INSN_HOST_ARCH := $(subst aarch64,arm64,$(shell uname -m))
 .PHONY: insn-gate-m3 insn-gate-rv32 insn-gate-mips insn-gate-host
+# The Cortex-M3 count varies by a few instructions from one run to the
+# next (tools/insn-gate.py), so a rise of 16 or fewer passes with a note.
 insn-gate-m3:
-	$(call insn_gate,m3,bench/results-insn-m3.csv,./bench/insn-m3.sh)
+	$(call insn_gate,m3,--slack 16 bench/results-insn-m3.csv,./bench/insn-m3.sh)
 insn-gate-rv32:
 	$(call insn_gate,rv32,bench/results-insn-rv32.csv,./bench/insn-rv32.sh)
 insn-gate-mips:
