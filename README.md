@@ -5,9 +5,10 @@
 [![coverage](https://raw.githubusercontent.com/c4milo/chapulin/badges/.github/badges/coverage.svg)](https://github.com/c4milo/chapulin/actions/workflows/check.yml?query=branch%3Amain)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-A TLS 1.3 library in C11 for devices with a few kilobytes of RAM. It
-needs no heap and nothing beyond libc. It runs as a client, as a
-server, or as the TLS layer under a QUIC stack.
+A TLS 1.3 library in C11, small enough to prove. On a device it runs in
+a few kilobytes of RAM, with no heap and nothing beyond libc. On a host
+it runs at about OpenSSL's speed. It runs as a client, as a server, or
+as the TLS layer under a QUIC stack.
 
 The name comes from El Chapulín Colorado: small, unassuming, and it
 protects you from the bad guys.
@@ -20,7 +21,7 @@ protects you from the bad guys.
 | Roles | Client, server (`ROLE=server`), or both in one object (`ROLE=both`) |
 | Transports | TCP through blocking callbacks; TCP where your code moves the records; QUIC's TLS layer, QUIC versions 1 and 2 ([RFC 9001](https://www.rfc-editor.org/rfc/rfc9001), [RFC 9369](https://www.rfc-editor.org/rfc/rfc9369)) |
 | Cipher suites | `TLS_CHACHA20_POLY1305_SHA256`; `TLS_AES_128_GCM_SHA256` and `TLS_AES_256_GCM_SHA384` with `SUITE=aesgcm` |
-| Key exchange | x25519, the X25519MLKEM768 post-quantum hybrid, secp256r1, and ML-KEM-1024. A device build offers one group, ML-KEM-1024 under `PROFILE=cnsa2`. A web PKI client offers the first three. A server holds all four and picks ML-KEM-1024 first. |
+| Key exchange | x25519, the X25519MLKEM768 post-quantum hybrid, secp256r1, and ML-KEM-1024. A device build offers one group: x25519, X25519MLKEM768 under `KEX=pq`, or ML-KEM-1024 under `PROFILE=cnsa2`. A web PKI client offers the first three. A server holds all four and picks ML-KEM-1024 first. |
 | Server authentication | Pre-shared key; a pinned public key or a pinned CA, under RSA-PSS, ECDSA P-256, or ML-DSA-87 with `PROFILE=cnsa2`; or web PKI: a certificate chain, SPKI pins, or both |
 | PEM files | Decodes certificate chains, P-256, RSA and ML-DSA-87 keys, CA bundles and CA certificates from bytes your program reads |
 | Memory, default build | 3120 B static working set on a 32-bit device, receive buffer included; 5008 B peak stack, measured on arm64; 31.4 kB of flash |
@@ -30,33 +31,37 @@ protects you from the bad guys.
 [`docs/performance.md`](docs/performance.md) has the figures for every
 build, and `make lint-bench-numbers` checks the memory row against them.
 
-## Speed beside OpenSSL
+## Who it is for
 
-Each chart sets chapulin beside OpenSSL on one CPU, for each primitive TLS runs. A bar is
-chapulin's speed in multiples of OpenSSL's: OpenSSL's time over chapulin's, in the same run on the
-same machine. A bar past the dashed line at 1 is faster than OpenSSL. The charts come from the CSVs
-of the table "chapulin beside OpenSSL" in [`docs/performance.md`](docs/performance.md), which holds
-the times, and `make lint-bench-numbers` fails when a chart and the CSVs disagree.
+chapulin began as TLS for devices, and it now serves hosts too. One
+protocol profile serves both, and it is small enough to state exactly,
+so proofs and an executable specification check it, not tests alone
+([Verification and testing](#verification-and-testing)).
 
-![Bars of chapulin's speed in multiples of OpenSSL's on the Apple M1 Pro, under Apple clang](docs/img/speed-vs-openssl-m1-pro.svg)
-
-![Bars of chapulin's speed in multiples of OpenSSL's on the AMD EPYC 7763, under gcc and clang](docs/img/speed-vs-openssl-x86-64.svg)
-
-![Bars of chapulin's speed in multiples of OpenSSL's on the Intel Xeon Platinum 8573C, with AVX-512, under gcc and clang](docs/img/speed-vs-openssl-x86-64-avx512.svg)
-
-## Why it exists
+**On a device.** No other permissively licensed C stack gives a device
+TLS 1.3 in a few kilobytes, with no heap and with machine-checked proofs
+([`docs/landscape.md`](docs/landscape.md), surveyed again on
+2026-11-17):
 
 - The small embedded TLS stacks are mostly commercial (SEGGER emSSL,
-  SharkSSL) or GPLv3 with a paid license (wolfSSL).
-- The permissively licensed ones leave a gap. BearSSL has no TLS 1.3.
-  picotls and Mbed TLS need an allocator, and Mbed TLS uses 9 to 15 kB
-  of RAM before its buffers.
+  SharkSSL) or GPLv3 with a paid license (wolfSSL). wolfSSL's tinytls13, of July
+  2026, is a TLS 1.3 client profile of about 31 kB of flash, with an
+  option for a static memory pool.
+- BearSSL has no TLS 1.3. picotls and Mbed TLS need an allocator, and
+  Mbed TLS uses 9 to 15 kB of RAM before its buffers.
 - chapulin is TLS 1.3 with no heap, in a few kilobytes, under
-  Apache-2.0.
-- The protocol profile is small enough to state exactly, so it is checked
-  with proofs and an executable specification, not only with tests.
+  Apache-2.0, as a client, a server, or both.
 
-[`docs/landscape.md`](docs/landscape.md) surveys the field, with sources.
+**On a host.** A program on a server or a desktop gets the same proven
+code, with fast paths for its CPU:
+
+- TLS 1.3 and the TLS layer of QUIC versions 1 and 2, with web PKI,
+  SPKI pins and session resumption.
+- Post-quantum key exchange, X25519MLKEM768 and ML-KEM-1024, and a
+  profile on CNSA 2.0's algorithms alone (`PROFILE=cnsa2`).
+- Each primitive at about OpenSSL's speed
+  ([Speed beside OpenSSL](#speed-beside-openssl)). CI fails a change
+  that makes a primitive run more instructions.
 
 ## Quick start
 
@@ -131,13 +136,8 @@ your defines and the object's differ
 
 A Zig project (Zig 0.16.0) can depend on chapulin as a package. Its
 module `chapulin` is a Zig API over the same object, as `chapulin.hpp` is
-for C++. It runs `TRANSPORT=tcp-nonblocking` and QUIC sessions that a
-program places in its own memory. It takes values in place of `ch_cfg`,
-and returns Zig errors in place of result codes. The module carries the
-object, and `chapulin.c` holds the headers translated under the object's
-defines. [`docs/zig.md`](docs/zig.md) is the API's reference, and
-[`docs/building.md`](docs/building.md) shows the `b.dependency` call and
-its options.
+for C++. [`docs/zig.md`](docs/zig.md) is the API's reference, and
+[`docs/building.md`](docs/building.md) shows how to add the dependency.
 
 [`examples/`](examples/) has complete programs for each trust mode, and
 `make examples-check` builds them. [`docs/usage.md`](docs/usage.md)
@@ -169,33 +169,30 @@ first value listed is the default.
 Signatures and SCRAM-SHA-256 to a host `TRUST=webpki` object.
 
 On arm64 and x86-64, a web PKI client and the `ROLE=server` and
-`ROLE=both` objects build a host object, which takes neither `AES` nor `WIDEMUL`. It holds fast paths
-beside the portable C, and each session picks among them from
-`ch_cfg.cpu`. chapulin probes no CPU: your program sets that field from
-the bits in `cpu_cfg.h`. The fast paths are:
-
-- in every session, ChaCha20 and ML-KEM's NTT on 128-bit vectors, and
-  ECDSA and RSA verification on 64-bit words;
-- under `CH_CPU_CONSTANT_TIME_MULTIPLY`, X25519, P-256 and RSA signatures
-  on the 64-bit multiply, and Poly1305 on the vector multiply;
-- under `CH_CPU_CONSTANT_TIME_AES`, AES-GCM on the AES and carry-less
-  multiply instructions;
-- under `CH_CPU_CONSTANT_TIME_SHA256`, SHA-256 on its instructions;
-- on arm64 under `CH_CPU_CONSTANT_TIME_SHA512`, SHA-384 on the SHA-512
-  instructions, in an object with `SUITE=aesgcm`;
-- on arm64 under `CH_CPU_CONSTANT_TIME_SHA3`, SHA-3 and SHAKE on their
-  instructions, in an object that clang built;
-- on x86-64, AVX2, VAES and AVX-512 kernels for ChaCha20, Poly1305,
-  AES-GCM, ML-KEM and RSA, and an AVX2 kernel for SHA-384 under
-  `SUITE=aesgcm`. `cpu_cfg.h` names the bits that each kernel needs.
-
-[`docs/performance.md`](docs/performance.md) times each primitive beside
-OpenSSL 3.6 on an Apple M1 Pro and two x86-64 CPUs. Some rows take less
-time than OpenSSL's, and some take more.
+`ROLE=both` objects build a *host object*. A host object holds fast paths
+beside the portable C: vector code, the 64-bit multiply, and the AES, SHA
+and AVX-512 instructions. chapulin probes no CPU. Your program states what
+its CPU has in `ch_cfg.cpu`, from the bits in `cpu_cfg.h`, and each
+session picks its paths from that value. `cpu_cfg.h` states what each bit
+picks. A host object takes neither `AES` nor `WIDEMUL`.
 
 [`docs/building.md`](docs/building.md) explains each value, what it adds
 to the object, and the checks a build refuses to pass without.
 [`docs/porting.md`](docs/porting.md) is the checklist for a new platform.
+
+## Speed beside OpenSSL
+
+Each chart sets chapulin beside OpenSSL on one CPU, for each primitive TLS runs. A bar is
+chapulin's speed in multiples of OpenSSL's: OpenSSL's time over chapulin's, in the same run on the
+same machine. A bar past the dashed line at 1 is faster than OpenSSL. The charts come from the CSVs
+of the table "chapulin beside OpenSSL" in [`docs/performance.md`](docs/performance.md), which holds
+the times, and `make lint-bench-numbers` fails when a chart and the CSVs disagree.
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the Apple M1 Pro, under Apple clang](docs/img/speed-vs-openssl-m1-pro.svg)
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the AMD EPYC 7763, under gcc and clang](docs/img/speed-vs-openssl-x86-64.svg)
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the Intel Xeon Platinum 8573C, with AVX-512, under gcc and clang](docs/img/speed-vs-openssl-x86-64-avx512.svg)
 
 ## Trust modes
 
@@ -298,12 +295,13 @@ change must not break.
 ## Supported platforms
 
 A platform is listed when CI runs the suites there on every push to main.
+Each job in `.github/workflows/check.yml` names the make targets it runs.
 
 | Platform | How the suites run | CI job |
 | --- | --- | --- |
-| Linux x86_64 | Natively: every lint, the fast proofs, the sanitizers, line coverage and the end-to-end handshakes. The host object's AVX2 and VAES kernels and its SHA-256 instructions, on a runner CPU that the job requires to have them (`make x86-64-kernels-check`). Under QEMU user mode, the host object on CPU models without AES-NI, PCLMULQDQ, AVX2 or the SHA extensions (`make aes-runtime-qemu`). Each night, the AVX-512 kernels under Intel SDE, an emulator (`make rsa-ifma-sde-check`). | `check`, `slow`, `mutants`, `prove`, `san`, `coverage`, `x86-64-kernels`, `mips`; nightly `rsa-ifma-sde` |
-| Linux arm64 | Natively under gcc: the deterministic suites (`make suite-check`), which run the host object's AES, PMULL, SHA-256 and SHA-512 instructions. Under clang, SHA-3 on its instructions (`make keccak-instructions-check`). The host objects, disassembled (`make aes-runtime-disasm`). Under QEMU user mode, the host object on a CPU model without the SHA-512 instructions (`make aes-runtime-qemu`). | `arm64`, `mips` |
-| macOS arm64 | Natively under Apple clang: the deterministic suites (`make suite-check`), which run the host object's AES, PMULL, SHA-256, SHA-512 and SHA-3 instructions. The host objects, disassembled (`make aes-runtime-disasm`). | `macos` |
+| Linux x86_64 | Natively: every lint, the fast proofs, the sanitizers and the end-to-end handshakes. The AVX2, VAES and SHA kernels on a runner that has them, and CPUs without them under QEMU. Each night, the AVX-512 kernels under Intel SDE, an emulator. | `check`, `slow`, `mutants`, `prove`, `san`, `coverage`, `x86-64-kernels`, `mips`; nightly `rsa-ifma-sde` |
+| Linux arm64 | Natively under gcc and clang, with the AES, PMULL, SHA-256, SHA-512 and SHA-3 instructions, and a CPU without SHA-512 under QEMU | `arm64`, `mips` |
+| macOS arm64 | Natively under Apple clang, with the AES, PMULL, SHA-256, SHA-512 and SHA-3 instructions | `macos` |
 | mips32r2, big-endian | Cross-built, under QEMU user mode (`make cross-check`) | `mips` |
 | riscv32 | Cross-built with a pinned musl toolchain, under QEMU user mode | `riscv32` |
 | Cortex-M3, bare metal | The unmodified suites through semihosting on QEMU (`make m3-check`) | `m3` |

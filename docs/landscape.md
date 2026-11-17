@@ -1,8 +1,37 @@
-# Embedded TLS landscape (surveyed 2026-08-14; completeness re-swept 2026-08-17)
+# Embedded TLS landscape (surveyed 2026-08-14; completeness re-swept 2026-08-17; surveyed again 2026-11-17)
 
 Why chapulin exists: no shipping C TLS stack is simultaneously (a)
 heap-free at few-kB SRAM, (b) TLS 1.3 PSK-minimal, and (c) carrying
 machine-checked proofs. Each row below holds at most one of those.
+
+## The survey of 2026-11-17
+
+The claim above still holds: no permissively licensed C stack holds all
+three. What changed since August:
+
+- **wolfSSL tinytls13** ([wolfSSL](https://www.wolfssl.com/?p=48314),
+  July 2026) is a TLS 1.3-only client build profile. Its PSK floor is
+  30.8 KB of flash on a bare-metal Cortex-M33, with X25519 and
+  AES-128-GCM, and P-256 for about 6 KB more. A static memory pool with
+  no system malloc costs about 1.3 KB of flash. The page gives no RAM
+  figure, no server and no proofs, and wolfSSL ships under GPLv3 or a
+  commercial license. It holds (b) and part of (a).
+- **Mbed TLS** released 4.0 with TF-PSA-Crypto 1.0 in October 2025, and
+  4.1.0 is the long-term release until March 2029
+  ([announcement list](https://lists.trustedfirmware.org/archives/list/mbed-tls-announce@lists.trustedfirmware.org/2025/7/)).
+  Nothing found changes its need for an allocator.
+- **BearSSL** still lists TLS 1.3 as planned
+  ([bearssl.org](https://bearssl.org/todo.html)).
+- New and early: **NoxTLS** ([GitHub](https://github.com/argenox/noxtls),
+  C, GPL-2.0, TLS 1.2 and 1.3, in early alpha, no statement of its heap or
+  footprint); **GatoPSKTLS** ([docs.rs](https://docs.rs/crate/GatoPSKTLS/latest),
+  Rust, a fork of embedded-tls with a PSK server); and **krabitls** 0.5.0
+  ([docs.rs](https://docs.rs/crate/krabitls/0.5.0), Rust, which calls itself
+  a hobby project with unaudited cryptography).
+- Verified TLS: no C stack for a device. A March 2026 audit of Cryspen's
+  Rust code ([Symbolic Software](https://symbolic.software/blog/2026-03-07-ce-labs-tls/))
+  reports proofs its build does not check, and a Bertie client that runs
+  no chain or hostname validation.
 
 ## Direct competitors
 
