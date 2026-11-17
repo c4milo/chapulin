@@ -186,7 +186,8 @@ Each chart sets chapulin beside OpenSSL on one CPU, for each primitive TLS runs.
 chapulin's speed in multiples of OpenSSL's: OpenSSL's time over chapulin's, in the same run on the
 same machine. A bar past the dashed line at 1 is faster than OpenSSL. The charts come from the CSVs
 of the table "chapulin beside OpenSSL" in [`docs/performance.md`](docs/performance.md), which holds
-the times, and `make lint-bench-numbers` fails when a chart and the CSVs disagree.
+the times, and `make lint-bench-numbers` fails when a chart and the CSVs disagree. The same
+document charts each row at every run since 2026-10-08.
 
 ![Bars of chapulin's speed in multiples of OpenSSL's on the Apple M1 Pro, under Apple clang](docs/img/speed-vs-openssl-m1-pro.svg)
 

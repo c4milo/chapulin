@@ -13,7 +13,8 @@ an x86-64 CPU's chart holds a bar for each of the two compilers the table holds.
 
 tools/bench-numbers.py calls check_charts, so `make lint-bench-numbers` fails when a committed
 SVG is not what this file draws from the CSVs. After a run moves a CSV, run this file and commit
-its SVGs with the CSVs. The output holds no date and no time of its own, so the same CSVs draw
+its SVGs with the CSVs. It also adds the run to bench/history-speed-vs-openssl.csv and draws
+docs/img/speed-history-*.svg (tools/speed_history.py). The output holds no date and no time of its own, so the same CSVs draw
 the same bytes.
 """
 import math
@@ -247,6 +248,11 @@ def main():
         with open(path, "w") as f:
             f.write(draw(names))
         print("wrote %s" % path)
+    # The history reads this file's speeds, so it is imported here and not at the top.
+    import speed_history
+    for name in speed_history.record():
+        print("added a point for %s to %s" % (name, speed_history.HISTORY))
+    speed_history.draw_all()
     return 0
 
 

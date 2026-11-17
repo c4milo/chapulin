@@ -124,7 +124,13 @@ def read_csv(path):
     if not os.path.exists(path):
         return None
     with open(path) as f:
-        lines = f.read().splitlines()
+        return parse_csv(f.read())
+
+
+def parse_csv(text):
+    """read_csv's answer for a CSV's text, which tools/speed_history.py
+    reads from git as well as from the tree."""
+    lines = text.splitlines()
     comments = [line for line in lines if line.startswith("#")]
     data = list(csv.reader(line for line in lines if line and not line.startswith("#")))
     return comments, [dict(zip(data[0], row)) for row in data[1:]]

@@ -531,6 +531,19 @@ moves a CSV, run `python3 tools/speed_chart.py` and commit its SVGs with the CSV
 
 ![Bars of chapulin's speed in multiples of OpenSSL's on the Intel Xeon Platinum 8573C, with AVX-512, under gcc and clang](img/speed-vs-openssl-x86-64-avx512.svg)
 
+The three history charts draw the same rows at each run since 2026-10-08, one panel for each row.
+`bench/history-speed-vs-openssl.csv` holds a point for each run of each column: the speeds the bars
+draw, with the CPU, the date and the tree the CSVs state. `tools/speed_chart.py` adds a point when a
+run moves a column, and `make lint-bench-numbers` fails when a column's last point is not what its
+CSVs give, or when a history chart is not what the file draws. The points before the history file
+came from git's commits of the CSVs (`python3 tools/speed_history.py --backfill`).
+
+![Lines of chapulin's speed in multiples of OpenSSL's at each run on the Apple M1 Pro, one panel for each row](img/speed-history-m1-pro.svg)
+
+![Lines of chapulin's speed in multiples of OpenSSL's at each run on the AMD EPYC 7763, under gcc and clang, one panel for each row](img/speed-history-x86-64.svg)
+
+![Lines of chapulin's speed in multiples of OpenSSL's at each run on the Intel Xeon Platinum 8573C, under gcc and clang, one panel for each row](img/speed-history-x86-64-avx512.svg)
+
 | one operation | M1 Pro, chapulin | M1 Pro, OpenSSL | ratio | x86-64 gcc, chapulin | x86-64 gcc, OpenSSL | ratio | x86-64 clang, chapulin | x86-64 clang, OpenSSL | ratio | x86-64 AVX-512 gcc, chapulin | x86-64 AVX-512 gcc, OpenSSL | ratio | x86-64 AVX-512 clang, chapulin | x86-64 AVX-512 clang, OpenSSL | ratio |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | SHA-256, 16 KiB | 7.03 µs | 7.01 µs | **1.00** | 10.4 µs | 10.5 µs | 0.99 | 10.4 µs | 10.4 µs | 0.99 | 11.4 µs | 11.4 µs | 0.99 | 11.4 µs | 11.4 µs | 0.99 |

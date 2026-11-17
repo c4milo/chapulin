@@ -23,7 +23,9 @@
 # tools/bench_handshake.py for the server handshake tables
 # bench/handshake-n2.sh's CSV fills. tools/speed_chart.py draws that table
 # as one chart for each CPU, and check_charts fails when a committed chart
-# is not what the CSVs draw.
+# is not what the CSVs draw. tools/speed_history.py keeps each run's
+# speeds, and check_history fails when the last run it holds is not the
+# CSVs' or a history chart is not what it draws.
 import csv
 import re
 import sys
@@ -32,6 +34,7 @@ from bench_handshake import check_handshake
 from bench_record import check_record
 from bench_scoreboard import check_scoreboard
 from speed_chart import check_charts
+from speed_history import check_history
 
 MHZ_HZ = 500_000  # 500 MHz at one instruction per cycle, in kilo-instructions
 
@@ -559,6 +562,7 @@ def main():
     rc |= check_record(readme)
     rc |= check_scoreboard(readme)
     rc |= check_charts()
+    rc |= check_history()
     rc |= check_handshake(readme)
     if rc == 0:
         print("lint-bench-numbers: docs/performance.md's figures, its record tables, its table "

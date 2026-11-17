@@ -20032,3 +20032,16 @@ does nothing more.
       does not show the spread from one run to the next, which reached 0.89 to 0.99 of OpenSSL's
       time on the 8573C (decision 235), and it holds no history. The table's machine lines state
       each run's load average.
+
+    Addendum, 2026-11-17. Camilo asked for the history too. `bench/history-speed-vs-openssl.csv`
+    holds a point for each run of each column group: the speeds of the bars, with the CPU, the date
+    and the tree the primitives CSV states. `tools/speed_chart.py` adds a point when a group's CSVs
+    state another run or a row's speed moved, so a run that records a few rows again makes a point.
+    `tools/speed_history.py --backfill` wrote the points before the file from git's commits of the
+    CSVs: 9 for the M1 Pro, 26 for each compiler on the EPYC 7763 and 18 on the Xeon 8573C, from
+    2026-10-08. Every commit parsed. A history chart for each CPU draws a panel for each row, with
+    its own scale, and a line for each compiler through the last run of each day. It draws the
+    points of the CPU the last run states, so a run on another CPU model would not join the line.
+    `check_history` fails when a group's last point is not what its CSVs give, or when a history
+    chart is not what the file draws. A point is one run, so the line shows run-to-run spread as
+    well as changes to the code.
