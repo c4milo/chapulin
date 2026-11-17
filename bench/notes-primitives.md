@@ -16,6 +16,18 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The x86-64 run of c8df21fb
+
+Bench run 44091698677 recorded the AMD EPYC 7763 columns on c8df21fb, beside OpenSSL 3.6.5.
+No ratio moved by more than 0.03 from the run of 224e894f: SHA-384 over 64 bytes under clang
+reads 0.66 where it read 0.69, ML-DSA-87 signing reads 0.56 and 0.53 where it read 0.54 and 0.55,
+and every other move is 0.02 or less. Each move is inside the spread from one runner to the
+next.
+
+The AVX-512 job asks for a Xeon 8573C, and in seven attempts it drew an EPYC 7763, a Xeon
+8370C, a Xeon 6975P-C three times and an EPYC 9V74 twice. The 8573C columns stay those of
+224e894f.
+
 ## The M1 Pro's run of c8df21fb
 
 The M1 Pro's CSVs now hold a run of 2026-11-17 on c8df21fb against a new build of OpenSSL
