@@ -16,6 +16,39 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The M1 Pro's run of c8df21fb
+
+The M1 Pro's CSVs now hold a run of 2026-11-17 on c8df21fb against a new build of OpenSSL
+3.6.5, the pinned release, built as CI builds it. The primitives started at a 1-minute load of
+6.31 and the AEAD rows at 6.19. A first pass of the primitives started at 8.08, above the rule's
+8, once its own build had run, and was timed again.
+
+No ratio moved by more than 0.02. Four rows that read 0.98 or 0.99 read 1.00 or 1.01:
+SHA-256 and SHA-384 over 16 KiB and both AES-GCM seals of a 16 KiB record. No commit since
+2603ef81 changed SHA-2 or AES-GCM, so these moves are the M1 Pro's spread from one run to the
+next. SHA3-256 over 16 KiB stays at 1.01.
+
+## Three leads measured on 2026-11-17, and none taken
+
+Camilo asked to try the three leads left after wave 6. The counts and the scoreboard
+answered each before a proof was spent.
+
+- **One SHA-3 stack wipe for a run of blocks.** Each SHA-3 entry already wipes once a call, not
+  once a block, and decision 236 took the wipe off the public matrix stream. What is left of
+  decision 219's cost in ML-KEM-768 key generation on the Cortex-M3 is 8,600 instructions:
+  1,015,455 against 1,006,828 before 90415b30. A wipe after a run of the secret streams would
+  give back a third of that, about 0.3%, on a device, and moves no scoreboard row.
+- **The power change of decision 233 on the IFMA verifier.** RSA verification on the Xeon
+  8573C reads 0.38 to 0.45 of OpenSSL's time already, so the change moves no row toward 1.00.
+- **The P-256 inverse two rounds a pair.** A pair of rounds can update u and v once, with the
+  product of the two rounds' factors and a division by 2^62, and so run two modular
+  combinations where two rounds run four. The prototype gave the same inverse on 91,176
+  comparisons of `bin/p256_equiv_test`. On the M1 Pro under `ch_cfg.cpu 0xe7` it took
+  101,061 instructions of a P-256 key generation where the tree takes 101,158, 388,311 of an
+  ECDH where it takes 388,707, and 157,302 of a signature where it takes 157,698. A round's
+  cost is its 31 steps on the approximations, which a pair does not change, so the pair saves
+  0.1% to 0.25% and is not worth a Lean proof. The prototype is not in the tree.
+
 ## The M1 Pro's run of 2603ef81
 
 The M1 Pro's CSVs now hold a run of 2026-11-15 on 2603ef81, the code of

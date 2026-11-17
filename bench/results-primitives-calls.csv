@@ -1,4 +1,4 @@
-# bench/primitives.sh -finstrument-functions count of calls into each primitive during one handshake, per end; Apple clang version 21.0.0 (clang-2100.3.34.2), tree v0.7.0-12-g2603ef81
+# bench/primitives.sh -finstrument-functions count of calls into each primitive during one handshake, per end; Apple clang version 21.0.0 (clang-2100.3.34.2), tree v0.8.0-11-gc8df21fb-dirty
 handshake,function,client_calls,server_calls
 handshake_pinned_rsa2048,x25519,1,1
 handshake_pinned_rsa2048,x25519_base,1,1
