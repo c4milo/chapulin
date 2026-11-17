@@ -20,9 +20,9 @@ protects you from the bad guys.
 | Roles | Client, server (`ROLE=server`), or both in one object (`ROLE=both`) |
 | Transports | TCP through blocking callbacks; TCP where your code moves the records; QUIC's TLS layer, QUIC versions 1 and 2 ([RFC 9001](https://www.rfc-editor.org/rfc/rfc9001), [RFC 9369](https://www.rfc-editor.org/rfc/rfc9369)) |
 | Cipher suites | `TLS_CHACHA20_POLY1305_SHA256`; `TLS_AES_128_GCM_SHA256` and `TLS_AES_256_GCM_SHA384` with `SUITE=aesgcm` |
-| Key exchange | x25519, the X25519MLKEM768 post-quantum hybrid, and secp256r1. A device build offers one group; web PKI clients and servers hold all three. |
-| Server authentication | Pre-shared key, pinned public key, pinned CA, or web PKI: a certificate chain, SPKI pins, or both |
-| PEM files | Decodes certificate chains, P-256 keys, CA bundles and CA certificates from bytes your program reads |
+| Key exchange | x25519, the X25519MLKEM768 post-quantum hybrid, secp256r1, and ML-KEM-1024. A device build offers one group, ML-KEM-1024 under `PROFILE=cnsa2`. A web PKI client offers the first three. A server holds all four and picks ML-KEM-1024 first. |
+| Server authentication | Pre-shared key; a pinned public key or a pinned CA, under RSA-PSS, ECDSA P-256, or ML-DSA-87 with `PROFILE=cnsa2`; or web PKI: a certificate chain, SPKI pins, or both |
+| PEM files | Decodes certificate chains, P-256, RSA and ML-DSA-87 keys, CA bundles and CA certificates from bytes your program reads |
 | Memory, default build | 3120 B static working set on a 32-bit device, receive buffer included; 5008 B peak stack, measured on arm64; 31.4 kB of flash |
 | Dependencies | C11 and libc. No `malloc` anywhere. |
 | License | Apache-2.0 |
@@ -86,20 +86,31 @@ A client that shares a key with its server:
 static uint8_t rxbuf[2048];
 static ch_tls tls;
 
-ch_cfg cfg = {
-    .psk = psk, .psk_len = 32,
-    .psk_id = (const uint8_t *)"device-42", .psk_id_len = 9,
-    .buf = rxbuf, .buf_len = sizeof rxbuf,
-    .send = my_send, .recv = my_recv, .io = &sock,
-};
-
-if (ch_connect(&tls, &cfg) != CH_OK) {
-    /* reconnect later: any error ends the session and wipes its keys */
+int talk(void) {
+    /* Headers that do not match the linked object write past its structs. */
+    if (!ch_build_matches(&ch_build)) {
+        return -1;
+    }
+    ch_cfg cfg = {
+        .psk = psk, .psk_len = 32,
+        .psk_id = (const uint8_t *)"device-42", .psk_id_len = 9,
+        .buf = rxbuf, .buf_len = sizeof rxbuf,
+        .send = my_send, .recv = my_recv, .io = &sock,
+    };
+    /* Any error ends the session and wipes its keys: reconnect later. */
+    if (ch_connect(&tls, &cfg) != CH_OK ||
+        ch_write(&tls, request, request_len) != CH_OK) {
+        return -1;
+    }
+    int got = ch_read(&tls, reply, sizeof reply);  /* 0 when the peer closed */
+    ch_close(&tls);
+    return got;
 }
-ch_write(&tls, request, request_len);
-int got = ch_read(&tls, reply, sizeof reply);  /* 0 when the peer closed */
-ch_close(&tls);
 ```
+
+`psk`, `my_send`, `my_recv`, `sock`, `request`, `request_len` and
+`reply` are your program's. [`examples/psk_client.c`](examples/psk_client.c) is the whole
+program.
 
 The struct sizes depend on the defines the object was built with.
 `bin/chapulin.h` holds those defines and the struct sizes, and includes
@@ -113,8 +124,9 @@ cc -std=c11 -I path/to/chapulin/include -include path/to/chapulin/bin/chapulin.h
 
 A build that cannot take the header passes the flags that
 `make print-lib-def` prints. Either way, call
-`ch_build_matches(&ch_build)` (`build.h`) once at startup, as every
-example does. It returns 0 when your defines and the object's differ
+`ch_build_matches(&ch_build)` (`build.h`) once at startup, as the
+example above and every program in `examples/` do. It returns 0 when
+your defines and the object's differ
 ([`docs/building.md`](docs/building.md)).
 
 A Zig project (Zig 0.16.0) can depend on chapulin as a package. Its
@@ -151,8 +163,13 @@ first value listed is the default.
 | `KEYLOG` | `off`, `on` | Hands each traffic secret to a hook you define, for an NSS key log |
 | `WIDEMUL` | `decomposed`, `native` | Whether a device object's wide multiplies use the CPU instruction, which you must know runs in constant time |
 
-On arm64 and x86-64, a web PKI client and both server roles build a host
-object, which takes neither `AES` nor `WIDEMUL`. It holds fast paths
+[`docs/building.md`](docs/building.md) lists the other variables:
+`TX_RECORD` raises the record size a TCP host build sends, and
+`DNSSEC`, `JWS` and `SCRAM` add calls for DNSSEC signatures, JSON Web
+Signatures and SCRAM-SHA-256 to a host `TRUST=webpki` object.
+
+On arm64 and x86-64, a web PKI client and the `ROLE=server` and
+`ROLE=both` objects build a host object, which takes neither `AES` nor `WIDEMUL`. It holds fast paths
 beside the portable C, and each session picks among them from
 `ch_cfg.cpu`. chapulin probes no CPU: your program sets that field from
 the bits in `cpu_cfg.h`. The fast paths are:
@@ -248,6 +265,12 @@ and [`docs/ca.md`](docs/ca.md) describe the files each call reads.
   `pem_read_block`. For each one, it compares two classes of input with
   Welch's t-test. On arm64 and x86-64, it also times a host object's X25519,
   P-256 and RSA arithmetic on 64-bit words.
+- **Instruction counts.** CI counts the instructions of each primitive,
+  each record stage and each handshake. It counts on QEMU for Cortex-M3,
+  rv32imac and mips32r2, and under valgrind's callgrind for x86-64 and
+  arm64. Each night it counts the AVX-512, VAES and SHA extension
+  kernels under Intel SDE. A count above its recorded value fails the
+  check ([`docs/decisions.md`](docs/decisions.md) 235).
 - **Mutation checks.** Each file in [`test/violations/`](test/violations/)
   breaks one rule on purpose, and the named test must fail on it.
 - **Interoperability.** End-to-end handshakes of the client against
@@ -259,11 +282,13 @@ and [`docs/ca.md`](docs/ca.md) describe the files each call reads.
   tests. The server, QUIC session and PEM file tests run without the
   sanitizers.
 
-On each pull request and each push to main, CI runs the lints, the tests
-and the platform suites. A push to main also runs the fast proofs, the
-fast mutation checks, the end-to-end handshakes, the spec differential and
-the state machine test. The nightly runs the slow proofs, every mutation
-check, the differential on new seeds and the fuzz targets.
+On each pull request and each push to main, CI runs the lints, the tests,
+the platform suites and the host instruction counts. A push to main also
+runs the fast proofs, the fast mutation checks, the end-to-end handshakes,
+the spec differential, the state machine test and the device instruction
+counts. The nightly runs the slow proofs, every mutation check, the
+differential on new seeds, the fuzz targets and the SDE instruction
+counts.
 [`docs/verification.md`](docs/verification.md) lists every harness, its
 bound, and what rests on tests instead of proofs.
 [`docs/proofs.md`](docs/proofs.md) explains how the harnesses are
@@ -320,8 +345,10 @@ platform, start with [`docs/porting.md`](docs/porting.md).
 - The device modes, raw and ca, do not trust public CAs. The web PKI
   mode does, against roots you supply. `ch_anchors_from_pem` decodes
   them from a CA bundle.
-- It does not offer `TLS_AES_128_CCM_8_SHA256`, the IoT profile's
-  mandatory suite. A peer that insists on AES-CCM will not connect.
+- It does not offer `TLS_AES_128_CCM_8_SHA256`, the suite that the TLS
+  1.3 IoT profile
+  ([draft-ietf-uta-tls13-iot-profile](https://datatracker.ietf.org/doc/html/draft-ietf-uta-tls13-iot-profile))
+  makes mandatory. A peer that insists on AES-CCM will not connect.
 - A pinned key breaks when the server rotates it.
   [`docs/rotation.md`](docs/rotation.md) shows the two-slot pin. The
   pinned-CA modes accept a new server key whose chain verifies up to the
