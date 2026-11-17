@@ -21,7 +21,9 @@
 # tools/bench_scoreboard.py for the table that sets chapulin beside
 # OpenSSL, from those CSVs and bench/primitives.sh's, and
 # tools/bench_handshake.py for the server handshake tables
-# bench/handshake-n2.sh's CSV fills.
+# bench/handshake-n2.sh's CSV fills. tools/speed_chart.py draws that table
+# as one chart for each CPU, and check_charts fails when a committed chart
+# is not what the CSVs draw.
 import csv
 import re
 import sys
@@ -29,6 +31,7 @@ import sys
 from bench_handshake import check_handshake
 from bench_record import check_record
 from bench_scoreboard import check_scoreboard
+from speed_chart import check_charts
 
 MHZ_HZ = 500_000  # 500 MHz at one instruction per cycle, in kilo-instructions
 
@@ -555,11 +558,12 @@ def main():
     rc |= check_decision_x25519()
     rc |= check_record(readme)
     rc |= check_scoreboard(readme)
+    rc |= check_charts()
     rc |= check_handshake(readme)
     if rc == 0:
         print("lint-bench-numbers: docs/performance.md's figures, its record tables, its table "
-              "beside OpenSSL and its server handshake tables, the README's At a glance row and "
-              "docs/decisions.md's x25519 cost match bench/")
+              "beside OpenSSL and its charts, its server handshake tables, the README's At a "
+              "glance row and docs/decisions.md's x25519 cost match bench/")
     return rc
 
 

@@ -20000,3 +20000,28 @@ does nothing more.
       call on a secret context. The `sha3_stream` proof runs both values of the flag, and the
       `sha3` proof starts SHAKE128 from either init. Two violations break the rule:
       `inv71-sha3-every-context-public` and `inv71-noise-on-public-context`.
+
+237. **Charts draw the table beside OpenSSL, one for each CPU.** Camilo asked on 2026-11-17 to
+    track chapulin's speed against OpenSSL in a chart, as connect-zig charts its codec against its
+    baselines. docs/performance.md's table "chapulin beside OpenSSL" already held the numbers, and
+    a table of 31 rows and 15 columns does not show at a glance where chapulin is behind.
+
+    - **What a chart shows.** One SVG for each CPU of the table, in `docs/img/`: the Apple M1
+      Pro, the AMD EPYC 7763 and the Intel Xeon Platinum 8573C. A bar is chapulin's speed in
+      multiples of OpenSSL's, which is OpenSSL's time over chapulin's, the inverse of the table's
+      ratio. A dashed line at 1 is OpenSSL. An x86-64 chart holds a bar for gcc and a bar for the
+      pinned clang, the table's two groups for that CPU. The title counts the rows where chapulin
+      is faster, and the subtitle names the CPU, the system, the date of the run and its tree.
+      The README and docs/performance.md show the three charts.
+    - **One source.** `tools/speed_chart.py` imports `tools/bench_scoreboard.py`'s readers, so
+      a chart picks the rows the table picks: the widest `ch_cfg.cpu` value a CSV holds, and
+      OpenSSL's row of the same run. A row whose OpenSSL cell times another operation, the four
+      RSA-PSS rows, has no bar. The SVG holds no date or time of its own, so the same CSVs draw
+      the same bytes.
+    - **What holds it.** `make lint-bench-numbers` calls `check_charts`, which draws each chart
+      again and fails when the committed SVG differs. So a run that moves a CSV moves its chart
+      in the same commit, as it moves the table.
+    - **What it does not show.** A chart shows one run on each machine, as the table does. It
+      does not show the spread from one run to the next, which reached 0.89 to 0.99 of OpenSSL's
+      time on the 8573C (decision 235), and it holds no history. The table's machine lines state
+      each run's load average.

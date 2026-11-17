@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 1126" width="960" height="1126" role="img" aria-labelledby="t d">
+<title id="t">chapulin beside OpenSSL 3.6.5 on the INTEL(R) XEON(R) PLATINUM 8573C</title>
+<desc id="d">On the INTEL(R) XEON(R) PLATINUM 8573C, chapulin is faster than OpenSSL 3.6.5 in 26 of 27 rows under gcc and 25 of 27 under clang. Each bar is chapulin's speed in multiples of OpenSSL 3.6.5's: OpenSSL 3.6.5's time over chapulin's, on the same machine in the same run. Under gcc 13.3.0: SHA-256, 16 KiB 1.01x; SHA-256, 64 bytes 1.53x; SHA-384, 16 KiB 0.94x; SHA-384, 64 bytes 1.31x; SHA3-256, 16 KiB 1.08x; SHA3-256, 64 bytes 1.58x; X25519 key generation 2.37x; X25519 shared secret 1.00x; P-256 key generation 1.01x; P-256 shared secret 1.20x; ECDSA P-256 sign 1.19x; ECDSA P-256 verify 1.43x; ECDSA P-384 verify 1.36x; RSA-2048 PKCS#1 v1.5 verify 2.20x; RSA-3072 PKCS#1 v1.5 verify 2.62x; ML-KEM-768 key generation 2.25x; ML-KEM-768 encapsulation 1.08x; ML-KEM-768 decapsulation 1.45x; ML-DSA-87 key generation 1.47x; ML-DSA-87 sign 1.31x; ML-DSA-87 verify 2.37x; AES-128-GCM, the key set and one 16 KiB record sealed 1.04x; AES-128-GCM, the key set and one 16 KiB record opened 1.04x; AES-256-GCM, the key set and one 16 KiB record sealed 1.02x; AES-256-GCM, the key set and one 16 KiB record opened 1.05x; ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag 1.03x; ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag 1.07x. Under clang 23.1.6: SHA-256, 16 KiB 1.01x; SHA-256, 64 bytes 1.52x; SHA-384, 16 KiB 0.96x; SHA-384, 64 bytes 1.42x; SHA3-256, 16 KiB 1.06x; SHA3-256, 64 bytes 1.55x; X25519 key generation 2.54x; X25519 shared secret 1.06x; P-256 key generation 1.03x; P-256 shared secret 1.25x; ECDSA P-256 sign 1.20x; ECDSA P-256 verify 1.47x; ECDSA P-384 verify 1.94x; RSA-2048 PKCS#1 v1.5 verify 2.24x; RSA-3072 PKCS#1 v1.5 verify 2.51x; ML-KEM-768 key generation 2.36x; ML-KEM-768 encapsulation 1.13x; ML-KEM-768 decapsulation 1.61x; ML-DSA-87 key generation 1.22x; ML-DSA-87 sign 1.27x; ML-DSA-87 verify 2.65x; AES-128-GCM, the key set and one 16 KiB record sealed 1.02x; AES-128-GCM, the key set and one 16 KiB record opened 1.07x; AES-256-GCM, the key set and one 16 KiB record sealed 0.99x; AES-256-GCM, the key set and one 16 KiB record opened 1.03x; ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag 1.04x; ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag 1.05x.</desc>
+<style>
+svg { --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984; --grid:#e4e3df; --first:#2a78d6; --second:#eb6834; --unit:#52514e; }
+@media (prefers-color-scheme: dark) {
+  svg { --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#8f8e86; --grid:#33332f; --first:#3987e5; --second:#d95926; --unit:#c3c2b7; }
+}
+text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--ink); }
+.title { font-size: 17px; font-weight: 600; }
+.sub { font-size: 12.5px; fill: var(--ink2); }
+.section { font-size: 13.5px; font-weight: 600; }
+.row { font-size: 12.5px; fill: var(--ink2); }
+.val { font-size: 10.5px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.tick { font-size: 11px; fill: var(--muted); }
+.legend { font-size: 12.5px; fill: var(--ink2); }
+</style>
+<rect width="960" height="1126" rx="8" fill="var(--surface)"/>
+<text class="title" x="24" y="34">chapulin is faster than OpenSSL 3.6.5 in 26 of 27 rows under gcc and 25 of 27 under clang</text>
+<text class="sub" x="24" y="56">Each bar is chapulin's speed in multiples of OpenSSL 3.6.5's: OpenSSL 3.6.5's time over chapulin's, on the same machine in the same run. A longer bar is faster.</text>
+<text class="sub" x="24" y="74">INTEL(R) XEON(R) PLATINUM 8573C, Linux 7.0.0-1017-azure, run on 2026-11-14, tree 224e894-dirty.</text>
+<text class="sub" x="24" y="92">chapulin runs under the widest ch_cfg.cpu value each CSV holds, as docs/performance.md's table does.</text>
+<rect x="24" y="108" width="12" height="12" rx="2" fill="var(--first)"/>
+<text class="legend" x="42" y="118">chapulin, gcc 13.3.0</text>
+<rect x="206" y="108" width="12" height="12" rx="2" fill="var(--second)"/>
+<text class="legend" x="224" y="118">chapulin, clang 23.1.6</text>
+<line x1="402" y1="114" x2="418" y2="114" stroke="var(--unit)" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text class="legend" x="424" y="118">OpenSSL 3.6.5: the unit, 1×</text>
+<line x1="396.0" y1="142" x2="396.0" y2="1082" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="396.0" y="1096" text-anchor="middle">0×</text>
+<line x1="478.0" y1="142" x2="478.0" y2="1082" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="478.0" y="1096" text-anchor="middle">0.5×</text>
+<line x1="560.0" y1="142" x2="560.0" y2="1082" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="560.0" y="1096" text-anchor="middle">1×</text>
+<line x1="642.0" y1="142" x2="642.0" y2="1082" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="642.0" y="1096" text-anchor="middle">1.5×</text>
+<line x1="724.0" y1="142" x2="724.0" y2="1082" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="724.0" y="1096" text-anchor="middle">2×</text>
+<line x1="806.0" y1="142" x2="806.0" y2="1082" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="806.0" y="1096" text-anchor="middle">2.5×</text>
+<line x1="888.0" y1="142" x2="888.0" y2="1082" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="888.0" y="1096" text-anchor="middle">3×</text>
+<text class="section" x="24" y="163">Hashes</text>
+<text class="row" x="386" y="187.0" text-anchor="end">SHA-256, 16 KiB</text>
+<path d="M396.0,172.0 h162.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-162.2 z" fill="var(--first)"/>
+<text class="val" x="566.2" y="181">1.01×</text>
+<path d="M396.0,184.0 h162.1 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-162.1 z" fill="var(--second)"/>
+<text class="val" x="566.1" y="193">1.01×</text>
+<text class="row" x="386" y="217.0" text-anchor="end">SHA-256, 64 bytes</text>
+<path d="M396.0,202.0 h247.9 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-247.9 z" fill="var(--first)"/>
+<text class="val" x="651.9" y="211">1.53×</text>
+<path d="M396.0,214.0 h246.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-246.7 z" fill="var(--second)"/>
+<text class="val" x="650.7" y="223">1.52×</text>
+<text class="row" x="386" y="247.0" text-anchor="end">SHA-384, 16 KiB</text>
+<path d="M396.0,232.0 h150.5 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-150.5 z" fill="var(--first)"/>
+<text class="val" x="554.5" y="241">0.94×</text>
+<path d="M396.0,244.0 h154.4 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-154.4 z" fill="var(--second)"/>
+<text class="val" x="558.4" y="253">0.96×</text>
+<text class="row" x="386" y="277.0" text-anchor="end">SHA-384, 64 bytes</text>
+<path d="M396.0,262.0 h212.5 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-212.5 z" fill="var(--first)"/>
+<text class="val" x="616.5" y="271">1.31×</text>
+<path d="M396.0,274.0 h230.0 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-230.0 z" fill="var(--second)"/>
+<text class="val" x="634.0" y="283">1.42×</text>
+<text class="row" x="386" y="307.0" text-anchor="end">SHA3-256, 16 KiB</text>
+<path d="M396.0,292.0 h174.0 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-174.0 z" fill="var(--first)"/>
+<text class="val" x="578.0" y="301">1.08×</text>
+<path d="M396.0,304.0 h171.6 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-171.6 z" fill="var(--second)"/>
+<text class="val" x="575.6" y="313">1.06×</text>
+<text class="row" x="386" y="337.0" text-anchor="end">SHA3-256, 64 bytes</text>
+<path d="M396.0,322.0 h256.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-256.7 z" fill="var(--first)"/>
+<text class="val" x="660.7" y="331">1.58×</text>
+<path d="M396.0,334.0 h251.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-251.2 z" fill="var(--second)"/>
+<text class="val" x="655.2" y="343">1.55×</text>
+<text class="section" x="24" y="369">Key exchange</text>
+<text class="row" x="386" y="393.0" text-anchor="end">X25519 key generation</text>
+<path d="M396.0,378.0 h385.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-385.2 z" fill="var(--first)"/>
+<text class="val" x="789.2" y="387">2.37×</text>
+<path d="M396.0,390.0 h414.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-414.2 z" fill="var(--second)"/>
+<text class="val" x="818.2" y="399">2.54×</text>
+<text class="row" x="386" y="423.0" text-anchor="end">X25519 shared secret</text>
+<path d="M396.0,408.0 h161.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-161.2 z" fill="var(--first)"/>
+<text class="val" x="565.2" y="417">1.00×</text>
+<path d="M396.0,420.0 h170.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-170.7 z" fill="var(--second)"/>
+<text class="val" x="574.7" y="429">1.06×</text>
+<text class="row" x="386" y="453.0" text-anchor="end">P-256 key generation</text>
+<path d="M396.0,438.0 h163.4 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-163.4 z" fill="var(--first)"/>
+<text class="val" x="567.4" y="447">1.01×</text>
+<path d="M396.0,450.0 h165.3 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-165.3 z" fill="var(--second)"/>
+<text class="val" x="569.3" y="459">1.03×</text>
+<text class="row" x="386" y="483.0" text-anchor="end">P-256 shared secret</text>
+<path d="M396.0,468.0 h194.5 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-194.5 z" fill="var(--first)"/>
+<text class="val" x="598.5" y="477">1.20×</text>
+<path d="M396.0,480.0 h202.3 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-202.3 z" fill="var(--second)"/>
+<text class="val" x="606.3" y="489">1.25×</text>
+<text class="section" x="24" y="515">Signatures</text>
+<text class="row" x="386" y="539.0" text-anchor="end">ECDSA P-256 sign</text>
+<path d="M396.0,524.0 h191.8 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-191.8 z" fill="var(--first)"/>
+<text class="val" x="595.8" y="533">1.19×</text>
+<path d="M396.0,536.0 h194.4 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-194.4 z" fill="var(--second)"/>
+<text class="val" x="598.4" y="545">1.20×</text>
+<text class="row" x="386" y="569.0" text-anchor="end">ECDSA P-256 verify</text>
+<path d="M396.0,554.0 h231.1 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-231.1 z" fill="var(--first)"/>
+<text class="val" x="635.1" y="563">1.43×</text>
+<path d="M396.0,566.0 h238.8 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-238.8 z" fill="var(--second)"/>
+<text class="val" x="642.8" y="575">1.47×</text>
+<text class="row" x="386" y="599.0" text-anchor="end">ECDSA P-384 verify</text>
+<path d="M396.0,584.0 h219.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-219.7 z" fill="var(--first)"/>
+<text class="val" x="623.7" y="593">1.36×</text>
+<path d="M396.0,596.0 h315.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-315.7 z" fill="var(--second)"/>
+<text class="val" x="719.7" y="605">1.94×</text>
+<text class="row" x="386" y="629.0" text-anchor="end">RSA-2048 PKCS#1 v1.5 verify</text>
+<path d="M396.0,614.0 h357.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-357.7 z" fill="var(--first)"/>
+<text class="val" x="761.7" y="623">2.20×</text>
+<path d="M396.0,626.0 h364.8 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-364.8 z" fill="var(--second)"/>
+<text class="val" x="768.8" y="635">2.24×</text>
+<text class="row" x="386" y="659.0" text-anchor="end">RSA-3072 PKCS#1 v1.5 verify</text>
+<path d="M396.0,644.0 h425.9 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-425.9 z" fill="var(--first)"/>
+<text class="val" x="829.9" y="653">2.62×</text>
+<path d="M396.0,656.0 h408.8 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-408.8 z" fill="var(--second)"/>
+<text class="val" x="812.8" y="665">2.51×</text>
+<text class="section" x="24" y="691">Post-quantum</text>
+<text class="row" x="386" y="715.0" text-anchor="end">ML-KEM-768 key generation</text>
+<path d="M396.0,700.0 h365.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-365.2 z" fill="var(--first)"/>
+<text class="val" x="769.2" y="709">2.25×</text>
+<path d="M396.0,712.0 h384.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-384.2 z" fill="var(--second)"/>
+<text class="val" x="788.2" y="721">2.36×</text>
+<text class="row" x="386" y="745.0" text-anchor="end">ML-KEM-768 encapsulation</text>
+<path d="M396.0,730.0 h173.9 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-173.9 z" fill="var(--first)"/>
+<text class="val" x="577.9" y="739">1.08×</text>
+<path d="M396.0,742.0 h182.6 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-182.6 z" fill="var(--second)"/>
+<text class="val" x="586.6" y="751">1.13×</text>
+<text class="row" x="386" y="775.0" text-anchor="end">ML-KEM-768 decapsulation</text>
+<path d="M396.0,760.0 h234.5 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-234.5 z" fill="var(--first)"/>
+<text class="val" x="638.5" y="769">1.45×</text>
+<path d="M396.0,772.0 h261.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-261.7 z" fill="var(--second)"/>
+<text class="val" x="665.7" y="781">1.61×</text>
+<text class="row" x="386" y="805.0" text-anchor="end">ML-DSA-87 key generation</text>
+<path d="M396.0,790.0 h238.3 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-238.3 z" fill="var(--first)"/>
+<text class="val" x="642.3" y="799">1.47×</text>
+<path d="M396.0,802.0 h196.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-196.7 z" fill="var(--second)"/>
+<text class="val" x="600.7" y="811">1.22×</text>
+<text class="row" x="386" y="835.0" text-anchor="end">ML-DSA-87 sign</text>
+<path d="M396.0,820.0 h212.6 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-212.6 z" fill="var(--first)"/>
+<text class="val" x="616.6" y="829">1.31×</text>
+<path d="M396.0,832.0 h206.0 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-206.0 z" fill="var(--second)"/>
+<text class="val" x="610.0" y="841">1.27×</text>
+<text class="row" x="386" y="865.0" text-anchor="end">ML-DSA-87 verify</text>
+<path d="M396.0,850.0 h386.1 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-386.1 z" fill="var(--first)"/>
+<text class="val" x="790.1" y="859">2.37×</text>
+<path d="M396.0,862.0 h431.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-431.7 z" fill="var(--second)"/>
+<text class="val" x="835.7" y="871">2.65×</text>
+<text class="section" x="24" y="897">Records</text>
+<text class="row" x="386" y="921.0" text-anchor="end">AES-128-GCM, the key set and one 16 KiB record sealed</text>
+<path d="M396.0,906.0 h167.1 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-167.1 z" fill="var(--first)"/>
+<text class="val" x="571.1" y="915">1.04×</text>
+<path d="M396.0,918.0 h164.3 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-164.3 z" fill="var(--second)"/>
+<text class="val" x="568.3" y="927">1.02×</text>
+<text class="row" x="386" y="951.0" text-anchor="end">AES-128-GCM, the key set and one 16 KiB record opened</text>
+<path d="M396.0,936.0 h167.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-167.2 z" fill="var(--first)"/>
+<text class="val" x="571.2" y="945">1.04×</text>
+<path d="M396.0,948.0 h172.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-172.2 z" fill="var(--second)"/>
+<text class="val" x="576.2" y="957">1.07×</text>
+<text class="row" x="386" y="981.0" text-anchor="end">AES-256-GCM, the key set and one 16 KiB record sealed</text>
+<path d="M396.0,966.0 h163.6 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-163.6 z" fill="var(--first)"/>
+<text class="val" x="567.6" y="975">1.02×</text>
+<path d="M396.0,978.0 h159.5 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-159.5 z" fill="var(--second)"/>
+<text class="val" x="563.5" y="987">0.99×</text>
+<text class="row" x="386" y="1011.0" text-anchor="end">AES-256-GCM, the key set and one 16 KiB record opened</text>
+<path d="M396.0,996.0 h169.6 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-169.6 z" fill="var(--first)"/>
+<text class="val" x="573.6" y="1005">1.05×</text>
+<path d="M396.0,1008.0 h166.5 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-166.5 z" fill="var(--second)"/>
+<text class="val" x="570.5" y="1017">1.03×</text>
+<text class="row" x="386" y="1041.0" text-anchor="end">ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag</text>
+<path d="M396.0,1026.0 h165.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-165.7 z" fill="var(--first)"/>
+<text class="val" x="569.7" y="1035">1.03×</text>
+<path d="M396.0,1038.0 h167.5 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-167.5 z" fill="var(--second)"/>
+<text class="val" x="571.5" y="1047">1.04×</text>
+<text class="row" x="386" y="1071.0" text-anchor="end">ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag</text>
+<path d="M396.0,1056.0 h172.9 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-172.9 z" fill="var(--first)"/>
+<text class="val" x="576.9" y="1065">1.07×</text>
+<path d="M396.0,1068.0 h169.6 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-169.6 z" fill="var(--second)"/>
+<text class="val" x="573.6" y="1077">1.05×</text>
+<line x1="560.0" y1="138" x2="560.0" y2="1082" stroke="var(--unit)" stroke-width="1.5" stroke-dasharray="4 3"/>
+</svg>

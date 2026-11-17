@@ -518,6 +518,19 @@ the VAES and AES bits runs each AES-GCM seal and open on a 512-bit kernel (decis
 has two groups of cells: gcc, which CI compiles with, and the pinned clang 23, a newer clang than
 Zig 0.16's clang 21, which `build.zig` compiles the object with for a Zig project such as colibri.
 
+The three charts draw the same rows as speed, one chart for each CPU. A bar is chapulin's speed in
+multiples of OpenSSL's: OpenSSL's time over chapulin's, the inverse of the table's ratio. So a bar
+past the dashed line at 1 is a row where chapulin is faster. A row whose OpenSSL cell times another
+operation has no bar. `tools/speed_chart.py` draws the charts from the CSVs the table reads, and
+`make lint-bench-numbers` fails when a committed chart is not what the CSVs draw. After a run
+moves a CSV, run `python3 tools/speed_chart.py` and commit its SVGs with the CSVs (decision 237).
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the Apple M1 Pro, under Apple clang](img/speed-vs-openssl-m1-pro.svg)
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the AMD EPYC 7763, under gcc and clang](img/speed-vs-openssl-x86-64.svg)
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the Intel Xeon Platinum 8573C, with AVX-512, under gcc and clang](img/speed-vs-openssl-x86-64-avx512.svg)
+
 | one operation | M1 Pro, chapulin | M1 Pro, OpenSSL | ratio | x86-64 gcc, chapulin | x86-64 gcc, OpenSSL | ratio | x86-64 clang, chapulin | x86-64 clang, OpenSSL | ratio | x86-64 AVX-512 gcc, chapulin | x86-64 AVX-512 gcc, OpenSSL | ratio | x86-64 AVX-512 clang, chapulin | x86-64 AVX-512 clang, OpenSSL | ratio |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | SHA-256, 16 KiB | 7.06 µs | 7.11 µs | 0.99 | 10.4 µs | 10.4 µs | 0.99 | 10.4 µs | 10.5 µs | 0.99 | 11.4 µs | 11.4 µs | 0.99 | 11.4 µs | 11.4 µs | 0.99 |

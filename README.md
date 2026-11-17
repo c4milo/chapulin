@@ -30,6 +30,20 @@ protects you from the bad guys.
 [`docs/performance.md`](docs/performance.md) has the figures for every
 build, and `make lint-bench-numbers` checks the memory row against them.
 
+## Speed beside OpenSSL
+
+Each chart sets chapulin beside OpenSSL on one CPU, for each primitive TLS runs. A bar is
+chapulin's speed in multiples of OpenSSL's: OpenSSL's time over chapulin's, in the same run on the
+same machine. A bar past the dashed line at 1 is faster than OpenSSL. The charts come from the CSVs
+of the table "chapulin beside OpenSSL" in [`docs/performance.md`](docs/performance.md), which holds
+the times, and `make lint-bench-numbers` fails when a chart and the CSVs disagree.
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the Apple M1 Pro, under Apple clang](docs/img/speed-vs-openssl-m1-pro.svg)
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the AMD EPYC 7763, under gcc and clang](docs/img/speed-vs-openssl-x86-64.svg)
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the Intel Xeon Platinum 8573C, with AVX-512, under gcc and clang](docs/img/speed-vs-openssl-x86-64-avx512.svg)
+
 ## Why it exists
 
 - The small embedded TLS stacks are mostly commercial (SEGGER emSSL,
