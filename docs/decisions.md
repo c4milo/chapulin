@@ -19928,6 +19928,13 @@ does nothing more.
     `bench/results-insn-sde-record-x86_64.csv`. SDE shows which instructions run and nothing of
     their timing on any CPU.
 
+    A count moves when a buffer moves to another alignment. `ct_wipe` and loops like it store
+    single bytes up to a word boundary, so a frame that grows by a few bytes, in a benchmark or
+    in the library, can move a row by a few instructions. The SDE change moved arm64 host rows
+    by 4 to 14, up and down, with no library change, so 2a385593 recorded them again. Camilo
+    ruled on 2026-11-17 that the gate stays exact: a commit that moves a row records the fresh
+    count and says why, and a real rise of a few instructions still fails.
+
 236. **No wipe of the stack below follows a SHA-3 call on the public stream of a matrix entry.**
     Decision 219 wipes 1,024 bytes of the stack below each SHA-3 call that ran the permutation,
     in an object that runs `keccak_f1600_plain`. The instruction gate of decision 235 showed what
