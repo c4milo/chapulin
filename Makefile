@@ -7487,9 +7487,17 @@ else
 	done; \
 	[ $$rc -eq 0 ] || { echo "lint-spec: banned escape hatch in the model"; exit 1; }
 	$(call REQUIRE_MATHLIB,lint-spec)
-	@cd spec/lean && $(LAKE) build 2>&1 | tee /tmp/lake-build.log \
-	  && ! grep -q "warning:" /tmp/lake-build.log \
-	  || { echo "lint-spec: lake build warnings are errors here"; exit 1; }
+	# The Spec library, and Main.lean elaborated against it, so a warning
+	# in either fails. A plain `lake build` builds the diffspec executable,
+	# its default target, and links it against Mathlib's native code, which
+	# lake compiles first: 8,700 C files and 20 to 34 minutes on a runner.
+	# lint-spec reads no executable, so it builds none. The targets that
+	# run the differential build it themselves. The status comes from the
+	# commands, not from a pipe into tee, so a failed build fails here.
+	@cd spec/lean && { $(LAKE) build Spec && $(LAKE) env lean Main.lean; } \
+	    > /tmp/lake-build.log 2>&1; rc=$$?; cat /tmp/lake-build.log; \
+	  [ $$rc -eq 0 ] && ! grep -q "warning:" /tmp/lake-build.log \
+	  || { echo "lint-spec: lake build failed or warned, and warnings are errors here"; exit 1; }
 	# The axiom check elaborates against all of Mathlib, about 11 seconds.
 	# Its answer depends only on the compiled Spec modules, the check
 	# itself, the Lean toolchain and the Mathlib commit, so a run whose
