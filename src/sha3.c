@@ -217,6 +217,11 @@ static void keccak_f1600(uint64_t a[25]) {
 // and the search finds nothing it left (test/sha3_residue.h). So no wipe follows it. ML-KEM's
 // sampler squeezes 24 bytes a call, and a permutation runs in one call of seven.
 //
+// No wipe follows a call on a context that shake128_init_public started either
+// (docs/decisions.md 236, INV-71). Its input is the seed rho of a matrix entry and two indices,
+// which the public key carries in the clear, so what the body left in the stack is public. On
+// the Cortex-M3, ML-KEM-768 key generation runs 2% fewer instructions for it.
+//
 // The other forms keep their values in registers and in the states they name
 // (docs/decisions.md 99, 216, 217 and 218), so their objects run no wipe below. What no wipe
 // clears: a register, which holds what the last instruction left in it until another writes it.
@@ -458,6 +463,7 @@ static void shake_init(shake *s, size_t rate) {
     s->rate = rate;
     s->pos = 0;
     s->squeezing = 0;
+    s->wipes_below = 1;
 }
 
 void shake128_init(shake *s) {
@@ -468,12 +474,17 @@ void shake256_init(shake *s) {
     shake_init(s, SHAKE256_RATE);
 }
 
+void shake128_init_public(shake *s) {
+    shake_init(s, SHAKE128_RATE);
+    s->wipes_below = 0;
+}
+
 void shake_absorb(shake *s, const uint8_t *in, size_t n) {
     // The body runs the permutation when the bytes fill the block. The position is below the
     // rate while the context absorbs.
     int permutes = n >= s->rate - s->pos;
     absorb(s->lane, s->rate, &s->pos, in, n);
-    wipe_below_after(permutes);
+    wipe_below_after(permutes & s->wipes_below);
 }
 
 void shake_squeeze(shake *s, uint8_t *out, size_t n) {
@@ -485,5 +496,5 @@ void shake_squeeze(shake *s, uint8_t *out, size_t n) {
         s->squeezing = 1;
     }
     squeeze(s->lane, s->rate, &s->pos, out, n);
-    wipe_below_after(permutes);
+    wipe_below_after(permutes & s->wipes_below);
 }

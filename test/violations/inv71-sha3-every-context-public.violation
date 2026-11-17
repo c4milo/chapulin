@@ -1,0 +1,16 @@
+invariant: INV-71
+file: src/sha3.c
+catches: sha3_equiv_test
+reason: shake_init writes 0 to wipes_below, so every SHAKE context skips the
+  wipe of the stack below its calls, the noise and the hashes of ML-KEM
+  and ML-DSA-87 too. Every output is still right. bin/sha3_equiv_test,
+  a device object's build, starts its contexts with shake128_init and
+  shake256_init, copies the stack below each kind of call and finds a
+  lane the call computed from its input (docs/decisions.md 236).
+
+--- old
+    s->squeezing = 0;
+    s->wipes_below = 1;
+--- new
+    s->squeezing = 0;
+    s->wipes_below = 0;

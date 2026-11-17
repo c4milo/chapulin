@@ -51,6 +51,11 @@ void shake256_init(shake *s) {
     fill_nondet((uint8_t *)s, sizeof *s);
 }
 
+void shake128_init_public(shake *s) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "shake128_init_public: ctx writable");
+    fill_nondet((uint8_t *)s, sizeof *s);
+}
+
 void shake_absorb(shake *s, const uint8_t *in, size_t n) {
     __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "shake_absorb: ctx writable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "shake_absorb: input readable");

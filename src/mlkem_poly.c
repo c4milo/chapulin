@@ -425,6 +425,11 @@ void mlk_poly_tomsg(uint8_t msg[32], const mlk_poly *p) {
 // and the sampler needs about 170 groups for each polynomial
 // (docs/decisions.md 100).
 //
+// The stream's input is public, so the context comes from
+// shake128_init_public, and an object that wipes the stack below each
+// SHA-3 call runs no wipe after these squeezes (docs/decisions.md 236,
+// INV-71).
+//
 // The read is capped at MLK_SAMPLE_GROUPS three-byte groups (1536
 // bytes). FIPS 203 reads an unbounded stream; 704 bytes already puts
 // the probability of needing more below 2^-128 (C2SP/CCTV's bound), so
@@ -439,7 +444,7 @@ void mlk_sample_ntt(mlk_poly *p, const uint8_t seed[32], uint8_t x0, uint8_t x1)
     shake s;
     const uint8_t idx[2] = {x0, x1};
     uint8_t buf[3 * MLK_SAMPLE_CHUNK_GROUPS];
-    shake128_init(&s);
+    shake128_init_public(&s);
     shake_absorb(&s, seed, 32);
     shake_absorb(&s, idx, 2);
     unsigned j = 0;

@@ -19911,3 +19911,76 @@ does nothing more.
     took 21. The counts fell by 0.004% or less, the lines icount had added: x25519 by 742,
     RSA-3072 by 256. The rv32 and mips counts run QEMU in user mode, with no icount, and no run
     of either has differed.
+
+236. **No wipe of the stack below follows a SHA-3 call on the public stream of a matrix entry.**
+    Decision 219 wipes 1,024 bytes of the stack below each SHA-3 call that ran the permutation,
+    in an object that runs `keccak_f1600_plain`. The instruction gate of decision 235 showed what
+    that cost a device core: on the Cortex-M3, ML-KEM-768 key generation rose from 1,006,797
+    instructions to 1,035,660, and decapsulation from 1,330,059 to 1,360,551, counted as decision
+    235 now counts. Camilo chose this form on 2026-11-17, from the three below.
+
+    - **Where the wipes ran.** One wipe costs about 800 instructions on the Cortex-M3.
+      `mlk_sample_ntt` squeezes 24 bytes a call, and each call that reads past a block runs a
+      permutation and a wipe: about three for each of the nine entries of ML-KEM-768's matrix.
+      The stream comes from the seed rho and two indices. The encapsulation key carries rho in
+      the clear, so what a body leaves in the stack from this stream is public.
+      `keccak_avx2.c` and `keccak_neon.c` take this stream for the same reason, and they keep
+      lanes in stack slots that no wipe clears (decisions 107 and 198, INV-48 and INV-69).
+      `mld_sample_ntt_cpu` squeezes ML-DSA-87's matrix A one block a call from rho, which pk
+      carries in the clear.
+    - **The change.** `shake128_init_public` starts the stream `shake128_init` starts, and
+      writes 0 to the context's new field `wipes_below`. `shake_init` writes 1. `shake_absorb`
+      and `shake_squeeze` give `wipe_below_after` the value `permutes & s->wipes_below`. The two
+      matrix samplers call the new init, and `keccak_hw.h` renames it to
+      `shake128_init_public_hw` in the copies on the SHA-3 instructions. The field takes 4 bytes
+      that were padding, so `sizeof(shake)` stays 216 on the 32-bit cores and 224 on the 64-bit
+      ones. Every other SHAKE context keeps its wipe: the noise, G, H, J, and ML-DSA-87's key,
+      mask, challenge and message streams. ML-DSA-87's verification hashes only public bytes,
+      but its other calls keep the wipe too. The rule admits one stream, so one argument covers
+      every call it admits.
+    - **The forms measured.** On the Cortex-M3, under the Arm GNU gcc 15.3, by decision 235's
+      count, which drops a guest address that repeats the one before:
+
+      | form | key generation | decapsulation |
+      | --- | --- | --- |
+      | decision 219, on main | 1,035,660 | 1,360,551 |
+      | one wipe after each matrix entry | 1,020,834 | 1,345,725 |
+      | no test and no wipe on the matrix stream, a prototype | 1,013,652 | 1,338,543 |
+      | this decision | 1,015,455 | 1,340,386 |
+      | before decision 219, at 3f5bbcd0 | 1,006,797 | 1,330,059 |
+
+      This decision takes back 70% of decision 219's rise in key generation and 66% in
+      decapsulation. The prototype skipped the test of the lengths as well, in a squeeze entry
+      of its own. This form keeps one squeeze entry and tests a flag the init sets. The rest of
+      the rise is the wipes after the secret streams, which stay. One wipe after each entry
+      kept a wipe on every stream, and took back 51%. This Mac's Arm GNU gcc is 15.3.rel2, and
+      the pin is 15.3.rel1. On main the two count the same three ML-KEM rows, so
+      `bench/results-insn-m3.csv` takes this decision's counts from rel2. The hybrid handshake
+      fell from 61,198,198 instructions to 61,137,623.
+    - **The other cores.** Lab run 44009624749 counted the change on CI's runners. Under
+      mips32r2 at `-Os`, key generation fell from 1,269,248 instructions to 1,241,085, and under
+      rv32imac from 1,216,804 to 1,182,282: 2.2% and 2.8%. The stack high-water mark of key
+      generation fell from 5,260 bytes to 4,668 on mips32r2 and from 5,200 to 4,492 on
+      rv32imac, because the matrix sampler no longer calls `wipe_frame`. On an arm64 host object
+      under gcc, which holds no copy on the SHA-3 instructions, key generation fell 0.9% and
+      ML-DSA-87's verification 0.8%. There a squeeze of SHAKE128 or SHAKE256 rose by 14
+      instructions, the store of the flag and its tests. An x86-64 host object runs no wipe below, so there each
+      SHAKE context costs one more store, of `wipes_below`: ML-KEM-768's key generation rose by
+      6 instructions, and an ML-DSA-87 signature by 134.
+    - **The branches.** `lint-wide-multiply` read the new branches before their ceilings rose.
+      `shake_absorb` tests `wipes_below` after its test of the bytes against the room in the
+      block, and on the Cortex-M3 `shake_squeeze` does too. `shake128_init_public` holds the
+      loop over the lanes it zeroes, as the other inits do. Each reads a length, the position,
+      the flag or the lane counter. The pinned clang's entries rose by 2 or 3 on the 32-bit
+      cores and by 1 on arm64. The CI gccs' entries rose by 1 for mips32r2 and riscv32, the loop
+      of the init, and by 2 for the Cortex-M3. A `&&` in place of the `&` cost two more
+      branches on arm64.
+    - **The memory.** `bench/sram.sh` wrote the same CSV. Its call graph keeps the edge from
+      `shake_absorb` to `wipe_frame`, which a secret context still runs, so each static peak
+      stays. The high-water marks above are what a run writes.
+    - **What holds it.** INV-71. The Semgrep rule `inv-71-public-shake-matrix-only` refuses a
+      call of the public init outside the two samplers. `bin/sha3_test` holds its stream to
+      `shake128_init`'s, and `bin/sha3_equiv_test` still searches the stack below each kind of
+      call on a secret context. The `sha3_stream` proof runs both values of the flag, and the
+      `sha3` proof starts SHAKE128 from either init. Two violations break the rule:
+      `inv71-sha3-every-context-public` and `inv71-noise-on-public-context`.

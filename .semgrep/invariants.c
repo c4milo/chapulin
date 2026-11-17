@@ -223,3 +223,29 @@ void hsf_begin(uint8_t *priv, uint8_t *random, uint8_t *dz) {
     // ruleid: inv-4-randomness-files
     rand_draw(0, random, 32);
 }
+
+// The callers inv-71-public-shake-matrix-only admits: the two matrix
+// samplers, whose stream comes from the public seed rho.
+void mlk_sample_ntt(mlk_poly *p, const uint8_t seed[32], uint8_t x0, uint8_t x1) {
+    shake s;
+    // ok: inv-71-public-shake-matrix-only
+    shake128_init_public(&s);
+}
+
+int mld_sample_ntt_cpu(uint32_t cpu, mld_poly *p, const uint8_t rho[32], uint8_t s, uint8_t r) {
+    shake xof;
+    // ok: inv-71-public-shake-matrix-only
+    shake128_init_public_hw(&xof);
+    return 0;
+}
+
+// A secret stream on the public context, under either name.
+void mlk_sample_cbd(mlk_poly *p, const uint8_t seed[32], uint8_t nonce) {
+    shake s;
+    // ruleid: inv-71-public-shake-matrix-only
+    shake128_init_public(&s);
+    // ruleid: inv-71-public-shake-matrix-only
+    shake128_init_public_hw(&s);
+    // ok: inv-71-public-shake-matrix-only
+    shake128_init(&s);
+}

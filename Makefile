@@ -10563,6 +10563,26 @@ BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/cha
 # its result. Each reads a length and the position in the block, which are
 # public. x86-64's host entry runs no wipe and did not move.
 #
+# sha3.c's clang entries rose again when a context that
+# shake128_init_public started began to skip that wipe (docs/decisions.md
+# 236): m3 from 40 to 43, mips32r2 from 27 to 29 and rv32imac from 34 to
+# 36. The new branches were read. On each spec shake_absorb tests the
+# context's wipes_below after its test of the bytes against the room left
+# in the block, and on m3 shake_squeeze does the same after its test of the
+# bytes left. shake128_init_public holds the loop over the 25 lanes it
+# zeroes, as shake128_init and shake256_init do. arm64's host entry rose
+# from 77 to 78: shake_absorb tests the flag with a tbz, and the -O2 init
+# holds no loop. Each branch reads a length, the position in the block, the
+# flag or the lane counter, which are public. x86-64's host entry runs no
+# wipe and did not move. The gcc entries rose too: m3-gcc from 23 to 25
+# under the Arm GNU gcc 15.3, mips32r2-gcc from 19 to 20 and
+# mips32r2-gcc-O2 from 34 to 35 under Ubuntu 24.04's mips gcc 12.4, and
+# rv32imac-gcc and rv32ic-gcc from 24 to 25 under the Bootlin gcc 14.3.
+# Under each the new branch is the bne that closes shake128_init_public's
+# loop over the lanes, and under the Arm GNU gcc shake_absorb also tests
+# the AND of its length test and the flag with a beq after an ITE. The
+# branches were read.
+#
 # x25519.c's two riscv32 gcc entries rose from 23 to 24 when the clamp
 # moved into clamp_and_ladder(), which the wide field shares. Both branches
 # that function adds were read: a bne that closes the 32-byte copy loop,
@@ -10609,41 +10629,41 @@ BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/cha
 # in the comment above WIDE64_SPECS, at the flags a host object is
 # compiled with.
 BRANCH_CEILING := \
-  m3/src/ct.c:2 m3/src/ct_wipe.c:7 m3/src/sha256.c:17 m3/src/sha3.c:40 m3/src/hkdf.c:19 m3/src/chacha20.c:9 m3/src/poly1305.c:19 \
+  m3/src/ct.c:2 m3/src/ct_wipe.c:7 m3/src/sha256.c:17 m3/src/sha3.c:43 m3/src/hkdf.c:19 m3/src/chacha20.c:9 m3/src/poly1305.c:19 \
   m3/src/aead.c:4 m3/src/x25519.c:33 m3/src/p256_field.c:24 m3/src/mlkem.c:16 m3/src/mlkem_poly.c:43 m3/src/drbg.c:9 \
   m3/src/softmul.c:0 m3/src/aes.c:3 m3/src/quic_aes_soft.c:12 m3/src/aes_extern.c:0 \
-  m3/src/gcm.c:22 m3/src/rsa_sign.c:36 mips32r2/src/ct.c:2 mips32r2/src/ct_wipe.c:6 mips32r2/src/sha256.c:16 mips32r2/src/sha3.c:27 \
+  m3/src/gcm.c:22 m3/src/rsa_sign.c:36 mips32r2/src/ct.c:2 mips32r2/src/ct_wipe.c:6 mips32r2/src/sha256.c:16 mips32r2/src/sha3.c:29 \
   mips32r2/src/hkdf.c:16 mips32r2/src/chacha20.c:7 mips32r2/src/poly1305.c:18 mips32r2/src/aead.c:2 \
   mips32r2/src/x25519.c:31 mips32r2/src/p256_field.c:21 mips32r2/src/mlkem.c:13 mips32r2/src/mlkem_poly.c:36 \
   mips32r2/src/drbg.c:8 mips32r2/src/softmul.c:0 mips32r2/src/aes.c:2 mips32r2/src/quic_aes_soft.c:12 \
   mips32r2/src/aes_extern.c:0 mips32r2/src/gcm.c:16 mips32r2/src/rsa_sign.c:34 rv32imac/src/ct.c:2 rv32imac/src/ct_wipe.c:7 \
-  rv32imac/src/sha256.c:17 rv32imac/src/sha3.c:34 rv32imac/src/hkdf.c:18 rv32imac/src/chacha20.c:8 \
+  rv32imac/src/sha256.c:17 rv32imac/src/sha3.c:36 rv32imac/src/hkdf.c:18 rv32imac/src/chacha20.c:8 \
   rv32imac/src/poly1305.c:18 rv32imac/src/aead.c:2 rv32imac/src/x25519.c:31 rv32imac/src/p256_field.c:21 \
   rv32imac/src/mlkem.c:14 rv32imac/src/mlkem_poly.c:36 rv32imac/src/drbg.c:9 rv32imac/src/softmul.c:0 \
   rv32imac/src/aes.c:3 rv32imac/src/quic_aes_soft.c:12 rv32imac/src/aes_extern.c:0 \
   rv32imac/src/gcm.c:20 rv32imac/src/rsa_sign.c:32 m3-gcc/src/ct.c:1 m3-gcc/src/ct_wipe.c:4 m3-gcc/src/sha256.c:12 \
-  m3-gcc/src/sha3.c:23 m3-gcc/src/hkdf.c:19 m3-gcc/src/chacha20.c:7 m3-gcc/src/poly1305.c:14 m3-gcc/src/aead.c:2 \
+  m3-gcc/src/sha3.c:25 m3-gcc/src/hkdf.c:19 m3-gcc/src/chacha20.c:7 m3-gcc/src/poly1305.c:14 m3-gcc/src/aead.c:2 \
   m3-gcc/src/x25519.c:23 m3-gcc/src/p256_field.c:14 m3-gcc/src/mlkem.c:13 m3-gcc/src/mlkem_poly.c:37 \
   m3-gcc/src/drbg.c:8 m3-gcc/src/softmul.c:0 m3-gcc/src/aes.c:3 m3-gcc/src/quic_aes_soft.c:9 \
   m3-gcc/src/aes_extern.c:0 m3-gcc/src/gcm.c:15 m3-gcc/src/rsa_sign.c:32 mips32r2-gcc/src/ct.c:1 mips32r2-gcc/src/ct_wipe.c:3 \
-  mips32r2-gcc/src/sha256.c:12 mips32r2-gcc/src/sha3.c:19 mips32r2-gcc/src/hkdf.c:18 \
+  mips32r2-gcc/src/sha256.c:12 mips32r2-gcc/src/sha3.c:20 mips32r2-gcc/src/hkdf.c:18 \
   mips32r2-gcc/src/chacha20.c:6 mips32r2-gcc/src/poly1305.c:14 mips32r2-gcc/src/aead.c:2 \
   mips32r2-gcc/src/x25519.c:20 mips32r2-gcc/src/p256_field.c:13 mips32r2-gcc/src/mlkem.c:13 \
   mips32r2-gcc/src/mlkem_poly.c:41 mips32r2-gcc/src/drbg.c:7 mips32r2-gcc/src/softmul.c:0 \
   mips32r2-gcc/src/aes.c:3 mips32r2-gcc/src/quic_aes_soft.c:9 mips32r2-gcc/src/aes_extern.c:0 \
   mips32r2-gcc/src/gcm.c:13 mips32r2-gcc/src/rsa_sign.c:29 \
-  mips32r2-gcc-O2/src/ct.c:2 mips32r2-gcc-O2/src/ct_wipe.c:6 mips32r2-gcc-O2/src/sha256.c:23 mips32r2-gcc-O2/src/sha3.c:34 \
+  mips32r2-gcc-O2/src/ct.c:2 mips32r2-gcc-O2/src/ct_wipe.c:6 mips32r2-gcc-O2/src/sha256.c:23 mips32r2-gcc-O2/src/sha3.c:35 \
   mips32r2-gcc-O2/src/hkdf.c:23 mips32r2-gcc-O2/src/chacha20.c:7 mips32r2-gcc-O2/src/poly1305.c:21 \
   mips32r2-gcc-O2/src/aead.c:2 mips32r2-gcc-O2/src/x25519.c:28 mips32r2-gcc-O2/src/p256_field.c:24 \
   mips32r2-gcc-O2/src/mlkem.c:17 \
   mips32r2-gcc-O2/src/mlkem_poly.c:39 mips32r2-gcc-O2/src/drbg.c:8 mips32r2-gcc-O2/src/softmul.c:0 \
-  rv32imac-gcc/src/ct.c:1 rv32imac-gcc/src/ct_wipe.c:4 rv32imac-gcc/src/sha256.c:15 rv32imac-gcc/src/sha3.c:24 rv32imac-gcc/src/hkdf.c:23 \
+  rv32imac-gcc/src/ct.c:1 rv32imac-gcc/src/ct_wipe.c:4 rv32imac-gcc/src/sha256.c:15 rv32imac-gcc/src/sha3.c:25 rv32imac-gcc/src/hkdf.c:23 \
   rv32imac-gcc/src/chacha20.c:11 rv32imac-gcc/src/poly1305.c:15 rv32imac-gcc/src/aead.c:4 \
   rv32imac-gcc/src/x25519.c:24 rv32imac-gcc/src/p256_field.c:20 rv32imac-gcc/src/mlkem.c:19 \
   rv32imac-gcc/src/mlkem_poly.c:39 rv32imac-gcc/src/drbg.c:10 rv32imac-gcc/src/softmul.c:0 \
   rv32imac-gcc/src/aes.c:4 rv32imac-gcc/src/quic_aes_soft.c:12 rv32imac-gcc/src/aes_extern.c:0 \
   rv32imac-gcc/src/gcm.c:23 rv32imac-gcc/src/rsa_sign.c:33 rv32ic-gcc/src/ct.c:1 rv32ic-gcc/src/ct_wipe.c:4 \
-  rv32ic-gcc/src/sha256.c:15 rv32ic-gcc/src/sha3.c:24 rv32ic-gcc/src/hkdf.c:23 rv32ic-gcc/src/chacha20.c:11 \
+  rv32ic-gcc/src/sha256.c:15 rv32ic-gcc/src/sha3.c:25 rv32ic-gcc/src/hkdf.c:23 rv32ic-gcc/src/chacha20.c:11 \
   rv32ic-gcc/src/poly1305.c:15 rv32ic-gcc/src/aead.c:4 rv32ic-gcc/src/x25519.c:24 \
   rv32ic-gcc/src/p256_field.c:20 rv32ic-gcc/src/mlkem.c:19 rv32ic-gcc/src/mlkem_poly.c:39 \
   rv32ic-gcc/src/drbg.c:10 rv32ic-gcc/src/softmul.c:2 rv32ic-gcc/src/aes.c:4 \
@@ -10689,7 +10709,7 @@ BRANCH_CEILING := \
   arm64/src/mlkem_poly.c@host:49 x86-64/src/mlkem_poly.c@host:50 \
   arm64/src/ct.c@host:9 x86-64/src/ct.c@host:4 arm64/src/ct_wipe.c@host:5 x86-64/src/ct_wipe.c@host:11 \
   arm64/src/base64.c@host:0 x86-64/src/base64.c@host:0 \
-  arm64/src/sha256.c@host:28 x86-64/src/sha256.c@host:35 arm64/src/sha3.c@host:77 x86-64/src/sha3.c@host:84 \
+  arm64/src/sha256.c@host:28 x86-64/src/sha256.c@host:35 arm64/src/sha3.c@host:78 x86-64/src/sha3.c@host:84 \
   arm64/src/hkdf.c@host:19 x86-64/src/hkdf.c@host:19 arm64/src/chacha20.c@host:1 x86-64/src/chacha20.c@host:3 \
   arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:19 \
   arm64/src/mlkem.c@host:12 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:79 x86-64/src/rsa_sign.c@host:67 \

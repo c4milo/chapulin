@@ -1,0 +1,16 @@
+invariant: INV-71
+file: src/mlkem_poly.c
+catches: test/lint-invariants.sh
+reason: mlk_sample_cbd starts its context with shake128_init_public and
+  then sets SHAKE256's rate, so it squeezes the same noise from the
+  secret seed and no wipe follows its squeeze. Every output is still
+  right. inv-71-public-shake-matrix-only refuses a call of the public
+  init outside the two matrix samplers (docs/decisions.md 236).
+
+--- old
+    uint8_t buf[MLK_CBD_BYTES];
+    shake256_init(&s);
+--- new
+    uint8_t buf[MLK_CBD_BYTES];
+    shake128_init_public(&s);
+    s.rate = SHAKE256_RATE;

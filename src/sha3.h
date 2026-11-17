@@ -24,21 +24,30 @@
 
 typedef struct {
     uint64_t lane[25];
-    size_t rate;   // bytes absorbed or squeezed per permutation
-    size_t pos;    // bytes into the current rate block
-    int squeezing; // 0 while absorbing; 1 once the first squeeze ran
+    size_t rate;     // bytes absorbed or squeezed per permutation
+    size_t pos;      // bytes into the current rate block
+    int squeezing;   // 0 while absorbing; 1 once the first squeeze ran
+    int wipes_below; // 1: a call that ran the permutation wipes the stack below it; 0: none does
 } shake;
 
 // The one-shots wipe their internal sponge state before returning, so
 // they are safe on secret input as-is. In an object that runs sha3.c's
 // keccak_f1600_plain, the one-shots, shake_absorb and shake_squeeze also
 // wipe the stack below their bodies before they return (sha3.c,
-// docs/decisions.md 219).
+// docs/decisions.md 219), except on a context that shake128_init_public
+// started (docs/decisions.md 236).
 void sha3_256(const uint8_t *in, size_t n, uint8_t out[SHA3_256_LEN]);
 void sha3_512(const uint8_t *in, size_t n, uint8_t out[SHA3_512_LEN]);
 
 void shake128_init(shake *s);
 void shake256_init(shake *s);
+// shake128_init for a stream whose input is public: the stream of a matrix entry from the seed
+// rho, which ML-KEM's encapsulation key and ML-DSA-87's public key carry in the clear. The stream
+// is shake128_init's. It writes 0 to wipes_below, which the other inits set to 1. So in an object
+// that wipes the stack below shake_absorb and shake_squeeze, no wipe follows a call on this context
+// (docs/decisions.md 236, INV-71). Only mlk_sample_ntt and mld_sample_ntt_cpu call it, which a
+// Semgrep rule holds.
+void shake128_init_public(shake *s);
 // Absorb more message bytes. Never call after shake_squeeze on the same
 // context: the sponge has been padded, and later input would land in
 // squeezed state. Re-init to start a new message.
@@ -53,7 +62,7 @@ void shake_squeeze(shake *s, uint8_t *out, size_t n);
 #include "cpu_cfg.h"
 
 #if defined(CH_KECCAK_INSTRUCTIONS) || defined(__x86_64__)
-// The six calls above with the architecture's faster Keccak-f[1600] (sha3_hw.c): on arm64's SHA-3
+// The seven calls above with the architecture's faster Keccak-f[1600] (sha3_hw.c): on arm64's SHA-3
 // instructions (docs/decisions.md 99), and on x86-64 FIPS 202's chi on BMI1's ANDN, with BMI2's
 // RORX (docs/decisions.md 217). An arm64 host object that clang compiled (cpu_cfg.h) and every
 // x86-64 host object hold them beside sha3.c's, which stay the reference: CBMC proves the portable
@@ -68,6 +77,7 @@ void sha3_256_hw(const uint8_t *in, size_t n, uint8_t out[SHA3_256_LEN]);
 void sha3_512_hw(const uint8_t *in, size_t n, uint8_t out[SHA3_512_LEN]);
 void shake128_init_hw(shake *s);
 void shake256_init_hw(shake *s);
+void shake128_init_public_hw(shake *s);
 void shake_absorb_hw(shake *s, const uint8_t *in, size_t n);
 void shake_squeeze_hw(shake *s, uint8_t *out, size_t n);
 #endif

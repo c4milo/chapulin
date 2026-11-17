@@ -307,13 +307,16 @@ The entries are grouped by area:
 - **Harnesses:** `sha3` (fast), `sha3_stream` (fast), `sha3_round` (fast)
 - **Proves:**
   - `sha3`: every mode is safe for a one-call message and XOF output
-    from a fresh context.
+    from a fresh context. SHAKE128 starts from `shake128_init` or from
+    `shake128_init_public`, a nondeterministic choice.
   - `sha3_stream`: the SHAKE streaming calls are safe from any context
-    state (arbitrary lanes, either rate, every position), for split
-    absorbs and squeezes.
+    state (arbitrary lanes, either rate, every position, either value of
+    `wipes_below`), for split absorbs and squeezes.
   - Both: in the object the harnesses compile, which runs
     `keccak_f1600_plain`, each entry that runs the permutation then wipes
-    the stack below its body (decision 219). The wipe is memory-safe and
+    the stack below its body (decision 219), unless the context's
+    `wipes_below` is 0, which only `shake128_init_public` writes
+    (decision 236, INV-71). The wipe is memory-safe and
     UB-free, the call through the volatile pointer runs `wipe_frame`, and
     `wipe_frame`'s one wipe covers its array of `SHA3_BELOW_LEN` bytes and
     no byte outside it: `ct_wipe` is the stub of bounds-checked stores

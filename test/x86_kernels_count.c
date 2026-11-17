@@ -255,8 +255,8 @@ void sha512_avx2_compress_blocks(uint64_t state[8], const uint8_t *p, size_t blo
     sha512_compress_blocks(state, p, blocks);
 }
 
-// sha3_hw.c's six entries, on sha3.c's code, which computes the bytes the
-// copy on ANDN and RORX computes. The two init calls run no permutation and
+// sha3_hw.c's seven entries, on sha3.c's code, which computes the bytes the
+// copy on ANDN and RORX computes. The three init calls run no permutation and
 // count nothing.
 unsigned long x86_sha3_bmi_calls;
 
@@ -276,6 +276,10 @@ void shake128_init_hw(shake *s) {
 
 void shake256_init_hw(shake *s) {
     shake256_init(s);
+}
+
+void shake128_init_public_hw(shake *s) {
+    shake128_init_public(s);
 }
 
 void shake_absorb_hw(shake *s, const uint8_t *in, size_t n) {

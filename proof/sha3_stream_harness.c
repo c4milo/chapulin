@@ -14,6 +14,7 @@
 #include "sha3.c"
 
 uint64_t nondet_u64(void);
+int nondet_int(void);
 
 // Typed stores: a byte-pointer fill of the uint64 lanes makes every
 // store a whole-object update in the SSA (docs/proofs.md).
@@ -24,6 +25,10 @@ static void fill_context(shake *s) {
     s->rate = nondet_size_t();
     __CPROVER_assume(s->rate == SHAKE128_RATE || s->rate == SHAKE256_RATE);
     s->pos = nondet_size_t();
+    // Either init's flag: a context shake128_init_public started skips the wipe below
+    // (docs/decisions.md 236), and every other one runs it.
+    s->wipes_below = nondet_int();
+    __CPROVER_assume(s->wipes_below == 0 || s->wipes_below == 1);
 }
 
 int main(void) {

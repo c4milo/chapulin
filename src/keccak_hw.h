@@ -2,7 +2,7 @@
 // SHA-3 instructions (-DCH_CPU_RUNTIME, docs/decisions.md 99). sha3_hw.c, mlkem_poly_hw.c and
 // mlkem_hw.c each include this header and then their file, so a copy is the same source text
 // as the file under its own names, compiled once more, as hash_hw.h's copies are for SHA-2.
-// sha3_hw.c's x86-64 arm includes it too, for the six sha3.c renames alone: that arm is
+// sha3_hw.c's x86-64 arm includes it too, for the seven sha3.c renames alone: that arm is
 // sha3.c on BMI1 and BMI2 (docs/decisions.md 217), and no ML-KEM copy has a body on x86-64.
 //
 // The renames below do two things. They send a copy's SHA-3 and SHAKE calls to sha3_hw.c's
@@ -34,6 +34,7 @@
 #define sha3_512 sha3_512_hw
 #define shake128_init shake128_init_hw
 #define shake256_init shake256_init_hw
+#define shake128_init_public shake128_init_public_hw
 #define shake_absorb shake_absorb_hw
 #define shake_squeeze shake_squeeze_hw
 

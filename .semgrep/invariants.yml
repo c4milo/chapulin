@@ -747,6 +747,29 @@ rules:
       - pattern: ch_mldsa_key_from_pem(...)
       - pattern: ch_anchors_from_pem(...)
 
+  - id: inv-71-public-shake-matrix-only
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-71: shake128_init_public starts a SHAKE128 context after whose
+      calls no wipe of the stack below runs (docs/decisions.md 236). Its
+      input must be public: the seed rho and the two indices of a matrix
+      entry, which ML-KEM's encapsulation key and ML-DSA-87's public key
+      carry in the clear. So mlk_sample_ntt (mlkem_poly.c) and
+      mld_sample_ntt_cpu (mldsa_poly.c) are the only functions that may
+      call it or its copy shake128_init_public_hw, and sha3.c, which
+      defines it, is excluded. A call anywhere else leaves in the stack
+      what a body computed from its input. It needs its own argument
+      that the input is public: amend docs/invariants.md in the same PR.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, sha3.c]
+    patterns:
+      - pattern-either:
+          - pattern: shake128_init_public(...)
+          - pattern: shake128_init_public_hw(...)
+      - pattern-not-inside: '$T mlk_sample_ntt(...) { ... }'
+      - pattern-not-inside: '$T mld_sample_ntt_cpu(...) { ... }'
+
   - id: inv-20-no-time-calls
     languages: [c]
     severity: ERROR

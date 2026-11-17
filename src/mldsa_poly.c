@@ -159,7 +159,9 @@ int mld_sample_ntt_cpu(uint32_t cpu, mld_poly *p, const uint8_t rho[MLD_RHO_BYTE
     const uint8_t index[2] = {s, r};
     uint8_t block[SHAKE128_RATE];
     shake xof;
-    shake128_init(&xof);
+    // rho and the two indices are public, so no wipe follows a squeeze of this stream
+    // (docs/decisions.md 236, INV-71).
+    shake128_init_public(&xof);
     mld_absorb(cpu, &xof, rho, MLD_RHO_BYTES);
     mld_absorb(cpu, &xof, index, sizeof index);
     unsigned j = 0;

@@ -126,9 +126,42 @@ static void test_streaming(void) {
     }
 }
 
+// shake128_init_public starts the stream shake128_init starts, and only it writes 0 to
+// wipes_below, the field that skips the wipe below each call (docs/decisions.md 236, INV-71). The
+// splits sit on and around the rate, as in test_streaming.
+static void test_public_input(void) {
+    uint8_t msg[300];
+    for (size_t i = 0; i < sizeof msg; i++) {
+        msg[i] = (uint8_t)(i * 17 + 3);
+    }
+    shake s;
+    shake128_init(&s);
+    CHECK(s.wipes_below == 1);
+    uint8_t whole[400];
+    shake_absorb(&s, msg, sizeof msg);
+    shake_squeeze(&s, whole, sizeof whole);
+    shake256_init(&s);
+    CHECK(s.wipes_below == 1);
+
+    static const size_t splits[] = {0, 1, 167, 168, 169, 299};
+    for (size_t i = 0; i < sizeof splits / sizeof splits[0]; i++) {
+        size_t at = splits[i];
+        uint8_t out[400];
+        shake128_init_public(&s);
+        CHECK(s.wipes_below == 0);
+        shake_absorb(&s, msg, at);
+        shake_absorb(&s, msg + at, sizeof msg - at);
+        shake_squeeze(&s, out, at);
+        shake_squeeze(&s, out + at, sizeof out - at);
+        CHECK(memcmp(out, whole, sizeof out) == 0);
+        CHECK(s.wipes_below == 0);
+    }
+}
+
 int main(void) {
     test_vectors();
     test_streaming();
+    test_public_input();
     if (failures == 0) {
         (void)printf("sha3: all tests passed\n");
     }

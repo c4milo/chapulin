@@ -6,8 +6,8 @@ aead_seal_1kib,82677,48117,892
 x25519_scalarmult,34970635,28672927,1632
 p256_ecdsa_verify,46029602,46029602,1572
 rsa_pss_verify_3072,11625129,11625129,3824
-mlkem_keygen,1269248,1269248,5260
-mlkem_decaps,1626105,1590113,8972
+mlkem_keygen,1241085,1241085,4668
+mlkem_decaps,1597705,1561713,8380
 handshake_crypto,82260316,69664900,4856
-handshake_crypto_pq,86520799,73889393,12092
+handshake_crypto_pq,86436591,73805185,11500
 # at 500 MHz and 1.0 IPC: sha256_1kib 0.135 ms, hkdf_expand_label_32b 0.043 ms, aead_seal_1kib 0.165 ms, x25519_scalarmult 69.941 ms, p256_ecdsa_verify 92.059 ms, rsa_pss_verify_3072 23.250 ms, handshake_crypto 164.521 ms

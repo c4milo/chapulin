@@ -66,6 +66,10 @@ void shake256_init_hw(shake *s) {
     shake256_init(s);
 }
 
+void shake128_init_public_hw(shake *s) {
+    shake128_init_public(s);
+}
+
 void shake_absorb_hw(shake *s, const uint8_t *in, size_t n) {
     sha3_hw_calls.updates++;
     shake_absorb_uncounted(s, in, n);

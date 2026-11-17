@@ -282,11 +282,12 @@ for target in "$x86" "$arm64"; do
     defines ks_handshake_hw || fail "src/keysched_hw.c for $target does not define ks_handshake_hw"
 done
 
-# Keccak. sha3_hw.c's six entries, and the calls each of ML-KEM's files
+# Keccak. sha3_hw.c's seven entries, and the calls each of ML-KEM's files
 # makes into sha3.h.
-sha3_entries=(sha3_256_hw sha3_512_hw shake128_init_hw shake256_init_hw shake_absorb_hw shake_squeeze_hw)
+sha3_entries=(sha3_256_hw sha3_512_hw shake128_init_hw shake256_init_hw shake128_init_public_hw
+    shake_absorb_hw shake_squeeze_hw)
 mlkem_keccak_calls=(sha3_256 sha3_512 shake256_init shake_absorb shake_squeeze)
-mlkem_poly_keccak_calls=(shake128_init shake256_init shake_absorb shake_squeeze)
+mlkem_poly_keccak_calls=(shake128_init_public shake256_init shake_absorb shake_squeeze)
 for target in "$x86" "$arm64"; do
     for src in src/sha3.c src/mlkem.c src/mlkem_poly.c src/mlkem_poly_native.c src/mlkem_hw.c src/mlkem_poly_hw.c; do
         cross_object "$target" "$src"

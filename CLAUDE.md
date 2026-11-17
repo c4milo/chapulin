@@ -865,6 +865,9 @@ Home: github.com/c4milo.
   in `sha512.c`'s form. The test measures each body's depth against that
   length. `m3-check`, the `cross-check` lanes and the qemu lane's
   `sha3-device` part run it on the device targets (docs/decisions.md 219).
+  No wipe follows a call on a context that `shake128_init_public` started:
+  only the two matrix samplers start one, for the stream of the public seed
+  rho, and a Semgrep rule holds that (docs/decisions.md 236, INV-71).
   The loops of 24 rounds in `sha3_inverted_lanes.h` and `sha3_andn.h` hold
   one address of the round constants, so a round fits the 14 general
   registers of a build that keeps rbp as the frame pointer, as macOS does.

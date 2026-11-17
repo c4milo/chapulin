@@ -430,9 +430,9 @@ its commit, and a change that lowers one records it too.
 | RSA-3072 PSS verify (default) | 11.6 M | 23 | 8.4 M | 13.2 M |
 | P-256 verify (`TRUST=raw-ecdsa`) | 46.0 M | 92 | 26.7 M | 42.6 M |
 | full pinned handshake crypto (default) | 82.3 M | 165 | 57.7 M | 90.4 M |
-| ML-KEM-768 keygen (`KEX=pq`) | 1.3 M | 3 | 1.0 M | 1.2 M |
-| ML-KEM-768 decapsulate (`KEX=pq`) | 1.6 M | 3 | 1.4 M | 1.6 M |
-| full hybrid handshake crypto (`KEX=pq`) | 86.5 M | 173 | 61.2 M | 94.6 M |
+| ML-KEM-768 keygen (`KEX=pq`) | 1.2 M | 2 | 1.0 M | 1.2 M |
+| ML-KEM-768 decapsulate (`KEX=pq`) | 1.6 M | 3 | 1.3 M | 1.6 M |
+| full hybrid handshake crypto (`KEX=pq`) | 86.4 M | 173 | 61.1 M | 94.5 M |
 
 ### The multiply decomposition
 

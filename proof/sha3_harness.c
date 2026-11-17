@@ -11,6 +11,8 @@
 
 #include "sha3.c"
 
+int nondet_int(void);
+
 int main(void) {
     uint8_t msg[200];
     size_t n = nondet_size_t();
@@ -26,8 +28,14 @@ int main(void) {
     size_t out_len = nondet_size_t();
     __CPROVER_assume(out_len <= sizeof out);
 
+    // Either SHAKE128 init: a context shake128_init_public started skips the wipe below
+    // (docs/decisions.md 236), and the sponge is the same.
     shake s;
-    shake128_init(&s);
+    if (nondet_int()) {
+        shake128_init(&s);
+    } else {
+        shake128_init_public(&s);
+    }
     shake_absorb(&s, msg, n);
     shake_squeeze(&s, out, out_len);
 

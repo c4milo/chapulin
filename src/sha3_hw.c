@@ -1,7 +1,7 @@
 // SHA-3 and SHAKE (FIPS 202) for a session of a host object (-DCH_CPU_RUNTIME, cpu_cfg.h) whose
-// ch_cfg.cpu names the architecture's faster Keccak-f[1600]: the six calls sha3.h declares with _hw
-// after their names. A host object compiles this file beside sha3.c, and sha3.h's entries call it
-// for such a session. The file has two arms, one for each architecture.
+// ch_cfg.cpu names the architecture's faster Keccak-f[1600]: the seven calls sha3.h declares with
+// _hw after their names. A host object compiles this file beside sha3.c, and sha3.h's entries call
+// it for such a session. The file has two arms, one for each architecture.
 //
 // For x86-64 it is sha3.c compiled once more, under the _hw names keccak_hw.h gives, with every
 // function under target("bmi,bmi2"). The define below makes that copy run sha3_andn.h's form of

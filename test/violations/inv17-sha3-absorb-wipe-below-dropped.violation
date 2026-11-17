@@ -12,7 +12,7 @@ reason: shake_absorb never wipes the stack below its body, so the lanes
 
 --- old
     absorb(s->lane, s->rate, &s->pos, in, n);
-    wipe_below_after(permutes);
+    wipe_below_after(permutes & s->wipes_below);
 --- new
     absorb(s->lane, s->rate, &s->pos, in, n);
     (void)permutes;

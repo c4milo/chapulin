@@ -1667,6 +1667,43 @@ last `ROLE=server` stub, as the entry said it would.
   last row by the wrong word of a, which `bin/diff_p256_arm64` catches.
 - See [decisions: Engineering](decisions.md#engineering), entry 215.
 
+### INV-71 — a public SHAKE128 context takes the matrix stream alone
+
+- **Claim.** `shake128_init_public` starts the SHAKE128 stream that
+  `shake128_init` starts, and it is the only init that writes 0 to the
+  context's `wipes_below`. In an object that wipes the stack below each
+  SHA-3 call that ran the permutation (INV-17, decision 219), no wipe
+  follows a call on such a context. Its two callers, `mlk_sample_ntt` and
+  `mld_sample_ntt_cpu`, absorb the seed rho and two indices. ML-KEM's
+  encapsulation key and ML-DSA-87's public key carry rho in the clear. So
+  what a call on that context leaves in the stack comes from public bytes
+  alone (decision 236).
+- **Mechanism.** `shake_init` writes 1 to `wipes_below`, and
+  `shake128_init_public` writes 0 after it. `shake_absorb` and
+  `shake_squeeze` give `wipe_below_after` the value
+  `permutes & s->wipes_below`, an AND of two words that are 0 or 1, so
+  no branch reads the flag. The flag, the lengths and the position are
+  public, so the choice of a wipe reads no secret. `keccak_hw.h`
+  renames the call to `shake128_init_public_hw` in the copies on the
+  SHA-3 instructions, whose objects run no wipe below.
+- **Check.** *Semgrep tripwire*: `inv-71-public-shake-matrix-only`
+  refuses a call of `shake128_init_public` or `shake128_init_public_hw`
+  in a library source outside the two samplers. `bin/sha3_test` requires
+  the public context's stream to equal `shake128_init`'s at splits on and
+  around the rate, and `wipes_below` to be 1 after the two other inits.
+  `bin/sha3_equiv_test` and `bin/sha3_equiv_test_host` start the ten
+  kinds of call of INV-17 with `shake128_init` and `shake256_init`, and
+  search the stack below each one. The `sha3_stream` proof runs each
+  entry with both values of the flag. `test/hash-builds.sh` requires
+  `mlkem_poly.c` and its `_hw` copy to call the public init.
+- **Violation.** A PR skips the wipe in every context:
+  `inv71-sha3-every-context-public` makes `shake_init` write 0, and
+  `bin/sha3_equiv_test` catches it. A PR starts a secret stream on the
+  public context: `inv71-noise-on-public-context` makes `mlk_sample_cbd`
+  call the public init and then set SHAKE256's rate, which gives the same
+  noise, and `test/lint-invariants.sh` catches it.
+- See [decisions: Engineering](decisions.md#engineering), entry 236.
+
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
 - **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit words
