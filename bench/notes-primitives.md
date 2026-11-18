@@ -16,7 +16,7 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
-## The first arm64 server run, f20bd243
+## The first arm64 server run, 4ffa66dd
 
 Bench run 44409753742 recorded the Arm Neoverse N2 of GitHub's `ubuntu-24.04-arm` runner for the
 first time, under gcc 13.3 and clang 23, beside OpenSSL 3.6.5. The M1 Pro's column shows chapulin

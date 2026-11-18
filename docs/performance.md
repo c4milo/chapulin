@@ -962,9 +962,10 @@ What the AVX-512 machine's columns show:
 
 What the arm64 machine's columns show:
 
-- Both compilers' columns are one run of 2026-11-18 on the tree of f20bd243, on an Arm Neoverse
+- Both compilers' columns are one run of 2026-11-18 on the tree of 4ffa66dd, on an Arm Neoverse
   N2, the core of GitHub's `ubuntu-24.04-arm` runner (bench run 44409753742), beside OpenSSL
-  3.6.5. Its rows run under `ch_cfg.cpu 0xe7`: `CH_CPU_PROBED`, the AES and multiply bits, and
+  3.6.5. The CSVs name f20bd243, that commit before a rebase onto b0c0f606, which changed only
+  the README, `tools/speed_chart.py` and `docs/decisions.md`. Its rows run under `ch_cfg.cpu 0xe7`: `CH_CPU_PROBED`, the AES and multiply bits, and
   `CH_CPU_CONSTANT_TIME_SHA256`, `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`.
   The AES-GCM rows run under `0x83` and the ChaCha20-Poly1305 rows under `0x7`. It is this
   machine's first record in the table.
