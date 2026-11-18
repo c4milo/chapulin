@@ -28,7 +28,9 @@ import sys
 # bench/primitives.sh wrote on it, and the CSV bench/record.sh wrote on it,
 # which holds the AEAD rows. The x86-64 groups are two CPUs, one without
 # AVX-512 and one with AVX-512 IFMA, each under gcc and the pinned clang;
-# the bench workflow's record-x86_64 job checks which kind it drew.
+# the bench workflow's record-x86_64 job checks which kind it drew. The
+# arm64 groups are an Arm Neoverse N2 under the same two compilers, which
+# its record-arm64 job checks.
 MACHINES = [
     ("M1 Pro", "bench/results-primitives-darwin-arm64-clang.csv",
      "bench/results-record-darwin-arm64-clang.csv"),
@@ -40,6 +42,10 @@ MACHINES = [
      "bench/results-record-linux-x86_64-avx512-gcc.csv"),
     ("x86-64 AVX-512 clang", "bench/results-primitives-linux-x86_64-avx512-clang.csv",
      "bench/results-record-linux-x86_64-avx512-clang.csv"),
+    ("arm64 gcc", "bench/results-primitives-linux-arm64-n2-gcc.csv",
+     "bench/results-record-linux-arm64-n2-gcc.csv"),
+    ("arm64 clang", "bench/results-primitives-linux-arm64-n2-clang.csv",
+     "bench/results-record-linux-arm64-n2-clang.csv"),
 ]
 
 # The first cell of the table's header row, which is how the check finds it.

@@ -16,6 +16,14 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The first arm64 server run, f20bd243
+
+Bench run 44409753742 recorded the Arm Neoverse N2 of GitHub's `ubuntu-24.04-arm` runner for the
+first time, under gcc 13.3 and clang 23, beside OpenSSL 3.6.5. The M1 Pro's column shows chapulin
+ahead of OpenSSL on most rows, and this core does not. It trails on 14 rows under gcc and 12 under
+clang: SHA3-256, ML-KEM-768's encapsulation, ChaCha20-Poly1305, RSA verification and, under gcc,
+P-256. docs/performance.md lists the ratios. Each is a lead for arm64 work on a server core.
+
 ## The AVX-512 run of 64976029
 
 Bench run 44399684739 recorded the AVX-512 columns on 64976029, after decision 238, beside OpenSSL

@@ -9,7 +9,7 @@ a chart and the table pick the same rows: the widest ch_cfg.cpu value a CSV hold
 and OpenSSL's row of the same run. Each bar is chapulin's speed in multiples of OpenSSL's, which
 is OpenSSL's time over chapulin's: the inverse of the table's ratio. A row whose OpenSSL cell
 times another operation has no ratio in the table and no bar here. One chart holds one CPU, and
-an x86-64 CPU's chart holds a bar for each of the two compilers the table holds.
+a Linux CPU's chart holds a bar for each of the two compilers the table holds.
 
 tools/bench-numbers.py calls check_charts, so `make lint-bench-numbers` fails when a committed
 SVG is not what this file draws from the CSVs. After a run moves a CSV, run this file and commit
@@ -30,6 +30,7 @@ CHARTS = [
     ("m1-pro", ["M1 Pro"]),
     ("x86-64", ["x86-64 gcc", "x86-64 clang"]),
     ("x86-64-avx512", ["x86-64 AVX-512 gcc", "x86-64 AVX-512 clang"]),
+    ("arm64", ["arm64 gcc", "arm64 clang"]),
 ]
 
 IMG = "docs/img"
