@@ -513,7 +513,7 @@ The entries are grouped by area:
 
 #### aead_avx512
 
-- **Harnesses:** `aead_avx512` (fast), `aead_avx512_row` (fast), `aead_avx512_last` (fast)
+- **Harnesses:** `aead_avx512` (fast), `aead_avx512_row` (fast), `aead_avx512_last` (fast), `aead_avx512_halves` (fast), `aead_avx512_row_halves` (fast)
 - **Build:** the AVX-512 one-pass ChaCha20-Poly1305 (`aead_avx512.c`,
   decision 226) and `chacha20_avx512.c`, whose kernel the open runs over
   its last bytes, under `-DCH_CPU_RUNTIME`, `-DCH_AEAD_AVX512_MODEL`,
@@ -521,6 +521,9 @@ The entries are grouped by area:
   `test/chacha20_avx512_model_lanes.h` and
   `test/poly1305_ifma_model_lanes.h`, the models of each instruction in
   portable C that `bin/aead_avx512_equiv_test` runs on every machine.
+  goto-cc takes gcc's layout of a pass's groups, and the two `_halves`
+  harnesses define `AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS` to 1 for clang's
+  (decision 238).
   Each IFMA multiplication adds any value (`proof/poly1305_ifma_stubs.h`),
   `ct_wipe` is the stub's loop, and `poly1305_update_native`, which the
   bytes after the last group run, is a stub that reads each byte.
@@ -529,11 +532,13 @@ The entries are grouped by area:
   context, their frames and the struct of powers they wipe, with the
   output on the input or apart from it, at 2,048 bytes and a rest of 0,
   37 or 300: a last whole pass, a row pass beside the last whole pass,
-  and a pass of sixteen blocks over the rest. Those run every statement of
-  both files but `chacha20_avx512.c`'s row pass alone, which a message of
-  1 to 256 bytes runs and no message of 2,048 bytes or more does.
-- **Bound:** the three lengths above, one a harness. One harness with
-  the three lengths gave no verdict in 77 minutes of symbolic execution.
+  and a pass of sixteen blocks over the rest; in clang's layout, at a rest
+  of 0 and 37. Those run every statement of both files but
+  `chacha20_avx512.c`'s row pass alone, which a message of 1 to 256 bytes
+  runs and no message of 2,048 bytes or more does.
+- **Bound:** the three lengths above, one a harness, and two of them in
+  clang's layout. One harness with the three lengths gave no verdict in
+  77 minutes of symbolic execution.
 - **Not proved:** any value either file computes. The poly1305_ifma
   harnesses prove the bounds of a group's sums and of the powers of r on
   the same text, which `poly1305_ifma_group.h` holds for both files, and

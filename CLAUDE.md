@@ -282,8 +282,9 @@ Home: github.com/c4milo.
   x86-64 session whose caller sets CH_CPU_AVX512_IFMA) +
   `aead_avx512.[ch]` (the ChaCha20-Poly1305 seal and open in one pass on
   AVX-512: `chacha20_avx512_lanes.h`'s pass with four of
-  `poly1305_ifma_group.h`'s IFMA groups between its double rounds, for an
-  x86-64 session whose caller sets CH_CPU_AVX512_IFMA and
+  `poly1305_ifma_group.h`'s IFMA groups among its double rounds, under
+  clang each group's four chunks after its half rounds (docs/decisions.md
+  238), for an x86-64 session whose caller sets CH_CPU_AVX512_IFMA and
   CH_CPU_CONSTANT_TIME_MULTIPLY, from 2,048 bytes; the open wipes the
   plaintext on a bad tag; docs/decisions.md 226) +
   `poly1305.[ch]` with `poly1305_vector.[ch]` (four blocks a pass in

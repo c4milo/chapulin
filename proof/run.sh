@@ -3538,7 +3538,9 @@ launch fast full poly1305_ifma_blocks 513 "poly1305_ifma_blocks.1:2,ct_wipe.0:19
 # as bin/aead_avx512_equiv_test builds them. Each line runs a seal or an
 # open whole for its memory accesses at 2,048 bytes and one rest, the three
 # ways a message ends: aead_avx512 a rest of 0, aead_avx512_row 37 and
-# aead_avx512_last 300. Each IFMA product is any value
+# aead_avx512_last 300. aead_avx512_halves and aead_avx512_row_halves run
+# the first two in clang's layout of a pass's groups, the layout goto-cc
+# does not take (docs/decisions.md 238). Each IFMA product is any value
 # (proof/poly1305_ifma_stubs.h), and ct_wipe is the stub's loop. Each line
 # has one length, so symbolic execution finds where each loop over passes
 # or groups ends. One harness with the three lengths ran 77 minutes in
@@ -3561,6 +3563,8 @@ launch fast full poly1305_ifma_blocks 513 "poly1305_ifma_blocks.1:2,ct_wipe.0:19
 launch fast:6 full aead_avx512 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
 launch fast:6 full aead_avx512_row 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
 launch fast:6 full aead_avx512_last 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
+launch fast:6 full aead_avx512_halves 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
+launch fast:6 full aead_avx512_row_halves 17 "fill_nondet.0:2349,ct_wipe.0:1945,aead_avx512_seal.1:2,aead_avx512_open.1:2,whole_passes.0:2,hash_rest.1:5,poly1305_update_native.0:45,xor_partial.0:45" --object-bits 12 proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL -Itest
 # rsa_avx2.c, RSA's public operation on AVX2, which an x86-64 host object
 # runs for a session whose ch_cfg.cpu holds CH_CPU_AVX2 and not
 # CH_CPU_AVX512_IFMA (docs/decisions.md 122). As for rsa_ifma.c, the lines

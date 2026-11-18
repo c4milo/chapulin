@@ -20045,3 +20045,46 @@ does nothing more.
     `check_history` fails when a group's last point is not what its CSVs give, or when a history
     chart is not what the file draws. A point is one run, so the line shows run-to-run spread as
     well as changes to the code.
+
+238. **Under clang, the AVX-512 one pass runs each chunk of a Poly1305 group after a half
+    round.** Camilo chose the ChaCha20-Poly1305 row on the Xeon Platinum 8370C on 2026-11-18. There
+    the seal of 16 KiB read 1.09 times OpenSSL's time under gcc and 1.18 times under clang (bench
+    run 44230474748).
+
+    - **What the lab found.** Lab runs 44327378030 to 44330567657 timed the seal, its keystream, its
+      Poly1305 and OpenSSL's seal in one process on five CPU models. A chain of dependent adds after
+      each batch gave the core clock. In cycles the seal took 0.72 to 0.87 of OpenSSL's under gcc
+      and 0.74 to 0.97 under clang, on every model. On the 8370C the IFMA Poly1305 lowered the clock
+      to 2.79 to 2.84 GHz, where the 512-bit keystream and OpenSSL's seal ran at 3.38 GHz. That
+      clock is the 8370C's gap, and this entry does not change it. bench/notes-primitives.md holds
+      the table.
+    - **Clang's pass.** Under gcc the one pass took 5 to 10% fewer cycles than its keystream and its
+      Poly1305 alone, and under clang 5 to 8% more. clang schedules before it allocates registers.
+      Under its generic model it put a group's 36 IFMA products in one block, which waited on port
+      0 beside the rotations. gcc schedules after, and moved the products among the rotations.
+    - **What changed.** A group is four chunks: the digits of its second eight blocks and the
+      products of their digit 1, the products of their digits 2 and 0, the same two chunks for its
+      first eight blocks, and last the carry. Under clang each chunk runs after one half of the two
+      double rounds around it, a column round or a diagonal round. The target attribute adds
+      `tune=sapphirerapids`, and with that model clang keeps the chunks where the source puts them.
+      Under gcc the pass is the code before this entry, `absorb_group` between two double rounds.
+      `AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS` names the layout, and a test defines it.
+    - **Numbers.** In lab run 44385644903 clang's seal of 16 KiB took 0.977 to 0.980 of its cycles
+      before on a Xeon 6975P-C, 0.956 to 0.959 on an EPYC 9V45 and 0.930 to 0.935 on an EPYC 9V74.
+      In lab runs 44375462702 and 44376547386 the same layout took 0.962 to 0.966 of them on the
+      8370C and the 8573C. gcc's code is the same instructions as before, but for three line
+      numbers its `CH_ASSERT`s pass. Clang's seal still takes 6 to 7% more cycles than gcc's on the
+      6975P-C.
+    - **Why a layout for each compiler.** Lab runs 44334066442, 44375462702 and 44376547386 timed
+      four layouts with the chunks among the rounds. Under the tune each one helped clang by 0.7 to
+      6.4%. Under gcc each one took 0 to 6.2% longer: gcc then kept more values live and wrote them
+      to the stack. Without the tune, clang put the products in one block whatever the source did. The four chunks in a row
+      load the blocks in another order than `group_sums`, and gcc's code for them took 0.5 to 4.8%
+      longer (lab runs 44382147600 and 44383076574), so gcc keeps `group_sums`. llvm-mca's model of
+      Sapphire Rapids ordered the layouts as the lab did, and its Zen 4 model did not.
+    - **What holds it.** `bin/aead_avx512_equiv_test` holds both layouts' text over the lane models
+      (`test/aead_avx512_model.c` and `test/aead_avx512_model_halves.c`) to the two-pass AEAD under
+      every compiler. On a CPU with AVX-512 IFMA it holds each compiler's own layout, and the lab
+      runs held both layouts under both compilers, the stack and register searches included. The
+      `aead_avx512_halves` and `aead_avx512_row_halves` harnesses prove clang's layout's memory
+      accesses, and one clang-tidy pass reads each layout.

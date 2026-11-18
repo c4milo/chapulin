@@ -77,11 +77,15 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 // up to 63 bytes to a 64-byte boundary.
 #define BUFFER (2 * (RECORD + 1) + 2 * ALIGN_MAX + SHIFT + 3 * GUARD)
 
-// test/aead_avx512_model.c: the entries over the lane models.
-void aead_avx512_model_seal(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
-                            poly1305 *p, const uint8_t *pt, size_t n, uint8_t *ct);
-void aead_avx512_model_open(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
-                            poly1305 *p, const uint8_t *ct, size_t n, uint8_t *pt);
+// test/aead_avx512_model.c: the entries over the lane models, in gcc's
+// layout of a pass's groups, and test/aead_avx512_model_halves.c's in
+// clang's (docs/decisions.md 238).
+typedef void model_entry(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
+                         poly1305 *p, const uint8_t *in, size_t n, uint8_t *out);
+model_entry aead_avx512_model_seal;
+model_entry aead_avx512_model_open;
+model_entry aead_avx512_model_halves_seal;
+model_entry aead_avx512_model_halves_open;
 
 // xorshift64 with a fixed seed, so a mismatch reproduces bit for bit.
 static uint64_t rng_state = UINT64_C(0x9e3779b97f4a7c15);
@@ -189,7 +193,8 @@ static void model_end(poly1305 *p, size_t aad_len, size_t n, uint8_t tag[AEAD_TA
     widemul_poly1305_final(WIDEMUL_CONSTANT_TIME, p, tag);
 }
 
-static void check_model(size_t n, size_t aad_len, size_t offset, shape aliasing) {
+static void check_model_layout(model_entry *seal, model_entry *open, size_t n, size_t aad_len,
+                               size_t offset, shape aliasing) {
     uint8_t *in;
     uint8_t *out;
     uint8_t tag[AEAD_TAG];
@@ -197,7 +202,7 @@ static void check_model(size_t n, size_t aad_len, size_t offset, shape aliasing)
     place(aliasing, offset, n, &in, &out);
     load(in, message, n);
     model_start(&p, aad_len);
-    aead_avx512_model_seal(key, nonce, &p, in, n, out);
+    seal(key, nonce, &p, in, n, out);
     model_end(&p, aad_len, n, tag);
     compared++;
     if (memcmp(out, sealed, n) != 0 || memcmp(tag, sealed_tag, AEAD_TAG) != 0) {
@@ -205,12 +210,19 @@ static void check_model(size_t n, size_t aad_len, size_t offset, shape aliasing)
     }
     load(in, sealed, n);
     model_start(&p, aad_len);
-    aead_avx512_model_open(key, nonce, &p, in, n, out);
+    open(key, nonce, &p, in, n, out);
     model_end(&p, aad_len, n, tag);
     compared++;
     if (memcmp(out, message, n) != 0 || memcmp(tag, sealed_tag, AEAD_TAG) != 0) {
         report("the model's open differs from the message", n, offset, aliasing);
     }
+}
+
+static void check_model(size_t n, size_t aad_len, size_t offset, shape aliasing) {
+    check_model_layout(aead_avx512_model_seal, aead_avx512_model_open, n, aad_len, offset,
+                       aliasing);
+    check_model_layout(aead_avx512_model_halves_seal, aead_avx512_model_halves_open, n, aad_len,
+                       offset, aliasing);
 }
 
 static void check_seal(size_t n, size_t aad_len, size_t offset, shape aliasing) {

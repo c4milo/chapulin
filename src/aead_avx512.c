@@ -28,6 +28,26 @@
 #define POLY1305_SCALAR_CARRY_ONLY
 #include "poly1305_scalar.h"
 
+// Where a pass runs a group's products among its rounds (docs/decisions.md
+// 238). A group is four chunks: the digits of its second eight blocks and
+// the products of their digit 1, the products of their digits 2 and 0, the
+// same two chunks for its first eight blocks, and last the carry. Under 0
+// the four chunks run together between two double rounds. Under 1 each
+// chunk runs after one half of those two double rounds, a column round or
+// a diagonal round. clang takes 1 and gcc takes 0. gcc schedules after it
+// allocates registers and moves the products among the rounds itself, and
+// a group among the rounds only keeps more values live in gcc's code. clang
+// schedules before, and keeps the products where the source puts them only
+// under its model of a Sapphire Rapids core, the tune below. A test
+// defines the value to run the other layout.
+#ifndef AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS
+#ifdef __clang__
+#define AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS 1
+#else
+#define AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS 0
+#endif
+#endif
+
 #ifdef CH_AEAD_AVX512_MODEL
 // Each lane operation in portable C (test/chacha20_avx512_model_lanes.h and
 // test/poly1305_ifma_model_lanes.h), which only a build with -Itest finds.
@@ -38,9 +58,13 @@
 // outside it does, as in chacha20_avx512.c and poly1305_ifma.c. The object
 // is compiled with no instruction flag, so only these functions hold
 // AVX-512 instructions, and aead.c calls them only for a session whose
-// ch_cfg.cpu holds CH_CPU_AVX512_IFMA beside the multiply bit.
+// ch_cfg.cpu holds CH_CPU_AVX512_IFMA beside the multiply bit. Under clang
+// the attribute also names the core whose costs clang's scheduler reads:
+// under its generic model it put a group's 36 IFMA products in one block,
+// and the block waited on port 0, which runs the rotations as well.
 #ifdef __clang__
-#pragma clang attribute push(__attribute__((target("avx512f,avx512ifma"))), apply_to = function)
+#pragma clang attribute push(__attribute__((target("avx512f,avx512ifma,tune=sapphirerapids"))),    \
+                             apply_to = function)
 #else
 #pragma GCC push_options
 #pragma GCC target("avx512f,avx512ifma")
@@ -73,8 +97,52 @@
 _Static_assert((size_t)PASS_GROUPS *POLY1305_IFMA_GROUP == PASS_BYTES,
                "the four groups of a pass are the pass's bytes");
 
+// A group's values from one chunk to the next: the digits of eight of its
+// blocks, and the six sums of group_sums.
+typedef struct {
+    lanes blocks[3];
+    lanes lo[3];
+    lanes hi[3];
+} group_chunks;
+
+// The four chunks of the group at m, in the order group_sums and carry run
+// the same steps (poly1305_ifma_group.h). The second eight blocks come
+// first because they do not wait on h. Each chunk carries always_inline,
+// so a chunk's values stay in registers.
+static inline __attribute__((always_inline)) void
+chunk_second_digit_1(group_chunks *c, const uint8_t *m, multiplier_read *second) {
+    load_blocks(c->blocks, m + 128);
+    sums_zero(c->lo, c->hi);
+    multiply_add_digit_1(c->lo, c->hi, c->blocks[1], second);
+}
+
+static inline __attribute__((always_inline)) void chunk_second_digits_2_0(group_chunks *c,
+                                                                          multiplier_read *second) {
+    multiply_add_digit_2(c->lo, c->hi, c->blocks[2], second);
+    multiply_add_digit_0(c->lo, c->hi, c->blocks[0], second);
+}
+
+static inline __attribute__((always_inline)) void
+chunk_first_digit_1(group_chunks *c, const lanes h[3], const uint8_t *m, multiplier_read *first) {
+    load_blocks(c->blocks, m);
+    c->blocks[0] = lanes_add(c->blocks[0], h[0]);
+    c->blocks[1] = lanes_add(c->blocks[1], h[1]);
+    c->blocks[2] = lanes_add(c->blocks[2], h[2]);
+    multiply_add_digit_1(c->lo, c->hi, c->blocks[1], first);
+}
+
+static inline __attribute__((always_inline)) void
+chunk_first_digits_2_0(group_chunks *c, lanes h[3], multiplier_read *first) {
+    multiply_add_digit_2(c->lo, c->hi, c->blocks[2], first);
+    multiply_add_digit_0(c->lo, c->hi, c->blocks[0], first);
+    carry(h, c->lo, c->hi);
+}
+
 // The group at m absorbed into the eight lanes of h, under the two
-// multipliers every group but the last takes (poly1305_ifma_group.h).
+// multipliers every group but the last takes (poly1305_ifma_group.h). The
+// four chunks run the same steps, but in a row they load the blocks in
+// another order, and gcc's code for them took 0.5 to 4.8% longer to seal
+// 16 KiB than its code for this function (docs/decisions.md 238).
 static inline __attribute__((always_inline)) void
 absorb_group(lanes h[3], const uint8_t *m, multiplier_read *first, multiplier_read *second) {
     lanes lo[3];
@@ -83,7 +151,42 @@ absorb_group(lanes h[3], const uint8_t *m, multiplier_read *first, multiplier_re
     carry(h, lo, hi);
 }
 
-// The ten double rounds of the pass in x, and between them the four groups
+// Two double rounds of the pass in x and of the rows in y where rows is not
+// 0, and the group at m absorbed into h among them, in the layout
+// AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS names: its four chunks after the
+// four half rounds, or together between the two double rounds.
+static inline __attribute__((always_inline)) void
+rounds_absorbing(chacha_lanes x[16], chacha_lanes y[4], int rows, const uint8_t *m, lanes h[3],
+                 multiplier_read *first, multiplier_read *second) {
+    group_chunks c;
+    column_round(x);
+    if (AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS) {
+        chunk_second_digit_1(&c, m, second);
+    }
+    diagonal_round(x);
+    if (AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS) {
+        chunk_second_digits_2_0(&c, second);
+    }
+    if (rows) {
+        double_round_rows(y);
+    }
+    if (!AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS) {
+        absorb_group(h, m, first, second);
+    }
+    column_round(x);
+    if (AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS) {
+        chunk_first_digit_1(&c, h, m, first);
+    }
+    diagonal_round(x);
+    if (AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS) {
+        chunk_first_digits_2_0(&c, h, first);
+    }
+    if (rows) {
+        double_round_rows(y);
+    }
+}
+
+// The ten double rounds of the pass in x, and among them the four groups
 // at hash absorbed into h. The rounds run on the vector units and the
 // groups mostly on the multiplier, and neither waits on the other, so the
 // CPU runs both at once. Where rows is not 0, the four rows of a row pass
@@ -97,15 +200,7 @@ static inline __attribute__((always_inline)) void rounds_hashing(chacha_lanes x[
         double_round_rows(y);
     }
     for (size_t g = 0; g < PASS_GROUPS; g++) {
-        double_round(x);
-        if (rows) {
-            double_round_rows(y);
-        }
-        absorb_group(h, hash + POLY1305_IFMA_GROUP * g, &of_r->by_16, &of_r->by_8);
-        double_round(x);
-        if (rows) {
-            double_round_rows(y);
-        }
+        rounds_absorbing(x, y, rows, hash + POLY1305_IFMA_GROUP * g, h, &of_r->by_16, &of_r->by_8);
     }
     double_round(x);
     if (rows) {

@@ -245,17 +245,29 @@ quarter_round(chacha_lanes *a, chacha_lanes *b, chacha_lanes *c, chacha_lanes *d
     *b = chacha_lanes_rotate_left_7(chacha_lanes_xor(*b, *c));
 }
 
-// One double round of RFC 8439 §2.3 on the pass: the four column rounds,
-// then the four diagonal rounds, as chacha20.c's block runs them.
-static inline __attribute__((PASS_INLINE_ATTRIBUTE)) void double_round(chacha_lanes x[16]) {
+// The four column rounds of RFC 8439 §2.3 on the pass, and the four
+// diagonal rounds. aead_avx512.c runs a group's products between the two
+// under clang (docs/decisions.md 238). Both carry always_inline, so a
+// double round in either kernel is the eight quarter rounds it was before.
+static inline __attribute__((always_inline)) void column_round(chacha_lanes x[16]) {
     quarter_round(&x[0], &x[4], &x[8], &x[12]);
     quarter_round(&x[1], &x[5], &x[9], &x[13]);
     quarter_round(&x[2], &x[6], &x[10], &x[14]);
     quarter_round(&x[3], &x[7], &x[11], &x[15]);
+}
+
+static inline __attribute__((always_inline)) void diagonal_round(chacha_lanes x[16]) {
     quarter_round(&x[0], &x[5], &x[10], &x[15]);
     quarter_round(&x[1], &x[6], &x[11], &x[12]);
     quarter_round(&x[2], &x[7], &x[8], &x[13]);
     quarter_round(&x[3], &x[4], &x[9], &x[14]);
+}
+
+// One double round of RFC 8439 §2.3 on the pass: the four column rounds,
+// then the four diagonal rounds, as chacha20.c's block runs them.
+static inline __attribute__((PASS_INLINE_ATTRIBUTE)) void double_round(chacha_lanes x[16]) {
+    column_round(x);
+    diagonal_round(x);
 }
 
 // The input words of RFC 8439 §2.3 in chacha20.c's order: the constants,

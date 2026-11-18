@@ -768,7 +768,7 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c test/chacha20_equiv_test.c \
           src/aead_avx2.c test/aead_avx2_equiv_test.c src/aead_avx512.c test/aead_avx512_equiv_test.c \
-          test/aead_avx512_model.c \
+          test/aead_avx512_model.c test/aead_avx512_model_halves.c \
           test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c test/chacha20_equiv_avx512.c \
           src/avx512_wipe.c test/avx512_wipe_test.c src/x25519_wide.c \
           test/x25519_equiv_test.c src/x25519_adx.c test/x25519_adx_model.c test/x25519_adx_model_test.c \
@@ -3902,11 +3902,13 @@ bin/aead_avx2_equiv_test: test/aead_avx2_equiv_test.c \
 # their lane models, for the tidy pass that reads that build.
 AEAD_AVX512_MODEL_DEFS := -DCH_AEAD_AVX512_MODEL -DCH_CHACHA20_AVX512_MODEL -DCH_POLY1305_IFMA_MODEL
 # The AVX-512 one pass against the two-pass AEAD of the same object, its own
-# text over the lane models on every host (test/aead_avx512_model.c), and
-# the instructions through aead_seal_cpu and aead_open_cpu on a CPU with
-# AVX-512 IFMA (docs/decisions.md 226).
+# text over the lane models on every host in both layouts of a pass's
+# groups (test/aead_avx512_model.c and test/aead_avx512_model_halves.c,
+# docs/decisions.md 238), and the instructions through aead_seal_cpu and
+# aead_open_cpu on a CPU with AVX-512 IFMA (docs/decisions.md 226).
 AEAD_AVX512_EQUIV_TEST_SRCS := $(call host_srcs,src/aead.c src/chacha20.c src/poly1305.c src/ct.c \
-                               src/ct_wipe.c) test/aead_avx512_model.c test/stack_residue.c
+                               src/ct_wipe.c) test/aead_avx512_model.c \
+                               test/aead_avx512_model_halves.c test/stack_residue.c
 bin/aead_avx512_equiv_test: test/aead_avx512_equiv_test.c \
                             $(AEAD_AVX512_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -7946,6 +7948,7 @@ else
 	  test/diff_x25519_test.c test/diff_p256_wide_test.c src/chacha20_vector.c test/chacha20_equiv_vector.c \
 	  test/chacha20_equiv_test.c src/aead_avx2.c test/aead_avx2_equiv_test.c \
 	  src/aead_avx512.c test/aead_avx512_equiv_test.c test/aead_avx512_model.c \
+	  test/aead_avx512_model_halves.c \
 	  src/avx512_wipe.c test/avx512_wipe_test.c test/chacha20_equiv_avx512.c src/poly1305_vector.c \
 	  test/poly1305_equiv_vector.c test/stack_residue.c \
 	  src/poly1305_avx2.c test/poly1305_equiv_avx2.c src/poly1305_ifma.c test/poly1305_equiv_ifma.c \
@@ -8142,12 +8145,16 @@ else
 	# aead_avx512.c and chacha20_avx512.c over the lane models, the build
 	# bin/aead_avx512_equiv_test runs on every host, so this pass reads
 	# test/chacha20_avx512_model_lanes.h and test/poly1305_ifma_model_lanes.h;
-	# the pass of the native copies below reads the instructions.
-	# test/aead_avx512_model.c stays out of every pass, for the reason
-	# test/aes_equiv_soft.c does below (docs/decisions.md 226).
+	# the pass of the native copies below reads the instructions. This pass
+	# reads gcc's layout of a pass's groups, and the pass below clang's, the
+	# layout clang-tidy's compiler takes (docs/decisions.md 238).
+	# test/aead_avx512_model.c and test/aead_avx512_model_halves.c stay out
+	# of every pass, for the reason test/aes_equiv_soft.c does below
+	# (docs/decisions.md 226).
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,src/aead_avx512.c src/chacha20_avx512.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME $(AEAD_AVX512_MODEL_DEFS) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME $(AEAD_AVX512_MODEL_DEFS) \
+	  -DAEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS=0 -Isrc -Iinclude/chapulin -Iinclude -I. -Itest)
 	# rsa_avx2.c over its lane model, as bin/rsa_avx2_model_test runs it on
 	# every host, with rsa_mont.c's dispatch to it and the two test mains
 	# (docs/decisions.md 122). test/rsa_avx2_model.c and

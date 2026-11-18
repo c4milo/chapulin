@@ -83,30 +83,47 @@ static void multiplier_complete(multiplier *by) {
 //   d1 = a0 r1 + a1 r0      + a2 (20 r2)
 //   d2 = a0 r2 + a1 r1      + a2 r0
 //
-// a1 and a2 come first: a0 is the digit the carry below finishes last. It
+// a1 and a2 come first: a0 is the digit the carry below finishes last. The
+// six products of each digit are a function of their own, which
+// aead_avx512.c also calls one at a time (docs/decisions.md 238). These
 // and group_sums carry always_inline for poly1305_avx2.c's reason: gcc
 // otherwise compiled them out of line and passed the sums through the
 // stack (docs/decisions.md 110).
 static inline __attribute__((always_inline)) void
+multiply_add_digit_1(lanes lo[3], lanes hi[3], lanes a1, multiplier_read *by) {
+    lo[0] = lanes_multiply_add_low(lo[0], a1, by->s2);
+    hi[0] = lanes_multiply_add_high(hi[0], a1, by->s2);
+    lo[1] = lanes_multiply_add_low(lo[1], a1, by->r0);
+    hi[1] = lanes_multiply_add_high(hi[1], a1, by->r0);
+    lo[2] = lanes_multiply_add_low(lo[2], a1, by->r1);
+    hi[2] = lanes_multiply_add_high(hi[2], a1, by->r1);
+}
+
+static inline __attribute__((always_inline)) void
+multiply_add_digit_2(lanes lo[3], lanes hi[3], lanes a2, multiplier_read *by) {
+    lo[0] = lanes_multiply_add_low(lo[0], a2, by->s1);
+    hi[0] = lanes_multiply_add_high(hi[0], a2, by->s1);
+    lo[1] = lanes_multiply_add_low(lo[1], a2, by->s2);
+    hi[1] = lanes_multiply_add_high(hi[1], a2, by->s2);
+    lo[2] = lanes_multiply_add_low(lo[2], a2, by->r0);
+    hi[2] = lanes_multiply_add_high(hi[2], a2, by->r0);
+}
+
+static inline __attribute__((always_inline)) void
+multiply_add_digit_0(lanes lo[3], lanes hi[3], lanes a0, multiplier_read *by) {
+    lo[0] = lanes_multiply_add_low(lo[0], a0, by->r0);
+    hi[0] = lanes_multiply_add_high(hi[0], a0, by->r0);
+    lo[1] = lanes_multiply_add_low(lo[1], a0, by->r1);
+    hi[1] = lanes_multiply_add_high(hi[1], a0, by->r1);
+    lo[2] = lanes_multiply_add_low(lo[2], a0, by->r2);
+    hi[2] = lanes_multiply_add_high(hi[2], a0, by->r2);
+}
+
+static inline __attribute__((always_inline)) void
 multiply_add(lanes lo[3], lanes hi[3], const lanes a[3], multiplier_read *by) {
-    lo[0] = lanes_multiply_add_low(lo[0], a[1], by->s2);
-    hi[0] = lanes_multiply_add_high(hi[0], a[1], by->s2);
-    lo[1] = lanes_multiply_add_low(lo[1], a[1], by->r0);
-    hi[1] = lanes_multiply_add_high(hi[1], a[1], by->r0);
-    lo[2] = lanes_multiply_add_low(lo[2], a[1], by->r1);
-    hi[2] = lanes_multiply_add_high(hi[2], a[1], by->r1);
-    lo[0] = lanes_multiply_add_low(lo[0], a[2], by->s1);
-    hi[0] = lanes_multiply_add_high(hi[0], a[2], by->s1);
-    lo[1] = lanes_multiply_add_low(lo[1], a[2], by->s2);
-    hi[1] = lanes_multiply_add_high(hi[1], a[2], by->s2);
-    lo[2] = lanes_multiply_add_low(lo[2], a[2], by->r0);
-    hi[2] = lanes_multiply_add_high(hi[2], a[2], by->r0);
-    lo[0] = lanes_multiply_add_low(lo[0], a[0], by->r0);
-    hi[0] = lanes_multiply_add_high(hi[0], a[0], by->r0);
-    lo[1] = lanes_multiply_add_low(lo[1], a[0], by->r1);
-    hi[1] = lanes_multiply_add_high(hi[1], a[0], by->r1);
-    lo[2] = lanes_multiply_add_low(lo[2], a[0], by->r2);
-    hi[2] = lanes_multiply_add_high(hi[2], a[0], by->r2);
+    multiply_add_digit_1(lo, hi, a[1], by);
+    multiply_add_digit_2(lo, hi, a[2], by);
+    multiply_add_digit_0(lo, hi, a[0], by);
 }
 
 // The six sums of each lane carried into three digits in one round. A

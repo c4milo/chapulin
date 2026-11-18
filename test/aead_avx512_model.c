@@ -15,6 +15,11 @@
 // for its other units, so the unit defines it only where the command line
 // did not; it passes none of the model defines. The #defines rename every
 // function the two files define outside the unit.
+//
+// This unit runs a pass's groups in gcc's layout, the four chunks of a group
+// together between two double rounds, and test/aead_avx512_model_halves.c
+// includes it under other names for clang's layout, so the test holds both
+// layouts under every compiler (docs/decisions.md 238).
 #ifndef CH_CPU_RUNTIME
 #define CH_CPU_RUNTIME
 #endif
@@ -22,9 +27,19 @@
 #define CH_CHACHA20_AVX512_MODEL 1
 #define CH_POLY1305_IFMA_MODEL 1
 
+// Each unit sets the layout itself, whatever a command line defines.
+#undef AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS
+#ifdef AEAD_AVX512_MODEL_HALVES
+#define AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS 1
+#define chacha20_avx512_xor aead_avx512_model_halves_keystream
+#define aead_avx512_seal aead_avx512_model_halves_seal
+#define aead_avx512_open aead_avx512_model_halves_open
+#else
+#define AEAD_AVX512_CHUNKS_AFTER_HALF_ROUNDS 0
 #define chacha20_avx512_xor aead_avx512_model_keystream
 #define aead_avx512_seal aead_avx512_model_seal
 #define aead_avx512_open aead_avx512_model_open
+#endif
 
 #include "chacha20_avx512.c"
 

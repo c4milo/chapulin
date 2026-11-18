@@ -16,6 +16,25 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## ChaCha20-Poly1305 on five CPUs with AVX-512 IFMA
+
+Lab runs 44327378030 to 44330567657 timed the seal of 16 KiB, its keystream, its Poly1305 and
+OpenSSL 3.6.5's seal in one process on each runner. After each batch a chain of dependent adds
+gave the core clock. Each cell is the median of two runs of each binary.
+
+| CPU | gcc seal, OpenSSL's cycles | clang | clock, seal / keystream / Poly1305 / OpenSSL |
+| --- | --- | --- | --- |
+| Xeon 6975P-C | 0.86 | 0.93 | 3.89 / 3.89 / 3.79 / 3.89 GHz |
+| Xeon Platinum 8370C | 0.87 | 0.92 | 2.89 to 3.19 / 3.38 / 2.79 to 2.84 / 3.38 GHz |
+| Xeon Platinum 8573C | 0.85 | 0.92 | 2.94 / 3.04 / 2.94 / 3.04 GHz |
+| EPYC 9V45 | 0.72 | 0.74 | 4.44 / 4.40 / 4.43 / 4.50 GHz |
+| EPYC 9V74 | 0.87 | 0.97 | 3.68 GHz for all four |
+
+On every model the seal takes fewer cycles than OpenSSL's. On the 8370C the IFMA Poly1305 lowers
+the clock, and the bench row's gap is that clock. Of the 31 runners with AVX-512 IFMA that the lab
+drew in those runs, 22 were a Xeon 6975P-C. Decision 238 holds what the runs showed of clang's
+code.
+
 ## The AVX-512 run of 0315cbf4
 
 Bench run 44230474748 recorded the AVX-512 columns on 0315cbf4, beside OpenSSL 3.6.5. Its job
