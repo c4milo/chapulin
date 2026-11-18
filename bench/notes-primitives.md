@@ -16,6 +16,15 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The AVX-512 run of 64976029
+
+Bench run 44399684739 recorded the AVX-512 columns on 64976029, after decision 238, beside OpenSSL
+3.6.5. Its job drew a Xeon 6975P-C in one attempt, the model that 22 of 31 runners with AVX-512
+IFMA were in the lab runs of that day. On this model one row reads above OpenSSL's time: SHA-384
+over 16 KiB, 1.07 times under gcc and 1.04 under clang. AES-256-GCM's seal and P-256's key
+generation under gcc read 1.00. ChaCha20-Poly1305 takes 0.87 of OpenSSL's time under gcc and 0.92
+under clang.
+
 ## ChaCha20-Poly1305 on five CPUs with AVX-512 IFMA
 
 Lab runs 44327378030 to 44330567657 timed the seal of 16 KiB, its keystream, its Poly1305 and

@@ -2162,6 +2162,33 @@ x86-64 AVX-512 gcc,19,Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz,2026-11-18,0
 x86-64 AVX-512 gcc,19,Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz,2026-11-18,0315cbf-dirty,"AES-256-GCM, the key set and one 16 KiB record opened",1.006
 x86-64 AVX-512 gcc,19,Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz,2026-11-18,0315cbf-dirty,"ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag",0.915
 x86-64 AVX-512 gcc,19,Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz,2026-11-18,0315cbf-dirty,"ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag",0.920
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA-256, 16 KiB",1.009
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA-256, 64 bytes",1.388
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA-384, 16 KiB",0.932
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA-384, 64 bytes",1.251
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA3-256, 16 KiB",1.032
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA3-256, 64 bytes",1.500
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,X25519 key generation,2.400
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,X25519 shared secret,1.010
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,P-256 key generation,1.000
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,P-256 shared secret,1.216
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ECDSA P-256 sign,1.192
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ECDSA P-256 verify,1.430
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ECDSA P-384 verify,1.193
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,RSA-2048 PKCS#1 v1.5 verify,2.139
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,RSA-3072 PKCS#1 v1.5 verify,2.510
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-KEM-768 key generation,2.327
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-KEM-768 encapsulation,1.100
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-KEM-768 decapsulation,1.500
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-DSA-87 key generation,1.517
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-DSA-87 sign,1.420
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-DSA-87 verify,2.516
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"AES-128-GCM, the key set and one 16 KiB record sealed",1.014
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"AES-128-GCM, the key set and one 16 KiB record opened",1.031
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"AES-256-GCM, the key set and one 16 KiB record sealed",1.004
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"AES-256-GCM, the key set and one 16 KiB record opened",1.085
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag",1.143
+x86-64 AVX-512 gcc,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag",1.146
 x86-64 AVX-512 clang,1,INTEL(R) XEON(R) PLATINUM 8573C,2026-10-09,d699bec-dirty,"SHA-256, 16 KiB",0.975
 x86-64 AVX-512 clang,1,INTEL(R) XEON(R) PLATINUM 8573C,2026-10-09,d699bec-dirty,"SHA-256, 64 bytes",1.174
 x86-64 AVX-512 clang,1,INTEL(R) XEON(R) PLATINUM 8573C,2026-10-09,d699bec-dirty,"SHA-384, 16 KiB",0.583
@@ -2675,3 +2702,30 @@ x86-64 AVX-512 clang,19,Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz,2026-11-18
 x86-64 AVX-512 clang,19,Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz,2026-11-18,0315cbf-dirty,"AES-256-GCM, the key set and one 16 KiB record opened",1.041
 x86-64 AVX-512 clang,19,Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz,2026-11-18,0315cbf-dirty,"ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag",0.845
 x86-64 AVX-512 clang,19,Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz,2026-11-18,0315cbf-dirty,"ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag",0.855
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA-256, 16 KiB",1.011
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA-256, 64 bytes",1.356
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA-384, 16 KiB",0.961
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA-384, 64 bytes",1.369
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA3-256, 16 KiB",1.052
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"SHA3-256, 64 bytes",1.520
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,X25519 key generation,2.542
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,X25519 shared secret,1.065
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,P-256 key generation,1.010
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,P-256 shared secret,1.270
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ECDSA P-256 sign,1.195
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ECDSA P-256 verify,1.479
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ECDSA P-384 verify,1.821
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,RSA-2048 PKCS#1 v1.5 verify,2.194
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,RSA-3072 PKCS#1 v1.5 verify,2.445
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-KEM-768 key generation,2.512
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-KEM-768 encapsulation,1.205
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-KEM-768 decapsulation,1.709
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-DSA-87 key generation,1.297
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-DSA-87 sign,1.492
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,ML-DSA-87 verify,2.713
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"AES-128-GCM, the key set and one 16 KiB record sealed",1.050
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"AES-128-GCM, the key set and one 16 KiB record opened",1.079
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"AES-256-GCM, the key set and one 16 KiB record sealed",1.005
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"AES-256-GCM, the key set and one 16 KiB record opened",1.054
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag",1.084
+x86-64 AVX-512 clang,20,Intel(R) Xeon(R) 6975P-C,2026-11-18,6497602-dirty,"ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag",1.086
