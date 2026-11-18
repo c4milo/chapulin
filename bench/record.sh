@@ -242,9 +242,19 @@ cpu() {
         sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -1
     else
         # arm64 Linux names the core by its implementer and part numbers.
-        printf 'implementer %s part %s' \
-            "$(sed -n 's/^CPU implementer[[:space:]]*: //p' /proc/cpuinfo | head -1)" \
-            "$(sed -n 's/^CPU part[[:space:]]*: //p' /proc/cpuinfo | head -1)"
+        # lscpu names the vendor and the model of a part it knows, such as
+        # ARM Neoverse-N2. Its output goes to a variable first, so no pipe
+        # ends before lscpu writes all of it.
+        local info model
+        info=$(lscpu 2>/dev/null || true)
+        model=$(sed -n '/^Model name:/{s/^Model name:[[:space:]]*//p;q;}' <<<"$info")
+        if [ -n "$model" ] && [ "$model" != "-" ]; then
+            printf '%s %s' "$(sed -n '/^Vendor ID:/{s/^Vendor ID:[[:space:]]*//p;q;}' <<<"$info")" "$model"
+        else
+            printf 'implementer %s part %s' \
+                "$(sed -n 's/^CPU implementer[[:space:]]*: //p' /proc/cpuinfo | head -1)" \
+                "$(sed -n 's/^CPU part[[:space:]]*: //p' /proc/cpuinfo | head -1)"
+        fi
     fi
 }
 
