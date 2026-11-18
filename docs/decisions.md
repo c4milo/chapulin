@@ -20046,6 +20046,15 @@ does nothing more.
     chart is not what the file draws. A point is one run, so the line shows run-to-run spread as
     well as changes to the code.
 
+    Addendum, 2026-11-18. Camilo asked that the README show the speed before it shows how to use
+    the library, as connect-zig's README does. Its "Performance" section now comes before "Quick
+    start". It states one CPU's result in its first line and shows that CPU's chart, and each
+    other chart sits in a `<details>` block whose `<summary>` states its CPU's result. Each of
+    those sentences is a chart's title after its CPU's name, which `cpu_name` writes without
+    trademark signs or a core count. `check_charts` fails when the README does not state the
+    sentence the CSVs give for a chart, so a run that moves a count or lands on another CPU moves
+    the README too.
+
 238. **Under clang, the AVX-512 one pass runs each chunk of a Poly1305 group after a half
     round.** Camilo chose the ChaCha20-Poly1305 row on the Xeon Platinum 8370C on 2026-11-18. There
     the seal of 16 KiB read 1.09 times OpenSSL's time under gcc and 1.18 times under clang (bench

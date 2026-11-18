@@ -114,6 +114,35 @@ def escape(text):
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def title_of(drawn, openssl):
+    """A chart's title: the rows where each compiler's chapulin runs faster than OpenSSL."""
+    return "chapulin is faster than %s in %s" % (
+        openssl, " and ".join(claim([v for _, v in s], c, k == 0)
+                              for k, (c, _, s) in enumerate(drawn)))
+
+
+def cpu_name(text):
+    """A CPU's name as the README writes it: the CSV's name without trademark signs or a core
+    count, and in title case where the CSV writes it in capitals."""
+    text = re.sub(r"\((R|TM)\)", "", text)
+    capitals = text.isupper()
+    text = re.sub(r"\s+\d+-Core Processor$", "", text)
+    text = " ".join(text.split())
+    if capitals:
+        text = " ".join(w if any(ch.isdigit() for ch in w) else w.capitalize()
+                        for w in text.split())
+    return text
+
+
+def headline(names):
+    """The README's sentence for one chart: its CPU and its title."""
+    drawn = series(names)
+    known = next((f for _, f, _ in drawn if f), None)
+    if known is None:
+        return None
+    return "%s: %s" % (cpu_name(known["cpu"]), title_of(drawn, known["openssl"]))
+
+
 def draw(names):
     """One chart's SVG text."""
     drawn = series(names)
@@ -121,9 +150,7 @@ def draw(names):
     labels = [label for label, _ in drawn[0][2]]
     cpu = known["cpu"] if known else names[0]
     openssl = known["openssl"] if known else "OpenSSL"
-    title = "chapulin is faster than %s in %s" % (
-        openssl, " and ".join(claim([v for _, v in s], c, k == 0)
-                              for k, (c, _, s) in enumerate(drawn)))
+    title = title_of(drawn, openssl)
 
     width = 960
     pad_l = 24
@@ -226,8 +253,17 @@ text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fil
 
 
 def check_charts():
-    """Each committed chart against what this file draws from the CSVs."""
+    """Each committed chart against what this file draws from the CSVs, and the README's
+    sentence for each chart: its CPU and its title, in the "Performance" section's first line
+    or in a <summary> line."""
     rc = 0
+    readme = " ".join(open("README.md").read().split())
+    for slug, names in CHARTS:
+        want = headline(names)
+        if want is not None and want not in readme:
+            print("lint-bench-numbers: README.md does not state %r, which the CSVs give for "
+                  "%s" % (want, chart_path(slug)))
+            rc = 1
     for slug, names in CHARTS:
         path = chart_path(slug)
         want = draw(names)

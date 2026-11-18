@@ -60,8 +60,38 @@ code, with fast paths for its CPU:
 - Post-quantum key exchange, X25519MLKEM768 and ML-KEM-1024, and a
   profile on CNSA 2.0's algorithms alone (`PROFILE=cnsa2`).
 - Each primitive at about OpenSSL's speed
-  ([Speed beside OpenSSL](#speed-beside-openssl)). CI fails a change
+  ([Performance](#performance)). CI fails a change
   that makes a primitive run more instructions.
+
+## Performance
+
+Intel Xeon 6975P-C: chapulin is faster than OpenSSL 3.6.5 in 26 of 27 rows under gcc and 26 of 27 under clang.
+
+The rows are the primitives TLS runs: hashes, key exchange, signatures,
+ML-KEM and ML-DSA, and AES-GCM and ChaCha20-Poly1305 records. A bar is
+OpenSSL's time over chapulin's, in one run on one machine, so a bar past
+the dashed line at 1 is faster than OpenSSL.
+
+![Bars of chapulin's speed in multiples of OpenSSL's on an x86-64 CPU with AVX-512 IFMA, under gcc and clang](docs/img/speed-vs-openssl-x86-64-avx512.svg)
+
+<details>
+<summary>AMD EPYC 7763: chapulin is faster than OpenSSL 3.6.5 in 25 of 27 rows under gcc and 25 of 27 under clang</summary>
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the AMD EPYC 7763, under gcc and clang](docs/img/speed-vs-openssl-x86-64.svg)
+
+</details>
+
+<details>
+<summary>Apple M1 Pro: chapulin is faster than OpenSSL 3.6.5 in 24 of 27 rows under Apple clang</summary>
+
+![Bars of chapulin's speed in multiples of OpenSSL's on the Apple M1 Pro, under Apple clang](docs/img/speed-vs-openssl-m1-pro.svg)
+
+</details>
+
+[`docs/performance.md`](docs/performance.md#chapulin-beside-openssl)
+holds the times, how each run was made, each run's machine and load, and
+each row's speed at every run since 2026-10-08. `make lint-bench-numbers`
+fails when a chart or a sentence above disagrees with the recorded CSVs.
 
 ## Quick start
 
@@ -179,21 +209,6 @@ picks. A host object takes neither `AES` nor `WIDEMUL`.
 [`docs/building.md`](docs/building.md) explains each value, what it adds
 to the object, and the checks a build refuses to pass without.
 [`docs/porting.md`](docs/porting.md) is the checklist for a new platform.
-
-## Speed beside OpenSSL
-
-Each chart sets chapulin beside OpenSSL on one CPU, for each primitive TLS runs. A bar is
-chapulin's speed in multiples of OpenSSL's: OpenSSL's time over chapulin's, in the same run on the
-same machine. A bar past the dashed line at 1 is faster than OpenSSL. The charts come from the CSVs
-of the table "chapulin beside OpenSSL" in [`docs/performance.md`](docs/performance.md), which holds
-the times, and `make lint-bench-numbers` fails when a chart and the CSVs disagree. The same
-document charts each row at every run since 2026-10-08.
-
-![Bars of chapulin's speed in multiples of OpenSSL's on the Apple M1 Pro, under Apple clang](docs/img/speed-vs-openssl-m1-pro.svg)
-
-![Bars of chapulin's speed in multiples of OpenSSL's on the AMD EPYC 7763, under gcc and clang](docs/img/speed-vs-openssl-x86-64.svg)
-
-![Bars of chapulin's speed in multiples of OpenSSL's on an x86-64 CPU with AVX-512 IFMA, under gcc and clang](docs/img/speed-vs-openssl-x86-64-avx512.svg)
 
 ## Trust modes
 
