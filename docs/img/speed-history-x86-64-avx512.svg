@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 1020" width="960" height="1020" role="img" aria-labelledby="t d">
-<title id="t">chapulin's speed beside OpenSSL over time on the INTEL(R) XEON(R) PLATINUM 8573C</title>
-<desc id="d">Each panel is one row of docs/performance.md's table beside OpenSSL. A line is chapulin's speed in multiples of OpenSSL's at each recording. x86-64 AVX-512 gcc: runs on 11 days, from 2026-10-09 to 2026-11-14. x86-64 AVX-512 clang: runs on 11 days, from 2026-10-09 to 2026-11-14.</desc>
+<title id="t">chapulin's speed beside OpenSSL over time on the Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz</title>
+<desc id="d">Each panel is one row of docs/performance.md's table beside OpenSSL. A line is chapulin's speed in multiples of OpenSSL's at each recording. x86-64 AVX-512 gcc: runs on 1 days, from 2026-11-18 to 2026-11-18. x86-64 AVX-512 clang: runs on 1 days, from 2026-11-18 to 2026-11-18.</desc>
 <style>
 svg { --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984; --grid:#e4e3df; --first:#2a78d6; --second:#eb6834; --unit:#52514e; }
 @media (prefers-color-scheme: dark) {
@@ -15,253 +15,199 @@ text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fil
 </style>
 <rect width="960" height="1020" rx="8" fill="var(--surface)"/>
 <text class="title" x="24" y="34">chapulin's speed beside OpenSSL at each recording</text>
-<text class="sub" x="24" y="56">INTEL(R) XEON(R) PLATINUM 8573C, from 2026-10-09 to 2026-11-14. A point above the dashed line at 1 is a run where chapulin was faster.</text>
+<text class="sub" x="24" y="56">Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz, from 2026-11-18 to 2026-11-18. A point above the dashed line at 1 is a run where chapulin was faster.</text>
 <text class="sub" x="24" y="74">Each panel has its own scale. A line draws the last run of each day, and the number at its right is the last run's speed.</text>
 <rect x="24" y="92" width="12" height="12" rx="2" fill="var(--first)"/>
-<text class="legend" x="42" y="102">x86-64 AVX-512 gcc, runs on 11 days</text>
-<rect x="311" y="92" width="12" height="12" rx="2" fill="var(--second)"/>
-<text class="legend" x="329" y="102">x86-64 AVX-512 clang, runs on 11 days</text>
+<text class="legend" x="42" y="102">x86-64 AVX-512 gcc, runs on 1 days</text>
+<rect x="304" y="92" width="12" height="12" rx="2" fill="var(--second)"/>
+<text class="legend" x="322" y="102">x86-64 AVX-512 clang, runs on 1 days</text>
 <text class="panel" x="24.0" y="144">SHA-256, 16 KiB</text>
 <rect x="24.0" y="152" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="24.0" y1="186.5" x2="272.0" y2="186.5" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="24.0,182.4 37.8,183.9 44.7,184.7 51.6,184.4 161.8,184.7 182.4,184.2 230.7,184.7 237.6,167.5 251.3,185.3 265.1,184.4 272.0,184.4" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="272.0" cy="184.4" r="2.2" fill="var(--first)"/>
-<text class="val" x="276.0" y="164.0" style="fill:var(--first)">1.01×</text>
-<polyline points="24.0,193.8 37.8,182.4 44.7,184.2 51.6,184.2 161.8,184.7 182.4,184.7 230.7,185.9 237.6,183.9 251.3,185.3 265.1,183.6 272.0,184.4" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="272.0" cy="184.4" r="2.2" fill="var(--second)"/>
-<text class="val" x="276.0" y="178.0" style="fill:var(--second)">1.01×</text>
+<line x1="24.0" y1="179.0" x2="272.0" y2="179.0" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="24.0" cy="191.6" r="2.2" fill="var(--first)"/>
+<text class="val" x="276.0" y="164.0" style="fill:var(--first)">0.96×</text>
+<circle cx="24.0" cy="169.5" r="2.2" fill="var(--second)"/>
+<text class="val" x="276.0" y="178.0" style="fill:var(--second)">1.03×</text>
 <text class="panel" x="334.0" y="144">SHA-256, 64 bytes</text>
 <rect x="334.0" y="152" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="334.0" y1="204.7" x2="582.0" y2="204.7" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="334.0,193.6 347.8,170.5 354.7,171.8 361.6,171.1 471.8,172.8 492.4,174.0 540.7,171.7 547.6,176.2 561.3,172.7 575.1,169.1 582.0,169.2" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="582.0" cy="169.2" r="2.2" fill="var(--first)"/>
-<text class="val" x="586.0" y="164.0" style="fill:var(--first)">1.53×</text>
-<polyline points="334.0,193.0 347.8,158.7 354.7,157.7 361.6,159.8 471.8,175.5 492.4,175.0 540.7,174.4 547.6,175.8 561.3,174.6 575.1,170.1 582.0,169.7" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="582.0" cy="169.7" r="2.2" fill="var(--second)"/>
-<text class="val" x="586.0" y="178.0" style="fill:var(--second)">1.52×</text>
+<line x1="334.0" y1="203.9" x2="582.0" y2="203.9" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="334.0" cy="165.9" r="2.2" fill="var(--first)"/>
+<text class="val" x="586.0" y="164.0" style="fill:var(--first)">1.46×</text>
+<circle cx="334.0" cy="158.4" r="2.2" fill="var(--second)"/>
+<text class="val" x="586.0" y="178.0" style="fill:var(--second)">1.55×</text>
 <text class="panel" x="644.0" y="144">SHA-384, 16 KiB</text>
 <rect x="644.0" y="152" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="644.0" y1="156.9" x2="892.0" y2="156.9" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="644.0,205.5 657.8,202.0 664.7,163.2 671.6,163.3 781.8,163.2 802.4,163.1 850.7,163.1 857.6,158.0 871.3,163.3 885.1,162.5 892.0,163.2" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="892.0" cy="163.2" r="2.2" fill="var(--first)"/>
+<line x1="644.0" y1="169.9" x2="892.0" y2="169.9" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="644.0" cy="191.1" r="2.2" fill="var(--first)"/>
 <text class="val" x="896.0" y="164.0" style="fill:var(--first)">0.94×</text>
-<polyline points="644.0,197.9 657.8,195.0 664.7,160.7 671.6,160.8 781.8,160.8 802.4,160.7 850.7,160.9 857.6,160.5 871.3,160.7 885.1,160.0 892.0,160.8" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="892.0" cy="160.8" r="2.2" fill="var(--second)"/>
-<text class="val" x="896.0" y="178.0" style="fill:var(--second)">0.96×</text>
+<circle cx="644.0" cy="190.0" r="2.2" fill="var(--second)"/>
+<text class="val" x="896.0" y="178.0" style="fill:var(--second)">0.94×</text>
 <text class="panel" x="24.0" y="240">SHA-384, 64 bytes</text>
 <rect x="24.0" y="248" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="24.0" y1="281.5" x2="272.0" y2="281.5" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="24.0,301.0 37.8,292.5 44.7,260.9 51.6,261.3 161.8,265.2 182.4,264.2 230.7,264.0 237.6,261.9 251.3,263.3 265.1,263.9 272.0,264.0" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="272.0" cy="264.0" r="2.2" fill="var(--first)"/>
-<text class="val" x="276.0" y="260.0" style="fill:var(--first)">1.31×</text>
-<polyline points="24.0,302.3 37.8,299.4 44.7,252.2 51.6,252.6 161.8,257.3 182.4,257.4 230.7,257.2 237.6,257.3 251.3,257.4 265.1,258.3 272.0,258.0" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="272.0" cy="258.0" r="2.2" fill="var(--second)"/>
-<text class="val" x="276.0" y="274.0" style="fill:var(--second)">1.42×</text>
+<line x1="24.0" y1="298.7" x2="272.0" y2="298.7" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="24.0" cy="260.9" r="2.2" fill="var(--first)"/>
+<text class="val" x="276.0" y="260.0" style="fill:var(--first)">1.36×</text>
+<circle cx="24.0" cy="255.4" r="2.2" fill="var(--second)"/>
+<text class="val" x="276.0" y="274.0" style="fill:var(--second)">1.41×</text>
 <text class="panel" x="334.0" y="240">SHA3-256, 16 KiB</text>
 <rect x="334.0" y="248" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="334.0" y1="266.5" x2="582.0" y2="266.5" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="334.0,297.3 347.8,298.2 354.7,298.9 361.6,298.8 471.8,298.5 492.4,298.5 540.7,296.3 547.6,291.6 561.3,256.1 575.1,255.3 582.0,255.8" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="582.0" cy="255.8" r="2.2" fill="var(--first)"/>
-<text class="val" x="586.0" y="260.0" style="fill:var(--first)">1.08×</text>
-<polyline points="334.0,295.8 347.8,291.6 354.7,292.0 361.6,291.8 471.8,291.2 492.4,290.4 540.7,280.2 547.6,279.1 561.3,258.5 575.1,256.9 582.0,257.8" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="582.0" cy="257.8" r="2.2" fill="var(--second)"/>
-<text class="val" x="586.0" y="274.0" style="fill:var(--second)">1.06×</text>
+<line x1="334.0" y1="283.7" x2="582.0" y2="283.7" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="334.0" cy="267.4" r="2.2" fill="var(--first)"/>
+<text class="val" x="586.0" y="260.0" style="fill:var(--first)">1.04×</text>
+<circle cx="334.0" cy="285.5" r="2.2" fill="var(--second)"/>
+<text class="val" x="586.0" y="274.0" style="fill:var(--second)">0.99×</text>
 <text class="panel" x="644.0" y="240">SHA3-256, 64 bytes</text>
 <rect x="644.0" y="248" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
 <line x1="644.0" y1="298.9" x2="892.0" y2="298.9" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="644.0,300.4 657.8,290.5 664.7,290.8 671.6,290.6 781.8,291.3 802.4,291.7 850.7,290.0 857.6,287.8 871.3,256.8 885.1,254.0 892.0,255.5" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="892.0" cy="255.5" r="2.2" fill="var(--first)"/>
-<text class="val" x="896.0" y="260.0" style="fill:var(--first)">1.58×</text>
-<polyline points="644.0,300.2 657.8,284.5 664.7,284.7 671.6,284.7 781.8,285.8 802.4,285.8 850.7,276.8 857.6,276.9 871.3,259.5 885.1,257.7 892.0,258.1" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="892.0" cy="258.1" r="2.2" fill="var(--second)"/>
-<text class="val" x="896.0" y="274.0" style="fill:var(--second)">1.55×</text>
+<circle cx="644.0" cy="259.4" r="2.2" fill="var(--first)"/>
+<text class="val" x="896.0" y="260.0" style="fill:var(--first)">1.39×</text>
+<circle cx="644.0" cy="255.3" r="2.2" fill="var(--second)"/>
+<text class="val" x="896.0" y="274.0" style="fill:var(--second)">1.43×</text>
 <text class="panel" x="24.0" y="336">X25519 key generation</text>
 <rect x="24.0" y="344" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="24.0" y1="391.2" x2="272.0" y2="391.2" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="24.0,398.9 37.8,399.0 44.7,398.9 51.6,399.0 161.8,353.1 182.4,353.4 230.7,353.6 237.6,349.1 251.3,353.3 265.1,352.0 272.0,353.1" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="272.0" cy="353.1" r="2.2" fill="var(--first)"/>
-<text class="val" x="276.0" y="356.0" style="fill:var(--first)">2.37×</text>
-<polyline points="24.0,396.1 37.8,395.9 44.7,396.3 51.6,396.3 161.8,348.3 182.4,349.5 230.7,348.2 237.6,348.2 251.3,348.9 265.1,347.6 272.0,348.2" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="272.0" cy="348.2" r="2.2" fill="var(--second)"/>
-<text class="val" x="276.0" y="370.0" style="fill:var(--second)">2.54×</text>
+<line x1="24.0" y1="398.0" x2="272.0" y2="398.0" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="24.0" cy="357.5" r="2.2" fill="var(--first)"/>
+<text class="val" x="276.0" y="356.0" style="fill:var(--first)">2.04×</text>
+<circle cx="24.0" cy="348.4" r="2.2" fill="var(--second)"/>
+<text class="val" x="276.0" y="370.0" style="fill:var(--second)">2.27×</text>
 <text class="panel" x="334.0" y="336">X25519 shared secret</text>
 <rect x="334.0" y="344" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="334.0" y1="366.5" x2="582.0" y2="366.5" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="334.0,394.0 347.8,394.6 354.7,394.3 361.6,394.3 471.8,363.3 492.4,363.3 540.7,363.5 547.6,355.5 561.3,361.5 575.1,365.9 582.0,366.4" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="582.0" cy="366.4" r="2.2" fill="var(--first)"/>
-<text class="val" x="586.0" y="356.0" style="fill:var(--first)">1.00×</text>
-<polyline points="334.0,381.5 347.8,379.1 354.7,379.6 361.6,379.7 471.8,352.0 492.4,352.1 540.7,351.6 547.6,352.8 561.3,353.2 575.1,358.1 582.0,358.5" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="582.0" cy="358.5" r="2.2" fill="var(--second)"/>
+<line x1="334.0" y1="380.2" x2="582.0" y2="380.2" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="334.0" cy="384.8" r="2.2" fill="var(--first)"/>
+<text class="val" x="586.0" y="356.0" style="fill:var(--first)">0.98×</text>
+<circle cx="334.0" cy="360.4" r="2.2" fill="var(--second)"/>
 <text class="val" x="586.0" y="370.0" style="fill:var(--second)">1.06×</text>
 <text class="panel" x="644.0" y="336">P-256 key generation</text>
 <rect x="644.0" y="344" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="644.0" y1="357.6" x2="892.0" y2="357.6" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="644.0,394.9 657.8,392.6 664.7,394.0 671.6,393.8 781.8,394.9 802.4,380.5 850.7,376.9 857.6,357.6 871.3,357.4 885.1,355.3 892.0,355.7" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="892.0" cy="355.7" r="2.2" fill="var(--first)"/>
-<text class="val" x="896.0" y="356.0" style="fill:var(--first)">1.01×</text>
-<polyline points="644.0,356.1 657.8,355.8 664.7,357.1 671.6,357.1 781.8,360.3 802.4,359.7 850.7,353.3 857.6,355.3 871.3,351.3 885.1,354.4 892.0,354.0" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="892.0" cy="354.0" r="2.2" fill="var(--second)"/>
-<text class="val" x="896.0" y="370.0" style="fill:var(--second)">1.03×</text>
+<line x1="644.0" y1="359.3" x2="892.0" y2="359.3" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="644.0" cy="386.1" r="2.2" fill="var(--first)"/>
+<text class="val" x="896.0" y="356.0" style="fill:var(--first)">0.91×</text>
+<circle cx="644.0" cy="376.9" r="2.2" fill="var(--second)"/>
+<text class="val" x="896.0" y="370.0" style="fill:var(--second)">0.94×</text>
 <text class="panel" x="24.0" y="432">P-256 shared secret</text>
 <rect x="24.0" y="440" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="24.0" y1="466.9" x2="272.0" y2="466.9" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="24.0,492.0 37.8,492.4 44.7,493.0 51.6,493.0 161.8,493.1 182.4,481.7 230.7,466.4 237.6,458.1 251.3,451.2 265.1,449.5 272.0,449.6" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="272.0" cy="449.6" r="2.2" fill="var(--first)"/>
-<text class="val" x="276.0" y="452.0" style="fill:var(--first)">1.20×</text>
-<polyline points="24.0,472.5 37.8,472.0 44.7,472.5 51.6,472.5 161.8,472.6 182.4,473.4 230.7,461.4 237.6,461.3 251.3,445.3 265.1,445.4 272.0,445.5" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="272.0" cy="445.5" r="2.2" fill="var(--second)"/>
-<text class="val" x="276.0" y="466.0" style="fill:var(--second)">1.25×</text>
+<line x1="24.0" y1="469.2" x2="272.0" y2="469.2" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="24.0" cy="478.5" r="2.2" fill="var(--first)"/>
+<text class="val" x="276.0" y="452.0" style="fill:var(--first)">0.97×</text>
+<circle cx="24.0" cy="458.5" r="2.2" fill="var(--second)"/>
+<text class="val" x="276.0" y="466.0" style="fill:var(--second)">1.03×</text>
 <text class="panel" x="334.0" y="432">ECDSA P-256 sign</text>
 <rect x="334.0" y="440" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="334.0" y1="477.2" x2="582.0" y2="477.2" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="334.0,486.8 347.8,485.7 354.7,486.7 361.6,486.0 471.8,490.3 492.4,480.1 540.7,479.0 547.6,457.8 561.3,459.0 575.1,453.6 582.0,453.5" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="582.0" cy="453.5" r="2.2" fill="var(--first)"/>
-<text class="val" x="586.0" y="452.0" style="fill:var(--first)">1.19×</text>
-<polyline points="334.0,454.7 347.8,447.8 354.7,448.2 361.6,448.7 471.8,454.9 492.4,454.7 540.7,450.6 547.6,451.2 561.3,449.3 575.1,451.1 582.0,451.6" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="582.0" cy="451.6" r="2.2" fill="var(--second)"/>
-<text class="val" x="586.0" y="466.0" style="fill:var(--second)">1.20×</text>
+<line x1="334.0" y1="482.8" x2="582.0" y2="482.8" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="334.0" cy="474.4" r="2.2" fill="var(--first)"/>
+<text class="val" x="586.0" y="452.0" style="fill:var(--first)">1.03×</text>
+<circle cx="334.0" cy="454.6" r="2.2" fill="var(--second)"/>
+<text class="val" x="586.0" y="466.0" style="fill:var(--second)">1.11×</text>
 <text class="panel" x="644.0" y="432">ECDSA P-256 verify</text>
 <rect x="644.0" y="440" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="644.0" y1="482.5" x2="892.0" y2="482.5" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="644.0,492.0 657.8,492.2 664.7,492.4 671.6,492.4 781.8,492.6 802.4,481.2 850.7,460.4 857.6,448.4 871.3,449.9 885.1,449.5 892.0,449.4" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="892.0" cy="449.4" r="2.2" fill="var(--first)"/>
-<text class="val" x="896.0" y="452.0" style="fill:var(--first)">1.43×</text>
-<polyline points="644.0,467.0 657.8,469.8 664.7,469.9 671.6,470.0 781.8,470.4 802.4,471.6 850.7,453.5 857.6,453.8 871.3,445.8 885.1,446.3 892.0,445.7" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="892.0" cy="445.7" r="2.2" fill="var(--second)"/>
-<text class="val" x="896.0" y="466.0" style="fill:var(--second)">1.48×</text>
+<line x1="644.0" y1="487.4" x2="892.0" y2="487.4" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="644.0" cy="459.2" r="2.2" fill="var(--first)"/>
+<text class="val" x="896.0" y="452.0" style="fill:var(--first)">1.17×</text>
+<circle cx="644.0" cy="450.4" r="2.2" fill="var(--second)"/>
+<text class="val" x="896.0" y="466.0" style="fill:var(--second)">1.22×</text>
 <text class="panel" x="24.0" y="528">ECDSA P-384 verify</text>
 <rect x="24.0" y="536" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="24.0" y1="589.5" x2="272.0" y2="589.5" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="24.0,586.6 37.8,586.3 44.7,586.5 51.6,586.5 161.8,586.3 182.4,586.4 230.7,586.5 237.6,568.6 251.3,573.2 265.1,571.0 272.0,571.2" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="272.0" cy="571.2" r="2.2" fill="var(--first)"/>
-<text class="val" x="276.0" y="548.0" style="fill:var(--first)">1.36×</text>
-<polyline points="24.0,541.0 37.8,541.9 44.7,541.8 51.6,541.9 161.8,542.3 182.4,542.9 230.7,541.2 237.6,542.7 251.3,542.2 265.1,541.5 272.0,541.4" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="272.0" cy="541.4" r="2.2" fill="var(--second)"/>
-<text class="val" x="276.0" y="562.0" style="fill:var(--second)">1.94×</text>
+<line x1="24.0" y1="589.8" x2="272.0" y2="589.8" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="24.0" cy="569.9" r="2.2" fill="var(--first)"/>
+<text class="val" x="276.0" y="548.0" style="fill:var(--first)">1.46×</text>
+<circle cx="24.0" cy="540.6" r="2.2" fill="var(--second)"/>
+<text class="val" x="276.0" y="562.0" style="fill:var(--second)">2.13×</text>
 <text class="panel" x="334.0" y="528">RSA-2048 PKCS#1 v1.5 verify</text>
 <rect x="334.0" y="536" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="334.0" y1="590.0" x2="582.0" y2="590.0" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="334.0,548.8 347.8,550.0 354.7,548.9 361.6,549.0 471.8,548.6 492.4,548.8 540.7,549.2 547.6,546.0 561.3,543.9 575.1,543.2 582.0,542.2" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="582.0" cy="542.2" r="2.2" fill="var(--first)"/>
-<text class="val" x="586.0" y="548.0" style="fill:var(--first)">2.20×</text>
-<polyline points="334.0,547.0 347.8,546.2 354.7,544.7 361.6,544.8 471.8,544.7 492.4,545.5 540.7,545.7 547.6,544.9 561.3,542.1 575.1,540.7 582.0,540.5" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="582.0" cy="540.5" r="2.2" fill="var(--second)"/>
-<text class="val" x="586.0" y="562.0" style="fill:var(--second)">2.24×</text>
+<line x1="334.0" y1="589.8" x2="582.0" y2="589.8" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="334.0" cy="549.7" r="2.2" fill="var(--first)"/>
+<text class="val" x="586.0" y="548.0" style="fill:var(--first)">1.92×</text>
+<circle cx="334.0" cy="540.6" r="2.2" fill="var(--second)"/>
+<text class="val" x="586.0" y="562.0" style="fill:var(--second)">2.12×</text>
 <text class="panel" x="644.0" y="528">RSA-3072 PKCS#1 v1.5 verify</text>
 <rect x="644.0" y="536" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="644.0" y1="590.4" x2="892.0" y2="590.4" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="644.0,543.4 657.8,546.5 664.7,545.2 671.6,545.2 781.8,545.1 802.4,545.1 850.7,545.8 857.6,544.9 871.3,540.5 885.1,540.7 892.0,540.1" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="892.0" cy="540.1" r="2.2" fill="var(--first)"/>
-<text class="val" x="896.0" y="548.0" style="fill:var(--first)">2.62×</text>
-<polyline points="644.0,547.4 657.8,547.3 664.7,545.6 671.6,545.5 781.8,545.8 802.4,545.7 850.7,546.7 857.6,546.1 871.3,543.6 885.1,543.4 892.0,543.3" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="892.0" cy="543.3" r="2.2" fill="var(--second)"/>
-<text class="val" x="896.0" y="562.0" style="fill:var(--second)">2.51×</text>
+<line x1="644.0" y1="590.1" x2="892.0" y2="590.1" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="644.0" cy="540.4" r="2.2" fill="var(--first)"/>
+<text class="val" x="896.0" y="548.0" style="fill:var(--first)">2.33×</text>
+<circle cx="644.0" cy="554.5" r="2.2" fill="var(--second)"/>
+<text class="val" x="896.0" y="562.0" style="fill:var(--second)">1.95×</text>
 <text class="panel" x="24.0" y="624">ML-KEM-768 key generation</text>
 <rect x="24.0" y="632" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="24.0" y1="686.2" x2="272.0" y2="686.2" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="24.0,660.2 37.8,658.3 44.7,659.1 51.6,660.1 161.8,658.9 182.4,659.4 230.7,659.9 237.6,656.3 251.3,640.8 265.1,641.9 272.0,640.6" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="272.0" cy="640.6" r="2.2" fill="var(--first)"/>
-<text class="val" x="276.0" y="644.0" style="fill:var(--first)">2.25×</text>
-<polyline points="24.0,647.7 37.8,645.9 44.7,646.5 51.6,648.9 161.8,642.1 182.4,644.8 230.7,645.7 237.6,639.5 251.3,637.0 265.1,637.9 272.0,636.3" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="272.0" cy="636.3" r="2.2" fill="var(--second)"/>
-<text class="val" x="276.0" y="658.0" style="fill:var(--second)">2.36×</text>
+<line x1="24.0" y1="686.4" x2="272.0" y2="686.4" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="24.0" cy="641.3" r="2.2" fill="var(--first)"/>
+<text class="val" x="276.0" y="644.0" style="fill:var(--first)">2.44×</text>
+<circle cx="24.0" cy="636.1" r="2.2" fill="var(--second)"/>
+<text class="val" x="276.0" y="658.0" style="fill:var(--second)">2.61×</text>
 <text class="panel" x="334.0" y="624">ML-KEM-768 encapsulation</text>
 <rect x="334.0" y="632" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="334.0" y1="663.6" x2="582.0" y2="663.6" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="334.0,681.6 347.8,679.2 354.7,678.8 361.6,682.3 471.8,679.4 492.4,679.8 540.7,682.3 547.6,678.1 561.3,651.9 575.1,653.6 582.0,653.2" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="582.0" cy="653.2" r="2.2" fill="var(--first)"/>
-<text class="val" x="586.0" y="644.0" style="fill:var(--first)">1.08×</text>
-<polyline points="334.0,664.2 347.8,655.4 354.7,655.5 361.6,659.2 471.8,648.7 492.4,656.7 540.7,658.8 547.6,646.7 561.3,639.8 575.1,646.5 582.0,646.1" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="582.0" cy="646.1" r="2.2" fill="var(--second)"/>
-<text class="val" x="586.0" y="658.0" style="fill:var(--second)">1.13×</text>
+<line x1="334.0" y1="681.3" x2="582.0" y2="681.3" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="334.0" cy="651.3" r="2.2" fill="var(--first)"/>
+<text class="val" x="586.0" y="644.0" style="fill:var(--first)">1.23×</text>
+<circle cx="334.0" cy="640.7" r="2.2" fill="var(--second)"/>
+<text class="val" x="586.0" y="658.0" style="fill:var(--second)">1.30×</text>
 <text class="panel" x="644.0" y="624">ML-KEM-768 decapsulation</text>
 <rect x="644.0" y="632" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="644.0" y1="684.5" x2="892.0" y2="684.5" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="644.0,671.5 657.8,667.8 664.7,669.1 671.6,670.8 781.8,668.5 802.4,668.7 850.7,669.2 857.6,666.6 871.3,652.0 885.1,654.0 892.0,653.3" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="892.0" cy="653.3" r="2.2" fill="var(--first)"/>
-<text class="val" x="896.0" y="644.0" style="fill:var(--first)">1.45×</text>
-<polyline points="644.0,652.1 657.8,648.5 664.7,650.6 671.6,653.0 781.8,646.1 802.4,651.1 850.7,649.9 857.6,642.9 871.3,637.8 885.1,641.9 892.0,641.8" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="892.0" cy="641.8" r="2.2" fill="var(--second)"/>
-<text class="val" x="896.0" y="658.0" style="fill:var(--second)">1.61×</text>
+<line x1="644.0" y1="685.1" x2="892.0" y2="685.1" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="644.0" cy="649.0" r="2.2" fill="var(--first)"/>
+<text class="val" x="896.0" y="644.0" style="fill:var(--first)">1.62×</text>
+<circle cx="644.0" cy="637.3" r="2.2" fill="var(--second)"/>
+<text class="val" x="896.0" y="658.0" style="fill:var(--second)">1.82×</text>
 <text class="panel" x="24.0" y="720">ML-DSA-87 key generation</text>
 <rect x="24.0" y="728" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="24.0" y1="752.1" x2="272.0" y2="752.1" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="182.4,782.6 230.7,764.0 237.6,733.7 251.3,734.7 265.1,731.0 272.0,734.2" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="272.0" cy="734.2" r="2.2" fill="var(--first)"/>
-<text class="val" x="276.0" y="740.0" style="fill:var(--first)">1.47×</text>
-<polyline points="182.4,783.7 230.7,747.9 237.6,741.7 251.3,743.1 265.1,742.8 272.0,743.8" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="272.0" cy="743.8" r="2.2" fill="var(--second)"/>
-<text class="val" x="276.0" y="754.0" style="fill:var(--second)">1.22×</text>
+<line x1="24.0" y1="781.0" x2="272.0" y2="781.0" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="24.0" cy="733.4" r="2.2" fill="var(--first)"/>
+<text class="val" x="276.0" y="740.0" style="fill:var(--first)">1.78×</text>
+<circle cx="24.0" cy="751.1" r="2.2" fill="var(--second)"/>
+<text class="val" x="276.0" y="754.0" style="fill:var(--second)">1.49×</text>
 <text class="panel" x="334.0" y="720">ML-DSA-87 sign</text>
 <rect x="334.0" y="728" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="334.0" y1="764.3" x2="582.0" y2="764.3" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="492.4,781.3 540.7,746.7 547.6,743.9 561.3,741.5 575.1,738.9 582.0,742.0" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="582.0" cy="742.0" r="2.2" fill="var(--first)"/>
-<text class="val" x="586.0" y="740.0" style="fill:var(--first)">1.31×</text>
-<polyline points="492.4,778.0 540.7,733.5 547.6,736.1 561.3,737.4 575.1,733.1 582.0,744.8" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="582.0" cy="744.8" r="2.2" fill="var(--second)"/>
-<text class="val" x="586.0" y="754.0" style="fill:var(--second)">1.27×</text>
+<line x1="334.0" y1="780.4" x2="582.0" y2="780.4" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="334.0" cy="734.1" r="2.2" fill="var(--first)"/>
+<text class="val" x="586.0" y="740.0" style="fill:var(--first)">1.64×</text>
+<circle cx="334.0" cy="733.9" r="2.2" fill="var(--second)"/>
+<text class="val" x="586.0" y="754.0" style="fill:var(--second)">1.64×</text>
 <text class="panel" x="644.0" y="720">ML-DSA-87 verify</text>
 <rect x="644.0" y="728" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="644.0" y1="782.5" x2="892.0" y2="782.5" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="802.4,765.7 850.7,739.8 857.6,740.7 871.3,741.6 885.1,739.2 892.0,741.7" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="892.0" cy="741.7" r="2.2" fill="var(--first)"/>
-<text class="val" x="896.0" y="740.0" style="fill:var(--first)">2.37×</text>
-<polyline points="802.4,763.4 850.7,734.9 857.6,732.0 871.3,734.8 885.1,734.8 892.0,733.4" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="892.0" cy="733.4" r="2.2" fill="var(--second)"/>
-<text class="val" x="896.0" y="754.0" style="fill:var(--second)">2.65×</text>
+<line x1="644.0" y1="782.9" x2="892.0" y2="782.9" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="644.0" cy="735.8" r="2.2" fill="var(--first)"/>
+<text class="val" x="896.0" y="740.0" style="fill:var(--first)">3.18×</text>
+<circle cx="644.0" cy="731.6" r="2.2" fill="var(--second)"/>
+<text class="val" x="896.0" y="754.0" style="fill:var(--second)">3.37×</text>
 <text class="panel" x="24.0" y="816">AES-128-GCM, the key set and one 16 KiB record sealed</text>
 <rect x="24.0" y="824" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="24.0" y1="834.4" x2="272.0" y2="834.4" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="24.0,878.3 37.8,872.3 44.7,873.5 51.6,828.6 161.8,830.5 182.4,830.7 230.7,832.6 237.6,834.9 251.3,833.2 265.1,832.5 272.0,831.5" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="272.0" cy="831.5" r="2.2" fill="var(--first)"/>
-<text class="val" x="276.0" y="836.0" style="fill:var(--first)">1.04×</text>
-<polyline points="24.0,873.4 37.8,870.6 44.7,872.0 51.6,828.2 161.8,833.0 182.4,833.2 230.7,831.8 237.6,831.0 251.3,833.7 265.1,832.9 272.0,832.9" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="272.0" cy="832.9" r="2.2" fill="var(--second)"/>
-<text class="val" x="276.0" y="850.0" style="fill:var(--second)">1.02×</text>
+<line x1="24.0" y1="841.7" x2="272.0" y2="841.7" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="24.0" cy="863.4" r="2.2" fill="var(--first)"/>
+<text class="val" x="276.0" y="836.0" style="fill:var(--first)">0.94×</text>
+<circle cx="24.0" cy="852.4" r="2.2" fill="var(--second)"/>
+<text class="val" x="276.0" y="850.0" style="fill:var(--second)">0.97×</text>
 <text class="panel" x="334.0" y="816">AES-128-GCM, the key set and one 16 KiB record opened</text>
 <rect x="334.0" y="824" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="334.0" y1="838.1" x2="582.0" y2="838.1" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="334.0,878.3 347.8,873.6 354.7,874.8 361.6,832.9 471.8,834.3 492.4,834.4 540.7,836.5 547.6,839.9 561.3,836.6 575.1,835.7 582.0,835.3" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="582.0" cy="835.3" r="2.2" fill="var(--first)"/>
-<text class="val" x="586.0" y="836.0" style="fill:var(--first)">1.04×</text>
-<polyline points="334.0,874.9 347.8,873.0 354.7,874.5 361.6,828.2 471.8,830.8 492.4,833.9 540.7,832.1 547.6,832.6 561.3,832.4 575.1,832.8 582.0,833.1" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="582.0" cy="833.1" r="2.2" fill="var(--second)"/>
-<text class="val" x="586.0" y="850.0" style="fill:var(--second)">1.07×</text>
+<line x1="334.0" y1="853.7" x2="582.0" y2="853.7" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="334.0" cy="863.6" r="2.2" fill="var(--first)"/>
+<text class="val" x="586.0" y="836.0" style="fill:var(--first)">0.97×</text>
+<circle cx="334.0" cy="841.5" r="2.2" fill="var(--second)"/>
+<text class="val" x="586.0" y="850.0" style="fill:var(--second)">1.04×</text>
 <text class="panel" x="644.0" y="816">AES-256-GCM, the key set and one 16 KiB record sealed</text>
 <rect x="644.0" y="824" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="644.0" y1="833.3" x2="892.0" y2="833.3" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="644.0,878.2 657.8,871.6 664.7,873.0 671.6,828.3 781.8,830.3 802.4,831.7 850.7,832.5 857.6,837.3 871.3,835.0 885.1,832.3 892.0,832.0" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="892.0" cy="832.0" r="2.2" fill="var(--first)"/>
-<text class="val" x="896.0" y="836.0" style="fill:var(--first)">1.02×</text>
-<polyline points="644.0,874.2 657.8,869.2 664.7,871.6 671.6,828.4 781.8,832.8 802.4,834.0 850.7,832.6 857.6,831.0 871.3,833.2 885.1,832.8 892.0,834.1" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="892.0" cy="834.1" r="2.2" fill="var(--second)"/>
-<text class="val" x="896.0" y="850.0" style="fill:var(--second)">0.99×</text>
+<line x1="644.0" y1="841.7" x2="892.0" y2="841.7" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="644.0" cy="863.4" r="2.2" fill="var(--first)"/>
+<text class="val" x="896.0" y="836.0" style="fill:var(--first)">0.94×</text>
+<circle cx="644.0" cy="852.7" r="2.2" fill="var(--second)"/>
+<text class="val" x="896.0" y="850.0" style="fill:var(--second)">0.97×</text>
 <text class="panel" x="24.0" y="912">AES-256-GCM, the key set and one 16 KiB record opened</text>
 <rect x="24.0" y="920" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="24.0" y1="932.1" x2="272.0" y2="932.1" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="24.0,974.2 37.8,968.0 44.7,968.9 51.6,926.2 161.8,925.7 182.4,927.9 230.7,928.6 237.6,934.8 251.3,931.5 265.1,927.7 272.0,928.0" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="272.0" cy="928.0" r="2.2" fill="var(--first)"/>
-<text class="val" x="276.0" y="932.0" style="fill:var(--first)">1.05×</text>
-<polyline points="24.0,971.3 37.8,966.9 44.7,968.3 51.6,924.3 161.8,926.7 182.4,930.5 230.7,929.4 237.6,929.1 251.3,931.8 265.1,929.5 272.0,929.5" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="272.0" cy="929.5" r="2.2" fill="var(--second)"/>
-<text class="val" x="276.0" y="946.0" style="fill:var(--second)">1.03×</text>
+<line x1="24.0" y1="956.4" x2="272.0" y2="956.4" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="24.0" cy="954.1" r="2.2" fill="var(--first)"/>
+<text class="val" x="276.0" y="932.0" style="fill:var(--first)">1.01×</text>
+<circle cx="24.0" cy="940.4" r="2.2" fill="var(--second)"/>
+<text class="val" x="276.0" y="946.0" style="fill:var(--second)">1.04×</text>
 <text class="panel" x="334.0" y="912">ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag</text>
 <rect x="334.0" y="920" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="334.0" y1="932.6" x2="582.0" y2="932.6" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="334.0,974.6 347.8,933.7 354.7,935.3 361.6,936.2 471.8,932.9 492.4,935.9 540.7,938.0 547.6,949.6 561.3,938.1 575.1,923.9 582.0,930.6" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="582.0" cy="930.6" r="2.2" fill="var(--first)"/>
-<text class="val" x="586.0" y="932.0" style="fill:var(--first)">1.03×</text>
-<polyline points="334.0,973.4 347.8,932.5 354.7,934.8 361.6,933.8 471.8,932.7 492.4,933.9 540.7,937.8 547.6,940.2 561.3,934.6 575.1,927.4 582.0,929.9" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="582.0" cy="929.9" r="2.2" fill="var(--second)"/>
-<text class="val" x="586.0" y="946.0" style="fill:var(--second)">1.04×</text>
+<line x1="334.0" y1="931.3" x2="582.0" y2="931.3" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="334.0" cy="950.6" r="2.2" fill="var(--first)"/>
+<text class="val" x="586.0" y="932.0" style="fill:var(--first)">0.92×</text>
+<circle cx="334.0" cy="966.4" r="2.2" fill="var(--second)"/>
+<text class="val" x="586.0" y="946.0" style="fill:var(--second)">0.84×</text>
 <text class="panel" x="644.0" y="912">ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag</text>
 <rect x="644.0" y="920" width="248.0" height="56" fill="none" stroke="var(--grid)"/>
-<line x1="644.0" y1="935.6" x2="892.0" y2="935.6" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
-<polyline points="644.0,974.4 657.8,930.1 664.7,930.2 671.6,937.7 781.8,930.0 802.4,936.5 850.7,937.0 857.6,940.8 871.3,936.5 885.1,924.1 892.0,930.5" fill="none" stroke="var(--first)" stroke-width="1.5"/>
-<circle cx="892.0" cy="930.5" r="2.2" fill="var(--first)"/>
-<text class="val" x="896.0" y="932.0" style="fill:var(--first)">1.07×</text>
-<polyline points="644.0,974.4 657.8,931.5 664.7,929.5 671.6,934.9 781.8,929.5 802.4,935.9 850.7,932.8 857.6,930.6 871.3,934.4 885.1,928.8 892.0,931.9" fill="none" stroke="var(--second)" stroke-width="1.5"/>
-<circle cx="892.0" cy="931.9" r="2.2" fill="var(--second)"/>
-<text class="val" x="896.0" y="946.0" style="fill:var(--second)">1.05×</text>
+<line x1="644.0" y1="931.8" x2="892.0" y2="931.8" stroke="var(--unit)" stroke-width="1" stroke-dasharray="3 3"/>
+<circle cx="644.0" cy="950.6" r="2.2" fill="var(--first)"/>
+<text class="val" x="896.0" y="932.0" style="fill:var(--first)">0.92×</text>
+<circle cx="644.0" cy="965.9" r="2.2" fill="var(--second)"/>
+<text class="val" x="896.0" y="946.0" style="fill:var(--second)">0.85×</text>
 </svg>

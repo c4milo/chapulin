@@ -16,6 +16,18 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The AVX-512 run of 0315cbf4
+
+Bench run 44230474748 recorded the AVX-512 columns on 0315cbf4, beside OpenSSL 3.6.5. Its job
+took the first CPU with AVX-512 IFMA it drew, a Xeon Platinum 8370C, in one attempt. The column
+takes any such CPU since 2026-11-17, so this run does not compare with the 8573C runs before it.
+
+Against OpenSSL on the same host, the 8370C reads lower than the 8573C did on ML-KEM-768, ML-DSA-87
+and P-384. It reads higher on the AEADs, P-256, X25519 key generation, SHA3-256 and RSA
+verification. ChaCha20-Poly1305 takes 1.09 and
+1.18 times OpenSSL's time to seal, where the 8573C read 0.97 and 0.96. P-256's shared secret takes
+1.03 times it under gcc, where the 8573C read 0.83.
+
 ## The x86-64 run of c8df21fb
 
 Bench run 44091698677 recorded the AMD EPYC 7763 columns on c8df21fb, beside OpenSSL 3.6.5.

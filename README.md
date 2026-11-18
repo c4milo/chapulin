@@ -193,7 +193,7 @@ document charts each row at every run since 2026-10-08.
 
 ![Bars of chapulin's speed in multiples of OpenSSL's on the AMD EPYC 7763, under gcc and clang](docs/img/speed-vs-openssl-x86-64.svg)
 
-![Bars of chapulin's speed in multiples of OpenSSL's on the Intel Xeon Platinum 8573C, with AVX-512, under gcc and clang](docs/img/speed-vs-openssl-x86-64-avx512.svg)
+![Bars of chapulin's speed in multiples of OpenSSL's on an x86-64 CPU with AVX-512 IFMA, under gcc and clang](docs/img/speed-vs-openssl-x86-64-avx512.svg)
 
 ## Trust modes
 
