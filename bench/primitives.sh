@@ -422,6 +422,30 @@ if [ -n "$OPENSSL_BIN" ]; then
     OPENSSL_LABEL=$(openssl_label "$OPENSSL_BIN")
 fi
 
+# bench/openssl_kem.c times OpenSSL's ML-KEM-768 encapsulation to a key made
+# from its bytes at each call, as a TLS server encapsulates to the client's
+# key, in place of `openssl speed`'s row, which reuses one key object
+# (docs/decisions.md 239). It builds against the headers and the library
+# beside the binary openssl_find printed. Where they are not there, the CSV
+# holds no OpenSSL encapsulation row, so no row mixes the two methods.
+OPENSSL_KEM=""
+if [ -n "$OPENSSL_BIN" ]; then
+    OPENSSL_PREFIX=$(cd "$(dirname "$OPENSSL_BIN")/.." && pwd)
+    for OPENSSL_LIB in "$OPENSSL_PREFIX/lib64" "$OPENSSL_PREFIX/lib"; do
+        if ls "$OPENSSL_LIB"/libcrypto.* > /dev/null 2>&1; then
+            break
+        fi
+    done
+    if [ -f "$OPENSSL_PREFIX/include/openssl/evp.h" ] &&
+        "$CC" -O2 -I"$OPENSSL_PREFIX/include" bench/openssl_kem.c -L"$OPENSSL_LIB" -lcrypto \
+            -Wl,-rpath,"$OPENSSL_LIB" -o "$W/openssl_kem" 2> "$W/openssl_kem.log"; then
+        OPENSSL_KEM=$W/openssl_kem
+    else
+        echo "primitives bench: no OpenSSL ML-KEM-768 encapsulation row: bench/openssl_kem.c" \
+            "did not build against $OPENSSL_PREFIX" >&2
+    fi
+fi
+
 # One second of one `openssl speed` algorithm, as rows shaped like
 # chapulin_run's. awk reads the +F line whose tag is $1 and prints one row
 # for each "name=field" in $2: the row's name, and the field of that line
@@ -448,6 +472,8 @@ openssl_rows() {
 
 # One run of every OpenSSL row: one second of each algorithm. The KEM
 # lines hold key generations, encapsulations and decapsulations a second,
+# and the run takes their key generations and decapsulations, with
+# bench/openssl_kem.c's encapsulation row beside them,
 # the ML-DSA line key generations, signatures and verifications, and the
 # X25519 and ECP-256 key generations are the first of theirs.
 openssl_run() {
@@ -465,7 +491,10 @@ openssl_run() {
     openssl_rows +F4 p384_ecdsa_verify=5 op 0 ecdsap384
     openssl_rows +F2 "rsa_pkcs1_sign_2048=4 rsa_pkcs1_verify_2048=5" op 0 rsa2048
     openssl_rows +F2 "rsa_pkcs1_sign_3072=4 rsa_pkcs1_verify_3072=5" op 0 rsa3072
-    openssl_rows +F9 "mlkem768_keygen=3 mlkem768_encaps=4 mlkem768_decaps=5" op 0 ML-KEM-768
+    openssl_rows +F9 "mlkem768_keygen=3 mlkem768_decaps=5" op 0 ML-KEM-768
+    if [ -n "$OPENSSL_KEM" ]; then
+        "$OPENSSL_KEM" "$OPENSSL_LABEL"
+    fi
     openssl_rows +F10 "mldsa87_keygen=3 mldsa87_sign=4 mldsa87_verify=5" op 0 ML-DSA-87
 }
 

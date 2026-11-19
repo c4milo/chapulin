@@ -20097,3 +20097,24 @@ does nothing more.
       runs held both layouts under both compilers, the stack and register searches included. The
       `aead_avx512_halves` and `aead_avx512_row_halves` harnesses prove clang's layout's memory
       accesses, and one clang-tidy pass reads each layout.
+
+239. **OpenSSL's ML-KEM-768 encapsulation row times a key made from bytes.** The Neoverse N2
+    column showed chapulin's encapsulation at 0.66 to 0.70 of OpenSSL's speed, while its key
+    generation ran faster than OpenSSL's. `openssl speed` reuses one key object for every
+    operation. A TLS server encapsulates to the key the client sends, so it makes a key object from
+    the key's bytes at each handshake. Camilo chose on 2026-11-19 that the row time that work.
+
+    - **What the run showed.** On a Neoverse N2 under OpenSSL 3.6.5, an encapsulation took 17.5 µs
+      under the reused key object, 17.8 µs under a new context on that object, and 32.5 µs when it
+      made the key object from the bytes first (lab run 44434667287). chapulin took 21.2 to 25.7 µs
+      there, and it reads the key's bytes and runs FIPS 203's modulus check at each call.
+    - **The change.** `bench/openssl_kem.c` times that operation, the median of 11 samples on the
+      thread's CPU clock, as `bench/primitives.c` times a row. `bench/primitives.sh` builds it
+      against the headers and the library beside the OpenSSL binary it times, and its row replaces
+      `openssl speed`'s encapsulation row. Where the program does not build, the CSV holds no
+      OpenSSL encapsulation row, so no column mixes the two methods.
+    - **What stays.** The decapsulation row stays `openssl speed`'s. A TLS client keeps the key
+      object its key generation made and decapsulates under it, so that reuse is a handshake's
+      work. Key generation makes a new key at each operation on both sides.
+    - **When the table moves.** Each column moves at its next recording. Until then a column holds
+      `openssl speed`'s encapsulation row, which `docs/performance.md`'s method notes state.

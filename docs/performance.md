@@ -626,7 +626,11 @@ How the figures are taken:
   which a device object runs too. [`bench/notes-primitives.md`](../bench/notes-primitives.md) reads
   those rows and the handshakes'.
 - **OpenSSL.** `openssl speed -mr -seconds 1`, on the binary `test/e2e.sh` takes
-  ([`bench/openssl.sh`](../bench/openssl.sh)). Each machine's line names its version.
+  ([`bench/openssl.sh`](../bench/openssl.sh)). Each machine's line names its version. The ML-KEM-768
+  encapsulation row is [`bench/openssl_kem.c`](../bench/openssl_kem.c)'s, built against that
+  binary's library: each operation makes a key object from the 1,184 bytes of an encapsulation key
+  and encapsulates to it, as a TLS server does with the key the client sends (decision 239). A
+  column recorded before that decision holds `openssl speed`'s row, which reuses one key object.
 - **The clock.** `openssl speed` divides the operations it ran by the user CPU time its process
   took. `bench/primitives.c` times each sample on its thread's CPU clock. So neither side counts
   the time a loaded machine gave to other work. The load in a machine's line can still move both
@@ -650,7 +654,10 @@ What a row compares:
   value without one.
 - **Key generation and encapsulation.** chapulin's calls take their random bytes as arguments, so
   its rows time no draw. OpenSSL's rows draw theirs, and its key generation also builds a key
-  object.
+  object. chapulin's ML-KEM-768 encapsulation reads the key's bytes and runs FIPS 203's modulus
+  check at each call, as OpenSSL's row does when it makes the key object. Its decapsulation reads
+  the decapsulation key's bytes at each call too, while OpenSSL's row decapsulates under the key
+  object its key generation made, as a TLS client does.
 - **ECDSA.** chapulin derives its nonce by RFC 6979 and signs a 32-byte digest. `openssl speed`
   draws its nonce and signs 20 bytes.
 - **AES-GCM.** One operation of OpenSSL 3.6's `speed -aead` sets the key and the IV, hashes 13 bytes
