@@ -1,4 +1,4 @@
-# Lab only: times an SVE2 ChaCha20 prototype on a Neoverse N2 (branch lab/n2-sve2-chacha).
+# Lab only: builds the bench programs on a Neoverse N2 and runs the record rows quickly.
 name: lab-n2-sve2
 on:
   push:
@@ -7,11 +7,7 @@ permissions:
   contents: read
 jobs:
   n2:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04-arm, ubuntu-26.04-arm]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 30
     steps:
       - name: Check the CPU this runner drew
@@ -29,32 +25,10 @@ jobs:
         with:
           major: ${{ env.LLVM_MAJOR }}
           sha256: ${{ env.LLVM_KEY_SHA256 }}
-      - name: Install gcc 14 on Ubuntu 24.04
-        if: matrix.os == 'ubuntu-24.04-arm'
-        run: command -v gcc-14 || { sudo apt-get update -qq && sudo apt-get install -y -qq gcc-14; }
-      - name: Build and time chacha20_sve2.c's copy
-        if: false
+      - name: Build the bench programs and run the record rows quickly
         run: |
-          if [ "${{ matrix.os }}" = ubuntu-24.04-arm ]; then set -- gcc gcc-14 "$CLANG_RV"; else set -- gcc "$CLANG_RV"; fi
-          bash lab/run_copy.sh "$@" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Read the copy's pass under each compiler
-        run: |
-          if [ "${{ matrix.os }}" = ubuntu-24.04-arm ]; then set -- gcc-14; else set -- gcc "$CLANG_RV"; fi
-          bash lab/run_barrier.sh "$@"
-      - name: The residue search on the copy with and without the hold
-        run: |
-          if [ "${{ matrix.os }}" = ubuntu-24.04-arm ]; then set -- gcc-14; else set -- gcc "$CLANG_RV"; fi
-          cp src/chacha20_sve2.c /tmp/hold_$$.c
-          sed 's/^#define LANES_HOLD(v) lanes_hold(v)$/#define LANES_HOLD(v) (v)/' /tmp/hold_$$.c > /tmp/nohold_$$.c
-          cmp -s /tmp/hold_$$.c /tmp/nohold_$$.c && { echo "the sed changed nothing"; exit 1; }
-          for tree in nohold hold; do
-            cp "/tmp/${tree}_$$.c" src/chacha20_sve2.c
-            for cc in "$@"; do
-              for round in 1 2 3; do
-                rm -f bin/chacha20_equiv_test
-                make -s CC="$cc" bin/chacha20_equiv_test > /dev/null
-                echo "== $tree $cc round $round: $(CH_REQUIRE_SVE2=1 CH_CHACHA20_EQUIV_SEED=$round ./bin/chacha20_equiv_test 2>&1 | grep -E 'residue|mismatch|SVE2 copy holds' | tr '\n' ' ')"
-              done
-            done
+          for cc in gcc "$CLANG_RV"; do
+            echo "== $cc"
+            CC="$cc" bash bench/primitives.sh --build
+            CC="$cc" BENCH_MACHINE=n2 bash bench/record.sh --quick | grep -E '^chacha20poly1305,(0x7|0x1007),' | grep -E 'rec_seal/16384|aead_seal/16384|chacha20/16384|keystream' | head -8
           done
-          git checkout -- src/chacha20_sve2.c
