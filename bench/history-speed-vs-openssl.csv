@@ -2756,6 +2756,33 @@ arm64 gcc,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"AES-256-GCM, the key set a
 arm64 gcc,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"AES-256-GCM, the key set and one 16 KiB record opened",1.029
 arm64 gcc,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag",0.725
 arm64 gcc,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag",0.723
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA-256, 16 KiB",0.935
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA-256, 64 bytes",1.668
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA-384, 16 KiB",0.935
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA-384, 64 bytes",1.412
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA3-256, 16 KiB",0.916
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA3-256, 64 bytes",1.231
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,X25519 key generation,1.573
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,X25519 shared secret,1.036
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,P-256 key generation,0.846
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,P-256 shared secret,0.910
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ECDSA P-256 sign,0.969
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ECDSA P-256 verify,1.124
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ECDSA P-384 verify,1.813
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,RSA-2048 PKCS#1 v1.5 verify,0.696
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,RSA-3072 PKCS#1 v1.5 verify,0.684
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-KEM-768 key generation,1.410
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-KEM-768 encapsulation,1.385
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-KEM-768 decapsulation,1.012
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-DSA-87 key generation,1.028
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-DSA-87 sign,1.053
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-DSA-87 verify,1.611
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"AES-128-GCM, the key set and one 16 KiB record sealed",1.004
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"AES-128-GCM, the key set and one 16 KiB record opened",1.026
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"AES-256-GCM, the key set and one 16 KiB record sealed",1.008
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"AES-256-GCM, the key set and one 16 KiB record opened",0.998
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag",0.723
+arm64 gcc,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag",0.724
 arm64 clang,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"SHA-256, 16 KiB",0.935
 arm64 clang,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"SHA-256, 64 bytes",1.652
 arm64 clang,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"SHA-384, 16 KiB",0.954
@@ -2783,3 +2810,30 @@ arm64 clang,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"AES-256-GCM, the key set
 arm64 clang,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"AES-256-GCM, the key set and one 16 KiB record opened",1.028
 arm64 clang,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag",0.745
 arm64 clang,1,ARM Neoverse-N2,2026-11-18,f20bd24-dirty,"ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag",0.745
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA-256, 16 KiB",0.935
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA-256, 64 bytes",1.668
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA-384, 16 KiB",0.954
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA-384, 64 bytes",1.522
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA3-256, 16 KiB",0.971
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"SHA3-256, 64 bytes",1.315
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,X25519 key generation,1.881
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,X25519 shared secret,0.953
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,P-256 key generation,0.983
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,P-256 shared secret,1.097
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ECDSA P-256 sign,1.139
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ECDSA P-256 verify,1.331
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ECDSA P-384 verify,1.862
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,RSA-2048 PKCS#1 v1.5 verify,0.934
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,RSA-3072 PKCS#1 v1.5 verify,0.969
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-KEM-768 key generation,1.570
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-KEM-768 encapsulation,1.528
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-KEM-768 decapsulation,1.135
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-DSA-87 key generation,0.849
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-DSA-87 sign,1.257
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,ML-DSA-87 verify,1.740
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"AES-128-GCM, the key set and one 16 KiB record sealed",1.000
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"AES-128-GCM, the key set and one 16 KiB record opened",1.027
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"AES-256-GCM, the key set and one 16 KiB record sealed",1.007
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"AES-256-GCM, the key set and one 16 KiB record opened",1.007
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag",0.746
+arm64 clang,2,ARM Neoverse-N2,2026-11-19,de8ea4b-dirty,"ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag",0.746

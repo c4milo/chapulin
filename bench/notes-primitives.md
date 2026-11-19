@@ -16,6 +16,15 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The arm64 server run of de8ea4b5
+
+Bench run 44457220954 recorded the Neoverse N2 again after decisions 239 to 241. SHA3-256 over
+16 KiB went from 1.43 and 1.85 times OpenSSL's time to 1.09 and 1.03 times, and ML-KEM-768's
+encapsulation to 0.72 and 0.65 of OpenSSL's time to a key made from bytes. With the SHA-3 bit
+clear, AES-GCM lost EOR3 and reads 0.97 to 1.00. The run before it, 44453649422 on b1eaadad, wrote
+no OpenSSL encapsulation row, because bench/openssl_kem.c did not build on the runner; de8ea4b5
+fixed that.
+
 ## The first arm64 server run, 4ffa66dd
 
 Bench run 44409753742 recorded the Arm Neoverse N2 of GitHub's `ubuntu-24.04-arm` runner for the

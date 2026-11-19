@@ -89,7 +89,7 @@ the dashed line at 1 is faster than OpenSSL.
 </details>
 
 <details>
-<summary>ARM Neoverse-N2: chapulin is faster than OpenSSL 3.6.5 in 13 of 27 rows under gcc and 15 of 27 under clang</summary>
+<summary>ARM Neoverse-N2: chapulin is faster than OpenSSL 3.6.5 in 16 of 27 rows under gcc and 17 of 27 under clang</summary>
 
 ![Bars of chapulin's speed in multiples of OpenSSL's on an Arm Neoverse N2, under gcc and clang](docs/img/speed-vs-openssl-arm64.svg)
 
