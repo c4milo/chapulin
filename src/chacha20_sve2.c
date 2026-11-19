@@ -32,20 +32,21 @@
     LANES_HOLD(svget_neonq_u32(svxar_n_u32(svset_neonq_u32(svundef_u32(), (x)),                    \
                                            svset_neonq_u32(svundef_u32(), (y)), 32 - (r))))
 
-// Under gcc each step's result passes through an empty statement that holds it in a NEON
-// register. It emits no instruction. Without it gcc 15 kept some results in whole SVE registers
-// through the round loop, and wrote them to stack slots it addressed with ADDVL and ADD. On a
-// Neoverse N2 the copy then took 0.67 of the NEON path's time over 16 KiB, and 0.54 with it; gcc
-// 14 took 0.60 and 0.57. Under clang 23 it raised the time from 0.61 to 0.64, so clang compiles
-// none (docs/decisions.md 242).
-#ifdef __clang__
-#define LANES_HOLD(v) (v)
-#else
+// Under gcc 15 and later each step's result passes through an empty statement that holds it in a
+// NEON register. It emits no instruction. Without it gcc 15 kept some results in whole SVE
+// registers through the round loop, and wrote them to stack slots it addressed with ADDVL and ADD.
+// On a Neoverse N2 the copy then took 0.67 of the NEON path's time over 16 KiB, and 0.54 with it.
+// Under gcc 14 the hold left a word of the block in general registers on the stack below the call,
+// which bin/chacha20_equiv_test's search found, and under clang 23 it raised the time from 0.61 to
+// 0.64. So neither compiles it (docs/decisions.md 242).
+#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ >= 15
 static inline uint32x4_t lanes_hold(uint32x4_t v) {
     __asm__("" : "+w"(v));
     return v;
 }
 #define LANES_HOLD(v) lanes_hold(v)
+#else
+#define LANES_HOLD(v) (v)
 #endif
 
 // chacha20_vector.h is read below with the rename in place, so it declares chacha20_sve2_xor.
