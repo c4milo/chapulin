@@ -432,4 +432,48 @@ Other targets:
   gives you a session that wipes its keys when it leaves scope.
 - `make hooks`, once after clone, enables the commit-msg hook.
 
+## One binary for many CPUs
+
+A host object runs well on every CPU of its architecture, when your
+program describes the CPU at run time. Build it once for each
+architecture.
+
+- **No CPU flag at build time.** A host object needs no `-march` flag.
+  Each fast path turns its instructions on for its own functions alone,
+  beside the portable code. So one arm64 build runs on any arm64 CPU,
+  and one x86-64 build on any x86-64 CPU.
+- **The choice is made at run time.** Each session picks its paths from
+  `ch_cfg.cpu`. Probe the CPU in your program, and pass what you found to
+  every session. [`examples/cpu_probe.c`](../examples/cpu_probe.c) is a
+  probe to copy, for Linux and macOS on arm64 and x86-64. It reads the
+  core's ID at run time, so one binary applies a rule for one core, such
+  as the Neoverse N2's (decision 240).
+- **The value matters more than the build.** With `CH_CPU_PROBED` alone,
+  every session runs the portable code: correct and constant time, but
+  slow. On a Neoverse N2 under gcc, SHA-256 of 16 KiB took 98.5 µs that
+  way and 8.2 µs under every bit the CPU has. P-256 key generation took
+  1.9 ms and 12.8 µs (`bench/results-primitives-linux-arm64-n2-gcc.csv`,
+  2026-11-18).
+- **The compiler still matters.** Some fast paths exist under one
+  compiler alone. In an arm64 object, Keccak on the SHA-3 instructions
+  and RSA's loops in blocks of four words are clang's alone (decisions 99
+  and 209). Zig's build and Apple's toolchain compile with clang.
+- **One build for each architecture.** arm64 and x86-64 are separate
+  objects. chapulin builds and tests each one alone, and it does not
+  build or test a macOS universal binary that holds both.
+- **x86-64 asks for DOITM.** Each `CH_CPU_CONSTANT_TIME_*` bit states that
+  the thread runs the instructions in constant time. On x86-64 that takes
+  DOITM, which only the operating system sets
+  ([`docs/usage.md`](usage.md)). Without the multiply bit, X25519 and
+  P-256 run on the portable multiply. Without the AES bit, a session
+  offers ChaCha20-Poly1305 alone. So on x86-64 a binary is fast only
+  where you can state that its system sets DOITM.
+- **A rule for one core lives in your probe.** chapulin probes nothing. A
+  later rule for a core model, as the N2's was, reaches a binary only
+  when you update your copy of the probe. Without it the binary stays
+  correct, and that core runs a slower path.
+- **A device object has no choice at run time.** A raw or ca client, and
+  every build for a target that fails the host test, runs the portable
+  code alone. Build it for each target.
+
 See [`CLAUDE.md`](../CLAUDE.md) for the house rules.
