@@ -7,7 +7,11 @@ permissions:
   contents: read
 jobs:
   n2:
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, ubuntu-26.04-arm]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - name: Check the CPU this runner drew
@@ -25,5 +29,10 @@ jobs:
         with:
           major: ${{ env.LLVM_MAJOR }}
           sha256: ${{ env.LLVM_KEY_SHA256 }}
-      - name: Measure
-        run: bash lab/run_sve2.sh | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Install gcc 14 on Ubuntu 24.04
+        if: matrix.os == 'ubuntu-24.04-arm'
+        run: command -v gcc-14 || { sudo apt-get update -qq && sudo apt-get install -y -qq gcc-14; }
+      - name: Build and time chacha20_sve2.c's copy
+        run: |
+          if [ "${{ matrix.os }}" = ubuntu-24.04-arm ]; then set -- gcc gcc-14 "$CLANG_RV"; else set -- gcc "$CLANG_RV"; fi
+          bash lab/run_copy.sh "$@" | tee -a "$GITHUB_STEP_SUMMARY"
