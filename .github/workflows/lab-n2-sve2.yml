@@ -49,7 +49,7 @@ jobs:
             gcc -O2 -g -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I. -c "$f" -o "$W/$(basename "$f" .c).o"
           done
           gcc "$W"/*.o -o "$W/copy"
-          valgrind --version
-          valgrind --tool=memcheck --error-exitcode=1 -q "$W/copy" 2>&1 | tail -20 || true
-          valgrind --tool=callgrind --callgrind-out-file="$W/cg.out" "$W/copy" 2>&1 | tail -20 || true
-          LD_SHOW_AUXV=1 valgrind -q /bin/true 2>&1 | grep -i hwcap || true
+          "$VALGRIND" --version
+          "$VALGRIND" --tool=memcheck --error-exitcode=1 -q "$W/copy" 2>&1 | tail -20 || true
+          "$VALGRIND" --tool=callgrind --callgrind-out-file="$W/cg.out" "$W/copy" 2>&1 | tail -20 || true
+          LD_SHOW_AUXV=1 "$VALGRIND" -q /bin/true 2>&1 | grep -i hwcap || true
