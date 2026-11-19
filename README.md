@@ -207,8 +207,8 @@ Signatures and SCRAM-SHA-256 to a host `TRUST=webpki` object.
 
 On arm64 and x86-64, a web PKI client and the `ROLE=server` and
 `ROLE=both` objects build a *host object*. A host object holds fast paths
-beside the portable C: vector code, the 64-bit multiply, and the AES, SHA
-and AVX-512 instructions. chapulin probes no CPU. Your program states what
+beside the portable C: vector code, the 64-bit multiply, and the AES, SHA,
+AVX-512 and SVE2 instructions. chapulin probes no CPU. Your program states what
 its CPU has in `ch_cfg.cpu`, from the bits in `cpu_cfg.h`, and each
 session picks its paths from that value. `cpu_cfg.h` states what each bit
 picks. A host object takes neither `AES` nor `WIDEMUL`.
@@ -323,7 +323,7 @@ Each job in `.github/workflows/check.yml` names the make targets it runs.
 | Platform | How the suites run | CI job |
 | --- | --- | --- |
 | Linux x86_64 | Natively: every lint, the fast proofs, the sanitizers and the end-to-end handshakes. The AVX2, VAES and SHA kernels on a runner that has them, and CPUs without them under QEMU. Each night, the AVX-512 kernels under Intel SDE, an emulator. | `check`, `slow`, `mutants`, `prove`, `san`, `coverage`, `x86-64-kernels`, `mips`; nightly `rsa-ifma-sde` |
-| Linux arm64 | Natively under gcc and clang, with the AES, PMULL, SHA-256, SHA-512 and SHA-3 instructions, and a CPU without SHA-512 under QEMU | `arm64`, `mips` |
+| Linux arm64 | Natively under gcc and clang, with the AES, PMULL, SHA-256, SHA-512, SHA-3 and SVE2 instructions. Under QEMU, a CPU without SHA-512 or SVE2, and SVE2 at vector lengths of 16 to 256 bytes | `arm64`, `mips` |
 | macOS arm64 | Natively under Apple clang, with the AES, PMULL, SHA-256, SHA-512 and SHA-3 instructions | `macos` |
 | mips32r2, big-endian | Cross-built, under QEMU user mode (`make cross-check`) | `mips` |
 | riscv32 | Cross-built with a pinned musl toolchain, under QEMU user mode | `riscv32` |
