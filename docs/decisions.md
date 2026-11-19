@@ -20198,7 +20198,16 @@ does nothing more.
       clang 23 the copy took 7,920 ns, 0.61 of the NEON time, and under gcc 15 9,357 ns, 0.67 (lab
       run 44551851212). A prototype of eight blocks a pass in SVE types alone took 8,944 ns under
       clang (lab run 44549703437), so the copy's nine blocks a pass, one in general registers, stay.
-      gcc 15's code is not yet read.
+    - **gcc 15's hold.** gcc 15 kept some XAR results in whole SVE registers through the round
+      loop, and wrote them to stack slots it addressed with ADDVL and ADD. Under gcc 15 and later
+      the copy now passes each result through an empty `asm` that holds it in a NEON register and
+      emits no instruction, as `P256_WIDE_HOLD` does (decision 224). Over 16 KiB that took gcc 15
+      from 9,347 ns to 7,595 ns, 0.54 of the NEON path's time (lab run 44563312841). The hold
+      takes no other compiler. Under gcc 14 it took 7,505 ns where the copy without it took 7,899,
+      but it left word 12 of the block in general registers on the stack below the call, which
+      `bin/chacha20_equiv_test`'s search found under three seeds (lab run 44566721035). Without the
+      hold, gcc 14, gcc 15 and clang 23 all pass the search. Under clang 23 the hold took 8,259 ns
+      where the copy without it took 7,919.
     - **The tests.** `bin/chacha20_equiv_test` holds the copy to `chacha20.c`'s loop and searches
       the stack it leaves, on CI's N2 under `CH_REQUIRE_SVE2=1`. The qemu lane runs it at SVE vector
       lengths of 16, 32, 64 and 256 bytes, and requires both loops to die of SIGILL under the bit on

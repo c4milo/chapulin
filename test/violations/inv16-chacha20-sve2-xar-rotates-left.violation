@@ -8,6 +8,6 @@ reason: the SVE2 copy's XAR rotates right by r in place of 32 - r, so
   SVE vector length from 16 bytes to 256.
 
 --- old
-                                svset_neonq_u32(svundef_u32(), (y)), 32 - (r)))
+                                           svset_neonq_u32(svundef_u32(), (y)), 32 - (r))))
 --- new
-                                svset_neonq_u32(svundef_u32(), (y)), (r)))
+                                           svset_neonq_u32(svundef_u32(), (y)), (r))))
