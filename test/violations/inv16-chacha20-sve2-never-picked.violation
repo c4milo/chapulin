@@ -1,0 +1,12 @@
+invariant: INV-16
+file: src/chacha20.c
+catches: test/chacha-builds.sh
+reason: use_sve2 answers no for every session, so a caller that set
+  CH_CPU_SVE2 runs the NEON path and chacha20_sve2.c's copy never runs.
+  test/chacha-builds.sh requires chacha20_xor_cpu for arm64 to call
+  chacha20_sve2_xor, and the compiler drops a call that no value reaches.
+
+--- old
+    return (cpu & CH_CPU_SVE2) != 0;
+--- new
+    return (cpu & CH_CPU_SVE2) != 0 && cpu == 0;

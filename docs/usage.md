@@ -126,8 +126,11 @@ measure power.
 
 The other
 bits, `CH_CPU_AVX2`, `CH_CPU_VAES`, `CH_CPU_AVX512`,
-`CH_CPU_AVX512_IFMA`, `CH_CPU_BMI2_ADX` and `CH_CPU_BMI1`, state no timing. Set one only when your probe
-found it, because an instruction the CPU lacks stops the program.
+`CH_CPU_AVX512_IFMA`, `CH_CPU_BMI2_ADX` and `CH_CPU_BMI1` on x86-64 and
+`CH_CPU_SVE2` on arm64, state no timing. Set one only when your probe
+found it, because an instruction the CPU lacks stops the program. Linux
+on arm64 reports SVE2 in `AT_HWCAP2` as `HWCAP2_SVE2`; a session with the
+bit runs ChaCha20 on SVE2 (decision 242).
 
 On an Arm Neoverse N2 (implementer 0x41, part 0xd49 in `MIDR_EL1`),
 leave `CH_CPU_CONSTANT_TIME_SHA3` clear even with DIT set. That core runs

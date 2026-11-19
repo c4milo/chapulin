@@ -324,6 +324,9 @@
 #                     chacha20_vector.c and poly1305_vector.c: the block
 #                     in general registers, the residue checks that run
 #                     on NEON alone, and the passes of four pairs
+#   sve2              bin/chacha20_equiv_test for arm64, built with clang,
+#                     for the violations of chacha20_sve2.c's copy of the
+#                     128-bit path, at each SVE vector length
 #   keccak-neon       bin/keccak_neon_equiv_test for arm64, built with the
 #                     arm64 gcc, which runs the plain form, and with clang,
 #                     which runs the SHA-3 form too, and
@@ -397,10 +400,10 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | sha3-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
-    mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
+    mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | sve2 | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | \
     rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi | sha3-device) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | sha3-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi | sha3-device]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | sha3-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mldsa-vector | mlkem-avx2 | mldsa-avx2 | poly1305-avx2 | aead-avx2 | chacha20-avx2 | vector-neon | sve2 | keccak-neon | aes-equiv | ghash-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2 | x25519-adx | p256-adx | p256-arm64 | rsa-adx | sha3-bmi | sha3-device]" >&2
     exit 2
     ;;
 esac
@@ -424,7 +427,7 @@ arm64_cc=""
 x86_qemu=${QEMU_X86_64:-qemu-x86_64}
 arm64_qemu=${QEMU_AARCH64:-qemu-aarch64}
 if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ] && [ "$only" != ghash-equiv ] &&
-    [ "$only" != vector-neon ] && [ "$only" != keccak-neon ] && [ "$only" != p256-arm64 ]; then
+    [ "$only" != vector-neon ] && [ "$only" != sve2 ] && [ "$only" != keccak-neon ] && [ "$only" != p256-arm64 ]; then
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
@@ -438,9 +441,11 @@ if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != mldsa
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
-# clang for arm64, the one compiler under which sha3_hw.c has a body.
+# clang for arm64, the one compiler under which sha3_hw.c has a body, and
+# the one here that builds chacha20_sve2.c's copy: Ubuntu 24.04's arm64
+# gcc is gcc 13, which ships no <arm_neon_sve_bridge.h>.
 keccak_cc=""
-if [ -z "$only" ] || [ "$only" = keccak ] || [ "$only" = keccak-neon ]; then
+if [ -z "$only" ] || [ "$only" = keccak ] || [ "$only" = keccak-neon ] || [ "$only" = sve2 ]; then
     keccak_cc=${KECCAK_ARM64_CC:-clang}
     "$keccak_cc" --target=aarch64-linux-gnu -dM -E -x c /dev/null 2> /dev/null | grep -qw __clang__ ||
         { echo "aes-runtime-qemu: $keccak_cc is not a clang that compiles for aarch64; set KECCAK_ARM64_CC" >&2; exit 1; }
@@ -590,6 +595,8 @@ sigill=132
 # FEAT_PMULL and FEAT_SHA256.
 no_sha512=cortex-a72
 no_sha3=cortex-a72
+# QEMU's arm64 model without SVE2: cortex-a72 has no SVE at all.
+no_sve2=cortex-a72
 # QEMU's x86-64 model without AVX-512 IFMA. Its max model has no AVX-512
 # instruction today, and the minus sign keeps the rows' meaning on a QEMU
 # that adds them.
@@ -785,6 +792,32 @@ if [ -z "$only" ] || [ "$only" = vector-neon ]; then
 fi
 if [ "$only" = vector-neon ]; then
     echo "aes-runtime-qemu: bin/chacha20_equiv_test and bin/poly1305_equiv_test held the NEON ChaCha20 and Poly1305 to the portable loops, for arm64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = sve2 ]; then
+    # chacha20_sve2.c's copy of the 128-bit path against chacha20.c's loop,
+    # with the search of the stack each call leaves, as clang compiles it
+    # for arm64 (docs/decisions.md 242). The copy runs the low 128 bits of
+    # each SVE register, so it must agree at every vector length QEMU's max
+    # model takes, from 16 bytes to 256. On cortex-a72, which has no SVE,
+    # the binary skips the copy.
+    sve2_chacha20_equiv_srcs=()
+    for src in "${chacha20_equiv_srcs[@]}"; do
+        [ "$src" = src/avx512_wipe.c ] || sve2_chacha20_equiv_srcs+=("$src")
+    done
+    "$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -o "$arm64_out/chacha20_equiv_sve2" \
+        test/chacha20_equiv_test.c "${sve2_chacha20_equiv_srcs[@]}" || exit 1
+    for length in 16 32 64 256; do
+        CH_REQUIRE_SVE2=1 expect_arm64 "max,sve-default-vector-length=$length" 0 \
+            "the SVE2 copy and src/chacha20.c's loop disagree at a vector length of $length bytes, a call left the key on the stack, or the object holds no copy" \
+            chacha20_equiv_sve2
+    done
+    expect_arm64 "$no_sve2" 0 "bin/chacha20_equiv_test ran the SVE2 copy on a model without SVE2" \
+        chacha20_equiv_sve2
+fi
+if [ "$only" = sve2 ]; then
+    echo "aes-runtime-qemu: as clang compiles it for arm64, bin/chacha20_equiv_test held src/chacha20_sve2.c's copy to src/chacha20.c's loop at SVE vector lengths of 16, 32, 64 and 256 bytes, and found no key on the stack"
     exit 0
 fi
 
@@ -1435,6 +1468,16 @@ for b in quic_loop_keccak webpki_loop_keccak; do
     CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and src/sha3.c disagree" "$b" cpu 0xa7 0x27
     CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and src/sha3.c disagree" "$b" cpu 0x27 0xa7
 done
+# The same two loops for CH_CPU_SVE2: a session with the bit runs its
+# ChaCha20 records and packets on chacha20_sve2.c's copy, which clang
+# compiles. Neither end states the AES bit, so each session holds
+# ChaCha20 alone (docs/decisions.md 242).
+for b in quic_loop_keccak webpki_loop_keccak; do
+    expect_arm64 "$no_sve2" "$sigill" "a session with CH_CPU_SVE2 ran no SVE2 instruction" \
+        "$b" cpu 0x1025 0x1025
+    CH_REQUIRE_SVE2=1 expect_arm64 max 0 "the SVE2 copy and the NEON path disagree" "$b" cpu 0x1025 0x25
+    CH_REQUIRE_SVE2=1 expect_arm64 max 0 "the SVE2 copy and the NEON path disagree" "$b" cpu 0x25 0x1025
+done
 
 echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU_AVX2 passed in the" \
     "vectors and both loops, and the rows with either died of SIGILL; on $no_avx2 the rows with" \
@@ -1452,7 +1495,9 @@ echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU
     "instructions and the other on src/sha512.c agreed; as clang compiles arm64, on $no_sha3 the rows" \
     "without the SHA-3 bit passed and the rows with it died of SIGILL, and on max src/sha3_hw.c agreed" \
     "with src/sha3.c and left no lane on the stack, ML-KEM's copies agreed with src/mlkem.c, and one end on" \
-    "the SHA-3 instructions and the other on src/sha3.c agreed; the vector NTT agreed with" \
+    "the SHA-3 instructions and the other on src/sha3.c agreed; on $no_sve2 the rows with CH_CPU_SVE2" \
+    "died of SIGILL, and on max one end on src/chacha20_sve2.c's copy and the other on the NEON path" \
+    "agreed; the vector NTT agreed with" \
     "src/mlkem_poly.c's loops on SSE2 and on NEON; src/aes_hw.c agreed with the table and left no word of a" \
     "schedule on the stack on AES-NI and on the Arm AES instructions; built as a device object for" \
     "x86-64, arm64 and mips32r2, bin/sha3_equiv_test found each body of src/sha3.c inside the stack" \

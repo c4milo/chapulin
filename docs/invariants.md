@@ -4932,7 +4932,10 @@ last `ROLE=server` stub, as the entry said it would.
   which states no timing either (decision 90), and one whose caller set
   `CH_CPU_AVX512_IFMA` on `chacha20_avx512.c`'s, the same operations in
   512-bit vectors with VPROLD's fixed rotations, which states none
-  either (decision 121).
+  either (decision 121). On arm64 a session whose caller set
+  `CH_CPU_SVE2` computes it on `chacha20_sve2.c`'s copy of the 128-bit
+  path, whose XAR is an exclusive-or and a fixed rotation on every lane,
+  which states no timing either (decision 242).
   A host object's vector Poly1305 multiplies on NEON's UMULL and UMLAL or
   SSE2's PMULUDQ, so it runs only for a session whose caller set
   `CH_CPU_CONSTANT_TIME_MULTIPLY`, which states that every widening

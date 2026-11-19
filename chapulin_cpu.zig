@@ -71,6 +71,10 @@ const CpuBits = struct {
     /// rotations are RORX, so its ML-DSA-87 hashes run there. ML-KEM's hashes run sha3.c whatever
     /// this says. An x86-64 bit, which an arm64 object refuses.
     bmi1: bool = false,
+    /// CH_CPU_SVE2: the CPU has SVE2. It states presence alone, as avx2 does. The session runs
+    /// ChaCha20 on chacha20_sve2.c's copy of the NEON path, whose quarter rounds run on SVE2's XAR,
+    /// where the object holds the copy. An arm64 bit, which an x86-64 object refuses.
+    sve2: bool = false,
 };
 
 /// ch_cfg.cpu for what found states, and 0 for null, which every init refuses. EcdsaP256Key.init_from_pem
@@ -87,5 +91,6 @@ fn cpu_bits_of(found: ?CpuBits) u32 {
         (if (cpu.avx512_ifma) c.CH_CPU_AVX512_IFMA else 0) |
         (if (cpu.avx512) c.CH_CPU_AVX512 else 0) |
         (if (cpu.bmi2_adx) c.CH_CPU_BMI2_ADX else 0) |
-        (if (cpu.bmi1) c.CH_CPU_BMI1 else 0);
+        (if (cpu.bmi1) c.CH_CPU_BMI1 else 0) |
+        (if (cpu.sve2) c.CH_CPU_SVE2 else 0);
 }

@@ -48,6 +48,8 @@
         "src/chacha20_avx512.c",
         "src/chacha20_avx512.h",
         "src/chacha20_avx512_lanes.h",
+        "src/chacha20_sve2.c",
+        "src/chacha20_sve2.h",
         "src/chacha20_vector.c",
         "src/chacha20_vector.h",
         "chapulin.hpp",

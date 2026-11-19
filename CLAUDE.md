@@ -263,7 +263,10 @@ Home: github.com/c4milo.
   and `keysched.c` compiled once more over the hash instructions, a host
   object) ← `chacha20.[ch]` with `chacha20_vector.[ch]` (eight blocks a
   pass on NEON, two groups of four side by side, and four on SSE2, every
-  session of a host object), `chacha20_avx2.[ch]` (eight blocks a pass in
+  session of a host object), `chacha20_sve2.[ch]` (`chacha20_vector.c`
+  compiled once more with each XOR-and-rotate step on SVE2's XAR, an arm64
+  session whose caller sets CH_CPU_SVE2, in an object that clang or gcc 14
+  and later builds, docs/decisions.md 242), `chacha20_avx2.[ch]` (eight blocks a pass in
   256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2;
   `chacha20_avx2_lanes.h` holds each lane as a GNU C vector of eight
   `uint32_t`, whose sums, exclusive-ors and rotations by 12 and 7 are C
@@ -670,7 +673,9 @@ Home: github.com/c4milo.
   on SSE2 (docs/decisions.md 193), in every session: every arm64 and x86-64 CPU has those, so
   no bit picks them, and a host build whose compiler defines neither
   `__ARM_NEON` nor `__SSE2__` stops at an `#error` (docs/decisions.md 82
-  and 86). ML-KEM's NTT and base multiplication run on `mlkem_vector.c`'s
+  and 86). On arm64 `CH_CPU_SVE2` runs those passes on `chacha20_sve2.c`,
+  the same text with each XOR and rotation as one XAR. The bit states
+  presence alone, as CH_CPU_AVX2 does (docs/decisions.md 242). ML-KEM's NTT and base multiplication run on `mlkem_vector.c`'s
   eight 16-bit lanes in every session of a host object the same way:
   their multiplies are 16x16, the size of `ct.h`'s pieces, so no bit
   picks them, and `mlkem_poly.c`'s loops stay the reference and a device

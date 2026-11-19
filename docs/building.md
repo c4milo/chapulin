@@ -168,7 +168,8 @@ Other targets:
   you state those instructions run in constant time on that CPU in the
   mode your thread runs in, on x86-64 `CH_CPU_AVX2`, `CH_CPU_VAES`,
   `CH_CPU_AVX512_IFMA`, `CH_CPU_AVX512`, `CH_CPU_BMI2_ADX` and `CH_CPU_BMI1`, and on arm64
-  `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`. Every
+  `CH_CPU_CONSTANT_TIME_SHA512`, `CH_CPU_CONSTANT_TIME_SHA3` and
+  `CH_CPU_SVE2`. Every
   init call, `ch_srv_check` and `ch_p256_key_from_pem` refuse a value
   without `CH_CPU_PROBED`, and one with a bit this object does not
   define for its architecture, such as `CH_CPU_AVX2` on arm64 or
@@ -269,6 +270,10 @@ Other targets:
   beside `CH_CPU_BMI2_ADX`, whose BMI2 gives RORX, the session runs SHA-3
   and SHAKE on `sha3_hw.c`'s copy of `sha3.c`, whose chi is ANDN, so its
   ML-DSA-87 hashes run there (decision 217).
+  `CH_CPU_SVE2` says an arm64 CPU has SVE2. It states no timing, and the
+  session runs ChaCha20 on `chacha20_sve2.c`'s copy of the NEON path,
+  whose quarter rounds run on XAR, where the object holds the copy: gcc 14
+  and later and clang build it, and gcc 13 does not (decision 242).
   Set each bit from your probe alone: a session whose bit names
   instructions its CPU lacks faults on the first one. The three hash
   bits say the CPU has the SHA-256, the SHA-512 or the SHA-3

@@ -49,8 +49,8 @@ static uint8_t residue_in[RESIDUE_LENGTH];
 static uint8_t residue_out[RESIDUE_LENGTH];
 
 static __attribute__((noinline)) void residue_call(void) {
-    chacha20_vector_xor(residue_key, residue_nonce, residue_counter, residue_in, residue_out,
-                        RESIDUE_LENGTH);
+    current->xor_bytes(residue_key, residue_nonce, residue_counter, residue_in, residue_out,
+                       RESIDUE_LENGTH);
 }
 
 // test/stack_residue.c, compiled as a source of its own.
@@ -141,8 +141,9 @@ static void run_residue(void) {
             }
         }
     }
-    printf("chacha20 equivalence: the stack below the 128-bit path holds neither the key's "
-           "words side by side nor a word of its blocks in general registers\n");
+    printf("chacha20 equivalence: the stack below %s holds neither the key's words side by "
+           "side nor a word of its blocks in general registers\n",
+           current->name);
 }
 
 #endif // __ARM_NEON

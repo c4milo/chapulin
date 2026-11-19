@@ -1,0 +1,13 @@
+invariant: INV-16
+file: src/chacha20_sve2.c
+catches: test/docker-aes-runtime-qemu.sh sve2
+reason: the SVE2 copy's XAR rotates right by r in place of 32 - r, so
+  three of a quarter round's four rotations go the wrong way and every
+  block's keystream is wrong. bin/chacha20_equiv_test compares every byte
+  of the copy's output with chacha20.c's under QEMU's max model, at each
+  SVE vector length from 16 bytes to 256.
+
+--- old
+                                           svset_neonq_u32(svundef_u32(), (y)), 32 - (r))))
+--- new
+                                           svset_neonq_u32(svundef_u32(), (y)), (r))))

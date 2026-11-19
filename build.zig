@@ -721,7 +721,7 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // object runs, the AVX2 kernel a session's CH_CPU_AVX2 bit picks on
     // x86-64 (docs/decisions.md 82, 89 and 90), and the AVX-512 kernel its
     // CH_CPU_AVX512_IFMA bit picks there.
-    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{ "chacha20_vector.c", "chacha20_avx2.c", "chacha20_avx512.c" } });
+    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{ "chacha20_vector.c", "chacha20_sve2.c", "chacha20_avx2.c", "chacha20_avx512.c" } });
     // AVX512_WIPE_SRCS: the wipe of every vector register and the mask
     // registers k1 to k7, which an x86-64 kernel that ran secrets through
     // 512-bit registers calls before it returns. An x86-64 host object

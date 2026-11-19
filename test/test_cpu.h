@@ -14,6 +14,7 @@
 
 #include "cfg.h"
 #include "hash_instructions_cpu.h"
+#include "sve2_cpu.h"
 #include "x86_kernels_cpu.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -52,9 +53,9 @@ static uint32_t test_cpu = TEST_CPU;
 
 // Every bit a host object defines on the architecture this binary targets: the four of every
 // host object, on x86-64 CH_CPU_AVX2, CH_CPU_VAES, CH_CPU_AVX512_IFMA, CH_CPU_AVX512,
-// CH_CPU_BMI2_ADX and CH_CPU_BMI1, and on arm64 CH_CPU_CONSTANT_TIME_SHA512 and
-// CH_CPU_CONSTANT_TIME_SHA3. It is written here apart from cpu_cfg.h's CH_CPU_DEFINED, so a wrong
-// set there fails a row.
+// CH_CPU_BMI2_ADX and CH_CPU_BMI1, and on arm64 CH_CPU_CONSTANT_TIME_SHA512,
+// CH_CPU_CONSTANT_TIME_SHA3 and CH_CPU_SVE2. It is written here apart from cpu_cfg.h's
+// CH_CPU_DEFINED, so a wrong set there fails a row.
 #define TEST_CPU_COMMON                                                                            \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \
      CH_CPU_CONSTANT_TIME_SHA256)
@@ -63,23 +64,25 @@ static uint32_t test_cpu = TEST_CPU;
     (TEST_CPU_COMMON | CH_CPU_AVX2 | CH_CPU_VAES | CH_CPU_AVX512_IFMA | CH_CPU_AVX512 |            \
      CH_CPU_BMI2_ADX | CH_CPU_BMI1)
 #else
-#define TEST_CPU_ALL (TEST_CPU_COMMON | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3)
+#define TEST_CPU_ALL                                                                               \
+    (TEST_CPU_COMMON | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3 | CH_CPU_SVE2)
 #endif
 
 // The values every init call and ch_srv_check refuse: 0, which a caller that never set the field
-// leaves; every defined bit but CH_CPU_PROBED; the first bit past CH_CPU_BMI1, which no
+// leaves; every defined bit but CH_CPU_PROBED; the first bit past CH_CPU_SVE2, which no
 // architecture defines; the top bit; and each bit of the other architecture, which an object
-// refuses rather than ignores: the six x86-64 bits on arm64, and the SHA-512 and SHA-3 bits on
-// x86-64. Then the two they take at the edges: CH_CPU_PROBED alone, and every bit the
+// refuses rather than ignores: the six x86-64 bits on arm64, and the SHA-512, SHA-3 and SVE2 bits
+// on x86-64. Then the two they take at the edges: CH_CPU_PROBED alone, and every bit the
 // architecture defines.
 static const uint32_t test_cpu_values[] = {
     0,
     TEST_CPU_ALL & ~(uint32_t)CH_CPU_PROBED,
-    CH_CPU_PROBED | (CH_CPU_BMI1 << 1),
+    CH_CPU_PROBED | (CH_CPU_SVE2 << 1),
     CH_CPU_PROBED | 0x80000000U,
 #ifdef __x86_64__
     CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA512,
     CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA3,
+    CH_CPU_PROBED | CH_CPU_SVE2,
 #else
     CH_CPU_PROBED | CH_CPU_AVX2,
     CH_CPU_PROBED | CH_CPU_VAES,
@@ -169,6 +172,19 @@ static inline uint32_t test_cpu_absent_bmi1_bit(uint32_t value) {
     return 0;
 }
 
+// CH_CPU_SVE2 where value holds it and this CPU lacks SVE2 (test/sve2_cpu.h), and 0 for every
+// other value and on x86-64.
+static inline uint32_t test_cpu_absent_sve2_bit(uint32_t value) {
+#ifdef __aarch64__
+    if ((value & CH_CPU_SVE2) != 0 && !cpu_has_sve2()) {
+        return CH_CPU_SVE2;
+    }
+#else
+    (void)value;
+#endif
+    return 0;
+}
+
 // CH_CPU_AVX2 where value holds it and this CPU lacks AVX2 (test/x86_kernels_cpu.h), and 0 for
 // every other value and on arm64.
 static inline uint32_t test_cpu_absent_avx2_bit(uint32_t value) {
@@ -193,7 +209,9 @@ static inline uint32_t test_cpu_absent_avx2_bit(uint32_t value) {
 // gcm_avx512_kernel.c under it. It leaves out CH_CPU_BMI2_ADX where this CPU lacks BMI2 or ADX,
 // because a session's shared secret runs on x25519_adx.c under it. It leaves out CH_CPU_BMI1 where
 // this CPU lacks BMI1, because a session's SHA-3 runs on sha3_hw.c's x86-64 copy under it and
-// CH_CPU_BMI2_ADX. A value the call refuses runs nothing and stays whole.
+// CH_CPU_BMI2_ADX. It leaves out CH_CPU_SVE2 where this CPU lacks SVE2, because a session's
+// ChaCha20 runs on chacha20_sve2.c's copy under it. A value the call refuses runs nothing and
+// stays whole.
 static inline uint32_t test_cpu_value(size_t i) {
     uint32_t value = test_cpu_values[i];
     if (!test_cpu_taken(i)) {
@@ -201,7 +219,8 @@ static inline uint32_t test_cpu_value(size_t i) {
     }
     return value & ~test_cpu_absent_hash_bits(value) & ~test_cpu_absent_ifma_bit(value) &
            ~test_cpu_absent_avx2_bit(value) & ~test_cpu_absent_avx512_bit(value) &
-           ~test_cpu_absent_bmi2_adx_bit(value) & ~test_cpu_absent_bmi1_bit(value);
+           ~test_cpu_absent_bmi2_adx_bit(value) & ~test_cpu_absent_bmi1_bit(value) &
+           ~test_cpu_absent_sve2_bit(value);
 }
 
 // The hash bits a row gives an end that states its hash instructions: each one an object runs
@@ -236,11 +255,12 @@ static inline uint32_t test_cpu_hash_bits(void) {
 
 #ifdef CH_CPU_RUNTIME
 // The instructions test_cpu names and this CPU lacks, or NULL where it has them all: an x86-64
-// kernel's, AVX-512 IFMA, what CH_CPU_AVX512 names, BMI2 and ADX, or a hash's. *required is
-// whether the environment makes their absence a failure: CH_REQUIRE_X86_KERNELS for a kernel,
+// kernel's, AVX-512 IFMA, what CH_CPU_AVX512 names, BMI2 and ADX, SVE2, or a hash's. *required
+// is whether the environment makes their absence a failure: CH_REQUIRE_X86_KERNELS for a kernel,
 // which CI's x86-64 kernels job sets, CH_REQUIRE_AVX512_IFMA for AVX-512 IFMA, CH_REQUIRE_AVX512
 // for what CH_CPU_AVX512 names, CH_REQUIRE_BMI2_ADX for BMI2 and ADX (test/x86_kernels_cpu.h),
-// and CH_REQUIRE_HASH_INSTRUCTIONS for a hash (test/hash_instructions_cpu.h).
+// CH_REQUIRE_SVE2 for SVE2 (test/sve2_cpu.h), and CH_REQUIRE_HASH_INSTRUCTIONS for a hash
+// (test/hash_instructions_cpu.h).
 static inline const char *test_cpu_lacks(int *required) {
 #ifdef __x86_64__
     *required = x86_kernels_required();
@@ -265,6 +285,12 @@ static inline const char *test_cpu_lacks(int *required) {
     *required = x86_bmi1_required();
     if (test_cpu_absent_bmi1_bit(test_cpu) != 0) {
         return "BMI1";
+    }
+#endif
+#ifdef __aarch64__
+    *required = sve2_required();
+    if (test_cpu_absent_sve2_bit(test_cpu) != 0) {
+        return "SVE2";
     }
 #endif
     *required = hash_instructions_required();

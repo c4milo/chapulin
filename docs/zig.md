@@ -413,10 +413,11 @@ the AVX-512 kernels alone, `rsa_ifma.c`, `rsa_ifma_sign.c`,
 and in `avx512_wipe.c`'s block of assembly, as make's does
 (docs/decisions.md 119 to 121).
 
-- **A value states what the caller found.** `Cpu` holds eleven bools,
+- **A value states what the caller found.** `Cpu` holds twelve bools,
   false by default: `constant_time_aes`, `constant_time_multiply`, `avx2`,
   `vaes`, `constant_time_sha256`, `constant_time_sha512`,
-  `constant_time_sha3`, `avx512_ifma`, `avx512`, `bmi2_adx` and `bmi1`.
+  `constant_time_sha3`, `avx512_ifma`, `avx512`, `bmi2_adx`, `bmi1` and
+  `sve2`.
   `init` writes
   `CH_CPU_PROBED` and the bit of each one that is true. `Cpu{}` says the
   caller looked and states nothing more. The five named `constant_time_`
@@ -456,7 +457,10 @@ and in `avx512_wipe.c`'s block of assembly, as make's does
   `bmi2_adx` the session runs SHA-3 and SHAKE on `sha3_hw.c`'s copy of
   `sha3.c`, whose chi is ANDN and whose rotations are RORX, so its
   ML-DSA-87 hashes run there. ML-KEM's hashes run `sha3.c` whatever the
-  field says (docs/decisions.md 217).
+  field says (docs/decisions.md 217). `sve2` is arm64's and says the CPU
+  has SVE2, and with it the session runs ChaCha20 on `chacha20_sve2.c`'s
+  copy of the NEON path, whose quarter rounds run on XAR
+  (docs/decisions.md 242).
   The three hash fields say the CPU has the SHA-256, the SHA-512 or the
   SHA-3 instructions. With `constant_time_sha256` the session hashes its
   transcript and derives its keys over SHA-256 on them, and with
@@ -467,8 +471,8 @@ and in `avx512_wipe.c`'s block of assembly, as make's does
 - **A value without one is refused at init.** A null `cpu` leaves the
   field 0, C answers `CH_EINVAL`, and `init` and `ServerOptions.check` return
   `error.Invalid` with nothing sent. So does `avx2`, `vaes`,
-  `avx512_ifma`, `avx512`, `bmi2_adx` or `bmi1` in an arm64 object, and `constant_time_sha512` or
-  `constant_time_sha3` in an x86-64 one: each object defines its own
+  `avx512_ifma`, `avx512`, `bmi2_adx` or `bmi1` in an arm64 object, and `constant_time_sha512`,
+  `constant_time_sha3` or `sve2` in an x86-64 one: each object defines its own
   architecture's bits. Both refusals are C's.
 - **The probe is the caller's.** chapulin and its API probe nothing and
   set no CPU mode. A caller states the constant-time bits only where it

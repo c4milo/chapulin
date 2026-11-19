@@ -1,0 +1,12 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: a host object stops carrying chacha20_sve2.c, and on arm64 its
+  link fails on chacha20_sve2_xor, which chacha20.c calls there, only
+  where something links it. lint-trust-separation's ChaCha20 rows require
+  the file in every host object's source list.
+
+--- old
+CHACHA_VECTOR_SRCS := src/chacha20_vector.c src/chacha20_sve2.c src/chacha20_avx2.c src/chacha20_avx512.c
+--- new
+CHACHA_VECTOR_SRCS := src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c

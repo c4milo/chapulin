@@ -1,7 +1,8 @@
 // The vector ChaCha20 source the bench's rows run under BENCH_CPU, compiled
 // with one more entry, for bench/record.c: chacha20_avx512.c where the
 // value names AVX-512 IFMA on x86-64, chacha20_avx2.c where it names AVX2
-// there, and chacha20_vector.c under every other value (record_stages.h). The functions this entry
+// there, chacha20_sve2.c where it names SVE2 on arm64, and chacha20_vector.c under every other
+// value (record_stages.h). The functions this entry
 // runs are static in those files, so this file includes the source. The bench also links the
 // library's own object of it, so this file first renames the external name
 // the source defines, and nothing calls the renamed function.
@@ -13,6 +14,9 @@
 #elif defined(BENCH_ON_AVX2)
 #define chacha20_avx2_xor bench_chacha20_avx2_copy_xor
 #include "chacha20_avx2.c"
+#elif defined(BENCH_ON_SVE2)
+#define chacha20_sve2_xor bench_chacha20_sve2_copy_xor
+#include "chacha20_sve2.c"
 #else
 #define chacha20_vector_xor bench_chacha20_vector_copy_xor
 #include "chacha20_vector.c"
@@ -75,6 +79,13 @@ bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonc
     }
 }
 #else
+// On the SVE2 copy it takes the copy's target attribute, because its
+// rounds run XAR.
+#if defined(BENCH_ON_SVE2) && defined(__clang__)
+__attribute__((target("sve2")))
+#elif defined(BENCH_ON_SVE2)
+__attribute__((target("+sve2")))
+#endif
 void bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY],
                                   const uint8_t nonce[CHACHA20_NONCE], uint32_t counter, size_t n,
                                   uint8_t out[BENCH_CHACHA20_VECTOR_PASS_MAX]) {

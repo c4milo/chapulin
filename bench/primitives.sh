@@ -280,6 +280,7 @@ CPU_AVX512_IFMA=0x100
 CPU_AVX512=0x200
 CPU_BMI2_ADX=0x400
 CPU_BMI1=0x800
+CPU_SVE2=0x1000
 
 # Whether a CPU's feature list names every word given.
 reports() { # $1 = the list, space separated; the rest = the words
@@ -300,7 +301,8 @@ reports() { # $1 = the list, space separated; the rest = the words
 # instructions and the SHA-3 bit where it reports the SHA-3 ones, and on
 # x86-64 the AVX2 and VAES bits where it reports those, the IFMA bit
 # where it reports AVX-512F and AVX-512 IFMA, and CH_CPU_AVX512 where it
-# reports AVX-512F, AVX-512BW, AVX-512VL, VAES and VPCLMULQDQ. A program gcc
+# reports AVX-512F, AVX-512BW, AVX-512VL, VAES and VPCLMULQDQ, and on arm64
+# CH_CPU_SVE2 where it reports SVE2. A program gcc
 # built holds no Keccak on the SHA-3 instructions, and there the SHA-3
 # bit picks nothing (docs/decisions.md 99). BENCH_CPU from the
 # environment wins, for a system this function has no probe for. The
@@ -330,6 +332,9 @@ cpu_value() {
         fi
         if [ "$(sysctl -n hw.optional.arm.FEAT_SHA3 2>/dev/null)" = 1 ]; then
             features="$features sha3"
+        fi
+        if [ "$(sysctl -n hw.optional.arm.FEAT_SVE2 2>/dev/null)" = 1 ]; then
+            features="$features sve2"
         fi
         ;;
     "Linux arm64") features=$(sed -n 's/^Features[[:space:]]*: //p' /proc/cpuinfo | head -1) ;;
@@ -386,6 +391,11 @@ cpu_value() {
     if [ "$ARCH" = x86_64 ] && reports "$features" bmi1; then
         value=$((value | CPU_BMI1))
     fi
+    # chacha20_sve2.c's copy: arm64 Linux names SVE2 sve2. macOS would name
+    # it FEAT_SVE2, which macOS 26 does not define.
+    if [ "$ARCH" = arm64 ] && reports "$features" sve2; then
+        value=$((value | CPU_SVE2))
+    fi
     printf '0x%x\n' "$value"
 }
 
@@ -394,7 +404,7 @@ cpu_value() {
 cpu_names() { # $1 = a ch_cfg.cpu value
     local names=CH_CPU_PROBED bit variable
     for bit in CONSTANT_TIME_AES CONSTANT_TIME_MULTIPLY AVX2 VAES CONSTANT_TIME_SHA256 \
-        CONSTANT_TIME_SHA512 CONSTANT_TIME_SHA3 AVX512_IFMA AVX512 BMI2_ADX BMI1; do
+        CONSTANT_TIME_SHA512 CONSTANT_TIME_SHA3 AVX512_IFMA AVX512 BMI2_ADX BMI1 SVE2; do
         variable=CPU_$bit
         if [ $(($1 & ${!variable})) -ne 0 ]; then
             names="$names, CH_CPU_$bit"

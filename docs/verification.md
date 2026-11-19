@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-140 of the 185 C sources in the tree root are compiled into a
+140 of the 186 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 45 sources are in no such harness:
+The other 46 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -59,6 +59,7 @@ The other 45 sources are in no such harness:
 | `gcm_vaes.c` | It runs `gcm_hw.c`'s three loops on the 256-bit VAES and VPCLMULQDQ intrinsics. | On an x86-64 CPU with those instructions, `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test`, `bin/quic_test_hw` and the Wycheproof host binary run its seal and open against `gcm.c`'s proven one-block loop and portable GHASH and the published vectors ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `gcm_avx512_kernel.c` | It runs AES-GCM's whole seal and open on the 512-bit VAES, VPCLMULQDQ and AVX-512 intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with what `CH_CPU_AVX512` names, `bin/gcm_avx512_equiv_test` holds every seal and open to `gcm.c` on `gcm_hw.c`'s loops, which `bin/ghash_equiv_test` holds to the proven portable GHASH, at the ends of guarded pages, and `bin/quic_test_hw` and the Wycheproof host binary run the published vectors on it; the nightly's `rsa-ifma-sde` job runs them under Intel SDE ([The 512-bit AES-GCM kernel](#the-512-bit-aes-gcm-kernel)). |
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector ChaCha20](#the-vector-chacha20)). |
+| `chacha20_sve2.c` | It is `chacha20_vector.c` compiled once more with each quarter round's XOR-and-rotate step on SVE2's XAR intrinsic, and has a body on arm64 alone. | On an arm64 CPU with SVE2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop and searches the stack it leaves, on CI's Neoverse N2 and under QEMU at SVE vector lengths of 16 to 256 bytes, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The SVE2 copy](#the-sve2-copy)). |
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `avx512_wipe.c` | It is one block of inline assembly, which CBMC does not read, and holds no C a harness could drive. It has a body on x86-64 alone. | On a CPU with AVX-512F, `bin/avx512_wipe_test` sets every bit of zmm0 to zmm31 and k1 to k7, calls it, and requires each register to read back as zero; the nightly's `rsa-ifma-sde` job runs the binary under Intel SDE. |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, `bin/diff_poly1305_vector` holds it to the Lean model whose bounds `Spec/Poly1305Vector.lean` proves, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
@@ -5432,6 +5433,43 @@ it runs adds, exclusive-ors, shifts, lane moves and byte shuffles by a
 constant index, with no table in memory and no multiply. No gcc measures its branches. No proof covers the ChaCha20 a
 host session runs: the proved loop runs in a device object alone, which
 is the cost decision 89 states.
+
+### The SVE2 copy
+
+`chacha20_sve2.c` is `chacha20_vector.c` compiled once more for an arm64
+host object, under the name `chacha20_sve2_xor`, with SVE2 turned on for
+its own functions alone (decision 242). It differs from the NEON path in
+one step: each XOR followed by a rotation is one XAR. A session whose
+`ch_cfg.cpu` holds `CH_CPU_SVE2` runs it, where clang or gcc 14 and
+later built the object. What holds it:
+
+- `bin/chacha20_equiv_test` runs every case of the NEON path on the copy,
+  and the search of the stack below it, on a CPU with SVE2. CI's arm64
+  job, on a Neoverse N2, runs it under `CH_REQUIRE_SVE2=1`, so a CPU
+  without SVE2 fails the run and does not skip it.
+- `test/docker-aes-runtime-qemu.sh sve2` builds that binary with clang
+  for arm64 and runs it under QEMU's max model at SVE vector lengths of
+  16, 32, 64 and 256 bytes. The copy reads the low 128 bits of each
+  register, so it must agree at each one. The full lane also requires
+  both loops to die of SIGILL under the bit on cortex-a72, which has no
+  SVE, and to agree with the NEON path on max.
+- `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors
+  and the ChaCha20-Poly1305 suite under 0x1005 on arm64.
+- `test/chacha-builds.sh` requires `chacha20_xor_cpu` for arm64 to call
+  the copy, `chacha20_xor` not to, the copy to hold XAR on SVE
+  registers, and `chacha20.c` and `chacha20_vector.c` to hold no SVE
+  instruction.
+- `make lint-wide-multiply` holds the copy's conditional branches for
+  arm64 at its own ceiling, and `make lint-trust-separation` requires it
+  in every host object.
+
+Three violations break the copy and each is caught:
+`inv16-chacha20-sve2-xar-rotates-left` by the qemu lane's `sve2` part,
+`inv16-chacha20-sve2-never-picked` by `test/chacha-builds.sh`, and
+`inv16-host-object-drops-sve2-chacha` by `make lint-trust-separation`.
+Valgrind 3.27.1 dies of SIGILL at the copy's first XAR, so the taint lane
+and the instruction gate do not run it. They run the NEON path, whose
+text the copy shares.
 
 ### The vector Poly1305
 

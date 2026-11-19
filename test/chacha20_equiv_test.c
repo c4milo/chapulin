@@ -60,7 +60,9 @@
 #include "chacha20.h"
 #include "chacha20_avx2.h"
 #include "chacha20_avx512.h"
+#include "chacha20_sve2.h"
 #include "chacha20_vector.h"
+#include "sve2_cpu.h"
 #include "x86_kernels_cpu.h"
 
 // xorshift64, the generator test/aes_equiv_test.c uses. The default seed
@@ -164,6 +166,9 @@ typedef struct {
 static const vector_path vector_128 = {"the 128-bit path on NEON", chacha20_vector_xor};
 #else
 static const vector_path vector_128 = {"the 128-bit path on SSE2", chacha20_vector_xor};
+#endif
+#ifdef CH_CHACHA20_SVE2
+static const vector_path vector_sve2 = {"the 128-bit path's SVE2 copy", chacha20_sve2_xor};
 #endif
 #ifdef __x86_64__
 static const vector_path vector_avx2 = {"the AVX2 kernel", chacha20_avx2_xor};
@@ -405,6 +410,26 @@ int main(void) {
     run_path(&vector_128, seed);
 #ifdef __ARM_NEON
     run_residue();
+#endif
+#ifdef CH_CHACHA20_SVE2
+    if (cpu_has_sve2()) {
+        run_path(&vector_sve2, seed);
+        run_residue();
+    } else if (sve2_required()) {
+        (void)fprintf(stderr, "chacha20 equivalence: this CPU lacks SVE2, and CH_REQUIRE_SVE2 is "
+                              "1\n");
+        return 1;
+    } else {
+        printf("chacha20 equivalence: SKIP the SVE2 copy: this CPU lacks SVE2\n");
+    }
+#elif defined(__aarch64__)
+    if (sve2_required()) {
+        (void)fprintf(stderr, "chacha20 equivalence: this compiler builds no SVE2 copy, and "
+                              "CH_REQUIRE_SVE2 is 1\n");
+        return 1;
+    }
+    printf("chacha20 equivalence: SKIP the SVE2 copy: this compiler ships no "
+           "<arm_neon_sve_bridge.h>\n");
 #endif
 #ifdef __x86_64__
     if (x86_cpu_has_avx2()) {

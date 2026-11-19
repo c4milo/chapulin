@@ -11,6 +11,8 @@
  *     does it state a CH_CPU_CONSTANT_TIME_* bit, for each set of instructions the system reports:
  *     AES with PMULL, the multiply, SHA-256, SHA-512 and SHA-3. DIT is a state of one thread, so
  *     call it on each thread that runs a session.
+ *   - On arm64, CH_CPU_SVE2 where the system reports SVE2. It states no timing, so it needs no
+ *     DIT. macOS 26 defines no hw.optional.arm.FEAT_SVE2, so a Mac does not state it.
  *   - On an Arm Neoverse N2 (implementer 0x41, part 0xd49), it leaves CH_CPU_CONSTANT_TIME_SHA3
  *     clear. There the SHA-3 instructions run Keccak 1.8 times slower than the portable code, and
  *     the bit gains AES-GCM's EOR3 passes 2% (docs/decisions.md 240).
@@ -59,6 +61,7 @@ static int reports(const char *name) {
 #define HAS_SHA256() reports("hw.optional.arm.FEAT_SHA256")
 #define HAS_SHA512() reports("hw.optional.arm.FEAT_SHA512")
 #define HAS_SHA3() reports("hw.optional.arm.FEAT_SHA3")
+#define HAS_SVE2() reports("hw.optional.arm.FEAT_SVE2")
 static int is_neoverse_n2(void) {
     return 0;
 }
@@ -67,12 +70,16 @@ static int is_neoverse_n2(void) {
 #ifndef HWCAP_DIT
 #define HWCAP_DIT (1UL << 24)
 #endif
+#ifndef HWCAP2_SVE2
+#define HWCAP2_SVE2 (1UL << 1)
+#endif
 #define HAS_DIT() ((getauxval(AT_HWCAP) & HWCAP_DIT) != 0)
 #define HAS_AES_PMULL()                                                                            \
     ((getauxval(AT_HWCAP) & (HWCAP_AES | HWCAP_PMULL)) == (HWCAP_AES | HWCAP_PMULL))
 #define HAS_SHA256() ((getauxval(AT_HWCAP) & HWCAP_SHA2) != 0)
 #define HAS_SHA512() ((getauxval(AT_HWCAP) & HWCAP_SHA512) != 0)
 #define HAS_SHA3() ((getauxval(AT_HWCAP) & HWCAP_SHA3) != 0)
+#define HAS_SVE2() ((getauxval(AT_HWCAP2) & HWCAP2_SVE2) != 0)
 
 // Whether cpu0 is an Arm Neoverse N2, from its MIDR_EL1, which Linux publishes in sysfs:
 // implementer in bits 31 to 24, part number in bits 15 to 4.
@@ -98,6 +105,9 @@ static int set_dit(void) {
 
 static uint32_t cpu_probe_value(void) {
     uint32_t value = CH_CPU_PROBED;
+    if (HAS_SVE2()) {
+        value |= CH_CPU_SVE2;
+    }
     if (!HAS_DIT() || !set_dit()) {
         return value;
     }
