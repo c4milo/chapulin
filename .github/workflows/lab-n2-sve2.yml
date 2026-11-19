@@ -41,13 +41,18 @@ jobs:
         run: |
           if [ "${{ matrix.os }}" = ubuntu-24.04-arm ]; then set -- gcc-14; else set -- gcc "$CLANG_RV"; fi
           bash lab/run_barrier.sh "$@"
-      - name: Build and run the tree's SVE2 tests under the tree's flags
+      - name: The residue search on the copy with and without the hold
         run: |
           if [ "${{ matrix.os }}" = ubuntu-24.04-arm ]; then set -- gcc-14; else set -- gcc "$CLANG_RV"; fi
-          for cc in "$@"; do
-            echo "== $cc"
-            rm -f bin/chacha20_equiv_test bin/unit_host
-            make -j4 CC="$cc" bin/chacha20_equiv_test bin/unit_host
-            CH_REQUIRE_SVE2=1 ./bin/chacha20_equiv_test
-            CH_REQUIRE_SVE2=1 ./bin/unit_host 0x1005 | tail -3
+          for tree in 93c7e8ad1008a986eaa1ee4d6694131133a7fc17 HEAD; do
+            git show "$tree:src/chacha20_sve2.c" > /tmp/sve2_$$.c
+            cp /tmp/sve2_$$.c src/chacha20_sve2.c
+            for cc in "$@"; do
+              for round in 1 2 3; do
+                rm -f bin/chacha20_equiv_test
+                make -s CC="$cc" bin/chacha20_equiv_test > /dev/null
+                echo "== $tree $cc round $round: $(CH_REQUIRE_SVE2=1 CH_CHACHA20_EQUIV_SEED=$round ./bin/chacha20_equiv_test 2>&1 | grep -E 'residue|mismatch|SVE2 copy holds' | tr '\n' ' ')"
+              done
+            done
           done
+          git checkout -- src/chacha20_sve2.c
