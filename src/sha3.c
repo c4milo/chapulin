@@ -163,18 +163,13 @@ static void keccak_f1600_plain(uint64_t a[25]) {
 #include "sha3_andn.h"
 #include "sha3_inverted_lanes.h"
 
-// Three forms of one permutation. sha3_hw.c's x86-64 copy of this file
-// defines CH_SHA3_BMI_COPY and runs sha3_andn.h's form, whose chi is
-// FIPS 202's on ANDN (docs/decisions.md 217). This file in an x86-64 host
-// object runs sha3_inverted_lanes.h's form, which keeps six lanes inverted
-// between rounds and writes each round into a second state
-// (docs/decisions.md 216), because an x86-64 CPU without BMI1 has no
-// AND-NOT. Every other object runs keccak_f1600_plain, which stays the
-// reference. On arm64 and on a Cortex-M core, BIC computes AND-NOT in one
-// instruction, so the inverted lanes add instructions there
-// (docs/decisions.md 195). The three forms compile in every object, so
-// bin/sha3_equiv_test and the sha3_round harness hold all three on every
-// machine. The compiler removes the forms that SHA3_FORM does not pick.
+// Three forms of one permutation (docs/decisions.md 195, 216, 217 and 241). sha3_hw.c's x86-64
+// copy defines CH_SHA3_BMI_COPY and runs sha3_andn.h's form, whose chi is FIPS 202's on ANDN. An
+// x86-64 host object runs sha3_inverted_lanes.h's form, because an x86-64 CPU without BMI1 has no
+// AND-NOT. An arm64 host object that gcc compiled runs sha3_andn.h's form, whose AND-NOT is BIC:
+// on a Neoverse N2 it ran SHA3-256 there in 0.76 of the plain form's time. Every other object
+// runs keccak_f1600_plain, the reference. All three compile in every object, so
+// bin/sha3_equiv_test and the sha3_round harness hold them on every machine.
 #define SHA3_FORM_PLAIN 0
 #define SHA3_FORM_INVERTED_LANES 1
 #define SHA3_FORM_ANDN 2
@@ -182,6 +177,8 @@ static void keccak_f1600_plain(uint64_t a[25]) {
 #define SHA3_FORM SHA3_FORM_ANDN
 #elif defined(CH_CPU_RUNTIME) && defined(__x86_64__)
 #define SHA3_FORM SHA3_FORM_INVERTED_LANES
+#elif defined(CH_CPU_RUNTIME) && defined(__aarch64__) && !defined(__clang__)
+#define SHA3_FORM SHA3_FORM_ANDN
 #else
 #define SHA3_FORM SHA3_FORM_PLAIN
 #endif
@@ -202,10 +199,11 @@ static void keccak_f1600(uint64_t a[25]) {
 // 219). keccak_f1600_plain computes the round in place, and the round holds more values than a
 // core has registers. So each compiler writes lanes and theta's values to stack slots of its
 // own, which no ct_wipe can name. bin/sha3_equiv_test found up to 40 such words after one call,
-// under gcc and clang, for arm64, x86-64, mips32r2, rv32 and Cortex-M3. The state comes from the
-// input, which is a secret seed under ML-KEM and ML-DSA-87.
+// under gcc and clang, for arm64, x86-64, mips32r2, rv32 and Cortex-M3, and under gcc for arm64
+// after sha3_andn.h's form too (docs/decisions.md 241). The state comes from the input, which is
+// a secret seed under ML-KEM and ML-DSA-87.
 //
-// So in an object that runs keccak_f1600_plain, each entry calls a body that is never inlined.
+// So in an object that runs either, each entry calls a body that is never inlined.
 // When the body ran the permutation, the entry then calls wipe_frame through wipe_frame_call, in
 // sha512.c's form. The frames of the body and of every call it made lay right under the entry's
 // frame. wipe_frame's array lies in the same place, and the call writes zero over it.
@@ -222,12 +220,13 @@ static void keccak_f1600(uint64_t a[25]) {
 // which the public key carries in the clear, so what the body left in the stack is public. On
 // the Cortex-M3, ML-KEM-768 key generation runs 2% fewer instructions for it.
 //
-// The other forms keep their values in registers and in the states they name
-// (docs/decisions.md 99, 216, 217 and 218), so their objects run no wipe below. What no wipe
-// clears: a register, which holds what the last instruction left in it until another writes it.
+// The x86-64 forms and the SHA-3 instructions keep their values in registers and in the states
+// they name (docs/decisions.md 99, 216, 217 and 218), so their objects run no wipe below. What no
+// wipe clears: a register, which holds what the last instruction left in it until another writes
+// it.
 #ifdef CH_SHA3_HW_COPY
 #define SHA3_WIPES_BELOW 0
-#elif SHA3_FORM == SHA3_FORM_PLAIN
+#elif SHA3_FORM == SHA3_FORM_PLAIN || (SHA3_FORM == SHA3_FORM_ANDN && defined(__aarch64__))
 #define SHA3_WIPES_BELOW 1
 #else
 #define SHA3_WIPES_BELOW 0

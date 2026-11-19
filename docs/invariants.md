@@ -6930,8 +6930,10 @@ last `ROLE=server` stub, as the entry said it would.
   and clang. `inv17-keccak-rounds-loop-counts-rounds` and
   `inv17-keccak-andn-rounds-loop-counts-rounds` give each loop its count
   again. That part catches both, and so does `check-rosetta`.
-  A device object and an arm64 host object run `keccak_f1600_plain`,
-  whose round computes the state in place. Their compilers keep lanes
+  A device object and an arm64 host object that clang compiled run
+  `keccak_f1600_plain`, whose round computes the state in place, and an
+  arm64 host object that gcc compiled runs `sha3_andn.h`'s form
+  (decision 241). Their compilers keep lanes
   and values of theta in stack slots of their own. So in those objects
   each of `sha3.c`'s four entries that can run the permutation calls a
   body that is never inlined. When the body ran the permutation, the

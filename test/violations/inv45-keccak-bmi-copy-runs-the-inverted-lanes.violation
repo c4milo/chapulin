@@ -9,6 +9,8 @@ reason: sha3_hw.c's x86-64 copy runs sha3_inverted_lanes.h's form in place
   five NOTs a round.
 
 --- old
+#ifdef CH_SHA3_BMI_COPY
 #define SHA3_FORM SHA3_FORM_ANDN
 --- new
+#ifdef CH_SHA3_BMI_COPY
 #define SHA3_FORM SHA3_FORM_INVERTED_LANES

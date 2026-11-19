@@ -860,7 +860,9 @@ Home: github.com/c4milo.
   copies to `mlkem.c` and `mlkem_poly.c`. `bin/sha3_equiv_test` and
   `bin/sha3_equiv_test_host` search the stack below each call of `sha3.c`,
   in a device object and in a host object. Where `sha3.c` runs
-  `keccak_f1600_plain`, in a device object and an arm64 host object, each
+  `keccak_f1600_plain`, in a device object and an arm64 host object that
+  clang compiled, or `sha3_andn.h`'s form, in an arm64 host object that
+  gcc compiled (docs/decisions.md 241), each
   entry calls a body that is never inlined and, when the body ran the
   permutation, wipes `SHA3_BELOW_LEN` bytes, 1,024, of the stack below it,
   in `sha512.c`'s form. The test measures each body's depth against that

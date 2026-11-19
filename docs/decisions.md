@@ -20147,3 +20147,26 @@ does nothing more.
       its capability bits cleared in turn (lab run 44434667287), so it runs Keccak in general
       registers there too.
 
+241. **An arm64 host object that gcc builds runs Keccak in sha3_andn.h's form.** The Neoverse N2
+    column showed SHA3-256 of 16 KiB at 0.70 of OpenSSL's speed under gcc. gcc has no Keccak on the
+    SHA-3 instructions for arm64 (decision 99), and it ran the plain form in 42.7 µs, where clang ran
+    it in 30.6 µs and OpenSSL 3.6.5 in 29.7 µs. Camilo chose this lead on 2026-11-19.
+
+    - **What the lab run showed.** On a Neoverse N2 under gcc 13.3, `sha3_andn.h`'s form ran SHA3-256
+      of 16 KiB in 32.5 µs, 0.76 of the plain form's time, and the inverted lanes of decision 216 in
+      33.0 µs. ML-KEM-768 ran 9 to 10% faster (lab run 44434667287). Under clang the plain form stayed
+      the fastest of the three, so an object clang builds keeps it. The form's AND-NOT is BIC on
+      arm64, as it is ANDN in `sha3_hw.c`'s x86-64 copy.
+    - **The wipe stays.** Those builds ran with no wipe below. Under gcc for arm64 the form leaves
+      lanes in the stack too: `bin/sha3_equiv_test_host` found one after each of its ten kinds of
+      call (check run 44438895997). So `SHA3_WIPES_BELOW` covers this form on arm64 as it covers the
+      plain form, and the test passes with the wipe (check run 44441302857). The wipe adds one pass
+      over 1,024 bytes after each call that ran the permutation.
+    - **The counts.** Under callgrind on the CI's arm64 runner, SHA3-256 of 16 KiB fell from 529,391
+      instructions to 502,219, and ML-KEM-768 key generation from 235,338 to 230,906. 72 cells of
+      `bench/results-insn-host-arm64.csv` fell, and none rose. The count fell 5% where the time fell
+      24%, so the count does not show all of the change.
+    - **What does not change.** A device object and an arm64 object that clang builds keep the plain
+      form, and an x86-64 host object keeps the inverted lanes. The sha3_round harness and
+      `bin/sha3_equiv_test` hold all three forms on every machine.
+

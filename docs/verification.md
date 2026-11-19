@@ -352,8 +352,10 @@ The entries are grouped by area:
   differential runs every mode against the Lean model. The same binary
   searches the stack below ten kinds of call, in every object. It looks
   for any value the call computed, and for its complement
-  (`test/sha3_residue.h`, decisions 218 and 219). Where the object runs
-  `keccak_f1600_plain`, it first calls each entry's body by its own name
+  (`test/sha3_residue.h`, decisions 218 and 219). Where the object wipes
+  below each call, which runs `keccak_f1600_plain` or, under gcc for
+  arm64, `sha3_andn.h`'s form (decision 241), it first calls each entry's
+  body by its own name
   with no wipe after it. It requires the depth the body writes within
   `SHA3_BELOW_LEN`, and at least one word of the set in the stack.
   `bin/sha3_equiv_test` is a device object's build, and
