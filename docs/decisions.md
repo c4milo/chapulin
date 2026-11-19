@@ -20292,3 +20292,6 @@ does nothing more.
       times gcc 13's time. This decision leaves that loop as it is. A copy of `kept` without its
       volatile read let gcc 15 keep the `block_state` in registers, but under gcc 13 and 14
       SHA-256 then took 1.04 times its time, so the volatile read stays.
+    - **The table.** Bench run 44612268440 recorded the N2 columns on f5782fe3. Under gcc,
+      SHA-384 over 16 KiB takes 1.07 times OpenSSL's time, where it took 1.15, and SHA-256 1.04,
+      where it took 1.10. Under clang SHA-256 takes 1.01, where it took 1.07.

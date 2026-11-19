@@ -16,6 +16,14 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The arm64 server run of f5782fe3
+
+Bench run 44612268440 recorded the Neoverse N2 again after decision 243, under gcc 15.2 and clang
+23. Under gcc, SHA-384 over 16 KiB went from 1.15 to 1.07 times OpenSSL's time, SHA-256 from
+1.10 to 1.04, and P-256 key generation from 1.24 to 1.23. SHA-256's new order moved clang too,
+from 1.07 to 1.01. chapulin is faster than OpenSSL in 19 of 27 rows under gcc and 18 under
+clang, where AES-128-GCM's seal now reads 3.73 µs against OpenSSL's 3.72.
+
 ## The arm64 server run of 6d4a8172
 
 Bench run 44581120021 recorded the Neoverse N2 again after decision 242, on `ubuntu-26.04-arm`,
