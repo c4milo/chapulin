@@ -37,6 +37,13 @@
 #     neither, so the rest of the object runs on any x86-64 CPU; and for
 #     arm64, the two kernels' files must define nothing (docs/decisions.md
 #     90);
+#   - for arm64, chacha20_xor_cpu must call chacha20_sve2_xor, the
+#     128-bit path's SVE2 copy, and chacha20_xor must not, since it takes
+#     no description of the CPU; chacha20_sve2.c must define
+#     chacha20_sve2_xor and hold XAR on SVE registers, which its target
+#     attribute turns on, while chacha20.c and chacha20_vector.c hold no
+#     SVE instruction; and for x86-64 the copy's file must define nothing
+#     and chacha20_xor_cpu call nothing of it (docs/decisions.md 242);
 #   - the same for the AVX2 Poly1305, the AEAD's other half
 #     (docs/decisions.md 110): for x86-64, poly1305_avx2_native.c must
 #     define poly1305_avx2_blocks_native on 256-bit registers, and
@@ -181,6 +188,42 @@ for kernel in chacha20_avx2_xor chacha20_avx512_xor; do
         exit 1
     fi
 done
+
+# The SVE2 copy of the 128-bit path, which a session with CH_CPU_SVE2
+# runs on arm64. An SVE register is z0 to z31 and a predicate p0 to p15;
+# the NEON path names its registers v0 to v31.
+cross_object "$arm64" src/chacha20.c
+if ! body_names chacha20_xor_cpu chacha20_sve2_xor; then
+    echo "chacha-builds: chacha20_xor_cpu for arm64 does not call chacha20_sve2_xor; a session with CH_CPU_SVE2 runs it" >&2
+    exit 1
+fi
+if body_names chacha20_xor chacha20_sve2_xor; then
+    echo "chacha-builds: chacha20_xor for arm64 calls chacha20_sve2_xor; it takes no description of the CPU" >&2
+    exit 1
+fi
+cross_object "$x86" src/chacha20.c
+if body_names chacha20_xor_cpu chacha20_sve2_xor; then
+    echo "chacha-builds: chacha20_xor_cpu for x86-64 calls chacha20_sve2_xor, which has a body on arm64 alone" >&2
+    exit 1
+fi
+cross_object "$arm64" src/chacha20_sve2.c
+if ! nm "$work/cross.o" | grep -qE '[[:space:]]T[[:space:]]_?chacha20_sve2_xor$' ||
+    ! grep -qE '[[:space:]]xar[[:space:]]+z[0-9]+\.s' "$work/cross.s"; then
+    echo "chacha-builds: src/chacha20_sve2.c for arm64 must define chacha20_sve2_xor with XAR on SVE registers" >&2
+    exit 1
+fi
+for src in src/chacha20.c src/chacha20_vector.c; do
+    cross_object "$arm64" "$src"
+    if grep -qE '[[:space:],]([zp][0-9]+\.[bhsdq]|xar)([[:space:],]|$)' "$work/cross.s"; then
+        echo "chacha-builds: $src for arm64 holds an SVE instruction; only src/chacha20_sve2.c may" >&2
+        exit 1
+    fi
+done
+cross_object "$x86" src/chacha20_sve2.c
+if nm "$work/cross.o" | grep -q chacha20_sve2_xor; then
+    echo "chacha-builds: src/chacha20_sve2.c for x86-64 defines chacha20_sve2_xor; it has a body on arm64 alone" >&2
+    exit 1
+fi
 
 # The AVX2 kernel's instructions.
 cross_object "$x86" src/chacha20_avx2.c
@@ -345,4 +388,4 @@ if nm "$work/cross.o" | grep -q avx512_wipe_registers; then
     exit 1
 fi
 
-echo "chacha-builds: src/chacha20_vector.h admits NEON or SSE2 on a little-endian target alone, a device object calls no vector path, a host object's chacha20_xor calls the 128-bit path and no kernel, chacha20_xor_cpu calls the 128-bit path and on x86-64 both kernels, the kernels' 256-bit and 512-bit instructions stay in src/chacha20_avx2.c and src/chacha20_avx512.c, which calls avx512_wipe_registers, the AVX2 and IFMA Poly1305s' stay in their native copies, which only src/poly1305.c's native copy on x86-64 calls, the IFMA one calls avx512_wipe_registers, src/aead.c runs both kernels' updates on x86-64, and avx512_wipe_registers zeros zmm0 to zmm31 and k1 to k7 on x86-64 alone"
+echo "chacha-builds: src/chacha20_vector.h admits NEON or SSE2 on a little-endian target alone, a device object calls no vector path, a host object's chacha20_xor calls the 128-bit path and no kernel, chacha20_xor_cpu calls the 128-bit path, on arm64 its SVE2 copy, whose XAR stays in src/chacha20_sve2.c, and on x86-64 both kernels, the kernels' 256-bit and 512-bit instructions stay in src/chacha20_avx2.c and src/chacha20_avx512.c, which calls avx512_wipe_registers, the AVX2 and IFMA Poly1305s' stay in their native copies, which only src/poly1305.c's native copy on x86-64 calls, the IFMA one calls avx512_wipe_registers, src/aead.c runs both kernels' updates on x86-64, and avx512_wipe_registers zeros zmm0 to zmm31 and k1 to k7 on x86-64 alone"

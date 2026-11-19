@@ -93,6 +93,20 @@ AUDITED = {
         "published vectors on it. Delete this entry if a harness can ever "
         "compile the file."
     ),
+    "chacha20_sve2.c": (
+        "chacha20_vector.c compiled once more for an arm64 host object, with "
+        "each quarter round's XOR-and-rotate step on SVE2's XAR through "
+        "<arm_sve.h> and <arm_neon_sve_bridge.h>, which CBMC cannot read, so no "
+        "harness compiles the file. Its own text is one macro and the "
+        "include: the macro's 32 - (r) is a constant of 16, 20, 24 or 25, and "
+        "every other operator is chacha20_vector.c's, which that file's entry "
+        "covers. bin/chacha20_equiv_test holds the copy to chacha20.c's "
+        "proven loop on a CPU with SVE2, CI's Neoverse N2, and under QEMU at "
+        "each SVE vector length, and bin/unit_host and the host Wycheproof "
+        "test run the published vectors on it there, under a ch_cfg.cpu value "
+        "with CH_CPU_SVE2. Delete this entry if a harness can ever compile "
+        "the file."
+    ),
     "chacha20_avx2.c": (
         "a host object's AVX2 ChaCha20 kernel on x86-64, written in AVX2 intrinsics, "
         "which CBMC cannot read, so no harness compiles the file. Every "

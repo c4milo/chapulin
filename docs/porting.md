@@ -140,7 +140,9 @@ four 64-bit words, on MULX, ADCX and ADOX (decision 165), and the P-256 point
 arithmetic runs on `p256_adx.h`'s copy of the wide files. By itself the bit runs
 an ECDSA P-256 verification on that copy (decision 171). `CH_CPU_BMI1` says the
 CPU has BMI1; beside `CH_CPU_BMI2_ADX` SHA-3 and SHAKE run on `sha3_hw.c`'s copy
-of `sha3.c`, on ANDN and RORX (decision 217). Set each from
+of `sha3.c`, on ANDN and RORX (decision 217). On arm64, `CH_CPU_SVE2` says the
+CPU has SVE2; a session runs ChaCha20 on `chacha20_sve2.c`'s copy of the NEON
+path, on XAR (decision 242). Set each from
 your probe alone: a session whose bit names instructions its CPU lacks faults on
 the first one.
 

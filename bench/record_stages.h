@@ -14,6 +14,7 @@
 
 #include "aead.h"
 #include "aes.h"
+#include "chacha20_sve2.h"
 #include "gcm.h"
 #include "gcm_hw.h"
 #include "gcm_vaes.h"
@@ -59,11 +60,14 @@
 
 // Whether the ChaCha20 rows run chacha20_avx512.c's kernel under BENCH_CPU,
 // as chacha20.c's use_avx512 picks it, or chacha20_avx2.c's, as its
-// use_avx2 picks it beside that.
+// use_avx2 picks it beside that, or on arm64 chacha20_sve2.c's copy, as its
+// use_sve2 picks it where the object holds the copy.
 #if defined(__x86_64__) && ((BENCH_CPU) & CH_CPU_AVX512_IFMA) != 0
 #define BENCH_ON_AVX512 1
 #elif defined(__x86_64__) && ((BENCH_CPU) & CH_CPU_AVX2) != 0
 #define BENCH_ON_AVX2 1
+#elif defined(CH_CHACHA20_SVE2) && ((BENCH_CPU) & CH_CPU_SVE2) != 0
+#define BENCH_ON_SVE2 1
 #endif
 
 // bench/record_gcm.c. counter_mode and compute_tag as gcm_traffic_seal

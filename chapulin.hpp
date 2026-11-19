@@ -222,6 +222,11 @@ struct Cpu {
     // ML-DSA-87 hashes run there. ML-KEM's hashes run sha3.c whatever this
     // says. An x86-64 bit, which an arm64 object refuses.
     bool bmi1 = false;
+    // The CPU has SVE2: CH_CPU_SVE2. It states presence alone, as avx2
+    // does. The session runs ChaCha20 on chacha20_sve2.c's copy of the NEON
+    // path, whose quarter rounds run on SVE2's XAR, where the object holds
+    // the copy. An arm64 bit, which an x86-64 object refuses.
+    bool sve2 = false;
 };
 #endif
 
@@ -437,7 +442,7 @@ class Config {
                    (found.constant_time_sha3 ? CH_CPU_CONSTANT_TIME_SHA3 : 0U) |
                    (found.avx512_ifma ? CH_CPU_AVX512_IFMA : 0U) |
                    (found.avx512 ? CH_CPU_AVX512 : 0U) | (found.bmi2_adx ? CH_CPU_BMI2_ADX : 0U) |
-                   (found.bmi1 ? CH_CPU_BMI1 : 0U);
+                   (found.bmi1 ? CH_CPU_BMI1 : 0U) | (found.sve2 ? CH_CPU_SVE2 : 0U);
         return *this;
     }
 #endif

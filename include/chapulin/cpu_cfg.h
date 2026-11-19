@@ -219,6 +219,7 @@
 #define CH_CPU_AVX512 0x200U
 #define CH_CPU_BMI2_ADX 0x400U
 #define CH_CPU_BMI1 0x800U
+#define CH_CPU_SVE2 0x1000U
 #ifdef __x86_64__
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY | CH_CPU_AVX2 |      \
@@ -227,7 +228,8 @@
 #else
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \
-     CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3)
+     CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3 |       \
+     CH_CPU_SVE2)
 #endif
 
 // Whether the object holds Keccak on the SHA-3 instructions, which CH_CPU_CONSTANT_TIME_SHA3

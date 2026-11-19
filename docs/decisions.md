@@ -20170,3 +20170,44 @@ does nothing more.
       form, and an x86-64 host object keeps the inverted lanes. The sha3_round harness and
       `bin/sha3_equiv_test` hold all three forms on every machine.
 
+
+242. **An arm64 host object runs ChaCha20 on SVE2's XAR under a new bit, CH_CPU_SVE2.** The Neoverse
+    N2 column showed ChaCha20-Poly1305 at 0.72 of OpenSSL's speed under gcc and 0.75 under clang.
+    NEON has no instruction that XORs two vectors and rotates the result, so each quarter-round step
+    takes two or three instructions. SVE2's XAR does both in one. OpenSSL 3.6.5 runs ChaCha20 on
+    SVE2 on the N2 at 2.02 GB/s, and at 1.37 GB/s without it.
+
+    - **The ruling.** Camilo ruled on 2026-11-19 for a thirteenth bit, after decision 240's question:
+      how would a caller know to set it? Linux reports SVE2 in `AT_HWCAP2` as `HWCAP2_SVE2`, and the
+      bit states presence alone, as `CH_CPU_AVX2` does. `examples/cpu_probe.c` sets it from that
+      report. On a Mac it asks sysctl for `hw.optional.arm.FEAT_SVE2`, which macOS 26 does not
+      define, so a Mac caller does not set it.
+    - **The copy.** `chacha20_sve2.c` is `chacha20_vector.c` compiled once more under the name
+      `chacha20_sve2_xor`, with SVE2 turned on for its own functions alone. The vector file names
+      each XOR-and-rotate step `LANES_XOR_ROTATE_LEFT`, and the copy defines it as one XAR. The
+      bridge calls of `<arm_neon_sve_bridge.h>` move no data, because a NEON register is the low
+      128 bits of the SVE register with the same number. The copy drops the lanes above bit 127, so
+      it computes the same keystream at every vector length, and it needs no check of the length.
+    - **Which compilers build it.** The object holds the copy where clang or gcc 14 and later
+      builds it (`CH_CHACHA20_SVE2`, `chacha20_sve2.h`). Those compilers ship the bridge header, and
+      gcc 13 does not. In an object gcc 13 builds, the bit describes the CPU and picks nothing, as
+      the SHA-3 bit does under gcc (decision 99). The test names the compilers because Semgrep
+      parses no `__has_include` in an `#if`.
+    - **What the lab runs showed.** On a Neoverse N2, 16 KiB of ChaCha20 took 13,272 ns on the NEON
+      path under gcc 14 and 7,858 ns on the copy (2.08 GB/s), 0.59 of the NEON path's time. Under
+      clang 23 the copy took 7,920 ns, 0.61 of the NEON time, and under gcc 15 9,357 ns, 0.67 (lab
+      run 44551851212). A prototype of eight blocks a pass in SVE types alone took 8,944 ns under
+      clang (lab run 44549703437), so the copy's nine blocks a pass, one in general registers, stay.
+      gcc 15's code is not yet read.
+    - **The tests.** `bin/chacha20_equiv_test` holds the copy to `chacha20.c`'s loop and searches
+      the stack it leaves, on CI's N2 under `CH_REQUIRE_SVE2=1`. The qemu lane runs it at SVE vector
+      lengths of 16, 32, 64 and 256 bytes, and requires both loops to die of SIGILL under the bit on
+      a model without SVE2. `bin/unit_host` and the host Wycheproof test run their ChaCha20 vectors
+      under 0x1005 on arm64. `test/chacha-builds.sh` requires `chacha20_xor_cpu` to call the copy
+      and no other file to hold an SVE instruction.
+    - **What Valgrind cannot run.** On the N2, Valgrind 3.27.1 reports SVE2 in `AT_HWCAP2` and dies
+      of SIGILL at the copy's first XAR. So the taint lane and the instruction gate leave the bit
+      out. They read `chacha20_vector.c`'s text on NEON, and the copy differs from it in the four
+      steps alone.
+    - **Registers.** The NEON path clears no vector register, and neither does the copy. At a vector
+      length of 128 bits the two use the same 32 registers.

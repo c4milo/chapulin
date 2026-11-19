@@ -178,8 +178,11 @@ jobs:
       # native copies take the NEON Poly1305 (docs/decisions.md 83 and
       # 87), and with and without the AES bit, whose AES runs on the Arm
       # instructions (docs/decisions.md 89). The check and san jobs run the
-      # SSE2 arms on x86-64 (test/platforms.mk, suite-check).
-      - run: make suite-check
+      # SSE2 arms on x86-64 (test/platforms.mk, suite-check). The runner is
+      # a Neoverse N2, which has SVE2, so CH_REQUIRE_SVE2=1 makes each run
+      # under CH_CPU_SVE2 run chacha20_sve2.c's copy or fail, and never
+      # skip (docs/decisions.md 242).
+      - run: CH_REQUIRE_SVE2=1 make suite-check
       # sha3_hw.c holds Keccak on the SHA-3 instructions under clang alone
       # (docs/decisions.md 99), so suite-check above, under gcc, ran none of
       # it. The pinned clang builds the two equivalence tests, and the step

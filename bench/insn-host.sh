@@ -52,7 +52,9 @@ export CC=${CC:-gcc}
 # multiply bits, and on x86-64 0xf adds AVX2, 0xc0f BMI1 and BMI2_ADX
 # beside it. On arm64 0x27 adds the SHA-256 instructions and 0x67 the
 # SHA-512 ones. The SHA-3 bit picks nothing in an object gcc compiled
-# (docs/decisions.md 99), so no value here sets it. The record binaries
+# (docs/decisions.md 99), so no value here sets it. No value sets
+# CH_CPU_SVE2 either: valgrind 3.27.1 dies of SIGILL at the first XAR of
+# chacha20_sve2.c's copy (docs/decisions.md 242). The record binaries
 # take their value on the compile line: 0x3 and 0x7.
 case "$(uname -m)" in
 x86_64)

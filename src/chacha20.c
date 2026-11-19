@@ -5,6 +5,7 @@
 #ifdef CH_CPU_RUNTIME
 #include "chacha20_avx2.h"
 #include "chacha20_avx512.h"
+#include "chacha20_sve2.h"
 #include "chacha20_vector.h"
 #include "cpu_cfg.h"
 #endif
@@ -25,6 +26,16 @@ static int use_avx2(uint32_t cpu) {
 // IFMA has, and no bit states a timing for it (docs/decisions.md 121).
 static int use_avx512(uint32_t cpu) {
     return (cpu & CH_CPU_AVX512_IFMA) != 0;
+}
+#endif
+
+#ifdef CH_CHACHA20_SVE2
+// Whether chacha20_xor_cpu runs chacha20_sve2.c's copy of the NEON path in
+// place of the NEON path: where cpu holds CH_CPU_SVE2, which the caller
+// sets from its own probe of the CPU, as it sets CH_CPU_AVX2 on x86-64
+// (docs/decisions.md 242).
+static int use_sve2(uint32_t cpu) {
+    return (cpu & CH_CPU_SVE2) != 0;
 }
 #endif
 
@@ -193,8 +204,15 @@ void chacha20_xor_cpu(uint32_t cpu, const uint8_t key[CHACHA20_KEY],
         chacha20_avx2_xor(key, nonce, counter, in, out, n);
         return;
     }
+#elif defined(CH_CHACHA20_SVE2)
+    // The NEON path's text with SVE2's XAR in its quarter rounds, where
+    // the session's caller says the CPU has SVE2 (chacha20_sve2.h).
+    if (use_sve2(cpu)) {
+        chacha20_sve2_xor(key, nonce, counter, in, out, n);
+        return;
+    }
 #else
-    // arm64 has one vector path, so no bit picks here.
+    // This arm64 object holds no SVE2 copy, so no bit picks here.
     (void)cpu;
 #endif
     chacha20_vector_xor(key, nonce, counter, in, out, n);

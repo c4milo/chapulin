@@ -371,7 +371,7 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
         src/pem.c src/base64.c src/x509.c src/x509_der.c src/x509_ca.c src/webpki_time.c src/webpki_name.c src/webpki_spki.c src/webpki_ext.c src/buf.c src/record.c src/keysched.c src/io.c src/handshake_message.c src/handshake_parser.c src/handshake_parser_ee.c src/handshake_record.c src/session.c \
         src/handshake_auth.c src/handshake_flight.c src/handshake.c src/handshake_post.c src/tls.c src/tls_entry.c src/session_report.c src/tls_write.c src/softmul.c src/build.c
 
-HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/chacha20_avx512_lanes.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_ifma_group.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/aead_avx512.h src/poly1305_wide.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont_division.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
+HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_sve2.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/chacha20_avx512_lanes.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_ifma_group.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/aead_avx512.h src/poly1305_wide.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont_division.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
         src/pem.h src/base64.h src/base64_codec.h src/pbkdf2.h src/rsa_key_field.h src/ed25519_sign.h src/x25519_wide_ed25519_sign.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
         include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/sha3_andn.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h include/chapulin/jws.h include/chapulin/scram.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mlkem_rejection_table.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
         src/keccak_neon.h src/keccak_neon_round.h src/mlkem_neon.h src/mldsa_neon.h \
@@ -766,10 +766,10 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
           test/aead_avx512_count.c test/rsa_avx2_count.c \
           test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c test/aes_runtime_arm64_eor3.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
-          src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c test/chacha20_equiv_test.c \
+          src/chacha20_vector.c src/chacha20_sve2.c src/chacha20_avx2.c src/chacha20_avx512.c test/chacha20_equiv_test.c \
           src/aead_avx2.c test/aead_avx2_equiv_test.c src/aead_avx512.c test/aead_avx512_equiv_test.c \
           test/aead_avx512_model.c test/aead_avx512_model_halves.c \
-          test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c test/chacha20_equiv_avx512.c \
+          test/chacha20_equiv_vector.c test/chacha20_equiv_sve2.c test/chacha20_equiv_avx2.c test/chacha20_equiv_avx512.c \
           src/avx512_wipe.c test/avx512_wipe_test.c src/x25519_wide.c \
           test/x25519_equiv_test.c src/x25519_adx.c test/x25519_adx_model.c test/x25519_adx_model_test.c \
           test/x25519_adx_equiv_test.c \
@@ -805,7 +805,7 @@ TESTH := test/ghash_powers_soft.h test/ghash_equiv_stored.h test/ghash_powers_te
          test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
          test/mldsa_vector_count.h test/mldsa_signer_frames.h \
-         test/hash_instructions_cpu.h test/hash_runtime_count.h test/hash_runtime_quic.h test/hash_runtime_sha3.h test/hash_runtime_hashes.h \
+         test/hash_instructions_cpu.h test/sve2_cpu.h test/hash_runtime_count.h test/hash_runtime_quic.h test/hash_runtime_sha3.h test/hash_runtime_hashes.h \
          test/hash_runtime_srv.h test/hash_runtime_webpki.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
          test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h \
@@ -1582,11 +1582,13 @@ ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(AVX512_WIPE_SRCS)
 endif
 # The vector sources, named once for the object and for the test binaries
-# that build a host object's ChaCha20: the 128-bit path, the AVX2 kernel
+# that build a host object's ChaCha20: the 128-bit path, its SVE2 copy,
+# which a session whose ch_cfg.cpu holds CH_CPU_SVE2 runs, the AVX2 kernel
 # and the AVX-512 kernel, which a session whose ch_cfg.cpu holds
 # CH_CPU_AVX512_IFMA runs for its records and packets, sixteen blocks a
-# pass. Both kernels compile to nothing on arm64.
-CHACHA_VECTOR_SRCS := src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c
+# pass. Both kernels compile to nothing on arm64, and the copy compiles to
+# nothing on x86-64.
+CHACHA_VECTOR_SRCS := src/chacha20_vector.c src/chacha20_sve2.c src/chacha20_avx2.c src/chacha20_avx512.c
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(CHACHA_VECTOR_SRCS)
 endif
@@ -1658,6 +1660,14 @@ X86_WYCHEPROOF_CPU := $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f 0x31f 0x41f 0xc1f)
 HASH_UNIT_CPU := 0x25
 HASH_WYCHEPROOF_CPU := 0x27 $(if $(X86_KERNEL_PROBE),,0x67)
 HASH512_UNIT_CPU := $(if $(X86_KERNEL_PROBE),0xd,0x65)
+# The value under which an arm64 host binary runs ChaCha20 on
+# chacha20_sve2.c's copy of the 128-bit path (docs/decisions.md 242): the
+# unit suite's RFC 8439 vectors, and the Wycheproof host binary's
+# ChaCha20-Poly1305 suite. A run under it on a CPU without SVE2 skips, and
+# fails instead under CH_REQUIRE_SVE2=1, which CI's arm64 job sets on its
+# Neoverse N2. An x86-64 object refuses the bit.
+#   0x1005  the probe's bit, the multiply bit and CH_CPU_SVE2, on arm64
+SVE2_UNIT_CPU := $(if $(X86_KERNEL_PROBE),,0x1005)
 # The exporter of RFC 9846 section 7.5, off by default. EXPORTER=on adds
 # ch_export to the public API and 32 bytes to ch_tls, so a device build
 # that exports nothing pays neither: docs/performance.md's SRAM numbers
@@ -2563,18 +2573,18 @@ lint-trust-separation-run:
 	check "ROLE=client TRUST=webpki HOST_TARGET=" "src/rsa_mont.c" "$(RSA_MONT64_SRCS) $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=server TRUST=none HOST_TARGET=" "src/rsa_mont.c src/rsa_sign.c" "$(RSA_MONT64_SRCS) $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa X86_64_TARGET=yes" "src/chacha20.c" \
-	  "src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c src/poly1305_vector.c src/poly1305_avx2.c src/avx512_wipe.c" "" \
+	  "src/chacha20_vector.c src/chacha20_sve2.c src/chacha20_avx2.c src/chacha20_avx512.c src/poly1305_vector.c src/poly1305_avx2.c src/avx512_wipe.c" "" \
 	  "-DCH_CHACHA_VECTOR"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes X86_64_TARGET=yes" \
-	  "src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c src/avx512_wipe.c" \
+	  "src/chacha20.c src/chacha20_vector.c src/chacha20_sve2.c src/chacha20_avx2.c src/chacha20_avx512.c src/avx512_wipe.c" \
 	  "src/poly1305_vector.c src/poly1305_avx2.c" "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes X86_64_TARGET=yes" \
-	  "src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c src/avx512_wipe.c" \
+	  "src/chacha20.c src/chacha20_vector.c src/chacha20_sve2.c src/chacha20_avx2.c src/chacha20_avx512.c src/avx512_wipe.c" \
 	  "src/poly1305_vector.c src/poly1305_avx2.c" "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes X86_64_TARGET=" \
-	  "src/chacha20.c src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c" "src/avx512_wipe.c" "-DCH_CPU_RUNTIME" ""; \
+	  "src/chacha20.c src/chacha20_vector.c src/chacha20_sve2.c src/chacha20_avx2.c src/chacha20_avx512.c" "src/avx512_wipe.c" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET= X86_64_TARGET=yes" "src/chacha20.c" \
-	  "src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c src/poly1305_vector.c src/poly1305_avx2.c src/avx512_wipe.c" "" \
+	  "src/chacha20_vector.c src/chacha20_sve2.c src/chacha20_avx2.c src/chacha20_avx512.c src/poly1305_vector.c src/poly1305_avx2.c src/avx512_wipe.c" "" \
 	  "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME"; \
 	for value in portable vector; do \
 	  for axis in "TRUST=raw-rsa" "ROLE=client TRUST=webpki HOST_TARGET=yes" "ROLE=server TRUST=none HOST_TARGET="; do \
@@ -2623,7 +2633,7 @@ lint-trust-separation-run:
 	  "src/poly1305_vector.c src/poly1305_avx2.c src/poly1305_ifma.c $$native_files" "" \
 	  "-DCH_NATIVE_WIDEMUL -DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa WIDEMUL=native" "src/poly1305.c" \
-	  "src/chacha20_vector.c src/chacha20_avx2.c src/poly1305_vector.c src/poly1305_avx2.c src/poly1305_ifma.c $$native_files" \
+	  "src/chacha20_vector.c src/chacha20_sve2.c src/chacha20_avx2.c src/poly1305_vector.c src/poly1305_avx2.c src/poly1305_ifma.c $$native_files" \
 	  "-DCH_NATIVE_WIDEMUL" \
 	  "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "src/poly1305.c src/poly1305_native.c src/poly1305_vector_native.c \
@@ -3878,15 +3888,16 @@ bin/rsa_test_host: test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS)) $(HDRS) $(
 # binary under their own names: chacha20.c compiles here without
 # -DCH_CPU_RUNTIME, so chacha20_xor is the portable loop, as a device
 # object runs it, and test/chacha20_equiv_vector.c compiles
-# chacha20_vector.c under the define beside it, and
-# test/chacha20_equiv_avx2.c the AVX2 kernel, whose cases run on an
+# chacha20_vector.c under the define beside it,
+# test/chacha20_equiv_sve2.c its SVE2 copy, whose cases run on an arm64
+# CPU with SVE2, test/chacha20_equiv_avx2.c the AVX2 kernel, whose cases run on an
 # x86-64 CPU with AVX2, and test/chacha20_equiv_avx512.c the AVX-512
 # kernel with avx512_wipe.c, whose cases run on one with AVX-512F.
 # ct_wipe.c is the wipe of the buffer a vector path's last bytes pass
 # through. The line takes HOST_CFLAGS for bin/aes_equiv_test's reason.
-CHACHA20_EQUIV_TEST_SRCS := test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c \
-                            test/chacha20_equiv_avx512.c src/chacha20.c src/ct.c src/ct_wipe.c \
-                            test/stack_residue.c
+CHACHA20_EQUIV_TEST_SRCS := test/chacha20_equiv_vector.c test/chacha20_equiv_sve2.c \
+                            test/chacha20_equiv_avx2.c test/chacha20_equiv_avx512.c src/chacha20.c \
+                            src/ct.c src/ct_wipe.c test/stack_residue.c
 # The one-pass ChaCha20-Poly1305 of an x86-64 host object against the
 # two-pass AEAD of the same object, both through aead_seal_cpu and
 # aead_open_cpu under two ch_cfg.cpu values (docs/decisions.md 199). Its
@@ -5483,7 +5494,7 @@ $(foreach b,$(CHECK_RUN_BINS),$(eval $(call CHECK_RUN,$(b))))
 # under beside those: X86_UNIT_CPU on x86-64 for the unit suite, the
 # two RSA verifiers' binaries, the P-256 key exchange's and signer's and
 # the ML-DSA-87 signer's,
-# HASH_UNIT_CPU for the unit suite, and
+# HASH_UNIT_CPU and SVE2_UNIT_CPU for the unit suite, and
 # HASH512_UNIT_CPU for the two SHA-512 vector binaries.
 define CHECK_RUN_HOST_VECTOR_BIN
 check-run-$(1): bin/$(1)
@@ -5494,7 +5505,7 @@ endef
 HASH_VECTOR_HOST := sha512_test_host hkdf384_test_host
 X86_VECTOR_HOST := unit_host rsa_test_host rsa_pkcs1_test_host p256_ecdh_test_host p256_sign_test_host \
                    mldsa_signer_test_host
-$(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST_VECTOR_BIN,$(b),$(if $(filter $(X86_VECTOR_HOST),$(b)),$(X86_UNIT_CPU)) $(if $(filter unit_host,$(b)),$(HASH_UNIT_CPU)) $(if $(filter $(HASH_VECTOR_HOST),$(b)),$(HASH512_UNIT_CPU)))))
+$(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST_VECTOR_BIN,$(b),$(if $(filter $(X86_VECTOR_HOST),$(b)),$(X86_UNIT_CPU)) $(if $(filter unit_host,$(b)),$(HASH_UNIT_CPU) $(SVE2_UNIT_CPU)) $(if $(filter $(HASH_VECTOR_HOST),$(b)),$(HASH512_UNIT_CPU)))))
 
 # The host object's AES runs: the published vectors on the instructions
 # and on the table, and each instruction path against its software twin
@@ -7013,11 +7024,13 @@ wycheproof-run-default:
 # messages' Poly1305 on poly1305_ifma.c's. On both
 # architectures it runs once more under HASH_WYCHEPROOF_CPU, where the
 # HMAC-SHA-256 and HKDF-SHA-256 suites hash on the CPU's SHA-256
-# instructions (docs/decisions.md 93). Running the
+# instructions (docs/decisions.md 93), and on arm64 once more under
+# SVE2_UNIT_CPU, where the ChaCha20-Poly1305 suite runs its keystream on
+# chacha20_sve2.c's copy (docs/decisions.md 242). Running the
 # whole file each time is what the rule asks for and what keeps this test
 # from rotting when a suite is added. A compiler that fails the host test
 # skips, the way the fetch above skips offline.
-HOST_WYCHEPROOF_CPU := 0x1 0x3 0x5 0x7 $(X86_WYCHEPROOF_CPU) $(HASH_WYCHEPROOF_CPU)
+HOST_WYCHEPROOF_CPU := 0x1 0x3 0x5 0x7 $(X86_WYCHEPROOF_CPU) $(HASH_WYCHEPROOF_CPU) $(SVE2_UNIT_CPU)
 # WYCHEPROOF_HOST names sha512_avx2.c's object (SHA512_AVX2_UNIT), which
 # both targets build first. The stamp's -E run names the source in its
 # place, so an edit to the kernel runs the test again.
@@ -7343,7 +7356,11 @@ CT_TAINT_DEF := -DCH_CT_TAINT
 # SKIP for 0x27, 0x1f, 0x11f and 0x31f there. The SHA-3 bit is not on the
 # list: Valgrind 3.27.1 decodes no EOR3, the first SHA-3 instruction
 # sha3_hw.c's Keccak runs, which then dies of SIGILL. The notes of 3.28.0
-# name EOR3 and none of RAX1, XAR and BCAX. On x86-64 0xc01, the probe's
+# name EOR3 and none of RAX1, XAR and BCAX. Nor is CH_CPU_SVE2: on CI's
+# Neoverse N2, Valgrind 3.27.1 reports SVE2 in AT_HWCAP2 and then dies of
+# SIGILL at the first XAR of chacha20_sve2.c's copy. The copy is
+# chacha20_vector.c's text, which the lane reads on NEON, with XAR in place
+# of an exclusive-or and a rotation (docs/decisions.md 242). On x86-64 0xc01, the probe's
 # bit with CH_CPU_BMI2_ADX and CH_CPU_BMI1, runs SHA-3 and SHAKE on
 # sha3_hw.c's x86-64 copy, whose ANDN and RORX Valgrind decodes, and picks
 # no other path a case takes without the multiply bit (docs/decisions.md
@@ -7945,7 +7962,7 @@ else
 	  src/rsa_mont64_adx.c test/rsa_mont64_adx_model.c test/rsa_mont64_adx_test.c \
 	  $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
 	  test/p384_portable.c \
-	  test/diff_x25519_test.c test/diff_p256_wide_test.c src/chacha20_vector.c test/chacha20_equiv_vector.c \
+	  test/diff_x25519_test.c test/diff_p256_wide_test.c src/chacha20_vector.c src/chacha20_sve2.c test/chacha20_equiv_vector.c \
 	  test/chacha20_equiv_test.c src/aead_avx2.c test/aead_avx2_equiv_test.c \
 	  src/aead_avx512.c test/aead_avx512_equiv_test.c test/aead_avx512_model.c \
 	  test/aead_avx512_model_halves.c \
@@ -8200,6 +8217,13 @@ else
 	# tools/freestanding's string.h.
 	@$(call TIDY_EACH,src/chacha20_avx2.c src/chacha20_avx512.c src/chacha20.c test/aead_avx512_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I.)
+	# chacha20_sve2.c, the NEON path's SVE2 copy, and chacha20.c, whose
+	# use_sve2 picks it, read for an arm64 target whatever the host: the
+	# copy has a body on arm64 alone, so on CI's x86-64 runner no pass above
+	# reads it (docs/decisions.md 242).
+	@$(call TIDY_EACH,src/chacha20_sve2.c src/chacha20.c, \
+	  -std=c11 --target=aarch64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I.)
 	@$(call TIDY_EACH,src/gcm_vaes.c src/gcm_avx512.c src/gcm_avx512_kernel.c src/gcm.c test/x86_kernels_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
@@ -9373,7 +9397,7 @@ WIDEMUL_CEILING := src/ct.c:0 src/ct_wipe.c:0 src/sha256.c:0 src/sha3.c:0 src/hk
 # bin/gcm_avx512_equiv_test, bin/quic_test_hw and the host Wycheproof test
 # hold their bytes. None of these measures timing (docs/quic.md, "What the
 # AES axis proves").
-WIDE64_CEILING := src/x25519_wide.c:0 src/x25519_adx.c:0 src/rsa_mont64_adx.c:0 src/chacha20_vector.c:0 src/chacha20_avx2.c:0 src/chacha20_avx512.c:0 \
+WIDE64_CEILING := src/x25519_wide.c:0 src/x25519_adx.c:0 src/rsa_mont64_adx.c:0 src/chacha20_vector.c:0 src/chacha20_sve2.c:0 src/chacha20_avx2.c:0 src/chacha20_avx512.c:0 \
                   src/poly1305_vector.c:0 \
                   src/poly1305_avx2.c:0 src/poly1305_native.c:0 src/mlkem_poly_native.c:0 \
                   src/poly1305_vector_native.c:0 src/poly1305_avx2_native.c:0 src/poly1305_ifma.c:0 \
@@ -9493,7 +9517,8 @@ WIDEMUL_DEFINES := src/quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_pack
                    src/srv.c:-DCH_ROLE_SERVER src/webpki_ticket.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    src/hkdf.c:-DCH_HASH_SHA384 src/keysched.c:-DCH_HASH_SHA384 \
                    src/handshake_groups.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
-                   src/chacha20_vector.c:-DCH_CPU_RUNTIME src/chacha20_avx2.c:-DCH_CPU_RUNTIME \
+                   src/chacha20_vector.c:-DCH_CPU_RUNTIME src/chacha20_sve2.c:-DCH_CPU_RUNTIME \
+                   src/chacha20_avx2.c:-DCH_CPU_RUNTIME \
                    src/chacha20_avx512.c:-DCH_CPU_RUNTIME \
                    src/poly1305_vector.c:-DCH_CPU_RUNTIME src/poly1305_avx2.c:-DCH_CPU_RUNTIME \
                    src/poly1305_ifma.c:-DCH_CPU_RUNTIME src/aead_avx2.c:-DCH_CPU_RUNTIME \
@@ -10477,7 +10502,7 @@ DIVIDE_CEILING_SPEC := mips32r2-gcc-O2/src/tls_write.c:3
 # on those lines.
 BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/chacha20.c src/poly1305.c src/aead.c src/x25519.c src/mlkem.c \
                src/mlkem_poly.c src/drbg.c src/softmul.c src/rsa_sign.c src/aes.c src/quic_aes_soft.c src/quic_packet.c \
-               src/aes_extern.c src/gcm.c src/p256_field.c src/x25519_wide.c src/x25519_adx.c src/rsa_mont64_adx.c src/chacha20_vector.c src/chacha20_avx2.c src/chacha20_avx512.c \
+               src/aes_extern.c src/gcm.c src/p256_field.c src/x25519_wide.c src/x25519_adx.c src/rsa_mont64_adx.c src/chacha20_vector.c src/chacha20_sve2.c src/chacha20_avx2.c src/chacha20_avx512.c \
                src/poly1305_vector.c \
                src/sha512.c \
                src/sha512_compress.c src/p256_scalar.c src/poly1305_native.c src/mlkem_poly_native.c \
@@ -10702,6 +10727,7 @@ BRANCH_CEILING := \
   arm64/src/x25519_wide.c:8 x86-64/src/x25519_wide.c:9 arm64/src/x25519_adx.c:0 x86-64/src/x25519_adx.c:5 \
   arm64/src/rsa_mont64_adx.c:0 x86-64/src/rsa_mont64_adx.c:32 \
   arm64/src/chacha20_vector.c:45 x86-64/src/chacha20_vector.c:26 \
+  arm64/src/chacha20_sve2.c:45 x86-64/src/chacha20_sve2.c:0 \
   arm64/src/chacha20_avx2.c:0 x86-64/src/chacha20_avx2.c:31 \
   arm64/src/chacha20_avx512.c:0 x86-64/src/chacha20_avx512.c:75 \
   arm64/src/poly1305_vector.c:0 x86-64/src/poly1305_vector.c:0 \
@@ -10731,7 +10757,7 @@ BRANCH_CEILING := \
   arm64/src/ct.c@host:9 x86-64/src/ct.c@host:4 arm64/src/ct_wipe.c@host:5 x86-64/src/ct_wipe.c@host:11 \
   arm64/src/base64.c@host:0 x86-64/src/base64.c@host:0 \
   arm64/src/sha256.c@host:28 x86-64/src/sha256.c@host:35 arm64/src/sha3.c@host:78 x86-64/src/sha3.c@host:84 \
-  arm64/src/hkdf.c@host:19 x86-64/src/hkdf.c@host:19 arm64/src/chacha20.c@host:1 x86-64/src/chacha20.c@host:3 \
+  arm64/src/hkdf.c@host:19 x86-64/src/hkdf.c@host:19 arm64/src/chacha20.c@host:2 x86-64/src/chacha20.c@host:3 \
   arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:19 \
   arm64/src/mlkem.c@host:12 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:79 x86-64/src/rsa_sign.c@host:67 \
   arm64/src/drbg.c@host:5 x86-64/src/drbg.c@host:5 \

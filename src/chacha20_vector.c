@@ -203,6 +203,14 @@ static inline void store_16(uint8_t *out, lanes keystream) {
 
 #endif
 
+// The XOR of x and y, rotated left by r: the step of each quarter round
+// that follows an add, for r of 16, 12, 8 and 7. chacha20_sve2.c defines
+// it before it includes this file, so its copy runs each step as one SVE2
+// XAR (chacha20_sve2.h).
+#ifndef LANES_XOR_ROTATE_LEFT
+#define LANES_XOR_ROTATE_LEFT(x, y, r) lanes_rotate_left_##r(lanes_xor((x), (y)))
+#endif
+
 static uint32_t load32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
@@ -210,13 +218,13 @@ static uint32_t load32(const uint8_t *p) {
 // chacha20.c's QUARTERROUND on four lanes at once.
 static inline void quarter_round(lanes *a, lanes *b, lanes *c, lanes *d) {
     *a = lanes_add(*a, *b);
-    *d = lanes_rotate_left_16(lanes_xor(*d, *a));
+    *d = LANES_XOR_ROTATE_LEFT(*d, *a, 16);
     *c = lanes_add(*c, *d);
-    *b = lanes_rotate_left_12(lanes_xor(*b, *c));
+    *b = LANES_XOR_ROTATE_LEFT(*b, *c, 12);
     *a = lanes_add(*a, *b);
-    *d = lanes_rotate_left_8(lanes_xor(*d, *a));
+    *d = LANES_XOR_ROTATE_LEFT(*d, *a, 8);
     *c = lanes_add(*c, *d);
-    *b = lanes_rotate_left_7(lanes_xor(*b, *c));
+    *b = LANES_XOR_ROTATE_LEFT(*b, *c, 7);
 }
 
 // One double round of RFC 8439 §2.3 on one group: the four column

@@ -47,7 +47,9 @@
 # which gcc builds for arm64 over p256_arm64_asm.h; and "vector-neon"
 # bin/chacha20_equiv_test and bin/poly1305_equiv_test alone, for arm64,
 # which hold the NEON ChaCha20 and Poly1305 to the portable loops and
-# search the stack each call leaves; and "keccak-neon"
+# search the stack each call leaves; and "sve2" bin/chacha20_equiv_test
+# alone, for arm64 as clang builds it, which holds chacha20_sve2.c's copy
+# to the portable loop at each SVE vector length; and "keccak-neon"
 # bin/keccak_neon_equiv_test and bin/mldsa_runtime_test alone, for arm64,
 # which hold the two-way Keccak and its samplers to the proven code;
 # and "sha3-device" bin/sha3_equiv_test alone as a device object builds
@@ -86,6 +88,7 @@
 # intrinsic, their wipes and the define that picks them with
 # "rsa-addcarry", and the violations of the NEON arms of
 # chacha20_vector.c and poly1305_vector.c with "vector-neon", the
+# violations of chacha20_sve2.c's copy with "sve2", the
 # violations of keccak_neon.c and its samplers with "keccak-neon", the
 # violations of p256_arm64_asm.h and of the dispatch to it with
 # "p256-arm64", and the violations of sha3_hw.c's x86-64 copy and of the
