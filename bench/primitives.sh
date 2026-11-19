@@ -431,9 +431,11 @@ fi
 # (docs/decisions.md 239). It builds against the headers and the library
 # beside the binary openssl_find printed. Where they are not there, the CSV
 # holds no OpenSSL encapsulation row, so no row mixes the two methods.
+# openssl_find can print a bare name found on PATH, as it does on a bench
+# runner, so command -v gives the binary's path first.
 OPENSSL_KEM=""
 if [ -n "$OPENSSL_BIN" ]; then
-    OPENSSL_PREFIX=$(cd "$(dirname "$OPENSSL_BIN")/.." && pwd)
+    OPENSSL_PREFIX=$(cd "$(dirname "$(command -v "$OPENSSL_BIN")")/.." && pwd)
     for OPENSSL_LIB in "$OPENSSL_PREFIX/lib64" "$OPENSSL_PREFIX/lib"; do
         if ls "$OPENSSL_LIB"/libcrypto.* > /dev/null 2>&1; then
             break
