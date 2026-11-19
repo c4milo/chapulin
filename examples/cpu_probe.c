@@ -121,7 +121,8 @@ static uint32_t cpu_probe_value(void) {
 
 // CPUID leaf 7, subleaf 0: EBX and ECX.
 static void leaf7(unsigned int *ebx, unsigned int *ecx) {
-    unsigned int eax = 0, edx = 0;
+    unsigned int eax = 0;
+    unsigned int edx = 0;
     *ebx = 0;
     *ecx = 0;
     if (!__get_cpuid_count(7, 0, &eax, ebx, ecx, &edx)) {
@@ -132,7 +133,8 @@ static void leaf7(unsigned int *ebx, unsigned int *ecx) {
 
 static uint32_t cpu_probe_value(void) {
     uint32_t value = CH_CPU_PROBED;
-    unsigned int ebx, ecx;
+    unsigned int ebx = 0;
+    unsigned int ecx = 0;
     __builtin_cpu_init();
     leaf7(&ebx, &ecx);
     // __builtin_cpu_supports reports AVX2 and AVX-512 only where the system saves their registers.
