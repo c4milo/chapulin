@@ -110,13 +110,15 @@ CPU_LABEL = "ch_cfg.cpu "
 # kernels (cpu_cfg.h, docs/decisions.md 121), and CH_CPU_AVX512, which runs
 # the AES-GCM rows on the 512-bit kernel (docs/decisions.md 130), and on
 # arm64 CH_CPU_CONSTANT_TIME_SHA3, which runs the AES-GCM rows on the passes
-# with EOR3 (docs/decisions.md 158). A record's protection hashes nothing,
+# with EOR3 (docs/decisions.md 158), and CH_CPU_SVE2, which runs the
+# ChaCha20-Poly1305 rows on chacha20_sve2.c's copy (docs/decisions.md 242).
+# A record's protection hashes nothing,
 # so no other hash bit changes a row, and the values of a record CSV, ORed
 # together, are the primitives' widest value without those bits. A record
 # CSV written before decision 121 states no CH_CPU_AVX512_IFMA either, and
 # machine_line reads such a CSV without that bit (docs/decisions.md 93 and
 # 119).
-RECORD_BITS = 0x39f
+RECORD_BITS = 0x139f
 IFMA_BIT = 0x100
 FIRST_LINE = re.compile(r"^# bench/\S+ on (?P<cpu>.+?) \((?P<arch>\w+)\), (?:.+, )?"
                         r"(?P<os>\S+ \S+), (?P<date>\d{4}-\d\d-\d\d), tree (?P<tree>\S+)$")

@@ -16,6 +16,16 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The arm64 server run of 6d4a8172
+
+Bench run 44581120021 recorded the Neoverse N2 again after decision 242, on `ubuntu-26.04-arm`,
+whose gcc is 15.2: gcc 13, the one before, builds no SVE2 copy of the NEON ChaCha20.
+ChaCha20-Poly1305 over 16 KiB went from 1.38 and 1.34 times OpenSSL's time to 0.94 and 0.96 of
+it, under `ch_cfg.cpu 0x1067` and record rows under `0x1007`. The new compiler moved other gcc rows
+too: SHA-384 over 16 KiB from 1.07 to 1.15 times OpenSSL's time, SHA-256 from 1.07 to 1.10, and
+P-256 key generation from 1.18 to 1.24. chapulin is faster than OpenSSL in 19 of 27 rows under each
+compiler, where it was faster in 16 and 17.
+
 ## The arm64 server run of de8ea4b5
 
 Bench run 44457220954 recorded the Neoverse N2 again after decisions 239 to 241. SHA3-256 over

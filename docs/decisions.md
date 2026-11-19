@@ -20220,3 +20220,7 @@ does nothing more.
       steps alone.
     - **Registers.** The NEON path clears no vector register, and neither does the copy. At a vector
       length of 128 bits the two use the same 32 registers.
+    - **The table.** The N2 column moved to `ubuntu-26.04-arm`, whose gcc 15 builds the copy, and
+      `bench/record.sh` times the ChaCha20-Poly1305 rows under 0x1007 as well. On bench run
+      44581120021, ChaCha20-Poly1305 over 16 KiB takes 0.94 of OpenSSL's time under gcc and 0.96
+      under clang, where it took 1.38 and 1.34 times it.
