@@ -45,6 +45,12 @@
 #   and a run takes its rows only where the CPU reports FEAT_SHA3 and is
 #   not an Arm Neoverse N2 (bench/neoverse.sh)
 #
+#   0x1007, 0x7's bits and CH_CPU_SVE2, on an arm64 CPU with SVE2: the
+#   ChaCha20-Poly1305 rows again, with the keystream on chacha20_sve2.c's
+#   copy of the NEON path (docs/decisions.md 242). --build compiles it for
+#   every arm64 target, and a run takes its rows only where the CPU reports
+#   SVE2
+#
 #   0x31f, those and CH_CPU_AVX512, on an x86-64 CPU with AVX-512F,
 #   AVX-512BW and AVX-512VL as well: the AES-128-GCM and AES-256-GCM rows
 #   again, whose whole AEADs, and the records and keyed AEADs over them,
@@ -233,6 +239,24 @@ if [ -z "$X86_64" ]; then
         KERNELS_NOTE="ch_cfg.cpu 0x83 adds CH_CPU_CONSTANT_TIME_SHA3 to 0x3, the AES-GCM passes with EOR3"
     fi
 fi
+# The arm64 SVE2 build. It compiles for every arm64 target, and its rows
+# run only where this CPU has SVE2, which Linux names sve2 in /proc/cpuinfo.
+SVE2=""
+if [ -z "$X86_64" ]; then
+    "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x1007 -o "$W/record_sve2" "${SRCS[@]}"
+    if [ "$(uname -s)" = Darwin ]; then
+        if [ "$(sysctl -n hw.optional.arm.FEAT_SVE2 2>/dev/null)" = 1 ]; then
+            SVE2=yes
+        fi
+    elif [ -r /proc/cpuinfo ] && grep -m1 '^Features' /proc/cpuinfo | grep -qw sve2; then
+        SVE2=yes
+    fi
+    if [ -n "$SVE2" ]; then
+        KERNELS_NOTE="$KERNELS_NOTE; ch_cfg.cpu 0x1007 adds CH_CPU_SVE2 to 0x7, the ChaCha20 keystream on chacha20_sve2.c's copy"
+    else
+        KERNELS_NOTE="$KERNELS_NOTE; no ch_cfg.cpu 0x1007 rows: this CPU is not arm64 with SVE2"
+    fi
+fi
 if [ -n "$BUILD_ONLY" ]; then
     echo "record bench: --build built every binary and ran nothing" >&2
     exit 0
@@ -350,6 +374,9 @@ LOAD_BEFORE=$(load)
     fi
     if [ -n "$SHA3" ]; then
         "$W/record_sha3" ${QUICK:+"$QUICK"} aes128gcm aes256gcm
+    fi
+    if [ -n "$SVE2" ]; then
+        "$W/record_sve2" ${QUICK:+"$QUICK"} chacha20poly1305
     fi
     if [ -x "$W/record_zig" ]; then
         "$W/record_zig"
