@@ -20118,3 +20118,32 @@ does nothing more.
       work. Key generation makes a new key at each operation on both sides.
     - **When the table moves.** Each column moves at its next recording. Until then a column holds
       `openssl speed`'s encapsulation row, which `docs/performance.md`'s method notes state.
+
+240. **On an Arm Neoverse N2 a caller leaves CH_CPU_CONSTANT_TIME_SHA3 clear, and chapulin
+    adds no bit for it.** The Neoverse N2 column showed SHA3-256 at 0.54 of OpenSSL's speed under
+    clang. On that core the SHA-3 instructions run Keccak 1.8 times slower than the general
+    registers: SHA3-256 of 16 KiB took 55.1 µs with them and 30.7 µs without, where OpenSSL took
+    29.7 µs. On the M1 Pro the same instructions run it 1.58 times faster. The bit's other use,
+    AES-GCM's passes with EOR3 (decision 158), gains 2% on the N2. chapulin probes nothing
+    (decision 89), so only the caller knows which core it runs on.
+
+    - **The ruling.** Camilo ruled on 2026-11-19 that chapulin adds no constant. Twelve
+      `CH_CPU_` bits exist, and a bit that states a speed of one core is a bit that only a
+      caller who reads the core's ID would set. `docs/usage.md` states the rule instead: on an N2
+      (implementer 0x41, part 0xd49), leave `CH_CPU_CONSTANT_TIME_SHA3` clear.
+    - **The example.** `examples/cpu_probe.c` builds the value a session on the calling thread
+      can state, for a caller to copy, on Linux and macOS, arm64 and x86-64. On arm64 it sets
+      PSTATE.DIT and states a constant-time bit only after DIT reads back set, and it reads
+      `MIDR_EL1` from sysfs on Linux to apply the N2 rule. On x86-64 it states the kernel bits the
+      CPU and the system report, and a constant-time bit only in a build with
+      `-DCPU_PROBE_DOITM_IS_SET`, because only the system sets DOITM. `make check` builds and
+      runs it on every host it targets, and it fails a value with a bit the object does not
+      define. It is not part of the library, and chapulin still probes nothing.
+    - **The bench.** `bench/neoverse.sh` reads the core's implementer and part from
+      `/proc/cpuinfo`. On an N2, `bench/primitives.sh` states every bit but the SHA-3 one, and
+      `bench/record.sh` times no `ch_cfg.cpu 0x83` rows, so the table shows what an informed N2
+      caller gets. The column moves at its next recording.
+    - **What OpenSSL does.** OpenSSL 3.6.5 ran SHA3-256 at the same speed on the N2 with each of
+      its capability bits cleared in turn (lab run 44434667287), so it runs Keccak in general
+      registers there too.
+

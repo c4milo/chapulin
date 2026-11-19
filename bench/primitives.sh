@@ -94,6 +94,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source=bench/openssl.sh
 . bench/openssl.sh
+# shellcheck source=bench/neoverse.sh
+. bench/neoverse.sh
 
 QUICK=""
 BUILD_ONLY=""
@@ -352,8 +354,9 @@ cpu_value() {
     if [ "$ARCH" = arm64 ] && reports "$features" sha512; then
         value=$((value | CPU_CONSTANT_TIME_SHA512))
     fi
-    # arm64 Linux names FEAT_SHA3 sha3. An x86-64 object refuses the bit.
-    if [ "$ARCH" = arm64 ] && reports "$features" sha3; then
+    # arm64 Linux names FEAT_SHA3 sha3. An x86-64 object refuses the bit. On
+    # an Arm Neoverse N2 a caller leaves it clear (bench/neoverse.sh).
+    if [ "$ARCH" = arm64 ] && reports "$features" sha3 && ! neoverse_n2; then
         value=$((value | CPU_CONSTANT_TIME_SHA3))
     fi
     if [ "$ARCH" = x86_64 ] && reports "$features" avx2; then

@@ -7961,7 +7961,7 @@ else
 	  src/keccak_neon.c src/mlkem_neon.c src/mldsa_neon.c test/keccak_neon_equiv_test.c test/keccak_neon_count.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c test/aead_avx512_count.c \
 	  test/gcm_avx512_equiv_test.c test/webpki_ticket_count.c test/ct_taint_test.c test/ct_taint_keys.c \
-	  $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
+	  examples/cpu_probe.c $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# The wide X25519 field. x25519_wide.c guards its body on
 	# -DCH_CPU_RUNTIME and compiles x25519.c's clamp and all-zero check
@@ -7970,6 +7970,12 @@ else
 	# differential main, which refuses any other build.
 	@$(call TIDY_EACH,src/x25519_wide.c test/x25519_equiv_test.c test/diff_x25519_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -Isrc -Iinclude/chapulin -Iinclude -I.)
+	# examples/cpu_probe.c builds under -DCH_CPU_RUNTIME alone, and on arm64
+	# it sets and reads PSTATE.DIT with two instructions C cannot name, so
+	# this pass defines it and turns portability-no-assembler off for that
+	# file alone (docs/decisions.md 240).
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler examples/cpu_probe.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_CPU_RUNTIME -Iinclude)
 	# x25519_adx.c over its model, the build bin/x25519_adx_model_test runs
 	# on every host, so this pass reads test/x25519_adx_model.h and the
 	# field's C, with the two test mains: on another architecture than
@@ -8906,9 +8912,17 @@ bin/example_webpki: examples/webpki_client.c $(EXAMPLE_WEBPKI_SRCS) $(HDRS)
 	$(CC) $(if $(HOST_TARGET),$(HOST_CFLAGS) -DCH_CPU_RUNTIME,$(CFLAGS)) -DCH_TRUST_WEBPKI -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ \
 	  examples/webpki_client.c $(EXAMPLE_WEBPKI_SRCS)
 
+# The CPU probe builds and runs where the compiler targets a host, and
+# prints the value it found. Its exit status fails a value with a bit the
+# object does not define for its architecture.
+bin/example_cpu_probe: examples/cpu_probe.c include/chapulin/cpu_cfg.h
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -Iinclude -o $@ examples/cpu_probe.c
+
 .PHONY: examples-check
-examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_webpki
-	@echo "examples-check: the PSK and pinned examples link the packaged library; ca_client links the CA-trust sources; webpki_client links the TRUST=webpki sources"
+examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_webpki $(if $(HOST_TARGET),bin/example_cpu_probe)
+	$(if $(HOST_TARGET),@./bin/example_cpu_probe)
+	@echo "examples-check: the PSK and pinned examples link the packaged library; ca_client links the CA-trust sources; webpki_client links the TRUST=webpki sources$(if $(HOST_TARGET),; cpu_probe builds a ch_cfg.cpu value on this host)"
 
 
 # lint-invariants checks that the code does not violate an invariant.

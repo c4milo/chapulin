@@ -42,7 +42,8 @@
 #   arm64 CPU with FEAT_SHA3: the AES-128-GCM and AES-256-GCM rows again,
 #   whose seal and open passes run on gcm_arm64_eor3.c, with EOR3
 #   (docs/decisions.md 158). --build compiles it for every arm64 target,
-#   and a run takes its rows only where the CPU reports FEAT_SHA3
+#   and a run takes its rows only where the CPU reports FEAT_SHA3 and is
+#   not an Arm Neoverse N2 (bench/neoverse.sh)
 #
 #   0x31f, those and CH_CPU_AVX512, on an x86-64 CPU with AVX-512F,
 #   AVX-512BW and AVX-512VL as well: the AES-128-GCM and AES-256-GCM rows
@@ -86,6 +87,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source=bench/openssl.sh
 . bench/openssl.sh
+# shellcheck source=bench/neoverse.sh
+. bench/neoverse.sh
 
 QUICK=""
 BUILD_ONLY=""
@@ -221,6 +224,10 @@ if [ -z "$X86_64" ]; then
         fi
     elif [ -r /proc/cpuinfo ] && grep -m1 '^Features' /proc/cpuinfo | grep -qw sha3; then
         SHA3=yes
+    fi
+    if [ -n "$SHA3" ] && neoverse_n2; then
+        SHA3=""
+        KERNELS_NOTE="no ch_cfg.cpu 0x83 rows: on an Arm Neoverse N2 a caller leaves CH_CPU_CONSTANT_TIME_SHA3 clear (bench/neoverse.sh)"
     fi
     if [ -n "$SHA3" ]; then
         KERNELS_NOTE="ch_cfg.cpu 0x83 adds CH_CPU_CONSTANT_TIME_SHA3 to 0x3, the AES-GCM passes with EOR3"

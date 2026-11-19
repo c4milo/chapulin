@@ -129,6 +129,19 @@ bits, `CH_CPU_AVX2`, `CH_CPU_VAES`, `CH_CPU_AVX512`,
 `CH_CPU_AVX512_IFMA`, `CH_CPU_BMI2_ADX` and `CH_CPU_BMI1`, state no timing. Set one only when your probe
 found it, because an instruction the CPU lacks stops the program.
 
+On an Arm Neoverse N2 (implementer 0x41, part 0xd49 in `MIDR_EL1`),
+leave `CH_CPU_CONSTANT_TIME_SHA3` clear even with DIT set. That core runs
+Keccak on its SHA-3 instructions 1.8 times slower than in its general
+registers, so SHA-3, SHAKE, ML-KEM and ML-DSA-87 run faster on the
+portable code. The bit's other use, AES-GCM's passes with EOR3, gains 2%
+there (decision 240).
+
+[`examples/cpu_probe.c`](../examples/cpu_probe.c) is a probe to copy.
+On Linux and macOS, on arm64 and x86-64, it builds the value a session
+on the calling thread can state. It sets DIT on arm64, applies the N2
+rule, and states a constant-time bit on x86-64 only in a build that
+says the system sets DOITM.
+
 The hostname
 goes out as the ClientHello's `server_name`, and the hello offers five
 signature schemes, because a public chain's links may be signed by any

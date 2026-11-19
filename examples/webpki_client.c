@@ -28,6 +28,7 @@
  *      in ch_cfg.cpu, and ch_connect refuses a ch_cfg that never set it.
  *      This file states that it set the field and nothing more, so every
  *      path the session takes runs on any CPU of the architecture.
+ *      examples/cpu_probe.c builds a fuller value from the CPU it runs on.
  *
  * What the check covers: the chain verifies up to one of your anchors,
  * every certificate on the path is valid at now_seconds, and a dNSName
