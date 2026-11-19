@@ -41,3 +41,13 @@ jobs:
         run: |
           if [ "${{ matrix.os }}" = ubuntu-24.04-arm ]; then set -- gcc-14; else set -- gcc "$CLANG_RV"; fi
           bash lab/run_barrier.sh "$@"
+      - name: Build and run the tree's SVE2 tests under the tree's flags
+        run: |
+          if [ "${{ matrix.os }}" = ubuntu-24.04-arm ]; then set -- gcc-14; else set -- gcc "$CLANG_RV"; fi
+          for cc in "$@"; do
+            echo "== $cc"
+            rm -f bin/chacha20_equiv_test bin/unit_host
+            make -j4 CC="$cc" bin/chacha20_equiv_test bin/unit_host
+            CH_REQUIRE_SVE2=1 ./bin/chacha20_equiv_test
+            CH_REQUIRE_SVE2=1 ./bin/unit_host 0x1005 | tail -3
+          done
