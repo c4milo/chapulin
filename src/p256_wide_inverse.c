@@ -51,13 +51,13 @@
 // wraps nothing, and here, where six of these masks run one after another in each
 // approximations call, that form took 1.59 µs an inverse on the M1 Pro where this one takes 1.42.
 static inline uint64_t nonzero_mask(uint64_t x) {
-    return p256_wide_mask((x | (0 - x)) >> 63);
+    return p256_wide_mask_top(x | (0 - x));
 }
 
 // |f| for a two's complement word f, and all ones in *negative when f is below zero. A negative
 // f is not zero, so ~f + 1 wraps nothing.
 static inline uint64_t magnitude(uint64_t f, uint64_t *negative) {
-    *negative = p256_wide_mask(f >> 63);
+    *negative = p256_wide_mask_top(f);
     return (f ^ *negative) + (*negative & 1);
 }
 
@@ -117,13 +117,18 @@ static void approximations(uint64_t *xa, uint64_t *xb, const uint64_t a[WORDS],
 // step leaves it so for the next *xa. A step on xa and xb is a step on a and b: when xa is even
 // it becomes xa / 2, and when it is odd it becomes |xa - xb| / 2, and xb becomes the old xa
 // when xa was below xb.
+//
+// Both masks come from words, not from a value of 0 or 1: swap from the subtraction itself and
+// *odd from a bit of the difference, shifted to the top. Each lies on the path from one step to
+// the next. gcc 14 and 15 for arm64 built a mask of 0 or 1 in byte-wide steps, and over the 527
+// steps of an inverse a P-256 key generation took 1.02 times gcc 13's time on a Neoverse N2
+// (docs/decisions.md 243).
 static inline void step(uint64_t *xa, uint64_t *xb, uint64_t *pair0, uint64_t *pair1,
                         uint64_t *odd) {
     // xb is subtracted where xa is odd, so the subtraction borrows only where xa is odd and below
     // xb, the steps that swap.
-    uint64_t borrow = 0;
-    uint64_t difference = p256_wide_sub_borrow(&borrow, *xa, *xb & *odd);
-    uint64_t swap = p256_wide_mask(borrow);
+    uint64_t swap;
+    uint64_t difference = p256_wide_sub_mask(&swap, *xa, *xb & *odd);
     uint64_t pair_difference = *pair0 - (*pair1 & *odd);
     // A step swaps only where xa is odd, and there difference is xa - xb and pair_difference is
     // pair0 - pair1 modulo 2^64, so the sums below give xb the old xa and pair1 the old pair0.
@@ -133,8 +138,8 @@ static inline void step(uint64_t *xa, uint64_t *xb, uint64_t *pair0, uint64_t *p
     *xa = ((difference ^ swap) - swap) >> 1;
     // The next xa is |difference| / 2. Where xa was odd, difference is a difference of two odd
     // words, so it is even, and an even word and its negation agree in bit 1. Where xa was
-    // even, difference is xa.
-    *odd = p256_wide_mask((difference >> 1) & 1);
+    // even, difference is xa. The shift puts bit 1 at the top.
+    *odd = p256_wide_mask_top(difference << 62);
     *pair0 = (pair_difference ^ swap) - swap;
     *pair1 <<= 1;
 }
@@ -165,7 +170,7 @@ static inline void unpack_factors(uint64_t factor[4], uint64_t pair0, uint64_t p
 static void step_factors(uint64_t factor[4], uint64_t xa, uint64_t xb) {
     uint64_t pair0 = 1;                 // f0 + 2^32 g0
     uint64_t pair1 = UINT64_C(1) << 32; // f1 + 2^32 g1
-    uint64_t odd = p256_wide_mask(xa & 1);
+    uint64_t odd = p256_wide_mask_top(xa << 63);
     // Written out, the 31 steps take no loop counter and keep each value in a register: gcc 13.3
     // ran 27 instructions a step in the loop, one of them a store, and 21 written out. clang 23's
     // written-out steps took 1.07 times its loop's time on a Xeon 8573C, so the pragma is gcc's
@@ -231,7 +236,7 @@ static inline __attribute__((always_inline)) uint64_t combine_exact(uint64_t o[W
     for (size_t i = 0; i < WORDS + 1; i++) {
         sum[i] = p256_wide_add_carry(&carry, product_x[i], product_y[i]);
     }
-    uint64_t negative = p256_wide_mask(sum[WORDS] >> 63);
+    uint64_t negative = p256_wide_mask_top(sum[WORDS]);
     negate_masked(sum, negative);
     // gcc 13.3 built the four words below in vector registers from the five, as it did
     // combine_modular's (docs/decisions.md 232).

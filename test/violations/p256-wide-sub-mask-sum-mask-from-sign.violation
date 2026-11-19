@@ -1,0 +1,15 @@
+invariant: INV-16
+file: src/p256_wide_word.h
+catches: p256_equiv_test_sum
+reason: the 128-bit form of the masked subtraction takes its mask from bit 63
+  of the 64-bit difference and not from the top word of the 128-bit one
+  (docs/decisions.md 243). Where a and b differ by 2^63 or more, that bit is
+  not the borrow, so the inverse's step swaps where it must not or keeps
+  where it must swap, and the inverse comes out wrong.
+  bin/p256_equiv_test_sum runs this form and holds every inverse on it to
+  p256_field.c's and p256_scalar.c's.
+
+--- old
+    *mask = (uint64_t)(difference >> 64);
+--- new
+    *mask = p256_wide_mask_top((uint64_t)difference);

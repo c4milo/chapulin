@@ -3010,9 +3010,11 @@ launch fast full p256_wide_wipe 2 "ct_wipe.0:3073" src/ct.c proof/ct_wipe_stub.c
 # its _webpki twin took 186 and 223 s, rsa_sign64_crt and its twin 22 and
 # 56 s, and the window and IFMA lines their old times.
 launch fast full rsa_sign64_wipe 2 "ct_wipe.0:16385" src/ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 --unsigned-overflow-check
-# The wide inverse, p256_wide_inverse.c (docs/decisions.md 115), in four harnesses.
+# The wide inverse, p256_wide_inverse.c (docs/decisions.md 115), in five harnesses.
 # p256_wide_inverse_steps holds the approximations and one step to references that branch,
-# over every input, and the unpacking of the factors over the range of each; it runs without
+# over every input, and the unpacking of the factors over the range of each, on the builtins'
+# form of the step's subtraction; p256_wide_inverse_steps_sum is the same proof on the 128-bit
+# difference, gcc's form outside x86-64 (docs/decisions.md 243). Both run without
 # --unsigned-overflow-check, because the masks and the packed factors wrap on purpose and the
 # equalities fix every value they compute. p256_wide_inverse_range proves that range of the
 # reference's 31 steps, in one formula, as only the whole run bounds it; it is in the slow
@@ -3028,7 +3030,11 @@ launch fast full rsa_sign64_wipe 2 "ct_wipe.0:16385" src/ct.c proof/ct_wipe_stub
 #   p256_wide_inverse_range    119 properties, 506 s, 238 MB
 #   p256_wide_inverse          850 properties,   1 s,  41 MB
 #   p256_wide_inverse_round    848 properties,   1 s,  26 MB
+# And on 2026-11-19, at a load average of about 4, after decision 243:
+#   p256_wide_inverse_steps       1010 properties, 37 s, 196 MB
+#   p256_wide_inverse_steps_sum    994 properties, 27 s, 203 MB
 launch fast full p256_wide_inverse_steps 257 "" -DCH_CPU_RUNTIME
+launch fast full p256_wide_inverse_steps_sum 257 "" -DCH_CPU_RUNTIME
 launch slow full p256_wide_inverse_range 32 "" -DCH_CPU_RUNTIME
 launch fast full p256_wide_inverse 34 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_inverse_round 33 "" -DCH_CPU_RUNTIME

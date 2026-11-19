@@ -33,13 +33,21 @@
 // --signed-overflow-check, which every full line carries, proves that none
 // of their sums and doublings overflows.
 //
+// The step's subtraction has two forms (p256_wide_sub_mask in
+// p256_wide_word.h). This harness reads the builtins' form, which clang
+// compiles, and p256_wide_inverse_steps_sum_harness.c includes it to read the
+// 128-bit difference, which gcc compiles outside x86-64. The same reference
+// holds both.
+//
 // p256_wide_inverse_harness.c proves the combinations of a round, and
 // p256_wide_inverse_round_harness.c runs one round whole.
 // spec/lean/Spec/P256WideInverse.lean proves that the reference's steps,
 // applied as p256_wide_inverse applies them, invert y.
 #include "harness.h"
 
+#ifndef P256_WIDE_CARRY
 #define P256_WIDE_CARRY P256_WIDE_CARRY_BUILTIN
+#endif
 
 #include "p256_wide_inverse.c"
 

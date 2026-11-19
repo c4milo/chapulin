@@ -20224,3 +20224,71 @@ does nothing more.
       `bench/record.sh` times the ChaCha20-Poly1305 rows under 0x1007 as well. On bench run
       44581120021, ChaCha20-Poly1305 over 16 KiB takes 0.94 of OpenSSL's time under gcc and 0.96
       under clang, where it took 1.38 and 1.34 times it.
+
+
+243. **SHA-512's round, SHA-256's last four groups and the P-256 inverse's masks change form, and
+    gcc 15 runs them at gcc 13's speed or faster.** The Neoverse N2 column moved from gcc 13.3 to gcc 15.2 in d04ca502. With no
+    change to the source, gcc 15 took more time than gcc 13 on several rows. Camilo ruled on
+    2026-11-19 to land all four changes below, the swap mask's form for gcc among them.
+
+    - **How the lab found them.** Ubuntu 26.04 for arm64 holds gcc 13.4, 14.3 and 15.2 side by
+      side. The lab built the primitives program statically under each one and timed the three in
+      turn on one N2 (lab run 44591802420). Two runners agreed within 0.3%. Against gcc 13, gcc 15
+      took 1.08 times the time of SHA-384 over 16 KiB, 1.03 of SHA-256, 1.02 of P-256's key
+      generation and signature, and 1.03 of RSA verification. clang 23 did not move. A count of
+      each function's instructions by kind, under each compiler, gave the function. Lab runs
+      44594139534 and 44596482941 timed each change under a define, with clang beside gcc.
+    - **SHA-512.** SHA512H2 writes its result over its first operand, the sum SHA512H returns, and
+      the add of the round reads that sum too. With SHA512H2 first in the source, gcc 15 copied the
+      sum to a second register before each SHA512H2, on the path from one pair of rounds to the
+      next. `round_pair` now runs the add first, so SHA512H2 reads the sum last. The add writes the
+      new e and f over cd, so the old c and d wait in a field of the `block_state`, `before`, which
+      the wipe clears.
+    - **SHA-256.** SHA256H and SHA256H2 each need the other half's old value, so one half is
+      copied in each group of four rounds (decision 93). In the last four groups gcc 15 copied
+      both halves in one group. `run_blocks` now takes the two orders the other way round in its
+      last four groups, so group 12 runs SHA256H2 first, as group 11 does. This made every
+      compiler faster on the N2, not only gcc 15. A model of the dependencies, with the copy on the
+      input it feeds, gives decision 93's result for the order of the loop and no gain for this
+      one. So the gain rests on the measurement alone.
+    - **P-256.** When gcc 14 and 15 for arm64 can prove that a value is 0 or 1, they build
+      `p256_wide_mask` of it in byte-wide steps: SBFIZ, ASR and SXTB, where gcc 13 wrote one SBFX. A
+      borrow's mask became a 32-bit CSETM and an SXTB. Both masks of the inverse's step lie on the
+      path of its 527 steps. `p256_wide_mask_top` takes the top bit of a word by one arithmetic
+      shift, and the step shifts bit 1 of the difference to the top. `nonzero_mask`, `magnitude`
+      and two masks of each round take the same form. `p256_wide_sub_mask` gives the swap mask: in
+      the sum form, gcc's outside x86-64, the top word of the 128-bit difference, and in the other
+      two forms the borrow's mask as before. Under Apple clang the 128-bit difference cost an M1 Pro
+      1.6% more instructions in a key generation and the N2 1.5% more time, so clang keeps its form.
+      No form takes `0 - bit`: gcc rewrites `x & -bit` as a multiply by the bit
+      (https://github.com/c4milo/chapulin/issues/106). The inverse's round gained no multiply and
+      no branch under gcc 13 and 15 for arm64 and gcc 15 for x86-64, and clang 23 writes the same
+      round as before on both.
+    - **What the N2 timed.** Lab run 44609349326 timed this tree against its parent on one N2.
+      Under gcc 15, SHA-384 over 16 KiB went from 0.881 to 0.817 ns a byte, gcc 13's figure.
+      SHA-256 went from 0.515 to 0.488, below gcc 13's 0.501. P-256 key generation went from
+      13,062 to 12,753 ns and signature from 20,330 to 19,677, where gcc 13 took 12,770 and
+      19,835. Under gcc 13 and clang 23, SHA-256 went from 0.501 to 0.474, and no other row moved
+      by more than 0.5%.
+    - **What x86-64 timed.** gcc 15 for x86-64 writes the inverse's round in 1,550 instructions
+      where it wrote 1,588. On an EPYC 7763 its P-256 rows took 1.003 to 1.006 of their time, and
+      on two EPYC 9V45 runners 0.993 to 1.004, inside spreads of 2 to 8% (lab runs 44609349326 and
+      44610800512). Their counts fell by 0.1 to 0.5%. clang's rows moved only inside their spreads.
+    - **What the M1 Pro timed.** Under Apple clang, at a load average under 6, no row moved outside
+      its run's spread of 1 to 2%, and SHA-384 retired 1.9% fewer instructions. GitHub's hosted
+      Apple runner, a virtual M1 of three cores, read spreads of 11 to 64% and gave no count, so
+      it judged nothing here.
+    - **The counts.** Under callgrind and gcc 15 on the N2, SHA-384 over 16 KiB fell from 77,016
+      instructions to 72,507, and a P-256 key generation from 119,779 to 117,515. No count rose.
+      SHA-256's did not move: the order changes no instruction.
+    - **Proofs and tests.** The inverse's step harness reads the builtins' form of
+      `p256_wide_sub_mask`, and `p256_wide_inverse_steps_sum` reads the sum form against the same
+      reference. `bin/p256_equiv_test_sum` holds the sum form to the portable inverse, and a mutant
+      that takes the mask from the sign of the 64-bit difference fails it. `bin/sha2_equiv_test`
+      searches the stack below each call, and a mutant that keeps `before` outside the
+      `block_state` fails it.
+    - **What does not change.** gcc 15 adds two register copies to each pass of RSA's Montgomery
+      loop, which keep the two carries for the code after it, and RSA verification takes 1.03
+      times gcc 13's time. This decision leaves that loop as it is. A copy of `kept` without its
+      volatile read let gcc 15 keep the `block_state` in registers, but under gcc 13 and 14
+      SHA-256 then took 1.04 times its time, so the volatile read stays.

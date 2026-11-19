@@ -1147,15 +1147,16 @@ The entries are grouped by area:
 
 #### p256_wide
 
-- **Harnesses:** `p256_wide_row` (fast), `p256_wide_row_sum` (fast), `p256_wide_sqr` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_inverse_steps` (fast), `p256_wide_inverse_range` (slow), `p256_wide_inverse` (fast), `p256_wide_inverse_round` (fast), `p256_wide_point` (fast), `p256_wide_digit` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
+- **Harnesses:** `p256_wide_row` (fast), `p256_wide_row_sum` (fast), `p256_wide_sqr` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_inverse_steps` (fast), `p256_wide_inverse_steps_sum` (fast), `p256_wide_inverse_range` (slow), `p256_wide_inverse` (fast), `p256_wide_inverse_round` (fast), `p256_wide_point` (fast), `p256_wide_digit` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
 - **Build:** a host object's wide P-256 files (`p256_wide_field.c`,
   `p256_wide_scalar.c`, `p256_wide_inverse.c`, `p256_wide_point.c`,
   `p256_wide_mul.c`, `p256_wide_table.c` and `p256_wide_wipe.c`,
   decisions 94 and 115), under `-DCH_CPU_RUNTIME`, with
   `--unsigned-overflow-check` on every line but `p256_wide_inverse_steps`,
-  `p256_wide_inverse_range` and `p256_wide_inverse_round`: the inverse's
-  masks and packed factors wrap on purpose, and the first two lines fix
-  every value they compute by an equality instead.
+  `p256_wide_inverse_steps_sum`, `p256_wide_inverse_range` and
+  `p256_wide_inverse_round`: the inverse's
+  masks and packed factors wrap on purpose, and the first three lines
+  fix every value they compute by an equality instead.
 - **Proves:**
   - `p256_wide_row`: on the real 64x64->128 multiply, one row of a
     product, x times four words plus four words, wraps nothing for any
@@ -1217,7 +1218,15 @@ The entries are grouped by area:
     word leaves what a reference step that branches and keeps each
     factor in its own signed variable leaves, and the mask of the next
     approximation's low bit. And the unpacking returns every factor
-    between -(2^31 - 1) and 2^31 from the packed words.
+    between -(2^31 - 1) and 2^31 from the packed words. The step's
+    subtraction is `p256_wide_sub_mask`'s builtins' form, which clang
+    compiles.
+  - `p256_wide_inverse_steps_sum`: `p256_wide_inverse_steps` once more,
+    on the form of the step's subtraction that gcc compiles outside
+    x86-64: a 128-bit difference whose top word is the swap mask
+    (decision 243). The same reference holds both forms. gcc's form for
+    x86-64 is an intrinsic, which cbmc cannot read, and
+    `bin/p256_equiv_test` holds it.
   - `p256_wide_inverse_range`: the reference's 31 steps, from the
     factors 1, 0, 0 and 1, end with every factor in that range, for any
     approximations with the second odd. So `step_factors` returns the

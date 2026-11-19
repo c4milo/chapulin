@@ -125,9 +125,10 @@ static inline void rounds_abcd_first(block_state *c, words current, size_t group
 }
 
 // The same four rounds with SHA256H2 first and e, f, g and h copied. run_blocks takes the two
-// in turn. Both compilers measured put the copy in front of the instruction that runs first,
-// so one order alone puts a register copy on the same half's path in every group. Taken in
-// turn, each half's path holds the copy in every other group (docs/decisions.md 93).
+// in turn, and its last four groups take them the other way round (docs/decisions.md 243). Both
+// compilers measured put the copy in front of the instruction that runs first, so one order
+// alone puts a register copy on the same half's path in every group. Taken in turn, each half's
+// path holds the copy in every other group (docs/decisions.md 93).
 static inline void rounds_efgh_first(block_state *c, words current, size_t group) {
     c->with_constants = vaddq_u32(current, vld1q_u32(&K[4 * group]));
     c->before = c->efgh;
@@ -163,10 +164,14 @@ static inline void run_blocks(block_state *c, uint32_t h[8], const uint8_t *p, s
             rounds_efgh_first(c, c->w3, group + 3);
             c->w3 = schedule(c->w3, c->w0, c->w1, c->w2);
         }
-        rounds_abcd_first(c, c->w0, 12);
-        rounds_efgh_first(c, c->w1, 13);
-        rounds_abcd_first(c, c->w2, 14);
-        rounds_efgh_first(c, c->w3, 15);
+        // The last four groups take the two orders the other way round from the loop's, so group
+        // 12 runs SHA256H2 first, as group 11 does. On a Neoverse N2 a block then took 0.95 of
+        // its time with the loop's order, under gcc 13, 14 and 15 and clang 23. The M1 Pro timed
+        // the two orders the same (docs/decisions.md 243).
+        rounds_efgh_first(c, c->w0, 12);
+        rounds_abcd_first(c, c->w1, 13);
+        rounds_efgh_first(c, c->w2, 14);
+        rounds_abcd_first(c, c->w3, 15);
         c->abcd = vaddq_u32(c->abcd, kept(&c->abcd_start));
         c->efgh = vaddq_u32(c->efgh, kept(&c->efgh_start));
         p += SHA256_BLOCK;

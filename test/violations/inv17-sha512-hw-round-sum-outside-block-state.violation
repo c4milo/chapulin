@@ -15,9 +15,11 @@ reason: round_pair keeps what SHA512H returns in a local of its own, which
 
 --- old
     c->half = vsha512hq_u64(c->sum, vextq_u64(*ef, *gh, 1), vextq_u64(*cd, *ef, 1));
-    *gh = vsha512h2q_u64(c->half, *cd, *ab);
+    c->before = *cd;
     *cd = vaddq_u64(*cd, c->half);
+    *gh = vsha512h2q_u64(c->half, c->before, *ab);
 --- new
     volatile words half = vsha512hq_u64(c->sum, vextq_u64(*ef, *gh, 1), vextq_u64(*cd, *ef, 1));
-    *gh = vsha512h2q_u64(half, *cd, *ab);
+    c->before = *cd;
     *cd = vaddq_u64(*cd, half);
+    *gh = vsha512h2q_u64(half, c->before, *ab);

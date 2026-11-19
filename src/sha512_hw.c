@@ -106,6 +106,8 @@ typedef struct {
     words sum;            // those two, in the other order, plus g and h
     words half;           // what SHA512H leaves: the two sums the new e and f and the new a
                           // and b are both made from
+    words before;         // the vector cd names as a pair begins, which SHA512H2 reads after
+                          // the add writes over it
 } block_state;
 
 // A field of a block_state, read from memory at the point of use, as sha256_hw.c's kept reads
@@ -128,13 +130,20 @@ static inline words load_block_words(const uint8_t *p) {
 // are untouched: the old a and b are the new c and d, and the old e and f the new g and h. So
 // the next pair takes the same four vectors with each name moved on by one place, and four
 // pairs bring every name back to where it began.
+//
+// SHA512H2 writes its result over its first operand, half, and the add reads half too. The add
+// comes first, so SHA512H2 reads half last and can write over its register. With SHA512H2 first,
+// gcc 15.2 for arm64 copied half to a second register before each SHA512H2, on the path from one
+// pair to the next. SHA-384 then took 1.08 times gcc 13's time on a Neoverse N2. The add writes
+// the new e and f over cd, so SHA512H2 reads the old c and d from before (docs/decisions.md 243).
 static inline void round_pair(block_state *c, const words *ab, words *cd, const words *ef,
                               words *gh, words current, size_t pair) {
     c->with_constants = vaddq_u64(current, vld1q_u64(&sha512_round_constants[2 * pair]));
     c->sum = vaddq_u64(vextq_u64(c->with_constants, c->with_constants, 1), *gh);
     c->half = vsha512hq_u64(c->sum, vextq_u64(*ef, *gh, 1), vextq_u64(*cd, *ef, 1));
-    *gh = vsha512h2q_u64(c->half, *cd, *ab);
+    c->before = *cd;
     *cd = vaddq_u64(*cd, c->half);
+    *gh = vsha512h2q_u64(c->half, c->before, *ab);
 }
 
 // Sixteen rounds from round 2 * first, on the eight vectors of the schedule in order: eight

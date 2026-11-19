@@ -1,8 +1,9 @@
 // The steps on 64-bit words that the wide P-256 arithmetic is built from: an add with carry, a
-// subtract with borrow, one row of a product, the product of a word and four words, the square
-// of four words, and a mask from a bit. The wide files include this header: p256_wide_field.h,
-// so every file that includes it, p256_wide_scalar.c and p256_wide_inverse.c. The two moduli
-// share these six steps and no constant, as p256_field.c and p256_scalar.c share none.
+// subtract with borrow and one with a mask, one row of a product, the product of a word and four
+// words, the square of four words, and a mask from a bit or from a word's top bit. The wide files
+// include this header: p256_wide_field.h, so every file that includes it, p256_wide_scalar.c and
+// p256_wide_inverse.c. The two moduli share these steps and no constant, as p256_field.c and
+// p256_scalar.c share none.
 //
 // Every step runs the same instructions whatever its operands hold. No branch and no index
 // reads a word. The one instruction whose timing the C cannot state is the 64x64->128 multiply,
@@ -84,6 +85,15 @@ static inline uint64_t p256_wide_mask(uint64_t bit) {
     return (uint64_t)((int64_t)(bit << 63) >> 63);
 }
 
+// All ones when bit 63 of x is set and zero when it is clear, by one arithmetic shift. A caller
+// shifts the word itself to move the bit it reads to the top, and does not first make a value of
+// 0 or 1. When gcc 14 and 15 for arm64 can prove that a value is 0 or 1, they build
+// p256_wide_mask of it in byte-wide steps, four instructions where gcc 13 wrote one SBFX
+// (docs/decisions.md 243).
+static inline uint64_t p256_wide_mask_top(uint64_t x) {
+    return (uint64_t)((int64_t)x >> 63);
+}
+
 // a + b + *carry: returns the low 64 bits and leaves the carry out, 0 or 1, in *carry. *carry
 // is 0 or 1 on entry.
 static inline uint64_t p256_wide_add_carry(uint64_t *carry, uint64_t a, uint64_t b) {
@@ -150,6 +160,28 @@ static inline uint64_t p256_wide_sub_wrap(uint64_t a, uint64_t b) {
 #else
     ct_u128 difference = (((ct_u128)1 << 64) | a) - b;
     return (uint64_t)difference;
+#endif
+}
+
+// a - b: returns the 64-bit difference and leaves in *mask all ones when the subtraction
+// borrowed and zero when it did not.
+static inline uint64_t p256_wide_sub_mask(uint64_t *mask, uint64_t a, uint64_t b) {
+#if P256_WIDE_CARRY == P256_WIDE_CARRY_SUM
+    // a and b are below 2^64, so the top word of the 128-bit difference is all ones when a is
+    // below b and zero when it is not: the mask itself. gcc then writes no borrow of 0 or 1, and
+    // so has no byte-wide mask to build (p256_wide_mask_top). The 128 bits wrap on purpose when a
+    // is below b.
+    ct_u128 difference = (ct_u128)a - b;
+    *mask = (uint64_t)(difference >> 64);
+    return (uint64_t)difference;
+#else
+    // The other two forms take the borrow, 0 or 1, and its mask. Under clang the 128-bit
+    // difference above cost an M1 Pro 1.6% more instructions in a P-256 key generation. Nobody
+    // timed it under gcc for x86-64 (docs/decisions.md 243).
+    uint64_t borrow = 0;
+    uint64_t difference = p256_wide_sub_borrow(&borrow, a, b);
+    *mask = p256_wide_mask(borrow);
+    return difference;
 #endif
 }
 
