@@ -5,6 +5,10 @@
 
 #ifdef __ARM_NEON
 #include <arm_neon.h>
+#ifdef CHACHA20_VECTOR_XAR
+#include <arm_neon_sve_bridge.h>
+#include <arm_sve.h>
+#endif
 #else
 #include <emmintrin.h>
 #endif
@@ -203,6 +207,58 @@ static inline void store_16(uint8_t *out, lanes keystream) {
 
 #endif
 
+// The XOR of x and y, rotated left by 16, 12, 8 or 7: the step of each
+// quarter round that follows an add.
+#ifdef CHACHA20_VECTOR_XAR
+
+// chacha20_sve2.c's copy of this file: one SVE2 XAR for each step. XAR
+// XORs two vectors and rotates each 32-bit lane right, so a rotation left
+// by r is a rotation right by 32 - r. A NEON register is the low 128 bits
+// of the SVE register with the same number, so each conversion below
+// moves no data. XAR also computes the lanes above bit 127 where the
+// vector length is longer, and svget_neonq_u32 drops them, so the copy
+// computes the same keystream at every vector length. svundef_u32 leaves
+// those lanes undefined, and nothing reads them.
+#define LANES_XAR(x, y, right)                                                                     \
+    svget_neonq_u32(svxar_n_u32(svset_neonq_u32(svundef_u32(), (x)),                             \
+                                svset_neonq_u32(svundef_u32(), (y)), (right)))
+
+static inline lanes lanes_xor_rotate_left_16(lanes x, lanes y) {
+    return LANES_XAR(x, y, 16);
+}
+
+static inline lanes lanes_xor_rotate_left_12(lanes x, lanes y) {
+    return LANES_XAR(x, y, 20);
+}
+
+static inline lanes lanes_xor_rotate_left_8(lanes x, lanes y) {
+    return LANES_XAR(x, y, 24);
+}
+
+static inline lanes lanes_xor_rotate_left_7(lanes x, lanes y) {
+    return LANES_XAR(x, y, 25);
+}
+
+#else
+
+static inline lanes lanes_xor_rotate_left_16(lanes x, lanes y) {
+    return lanes_rotate_left_16(lanes_xor(x, y));
+}
+
+static inline lanes lanes_xor_rotate_left_12(lanes x, lanes y) {
+    return lanes_rotate_left_12(lanes_xor(x, y));
+}
+
+static inline lanes lanes_xor_rotate_left_8(lanes x, lanes y) {
+    return lanes_rotate_left_8(lanes_xor(x, y));
+}
+
+static inline lanes lanes_xor_rotate_left_7(lanes x, lanes y) {
+    return lanes_rotate_left_7(lanes_xor(x, y));
+}
+
+#endif
+
 static uint32_t load32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
@@ -210,13 +266,13 @@ static uint32_t load32(const uint8_t *p) {
 // chacha20.c's QUARTERROUND on four lanes at once.
 static inline void quarter_round(lanes *a, lanes *b, lanes *c, lanes *d) {
     *a = lanes_add(*a, *b);
-    *d = lanes_rotate_left_16(lanes_xor(*d, *a));
+    *d = lanes_xor_rotate_left_16(*d, *a);
     *c = lanes_add(*c, *d);
-    *b = lanes_rotate_left_12(lanes_xor(*b, *c));
+    *b = lanes_xor_rotate_left_12(*b, *c);
     *a = lanes_add(*a, *b);
-    *d = lanes_rotate_left_8(lanes_xor(*d, *a));
+    *d = lanes_xor_rotate_left_8(*d, *a);
     *c = lanes_add(*c, *d);
-    *b = lanes_rotate_left_7(lanes_xor(*b, *c));
+    *b = lanes_xor_rotate_left_7(*b, *c);
 }
 
 // One double round of RFC 8439 §2.3 on one group: the four column
