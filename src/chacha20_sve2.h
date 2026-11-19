@@ -19,14 +19,14 @@
 
 #include "chacha20.h"
 
-// Whether the object holds the copy: an arm64 host object whose compiler ships
-// <arm_neon_sve_bridge.h>, the header whose calls move a NEON vector into an SVE vector and back.
-// gcc ships it from gcc 14 and clang from clang 17. In an object another compiler built,
-// CH_CPU_SVE2 describes the CPU and picks nothing.
-#if defined(CH_CPU_RUNTIME) && defined(__aarch64__) && defined(__has_include)
-#if __has_include(<arm_neon_sve_bridge.h>)
+// Whether the object holds the copy: an arm64 host object that clang or gcc 14 and later builds.
+// Those compilers ship <arm_neon_sve_bridge.h>, the header whose calls move a NEON vector into an
+// SVE vector and back, and gcc 13 does not. In an object gcc 13 built, CH_CPU_SVE2 describes the
+// CPU and picks nothing. The test names the compilers, and not the header through
+// __has_include, because Semgrep parses no __has_include in an #if (tools/semgrep-parse.py).
+#if defined(CH_CPU_RUNTIME) && defined(__aarch64__) &&                                             \
+    (defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 14))
 #define CH_CHACHA20_SVE2
-#endif
 #endif
 
 #ifdef CH_CHACHA20_SVE2

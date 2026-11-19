@@ -19,9 +19,21 @@
 #pragma GCC target("+sve2")
 #endif
 
+#include <arm_neon_sve_bridge.h>
+#include <arm_sve.h>
+
+// The step chacha20_vector.c names LANES_XOR_ROTATE_LEFT, as one SVE2 XAR. XAR XORs two vectors
+// and rotates each 32-bit lane right, so a rotation left by r is a rotation right by 32 - r. A
+// NEON register is the low 128 bits of the SVE register with the same number, so the bridge calls
+// move no data. Where the vector length is longer, XAR also computes the lanes above bit 127, and
+// svget_neonq_u32 drops them, so the copy computes the same keystream at every vector length.
+// svundef_u32 leaves those lanes undefined, and nothing reads them.
+#define LANES_XOR_ROTATE_LEFT(x, y, r)                                                             \
+    svget_neonq_u32(svxar_n_u32(svset_neonq_u32(svundef_u32(), (x)),                               \
+                                svset_neonq_u32(svundef_u32(), (y)), 32 - (r)))
+
 // chacha20_vector.h is read below with the rename in place, so it declares chacha20_sve2_xor.
 #define chacha20_vector_xor chacha20_sve2_xor
-#define CHACHA20_VECTOR_XAR
 
 #include "chacha20_vector.c"
 
