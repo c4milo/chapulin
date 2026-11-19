@@ -173,11 +173,13 @@ jobs:
 
   record-arm64:
     # The arm64 server's columns of the table beside OpenSSL: the record and
-    # the primitives under both compilers on one ubuntu-24.04-arm runner,
+    # the primitives under both compilers on one ubuntu-26.04-arm runner,
     # whose core is an Arm Neoverse N2, implementer 0x41 and part 0xd49. The
     # job stops on another core, so a record compares with the last one on
-    # the same model, and BENCH_MACHINE puts n2 in its CSVs' file names.
-    runs-on: ubuntu-24.04-arm
+    # the same model, and BENCH_MACHINE puts n2 in its CSVs' file names. Its
+    # gcc is 15, as CI's arm64 job's is: gcc 13, Ubuntu 24.04's, builds no
+    # SVE2 copy of the NEON ChaCha20 (docs/decisions.md 242).
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 45
     env:
       BENCH_MACHINE: n2
