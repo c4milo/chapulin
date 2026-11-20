@@ -1,0 +1,17 @@
+invariant: INV-34
+file: src/gcm.c
+catches: test/docker-aes-runtime-qemu.sh arm64-hash-count
+reason: schedule_cpu returns the schedule's low byte alone, so gcm_use_eor3
+  never sees CH_CPU_CONSTANT_TIME_EOR3, which sits in the byte above it,
+  and a caller that states that bit without the SHA-3 bit runs AES-GCM
+  without EOR3 (docs/decisions.md 244). bin/aes_runtime_test counts the
+  calls into gcm_arm64_eor3.c's entries under the AES bit with the EOR3
+  bit. Only an arm64 compiler reads the line, so the script builds that
+  binary for arm64 and runs it under qemu-aarch64's max model.
+
+--- old
+static uint32_t schedule_cpu(const aes_key_schedule *k) {
+    return (uint32_t)k->cpu | (uint32_t)k->cpu_high << 8;
+--- new
+static uint32_t schedule_cpu(const aes_key_schedule *k) {
+    return (uint32_t)k->cpu;

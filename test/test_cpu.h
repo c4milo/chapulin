@@ -54,8 +54,8 @@ static uint32_t test_cpu = TEST_CPU;
 // Every bit a host object defines on the architecture this binary targets: the four of every
 // host object, on x86-64 CH_CPU_AVX2, CH_CPU_VAES, CH_CPU_AVX512_IFMA, CH_CPU_AVX512,
 // CH_CPU_BMI2_ADX and CH_CPU_BMI1, and on arm64 CH_CPU_CONSTANT_TIME_SHA512,
-// CH_CPU_CONSTANT_TIME_SHA3 and CH_CPU_SVE2. It is written here apart from cpu_cfg.h's
-// CH_CPU_DEFINED, so a wrong set there fails a row.
+// CH_CPU_CONSTANT_TIME_SHA3, CH_CPU_SVE2 and CH_CPU_CONSTANT_TIME_EOR3. It is written here apart
+// from cpu_cfg.h's CH_CPU_DEFINED, so a wrong set there fails a row.
 #define TEST_CPU_COMMON                                                                            \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \
      CH_CPU_CONSTANT_TIME_SHA256)
@@ -65,24 +65,26 @@ static uint32_t test_cpu = TEST_CPU;
      CH_CPU_BMI2_ADX | CH_CPU_BMI1)
 #else
 #define TEST_CPU_ALL                                                                               \
-    (TEST_CPU_COMMON | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3 | CH_CPU_SVE2)
+    (TEST_CPU_COMMON | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3 | CH_CPU_SVE2 |     \
+     CH_CPU_CONSTANT_TIME_EOR3)
 #endif
 
 // The values every init call and ch_srv_check refuse: 0, which a caller that never set the field
-// leaves; every defined bit but CH_CPU_PROBED; the first bit past CH_CPU_SVE2, which no
-// architecture defines; the top bit; and each bit of the other architecture, which an object
-// refuses rather than ignores: the six x86-64 bits on arm64, and the SHA-512, SHA-3 and SVE2 bits
-// on x86-64. Then the two they take at the edges: CH_CPU_PROBED alone, and every bit the
-// architecture defines.
+// leaves; every defined bit but CH_CPU_PROBED; the first bit past CH_CPU_CONSTANT_TIME_EOR3,
+// which no architecture defines; the top bit; and each bit of the other architecture, which an
+// object refuses rather than ignores: the six x86-64 bits on arm64, and the SHA-512, SHA-3, SVE2
+// and EOR3 bits on x86-64. Then the two they take at the edges: CH_CPU_PROBED alone, and every bit
+// the architecture defines.
 static const uint32_t test_cpu_values[] = {
     0,
     TEST_CPU_ALL & ~(uint32_t)CH_CPU_PROBED,
-    CH_CPU_PROBED | (CH_CPU_SVE2 << 1),
+    CH_CPU_PROBED | (CH_CPU_CONSTANT_TIME_EOR3 << 1),
     CH_CPU_PROBED | 0x80000000U,
 #ifdef __x86_64__
     CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA512,
     CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA3,
     CH_CPU_PROBED | CH_CPU_SVE2,
+    CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_EOR3,
 #else
     CH_CPU_PROBED | CH_CPU_AVX2,
     CH_CPU_PROBED | CH_CPU_VAES,
@@ -101,9 +103,10 @@ static inline int test_cpu_taken(size_t i) {
     return i + 2 >= TEST_CPU_VALUES;
 }
 
-// The hash bits of value whose instructions this CPU lacks (test/hash_instructions_cpu.h). A
-// session under such a bit dies of SIGILL at its first hash, as one whose caller described the
-// CPU wrongly does.
+// The hash bits of value whose instructions this CPU lacks (test/hash_instructions_cpu.h), and on
+// arm64 CH_CPU_CONSTANT_TIME_EOR3 where it lacks FEAT_SHA3, whose EOR3 that bit names. A session
+// under such a bit dies of SIGILL at its first hash or AES-GCM call, as one whose caller described
+// the CPU wrongly does.
 static inline uint32_t test_cpu_absent_hash_bits(uint32_t value) {
     uint32_t absent = 0;
     if ((value & CH_CPU_CONSTANT_TIME_SHA256) != 0 && !cpu_has_sha256_instructions()) {
@@ -115,6 +118,9 @@ static inline uint32_t test_cpu_absent_hash_bits(uint32_t value) {
     }
     if ((value & CH_CPU_CONSTANT_TIME_SHA3) != 0 && !cpu_has_sha3_instructions()) {
         absent |= CH_CPU_CONSTANT_TIME_SHA3;
+    }
+    if ((value & CH_CPU_CONSTANT_TIME_EOR3) != 0 && !cpu_has_sha3_instructions()) {
+        absent |= CH_CPU_CONSTANT_TIME_EOR3;
     }
 #endif
     return absent;

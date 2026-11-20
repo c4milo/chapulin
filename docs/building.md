@@ -168,8 +168,8 @@ Other targets:
   you state those instructions run in constant time on that CPU in the
   mode your thread runs in, on x86-64 `CH_CPU_AVX2`, `CH_CPU_VAES`,
   `CH_CPU_AVX512_IFMA`, `CH_CPU_AVX512`, `CH_CPU_BMI2_ADX` and `CH_CPU_BMI1`, and on arm64
-  `CH_CPU_CONSTANT_TIME_SHA512`, `CH_CPU_CONSTANT_TIME_SHA3` and
-  `CH_CPU_SVE2`. Every
+  `CH_CPU_CONSTANT_TIME_SHA512`, `CH_CPU_CONSTANT_TIME_SHA3`,
+  `CH_CPU_SVE2` and `CH_CPU_CONSTANT_TIME_EOR3`. Every
   init call, `ch_srv_check` and `ch_p256_key_from_pem` refuse a value
   without `CH_CPU_PROBED`, and one with a bit this object does not
   define for its architecture, such as `CH_CPU_AVX2` on arm64 or
@@ -301,7 +301,11 @@ Other targets:
   `CH_CPU_CONSTANT_TIME_SHA3` an arm64 session runs SHA-3, SHAKE and
   ML-KEM on the SHA-3 instructions, in `sha3_hw.c` and ML-KEM's two
   copies over it, where clang compiled the object. In an object another
-  compiler built, that bit picks nothing (decision 99). A raw or
+  compiler built, that bit picks nothing (decision 99). Beside the AES
+  bit it also runs AES-GCM's passes with EOR3, as
+  `CH_CPU_CONSTANT_TIME_EOR3` does by itself: that bit states EOR3 alone,
+  for a caller on an Arm Neoverse N2, which leaves the SHA-3 bit clear
+  (decisions 158, 240 and 244). A raw or
   ca client builds the portable object on every target, and so does every
   product for any other target, so the default `make lib` has no `cpu`
   field. To package a server's portable object on a host, set the host

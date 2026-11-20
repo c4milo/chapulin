@@ -110,7 +110,8 @@ CPU_LABEL = "ch_cfg.cpu "
 # kernels (cpu_cfg.h, docs/decisions.md 121), and CH_CPU_AVX512, which runs
 # the AES-GCM rows on the 512-bit kernel (docs/decisions.md 130), and on
 # arm64 CH_CPU_CONSTANT_TIME_SHA3, which runs the AES-GCM rows on the passes
-# with EOR3 (docs/decisions.md 158), and CH_CPU_SVE2, which runs the
+# with EOR3 (docs/decisions.md 158), as CH_CPU_CONSTANT_TIME_EOR3 does by
+# itself (docs/decisions.md 244), and CH_CPU_SVE2, which runs the
 # ChaCha20-Poly1305 rows on chacha20_sve2.c's copy (docs/decisions.md 242).
 # A record's protection hashes nothing,
 # so no other hash bit changes a row, and the values of a record CSV, ORed
@@ -118,7 +119,9 @@ CPU_LABEL = "ch_cfg.cpu "
 # CSV written before decision 121 states no CH_CPU_AVX512_IFMA either, and
 # machine_line reads such a CSV without that bit (docs/decisions.md 93 and
 # 119).
-RECORD_BITS = 0x139f
+RECORD_BITS = 0x339f
+EOR3_BIT = 0x2000
+SVE2_BIT = 0x1000
 IFMA_BIT = 0x100
 FIRST_LINE = re.compile(r"^# bench/\S+ on (?P<cpu>.+?) \((?P<arch>\w+)\), (?:.+, )?"
                         r"(?P<os>\S+ \S+), (?P<date>\d{4}-\d\d-\d\d), tree (?P<tree>\S+)$")
@@ -290,9 +293,16 @@ def machine_line(name, primitives, record):
         return None
     values = "`ch_cfg.cpu 0x%x`" % ours["value"]
     if aead["union"] != aead["value"]:
+        if aead["aes"] & EOR3_BIT:
+            eor3 = ("`CH_CPU_CONSTANT_TIME_EOR3` runs AES-GCM's passes with EOR3 "
+                    "(decisions 158 and 244)")
+        else:
+            eor3 = "`CH_CPU_CONSTANT_TIME_SHA3` runs AES-GCM's passes with EOR3 (decision 158)"
+        if aead["chacha"] & SVE2_BIT:
+            eor3 += " and `CH_CPU_SVE2` ChaCha20's on its SVE2 copy (decision 242),"
         values += (", and `0x%x` for the AES-GCM rows and `0x%x` for the ChaCha20-Poly1305 rows, "
-                   "as `CH_CPU_CONSTANT_TIME_SHA3` runs AES-GCM's passes with EOR3 (decision 158) "
-                   "and no other hash bit changes a record" % (aead["aes"], aead["chacha"]))
+                   "as %s and no other hash bit changes a record"
+                   % (aead["aes"], aead["chacha"], eor3))
     elif aead["value"] != ours["value"]:
         unread = ("no hash bit changes, recorded before `CH_CPU_AVX512_IFMA` picked the "
                   "AVX-512 ChaCha20-Poly1305 (decision 121)" if before_ifma

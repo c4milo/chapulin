@@ -79,21 +79,24 @@ void gcm_open_arm64_eor3(const uint8_t *round_keys, size_t rounds, const uint8_t
                          const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len,
                          const uint8_t *ct, size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]);
 
-// Whether a schedule's AEAD runs on the EOR3 copy: where cpu, the
-// description of the CPU the schedule records from its session's
-// ch_cfg.cpu, holds CH_CPU_CONSTANT_TIME_SHA3, which says the CPU has
-// FEAT_SHA3 and states that its instructions, EOR3 among them, run in
-// constant time, beside CH_CPU_CONSTANT_TIME_AES. The value is the
-// caller's and public, so the branch on it reads no key.
-static inline int gcm_use_eor3(uint8_t cpu) {
-    return (cpu & CH_CPU_CONSTANT_TIME_SHA3) != 0 && (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
+// Whether a schedule's AEAD runs on the EOR3 copy: where cpu, the two
+// bytes of the description of the CPU the schedule records from its
+// session's ch_cfg.cpu, holds CH_CPU_CONSTANT_TIME_AES beside either of two
+// bits. CH_CPU_CONSTANT_TIME_SHA3 says the CPU has FEAT_SHA3 and states
+// that its instructions, EOR3 among them, run in constant time.
+// CH_CPU_CONSTANT_TIME_EOR3 states it for EOR3 alone, for a caller that
+// keeps Keccak off the SHA-3 instructions (docs/decisions.md 244). The
+// value is the caller's and public, so the branch on it reads no key.
+static inline int gcm_use_eor3(uint32_t cpu) {
+    return (cpu & (CH_CPU_CONSTANT_TIME_SHA3 | CH_CPU_CONSTANT_TIME_EOR3)) != 0 &&
+           (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
 }
 
 // The entries as gcm.c calls them, with the schedule's cpu first: the EOR3
 // copy where gcm_use_eor3 says so, and the other for every other value.
 // One branch a call, on a value that is not secret, and no function
 // pointer, as widemul.h picks a multiply.
-static inline void gcm_seal_arm64_cpu(uint8_t cpu, const uint8_t *round_keys, size_t rounds,
+static inline void gcm_seal_arm64_cpu(uint32_t cpu, const uint8_t *round_keys, size_t rounds,
                                       const uint8_t *powers, const uint8_t nonce[AES_IV],
                                       const uint8_t *aad, size_t aad_len, const uint8_t *pt,
                                       size_t n, uint8_t *ct, uint8_t tag[AES_BLOCK]) {
@@ -104,7 +107,7 @@ static inline void gcm_seal_arm64_cpu(uint8_t cpu, const uint8_t *round_keys, si
     gcm_seal_arm64(round_keys, rounds, powers, nonce, aad, aad_len, pt, n, ct, tag);
 }
 
-static inline void gcm_open_arm64_cpu(uint8_t cpu, const uint8_t *round_keys, size_t rounds,
+static inline void gcm_open_arm64_cpu(uint32_t cpu, const uint8_t *round_keys, size_t rounds,
                                       const uint8_t *powers, const uint8_t nonce[AES_IV],
                                       const uint8_t *aad, size_t aad_len, const uint8_t *ct,
                                       size_t n, uint8_t *pt, uint8_t want[AES_BLOCK]) {

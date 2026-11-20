@@ -75,6 +75,12 @@ const CpuBits = struct {
     /// ChaCha20 on chacha20_sve2.c's copy of the NEON path, whose quarter rounds run on SVE2's XAR,
     /// where the object holds the copy. An arm64 bit, which an x86-64 object refuses.
     sve2: bool = false,
+    /// CH_CPU_CONSTANT_TIME_EOR3: EOR3, one of FEAT_SHA3's instructions, under the same statement
+    /// as the hash bits. An arm64 bit. Beside constant_time_aes the session runs AES-GCM's passes
+    /// with EOR3, as constant_time_sha3 does, and it picks nothing else. On an Arm Neoverse N2 set
+    /// it and leave constant_time_sha3 clear, so Keccak runs in general registers and AES-GCM keeps
+    /// EOR3.
+    constant_time_eor3: bool = false,
 };
 
 /// ch_cfg.cpu for what found states, and 0 for null, which every init refuses. EcdsaP256Key.init_from_pem
@@ -92,5 +98,6 @@ fn cpu_bits_of(found: ?CpuBits) u32 {
         (if (cpu.avx512) c.CH_CPU_AVX512 else 0) |
         (if (cpu.bmi2_adx) c.CH_CPU_BMI2_ADX else 0) |
         (if (cpu.bmi1) c.CH_CPU_BMI1 else 0) |
-        (if (cpu.sve2) c.CH_CPU_SVE2 else 0);
+        (if (cpu.sve2) c.CH_CPU_SVE2 else 0) |
+        (if (cpu.constant_time_eor3) c.CH_CPU_CONSTANT_TIME_EOR3 else 0);
 }

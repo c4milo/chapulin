@@ -227,6 +227,13 @@ struct Cpu {
     // path, whose quarter rounds run on SVE2's XAR, where the object holds
     // the copy. An arm64 bit, which an x86-64 object refuses.
     bool sve2 = false;
+    // EOR3, one of FEAT_SHA3's instructions, runs in constant time, under
+    // the same statement as the hash bits: CH_CPU_CONSTANT_TIME_EOR3. An
+    // arm64 bit. Beside constant_time_aes the session runs AES-GCM's passes
+    // with EOR3, as constant_time_sha3 does, and it picks nothing else. On
+    // an Arm Neoverse N2 set it and leave constant_time_sha3 clear, so
+    // Keccak runs in general registers and AES-GCM keeps EOR3.
+    bool constant_time_eor3 = false;
 };
 #endif
 
@@ -442,7 +449,8 @@ class Config {
                    (found.constant_time_sha3 ? CH_CPU_CONSTANT_TIME_SHA3 : 0U) |
                    (found.avx512_ifma ? CH_CPU_AVX512_IFMA : 0U) |
                    (found.avx512 ? CH_CPU_AVX512 : 0U) | (found.bmi2_adx ? CH_CPU_BMI2_ADX : 0U) |
-                   (found.bmi1 ? CH_CPU_BMI1 : 0U) | (found.sve2 ? CH_CPU_SVE2 : 0U);
+                   (found.bmi1 ? CH_CPU_BMI1 : 0U) | (found.sve2 ? CH_CPU_SVE2 : 0U) |
+                   (found.constant_time_eor3 ? CH_CPU_CONSTANT_TIME_EOR3 : 0U);
         return *this;
     }
 #endif

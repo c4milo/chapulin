@@ -338,18 +338,22 @@ static void check_traffic_case(const traffic_case *c) {
     gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
     CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
 #ifdef __aarch64__
-    // On arm64 CH_CPU_CONSTANT_TIME_SHA3 beside the AES bit runs
-    // gcm_arm64_eor3.c's copy, and every other value the copy without EOR3
-    // (docs/decisions.md 158).
+    // On arm64 CH_CPU_CONSTANT_TIME_SHA3 or CH_CPU_CONSTANT_TIME_EOR3 beside
+    // the AES bit runs gcm_arm64_eor3.c's copy, and every other value the
+    // copy without EOR3 (docs/decisions.md 158 and 244). The EOR3 bit sits
+    // in the schedule's second byte, which gcm.c reads with the first.
     unsigned long eor3_before = aes_runtime_eor3_calls;
     aes_traffic_key_cpu(&k, RUNTIME_PRESENT);
     gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
     CHECK(aes_runtime_eor3_calls == eor3_before);
-    aes_traffic_key_cpu(&k, RUNTIME_PRESENT | CH_CPU_CONSTANT_TIME_SHA3);
-    gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
-    CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
-    CHECK(gcm_traffic_open(&k, iv, aad, aad_len, ct, n, tag, opened) == 1);
-    CHECK(memcmp(opened, pt, n) == 0 && aes_runtime_eor3_calls == eor3_before + 2);
+    static const uint32_t eor3_bits[2] = {CH_CPU_CONSTANT_TIME_SHA3, CH_CPU_CONSTANT_TIME_EOR3};
+    for (size_t b = 0; b < 2; b++) {
+        aes_traffic_key_cpu(&k, RUNTIME_PRESENT | eor3_bits[b]);
+        gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
+        CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
+        CHECK(gcm_traffic_open(&k, iv, aad, aad_len, ct, n, tag, opened) == 1);
+        CHECK(memcmp(opened, pt, n) == 0 && aes_runtime_eor3_calls == eor3_before + 2 * (b + 1));
+    }
 #endif
 }
 

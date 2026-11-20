@@ -1,0 +1,15 @@
+invariant: INV-14
+file: include/chapulin/cpu_cfg.h
+catches: test/host-builds.sh
+reason: cpu_cfg.h's arm64 set loses CH_CPU_CONSTANT_TIME_EOR3, so every init
+  refuses the value a caller on an Arm Neoverse N2 states to keep AES-GCM's
+  EOR3 with the SHA-3 bit clear (docs/decisions.md 244). test/host-builds.sh
+  reads the header for both architectures under the pinned clang and
+  compares each set with the bits it writes out.
+
+--- old
+     CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3 |       \
+     CH_CPU_SVE2 | CH_CPU_CONSTANT_TIME_EOR3)
+--- new
+     CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3 |       \
+     CH_CPU_SVE2)

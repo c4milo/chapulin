@@ -133,11 +133,13 @@ on arm64 reports SVE2 in `AT_HWCAP2` as `HWCAP2_SVE2`; a session with the
 bit runs ChaCha20 on SVE2 (decision 242).
 
 On an Arm Neoverse N2 (implementer 0x41, part 0xd49 in `MIDR_EL1`),
-leave `CH_CPU_CONSTANT_TIME_SHA3` clear even with DIT set. That core runs
-Keccak on its SHA-3 instructions 1.8 times slower than in its general
-registers, so SHA-3, SHAKE, ML-KEM and ML-DSA-87 run faster on the
-portable code. The bit's other use, AES-GCM's passes with EOR3, gains 2%
-there (decision 240).
+leave `CH_CPU_CONSTANT_TIME_SHA3` clear even with DIT set, and set
+`CH_CPU_CONSTANT_TIME_EOR3`. That core runs Keccak on its SHA-3
+instructions 1.8 times slower than in its general registers, so SHA-3,
+SHAKE, ML-KEM and ML-DSA-87 run faster on the portable code. The EOR3 bit
+states EOR3 alone, and beside the AES bit it keeps AES-GCM's passes with
+EOR3, which gain 2% there (decisions 240 and 244). On any other CPU with
+FEAT_SHA3, the SHA-3 bit picks those passes too.
 
 [`examples/cpu_probe.c`](../examples/cpu_probe.c) is a probe to copy.
 On Linux and macOS, on arm64 and x86-64, it builds the value a session

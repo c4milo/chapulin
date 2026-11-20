@@ -148,7 +148,10 @@ the first one.
 
 Three bits state the hash instructions: `CH_CPU_CONSTANT_TIME_SHA256` on both
 architectures, and `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`
-on arm64. Each says the CPU has the instructions and states that they run in
+on arm64. On arm64 `CH_CPU_CONSTANT_TIME_EOR3` states EOR3, one of the SHA-3
+instructions, alone: beside the AES bit it runs AES-GCM's passes with EOR3, as
+the SHA-3 bit does, for a caller that keeps Keccak off the SHA-3 instructions
+(decision 244). Each says the CPU has the instructions and states that they run in
 constant time in the session's thread's mode, because a hash reads HMAC keys and
 traffic secrets. A session hands its `ch_cfg.cpu` to every hash call of its
 transcript, its key schedule and its record and packet keys. With the SHA-256

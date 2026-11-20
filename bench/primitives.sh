@@ -281,6 +281,7 @@ CPU_AVX512=0x200
 CPU_BMI2_ADX=0x400
 CPU_BMI1=0x800
 CPU_SVE2=0x1000
+CPU_CONSTANT_TIME_EOR3=0x2000
 
 # Whether a CPU's feature list names every word given.
 reports() { # $1 = the list, space separated; the rest = the words
@@ -298,7 +299,8 @@ reports() { # $1 = the list, space separated; the rest = the words
 # multiply bit, the AES bit where the CPU reports the AES instructions and
 # the carry-less multiply, the SHA-256 bit where it reports the SHA-256
 # instructions, on arm64 the SHA-512 bit where it reports the SHA-512
-# instructions and the SHA-3 bit where it reports the SHA-3 ones, and on
+# instructions, the SHA-3 bit and the EOR3 bit where it reports the SHA-3
+# ones, but the EOR3 bit alone on an Arm Neoverse N2, and on
 # x86-64 the AVX2 and VAES bits where it reports those, the IFMA bit
 # where it reports AVX-512F and AVX-512 IFMA, and CH_CPU_AVX512 where it
 # reports AVX-512F, AVX-512BW, AVX-512VL, VAES and VPCLMULQDQ, and on arm64
@@ -306,7 +308,7 @@ reports() { # $1 = the list, space separated; the rest = the words
 # built holds no Keccak on the SHA-3 instructions, and there the SHA-3
 # bit picks nothing (docs/decisions.md 99). BENCH_CPU from the
 # environment wins, for a system this function has no probe for. The
-# five timing bits also state that the instructions run in constant time
+# six timing bits also state that the instructions run in constant time
 # in the thread's mode. The bench sets
 # no such mode, neither PSTATE.DIT nor DOITM: it times the paths the bits
 # pick and states nothing a deployment could rely on.
@@ -359,10 +361,14 @@ cpu_value() {
     if [ "$ARCH" = arm64 ] && reports "$features" sha512; then
         value=$((value | CPU_CONSTANT_TIME_SHA512))
     fi
-    # arm64 Linux names FEAT_SHA3 sha3. An x86-64 object refuses the bit. On
-    # an Arm Neoverse N2 a caller leaves it clear (bench/neoverse.sh).
-    if [ "$ARCH" = arm64 ] && reports "$features" sha3 && ! neoverse_n2; then
-        value=$((value | CPU_CONSTANT_TIME_SHA3))
+    # arm64 Linux names FEAT_SHA3 sha3. An x86-64 object refuses both bits.
+    # On an Arm Neoverse N2 a caller states EOR3 alone and leaves the SHA-3
+    # bit clear (bench/neoverse.sh, docs/decisions.md 244).
+    if [ "$ARCH" = arm64 ] && reports "$features" sha3; then
+        value=$((value | CPU_CONSTANT_TIME_EOR3))
+        if ! neoverse_n2; then
+            value=$((value | CPU_CONSTANT_TIME_SHA3))
+        fi
     fi
     if [ "$ARCH" = x86_64 ] && reports "$features" avx2; then
         value=$((value | CPU_AVX2))
@@ -404,7 +410,8 @@ cpu_value() {
 cpu_names() { # $1 = a ch_cfg.cpu value
     local names=CH_CPU_PROBED bit variable
     for bit in CONSTANT_TIME_AES CONSTANT_TIME_MULTIPLY AVX2 VAES CONSTANT_TIME_SHA256 \
-        CONSTANT_TIME_SHA512 CONSTANT_TIME_SHA3 AVX512_IFMA AVX512 BMI2_ADX BMI1 SVE2; do
+        CONSTANT_TIME_SHA512 CONSTANT_TIME_SHA3 AVX512_IFMA AVX512 BMI2_ADX BMI1 SVE2 \
+        CONSTANT_TIME_EOR3; do
         variable=CPU_$bit
         if [ $(($1 & ${!variable})) -ne 0 ]; then
             names="$names, CH_CPU_$bit"

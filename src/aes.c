@@ -47,12 +47,13 @@
 // A schedule keeps its session's ch_cfg.cpu in two bytes, cpu and cpu_high
 // (aes_schedule.h). gcm_use_vaes reads CH_CPU_VAES and
 // CH_CPU_CONSTANT_TIME_AES from the low byte, so both bits must sit in it,
-// and gcm_use_avx512 reads CH_CPU_AVX512 beside them from the two bytes, so
-// that bit must sit below the third byte.
+// and gcm_use_avx512 reads CH_CPU_AVX512 beside them from the two bytes, as
+// gcm_use_eor3 reads CH_CPU_CONSTANT_TIME_SHA3 and CH_CPU_CONSTANT_TIME_EOR3,
+// so those bits must sit below the third byte.
 _Static_assert((CH_CPU_VAES | CH_CPU_CONSTANT_TIME_AES) <= 0xffU,
                "a schedule's cpu byte holds every bit gcm_use_vaes reads");
-_Static_assert(CH_CPU_AVX512 <= 0xffffU,
-               "a schedule's two cpu bytes hold every bit gcm_use_avx512 reads");
+_Static_assert((CH_CPU_AVX512 | CH_CPU_CONSTANT_TIME_SHA3 | CH_CPU_CONSTANT_TIME_EOR3) <= 0xffffU,
+               "a schedule's two cpu bytes hold every bit gcm_use_avx512 and gcm_use_eor3 read");
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING

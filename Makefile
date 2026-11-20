@@ -7356,7 +7356,9 @@ CT_TAINT_DEF := -DCH_CT_TAINT
 # SKIP for 0x27, 0x1f, 0x11f and 0x31f there. The SHA-3 bit is not on the
 # list: Valgrind 3.27.1 decodes no EOR3, the first SHA-3 instruction
 # sha3_hw.c's Keccak runs, which then dies of SIGILL. The notes of 3.28.0
-# name EOR3 and none of RAX1, XAR and BCAX. Nor is CH_CPU_SVE2: on CI's
+# name EOR3 and none of RAX1, XAR and BCAX. For the same reason the list
+# holds no CH_CPU_CONSTANT_TIME_EOR3, which runs AES-GCM's passes with
+# EOR3 (docs/decisions.md 244). Nor is CH_CPU_SVE2: on CI's
 # Neoverse N2, Valgrind 3.27.1 reports SVE2 in AT_HWCAP2 and then dies of
 # SIGILL at the first XAR of chacha20_sve2.c's copy. The copy is
 # chacha20_vector.c's text, which the lane reads on NEON, with XAR in place
@@ -10761,7 +10763,7 @@ BRANCH_CEILING := \
   arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:19 \
   arm64/src/mlkem.c@host:12 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:79 x86-64/src/rsa_sign.c@host:67 \
   arm64/src/drbg.c@host:5 x86-64/src/drbg.c@host:5 \
-  arm64/src/aes.c@host:20 x86-64/src/aes.c@host:19 arm64/src/gcm.c@host:30 x86-64/src/gcm.c@host:47 \
+  arm64/src/aes.c@host:20 x86-64/src/aes.c@host:19 arm64/src/gcm.c@host:34 x86-64/src/gcm.c@host:47 \
   arm64/src/p256_field.c@host:4 x86-64/src/p256_field.c@host:4 \
   arm64/src/p256_scalar.c@host:4 x86-64/src/p256_scalar.c@host:4 \
   arm64/src/sha512.c@host:9 x86-64/src/sha512.c@host:9 \

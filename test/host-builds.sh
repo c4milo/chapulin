@@ -84,7 +84,8 @@ done
 # here: 0x01 CH_CPU_PROBED, 0x02 the AES bit, 0x04 the multiply bit, 0x08
 # CH_CPU_AVX2, 0x10 CH_CPU_VAES, 0x20 the SHA-256 bit, 0x40 the SHA-512
 # bit, 0x80 the SHA-3 bit, 0x100 CH_CPU_AVX512_IFMA, 0x200 CH_CPU_AVX512,
-# 0x400 CH_CPU_BMI2_ADX, 0x800 CH_CPU_BMI1 and 0x1000 CH_CPU_SVE2.
+# 0x400 CH_CPU_BMI2_ADX, 0x800 CH_CPU_BMI1, 0x1000 CH_CPU_SVE2 and 0x2000 the
+# EOR3 bit.
 defined_tu=$out/cpu_defined.c
 printf '%s\n' '#include "include/chapulin/cpu_cfg.h"' \
     '_Static_assert(CH_CPU_DEFINED == WANT, "CH_CPU_DEFINED holds another set of bits");' \
@@ -93,7 +94,7 @@ defined() { # $1 = a clang target, $2 = the bits its object defines
     "$clang_rv" -target "$1" -std=c11 -Isrc -Iinclude/chapulin -Iinclude -I. -fsyntax-only -DCH_CPU_RUNTIME "-DWANT=$2" "$defined_tu" ||
         fail "include/chapulin/cpu_cfg.h's CH_CPU_DEFINED for $1 is not $2"
 }
-defined aarch64-none-elf 0x10e7U
+defined aarch64-none-elf 0x30e7U
 defined x86_64-none-elf 0xf3fU
 
 # The Makefile's defines for a TRUST=webpki object under a compiler.

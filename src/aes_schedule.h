@@ -42,9 +42,12 @@
 // the schedule's session gave in ch_cfg.cpu. The low byte holds CH_CPU_VAES
 // and CH_CPU_CONSTANT_TIME_AES, the two bits gcm_use_vaes reads, and the
 // byte above it CH_CPU_AVX512, which gcm_use_avx512 reads beside them (aes.c
-// asserts both). gcm.c reads the two bytes to pick gcm_vaes.c's 256-bit
-// kernels for the schedule's whole blocks on x86-64, or gcm_avx512.c's
-// 512-bit kernel for its whole seal or open, and nothing else reads them.
+// asserts both). On arm64 the low byte holds CH_CPU_CONSTANT_TIME_SHA3 and
+// the byte above it CH_CPU_CONSTANT_TIME_EOR3, which gcm_use_eor3 reads
+// beside the AES bit. gcm.c reads the two bytes to pick gcm_vaes.c's
+// 256-bit kernels for the schedule's whole blocks on x86-64, gcm_avx512.c's
+// 512-bit kernel for its whole seal or open, or gcm_arm64_eor3.c's passes
+// on arm64, and nothing else reads them.
 // aes_traffic_key_init and the Retry constructor write 0 to both, which
 // names no kernel, aes_traffic_key_cpu and the Initial constructor write
 // the session's value, and no other line writes them. Two bytes rather than

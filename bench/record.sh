@@ -41,9 +41,12 @@
 #   0x83, the probe's bit, the AES bit and CH_CPU_CONSTANT_TIME_SHA3, on an
 #   arm64 CPU with FEAT_SHA3: the AES-128-GCM and AES-256-GCM rows again,
 #   whose seal and open passes run on gcm_arm64_eor3.c, with EOR3
-#   (docs/decisions.md 158). --build compiles it for every arm64 target,
-#   and a run takes its rows only where the CPU reports FEAT_SHA3 and is
-#   not an Arm Neoverse N2 (bench/neoverse.sh)
+#   (docs/decisions.md 158). On an Arm Neoverse N2 the value is 0x2003, the
+#   probe's bit, the AES bit and CH_CPU_CONSTANT_TIME_EOR3, which runs the
+#   same passes while Keccak stays off the SHA-3 instructions
+#   (bench/neoverse.sh, docs/decisions.md 244). --build compiles it for
+#   every arm64 target, and a run takes its rows only where the CPU reports
+#   FEAT_SHA3
 #
 #   0x1007, 0x7's bits and CH_CPU_SVE2, on an arm64 CPU with SVE2: the
 #   ChaCha20-Poly1305 rows again, with the keystream on chacha20_sve2.c's
@@ -221,9 +224,15 @@ fi
 # run only where this CPU has FEAT_SHA3, which Linux names sha3 in
 # /proc/cpuinfo and macOS reports as hw.optional.arm.FEAT_SHA3.
 SHA3=""
+EOR3_VALUE=0x83
+EOR3_BIT=CH_CPU_CONSTANT_TIME_SHA3
+if neoverse_n2; then
+    EOR3_VALUE=0x2003
+    EOR3_BIT=CH_CPU_CONSTANT_TIME_EOR3
+fi
 if [ -z "$X86_64" ]; then
-    "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x83 -o "$W/record_sha3" "${SRCS[@]}"
-    KERNELS_NOTE="no ch_cfg.cpu 0x83 rows: this CPU is not arm64 with FEAT_SHA3"
+    "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU="$EOR3_VALUE" -o "$W/record_sha3" "${SRCS[@]}"
+    KERNELS_NOTE="no ch_cfg.cpu $EOR3_VALUE rows: this CPU is not arm64 with FEAT_SHA3"
     if [ "$(uname -s)" = Darwin ]; then
         if [ "$(sysctl -n hw.optional.arm.FEAT_SHA3 2>/dev/null)" = 1 ]; then
             SHA3=yes
@@ -231,12 +240,8 @@ if [ -z "$X86_64" ]; then
     elif [ -r /proc/cpuinfo ] && grep -m1 '^Features' /proc/cpuinfo | grep -qw sha3; then
         SHA3=yes
     fi
-    if [ -n "$SHA3" ] && neoverse_n2; then
-        SHA3=""
-        KERNELS_NOTE="no ch_cfg.cpu 0x83 rows: on an Arm Neoverse N2 a caller leaves CH_CPU_CONSTANT_TIME_SHA3 clear (bench/neoverse.sh)"
-    fi
     if [ -n "$SHA3" ]; then
-        KERNELS_NOTE="ch_cfg.cpu 0x83 adds CH_CPU_CONSTANT_TIME_SHA3 to 0x3, the AES-GCM passes with EOR3"
+        KERNELS_NOTE="ch_cfg.cpu $EOR3_VALUE adds $EOR3_BIT to 0x3, the AES-GCM passes with EOR3"
     fi
 fi
 # The arm64 SVE2 build. It compiles for every arm64 target, and its rows

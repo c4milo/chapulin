@@ -20295,3 +20295,34 @@ does nothing more.
     - **The table.** Bench run 44612268440 recorded the N2 columns on f5782fe3. Under gcc,
       SHA-384 over 16 KiB takes 1.07 times OpenSSL's time, where it took 1.15, and SHA-256 1.04,
       where it took 1.10. Under clang SHA-256 takes 1.01, where it took 1.07.
+
+244. **A new claim bit, CH_CPU_CONSTANT_TIME_EOR3, keeps AES-GCM's EOR3 where the SHA-3 bit is
+    clear.** Decision 240 had a caller on an Arm Neoverse N2 leave `CH_CPU_CONSTANT_TIME_SHA3` clear,
+    because that core runs Keccak 1.8 times slower on its SHA-3 instructions. The same bit picked
+    AES-GCM's passes with EOR3 (decision 158), so the caller lost them too. colibri measured the
+    loss on an N2: an HTTP/2 response of 256 KiB over TLS ran 4.0% more instructions (colibri run
+    44663625651).
+
+    - **The ruling.** Camilo ruled on 2026-11-20 that the two uses take separate claims, and chose
+      this form over a bit that states a speed, the kind decision 240 refused. Decision 240 stands
+      for Keccak: on an N2 the SHA-3 bit stays clear.
+    - **The bit.** `CH_CPU_CONSTANT_TIME_EOR3`, 0x2000, says the CPU has FEAT_SHA3 and states that
+      EOR3 runs in constant time in the thread's mode. Arm's list of data-independent-time
+      instructions names EOR3, as it names the other three. `gcm_use_eor3` runs the EOR3 copy
+      under the AES bit beside either the SHA-3 bit or this one, and the new bit picks nothing
+      else. A caller that sets the SHA-3 bit today keeps both paths and need not change.
+    - **How a caller knows to set it.** From the same report as the SHA-3 bit: `HWCAP_SHA3` on
+      Linux and `hw.optional.arm.FEAT_SHA3` on macOS, with DIT set. On an N2 it sets this bit and
+      leaves the SHA-3 bit clear. Elsewhere it may set both. `examples/cpu_probe.c` does so, and
+      the Zig and C++ wrappers name the field `constant_time_eor3`.
+    - **Where the bit lives.** It sits in the second byte of the value, which an AES key schedule
+      keeps as `cpu_high` (aes_schedule.h). `gcm.c` now hands `gcm_use_eor3` both bytes, as it
+      hands `gcm_use_avx512` both, and `aes.c` asserts that the bit fits.
+    - **The tests.** `bin/aes_runtime_test` counts the calls into `gcm_arm64_eor3.c` under the AES
+      bit with the SHA-3 bit, with the EOR3 bit, and with neither. Three violations break the
+      choice: one that reads the SHA-512 bit, one that drops the EOR3 bit, and one that reads the
+      schedule's low byte alone. The qemu lane's `arm64-hash-count` part catches each. The taint
+      lane and the instruction gate hold no value with the bit, because Valgrind 3.27.1 decodes no
+      EOR3.
+    - **The bench.** On an N2, `bench/primitives.sh` states the EOR3 bit and not the SHA-3 bit,
+      and `bench/record.sh` times its AES-GCM rows with EOR3 under 0x2003 in place of 0x83.

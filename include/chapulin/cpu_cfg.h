@@ -198,15 +198,29 @@
 // CPU (docs/decisions.md 217). ML-DSA-87 passes the session's value to its hashes, so its SHAKE
 // calls run there. ML-KEM's hashes take no value, and run sha3.c whatever the two bits say.
 //
+// CH_CPU_CONSTANT_TIME_EOR3 says an arm64 CPU has FEAT_SHA3 and states that EOR3, one of its
+// four instructions, runs in constant time in the thread's mode, as the SHA-3 bit states for all
+// four. Beside CH_CPU_CONSTANT_TIME_AES it runs AES-GCM on gcm_arm64_eor3.c, as the SHA-3 bit does,
+// and it picks nothing else. So a caller on an Arm Neoverse N2, whose SHA-3 instructions run
+// Keccak 1.8 times slower than its general registers, sets this bit and leaves the SHA-3 bit
+// clear: Keccak runs in general registers, and AES-GCM keeps EOR3 (docs/decisions.md 240 and 244).
+//
+// CH_CPU_SVE2 says an arm64 CPU has SVE2, which Linux reports in AT_HWCAP2 as HWCAP2_SVE2. Like
+// CH_CPU_AVX2 it states presence alone and no timing. A session with it runs ChaCha20 on
+// chacha20_sve2.c, the NEON path with each XOR and rotation as one XAR, where clang or gcc 14 and
+// later built the object (CH_CHACHA20_SVE2, chacha20_sve2.h, docs/decisions.md 242).
+//
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2, CH_CPU_VAES, CH_CPU_AVX512_IFMA,
-// CH_CPU_AVX512, CH_CPU_BMI2_ADX or CH_CPU_BMI1 on arm64, CH_CPU_CONSTANT_TIME_SHA512 or
-// CH_CPU_CONSTANT_TIME_SHA3 on x86-64, or a bit a later release adds. A caller written before such
+// CH_CPU_AVX512, CH_CPU_BMI2_ADX or CH_CPU_BMI1 on arm64, CH_CPU_CONSTANT_TIME_SHA512,
+// CH_CPU_CONSTANT_TIME_SHA3, CH_CPU_SVE2 or CH_CPU_CONSTANT_TIME_EOR3 on x86-64, or a bit a later
+// release adds. A caller written before such
 // a release leaves the new bit clear and runs the slower path. A defined bit for instructions the
 // object never runs, such as CH_CPU_CONSTANT_TIME_AES in an object that carries no AES, still
 // describes the CPU, and init accepts it. An AES key schedule keeps the low two bytes of the value,
-// which hold CH_CPU_VAES, CH_CPU_CONSTANT_TIME_AES and CH_CPU_AVX512, the three bits gcm_use_vaes
-// and gcm_use_avx512 read (aes_schedule.h).
+// which hold CH_CPU_VAES, CH_CPU_CONSTANT_TIME_AES and CH_CPU_AVX512, the bits gcm_use_vaes and
+// gcm_use_avx512 read on x86-64, and CH_CPU_CONSTANT_TIME_SHA3 and CH_CPU_CONSTANT_TIME_EOR3, the
+// bits gcm_use_eor3 reads beside the AES bit on arm64 (aes_schedule.h).
 #define CH_CPU_PROBED 0x01U
 #define CH_CPU_CONSTANT_TIME_AES 0x02U
 #define CH_CPU_CONSTANT_TIME_MULTIPLY 0x04U
@@ -220,6 +234,7 @@
 #define CH_CPU_BMI2_ADX 0x400U
 #define CH_CPU_BMI1 0x800U
 #define CH_CPU_SVE2 0x1000U
+#define CH_CPU_CONSTANT_TIME_EOR3 0x2000U
 #ifdef __x86_64__
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY | CH_CPU_AVX2 |      \
@@ -229,7 +244,7 @@
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \
      CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3 |       \
-     CH_CPU_SVE2)
+     CH_CPU_SVE2 | CH_CPU_CONSTANT_TIME_EOR3)
 #endif
 
 // Whether the object holds Keccak on the SHA-3 instructions, which CH_CPU_CONSTANT_TIME_SHA3

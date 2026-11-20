@@ -227,6 +227,12 @@ static int runs_arm64(const aes_key_schedule *k) {
     return 1;
 #endif
 }
+
+// The two bytes of the description of the CPU that k records, which
+// gcm_use_eor3 reads (aes_schedule.h).
+static uint32_t schedule_cpu(const aes_key_schedule *k) {
+    return (uint32_t)k->cpu | (uint32_t)k->cpu_high << 8;
+}
 #endif
 
 #if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
@@ -331,8 +337,8 @@ static void seal_schedule(const aes_key_schedule *k, const uint8_t *powers,
 #endif
 #if defined(CH_CPU_RUNTIME) && defined(__aarch64__)
     if (runs_arm64(k)) {
-        gcm_seal_arm64_cpu(k->cpu, k->round_keys, instruction_rounds(k), powers, nonce, aad,
-                           aad_len, pt, n, ct, tag);
+        gcm_seal_arm64_cpu(schedule_cpu(k), k->round_keys, instruction_rounds(k), powers, nonce,
+                           aad, aad_len, pt, n, ct, tag);
         return;
     }
 #endif
@@ -387,8 +393,8 @@ static int open_schedule(const aes_key_schedule *k, const uint8_t *powers,
 #endif
 #if defined(CH_CPU_RUNTIME) && defined(__aarch64__)
     if (runs_arm64(k)) {
-        gcm_open_arm64_cpu(k->cpu, k->round_keys, instruction_rounds(k), powers, nonce, aad,
-                           aad_len, ct, n, pt, want);
+        gcm_open_arm64_cpu(schedule_cpu(k), k->round_keys, instruction_rounds(k), powers, nonce,
+                           aad, aad_len, ct, n, pt, want);
         return tag_matches(want, tag, pt, n);
     }
 #endif

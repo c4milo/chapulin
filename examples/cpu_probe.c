@@ -13,9 +13,10 @@
  *     call it on each thread that runs a session.
  *   - On arm64, CH_CPU_SVE2 where the system reports SVE2. It states no timing, so it needs no
  *     DIT. macOS 26 defines no hw.optional.arm.FEAT_SVE2, so a Mac does not state it.
- *   - On an Arm Neoverse N2 (implementer 0x41, part 0xd49), it leaves CH_CPU_CONSTANT_TIME_SHA3
- *     clear. There the SHA-3 instructions run Keccak 1.8 times slower than the portable code, and
- *     the bit gains AES-GCM's EOR3 passes 2% (docs/decisions.md 240).
+ *   - Where the system reports SHA-3, CH_CPU_CONSTANT_TIME_EOR3 beside the SHA-3 bit. On an Arm
+ *     Neoverse N2 (implementer 0x41, part 0xd49), it states CH_CPU_CONSTANT_TIME_EOR3 alone and
+ *     leaves CH_CPU_CONSTANT_TIME_SHA3 clear. There the SHA-3 instructions run Keccak 1.8 times
+ *     slower than the portable code, and EOR3 gains AES-GCM 2% (docs/decisions.md 240 and 244).
  *   - On x86-64, the bits for the kernels that the CPU and the operating system report: AVX2, VAES,
  *     AVX-512, AVX-512 IFMA, BMI1, and BMI2 with ADX. A CH_CPU_CONSTANT_TIME_* bit also needs
  *     DOITM, which only the operating system sets, so it states those bits only in a build with
@@ -121,8 +122,11 @@ static uint32_t cpu_probe_value(void) {
     if (HAS_SHA512()) {
         value |= CH_CPU_CONSTANT_TIME_SHA512;
     }
-    if (HAS_SHA3() && !is_neoverse_n2()) {
-        value |= CH_CPU_CONSTANT_TIME_SHA3;
+    if (HAS_SHA3()) {
+        value |= CH_CPU_CONSTANT_TIME_EOR3;
+        if (!is_neoverse_n2()) {
+            value |= CH_CPU_CONSTANT_TIME_SHA3;
+        }
     }
     return value;
 }
