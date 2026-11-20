@@ -24,6 +24,14 @@ Bench run 44612268440 recorded the Neoverse N2 again after decision 243, under g
 from 1.07 to 1.01. chapulin is faster than OpenSSL in 19 of 27 rows under gcc and 18 under
 clang, where AES-128-GCM's seal now reads 3.73 µs against OpenSSL's 3.72.
 
+## The arm64 server run of afa7a675
+
+Bench run 44671153926 recorded the Neoverse N2 after decision 244, which gives EOR3 a bit of its
+own. The bench now states `CH_CPU_CONSTANT_TIME_EOR3` on an N2 beside the clear SHA-3 bit, and
+times the AES-GCM rows under `0x2003`. AES-GCM went from 0.97 to 1.00 of OpenSSL's time to 0.94
+to 0.98 of it. chapulin is faster than OpenSSL in 19 of 27 rows under each compiler, where clang
+read 18.
+
 ## The M1 Pro run of 6443a0de
 
 The M1 Pro column was recorded again on 2026-11-20 for v0.10.0, after decision 243 changed the

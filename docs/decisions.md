@@ -20325,4 +20325,6 @@ does nothing more.
       lane and the instruction gate hold no value with the bit, because Valgrind 3.27.1 decodes no
       EOR3.
     - **The bench.** On an N2, `bench/primitives.sh` states the EOR3 bit and not the SHA-3 bit,
-      and `bench/record.sh` times its AES-GCM rows with EOR3 under 0x2003 in place of 0x83.
+      and `bench/record.sh` times its AES-GCM rows with EOR3 under 0x2003 in place of 0x83. On
+      bench run 44671153926, AES-GCM on the N2 takes 0.94 to 0.98 of OpenSSL 3.6.5's time, where
+      with no EOR3 it took 0.97 to 1.00.
