@@ -24,6 +24,16 @@ Bench run 44612268440 recorded the Neoverse N2 again after decision 243, under g
 from 1.07 to 1.01. chapulin is faster than OpenSSL in 19 of 27 rows under gcc and 18 under
 clang, where AES-128-GCM's seal now reads 3.73 µs against OpenSSL's 3.72.
 
+## The M1 Pro run of 6443a0de
+
+The M1 Pro column was recorded again on 2026-11-20 for v0.10.0, after decision 243 changed the
+arm64 SHA-256 and SHA-512 instruction paths. Its load average was 2.9 to 3.1, where the run of
+c8df21fb ran at 6.3 to 7.9. chapulin's rows took 0.95 to 0.98 of their former time, and OpenSSL's
+0.96 to 1.00, so most ratios moved by 0.01 or less. SHA-256 over 16 KiB took 0.98 of its former
+time and OpenSSL 0.99. ML-KEM-768's encapsulation went from 0.81 to 0.41 of OpenSSL's time,
+because OpenSSL's row now makes its key from bytes (decision 239). chapulin is faster than OpenSSL
+in 26 of 27 rows, where it was faster in 24.
+
 ## The arm64 server run of 6d4a8172
 
 Bench run 44581120021 recorded the Neoverse N2 again after decision 242, on `ubuntu-26.04-arm`,

@@ -245,6 +245,33 @@ M1 Pro,9,Apple M1 Pro,2026-11-17,v0.8.0-11-gc8df21fb-dirty,"AES-256-GCM, the key
 M1 Pro,9,Apple M1 Pro,2026-11-17,v0.8.0-11-gc8df21fb-dirty,"AES-256-GCM, the key set and one 16 KiB record opened",1.034
 M1 Pro,9,Apple M1 Pro,2026-11-17,v0.8.0-11-gc8df21fb-dirty,"ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag",1.011
 M1 Pro,9,Apple M1 Pro,2026-11-17,v0.8.0-11-gc8df21fb-dirty,"ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag",1.023
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"SHA-256, 16 KiB",1.003
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"SHA-256, 64 bytes",2.056
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"SHA-384, 16 KiB",1.007
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"SHA-384, 64 bytes",1.458
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"SHA3-256, 16 KiB",0.993
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"SHA3-256, 64 bytes",2.044
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,X25519 key generation,2.737
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,X25519 shared secret,1.025
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,P-256 key generation,1.084
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,P-256 shared secret,1.220
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,ECDSA P-256 sign,1.297
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,ECDSA P-256 verify,1.451
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,ECDSA P-384 verify,1.773
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,RSA-2048 PKCS#1 v1.5 verify,1.048
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,RSA-3072 PKCS#1 v1.5 verify,1.071
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,ML-KEM-768 key generation,2.336
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,ML-KEM-768 encapsulation,2.445
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,ML-KEM-768 decapsulation,1.606
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,ML-DSA-87 key generation,1.330
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,ML-DSA-87 sign,1.747
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,ML-DSA-87 verify,2.893
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"AES-128-GCM, the key set and one 16 KiB record sealed",1.026
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"AES-128-GCM, the key set and one 16 KiB record opened",1.042
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"AES-256-GCM, the key set and one 16 KiB record sealed",1.033
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"AES-256-GCM, the key set and one 16 KiB record opened",1.055
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag",1.025
+M1 Pro,10,Apple M1 Pro,2026-11-20,v0.9.1-11-g6443a0de-dirty,"ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag",1.026
 x86-64 gcc,1,AMD EPYC 7763 64-Core Processor,2026-10-08,24dd0b5-dirty,"SHA-256, 16 KiB",1.002
 x86-64 gcc,1,AMD EPYC 7763 64-Core Processor,2026-10-08,24dd0b5-dirty,"SHA-256, 64 bytes",1.136
 x86-64 gcc,1,AMD EPYC 7763 64-Core Processor,2026-10-08,24dd0b5-dirty,"SHA-384, 16 KiB",0.482

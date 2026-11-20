@@ -82,7 +82,7 @@ the dashed line at 1 is faster than OpenSSL.
 </details>
 
 <details>
-<summary>Apple M1 Pro: chapulin is faster than OpenSSL 3.6.5 in 24 of 27 rows under Apple clang</summary>
+<summary>Apple M1 Pro: chapulin is faster than OpenSSL 3.6.5 in 26 of 27 rows under Apple clang</summary>
 
 ![Bars of chapulin's speed in multiples of OpenSSL's on the Apple M1 Pro, under Apple clang](docs/img/speed-vs-openssl-m1-pro.svg)
 
