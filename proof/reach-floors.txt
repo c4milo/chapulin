@@ -225,6 +225,11 @@ p256_wide_inverse_round 174
 # of both: 150 of 338 on arm64 macOS, where the tree before the change read
 # 153 of 329, the floor the nightly recorded.
 p256_wide_inverse_steps 150
+# Decision 243 added p256_wide_inverse_steps_sum, the step harness on the 128-bit difference. Lab
+# run 44671389024 ran the nightly's reach command for it on the nightly's runner image and pinned
+# cbmc, because the nightlies of 2026-11-19 were cancelled before their parts reported: 147 of 334
+# locations, where p256_wide_inverse_steps read 154 of 342 in the same run.
+p256_wide_inverse_steps_sum 147
 # Floor from GitHub run 40295070547 of 2026-10-26 (nightly on 9efba144):
 # docs/decisions.md 155 put ct_memeq_public, a static inline function, in
 # ct.h, which this harness compiles and does not call.
