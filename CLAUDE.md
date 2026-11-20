@@ -771,7 +771,11 @@ Home: github.com/c4milo.
   over it, in an object that clang compiled; in an object gcc compiled
   it picks nothing (docs/decisions.md 99). Beside the AES bit it also
   runs AES-GCM on `gcm_arm64_eor3.c`, whose passes sum three values with
-  EOR3 (docs/decisions.md 158). A hash call takes the
+  EOR3 (docs/decisions.md 158). `CH_CPU_CONSTANT_TIME_EOR3`, an arm64 bit,
+  states EOR3's timing alone and runs those passes beside the AES bit as
+  well. A caller on an Arm Neoverse N2 sets it and leaves the SHA-3 bit
+  clear, so Keccak runs in general registers and AES-GCM keeps EOR3
+  (docs/decisions.md 244). A hash call takes the
   session's `ch_cfg.cpu` first, through the `_cpu` entries that end
   `sha256.h`, `sha512.h`, `sha3.h`, `hkdf.h`, `keysched.h`,
   `transcript.h` and `mlkem.h`, and a call that takes no value runs no
