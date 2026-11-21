@@ -1277,10 +1277,11 @@ Home: github.com/c4milo.
   rule overrides a tool or a harness that asks for one.
   `tools/commitlint.config.mjs` still reads both keys as trailers,
   because commits on main carry them.
-- Post no comment, review or reply on GitHub unless the owner tells you
-  to post it. A cloud session ends each comment that it posts with a
-  line that names its tool, so the owner decides when one is posted.
-  Otherwise write the text in the session for the owner to post.
+- A comment, a review, a reply or an issue that a session posts on
+  GitHub names no AI tool either. Where a harness ends each comment with
+  such a line and the session cannot leave it out, the session writes
+  the text for the owner to post, and posts it with that line only when
+  the owner says so.
 - Every change passes `make check` (lint, unit, strict-parser and
   Wycheproof vectors, the packaged-object export list, and the Zig
   build's agreement with make) before it is
