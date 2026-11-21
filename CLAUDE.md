@@ -1271,6 +1271,16 @@ Home: github.com/c4milo.
   `docs/`, not the body: state the why in a sentence and name the
   document. Write the body from the diff; never trim a long draft down,
   because editing anchors on the draft and lands long every time.
+- A commit message and a pull request description name no AI tool. They
+  carry no `Co-Authored-By` trailer for one, no `Claude-Session` trailer
+  and no "Generated with" line. The owner ruled it on 2026-11-21, and the
+  rule overrides a tool or a harness that asks for one.
+  `tools/commitlint.config.mjs` still reads both keys as trailers,
+  because commits on main carry them.
+- A comment, a review, a reply or an issue that a session posts on
+  GitHub names no AI tool either. The one exception is a cloud session
+  whose harness ends each comment with such a line: that session posts
+  its comment with the line.
 - Every change passes `make check` (lint, unit, strict-parser and
   Wycheproof vectors, the packaged-object export list, and the Zig
   build's agreement with make) before it is
