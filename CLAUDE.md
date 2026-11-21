@@ -1278,10 +1278,9 @@ Home: github.com/c4milo.
   `tools/commitlint.config.mjs` still reads both keys as trailers,
   because commits on main carry them.
 - A comment, a review, a reply or an issue that a session posts on
-  GitHub names no AI tool either. Where a harness ends each comment with
-  such a line and the session cannot leave it out, the session writes
-  the text for the owner to post, and posts it with that line only when
-  the owner says so.
+  GitHub names no AI tool either. The one exception is a cloud session
+  whose harness ends each comment with such a line: that session posts
+  its comment with the line.
 - Every change passes `make check` (lint, unit, strict-parser and
   Wycheproof vectors, the packaged-object export list, and the Zig
   build's agreement with make) before it is
