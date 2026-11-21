@@ -65,7 +65,11 @@ count_row() { # $1 = label; the rest = the program and its arguments before the 
         printf '%s\n' "$out" | tail -20 >&2
         return 1
     }
-    printf '%s\n' "$out" | grep -q "^$label," || {
+    # grep reads a here-string, and no pipe from printf. bash's printf
+    # writes each line with a call of its own, and grep -q exits at the
+    # first match. In a pipe, a later write can then fail, and under
+    # pipefail that failure reads as a row that the program did not print.
+    grep -q "^$label," <<<"$out" || {
         echo "FAIL SDE insn count: $* counted no row named $label" >&2
         return 1
     }

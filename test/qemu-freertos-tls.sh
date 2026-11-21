@@ -28,7 +28,10 @@ OUT=$(timeout 90 "$QEMU" -M mps2-an385 -cpu cortex-m3 -nographic -semihosting \
     printf '%s\n' "$OUT" | sed 's/^/  guest: /' >&2
     exit 1
 }
-printf '%s\n' "$OUT" | grep -q "^PASS$" || {
+# grep reads a here-string, and no pipe from printf. In a pipe, grep -q
+# exits at its match, a later write of printf can fail, and under pipefail
+# that failure reads as no PASS.
+grep -q "^PASS$" <<<"$OUT" || {
     echo "FAIL qemu-freertos-tls: no PASS from the guest" >&2
     printf '%s\n' "$OUT" | sed 's/^/  guest: /' >&2
     exit 1
