@@ -9,6 +9,6 @@ reason: build.zig stops adding the evex512 feature to an x86-64 host
   object for x86_64-linux-gnu at -Dcpu=baseline on any machine.
 
 --- old
-    const target = withEvex512(b, config, b.standardTargetOptions(.{}));
+    const target = withEvex512(b, config, target_option);
 --- new
-    const target = b.standardTargetOptions(.{});
+    const target = target_option;

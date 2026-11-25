@@ -471,6 +471,20 @@ pair() {
     consume "zig pair" "$out/zig-pair" "-Dh2=$(cat "$out/h2/zig-row.txt")" "-Dquic=$(cat "$out/quic/zig-row.txt")"
     "$out/zig-pair/bin/pair" || fail "zig pair: the program exited $?"
     echo "lint-zig-build: one Zig program imports the modules of colibri's tcp-nonblocking ROLE=both and QUIC objects, links both objects, and each half ran"
+
+    # docs/decisions.md 245: the one module of both nonblocking objects,
+    # which defines ch_assert_fail for a program that defines none.
+    mkdir -p "$out/zig-both"
+    consume "zig both" "$out/zig-both" "-Dboth=RAND=session TRANSPORT=nonblocking ROLE=both TRUST=webpki EXPORTER=on"
+    if "$out/zig-both/bin/both" > "$out/zig-both/both.log" 2>&1; then
+        fail "zig both: the program ran past the module's ch_assert_fail"
+    fi
+    grep -q "chapulin assertion failed: both (both.zig:1)" "$out/zig-both/both.log" ||
+        fail "zig both: the module's ch_assert_fail did not stop the program with its condition"
+    "$out/zig-both/bin/both_hook" > "$out/zig-both/both_hook.log" 2>&1 || fail "zig both: both_hook exited $?"
+    grep -q "both_hook: the program's hook ran: both_hook (both_hook.zig:2)" "$out/zig-both/both_hook.log" ||
+        fail "zig both: the module's ch_assert_fail did not call the program's chapulinAssertFail"
+    echo "lint-zig-build: one module of both nonblocking objects links both, defines ch_assert_fail, and calls a program's chapulinAssertFail"
 }
 
 # Waits for every check started so far, prints each one's output in the

@@ -20,6 +20,11 @@
 //! - `zig build -Dh2=ROW -Dquic=ROW` installs bin/pair, pair.zig built
 //!   against colibri's tcp-nonblocking object and its QUIC object in one
 //!   image.
+//! - `zig build -Dboth=ROW`, a row with TRANSPORT=nonblocking, installs
+//!   bin/both and bin/both_hook against the one module of both objects
+//!   (docs/decisions.md 245). Neither defines a hook. both.zig calls the
+//!   module's ch_assert_fail, which must stop it; both_hook.zig declares
+//!   chapulinAssertFail, which the hook must call.
 //!
 //! A row is the options chapulin's build.zig takes, as NAME=VALUE words:
 //! "RAND=extern TRANSPORT=quic-nonblocking AES=extern CH_AES_EXTERN_CONSTANT_TIME=true".
@@ -60,8 +65,14 @@ pub fn build(b: *std.Build) void {
     const loop = b.option(bool, "loop", "Also install bin/loop; the object must be ROLE=both") orelse false;
     const h2 = b.option([]const u8, "h2", "The options of the tcp-nonblocking object pair.zig links");
     const quic = b.option([]const u8, "quic", "The options of the QUIC object pair.zig links");
-    if (object == null and (h2 == null or quic == null)) {
-        std.process.fatal("name -Dobject, or -Dh2 and -Dquic", .{});
+    const both = b.option([]const u8, "both", "The options, with TRANSPORT=nonblocking, of the module both.zig and both_hook.zig import");
+    if (object == null and both == null and (h2 == null or quic == null)) {
+        std.process.fatal("name -Dobject, -Dboth, or -Dh2 and -Dquic", .{});
+    }
+    if (both) |row| {
+        const imports = [_]Import{.{ .name = "chapulin", .dependency = b.dependency("chapulin", options(target, row)) }};
+        _ = program(b, "both", target, optimize, &imports);
+        _ = program(b, "both_hook", target, optimize, &imports);
     }
     if (object) |row| {
         const chapulin = b.dependency("chapulin", options(target, row));

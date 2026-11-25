@@ -22,6 +22,10 @@
 const std = @import("std");
 
 const Transport = enum { @"tcp-blocking", @"tcp-nonblocking", @"quic-nonblocking" };
+/// What TRANSPORT takes: one transport, or `nonblocking`, both nonblocking transports in one
+/// request. The Makefile builds one object a transport; `nonblocking` is the Zig build's alone, and
+/// gives one module that carries both objects (docs/decisions.md 245).
+const TransportRequest = enum { @"tcp-blocking", @"tcp-nonblocking", @"quic-nonblocking", nonblocking };
 const Role = enum { client, server, both };
 const Trust = enum { @"raw-rsa", @"raw-ecdsa", @"ca-rsa", @"ca-ecdsa", @"raw-mldsa", @"ca-mldsa", webpki, none };
 const Suite = enum { chacha, aesgcm };
@@ -293,9 +297,13 @@ pub fn build(b: *std.Build) void {
     const suite_option = b.option(Suite, "SUITE", "chacha, or aesgcm for the AES-GCM suites beside it");
     const kex_option = b.option(Kex, "KEX", "The key exchange group of a raw or ca client");
     refuseProfileAxes(profile, suite_option, kex_option);
+    const request = b.option(TransportRequest, "TRANSPORT", "What TLS runs over and who does the I/O; nonblocking for both nonblocking transports in one module") orelse .@"tcp-blocking";
     const config = Config{
         .profile = profile,
-        .transport = b.option(Transport, "TRANSPORT", "What TLS runs over and who does the I/O") orelse .@"tcp-blocking",
+        .transport = switch (request) {
+            .nonblocking => .@"tcp-nonblocking",
+            inline else => |one| @field(Transport, @tagName(one)),
+        },
         .role = b.option(Role, "ROLE", "client, server, or both for a host") orelse .client,
         .trust = b.option(Trust, "TRUST", "How the server key is trusted; none for ROLE=server") orelse .@"raw-rsa",
         .suite = if (profile == .cnsa2) .aesgcm else suite_option orelse .chacha,
@@ -312,8 +320,79 @@ pub fn build(b: *std.Build) void {
         .host_target = b.option([]const u8, "HOST_TARGET", "The host test's result, for a check: empty builds the device object on a host target"),
         .aes_extern_constant_time = b.option(bool, "CH_AES_EXTERN_CONSTANT_TIME", "State that ch_aes_block runs in constant time (ct.h)") orelse false,
     };
+    const target_option = b.standardTargetOptions(.{});
+    const localizer = addLocalizer(b);
+    if (request == .nonblocking) return addPair(b, config, target_option, localizer);
+    const built = addObject(b, config, target_option, localizer);
+    b.addNamedLazyPath("chapulin.o", built.object);
+    b.getInstallStep().dependOn(&b.addInstallFile(built.object, "lib/chapulin.o").step);
+
+    // The API headers sit in include/chapulin, and a program writes
+    // #include <chapulin/tls.h> with this path on its include path.
+    b.addNamedLazyPath("include", b.path("include"));
+    b.modules.put(b.graph.arena, "chapulin", built.api) catch @panic("OOM");
+
+    // What make lint-zig-build compares with make print-lib-srcs and make
+    // print-lib-def, one name per line, and the headers chapulin.c is
+    // translated from, which tools/public-constants.py reads.
+    const plan = built.plan;
+    const lists = b.addWriteFiles();
+    const lists_step = b.step("lib-lists", "Install lib-srcs.txt, lib-def.txt and lib-headers.txt, the object's sources, defines and public headers");
+    lists_step.dependOn(&b.addInstallFile(lists.add("lib-srcs.txt", sourceLines(b, plan.srcs)), "lib-srcs.txt").step);
+    lists_step.dependOn(&b.addInstallFile(lists.add("lib-def.txt", lines(b, plan.defs)), "lib-def.txt").step);
+    lists_step.dependOn(&b.addInstallFile(lists.add("lib-headers.txt", headerLines(b, plan.headers)), "lib-headers.txt").step);
+}
+
+/// The localizer, which hides every name of a partial object but its public ones. It runs on the
+/// host; test/localize-check.sh installs it.
+fn addLocalizer(b: *std.Build) *std.Build.Step.Compile {
+    const localizer = b.addExecutable(.{
+        .name = "localize_symbols",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/localize_symbols.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    b.step("localize-symbols", "Install the localizer to bin/").dependOn(&b.addInstallArtifact(localizer, .{}).step);
+    const unit_tests = b.addTest(.{ .root_module = localizer.root_module });
+    b.step("test", "Run the localizer's unit tests").dependOn(&b.addRunArtifact(unit_tests).step);
+    return localizer;
+}
+
+/// One object, and the Zig API module over it.
+const Built = struct { plan: Plan, object: std.Build.LazyPath, api: *std.Build.Module };
+
+/// TRANSPORT=nonblocking (docs/decisions.md 245): the tcp-nonblocking object and the
+/// quic-nonblocking object of one configuration, and one module "chapulin" that carries both, as
+/// chapulin.tcp and chapulin.quic, and defines ch_assert_fail once for the program. The axes of
+/// the record layer go to the TCP object alone: EXPORTER, TX_RECORD, DNSSEC, JWS and SCRAM. A
+/// QUIC object refuses the first two, and one copy of the last three serves the program.
+fn addPair(b: *std.Build, config: Config, target_option: std.Build.ResolvedTarget, localizer: *std.Build.Step.Compile) void {
+    var quic_config = config;
+    quic_config.transport = .@"quic-nonblocking";
+    quic_config.exporter = .off;
+    quic_config.tx_record = null;
+    quic_config.dnssec = .off;
+    quic_config.jws = .off;
+    quic_config.scram = .off;
+    const tcp = addObject(b, config, target_option, localizer);
+    const quic = addObject(b, quic_config, target_option, localizer);
+    b.addNamedLazyPath("include", b.path("include"));
+    _ = b.addModule("chapulin", .{
+        .root_source_file = b.path("chapulin_pair.zig"),
+        .imports = &.{
+            .{ .name = "chapulin_tcp_object", .module = tcp.api },
+            .{ .name = "chapulin_quic_object", .module = quic.api },
+        },
+    });
+}
+
+/// The object of one configuration, compiled and localized, and the API module over it. The
+/// configuration is refused as the Makefile refuses it, the object of a pair as one of its own.
+fn addObject(b: *std.Build, config: Config, target_option: std.Build.ResolvedTarget, localizer: *std.Build.Step.Compile) Built {
     refuseUnbuildable(config);
-    const target = withEvex512(b, config, b.standardTargetOptions(.{}));
+    const target = withEvex512(b, config, target_option);
     refuseSpeedOnHost(config, target.result);
     const plan = computePlan(b, config, target.result);
     // The flags the sources compile with. The module below is translated
@@ -340,28 +419,10 @@ pub fn build(b: *std.Build) void {
     module.addCSourceFiles(.{ .root = b.path("src"), .files = plan.srcs, .flags = flags });
     const partial = b.addObject(.{ .name = "chapulin-partial", .root_module = module });
 
-    // The localizer runs on the host; test/localize-check.sh installs it.
-    const localizer = b.addExecutable(.{
-        .name = "localize_symbols",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tools/localize_symbols.zig"),
-            .target = b.graph.host,
-            .optimize = .ReleaseSafe,
-        }),
-    });
-    b.step("localize-symbols", "Install the localizer to bin/").dependOn(&b.addInstallArtifact(localizer, .{}).step);
-    const unit_tests = b.addTest(.{ .root_module = localizer.root_module });
-    b.step("test", "Run the localizer's unit tests").dependOn(&b.addRunArtifact(unit_tests).step);
     const localize = b.addRunArtifact(localizer);
     localize.addFileArg(partial.getEmittedBin());
     const object = localize.addOutputFileArg("chapulin.o");
     localize.addArgs(plan.public);
-    b.addNamedLazyPath("chapulin.o", object);
-    b.getInstallStep().dependOn(&b.addInstallFile(object, "lib/chapulin.o").step);
-
-    // The API headers sit in include/chapulin, and a program writes
-    // #include <chapulin/tls.h> with this path on its include path.
-    b.addNamedLazyPath("include", b.path("include"));
 
     // The headers of the plan, translated by translate-c for the object's
     // target and optimize mode under the defines in flags, so a dependent's
@@ -403,7 +464,7 @@ pub fn build(b: *std.Build) void {
     _ = api_files.addCopyFile(b.path("chapulin_cpu.zig"), "chapulin_cpu.zig");
     _ = api_files.addCopyFile(b.path("chapulin_cfg.zig"), "chapulin_cfg.zig");
     _ = api_files.add("defines.txt", lines(b, plan.defs));
-    const api = b.addModule("chapulin", .{
+    const api = b.createModule(.{
         .root_source_file = root,
         .imports = &.{.{ .name = "chapulin_c", .module = translated }},
     });
@@ -412,15 +473,7 @@ pub fn build(b: *std.Build) void {
     // object of its own: a second addObjectFile of the same object defines
     // every public name twice.
     api.addObjectFile(object);
-
-    // What make lint-zig-build compares with make print-lib-srcs and make
-    // print-lib-def, one name per line, and the headers chapulin.c is
-    // translated from, which tools/public-constants.py reads.
-    const lists = b.addWriteFiles();
-    const lists_step = b.step("lib-lists", "Install lib-srcs.txt, lib-def.txt and lib-headers.txt, the object's sources, defines and public headers");
-    lists_step.dependOn(&b.addInstallFile(lists.add("lib-srcs.txt", sourceLines(b, plan.srcs)), "lib-srcs.txt").step);
-    lists_step.dependOn(&b.addInstallFile(lists.add("lib-def.txt", lines(b, plan.defs)), "lib-def.txt").step);
-    lists_step.dependOn(&b.addInstallFile(lists.add("lib-headers.txt", headerLines(b, plan.headers)), "lib-headers.txt").step);
+    return .{ .plan = plan, .object = object, .api = api };
 }
 
 /// The Makefile's refusals of a SUITE or KEX value beside PROFILE=cnsa2,

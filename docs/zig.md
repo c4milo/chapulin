@@ -73,15 +73,46 @@ the API leaves out, a program uses there under its C name:
 
 The image still defines the hooks the object imports: `ch_rand_bytes`
 under `RAND=extern`, `ch_assert_fail`, `ch_keylog` under `KEYLOG=on`, and
-`ch_aes_block` under `AES=extern` (docs/porting.md). The module exports
-none of them. A `RAND=drbg` object defines `ch_rand_bytes` itself, and a
+`ch_aes_block` under `AES=extern` (docs/porting.md). The module of one
+transport exports none of them; the module of `TRANSPORT=nonblocking`
+defines `ch_assert_fail` (below). A `RAND=drbg` object defines `ch_rand_bytes` itself, and a
 `RAND=session` object names none: each session draws from the
 `std.Random` its options carry (Random bytes, below).
 
+### Both nonblocking objects in one module
+
+`TRANSPORT=nonblocking`, the Zig build's alone, builds the
+tcp-nonblocking object and the quic-nonblocking object of one
+configuration, and gives one module `chapulin` (docs/decisions.md 245).
+Its `tcp` is the API over the first object, and its `quic` the API over
+the second: `chapulin.tcp.tcp.Client` is a record session, and
+`chapulin.quic.quic.Client` a QUIC session. `EXPORTER`, `TX_RECORD`,
+`DNSSEC`, `JWS` and `SCRAM` reach the tcp-nonblocking object alone.
+
+```zig
+const chapulin = b.dependency("chapulin", .{ .target = target, .RAND = .session, .TRANSPORT = .nonblocking, .ROLE = .both, .TRUST = .webpki, .SUITE = .aesgcm, .EXPORTER = .on });
+module.addImport("chapulin", chapulin.module("chapulin"));
+```
+
+This module defines `ch_assert_fail`, so the program defines no hook. The
+hook stops the program with the failed condition. A program that reports
+it its own way declares, in its root file:
+
+```zig
+pub fn chapulinAssertFail(condition: [*:0]const u8, file: [*:0]const u8, line: c_int) noreturn {
+    // ...
+}
+```
+
+A program asks for the pair once. A second request with other options
+gives a second module, and its second definition of the hook stops the
+build.
+
 ### Two objects in one program
 
-colibri links a tcp-nonblocking object and a QUIC object into one image.
-Each is a dependency of its own, imported under a name of its own:
+A program may still take a tcp-nonblocking object and a QUIC object as
+two requests, each imported under a name of its own. It then defines the
+hook itself:
 
 ```zig
 const h2 = b.dependency("chapulin", .{ .target = target, .RAND = .@"extern", .TRANSPORT = .@"tcp-nonblocking", .ROLE = .both, .TRUST = .webpki, .EXPORTER = .on });

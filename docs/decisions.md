@@ -20328,3 +20328,39 @@ does nothing more.
       and `bench/record.sh` times its AES-GCM rows with EOR3 under 0x2003 in place of 0x83. On
       bench run 44671153926, AES-GCM on the N2 takes 0.94 to 0.98 of OpenSSL 3.6.5's time, where
       with no EOR3 it took 0.97 to 1.00.
+
+245. **A Zig program asks for both nonblocking objects in one request, and that module defines
+    `ch_assert_fail`.** Camilo ruled on 2026-11-25 that colibri imports chapulin once, and that a
+    colibri program no longer writes chapulin's assertion hook. colibri linked a tcp-nonblocking
+    object and a quic-nonblocking object as two dependencies, each with a module of its own, and
+    every program it served defined `ch_assert_fail`.
+
+    - **The request.** The Zig build's `TRANSPORT` takes a fourth value, `nonblocking`. It builds
+      the tcp-nonblocking object and the quic-nonblocking object of one configuration, and gives
+      one module `chapulin` (`chapulin_pair.zig`). Its `tcp` is the API over the first object and
+      its `quic` the API over the second, each the module a request of that transport alone gives.
+      The Makefile still builds one object a transport, and its variables are unchanged.
+    - **The record layer's axes go to the TCP object.** `EXPORTER`, `TX_RECORD`, `DNSSEC`, `JWS`
+      and `SCRAM` reach the tcp-nonblocking object alone. A QUIC object refuses the first two, and
+      one copy of the last three serves a program. Every other axis reaches both objects.
+    - **The hook.** The pair's module defines `ch_assert_fail`, so a program that imports it
+      defines no hook. The definition stops the program with the condition, the file and the
+      line. A program that reports a failure its own way declares `pub fn chapulinAssertFail` in
+      its root file, and the hook calls that function. Zig refuses two exports of one name in one
+      program, a weak one too, so the definition lives in the one module a program imports once.
+      A request of one transport still exports no hook (docs/zig.md), and a C image still defines
+      its own (docs/porting.md).
+    - **The limit.** A program asks for the pair once, with one set of options. A second request
+      with other options, such as `KEYLOG=on` beside `KEYLOG=off`, gives a second module, and the
+      two definitions of the hook stop the build.
+    - **The check.** A project of `test/zig-pair/` asks for the pair, defines no hook and links
+      both objects. One program calls the hook and must stop with its panic; a second declares
+      `chapulinAssertFail` and must exit through it.
+
+    The alternatives refused:
+    - A weak definition in each object's module. Zig 0.16 refuses a second export of one name in
+      one program, so two modules, or a module and a program's own definition, stop the build.
+    - A weak definition in C, in the host objects. The linker resolves it, so a program's own
+      definition wins, but it adds C with no task of its own to every proof and lint lane.
+    - The hook left to every program, as decision 61's 2026-09-24 ruling had it. Camilo found it a
+      detail of chapulin that each colibri program had to repeat.
