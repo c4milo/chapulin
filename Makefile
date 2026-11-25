@@ -9663,7 +9663,7 @@ WIDEMUL_DEFINES := src/quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_pack
                    src/scram.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_SCRAM$(COMMA)-DCH_TRUST_WEBPKI \
                    src/jws_sign.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_JWS$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-UCH_KEX_PQ \
                    src/pbkdf2.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_SCRAM$(COMMA)-DCH_TRUST_WEBPKI \
-                   src/hash.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH$(COMMA)-DCH_TRUST_WEBPKI \
+                   src/hash.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    src/hkdf.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384$(COMMA)-DCH_HASH \
                    src/aes.c@host:$(WIDE64_HOST_AES_DEFINES) src/gcm.c@host:$(WIDE64_HOST_AES_DEFINES) \
                    src/quic_packet.c@host:$(WIDE64_HOST_AES_DEFINES) \
