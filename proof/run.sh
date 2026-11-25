@@ -1093,6 +1093,12 @@ launch fast full hkdf 120 "" src/ct.c proof/ct_wipe_stub.c
 # The SHA-256 proof on the line above measured 282 properties, 2 s,
 # 0.04 GB after hash_len joined the signatures.
 launch fast full hkdf384 170 "fill_nondet.0:209,ct_wipe.0:209" src/ct.c proof/ct_wipe_stub.c
+# hkdf512: the same proof under CH_HASH, a HASH=on object's define
+# (docs/decisions.md 246), with hmac_sha512 called too and extract's
+# hash_len free over the three values the dispatcher takes. The keys and
+# the loops are hkdf384's. Not measured: no cbmc ran when it was written,
+# on 2026-11-25, and a person measures it before the tier holds it.
+launch fast full hkdf512 170 "fill_nondet.0:209,ct_wipe.0:209" src/ct.c proof/ct_wipe_stub.c
 # io: 462 s and 3.6 GB under this script's own flags, measured on
 # 2026-10-17 once io_send_all moved to io_send below: 122 properties.
 # The read half of the transport shim over the caller's callbacks,
@@ -3359,6 +3365,14 @@ launch fast full pbkdf2 68 "pbkdf2_hmac_sha256.1:3,block_of.2:3,ct_wipe.0:225" -
 # bytes, with x509_der.c's real readers and stubs of the three hashes.
 # Measured in the same container: 904 properties, 112 s, 0.20 GB.
 launch fast full x509_end_point 12 "fill_nondet.0:65,main.0:65,main.1:65" -DCH_CPU_RUNTIME -DCH_SCRAM -DCH_TRUST_WEBPKI src/x509_end_point.c src/x509_der.c src/buf.c src/ct.c
+# hash.c, the hashes, HMAC and HKDF as public calls (docs/decisions.md
+# 246), over stubs of every hash, HMAC and HKDF call below it and any CPU
+# value: each refusal, the path a stream runs on the value its init took,
+# the wipe of a whole state, and the arguments hkdf.c's CH_ASSERTs hold.
+# The loops count the bytes of a state, at most CH_SHAKE_STATE_SIZE, 240.
+# Not measured: no cbmc ran when the harness was written, on 2026-11-25,
+# and a person measures it with /usr/bin/time -v before the tier holds it.
+launch fast full hash 6 "fill_nondet.0:241,all_zero.0:241,ct_wipe.0:241" -DCH_CPU_RUNTIME -DCH_HASH -DCH_TRUST_WEBPKI src/hash.c src/ct.c proof/ct_wipe_stub.c
 # sha1.c, the SHA-1 a DNSSEC=on object holds for NSEC3 and DS digests of
 # type 1 (docs/decisions.md 169): init, one update of up to a block and
 # the final padding, which writes into the block directly, so a final runs

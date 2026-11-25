@@ -127,7 +127,8 @@ link_flags=()
 # copies of the files built on the multiply, the vector Poly1305 among
 # them, and every session of theirs runs the vector ChaCha20. AES=extern
 # would need a ch_aes_block that encrypts, and hooks.zig's stops the
-# program.
+# program. The last row is stdx's object: the hash calls beside SCRAM's
+# (docs/decisions.md 246).
 configs=(
     "default|RAND=extern|"
     "h2|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki EXPORTER=on|"
@@ -137,6 +138,7 @@ configs=(
     "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
     "record-aes|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm|"
     "cnsa2-server|RAND=extern PROFILE=cnsa2 ROLE=server TRUST=none|"
+    "hash|RAND=extern TRANSPORT=tcp-nonblocking TRUST=webpki SCRAM=on HASH=on|"
 )
 # The configuration of every other lib-check build in check, in its order,
 # so every value of every axis meets build.zig at least once. The server
@@ -170,6 +172,7 @@ roster=(
     "scram-record|RAND=extern TRANSPORT=tcp-nonblocking TRUST=webpki DNSSEC=on JWS=on SCRAM=on|"
     "jws-both|RAND=extern TRANSPORT=tcp-nonblocking TRUST=webpki ROLE=both DNSSEC=on JWS=on SCRAM=on|"
     "scram-quic|RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki EXPORTER=off SCRAM=on|"
+    "hash-quic|RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki EXPORTER=off HASH=on|"
     "server-quic-keylog|RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on|"
     "server-aes|RAND=extern ROLE=server TRUST=none SUITE=aesgcm|"
     "server-aes-extern|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=|CH_AES_EXTERN_CONSTANT_TIME"

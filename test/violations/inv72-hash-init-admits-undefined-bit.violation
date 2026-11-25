@@ -1,0 +1,22 @@
+invariant: INV-72
+file: src/hash.c
+catches: hash_test
+reason: ch_sha256_init takes any value that holds CH_CPU_PROBED, a bit
+  this object does not define among them, where hash.h refuses each value
+  an init call refuses (cpu.h). A caller that names an instruction set of
+  the other architecture then runs a stream the object never described.
+  bin/hash_test calls each init with every value test/test_cpu.h lists as
+  refused.
+
+--- old
+    s->cpu = 0;
+    if (!cpu_value_ok(cpu)) {
+        return CH_EINVAL;
+    }
+    sha256_init(&s->hash);
+--- new
+    s->cpu = 0;
+    if ((cpu & CH_CPU_PROBED) == 0) {
+        return CH_EINVAL;
+    }
+    sha256_init(&s->hash);

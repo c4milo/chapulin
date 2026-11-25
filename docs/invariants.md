@@ -1704,6 +1704,46 @@ last `ROLE=server` stub, as the entry said it would.
   noise, and `test/lint-invariants.sh` catches it.
 - See [decisions: Engineering](decisions.md#engineering), entry 236.
 
+### INV-72 — a hash.h call runs where a session's hash would run, and refuses what an init refuses
+
+- **Claim.** In a `HASH=on` object each of `hash.h`'s calls that takes
+  a CPU value refuses with `CH_EINVAL` a value without `CH_CPU_PROBED` or
+  with a bit the object does not define, and writes nothing. Each one it
+  takes runs every hash on the path that value gives a session's hash: on
+  the instructions or the kernel its bit names, and on the portable code
+  without the bit. A stream runs its update and its final on the value
+  its init took, and its final, or `ch_shake_wipe`, leaves the caller's
+  whole state zero. The digests are FIPS 180-4's and FIPS 202's, HMAC is
+  RFC 2104's over SHA-256, SHA-384 and SHA-512, and HKDF is RFC 5869's
+  (docs/decisions.md 246).
+- **Mechanism.** `hash.c` asks `cpu.h`'s `cpu_value_ok`, the rule every
+  init call asks, before it writes. A stream's struct keeps the hash's
+  context and the value, and its update and final pass that value to
+  the entries that end `sha256.h`, `sha512.h` and `sha3.h`, as a
+  session's hashes do. HMAC and HKDF pass it to `hkdf.h`'s entries, whose
+  `hash_on_instructions` reads the SHA-512 bit for SHA-384 and SHA-512.
+  `hkdf.c`'s `hmac` takes SHA-512 under `CH_HASH` alone, so the key
+  schedule's sizes do not move.
+- **Check.** `bin/hash_test` runs RFC 6234's, RFC 4231's and RFC 5869's
+  vectors, hashlib's SHA-3 and SHAKE, uneven splits and every refusal of
+  `test/test_cpu.h`, under `CH_CPU_PROBED` and under this CPU's bits, and
+  requires each final to leave zeros. `bin/hash_dispatch_test` counts the
+  calls into each path, with stand-ins that run the portable code, so its
+  verdict is the same on every CPU. The Wycheproof hash test runs the
+  HMAC and HKDF suites. The `hash` proof holds each refusal, the path of
+  each stream and each wipe over stubs of every hash, and the `hkdf512`
+  proof holds `hmac_sha512`. `bin/diff` holds HMAC-SHA-512 and
+  HKDF-SHA-512 to `Spec.Hkdf`.
+- **Violation.** A PR admits a bit the object does not define:
+  `inv72-hash-init-admits-undefined-bit` makes `ch_sha256_init` test
+  `CH_CPU_PROBED` alone, and `bin/hash_test` catches it. A PR drops the
+  caller's value from a stream: `inv72-hash-stream-keeps-probed-alone`
+  makes `ch_sha512_init` keep `CH_CPU_PROBED`, every digest stays right,
+  and `bin/hash_dispatch_test` catches it. A PR hashes a long HMAC-SHA-512
+  key with SHA-384: `inv72-hmac-sha512-long-key-hashed-sha384`, which
+  `bin/hash_test` catches through RFC 4231's 131-byte keys.
+- See [decisions: Engineering](decisions.md#engineering), entry 246.
+
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
 - **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit words

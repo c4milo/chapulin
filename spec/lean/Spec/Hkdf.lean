@@ -3,7 +3,8 @@ import Spec.Sha512
 
 /-!
 HMAC (RFC 2104), HKDF (RFC 5869), and the TLS 1.3 key-schedule pieces built
-on them (RFC 9846 §7.1), over SHA-256 and SHA-384. Written from the RFC
+on them (RFC 9846 §7.1), over SHA-256 and SHA-384, and HMAC and HKDF over
+SHA-512 for hash.h's calls (docs/decisions.md 246). Written from the RFC
 text only.
 
 Every definition takes the hash as a `Hash`: its block size, its output
@@ -33,6 +34,10 @@ def sha256H : Hash := ⟨64, 32, sha256⟩
 /-- SHA-384: B = 128 and HashLen = 48 (FIPS 180-4 §1; SHA-384 takes
 SHA-512's block). -/
 def sha384H : Hash := ⟨128, 48, Spec.Sha512.sha384⟩
+
+/-- SHA-512: B = 128 and HashLen = 64 (FIPS 180-4 §1). No TLS 1.3 suite
+runs it; hash.h's HMAC and HKDF take it. -/
+def sha512H : Hash := ⟨128, 64, Spec.Sha512.sha512⟩
 
 /-- RFC 2104 §2: B for SHA-256. -/
 def blockSize : Nat := sha256H.blockSize
@@ -163,6 +168,10 @@ theorem sha256H_digest_size (m : ByteArray) : (sha256H.digest m).size = sha256H.
 /-- SHA-384's digest is its HashLen. -/
 theorem sha384H_digest_size (m : ByteArray) : (sha384H.digest m).size = sha384H.hashLen :=
   Spec.Sha512.sha384_size m
+
+/-- SHA-512's digest is its HashLen. -/
+theorem sha512H_digest_size (m : ByteArray) : (sha512H.digest m).size = sha512H.hashLen :=
+  Spec.Sha512.sha512_size m
 
 /-- HMAC answers one hash output (RFC 2104 §2: the outer hash's). -/
 theorem hmacWith_size (h : Hash) (h_digest : ∀ m, (h.digest m).size = h.hashLen)

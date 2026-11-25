@@ -787,6 +787,140 @@ test "SCRAM=on: the parts match std.crypto, and a SCRAM-SHA-256 proof checks" {
     try expectError(error.Invalid, scram.tls_server_end_point(&binding_room, bare[0..18]));
 }
 
+/// What the CPU that builds this test has of the hash instructions and kernels, as a Cpu value: the
+/// target's features, which name the CPU under -Dtarget=native. The test states their timing, as
+/// fixture.zig's cpuAnswer does for AES. A baseline target names none, and the value then runs the
+/// portable code, as Cpu{} does.
+fn hashCpu() chapulin.Cpu {
+    const builtin = @import("builtin");
+    const features = builtin.cpu.features;
+    if (builtin.cpu.arch == .x86_64) {
+        const x86 = std.Target.x86;
+        return .{
+            .constant_time_sha256 = x86.featureSetHas(features, .sha),
+            .avx2 = x86.featureSetHas(features, .avx2),
+            .bmi1 = x86.featureSetHas(features, .bmi),
+            .bmi2_adx = x86.featureSetHas(features, .bmi2) and x86.featureSetHas(features, .adx),
+        };
+    }
+    const arm = std.Target.aarch64;
+    return .{
+        .constant_time_sha256 = arm.featureSetHas(features, .sha2),
+        .constant_time_sha512 = arm.featureSetHas(features, .sha3),
+        .constant_time_sha3 = arm.featureSetHas(features, .sha3),
+    };
+}
+
+/// A SHA-2 stream of chapulin.hash against std.crypto's hash: one-shot, then the stream over
+/// uneven splits.
+fn expectSha2(comptime Ours: type, comptime Theirs: type, oneshot: anytype, cpu: chapulin.Cpu, message: []const u8) !void {
+    var want: [Ours.digest_len]u8 = undefined;
+    Theirs.hash(message, &want, .{});
+    var got: [Ours.digest_len]u8 = undefined;
+    try oneshot(cpu, &got, message);
+    try std.testing.expectEqualSlices(u8, &want, &got);
+    for ([_]usize{ 0, 1, 63, 64, 65, 127, 128, 129, message.len }) |split| {
+        var stream = try Ours.init(cpu);
+        stream.update(message[0..split]);
+        stream.update(message[split..]);
+        stream.final(&got);
+        try std.testing.expectEqualSlices(u8, &want, &got);
+    }
+}
+
+/// The three HMACs and HKDFs of chapulin.hash against std.crypto's, under one Cpu.
+fn expectMacs(cpu: chapulin.Cpu, message: []const u8) !void {
+    const hash = chapulin.hash;
+    const key = "a key of the Zig API's hash test, longer than none of the blocks";
+    var tag: [64]u8 = undefined;
+    var want: [64]u8 = undefined;
+    try hash.hmac(cpu, tag[0..32], &.{ .algorithm = .sha256, .key = key, .message = message });
+    std.crypto.auth.hmac.sha2.HmacSha256.create(want[0..32], message, key);
+    try std.testing.expectEqualSlices(u8, want[0..32], tag[0..32]);
+    try hash.hmac(cpu, tag[0..48], &.{ .algorithm = .sha384, .key = key, .message = message });
+    std.crypto.auth.hmac.sha2.HmacSha384.create(want[0..48], message, key);
+    try std.testing.expectEqualSlices(u8, want[0..48], tag[0..48]);
+    try hash.hmac(cpu, &tag, &.{ .algorithm = .sha512, .key = message, .message = key });
+    std.crypto.auth.hmac.sha2.HmacSha512.create(&want, key, message);
+    try std.testing.expectEqualSlices(u8, &want, &tag);
+    try expectError(error.Invalid, hash.hmac(cpu, tag[0..48], &.{ .algorithm = .sha512, .key = key, .message = message }));
+
+    const Hkdf = std.crypto.kdf.hkdf;
+    var prk: [64]u8 = undefined;
+    try hash.hkdf_extract(cpu, prk[0..32], &.{ .algorithm = .sha256, .salt = "salt", .ikm = message });
+    try std.testing.expectEqualSlices(u8, &Hkdf.HkdfSha256.extract("salt", message), prk[0..32]);
+    var okm: [300]u8 = undefined;
+    var okm_want: [300]u8 = undefined;
+    try hash.hkdf_expand(cpu, &okm, &.{ .algorithm = .sha256, .prk = prk[0..32], .info = "info" });
+    Hkdf.HkdfSha256.expand(&okm_want, "info", prk[0..32].*);
+    try std.testing.expectEqualSlices(u8, &okm_want, &okm);
+    try hash.hkdf_extract(cpu, &prk, &.{ .algorithm = .sha512, .salt = "", .ikm = message });
+    try std.testing.expectEqualSlices(u8, &Hkdf.HkdfSha512.extract("", message), &prk);
+    try hash.hkdf_expand(cpu, &okm, &.{ .algorithm = .sha512, .prk = &prk, .info = message[0..80] });
+    Hkdf.HkdfSha512.expand(&okm_want, message[0..80], prk);
+    try std.testing.expectEqualSlices(u8, &okm_want, &okm);
+    const Hkdf384 = Hkdf.Hkdf(std.crypto.auth.hmac.sha2.HmacSha384);
+    try hash.hkdf_extract(cpu, prk[0..48], &.{ .algorithm = .sha384, .salt = key, .ikm = message });
+    try std.testing.expectEqualSlices(u8, &Hkdf384.extract(key, message), prk[0..48]);
+    try hash.hkdf_expand(cpu, okm[0..48], &.{ .algorithm = .sha384, .prk = prk[0..48], .info = "" });
+    Hkdf384.expand(okm_want[0..48], "", prk[0..48].*);
+    try std.testing.expectEqualSlices(u8, okm_want[0..48], okm[0..48]);
+    try expectError(error.Invalid, hash.hkdf_expand(cpu, okm[0..0], &.{ .algorithm = .sha256, .prk = prk[0..32], .info = "" }));
+    try expectError(error.Invalid, hash.hkdf_expand(cpu, &okm, &.{ .algorithm = .sha256, .prk = prk[0..31], .info = "" }));
+    try std.testing.expectEqual(@as(usize, 255 * 48), hash.Algorithm.sha384.hkdf_expand_len_max());
+}
+
+/// SHA-3 and SHAKE of chapulin.hash against std.crypto's, under one Cpu.
+fn expectSha3(cpu: chapulin.Cpu, message: []const u8) !void {
+    const hash = chapulin.hash;
+    const sha3 = std.crypto.hash.sha3;
+    var digest: [64]u8 = undefined;
+    var want: [64]u8 = undefined;
+    try hash.sha3_256(cpu, digest[0..32], message);
+    sha3.Sha3_256.hash(message, want[0..32], .{});
+    try std.testing.expectEqualSlices(u8, want[0..32], digest[0..32]);
+    try hash.sha3_512(cpu, &digest, message);
+    sha3.Sha3_512.hash(message, &want, .{});
+    try std.testing.expectEqualSlices(u8, &want, &digest);
+
+    var out: [400]u8 = undefined;
+    var out_want: [400]u8 = undefined;
+    try hash.shake128(cpu, &out, message);
+    sha3.Shake128.hash(message, &out_want, .{});
+    try std.testing.expectEqualSlices(u8, &out_want, &out);
+    var stream = try hash.Shake256.init(cpu);
+    stream.absorb(message[0..7]);
+    stream.absorb(message[7..]);
+    stream.squeeze(out[0..1]);
+    stream.squeeze(out[1..200]);
+    stream.squeeze(out[200..]);
+    stream.wipe();
+    sha3.Shake256.hash(message, &out_want, .{});
+    try std.testing.expectEqualSlices(u8, &out_want, &out);
+}
+
+test "HASH=on: each call matches std.crypto under the portable and the host's Cpu, and refuses what hash.h refuses" {
+    if (!@hasDecl(c, "ch_hkdf_expand")) return error.SkipZigTest;
+    const hash = chapulin.hash;
+    var message: [300]u8 = undefined;
+    for (&message, 0..) |*byte, i| byte.* = @truncate(i *% 7 +% 3);
+    const sha2 = std.crypto.hash.sha2;
+    for ([_]chapulin.Cpu{ .{}, hashCpu() }) |cpu| {
+        try expectSha2(hash.Sha256, sha2.Sha256, hash.sha256, cpu, &message);
+        try expectSha2(hash.Sha384, sha2.Sha384, hash.sha384, cpu, &message);
+        try expectSha2(hash.Sha512, sha2.Sha512, hash.sha512, cpu, &message);
+        try expectMacs(cpu, &message);
+        try expectSha3(cpu, &message);
+    }
+    // A bit of the other architecture is one the object does not define.
+    const other: chapulin.Cpu = if (@import("builtin").cpu.arch == .x86_64) .{ .constant_time_sha512 = true } else .{ .avx2 = true };
+    try expectError(error.Invalid, hash.Sha256.init(other));
+    var digest: [32]u8 = undefined;
+    try expectError(error.Invalid, hash.sha256(other, &digest, "x"));
+    try expectError(error.Invalid, hash.Shake128.init(other));
+    try expectError(error.Invalid, hash.hmac(other, &digest, &.{ .algorithm = .sha256, .key = "", .message = "" }));
+}
+
 /// Refers to each named declaration of T, so it compiles.
 fn compile(comptime T: type, comptime names: []const []const u8) void {
     inline for (names) |name| _ = &@field(T, name);
@@ -801,6 +935,7 @@ test "every declaration this object has compiles" {
     if (has_webpki) compile(chapulin, &.{ "TrustAnchor", "CertType", "Anchors" });
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hook_context"});
     if (@hasDecl(c, "ch_dnssec_verify")) compile(chapulin.dnssec, &.{ "Algorithm", "DigestType", "Hash", "verify" });
+    if (@hasDecl(c, "ch_hkdf_expand")) compile(chapulin.hash, &.{ "Sha256", "Sha384", "Sha512", "sha256", "sha384", "sha512", "sha3_256", "sha3_512", "Shake128", "Shake256", "shake128", "shake256", "Algorithm", "HmacOptions", "hmac", "HkdfExtractOptions", "hkdf_extract", "HkdfExpandOptions", "hkdf_expand", "hkdf_info_len_max" });
     const record = [_][]const u8{ "init", "record_in", "state", "alert_sent", "alert_received", "read", "write", "writable_len", "end", "close", "fail", "group", "psk_selected", "peer_limit", "read_closed", "reply_len" };
     const quic = [_][]const u8{ "init", "crypto_in", "initial_keys", "keys_ready", "peer_transport_params", "seal", "seal_close", "open", "retry_ok", "negotiated_version", "key_update", "key_phase", "drop_previous_keys", "discard", "state", "alert", "error_code", "close", "alpn_selected", "group", "psk_selected" };
     compile(chapulin.tcp, &.{ "parts_max", "InitError", "RecordInError", "ServerRecordInError", "RecordOutError", "ReadError", "WriteError", "EndError", "FailError", "ExportError" });

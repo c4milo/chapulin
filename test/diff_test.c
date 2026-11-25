@@ -27,6 +27,7 @@
 #include "diff_handshake_parser.h"
 #include "diff_hash.h"
 #include "diff_hash384.h"
+#include "diff_hash512.h"
 #include "diff_mlkem.h"
 #include "diff_p256.h"
 #include "diff_p384.h"
@@ -75,6 +76,10 @@ int main(int argc, char **argv) {
     diff_hkdf384();
     diff_expand_label384();
     diff_schedule384();
+#endif
+#ifdef CH_HASH
+    diff_hmac512();
+    diff_hkdf512();
 #endif
     diff_chacha20();
     diff_poly1305();

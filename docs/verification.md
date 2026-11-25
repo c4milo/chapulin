@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-140 of the 186 C sources in the tree root are compiled into a
+141 of the 187 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -397,6 +397,21 @@ The entries are grouped by area:
 - **Not proved:** the SHA-256 arm of that build, 32-byte hashes in its
   48-byte buffers. The [hkdf](#hkdf) harnesses prove the SHA-256 arm in
   buffers sized to it.
+
+#### hkdf512
+
+- **Harness:** `hkdf512` (fast)
+- **Build:** `CH_HASH`, which a `HASH=on` object defines (decision 246).
+- **Proves:** `hmac_sha512` directly, `hmac_sha384` beside it, and
+  extract with `hash_len` free over 32, 48 and 64, so all three arms of
+  the `hmac` dispatcher, over the proven sha256 and sha512 contracts.
+- **Bound:** the [hkdf384](#hkdf384) harness's: keys ≤ 160 B and
+  messages ≤ 48 B.
+- **Not proved:** expand at `hash_len` 64, which no harness launches;
+  `bin/diff` holds it to `Spec.Hkdf`'s `sha512H`, and `bin/hash_test` and
+  the Wycheproof hash test to RFC 5869's construction and Wycheproof's
+  HKDF-SHA-512 suite. No cbmc ran when the harness was written, so its
+  time and memory are not measured yet.
 
 #### keysched, keysched384
 
@@ -1935,6 +1950,29 @@ The entries are grouped by area:
 - **Not proved:** the digests, which a contract stub of SHA-256 answers
   here. `bin/scram_test` holds them to RFC 4231's cases, and
   `bin/wycheproof_scram_test` to Wycheproof's.
+
+#### hash
+
+- **Harness:** `hash` (fast)
+- **Build:** a host object with `CH_HASH` (decision 246).
+- **Proves:** `hash.c`'s 24 calls are memory safe and free of UB over
+  any CPU value, with a NULL pointer for each input of no bytes. Also:
+  - each init and each call over a whole input answers `CH_EINVAL`
+    exactly for a value `cpu_value_ok` refuses;
+  - a stream runs each update, absorb, squeeze and final on the path the
+    value its init took names, and a final or `ch_shake_wipe` leaves the
+    caller's whole state zero;
+  - `ch_hmac`, `ch_hkdf_extract` and `ch_hkdf_expand` answer `CH_OK`
+    exactly when the value, the algorithm and each length are ones
+    `hash.h` takes, run the path of the hash they name, and hand
+    `hkdf.c` only arguments its `CH_ASSERT`s take.
+- **Bound:** inputs of up to 4 bytes, outputs of up to 65, and an output
+  or an info past every bound `hash.h` sets.
+- **Not proved:** the digests, which stubs answer here, and the time and
+  memory of the run: no cbmc ran when the harness was written.
+  `bin/hash_test` holds the digests to RFC 6234's, RFC 4231's and RFC
+  5869's vectors and to hashlib's SHA-3 and SHAKE, and
+  `bin/hash_dispatch_test` counts which path each call takes.
 
 #### pbkdf2
 
@@ -8575,6 +8613,15 @@ tag cut to its group's length. It holds `ch_pbkdf2_hmac_sha256` to the
 a host object with `CH_SCRAM` (decision 222). `ch_ct_compare` makes
 each compare. Wycheproof has no suite for SHA-256 alone, for base64 or
 for the tls-server-end-point value. None of these cases is in the 6,375.
+
+The Wycheproof hash test holds `ch_hmac` to every case of
+`hmac_sha256_test.json`, `hmac_sha384_test.json` and
+`hmac_sha512_test.json`, 174 each, 66 valid and 108 invalid, and
+`ch_hkdf_extract` with `ch_hkdf_expand` to the 252 cases of the three
+`hkdf_` suites, of which 9 ask for more than 255 blocks and must be
+refused (decision 246). It runs each under `CH_CPU_PROBED` and under the
+bits the CPU has, in a host object with `CH_HASH`. None of these cases is
+in the 6,375.
 
 ML-KEM-1024's three suites, 511 cases, run in a binary of their own,
 `bin/wycheproof_mlkem1024_test`, built under `-DCH_MLKEM_1024` with the

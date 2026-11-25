@@ -145,10 +145,12 @@ def build_and_run():
     # through RSA_WIDE_DEF: the RSA differential samples a 4096-bit
     # modulus, which rsa.h admits only at that bound. The bound is named
     # rather than -DCH_TRUST_WEBPKI, which cfg.h refuses beside
-    # -DCH_TRUST_CA. -DCH_HASH_SHA384, as bin/diff passes it, so the
-    # SHA-384 rows of test/diff_hash384.h run too.
+    # -DCH_TRUST_CA. -DCH_HASH_SHA384 and -DCH_HASH, as bin/diff passes
+    # them, so the SHA-384 rows of test/diff_hash384.h and the SHA-512 rows
+    # of test/diff_hash512.h run too.
     flags =["--coverage", "-O0", "-g", "-std=c11", "-D_DEFAULT_SOURCE",
              "-DCH_RAND_EXTERN", "-DCH_TRUST_CA", "-DCH_RSA_MODULUS_MAX=512", "-DCH_HASH_SHA384",
+             "-DCH_HASH",
              f"-I{ROOT / 'src'}", f"-I{ROOT / 'include' / 'chapulin'}",
              f"-I{ROOT / 'include'}", f"-I{ROOT}"]
     objs = []

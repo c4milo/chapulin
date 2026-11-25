@@ -21,6 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "public_sizes.h"
 #include "result.h"
 
 #if defined(CH_SCRAM) && !defined(CH_CPU_RUNTIME)
@@ -30,8 +31,8 @@
 #error "CH_SCRAM needs TRUST=webpki, whose object packages SHA-384, SHA-512 and the DER reader"
 #endif
 
-// The length of a SHA-256 digest and of an HMAC-SHA-256 tag, in bytes.
-#define CH_SHA256_LEN 32
+// CH_SHA256_LEN, the length of a SHA-256 digest and of an HMAC-SHA-256
+// tag, is public_sizes.h's, which hash.h names too.
 
 // The length of the base64 text of n bytes (RFC 4648 section 4): 4
 // characters for each group of 3 bytes, and '=' fills the last group.

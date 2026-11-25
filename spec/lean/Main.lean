@@ -307,6 +307,17 @@ def dispatch : List String → Option String
     let l ← len.toNat?
     if l > 255 * Spec.Hkdf.sha384H.hashLen then return "ERR hkdf384_expand len over 255*HashLen"
     return emit (Spec.Hkdf.expandWith Spec.Hkdf.sha384H (← hexArg? prk) (← hexArg? info) l)
+  -- HMAC and HKDF over SHA-512, which hash.h's calls take and no TLS 1.3
+  -- suite runs (docs/decisions.md 246), with RFC 5869 §2.3's bound at
+  -- HashLen = 64.
+  | ["hmac512", k, m] => do
+    return emit (Spec.Hkdf.hmacWith Spec.Hkdf.sha512H (← hexArg? k) (← hexArg? m))
+  | ["hkdf512_extract", salt, ikm] => do
+    return emit (Spec.Hkdf.extractWith Spec.Hkdf.sha512H (← hexArg? salt) (← hexArg? ikm))
+  | ["hkdf512_expand", prk, info, len] => do
+    let l ← len.toNat?
+    if l > 255 * Spec.Hkdf.sha512H.hashLen then return "ERR hkdf512_expand len over 255*HashLen"
+    return emit (Spec.Hkdf.expandWith Spec.Hkdf.sha512H (← hexArg? prk) (← hexArg? info) l)
   | ["expand_label384", secret, label, ctx, len] => do
     let lab ← String.fromUTF8? (← hexArg? label)
     let c ← hexArg? ctx

@@ -9,6 +9,9 @@
 // block is SHA-512's 128 bytes, so the key reaches 160; hmac_sha384 is
 // called directly; and extract takes a hash_len free over the two values
 // the dispatcher in hmac accepts, so both of its arms are under proof.
+// hkdf512_harness.c compiles it under CH_HASH, a HASH=on object's define
+// (docs/decisions.md 246): there hmac_sha512 is called directly too, and
+// extract's hash_len is free over the three values the dispatcher takes.
 //
 // Layered proof: the hashes are replaced by stubs asserting the contract
 // their own proofs established (valid context, readable input, writable
@@ -20,7 +23,7 @@
 
 #include "hkdf.c"
 
-#ifdef CH_HASH_SHA384
+#if defined(CH_HASH_SHA384) || defined(CH_HASH)
 #define PROOF_BLOCK SHA512_BLOCK
 #else
 #define PROOF_BLOCK SHA256_BLOCK
@@ -29,7 +32,7 @@
 int main(void) {
     uint8_t key[PROOF_BLOCK + 32];
     uint8_t msg[48];
-    uint8_t prk[HKDF_HASH_MAX];
+    uint8_t prk[HMAC_HASH_MAX];
     size_t key_len = nondet_size_t();
     size_t msg_len = nondet_size_t();
     __CPROVER_assume(key_len <= sizeof key);
@@ -38,7 +41,12 @@ int main(void) {
     fill_nondet(msg, sizeof msg);
 
     hmac_sha256(key, key_len, msg, msg_len, prk);
-#ifdef CH_HASH_SHA384
+#ifdef CH_HASH
+    hmac_sha384(key, key_len, msg, msg_len, prk);
+    hmac_sha512(key, key_len, msg, msg_len, prk);
+    size_t hash_len = nondet_size_t();
+    __CPROVER_assume(hash_len == SHA256_LEN || hash_len == SHA384_LEN || hash_len == SHA512_LEN);
+#elif defined(CH_HASH_SHA384)
     hmac_sha384(key, key_len, msg, msg_len, prk);
     size_t hash_len = nondet_size_t();
     __CPROVER_assume(hash_len == SHA256_LEN || hash_len == SHA384_LEN);

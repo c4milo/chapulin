@@ -49,6 +49,7 @@ const Options = struct {
     DNSSEC: ?[]const u8 = null,
     JWS: ?[]const u8 = null,
     SCRAM: ?[]const u8 = null,
+    HASH: ?[]const u8 = null,
     TX_RECORD: ?[]const u8 = null,
     HOST_TARGET: ?[]const u8 = null,
     CH_AES_EXTERN_CONSTANT_TIME: ?[]const u8 = null,

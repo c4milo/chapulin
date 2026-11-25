@@ -1,5 +1,7 @@
 // HMAC (RFC 2104), HKDF (RFC 5869), and the TLS 1.3 label scheme (RFC 9846
-// §7.1), over SHA-256 and, in a build that has it, SHA-384. One file
+// §7.1), over SHA-256 and, in a build that has it, SHA-384. A CH_HASH
+// build adds SHA-384 and SHA-512 to HMAC and HKDF for hash.h's calls
+// (docs/decisions.md 246), and its key schedule keeps its own. One file
 // because TLS 1.3 uses them as one unit: every key in the protocol is an
 // HKDF-Expand-Label of some HKDF-Extract output, and Finished is the lone
 // bare-HMAC user.
@@ -21,8 +23,18 @@
 #include "sha256.h"
 
 // public_sizes.h sets CH_HASH_SHA384 and HKDF_HASH_MAX from the build.
-#ifdef CH_HASH_SHA384
+#if defined(CH_HASH_SHA384) || defined(CH_HASH)
 #include "sha512.h"
+#endif
+
+// The longest hash hmac, hkdf_extract and hkdf_expand take. A CH_HASH
+// build takes SHA-512 for hash.h's calls. HKDF_HASH_MAX stays the longest
+// hash of the key schedule, which sizes every secret a session holds, so
+// the axis grows no session.
+#ifdef CH_HASH
+#define HMAC_HASH_MAX SHA512_LEN
+#else
+#define HMAC_HASH_MAX HKDF_HASH_MAX
 #endif
 
 // HMAC-SHA-256. Its callers outside the key schedule fix SHA-256 whatever
@@ -31,28 +43,37 @@
 void hmac_sha256(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len,
                  uint8_t out[SHA256_LEN]);
 
-#ifdef CH_HASH_SHA384
+#if defined(CH_HASH_SHA384) || defined(CH_HASH)
 // HMAC-SHA-384: the same construction over SHA-384's 128-byte block.
 void hmac_sha384(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len,
                  uint8_t out[SHA384_LEN]);
 #endif
 
+#ifdef CH_HASH
+// HMAC-SHA-512: the same construction over SHA-512's 128-byte block, for
+// hash.h's calls alone. No session runs it.
+void hmac_sha512(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len,
+                 uint8_t out[SHA512_LEN]);
+#endif
+
 // HMAC under the hash hash_len names. out gets hash_len bytes.
 //
-// Requires: hash_len is SHA256_LEN, or SHA384_LEN in a build with
-// CH_HASH_SHA384; CH_ASSERT holds it there. key points at key_len readable
-// bytes, msg at msg_len, and out at hash_len writable bytes.
+// Requires: hash_len is SHA256_LEN, SHA384_LEN in a build with
+// CH_HASH_SHA384 or CH_HASH, or SHA512_LEN in a CH_HASH build; CH_ASSERT
+// holds it there. key points at key_len readable bytes, msg at msg_len,
+// and out at hash_len writable bytes.
 void hmac(size_t hash_len, const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len,
           uint8_t *out);
 
-// HKDF-Extract (RFC 5869 §2.2). prk gets hash_len bytes. A NULL salt is
-// hash_len zero bytes, the RFC's default.
+// HKDF-Extract (RFC 5869 §2.2), under the hashes hmac takes. prk gets
+// hash_len bytes. A NULL salt is hash_len zero bytes, the RFC's default.
 void hkdf_extract(size_t hash_len, const uint8_t *salt, size_t salt_len, const uint8_t *ikm,
                   size_t ikm_len, uint8_t *prk);
 
-// HKDF-Expand (RFC 5869 §2.3). prk holds hash_len bytes; out gets out_len
-// bytes, out_len <= 255 * hash_len. The key schedule asks for one hash
-// length; an EXPORTER=on build asks for up to CH_EXPORT_MAX through
+// HKDF-Expand (RFC 5869 §2.3), under the hashes hmac takes. prk holds
+// hash_len bytes; out gets out_len bytes, out_len <= 255 * hash_len; info
+// is at most HKDF_EXPAND_INFO_MAX bytes. The key schedule asks for one
+// hash length; an EXPORTER=on build asks for up to CH_EXPORT_MAX through
 // ch_export, which is eight blocks.
 void hkdf_expand(size_t hash_len, const uint8_t *prk, const uint8_t *info, size_t info_len,
                  uint8_t *out, size_t out_len);
@@ -85,6 +106,20 @@ _Static_assert(HKDF_LABEL_MAX <= 255 - 6, "the label vector's length is one byte
 // 64 while the label cap was fixed; deriving it is what lets the cap and
 // the hash move without a second number to keep in step.
 #define HKDF_INFO_MAX (2 + 1 + 6 + HKDF_LABEL_MAX + 1 + HKDF_HASH_MAX)
+
+// The longest info hkdf_expand takes. A CH_HASH build takes a caller's
+// info of up to CH_HKDF_INFO_LEN_MAX bytes through ch_hkdf_expand
+// (public_sizes.h), and every other build takes what hkdf_expand_label
+// builds. The buffer hkdf_expand_label writes stays HKDF_INFO_MAX bytes.
+#ifdef CH_HASH
+#define HKDF_EXPAND_INFO_MAX CH_HKDF_INFO_LEN_MAX
+#else
+#define HKDF_EXPAND_INFO_MAX HKDF_INFO_MAX
+#endif
+#ifndef __cplusplus
+_Static_assert(HKDF_EXPAND_INFO_MAX >= HKDF_INFO_MAX,
+               "hkdf_expand takes every info the label builds");
+#endif
 
 // secret holds hash_len bytes; ctx_len is at most HKDF_HASH_MAX.
 void hkdf_expand_label(size_t hash_len, const uint8_t *secret, const char *label,
@@ -123,8 +158,13 @@ void hkdf_expand_label_hw(size_t hash_len, const uint8_t *secret, const char *la
 // copy that holds two hashes still runs each on its own bit alone: a session that stated one
 // hash's instructions and not the other's never runs the other's.
 static inline int hash_on_instructions(uint32_t cpu, size_t hash_len) {
-#ifdef CH_HASH_SHA384
+#if defined(CH_HASH_SHA384) || defined(CH_HASH)
     if (hash_len == SHA384_LEN) {
+        return sha512_on_instructions(cpu);
+    }
+#endif
+#ifdef CH_HASH
+    if (hash_len == SHA512_LEN) {
         return sha512_on_instructions(cpu);
     }
 #endif

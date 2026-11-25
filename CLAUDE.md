@@ -544,6 +544,12 @@ Home: github.com/c4milo.
   `x509_end_point.c` defines `ch_tls_server_end_point`, RFC 5929's hash of
   a certificate. `base64_codec.[ch]` holds both axes' base64 loops. No
   session calls them, and each carries the transport in its symbol name.
+  A seventh pair is `hash.[ch]` (HASH=on, docs/decisions.md 246): SHA-2
+  as a stream and over a whole input, SHA-3, SHAKE, `ch_hmac` and HKDF,
+  each under the caller's `ch_cfg.cpu` bits through the `_cpu` entries a
+  session's hashes run. Its names differ from SCRAM=on's, so one object
+  holds both. No session calls them, and each carries the transport in
+  its symbol name.
   The Makefile TRANSPORT variable names
   what TLS runs over and who does the I/O: `tcp-blocking` (default),
   `tcp-nonblocking` or `quic-nonblocking` (docs/decisions.md 62). Each

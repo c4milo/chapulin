@@ -34,7 +34,7 @@ void hmac_sha256(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t 
     ct_wipe(&s, sizeof s);
 }
 
-#ifdef CH_HASH_SHA384
+#if defined(CH_HASH_SHA384) || defined(CH_HASH)
 // hmac_sha256's body over SHA-384. Its own function rather than a hash
 // argument inside one body: the one-function form measured cognitive
 // complexity 24 against the tree's threshold of 15 (docs/server.md, "What
@@ -70,13 +70,53 @@ void hmac_sha384(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t 
 }
 #endif
 
+#ifdef CH_HASH
+// hmac_sha384's body over SHA-512, for hash.h's calls (docs/decisions.md
+// 246). SHA-512 shares SHA-384's block and differs in its initial value
+// and in the bytes of the result it keeps (FIPS 180-4 §6.4 and §6.5).
+void hmac_sha512(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len,
+                 uint8_t out[SHA512_LEN]) {
+    uint8_t k[SHA512_BLOCK] = {0};
+    if (key_len > SHA512_BLOCK) {
+        sha512_of(key, key_len, k);
+    } else {
+        memcpy(k, key, key_len);
+    }
+    uint8_t pad[SHA512_BLOCK];
+    sha512 s;
+    for (int i = 0; i < SHA512_BLOCK; i++) {
+        pad[i] = k[i] ^ 0x36;
+    }
+    sha512_init(&s);
+    sha512_update(&s, pad, SHA512_BLOCK);
+    sha512_update(&s, msg, msg_len);
+    sha512_final(&s, out);
+    for (int i = 0; i < SHA512_BLOCK; i++) {
+        pad[i] = k[i] ^ 0x5c;
+    }
+    sha512_init(&s);
+    sha512_update(&s, pad, SHA512_BLOCK);
+    sha512_update(&s, out, SHA512_LEN);
+    sha512_final(&s, out);
+    ct_wipe(k, sizeof k);
+    ct_wipe(pad, sizeof pad);
+    ct_wipe(&s, sizeof s);
+}
+#endif
+
 void hmac(size_t hash_len, const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len,
           uint8_t *out) {
-#ifdef CH_HASH_SHA384
-    // hash_len is the suite's, which the ServerHello named in the clear, so
-    // this branch reads a public value.
+#if defined(CH_HASH_SHA384) || defined(CH_HASH)
+    // hash_len is the suite's, which the ServerHello named in the clear, or
+    // the hash a hash.h caller named, so this branch reads a public value.
     if (hash_len == SHA384_LEN) {
         hmac_sha384(key, key_len, msg, msg_len, out);
+        return;
+    }
+#endif
+#ifdef CH_HASH
+    if (hash_len == SHA512_LEN) {
+        hmac_sha512(key, key_len, msg, msg_len, out);
         return;
     }
 #endif
@@ -86,7 +126,7 @@ void hmac(size_t hash_len, const uint8_t *key, size_t key_len, const uint8_t *ms
 
 void hkdf_extract(size_t hash_len, const uint8_t *salt, size_t salt_len, const uint8_t *ikm,
                   size_t ikm_len, uint8_t *prk) {
-    static const uint8_t zeros[HKDF_HASH_MAX] = {0};
+    static const uint8_t zeros[HMAC_HASH_MAX] = {0};
     if (salt == NULL) {
         salt = zeros;
         salt_len = hash_len;
@@ -96,12 +136,12 @@ void hkdf_extract(size_t hash_len, const uint8_t *salt, size_t salt_len, const u
 
 void hkdf_expand(size_t hash_len, const uint8_t *prk, const uint8_t *info, size_t info_len,
                  uint8_t *out, size_t out_len) {
-    CH_ASSERT(hash_len <= HKDF_HASH_MAX);
+    CH_ASSERT(hash_len <= HMAC_HASH_MAX);
     CH_ASSERT(out_len > 0 && out_len <= (size_t)255 * hash_len);
-    CH_ASSERT(info_len <= HKDF_INFO_MAX);
+    CH_ASSERT(info_len <= HKDF_EXPAND_INFO_MAX);
     // T(n) = HMAC(prk, T(n-1) | info | n); msg buffer sized for the max.
-    uint8_t msg[HKDF_HASH_MAX + HKDF_INFO_MAX + 1];
-    uint8_t t[HKDF_HASH_MAX] = {0}; // T(0) is empty; t_len 0 keeps it out of round 1
+    uint8_t msg[HMAC_HASH_MAX + HKDF_EXPAND_INFO_MAX + 1];
+    uint8_t t[HMAC_HASH_MAX] = {0}; // T(0) is empty; t_len 0 keeps it out of round 1
     size_t t_len = 0;
     uint8_t n = 0;
     size_t off = 0;

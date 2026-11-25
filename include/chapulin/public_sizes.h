@@ -13,6 +13,25 @@
 #define SHA256_LEN 32
 #define SHA384_LEN 48
 
+// The length of a SHA-256 digest and of an HMAC-SHA-256 tag, in bytes,
+// as scram.h and hash.h name it.
+#define CH_SHA256_LEN SHA256_LEN
+
+// The sizes of hash.h's three state types, in bytes (docs/decisions.md
+// 246). Each is fixed, so a caller's storage has one size in every build
+// and on both host targets. hash.c holds each struct it writes into a
+// state to one of these sizes and to 8-byte alignment.
+#define CH_SHA256_STATE_SIZE 128
+#define CH_SHA512_STATE_SIZE 224
+#define CH_SHAKE_STATE_SIZE 240
+
+// The longest info ch_hkdf_expand takes, in bytes. RFC 5869 section 2.3
+// sets no bound. hkdf.c copies info into one buffer on its frame for each
+// block, so the bound sizes that buffer in a CH_HASH build. Wycheproof's
+// longest info is 80 bytes, and HPKE's key schedule passes fewer than 200
+// (docs/decisions.md 246).
+#define CH_HKDF_INFO_LEN_MAX 1024
+
 // SHA-384 joins HMAC and HKDF under CH_HASH_SHA384. A -DCH_SUITE_AES_GCM
 // build sets it here, because TLS_AES_256_GCM_SHA384 hashes with SHA-384;
 // a test binary or a proof harness sets it on its own to run the SHA-384

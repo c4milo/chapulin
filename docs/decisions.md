@@ -20364,3 +20364,68 @@ does nothing more.
       definition wins, but it adds C with no task of its own to every proof and lint lane.
     - The hook left to every program, as decision 61's 2026-09-24 ruling had it. Camilo found it a
       detail of chapulin that each colibri program had to repeat.
+
+246. **HASH=on exports the hashes, HMAC and HKDF, each under a CPU value.** stdx's `crypto`
+    module gives its dependents chapulin's cryptography, and it needs the hashes a program
+    calls: a digest of a file, an HMAC of a token, an HKDF of a shared secret. Camilo ruled on
+    2026-11-25 that the calls chapulin's key schedule already runs become public, each on the
+    path a session's `ch_cfg.cpu` would give it.
+
+    - **The axis.** `HASH=on` defines `CH_HASH`, off by default. A host `TRUST=webpki` object
+      alone takes it, on every transport, as `SCRAM=on` does. That object packages SHA-384,
+      SHA-512 and SHA-3, and no device object has a measured budget for these calls. Each call
+      carries the transport in its symbol name (decision 61). In the Zig build's
+      `TRANSPORT=nonblocking` the axis reaches the tcp-nonblocking object alone, as `SCRAM` does
+      (decision 245): one copy serves a program. It takes no build record bit.
+    - **The calls, 24 in `hash.h`.** SHA-256, SHA-384 and SHA-512 as a stream,
+      `ch_sha256_init`, `ch_sha256_update` and `ch_sha256_final` and the same for the other two,
+      and over a whole input, `ch_sha256_hash`, `ch_sha384_hash` and `ch_sha512_hash`.
+      `ch_sha3_256_hash` and `ch_sha3_512_hash` over a whole input. SHAKE128 and SHAKE256 as a
+      stream, `ch_shake128_init`, `ch_shake256_init`, `ch_shake_absorb`, `ch_shake_squeeze` and
+      `ch_shake_wipe`, and over a whole input, `ch_shake128_hash` and `ch_shake256_hash`.
+      `ch_hmac`, `ch_hkdf_extract` and `ch_hkdf_expand`, each over one of three hashes that
+      `CH_HASH_ALGORITHM_SHA256`, `_SHA384` and `_SHA512` name. HMAC and HKDF are one call each.
+    - **The names.** `SCRAM=on` holds `ch_sha256` and `ch_hmac_sha256`, which take no CPU value,
+      and stdx builds an object with both axes. So no name here is one of those: a stream has
+      `_init`, `_update` and `_final`, a whole input `_hash`, and HMAC is `ch_hmac` with an
+      algorithm. The two axes' calls stand side by side in one object.
+    - **The CPU value.** Each call takes the bits of `ch_cfg.cpu` (cpu_cfg.h) and runs through
+      the entries that end `sha256.h`, `sha512.h`, `sha3.h` and `hkdf.h`, as a session's hashes
+      do. Each refuses with `CH_EINVAL` a value without `CH_CPU_PROBED` or with a bit the object
+      does not define, as every init call does (cpu.h). A stream keeps the value its init took,
+      so update and final take none, and an assertion holds a stream that no init started. So a
+      `HASH=on` object packages `sha512_hw.c` and `sha512_avx2.c` without `SUITE=aesgcm` too,
+      and `hkdf_hw.c` compiles HMAC-SHA-512 under the instructions' names.
+    - **The states.** `ch_sha256_state`, `ch_sha384_state`, `ch_sha512_state` and
+      `ch_shake_state` are words of a fixed size, `public_sizes.h`'s `CH_SHA256_STATE_SIZE`, 128
+      bytes, `CH_SHA512_STATE_SIZE`, 224, and `CH_SHAKE_STATE_SIZE`, 240. `hash.c` holds each
+      struct it writes into a state to that size and alignment with a `_Static_assert`. A fixed
+      size, in place of `dnssec.h`'s size from each object, gives one layout in every build and
+      on both host targets. A final wipes the whole state, and so does `ch_shake_wipe`.
+    - **HMAC-SHA-512.** `hkdf.c`'s `hmac` took 32 and 48 bytes. Under `CH_HASH` it takes 64,
+      through `hmac_sha512`, the construction over SHA-512. `HMAC_HASH_MAX` sizes `hkdf.c`'s
+      buffers, and `HKDF_HASH_MAX` stays the key schedule's, so the axis grows no session. So
+      HKDF-SHA-512 comes with it at no other cost.
+    - **HKDF's bounds.** `ch_hkdf_expand` takes an info of up to `CH_HKDF_INFO_LEN_MAX`, 1,024
+      bytes, because `hkdf_expand` copies the info into a buffer on its frame. In a `CH_HASH`
+      build the buffer takes that bound, `HKDF_EXPAND_INFO_MAX`, and `hkdf_expand_label`'s
+      buffer stays `HKDF_INFO_MAX`. Wycheproof's longest info is 80 bytes. Both calls take a PRK
+      of the digest length alone. RFC 5869 section 2.3 permits a longer one, and none of the
+      calls' callers passes one.
+    - **The Zig API.** `chapulin.hash` holds `Sha256`, `Sha384` and `Sha512`, each with `init`,
+      `update` and `final`; `sha256`, `sha384`, `sha512`, `sha3_256` and `sha3_512`; `Shake128`
+      and `Shake256` with `init`, `absorb`, `squeeze` and `wipe`, and `shake128` and `shake256`;
+      `Algorithm`; and `hmac`, `hkdf_extract` and `hkdf_expand`, each with an options struct, as
+      decision 222 gives `hmac_sha256` one. Each takes a `chapulin.Cpu`.
+    - **What holds it.** `bin/hash_test` reads RFC 6234's SHA-2 rows, RFC 4231's HMAC cases and
+      RFC 5869's HKDF cases out of `docs/rfcs/`, and Python checks each. It runs them, hashlib's
+      SHA-3 and SHAKE, a stream in uneven pieces and each refusal, under `CH_CPU_PROBED` and
+      under the bits this CPU has. `bin/hash_dispatch_test` counts which path each call takes.
+      The Wycheproof hash test runs the HMAC and HKDF suites of the three hashes under both
+      values. The `hash` proof holds each refusal, each stream's path and each wipe over stubs,
+      and the `hkdf512` proof holds HMAC-SHA-512. `bin/diff` holds HMAC-SHA-512 and HKDF-SHA-512
+      to `Spec.Hkdf`'s `sha512H`. The Zig test checks each call against `std.crypto`. INV-72
+      states the rule.
+    - **Not built.** SHA-1, which `dnssec.h` keeps for DS digests alone. A stream of SHA3-256 or
+      SHA3-512: `sha3.c`'s stream pads with SHAKE's suffix, and the axis adds no Keccak code. A
+      stream of HMAC. SHA-224, SHA-512/256, HMAC over SHA-3, and a PRK longer than HashLen.

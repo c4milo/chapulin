@@ -108,4 +108,27 @@ void sha384_of(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]) {
 }
 #endif
 
+// The SHA-512 stub, beside the SHA-384 one, whose sha512_update it shares:
+// the harnesses that compile hkdf.c under CH_HASH define both, because that
+// build carries HMAC-SHA-512 (docs/decisions.md 246). sha512_harness.c
+// proves the real functions.
+#ifdef CH_PROOF_STUB_SHA512
+void sha512_init(sha512 *s) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha512_init: ctx writable");
+    fill_nondet((uint8_t *)s, sizeof *s);
+}
+
+void sha512_final(sha512 *s, uint8_t out[SHA512_LEN]) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha512_final: ctx writable");
+    __CPROVER_assert(__CPROVER_w_ok(out, SHA512_LEN), "sha512_final: output writable");
+    fill_nondet(out, SHA512_LEN);
+}
+
+void sha512_of(const uint8_t *in, size_t n, uint8_t out[SHA512_LEN]) {
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "sha512_of: input readable");
+    __CPROVER_assert(__CPROVER_w_ok(out, SHA512_LEN), "sha512_of: output writable");
+    fill_nondet(out, SHA512_LEN);
+}
+#endif
+
 #endif

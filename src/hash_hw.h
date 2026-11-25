@@ -50,6 +50,7 @@
 // hkdf.c.
 #define hmac_sha256 hmac_sha256_hw
 #define hmac_sha384 hmac_sha384_hw
+#define hmac_sha512 hmac_sha512_hw
 #define hmac hmac_hw
 #define hkdf_extract hkdf_extract_hw
 #define hkdf_expand hkdf_expand_hw

@@ -2,15 +2,17 @@
 
 A Zig program runs chapulin's tcp-nonblocking and QUIC sessions through Zig
 values, Zig errors and session types it places in its own memory. It
-never builds a `ch_cfg` or writes a C callback. The API is eleven files
+never builds a `ch_cfg` or writes a C callback. The API is twelve files
 at the repository root: `chapulin.zig`, `chapulin_tcp.zig`,
 `chapulin_quic.zig`, `chapulin_quic_token.zig`, `chapulin_ticket.zig`,
 `chapulin_pem.zig`, `chapulin_dnssec.zig`, `chapulin_jws.zig`,
-`chapulin_scram.zig`, `chapulin_cpu.zig` and `chapulin_cfg.zig`. `chapulin_quic_token.zig` holds the Retry token calls,
+`chapulin_scram.zig`, `chapulin_hash.zig`, `chapulin_cpu.zig` and
+`chapulin_cfg.zig`. `chapulin_quic_token.zig` holds the Retry token calls,
 `chapulin_ticket.zig` holds `Ticket`, `chapulin_pem.zig` holds `Chain`,
 `EcdsaP256Key`, `RsaKey`, `MlDsa87Key` and `Anchors`, `chapulin_dnssec.zig`
 holds the DNSSEC calls, `chapulin_jws.zig` holds the JWS calls,
 `chapulin_scram.zig` holds the parts of SCRAM-SHA-256,
+`chapulin_hash.zig` holds the hashes, HMAC and HKDF,
 `chapulin_cpu.zig` holds `Cpu` and `cpu_bits`, and
 `chapulin_cfg.zig` builds each `ch_cfg`. The API is chapulin.hpp's kind of
 wrapper: each call
@@ -87,7 +89,8 @@ configuration, and gives one module `chapulin` (docs/decisions.md 245).
 Its `tcp` is the API over the first object, and its `quic` the API over
 the second: `chapulin.tcp.tcp.Client` is a record session, and
 `chapulin.quic.quic.Client` a QUIC session. `EXPORTER`, `TX_RECORD`,
-`DNSSEC`, `JWS` and `SCRAM` reach the tcp-nonblocking object alone.
+`DNSSEC`, `JWS`, `SCRAM` and `HASH` reach the tcp-nonblocking object
+alone, so a program calls `chapulin.tcp.hash`.
 
 ```zig
 const chapulin = b.dependency("chapulin", .{ .target = target, .RAND = .session, .TRANSPORT = .nonblocking, .ROLE = .both, .TRUST = .webpki, .SUITE = .aesgcm, .EXPORTER = .on });
@@ -167,6 +170,7 @@ for a `@compileError` declaration too.
 | `dnssec.Algorithm`, `dnssec.DigestType`, `dnssec.Hash`, `dnssec.verify` | `dnssec.h`'s five calls (DNSSEC=on) |
 | `jws.Algorithm`, `jws.VerifyOptions`, `jws.verify`, `jws.base64url_encode`, `jws.base64url_decode`, `jws.base64url_len`, `jws.base64url_decoded_len_max` | `jws.h`'s three calls and two length macros (JWS=on) |
 | `scram.sha256`, `scram.hmac_sha256`, `scram.pbkdf2_hmac_sha256`, `scram.timing_safe_eql`, `scram.base64_encode`, `scram.base64_decode`, `scram.tls_server_end_point` | `scram.h`'s seven calls (SCRAM=on); `timing_safe_eql` is `ch_ct_compare` as a bool |
+| `hash.Sha256`, `hash.Sha384`, `hash.Sha512`, `hash.sha256`, `hash.sha384`, `hash.sha512`, `hash.sha3_256`, `hash.sha3_512`, `hash.Shake128`, `hash.Shake256`, `hash.shake128`, `hash.shake256`, `hash.Algorithm`, `hash.hmac`, `hash.hkdf_extract`, `hash.hkdf_expand` | `hash.h`'s 24 calls (HASH=on) |
 | `Error.Discard`, `Error.AeadLimit` | `CH_QUIC_DISCARD` (a QUIC object) |
 | `Error.KeyUpdateLimit` | `CH_KEY_UPDATE_LIMIT` (a TCP object) |
 | a record session's `key_update` | never: the name is reserved |
@@ -514,6 +518,43 @@ and in `avx512_wipe.c`'s block of assembly, as make's does
   can: on arm64 a core with FEAT_DIT and a thread that has set
   PSTATE.DIT, and on x86-64 a part on Intel's DOIT list whose operating
   system has set DOITM.
+
+### Hashes, HMAC and HKDF
+
+An object built with `HASH=on` gives `chapulin.hash` (`hash.h`,
+docs/decisions.md 246). Every call takes a `Cpu`, and runs each hash
+where a session with that value would run it: on the SHA-256, SHA-512 or
+SHA-3 instructions, or on x86-64 the AVX2 and BMI kernels, where the
+fields name them. `Cpu{}` runs the portable code. A value with a field
+of the other architecture is `error.Invalid`, as at init.
+
+- `Sha256`, `Sha384` and `Sha512` are streams: `init(cpu)`, then
+  `update(bytes)`, then `final(out)`, which writes `digest_len` bytes and
+  wipes the state. A stream keeps the `Cpu` its `init` took.
+- `sha256`, `sha384`, `sha512`, `sha3_256` and `sha3_512` hash a whole
+  input: `(cpu, out, bytes)`, the destination first.
+- `Shake128` and `Shake256` are streams: `init(cpu)`, then `absorb`, then
+  `squeeze` as often as the caller likes, and `wipe` last. An absorb after
+  the first squeeze of one byte or more fails `hash.h`'s assertion.
+  `shake128` and `shake256` fill `out` from a whole input.
+- `hmac(cpu, out, &.{ .algorithm, .key, .message })` writes the HMAC into
+  `out`, whose length is `algorithm.digest_len()`.
+  `hkdf_extract(cpu, prk, &.{ .algorithm, .salt, .ikm })` and
+  `hkdf_expand(cpu, out, &.{ .algorithm, .prk, .info })` are RFC 5869's two
+  steps. `Algorithm` is `sha256`, `sha384` or `sha512`. An `out` of
+  another length, a `prk` other than the digest's length, an `info` past
+  `hkdf_info_len_max`, 1,024 bytes, or an Expand past
+  `algorithm.hkdf_expand_len_max()` is `error.Invalid`.
+
+```zig
+const hash = chapulin.hash;
+var digest: [hash.sha256_len]u8 = undefined;
+try hash.sha256(cpu, &digest, message);
+var prk: [hash.sha256_len]u8 = undefined;
+try hash.hkdf_extract(cpu, &prk, &.{ .algorithm = .sha256, .salt = salt, .ikm = secret });
+var key: [32]u8 = undefined;
+try hash.hkdf_expand(cpu, &key, &.{ .algorithm = .sha256, .prk = &prk, .info = "key" });
+```
 
 ### Codes and reports
 

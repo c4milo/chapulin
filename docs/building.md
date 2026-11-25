@@ -62,7 +62,13 @@ Other targets:
   SCRAM-SHA-256 (`scram.h`, decision 222): SHA-256, HMAC-SHA-256,
   PBKDF2-HMAC-SHA-256, `ch_ct_compare`, base64's encoder and decoder,
   and the tls-server-end-point channel binding. It takes the same
-  objects. `WIDEMUL` is a device object's
+  objects. `HASH=on` adds 24 calls (`hash.h`, decision 246): SHA-256,
+  SHA-384 and SHA-512 as a stream and over a whole input, SHA3-256 and
+  SHA3-512, SHAKE128 and SHAKE256, HMAC, and HKDF's Extract and Expand.
+  Each takes the bits of `ch_cfg.cpu` and runs where a session's hash
+  runs, so the object holds `sha512_hw.c` without `SUITE=aesgcm` too. It
+  takes the same objects, and stands beside `SCRAM=on` in one object.
+  `WIDEMUL` is a device object's
   variable alone. `WIDEMUL=native` defines `CH_NATIVE_WIDEMUL` in the
   object: the builder states that this part's widening multiply runs in
   constant time, and every widening product then uses the CPU's multiply

@@ -219,6 +219,8 @@ pub const dnssec = @import("chapulin_dnssec.zig");
 pub const jws = @import("chapulin_jws.zig");
 /// The parts of SCRAM-SHA-256 of an object built with SCRAM=on (chapulin_scram.zig).
 pub const scram = @import("chapulin_scram.zig");
+/// The hashes, HMAC and HKDF of an object built with HASH=on (chapulin_hash.zig).
+pub const hash = @import("chapulin_hash.zig");
 
 /// An ecdsa_secp256r1_sha256 identity: srv.ecdsa_p256.
 pub const EcdsaP256Identity = if (has_classic_server) struct {

@@ -373,7 +373,7 @@ SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/chacha20.c src/poly13
 
 HDRS := include/chapulin/public_sizes.h include/chapulin/session_storage.h src/tcp_nonblocking_session.h src/dnssec_hash.h src/tls_calls.h src/session_convert.h include/chapulin/aes_extern.h include/chapulin/rsa_key.h src/p256_sign_der.h src/rsa_sign64_blind.h src/ct.h src/sha256.h src/hkdf.h src/chacha20.h src/chacha20_vector.h src/chacha20_sve2.h src/chacha20_avx2.h src/chacha20_avx2_lanes.h src/chacha20_avx512.h src/chacha20_avx512_lanes.h src/poly1305.h src/poly1305_vector.h src/poly1305_avx2.h src/poly1305_avx2_lanes.h src/poly1305_ifma.h src/poly1305_ifma_lanes.h src/poly1305_ifma_group.h src/poly1305_scalar.h src/aead.h src/aead_avx2.h src/aead_avx512.h src/poly1305_wide.h src/x25519.h src/x25519_wide.h src/x25519_adx.h src/x25519_adx_asm.h src/x25519_wide_edwards.h src/x25519_wide_ed25519.h src/ed25519_verify.h src/x25519_wide_table.h src/p256.h src/rsa.h src/rsa_mont64.h src/rsa_mont64_blocks.h src/rsa_mont_division.h src/rsa_mont64_addcarry.h src/rsa_mont64_adx.h src/rsa_mont64_adx_asm.h src/rsa_ifma.h src/rsa_ifma_lanes.h src/rsa_ifma_product.h src/rsa_ifma_sign.h src/avx512_wipe.h src/rsa_avx2.h src/rsa_avx2_lanes.h src/rsa_avx2_number.h include/chapulin/ch_assert.h \
         src/pem.h src/base64.h src/base64_codec.h src/pbkdf2.h src/rsa_key_field.h src/ed25519_sign.h src/x25519_wide_ed25519_sign.h src/pem_blocks.h src/x509_pem.h include/chapulin/pem_files.h src/x509.h src/x509_der.h include/chapulin/x509_ca.h src/webpki.h include/chapulin/webpki_cfg.h src/webpki_pin.h src/webpki_ticket.h src/buf.h src/record.h src/keysched.h src/io.h src/handshake_message.h src/handshake_parser.h src/handshake_record.h include/chapulin/cfg.h src/session.h src/handshake_auth.h src/handshake.h src/handshake_post.h \
-        include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/sha3_andn.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h include/chapulin/jws.h include/chapulin/scram.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mlkem_rejection_table.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
+        include/chapulin/tls.h include/chapulin/rand.h src/rand_draw.h include/chapulin/drbg.h src/sha3.h src/sha3_inverted_lanes.h src/sha3_andn.h src/keccak_hw.h src/sha1.h include/chapulin/dnssec.h include/chapulin/jws.h include/chapulin/scram.h include/chapulin/hash.h src/sha512.h src/sha512_compress.h src/sha512_compress_blocks.h src/sha512_round_constants.h src/sha512_avx2.h src/p384.h src/p384_field.h src/p256_field.h src/p256_scalar.h src/p256_point.h src/p256_sign.h src/p256_ecdh.h src/rsa_pkcs1.h src/rsa_sign.h src/rsa_sign64.h src/rsa_sign64_wipe.h src/mlkem.h src/mlkem_poly.h src/mlkem_vector.h src/mldsa_vector.h src/mlkem_lanes.h src/mlkem_zetas.h src/mldsa.h src/mldsa_poly.h src/mldsa_zetas.h src/mldsa_signer.h src/mldsa_sign_round.h src/mldsa_sign_steps.h src/mldsa_sign_poly.h src/mldsa_sign_pack.h src/mlkem_avx2.h src/mlkem_rejection_table.h src/mldsa_avx2.h src/keccak_avx2.h src/keccak_round_constants.h \
         src/keccak_neon.h src/keccak_neon_round.h src/mlkem_neon.h src/mldsa_neon.h \
         src/p256_wide_word.h src/p256_wide_field.h src/p256_wide_scalar.h src/p256_wide_inverse.h src/p256_wide_point.h \
         src/p256_wide_mul.h src/p256_wide_table.h src/p256_wide_wipe.h src/p256_wide_verify.h src/p256_wide_verify_point.h \
@@ -799,7 +799,7 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/ghash_powers_soft.h test/ghash_equiv_stored.h test/ghash_powers_tests.h test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wycheproof_mldsa.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
+TESTH := test/hash_host_cpu.h test/ghash_powers_soft.h test/ghash_equiv_stored.h test/ghash_powers_tests.h test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wycheproof_mldsa.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
          test/pem_files_bundle_tests.h test/pem_files_parameters_tests.h \
          test/diff_pem_files_calls.h test/timing_pem.h test/timing_mldsa.h test/pem_fixtures_mldsa.h \
          test/diff_webpki_chain_anchors.h \
@@ -815,7 +815,7 @@ TESTH := test/ghash_powers_soft.h test/ghash_equiv_stored.h test/ghash_powers_te
          test/rsa_ifma_count.h test/aead_avx512_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/aes_equiv_gcm.h test/aes_equiv_residue.h test/ghash_equiv_eor3.h test/ghash_equiv_lengths.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/gcm_avx512_residue.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
-         test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_p256_wide_half.h test/diff_p256_wide_mixed.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
+         test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_p256_wide_half.h test/diff_p256_wide_mixed.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h test/diff_hash512.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8439_tests.h test/rfc8448_vectors.h \
          test/cnsa2_mock.h test/cnsa2_cases.h test/cnsa2_mldsa_cases.h test/cnsa2_mldsa_fixture.h \
@@ -923,9 +923,11 @@ WEBPKI_SRCS := src/webpki_time.c src/webpki_name.c src/webpki_spki.c src/webpki_
 # same way and compile to nothing outside a CH_JWS build
 # (docs/decisions.md 221). scram.c, pbkdf2.c and x509_end_point.c, the
 # parts of SCRAM-SHA-256, compile to nothing outside a CH_SCRAM build
-# (docs/decisions.md 222), and base64_codec.c serves both axes.
+# (docs/decisions.md 222), and base64_codec.c serves both axes. hash.c,
+# the hashes, HMAC and HKDF as public calls, compiles to nothing outside a
+# CH_HASH build (docs/decisions.md 246).
 WEBPKI_CHAIN_SRCS := src/sha512.c src/sha512_compress.c src/p384.c src/p384_field.c src/rsa_pkcs1.c src/dnssec.c src/sha1.c \
-                     src/jws.c src/jws_sign.c src/base64_codec.c src/scram.c src/pbkdf2.c src/x509_end_point.c
+                     src/jws.c src/jws_sign.c src/base64_codec.c src/scram.c src/pbkdf2.c src/x509_end_point.c src/hash.c
 # The constant-time P-256 key exchange: p256_ecdh.c over the arithmetic
 # p256_sign.c computes with too. p256.c is the variable-time verifier and
 # is not among them. Every server role and every TRUST=webpki client
@@ -1774,6 +1776,36 @@ PUBLIC_SCRAM :=
 else
 $(error SCRAM=$(SCRAM) is not a setting; use SCRAM=on or SCRAM=off)
 endif
+# The hashes, HMAC and HKDF as public calls (hash.h, docs/decisions.md
+# 246), off by default. HASH=on adds 24 calls to the object: SHA-256,
+# SHA-384 and SHA-512 as a stream and over a whole input, SHA3-256 and
+# SHA3-512 over a whole input, SHAKE128 and SHAKE256 as a stream and over
+# a whole input, HMAC and HKDF's two steps over the three SHA-2 hashes.
+# Each takes a description of the CPU and runs a hash where a session
+# would run it, so the object holds sha512_hw.c and sha512_avx2.c without
+# SUITE=aesgcm too. The axis takes a host TRUST=webpki object alone, as
+# SCRAM=on does, and each call carries the transport in its symbol name.
+# Its calls have names of their own, so SCRAM=on beside it adds its seven.
+HASH ?= off
+ifeq ($(HASH),on)
+ifeq ($(CPU_RUNTIME_DEF),)
+$(error HASH=on needs a host object: no device object has a measured budget for its calls, so build for arm64 or x86-64 with HOST_TARGET=yes)
+endif
+ifneq ($(TRUST),webpki)
+$(error HASH=on needs TRUST=webpki, whose object packages SHA-384, SHA-512 and SHA-3)
+endif
+LIB_DEF += -DCH_HASH
+PUBLIC_HASH := ch_sha256_init ch_sha256_update ch_sha256_final ch_sha256_hash \
+               ch_sha384_init ch_sha384_update ch_sha384_final ch_sha384_hash \
+               ch_sha512_init ch_sha512_update ch_sha512_final ch_sha512_hash \
+               ch_sha3_256_hash ch_sha3_512_hash \
+               ch_shake128_init ch_shake256_init ch_shake_absorb ch_shake_squeeze ch_shake_wipe \
+               ch_shake128_hash ch_shake256_hash ch_hmac ch_hkdf_extract ch_hkdf_expand
+else ifeq ($(HASH),off)
+PUBLIC_HASH :=
+else
+$(error HASH=$(HASH) is not a setting; use HASH=on or HASH=off)
+endif
 # The key log (keylog.h), off by default. KEYLOG=on hands each traffic
 # secret to a hook the image defines, which is the one path by which a
 # secret leaves chapulin on purpose, so a device client refuses it: a
@@ -2037,12 +2069,14 @@ endif
 # over it (hash_hw_of above); a session's hash bit picks them, and a device
 # object holds the portable hash alone. It holds sha512_hw.c and
 # sha512_avx2.c only with SUITE=aesgcm, whose key schedule and transcript
-# run SHA-384 under a session's value. A TRUST=webpki object without the
-# suite hashes certificates with sha512.c through calls that take no
-# value, so no call in it would run either file, and it leaves both out:
-# its SHA-384 is sha512.c over sha512_compress_blocks.c on every CPU.
+# run SHA-384 under a session's value, or with HASH=on, whose SHA-384 and
+# SHA-512 calls take a value (docs/decisions.md 246). A TRUST=webpki
+# object without either hashes certificates with sha512.c through calls
+# that take no value, so no call in it would run either file, and it
+# leaves both out: its SHA-384 is sha512.c over sha512_compress_blocks.c
+# on every CPU.
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(filter-out $(if $(SUITE_DEF),,$(SHA512_HW_SRCS)),$(call hash_hw_srcs_of,$(LIB_SRCS)))
+LIB_SRCS += $(filter-out $(if $(SUITE_DEF)$(PUBLIC_HASH),,$(SHA512_HW_SRCS)),$(call hash_hw_srcs_of,$(LIB_SRCS)))
 endif
 # The most plaintext one outgoing TLS record carries, cfg.h's CH_TX_PT.
 # Empty, the default, leaves cfg.h's 512, which keeps a device's ch_tls
@@ -2138,7 +2172,7 @@ LOCALIZE_C := $(wildcard test/localize/*.c)
 # ch_cfg and every object that reads it, and a check can build a server's
 # device object beside its host object. It is added only for a host
 # object, for TX_RECORD's reason.
-LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)$(if $(TX_RECORD),-tx$(TX_RECORD))$(if $(CPU_RUNTIME_DEF),-host)$(if $(PUBLIC_DNSSEC),-dnssec)$(if $(PUBLIC_JWS),-jws)$(if $(PUBLIC_SCRAM),-scram)
+LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)$(if $(TX_RECORD),-tx$(TX_RECORD))$(if $(CPU_RUNTIME_DEF),-host)$(if $(PUBLIC_DNSSEC),-dnssec)$(if $(PUBLIC_JWS),-jws)$(if $(PUBLIC_SCRAM),-scram)$(if $(PUBLIC_HASH),-hash)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -2400,9 +2434,9 @@ print-aes-runtime-qemu-srcs:
 # object, over TCP and over QUIC, beside the three files they stand
 # beside, so a device object carries the portable hash alone. They hold
 # sha512_hw.c, and sha512_avx2.c, the kernel its x86-64 arm compresses on,
-# to the host object with SUITE=aesgcm: a host object without the suite
-# packages sha512.c for its certificates and neither of the two
-# (docs/decisions.md 93 and 128). The SHA-512 rows hold sha512_compress_blocks.c,
+# to the host object with SUITE=aesgcm or HASH=on: a host object without
+# either packages sha512.c for its certificates and neither of the two
+# (docs/decisions.md 93, 128 and 246). The SHA-512 rows hold sha512_compress_blocks.c,
 # the compression function a host object runs in every session, to the
 # host object beside sha512.c, and sha512_compress.c, the reference, to
 # the device object beside it, so no object packages both and none
@@ -2606,6 +2640,8 @@ lint-trust-separation-run:
 	  "src/sha512.c $$sha512_hw $$hash_hw" "" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
 	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "src/sha512.c" "$$sha512_hw $$hash_hw" \
 	  "-DCH_SUITE_AES_GCM" "-DCH_CPU_RUNTIME"; \
+	check "TRANSPORT=quic-nonblocking TRUST=webpki HASH=on EXPORTER=off HOST_TARGET=yes" \
+	  "src/sha512.c src/hash.c $$sha512_hw $$hash_hw" "" "-DCH_CPU_RUNTIME -DCH_HASH" "-DCH_SUITE_AES_GCM"; \
 	sha512_both="src/sha512_compress.c src/sha512_compress_blocks.c"; \
 	check "TRUST=raw-rsa" "" "src/sha512.c $$sha512_both" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "src/sha512.c src/sha512_compress_blocks.c" "src/sha512_compress.c" \
@@ -2780,7 +2816,7 @@ PUBLIC_PEM := $(if $(filter -DCH_ROLE_SERVER,$(ROLE_DEF)),ch_chain_from_pem \
 TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_chain_from_pem ch_p256_key_from_pem ch_rsa_key_from_pem \
                    ch_mldsa_key_from_pem \
                    ch_anchors_from_pem ch_ticket_obfuscated_age ch_alert_sent ch_alert_received $(PUBLIC_DNSSEC) $(PUBLIC_JWS) $(PUBLIC_SCRAM) \
-                   ch_state ch_group ch_suite ch_psk_selected ch_pin_slot ch_epoch ch_epoch_seen \
+                   $(PUBLIC_HASH) ch_state ch_group ch_suite ch_psk_selected ch_pin_slot ch_epoch ch_epoch_seen \
                    ch_epoch_status ch_epoch_store_failed ch_alpn_selected ch_server_cert_type \
                    ch_sni_len ch_read_closed ch_peer_limit
 # A symbol name takes no hyphen, so the suffix is the TRANSPORT value
@@ -2789,7 +2825,7 @@ TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_chain_from_pem ch
 TRANSPORT_SUFFIX := $(subst -,_,$(TRANSPORT))
 transport_symbol = $(if $(filter ch_build,$(1)),ch_build_info,$(1))_$(TRANSPORT_SUFFIX)
 PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) $(PUBLIC_BUILD) \
-            $(PUBLIC_DNSSEC) $(PUBLIC_JWS) $(PUBLIC_SCRAM) $(PUBLIC_REPORT), \
+            $(PUBLIC_DNSSEC) $(PUBLIC_JWS) $(PUBLIC_SCRAM) $(PUBLIC_HASH) $(PUBLIC_REPORT), \
             $(if $(filter $(s),$(TRANSPORT_NAMED)),$(call transport_symbol,$(s)),$(s)))
 
 # The hooks the object imports, which the image defines (docs/porting.md):
@@ -2826,6 +2862,12 @@ DECLARES_dnssec.h := ch_dnssec_hash_init ch_dnssec_digest_init ch_dnssec_hash_up
 DECLARES_jws.h := ch_base64url_encode ch_base64url_decode ch_jws_verify ch_jws_sign
 DECLARES_scram.h := ch_sha256 ch_hmac_sha256 ch_pbkdf2_hmac_sha256 ch_ct_compare ch_base64_encode ch_base64_decode \
                     ch_tls_server_end_point
+DECLARES_hash.h := ch_sha256_init ch_sha256_update ch_sha256_final ch_sha256_hash \
+                   ch_sha384_init ch_sha384_update ch_sha384_final ch_sha384_hash \
+                   ch_sha512_init ch_sha512_update ch_sha512_final ch_sha512_hash \
+                   ch_sha3_256_hash ch_sha3_512_hash \
+                   ch_shake128_init ch_shake256_init ch_shake_absorb ch_shake_squeeze ch_shake_wipe \
+                   ch_shake128_hash ch_shake256_hash ch_hmac ch_hkdf_extract ch_hkdf_expand
 DECLARES_drbg.h := ch_drbg_seed
 DECLARES_rand.h := ch_rand_bytes
 DECLARES_keylog.h := ch_keylog
@@ -2833,7 +2875,7 @@ DECLARES_aes_extern.h := ch_aes_block
 DECLARES_ch_assert.h := ch_assert_fail
 DECLARES_build.h := ch_build
 LIB_HEADER_ORDER := include/chapulin/tls.h include/chapulin/tcp_nonblocking.h include/chapulin/quic.h include/chapulin/srv.h include/chapulin/srv_tcp_nonblocking.h include/chapulin/srv_quic.h \
-                    include/chapulin/quic_token.h include/chapulin/x509_ca.h include/chapulin/pem_files.h include/chapulin/ticket.h include/chapulin/alert.h include/chapulin/session_report.h include/chapulin/dnssec.h include/chapulin/jws.h include/chapulin/scram.h include/chapulin/drbg.h include/chapulin/rand.h include/chapulin/keylog.h \
+                    include/chapulin/quic_token.h include/chapulin/x509_ca.h include/chapulin/pem_files.h include/chapulin/ticket.h include/chapulin/alert.h include/chapulin/session_report.h include/chapulin/dnssec.h include/chapulin/jws.h include/chapulin/scram.h include/chapulin/hash.h include/chapulin/drbg.h include/chapulin/rand.h include/chapulin/keylog.h \
                     include/chapulin/aes_extern.h include/chapulin/ch_assert.h include/chapulin/build.h
 # The API headers: the ones above and the headers they include. Together
 # they compile with no -Isrc under the object's header, which defines the
@@ -2842,7 +2884,7 @@ LIB_HEADER_ORDER := include/chapulin/tls.h include/chapulin/tcp_nonblocking.h in
 API_HEADERS := $(LIB_HEADER_ORDER) include/chapulin/cfg.h include/chapulin/cpu_cfg.h include/chapulin/profile_cfg.h include/chapulin/srv_cfg.h include/chapulin/result.h \
                include/chapulin/session_storage.h include/chapulin/public_sizes.h include/chapulin/rsa_key.h include/chapulin/webpki_cfg.h include/chapulin/quic_cfg.h
 LIB_DECLARED = $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) \
-               $(PUBLIC_BUILD) $(PUBLIC_DNSSEC) $(PUBLIC_JWS) $(PUBLIC_SCRAM) $(PUBLIC_REPORT) $(LIB_HOOKS)
+               $(PUBLIC_BUILD) $(PUBLIC_DNSSEC) $(PUBLIC_JWS) $(PUBLIC_SCRAM) $(PUBLIC_HASH) $(PUBLIC_REPORT) $(LIB_HOOKS)
 LIB_HEADERS = $(foreach h,$(LIB_HEADER_ORDER),$(if $(filter $(DECLARES_$(notdir $(h))),$(LIB_DECLARED)),$(h)))
 
 # LIB_VARIANT names the build variables that pick the sources and the
@@ -2986,7 +3028,7 @@ LIB_LAYOUT := bin/obj/$(LIB_VARIANT)/layout.s
 LIB_HEADER_AXES := CH_TRUST_CA CH_TRUST_WEBPKI CH_PIN_ECDSA CH_PIN_MLDSA CH_KEX_PQ CH_TRANSPORT_QUIC_NONBLOCKING \
                    CH_TRANSPORT_TCP_NONBLOCKING CH_SUITE_AES_GCM CH_ROLE_SERVER CH_ROLE_BOTH \
                    CH_EXPORTER CH_KEYLOG CH_RAND_EXTERN CH_RAND_DRBG CH_RAND_SESSION CH_CPU_RUNTIME \
-                   CH_PROFILE_CNSA2 CH_MLKEM_1024 CH_DNSSEC CH_JWS CH_SCRAM
+                   CH_PROFILE_CNSA2 CH_MLKEM_1024 CH_DNSSEC CH_JWS CH_SCRAM CH_HASH
 $(LIB_HEADER): FORCE
 	@mkdir -p $(@D)
 	@$(CC) $(LIB_CFLAGS) $(LIB_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -S tools/layout_probe.c -o $(LIB_LAYOUT)
@@ -3681,6 +3723,31 @@ bin/scram_test: test/scram_test.c test/scram_vectors.h $(SCRAM_TEST_SRCS) $(HDRS
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_SCRAM -DCH_TRUST_WEBPKI -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
 	  test/scram_test.c $(sort $(SCRAM_TEST_SRCS))
+# hash.c's calls against the vectors RFC 6234, RFC 4231 and RFC 5869 print
+# and hashlib's SHA-3 and SHAKE (test/gen_hash_vectors.py), under
+# CH_CPU_PROBED and under the bits this CPU has of the hash instructions
+# and kernels, and at every refusal hash.h states (docs/decisions.md 246).
+# It builds as a host object with CH_HASH, over the files a HASH=on object
+# holds for its hashes: the portable ones, the copies on the instructions
+# and the kernel's object, as host_srcs names them.
+HASH_TEST_SRCS := src/hash.c $(call host_srcs,src/sha256.c src/hkdf.c src/sha512.c src/sha3.c) src/ct.c src/ct_wipe.c
+bin/hash_test: test/hash_test.c test/hash_vectors.h $(HASH_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_HASH -DCH_TRUST_WEBPKI -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/hash_test.c $(HASH_TEST_SRCS)
+# Which path each of hash.h's calls takes under the value it was given:
+# the counting stand-ins of bin/hash_runtime_test in place of sha256.c,
+# sha512.c, sha3.c and their copies on the instructions, so no hash
+# instruction runs and the binary gives one verdict on every CPU
+# (test/hash_dispatch_test.c). hkdf_hw.c is the real copy over the counted
+# entries.
+HASH_DISPATCH_TEST_SRCS := src/hash.c src/hkdf.c src/hkdf_hw.c src/ct.c src/ct_wipe.c test/hash_runtime_count.c \
+                           test/hash_runtime_compress_count.c test/hash_runtime_sha3_count.c
+bin/hash_dispatch_test: test/hash_dispatch_test.c $(HASH_DISPATCH_TEST_SRCS) src/sha256.c src/sha512.c \
+                        src/sha512_compress_blocks.c src/sha3.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_HASH -DCH_TRUST_WEBPKI -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/hash_dispatch_test.c $(HASH_DISPATCH_TEST_SRCS)
 bin/rsa_exp_test: test/rsa_exp_test.c test/rsa_exp_vectors.h $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_DNSSEC $(RSA_WIDE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
@@ -5210,6 +5277,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/rsa_equiv_test_blocks \
                                  bin/rsa_mont64_adx_test \
                                  bin/rsa_exp_test bin/dnssec_test bin/jws_test bin/jws_sign_test bin/scram_test \
+                                 bin/hash_test bin/hash_dispatch_test \
                                  bin/rsa_blocks_equiv_test bin/rsa_addcarry_equiv_test \
                                  bin/rsa_ifma_model_test bin/rsa_ifma_model_test_384 \
                                  bin/rsa_ifma_equiv_test bin/avx512_wipe_test bin/rsa_avx2_model_test \
@@ -5383,7 +5451,7 @@ print-diff-srcs:
 	@echo $(DIFF_SRCS)
 bin/diff: test/diff_test.c $(DIFF_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/diff_test.c $(DIFF_SRCS)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -DCH_HASH -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/diff_test.c $(DIFF_SRCS)
 
 # Build and run one test binary: make run-unit, make run-webpki_time_test.
 # check runs every binary on its roster through a check-run- target of
@@ -5449,10 +5517,11 @@ CHECK_LIBRARY_BUILDS := check-lib-drbg check-lib-session check-lib-session-cxx c
               check-lib-cnsa2-ca-mldsa-quic check-cnsa2-server check-srv-mldsa check-lib-cnsa2-server \
               check-lib-cnsa2-server-tcp-nonblocking \
               check-lib-cnsa2-server-quic check-lib-exporter check-lib-dnssec check-lib-dnssec-quic check-lib-jws check-lib-jws-quic check-lib-jws-both check-lib-scram check-lib-scram-quic \
+              check-lib-hash check-lib-hash-quic \
               check-lib-server-quic-keylog \
               check-lib-server-aes check-lib-server-aes-extern check-lib-quic-aes \
               check-lib-pair \
-              check-stack-webpki check-stack-exporter check-stack-quic check-stack-server check-stack-suite \
+              check-stack-webpki check-stack-hash check-stack-exporter check-stack-quic check-stack-server check-stack-suite \
               check-stack-cnsa2 check-stack-cnsa2-quic check-stack-cnsa2-ca-mldsa check-stack-cnsa2-server \
               check-stack-cnsa2-server-quic
 CHECK_RUN_HOST_VECTOR := $(patsubst bin/%,check-run-%,$(HOST_VECTOR_BINS))
@@ -5880,6 +5949,26 @@ else
 	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki \
 	  EXPORTER=off SCRAM=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 endif
+# The hash axis (docs/decisions.md 246), the same way. The
+# tcp-nonblocking job takes SCRAM=on too, as stdx's object does, so the
+# object exports both axes' calls, whose names differ. The QUIC job takes
+# HASH=on alone, without the suite, so the object holds sha512_hw.c for
+# the axis alone. Each proves the object exports the 24 calls under its
+# transport's names.
+check-lib-hash:
+ifeq ($(HOST_TARGET),)
+	@echo "SKIP lib-check HASH=on TRANSPORT=tcp-nonblocking: $(CC) fails the host test"
+else
+	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=tcp-nonblocking TRUST=webpki \
+	  SCRAM=on HASH=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
+check-lib-hash-quic:
+ifeq ($(HOST_TARGET),)
+	@echo "SKIP lib-check HASH=on TRANSPORT=quic-nonblocking: $(CC) fails the host test"
+else
+	@mkdir -p bin/check; $(CHECK_LIBRARY_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=quic-nonblocking TRUST=webpki \
+	  EXPORTER=off HASH=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
 # The key log axis, on the build colibri's interop endpoint links: a
 # QUIC server. It proves the object still exports its nineteen calls
 # and imports ch_keylog as a hook. EXPORTER=off is named because that
@@ -5936,6 +6025,12 @@ check-lib-pair: lint-zig-build $(filter check-lib-%,$(filter-out check-lib-pair,
 # else in check measures. It took 2.0 to 3.1 s in three timed runs.
 check-stack-webpki:
 	@mkdir -p bin/check; $(MAKE) lint-stack TRUST=webpki > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The HASH axis raises hkdf_expand's info buffer to CH_HKDF_INFO_LEN_MAX,
+# 1,024 bytes, and adds hash.c's frames (docs/decisions.md 246); this
+# holds both to the TRUST=webpki object's budget, with SCRAM=on beside it
+# as stdx's object takes it.
+check-stack-hash:
+	@mkdir -p bin/check; $(MAKE) lint-stack TRUST=webpki HASH=on SCRAM=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # The EXPORTER axis widens hkdf's info buffer by 20 bytes and adds
 # ks_exporter's frame; this holds both to the default budget.
 check-stack-exporter:
@@ -6755,10 +6850,11 @@ wycheproof:
 	python3 test/gen_wycheproof_jws.py $(WYCHEPROOF_DIR) bin/wycheproof_jws_vectors.h && \
 	python3 test/gen_wycheproof_jws_sign.py $(WYCHEPROOF_DIR) bin/wycheproof_jws_sign_vectors.h && \
 	python3 test/gen_wycheproof_scram.py $(WYCHEPROOF_DIR) bin/wycheproof_scram_vectors.h && \
+	python3 test/gen_wycheproof_hash.py $(WYCHEPROOF_DIR) bin/wycheproof_hash_vectors.h && \
 	$(MAKE) --no-print-directory -j4 wycheproof-default wycheproof-host wycheproof-aes-extern wycheproof-mldsa-library \
 	  wycheproof-mldsa-library-host wycheproof-mlkem1024 wycheproof-mlkem1024-host wycheproof-mlkem1024-two-ranks \
 	  wycheproof-mlkem1024-two-ranks-host wycheproof-mldsa-sign wycheproof-ed25519 wycheproof-jws wycheproof-jws-sign \
-	  wycheproof-scram
+	  wycheproof-scram wycheproof-hash
 # The three tests build and run at once, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
@@ -6978,6 +7074,26 @@ else
 endif
 wycheproof-run-scram:
 	@$(WYCHEPROOF_SCRAM) -o bin/wycheproof_scram_test && ./bin/wycheproof_scram_test
+# hash.h's HMAC and HKDF over SHA-256, SHA-384 and SHA-512, held to
+# Wycheproof's six suites (test/gen_wycheproof_hash.py, docs/decisions.md
+# 246), under CH_CPU_PROBED and under the bits this CPU has. It builds as
+# a host object with CH_HASH over bin/hash_test's sources, so a compiler
+# that fails the host test skips it. The stamp preprocesses the kernel's
+# source in place of its object.
+WYCHEPROOF_HASH_CC = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_HASH -DCH_TRUST_WEBPKI -Isrc -Iinclude/chapulin -Iinclude -I. -Itest \
+  -Ibin test/wycheproof_hash_test.c
+.PHONY: wycheproof-hash wycheproof-run-hash
+wycheproof-hash:
+ifeq ($(HOST_TARGET),)
+	$(call REQUIRE_ON_CI,wycheproof-hash)
+	@echo "SKIP the Wycheproof hash test: $(CC) fails the host test"
+else
+	@python3 tools/stamp.py wycheproof-hash $(WYCHEPROOF_STAMP_INPUTS) \
+	  --output '$(WYCHEPROOF_HASH_CC) $(call sha512_avx2_named,$(HASH_TEST_SRCS)) -E' \
+	  -- $(MAKE) --no-print-directory wycheproof-run-hash
+endif
+wycheproof-run-hash: $(SHA512_AVX2_UNIT)
+	@$(WYCHEPROOF_HASH_CC) $(HASH_TEST_SRCS) -o bin/wycheproof_hash_test && ./bin/wycheproof_hash_test
 wycheproof-mlkem1024-host:
 ifeq ($(HOST_TARGET),)
 	$(call REQUIRE_ON_CI,wycheproof-mlkem1024-host)
@@ -9376,7 +9492,13 @@ WIDEMUL_CEILING := src/ct.c:0 src/ct_wipe.c:0 src/sha256.c:0 src/sha3.c:0 src/hk
 # reads both of its codecs. jws_sign.c, the JWS signer's dispatcher
 # (docs/decisions.md 223), joins on the same terms: a private key and the
 # noise pass through it to the signers, and it copies bytes and multiplies
-# nothing.
+# nothing. hash.c, the hashes, HMAC and HKDF as public calls
+# (docs/decisions.md 246), joins on the same terms: its body sits behind
+# -DCH_HASH, which hash.h refuses outside a host object, and a key or a
+# secret a program derives passes through it to sha256.c, sha512.c, sha3.c
+# and hkdf.c. It copies a pointer and a value, and multiplies and divides
+# nothing. The host copy of hkdf.c and hkdf_hw.c compile under -DCH_HASH
+# too, so the count reads HMAC-SHA-512.
 #
 # The AES instructions' six files, AES_HW_SRCS, joined it from
 # WIDEMUL_PUBLIC for their division count (docs/decisions.md 156): aes_hw.c,
@@ -9408,7 +9530,7 @@ WIDE64_CEILING := src/x25519_wide.c:0 src/x25519_adx.c:0 src/rsa_mont64_adx.c:0 
                   src/rsa_avx2.c:0 src/aead_avx2.c:0 src/aead_avx512.c:0 \
                   src/sha3_hw.c:0 src/mlkem_hw.c:0 src/mlkem_poly_hw.c:0 src/mlkem_vector.c:0 src/mldsa_vector.c:0 \
                   src/keccak_avx2.c:0 src/mlkem_avx2.c:0 src/mldsa_avx2.c:0 src/avx512_wipe.c:0 src/sha512_compress_blocks.c:0 \
-                  src/base64_codec.c:0 src/scram.c:0 src/pbkdf2.c:0 src/jws_sign.c:0 \
+                  src/base64_codec.c:0 src/scram.c:0 src/pbkdf2.c:0 src/jws_sign.c:0 src/hash.c:0 \
                   src/keccak_neon.c:0 src/mlkem_neon.c:0 src/mldsa_neon.c:0 \
                   src/sha512_avx2.c:0 $(addsuffix :0,$(AES_HW_SRCS)) \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
@@ -9541,7 +9663,8 @@ WIDEMUL_DEFINES := src/quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_pack
                    src/scram.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_SCRAM$(COMMA)-DCH_TRUST_WEBPKI \
                    src/jws_sign.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_JWS$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-UCH_KEX_PQ \
                    src/pbkdf2.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_SCRAM$(COMMA)-DCH_TRUST_WEBPKI \
-                   src/hkdf.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
+                   src/hash.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH$(COMMA)-DCH_TRUST_WEBPKI \
+                   src/hkdf.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384$(COMMA)-DCH_HASH \
                    src/aes.c@host:$(WIDE64_HOST_AES_DEFINES) src/gcm.c@host:$(WIDE64_HOST_AES_DEFINES) \
                    src/quic_packet.c@host:$(WIDE64_HOST_AES_DEFINES) \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
@@ -9555,7 +9678,7 @@ WIDEMUL_DEFINES := src/quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING src/quic_pack
                    src/keccak_avx2.c:-DCH_CPU_RUNTIME src/mlkem_avx2.c:-DCH_CPU_RUNTIME src/mldsa_avx2.c:-DCH_CPU_RUNTIME \
                    src/keccak_neon.c:-DCH_CPU_RUNTIME src/mlkem_neon.c:-DCH_CPU_RUNTIME src/mldsa_neon.c:-DCH_CPU_RUNTIME \
                    src/mlkem_vector.c:-DCH_CPU_RUNTIME src/mldsa_vector.c:-DCH_CPU_RUNTIME \
-                   src/hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
+                   src/hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384$(COMMA)-DCH_HASH \
                    src/keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    src/pem_files.c:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    $(addsuffix :$(WIDE64_HOST_AES_DEFINES),$(AES_HW_SRCS))
@@ -10327,8 +10450,13 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
 # word or a lane. sha512_compress_blocks.c stands with them, though it is
 # plain C that every session of a host object runs (docs/decisions.md
 # 127): only a host object compiles it, so only these two specs read it.
+# hkdf_hw.c, and hkdf.c@host below, compile under -DCH_HASH too
+# (docs/decisions.md 246). hmac_sha512 and the dispatch to it add five
+# branches on each spec, 19 to 24, measured as that difference under
+# clang 18. Each reads hash_len, the key's length or a loop counter, as
+# hmac_sha384's do.
 HASH_HW_BRANCH_CEILING := \
-  arm64/src/sha256_hw.c:6 x86-64/src/sha256_hw.c:10 arm64/src/hkdf_hw.c:19 x86-64/src/hkdf_hw.c:19 \
+  arm64/src/sha256_hw.c:6 x86-64/src/sha256_hw.c:10 arm64/src/hkdf_hw.c:24 x86-64/src/hkdf_hw.c:24 \
   arm64/src/keysched_hw.c:0 x86-64/src/keysched_hw.c:0 arm64/src/sha512_hw.c:17 x86-64/src/sha512_hw.c:13 \
   arm64/src/sha3_hw.c:72 x86-64/src/sha3_hw.c:84 arm64/src/mlkem_hw.c:12 x86-64/src/mlkem_hw.c:0 \
   arm64/src/mlkem_poly_hw.c:49 x86-64/src/mlkem_poly_hw.c:0 \
@@ -10759,7 +10887,7 @@ BRANCH_CEILING := \
   arm64/src/ct.c@host:9 x86-64/src/ct.c@host:4 arm64/src/ct_wipe.c@host:5 x86-64/src/ct_wipe.c@host:11 \
   arm64/src/base64.c@host:0 x86-64/src/base64.c@host:0 \
   arm64/src/sha256.c@host:28 x86-64/src/sha256.c@host:35 arm64/src/sha3.c@host:78 x86-64/src/sha3.c@host:84 \
-  arm64/src/hkdf.c@host:19 x86-64/src/hkdf.c@host:19 arm64/src/chacha20.c@host:2 x86-64/src/chacha20.c@host:3 \
+  arm64/src/hkdf.c@host:24 x86-64/src/hkdf.c@host:24 arm64/src/chacha20.c@host:2 x86-64/src/chacha20.c@host:3 \
   arm64/src/poly1305.c@host:21 x86-64/src/poly1305.c@host:19 arm64/src/aead.c@host:4 x86-64/src/aead.c@host:19 \
   arm64/src/mlkem.c@host:12 x86-64/src/mlkem.c@host:11 arm64/src/rsa_sign.c@host:79 x86-64/src/rsa_sign.c@host:67 \
   arm64/src/drbg.c@host:5 x86-64/src/drbg.c@host:5 \

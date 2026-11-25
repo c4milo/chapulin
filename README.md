@@ -202,8 +202,9 @@ first value listed is the default.
 
 [`docs/building.md`](docs/building.md) lists the other variables:
 `TX_RECORD` raises the record size a TCP host build sends, and
-`DNSSEC`, `JWS` and `SCRAM` add calls for DNSSEC signatures, JSON Web
-Signatures and SCRAM-SHA-256 to a host `TRUST=webpki` object.
+`DNSSEC`, `JWS`, `SCRAM` and `HASH` add calls for DNSSEC signatures, JSON
+Web Signatures, SCRAM-SHA-256, and the hashes, HMAC and HKDF to a host
+`TRUST=webpki` object.
 
 On arm64 and x86-64, a web PKI client and the `ROLE=server` and
 `ROLE=both` objects build a *host object*. A host object holds fast paths

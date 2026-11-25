@@ -1,0 +1,16 @@
+invariant: INV-72
+file: src/hash.c
+catches: hash_dispatch_test
+reason: ch_sha512_init keeps CH_CPU_PROBED in the state and not the value
+  its caller passed, so every update and final of the stream runs the
+  portable code whatever the caller stated. Every digest is still right,
+  so no vector objects. bin/hash_dispatch_test counts the calls into each
+  path, and requires a stream started under CH_CPU_AVX2, or on arm64
+  CH_CPU_CONSTANT_TIME_SHA512, to make every one on sha512_hw.c.
+
+--- old
+    sha512_init(&s->hash);
+    s->cpu = cpu;
+--- new
+    sha512_init(&s->hash);
+    s->cpu = CH_CPU_PROBED;

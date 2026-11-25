@@ -1,0 +1,16 @@
+invariant: INV-72
+file: src/hkdf.c
+catches: hash_test
+reason: hmac_sha512 hashes a key longer than SHA-512's block with SHA-384,
+  where RFC 2104 section 2 hashes it with the HMAC's own hash. Every
+  HMAC-SHA-512 and HKDF-SHA-512 under such a key is then wrong, and the
+  first 48 bytes of the hashed key still look like a key. Wycheproof's
+  suite has no key past 65 bytes, so it passes. RFC 4231's test cases 6
+  and 7, whose key is 131 bytes, fail in bin/hash_test.
+
+--- old
+    if (key_len > SHA512_BLOCK) {
+        sha512_of(key, key_len, k);
+--- new
+    if (key_len > SHA512_BLOCK) {
+        sha384_of(key, key_len, k);
