@@ -410,8 +410,9 @@ The entries are grouped by area:
 - **Not proved:** expand at `hash_len` 64, which no harness launches;
   `bin/diff` holds it to `Spec.Hkdf`'s `sha512H`, and `bin/hash_test` and
   the Wycheproof hash test to RFC 5869's construction and Wycheproof's
-  HKDF-SHA-512 suite. No cbmc ran when the harness was written, so its
-  time and memory are not measured yet.
+  HKDF-SHA-512 suite.
+- **Measured:** 402 properties, 8 s, 0.18 GB peak, on 2026-11-25 (cbmc
+  6.11.0, kissat 4.0.4, x86-64 Linux, `/usr/bin/time -v`).
 
 #### keysched, keysched384
 
@@ -1968,11 +1969,12 @@ The entries are grouped by area:
     `hkdf.c` only arguments its `CH_ASSERT`s take.
 - **Bound:** inputs of up to 4 bytes, outputs of up to 65, and an output
   or an info past every bound `hash.h` sets.
-- **Not proved:** the digests, which stubs answer here, and the time and
-  memory of the run: no cbmc ran when the harness was written.
-  `bin/hash_test` holds the digests to RFC 6234's, RFC 4231's and RFC
-  5869's vectors and to hashlib's SHA-3 and SHAKE, and
-  `bin/hash_dispatch_test` counts which path each call takes.
+- **Not proved:** the digests, which stubs answer here. `bin/hash_test`
+  holds them to RFC 6234's, RFC 4231's and RFC 5869's vectors and to
+  hashlib's SHA-3 and SHAKE, and `bin/hash_dispatch_test` counts which
+  path each call takes.
+- **Measured:** 305 properties, 12 s, 0.28 GB peak, on 2026-11-25 (cbmc
+  6.11.0, kissat 4.0.4, x86-64 Linux, `/usr/bin/time -v`).
 
 #### pbkdf2
 
