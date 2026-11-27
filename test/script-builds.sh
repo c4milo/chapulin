@@ -20,7 +20,11 @@
 #     bench/insn-rv32.sh build with for their device cores, built here
 #     for this host;
 #   - `bench/handshake-n2.sh --build`: bench/handshake_server.c over the
-#     object build.zig makes with colibri's options, for this host.
+#     object build.zig makes with colibri's options, for this host;
+#   - `bench/inplace.sh --build`: bench/inplace.c over the objects make
+#     print-lib-objs names for a tcp-blocking and a tcp-nonblocking
+#     configuration, so it holds no list of its own; its build here holds
+#     the session fields it sets to make's headers.
 #
 # It also runs `test/qemu-m3.sh` the way CI would with a tool missing, CI
 # set and no linker, and requires it to fail. That script's run is the one
@@ -28,7 +32,7 @@
 # alone, and a skip on CI hid the Cortex-M3 build while it did not compile
 # (docs/invariants.md, INV-40).
 #
-# The six builds and that run start at once, each into a log of its own.
+# The seven builds and that run start at once, each into a log of its own.
 # The logs print whole, in the order above, once every one has ended, and
 # a failure names its step.
 cd "$(dirname "$0")/.." || exit 1
@@ -101,12 +105,13 @@ build() { # $1 = one of names below: runs that step into $work/$1.log
     qemu-m3) test/qemu-m3.sh --build ;;
     insn) insn_build ;;
     handshake-n2) bench/handshake-n2.sh --build ;;
+    inplace) bench/inplace.sh --build ;;
     qemu-m3-on-ci) qemu_m3_on_ci ;;
     esac > "$work/$1.log" 2>&1
     echo $? > "$work/$1.rc"
 }
 
-names=(aead record primitives qemu-m3 insn handshake-n2 qemu-m3-on-ci)
+names=(aead record primitives qemu-m3 insn handshake-n2 inplace qemu-m3-on-ci)
 for name in "${names[@]}"; do
     build "$name" &
 done

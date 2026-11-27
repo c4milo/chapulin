@@ -25,7 +25,10 @@
 # as one chart for each CPU, and check_charts fails when a committed chart
 # is not what the CSVs draw. tools/speed_history.py keeps each run's
 # speeds, and check_history fails when the last run it holds is not the
-# CSVs' or a history chart is not what it draws.
+# CSVs' or a history chart is not what it draws. tools/inplace_chart.py
+# draws each of bench/inplace.sh's CSVs, and its check_charts fails when a
+# committed chart is not what its CSV draws, or docs/performance.md does
+# not show it.
 import csv
 import re
 import sys
@@ -33,6 +36,7 @@ import sys
 from bench_handshake import check_handshake
 from bench_record import check_record
 from bench_scoreboard import check_scoreboard
+from inplace_chart import check_charts as check_inplace_charts
 from speed_chart import check_charts
 from speed_history import check_history
 
@@ -562,6 +566,7 @@ def main():
     rc |= check_record(readme)
     rc |= check_scoreboard(readme)
     rc |= check_charts()
+    rc |= check_inplace_charts()
     rc |= check_history()
     rc |= check_handshake(readme)
     if rc == 0:

@@ -2187,6 +2187,12 @@ LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 .PHONY: print-lib-srcs
 print-lib-srcs:
 	@echo $(LIB_SRCS)
+# bench/inplace.sh links its two builds against these objects, which make
+# compiles from LIB_SRCS with each source's own flags, before the
+# packaged link makes the internal names local.
+.PHONY: print-lib-objs
+print-lib-objs:
+	@echo $(LIB_OBJS)
 .PHONY: print-lib-def
 print-lib-def:
 	@echo $(LIB_DEF)
@@ -11731,6 +11737,22 @@ bench-aead:
 .PHONY: bench-record
 bench-record:
 	CC='$(CC)' bench/record.sh
+
+# The connected read and write through the calls that copy, ch_read and
+# ch_write over callbacks in a TRANSPORT=tcp-blocking object, and through
+# the calls that work in place, ch_read_in_place and ch_seal_in_place in a
+# TRANSPORT=tcp-nonblocking one (docs/decisions.md 247 and 248).
+# bench/inplace.sh links both programs against the objects print-lib-objs
+# names, times each at every 16-byte stack position of a page where
+# setarch exists, and writes
+# bench/results-inplace-<os>-<arch>-<compiler>.csv, which
+# tools/inplace_chart.py draws for docs/performance.md. `check` does not
+# run it, for the reason it does not run bench-record, and a run takes
+# about three minutes. `bench/inplace.sh --build` builds both programs,
+# and check-script-builds runs it.
+.PHONY: bench-inplace
+bench-inplace:
+	CC='$(CC)' bench/inplace.sh
 
 # Every primitive the tree ships, per byte or per operation, and whole
 # handshakes between this tree's client and server, on this machine, in a

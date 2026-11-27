@@ -540,7 +540,8 @@ def select_ct_taint(out, changed):
 # source, and the sources under bench/ and test/qemu/ those scripts
 # compile, can break a build of its own.
 SCRIPT_BUILDS_FILES = {"test/script-builds.sh", "bench/aead.sh", "bench/record.sh",
-                       "bench/primitives.sh", "bench/openssl.sh", "test/qemu-m3.sh"}
+                       "bench/primitives.sh", "bench/openssl.sh", "test/qemu-m3.sh",
+                       "bench/inplace.sh", "bench/cpu_value.sh", "bench/neoverse.sh"}
 
 
 def select_script_builds(out, changed):
