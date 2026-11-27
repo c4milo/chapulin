@@ -1,0 +1,18 @@
+invariant: INV-74
+file: src/tcp_seal.c
+catches: tcp_nonblocking_loop_test
+reason: ch_close_out returns as soon as the seal of its close_notify is
+  refused at the write key's last sequence number (RFC 9846 §5.3), so the
+  session stays connected with its keys. tcp_nonblocking.h states that
+  CH_ECAP closes the session too, with a length of 0. The loop closes at
+  that sequence number and requires the keys wiped and CH_ST_CLOSED.
+
+--- old
+    int rc = tlsi_seal_alert(t, 1, ALERT_CLOSE_NOTIFY, out, out_len);
+    tlsi_wipe(t);
+--- new
+    int rc = tlsi_seal_alert(t, 1, ALERT_CLOSE_NOTIFY, out, out_len);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    tlsi_wipe(t);

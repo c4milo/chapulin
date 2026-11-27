@@ -1839,8 +1839,12 @@ last `ROLE=server` stub, as the entry said it would.
   internal_error in `side` and writes no byte of `buf`. A KeyUpdate that a
   write needs goes into `side` before the records, and every record of
   the write goes out under one key. `ch_close_out` and `ch_fail_out` write
-  their alert into the caller's `out`. No call of the transport sends
-  through `cfg.send` (INV-28, docs/decisions.md 248).
+  their alert into the caller's `out`, and end the session even when the
+  seal of the alert is refused at the last sequence number: they then
+  answer `CH_ECAP` with a length of 0. Every seal call of the transport
+  writes a length of 0 when `rec_seal` refuses its record, because
+  `record.h` states none. No call of the transport sends through
+  `cfg.send` (INV-28, docs/decisions.md 248).
 - **Mechanism.** `tcp_seal.c` holds the calls. `seal_refusal` and the
   check of n against `ch_writable_len` run before any byte is written,
   and `key_for_write` decides the key before any record is sealed: the
@@ -1855,7 +1859,9 @@ last `ROLE=server` stub, as the entry said it would.
 - **Check.** CBMC: `tcp_seal`, `tcp_seal_suite` and `tcp_seal_rest` prove
   the calls' memory safety and the claims above over a havocked session,
   with the content of each record checked at a symbolic byte, at a buffer
-  of 72 bytes (docs/verification.md). `bin/tcp_nonblocking_loop_test`
+  of 72 bytes (docs/verification.md). `key_update_seal` proves the
+  KeyUpdate's seal, and `tcp_read` the fatal alert's, each over a
+  `rec_seal` stub that writes any length when it refuses. `bin/tcp_nonblocking_loop_test`
   (`test/tcp_nonblocking_seal_tests.h`) seals writes of one record, a
   record less and a record more one byte, and three records and 100
   bytes, and has the server read each one back in place, with
@@ -1864,7 +1870,9 @@ last `ROLE=server` stub, as the entry said it would.
   sequence number, an owed KeyUpdate in `side` before the records, a
   write that takes the last two sequence numbers before the wrap, the
   same write of one record more refused with internal_error, and a
-  KeyUpdate due at the cap of KeyUpdates refused the same way. The Zig
+  KeyUpdate due at the cap of KeyUpdates refused the same way. It closes
+  and fails a session at the last sequence number, and requires
+  `CH_ECAP`, a length of 0, the keys wiped and the session ended. The Zig
   API's loops seal through `seal` at both record sizes, and under
   `SUITE=aesgcm` across an AES-GCM key's ceiling (docs/zig.md).
   `bin/webpki_loop_tx_record` seals a handshake message of two records and
@@ -1879,8 +1887,13 @@ last `ROLE=server` stub, as the entry said it would.
   `inv74-seal-failure-keeps-session`, seals past `cap`,
   `inv74-seal-past-cap`, or takes a short `side`,
   `inv74-seal-takes-a-short-side`. A PR closes with a fatal alert,
-  `inv74-close-out-sends-a-fatal-alert`. `bin/tcp_nonblocking_loop_test`
-  catches each. A PR cuts a nonblocking server's handshake records at
+  `inv74-close-out-sends-a-fatal-alert`, or keeps the session when the
+  close_notify's seal is refused, `inv74-close-out-keeps-session-at-wrap`.
+  `bin/tcp_nonblocking_loop_test` catches each. A PR keeps the length
+  that `rec_seal` wrote when it refused the KeyUpdate,
+  `inv74-key-update-seal-keeps-a-refused-length`, which `key_update_seal`
+  catches, or the alert, `inv74-seal-alert-keeps-a-refused-length`, which
+  `tcp_read` catches. A PR cuts a nonblocking server's handshake records at
   `CH_TX_PT`, `inv38-nonblocking-handshake-record-past-stage`, which
   `bin/webpki_loop_tx_record` catches.
 - See [decisions: Engineering](decisions.md#engineering), entry 248.

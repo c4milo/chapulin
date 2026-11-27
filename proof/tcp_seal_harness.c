@@ -22,7 +22,10 @@
 // - the KeyUpdate goes into side before the first record, exactly when the
 //   key has fewer data records left than the write holds, and no
 //   KeyUpdate goes between two records;
-// - ch_writable_len's answer is the most plaintext whose records fit cap.
+// - ch_writable_len's answer is the most plaintext whose records fit cap;
+// - ch_close_out and ch_fail_out close or fail a connected session alone,
+//   wiped, and write the alert record's length, or 0 when the alert's seal
+//   was refused at the last sequence number.
 //
 // Three launch lines split the formula, because each 64-bit division costs
 // the solver a divider: tcp_seal and tcp_seal_suite prove the seal, and
@@ -42,8 +45,10 @@
 // record's plaintext before that plaintext moved would fail the content
 // assertion of that record. hspost_seal_key_update,
 // tlsi_fail_into, tlsi_seal_alert and tlsi_wipe are stubs of their
-// contracts (handshake_post.h, session.h); handshake_post's harness and
-// unit tests hold the bodies.
+// contracts (handshake_post.h, session.h). proof/tcp_read_harness.c
+// proves the bodies of tlsi_fail_into and tlsi_seal_alert's fatal alert,
+// proof/key_update_seal_harness.c the body of hspost_seal_key_update, and
+// the unit tests hold the rest.
 //
 // Bounds. buf's array holds CH_PROOF_SEAL_BUF bytes, 72, and the record
 // limit, the smaller of peer_limit and CH_TX_PT, takes every value but
@@ -92,6 +97,7 @@ static size_t seals;
 static size_t key_updates;
 static size_t fails;
 static size_t wipes;
+static size_t seal_alerts;
 static uint8_t fail_description;
 // One symbolic byte of the caller's plaintext, its offset in buf and its
 // value before the call.
@@ -170,6 +176,11 @@ int tlsi_seal_alert(ch_tls_priv *session, uint8_t level, uint8_t description, ui
     __CPROVER_assert(session == &t && session->keys, "close: under the live write key");
     __CPROVER_assert(level == 1 && description == ALERT_CLOSE_NOTIFY, "close: close_notify");
     __CPROVER_assert(__CPROVER_w_ok(out, CH_ALERT_RECORD_LEN), "close: out holds an alert");
+    seal_alerts++;
+    *out_len = 0;
+    if (nondet_u8() & 1) {
+        return CH_ECAP; // the last sequence number (RFC 9846 §5.3)
+    }
     fill_nondet(out, CH_ALERT_RECORD_LEN);
     *out_len = CH_ALERT_RECORD_LEN;
     return CH_OK;
@@ -350,10 +361,14 @@ static void check_close(void) {
         __CPROVER_assert(before.state != CH_ST_CONNECTED,
                          "close: CH_EPROTO off a connected session");
     }
-    if (rc == CH_OK) {
-        __CPROVER_assert(before.state == CH_ST_CONNECTED && t.state == CH_ST_CLOSED && wipes == 1,
-                         "close: a connected session closes, wiped");
-        __CPROVER_assert(out_len == CH_ALERT_RECORD_LEN, "close: one alert record");
+    __CPROVER_assert(rc == CH_OK || rc == CH_ECAP || rc == CH_EINVAL || rc == CH_EPROTO,
+                     "close: the codes tcp_nonblocking.h lists");
+    if (rc == CH_OK || rc == CH_ECAP) {
+        __CPROVER_assert(before.state == CH_ST_CONNECTED && t.state == CH_ST_CLOSED && wipes == 1 &&
+                             seal_alerts == 1,
+                         "close: a connected session closes, wiped, after one close_notify");
+        __CPROVER_assert(out_len == (rc == CH_OK ? CH_ALERT_RECORD_LEN : 0),
+                         "close: one alert record, or none at the last sequence number");
     }
 }
 
@@ -375,10 +390,15 @@ static void check_fail(void) {
         __CPROVER_assert(before.state != CH_ST_CONNECTED,
                          "fail: CH_EPROTO off a connected session");
     }
+    __CPROVER_assert(rc == CH_OK || rc == CH_ECAP || rc == CH_EINVAL || rc == CH_EPROTO,
+                     "fail: the codes tcp_nonblocking.h lists");
     if (rc == CH_OK || rc == CH_ECAP) {
         __CPROVER_assert(fails == 1 && fail_description == description,
                          "fail: one alert through tlsi_fail_into");
-        __CPROVER_assert(before.state == CH_ST_CONNECTED, "fail: a connected session alone");
+        __CPROVER_assert(before.state == CH_ST_CONNECTED && t.state == CH_ST_FAILED,
+                         "fail: a connected session alone, which fails");
+        __CPROVER_assert(out_len == (rc == CH_OK ? CH_ALERT_RECORD_LEN : 0),
+                         "fail: one alert record, or none at the last sequence number");
     }
 }
 

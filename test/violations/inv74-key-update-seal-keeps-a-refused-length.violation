@@ -1,0 +1,14 @@
+invariant: INV-74
+file: src/handshake_post.c
+catches: proof/prove-one.sh key_update_seal
+reason: hspost_seal_key_update returns CH_ECAP with whatever length
+  rec_seal wrote when it refused the record. record.h states no length
+  for a refused record, and handshake_post.h states 0. The real rec_seal
+  writes none, so no test of the record layer sees it; the proof's
+  rec_seal stub writes any length and requires the 0.
+
+--- old
+        *out_len = 0; // record.h states no length for a record it refused
+        return CH_ECAP;
+--- new
+        return CH_ECAP;

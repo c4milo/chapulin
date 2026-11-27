@@ -278,8 +278,8 @@ int hspost_send_key_update(ch_tls_priv *t) {
 int hspost_seal_key_update(ch_tls_priv *t, uint8_t *out, size_t cap, size_t *out_len) {
     CH_ASSERT(t->send_epochs < HSPOST_SEND_EPOCHS_MAX);
     const uint8_t msg[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
-    *out_len = 0;
     if (rec_seal(&t->wr, REC_HANDSHAKE, msg, sizeof msg, out, cap, out_len) != 0) {
+        *out_len = 0; // record.h states no length for a record it refused
         return CH_ECAP;
     }
     CH_ASSERT(*out_len == CH_KEY_UPDATE_RECORD_LEN);

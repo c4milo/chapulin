@@ -1,0 +1,21 @@
+invariant: INV-74
+file: src/session.c
+catches: proof/prove-one.sh tcp_read
+reason: tlsi_seal_alert returns CH_ECAP with whatever length rec_seal
+  wrote when it refused the alert. record.h states no length for a
+  refused record, and session.h states 0, so a ch_read_in_place that
+  fails at the last sequence number could report a reply that holds no
+  alert record. The real rec_seal writes none; the proof's stub writes
+  any length and requires one alert record or nothing.
+
+--- old
+        *out_len = 0; // record.h states no length for a record it refused
+        return CH_ECAP;
+    }
+    return CH_OK;
+}
+--- new
+        return CH_ECAP;
+    }
+    return CH_OK;
+}

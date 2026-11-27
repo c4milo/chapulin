@@ -222,6 +222,30 @@ static void test_seal_epoch_cap(ch_tcp_priv *client, ch_tcp_priv *server) {
     seal_fails(client, server, 1);
 }
 
+// ch_close_out and ch_fail_out at the write key's last sequence number,
+// whose alert the seal refuses (RFC 9846 §5.3): each returns CH_ECAP with
+// a length of 0, and still wipes the keys and ends the session as
+// tcp_nonblocking.h states.
+static void test_alert_at_wrap(ch_tcp_priv *client, ch_tcp_priv *server, const ch_cfg *ccfg,
+                               const ch_cfg *scfg) {
+    uint8_t out[CH_ALERT_RECORD_LEN];
+    size_t out_len = 1;
+    (void)run_handshake(client, server, ccfg, scfg);
+    client->t.wr.seq = UINT64_MAX;
+    CHECK(ch_close_out(tls_public(&client->t), out, sizeof out, &out_len) == CH_ECAP);
+    CHECK(out_len == 0 && client->t.keys == 0);
+    CHECK(ch_tcp_state(tcp_public(client)) == CH_ST_CLOSED);
+
+    (void)run_handshake(client, server, ccfg, scfg);
+    client->t.wr.seq = UINT64_MAX;
+    out_len = 1;
+    CHECK(ch_fail_out(tls_public(&client->t), ALERT_INTERNAL_ERROR, out, sizeof out, &out_len) ==
+          CH_ECAP);
+    CHECK(out_len == 0 && client->t.keys == 0);
+    CHECK(ch_tcp_state(tcp_public(client)) == CH_ST_FAILED);
+    CHECK(ch_alert_sent(tls_public(&client->t)) == ALERT_INTERNAL_ERROR);
+}
+
 static void test_seal_in_place(ch_tcp_priv *client, ch_tcp_priv *server) {
     for (size_t i = 0; i < sizeof seal_plain; i++) {
         seal_plain[i] = (uint8_t)(i * 7U + 3U);
@@ -248,6 +272,7 @@ static void test_seal_in_place(ch_tcp_priv *client, ch_tcp_priv *server) {
     test_seal_wrap(client, server, &ccfg, &scfg);
     (void)run_handshake(client, server, &ccfg, &scfg);
     test_seal_epoch_cap(client, server);
+    test_alert_at_wrap(client, server, &ccfg, &scfg);
     CHECK(io_calls == 0);
     ch_tcp_close(tcp_public(client));
     ch_tcp_close(tcp_public(server));

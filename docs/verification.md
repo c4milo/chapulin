@@ -3526,7 +3526,8 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 - **Harness:** `tcp_read` (fast)
 - **Build:** the client, `TRANSPORT=tcp-nonblocking`.
 - **Proves:** `ch_read_in_place` (`tcp_read.c`), with `session.c`'s
-  `tlsi_wipe` and `tlsi_close_read_side` and `buf.c`'s reader real, is
+  `tlsi_fail_into`, `tlsi_seal_alert`, `tlsi_wipe` and
+  `tlsi_close_read_side` and `buf.c`'s reader real, is
   memory safe and free of UB over a havocked connected session and
   caller bytes at the start or at the end of a fixed array, so an access
   below `p[0]` or at `p[n]` fails a bounds check. Also:
@@ -3545,7 +3546,8 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
     `held_fill <= held_len <= cfg.buf_len` holds across calls;
   - a failure leaves the session dead with no secret and nothing held,
     seals one alert into `reply` unless the peer's fatal alert arrived,
-    wipes every byte it opened, and changes no byte past them (INV-13,
+    with a reply length of one alert record or, when the seal is refused,
+    0, wipes every byte it opened, and changes no byte past them (INV-13,
     INV-17, INV-73).
 - **Bound:** caller bytes of at most 20 B and four records a call, which
   unwinding assertions prove; a record's length field is unconstrained,
@@ -3587,17 +3589,46 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   - the KeyUpdate goes into side before the first record, exactly when
     the key has fewer data records left than the write holds;
   - `ch_writable_len`'s answer is the most plaintext whose records fit
-    cap (INV-38, INV-74, docs/decisions.md 248).
+    cap (INV-38, INV-74, docs/decisions.md 248);
+  - `ch_close_out` and `ch_fail_out` close or fail a connected session
+    alone, wiped, and write the alert record's length, or 0 when the
+    alert's seal is refused at the last sequence number.
 - **Bound:** buf of at most 72 B; the record limit takes every value, and
   the content check follows limits of 1 to 4 bytes, so three records and
   two moves at a limit of 1 or 2. `tcp_seal_rest` takes a cap of 11 bits.
   162 s and 1.26 GB of `tcp_seal`, 198 s and 1.27 GB of `tcp_seal_suite`, and
-  14 s and 0.04 GB of `tcp_seal_rest`, in CPU time on a 4-core amd64 host
+  17 s and 0.04 GB of `tcp_seal_rest`, in CPU time on a 4-core amd64 host
   beside other work.
 - **Not proved:** `rec_seal`, `hspost_seal_key_update`, `tlsi_fail_into`,
-  `tlsi_seal_alert` and `tlsi_wipe` are contract stubs. Writes past 72
-  bytes rest on `bin/tcp_nonblocking_loop_test` and the Zig loop, which
-  seal records of 16 KiB.
+  `tlsi_seal_alert` and `tlsi_wipe` are contract stubs here.
+  [tcp_read](#tcp_read) proves the bodies of `tlsi_fail_into` and of
+  `tlsi_seal_alert` for a fatal alert, and
+  [key_update_seal](#key_update_seal) the body of `hspost_seal_key_update`.
+  The close_notify that `tlsi_seal_alert` seals rests on
+  `bin/tcp_nonblocking_loop_test`. Writes past 72 bytes rest on that test
+  and the Zig loop, which seal records of 16 KiB.
+
+#### key_update_seal
+
+- **Harness:** `key_update_seal` (fast)
+- **Build:** `TRANSPORT=tcp-nonblocking`.
+- **Proves:** `hspost_seal_key_update` (`handshake_post.c`), the KeyUpdate
+  that `ch_seal_in_place` writes into side, is memory safe and free of UB
+  over an unconstrained session below the cap of KeyUpdates and any cap.
+  Also:
+  - `CH_OK` seals one KeyUpdate that asks for no answer (RFC 9846 §4.7.3)
+    under the old write key, writes its length,
+    `CH_KEY_UPDATE_RECORD_LEN`, and then moves the write key once, with
+    one more KeyUpdate sent and no answer owed;
+  - `CH_ECAP` writes a length of 0 whatever `rec_seal` wrote there, and
+    leaves the write key, the count of KeyUpdates sent and the owed
+    answer as they were (INV-74).
+- **Bound:** an out of at most 35 B. The call has no loop. 379 properties,
+  0.3 s and 0.02 GB on a 4-core amd64 host.
+- **Not proved:** `rec_seal` and `rec_dir_update` are contract stubs. The
+  rec_seal stub writes any length when it refuses a record, which
+  `record.h` allows. `bin/tcp_nonblocking_loop_test` seals and reads the
+  KeyUpdate under the real record layer.
 
 ### QUIC
 

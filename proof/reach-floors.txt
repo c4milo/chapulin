@@ -654,8 +654,11 @@ tcp_nonblocking_in 253
 # location but the six CH_ASSERT arms. The other 88 are buf.c's writer
 # and rb_u24, which tcp_read.c does not call, session.c's tlsi_send_alert
 # and tlsi_fail, which it does not call, tlsi_give_back_buf's wipe, which
-# a connected session's NULL cfg.buf skips, and ch_assert_fail.
-tcp_read 406
+# a connected session's NULL cfg.buf skips, and ch_assert_fail. It took
+# 411 (84.7%, 411/485) the same day, once tlsi_fail_into and
+# tlsi_seal_alert of session.c sealed its alert, and a tcp-nonblocking
+# build compiled tlsi_send_alert and tlsi_fail out.
+tcp_read 411
 # tcp_seal, tcp_seal_suite and tcp_seal_rest took their floors on
 # 2026-11-27, measured by `python3 -u proof/coverage.py --reach --only
 # <name>` in an amd64 Linux container with the pinned cbmc: 78.9%
@@ -664,10 +667,19 @@ tcp_read 406
 # check, ch_close_out, ch_fail_out and their stubs, which tcp_seal_rest
 # reaches, and tcp_seal_rest leaves out the seal. Neither reaches the
 # CH_ASSERT arms or ch_assert_fail. tcp_seal_suite reaches the AES-GCM arm
-# of records_per_key that the default build compiles out.
+# of records_per_key that the default build compiles out. tcp_seal_rest
+# took 155 (53.1%, 155/292) the same day, once the tlsi_seal_alert stub
+# answered CH_ECAP too.
 tcp_seal 213
 tcp_seal_suite 227
-tcp_seal_rest 148
+tcp_seal_rest 155
+# key_update_seal took its floor on 2026-11-27, measured by `python3 -u
+# proof/coverage.py --reach --only key_update_seal` in an amd64 Linux
+# container with the pinned cbmc: 32.0% (57/178). It reaches every
+# location of hspost_seal_key_update and key_update_sealed but the
+# CH_ASSERT arms. The rest of handshake_post.c is in its goto model and
+# off the call's path.
+key_update_seal 57
 # The three srv_out floors were taken on 2026-10-31, measured by
 # proof/coverage.py in the pinned amd64 container: srv_out 90.7%
 # (165/182), srv_out_nonblocking 90.2% (174/193) and srv_out_quic 85.5%

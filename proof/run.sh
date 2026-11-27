@@ -2760,10 +2760,20 @@ launch fast full tcp_read 2 "read_records.0:4" -DCH_TRANSPORT_TCP_NONBLOCKING sr
 # and 16 GB, beside other work (proof/prove-one.sh under /usr/bin/time -v,
 # cbmc 6.11.0, kissat): tcp_seal 534 properties, 162 s of CPU, 1.26 GB
 # peak; tcp_seal_suite 558, 198 s, 1.27 GB; tcp_seal_rest 466, 14 s,
-# 0.04 GB.
+# 0.04 GB. With the tlsi_seal_alert stub's CH_ECAP, tcp_seal_rest took
+# 475 properties, 17 s of CPU and 0.04 GB the same day.
 launch fast full tcp_seal 2 "fill_nondet.0:73,seal_records.0:4,seal_records.1:4,is_error_alert.0:27" -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_seal.c
 launch fast full tcp_seal_suite 2 "fill_nondet.0:73,seal_records.0:4,seal_records.1:4,is_error_alert.0:27" -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_SUITE_AES_GCM src/tcp_seal.c
 launch fast full tcp_seal_rest 2 "fill_nondet.0:73,seal_records.0:4,seal_records.1:4,is_error_alert.0:27" -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_seal.c
+# hspost_seal_key_update's body (handshake_post.c), the KeyUpdate that
+# ch_seal_in_place writes into side, with rec_seal and rec_dir_update
+# contract stubs. The rec_seal stub writes any length when it refuses, as
+# record.h allows, so the proof holds the call to the 0 that
+# handshake_post.h states. fill_nondet.0 fills one record of 27 bytes.
+# Measured on 2026-11-27 in an amd64 Linux container of 4 cores and 16 GB
+# (proof/prove-one.sh under /usr/bin/time -v, cbmc 6.11.0, kissat): 379
+# properties, 0.3 s of CPU, 0.02 GB peak.
+launch fast full key_update_seal 2 "fill_nondet.0:28" -DCH_TRANSPORT_TCP_NONBLOCKING src/handshake_post.c
 # The ROLE=server flight handlers, with srv_accept's layering turned
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the

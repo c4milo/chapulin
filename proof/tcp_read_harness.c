@@ -33,8 +33,9 @@
 //   calls (both 0, or 0 < held_fill < held_len <= cfg.buf_len) holds after
 //   a call that found it.
 //
-// What is real and what is a stub. tcp_read.c, session.c's tlsi_wipe and
-// tlsi_close_read_side, and buf.c's reader are real. rec_open and rec_seal
+// What is real and what is a stub. tcp_read.c, session.c's tlsi_fail_into,
+// tlsi_seal_alert, tlsi_wipe and tlsi_close_read_side, and buf.c's reader
+// are real. rec_open and rec_seal
 // are stubs of record.h's contract, which record.c's harness proves. The
 // rec_open stub takes a record of any body of 1 byte or more, and returns
 // any plaintext shorter than the body and any inner type. record.c needs

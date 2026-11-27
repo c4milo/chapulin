@@ -117,8 +117,8 @@ int tlsi_fail(ch_tls_priv *t, uint8_t description) {
 int tlsi_seal_alert(ch_tls_priv *t, uint8_t level, uint8_t description, uint8_t *out,
                     size_t *out_len) {
     const uint8_t body[2] = {level, description};
-    *out_len = 0;
     if (rec_seal(&t->wr, REC_ALERT, body, sizeof body, out, CH_ALERT_RECORD_LEN, out_len) != 0) {
+        *out_len = 0; // record.h states no length for a record it refused
         return CH_ECAP;
     }
     return CH_OK;
