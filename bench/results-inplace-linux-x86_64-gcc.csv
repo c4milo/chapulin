@@ -1,0 +1,32 @@
+# bench/inplace.sh on Intel(R) Xeon(R) Processor @ 2.10GHz (x86_64), Linux 6.18.44-fc-v880, 2026-11-27, tree 412b149
+# gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0; gcc-14 -Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -Wvla -fno-strict-aliasing; objects: TRUST=webpki SUITE=aesgcm TX_RECORD=16384 RAND=extern, TRANSPORT=tcp-blocking for copy and TRANSPORT=tcp-nonblocking for in_place; ch_cfg.cpu 0xf3f: CH_CPU_PROBED, CH_CPU_CONSTANT_TIME_AES, CH_CPU_CONSTANT_TIME_MULTIPLY, CH_CPU_AVX2, CH_CPU_VAES, CH_CPU_CONSTANT_TIME_SHA256, CH_CPU_AVX512_IFMA, CH_CPU_AVX512, CH_CPU_BMI2_ADX, CH_CPU_BMI1
+# load average (1, 5, 15 min) before: 0.41 9.65 14.31; after: 0.96 6.43 12.45; pinned: taskset -c 3
+# copy_ns and in_place_ns: per call for a write and per record for a read, the median over 256 runs of each program, one at each 16-byte stack position of a page under setarch -R, of 51 samples each, each run's figure the median of its samples; speed: the median over the pairs of runs, one of each program back to back, of the copying run's figure over the in-place run's; speed_p25 and speed_p75: the pairs' 25th and 75th percentiles
+direction,aead,bytes,copy_ns,in_place_ns,speed,speed_p25,speed_p75
+read,aes128gcm,100,139.7,131.8,1.070,1.010,1.106
+read,aes128gcm,1024,222.8,200.5,1.109,1.051,1.134
+read,aes128gcm,4096,532.9,417.4,1.269,1.190,1.283
+read,aes128gcm,16384,1812.0,1344.2,1.350,1.302,1.419
+write,aes128gcm,100,148.6,133.4,1.116,1.059,1.169
+write,aes128gcm,1024,227.1,197.9,1.149,1.128,1.185
+write,aes128gcm,4096,492.9,413.6,1.191,1.180,1.215
+write,aes128gcm,16384,1625.5,1253.5,1.299,1.287,1.395
+write,aes128gcm,65536,7566.4,6261.2,1.215,1.182,1.272
+read,aes256gcm,100,147.4,136.8,1.078,1.031,1.097
+read,aes256gcm,1024,232.0,210.1,1.104,1.041,1.120
+read,aes256gcm,4096,584.2,462.6,1.251,1.175,1.263
+read,aes256gcm,16384,2040.2,1568.0,1.306,1.257,1.373
+write,aes256gcm,100,187.6,193.9,1.026,0.840,1.118
+write,aes256gcm,1024,360.0,300.8,1.209,1.079,1.440
+write,aes256gcm,4096,676.5,560.1,1.294,1.155,1.340
+write,aes256gcm,16384,1943.0,1571.3,1.287,1.233,1.359
+write,aes256gcm,65536,8448.3,7424.1,1.186,1.164,1.242
+read,chacha20poly1305,100,550.3,543.0,1.015,0.989,1.047
+read,chacha20poly1305,1024,851.5,831.2,1.034,0.988,1.095
+read,chacha20poly1305,4096,1842.7,1742.2,1.069,1.031,1.105
+read,chacha20poly1305,16384,5647.2,5207.0,1.104,1.073,1.162
+write,chacha20poly1305,100,568.0,582.3,1.034,0.999,1.073
+write,chacha20poly1305,1024,906.3,892.6,1.031,1.006,1.057
+write,chacha20poly1305,4096,1772.4,1717.4,1.062,1.031,1.098
+write,chacha20poly1305,16384,5399.4,5131.0,1.090,1.050,1.132
+write,chacha20poly1305,65536,22838.9,21735.9,1.066,1.034,1.107

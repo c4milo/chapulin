@@ -1365,6 +1365,39 @@ OpenSSL above takes its x86-64 AEAD rows from that job's CSVs, such as
 and `tools/bench_record.py` then takes the two files as columns. An emulated x86-64, such as an
 OrbStack amd64 container, runs translated code, so its times say nothing about those arms.
 
+### Reads and writes in place
+
+A `TRANSPORT=tcp-nonblocking` session reads each record where the caller holds it, with
+`ch_read_in_place`. It seals each write where the caller wrote it, with `ch_seal_in_place`
+(decisions 247 and 248). The `TRANSPORT=tcp-blocking` calls copy. `ch_read` copies each record
+from `cfg.recv` into `cfg.buf`, and then its plaintext out. `ch_write` copies each record into
+`ch_tls.tx`, and then out through `cfg.send`.
+
+`bench/inplace.sh`, which `make bench-inplace` runs, times both pairs of calls from one tree. Its
+two programs link objects that differ in `TRANSPORT` alone, and it writes
+`bench/results-inplace-<os>-<arch>-<compiler>.csv`. `tools/inplace_chart.py` draws each CSV, and
+`make lint-bench-numbers` fails when a chart is not what its CSV draws (INV-76).
+
+![Bars of the in-place read's and write's speed in multiples of the copying calls' on a virtual Intel Xeon, under gcc 14](img/inplace-linux-x86_64-gcc.svg)
+
+A bar is the in-place call's speed in multiples of the copying call's. A bar past the dashed line at
+1 is a row where the in-place call is faster. The bench connects each session by hand, so the
+chart times no handshake. A read row is the time per record over 64 records. A write row is the
+time per call over 16 calls, and a write of 64 KiB is four records.
+
+On the virtual Intel Xeon of this chart, one row's figure moved by up to 2.1 times from one run of
+a program to another, in streaks of consecutive runs. So the bench runs the two programs back to back 256
+times, once at each 16-byte stack position of a page. A bar is the median of the 256 ratios, and
+its whisker spans their 25th to 75th percentile.
+
+In place, AES-128-GCM reads run 1.07 to 1.35 times as fast as `ch_read`, and writes 1.12 to 1.30
+times as fast as `ch_write`. AES-256-GCM reads run 1.08 to 1.31 times as fast, and writes 1.03 to
+1.29 times. ChaCha20-Poly1305 reads and writes run 1.01 to 1.10 times as fast. At 16 KiB the
+in-place read saves about the same time with each AEAD, 440 to 472 ns a record. The
+ChaCha20-Poly1305 AEAD takes longer, so that time is a smaller share of its record. The AES-256-GCM
+writes of 100 bytes and 1 KiB spread the most: their pairs' quartiles are 0.84 to 1.12 and 1.08 to
+1.44 times.
+
 ### arm64 AES-GCM beside OpenSSL
 
 Decision 158 set the goal on 2026-10-25: on arm64, AES-GCM takes no more time than OpenSSL 3.6.4,

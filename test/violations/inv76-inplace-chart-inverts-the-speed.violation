@@ -1,0 +1,12 @@
+invariant: INV-76
+file: tools/inplace_chart.py
+catches: test/lint-bench-numbers.sh
+reason: the chart draws the in-place time over the copying time, so each
+  bar reads the copying call's speed in multiples of the in-place call's,
+  the inverse of the CSV's speed. The committed SVG is the chart of the
+  CSV's speed, and lint-bench-numbers compares the two.
+
+--- old
+        speed[(row["bytes"], row["aead"])] = (float(row["speed"]), float(row["speed_p25"]),
+--- new
+        speed[(row["bytes"], row["aead"])] = (1 / float(row["speed"]), float(row["speed_p25"]),

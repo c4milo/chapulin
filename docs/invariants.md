@@ -3735,6 +3735,23 @@ last `ROLE=server` stub, as the entry said it would.
   status, `inv75-prove-passes-a-job-without-status`.
   `test/prove-status-check.sh` catches each.
 
+### INV-76 — a chart of bench/inplace.sh is what its CSV draws
+
+- **Claim.** Each chart of the in-place read and write, `docs/img/inplace-*.svg`, is the SVG
+  `tools/inplace_chart.py` draws from its CSV, `bench/results-inplace-*.csv`.
+  `docs/performance.md` shows each one. A run that moves a CSV redraws its chart in the same
+  commit, and no chart has no CSV.
+- **Mechanism.** `make lint-bench-numbers` runs `tools/bench-numbers.py`, which calls
+  `tools/inplace_chart.py`'s `check_charts`. It draws each CSV's chart and compares the bytes with
+  the committed SVG. The drawing reads no clock, so one CSV always draws the same bytes. It fails
+  on an SVG with no CSV, and when `docs/performance.md` has no image line for a chart.
+- **Check.** `inv76-inplace-chart-inverts-the-speed` draws the in-place time over the copying
+  time, `inv76-inplace-csv-moves-without-its-chart` moves one row of the CSV, and
+  `inv76-performance-drops-the-inplace-chart` names another image in `docs/performance.md`.
+  `test/lint-bench-numbers.sh` catches each.
+- **Violation.** A PR commits a CSV from a new run and not the chart it draws, edits a chart by
+  hand, or drops a chart from `docs/performance.md`.
+
 ### INV-53 — a sharded CI job checks each member of its set in one part
 
 - **Claim.** A CI job that runs as N parts checks each member of its

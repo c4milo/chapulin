@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 678" width="960" height="678" role="img" aria-labelledby="t d">
+<title id="t">Reads and writes in place on the Intel Xeon Processor @ 2.10GHz</title>
+<desc id="d">On the Intel Xeon Processor @ 2.10GHz under gcc 14.2.0, Reads and writes in place are faster than the copying calls in 27 of 27 rows. Each bar is the in-place call's speed in multiples of the copying call's. Reads, per record: 100 bytes AES-128-GCM 1.07x (1.01 to 1.11), AES-256-GCM 1.08x (1.03 to 1.10), ChaCha20-Poly1305 1.01x (0.99 to 1.05); 1 KiB AES-128-GCM 1.11x (1.05 to 1.13), AES-256-GCM 1.10x (1.04 to 1.12), ChaCha20-Poly1305 1.03x (0.99 to 1.09); 4 KiB AES-128-GCM 1.27x (1.19 to 1.28), AES-256-GCM 1.25x (1.18 to 1.26), ChaCha20-Poly1305 1.07x (1.03 to 1.10); 16 KiB AES-128-GCM 1.35x (1.30 to 1.42), AES-256-GCM 1.31x (1.26 to 1.37), ChaCha20-Poly1305 1.10x (1.07 to 1.16). Writes, per call: 100 bytes AES-128-GCM 1.12x (1.06 to 1.17), AES-256-GCM 1.03x (0.84 to 1.12), ChaCha20-Poly1305 1.03x (1.00 to 1.07); 1 KiB AES-128-GCM 1.15x (1.13 to 1.19), AES-256-GCM 1.21x (1.08 to 1.44), ChaCha20-Poly1305 1.03x (1.01 to 1.06); 4 KiB AES-128-GCM 1.19x (1.18 to 1.22), AES-256-GCM 1.29x (1.16 to 1.34), ChaCha20-Poly1305 1.06x (1.03 to 1.10); 16 KiB AES-128-GCM 1.30x (1.29 to 1.40), AES-256-GCM 1.29x (1.23 to 1.36), ChaCha20-Poly1305 1.09x (1.05 to 1.13); 64 KiB, 4 records AES-128-GCM 1.22x (1.18 to 1.27), AES-256-GCM 1.19x (1.16 to 1.24), ChaCha20-Poly1305 1.07x (1.03 to 1.11).</desc>
+<style>
+svg { --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984; --grid:#e4e3df; --first:#2a78d6; --second:#eb6834; --third:#009e73; --unit:#52514e; }
+@media (prefers-color-scheme: dark) {
+  svg { --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#8f8e86; --grid:#33332f; --first:#3987e5; --second:#d95926; --third:#1fb386; --unit:#c3c2b7; }
+}
+text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--ink); }
+.title { font-size: 17px; font-weight: 600; }
+.sub { font-size: 12.5px; fill: var(--ink2); }
+.section { font-size: 13.5px; font-weight: 600; }
+.row { font-size: 12.5px; fill: var(--ink2); }
+.val { font-size: 10.5px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.tick { font-size: 11px; fill: var(--muted); }
+.legend { font-size: 12.5px; fill: var(--ink2); }
+.whisker { stroke: var(--ink2); stroke-width: 1.2; }
+</style>
+<rect width="960" height="678" rx="8" fill="var(--surface)"/>
+<text class="title" x="24" y="34">Reads and writes in place are faster than the copying calls in 27 of 27 rows</text>
+<text class="sub" x="24" y="56">Each bar is the in-place call's speed in multiples of the copying call's: the median over 256 pairs of runs of the copying time over the in-place</text>
+<text class="sub" x="24" y="74">time. The whisker spans the 25th to the 75th percentile. A longer bar is faster.</text>
+<text class="sub" x="24" y="92">Intel Xeon Processor @ 2.10GHz, gcc 14.2.0, Linux, run on 2026-11-27, tree 412b149.</text>
+<text class="sub" x="24" y="110">Copying: ch_read and ch_write over callbacks that copy, TRANSPORT=tcp-blocking.</text>
+<text class="sub" x="24" y="128">In place: ch_read_in_place and ch_seal_in_place, TRANSPORT=tcp-nonblocking.</text>
+<rect x="24" y="144" width="12" height="12" rx="2" fill="var(--first)"/>
+<text class="legend" x="42" y="154">AES-128-GCM</text>
+<rect x="143" y="144" width="12" height="12" rx="2" fill="var(--second)"/>
+<text class="legend" x="161" y="154">AES-256-GCM</text>
+<rect x="262" y="144" width="12" height="12" rx="2" fill="var(--third)"/>
+<text class="legend" x="280" y="154">ChaCha20-Poly1305</text>
+<line x1="423" y1="150" x2="439" y2="150" stroke="var(--unit)" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text class="legend" x="445" y="154">the copying call: the unit, 1×</text>
+<line x1="224.0" y1="178" x2="224.0" y2="632" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="224.0" y="646" text-anchor="middle">0×</text>
+<line x1="334.7" y1="178" x2="334.7" y2="632" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="334.7" y="646" text-anchor="middle">0.25×</text>
+<line x1="445.3" y1="178" x2="445.3" y2="632" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="445.3" y="646" text-anchor="middle">0.5×</text>
+<line x1="556.0" y1="178" x2="556.0" y2="632" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="556.0" y="646" text-anchor="middle">0.75×</text>
+<line x1="666.7" y1="178" x2="666.7" y2="632" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="666.7" y="646" text-anchor="middle">1×</text>
+<line x1="777.3" y1="178" x2="777.3" y2="632" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="777.3" y="646" text-anchor="middle">1.25×</text>
+<line x1="888.0" y1="178" x2="888.0" y2="632" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="888.0" y="646" text-anchor="middle">1.5×</text>
+<text class="section" x="24" y="201">Reads, per record</text>
+<text class="row" x="936" y="201" text-anchor="end">ch_read_in_place beside ch_read</text>
+<text class="row" x="214" y="233.0" text-anchor="end">100 bytes</text>
+<path d="M224.0,212.0 h470.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-470.7 z" fill="var(--first)"/>
+<path class="whisker" d="M671.1,217.0 H713.6 M671.1,214.0 v6 M713.6,214.0 v6" fill="none"/>
+<text class="val" x="718.6" y="221">1.07×</text>
+<path d="M224.0,224.0 h474.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-474.2 z" fill="var(--second)"/>
+<path class="whisker" d="M680.4,229.0 H709.6 M680.4,226.0 v6 M709.6,226.0 v6" fill="none"/>
+<text class="val" x="714.6" y="233">1.08×</text>
+<path d="M224.0,236.0 h446.3 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-446.3 z" fill="var(--third)"/>
+<path class="whisker" d="M661.8,241.0 H687.5 M661.8,238.0 v6 M687.5,238.0 v6" fill="none"/>
+<text class="val" x="692.5" y="245">1.01×</text>
+<text class="row" x="214" y="277.0" text-anchor="end">1 KiB</text>
+<path d="M224.0,256.0 h487.9 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-487.9 z" fill="var(--first)"/>
+<path class="whisker" d="M689.2,261.0 H726.0 M689.2,258.0 v6 M726.0,258.0 v6" fill="none"/>
+<text class="val" x="731.0" y="265">1.11×</text>
+<path d="M224.0,268.0 h485.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-485.7 z" fill="var(--second)"/>
+<path class="whisker" d="M684.8,273.0 H719.8 M684.8,270.0 v6 M719.8,270.0 v6" fill="none"/>
+<text class="val" x="724.8" y="277">1.10×</text>
+<path d="M224.0,280.0 h454.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-454.7 z" fill="var(--third)"/>
+<path class="whisker" d="M661.4,285.0 H708.7 M661.4,282.0 v6 M708.7,282.0 v6" fill="none"/>
+<text class="val" x="713.7" y="289">1.03×</text>
+<text class="row" x="214" y="321.0" text-anchor="end">4 KiB</text>
+<path d="M224.0,300.0 h558.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-558.7 z" fill="var(--first)"/>
+<path class="whisker" d="M750.8,305.0 H791.9 M750.8,302.0 v6 M791.9,302.0 v6" fill="none"/>
+<text class="val" x="796.9" y="309">1.27×</text>
+<path d="M224.0,312.0 h550.8 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-550.8 z" fill="var(--second)"/>
+<path class="whisker" d="M744.1,317.0 H783.1 M744.1,314.0 v6 M783.1,314.0 v6" fill="none"/>
+<text class="val" x="788.1" y="321">1.25×</text>
+<path d="M224.0,324.0 h470.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-470.2 z" fill="var(--third)"/>
+<path class="whisker" d="M680.4,329.0 H713.1 M680.4,326.0 v6 M713.1,326.0 v6" fill="none"/>
+<text class="val" x="718.1" y="333">1.07×</text>
+<text class="row" x="214" y="365.0" text-anchor="end">16 KiB</text>
+<path d="M224.0,344.0 h594.6 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-594.6 z" fill="var(--first)"/>
+<path class="whisker" d="M800.4,349.0 H852.1 M800.4,346.0 v6 M852.1,346.0 v6" fill="none"/>
+<text class="val" x="857.1" y="353">1.35×</text>
+<path d="M224.0,356.0 h575.1 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-575.1 z" fill="var(--second)"/>
+<path class="whisker" d="M780.4,361.0 H831.8 M780.4,358.0 v6 M831.8,358.0 v6" fill="none"/>
+<text class="val" x="836.8" y="365">1.31×</text>
+<path d="M224.0,368.0 h485.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-485.7 z" fill="var(--third)"/>
+<path class="whisker" d="M699.0,373.0 H738.4 M699.0,370.0 v6 M738.4,370.0 v6" fill="none"/>
+<text class="val" x="743.4" y="377">1.10×</text>
+<text class="section" x="24" y="407">Writes, per call</text>
+<text class="row" x="936" y="407" text-anchor="end">ch_seal_in_place beside ch_write</text>
+<text class="row" x="214" y="439.0" text-anchor="end">100 bytes</text>
+<path d="M224.0,418.0 h491.0 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-491.0 z" fill="var(--first)"/>
+<path class="whisker" d="M692.8,423.0 H741.5 M692.8,420.0 v6 M741.5,420.0 v6" fill="none"/>
+<text class="val" x="746.5" y="427">1.12×</text>
+<path d="M224.0,430.0 h451.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-451.2 z" fill="var(--second)"/>
+<path class="whisker" d="M595.8,435.0 H718.9 M595.8,432.0 v6 M718.9,432.0 v6" fill="none"/>
+<text class="val" x="723.9" y="439">1.03×</text>
+<path d="M224.0,442.0 h454.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-454.7 z" fill="var(--third)"/>
+<path class="whisker" d="M666.2,447.0 H699.0 M666.2,444.0 v6 M699.0,444.0 v6" fill="none"/>
+<text class="val" x="704.0" y="451">1.03×</text>
+<text class="row" x="214" y="483.0" text-anchor="end">1 KiB</text>
+<path d="M224.0,462.0 h505.6 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-505.6 z" fill="var(--first)"/>
+<path class="whisker" d="M723.3,467.0 H748.6 M723.3,464.0 v6 M748.6,464.0 v6" fill="none"/>
+<text class="val" x="753.6" y="471">1.15×</text>
+<path d="M224.0,474.0 h532.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-532.2 z" fill="var(--second)"/>
+<path class="whisker" d="M701.6,479.0 H861.4 M701.6,476.0 v6 M861.4,476.0 v6" fill="none"/>
+<text class="val" x="866.4" y="483">1.21×</text>
+<path d="M224.0,486.0 h453.4 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-453.4 z" fill="var(--third)"/>
+<path class="whisker" d="M669.3,491.0 H691.9 M669.3,488.0 v6 M691.9,488.0 v6" fill="none"/>
+<text class="val" x="696.9" y="495">1.03×</text>
+<text class="row" x="214" y="527.0" text-anchor="end">4 KiB</text>
+<path d="M224.0,506.0 h524.2 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-524.2 z" fill="var(--first)"/>
+<path class="whisker" d="M746.3,511.0 H761.8 M746.3,508.0 v6 M761.8,508.0 v6" fill="none"/>
+<text class="val" x="766.8" y="515">1.19×</text>
+<path d="M224.0,518.0 h569.8 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-569.8 z" fill="var(--second)"/>
+<path class="whisker" d="M735.3,523.0 H817.2 M735.3,520.0 v6 M817.2,520.0 v6" fill="none"/>
+<text class="val" x="822.2" y="527">1.29×</text>
+<path d="M224.0,530.0 h467.1 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-467.1 z" fill="var(--third)"/>
+<path class="whisker" d="M680.4,535.0 H710.0 M680.4,532.0 v6 M710.0,532.0 v6" fill="none"/>
+<text class="val" x="715.0" y="539">1.06×</text>
+<text class="row" x="214" y="571.0" text-anchor="end">16 KiB</text>
+<path d="M224.0,550.0 h572.0 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-572.0 z" fill="var(--first)"/>
+<path class="whisker" d="M793.7,555.0 H841.5 M793.7,552.0 v6 M841.5,552.0 v6" fill="none"/>
+<text class="val" x="846.5" y="559">1.30×</text>
+<path d="M224.0,562.0 h566.7 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-566.7 z" fill="var(--second)"/>
+<path class="whisker" d="M769.8,567.0 H825.6 M769.8,564.0 v6 M825.6,564.0 v6" fill="none"/>
+<text class="val" x="830.6" y="571">1.29×</text>
+<path d="M224.0,574.0 h479.5 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-479.5 z" fill="var(--third)"/>
+<path class="whisker" d="M688.8,579.0 H725.1 M688.8,576.0 v6 M725.1,576.0 v6" fill="none"/>
+<text class="val" x="730.1" y="583">1.09×</text>
+<text class="row" x="214" y="615.0" text-anchor="end">64 KiB, 4 records</text>
+<path d="M224.0,594.0 h534.8 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-534.8 z" fill="var(--first)"/>
+<path class="whisker" d="M747.2,599.0 H787.1 M747.2,596.0 v6 M787.1,596.0 v6" fill="none"/>
+<text class="val" x="792.1" y="603">1.22×</text>
+<path d="M224.0,606.0 h522.0 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-522.0 z" fill="var(--second)"/>
+<path class="whisker" d="M739.3,611.0 H773.8 M739.3,608.0 v6 M773.8,608.0 v6" fill="none"/>
+<text class="val" x="778.8" y="615">1.19×</text>
+<path d="M224.0,618.0 h468.9 a3.0,3.0 0 0 1 3.0,3.0 v4.0 a3.0,3.0 0 0 1 -3.0,3.0 h-468.9 z" fill="var(--third)"/>
+<path class="whisker" d="M681.7,623.0 H714.0 M681.7,620.0 v6 M714.0,620.0 v6" fill="none"/>
+<text class="val" x="719.0" y="627">1.07×</text>
+<line x1="666.7" y1="174" x2="666.7" y2="632" stroke="var(--unit)" stroke-width="1.5" stroke-dasharray="4 3"/>
+</svg>

@@ -1,0 +1,12 @@
+invariant: INV-76
+file: docs/performance.md
+catches: test/lint-bench-numbers.sh
+reason: docs/performance.md names an image the bench does not draw, so the
+  page states the bench's method and shows no figure of it.
+  lint-bench-numbers requires an image line for each chart that a CSV of
+  bench/inplace.sh draws.
+
+--- old
+(img/inplace-linux-x86_64-gcc.svg)
+--- new
+(img/inplace.svg)

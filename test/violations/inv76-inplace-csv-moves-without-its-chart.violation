@@ -1,0 +1,12 @@
+invariant: INV-76
+file: bench/results-inplace-linux-x86_64-gcc.csv
+catches: test/lint-bench-numbers.sh
+reason: a run moves a row of the CSV, and the commit keeps the chart the
+  last run drew. The AES-128-GCM read of 16 KiB reads 1.25 times as fast
+  in the CSV while the chart shows 1.35. lint-bench-numbers draws the
+  chart from the CSV and compares it with the committed SVG.
+
+--- old
+read,aes128gcm,16384,1812.0,1344.2,1.350,1.302,1.419
+--- new
+read,aes128gcm,16384,1812.0,1344.2,1.250,1.202,1.319
