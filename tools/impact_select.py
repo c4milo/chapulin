@@ -539,6 +539,13 @@ def select_ct_taint(out, changed):
 # out, and each script it runs, bench/openssl.sh, which two of them
 # source, and the sources under bench/ and test/qemu/ those scripts
 # compile, can break a build of its own.
+# tools/bench-numbers.py and the files it imports, which render bench/'s
+# CSVs into the tables and charts lint-bench-numbers compares.
+BENCH_NUMBER_TOOLS = {"tools/bench-numbers.py", "tools/bench_handshake.py",
+                      "tools/bench_record.py", "tools/bench_scoreboard.py",
+                      "tools/inplace_chart.py", "tools/speed_chart.py",
+                      "tools/speed_history.py"}
+
 SCRIPT_BUILDS_FILES = {"test/script-builds.sh", "bench/aead.sh", "bench/record.sh",
                        "bench/primitives.sh", "bench/openssl.sh", "test/qemu-m3.sh",
                        "bench/inplace.sh", "bench/cpu_value.sh", "bench/neoverse.sh"}
@@ -927,7 +934,7 @@ def select_lints(out, changed, csources, lib):
     if any(p.startswith("docs/") or p in ("README.md", "SECURITY.md",
                                           "CONTRIBUTING.md") for p in changed):
         out.add("lint", "make lint-docs", "the README must name every document")
-    if any(p.startswith(("docs/", "bench/")) or p == "README.md"
+    if any(p.startswith(("docs/", "bench/")) or p == "README.md" or p in BENCH_NUMBER_TOOLS
            for p in changed):
         out.add("lint", "make lint-bench-numbers",
                 "the published memory numbers come from bench/",

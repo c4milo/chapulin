@@ -25,22 +25,27 @@
 # (bench/cpu_value.sh, as bench/primitives.sh states it). BENCH_CPU from
 # the environment wins.
 #
-# A row's time moves with the address of the process's stack
-# (docs/performance.md, the pitfalls table): under gcc 14 on an Intel Xeon
-# with AVX-512, an AES-256-GCM write of 1 KiB in place took 310 to 330 ns at
-# some 16-byte positions of the stack and 390 to 404 ns at others. So where
-# setarch exists, each program runs once at each of the POSITIONS positions
-# of one 4 KiB page, with address randomization off: setarch -R puts the
-# stack at the same address in every run, below the environment, and a
-# variable of 16 k bytes moves it by 16 k bytes. Each run takes
-# POSITION_SAMPLES samples a row, and every run of the bench reads the same
-# positions. Where setarch does not exist, as on macOS, each program runs
-# TURNS times at the addresses the system picks, with bench/inplace.c's
-# default samples. The two programs run in turns, pinned to one core with
+# A row's time moves from one process to the next. It can move with the
+# address of the process's stack (docs/performance.md, the pitfalls
+# table). On the virtual Intel Xeon of the first run it also moved with
+# time: an AES-128-GCM read of 100 bytes took about 125 ns in some runs and
+# about 220 ns in others, in streaks of consecutive runs, at stack
+# addresses that setarch held fixed. So the bench pairs the programs and
+# reads a ratio from each pair. Where setarch exists, each program runs
+# once at each of the POSITIONS 16-byte positions of the stack in one
+# 4 KiB page, with address randomization off: setarch -R puts the stack at
+# the same address in every run, below the environment, and a variable of
+# 16 k bytes moves it by 16 k bytes. Each run takes POSITION_SAMPLES
+# samples a row. Where setarch does not exist, as on macOS, each program
+# runs TURNS times at the addresses the system picks, with
+# bench/inplace.c's default samples. The copying program and the in-place
+# one run back to back for each position or turn, pinned to one core with
 # taskset where it exists: BENCH_CORE names the core, the last one by
-# default. A row's figure is the median of its runs' figures, each the
-# median of the run's samples, and its iqr_pct is the 75th percentile of
-# those figures less the 25th, as a share of the median.
+# default. Each run's figure for a row is the median of its samples.
+# A row's speed is the median over the pairs of the copying run's figure
+# over the in-place run's, and speed_p25 and speed_p75 are the pairs' 25th
+# and 75th percentiles. copy_ns and in_place_ns are the medians of each
+# program's figures.
 #
 # `bench/inplace.sh --quick` builds both programs, runs each once with
 # three samples a row and writes nothing. `bench/inplace.sh --build`
@@ -178,36 +183,12 @@ TREE=$(git describe --always --dirty 2>/dev/null || echo "${BENCH_TREE:-unknown}
     echo "# load average (1, 5, 15 min) before: $LOAD_BEFORE; after: $LOAD_AFTER;" \
         "pinned: ${PIN[*]:-no taskset}"
     echo "# copy_ns and in_place_ns: per call for a write and per record for a read, the" \
-        "median over $RUNS_NOTE, the programs in turns, each run's figure the median of its" \
-        "samples; iqr_pct: the runs' 75th percentile less their 25th, percent of the median"
-    echo "direction,aead,bytes,copy_ns,in_place_ns,copy_iqr_pct,in_place_iqr_pct"
-    awk -F, '
-        # The median of a list of n figures, and in low and high its 25th
-        # and 75th percentiles, by nearest rank.
-        function median(list, n,   i, j, t, v) {
-            split(list, v, " ")
-            for (i = 1; i <= n; i++)
-                for (j = i + 1; j <= n; j++)
-                    if (v[j] + 0 < v[i] + 0) { t = v[i]; v[i] = v[j]; v[j] = t }
-            low = v[int((n + 3) / 4)]; high = v[int((3 * n + 3) / 4)]
-            return n % 2 ? v[(n + 1) / 2] : (v[n / 2] + v[n / 2 + 1]) / 2
-        }
-        {
-            key = $2 "," $3 "," $4
-            if (!(key in seen)) { seen[key] = 1; order[++count] = key }
-            figures[$1, key] = figures[$1, key] " " $6
-            runs[$1, key]++
-        }
-        END {
-            for (k = 1; k <= count; k++) {
-                key = order[k]
-                copy = median(figures["copy", key], runs["copy", key])
-                copy_iqr = 100 * (high - low) / copy
-                in_place = median(figures["in_place", key], runs["in_place", key])
-                in_place_iqr = 100 * (high - low) / in_place
-                printf "%s,%.1f,%.1f,%.1f,%.1f\n", key, copy, in_place, copy_iqr, in_place_iqr
-            }
-        }' "$W/rows"
+        "median over $RUNS_NOTE, each run's figure the median of its samples; speed: the" \
+        "median over the pairs of runs, one of each program back to back, of the copying" \
+        "run's figure over the in-place run's; speed_p25 and speed_p75: the pairs' 25th and" \
+        "75th percentiles"
+    echo "direction,aead,bytes,copy_ns,in_place_ns,speed,speed_p25,speed_p75"
+    python3 bench/inplace_rows.py "$W/rows"
 } >"$OUT"
 cat "$OUT"
 echo "inplace bench: wrote $OUT" >&2
