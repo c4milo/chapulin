@@ -3698,6 +3698,43 @@ last `ROLE=server` stub, as the entry said it would.
   entry is checked for presence only, so review holds what it says: a
   file that changes shape owes a fresh reading.
 
+### INV-75 — `proof/run.sh` reports each harness's own verdict
+
+- **Claim.** `proof/run.sh` reports a harness verified only when its own
+  cbmc run exited 0 and its log holds `VERIFICATION SUCCESSFUL`, and it
+  counts a harness as running only until that run ends. It holds both
+  when the kernel gives a job's process id to a new process. bash 5.2
+  forgets the status of a job that ended once a new child of the shell
+  takes the job's process id. `wait` then answers 127, "is not a child of
+  this shell", or the new child's status, and `kill -0` answers for the
+  new process. Where `pid_max` is 32768, as in a container, one run of
+  the fast tier forks enough children for that: a run on 2026-11-27
+  reported 45 proved harnesses as FAILED.
+- **Mechanism.** Each job writes its exit status to
+  `proof/results/<name>.rc` after its log and its cache mark, and
+  `launch` deletes the file an earlier run left before it starts the
+  job. The report loop takes the status from that file, and `wait` only
+  blocks until the job ends. A job that wrote no status, because a
+  signal ended it first, is FAILED. `inflight` counts a job as running
+  only while its status file is absent and `kill -0` finds its process.
+- **Check.** `make lint-prove-status` runs `test/prove-status-check.sh`.
+  It runs `run.sh`'s own code, its setup and its report loop, with four
+  launch lines of its own over a stand-in for cbmc, and with shell
+  functions in place of `wait` and `kill`. `wait` answers 127 and then 0
+  once a job ends, and `kill -0` finds every process alive. The run must
+  report the harness that verified as verified, and FAILED for a cbmc
+  that died after its verdict, a refuted property and a job that a
+  signal ended after a stale status of 0. It must end in 30 s, one job at
+  a time. The check does not make bash forget a status, which needs a
+  reused process id.
+- **Violation.** A PR takes `wait`'s answer in the report loop,
+  `inv75-prove-report-takes-wait-status`, counts a job as alive while
+  `kill -0` finds its process id, `inv75-prove-inflight-takes-kill-answer`,
+  keeps a status file from an earlier run,
+  `inv75-prove-keeps-a-stale-status`, or passes a job that wrote no
+  status, `inv75-prove-passes-a-job-without-status`.
+  `test/prove-status-check.sh` catches each.
+
 ### INV-53 — a sharded CI job checks each member of its set in one part
 
 - **Claim.** A CI job that runs as N parts checks each member of its

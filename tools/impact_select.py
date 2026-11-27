@@ -72,6 +72,7 @@ WRAPPER_GATES = {
     "make lint-frame-align": ["test/lint-frame-align.sh"],
     "make lint-schedule-order": ["test/lint-schedule-order.sh"],
     "make lint-proof-cover": ["test/lint-proof-cover.sh"],
+    "make lint-prove-status": ["test/prove-status-check.sh"],
     "make lint-bench-numbers": ["test/lint-bench-numbers.sh"],
 }
 
@@ -897,6 +898,10 @@ def select_lints(out, changed, csources, lib):
     if any(p.endswith(".sh") or p.startswith(".githooks/") for p in changed):
         out.add("lint", "make lint-shellcheck",
                 "shellcheck reads every tracked script")
+    if any(p in ("proof/run.sh", "test/prove-status-check.sh") for p in changed):
+        out.add("lint", "make lint-prove-status",
+                "proof/run.sh must report each harness's own verdict",
+                ["test/prove-status-check.sh"])
     if any(p.startswith("proof/") for p in changed):
         out.add("lint", "make lint-matrix",
                 "the nightly matrix must name every slow launch line",

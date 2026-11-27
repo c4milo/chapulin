@@ -206,17 +206,22 @@ verified() { # rc log
         ! grep -q "^loop identifier .* provided with unwindset" "$2"
 }
 
-# Live jobs as "pid:gb" pairs in a plain string — macOS ships bash 3.2,
-# where expanding an empty array under set -u is an error.
+# Live jobs as "pid:gb:name" entries in a plain string — macOS ships bash
+# 3.2, where expanding an empty array under set -u is an error. A job is
+# done once it has written its exit status to $LOGDIR/<name>.rc, whatever
+# kill -0 says of its process id: once the job exits, the kernel may give
+# that id to a new process, and kill -0 then answers for that process.
 RUNNING=""
 INFLIGHT_N=0
 INFLIGHT_GB=0
 inflight() {
-    local live="" sum=0 n=0 e
+    local live="" sum=0 n=0 e pid rest
     for e in $RUNNING; do
-        if kill -0 "${e%%:*}" 2>/dev/null; then
+        pid=${e%%:*}
+        rest=${e#*:}
+        if [ ! -f "$LOGDIR/${rest#*:}.rc" ] && kill -0 "$pid" 2>/dev/null; then
             live="$live $e"
-            sum=$((sum + ${e##*:}))
+            sum=$((sum + ${rest%%:*}))
             n=$((n + 1))
         fi
     done
@@ -353,6 +358,8 @@ launch() {
     # Never hand a solver more address space than the machine has:
     # past that line the OS kills the runner, not the job.
     if [ "$MEM_GB" -gt 2 ] && [ "$cap_gb" -gt $((MEM_GB - 1)) ]; then cap_gb=$((MEM_GB - 1)); fi
+    # A status a previous run left would read as this job's.
+    rm -f "$LOGDIR/$name.rc"
     (
         log="$LOGDIR/$name.log"
         ulimit -v $((cap_gb * 1024 * 1024)) 2>/dev/null || true
@@ -367,12 +374,15 @@ launch() {
             rm -f "$CACHEDIR/$name-"*.ok
             : > "$CACHEDIR/$name-$key.ok"
         fi
+        # The job's own exit status, which the report loop and inflight
+        # read in place of what wait and kill -0 say of its process id.
+        echo "$rc" > "$LOGDIR/$name.rc"
         exit $rc
     ) &
     NAMES[NJOBS]="$name"
     PIDS[NJOBS]=$!
     NJOBS=$((NJOBS + 1))
-    RUNNING="$RUNNING $!:$w"
+    RUNNING="$RUNNING $!:$w:$name"
 }
 
 # Shortest first: on CI the slow jobs run close to serial, and a run
@@ -3770,19 +3780,38 @@ launch fast full rsa_sign64_ifma_webpki 513 "ct_wipe.0:513" src/ct.c proof/ct_wi
 FAIL=0
 i=0
 while [ "$i" -lt "$NJOBS" ]; do
-    wait "${PIDS[$i]}"
+    # The status the job wrote decides, and wait's answer only blocks until
+    # the job ends. bash 5.2 forgets a job's status once a new child of this
+    # shell takes the job's process id, and a long run forks thousands of
+    # children where the kernel's pid_max is 32768, as in a container. wait
+    # then answers 127, "is not a child of this shell", or the status of the
+    # new child, which can be 0. A job that wrote no status, because a signal
+    # ended it first, is never verified.
+    wait "${PIDS[$i]}" 2>/dev/null
     rc=$?
     name="${NAMES[$i]}"
     log="$LOGDIR/$name.log"
+    job_rc=""
+    if [ -r "$LOGDIR/$name.rc" ]; then
+        read -r job_rc < "$LOGDIR/$name.rc" || job_rc=""
+    fi
+    case "$job_rc" in
+    '' | *[!0-9]*)
+        if [ "$rc" -eq 0 ]; then rc=1; fi
+        ;;
+    *) rc=$job_rc ;;
+    esac
     wall=$(awk '/^run.sh: wall/ {print $3}' "$log")
     printf '%-14s' "$name"
     if grep -q "no body for callee" "$log"; then
         echo "UNSOUND (missing body)"
         grep "no body" "$log" | sort -u
         FAIL=1
-    elif [ $rc -ne 0 ] || ! grep -q "VERIFICATION SUCCESSFUL" "$log"; then
+    elif [ "$rc" -ne 0 ] || ! grep -q "VERIFICATION SUCCESSFUL" "$log"; then
         if grep -qiE "bad_alloc|out of memory|out-of-memory|Cannot allocate|Killed" "$log"; then
             echo "FAILED (memory cap: raise the harness weight or split it)"
+        elif [ -z "$job_rc" ]; then
+            echo "FAILED (the job wrote no exit status)"
         else
             echo "FAILED"
         fi

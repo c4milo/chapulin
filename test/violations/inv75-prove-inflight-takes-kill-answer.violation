@@ -1,0 +1,14 @@
+invariant: INV-75
+file: proof/run.sh
+catches: test/prove-status-check.sh
+reason: inflight counts a job as alive while kill -0 finds its process
+  id, whether or not the job wrote its status. Once a long-lived process
+  takes a reused id, the admission loop waits for a job that already
+  ended, and at CPU_CAP such entries stop the run. The check runs with
+  kill -0 finding every process alive and one job at a time, and
+  requires the run to end in 30 s.
+
+--- old
+        if [ ! -f "$LOGDIR/${rest#*:}.rc" ] && kill -0 "$pid" 2>/dev/null; then
+--- new
+        if kill -0 "$pid" 2>/dev/null; then

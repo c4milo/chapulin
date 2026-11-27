@@ -1,0 +1,14 @@
+invariant: INV-75
+file: proof/run.sh
+catches: test/prove-status-check.sh
+reason: launch keeps the status file an earlier run of the same harness
+  left. A job that a signal ends before it writes its own status then
+  reports the earlier run's 0, and a log that holds VERIFICATION
+  SUCCESSFUL passes. The check writes a stale 0 for a job that kills
+  itself after its verdict, and requires FAILED.
+
+--- old
+    rm -f "$LOGDIR/$name.rc"
+    (
+--- new
+    (

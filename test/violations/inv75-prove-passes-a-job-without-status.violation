@@ -1,0 +1,13 @@
+invariant: INV-75
+file: proof/run.sh
+catches: test/prove-status-check.sh
+reason: a job that wrote no status takes wait's answer, so a job a signal
+  ended after cbmc printed VERIFICATION SUCCESSFUL passes when wait
+  answers 0 for another process. The check runs such a job with wait
+  answering 0 and requires FAILED.
+
+--- old
+        if [ "$rc" -eq 0 ]; then rc=1; fi
+        ;;
+--- new
+        ;;

@@ -7674,7 +7674,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build lint-p256-wide lint-x25519-wide lint-frame-align lint-schedule-order
+lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build lint-p256-wide lint-x25519-wide lint-frame-align lint-schedule-order lint-prove-status
 
 # The Zig build a Zig project depends on (build.zig, docs/decisions.md 69),
 # held to make's, and the Zig API its module carries (docs/zig.md). zig
@@ -7941,6 +7941,16 @@ lint-size-floor:
 .PHONY: lint-proof-cover
 lint-proof-cover:
 	@python3 tools/proof-cover.py
+
+# INV-75: proof/run.sh reports each harness's own verdict, though bash 5.2
+# forgets a job's status once a new child takes the job's process id, and
+# wait and kill -0 then answer for that child. test/prove-status-check.sh
+# runs run.sh's own code over a stand-in cbmc with both answers wrong, in
+# about 6 s, and says what it does not check.
+.PHONY: lint-prove-status
+lint-prove-status:
+	@python3 tools/stamp.py lint-prove-status --content proof/run.sh \
+	  --content test/prove-status-check.sh --output 'bash --version' -- test/prove-status-check.sh
 
 # INV-25: a reader that opens a slice must compare what is left in it
 # against a length, or a trailing byte inside the container passes

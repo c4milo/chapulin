@@ -1,0 +1,13 @@
+invariant: INV-75
+file: proof/run.sh
+catches: test/prove-status-check.sh
+reason: the report loop takes wait's answer and ignores the status each
+  job wrote. Once a new child of run.sh takes a job's process id, wait
+  answers 127, which fails a harness that verified, or the new child's
+  0, which passes a cbmc that died after it printed its verdict. The
+  check runs the report loop with wait answering 127 and then 0.
+
+--- old
+    *) rc=$job_rc ;;
+--- new
+    *) ;;
