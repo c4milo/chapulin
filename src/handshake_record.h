@@ -14,6 +14,9 @@
 #ifndef CH_HANDSHAKE_RECORD_H
 #define CH_HANDSHAKE_RECORD_H
 
+#ifndef __cplusplus
+#include <stdalign.h>
+#endif
 #include <stddef.h>
 #include <stdint.h>
 
@@ -40,16 +43,60 @@
 // inside ch_quic, because the driver returns to its caller between
 // messages, and the wipe comes one round trip earlier, at the step that
 // reaches HSQ_STEP_COMPLETE.
+// HS_WIPE_ALIGN starts each secret array of handshake_state at an address
+// that 16 divides, in a host object of tcp-nonblocking, which keeps the
+// state in the caller's ch_tcp. ct_wipe stores 16-byte words there, and
+// one byte at a time before the first such address and after the last
+// whole word (ct_wipe.c, docs/decisions.md 144). So each wipe of an array
+// stores whole words alone, wherever the state starts in its session
+// (docs/decisions.md 249). Every other build keeps the alignment of a
+// byte, and its layout.
+#if defined(CH_CPU_RUNTIME) && defined(__SIZEOF_INT128__) && defined(CH_TRANSPORT_TCP_NONBLOCKING)
+#define HS_WIPE_ALIGN 16
+#else
+#define HS_WIPE_ALIGN 1
+#endif
+
 typedef struct {
-    ch_tls_priv *t;
-    uint8_t priv[X25519_LEN];
-    uint8_t pub[X25519_LEN];
+    // The secret arrays come first. Each is a multiple of 16 bytes long,
+    // so no padding falls between them.
+    alignas(HS_WIPE_ALIGN) uint8_t priv[X25519_LEN];
+    alignas(HS_WIPE_ALIGN) uint8_t pub[X25519_LEN];
 #ifdef CH_KEX_MLKEM
     // ML-KEM (d, z) seed. The key pair re-expands from it on demand
     // (build and decapsulation), so the share the HRR retry resends is
     // identical by construction and no 2400-byte key lives in state.
-    uint8_t dz[64];
+    alignas(HS_WIPE_ALIGN) uint8_t dz[64];
 #endif
+#if defined(CH_KEX_TWO_GROUPS) || defined(CH_ROLE_SERVER)
+    // The P-256 private scalar of a secp256r1 key exchange, drawn only
+    // when that group is chosen: by a client once a retry names it
+    // (handshake_groups.c), and by a server once it selects it
+    // (srv_kex.c). Zero otherwise. The call that computes the shared
+    // secret wipes it on both exits (INV-17).
+    alignas(HS_WIPE_ALIGN) uint8_t p256_priv[P256_SCALAR_LEN];
+#endif
+    alignas(HS_WIPE_ALIGN) uint8_t random[32];
+    // The key schedule's secrets, each as long as the hash it runs: the
+    // suite's for all but the first two, and for those two the hash of
+    // the PSK the client presents or the server selects (RFC 9846 §7.1).
+    // The arrays are sized for the longest hash the build holds.
+    alignas(HS_WIPE_ALIGN) uint8_t early[HKDF_HASH_MAX];
+    alignas(HS_WIPE_ALIGN) uint8_t binder_key[HKDF_HASH_MAX];
+    alignas(HS_WIPE_ALIGN) uint8_t handshake_secret[HKDF_HASH_MAX];
+    alignas(HS_WIPE_ALIGN) uint8_t c_hs[HKDF_HASH_MAX];
+    alignas(HS_WIPE_ALIGN) uint8_t s_hs[HKDF_HASH_MAX];
+    alignas(HS_WIPE_ALIGN) uint8_t master[HKDF_HASH_MAX];
+#ifdef CH_ROLE_SERVER
+    // The ML-KEM-768 shared secret of a hybrid key exchange (mlkem.h's
+    // ss). srv_kex_share writes it when it encapsulates for the
+    // ServerHello, and srv_kex_secret copies it into the input keying
+    // material and wipes it, so it lives from one message to the next and
+    // no longer (INV-17). It stays zero when the server selected x25519
+    // or secp256r1.
+    alignas(HS_WIPE_ALIGN) uint8_t mlkem_ss[MLKEM_SS_LEN];
+#endif
+    ch_tls_priv *t;
 #ifdef CH_KEX_TWO_GROUPS
     // The group a HelloRetryRequest named, CH_GROUP_SECP256R1, or 0 when
     // no retry named one. It is the one group the first hello lists
@@ -61,14 +108,6 @@ typedef struct {
     // form of RFC 9846 §4.3.8.2. Public: it goes out in the clear.
     uint8_t p256_pub[P256_POINT_LEN];
 #endif
-#if defined(CH_KEX_TWO_GROUPS) || defined(CH_ROLE_SERVER)
-    // The P-256 private scalar of a secp256r1 key exchange, drawn only
-    // when that group is chosen: by a client once a retry names it
-    // (handshake_groups.c), and by a server once it selects it
-    // (srv_kex.c). Zero otherwise. The call that computes the shared
-    // secret wipes it on both exits (INV-17).
-    uint8_t p256_priv[P256_SCALAR_LEN];
-#endif
 #ifdef CH_SUITE_AES_GCM
     // The cipher suite the server named, 0 until a HelloRetryRequest or
     // the ServerHello names one. A ServerHello after a retry must repeat
@@ -77,27 +116,9 @@ typedef struct {
     // (REC_DIR_INIT_SUITE).
     uint16_t suite;
 #endif
-    uint8_t random[32];
-    // The key schedule's secrets, each as long as the hash it runs: the
-    // suite's for all but the first two, and for those two the hash of
-    // the PSK the client presents or the server selects (RFC 9846 §7.1).
-    // The arrays are sized for the longest hash the build holds.
-    uint8_t early[HKDF_HASH_MAX];
-    uint8_t binder_key[HKDF_HASH_MAX];
-    uint8_t handshake_secret[HKDF_HASH_MAX];
-    uint8_t c_hs[HKDF_HASH_MAX];
-    uint8_t s_hs[HKDF_HASH_MAX];
-    uint8_t master[HKDF_HASH_MAX];
     uint8_t cookie[HSP_COOKIE_MAX];
     size_t cookie_len;
 #ifdef CH_ROLE_SERVER
-    // The ML-KEM-768 shared secret of a hybrid key exchange (mlkem.h's
-    // ss). srv_kex_share writes it when it encapsulates for the
-    // ServerHello, and srv_kex_secret copies it into the input keying
-    // material and wipes it, so it lives from one message to the next and
-    // no longer (INV-17). It stays zero when the server selected x25519
-    // or secp256r1.
-    uint8_t mlkem_ss[MLKEM_SS_LEN];
     // The auth_seconds of the ticket this handshake resumed (srv_ticket.h),
     // which srv_select_auth writes and srv_send_new_session_ticket carries
     // into the ticket it issues, so a chain of resumptions keeps the instant

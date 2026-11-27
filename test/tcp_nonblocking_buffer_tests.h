@@ -102,6 +102,29 @@ static void connected_paths(ch_tcp_priv *client, ch_tcp_priv *server) {
     ch_tcp_close(tcp_public(server));
 }
 
+// The byte the test writes over each page-backed buffer before the handshake.
+#define BUFFER_SENTINEL 0xa5
+
+// Whether the n bytes at p are a run of one or more zero bytes, then one
+// or more bytes of the sentinel alone: the session wiped the bytes it wrote
+// at the front of the buffer, and it neither wrote nor wiped a byte past
+// them (docs/decisions.md 249). No handshake of this test fills its buffer.
+static int wiped_front(const uint8_t *p, size_t n) {
+    size_t i = 0;
+    while (i < n && p[i] == 0) {
+        i++;
+    }
+    if (i == 0 || i == n) {
+        return 0;
+    }
+    for (; i < n; i++) {
+        if (p[i] != BUFFER_SENTINEL) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static void test_connected_session_reads_no_buffer(ch_tcp_priv *client, ch_tcp_priv *server,
                                                    const ch_cfg *ccfg, const ch_cfg *scfg) {
     size_t client_mapped = 0;
@@ -118,10 +141,13 @@ static void test_connected_session_reads_no_buffer(ch_tcp_priv *client, ch_tcp_p
     c.buf_len = sizeof cli_buf;
     s.buf = server_pages;
     s.buf_len = sizeof srv_buf;
+    memset(client_pages, BUFFER_SENTINEL, sizeof cli_buf);
+    memset(server_pages, BUFFER_SENTINEL, sizeof srv_buf);
     (void)run_handshake(client, server, &c, &s);
     CHECK(ch_tcp_state(tcp_public(client)) == CH_ST_CONNECTED);
     CHECK(ch_tcp_state(tcp_public(server)) == CH_ST_CONNECTED);
-    CHECK(all_zero(client_pages, sizeof cli_buf) && all_zero(server_pages, sizeof srv_buf));
+    CHECK(wiped_front(client_pages, sizeof cli_buf) && wiped_front(server_pages, sizeof srv_buf));
+    CHECK(client->t.buf_written_len == 0 && server->t.buf_written_len == 0);
     CHECK(mprotect(client_pages, client_mapped, PROT_NONE) == 0);
     CHECK(mprotect(server_pages, server_mapped, PROT_NONE) == 0);
     connected_paths(client, server);

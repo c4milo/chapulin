@@ -1,0 +1,11 @@
+invariant: INV-73
+file: src/session.c
+catches: tcp_nonblocking_loop_test
+reason: tlsi_give_back_buf forgets the pointer and keeps buf_written_len,
+  so a session that gave its buffer back still names a length of bytes
+  it holds. The loop test requires the mark to be 0 once each end
+  connected (docs/decisions.md 249).
+
+--- old
+    t->buf_written_len = 0;
+--- new

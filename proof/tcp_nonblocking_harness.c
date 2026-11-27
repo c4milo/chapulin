@@ -305,6 +305,11 @@ static void havoc_state(void) {
     __CPROVER_assume(len <= sizeof buf && off <= len);
     r.t.pt_off = off;
     r.t.pt_len = len;
+    // The mark of the bytes the session wrote into cfg.buf: at or past
+    // pt_len, and inside the buffer (session.h, buf_written_len).
+    size_t written = nondet_size_t();
+    __CPROVER_assume(len <= written && written <= sizeof buf);
+    r.t.buf_written_len = written;
 }
 
 static void prove_init(void) {

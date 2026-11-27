@@ -1,0 +1,13 @@
+invariant: INV-73
+file: src/session.c
+catches: tcp_nonblocking_loop_test
+reason: tlsi_give_back_buf wipes all cfg.buf_len bytes again, the bytes
+  past the mark among them, which hold the caller's own bytes. That is the
+  cost docs/decisions.md 249 removed: on a host whose buffer is larger
+  than its handshake, most of the wipe writes bytes no handshake wrote.
+  The loop test requires a sentinel byte to survive past the wiped run.
+
+--- old
+    ct_wipe(t->cfg.buf, t->buf_written_len);
+--- new
+    ct_wipe(t->cfg.buf, t->cfg.buf_len);

@@ -11,6 +11,9 @@
 #include "buf.h"
 #include "cfg.h"
 #include "handshake_message.h"
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+#include "ch_assert.h"
+#endif
 #if !defined(CH_TRANSPORT_QUIC_NONBLOCKING) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
 #include "io.h"
 #include "record.h"
@@ -164,6 +167,14 @@ size_t hsr_feed(handshake_state *h, const uint8_t *p, size_t n) {
     size_t take = n < room ? n : room;
     memcpy(t->cfg.buf + t->pt_len, p, take);
     t->pt_len += take;
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+    // tlsi_give_back_buf wipes the bytes below the mark alone, so each
+    // write raises it past the last byte it wrote (docs/decisions.md 249).
+    if (t->buf_written_len < t->pt_len) {
+        t->buf_written_len = t->pt_len;
+    }
+    CH_ASSERT(t->pt_len <= t->buf_written_len && t->buf_written_len <= t->cfg.buf_len);
+#endif
     return take;
 }
 

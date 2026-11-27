@@ -1778,52 +1778,62 @@ last `ROLE=server` stub, as the entry said it would.
   so no unverified plaintext stays in the caller's input. A
   post-handshake message in parts waits in the caller's input, whose
   records take at most `cfg.buf_len` bytes together. `cfg.buf` serves the
-  handshake alone: the session wipes all `cfg.buf_len` bytes of it and
-  sets its copy of the pointer to NULL when it connects, when it fails
-  and when `ch_tcp_close` ends it, and a connected session never reads
-  or writes it. Every AEAD path opens in place: ChaCha20-Poly1305 and
-  AES-GCM, on the portable code and on each kernel a `ch_cfg.cpu` value
-  picks (docs/decisions.md 247).
+  handshake alone: the session wipes the bytes at its front that it
+  wrote, `buf_written_len` of them, and sets its copy of the pointer to
+  NULL when it connects, when it fails and when `ch_tcp_close` ends it,
+  and a connected session never reads or writes it. Every AEAD path opens
+  in place: ChaCha20-Poly1305 and AES-GCM, on the portable code and on
+  each kernel a `ch_cfg.cpu` value picks (docs/decisions.md 247).
 - **Mechanism.** `tcp_read.c` holds the read. It opens each record with
   `rec_open` at `pt == rec + REC_HDR`, which `aead.h` and `gcm.h` allow,
   and its `fail_into` wipes what the call opened before it seals the
-  alert into the caller's reply. `session.c`'s `tlsi_give_back_buf` wipes
-  the buffer and forgets the pointer. The client calls it in `ch_tcp_out`
-  when the session connects, the server in `ch_srv_tcp_in` after the
-  record that completes the handshake, and `tlsi_wipe` and
-  `tcp_nonblocking_wipe` call it on every failure and close. `ch_tcp_in`
-  and `ch_srv_tcp_in` fail a connected session before they read a byte.
-  `tls.h` declares no `ch_read` in this transport.
+  alert into the caller's reply. `hsr_feed`, the one call that writes the
+  buffer, raises `buf_written_len` past each byte it writes, and
+  `session.c`'s `tlsi_give_back_buf` wipes the bytes below it and forgets
+  the pointer and the mark. The client calls it in `ch_tcp_out` when the
+  session connects, the server in `ch_srv_tcp_in` after the record that
+  completes the handshake, and `tlsi_wipe` and `tcp_nonblocking_wipe`
+  call it on every failure and close. `ch_tcp_in` and `ch_srv_tcp_in`
+  fail a connected session before they read a byte. `tls.h` declares no
+  `ch_read` in this transport.
 - **Check.** `bin/tcp_nonblocking_loop_test` and its two other builds
   read a ticket, a wait, a partial record, a ticket in two records held
   in the caller's input, an input shorter than the held bytes, a record
   whose tag fails and a header no peer may send, each in place, and
   require each handshake buffer to be all zero and named by no session
-  once the session connects, fails or closes. Then it maps both buffers
-  with `mmap`, takes away every access once both ends connect, and runs
-  data each way, a KeyUpdate, a ticket, a ticket in two records, both
-  closes and `ch_tcp_close`: a path that touched a buffer would stop the
-  binary with SIGSEGV. `bin/record_in_place_test` opens records of each
-  suite in place under each `ch_cfg.cpu` value that picks another kernel,
-  at lengths on both sides of each kernel's threshold, and requires each
+  once the session connects, fails or closes. It also fills a pair of
+  page-backed buffers with a sentinel before a handshake, and requires
+  each to hold a run of zero bytes, then the sentinel alone, and a mark
+  of 0 once both ends connect. Then it maps both buffers with `mmap`,
+  takes away every access once both ends connect, and runs data each way,
+  a KeyUpdate, a ticket, a ticket in two records, both closes and
+  `ch_tcp_close`: a path that touched a buffer would stop the binary with
+  SIGSEGV. `bin/record_in_place_test` opens records of each suite in
+  place under each `ch_cfg.cpu` value that picks another kernel, at
+  lengths on both sides of each kernel's threshold, and requires each
   open with a wrong tag to leave zeros or the ciphertext. The Zig API's
   `loop.zig` runs a client and a server through `read` (docs/zig.md).
 - **Violation.** A PR keeps the buffer at connect:
-  `inv73-tcp-nonblocking-connect-keeps-handshake-buffer` on the client
-  and `inv73-tcp-nonblocking-server-connect-keeps-handshake-buffer` on the
+  `inv73-tcp-nonblocking-connect-keeps-handshake-buffer` on the client and
+  `inv73-tcp-nonblocking-server-connect-keeps-handshake-buffer` on the
   server. A PR gives it back unwiped,
   `inv73-tcp-nonblocking-give-back-skips-wipe`, or with the pointer kept,
-  `inv73-tcp-nonblocking-give-back-keeps-pointer`. A PR keeps it on a
-  failure or a close, `inv73-tcp-nonblocking-failure-keeps-handshake-buffer`.
-  A PR keeps a split message in the buffer after connect,
-  `inv73-tcp-nonblocking-split-message-waits-in-buffer`. A PR leaves a
-  failed record in the caller's input,
-  `inv73-tcp-nonblocking-failed-record-kept`. `bin/tcp_nonblocking_loop_test`
-  catches each. A PR makes the AES-GCM open of a host object decrypt a
-  pass before it hashes it, which only an open in place meets:
-  `inv73-aes-gcm-open-writes-before-it-hashes`, which
+  `inv73-tcp-nonblocking-give-back-keeps-pointer`. A PR writes the buffer
+  without the mark, `inv73-tcp-nonblocking-feed-skips-the-mark`, wipes the
+  whole buffer again,
+  `inv73-tcp-nonblocking-give-back-wipes-the-whole-buffer`, or keeps the mark
+  after the give-back, `inv73-tcp-nonblocking-give-back-keeps-the-mark`. A PR
+  keeps it on a failure or a close,
+  `inv73-tcp-nonblocking-failure-keeps-handshake-buffer`. A PR keeps a split
+  message in the buffer after connect,
+  `inv73-tcp-nonblocking-split-message-waits-in-buffer`. A PR leaves a failed
+  record in the caller's input, `inv73-tcp-nonblocking-failed-record-kept`.
+  `bin/tcp_nonblocking_loop_test` catches each. A PR makes the AES-GCM open
+  of a host object decrypt a pass before it hashes it, which only an open in
+  place meets: `inv73-aes-gcm-open-writes-before-it-hashes`, which
   `bin/record_in_place_test` catches.
-- See [decisions: Engineering](decisions.md#engineering), entry 247.
+- See [decisions: Engineering](decisions.md#engineering), entries 247
+  and 249.
 
 ### INV-74 — a tcp-nonblocking session seals in place, every record of a write or none
 

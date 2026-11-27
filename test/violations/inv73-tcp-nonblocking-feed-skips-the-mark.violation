@@ -1,0 +1,15 @@
+invariant: INV-73
+file: src/handshake_record.c
+catches: tcp_nonblocking_loop_test
+reason: hsr_feed writes the handshake's bytes into cfg.buf and leaves
+  buf_written_len where it was, so tlsi_give_back_buf wipes none of them
+  and the next handshake that takes the buffer finds this one's
+  plaintext. The loop test fills each buffer with a sentinel and requires
+  a run of zero bytes, then the sentinel alone (docs/decisions.md 249).
+
+--- old
+    if (t->buf_written_len < t->pt_len) {
+        t->buf_written_len = t->pt_len;
+    }
+    CH_ASSERT(t->pt_len <= t->buf_written_len && t->buf_written_len <= t->cfg.buf_len);
+--- new

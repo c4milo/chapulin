@@ -12,20 +12,22 @@
 #include "handshake_record.h"
 #include "record.h"
 
-// session.c's give-back of the handshake buffer (docs/decisions.md 247):
-// when the session holds cfg.buf it writes zero over all cfg.buf_len bytes,
-// with one memset as the ct_wipe stub writes, and forgets the pointer.
-// tcp_nonblocking_wipe calls it on every failure and close, and the client
-// driver when it connects.
+// session.c's give-back of the handshake buffer (docs/decisions.md 247 and
+// 249): when the session holds cfg.buf it writes zero over the
+// buf_written_len bytes at its front, with one memset as the ct_wipe stub
+// writes, and forgets the pointer and the mark. tcp_nonblocking_wipe calls
+// it on every failure and close, and the client driver when it connects.
 void tlsi_give_back_buf(ch_tls_priv *t) {
     __CPROVER_assert(t != NULL, "give back: session valid");
     if (t->cfg.buf == NULL) {
         return;
     }
-    __CPROVER_assert(__CPROVER_w_ok(t->cfg.buf, t->cfg.buf_len),
-                     "give back: cfg.buf holds cfg.buf_len writable bytes");
-    memset(t->cfg.buf, 0, t->cfg.buf_len);
+    __CPROVER_assert(t->buf_written_len <= t->cfg.buf_len, "give back: the mark lies in cfg.buf");
+    __CPROVER_assert(__CPROVER_w_ok(t->cfg.buf, t->buf_written_len),
+                     "give back: cfg.buf holds the bytes below the mark");
+    memset(t->cfg.buf, 0, t->buf_written_len);
     t->cfg.buf = NULL;
+    t->buf_written_len = 0;
     t->pt_off = 0;
     t->pt_len = 0;
 }
@@ -39,6 +41,9 @@ size_t hsr_feed(handshake_state *h, const uint8_t *p, size_t n) {
     size_t room = h->t->cfg.buf_len - h->t->pt_len;
     size_t took = n <= room ? n : room;
     h->t->pt_len += took;
+    if (h->t->buf_written_len < h->t->pt_len) {
+        h->t->buf_written_len = h->t->pt_len;
+    }
     return took;
 }
 

@@ -6,7 +6,7 @@ reason: a session wipes cfg.buf when it gives it back but keeps the pointer,
   connection's handshake instead of stopping.
 
 --- old
-    ct_wipe(t->cfg.buf, t->cfg.buf_len);
+    ct_wipe(t->cfg.buf, t->buf_written_len);
     t->cfg.buf = NULL;
 --- new
-    ct_wipe(t->cfg.buf, t->cfg.buf_len);
+    ct_wipe(t->cfg.buf, t->buf_written_len);

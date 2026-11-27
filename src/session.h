@@ -346,6 +346,12 @@ typedef struct {
     // front of its next input. Both are 0 when no message is in part.
     size_t held_len;
     size_t held_fill;
+    // How many bytes at the front of cfg.buf this session wrote. hsr_feed,
+    // the one call that writes cfg.buf in this transport, raises it to
+    // pt_len after each write, and its compaction writes below pt_len. So
+    // every byte the handshake wrote lies below it, and tlsi_give_back_buf
+    // wipes those bytes alone (docs/decisions.md 249).
+    size_t buf_written_len;
 #endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // The negotiated version: RFC 9368's QUIC version in use once version
@@ -448,9 +454,10 @@ void tlsi_wipe(ch_tls_priv *t);
 void tlsi_close_read_side(ch_tls_priv *t);
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-// Gives cfg.buf back to the caller: wipes its cfg.buf_len bytes, then sets
-// this session's copy of the pointer to NULL, so no later call can reach
-// the buffer (docs/decisions.md 247). It keeps cfg.buf_len, which the
+// Gives cfg.buf back to the caller: wipes the buf_written_len bytes at its
+// front, every byte the session wrote there, then sets this session's copy
+// of the pointer to NULL, so no later call can reach the buffer
+// (docs/decisions.md 247 and 249). It keeps cfg.buf_len, which the
 // record size checks read. A session that gave the buffer back already
 // holds NULL, and the call does nothing then. Each driver calls it when
 // the session connects, and tlsi_wipe calls it on every failure and close.

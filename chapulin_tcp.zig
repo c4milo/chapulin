@@ -464,7 +464,9 @@ fn Session(comptime side: Side, comptime limits: chapulin.Limits) type {
 
         fn from_hook(io: ?*anyopaque) *Self {
             const hook: *chapulin.Hook = @ptrCast(@alignCast(io.?));
-            return @fieldParentPtr("hook", hook);
+            // A host object aligns c.ch_tcp to 16 (docs/decisions.md 249), and hook's alignment
+            // is its own. The session was allocated at its own alignment, so the cast holds.
+            return @alignCast(@fieldParentPtr("hook", hook));
         }
 
         /// cfg.srv.on_record_out's rule: 0 for a whole record taken.

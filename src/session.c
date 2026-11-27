@@ -3,6 +3,7 @@
 #include "ct.h"
 #include "io.h"
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
+#include "ch_assert.h"
 #include "tls.h"
 #endif
 
@@ -41,9 +42,15 @@ void tlsi_give_back_buf(ch_tls_priv *t) {
     }
     // The buffer holds this connection's handshake plaintext, the peer's
     // certificates among them, and the next handshake that takes it from
-    // the caller must not find a byte of it (docs/decisions.md 247).
-    ct_wipe(t->cfg.buf, t->cfg.buf_len);
+    // the caller must not find a byte of it (docs/decisions.md 247). Every
+    // byte the session wrote lies below buf_written_len, and the bytes
+    // above it are the caller's own, so the wipe stops there
+    // (docs/decisions.md 249).
+    CH_ASSERT(t->buf_written_len <= t->cfg.buf_len);
+    CH_ASSERT(t->pt_len <= t->buf_written_len);
+    ct_wipe(t->cfg.buf, t->buf_written_len);
     t->cfg.buf = NULL;
+    t->buf_written_len = 0;
     t->pt_off = 0;
     t->pt_len = 0;
 }

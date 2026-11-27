@@ -5,7 +5,7 @@ reason: a session gives cfg.buf back without wiping it, so one connection's
   handshake plaintext stays for the next handshake that takes the buffer.
 
 --- old
-    ct_wipe(t->cfg.buf, t->cfg.buf_len);
+    ct_wipe(t->cfg.buf, t->buf_written_len);
     t->cfg.buf = NULL;
 --- new
     t->cfg.buf = NULL;

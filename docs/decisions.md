@@ -20505,17 +20505,18 @@ does nothing more.
       Each `init` takes the handshake buffer as a slice, and `read(input, reply)` returns a
       `Read` whose `plaintext` is a slice of `input`. A `reply` shorter than `alert_record_len`
       is `error.Invalid`, and `error.Io` left `ReadError`.
-    - **What it costs.** On an Intel Xeon with AVX-512 IFMA and VAES, gcc 14 at `-O2`, a read
-      of one record takes less time than `ch_read` over a recv that copies, as the Zig API's
-      did, at HEAD before this entry: 17 to 26% less for AES-128-GCM and AES-256-GCM from 100
-      bytes to 16 KiB, 3 to 8% less for ChaCha20-Poly1305 from 1 KiB up, and the same at 100
-      bytes. Each number is the least of 1,200 rounds of 64 records, the two builds run in turns
-      on one core. The wipe at connect is the one cost the entry adds: 255 ns for colibri's
-      20,480 bytes. Counted under callgrind as `insn-gate-host` counts them, the gated pinned
-      handshakes run 265 instructions fewer, and the two hybrid ones 1,353 more, 0.024%, because
-      their bench lends buffers sized for the hybrid hello. Camilo kept the whole wipe over one that stops at the
-      bytes the handshake wrote, so the two hybrid rows of `bench/results-insn-host-*.csv` take
-      the counts CI's `insn-gate-host` prints under its own compiler.
+    - **What it costs.** On an Intel Xeon with AVX-512 IFMA and VAES, gcc 14 at `-O2`, a read of one
+      record takes less time than `ch_read` over a recv that copies, as the Zig API's did, at HEAD
+      before this entry: 17 to 26% less for AES-128-GCM and AES-256-GCM from 100 bytes to 16 KiB, 3
+      to 8% less for ChaCha20-Poly1305 from 1 KiB up, and the same at 100 bytes. Each number is the
+      least of 1,200 rounds of 64 records, the two builds run in turns on one core. The wipe at
+      connect is the one cost the entry adds: 255 ns for colibri's 20,480 bytes. Counted under
+      callgrind as `insn-gate-host` counts them, the gated pinned handshakes run 265 instructions
+      fewer, and the two hybrid ones 1,353 more, 0.024%, because their bench lends buffers sized for
+      the hybrid hello. Camilo kept the whole wipe over one that stops at the bytes the handshake
+      wrote, so the two hybrid rows of `bench/results-insn-host-*.csv` take the counts CI's
+      `insn-gate-host` prints under its own compiler. Entry 249 amends this: the wipe stops at the
+      bytes the session wrote.
     - **What it saves.** colibri v0.22.0 on arm64 measured four buffers of records and plaintext
       for one TLS connection of `colibri.Server`, beside its socket input of 41,221 bytes:
       `cfg.buf`, 20,480; its `plain_in`, 41,221; its engine output, 49,161; and its socket
@@ -20621,3 +20622,50 @@ does nothing more.
       `insn-gate-host` counts them, each gated handshake runs the same number of instructions as
       at c18fc98, under each of the four `ch_cfg.cpu` values, so
       `bench/results-insn-host-*.csv` keeps its counts.
+249. **The handshake state's secrets start on `ct_wipe`'s word, and a session wipes the bytes of
+    `cfg.buf` it wrote.** CI's `insn-gate-host` failed on main at 059bb8b
+    ([#235](https://github.com/c4milo/chapulin/issues/235)): on arm64 each gated hybrid handshake
+    rose by about 1,312 instructions over its recorded count. Camilo ruled on 2026-11-27 to align
+    the state, to wipe only the bytes the session wrote, and to record the rise that stays. This
+    entry amends entry 247.
+
+    - **The alignment.** On a 64-bit target `ct_wipe` stores 16-byte words, and single bytes before
+      the first address 16 divides and after the last word (entry 144). Entry 247's two fields moved
+      `handshake_state` by 8 bytes in `ch_tcp_priv`, so its secret arrays started off that boundary.
+      `alignas(HS_WIPE_ALIGN)` gives each secret array an alignment of 16 in a host object of
+      tcp-nonblocking, which keeps the state in the caller's `ch_tcp`, and of 1 elsewhere. The
+      secret arrays now come first in `handshake_state`, so no padding falls between them. Every
+      other build keeps its size: the default, `KEX=pq`, ca, server, webpki and QUIC builds were
+      compiled for x86-64 before and after, and the device builds for the Cortex-M3 too. No figure
+      of `bench/results-sram.csv` moves. The alignment of `ch_tcp` rises to 16 in that object, so
+      `chapulin_tcp.zig` casts the alignment where it recovers a session from its hook.
+    - **The mark.** `ch_tls_priv.buf_written_len` counts the bytes at the front of `cfg.buf` that
+      the session wrote. In tcp-nonblocking `hsr_feed` is the one call that writes `cfg.buf`. It
+      raises the mark to `pt_len` after each write, and its compaction writes below `pt_len`.
+      `tlsi_give_back_buf` wipes `[0, buf_written_len)` and sets the mark to 0. The bytes past the
+      mark are the caller's own, or zero from an earlier give-back, so entry 247's rule holds: the
+      next handshake finds no byte of this one.
+    - **What it costs.** Counted under callgrind with gcc 13.3 on x86-64 against a91f01b, the tree
+      before entry 247: the pinned classic handshakes run 323 to 374 instructions fewer, and the
+      hybrid ones 598 more. The hybrid bench lends each side the smallest buffer it may, and the
+      handshake writes nearly all of it, so the wipe of bytes the handshake wrote takes 583
+      instructions there. No record row moved. `bench/results-insn-host-*.csv` take the counts that
+      CI's `insn-gate-host` prints under its own compiler.
+    - **What it saves.** A host whose `cfg.buf` holds more than its handshake writes wipes the
+      written bytes alone. Entry 247 measured 255 ns for the whole wipe of colibri's 20,480 bytes.
+    - **The checks.** The page-backed test of `test/tcp_nonblocking_buffer_tests.h` fills each
+      buffer with 0xa5 before the handshake. Once both ends connect, it requires a run of zero
+      bytes, then the sentinel alone, and a mark of 0. `inv73-tcp-nonblocking-feed-skips-the-mark`,
+      `inv73-tcp-nonblocking-give-back-wipes-the-whole-buffer` and
+      `inv73-tcp-nonblocking-give-back-keeps-the-mark` fail it.
+      `proof/tcp_nonblocking_record_stubs.h` states the new contract, and the driver harnesses bound
+      the mark by `pt_len` and the buffer.
+
+    Rejected:
+
+    - **One overlapping unaligned store over the head and one over the tail of each wipe.** It cut
+      the hybrid rows, but each wipe of an aligned buffer ran one more instruction, and 187 record
+      rows rose. It also changes entry 144's body.
+    - **A wipe of the bytes from protected records alone.** It leaves the cleartext ClientHello and
+      ServerHello in the buffer, which breaks entry 247's rule, and the hybrid rows still rose by
+      155 to 195.

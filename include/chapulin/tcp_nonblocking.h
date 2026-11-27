@@ -18,8 +18,9 @@
 //
 // cfg.buf serves the handshake alone (docs/decisions.md 247). The
 // session reassembles handshake messages in it while the handshake runs.
-// When the session connects, fails or closes, it wipes all cfg.buf_len
-// bytes and forgets the pointer, and from then on it neither reads nor
+// When the session connects, fails or closes, it wipes every byte of
+// cfg.buf it wrote, the bytes at the front of the buffer, and forgets the
+// pointer (docs/decisions.md 249). From then on it neither reads nor
 // writes the buffer. So one buffer can serve many connections one after
 // another, the way a server keeps a pool of buffers for the handshakes in
 // flight. Two rules go with that, and the caller keeps both:
