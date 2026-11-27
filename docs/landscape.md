@@ -84,14 +84,11 @@ client, no_std, no allocator, PSK — the closest architectural cousin.
 Self-described work-in-progress, no proofs, no C ABI, no published RAM
 figure beyond a user-supplied 16 kB frame buffer.
 
-**krabitls** (Rust, Apache-2.0,
-[kaidokert](https://github.com/kaidokert/krabitls-rs)). New (crate first
-published 2026-06): TLS 1.3-only client, optional DTLS 1.3, and it
-publishes real numbers — .text 37.5–96.2 KiB and peak stack
-9.7–111.6 kB depending on the algorithm set. The most serious new
-entrant, with no proofs and no C ABI. chapulin's `ch_connect` peaks at
-2,768 to 5,456 B of stack in its raw and ca modes without `KEX=pq`,
-measured on arm64 ([performance.md](performance.md)).
+**krabitls** (Rust, Apache-2.0, [kaidokert](https://github.com/kaidokert/krabitls-rs)). New (crate
+first published 2026-06): TLS 1.3-only client, optional DTLS 1.3, and it publishes real numbers —
+.text 37.5–96.2 KiB and peak stack 9.7–111.6 kB depending on the algorithm set. The most serious new
+entrant, with no proofs and no C ABI. chapulin's `ch_connect` peaks at 2,784 to 5,472 B of stack in
+its raw and ca modes without `KEX=pq`, measured on arm64 ([performance.md](performance.md)).
 
 **NetX Duo Secure** (MIT since the 2024 move to Eclipse ThreadX;
 ex-Express Logic/Azure RTOS). TLS 1.2 + 1.3 client/server built for

@@ -307,7 +307,13 @@ def machine_line(name, primitives, record):
         unread = ("no hash bit changes, recorded before `CH_CPU_AVX512_IFMA` picked the "
                   "AVX-512 ChaCha20-Poly1305 (decision 121)" if before_ifma
                   else "no hash bit changes")
-        values += ", and `0x%x` for the AEAD rows, which %s" % (aead["value"], unread)
+        # bench/record.sh runs the AES-GCM rows under CH_CPU_AVX512 and the
+        # ChaCha20-Poly1305 rows without it, which that bit does not change.
+        if aead["aes"] != aead["chacha"]:
+            values += (", and `0x%x` for the AES-GCM rows and `0x%x` for the ChaCha20-Poly1305 "
+                       "rows, which %s" % (aead["aes"], aead["chacha"], unread))
+        else:
+            values += ", and `0x%x` for the AEAD rows, which %s" % (aead["value"], unread)
     return ("**%s**: %s, %s, %s, %s, %s; one-minute load average %s before the "
             "primitives' run and %s after it, and %s and %s around the AEAD rows' run"
             % (name, ours["cpu"], ours["os"], ours["compiler"], ours["openssl"], values,
@@ -375,6 +381,42 @@ def check_field(prose):
     return 0
 
 
+def machine_bullets(text, names):
+    """Each bullet of the page that starts with one of the machine names in bold, as the
+    machine's name and the bullet's text, its continuation lines joined and its spaces
+    normalized."""
+    bullets = []
+    current = None
+    for line in text.splitlines():
+        m = re.match(r"- \*\*(.+?)\*\*:", line)
+        if m and m.group(1) in names:
+            current = [m.group(1), line[2:]]
+            bullets.append(current)
+        elif current is not None and line.startswith("  ") and line.strip():
+            current[1] += " " + line.strip()
+        else:
+            current = None
+    return [(name, re.sub(r"\s+", " ", body)) for name, body in bullets]
+
+
+def check_machine_bullets(text, lines):
+    """Each machine's bullet, whole, against the line its CSVs give: one bullet a machine,
+    and no text in it past that line."""
+    rc = 0
+    bullets = machine_bullets(text, {name for name, _ in lines})
+    for name, line in lines:
+        found = [body for bullet_name, body in bullets if bullet_name == name]
+        if len(found) != 1:
+            print("lint-bench-numbers: docs/performance.md holds %d bullets for %s, not one"
+                  % (len(found), name))
+            rc = 1
+        elif line is not None and found[0] != line:
+            print("lint-bench-numbers: docs/performance.md's bullet for %s is not the line its "
+                  "CSVs give; the page says: %s; the CSVs give: %s" % (name, found[0], line))
+            rc = 1
+    return rc
+
+
 def check_scoreboard(text):
     table, lines = render()
     rc = 0
@@ -395,11 +437,7 @@ def check_scoreboard(text):
                   "versions, or widest ch_cfg.cpu values that differ in a bit a record reads, so "
                   "its column mixes two runs" % name)
             rc = 1
-        elif line not in prose:
-            print("lint-bench-numbers: docs/performance.md does not state %s as its CSVs do: %s"
-                  % (name, line))
-            rc = 1
-    return rc | check_field(prose)
+    return rc | check_machine_bullets(text, lines) | check_field(prose)
 
 
 def main():

@@ -1,0 +1,13 @@
+invariant: INV-76
+file: tools/bench_scoreboard.py
+catches: test/lint-bench-numbers.sh
+reason: machine_line names one ch_cfg.cpu value for every AEAD row where
+  the AES-GCM rows and the ChaCha20-Poly1305 rows ran under two. On the
+  AVX-512 machine it then said 0x31f for the ChaCha20-Poly1305 rows,
+  which bench/record.sh runs under 0x11f. The committed bullets name both
+  values, and lint-bench-numbers compares each bullet with the line.
+
+--- old
+        if aead["aes"] != aead["chacha"]:
+--- new
+        if False:

@@ -3735,22 +3735,29 @@ last `ROLE=server` stub, as the entry said it would.
   status, `inv75-prove-passes-a-job-without-status`.
   `test/prove-status-check.sh` catches each.
 
-### INV-76 — a chart of bench/inplace.sh is what its CSV draws
+### INV-76 — what docs/performance.md shows of a bench run is what its CSVs give
 
 - **Claim.** Each chart of the in-place read and write, `docs/img/inplace-*.svg`, is the SVG
-  `tools/inplace_chart.py` draws from its CSV, `bench/results-inplace-*.csv`.
-  `docs/performance.md` shows each one. A run that moves a CSV redraws its chart in the same
-  commit, and no chart has no CSV.
-- **Mechanism.** `make lint-bench-numbers` runs `tools/bench-numbers.py`, which calls
-  `tools/inplace_chart.py`'s `check_charts`. It draws each CSV's chart and compares the bytes with
-  the committed SVG. The drawing reads no clock, so one CSV always draws the same bytes. It fails
-  on an SVG with no CSV, and when `docs/performance.md` has no image line for a chart.
+  `tools/inplace_chart.py` draws from its CSV, `bench/results-inplace-*.csv`, and
+  `docs/performance.md` shows each one. Each machine's bullet beside the OpenSSL table is, whole,
+  the line `tools/bench_scoreboard.py` writes from that machine's two CSVs. A run that moves a CSV
+  changes its chart or its bullet in the same commit.
+- **Mechanism.** `make lint-bench-numbers` runs `tools/bench-numbers.py`. It calls
+  `tools/inplace_chart.py`'s `check_charts`, which draws each CSV's chart and compares the bytes
+  with the committed SVG. The drawing reads no clock, so one CSV always draws the same bytes. The
+  check fails on an SVG with no CSV, and on a chart that `docs/performance.md` does not show. It
+  calls `tools/bench_scoreboard.py`'s `check_scoreboard`, which joins each machine's bullet with
+  its continuation lines and requires one bullet for each machine, equal to the line its CSVs
+  give. Until 2026-11-27 it found each line as a substring of the page, and lines of older runs
+  sat inside five bullets.
 - **Check.** `inv76-inplace-chart-inverts-the-speed` draws the in-place time over the copying
   time, `inv76-inplace-csv-moves-without-its-chart` moves one row of the CSV, and
   `inv76-performance-drops-the-inplace-chart` names another image in `docs/performance.md`.
+  `inv76-machine-bullet-keeps-an-older-line` leaves a line of an older run in a bullet, and
+  `inv76-machine-line-names-one-aead-value` states one value for AEAD rows that ran under two.
   `test/lint-bench-numbers.sh` catches each.
-- **Violation.** A PR commits a CSV from a new run and not the chart it draws, edits a chart by
-  hand, or drops a chart from `docs/performance.md`.
+- **Violation.** A PR commits a CSV from a new run and not the chart or the bullet it gives,
+  edits either by hand, or drops a chart from `docs/performance.md`.
 
 ### INV-53 — a sharded CI job checks each member of its set in one part
 

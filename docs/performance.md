@@ -243,7 +243,7 @@ bytes to each struct with the alignment after it.
 **`PROFILE=cnsa2 ROLE=server`.** The profile's server is a host object
 alone ([`docs/decisions.md`](decisions.md) 162), so its rows have no rv32
 column. `bench/sram.sh` measures:
-- a session struct of 3,160 bytes, whose TX array holds the 1,664-byte
+- a session struct of 3,680 bytes, whose TX array holds the 1,664-byte
   ServerHello with the ML-KEM-1024 ciphertext;
 - a receive floor of 2,179 bytes, the 2,174-byte largest ClientHello of
   the profile's client behind its record header, and 2,698 bytes over
@@ -252,7 +252,7 @@ column. `bench/sram.sh` measures:
   rejection loop under the CertificateVerify, whose frame holds A and the
   NTTs of the key (decision 191). With the signer pruned
   (`STACK_PRUNE=mldsa87_sign_cpu`) the peak is ML-KEM-1024's encapsulation,
-  at 10,320 bytes.
+  at 10,688 bytes.
 
 The send side needs no floor of its own. The 7.5 kB Certificate and the
 4,627-byte CertificateVerify each stream through `srv_frag`, 512 bytes a
@@ -585,29 +585,12 @@ came from git's commits of the CSVs (`python3 tools/speed_history.py --backfill`
 The machines, as the CSV headers state them:
 
 - **M1 Pro**: Apple M1 Pro, Darwin 25.6.0, Apple clang version 21.0.0 (clang-2100.3.34.2), OpenSSL 3.6.5, `ch_cfg.cpu 0xe7`, and `0x83` for the AES-GCM rows and `0x7` for the ChaCha20-Poly1305 rows, as `CH_CPU_CONSTANT_TIME_SHA3` runs AES-GCM's passes with EOR3 (decision 158) and no other hash bit changes a record; one-minute load average 2.90 before the primitives' run and 3.09 after it, and 3.14 and 3.55 around the AEAD rows' run
-  3.6.5, `ch_cfg.cpu 0xe7`, and `0x83` for the AES-GCM rows and `0x7` for the ChaCha20-Poly1305
-  rows, as `CH_CPU_CONSTANT_TIME_SHA3` runs AES-GCM's passes with EOR3 (decision 158) and no other
-  hash bit changes a record; one-minute load average 4.57 before the primitives' run and 4.07 after
-  it, and 4.55 and 4.26 around the AEAD rows' run
 - **x86-64 gcc**: AMD EPYC 7763 64-Core Processor, Linux 7.0.0-1017-azure, gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.5, `ch_cfg.cpu 0xc3f`, and `0x1f` for the AEAD rows, which no hash bit changes; one-minute load average 1.03 before the primitives' run and 1.21 after it, and 0.81 and 1.03 around the AEAD rows' run
-  13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.5, `ch_cfg.cpu 0xc3f`, and `0x1f` for the AEAD rows,
-  which no hash bit changes; one-minute load average 1.20 before the primitives' run and 1.04 after
-  it, and 0.85 and 1.22 around the AEAD rows' run
 - **x86-64 clang**: AMD EPYC 7763 64-Core Processor, Linux 7.0.0-1017-azure, Ubuntu clang version 23.1.6 (++20261116013850+5b10d2d74929-1~exp1~20261116133903.98), OpenSSL 3.6.5, `ch_cfg.cpu 0xc3f`, and `0x1f` for the AEAD rows, which no hash bit changes; one-minute load average 1.11 before the primitives' run and 1.03 after it, and 1.20 and 1.10 around the AEAD rows' run
-  23.1.6 (++20261108033755+c47d7823685a-1~exp1~20261108153854.96), OpenSSL 3.6.5, `ch_cfg.cpu
-  0xc3f`, and `0x1f` for the AEAD rows, which no hash bit changes; one-minute load average 1.06
-  before the primitives' run and 1.26 after it, and 1.10 and 1.12 around the AEAD rows' run
-- **x86-64 AVX-512 gcc**: Intel(R) Xeon(R) 6975P-C, Linux 7.0.0-1014-aws, gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.5, `ch_cfg.cpu 0xf3f`, and `0x31f` for the AEAD rows, which no hash bit changes; one-minute load average 1.00 before the primitives' run and 1.10 after it, and 1.01 and 1.00 around the AEAD rows' run
-  13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.5, `ch_cfg.cpu 0xf3f`, and `0x31f` for the AEAD rows,
-  which no hash bit changes; one-minute load average 1.18 before the primitives' run and 1.06 after
-  it, and 0.89 and 1.08 around the AEAD rows' run
-- **x86-64 AVX-512 clang**: Intel(R) Xeon(R) 6975P-C, Linux 7.0.0-1014-aws, Ubuntu clang version 23.1.6 (++20261116013850+5b10d2d74929-1~exp1~20261116133903.98), OpenSSL 3.6.5, `ch_cfg.cpu 0xf3f`, and `0x31f` for the AEAD rows, which no hash bit changes; one-minute load average 1.00 before the primitives' run and 1.00 after it, and 1.07 and 1.00 around the AEAD rows' run
+- **x86-64 AVX-512 gcc**: Intel(R) Xeon(R) 6975P-C, Linux 7.0.0-1014-aws, gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.5, `ch_cfg.cpu 0xf3f`, and `0x31f` for the AES-GCM rows and `0x11f` for the ChaCha20-Poly1305 rows, which no hash bit changes; one-minute load average 1.00 before the primitives' run and 1.10 after it, and 1.01 and 1.00 around the AEAD rows' run
+- **x86-64 AVX-512 clang**: Intel(R) Xeon(R) 6975P-C, Linux 7.0.0-1014-aws, Ubuntu clang version 23.1.6 (++20261116013850+5b10d2d74929-1~exp1~20261116133903.98), OpenSSL 3.6.5, `ch_cfg.cpu 0xf3f`, and `0x31f` for the AES-GCM rows and `0x11f` for the ChaCha20-Poly1305 rows, which no hash bit changes; one-minute load average 1.00 before the primitives' run and 1.00 after it, and 1.07 and 1.00 around the AEAD rows' run
 - **arm64 gcc**: ARM Neoverse-N2, Linux 7.0.0-1019-azure, gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0, OpenSSL 3.6.5, `ch_cfg.cpu 0x3067`, and `0x2003` for the AES-GCM rows and `0x1007` for the ChaCha20-Poly1305 rows, as `CH_CPU_CONSTANT_TIME_EOR3` runs AES-GCM's passes with EOR3 (decisions 158 and 244) and `CH_CPU_SVE2` ChaCha20's on its SVE2 copy (decision 242), and no other hash bit changes a record; one-minute load average 1.14 before the primitives' run and 1.15 after it, and 0.72 and 1.06 around the AEAD rows' run
 - **arm64 clang**: ARM Neoverse-N2, Linux 7.0.0-1019-azure, Ubuntu clang version 23.1.6 (++20261116013916+5b10d2d74929-1~exp1~20261116133927.96), OpenSSL 3.6.5, `ch_cfg.cpu 0x3067`, and `0x2003` for the AES-GCM rows and `0x1007` for the ChaCha20-Poly1305 rows, as `CH_CPU_CONSTANT_TIME_EOR3` runs AES-GCM's passes with EOR3 (decisions 158 and 244) and `CH_CPU_SVE2` ChaCha20's on its SVE2 copy (decision 242), and no other hash bit changes a record; one-minute load average 1.18 before the primitives' run and 1.20 after it, and 1.10 and 1.10 around the AEAD rows' run
-  version 23.1.6 (++20261108033755+c47d7823685a-1~exp1~20261108153854.96), OpenSSL 3.6.5,
-  `ch_cfg.cpu 0xf3f`, and `0x31f` for the AEAD rows, which no hash bit changes; one-minute load
-  average 1.09 before the primitives' run and 1.03 after it, and 1.03 and 1.23 around the AEAD rows'
-  run
 
 [`bench/primitives.sh`](../bench/primitives.sh) (`make bench-primitives`) writes the rows above the
 AEADs to a CSV for each machine and compiler, such as
@@ -755,158 +738,158 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   at 2,048 bits, where it took 1.02 and 0.95 (decision 233), and ML-KEM-768's encapsulation 0.72
   and 0.68, where it took 0.80 and 0.74 (decision 232). X25519's shared secret read 1.00 under
   gcc, where OpenSSL 3.6.5's takes 0.95 of 3.6.4's time.
-- The run of 2026-11-02 on the tree of 2cd2c9e4 drew an AMD EPYC 7763 too, the CPU the runs on the
+- The run of 2026-11-17 on the tree of c8df21f drew an AMD EPYC 7763 too, the CPU the runs on the
   trees of decisions 107, 109, 110, 113, 116, 117, 119, 123, 124, 128 and 130 and on 0b1608d1,
-  38f9a395, 401cb38b, 129bdc75 and 531fa3da drew as well. Its rows ran under `ch_cfg.cpu 0x43f`,
-  which holds `CH_CPU_BMI2_ADX`. The bench job stops on a CPU with AVX-512, so
-  these columns never run `rsa_ifma.c` or the 512-bit AES-GCM kernel. The runner's CPU changes from
-  run to run, so a column compares rows of one run with each other, and with an earlier run's only
-  on the same CPU. Against the run of 2026-11-02 on the tree of 531fa3da, OpenSSL's rows took 0.99
-  to 1.01 of their time. ML-DSA-87's key generation, signature and verification took 0.33, 0.71
-  and 0.57 of their time under gcc, and 0.17, 0.70 and 0.54 under clang, on the masked passes of
-  decision 176 and the four-way sampler of decision 178. Under gcc RSA's two signatures took 0.87
-  and 0.95 of their time, and P-384's verification 1.04 times. Under clang they took 0.95 and 0.95.
-  No change to their code accounts for those, and no other row of this table moved by more than 3%.
-  On the tree of 531fa3da, against the run of 2026-11-01 on the tree of 129bdc75, OpenSSL's rows
-  took 0.98 to 1.02 of their time. P-256's shared secret and verification took 0.88 and 0.96 of their time
-  under gcc, and 0.94 and 0.95 under clang, where its key generation took 0.97, on the inline
-  product of decision 175. Under gcc RSA's two signatures took 1.20 and 1.06 times their time, and
-  no change to their code accounts for that: RSA on 64-bit words runs at one of two speeds on this
-  CPU by where the linker places it (the pitfalls table below). No other row of this table moved by
-  more than 3%. On the tree of 401cb38b, against the run of 2026-10-29 on the tree of 38f9a395,
-  OpenSSL's rows took 1.00 to 1.01 of their time.
-  P-256's key generation, shared secret, signature and verification took 0.82, 0.80, 0.87 and 0.75
-  of their time under gcc, and 0.91, 0.89, 0.94 and 0.89 under clang, on `p256_adx.h`'s copy of
-  the wide files (decision 171). Under gcc RSA's two signatures took 0.93 and 0.95 of their time,
-  SHA-384 over 64 bytes 0.89 and P-384's verification 1.03 times, and under clang an X25519 shared
-  secret took 1.04 times its time. No change to their code accounts for those, and no other row of
-  this table moved by more than 2%. On the tree of 38f9a395, against the run of 2026-10-28 on the
-  tree of 0b1608d1, OpenSSL's rows took 1.00 to 1.02 of their time. An X25519 shared secret took 0.94 of its time under gcc and 0.79 under clang, on `x25519_adx.c`
-  (decisions 163 and 165). SHA-384 over 64 bytes took 1.17 times its time under gcc and 0.96 of it
-  under clang, and no change to its code accounts for that. No other row moved by more than 2%. On
-  the tree of 0b1608d1, against the run on the tree of decision 130, OpenSSL's rows took 0.99 to
-  1.01 of their time. X25519 took 0.27 of its time for key generation and 0.74 for a shared secret
-  under gcc, and 0.30 and 0.90 under clang (decisions 148 and 152). Under gcc RSA's two signatures
-  took 1.04 and 1.06 times their time, P-256's signature 1.04 times and ML-KEM-768's three rows
-  0.97, and no other row moved by more than 2%. Under clang SHA-256 and SHA-384 over 64 bytes took
-  1.07 and 1.10 times their time, and no other row moved by more than 2%. On the tree of decision
-  130, against the run on the tree of decision 128, under gcc no row of this table moved by more
-  than 2%, and under clang SHA-256 over 64 bytes took 1.04 times its time. On the tree of decision
-  128, against the run on the tree of decision 124, one change had moved rows of this table: SHA-384
-  took 0.51 of its time over 16 KiB and 0.57 over 64 bytes under gcc, and 0.47 and 0.39 under clang
-  (decisions 127 and 128, the SHA bullet below). Under gcc three more kinds of row had moved by more
-  than 2%: RSA's two signatures took 0.94 and 0.95 of their time, and ML-KEM-768's three rows and
-  P-384's verification 1.02 to 1.03 times. No change to their code accounts for those. Between the
-  two trees the code those rows run changed in one place: `mlk_poly_frommsg` reads a message bit
-  through a volatile object (decision 125), and a key generation does not call it. RSA on 64-bit
+  38f9a395, 401cb38b, 129bdc75, 531fa3da and 2cd2c9e4 drew as well. Its rows ran under `ch_cfg.cpu
+  0xc3f`, which holds `CH_CPU_BMI2_ADX` and `CH_CPU_BMI1`. The bench job stops on a CPU with
+  AVX-512, so these columns never run `rsa_ifma.c` or the 512-bit AES-GCM kernel. The runner's CPU
+  changes from run to run, so a column compares rows of one run with each other, and with an earlier
+  run's only on the same CPU. On the tree of 2cd2c9e4, against the run of 2026-11-02 on the tree of
+  531fa3da, OpenSSL's rows took 0.99 to 1.01 of their time. ML-DSA-87's key generation, signature
+  and verification took 0.33, 0.71 and 0.57 of their time under gcc, and 0.17, 0.70 and 0.54 under
+  clang, on the masked passes of decision 176 and the four-way sampler of decision 178. Under gcc
+  RSA's two signatures took 0.87 and 0.95 of their time, and P-384's verification 1.04 times. Under
+  clang they took 0.95 and 0.95. No change to their code accounts for those, and no other row of
+  this table moved by more than 3%. On the tree of 531fa3da, against the run of 2026-11-01 on the
+  tree of 129bdc75, OpenSSL's rows took 0.98 to 1.02 of their time. P-256's shared secret and
+  verification took 0.88 and 0.96 of their time under gcc, and 0.94 and 0.95 under clang, where its
+  key generation took 0.97, on the inline product of decision 175. Under gcc RSA's two signatures
+  took 1.20 and 1.06 times their time, and no change to their code accounts for that: RSA on 64-bit
   words runs at one of two speeds on this CPU by where the linker places it (the pitfalls table
-  below). Under clang no other row of this table had moved by more than 2.1%. On the tree of
-  decision 124, against the run on the tree of decision 123, two changes had moved rows. Under clang
-  ML-KEM-768's three rows took 0.90 to 0.92 of their time and the ChaCha20-Poly1305 seal 0.97:
-  decision 124 aligned the frames of the two AVX2 kernels they run on. Under both compilers the rows
-  of the hashes, HMAC, HKDF's label expansion, Poly1305 and the ChaCha20-Poly1305 seal took 0.67 to
-  0.96 of their time, and the 64-byte hashes 0.67 to 0.88, because the bench's sink now consumes one
-  byte of an output where it consumed every byte (the pitfalls table below). On the tree of decision
-  123, against the run on the tree of decision 119, RSA's verifications and the AES-GCM rows had
-  moved, and under gcc RSA's signatures, as the bullets below state. The RSA handshakes moved with
-  them, and [`bench/notes-primitives.md`](../bench/notes-primitives.md) reads those. Against the run
-  on the tree of decision 113, decisions 114 to 116 took P-256's key generation, shared secret,
-  signature and verification under gcc from 1.64, 1.97, 1.60 and 1.63 times OpenSSL's time to 1.49,
-  1.80, 1.21 and 1.41 on the tree of decision 119, and before that decisions 111 to 113 took the
-  first three from 2.08, 2.16 and 1.84 times, and X25519's two rows from 1.82 and 1.68 to 1.60 and
-  1.49.
+  below). No other row of this table moved by more than 3%. On the tree of 401cb38b, against the run
+  of 2026-10-29 on the tree of 38f9a395, OpenSSL's rows took 1.00 to 1.01 of their time. P-256's key
+  generation, shared secret, signature and verification took 0.82, 0.80, 0.87 and 0.75 of their time
+  under gcc, and 0.91, 0.89, 0.94 and 0.89 under clang, on `p256_adx.h`'s copy of the wide files
+  (decision 171). Under gcc RSA's two signatures took 0.93 and 0.95 of their time, SHA-384 over 64
+  bytes 0.89 and P-384's verification 1.03 times, and under clang an X25519 shared secret took 1.04
+  times its time. No change to their code accounts for those, and no other row of this table moved
+  by more than 2%. On the tree of 38f9a395, against the run of 2026-10-28 on the tree of 0b1608d1,
+  OpenSSL's rows took 1.00 to 1.02 of their time. An X25519 shared secret took 0.94 of its time
+  under gcc and 0.79 under clang, on `x25519_adx.c` (decisions 163 and 165). SHA-384 over 64 bytes
+  took 1.17 times its time under gcc and 0.96 of it under clang, and no change to its code accounts
+  for that. No other row moved by more than 2%. On the tree of 0b1608d1, against the run on the tree
+  of decision 130, OpenSSL's rows took 0.99 to 1.01 of their time. X25519 took 0.27 of its time for
+  key generation and 0.74 for a shared secret under gcc, and 0.30 and 0.90 under clang (decisions
+  148 and 152). Under gcc RSA's two signatures took 1.04 and 1.06 times their time, P-256's
+  signature 1.04 times and ML-KEM-768's three rows 0.97, and no other row moved by more than 2%.
+  Under clang SHA-256 and SHA-384 over 64 bytes took 1.07 and 1.10 times their time, and no other
+  row moved by more than 2%. On the tree of decision 130, against the run on the tree of decision
+  128, under gcc no row of this table moved by more than 2%, and under clang SHA-256 over 64 bytes
+  took 1.04 times its time. On the tree of decision 128, against the run on the tree of decision
+  124, one change had moved rows of this table: SHA-384 took 0.51 of its time over 16 KiB and 0.57
+  over 64 bytes under gcc, and 0.47 and 0.39 under clang (decisions 127 and 128, the SHA bullet
+  below). Under gcc three more kinds of row had moved by more than 2%: RSA's two signatures took
+  0.94 and 0.95 of their time, and ML-KEM-768's three rows and P-384's verification 1.02 to 1.03
+  times. No change to their code accounts for those. Between the two trees the code those rows run
+  changed in one place: `mlk_poly_frommsg` reads a message bit through a volatile object (decision
+  125), and a key generation does not call it. RSA on 64-bit words runs at one of two speeds on this
+  CPU by where the linker places it (the pitfalls table below). Under clang no other row of this
+  table had moved by more than 2.1%. On the tree of decision 124, against the run on the tree of
+  decision 123, two changes had moved rows. Under clang ML-KEM-768's three rows took 0.90 to 0.92 of
+  their time and the ChaCha20-Poly1305 seal 0.97: decision 124 aligned the frames of the two AVX2
+  kernels they run on. Under both compilers the rows of the hashes, HMAC, HKDF's label expansion,
+  Poly1305 and the ChaCha20-Poly1305 seal took 0.67 to 0.96 of their time, and the 64-byte hashes
+  0.67 to 0.88, because the bench's sink now consumes one byte of an output where it consumed every
+  byte (the pitfalls table below). On the tree of decision 123, against the run on the tree of
+  decision 119, RSA's verifications and the AES-GCM rows had moved, and under gcc RSA's signatures,
+  as the bullets below state. The RSA handshakes moved with them, and
+  [`bench/notes-primitives.md`](../bench/notes-primitives.md) reads those. Against the run on the
+  tree of decision 113, decisions 114 to 116 took P-256's key generation, shared secret, signature
+  and verification under gcc from 1.64, 1.97, 1.60 and 1.63 times OpenSSL's time to 1.49, 1.80, 1.21
+  and 1.41 on the tree of decision 119, and before that decisions 111 to 113 took the first three
+  from 2.08, 2.16 and 1.84 times, and X25519's two rows from 1.82 and 1.68 to 1.60 and 1.49.
 - The clang column is the same object built by the pinned clang 23 on the same CPU in the same job.
-  clang's code is faster on the wide fields' carry chains: P-256 takes 0.80 to 0.91 of gcc's time,
-  which puts its signature at 0.86 of OpenSSL's time and its verification at 0.88, and P-384
-  verifies in 0.52 of gcc's time. It is also faster for ML-KEM-768, 0.80 to 0.83 of gcc's time,
-  AES-GCM, 0.89 to 0.94, and ML-DSA-87, 0.56 to 0.90, and every ML-KEM-768, ML-DSA-87 and AES-GCM
-  row is ahead of OpenSSL. RSA verifies in 0.95 to 0.97 of gcc's time, both on `rsa_avx2.c`. RSA-3072 signs in 1.17 times gcc's time: gcc
-  runs the signer's products in rows of four words on `_addcarry_u64` chains, and clang keeps
-  `rsa_mont64.c`'s loops (decision 122). RSA-2048 signs in 1.04 times gcc's time in this run, 0.94
-  of it in the run on the tree of 531fa3da, where gcc's signature ran at its slower speed, and 1.08
-  times it in the run of 2026-11-01. SHA-384 takes 0.99 of gcc's time over 16 KiB and 0.93 of it
-  over 64 bytes, both on `sha512_avx2.c`.
+  clang's code is faster on the wide fields' carry chains: P-256 takes 0.94 to 0.97 of gcc's time,
+  which puts its signature at 0.84 of OpenSSL's time and its verification at 0.77, and P-384
+  verifies in 0.79 of gcc's time. It is also faster for ML-KEM-768, 0.89 to 0.96 of gcc's time,
+  AES-GCM, 0.87 to 0.90, and ML-DSA-87's signature and verification, 0.93 and 0.90. ML-DSA-87's key
+  generation takes 1.18 times gcc's time. Every ML-KEM-768, ML-DSA-87 and AES-GCM row is ahead of
+  OpenSSL. RSA verifies in 0.95 to 0.98 of gcc's time, both on `rsa_avx2.c`. RSA-3072 and RSA-2048
+  sign in 0.94 of gcc's time, where gcc runs the signer's products in rows of four words on
+  `_addcarry_u64` chains and clang keeps `rsa_mont64.c`'s loops (decision 122). RSA-2048 signed in
+  0.94 of gcc's time in the run on the tree of 531fa3da, where gcc's signature ran at its slower
+  speed, and in 1.08 times it in the run of 2026-11-01. SHA-384 takes 1.00 of gcc's time over 16 KiB
+  and 0.95 of it over 64 bytes, both on `sha512_avx2.c`.
 - AES-GCM is ahead of OpenSSL. Under the VAES bit the seal and the open run the VAES and VPCLMULQDQ
-  kernels of decision 90, and with the key expansion they take 0.67 to 0.72 of OpenSSL's time under
+  kernels of decision 90, and with the key expansion they take 0.68 to 0.73 of OpenSSL's time under
   gcc, where they took 0.76 to 0.83 on the tree of decision 119. `aes_hw.c` now expands a key a
   round key at a time in vector registers (decision 123): under gcc the AES-128 expansion takes 24
-  ns where it took 432, and the AES-256 expansion 26 ns where it took 526. ChaCha20-Poly1305 takes
-  1.24 and 1.23 times OpenSSL's time to seal and to open under gcc, and 1.17 times under clang. Under
+  ns where it took 432, and the AES-256 expansion 25 ns where it took 526. ChaCha20-Poly1305 takes
+  0.86 and 0.85 of OpenSSL's time to seal and to open under gcc, and 0.88 under clang. Under
   `CH_CPU_AVX2` and the multiply bit its keystream runs eight blocks a pass in 256-bit vectors
-  (decision 90) and its Poly1305 eight blocks at a time in four AVX2 lanes (decision 110). Of the
-  9.23 µs that sealing a 16 KiB record takes under gcc, less the tag's fixed work, the keystream is
-  6.58 and Poly1305 2.66, where OpenSSL takes 7.46.
+  (decision 90) and its Poly1305 eight blocks at a time in four AVX2 lanes (decision 110). From 1
+  KiB the seal and the open run both in one pass (decision 199). Sealing a 16 KiB record, less the
+  tag's fixed work, takes 6.45 µs under gcc, where OpenSSL takes 7.47. Alone, the keystream takes
+  5.74 µs and Poly1305 2.76.
 - ML-KEM-768's key generation, encapsulation and decapsulation take 0.39, 0.72 and 0.56 of OpenSSL's
   time under gcc, and 0.38, 0.68 and 0.50 under clang, against rows that hold a key's expanded
   matrix (decision 100). Before decision 232 its encapsulation and decapsulation took 0.80 and 0.61
   under gcc. Under `CH_CPU_AVX2` its matrix runs on four Keccak states side by side (decision 107),
   and its NTT and base multiplication run on SSE2 (decision 101), as do its reduction and message
   expansion. Its decode, key check and rank 3's compressions run on AVX2 (decision 232).
-- ML-DSA-87's key generation, signature and verification take 1.28, 0.58 and 0.33 of OpenSSL's
-  time under gcc, and 0.72, 0.53 and 0.30 of it under clang. A host object's signer computes A and
-  the NTTs of s1, s2 and t0 once for each signature, not in each round (decision 191). The run of
-  2026-11-08 on b04ba4e5 recorded the column again for it: a signature took 0.76 of its time on
-  the tree of 15c37ef4 under gcc and 0.80 under clang, and every other row 0.92 to 1.05 of its
-  time. Under `CH_CPU_AVX2` its transforms and
-  products run on `mldsa_vector.c`'s eight AVX2 lanes, the signer's only beside the multiply bit
-  (decisions 172 and 174). Its matrix A runs four entries at a time on the four-way Keccak
-  (decision 178), and RejBoundedPoly moves its kept values by ten masked passes (decision 176). In
-  the run on the tree of 531fa3da, before those two, the three took 3.91, 1.08 and 0.59 times under
-  gcc.
-- P-384 verifies in 0.95 of OpenSSL's time under gcc and P-256 in 1.02 times, on the 64-bit words of
+- ML-DSA-87's key generation, signature and verification take 0.56, 0.56 and 0.32 of OpenSSL's time
+  under gcc, and 0.67, 0.53 and 0.28 of it under clang. A host object's signer computes A and the
+  NTTs of s1, s2 and t0 once for each signature, not in each round (decision 191). The run of
+  2026-11-08 on b04ba4e5 recorded the column again for it: a signature took 0.76 of its time on the
+  tree of 15c37ef4 under gcc and 0.80 under clang, and every other row 0.92 to 1.05 of its time.
+  Under `CH_CPU_AVX2` its transforms and products run on `mldsa_vector.c`'s eight AVX2 lanes, the
+  signer's only beside the multiply bit (decisions 172 and 174). Its matrix A runs four entries at a
+  time on the four-way Keccak (decision 178), and RejBoundedPoly moves its kept values by ten masked
+  passes (decision 176). In the run on the tree of 531fa3da, before those two, the three took 3.91,
+  1.08 and 0.59 times under gcc.
+- P-384 verifies in 0.62 of OpenSSL's time under gcc and P-256 in 0.81 of it, on the 64-bit words of
   decisions 97 and 96 and, for P-256, the Jacobian points of decision 104, the inverse of decisions
   115 and 116 and the product and square on MULX and ADX of decisions 171 and 175, where the 32-bit
   words took 8.8 and 30 times.
-- SHA-256 runs in 0.99 of OpenSSL's time over 16 KiB and in 0.59 of it over 64 bytes under gcc, on
-  the SHA extensions (decision 93). SHA-384 takes 1.05 times OpenSSL's time over 16 KiB and 0.70 of
-  it over 64 bytes under gcc, and 1.04 times and 0.65 of it under clang. A session of a host object
+- SHA-256 runs in 0.99 of OpenSSL's time over 16 KiB and in 0.57 of it over 64 bytes under gcc, on
+  the SHA extensions (decision 93). SHA-384 takes 1.05 times OpenSSL's time over 16 KiB and 0.69 of
+  it over 64 bytes under gcc, and 1.04 times and 0.66 of it under clang. A session of a host object
   compresses on `sha512_compress_blocks.c`, plain C with no bit (decision 127), and one with
   `CH_CPU_AVX2` in a `SUITE=aesgcm` object on `sha512_avx2.c`, whose message schedule runs in
   256-bit registers, a quarter of a schedule step after each round (decision 128). The table's rows
   run the second. The first, the CSV's rows under `ch_cfg.cpu 0x1`, takes 1.42 times OpenSSL's time
-  over 16 KiB and 0.88 of it over 64 bytes under gcc, and 1.41 times and 0.89 of it under clang. On
+  over 16 KiB and 0.89 of it over 64 bytes under gcc, and 1.44 times and 0.83 of it under clang. On
   the tree of decision 124, which held no x86-64 SHA-512 code, the portable C took 2.06 and 1.21
-  times under gcc and 2.20 and 1.57 times under clang (decision 93). SHA3-256 takes 1.22 times and
-  0.87 of it under gcc, and 1.12 times and 0.76 of it under clang, with six lanes kept inverted
+  times under gcc and 2.20 and 1.57 times under clang (decision 93). SHA3-256 takes 1.04 times and
+  0.77 of it under gcc, and 1.05 times and 0.75 of it under clang, with six lanes kept inverted
   between rounds (decision 195). The plain round took 1.33 and 0.93 times under gcc and 1.23 and
   0.87 times under clang, and `sha3.c`'s loops 7.68 and 5.02 times under gcc (decision 98).
-- P-256's key generation and shared secret take 0.96 and 0.97 of OpenSSL's time under gcc and 0.94
-  and 0.92 under clang, and its signature 0.86 and 0.84 of it (decision 232). Before decision 232
+- P-256's key generation and shared secret take 0.96 and 0.98 of OpenSSL's time under gcc and 0.92
+  and 0.92 under clang, and its signature 0.87 and 0.84 of it (decision 232). Before decision 232
   they took 0.99, 0.99 and 0.90 of it under gcc and 0.93, 0.92 and 0.83 under clang, and before
   decision 224 1.09, 1.10 and 0.95 times under gcc. They run on the wide files with the table of
-  decision 109, the additions of decision 111, the Jacobian key exchange of decision 112, the
-  inline additions of decision 114, the binary GCD of decision 115, since decision 224 the affine
-  multiples and the step orders that let a core run two products at once, and since decision 232
-  fewer instructions in each round of the binary GCD. The native copies of the 32-bit files took
-  21 to 90 times.
-  Under `CH_CPU_BMI2_ADX` beside the multiply bit the points run on `p256_adx.h`'s copy of those
-  files, whose product and square are MULX, ADCX and ADOX in inline assembly that reduces in the
-  same statement (decision 171), inline in each point formula (decision 175). In the run of
+  decision 109, the additions of decision 111, the Jacobian key exchange of decision 112, the inline
+  additions of decision 114, the binary GCD of decision 115, since decision 224 the affine multiples
+  and the step orders that let a core run two products at once, and since decision 232 fewer
+  instructions in each round of the binary GCD. The native copies of the 32-bit files took 21 to 90
+  times. Under `CH_CPU_BMI2_ADX` beside the multiply bit the points run on `p256_adx.h`'s copy of
+  those files, whose product and square are MULX, ADCX and ADOX in inline assembly that reduces in
+  the same statement (decision 171), inline in each point formula (decision 175). In the run of
   2026-11-01, with each product a call, the shared secret took 1.44 times. On the wide files, in the
   run of 2026-10-29, the three took 1.54, 1.81 and 1.26 times. gcc compiles the wide files' carry
   steps from the two x86-64 intrinsics (decision 94).
-- RSA verifies in 0.92 and 0.84 of OpenSSL's time under gcc and in 0.88 and 0.82 of it under
-  clang. This CPU has no AVX-512 IFMA, so under `CH_CPU_AVX2` the public operation runs in
-  `rsa_avx2.c`'s 28-bit digits, four to a 256-bit register (decision 122). It starts from the
-  signature times 2^(Dn) mod m, which the long division writes, so it runs seventeen products, and
-  each product zeroes one register of its window (decision 233). Before decision 233 it took 1.02
-  and 0.91 times under gcc and 0.95 and 0.86 under clang, in bench run 43385076493. On the tree of
-  decision 119 it ran on `rsa_mont64.c`'s loops and took 1.87 and 1.99 times under gcc (decisions
-  95 and 117). An RSA-2048 PSS signature takes 1.33 ms under gcc and 1.38 ms under clang, where OpenSSL's
-  PKCS#1 v1.5 signature takes 661 µs under both. Under gcc it took 1.53 ms in the run on the tree of
-  531fa3da, on the same code, 1.28 ms in the run of 2026-11-01
-  and 1.38 ms in the run of 2026-10-29, on the same code, 1.35 ms in the run of 2026-10-28, 1.27 ms
-  in the run on the tree of decision 130, 1.35 ms on the tree of decision 124, on the same code, and
-  1.48 ms on the tree of decision 119. The signer runs on 64-bit words under the multiply bit, and
-  under gcc its products run in rows of four words on `_addcarry_u64` chains (decision 122).
-- X25519 takes 0.44 of OpenSSL's time for key generation and 1.05 times for a shared secret on
-  gcc's code, and 0.42 and 0.94 of it on clang's. A public key adds entries of the table of
-  decision 148 on the wide field. Under `CH_CPU_BMI2_ADX` beside the multiply bit a shared secret
-  runs on `x25519_adx.c`'s four 64-bit words, whose products, sums and differences are MULX, ADCX
-  and ADOX in inline assembly (decision 165). On the wide field, in the run of 2026-10-28, it took
-  1.09 times OpenSSL's time under gcc and 1.17 times under clang. Both compilers emit the same
-  instructions for the assembly, and the ladder around it is C: clang's code takes 0.89 of gcc's
-  time.
+- RSA verifies in 0.93 and 0.84 of OpenSSL's time under gcc and in 0.88 and 0.82 of it under clang.
+  This CPU has no AVX-512 IFMA, so under `CH_CPU_AVX2` the public operation runs in `rsa_avx2.c`'s
+  28-bit digits, four to a 256-bit register (decision 122). It starts from the signature times
+  2^(Dn) mod m, which the long division writes, so it runs seventeen products, and each product
+  zeroes one register of its window (decision 233). Before decision 233 it took 1.02 and 0.91 times
+  under gcc and 0.95 and 0.86 under clang, in bench run 43385076493. On the tree of decision 119 it
+  ran on `rsa_mont64.c`'s loops and took 1.87 and 1.99 times under gcc (decisions 95 and 117). An
+  RSA-2048 PSS signature takes 1.01 ms under gcc and 945 µs under clang, where OpenSSL's PKCS#1 v1.5
+  signature takes 660 µs under both. Under gcc it took 1.53 ms in the run on the tree of 531fa3da,
+  on the same code, 1.28 ms in the run of 2026-11-01 and 1.38 ms in the run of 2026-10-29, on the
+  same code, 1.35 ms in the run of 2026-10-28, 1.27 ms in the run on the tree of decision 130, 1.35
+  ms on the tree of decision 124, on the same code, and 1.48 ms on the tree of decision
+  119. The signer runs on 64-bit words under the multiply bit, and under gcc its products run in
+  rows of four words on `_addcarry_u64` chains (decision 122).
+- X25519 takes 0.44 of OpenSSL's time for key generation and 1.00 of it for a shared secret on gcc's
+  code, and 0.41 and 0.95 of it on clang's. A public key adds entries of the table of decision 148
+  on the wide field. Under `CH_CPU_BMI2_ADX` beside the multiply bit a shared secret runs on
+  `x25519_adx.c`'s four 64-bit words, whose products, sums and differences are MULX, ADCX and ADOX
+  in inline assembly (decision 165). On the wide field, in the run of 2026-10-28, it took 1.09 times
+  OpenSSL's time under gcc and 1.17 times under clang. Both compilers emit the same instructions for
+  the assembly, and the ladder around it is C: clang's code takes 0.95 of gcc's time for a shared
+  secret.
 
 What the AVX-512 machine's columns show:
 
@@ -1063,10 +1046,10 @@ least 1 ms, with every row's batches interleaved. The CSVs hold every row at 1 K
 64 KiB, each with its spread and its batches at the 10th and 90th percentile, and a check line
 that compares each whole with the sum of its parts.
 
-The machine is an Apple M1 Pro that ran other work: its one-minute load average was 4.0 to 4.1
-for the macOS column's run of 2026-10-28, and 6.3 and 7.1 before the VM's runs of 2026-10-04. A Linux CSV's own load average line is the VM's, and its first
-line holds the host's. So these figures are the filter's, in the terms of the method below. The
-three columns are three CSVs:
+The machine is an Apple M1 Pro that ran other work: its one-minute load average was 3.14 before and
+3.55 after the macOS column's run of 2026-11-20, and 6.3 and 7.1 before the VM's runs of 2026-10-04.
+A Linux CSV's own load average line is the VM's, and its first line holds the host's. So these
+figures are the filter's, in the terms of the method below. The three columns are three CSVs:
 
 - macOS 26 with Apple clang 21:
   [`bench/results-record-darwin-arm64-clang.csv`](../bench/results-record-darwin-arm64-clang.csv);
@@ -1101,9 +1084,9 @@ libraries on the same machine: `openssl speed -aead`, the median of five one-sec
 Zig 0.16.0's `std.crypto`, timed as the other rows are, which the VM does not have.
 
 What one operation of `openssl speed -aead` holds depends on the OpenSSL release, and the macOS
-column's is 3.6.4 where the VM's is 3.0.13. So each table has a row for each operation, and a
-column fills the rows its release times ([`bench/record.sh`](../bench/record.sh) states where each
-reading comes from):
+column's is 3.6.5 where the VM's is 3.0.13. So each table has a row for each operation, and a column
+fills the rows its release times ([`bench/record.sh`](../bench/record.sh) states where each reading
+comes from):
 
 - OpenSSL 3.0 sets the IV, hashes 13 bytes of associated data, encrypts the record and computes
   the tag, under a key set before the loop. chapulin's row for that operation is the AEAD's seal
@@ -1231,13 +1214,12 @@ What the numbers show for AES-GCM:
   loop that did it before, and ran it one byte at a time: 5.9 µs, three fifths of gcc's AES-GCM
   seal once counter mode and GHASH were fast. The record layer's own work is now 0.2 to 0.7 µs of
   a 16 KiB AES-GCM record and 0.3 to 0.4 µs of a ChaCha20-Poly1305 one on both compilers.
-- Each GHASH call wipes the part of its state it wrote: H, the powers it computed and a pass's
-  sums. The tag's fixed work, one GHASH call over the associated data and one multiply for the
-  block of lengths, each of which computes one power, takes 42 to 56 ns, where it took 150 to 169
-  while `ct_wipe` stored one byte at a time (decision 91) and 240 to 300 at 225a890; a 1 KiB seal
-  takes 237 to 584 ns. At 1 KiB the key expansion makes most of the record layer's share. The
-  wipe of the expanded key that `record.c` runs for every record takes 4 to 14 ns of it, where it
-  took 91 to 93.
+- Each GHASH call wipes the part of its state it wrote: H, the powers it computed and a pass's sums.
+  The tag's fixed work, one GHASH call over the associated data and one multiply for the block of
+  lengths, each of which computes one power, takes 42 to 56 ns, where it took 150 to 169 while
+  `ct_wipe` stored one byte at a time (decision 91) and 240 to 300 at 225a890; a 1 KiB seal takes
+  217 to 584 ns. At 1 KiB the key expansion makes most of the record layer's share. The wipe of the
+  expanded key that `record.c` runs for every record takes 4 to 14 ns of it, where it took 91 to 93.
 - Measured one commit at a time, the three commits for
   [#184](https://github.com/c4milo/chapulin/issues/184) took the 16 KiB seal from 26.8, 27.6 and
   36.3 µs at 044a49c to 11.5, 12.9 and 17.6 µs with counter mode, to 4.8, 5.4 and 10.0 µs with
@@ -1248,42 +1230,43 @@ What the numbers show for AES-GCM:
   runs of a104a3e and the tree after it, the `memset` wipe (decision 91) took the 16 KiB seal from
   3.1, 3.6 and 3.7 µs to 2.7, 3.5 and 3.3 µs, and the 16 KiB open from 3.0, 3.4 and 3.3 µs to 2.6,
   3.0 and 2.9 µs.
-- The seal now takes 2.3, 3.1 and 3.2 µs, and its AEAD alone 2.1, 2.6 and 2.5 µs. The open takes
+- The seal now takes 2.4, 3.1 and 3.2 µs, and its AEAD alone 2.1, 2.6 and 2.5 µs. The open takes
   2.1, 2.8 and 2.8 µs, and its AEAD alone 2.1, 2.6 and 2.5 µs. Against 044a49c the seal takes 0.09,
   0.11 and 0.09 of its time, and on the VM the open 0.13 and 0.09.
 - Against OpenSSL on the same machine, operation for operation: on the VM, where OpenSSL 3.0.13
-  seals under a key set before the loop, the AEAD's seal takes 0.91 and 0.92 times its time, and
-  the open 0.91 and 0.87 times. On macOS, where OpenSSL 3.6.4 sets the key for every operation,
-  the AEAD under a key expanded for the record takes 2.1 µs to seal and to open under `0x3`, 1.05
-  and 1.04 times OpenSSL's 2.0, and 0.99 and 0.97 of it under `0x83` (the table beside OpenSSL
-  above). Of chapulin's time, `aes_traffic_key_init` takes 10 ns, and 11 ns for AES-256, where it
-  took 202 and 255 ns before decision 158. Over 16 bytes the seal takes 88 ns, key and tag
-  included, where OpenSSL's whole operation takes 161 ns.
+  seals under a key set before the loop, the AEAD's seal takes 0.91 and 0.92 times its time, and the
+  open 0.91 and 0.87 times. On macOS, where OpenSSL 3.6.5 sets the key for every operation, the AEAD
+  under a key expanded for the record takes 2.2 µs to seal and to open under `0x3`, 1.05 and 1.04
+  times OpenSSL's 2.1, and 0.97 and 0.96 of it under `0x83` (the table beside OpenSSL above). Of
+  chapulin's time, `aes_traffic_key_init` takes 10 ns, and 11 ns for AES-256, where it took 202 and
+  255 ns before decision 158. Over 16 bytes the seal takes 88 ns, key and tag included, where
+  OpenSSL's whole operation takes 159 ns.
 
 For ChaCha20-Poly1305:
 
 - A session without the multiply bit, `ch_cfg.cpu 0x3`, runs Poly1305 on the 16x16 decomposition
   `ct.h` builds, and there Poly1305 is the largest stage: 76% to 83% of the record. colibri's
-  sessions are such sessions until it sets the bit.
-- ChaCha20 runs the keystream and the exclusive-or in 8.1 to 9.0 µs on the vector path, on both
+  `cpu_of` states the bit on arm64 (the server handshake section below), so its sessions there do
+  not run that Poly1305.
+- ChaCha20 runs the keystream and the exclusive-or in 6.9 to 9.0 µs on the vector path, on both
   compilers. `chacha20.c`'s portable loop, which a device object runs, took 34 to 35 µs here at
-  a104a3e, when a build without `CHACHA=vector` ran it: 25.2 to 29.0 for the block function and
-  6.3 to 8.9 for its exclusive-or, which ran one byte at a time in place. Since 97826ba a NEON pass
+  a104a3e, when a build without `CHACHA=vector` ran it: 25.2 to 29.0 for the block function and 6.3
+  to 8.9 for its exclusive-or, which ran one byte at a time in place. Since 97826ba a NEON pass
   computes two groups of four blocks side by side and XORs the keystream into the data from the
   registers that computed it (decision 86); a pass of one group took 13.6 to 14.6 µs. On clang the
   exclusive-or adds 0.4 to 0.6 µs to the keystream alone, whose row stores each pass's keystream to
   a buffer; under gcc 13 that row takes 0.4 to 0.5 µs longer than the whole, so the difference
   measures nothing there.
 - With the multiply bit, `ch_cfg.cpu 0x7`, a session runs the vector Poly1305 too (decision 83),
-  which takes Poly1305 over the ciphertext from 28.1 to 45.6 µs on the decomposition to 2.5 to
-  2.9 µs. `rec_seal` then takes 10.9 to 12.3 µs, 22% to 31% of the 0x3 record's time, and a 1 KiB
-  one 31% to 42%. ChaCha20 is 70% to 73% of the record, and Poly1305 22% to 25%. `rec_open` takes
-  10.6 to 11.9 µs.
+  which takes Poly1305 over the ciphertext from 28.1 to 45.6 µs on the decomposition to 2.0 to 2.9
+  µs. `rec_seal` then takes 9.4 to 12.3 µs, 22% to 31% of the 0x3 record's time, and a 1 KiB one 31%
+  to 42%. ChaCha20 is 70% to 74% of the record, and Poly1305 22% to 25%. `rec_open` takes 9.1 to
+  11.9 µs.
 - Against OpenSSL on the same machine, operation for operation: on the VM, where OpenSSL 3.0.13
   seals a whole record, the AEAD's seal takes 1.13 and 1.18 times its time and the open 1.12 and
   1.19 times, and `rec_seal` and `rec_open` 1.16 and 1.22, and 1.12 and 1.19. On macOS, where
-  OpenSSL 3.6.4 runs ChaCha20 and Poly1305 over the bytes and nothing else, the seal and the open
-  less their tag's fixed work take 10.5 µs, 1.18 and 1.15 times OpenSSL's 8.9 and 9.1.
+  OpenSSL 3.6.5 runs ChaCha20 and Poly1305 over the bytes and nothing else, the seal and the open
+  less their tag's fixed work take 9.0 and 8.9 µs, 0.98 and 0.97 of OpenSSL's 9.2.
 - A one-pass seal and open did not pay. In a scratch timing loop on the three columns' compilers, a
   seal that runs ChaCha20 over a chunk and then Poly1305 over the ciphertext it just wrote, and an
   open that hashes each chunk and then decrypts it, took no less time than two passes at any chunk
@@ -1320,27 +1303,26 @@ For [#181](https://github.com/c4milo/chapulin/issues/181), the numbers supported
 ChaCha20 first, because the block function and the in-place exclusive-or were half of the record on
 clang with Poly1305 on the decomposition and more than two thirds of it on the native multiply, and
 decision 82 added it. Its two paired runs on each platform agreed: the vector `rec_seal` took 0.71,
-0.68 and 0.78 of the portable one's time in the three columns in the second, and 0.78, 0.70 and
-0.78 in the first. In the last runs that timed both, at a104a3e with decision 86's two groups a
-pass, it took 0.62, 0.60 and 0.68. Most of what remained of that record was Poly1305 on the
-multiply decomposition: the same loop on the native multiply ran in about a third of the time. A
-vector Poly1305 needs a widening multiply too, so it needs
-the same statement about that multiply's timing, and decision 83 added one under it: `CHACHA=vector`
-with `WIDEMUL=native`, where Poly1305 was most of what the vector ChaCha20 left. Paired runs agree
-on each platform, two in the Linux VM and three on macOS, where the second ran at a load average of
-44 to 78. In the last pair on each, that build's `rec_seal` took 0.66, 0.66 and 0.69 of its time
-before the change in the three columns; the earlier pairs gave 0.66 and 0.66 on macOS, 0.57 on the
-VM's clang and 0.65 on gcc 13. Those pairs came before each call of the vector Poly1305 began to
-end with a wipe of the powers of r it computed, one `ct_wipe` of 208 bytes on NEON and 352 on
-SSE2. The runs the tables now hold measure the code with that wipe, and the 128-byte threshold
-still rests on decision 83's scratch timing. Under `ch_cfg.cpu 0x7` the vector Poly1305 takes 2.5
-and 2.8 µs on macOS and gcc 13, as in the pairs, and 2.9 µs on the VM's clang. On that compiler
-the figure moves with where the linker places the function. It took 4.7 µs in the bench build the
-tables held at d10b6e2, and 3.0 µs in one whose `aes_hw.c` differed in one function; that build
-with `-falign-functions=64` took 2.8 µs (the pitfalls below). It took 3.0 µs in the runs at
-97826ba, 4.8 µs again at a104a3e, before decision 91 and after it alike, and 4.6 µs in this tree's
-bench an hour before the tables' run, when `bench/record_rows.c` lacked its two `seal_aes_gcm`
-rows.
+0.68 and 0.78 of the portable one's time in the three columns in the second, and 0.78, 0.70 and 0.78
+in the first. In the last runs that timed both, at a104a3e with decision 86's two groups a pass, it
+took 0.62, 0.60 and 0.68. Most of what remained of that record was Poly1305 on the multiply
+decomposition: the same loop on the native multiply ran in about a third of the time. A vector
+Poly1305 needs a widening multiply too, so it needs the same statement about that multiply's timing,
+and decision 83 added one under it: `CHACHA=vector` with `WIDEMUL=native`, where Poly1305 was most
+of what the vector ChaCha20 left. Paired runs agree on each platform, two in the Linux VM and three
+on macOS, where the second ran at a load average of 44 to 78. In the last pair on each, that build's
+`rec_seal` took 0.66, 0.66 and 0.69 of its time before the change in the three columns; the earlier
+pairs gave 0.66 and 0.66 on macOS, 0.57 on the VM's clang and 0.65 on gcc 13. Those pairs came
+before each call of the vector Poly1305 began to end with a wipe of the powers of r it computed, one
+`ct_wipe` of 208 bytes on NEON and 352 on SSE2. The runs the tables now hold measure the code with
+that wipe, and the 128-byte threshold still rests on decision 83's scratch timing. Under `ch_cfg.cpu
+0x7` the vector Poly1305 takes 2.0 and 2.8 µs on macOS and gcc 13, and 2.9 µs on the VM's clang. On
+that compiler the figure moves with where the linker places the function. It took 4.7 µs in the
+bench build the tables held at d10b6e2, and 3.0 µs in one whose `aes_hw.c` differed in one function;
+that build with `-falign-functions=64` took 2.8 µs (the pitfalls below). It took 3.0 µs in the runs
+at 97826ba, 4.8 µs again at a104a3e, before decision 91 and after it alike, and 4.6 µs in this
+tree's bench an hour before the tables' run, when `bench/record_rows.c` lacked its two
+`seal_aes_gcm` rows.
 
 ChaCha20 was then the larger stage of that build, 80% of its record, and decision 86 runs two groups
 of four blocks a pass on NEON, because one group left the vector units waiting on each quarter
@@ -1458,9 +1440,10 @@ What the numbers show:
 
 The M1 Pro ran `make bench-record BENCH_MACHINE=m1` at a load average of 3.6 to 4.3, into
 [`bench/results-record-darwin-arm64-m1-clang.csv`](../bench/results-record-darwin-arm64-m1-clang.csv),
-on the passes of decision 161. Homebrew holds OpenSSL 3.5.9 on this machine, not 3.6, so the
-OpenSSL figure is one operation of 3.5.9's `speed -aead`. The record tables above keep the run of
-2026-10-09 against OpenSSL 3.6.5, in which a 16 KiB record took 1.13 to 1.15 times OpenSSL's time.
+on the passes of decision 161. Homebrew holds OpenSSL 3.5.9 on this machine, not 3.6, so the OpenSSL
+figure is one operation of 3.5.9's `speed -aead`. The record tables above hold the run of 2026-11-20
+against OpenSSL 3.6.5, in which the AEAD of a 16 KiB record, under a key expanded for it, took 1.01
+to 1.05 times OpenSSL's time under `0x3` and 0.95 to 0.97 of it under `0x83`.
 
 | M1 Pro, Apple clang 21, seal / open | 16 B | 1 KiB | 16 KiB |
 |---|---|---|---|
@@ -1873,11 +1856,11 @@ The order of the work, by the instructions each item removes from a handshake:
    computes modulo p and n and states no word, so it serves both copies, and
    `bin/diff_p256_wide` runs each against it.
 4. SHA-256 on the ARMv8 and x86-64 SHA instructions and SHA-512 on the ARMv8.2 ones, behind new
-   `ch_cfg.cpu` bits. Hashing takes 0.78 M of the 6.95 M: the transcript and key schedule's
-   0.59 M, the nonce's 0.19 M and the signed content's 0.01 M. CBMC cannot read the intrinsics,
-   so equivalence tests against the portable code hold them, as they hold the AES instructions.
-   Since decision 94 the RFC 6979 nonce is the largest part of a signature: 0.24 M of its 0.53 M
-   instructions on the M1 Pro, where OpenSSL's whole signature takes 0.18 M.
+   `ch_cfg.cpu` bits: done (decision 93). Hashing took 0.78 M of the 6.95 M: the transcript and key
+   schedule's 0.59 M, the nonce's 0.19 M and the signed content's 0.01 M. CBMC cannot read the
+   intrinsics, so equivalence tests against the portable code hold them, as they hold the AES
+   instructions. Since decision 94 the RFC 6979 nonce is the largest part of a signature: 0.24 M of
+   its 0.53 M instructions on the M1 Pro, where OpenSSL's whole signature takes 0.18 M.
 5. X25519 key generation from a table of multiples of the base point, as BoringSSL computes it:
    done, for a host session that states its multiply (decision 148). A clamped scalar is 64
    signed four-bit digits, and the key generation adds one entry of a 30 KiB table of multiples
@@ -1887,7 +1870,8 @@ The order of the work, by the instructions each item removes from a handshake:
    where it took 1.144 M ("What decision 148 changed", above). The table sits inside the L1 data
    cache of every core here, which decision 109 found to matter on the M1 Pro. The shared secret
    keeps the ladder.
-6. A server whose suite hashes with SHA-384 stops the SHA-256 transcript, 0.08 M.
+6. A server whose suite hashes with SHA-384 stops the SHA-256 transcript, 0.08 M: done, among the
+   fixes of entries 145 to 147 and 149 (above).
 
 ## The method behind these numbers
 

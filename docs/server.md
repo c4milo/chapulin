@@ -1500,23 +1500,21 @@ does not: both run `rsa_mont64.c` in a host object. The file is constant time
 in every word, for the signer's sake, and the verifier runs it because one
 64-bit arithmetic is less to audit than two (INV-41).
 
-The signing frame is *measured* now, by the method `make lint-stack` uses,
-which is `-Wframe-larger-than` per function; the three frames below sit on one
-call chain, so the peak is their sum. At the device bound of RSA-3072, under
-the Arm GNU gcc 16.2.0 the m3 lane uses, at -Os: `rsa_pss_sign` 1,072 bytes,
-`rsa_sp1` 1,536 and `mont_mul` 440, so 3,048 bytes. Under clang 23 at -O2 on
-arm64, the same three are 1,216, 1,696 and 496, so 3,408, and at the
-TRUST=webpki bound of RSA-4096 they are 1,472, 2,208 and 624, so 4,304.
-A host object's 64-bit signer is five frames on one chain: `rsa_sign64_pss`,
-`rsa_sign64_sp1`, `rsa_sign64_power`, `rsa_mont64_mont_square`, whose frame
-holds a copy of 2a (`docs/decisions.md` 106), and `rsa_mont64_blocks_square`,
-the square in blocks of four words that clang for arm64 runs (118). Under Apple
-clang 21 at -O2 on arm64 they are 1,152, 4,368, 3,408, 912 and 896, so 10,736,
-at the bound of RSA-3072, and 1,408, 5,776, 4,496, 1,168 and 1,152, so 14,000,
-at the bound of RSA-4096. That chain is the deepest of a host server object:
-`bench/sram.sh` measures `ch_srv_accept`'s peak at 12,736 bytes through it,
-where the encapsulation's chain takes 7,888 (`docs/performance.md`, "What the
-larger builds pay for").
+The signing frame is *measured* now, by the method `make lint-stack` uses, which is
+`-Wframe-larger-than` per function; the three frames below sit on one call chain, so the peak is
+their sum. At the device bound of RSA-3072, under the Arm GNU gcc 16.2.0 the m3 lane uses, at -Os:
+`rsa_pss_sign` 1,072 bytes, `rsa_sp1` 1,536 and `mont_mul` 440, so 3,048 bytes. Under clang 23 at
+-O2 on arm64, the same three are 1,216, 1,696 and 496, so 3,408, and at the TRUST=webpki bound of
+RSA-4096 they are 1,472, 2,208 and 624, so 4,304. A host object's 64-bit signer is five frames on
+one chain: `rsa_sign64_pss`, `rsa_sign64_sp1`, `rsa_sign64_power`, `rsa_mont64_mont_square`, whose
+frame holds a copy of 2a (`docs/decisions.md` 106), and `rsa_mont64_blocks_square`, the square in
+blocks of four words that clang for arm64 runs (118). Under Apple clang 21 at -O2 on arm64 they are
+1,152, 4,368, 3,408, 912 and 896, so 10,736, at the bound of RSA-3072, and 1,408, 5,776, 4,496,
+1,168 and 1,152, so 14,000, at the bound of RSA-4096. That chain is the deepest of a host server
+object after the ML-DSA-87 signer's: `bench/sram.sh` measures `ch_srv_accept`'s peak at 20,320 bytes
+through it with the ML-DSA-87 CertificateVerify pruned, and at 112,864 bytes through the ML-DSA-87
+signer, where the encapsulation's chain takes 10,672 (`docs/performance.md`, "What the larger builds
+pay for").
 
 Two of those three peaks are above `STACK_BUDGET`, which is 2,560 bytes for a
 device build, and the `ROLE=server` object packages `rsa_sign.c` now. The
@@ -3152,9 +3150,9 @@ under the profile.
   ChaCha20-Poly1305 ticket is refused on its first byte.
 - **CPU.** Every init call and `ch_srv_check` refuse a `ch_cfg.cpu`
   without `CH_CPU_CONSTANT_TIME_AES`.
-- **Memory.** A `ch_tls` of 3,160 bytes, a receive floor of 2,179 bytes
-  (2,698 over QUIC), and a `ch_srv_accept` peak of 112,160 bytes through
-  the signer, measured by `bench/sram.sh` ([performance.md](performance.md)).
+- **Memory.** A `ch_tls` of 3,680 bytes, a receive floor of 2,179 bytes (2,698 over QUIC), and a
+  `ch_srv_accept` peak of 112,160 bytes through the signer, measured by `bench/sram.sh`
+  ([performance.md](performance.md)).
 
 ## What is still open
 

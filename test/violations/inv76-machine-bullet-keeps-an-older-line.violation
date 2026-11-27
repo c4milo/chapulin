@@ -1,0 +1,16 @@
+invariant: INV-76
+file: docs/performance.md
+catches: test/lint-bench-numbers.sh
+reason: a machine's bullet beside the OpenSSL table keeps a line of an
+  older run under the line its CSVs give, as five bullets did until
+  2026-11-27, when a load average and a clang version of earlier runs sat
+  inside them. The check once found each line as a substring of the page,
+  so the leftover passed. It now holds each bullet, whole, to its line.
+
+--- old
+around the AEAD rows' run
+- **x86-64 gcc**:
+--- new
+around the AEAD rows' run
+  it, and 4.55 and 4.26 around the AEAD rows' run
+- **x86-64 gcc**:
