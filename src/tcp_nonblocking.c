@@ -37,11 +37,10 @@ int tcp_init(ch_tcp_priv *r, const ch_cfg *cfg) {
     memset(r, 0, sizeof *r);
     r->t.cfg = *cfg;
     // A presented ticket becomes the session copy's PSK, which every rule
-    // below and the handshake read (handshake_post.h). send goes unused
-    // until the handshake is done; ch_write and ch_close need it after it.
-    // No call reads through recv, so one that is set is refused
-    // (tcp_nonblocking.h).
-    if (!hspost_present_ticket(&r->t.cfg) || !tlsi_config_ok(&r->t.cfg) || cfg->send == NULL ||
+    // below and the handshake read (handshake_post.h). No call sends
+    // through send or reads through recv, so one that is set is refused
+    // (tcp_nonblocking.h, INV-28).
+    if (!hspost_present_ticket(&r->t.cfg) || !tlsi_config_ok(&r->t.cfg) || cfg->send != NULL ||
         cfg->recv != NULL) {
         return tcp_nonblocking_refuse_init(r);
     }

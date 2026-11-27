@@ -218,27 +218,17 @@ static int read_records(ch_tls_priv *t, read_walk *w, ch_read_result *result) {
     return CH_TCP_AGAIN;
 }
 
-// The failure funnel of this read, tlsi_fail with the alert written into
-// the caller's reply in place of cfg.send. Every byte the session opened
-// in p is wiped first, so no plaintext of a record that failed, and none
-// of a message in parts, stays there. After the peer's fatal alert this
-// side owes none (RFC 9846 §6.2, rfc9846.txt:3890-3893), and alert_sent
-// records nothing.
+// The failure funnel of this read, tlsi_fail_into with the alert written
+// into the caller's reply. Every byte the session opened in p is wiped
+// first, so no plaintext of a record that failed, and none of a message in
+// parts, stays there. After the peer's fatal alert this side owes none
+// (RFC 9846 §6.2, rfc9846.txt:3890-3893), and alert_sent records nothing.
 static void fail_into(ch_tls_priv *t, const read_walk *w, uint8_t *reply, ch_read_result *result) {
     if (w->opened > 0) {
         ct_wipe(w->p, w->opened);
     }
     size_t reply_len = 0;
-    if (t->alert_received == 0) {
-        t->alert_sent = w->alert;
-        const uint8_t body[2] = {2, w->alert}; // level 2 is fatal (RFC 9846 §6)
-        if (rec_seal(&t->wr, REC_ALERT, body, sizeof body, reply, CH_ALERT_RECORD_LEN,
-                     &reply_len) != 0) {
-            reply_len = 0; // the last sequence number (RFC 9846 §5.3), as tlsi_send_alert does
-        }
-    }
-    tlsi_wipe(t);
-    t->state = CH_ST_FAILED;
+    (void)tlsi_fail_into(t, w->alert, reply, &reply_len);
     result->consumed = 0;
     result->pt_off = 0;
     result->pt_len = 0;

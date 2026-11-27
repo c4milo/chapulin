@@ -16,8 +16,8 @@
 static void test_finished_and_data_in_one_delivery(ch_tcp_priv *client, ch_tcp_priv *server,
                                                    const ch_cfg *ccfg, const ch_cfg *scfg) {
     to_client.len = 0;
-    CHECK(ch_srv_tcp_init(tcp_public(server), scfg) == CH_OK);
-    CHECK(ch_tcp_init(tcp_public(client), ccfg) == CH_OK);
+    CHECK(server_init(server, scfg) == CH_OK);
+    CHECK(client_init(client, ccfg) == CH_OK);
     // One round trip: the ClientHello in, the server's flight back.
     CHECK(client_to_server(client, server));
     CHECK(server_to_client(client));

@@ -41,9 +41,9 @@ static void widemul_counted_handshake(int client_stated, int server_stated) {
     widemul_end_calls server_calls = {0, 0};
     widemul_native_calls = 0;
     widemul_decomposed_calls = 0;
-    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_OK);
+    CHECK(server_init(&server, &scfg) == CH_OK);
     widemul_take_calls(&server_calls);
-    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_OK);
+    CHECK(client_init(&client, &ccfg) == CH_OK);
     widemul_take_calls(&client_calls);
     for (int rounds = 0; rounds < 4; rounds++) {
         int moved = client_to_server(&client, &server);

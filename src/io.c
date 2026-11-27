@@ -7,6 +7,7 @@
 // a record gets the rest in the next call. 0, a negative value and a count
 // above n are failures, so a send that moves nothing cannot keep the
 // session in this loop (cfg.h).
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     while (n > 0) {
         int sent = cfg->send(cfg->io, p, n);
@@ -18,6 +19,7 @@ int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     }
     return CH_OK;
 }
+#endif
 
 // A TRANSPORT=tcp-nonblocking build reads no record through recv: its
 // sessions read in place from the caller's input (tcp_read.c), so the

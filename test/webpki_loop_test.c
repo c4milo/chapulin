@@ -143,13 +143,6 @@ static int held_recv(void *io, uint8_t *p, size_t n) {
     return (int)take;
 }
 
-static int unused_send(void *io, const uint8_t *p, size_t n) {
-    (void)io;
-    (void)p;
-    (void)n;
-    return -1;
-}
-
 // The one ticket the client keeps, as a caller stores it.
 static struct {
     uint8_t identity[CH_TICKET_ID_MAX];
@@ -191,7 +184,6 @@ static void server_config(ch_cfg *cfg, const uint8_t *key) {
     memset(cfg, 0, sizeof *cfg);
     cfg->buf = srv_buf;
     cfg->buf_len = sizeof srv_buf;
-    cfg->send = unused_send;
     cfg->srv.cookie_key = cookie_key;
     cfg->srv.on_record_out = sink;
     cfg->srv.ticket_key = key;
@@ -209,7 +201,6 @@ static void client_config(ch_cfg *cfg, const webpki_corpus_anchor *root, const c
     memset(cfg, 0, sizeof *cfg);
     cfg->buf = cli_buf;
     cfg->buf_len = sizeof cli_buf;
-    cfg->send = unused_send;
     cfg->on_ticket = keep_ticket;
     r2_trust(cfg, root, hostname);
 #ifdef CH_CPU_RUNTIME
@@ -327,7 +318,6 @@ static void pins_alone_config(ch_cfg *cfg, int present) {
     memset(cfg, 0, sizeof *cfg);
     cfg->buf = cli_buf;
     cfg->buf_len = sizeof cli_buf;
-    cfg->send = unused_send;
     cfg->on_ticket = keep_ticket;
     cfg->spki_pins = (const uint8_t *)loop_pin;
     cfg->spki_pin_count = 1;

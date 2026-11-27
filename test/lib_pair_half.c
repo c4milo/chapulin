@@ -88,9 +88,16 @@ static void level_ready(void *io, uint8_t level, uint8_t direction) {
     (void)direction;
 }
 #else
-// The first byte the session sent, which for a TLS record is its content
-// type. A handshake record is type 22 (RFC 9846 section 5.1).
+// The content type of a TLS record's first byte that a handshake record
+// carries, 22 (RFC 9846 section 5.1).
 #define LIB_PAIR_HANDSHAKE_RECORD 22
+
+// A tcp-nonblocking session sends through no send and reads through no
+// recv, and its init refuses either one (tcp_nonblocking.h), so the two
+// callbacks below are the blocking session's alone.
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
+// The first byte the session sent, which for a TLS record is its content
+// type.
 static uint8_t first_sent;
 
 static int keep_send(void *io, const uint8_t *p, size_t n) {
@@ -101,10 +108,8 @@ static int keep_send(void *io, const uint8_t *p, size_t n) {
     return (int)n;
 }
 
-#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 // No peer answers, so every read fails, and a blocking handshake stops
-// at its first read with CH_EIO. A tcp-nonblocking session reads through
-// no recv, and its init refuses one (tcp_nonblocking.h).
+// at its first read with CH_EIO.
 static int fail_recv(void *io, uint8_t *p, size_t n) {
     (void)io;
     memset(p, 0, n);
@@ -130,11 +135,9 @@ static void base_config(ch_cfg *cfg) {
     cfg->on_level_ready = level_ready;
     cfg->alpn_protocols = alpn;
     cfg->alpn_count = 1;
-#else
+#elif !defined(CH_TRANSPORT_TCP_NONBLOCKING)
     cfg->send = keep_send;
-#ifndef CH_TRANSPORT_TCP_NONBLOCKING
     cfg->recv = fail_recv;
-#endif
 #endif
 }
 

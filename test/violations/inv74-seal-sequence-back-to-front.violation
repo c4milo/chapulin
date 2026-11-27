@@ -1,0 +1,14 @@
+invariant: INV-74
+file: src/tcp_seal.c
+catches: tcp_nonblocking_loop_test
+reason: ch_seal_in_place seals from the last record to the first without
+  setting each record's sequence number, so the last record takes the
+  first number and the peer, which opens the records in the order they go
+  out, finds a tag that does not match on the first record of every write
+  of two records or more (RFC 9846 §5.3).
+
+--- old
+        t->wr.seq = first + i;
+        size_t out_len = 0;
+--- new
+        size_t out_len = 0;

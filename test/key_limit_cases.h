@@ -37,22 +37,31 @@
 //     the answer and retires the key, and three records before it the
 //     answer goes first and the write's three records follow under the
 //     next key, with no second KeyUpdate.
-// Then ch_writable_len against the real ch_write at the ceiling and one and
+// Then ch_writable_len against the real write at the ceiling and one and
 // two records before it, with no answer owed and with one owed, and
 // ChaCha20-Poly1305 at the same sequence numbers, where no KeyUpdate goes
 // out.
+//
+// Each case writes through test_write (test/test_write.h): ch_write on the
+// blocking transport, and ch_seal_in_place on the other. The in-place seal
+// differs in two rules, and the cases hold each transport to its own
+// (tcp_nonblocking.h, docs/decisions.md 248). Its KeyUpdate goes before
+// the first record of the write, so every record of one write goes under
+// one key. And ch_writable_len counts no KeyUpdate, which the seal writes
+// into its side buffer, not into the cap bytes it counts.
 #ifndef CH_TEST_KEY_LIMIT_CASES_H
 #define CH_TEST_KEY_LIMIT_CASES_H
 
 #include "handshake_post.h"
 #include "session_convert.h"
 #include "test_read.h"
+#include "test_write.h"
 
 // One direction's records once connected: the bytes one session sent and
-// the other has not read. io_send_all hands cfg.send one whole record,
-// and key_limit_send takes all of it, so each call is one record and
-// send_len holds the length of each, the first KEY_LIMIT_SENDS_MAX of
-// them.
+// the other has not read. test_write hands cfg.send one whole record a
+// call, in both transports, and key_limit_send takes all of it, so each
+// call is one record and send_len holds the length of each, the first
+// KEY_LIMIT_SENDS_MAX of them.
 #define KEY_LIMIT_SENDS_MAX 8
 typedef struct {
     uint8_t bytes[4096];
@@ -176,7 +185,7 @@ static int key_limit_read_all(ch_tls_priv *t, uint8_t *got, const uint8_t *want,
     return memcmp(got, want, n) == 0;
 }
 
-// The KeyUpdate ch_write sends at the ceiling: request_update 0,
+// The KeyUpdate a write sends at the ceiling: request_update 0,
 // update_not_requested (RFC 9846 §4.7.3).
 static const uint8_t key_limit_key_update[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
 
@@ -200,13 +209,13 @@ static void key_limit_check_boundary(uint16_t suite, int server_writes) {
     uint8_t type = 0;
     uint8_t got[8];
 
-    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"a", 1) == CH_OK);
+    CHECK(test_write(tls_public(pair.writer), (const uint8_t *)"a", 1) == CH_OK);
     CHECK(pair.wire->sends == 1 && pair.wire->send_len[0] == REC_OVERHEAD + 1);
     size_t at = key_limit_open(pair.wire, 0, &peek, pt, sizeof pt, &pt_len, &type);
     CHECK(at != 0 && type == REC_APPDATA && pt_len == 1 && pt[0] == 'a');
     CHECK(test_read(tls_public(pair.reader), got, sizeof got) == 1 && got[0] == 'a');
 
-    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"b", 1) == CH_OK);
+    CHECK(test_write(tls_public(pair.writer), (const uint8_t *)"b", 1) == CH_OK);
     CHECK(pair.wire->sends == 3 && pair.wire->send_len[1] == CH_KEY_UPDATE_RECORD_LEN);
     CHECK(pair.wire->send_len[2] == REC_OVERHEAD + 1);
     CHECK(pair.writer->send_epochs == epochs + 1 && pair.writer->wr.seq == 1);
@@ -229,10 +238,19 @@ static void key_limit_check_boundary(uint16_t suite, int server_writes) {
 static uint8_t key_limit_data[3 * KEY_LIMIT_RECORD + 2 * CH_KEY_UPDATE_RECORD_LEN];
 static uint8_t key_limit_got[sizeof key_limit_data];
 
-// One ch_write of three records from two records before the ceiling sends
-// one KeyUpdate, before the second record, and the reader reads all three.
-// The writer's records carry KEY_LIMIT_RECORD bytes, below every limit a
-// session here holds.
+// One write of three records from two records before the ceiling sends
+// one KeyUpdate, and the reader reads all three. ch_write sends it before
+// the second record, where the key's last data record is used, and the
+// in-place seal before the first, so its three records go under the next
+// key. The writer's records carry KEY_LIMIT_RECORD bytes, below every
+// limit a session here holds.
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+#define KEY_LIMIT_ONE_WRITE_UPDATE_AT 0 // the send that carries the KeyUpdate
+#define KEY_LIMIT_ONE_WRITE_SEQ 3       // the write sequence number after the write
+#else
+#define KEY_LIMIT_ONE_WRITE_UPDATE_AT 1
+#define KEY_LIMIT_ONE_WRITE_SEQ 2
+#endif
 static void key_limit_check_one_write(uint16_t suite, int server_writes) {
     key_limit_pair pair;
     CHECK(key_limit_open_pair(suite, server_writes, &pair));
@@ -240,12 +258,14 @@ static void key_limit_check_one_write(uint16_t suite, int server_writes) {
     pair.writer->peer_limit = KEY_LIMIT_RECORD;
     const size_t three_records = 3 * (size_t)KEY_LIMIT_RECORD;
     uint64_t epochs = pair.writer->send_epochs;
-    CHECK(ch_write(tls_public(pair.writer), key_limit_data, three_records) == CH_OK);
-    CHECK(pair.wire->sends == 4 && pair.wire->send_len[1] == CH_KEY_UPDATE_RECORD_LEN);
-    CHECK(pair.wire->send_len[0] == REC_OVERHEAD + KEY_LIMIT_RECORD &&
-          pair.wire->send_len[2] == REC_OVERHEAD + KEY_LIMIT_RECORD &&
-          pair.wire->send_len[3] == REC_OVERHEAD + KEY_LIMIT_RECORD);
-    CHECK(pair.writer->send_epochs == epochs + 1 && pair.writer->wr.seq == 2);
+    CHECK(test_write(tls_public(pair.writer), key_limit_data, three_records) == CH_OK);
+    CHECK(pair.wire->sends == 4);
+    for (size_t i = 0; i < 4; i++) {
+        size_t want = i == KEY_LIMIT_ONE_WRITE_UPDATE_AT ? CH_KEY_UPDATE_RECORD_LEN
+                                                         : REC_OVERHEAD + KEY_LIMIT_RECORD;
+        CHECK(pair.wire->send_len[i] == want);
+    }
+    CHECK(pair.writer->send_epochs == epochs + 1 && pair.writer->wr.seq == KEY_LIMIT_ONE_WRITE_SEQ);
     CHECK(key_limit_read_all(pair.reader, key_limit_got, key_limit_data, three_records));
     CHECK(pair.back->sends == 0);
 }
@@ -261,7 +281,7 @@ static void key_limit_check_sender_cap(uint16_t suite, int server_writes) {
     CHECK(key_limit_open_pair(suite, server_writes, &pair));
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
     pair.writer->send_epochs = HSPOST_SEND_EPOCHS_MAX - 1;
-    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"c", 1) == CH_OK);
+    CHECK(test_write(tls_public(pair.writer), (const uint8_t *)"c", 1) == CH_OK);
     CHECK(pair.writer->send_epochs == HSPOST_SEND_EPOCHS_MAX && pair.wire->sends == 2);
     CHECK(test_read(tls_public(pair.reader), got, sizeof got) == 1 && got[0] == 'c');
 
@@ -269,7 +289,7 @@ static void key_limit_check_sender_cap(uint16_t suite, int server_writes) {
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
     pair.writer->send_epochs = HSPOST_SEND_EPOCHS_MAX;
     rec_dir peek = pair.reader->rd;
-    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"d", 1) == CH_ECAP);
+    CHECK(test_write(tls_public(pair.writer), (const uint8_t *)"d", 1) == CH_ECAP);
     CHECK(pair.writer->state == CH_ST_FAILED);
     CHECK(ch_alert_sent(tls_public(pair.writer)) == ALERT_INTERNAL_ERROR);
     CHECK(pair.wire->sends == 1 && pair.wire->send_len[0] == CH_ALERT_RECORD_LEN);
@@ -317,7 +337,7 @@ static void key_limit_check_owed_answer(uint16_t suite, int server_writes) {
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
     uint64_t epochs = pair.writer->send_epochs;
     uint8_t got[8];
-    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"g", 1) == CH_OK);
+    CHECK(test_write(tls_public(pair.writer), (const uint8_t *)"g", 1) == CH_OK);
     CHECK(pair.wire->sends == 2 && pair.wire->send_len[0] == CH_KEY_UPDATE_RECORD_LEN);
     CHECK(pair.writer->send_epochs == epochs + 1 && pair.writer->key_update_owed == 0);
     CHECK(pair.writer->wr.seq == 1);
@@ -329,12 +349,30 @@ static void key_limit_check_owed_answer(uint16_t suite, int server_writes) {
     pair.writer->peer_limit = KEY_LIMIT_RECORD;
     epochs = pair.writer->send_epochs;
     const size_t three_records = 3 * (size_t)KEY_LIMIT_RECORD;
-    CHECK(ch_write(tls_public(pair.writer), key_limit_data, three_records) == CH_OK);
+    CHECK(test_write(tls_public(pair.writer), key_limit_data, three_records) == CH_OK);
     CHECK(pair.wire->sends == 4 && pair.wire->send_len[0] == CH_KEY_UPDATE_RECORD_LEN);
     CHECK(pair.writer->send_epochs == epochs + 1 && pair.writer->wr.seq == 3);
     CHECK(key_limit_read_all(pair.reader, key_limit_got, key_limit_data, three_records));
 }
 
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+// The bytes of records one ch_seal_in_place of n bytes writes into its
+// buffer from the writer as it stands, which ch_writable_len counts, and
+// not the KeyUpdate it writes into side. The writer is put back
+// afterwards, so each call starts from the same sequence number.
+static size_t key_limit_sent_by_write(const key_limit_pair *pair, size_t n) {
+    static ch_tls_priv saved;
+    static uint8_t records[sizeof key_limit_data + (size_t)8 * REC_OVERHEAD];
+    uint8_t side[CH_KEY_UPDATE_RECORD_LEN];
+    saved = *pair->writer;
+    memcpy(records + REC_HDR, key_limit_data, n);
+    ch_seal_result result = {0};
+    CHECK(ch_seal_in_place(tls_public(pair->writer), records, sizeof records, n, side, sizeof side,
+                           &result) == CH_OK);
+    *pair->writer = saved;
+    return result.records_len;
+}
+#else
 // The bytes one ch_write of n bytes sends from the writer as it stands.
 // The writer and the pipe are put back afterwards, so each call starts
 // from the same sequence number.
@@ -348,15 +386,30 @@ static size_t key_limit_sent_by_write(const key_limit_pair *pair, size_t n) {
     pair->wire->len = before;
     return sent;
 }
+#endif
 
-// ch_writable_len against the ch_write that sends what it counts, at the
+// The cap bytes a KeyUpdate before a write takes, and the most records
+// one write seals from two records before the ceiling with no answer owed.
+// ch_write sends a KeyUpdate in the cap it counts and seals the first
+// record under the old key. The in-place seal writes the KeyUpdate into
+// side and seals every record of one write under the next key.
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+#define KEY_LIMIT_UPDATE_IN_CAP 0
+#define KEY_LIMIT_WRITE_RECORDS_MAX (REC_AES_GCM_RECORDS_MAX - 1)
+#else
+#define KEY_LIMIT_UPDATE_IN_CAP CH_KEY_UPDATE_RECORD_LEN
+#define KEY_LIMIT_WRITE_RECORDS_MAX REC_AES_GCM_RECORDS_MAX
+#endif
+
+// ch_writable_len against the write that sends what it counts, at the
 // least limit a peer's record_size_limit leaves, 63 bytes: at the ceiling
 // and one and two records before it, for every cap up to three records, a
 // KeyUpdate record and one byte, the records of what it returns fit cap
 // and one byte more does not. The rows under it are the exact boundary:
 // at the ceiling a record of one byte costs a KeyUpdate record as well,
 // and one record before it the first record does not and the second
-// does. At the largest cap it counts one KeyUpdate and no second (tls.h).
+// does, in the cap bytes ch_write counts. At the largest cap it counts
+// one KeyUpdate and no second (tls.h).
 static void key_limit_check_writable_len(uint16_t suite) {
     key_limit_pair pair;
     CHECK(key_limit_open_pair(suite, 0, &pair));
@@ -376,7 +429,7 @@ static void key_limit_check_writable_len(uint16_t suite) {
     // With an answer owed two records before the ceiling, the KeyUpdate goes
     // first, and the next key carries REC_AES_GCM_RECORDS_MAX - 1 records.
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 2);
-    const size_t key_update_and_byte = CH_KEY_UPDATE_RECORD_LEN + REC_OVERHEAD + 1;
+    const size_t key_update_and_byte = KEY_LIMIT_UPDATE_IN_CAP + REC_OVERHEAD + 1;
     CHECK(ch_writable_len(tls_public(pair.writer), key_update_and_byte - 1) == 0);
     CHECK(ch_writable_len(tls_public(pair.writer), key_update_and_byte) == 1);
     CHECK(ch_writable_len(tls_public(pair.writer), SIZE_MAX) ==
@@ -393,7 +446,7 @@ static void key_limit_check_writable_len(uint16_t suite) {
     CHECK(ch_writable_len(tls_public(pair.writer), record + key_update_and_byte - 1) == 63);
     CHECK(ch_writable_len(tls_public(pair.writer), record + key_update_and_byte) == 64);
     CHECK(ch_writable_len(tls_public(pair.writer), SIZE_MAX) ==
-          (size_t)REC_AES_GCM_RECORDS_MAX * 63);
+          (size_t)KEY_LIMIT_WRITE_RECORDS_MAX * 63);
 }
 
 // ChaCha20-Poly1305 has no ceiling but the wrap (rfc9846.txt:3752-3754):
@@ -406,8 +459,8 @@ static void key_limit_check_chacha(int server_writes) {
     key_limit_seed(&pair, REC_AES_GCM_RECORDS_MAX - 1);
     uint64_t epochs = pair.writer->send_epochs;
     CHECK(ch_writable_len(tls_public(pair.writer), REC_OVERHEAD + 1) == 1);
-    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"e", 1) == CH_OK);
-    CHECK(ch_write(tls_public(pair.writer), (const uint8_t *)"f", 1) == CH_OK);
+    CHECK(test_write(tls_public(pair.writer), (const uint8_t *)"e", 1) == CH_OK);
+    CHECK(test_write(tls_public(pair.writer), (const uint8_t *)"f", 1) == CH_OK);
     CHECK(pair.wire->sends == 2 && pair.wire->send_len[0] == REC_OVERHEAD + 1 &&
           pair.wire->send_len[1] == REC_OVERHEAD + 1);
     CHECK(pair.writer->send_epochs == epochs &&

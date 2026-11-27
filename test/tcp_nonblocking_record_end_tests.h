@@ -21,6 +21,7 @@
 #include "record_edit.h"
 #include "session_convert.h"
 #include "tcp_nonblocking_close_tests.h"
+#include "test_write.h"
 
 // Everything the client owes, taken out of its staging array.
 static size_t take_client_bytes(ch_tcp_priv *client, uint8_t *wire) {
@@ -82,8 +83,8 @@ static void start_pair(ch_tcp_priv *client, ch_tcp_priv *server, const ch_cfg *c
     to_client.len = 0;
     records_pushed = 0;
     logged_count = 0;
-    CHECK(ch_srv_tcp_init(tcp_public(server), scfg) == CH_OK);
-    CHECK(ch_tcp_init(tcp_public(client), ccfg) == CH_OK);
+    CHECK(server_init(server, scfg) == CH_OK);
+    CHECK(client_init(client, ccfg) == CH_OK);
 }
 
 // What a refusal leaves: the call's result, the alert it chose, and a
@@ -212,7 +213,7 @@ static size_t check_answer_then_data(ch_tcp_priv *server, rec_dir *reader, uint8
                                      size_t at) {
     static const uint8_t answer[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
     size_t sends = server_sends;
-    CHECK(ch_write(tls_public(&server->t), (const uint8_t *)"ok", 2) == CH_OK &&
+    CHECK(test_write(tls_public(&server->t), (const uint8_t *)"ok", 2) == CH_OK &&
           server_sends == sends + 2);
     uint8_t type = 0;
     uint8_t sent[16];

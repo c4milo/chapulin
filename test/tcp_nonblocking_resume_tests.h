@@ -258,7 +258,7 @@ static void test_psk_identity_bounds(void) {
     ccfg.psk_len = sizeof psk;
     ccfg.psk_id = identity;
     ccfg.psk_id_len = CH_TICKET_ID_MAX;
-    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_OK && client.tx_len > 0);
+    CHECK(client_init(&client, &ccfg) == CH_OK && client.tx_len > 0);
     ccfg.psk_id_len = CH_TICKET_ID_MAX + 1;
     CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_EINVAL && client.tx_len == 0);
     ccfg.psk_id_len = 0;

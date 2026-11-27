@@ -1,0 +1,13 @@
+invariant: INV-38
+file: src/srv_out.c
+catches: webpki_loop_tx_record
+reason: a tcp-nonblocking server cuts its protected handshake records at
+  CH_TX_PT, as a blocking build does, while its ch_tls.tx holds the hello
+  alone (session.h), so in a TX_RECORD build a message longer than that
+  array does not fit one record and the handshake fails with
+  internal_error. The TX_RECORD loop seals one such message.
+
+--- old
+    return t->peer_limit < CH_TX_HANDSHAKE_PT ? t->peer_limit : CH_TX_HANDSHAKE_PT;
+--- new
+    return t->peer_limit < CH_TX_PT ? t->peer_limit : CH_TX_PT;

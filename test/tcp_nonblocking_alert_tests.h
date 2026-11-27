@@ -190,20 +190,31 @@ static void server_reads_client_ticket(ch_tcp_priv *client, ch_tcp_priv *server,
     CHECK(io_calls == 0);
 }
 
-// A send that takes nothing, so the alert ch_fail seals does not go out.
-static int refusing_send(void *io, const uint8_t *p, size_t n) {
-    (void)io;
-    (void)p;
-    (void)n;
-    return -1;
+// Whether n bytes at p all still hold the 0xEE a refusal must leave.
+static int untouched(const uint8_t *p, size_t n) {
+    uint8_t any = 0;
+    for (size_t i = 0; i < n; i++) {
+        any |= (uint8_t)(p[i] ^ 0xEE);
+    }
+    return any == 0;
 }
 
-// ch_fail on one end after the handshake. A description that is not an
-// error alert of RFC 9846 §6.2 returns CH_EINVAL and sends nothing.
-// record_overflow goes out through cfg.send as one sealed alert, which
-// the other end's ch_read reads as the peer's fatal alert. A second call
-// on the failed session returns CH_EPROTO and sends nothing. A send that
-// takes nothing gives CH_EIO, and the session fails all the same.
+// One ch_fail_out into out, cap bytes, that the session must refuse with
+// rc: it writes no byte of out and leaves *out_len 0.
+static void check_fail_out_refused(ch_tcp_priv *failer, uint8_t description, size_t cap, int rc) {
+    uint8_t out[CH_ALERT_RECORD_LEN + 1];
+    memset(out, 0xEE, sizeof out);
+    size_t out_len = 0;
+    CHECK(ch_fail_out(tls_public(&failer->t), description, out, cap, &out_len) == rc);
+    CHECK(out_len == 0 && untouched(out, sizeof out));
+}
+
+// ch_fail_out on one end after the handshake. A description that is not
+// an error alert of RFC 9846 §6.2, and a cap below CH_ALERT_RECORD_LEN,
+// return CH_EINVAL and write nothing. record_overflow goes into out as one
+// sealed alert, which the caller sends and the other end's read reads as
+// the peer's fatal alert. A second call on the failed session returns
+// CH_EPROTO and writes nothing. No call sends through cfg.send (INV-28).
 static void fail_after_handshake(ch_tcp_priv *client, ch_tcp_priv *server, const ch_cfg *ccfg,
                                  const ch_cfg *scfg, int server_fails) {
     connect_pair_on_wires(client, server, ccfg, scfg);
@@ -212,16 +223,23 @@ static void fail_after_handshake(ch_tcp_priv *client, ch_tcp_priv *server, const
     const size_t *sends = server_fails ? &server_sends : &client_sends;
     static const uint8_t refused[] = {ALERT_CLOSE_NOTIFY, ALERT_USER_CANCELED, 1, 255};
     for (size_t i = 0; i < sizeof refused; i++) {
-        CHECK(ch_fail(tls_public(&failer->t), refused[i]) == CH_EINVAL);
+        check_fail_out_refused(failer, refused[i], CH_ALERT_RECORD_LEN + 1, CH_EINVAL);
     }
+    check_fail_out_refused(failer, ALERT_RECORD_OVERFLOW, CH_ALERT_RECORD_LEN - 1, CH_EINVAL);
     CHECK(ch_tcp_state(tcp_public(failer)) == CH_ST_CONNECTED &&
           ch_alert_sent(tls_public(&failer->t)) == 0);
     CHECK(*sends == 0);
-    CHECK(ch_fail(tls_public(&failer->t), ALERT_RECORD_OVERFLOW) == CH_OK);
-    CHECK(ch_tcp_state(tcp_public(failer)) == CH_ST_FAILED && *sends == 1);
+    uint8_t out[CH_ALERT_RECORD_LEN];
+    size_t out_len = 0;
+    CHECK(ch_fail_out(tls_public(&failer->t), ALERT_RECORD_OVERFLOW, out, sizeof out, &out_len) ==
+          CH_OK);
+    CHECK(ch_tcp_state(tcp_public(failer)) == CH_ST_FAILED && *sends == 0);
+    check_alert_record(out, out_len, &reader->t.rd, ALERT_RECORD_OVERFLOW);
     CHECK(ch_alert_sent(tls_public(&failer->t)) == ALERT_RECORD_OVERFLOW &&
           ch_alert_received(tls_public(&failer->t)) == 0);
-    CHECK(ch_fail(tls_public(&failer->t), ALERT_RECORD_OVERFLOW) == CH_EPROTO && *sends == 1);
+    check_fail_out_refused(failer, ALERT_RECORD_OVERFLOW, CH_ALERT_RECORD_LEN + 1, CH_EPROTO);
+    // The caller sends the record, onto the wire the reader reads.
+    CHECK((server_fails ? server_send : client_send)(NULL, out, out_len) == (int)out_len);
     uint8_t got[16];
     CHECK(test_read(tls_public(&reader->t), got, sizeof got) == CH_EPROTO);
     CHECK(ch_alert_received(tls_public(&reader->t)) == ALERT_RECORD_OVERFLOW);
@@ -229,10 +247,14 @@ static void fail_after_handshake(ch_tcp_priv *client, ch_tcp_priv *server, const
     ch_tcp_close(tcp_public(client));
     ch_tcp_close(tcp_public(server));
 
+    // A session whose copy of cfg holds never_send
+    // (test/tcp_nonblocking_loop_send.h) fails the same way and never calls
+    // it: ch_fail_out writes the alert into out alone.
     connect_pair_on_wires(client, server, ccfg, scfg);
-    failer->t.cfg.send = refusing_send;
-    CHECK(ch_fail(tls_public(&failer->t), ALERT_DECODE_ERROR) == CH_EIO);
-    CHECK(ch_tcp_state(tcp_public(failer)) == CH_ST_FAILED &&
+    failer->t.cfg.send = never_send;
+    CHECK(ch_fail_out(tls_public(&failer->t), ALERT_DECODE_ERROR, out, sizeof out, &out_len) ==
+          CH_OK);
+    CHECK(out_len == CH_ALERT_RECORD_LEN && ch_tcp_state(tcp_public(failer)) == CH_ST_FAILED &&
           ch_alert_sent(tls_public(&failer->t)) == ALERT_DECODE_ERROR);
     ch_tcp_close(tcp_public(client));
     ch_tcp_close(tcp_public(server));

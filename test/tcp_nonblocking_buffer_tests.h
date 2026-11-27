@@ -18,6 +18,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include "test_write.h"
+
 // A whole number of pages that holds len bytes, from mmap, or NULL.
 static uint8_t *pages_for(size_t len, size_t *mapped) {
     size_t page = (size_t)sysconf(_SC_PAGESIZE);
@@ -72,13 +74,13 @@ static void connected_paths(ch_tcp_priv *client, ch_tcp_priv *server) {
     client->t.cfg.send = client_send;
     server->t.cfg.send = server_send;
     static const uint8_t ping[4] = {'p', 'i', 'n', 'g'};
-    CHECK(ch_write(tls_public(&client->t), ping, sizeof ping) == CH_OK);
+    CHECK(test_write(tls_public(&client->t), ping, sizeof ping) == CH_OK);
     CHECK(server_reads_sent(server) == sizeof ping);
 
     // A KeyUpdate the client owes goes before its data, and the server
     // rekeys its read direction for it.
     client->t.key_update_owed = 1;
-    CHECK(ch_write(tls_public(&client->t), ping, sizeof ping) == CH_OK);
+    CHECK(test_write(tls_public(&client->t), ping, sizeof ping) == CH_OK);
     CHECK(server_reads_sent(server) == sizeof ping);
 
     // A ticket, a ticket in two records and data, from the server.
@@ -89,13 +91,13 @@ static void connected_paths(ch_tcp_priv *client, ch_tcp_priv *server) {
     CHECK(client_reads_held(client) == 0);
     (void)hold_sealed(server, REC_HANDSHAKE, ticket_msg + ticket_len / 2,
                       ticket_len - ticket_len / 2);
-    CHECK(ch_write(tls_public(&server->t), ping, sizeof ping) == CH_OK);
+    CHECK(test_write(tls_public(&server->t), ping, sizeof ping) == CH_OK);
     CHECK(client_reads_held(client) == sizeof ping);
 
     // Both closes, each read where it lies, and the sessions ended.
-    ch_close(tls_public(&client->t));
+    test_close(tls_public(&client->t));
     CHECK(server_reads_sent(server) == 0 && server->t.read_closed == 1);
-    ch_close(tls_public(&server->t));
+    test_close(tls_public(&server->t));
     ch_tcp_close(tcp_public(client));
     ch_tcp_close(tcp_public(server));
 }
@@ -135,8 +137,8 @@ static void test_buffers_given_back_early(ch_tcp_priv *client, ch_tcp_priv *serv
                                           const ch_cfg *ccfg, const ch_cfg *scfg) {
     test_read_reset();
     to_client.len = 0;
-    CHECK(ch_srv_tcp_init(tcp_public(server), scfg) == CH_OK);
-    CHECK(ch_tcp_init(tcp_public(client), ccfg) == CH_OK);
+    CHECK(server_init(server, scfg) == CH_OK);
+    CHECK(client_init(client, ccfg) == CH_OK);
     CHECK(client_to_server(client, server));
     CHECK(!all_zero(srv_buf, sizeof srv_buf));
     CHECK(to_client.len > 0);

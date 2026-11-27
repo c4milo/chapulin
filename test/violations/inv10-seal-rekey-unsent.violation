@@ -1,0 +1,20 @@
+invariant: INV-10
+file: src/tcp_seal.c
+catches: webpki_loop_aes_extern
+reason: ch_seal_in_place moves its write direction to the next key and
+  reports no KeyUpdate in side, so the caller sends the records under the
+  next key alone. The peer never rekeys its read direction, so the first
+  record does not open there, and the reader of the AES-GCM loop's write
+  across the ceiling fails with bad_record_mac (docs/decisions.md 248).
+
+--- old
+        hspost_seal_key_update(t, side, side_cap, &result->side_len) != CH_OK) {
+        return fail_write(t, side, result);
+    }
+    return CH_OK;
+--- new
+        hspost_seal_key_update(t, side, side_cap, &result->side_len) != CH_OK) {
+        return fail_write(t, side, result);
+    }
+    result->side_len = 0;
+    return CH_OK;

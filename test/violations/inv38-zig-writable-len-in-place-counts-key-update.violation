@@ -1,0 +1,18 @@
+invariant: INV-38
+file: src/tls_write_rules.h
+catches: test/zig-build-check.sh
+reason: inv38-writable-len-in-place-counts-key-update's edit, with the Zig
+  API as the catcher: writable_len keeps room for a KeyUpdate record that
+  seal writes into side_buf, so a caller that sizes its seal by it cuts
+  every write 27 bytes short. loop_record.zig and loop_key_limit.zig hold
+  writable_len to each seal's own records, and fail.
+
+--- old
+    size_t records = 0;
+    size_t fill = records_fill(cap, limit, &records);
+    if (records > per_key) {
+--- new
+    size_t records = 0;
+    size_t room = cap > CH_KEY_UPDATE_RECORD_LEN ? cap - CH_KEY_UPDATE_RECORD_LEN : 0;
+    size_t fill = records_fill(room, limit, &records);
+    if (records > per_key) {

@@ -1,0 +1,14 @@
+invariant: INV-36
+file: chapulin_tcp.zig
+catches: test/zig-build-check.sh
+reason: seal returns an empty side where ch_seal_in_place wrote a
+  KeyUpdate record into side_buf, so a caller sends the records under the
+  next key without the KeyUpdate that moves the peer to it, and the peer
+  fails the first record with bad_record_mac. loop_key_update_run.zig,
+  which requires the KeyUpdate an owed answer writes, and the SUITE=aesgcm
+  loop's seal across the ceiling object (docs/decisions.md 248).
+
+--- old
+            return .{ .records = buf[0..result.records_len], .side = side_buf[0..result.side_len] };
+--- new
+            return .{ .records = buf[0..result.records_len], .side = side_buf[0..0] };

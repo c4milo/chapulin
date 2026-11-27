@@ -1,0 +1,13 @@
+invariant: INV-74
+file: src/tcp_seal.c
+catches: tcp_nonblocking_loop_test
+reason: ch_seal_in_place takes a side buffer shorter than one KeyUpdate
+  record, so the KeyUpdate an owed answer writes, or the alert of a
+  failure, has no room and the seal of it refuses after the call started.
+  The loop requires CH_EINVAL with nothing written for a side one byte
+  short.
+
+--- old
+    if (result == NULL || side == NULL || side_cap < CH_KEY_UPDATE_RECORD_LEN ||
+--- new
+    if (result == NULL || side == NULL || side_cap == 0 ||

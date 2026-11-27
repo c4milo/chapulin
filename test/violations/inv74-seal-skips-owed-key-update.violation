@@ -1,0 +1,13 @@
+invariant: INV-55
+file: src/tcp_seal.c
+catches: tcp_nonblocking_loop_test
+reason: ch_seal_in_place seals under the current key whatever
+  records_before_key_update answers, so a peer's request for an answer
+  never gets one, which RFC 9846 §4.7.3 owes before the next record of
+  application data, and an AES-GCM key seals past its ceiling. The loop's
+  owed KeyUpdate case requires the record in side.
+
+--- old
+    if (records_before_key_update(t) >= count) {
+--- new
+    if (1) {

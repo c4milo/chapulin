@@ -595,27 +595,26 @@ last `ROLE=server` stub, as the entry said it would.
   `git ls-files 'quic*'` stops naming every file the mode owns.
 - See [decisions: Engineering](decisions.md#engineering).
 
-### INV-28 — the tcp-nonblocking transport calls no I/O callback during the handshake
+### INV-28 — the tcp-nonblocking transport calls no I/O callback
 
-- **Claim.** A `TRANSPORT=tcp-nonblocking` build runs its whole handshake without
-  calling `ch_cfg.send` or `ch_cfg.recv`. The caller feeds bytes in and
-  takes bytes out: a client through `ch_tcp_in` and `ch_tcp_out`,
-  a server through `ch_srv_tcp_in` and `ch_srv_cfg.on_record_out`.
-  The alert of a handshake failure leaves the same way (INV-13).
-  `cfg.send` is still required at configuration time, because `ch_write`
-  and `ch_close` call it once the session is connected, and by then the
-  caller holds the bytes. `cfg.recv` must be NULL: no call reads through
-  it, because `ch_read_in_place` opens the records the caller holds
-  (INV-73, docs/decisions.md 247). Once connected, `ch_read_in_place`
-  calls no callback: the alert of its failure goes into the caller's
-  reply. A KeyUpdate whose sender asked for an answer gets it from the
-  next `ch_write` (RFC 9846 §4.7.3, INV-55). The peer's close_notify is
-  no failure, and the peer's fatal alert fails the session with no alert
-  written (INV-22). The `ch_read_in_place` that reads either writes
-  nothing, and `ch_close` sends this side's close_notify through
-  `cfg.send` as one record, whenever the caller makes it. So a caller
-  sees no send it did not ask for when the peer closes, aborts or asks
-  for a KeyUpdate.
+- **Claim.** A `TRANSPORT=tcp-nonblocking` build calls neither
+  `ch_cfg.send` nor `ch_cfg.recv`, in the handshake or after it, and each
+  init call refuses a configuration that sets either. The caller feeds
+  bytes in and takes bytes out: a client through `ch_tcp_in` and
+  `ch_tcp_out`, a server through `ch_srv_tcp_in` and
+  `ch_srv_cfg.on_record_out`. The alert of a handshake failure leaves the
+  same way (INV-13). Once connected, `ch_read_in_place` opens the records
+  the caller holds and writes the alert of its failure into the caller's
+  `reply` (INV-73, docs/decisions.md 247), and `ch_seal_in_place`,
+  `ch_close_out` and `ch_fail_out` seal into storage the caller passes
+  (INV-74, docs/decisions.md 248). A KeyUpdate whose sender asked for an
+  answer gets it from the next `ch_seal_in_place`, in its `side` (RFC 9846
+  §4.7.3, INV-55). The peer's close_notify is no failure, and the peer's
+  fatal alert fails the session with no alert written (INV-22). The
+  `ch_read_in_place` that reads either writes nothing, and
+  `ch_close_out` writes this side's close_notify, whenever the caller
+  makes it. So a caller sees no record it did not ask for when the peer
+  closes, aborts or asks for a KeyUpdate.
 - **Mechanism.** The blocking driver is not in the object. `handshake.c`
   is filtered out by `TRANSPORT_FILTER`, `srv_handshake.c` by the server
   arm, and `tls.c` and `srv.c` guard their accept and connect calls out.
@@ -628,9 +627,11 @@ last `ROLE=server` stub, as the entry said it would.
   mode exists for: a callback that blocks inside a completion-based
   event loop stalls every connection that loop holds, and there is no
   thread to park it on.
-- **Check.** `bin/srv_tcp_nonblocking_test` supplies a `send` and a
-  `recv` that fail the run if the driver ever calls them, so the claim
-  is measured rather than argued.
+- **Check.** Each init call of both roles refuses a `cfg.send` and a
+  `cfg.recv` (`test/tcp_nonblocking_loop_send.h` and
+  `bin/srv_tcp_nonblocking_test`). After init the tests set a `send` on
+  the session's own copy of `cfg` that fails the run if any call reaches
+  it, so the claim is measured rather than argued.
   `test/violations/srv-tcp-nonblocking-out-blocks-the-caller.violation`
   makes `emit` send instead of pushing and requires that binary to fail.
   `test/violations/inv28-srv-ccs-through-cfg-send.violation` sends the
@@ -649,16 +650,19 @@ last `ROLE=server` stub, as the entry said it would.
   the handshake, and requires that binary to fail.
   `bin/tlsclient_tcp_nonblocking` still covers the client against a real
   server in `check-slow`.
-  `bin/tcp_nonblocking_loop_test` also counts each end's send calls
-  after the handshake (`test/tcp_nonblocking_close_tests.h`): none while
-  the peer's close_notify is read, one per `ch_write`, and one for
-  `ch_close`.
+  `bin/tcp_nonblocking_loop_test` also counts each end's sends after the
+  handshake, which are the caller's own sends of the records the calls
+  wrote (`test/tcp_nonblocking_close_tests.h`): none while the peer's
+  close_notify is read, whose `ch_read_in_place` writes nothing into
+  `reply`, one for each record a seal wrote, and one for `ch_close_out`.
   `test/violations/inv22-read-answers-close-notify.violation` makes
-  that `ch_read` send a close_notify and requires the binary to fail.
+  that read seal a close_notify into `reply` and requires the binary to
+  fail. `inv28-tcp-init-takes-a-send` and `inv28-srv-tcp-init-takes-a-send`
+  let each init take a `cfg.send`, and the binary fails on each.
   `test/tcp_nonblocking_record_end_tests.h` has the connected server read
   KeyUpdates that ask for an answer, one record a call, and requires each
-  read to send nothing; `inv28-read-answers-key-update` answers inside
-  `ch_read` again, and the binary fails.
+  read to write nothing; `inv28-read-answers-key-update` answers inside
+  the read again, and the binary fails.
 
   That is the behavioral half, that neither driver calls a callback. The
   mechanism half, that a tcp-nonblocking object holds no blocking driver to
@@ -669,10 +673,15 @@ last `ROLE=server` stub, as the entry said it would.
   imports the `ch_handshake` this variant does not compile
   ([171](https://github.com/c4milo/chapulin/issues/171)). That build is
   the only client object with `ch_tcp_init` and no `ch_connect`, so
-  no other build reports it.
+  no other build reports it. The transport also declares no
+  `io_send_all`, `tlsi_send_alert`, `tlsi_fail`, `ch_write`,
+  `ch_write_parts`, `ch_close` or `ch_fail` (`io.h`, `session.h`,
+  `tls.h`), so a call that would send through `cfg.send` fails to
+  compile.
 - **Violation.** A PR adds a `recv` call to a tcp-nonblocking step so the
-  driver can wait for the rest of a message, or routes one message of
-  the server's flight through `io_send_all` because it is small.
+  driver can wait for the rest of a message, routes one message of the
+  server's flight through `cfg.send` because it is small, or brings back a
+  connected write that sends.
 - See [decisions: Engineering](decisions.md#engineering).
 
 ### INV-29 — the key log is the only way a secret leaves, and it names the right connection
@@ -1002,7 +1011,7 @@ last `ROLE=server` stub, as the entry said it would.
     refusal to its exact boundary. `test/zig-consumer/loop_key_limit.zig`
     has each end write across the ceiling through the Zig API (INV-36).
   - Violations: `inv10-aes-gcm-ceiling-no-key-update`,
-    `inv10-aes-gcm-ceiling-rekey-unsent`,
+    `inv10-aes-gcm-ceiling-rekey-unsent`, `inv10-seal-rekey-unsent`,
     `inv10-aes-gcm-ceiling-one-record-late`,
     `inv10-aes-gcm-ceiling-past-epoch-cap`,
     `inv10-chacha-under-aes-gcm-ceiling` and
@@ -1116,7 +1125,11 @@ last `ROLE=server` stub, as the entry said it would.
   - The staging array: `session.h` sizes `ch_tls.tx` (`CH_TX_STAGE`) to
     the larger of the build's largest hello and one sealed record of
     `CH_TX_PT` bytes, and asserts that it holds `CH_TX_PT + 1 +
-    AEAD_TAG`.
+    AEAD_TAG`. A tcp-nonblocking build stages its handshake alone, so its
+    array holds the hello, and its protected handshake records carry at
+    most `CH_TX_HANDSHAKE_PT` bytes, `CH_TX_PT` or what the array holds of
+    one record where that is less, which `session.h` asserts is 512 or
+    more (docs/decisions.md 248).
   - The send limit: `peer_limit` starts at `CH_TX_PT` in `handshake.c`,
     `srv_handshake.c` and both tcp-nonblocking drivers. The client's
     `parse_record_size_limit` (`handshake_parser_ee.c`) and the server's
@@ -1124,21 +1137,29 @@ last `ROLE=server` stub, as the entry said it would.
     peer's value less the content-type byte, never raise it, and refuse
     a value under 64 (RFC 8449 §4).
   - The writers: `ch_write_parts` (`tls_write.c`), which `ch_write`
-    calls over one part, and the server's `srv_out_limit` (`srv_out.c`)
-    cut every write at the smaller of `peer_limit` and `CH_TX_PT`.
+    calls over one part, `ch_seal_in_place` (`tcp_seal.c`) and the
+    server's `srv_out_limit` (`srv_out.c`) cut every write at the smaller
+    of `peer_limit` and `CH_TX_PT`, and a tcp-nonblocking server's
+    handshake records at the smaller of `peer_limit` and
+    `CH_TX_HANDSHAKE_PT`.
     `ch_write_parts` fills each record to that limit across the parts it
     crosses (docs/decisions.md 167). The server's Certificate writer,
     `srv_frag`, holds `SRV_FRAG_MAX` (512) bytes whatever `CH_TX_PT` is,
     so a raised `CH_TX_PT` adds nothing to the handshake's stack (INV-19).
-  - The framing calls: `ch_write` and `ch_writable_len` read the send
-    limit through one helper, `record_plaintext_max` (`tls_write.c`), and
+  - The framing calls: `ch_write`, `ch_seal_in_place` and
+    `ch_writable_len` read the send limit through one helper,
+    `record_plaintext_max` (`tls_write_rules.h`), and
     the KeyUpdate that falls due, at the AES-GCM ceiling or for an owed
     answer, through another, `records_before_key_update`.
     `ch_writable_len` counts `REC_OVERHEAD` per record, the length
     `rec_seal` adds, and `CH_KEY_UPDATE_RECORD_LEN` once when the write
     it sizes sends a KeyUpdate; it counts no second KeyUpdate, so under
     AES-GCM the value it returns stops at the records the key has left and
-    `REC_AES_GCM_RECORDS_MAX - 1` more (`records_per_key`, tls.h).
+    `REC_AES_GCM_RECORDS_MAX - 1` more (`records_per_key`, tls.h). In a
+    tcp-nonblocking build `ch_writable_len` is `writable_len_in_place`,
+    which counts no KeyUpdate record, because `ch_seal_in_place` writes it
+    into `side`, and stops at `REC_AES_GCM_RECORDS_MAX - 1` records under
+    AES-GCM.
     `ch_tcp_whole_len` (`tcp_nonblocking_frame.c`) reads the length
     field through the `rbuf` reader. `tls_write.c` asserts the two record
     lengths are 24 and 27.
@@ -1247,11 +1268,12 @@ last `ROLE=server` stub, as the entry said it would.
     first record does not. `inv38-writable-len-skips-key-update`
     requires `bin/tcp_blocking_key_limit` to fail.
   - `test/zig-consumer/loop_key_limit.zig` holds the Zig API's
-    `writable_len` to the same rows two records before the ceiling, and
-    `write` to refusing whole an output one byte short of the records it
-    seals, the KeyUpdate record among them.
-    `inv38-zig-writable-len-skips-key-update`, the same edit, requires
-    `test/zig-build-check.sh` to fail.
+    `writable_len` to each seal's own records two records before the
+    ceiling, with no KeyUpdate record counted, and `seal` to refusing
+    whole a buffer one byte short of its records.
+    `inv38-zig-writable-len-in-place-counts-key-update` makes the in-place
+    answer keep room for a KeyUpdate and requires `test/zig-build-check.sh`
+    to fail.
 - **Violation.** A PR raises `CH_TX_PT` past 2^14, sizes a stack
   buffer by `CH_TX_PT`, lets a peer's `record_size_limit` raise the
   send size rather than lower it, or truncates a record the receive
@@ -1802,6 +1824,66 @@ last `ROLE=server` stub, as the entry said it would.
   `inv73-aes-gcm-open-writes-before-it-hashes`, which
   `bin/record_in_place_test` catches.
 - See [decisions: Engineering](decisions.md#engineering), entry 247.
+
+### INV-74 — a tcp-nonblocking session seals in place, every record of a write or none
+
+- **Claim.** A connected `TRANSPORT=tcp-nonblocking` session seals each
+  write with `ch_seal_in_place`, where the caller wrote the plaintext, in
+  one run at `buf + REC_HDR`. It cuts the run into records of at most the
+  smaller of `CH_TX_PT` and the peer's limit (INV-38), moves record i's
+  plaintext forward by i × `REC_OVERHEAD` bytes and seals each record in
+  its place, at the sequence number it takes in the order the records go
+  out. The call seals every record of a write or none: a refusal on entry
+  and an n above `ch_writable_len` write no byte of `buf` or `side` and
+  change nothing, and a write that no key can seal fails the session with
+  internal_error in `side` and writes no byte of `buf`. A KeyUpdate that a
+  write needs goes into `side` before the records, and every record of
+  the write goes out under one key. `ch_close_out` and `ch_fail_out` write
+  their alert into the caller's `out`. No call of the transport sends
+  through `cfg.send` (INV-28, docs/decisions.md 248).
+- **Mechanism.** `tcp_seal.c` holds the calls. `seal_refusal` and the
+  check of n against `ch_writable_len` run before any byte is written,
+  and `key_for_write` decides the key before any record is sealed: the
+  KeyUpdate into `side` when `records_before_key_update` answers fewer
+  records than the write holds, and `fail_write` at the cap of KeyUpdates
+  or where the sequence number would wrap. `seal_records` then moves and
+  seals each record from the last to the first, sets the write key's
+  sequence number to first + i before each seal, and leaves it at first
+  + the record count. Every seal after the checks succeeds, and a
+  `CH_ASSERT` halts if one does not. `tls_write_rules.h` holds the record
+  limit, the KeyUpdate rule and the fill, which `tls_write.c` reads too.
+- **Check.** CBMC: `tcp_seal`, `tcp_seal_suite` and `tcp_seal_rest` prove
+  the calls' memory safety and the claims above over a havocked session,
+  with the content of each record checked at a symbolic byte, at a buffer
+  of 72 bytes (docs/verification.md). `bin/tcp_nonblocking_loop_test`
+  (`test/tcp_nonblocking_seal_tests.h`) seals writes of one record, a
+  record less and a record more one byte, and three records and 100
+  bytes, and has the server read each one back in place, with
+  `ch_writable_len` held to each write to the byte and no byte past the
+  records changed. It requires every refusal to write nothing and move no
+  sequence number, an owed KeyUpdate in `side` before the records, a
+  write that takes the last two sequence numbers before the wrap, the
+  same write of one record more refused with internal_error, and a
+  KeyUpdate due at the cap of KeyUpdates refused the same way. The Zig
+  API's loops seal through `seal` at both record sizes, and under
+  `SUITE=aesgcm` across an AES-GCM key's ceiling (docs/zig.md).
+  `bin/webpki_loop_tx_record` seals a handshake message of two records and
+  a byte on the connected server and counts three records of
+  `CH_TX_HANDSHAKE_PT` bytes at most.
+- **Violation.** A PR seals the records where the run left them,
+  `inv74-seal-skips-the-move`, or without each record's sequence
+  number, `inv74-seal-sequence-back-to-front`. A PR seals under the
+  current key whatever is owed, `inv74-seal-skips-owed-key-update`, takes a
+  write past the wrap, `inv74-seal-wraps-the-sequence-number`, keeps the
+  session after a write no key can seal,
+  `inv74-seal-failure-keeps-session`, seals past `cap`,
+  `inv74-seal-past-cap`, or takes a short `side`,
+  `inv74-seal-takes-a-short-side`. A PR closes with a fatal alert,
+  `inv74-close-out-sends-a-fatal-alert`. `bin/tcp_nonblocking_loop_test`
+  catches each. A PR cuts a nonblocking server's handshake records at
+  `CH_TX_PT`, `inv38-nonblocking-handshake-record-past-stage`, which
+  `bin/webpki_loop_tx_record` catches.
+- See [decisions: Engineering](decisions.md#engineering), entry 248.
 
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
@@ -3381,12 +3463,11 @@ last `ROLE=server` stub, as the entry said it would.
   `inv36-zig-module-drops-object` takes the object off the module, so
   every consumer program fails to link; `inv36-zig-api-drops-ticket-age`
   leaves `ch_cfg.ticket_age_ms` at 0 in `client_cfg` (`chapulin_cfg.zig`), so a stale ticket
-  resumes; `inv36-zig-api-write-seals-part` seals the part of `pt` that
-  fits where `write` must refuse it whole;
-  `inv36-zig-api-write-sizes-without-key-update` sizes `write`'s output
-  in Zig rather than through `ch_writable_len`, without the KeyUpdate
-  record, which only the `SUITE=aesgcm` loop's write across the ceiling
-  notices;
+  resumes; `inv36-zig-api-seal-seals-part` seals the part of `pt_len`
+  that fits where `seal` must refuse it whole;
+  `inv36-zig-api-seal-drops-key-update` returns an empty `side` where C
+  wrote a KeyUpdate record into it, which the run limit's loop and the
+  `SUITE=aesgcm` loop's seal across the ceiling notice;
   `inv36-zig-api-auth-proto-swapped` swaps two codes in the error table;
   `inv36-zig-api-read-drops-key-update-limit` leaves `KeyUpdateLimit` out
   of `read`'s error set, so `from_code` panics when the server in
@@ -3414,7 +3495,7 @@ last `ROLE=server` stub, as the entry said it would.
   `inv36-header-pubkey-from-pem-outside-ca` declares `ch_pubkey_from_pem`
   outside a CA build, which the script's translation of `x509_ca.h`
   refuses for the default object. The script also catches
-  `inv38-zig-writable-len-skips-key-update` (INV-38).
+  `inv38-zig-writable-len-in-place-counts-key-update` (INV-38).
   The host test has rows of its own. `lint-trust-separation` sets
   `HOST_TARGET` to `yes` and to empty on each row's command line, and
   requires `-DCH_CPU_RUNTIME` of a `TRUST=webpki` client, `ROLE=server`,
@@ -4899,7 +4980,11 @@ last `ROLE=server` stub, as the entry said it would.
     rekey. The KeyUpdate an AES-GCM write key sends at its ceiling is
     that answer when both fall due at one record (INV-10). `ch_close`
     sends no KeyUpdate, because §4.7.3 owes the answer before
-    application data alone.
+    application data alone. A tcp-nonblocking build keeps the same
+    rules with its own calls: `ch_read_in_place` writes no record for a
+    KeyUpdate, the next `ch_seal_in_place` of a byte or more writes the
+    one KeyUpdate into its `side`, before the records it seals, and
+    `ch_close_out` writes none (docs/decisions.md 248).
   - `ch_read` reads at most `CH_KEY_UPDATE_RUN_MAX`, 16, KeyUpdates in a
     row. A record of application data with one byte or more ends a run,
     and nothing else does: not an empty data record, not a
@@ -4919,10 +5004,12 @@ last `ROLE=server` stub, as the entry said it would.
   and `handle_key_update` adds one to it, rekeys `rd` and sets
   `key_update_owed`. `dispatch_one_record` (`tls.c`) clears
   `key_update_run` for a data record of a byte or more.
-  `records_before_key_update` (`tls_write.c`) returns 0 while an answer
-  is owed, so `key_update_before_record` sends the KeyUpdate before the
-  next data record, and `hspost_send_key_update` clears
-  `key_update_owed`. `ch_writable_len` reads the same
+  `records_before_key_update` (`tls_write_rules.h`) returns 0 while an
+  answer is owed, so `key_update_before_record` sends the KeyUpdate
+  before the next data record, and `hspost_send_key_update` clears
+  `key_update_owed`. In a tcp-nonblocking build `key_for_write`
+  (`tcp_seal.c`) reads the same function and `hspost_seal_key_update`
+  clears it. `ch_writable_len` reads the same
   `records_before_key_update`, so it counts that record (INV-38). The
   limit is one constant in `session.h` that no define changes, and the
   build record holds it (INV-35). `tls.c` asserts at compile time that

@@ -26,8 +26,9 @@ more:
 - storage: a QUIC session's receive buffer, the latest ticket, the peer's
   transport parameters, a P-256 key that a PEM file decodes to and, under
   `RAND=session`, the session's `std.Random`. A tcp-nonblocking session
-  holds no receive buffer: its `init` takes the handshake buffer
-  (docs/decisions.md 247).
+  holds no receive or send buffer: its `init` takes the handshake buffer,
+  `read` opens records in the caller's input and `seal` seals them in the
+  caller's buffer (docs/decisions.md 247 and 248).
 
 Every TLS rule stays in C. Where a caller needs a record length, a write
 size or a ticket's age, the API calls the C function that computes it
@@ -585,18 +586,18 @@ One Zig error per result code, named as chapulin.hpp's `Status` names
 it. Each call's error set is the part of `chapulin.Error` its C call
 returns. A set of more than one error has a name in its session's file:
 `tcp.RecordInError`, `tcp.ServerRecordInError`, `tcp.RecordOutError`,
-`tcp.ReadError`, `tcp.WriteError`, `tcp.FailError`, `quic.CryptoInError`,
+`tcp.ReadError`, `tcp.SealError`, `tcp.EndError`, `tcp.FailError`, `quic.CryptoInError`,
 `quic.ServerCryptoInError`, `quic.CryptoOutError`, `quic.SealError`,
 `quic.OpenError` and `quic.TokenMintError`. `tcp.InitError`,
-`tcp.EndError`, `tcp.ExportError` and `quic.InitError` name the sets of
-one error that a session call returns.
+`tcp.ExportError` and `quic.InitError` name the sets of one error that a
+session call returns.
 
 | C code | Zig | The session after it |
 |---|---|---|
-| `CH_EIO` | `error.Io` | Dead. An output slice could not take what C sent. |
-| `CH_EPROTO` | `error.Proto` | Dead after a protocol failure, and after the peer's fatal alert, which `alert_received` names. As it was for bytes delivered to a session that failed or closed, and for `read` or `write` before the handshake completed, which keeps running. |
+| `CH_EIO` | `error.Io` | Dead. A server's output slice could not take what C pushed. |
+| `CH_EPROTO` | `error.Proto` | Dead after a protocol failure, and after the peer's fatal alert, which `alert_received` names. As it was for bytes delivered to a session that failed or closed, and for `read`, `seal`, `end` or `fail` before the handshake completed, which keeps running. |
 | `CH_EAUTH` | `error.Auth` | Dead. |
-| `CH_ECAP` | `error.Cap` | Live from `record_out`, `crypto_out`, `seal`, `seal_close` and `token_mint`: the caller's buffer was short. Dead from `record_in`, `crypto_in` and `read`: the peer's message could never fit. |
+| `CH_ECAP` | `error.Cap` | Live from `record_out`, `crypto_out`, `seal`, `seal_close` and `token_mint`: the caller's buffer was short. Dead from `record_in`, `crypto_in` and `read`: the peer's message could never fit. Dead from a TCP `seal` that `state()` reports `.failed`, from `end` and from `fail`: no key could seal the record. |
 | `CH_EINVAL` | `error.Invalid` | Nothing was sent. From `init`, failed until the next `init`: C refused the configuration, a stale ticket or a server identity its flight could not use among the refusals. From any other call, as it was: the call came out of order or an argument was refused. A server's `record_in` never returns it, and its `crypto_in` returns it only for a level the call refuses on entry. |
 | `CH_QUIC_DISCARD` | `error.Discard` | Live. The caller drops the packet. |
 | `CH_QUIC_AEAD_LIMIT` | `error.AeadLimit` | Dead. |
@@ -604,10 +605,10 @@ one error that a session call returns.
 | `CH_TCP_AGAIN` | none | `read` returns `pt_len = 0`. |
 | `CH_ECLOSED` | none | No call returns it. |
 
-`write`'s `error.Cap` has two sources: the API's own refusal of a `pt`
-longer than `writable_len(output.len)`, which seals nothing and leaves
-the session as it was, and C's, when a record cannot be sealed, which
-leaves it dead. `token_check` answers `CH_EPROTO` and `CH_EAUTH` as the
+A TCP `seal`'s `error.Cap` has two sources: a `pt_len` longer than
+`writable_len(buf.len)`, which seals nothing and leaves the session as it
+was, and a write that no key can seal, which leaves it dead with the
+internal_error alert in `side_buf`, which `side_len()` counts. `token_check` answers `CH_EPROTO` and `CH_EAUTH` as the
 values `.not_retry` and `.invalid`, because they judge a token, not a
 session.
 
@@ -639,22 +640,22 @@ handshake a deadline of its own. colibri sizes each buffer at 20,480 bytes.
 
 | Zig call | C call | Errors |
 |---|---|---|
-| `Client.init(options, handshake_buf)` | the options' `ch_cfg`, built into `lists`, with `handshake_buf` as `cfg.buf`, then `ch_tcp_init` with the API's `send`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the options' `random` | Invalid |
+| `Client.init(options, handshake_buf)` | the options' `ch_cfg`, built into `lists`, with `handshake_buf` as `cfg.buf`, then `ch_tcp_init` with the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the options' `random` | Invalid |
 | `Client.record_out(output)` | `ch_tcp_out`; after a failed `record_in`, the failure's alert record, then `error.Invalid` | Invalid, Cap |
 | `Client.record_in(input)` | `ch_tcp_in`; returns the bytes consumed | Invalid, Proto, Auth, Cap |
 | `Client.take_ticket()` | none: moves the slot out and zeroes it | none |
-| `Server.init(options, sni_buf, handshake_buf)` | the options' `ch_cfg`, built into `lists`, with `handshake_buf` as `cfg.buf`, then `ch_srv_tcp_init` with the API's `send` and `on_record_out`, and under `RAND=session` the options' `random`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
+| `Server.init(options, sni_buf, handshake_buf)` | the options' `ch_cfg`, built into `lists`, with `handshake_buf` as `cfg.buf`, then `ch_srv_tcp_init` with the API's `on_record_out`, and under `RAND=session` the options' `random`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
 | `Server.record_in(input, output)` | `ch_srv_tcp_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Proto, Auth, Cap, Io |
 | `Server.output_len()` | the bytes the last `record_in` wrote into `output`, which a failed `record_in` also sets: `Progress.written` on success | none |
 | `Server.sni()` | `sni_buf[0..ch_sni_len]`, null when 0 | none |
 | `state()` | `ch_tcp_state` | none |
 | `alert_sent()`, `alert_received()` | `ch_alert_sent`, `ch_alert_received` on the session's `ch_tls` (alert.h), as an `AlertDescription`; each null when 0 | none |
 | `read(input, reply)` | `ch_read_in_place` | Invalid, Proto, Auth, Cap, KeyUpdateLimit |
-| `write(pt, output)` | `ch_writable_len`, then `ch_write` | Proto, Cap, Io |
-| `write_parts(parts, output)` | `ch_writable_len` over the parts' lengths together, then `ch_write_parts` over a `c.ch_part` for each slice of `parts`, `parts_max` at most | Proto, Cap, Io |
+| `seal(buf, pt_len, side_buf)` | `ch_seal_in_place`; returns `Sealed{ records, side }`, slices of `buf` and `side_buf` | Invalid, Proto, Cap |
 | `writable_len(cap)` | `ch_writable_len` | none |
-| `end(output)` | `ch_close` | Io |
-| `fail(description, output)` | `ch_fail` | Invalid, Proto, Cap, Io |
+| `side_len()` | the bytes the last `seal` wrote into `side_buf`, which a seal that failed the session also sets | none |
+| `end(output)` | `ch_close_out`; returns the alert's length | Invalid, Proto, Cap |
+| `fail(description, output)` | `ch_fail_out`; returns the alert's length | Invalid, Proto, Cap |
 | `close()` | `ch_tcp_close`, then the ticket slot zeroed | none |
 | `export_keying_material(label, context, out)` | `ch_export` | Invalid |
 | `alpn_selected()` | the name `ch_alpn_selected` indexes; null for `CH_ALPN_NONE` | none |
@@ -672,10 +673,10 @@ in a host object without it, and ChaCha20 first on `AES=extern`
 probes its own passes the order it chose.
 
 A record session's `key_update` is reserved: no C call starts a
-tcp-nonblocking KeyUpdate, so it is a `@compileError` that says so. `write`
-sends one inside `ch_write`, as the answer a peer's request owes or as
-the last record an AES-GCM write key seals, so no such call is planned
-(docs/decisions.md 78 and 138).
+tcp-nonblocking KeyUpdate, so it is a `@compileError` that says so. `seal`
+writes one into `side_buf`, as the answer a peer's request owes or when an
+AES-GCM write key cannot seal every record of a write, so no such call is
+planned (docs/decisions.md 78, 138 and 248).
 
 ### A handshake
 
@@ -758,58 +759,59 @@ A record that fails has every byte wiped in `input`.
 that fails on the peer's fatal alert writes nothing, because RFC 9846
 §6.2 has both sides close at once, and `alert_received` names the peer's
 alert. The caller sends the alert after every record it wrote before the
-read. A KeyUpdate that asks for an answer gets it from the next `write`
+read. A KeyUpdate that asks for an answer gets it from the next `seal`
 (RFC 9846 §4.7.3), and `read` writes nothing for it. `read` takes at most
 `CH_KEY_UPDATE_RUN_MAX` KeyUpdates in a row, and a record of application
 data with one byte or more ends a run. The next one fails the read with
 `error.KeyUpdateLimit` and the session with it, and `alert_sent` names
 unexpected_message (docs/decisions.md 138).
 
-### Writing and closing
+### Sealing and closing
 
-`write` seals all of `pt` into `output` and returns the bytes written.
-When `pt.len > writable_len(output.len)` it seals nothing and returns
+`seal(buf, pt_len, side_buf)` seals plaintext where it lies: that is
+`ch_seal_in_place` (docs/decisions.md 248). The caller writes `pt_len`
+bytes of plaintext at `buf[tcp.plaintext_offset..]`, 5 bytes in, and
+`seal` cuts them into records of the smaller of `CH_TX_PT` and
+`peer_limit()` and seals each one in `buf`. `Sealed.records` is the
+front of `buf` that then holds the records, and the caller sends it. When
+`pt_len > writable_len(buf.len)` it seals nothing and returns
 `error.Cap`, and the session is as it was, so a caller that seals one
-message at a time sizes `output` once and never loops. `ch_write` cuts
-records of the smaller of `CH_TX_PT` and `peer_limit()`, and
-`ch_writable_len` counts in the same limit, so a caller needs neither
-number to size a write. At `TX_RECORD=16384` a record carries 16,384
-bytes; the API adds nothing for it. A write carries one KeyUpdate record
-of `key_update_record_len` bytes before its records when a peer's
-request is owed an answer, and, under `SUITE=aesgcm`, among its records
-when it takes an AES-GCM write key to its ceiling; one record serves
-both, and `writable_len` counts it. A caller that sizes `output` for its
-largest message adds `key_update_record_len` bytes there, or such a
-write returns `error.Cap` with nothing sealed.
+message at a time sizes `buf` once and never loops. `ch_writable_len`
+counts in the same limit, so a caller needs neither number to size a
+seal. At `TX_RECORD=16384` a record carries 16,384 bytes; the API adds
+nothing for it.
 
-`write_parts(parts, output)` seals several buffers as one run of
-plaintext, in the records `write` seals for them joined, under the same
-rules: when the parts' lengths together pass `writable_len(output.len)`
-it seals nothing and returns `error.Cap`. Each part is a `[]const u8`, so
-an h2 DATA frame goes out as `write_parts(&.{ header, payload }, output)`
-with no copy into one buffer (docs/decisions.md 167). A call takes
-`parts_max` parts, 16, at most, and answers `error.Cap` with nothing
-sealed for more. The call copies each slice into a `c.ch_part` on its
-own stack, because a Zig slice has no defined layout, and the API
-allocates nothing.
+`side_buf` takes one KeyUpdate record of `key_update_record_len` bytes,
+which goes out before the records: when a peer's request is owed an
+answer, and, under `SUITE=aesgcm`, when an AES-GCM write key cannot seal
+every record of the seal before its ceiling. Then every record goes out
+under the next key. `Sealed.side` is that record, empty when there is
+none, and the caller sends it first. `writable_len` counts no KeyUpdate,
+because it goes into `side_buf`. A `side_buf` shorter than
+`key_update_record_len` is `error.Invalid` before anything is sealed.
 
-`end(output)` sends this side's close_notify into `output`, at most
-`alert_record_len` bytes, and wipes the session's keys: that is
-`ch_close`. It answers `error.Io` when `output` could not take the alert,
-and the session is closed either way. The peer's close_notify closes the
-peer's direction alone (RFC 9846 §6.1): `read` reports `peer_closed`,
-`read_closed()` is true, and `write` still sends until this side calls
+An h2 DATA frame's header and payload go out as one run: the caller
+writes both at `plaintext_offset`, one after the other, and seals them
+with one call.
+
+`end(output)` writes this side's close_notify into `output`,
+`alert_record_len` bytes, returns its length and wipes the session's
+keys: that is `ch_close_out`. An `output` shorter than `alert_record_len`
+is `error.Invalid`, and a session that is not connected `error.Proto`;
+neither changes the session. The peer's close_notify closes the peer's
+direction alone (RFC 9846 §6.1): `read` reports `peer_closed`,
+`read_closed()` is true, and `seal` still seals until this side calls
 `end`. A side that called `end` reads nothing more. The name is
 `std.crypto.tls.Client.end`'s, which sends close_notify too.
 
 `fail(description, output)` fails a connected session with the fatal
 alert `description`, an `AlertDescription`, names, for an error the caller found itself: that
-is `ch_fail`. It sends the sealed alert into `output`, at most
-`alert_record_len` bytes, and wipes the session's keys. A description
-that is not an error alert of RFC 9846 §6.2 answers `error.Invalid`, and
-a session that is not connected `error.Proto`; neither sends a byte or
-changes the session. `error.Io` says `output` could not take the alert,
-and the session failed all the same (docs/decisions.md 164).
+is `ch_fail_out`. It writes the sealed alert into `output`,
+`alert_record_len` bytes, returns its length and wipes the session's
+keys. A description that is not an error alert of RFC 9846 §6.2 or an
+`output` shorter than `alert_record_len` answers `error.Invalid`, and a
+session that is not connected `error.Proto`; neither writes a byte or
+changes the session (docs/decisions.md 164).
 
 `close()` calls `ch_tcp_close`, which wipes every secret and
 marks the session dead, and then zeroes the ticket slot. A connected
@@ -999,12 +1001,15 @@ each through the module alone (INV-36):
   equal to `test/webpki_corpus.h`'s before a session uses it. In a tcp-nonblocking session:
   - a handshake that selects ALPN `http/1.1` and X25519MLKEM768 and
     reports the server name;
-  - a write of three `CH_TX_PT` records and 100 bytes each way;
-  - a write one byte past `writable_len` refused whole;
+  - a seal of three `CH_TX_PT` records and 100 bytes each way, each
+    sealed where it lies;
+  - a seal one byte past `writable_len` refused whole;
   - two h2 DATA frames, each a 9-byte header and a payload one byte
-    longer than a record, through `write_parts`: four records that the
-    server reads as the parts joined, and a call one byte short refused
+    longer than a record, written as one run and sealed: four records that
+    the server reads as the frames, and a seal one byte short refused
     whole;
+  - a seal of no plaintext that writes nothing, and a `side_buf` one byte
+    short of a KeyUpdate record refused before anything is sealed;
   - the exporter on both sides;
   - the ticket taken, rebuilt through `Ticket.from_fields` and resumed;
   - a ticket at exactly its lifetime offered and one millisecond past it
@@ -1030,18 +1035,18 @@ each through the module alone (INV-36):
     refuses a first message in the clear and a client Finished sealed,
     whose alert `output_len` counts. The other side reads each one as its
     peer's fatal alert and sends nothing back;
-  - under `SUITE=aesgcm`, each side's write across its AES-GCM write
-    key's ceiling (docs/decisions.md 78), under each AES-GCM suite in
-    turn (`loop_key_limit.zig`). No call sets a sequence number, so the
+  - under `SUITE=aesgcm`, each side's seal across its AES-GCM write
+    key's ceiling (docs/decisions.md 78 and 248), under each AES-GCM suite
+    in turn (`loop_key_limit.zig`). No call sets a sequence number, so the
     test writes the writer's write sequence number and the reader's read
     sequence number, two records below the ceiling, into `record.t`.
-    `writable_len` counts the KeyUpdate record to the byte for the record
-    that crosses the ceiling and for none before it. One write across it
-    seals exactly one 27-byte KeyUpdate record among its records and
-    counts it, and one byte less of `output` is refused whole. The reader
-    reads the plaintext on both sides of the KeyUpdate and sends nothing,
-    neither side reports an alert, and the next write goes out under the
-    next key;
+    `writable_len` counts no KeyUpdate record. A seal of the key's last
+    data record writes no KeyUpdate. The next seal, of two records, is
+    refused whole one byte short, and then writes one 27-byte KeyUpdate
+    record into `side_buf`, at the key's last sequence number, and both
+    records under the next key. The reader reads the KeyUpdate and both
+    records and sends nothing, neither side reports an alert, and the next
+    seal goes out under the next key with no KeyUpdate;
   - in every object, one KeyUpdate past a run of `CH_KEY_UPDATE_RUN_MAX`
     (docs/decisions.md 138), which the server's `read` refuses with
     `error.KeyUpdateLimit`, and `alert_sent` names unexpected_message
@@ -1087,6 +1092,6 @@ fails it.
 Seventeen mutants in `test/violations/` break the API, the module, the
 public headers or the reverse check in `matches.zig`, and the script
 catches each. INV-36 names them. The script also catches
-`inv38-zig-writable-len-skips-key-update`, which stops `ch_writable_len`
-counting the KeyUpdate record (INV-38): the `SUITE=aesgcm` loop's
-`writable_len` rows fail.
+`inv38-zig-writable-len-in-place-counts-key-update`, which makes
+`ch_writable_len` keep room for a KeyUpdate record that `seal` writes into
+`side_buf` (INV-38): the loops' `writable_len` rows fail.

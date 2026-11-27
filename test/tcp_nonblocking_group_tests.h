@@ -125,7 +125,7 @@ static uint16_t server_answers(const uint16_t *groups, size_t count, unsigned sh
     server_config(&scfg);
     to_client.len = 0;
     logged_count = 0; // the server logs its handshake secrets per hello
-    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_OK);
+    CHECK(server_init(&server, &scfg) == CH_OK);
     uint8_t hello[512];
     size_t n = group_hello(hello, sizeof hello, groups, count, shared);
     size_t consumed = 0;

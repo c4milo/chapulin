@@ -1,0 +1,11 @@
+invariant: INV-74
+file: src/tcp_seal.c
+catches: tcp_nonblocking_loop_test
+reason: ch_close_out seals close_notify at level 2, fatal, so the peer
+  reads a fatal alert and fails its session, where RFC 9846 §6.1 makes
+  close_notify a closure alert that leaves the peer's direction open.
+
+--- old
+    int rc = tlsi_seal_alert(t, 1, ALERT_CLOSE_NOTIFY, out, out_len);
+--- new
+    int rc = tlsi_seal_alert(t, 2, ALERT_CLOSE_NOTIFY, out, out_len);

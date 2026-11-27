@@ -10,7 +10,12 @@
 #include "cfg.h"
 #include "session.h"
 
+// Sends n bytes through cfg.send. A TRANSPORT=tcp-nonblocking build
+// declares it not: its sessions call no send (INV-28), and every record
+// they make goes into storage the caller passes.
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n);
+#endif
 
 // Reads one record (header + body) through t->cfg.recv into buf, which
 // holds cap bytes. Returns CH_OK with the outer type and total length,

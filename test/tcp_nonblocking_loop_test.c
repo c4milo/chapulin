@@ -6,12 +6,13 @@
 // source list, which is the one object that carries both drivers.
 //
 // Why it exists: INV-28 says a tcp-nonblocking build calls neither cfg.send
-// nor cfg.recv while the handshake runs, and the server half was the only
-// half measured. bin/srv_tcp_nonblocking_test counts I/O calls on the
-// server, and the client's only driver was bin/tlsclient_tcp_nonblocking,
-// which needs a live server and so runs in check-slow. A claim checked once
-// a night is checked rarely. Here both halves supply a send and a recv that
-// count, and the test fails if either driver reaches for a socket.
+// nor cfg.recv, and the server half was the only half measured.
+// bin/srv_tcp_nonblocking_test counts I/O calls on the server, and the
+// client's only driver was bin/tlsclient_tcp_nonblocking, which needs a
+// live server and so runs in check-slow. A claim checked once a night is
+// checked rarely. Here each session gets a send that counts, set after its
+// init, and the test fails if either driver reaches for it
+// (test/tcp_nonblocking_loop_send.h).
 //
 // It answers a second question nothing else asks: whether the two
 // drivers agree. bin/srv_tcp_nonblocking_test feeds the server a
@@ -97,25 +98,12 @@ static int failures = 0;
         }                                                                                          \
     } while (0)
 
-// INV-28, both halves. Neither driver may call send while the handshake
-// runs; it is required at configuration time because ch_write and
-// ch_close call it once the session is connected. No call reads through
-// a recv, so each session sets none, and each init refuses one
-// (tcp_nonblocking.h).
-static size_t io_calls;
+#include "tcp_nonblocking_loop_send.h"
 
 // Set while the wrong-pin scenario runs, so the refusal it wants does
 // not print a line that reads like a failure in check's output. A
 // refusal outside that scenario still prints, because there it is one.
 static int expect_refusal;
-
-static int never_send(void *io, const uint8_t *p, size_t n) {
-    (void)io;
-    (void)p;
-    (void)n;
-    io_calls++;
-    return -1;
-}
 
 // One certificate the chain pointer names, in the shape
 // bin/srv_tcp_nonblocking_test uses: valid DER that nothing here
@@ -250,7 +238,6 @@ static void server_config(ch_cfg *cfg) {
     test_cfg_clear(cfg);
     cfg->buf = srv_buf;
     cfg->buf_len = sizeof srv_buf;
-    cfg->send = never_send;
     cfg->srv.cookie_key = cookie_key;
     cfg->srv.on_record_out = sink;
     cfg->io = &server_io;
@@ -271,7 +258,6 @@ static void client_config(ch_cfg *cfg) {
     test_cfg_clear(cfg);
     cfg->buf = cli_buf;
     cfg->buf_len = sizeof cli_buf;
-    cfg->send = never_send;
     // The pin: the server's own provisioned modulus, so CertificateVerify
     // verifies against the key that signed it.
     cfg->server_pubkey = rsa_sign_2048_n;
@@ -346,8 +332,8 @@ static int run_handshake(ch_tcp_priv *client, ch_tcp_priv *server, const ch_cfg 
     logged_count = 0;
     client_io = 0;
     server_io = 0;
-    CHECK(ch_srv_tcp_init(tcp_public(server), scfg) == CH_OK);
-    CHECK(ch_tcp_init(tcp_public(client), ccfg) == CH_OK);
+    CHECK(server_init(server, scfg) == CH_OK);
+    CHECK(client_init(client, ccfg) == CH_OK);
     // Four rounds is more than the handshake needs and fewer than a loop
     // that never ends: one round trip completes it without a
     // HelloRetryRequest, and the client Finished takes a second pass
@@ -386,6 +372,7 @@ static int run_handshake(ch_tcp_priv *client, ch_tcp_priv *server, const ch_cfg 
 #include "tcp_nonblocking_read_tests.h"
 #include "tcp_nonblocking_record_end_tests.h"
 #include "tcp_nonblocking_resume_tests.h"
+#include "tcp_nonblocking_seal_tests.h"
 #ifdef CH_RAND_SESSION
 #include "tcp_nonblocking_session_tests.h"
 #endif
@@ -475,6 +462,12 @@ int main(void) {
 #endif
     test_multiply_bit();
     test_cpu_values_at_init();
+    // Each init refuses a cfg.send and a cfg.recv (INV-28).
+    server_config(&scfg);
+    client_config(&ccfg);
+    test_init_refuses_callbacks(&ccfg, &scfg);
+    // Each write sealed where it lies, all of it or none (INV-74).
+    test_seal_in_place(&client, &server);
 
     if (failures == 0) {
         (void)printf(
@@ -491,7 +484,7 @@ int main(void) {
             " each end emits its failure's alert in the clear before its write key"
             " and sealed after, sends nothing after the peer's fatal alert and"
             " answers a 3-byte one with decode_error; the server refuses a client's"
-            " NewSessionTicket\n",
+            " NewSessionTicket; each write seals in place, all of it or none\n",
             (unsigned)LOOP_GROUP, rounds);
         return 0;
     }

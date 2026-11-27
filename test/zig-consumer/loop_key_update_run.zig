@@ -6,10 +6,10 @@
 //! name (chapulin.zig), so a set without KeyUpdateLimit would let one
 //! peer stop the process.
 //!
-//! No call sends a KeyUpdate alone: write sends one before its data when
-//! an answer is owed. So the test sets the client's key_update_owed before
-//! each write of one byte, hands the server the KeyUpdate record, and drops
-//! the data record, which would end the run. That record took sequence
+//! No call sends a KeyUpdate alone: seal writes one into side before its
+//! data when an answer is owed. So the test sets the client's
+//! key_update_owed before each seal of one byte, hands the server the
+//! KeyUpdate record, and drops the data record, which would end the run. That record took sequence
 //! number 0 of the client's next key, so the test also moves the server's
 //! read sequence number past it. The API promises nothing about a
 //! session's fields (docs/zig.md, "What stays out").
@@ -24,11 +24,10 @@ const tcp = chapulin.tcp;
 const run_max: usize = c.CH_KEY_UPDATE_RUN_MAX;
 /// The bytes rec_seal adds to each record (record.h).
 const overhead: usize = c.REC_OVERHEAD;
-/// One write of one byte while an answer is owed: the KeyUpdate record,
-/// then a record of one byte.
-const write_len = tcp.key_update_record_len + overhead + 1;
-
-var wire: [write_len]u8 = undefined;
+/// One seal of one byte while an answer is owed writes the KeyUpdate
+/// record into side and a record of one byte into buf.
+var buf: [overhead + 1]u8 = undefined;
+var side: [tcp.key_update_record_len]u8 = undefined;
 /// Room for everything one read may send: the alert of a read that fails.
 var reply: [tcp.alert_record_len]u8 = undefined;
 
@@ -40,10 +39,11 @@ pub fn run() !void {
     _ = try loop.drain(&loop.client, &loop.to_client);
     for (0..run_max + 1) |i| {
         fixture.tcpPriv(&loop.client.tcp).t.key_update_owed = 1;
-        const sent = try loop.client.write("k", &wire);
-        try check(sent == write_len, "a write that owes an answer did not send a KeyUpdate record and a record of one byte");
+        buf[tcp.plaintext_offset] = 'k';
+        const sealed = try loop.client.seal(&buf, 1, &side);
+        try check(sealed.side.len == tcp.key_update_record_len and sealed.records.len == buf.len, "a seal that owes an answer did not write a KeyUpdate record into side and a record of one byte");
         if (i > 0) fixture.tcpPriv(&loop.server.tcp).t.rd.seq = 1;
-        const update = wire[0..tcp.key_update_record_len];
+        const update = sealed.side;
         if (i < run_max) {
             const r = try loop.server.read(update, &reply);
             try check(r.consumed == update.len and r.plaintext.len == 0 and r.reply_len == 0, "the server did not read a KeyUpdate of the run as one record of no plaintext, or it sent a record");

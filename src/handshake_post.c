@@ -14,6 +14,10 @@
 #include "io.h"
 #include "record.h"
 #endif
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+#include "ch_assert.h"
+#include "tls.h"
+#endif
 #ifdef CH_TRUST_WEBPKI
 // handle_ticket binds every ticket, on either transport, on the path the
 // session's ch_cfg.cpu names (cpu.h's CH_CFG_CPU).
@@ -251,6 +255,15 @@ int hspost_take_ticket(ch_tls_priv *t, const uint8_t *body, size_t n, uint8_t *a
 #endif
 
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+// The step after a KeyUpdate this side sealed: everything after it goes
+// out under the next key (RFC 9846 §4.7.3, rfc9846.txt:3391-3392).
+static void key_update_sealed(ch_tls_priv *t) {
+    rec_dir_update(t->wr_secret, &t->wr);
+    t->send_epochs++;
+    t->key_update_owed = 0;
+}
+
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int hspost_send_key_update(ch_tls_priv *t) {
     uint8_t msg[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
     size_t out_len = 0;
@@ -258,11 +271,22 @@ int hspost_send_key_update(ch_tls_priv *t) {
         io_send_all(&t->cfg, t->tx, out_len) != CH_OK) {
         return CH_EIO;
     }
-    rec_dir_update(t->wr_secret, &t->wr);
-    t->send_epochs++;
-    t->key_update_owed = 0;
+    key_update_sealed(t);
     return CH_OK;
 }
+#else
+int hspost_seal_key_update(ch_tls_priv *t, uint8_t *out, size_t cap, size_t *out_len) {
+    CH_ASSERT(t->send_epochs < HSPOST_SEND_EPOCHS_MAX);
+    const uint8_t msg[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
+    *out_len = 0;
+    if (rec_seal(&t->wr, REC_HANDSHAKE, msg, sizeof msg, out, cap, out_len) != 0) {
+        return CH_ECAP;
+    }
+    CH_ASSERT(*out_len == CH_KEY_UPDATE_RECORD_LEN);
+    key_update_sealed(t);
+    return CH_OK;
+}
+#endif
 
 // One KeyUpdate that the run limit admits. It adds one to the run, and
 // the read direction always rekeys: RFC 9846 §4.7.3 has the receiver

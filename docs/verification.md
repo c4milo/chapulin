@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-142 of the 188 C sources in the tree root are compiled into a
+143 of the 189 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -87,7 +87,7 @@ The other 46 sources are in no such harness:
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
 | `poly1305_avx2_native.c` | It is `poly1305_avx2.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop on a CPU with AVX2. |
 | `poly1305_ifma_native.c` | It is `poly1305_ifma.c` under the names `widemul_native.h` gives, on the AVX-512 IFMA intrinsics in `poly1305_ifma_lanes.h`, which CBMC cannot read. | The `poly1305_ifma` harnesses prove the same text over a model of each instruction ([poly1305_ifma](#poly1305_ifma)), and on a CPU with AVX-512 IFMA `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop and searches the stack below a call for every power of r it computes; the nightly's `rsa-ifma-sde` job runs it under Intel SDE. |
-| `tls.c` | No harness. Its send path, `ch_write`, `ch_write_parts` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) and [write_parts](#write_parts) prove. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
+| `tls.c` | No harness. Its send path, `ch_write`, `ch_write_parts` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) and [write_parts](#write_parts) prove, and a tcp-nonblocking build's is `tcp_seal.c`, which [tcp_seal](#tcp_seal-tcp_seal_suite-and-tcp_seal_rest) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
 `aes_extern.c` is proved, but only up to the `ch_aes_block` the caller
 writes, which has no body here to prove ([aes_extern](#aes_extern)).
@@ -96,7 +96,8 @@ writes, which has no body here to prove ([aes_extern](#aes_extern)).
 [srv_tcp_nonblocking](#srv_tcp_nonblocking).
 `tls_write.c` holds `ch_write`, `ch_write_parts`, `ch_writable_len` and
 their helpers alone, and [writable_len](#writable_len) drives the calls in each build
-the file compiles differently in.
+the file compiles differently in. `tls_write_rules.h` holds the rules it shares
+with `tcp_seal.c`, and both harnesses compile them.
 
 `make check` runs `make proof-coverage`, which counts them and
 regenerates the source-by-source table in `bin/proof-coverage.md`. It
@@ -3558,6 +3559,45 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   it seals, and `bin/record_in_place_test` holds each AEAD path's open in
   place. The session's layout is the default client build's; a server
   role differs only in the struct's layout.
+
+#### tcp_seal, tcp_seal_suite and tcp_seal_rest
+
+- **Harnesses:** `tcp_seal` (fast), `tcp_seal_suite` (fast), `tcp_seal_rest` (fast)
+- **Build:** `TRANSPORT=tcp-nonblocking`, and `tcp_seal_suite` under
+  `-DCH_SUITE_AES_GCM` with the write key's suite and sequence number
+  unconstrained. `tcp_seal` and `tcp_seal_suite` prove the seal, and
+  `tcp_seal_rest` proves `ch_writable_len`'s answer, the close and the
+  failure, because each 64-bit division costs the solver a divider and one
+  formula of all four passed the fast tier's five minutes.
+- **Proves:** `ch_seal_in_place`, `ch_writable_len`, `ch_close_out` and
+  `ch_fail_out` (`tcp_seal.c`), with `tls_write_rules.h`'s rules real, are
+  memory safe and free of UB over a havocked session, any cap and n, a
+  buf, a side and a result that may each be NULL, and any side_cap, with
+  buf at the start or at the end of a fixed array. Also:
+  - a refusal on entry and the `CH_ECAP` of an n above
+    `ch_writable_len` write no byte of buf or side and change no field
+    of the session;
+  - a write that no key can seal fails the session with internal_error
+    in side and writes no byte of buf;
+  - a seal that succeeds seals ceil(n / limit) records from the last to
+    the first, each at i × (limit + `REC_OVERHEAD`) with its plaintext
+    `REC_HDR` after that, each holding the caller's bytes of its place in
+    the run and each at sequence number first + i; records_len counts
+    them, at most cap, and no byte past them changes;
+  - the KeyUpdate goes into side before the first record, exactly when
+    the key has fewer data records left than the write holds;
+  - `ch_writable_len`'s answer is the most plaintext whose records fit
+    cap (INV-38, INV-74, docs/decisions.md 248).
+- **Bound:** buf of at most 72 B; the record limit takes every value, and
+  the content check follows limits of 1 to 4 bytes, so three records and
+  two moves at a limit of 1 or 2. `tcp_seal_rest` takes a cap of 11 bits.
+  162 s and 1.26 GB of `tcp_seal`, 198 s and 1.27 GB of `tcp_seal_suite`, and
+  14 s and 0.04 GB of `tcp_seal_rest`, in CPU time on a 4-core amd64 host
+  beside other work.
+- **Not proved:** `rec_seal`, `hspost_seal_key_update`, `tlsi_fail_into`,
+  `tlsi_seal_alert` and `tlsi_wipe` are contract stubs. Writes past 72
+  bytes rest on `bin/tcp_nonblocking_loop_test` and the Zig loop, which
+  seal records of 16 KiB.
 
 ### QUIC
 

@@ -20,12 +20,6 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 int ch_read(ch_tls *t, uint8_t *p, size_t n) {
     return tls_read(tls_priv(t), p, n);
 }
-#else
-int ch_read_in_place(ch_tls *t, uint8_t *p, size_t n, uint8_t *reply, size_t reply_cap,
-                     ch_read_result *result) {
-    return tls_read_in_place(tls_priv(t), p, n, reply, reply_cap, result);
-}
-#endif
 
 int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
     return tls_write(tls_priv(t), p, n);
@@ -35,16 +29,35 @@ int ch_write_parts(ch_tls *t, const ch_part *parts, size_t part_count) {
     return tls_write_parts(tls_priv(t), parts, part_count);
 }
 
-size_t ch_writable_len(const ch_tls *t, size_t cap) {
-    return tls_writable_len(tls_priv_const(t), cap);
-}
-
 int ch_fail(ch_tls *t, uint8_t description) {
     return tls_fail(tls_priv(t), description);
 }
 
 void ch_close(ch_tls *t) {
     tls_close(tls_priv(t));
+}
+#else
+int ch_read_in_place(ch_tls *t, uint8_t *p, size_t n, uint8_t *reply, size_t reply_cap,
+                     ch_read_result *result) {
+    return tls_read_in_place(tls_priv(t), p, n, reply, reply_cap, result);
+}
+
+int ch_seal_in_place(ch_tls *t, uint8_t *buf, size_t cap, size_t n, uint8_t *side, size_t side_cap,
+                     ch_seal_result *result) {
+    return tls_seal_in_place(tls_priv(t), buf, cap, n, side, side_cap, result);
+}
+
+int ch_close_out(ch_tls *t, uint8_t *out, size_t cap, size_t *out_len) {
+    return tls_close_out(tls_priv(t), out, cap, out_len);
+}
+
+int ch_fail_out(ch_tls *t, uint8_t description, uint8_t *out, size_t cap, size_t *out_len) {
+    return tls_fail_out(tls_priv(t), description, out, cap, out_len);
+}
+#endif
+
+size_t ch_writable_len(const ch_tls *t, size_t cap) {
+    return tls_writable_len(tls_priv_const(t), cap);
 }
 
 #ifdef CH_EXPORTER

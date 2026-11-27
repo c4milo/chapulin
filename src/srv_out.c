@@ -10,9 +10,9 @@
 #include "ct.h"
 #include "handshake_message.h"
 #include "sha256.h"
-// Both TCP transports seal, and only tcp-blocking sends: io.h is
-// included for either, so emit below is a single arm a .violation mutant
-// can flip. A tcp-nonblocking build declares io_send_all and calls it nowhere.
+// Both TCP transports seal, and only tcp-blocking sends. A tcp-nonblocking
+// build declares no io_send_all (io.h), so a call to it there fails to
+// compile, and its cfg.send is NULL (INV-28).
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 #include "io.h"
 #include "record.h"
@@ -61,9 +61,16 @@ int srv_out_sealed(handshake_state *h, const uint8_t *pt, size_t n) {
 #else
 
 // The largest plaintext one record carries: this build's cap, lowered to
-// the client's record_size_limit.
+// the client's record_size_limit. A TRANSPORT=tcp-nonblocking build's cap
+// is CH_TX_HANDSHAKE_PT, what its ch_tls.tx holds of one record, because
+// its connected records go out from the caller's storage and not from
+// that array (session.h, docs/decisions.md 248).
 size_t srv_out_limit(const ch_tls_priv *t) {
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+    return t->peer_limit < CH_TX_HANDSHAKE_PT ? t->peer_limit : CH_TX_HANDSHAKE_PT;
+#else
     return t->peer_limit < CH_TX_PT ? t->peer_limit : CH_TX_PT;
+#endif
 }
 
 // Where one finished record goes. A TRANSPORT=tcp-blocking server writes it to

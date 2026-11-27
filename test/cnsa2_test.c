@@ -27,6 +27,7 @@
 #include "test_random.h"
 #include "test_read.h"
 #include "test_widemul.h"
+#include "test_write.h"
 #include "tls.h"
 #include "transcript.h"
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
@@ -218,10 +219,10 @@ static ch_cfg valid_cfg(mock_server *s) {
     ch_cfg cfg = {0};
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
-    cfg.send = mock_send;
 #ifndef CH_TRANSPORT_TCP_NONBLOCKING
-    // A tcp-nonblocking session reads through no recv, and its init
-    // refuses one (tcp_nonblocking.h).
+    // A tcp-nonblocking session sends through no send and reads through no
+    // recv, and its init refuses either one (tcp_nonblocking.h).
+    cfg.send = mock_send;
     cfg.recv = mock_recv;
 #endif
     cfg.io = s;
@@ -238,13 +239,19 @@ static ch_cfg valid_cfg(mock_server *s) {
 // with the mock's send and recv as the caller's socket. Returns what
 // ch_connect would: CH_OK once connected, the refusal or failure code, or
 // CH_EIO when the mock has nothing more to answer. The records after the
-// handshake are test_read's, which reads them through the session's recv,
-// mock_recv (test/test_read.h).
+// handshake are test_read's and test_write's, which read them through the
+// session's recv, mock_recv, and write them through its send, mock_send
+// (test/test_read.h, test/test_write.h). The test sets mock_send on the
+// session's copy of cfg after init and mock_recv once connected, and the
+// configuration sets neither.
 static ch_tcp_priv record;
 static int test_connect(ch_tls_priv **t, const ch_cfg *cfg) {
     *t = &record.t;
     test_read_reset();
     int rc = ch_tcp_init(tcp_public(&record), cfg);
+    if (rc == CH_OK) {
+        record.t.cfg.send = mock_send;
+    }
     while (rc == CH_OK) {
         static uint8_t wire[MOCK_QUEUE_MAX];
         size_t n = 0;

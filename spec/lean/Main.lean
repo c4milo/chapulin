@@ -580,6 +580,14 @@ def dispatch : List String → Option String
     let r ← room.toNat?
     let k ← perKey.toNat?
     return toString (Spec.TlsWrite.writableLen c l r k)
+  -- ch_writable_len in a TRANSPORT=tcp-nonblocking build, through
+  -- writable_len_in_place (tls_write_rules.h): the cap, the limit and the
+  -- records per key, each decimal, and so is the reply.
+  | ["writable_len_in_place", cap, limit, perKey] => do
+    let c ← cap.toNat?
+    let l ← limit.toNat?
+    let k ← perKey.toNat?
+    return toString (Spec.TlsWrite.writableLenInPlace c l k)
   | ["handshake_sequence", mode, letters] => do
     let m ← match mode with
       | "psk" => some Spec.Handshake.Mode.psk

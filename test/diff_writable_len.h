@@ -35,9 +35,15 @@
 // there the limits run up to 2^14. Each build compares its limits again
 // with key_update_owed set, so fill_across_key_update runs in both.
 //
+// The in-place answer of a TRANSPORT=tcp-nonblocking build,
+// writable_len_in_place (tls_write_rules.h), runs in every build against
+// writableLenInPlace, at the limits and records per key
+// diff_writable_in_place names (docs/decisions.md 248).
+//
 // Included by test/diff_test.c after diff_driver.h (single translation
-// unit). spec/lean/Main.lean serves the op:
+// unit). spec/lean/Main.lean serves the ops:
 //   writable_len <cap> <limit> <room> <per_key>
+//   writable_len_in_place <cap> <limit> <per_key>
 // with every number in decimal, and answers in decimal.
 #ifndef CH_DIFF_WRITABLE_LEN_H
 #define CH_DIFF_WRITABLE_LEN_H
@@ -46,6 +52,7 @@
 #include "session_convert.h"
 #include "suite.h"
 #include "tls.h"
+#include "tls_write_rules.h"
 
 // Limits drawn at random from 1 to CH_TX_PT, rooms drawn at random below
 // REC_AES_GCM_RECORDS_MAX, and caps drawn at random for each limit and room.
@@ -140,6 +147,58 @@ static void diff_writable_limits(void) {
     diff_writable_session.key_update_owed = 0;
 }
 
+// The in-place answer, writable_len_in_place (tls_write_rules.h), which a
+// TRANSPORT=tcp-nonblocking build's ch_writable_len returns, against the
+// spec's writableLenInPlace. It is a function of the cap, the limit and the
+// records per key alone, so this build compares it as it ships.
+static long diff_in_place_rows;
+
+static void diff_in_place_row(size_t cap, size_t limit, size_t per_key) {
+    size_t answer = writable_len_in_place(cap, limit, per_key);
+    char cmd[128];
+    (void)snprintf(cmd, sizeof cmd, "writable_len_in_place %zu %zu %zu", cap, limit, per_key);
+    char want[32];
+    (void)snprintf(want, sizeof want, "%zu", answer);
+    diff_in_place_rows++;
+    expect(cmd, want);
+}
+
+// The caps for one limit and one count of records per key: after 0 to 3
+// whole records, after per_key whole records where those fit a size_t,
+// SIZE_MAX, each plus 0, 1, REC_OVERHEAD, REC_OVERHEAD + 1 and a record
+// less one byte, and DIFF_WRITABLE_RANDOM_CAPS drawn at random.
+static void diff_in_place_caps(size_t limit, size_t per_key) {
+    size_t record = limit + REC_OVERHEAD;
+    const size_t offsets[] = {0, 1, REC_OVERHEAD, REC_OVERHEAD + 1, record - 1};
+    int key_fits = per_key <= (SIZE_MAX - record) / record;
+    for (size_t i = 0; i < sizeof offsets / sizeof offsets[0]; i++) {
+        for (size_t whole = 0; whole <= 3; whole++) {
+            diff_in_place_row(whole * record + offsets[i], limit, per_key);
+        }
+        if (key_fits) {
+            diff_in_place_row(per_key * record + offsets[i], limit, per_key);
+        }
+        diff_in_place_row(SIZE_MAX - offsets[i], limit, per_key);
+    }
+    for (int i = 0; i < DIFF_WRITABLE_RANDOM_CAPS; i++) {
+        diff_in_place_row(diff_writable_random_cap(), limit, per_key);
+    }
+}
+
+// The limits 0, 1, 63, 200, CH_TX_PT and one drawn at random, each at the
+// records per key a ChaCha20-Poly1305 key and an AES-GCM key give, and at
+// 1, 2 and one drawn at random, where the cut runs at small caps.
+static void diff_writable_in_place(void) {
+    const size_t limits[] = {0, 1, 63, 200, CH_TX_PT, 1 + rng_below(CH_TX_PT)};
+    const size_t per_keys[] = {SIZE_MAX, REC_AES_GCM_RECORDS_MAX - 1, 1, 2, 1 + rng_below(64)};
+    for (size_t i = 0; i < sizeof limits / sizeof limits[0]; i++) {
+        for (size_t k = 0; k < sizeof per_keys / sizeof per_keys[0]; k++) {
+            diff_in_place_caps(limits[i], per_keys[k]);
+        }
+    }
+    (void)printf("diff: writable_len_in_place: %ld rows, C == spec\n", diff_in_place_rows);
+}
+
 #ifdef CH_SUITE_AES_GCM
 
 static long diff_writable_aes_rows;
@@ -228,6 +287,7 @@ static void diff_writable_len(void) {
     diff_writable_session.wr.seq = REC_AES_GCM_RECORDS_MAX - 1;
     diff_writable_limits();
     diff_writable_aes();
+    diff_writable_in_place();
     (void)printf("diff: writable_len: %ld rows, %ld under an AES-GCM key, where the KeyUpdate "
                  "record changed %ld answers, C == spec\n",
                  diff_writable_rows, diff_writable_aes_rows, diff_writable_key_update_rows);
@@ -237,6 +297,7 @@ static void diff_writable_len(void) {
 
 static void diff_writable_len(void) {
     diff_writable_limits();
+    diff_writable_in_place();
     (void)printf("diff: writable_len: %ld rows, C == spec; the AES-GCM rows run under "
                  "-DCH_SUITE_AES_GCM only\n",
                  diff_writable_rows);

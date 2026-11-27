@@ -47,6 +47,13 @@
 int CH_MUST_USE ch_connect(ch_tls *t, const ch_cfg *cfg);
 #endif
 
+// ch_write, ch_write_parts, ch_close and ch_fail send through cfg.send,
+// so a TRANSPORT=tcp-nonblocking build declares none of them: its
+// sessions seal in the caller's storage with ch_seal_in_place, close with
+// ch_close_out and fail with ch_fail_out (tcp_nonblocking.h,
+// docs/decisions.md 248). ch_writable_len serves both transports, with
+// the meaning each one's write gives it (below).
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 // Sends n bytes as one or more records. Returns CH_OK or an error. It
 // keeps working after ch_read has returned 0 for the peer's close_notify.
 // On a session that is not connected it returns CH_EPROTO and changes
@@ -95,6 +102,7 @@ typedef struct {
 // when part_count is 0. A part of 0 bytes adds nothing (docs/decisions.md
 // 167).
 int CH_MUST_USE ch_write_parts(ch_tls *t, const ch_part *parts, size_t part_count);
+#endif
 
 // The most plaintext one ch_write seals into cap bytes of records, so a
 // caller whose send takes at most cap bytes per call knows how much to
@@ -121,6 +129,17 @@ int CH_MUST_USE ch_write_parts(ch_tls *t, const ch_part *parts, size_t part_coun
 // answer is owed, and under SUITE=aesgcm the write key's suite and
 // sequence number, and nothing else. ch_write still refuses a session
 // that is not connected, whatever this returns.
+//
+// In a TRANSPORT=tcp-nonblocking build it is the most plaintext one
+// ch_seal_in_place seals in a buffer of cap bytes: the same records of at
+// most the same limit, n + ceil(n / limit) * REC_OVERHEAD bytes, and the
+// largest n whose records fit cap. It counts no KeyUpdate record, because
+// that call writes its KeyUpdate into the caller's side buffer. Under an
+// AES-GCM write key it returns at most the plaintext of
+// REC_AES_GCM_RECORDS_MAX - 1 records, the most one key seals, because
+// that call seals every record of a write under one key. It reads the
+// peer's limit and under SUITE=aesgcm the write key's suite, and nothing
+// else (docs/decisions.md 248).
 size_t ch_writable_len(const ch_tls *t, size_t cap);
 
 // The wire length of one sealed alert record, 24 bytes: REC_OVERHEAD and
@@ -217,6 +236,7 @@ int CH_MUST_USE ch_export(const ch_tls *t, const char *label, const uint8_t *con
                           size_t context_len, uint8_t *out, size_t out_len);
 #endif
 
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 // Sends close_notify (only under live keys) and wipes all key material,
 // leaving the session CH_ST_CLOSED. RFC 9846 §6.1 has each side send a
 // close_notify before it closes its write direction, and this call is
@@ -248,5 +268,6 @@ void ch_close(ch_tls *t);
 // It sends no KeyUpdate first, even when an answer is owed, as ch_close
 // sends none (docs/decisions.md 164).
 int CH_MUST_USE ch_fail(ch_tls *t, uint8_t description);
+#endif
 
 #endif

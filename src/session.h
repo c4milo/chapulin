@@ -55,8 +55,15 @@
 // TRANSPORT=quic-nonblocking build stages its hello alone: it seals no
 // record (RFC 9001 §4.1.3, rfc9001.txt:462-464), and an assertion below
 // holds its CH_TX_PT at 512.
+//
+// A TRANSPORT=tcp-nonblocking build stages its handshake alone too. A
+// connected session seals each record of application data, each KeyUpdate
+// and each alert in storage the caller passes (tcp_seal.c,
+// docs/decisions.md 248), so no record that CH_TX_PT sizes passes through
+// the array. Its handshake records carry at most CH_TX_HANDSHAKE_PT
+// bytes of plaintext, below.
 #ifndef CH_TX_STAGE
-#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
 #define CH_TX_STAGE CH_TX_HELLO
 #elif CH_TX_HELLO >= CH_TX_PT + 1 + AEAD_TAG
 #define CH_TX_STAGE CH_TX_HELLO
@@ -68,8 +75,25 @@
 // RFC 9846's 2^14 record-body cap; the hello ships as one record. A
 // sealed record may pass it: its body is ciphertext, which §5.2 caps at
 // 2^14 + 256 (rfc9846.txt:3595-3596), and cfg.h caps CH_TX_PT.
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+// The most plaintext of one handshake record a TRANSPORT=tcp-nonblocking
+// build seals in ch_tls.tx: CH_TX_PT, or what the array holds of one
+// record where that is less. Only a TX_RECORD build raises CH_TX_PT past
+// it, so every build at the default CH_TX_PT cuts the records it cut
+// before (srv_out.c).
+#if CH_TX_PT + 1 + AEAD_TAG <= CH_TX_STAGE
+#define CH_TX_HANDSHAKE_PT CH_TX_PT
+#else
+#define CH_TX_HANDSHAKE_PT (CH_TX_STAGE - 1 - AEAD_TAG)
+#endif
+#endif
 #ifndef __cplusplus
-#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+// The floor of a record this build stages: the 512 bytes of plaintext
+// every TCP build has carried, in one sealed handshake record.
+_Static_assert(CH_TX_HANDSHAKE_PT >= 512 && CH_TX_STAGE >= CH_TX_HANDSHAKE_PT + 1 + AEAD_TAG,
+               "TX staging must hold one sealed handshake record of 512 bytes or more");
+#elif !defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 // A TRANSPORT=quic-nonblocking build stages no sealed record, so this floor has
 // nothing to hold there, and AEAD_TAG comes from record.h, which that
 // build does not read.
@@ -377,11 +401,31 @@ static inline size_t tls_hash_len(const ch_tls_priv *t) {
 
 // Sends an alert — encrypted iff keys are live, plaintext only before any
 // keys exist, nothing at all once they are wiped.
+//
+// A TRANSPORT=tcp-nonblocking build declares neither this nor tlsi_fail:
+// its sessions send nothing through cfg.send (INV-28), so a call that
+// would send one fails to compile there. tlsi_fail_into is its funnel.
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int tlsi_send_alert(ch_tls_priv *t, uint8_t level, uint8_t description);
 
 // Alert (best effort), wipe every key, mark the session failed, return the send's result. It
 // writes alert_sent; after the peer's fatal alert, alert_received, it sends and writes none (§6.2).
 int tlsi_fail(ch_tls_priv *t, uint8_t description);
+#else
+// tlsi_send_alert for a connected session: seals the alert under the write
+// key into out, which holds CH_ALERT_RECORD_LEN bytes or more, and writes
+// its length to *out_len. Returns CH_OK, or CH_ECAP with *out_len 0 when
+// the write key had no sequence number left.
+int tlsi_seal_alert(ch_tls_priv *t, uint8_t level, uint8_t description, uint8_t *out,
+                    size_t *out_len);
+
+// tlsi_fail for a connected session, with the fatal alert sealed into out,
+// which holds CH_ALERT_RECORD_LEN bytes or more, and its length in
+// *out_len, 0 when nothing was sealed. Returns CH_OK, or CH_ECAP when the
+// write key had no sequence number left. ch_read_in_place, ch_seal_in_place
+// and ch_fail_out fail through it (tcp_read.c, tcp_seal.c).
+int tlsi_fail_into(ch_tls_priv *t, uint8_t description, uint8_t *out, size_t *out_len);
+#endif
 
 // Whether a client configuration keeps every rule that does not depend on
 // which driver runs it. tls.c holds the predicates; ch_connect and

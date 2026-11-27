@@ -206,7 +206,20 @@ int hspost_handle(ch_tls_priv *t, const uint8_t *pt, size_t n, size_t *used, uin
 // Returns CH_OK, or CH_EIO when the record could not be sealed or sent.
 // The write key is still the old one then, and the caller fails the
 // session.
+//
+// A TRANSPORT=tcp-nonblocking build declares the call that seals instead:
+// its sessions send nothing through cfg.send, and hspost_seal_key_update
+// writes the same record into the caller's out, which holds cap bytes.
+// ch_seal_in_place (tcp_seal.c) is its one caller, which sends it before
+// the records it seals (docs/decisions.md 248). It returns CH_OK with the
+// record's length in *out_len, or CH_ECAP when the write key can seal no
+// more records or cap is below CH_KEY_UPDATE_RECORD_LEN. The write key is
+// still the old one then, and *out_len is 0.
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int hspost_send_key_update(ch_tls_priv *t);
+#else
+int hspost_seal_key_update(ch_tls_priv *t, uint8_t *out, size_t cap, size_t *out_len);
+#endif
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING

@@ -1,0 +1,13 @@
+invariant: INV-28
+file: src/tcp_nonblocking.c
+catches: tcp_nonblocking_loop_test
+reason: ch_tcp_init takes a configuration that sets cfg.send, which no call
+  of the transport calls, so a caller that set one believes its records
+  leave through it and sends nothing. tcp_nonblocking.h refuses it at
+  configuration time (docs/decisions.md 248).
+
+--- old
+    if (!hspost_present_ticket(&r->t.cfg) || !tlsi_config_ok(&r->t.cfg) || cfg->send != NULL ||
+        cfg->recv != NULL) {
+--- new
+    if (!hspost_present_ticket(&r->t.cfg) || !tlsi_config_ok(&r->t.cfg) || cfg->recv != NULL) {

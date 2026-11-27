@@ -138,13 +138,13 @@ static void test_cnsa2_handshake(void) {
         CHECK(t->group == CH_GROUP_MLKEM1024);
         CHECK(t->suite == SUITE_AES_256_GCM_SHA384);
         CHECK(t->psk_selected == 1);
-        CHECK(ch_write(tls_public(t), ping, sizeof ping) == CH_OK);
+        CHECK(test_write(tls_public(t), ping, sizeof ping) == CH_OK);
         CHECK(s.echo_len == sizeof ping && memcmp(s.echo, ping, sizeof ping) == 0);
         uint8_t got[16] = {0}; // a failed read writes nothing, and the next check reads got
         CHECK(test_read(tls_public(t), got, sizeof got) == (int)sizeof ping);
         CHECK(memcmp(got, ping, sizeof ping) == 0);
         CHECK(tickets == 1);
-        ch_close(tls_public(t));
+        test_close(tls_public(t));
     }
 }
 

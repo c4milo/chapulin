@@ -2,7 +2,11 @@
 
 #include "ct.h"
 #include "io.h"
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+#include "tls.h"
+#endif
 
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 // A protected record can only be sealed with live keys; before any keys
 // exist the alert goes out in plaintext, and once keys are wiped there is
 // nothing legal left to say, so nothing is sent.
@@ -21,6 +25,7 @@ int tlsi_send_alert(ch_tls_priv *t, uint8_t level, uint8_t description) {
     }
     return CH_OK;
 }
+#endif // CH_TRANSPORT_TCP_NONBLOCKING
 
 #ifdef CH_CPU_RUNTIME
 void tlsi_record_cpu(ch_tls_priv *t) {
@@ -92,6 +97,7 @@ void tlsi_close_read_side(ch_tls_priv *t) {
 // this side's is recorded. It returns what tlsi_send_alert returned, CH_OK
 // when nothing was sent, which ch_fail reports and every other caller
 // discards.
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int tlsi_fail(ch_tls_priv *t, uint8_t description) {
     int rc = CH_OK;
     if (t->alert_received == 0) {
@@ -102,3 +108,33 @@ int tlsi_fail(ch_tls_priv *t, uint8_t description) {
     t->state = CH_ST_FAILED;
     return rc;
 }
+#else
+// tlsi_send_alert on the transport that sends nothing itself: the alert is
+// sealed under the write key into the caller's out, CH_ALERT_RECORD_LEN
+// bytes, in place of cfg.send. Each caller holds a connected session,
+// whose write key is live. A key with no sequence number left seals
+// nothing (RFC 9846 §5.3), as tlsi_send_alert sends nothing then.
+int tlsi_seal_alert(ch_tls_priv *t, uint8_t level, uint8_t description, uint8_t *out,
+                    size_t *out_len) {
+    const uint8_t body[2] = {level, description};
+    *out_len = 0;
+    if (rec_seal(&t->wr, REC_ALERT, body, sizeof body, out, CH_ALERT_RECORD_LEN, out_len) != 0) {
+        return CH_ECAP;
+    }
+    return CH_OK;
+}
+
+// The same funnel as tlsi_fail, with the alert sealed into the caller's
+// out by tlsi_seal_alert.
+int tlsi_fail_into(ch_tls_priv *t, uint8_t description, uint8_t *out, size_t *out_len) {
+    int rc = CH_OK;
+    *out_len = 0;
+    if (t->alert_received == 0) {
+        t->alert_sent = description;
+        rc = tlsi_seal_alert(t, 2, description, out, out_len); // level 2 is fatal (RFC 9846 §6)
+    }
+    tlsi_wipe(t);
+    t->state = CH_ST_FAILED;
+    return rc;
+}
+#endif

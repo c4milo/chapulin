@@ -64,8 +64,7 @@ static int run_seeded(uint64_t client_seed, uint64_t server_seed, crossed *out) 
     to_client.len = 0;
     records_pushed = 0;
     logged_count = 0;
-    if (ch_srv_tcp_init(tcp_public(&server), &scfg) != CH_OK ||
-        ch_tcp_init(tcp_public(&client), &ccfg) != CH_OK) {
+    if (server_init(&server, &scfg) != CH_OK || client_init(&client, &ccfg) != CH_OK) {
         return 0;
     }
     for (int round = 0; round < 2; round++) {
@@ -113,8 +112,8 @@ static void check_session_refusals(void) {
     scfg.rand_bytes = contextless_draw;
     scfg.rand_io = NULL;
     contextless_calls = 0;
-    CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_OK);
-    CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_OK);
+    CHECK(client_init(&client, &ccfg) == CH_OK);
+    CHECK(server_init(&server, &scfg) == CH_OK);
     CHECK(contextless_calls == SESSION_CLIENT_DRAWS + 1 && stray_draws == 0 && hook_draws == 0);
     ch_tcp_close(tcp_public(&client));
     ch_tcp_close(tcp_public(&server));

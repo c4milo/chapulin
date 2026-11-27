@@ -1,7 +1,9 @@
 /-!
 How much plaintext one `ch_write` seals into `cap` bytes of records:
 `ch_writable_len` in `tls_write.c`, and the two helpers it calls, `records_fill`
-and `fill_across_key_update`. Each definition here is one C function over
+and `fill_across_key_update`. And how much one `ch_seal_in_place` seals in a
+buffer of `cap` bytes: `ch_writable_len` in a `TRANSPORT=tcp-nonblocking` build,
+`writable_len_in_place` in `tls_write_rules.h`, which reads `records_fill` too. Each definition here is one C function over
 `Nat`, with one `let` for each C local in the order the C computes them, so a
 reader can check each line against `tls_write.c`.
 
@@ -257,6 +259,55 @@ theorem writableLen_of_cap_le_room (cap limit room perKey : Nat) (h_limit_pos : 
   simp only [writableLen]
   rw [if_neg (by omega), if_neg (by omega)]
 
+/-- `writable_len_in_place (cap, limit, per_key)` (`tls_write_rules.h`):
+`ch_writable_len` in a `TRANSPORT=tcp-nonblocking` build, where `limit` is
+what `record_plaintext_max (t)` answers and `perKey` what `records_per_key (t)`
+answers. It counts no KeyUpdate record, because `ch_seal_in_place` writes that
+record into its side buffer, and it cuts at `perKey` records, because that
+call seals every record of a write under one key (docs/decisions.md 248). -/
+def writableLenInPlace (cap limit perKey : Nat) : Nat :=
+  if limit = 0 then 0
+  else
+    let records := (recordsFill cap limit).records
+    let fill := (recordsFill cap limit).fill
+    if records > perKey then perKey * limit else fill
+
+/-- The clamp's product is at most `cap`: `records_fill` found more than `perKey`
+records in `cap`, so `perKey` whole records' plaintext fits it. So the C's
+`per_key * limit` fits the `size_t` that holds `cap`. -/
+theorem writableLenInPlace_clamp_le (cap limit perKey : Nat)
+    (h_more : (recordsFill cap limit).records > perKey) : perKey * limit ≤ cap := by
+  have h_records := recordsFill_records cap limit
+  have h_whole_fill := recordsFill_whole_mul_le_fill cap limit
+  have h_fill := recordsFill_fill_le cap limit
+  have h_whole : perKey ≤ (recordsFill cap limit).whole := by omega
+  calc perKey * limit ≤ (recordsFill cap limit).whole * limit := Nat.mul_le_mul_right limit h_whole
+    _ ≤ (recordsFill cap limit).fill := h_whole_fill
+    _ ≤ cap := h_fill
+
+/-- `ch_writable_len`'s answer in a `TRANSPORT=tcp-nonblocking` build is at
+most `cap`, for every `limit` and every `perKey`, `SIZE_MAX` for a
+ChaCha20-Poly1305 key among them. -/
+theorem writableLenInPlace_le_cap (cap limit perKey : Nat) :
+    writableLenInPlace cap limit perKey ≤ cap := by
+  simp only [writableLenInPlace]
+  split
+  · exact Nat.zero_le cap
+  · split
+    · rename_i h_more
+      exact writableLenInPlace_clamp_le cap limit perKey h_more
+    · exact recordsFill_fill_le cap limit
+
+/-- Where no clamp runs, the in-place answer is the copy write's at a `room` of
+`cap` or more: the records alone, with no KeyUpdate record among them. -/
+theorem writableLenInPlace_eq_writableLen (cap limit room perKey : Nat) (h_limit_pos : 1 ≤ limit)
+    (h_room : cap ≤ room) (h_key : cap ≤ perKey) :
+    writableLenInPlace cap limit perKey = writableLen cap limit room perKey := by
+  have h_records := recordsFill_records_le cap limit
+  rw [writableLen_of_cap_le_room cap limit room perKey h_limit_pos h_room]
+  simp only [writableLenInPlace]
+  rw [if_neg (by omega), if_neg (by omega)]
+
 set_option compiler.extract_closed false in
 /-- The rows the C's own tests state, at the two limits they use. At a limit of
 512, `tls.h`'s: a record of no byte, of one byte, of 512 bytes, and one byte
@@ -293,6 +344,12 @@ def selftest (_ : Unit) : Bool :=
   writableLen record 63 1 aesPerKey == 63 &&
   writableLen (record + keyUpdateAndByte - 1) 63 1 aesPerKey == 63 &&
   writableLen (record + keyUpdateAndByte) 63 1 aesPerKey == 64 &&
-  writableLen sizeMax 63 1 aesPerKey == aesGcmRecordsMax * 63
+  writableLen sizeMax 63 1 aesPerKey == aesGcmRecordsMax * 63 &&
+  writableLenInPlace recOverhead 512 sizeMax == 0 &&
+  writableLenInPlace (recOverhead + 1) 512 sizeMax == 1 &&
+  writableLenInPlace (512 + 2 * recOverhead + 1) 512 sizeMax == 513 &&
+  writableLenInPlace 4096 0 sizeMax == 0 &&
+  writableLenInPlace (2 * record) 63 aesPerKey == 126 &&
+  writableLenInPlace sizeMax 63 aesPerKey == (aesGcmRecordsMax - 1) * 63
 
 end Spec.TlsWrite

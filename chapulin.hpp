@@ -13,7 +13,10 @@
 //
 // The wrapper forks with the object it forwards to. A TRANSPORT=tcp-blocking
 // object exports ch_connect, ch_read, ch_write, ch_writable_len and
-// ch_close, and Session forwards them. A TRANSPORT=quic-nonblocking object
+// ch_close, and Session forwards them. A TRANSPORT=tcp-nonblocking object
+// exports ch_read_in_place, ch_seal_in_place, ch_writable_len,
+// ch_close_out and ch_fail_out in their place, and Session forwards those
+// (docs/decisions.md 247 and 248). A TRANSPORT=quic-nonblocking object
 // exports none of the five and
 // eighteen ch_quic_ entries instead, so Quic forwards those, and Config
 // takes no Io and gains the original version, a ticket's version, the
@@ -636,7 +639,16 @@ class Session {
     Session(const Session &) = delete;
     Session &operator=(const Session &) = delete;
     ~Session() {
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+        // This transport writes its close_notify into the caller's storage
+        // (close_out), so the destructor wipes and drops the record: a
+        // caller that owes the peer one calls close_out first.
+        uint8_t record[CH_ALERT_RECORD_LEN];
+        size_t record_len = 0;
+        (void)ch_close_out(&tls_, record, sizeof record, &record_len);
+#else
         ch_close(&tls_);
+#endif
     }
 
 #if (!defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
@@ -647,6 +659,16 @@ class Session {
     }
 #endif
 
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+    // Forwards ch_seal_in_place: seals the n bytes of plaintext at
+    // buf.data + REC_HDR where they lie, and writes a KeyUpdate or a
+    // failure's alert into side; the caller sends side's record, then
+    // buf's (tcp_nonblocking.h). This transport has no write().
+    Status seal_in_place(Bytes buf, size_t n, Bytes side, ch_seal_result &result) {
+        return static_cast<Status>(
+            ch_seal_in_place(&tls_, buf.data, buf.size, n, side.data, side.size, &result));
+    }
+#else
     Status write(ConstBytes data) {
         return static_cast<Status>(ch_write(&tls_, data.data, data.size));
     }
@@ -659,9 +681,11 @@ class Session {
     template <size_t N> Status write_parts(const ch_part (&parts)[N]) {
         return write_parts(parts, N);
     }
+#endif
 
-    // Forwards ch_writable_len: the most plaintext one write() seals into
-    // cap bytes of records (tls.h).
+    // Forwards ch_writable_len: the most plaintext one write(), or one
+    // seal_in_place() on the tcp-nonblocking transport, seals into cap
+    // bytes of records (tls.h).
     size_t writable_len(size_t cap) const {
         return ch_writable_len(&tls_, cap);
     }
@@ -744,6 +768,19 @@ class Session {
         return ch_alert_received(&tls_);
     }
 
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+    // Forwards ch_close_out: writes this side's close_notify into out and
+    // wipes, leaving the session closed (tcp_nonblocking.h).
+    Status close_out(Bytes out, size_t &out_len) {
+        return static_cast<Status>(ch_close_out(&tls_, out.data, out.size, &out_len));
+    }
+
+    // Forwards ch_fail_out: fails a connected session with the fatal alert
+    // description names, written into out (tcp_nonblocking.h).
+    Status fail_out(uint8_t description, Bytes out, size_t &out_len) {
+        return static_cast<Status>(ch_fail_out(&tls_, description, out.data, out.size, &out_len));
+    }
+#else
     // Sends this side's close_notify under live keys and wipes; safe to
     // call more than once, and the destructor calls it too. A read that
     // returned at_end() does not do this: call it once this side has
@@ -757,6 +794,7 @@ class Session {
     Status fail(uint8_t description) {
         return static_cast<Status>(ch_fail(&tls_, description));
     }
+#endif
 
   private:
     ch_tls tls_{};

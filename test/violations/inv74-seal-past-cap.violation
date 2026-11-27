@@ -1,0 +1,13 @@
+invariant: INV-74
+file: src/tcp_seal.c
+catches: tcp_nonblocking_loop_test
+reason: ch_seal_in_place takes an n whose records do not fit cap and
+  seals past the end of the caller's buffer, where tcp_nonblocking.h has it
+  refuse the write whole with CH_ECAP and change nothing. The loop's write
+  one byte short of its two records requires the refusal.
+
+--- old
+    if (n > tls_writable_len(t, cap)) {
+        return CH_ECAP;
+    }
+--- new

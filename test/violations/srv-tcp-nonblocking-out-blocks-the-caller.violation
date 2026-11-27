@@ -18,5 +18,5 @@ static int emit(ch_tls_priv *t, const uint8_t *p, size_t n) {
 }
 --- new
 static int emit(ch_tls_priv *t, const uint8_t *p, size_t n) {
-    return io_send_all(&t->cfg, p, n);
+    return t->cfg.send(t->cfg.io, p, n) == (int)n ? CH_OK : CH_EIO;
 }

@@ -1,7 +1,8 @@
 //! A tcp-nonblocking client and server of one tcp-nonblocking ROLE=both object
 //! against each other, through the API alone: the handshake, ALPN, the
-//! server name, data both ways across several records, a write that does
-//! not fit, the exporter, a ticket taken and resumed through
+//! server name, data both ways across several records, each sealed where it
+//! lies, a seal that does not fit, an h2 frame's header and payload sealed
+//! as one run, the exporter, a ticket taken and resumed through
 //! Ticket.from_fields, a stale ticket refused, a client whose takes_tickets
 //! is false that keeps no ticket and still resumes one, close in each
 //! direction and close, four refusals, the last of whose alerts the
@@ -127,9 +128,34 @@ pub fn drain(reader: anytype, wire: *Pipe) !struct { []const u8, usize } {
     return .{ received[0..got], records };
 }
 
-/// data from writer to reader in one write, across records.
+/// Seals data through the API into the first cap bytes of wire's free room
+/// and marks what it wrote: the plaintext goes at plaintext_offset, seal
+/// seals it there, and a KeyUpdate that seal wrote into side moves in
+/// front of the records, the order the peer reads them in. Returns the
+/// bytes it pushed.
+pub fn seal_in(writer: anytype, wire: *Pipe, data: []const u8, cap: usize) !usize {
+    const room = wire.free();
+    @memcpy(room[tcp.plaintext_offset..][0..data.len], data);
+    var side: [tcp.key_update_record_len]u8 = undefined;
+    const sealed = try writer.seal(room[0..cap], data.len, &side);
+    if (sealed.side.len > 0) {
+        @memmove(room[sealed.side.len..][0..sealed.records.len], sealed.records);
+        @memcpy(room[0..sealed.side.len], sealed.side);
+    }
+    const n = sealed.side.len + sealed.records.len;
+    wire.push(n);
+    return n;
+}
+
+/// seal_in into all of wire's free room but the side record's length,
+/// which a KeyUpdate in front of the records takes.
+pub fn seal_to(writer: anytype, wire: *Pipe, data: []const u8) !usize {
+    return seal_in(writer, wire, data, wire.free().len - tcp.key_update_record_len);
+}
+
+/// data from writer to reader in one seal, across records.
 fn transfer(writer: anytype, reader: anytype, wire: *Pipe, data: []const u8) !usize {
-    wire.push(try writer.write(data, wire.free()));
+    _ = try seal_to(writer, wire, data);
     const got, const records = try drain(reader, wire);
     try check(std.mem.eql(u8, got, data), "the plaintext read differs from what was written");
     return records;
@@ -143,56 +169,57 @@ fn exchange() !void {
     try check(records >= 4, "a write longer than three records of CH_TX_PT went out in fewer than four");
     _ = try transfer(&server, &client, &to_client, &payload);
 
-    // A write one byte past what the output holds seals nothing and
-    // leaves the session connected; the same write into the whole
-    // output then reads back, so no record was sealed in between.
+    // A seal one byte past what the buffer holds seals nothing and leaves
+    // the session connected; the same seal into the whole buffer then
+    // reads back, so no record was sealed in between.
     const message = "one record";
-    const sealed = try client.write(message, to_server.free());
-    to_server.push(sealed);
-    try check(client.writable_len(sealed) == message.len and client.writable_len(sealed - 1) < message.len, "writable_len does not match what write sealed");
-    const refused = client.write(message, to_server.free()[0 .. sealed - 1]);
-    try check(refused == error.Cap and client.state() == .connected, "a write that did not fit was not refused whole");
-    to_server.push(try client.write(message, to_server.free()[0..sealed]));
+    const sealed = try seal_to(&client, &to_server, message);
+    try check(client.writable_len(sealed) == message.len and client.writable_len(sealed - 1) < message.len, "writable_len does not match what seal sealed");
+    const refused = seal_in(&client, &to_server, message, sealed - 1);
+    try check(refused == error.Cap and client.state() == .connected, "a seal that did not fit was not refused whole");
+    _ = try seal_in(&client, &to_server, message, sealed);
     const got, _ = try drain(&server, &to_server);
-    try check(std.mem.eql(u8, got, message ++ message), "a refused write sealed part of its plaintext");
-    try writeParts();
+    try check(std.mem.eql(u8, got, message ++ message), "a refused seal sealed part of its plaintext");
+    try sealFrames();
+    try sealRefusals();
 }
 
 /// A 9-byte header and a payload one byte longer than a record, as an h2
-/// DATA frame holds them, through write_parts: the server reads them joined,
-/// in two records, and a call one byte short of what the parts need seals
-/// nothing. The second call's records follow the first's on the wire.
-fn writeParts() !void {
+/// DATA frame holds them, written as one run where the records go: the
+/// server reads them joined, in two records, and a seal one byte short of
+/// what the run needs seals nothing. The second seal's records follow the
+/// first's on the wire.
+fn sealFrames() !void {
     const header = [_]u8{ 0, 0x40, 0, 0, 1, 0, 0, 0, 1 };
     const body = payload[0 .. c.CH_TX_PT + 1];
-    const parts = [_][]const u8{ &header, body };
-    const sealed = try client.write_parts(&parts, to_server.free());
-    to_server.push(sealed);
-    try check(client.writable_len(sealed) == header.len + body.len, "writable_len does not match what write_parts sealed");
-    const refused = client.write_parts(&parts, to_server.free()[0 .. sealed - 1]);
-    try check(refused == error.Cap and client.state() == .connected, "write_parts that did not fit was not refused whole");
-    to_server.push(try client.write_parts(&parts, to_server.free()[0..sealed]));
+    var frame_bytes: [header.len + c.CH_TX_PT + 1]u8 = undefined;
+    @memcpy(frame_bytes[0..header.len], &header);
+    @memcpy(frame_bytes[header.len..], body);
+    const sealed = try seal_to(&client, &to_server, &frame_bytes);
+    try check(sealed == frame_bytes.len + 2 * (c.REC_HDR + 1 + c.AEAD_TAG), "one frame of a header and a record and a byte of payload did not seal as two records");
+    try check(client.writable_len(sealed) == frame_bytes.len, "writable_len does not match what seal sealed");
+    const refused = seal_in(&client, &to_server, &frame_bytes, sealed - 1);
+    try check(refused == error.Cap and client.state() == .connected, "a frame that did not fit was not refused whole");
+    _ = try seal_in(&client, &to_server, &frame_bytes, sealed);
     const got, const records = try drain(&server, &to_server);
     try check(records == 4, "two frames of a header and a record and a byte of payload went out in other than four records");
-    const frame = header.len + body.len;
     for (0..2) |i| {
-        const one = got[i * frame .. (i + 1) * frame];
-        try check(std.mem.eql(u8, one[0..header.len], &header) and std.mem.eql(u8, one[header.len..], body), "the server read other bytes than the parts joined");
+        const one = got[i * frame_bytes.len .. (i + 1) * frame_bytes.len];
+        try check(std.mem.eql(u8, one, &frame_bytes), "the server read other bytes than the frame");
     }
-    try check(got.len == 2 * frame, "the server read more than the two frames");
-    try partsMax();
+    try check(got.len == 2 * frame_bytes.len, "the server read more than the two frames");
 }
 
-/// parts_max parts of one byte each go out as one run that the server reads
-/// joined, and one part more is refused with nothing sealed.
-fn partsMax() !void {
-    var parts: [tcp.parts_max + 1][]const u8 = undefined;
-    for (&parts, 0..) |*part, i| part.* = payload[i .. i + 1];
-    const refused = client.write_parts(&parts, to_server.free());
-    try check(refused == error.Cap and client.state() == .connected and to_server.pending().len == 0, "write_parts took one part over parts_max");
-    to_server.push(try client.write_parts(parts[0..tcp.parts_max], to_server.free()));
-    const got, const records = try drain(&server, &to_server);
-    try check(records == 1 and std.mem.eql(u8, got, payload[0..tcp.parts_max]), "parts_max parts did not go out as one record of the parts joined");
+/// A seal of no plaintext writes nothing, and a side buffer shorter than a
+/// KeyUpdate record is refused before anything is sealed.
+fn sealRefusals() !void {
+    var side: [tcp.key_update_record_len]u8 = undefined;
+    const none = try client.seal(to_server.free(), 0, &side);
+    try check(none.records.len == 0 and none.side.len == 0, "a seal of no plaintext wrote a record");
+    const room = to_server.free();
+    @memcpy(room[tcp.plaintext_offset..][0..4], "ping");
+    try check(client.seal(room, 4, side[0 .. side.len - 1]) == error.Invalid and client.state() == .connected, "seal took a side buffer shorter than a KeyUpdate record");
+    try check(to_server.pending().len == 0, "a refused seal left bytes on the wire");
 }
 
 fn exporter() !void {
@@ -246,7 +273,7 @@ fn closeBothWays() !void {
     const r = try server.read(to_server.pending(), &reply);
     to_server.pop(r.consumed);
     try check(r.peer_closed and server.read_closed() and server.state() == .connected, "the server did not read the client's close_notify");
-    to_client.push(try server.write("after", to_client.free()));
+    _ = try seal_to(&server, &to_client, "after");
     to_client.push(try server.end(to_client.free()));
     const back = try client.read(to_client.pending(), &reply);
     try check(back.peer_closed and back.consumed == 0, "a closed client read on");
@@ -371,8 +398,8 @@ fn serverAnswersHello() !void {
 /// fail on a connected client: a description outside RFC 9846 §6.2's
 /// error alerts is refused with nothing sent, record_overflow goes out as
 /// one sealed alert that the server reads as the client's fatal alert, and
-/// a second fail on the failed session is refused. Then an output too
-/// short for the alert fails the session with error.Io.
+/// a second fail on the failed session is refused. An output too short
+/// for the alert is refused on entry, with the session as it was.
 fn callerFails() !void {
     try handshake(serverValues(), clientValues());
     to_server = .{};
@@ -389,7 +416,8 @@ fn callerFails() !void {
 
     try handshake(serverValues(), clientValues());
     var short: [tcp.alert_record_len - 1]u8 = undefined;
-    try check(client.fail(.decode_error, &short) == error.Io and client.state() == .failed and client.alert_sent() == .decode_error, "fail into a short output did not fail the session");
+    try check(client.fail(.decode_error, &short) == error.Invalid and client.state() == .connected and client.alert_sent() == null, "fail into a short output changed the session");
+    try check(client.end(&short) == error.Invalid and client.state() == .connected, "end into a short output changed the session");
 }
 
 fn failureAlerts() !void {
@@ -457,5 +485,5 @@ pub fn run() !void {
     try key_limit.run();
     try key_update_run.run();
     const across = if (key_limit.runs) ", each side's write across its AES-GCM write key's ceiling under both AES-GCM suites" else "";
-    std.debug.print("a tcp-nonblocking client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, two frames of a header and a payload through write_parts, a resumed ticket, a stale one refused, a client that takes no tickets, first with no ticket and then with one it resumes, both closes, four refusals, each side's failure alert on each side of its write key{s}, and error.KeyUpdateLimit for one KeyUpdate past a run of {d}\n", .{ c.CH_TX_PT, payload.len, across, c.CH_KEY_UPDATE_RUN_MAX });
+    std.debug.print("a tcp-nonblocking client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, two frames of a header and a payload sealed where they lie, a resumed ticket, a stale one refused, a client that takes no tickets, first with no ticket and then with one it resumes, both closes, four refusals, each side's failure alert on each side of its write key{s}, and error.KeyUpdateLimit for one KeyUpdate past a run of {d}\n", .{ c.CH_TX_PT, payload.len, across, c.CH_KEY_UPDATE_RUN_MAX });
 }

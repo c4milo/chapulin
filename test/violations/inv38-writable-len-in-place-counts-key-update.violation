@@ -1,0 +1,18 @@
+invariant: INV-38
+file: src/tls_write_rules.h
+catches: tcp_nonblocking_loop_test
+reason: the in-place ch_writable_len keeps room for a KeyUpdate record in
+  cap, where ch_seal_in_place writes the KeyUpdate into side, so a caller
+  that seals what the call answers leaves 27 bytes of every buffer unused
+  and cuts its writes short. The loop requires the answer for a write's
+  own records to be that write's length.
+
+--- old
+    size_t records = 0;
+    size_t fill = records_fill(cap, limit, &records);
+    if (records > per_key) {
+--- new
+    size_t records = 0;
+    size_t room = cap > CH_KEY_UPDATE_RECORD_LEN ? cap - CH_KEY_UPDATE_RECORD_LEN : 0;
+    size_t fill = records_fill(room, limit, &records);
+    if (records > per_key) {

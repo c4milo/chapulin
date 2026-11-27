@@ -19,7 +19,8 @@
 # It also checks where session.h's CH_TX_STAGE stops being the hello. The
 # default classic hello is 617 bytes, so CH_TX_PT=600 seals a record of
 # 600 + 1 + 16 = 617 bytes and keeps the hello's 617, and CH_TX_PT=601
-# needs 618.
+# needs 618. A TRANSPORT=tcp-nonblocking build keeps the hello at every
+# CH_TX_PT.
 cd "$(dirname "$0")/.." || exit 1
 # Each case below names its own variables. make exports the variables its
 # command line set, so a run from `make check`'s check-lib-tx-record holds
@@ -67,8 +68,14 @@ fi
 compiles -DSTAGE=617 || fail "the default classic CH_TX_STAGE must stay 617"
 compiles -DCH_TX_PT=600 -DSTAGE=617 || fail "CH_TX_PT=600 must keep the 617-byte hello as CH_TX_STAGE"
 compiles -DCH_TX_PT=601 -DSTAGE=618 || fail "CH_TX_PT=601 must raise CH_TX_STAGE to its 618-byte sealed record"
+compiles -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
+    -DCH_TX_PT=16384 -DSTAGE=16401 || fail "the TX_RECORD=16384 tcp-blocking object's CH_TX_STAGE must be 16401"
+# A tcp-nonblocking session seals its records of application data in the
+# caller's storage, so its array stages the handshake alone, and
+# TX_RECORD leaves it at the hello (src/session.h, docs/decisions.md 248).
 compiles -DCH_TRUST_WEBPKI -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
-    -DCH_TX_PT=16384 -DSTAGE=16401 || fail "the TX_RECORD=16384 object's CH_TX_STAGE must be 16401"
+    -DCH_TX_PT=16384 -DSTAGE=CH_TX_HELLO ||
+    fail "the TX_RECORD=16384 tcp-nonblocking object's CH_TX_STAGE must be its hello, CH_TX_HELLO"
 
 # What make print-lib-def prints for one set of variables, and nothing
 # when make refuses them.

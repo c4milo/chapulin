@@ -123,13 +123,6 @@ static void leave(int side) {
     running = NEITHER;
 }
 
-static int never_send(void *io, const uint8_t *p, size_t n) {
-    (void)io;
-    (void)p;
-    (void)n;
-    return -1;
-}
-
 static int push_to_client(void *io, const uint8_t *p, size_t n) {
     (void)io;
     if (to_client.len + n > sizeof to_client.bytes) {
@@ -193,7 +186,6 @@ static void configure(const identity *id) {
     memset(&server_cfg, 0, sizeof server_cfg);
     server_cfg.buf = server_buf;
     server_cfg.buf_len = sizeof server_buf;
-    server_cfg.send = never_send;
     server_cfg.srv.cookie_key = cookie_key;
     server_cfg.srv.on_record_out = push_to_client;
 #ifdef CH_PIN_ECDSA
@@ -204,7 +196,6 @@ static void configure(const identity *id) {
     memset(&client_cfg, 0, sizeof client_cfg);
     client_cfg.buf = client_buf;
     client_cfg.buf_len = sizeof client_buf;
-    client_cfg.send = never_send;
     client_cfg.server_pubkey = id->pub;
     client_cfg.server_pubkey_len = id->pub_len;
 #ifdef CH_CPU_RUNTIME

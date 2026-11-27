@@ -2743,6 +2743,27 @@ launch fast:2 full tcp_nonblocking_in 4 "fill_nondet.0:129,no_secret_left.0:33" 
 # properties, 145 s and 181 s in two runs, 0.47 GB peak. At 24 bytes of
 # caller input the same formula took 359 s and 0.77 GB.
 launch fast full tcp_read 2 "read_records.0:4" -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_read.c src/session.c src/buf.c
+# ch_seal_in_place's, ch_writable_len's, ch_close_out's and ch_fail_out's
+# bodies (tcp_seal.c), with rec_seal, hspost_seal_key_update,
+# tlsi_fail_into, tlsi_seal_alert and tlsi_wipe contract stubs. tcp_seal
+# proves the seal. The caller's buf sits at either end of an array of 72
+# bytes, which holds three records at a limit of 1 or 2 bytes, so
+# seal_records.0, which moves and seals each record from the last to the
+# first, turns three times at most, and seal_records.1, CH_ASSERT's
+# do-while inside it, once a turn. tcp_seal_suite is the same formula
+# under -DCH_SUITE_AES_GCM, with the write key's suite and sequence number
+# unconstrained. tcp_seal_rest proves ch_writable_len's answer, the close
+# and the failure, at any record limit and a cap of 11 bits. One formula
+# of all four took 291 s to 342 s of CPU at a buffer of 80 bytes, over the
+# fast tier's five minutes, because each 64-bit division costs the solver
+# a divider. Measured on 2026-11-27 in an amd64 Linux container of 4 cores
+# and 16 GB, beside other work (proof/prove-one.sh under /usr/bin/time -v,
+# cbmc 6.11.0, kissat): tcp_seal 534 properties, 162 s of CPU, 1.26 GB
+# peak; tcp_seal_suite 558, 198 s, 1.27 GB; tcp_seal_rest 466, 14 s,
+# 0.04 GB.
+launch fast full tcp_seal 2 "fill_nondet.0:73,seal_records.0:4,seal_records.1:4,is_error_alert.0:27" -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_seal.c
+launch fast full tcp_seal_suite 2 "fill_nondet.0:73,seal_records.0:4,seal_records.1:4,is_error_alert.0:27" -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_SUITE_AES_GCM src/tcp_seal.c
+launch fast full tcp_seal_rest 2 "fill_nondet.0:73,seal_records.0:4,seal_records.1:4,is_error_alert.0:27" -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_seal.c
 # The ROLE=server flight handlers, with srv_accept's layering turned
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the

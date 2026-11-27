@@ -218,14 +218,13 @@ static int transport_ok(const ch_cfg *cfg) {
     return cfg->buf != NULL && cfg->buf_len >= CH_MIN_RXBUF && cfg->send == NULL &&
            cfg->recv == NULL && cfg->srv.on_crypto_out != NULL && cfg->on_level_ready != NULL;
 #elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
-    // A tcp-nonblocking server drives no socket while the handshake runs:
-    // the caller owns it, and the flight leaves through on_record_out
-    // (srv_cfg.h). send stays required all the same, because ch_write and
-    // ch_close call it once the session is connected, and by then the
-    // caller holds the bytes and it never blocks. No call reads through
-    // recv, because ch_read_in_place reads the caller's bytes, so a recv
-    // that is set is refused (tcp_nonblocking.h).
-    return cfg->buf != NULL && cfg->send != NULL && cfg->recv == NULL &&
+    // A tcp-nonblocking server drives no socket: the caller owns it. The
+    // flight leaves through on_record_out (srv_cfg.h), and once the session
+    // is connected ch_read_in_place reads the caller's bytes and
+    // ch_seal_in_place seals into the caller's storage. No call sends
+    // through send or reads through recv, so one that is set is refused
+    // (tcp_nonblocking.h, INV-28).
+    return cfg->buf != NULL && cfg->send == NULL && cfg->recv == NULL &&
            cfg->buf_len >= CH_MIN_RXBUF && cfg->srv.on_record_out != NULL;
 #else
     return cfg->buf != NULL && cfg->send != NULL && cfg->recv != NULL &&

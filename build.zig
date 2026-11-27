@@ -204,9 +204,9 @@ const public_hash = [_][]const u8{
     "ch_shake256_hash", "ch_hmac",          "ch_hkdf_extract",  "ch_hkdf_expand",
 };
 const public_tcp_nonblocking = [_][]const u8{
-    "ch_tcp_init",     "ch_tcp_in",        "ch_tcp_out",       "ch_tcp_state", "ch_tcp_tls",
-    "ch_tcp_close",    "ch_tcp_whole_len", "ch_read_in_place", "ch_write",     "ch_write_parts",
-    "ch_writable_len", "ch_close",         "ch_fail",
+    "ch_tcp_init",  "ch_tcp_in",        "ch_tcp_out",       "ch_tcp_state",     "ch_tcp_tls",
+    "ch_tcp_close", "ch_tcp_whole_len", "ch_read_in_place", "ch_seal_in_place", "ch_writable_len",
+    "ch_close_out", "ch_fail_out",
 } ++ public_ticket ++ public_alert;
 const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_write_parts", "ch_writable_len", "ch_close", "ch_fail" } ++ public_ticket ++ public_alert;
 const public_srv_quic = [_][]const u8{
@@ -226,8 +226,8 @@ const public_quic_either_role = [_][]const u8{
 /// The calls a connected tcp-nonblocking session makes, which a ROLE=server
 /// object exports without the client's driver.
 const public_record_either_role = [_][]const u8{
-    "ch_tcp_state", "ch_tcp_tls",     "ch_tcp_close",    "ch_tcp_whole_len", "ch_read_in_place",
-    "ch_write",     "ch_write_parts", "ch_writable_len", "ch_close",         "ch_fail",
+    "ch_tcp_state",     "ch_tcp_tls",      "ch_tcp_close", "ch_tcp_whole_len", "ch_read_in_place",
+    "ch_seal_in_place", "ch_writable_len", "ch_close_out", "ch_fail_out",
 } ++ public_alert;
 /// The calls a connected tcp-blocking session makes.
 const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_write_parts", "ch_writable_len", "ch_close", "ch_fail" } ++ public_alert;
@@ -252,7 +252,8 @@ const declarations = [_]Declaration{
     .{ .header = "tcp_nonblocking.h", .names = &.{
         "ch_tcp_init",      "ch_tcp_in",        "ch_tcp_out",
         "ch_tcp_state",     "ch_tcp_tls",       "ch_tcp_close",
-        "ch_tcp_whole_len", "ch_read_in_place",
+        "ch_tcp_whole_len", "ch_read_in_place", "ch_seal_in_place",
+        "ch_close_out",     "ch_fail_out",
     } },
     .{ .header = "quic.h", .names = &public_quic },
     .{ .header = "srv.h", .names = &.{ "ch_srv_accept", "ch_srv_check" } },
@@ -979,7 +980,7 @@ fn transportAxis(b: *std.Build, transport: Transport, aes_impl: Names) Axis {
         .@"tcp-nonblocking" => .{
             .defs = &.{"-DCH_TRANSPORT_TCP_NONBLOCKING"},
             .filter = &.{"handshake.c"},
-            .add = &.{ "tcp_nonblocking.c", "tcp_entry.c", "tcp_nonblocking_frame.c", "tcp_nonblocking_step.c", "tcp_read.c" },
+            .add = &.{ "tcp_nonblocking.c", "tcp_entry.c", "tcp_nonblocking_frame.c", "tcp_nonblocking_step.c", "tcp_read.c", "tcp_seal.c" },
             .public = &public_tcp_nonblocking,
         },
         .@"tcp-blocking" => .{ .public = &public_tcp_blocking },

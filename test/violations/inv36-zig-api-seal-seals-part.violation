@@ -1,0 +1,14 @@
+invariant: INV-36
+file: chapulin_tcp.zig
+catches: test/zig-build-check.sh
+reason: seal hands ch_seal_in_place the part of pt_len that buf holds and
+  reports success, where the call must refuse the whole seal with
+  error.Cap and seal nothing. A caller that trusted the result would lose
+  the rest of its plaintext unannounced. loop_record.zig's seal one byte
+  past writable_len objects.
+
+--- old
+            const rc = c.ch_seal_in_place(self.tls(), buf.ptr, buf.len, pt_len, side_buf.ptr, side_buf.len, &result);
+--- new
+            const fits = @min(pt_len, self.writable_len(buf.len));
+            const rc = c.ch_seal_in_place(self.tls(), buf.ptr, buf.len, fits, side_buf.ptr, side_buf.len, &result);

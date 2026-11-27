@@ -7,8 +7,8 @@ reason: a tcp-nonblocking server takes a configuration whose on_record_out is
   test, so dropping it turns a configuration mistake into a crash.
 
 --- old
-    return cfg->buf != NULL && cfg->send != NULL && cfg->recv == NULL &&
+    return cfg->buf != NULL && cfg->send == NULL && cfg->recv == NULL &&
            cfg->buf_len >= CH_MIN_RXBUF && cfg->srv.on_record_out != NULL;
 --- new
-    return cfg->buf != NULL && cfg->send != NULL && cfg->recv == NULL &&
+    return cfg->buf != NULL && cfg->send == NULL && cfg->recv == NULL &&
            cfg->buf_len >= CH_MIN_RXBUF;

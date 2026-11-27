@@ -1,0 +1,17 @@
+invariant: INV-74
+file: src/tcp_seal.c
+catches: tcp_nonblocking_loop_test
+reason: a write that no key can seal returns CH_ECAP and leaves the session
+  connected, with no internal_error in side, so the caller cannot tell it
+  from a buffer that was short and calls again with a smaller one, which
+  RFC 9846 §4.7.3's cap of KeyUpdates makes no key able to seal.
+
+--- old
+    result->records_len = 0;
+    (void)tlsi_fail_into(t, ALERT_INTERNAL_ERROR, side, &result->side_len);
+    return CH_ECAP;
+--- new
+    result->records_len = 0;
+    (void)t;
+    (void)side;
+    return CH_ECAP;

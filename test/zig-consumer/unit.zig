@@ -937,9 +937,10 @@ test "every declaration this object has compiles" {
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hook_context"});
     if (@hasDecl(c, "ch_dnssec_verify")) compile(chapulin.dnssec, &.{ "Algorithm", "DigestType", "Hash", "verify" });
     if (@hasDecl(c, "ch_hkdf_expand")) compile(chapulin.hash, &.{ "Sha256", "Sha384", "Sha512", "sha256", "sha384", "sha512", "sha3_256", "sha3_512", "Shake128", "Shake256", "shake128", "shake256", "Algorithm", "HmacOptions", "hmac", "HkdfExtractOptions", "hkdf_extract", "HkdfExpandOptions", "hkdf_expand", "hkdf_info_len_max" });
-    const record = [_][]const u8{ "init", "record_in", "state", "alert_sent", "alert_received", "read", "write", "writable_len", "end", "close", "fail", "group", "psk_selected", "peer_limit", "read_closed", "reply_len" };
+    const record = [_][]const u8{ "init", "record_in", "state", "alert_sent", "alert_received", "read", "seal", "writable_len", "side_len", "end", "close", "fail", "group", "psk_selected", "peer_limit", "read_closed", "reply_len" };
     const quic = [_][]const u8{ "init", "crypto_in", "initial_keys", "keys_ready", "peer_transport_params", "seal", "seal_close", "open", "retry_ok", "negotiated_version", "key_update", "key_phase", "drop_previous_keys", "discard", "state", "alert", "error_code", "close", "alpn_selected", "group", "psk_selected" };
-    compile(chapulin.tcp, &.{ "parts_max", "InitError", "RecordInError", "ServerRecordInError", "RecordOutError", "ReadError", "WriteError", "EndError", "FailError", "ExportError" });
+    compile(chapulin.tcp, &.{ "Sealed", "InitError", "RecordInError", "ServerRecordInError", "RecordOutError", "ReadError", "SealError", "EndError", "FailError", "ExportError" });
+    if (@hasDecl(c, "ch_tcp_whole_len")) compile(chapulin.tcp, &.{ "plaintext_offset", "alert_record_len", "key_update_record_len" });
     if (@hasDecl(c, "ch_tcp_init")) compileSession(chapulin.tcp.Client(.{}), &(record ++ .{ "record_out", "take_ticket" }));
     if (@hasDecl(c, "ch_srv_tcp_init")) compileSession(chapulin.tcp.Server(.{}), &(record ++ .{ "sni", "output_len" }));
     if (has_quic) compile(chapulin.quic, &.{ "Version", "InitError", "CryptoInError", "ServerCryptoInError", "CryptoOutError", "SealError", "OpenError", "TokenMintError" });

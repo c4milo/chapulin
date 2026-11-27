@@ -1,24 +1,25 @@
 //! Each side of a tcp-nonblocking pair writing across its AES-GCM write key's
-//! ceiling, in a SUITE=aesgcm object (docs/decisions.md 78). An AES-GCM
-//! write key seals at most REC_AES_GCM_RECORDS_MAX records (record.h), and
-//! ch_write sends the KeyUpdate that retires the key as the last of them.
-//! test/key_limit_cases.h checks the C calls; this checks the Zig calls
-//! over them. The test writes the writer's write sequence number and the
-//! reader's read sequence number two records below the ceiling, and every
-//! step after that goes through the API alone. Under each AES-GCM suite:
+//! ceiling, in a SUITE=aesgcm object (docs/decisions.md 78 and 248). An
+//! AES-GCM write key seals at most REC_AES_GCM_RECORDS_MAX records
+//! (record.h). seal changes the key before a write whose records the key
+//! cannot all seal: it writes the KeyUpdate into side, and every record of
+//! the write goes out under the next key. test/key_limit_cases.h checks the
+//! C calls; this checks the Zig calls over them. The test writes the
+//! writer's write sequence number and the reader's read sequence number two
+//! records below the ceiling, and every step after that goes through the
+//! API alone. Under each AES-GCM suite:
 //!
-//! - writable_len counts no KeyUpdate record for the one data record the
-//!   key has left, and counts one for the record after it, to the byte;
-//! - write refuses whole a write across the ceiling into one byte less
-//!   than its records, and then seals it into exactly its records: the
-//!   first record, one KeyUpdate record of key_update_record_len bytes
-//!   and the second record;
-//! - read returns the plaintext on both sides of the KeyUpdate, reads the
-//!   KeyUpdate record as a record of no plaintext, and sends nothing into
-//!   reply: a read sends no KeyUpdate, and this one's request_update is 0,
-//!   so the reader owes none either;
+//! - writable_len counts no KeyUpdate record, because seal writes it into
+//!   side;
+//! - a seal of the one data record the key has left writes no KeyUpdate;
+//! - the next seal, of two records, refuses whole a buffer one byte less
+//!   than its records, and then writes the KeyUpdate, at the key's last
+//!   sequence number, into side and both records under the next key;
+//! - read reads the KeyUpdate record as a record of no plaintext, then the
+//!   two records, and sends nothing into reply: this KeyUpdate's
+//!   request_update is 0, so the reader owes none;
 //! - neither side reports an alert;
-//! - the next write sends no KeyUpdate, and the reader reads it under the
+//! - the next seal writes no KeyUpdate, and the reader reads it under the
 //!   key the KeyUpdate moved it to.
 const std = @import("std");
 const chapulin = @import("chapulin");
@@ -87,52 +88,53 @@ fn crossCeiling(writer: anytype, reader: anytype, wire: *loop.Pipe) !void {
     fixture.tcpPriv(&writer.tcp).t.wr.seq = ceiling - 2;
     fixture.tcpPriv(&reader.tcp).t.rd.seq = ceiling - 2;
 
-    // The key has one data record left, so a write of one record sends no
-    // KeyUpdate. A second record goes out after the KeyUpdate record: it
-    // fits once the KeyUpdate record and its own overhead fit beside the
-    // first record, and not one byte sooner.
+    // writable_len counts no KeyUpdate record: seal writes it into side.
     const whole = per_record + overhead;
     const key_update = tcp.key_update_record_len;
-    try check(writer.writable_len(whole) == per_record, "writable_len counted a KeyUpdate record one record before the ceiling");
-    const second = whole + key_update + overhead;
-    try check(writer.writable_len(second) == per_record and writer.writable_len(second + 1) == per_record + 1, "writable_len did not count the KeyUpdate record at the ceiling");
+    try check(writer.writable_len(whole) == per_record and writer.writable_len(2 * whole) == 2 * per_record, "writable_len counted a KeyUpdate record");
 
-    // One write across the ceiling, into exactly the bytes writable_len
-    // counts for it: the first record, the KeyUpdate record and a second
-    // record of rest bytes. One byte fewer is refused whole.
+    // The key has one data record left, so a seal of one record writes no
+    // KeyUpdate.
+    const one = try loop.seal_in(writer, wire, data[0..per_record], whole);
+    try check(one == whole, "a seal of the key's last data record wrote a KeyUpdate record");
+    try readRecords(reader, wire, &.{.{ whole, per_record }}, data[0..per_record]);
+
+    // The key has no data record left. A seal of two records into one byte
+    // less than its records is refused whole; into exactly its records it
+    // writes the KeyUpdate into side, under the old key's last sequence
+    // number, and both records under the next key.
     const rest = data.len - per_record;
-    const sealed = second + rest;
-    try check(writer.writable_len(sealed) == data.len and writer.writable_len(sealed - 1) == data.len - 1, "writable_len does not match the write across the ceiling");
-    try check(writer.write(&data, wire.free()[0 .. sealed - 1]) == error.Cap, "a write across the ceiling into one byte less than its records was not refused");
-    const written = try writer.write(&data, wire.free()[0..sealed]);
-    try check(written == sealed, "write did not count the KeyUpdate record among the bytes it sealed");
-    wire.push(written);
+    const sealed = data.len + 2 * overhead;
+    try check(writer.writable_len(sealed) == data.len and writer.writable_len(sealed - 1) == data.len - 1, "writable_len does not match the seal across the ceiling");
+    try check(loop.seal_in(writer, wire, &data, sealed - 1) == error.Cap, "a seal across the ceiling into one byte less than its records was not refused");
+    try check(wire.pending().len == 0 and fixture.tcpPriv(&writer.tcp).t.wr.seq == ceiling - 1, "a refused seal sealed a record");
+    const written = try loop.seal_in(writer, wire, &data, sealed);
+    try check(written == key_update + sealed, "seal did not write one KeyUpdate record into side and the two records");
+    try readRecords(reader, wire, &.{ .{ key_update, 0 }, .{ whole, per_record }, .{ rest + overhead, rest } }, &data);
+    try checkNoAlerts(writer, reader);
 
-    // The reader reads the first record under the old key, the KeyUpdate
-    // record, which carries no plaintext and asks for no answer, and the
-    // second record under the next key.
-    const records = [_]struct { usize, usize }{ .{ whole, per_record }, .{ key_update, 0 }, .{ rest + overhead, rest } };
+    // The next seal, under the next key, writes no KeyUpdate.
+    const next = "under the next key";
+    try check(writer.writable_len(next.len + overhead) == next.len, "writable_len counted a KeyUpdate record under the next key");
+    const sent = try loop.seal_to(writer, wire, next);
+    try check(sent == next.len + overhead, "the seal after the ceiling wrote more than one record");
+    try readRecords(reader, wire, &.{.{ sent, next.len }}, next);
+    try checkNoAlerts(writer, reader);
+}
+
+/// reader reads one record of wire for each entry of records, each with
+/// the length and plaintext length it names and no reply, and what it read
+/// is want.
+fn readRecords(reader: anytype, wire: *loop.Pipe, records: []const struct { usize, usize }, want: []const u8) !void {
     var at: usize = 0;
-    for (records) |want| {
+    for (records) |one| {
         const r = try reader.read(wire.pending(), &reply);
         @memcpy(got[at..][0..r.plaintext.len], r.plaintext);
         at += r.plaintext.len;
         wire.pop(r.consumed);
-        try check(r.consumed == want[0] and r.plaintext.len == want[1] and r.reply_len == 0, "the reader did not read one record, one KeyUpdate record and one record, or it answered");
+        try check(r.consumed == one[0] and r.plaintext.len == one[1] and r.reply_len == 0, "the reader did not read the records the writer sealed, or it answered");
     }
-    try check(wire.pending().len == 0 and std.mem.eql(u8, got[0..at], &data), "the plaintext read across the ceiling differs from what was written");
-    try checkNoAlerts(writer, reader);
-
-    // The next write, under the next key, sends no KeyUpdate.
-    const next = "under the next key";
-    try check(writer.writable_len(next.len + overhead) == next.len, "writable_len counted a KeyUpdate record under the next key");
-    const sent = try writer.write(next, wire.free());
-    wire.push(sent);
-    const r = try reader.read(wire.pending(), &reply);
-    try check(std.mem.eql(u8, r.plaintext, next), "the write after the ceiling did not read back");
-    wire.pop(r.consumed);
-    try check(sent == next.len + overhead and r.consumed == sent and r.reply_len == 0, "the write after the ceiling sent more than one record");
-    try checkNoAlerts(writer, reader);
+    try check(wire.pending().len == 0 and std.mem.eql(u8, got[0..at], want), "the plaintext read across the ceiling differs from what was written");
 }
 
 /// Both sessions still connected, and neither has sent or received an

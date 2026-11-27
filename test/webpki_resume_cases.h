@@ -43,10 +43,10 @@ static ch_cfg base_cfg(void) {
     ch_cfg cfg = {0};
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
-    cfg.send = mock_send;
 #ifndef CH_TRANSPORT_TCP_NONBLOCKING
-    // A tcp-nonblocking session reads through no recv, and its init
-    // refuses one (tcp_nonblocking.h).
+    // A tcp-nonblocking session sends through no send and reads through no
+    // recv, and its init refuses either one (tcp_nonblocking.h).
+    cfg.send = mock_send;
     cfg.recv = mock_recv;
 #endif
     cfg.io = &mock;

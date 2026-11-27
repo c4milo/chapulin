@@ -1,0 +1,14 @@
+invariant: INV-28
+file: src/srv.c
+catches: tcp_nonblocking_loop_test
+reason: ch_srv_tcp_init takes a configuration that sets cfg.send, which no
+  call of the transport calls, so a server whose caller set one believes
+  its records leave through it. tcp_nonblocking.h refuses it at
+  configuration time (docs/decisions.md 248).
+
+--- old
+    return cfg->buf != NULL && cfg->send == NULL && cfg->recv == NULL &&
+           cfg->buf_len >= CH_MIN_RXBUF && cfg->srv.on_record_out != NULL;
+--- new
+    return cfg->buf != NULL && cfg->recv == NULL && cfg->buf_len >= CH_MIN_RXBUF &&
+           cfg->srv.on_record_out != NULL;

@@ -312,6 +312,9 @@ int tls_read(ch_tls_priv *t, uint8_t *p, size_t n) {
 }
 #endif // CH_TRANSPORT_TCP_NONBLOCKING
 
+// A TRANSPORT=tcp-nonblocking build closes with ch_close_out, which
+// writes the close_notify into the caller's storage (tcp_seal.c).
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 void tls_close(ch_tls_priv *t) {
     CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states
 
@@ -321,6 +324,7 @@ void tls_close(ch_tls_priv *t) {
     tlsi_wipe(t);
     t->state = CH_ST_CLOSED;
 }
+#endif
 
 #ifdef CH_TRUST_WEBPKI
 // A TRUST=webpki build's ch_connect and the config rules it checks. They

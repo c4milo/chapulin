@@ -97,10 +97,10 @@ static int client_out(uint8_t *out, size_t cap, size_t *out_len) {
 #else
 static ch_tcp_priv session;
 
-// ch_tcp_init requires a send and calls none, so this one counts its
-// calls and fails. No call of this transport reads through a recv, so the
-// configuration sets none, and ch_tcp_init refuses one
-// (tcp_nonblocking.h).
+// No call of this transport sends through a send or reads through a recv,
+// so the configuration sets neither, and ch_tcp_init refuses either one
+// (tcp_nonblocking.h). client_init sets this send on the session's copy of
+// cfg once init took it, where it counts any call that sends, and fails it.
 static int io_calls;
 
 static int fail_send(void *io, const uint8_t *p, size_t n) {
@@ -112,7 +112,11 @@ static int fail_send(void *io, const uint8_t *p, size_t n) {
 }
 
 static int client_init(const ch_cfg *cfg) {
-    return ch_tcp_init(tcp_public(&session), cfg);
+    int rc = ch_tcp_init(tcp_public(&session), cfg);
+    if (rc == CH_OK) {
+        session.t.cfg.send = fail_send;
+    }
+    return rc;
 }
 
 static uint8_t client_state(void) {
@@ -155,8 +159,6 @@ static void configure(ch_cfg *cfg, uint32_t ticket_epoch) {
     // and this one resumes a version 1 connection.
     saved.ticket.quic_version = CH_QUIC_VERSION_1;
     cfg->on_level_ready = level_ready;
-#else
-    cfg->send = fail_send;
 #endif
 }
 
@@ -197,7 +199,7 @@ static void test_ticket_epoch_boundary(void) {
     // epoch, and none ran here.
     CHECK(epoch_stores == 0);
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
-    // The caller sends the staged bytes: no init called cfg.send.
+    // The caller sends the staged bytes: no call sent through cfg.send.
     CHECK(io_calls == 0);
 #endif
 }

@@ -143,10 +143,12 @@ run() {
         pair drbg "ch_drbg_seed ch_rand_bytes" "RAND=drbg" "RAND=drbg TRANSPORT=quic-nonblocking EXPORTER=off"
         ;;
     tcp-both)
-        # Both TCP transports carry the connected session's calls: refused.
-        # ch_read is not among them: a tcp-nonblocking object reads with
-        # ch_read_in_place alone (tcp_nonblocking.h).
-        pair tcp-both "ch_close ch_fail ch_writable_len ch_write ch_write_parts" "RAND=extern" \
+        # Both TCP transports export ch_writable_len, the one call of the
+        # connected session they share: refused. ch_read, ch_write,
+        # ch_write_parts, ch_close and ch_fail are not among them: a
+        # tcp-nonblocking object reads with ch_read_in_place, seals with
+        # ch_seal_in_place and closes with ch_close_out (tcp_nonblocking.h).
+        pair tcp-both "ch_writable_len" "RAND=extern" \
             "RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking"
         ;;
     *)

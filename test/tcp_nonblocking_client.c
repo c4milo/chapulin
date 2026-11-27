@@ -11,8 +11,10 @@
 // event loop: collect what chapulin owes, send it, read what arrives,
 // feed it back, and stop when the state says connected. Nothing in it
 // blocks inside chapulin. Once connected, the program keeps the bytes it
-// reads in in_buf, and ch_read_in_place opens each record there
-// (tcp_nonblocking.h).
+// reads in in_buf, and ch_read_in_place opens each record there. It
+// writes its line where the records will go, in out_buf, and
+// ch_seal_in_place seals it there; ch_close_out writes the close_notify
+// the program sends last (tcp_nonblocking.h).
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,13 +41,6 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
     for (size_t i = 0; i < n; i++) {
         p[i] = counter++;
     }
-}
-
-// cfg.send: one send(), whose count chapulin reads, and it calls again
-// for the rest (cfg.h).
-static int sock_send(void *io, const uint8_t *p, size_t n) {
-    ssize_t w = send(*(int *)io, p, n, 0);
-    return w > 0 ? (int)w : -1;
 }
 
 // Writes all n bytes that ch_tcp_out staged, and returns 0, or -1 when
@@ -193,6 +188,42 @@ static int read_reply(ch_tcp_priv *r, int fd, size_t have) {
     return 1;
 }
 
+// Where the program writes its line, at REC_HDR, and the call seals it
+// into records: room for the longest line at the least record_size_limit
+// a peer may set, 64 bytes (RFC 8449 §4), which takes nine records.
+static uint8_t out_buf[1024];
+
+// Seals the n bytes of line where they lie in out_buf and sends the
+// records, a KeyUpdate the session owes first. Returns 0, or 1 when the
+// records do not fit out_buf, the seal fails or the socket refuses them.
+static int write_line(ch_tcp_priv *r, int fd, const char *line, size_t n) {
+    ch_tls *t = ch_tcp_tls(tcp_public(r));
+    if (n > ch_writable_len(t, sizeof out_buf)) {
+        return 1;
+    }
+    memcpy(out_buf + REC_HDR, line, n);
+    uint8_t side[CH_KEY_UPDATE_RECORD_LEN];
+    ch_seal_result result = {0};
+    int rc = ch_seal_in_place(t, out_buf, sizeof out_buf, n, side, sizeof side, &result);
+    // On a failure side holds its alert, which goes to the server before
+    // the connection closes.
+    if (sock_write_all(fd, side, result.side_len) != 0 || rc != CH_OK) {
+        (void)fprintf(stderr, "seal: %d\n", rc);
+        return 1;
+    }
+    return sock_write_all(fd, out_buf, result.records_len) != 0;
+}
+
+// Writes this side's close_notify and sends it.
+static void close_session(ch_tcp_priv *r, int fd) {
+    uint8_t out[CH_ALERT_RECORD_LEN];
+    size_t out_len = 0;
+    if (ch_close_out(ch_tcp_tls(tcp_public(r)), out, sizeof out, &out_len) == CH_OK) {
+        (void)sock_write_all(fd, out, out_len);
+    }
+    ch_tcp_close(tcp_public(r));
+}
+
 int main(int argc, char **argv) {
     if (argc != 5) {
         (void)fprintf(stderr, "usage: %s host port psk-hex psk-id\n", argv[0]);
@@ -217,10 +248,8 @@ int main(int argc, char **argv) {
     cfg.psk_len = psk_len;
     cfg.psk_id = (const uint8_t *)argv[4];
     cfg.psk_id_len = strlen(argv[4]);
-    // Used only after the handshake, by ch_write and ch_close. No call
-    // reads through a recv, and ch_tcp_init refuses one (tcp_nonblocking.h).
-    cfg.send = sock_send;
-    cfg.io = &fd;
+    // No call sends through a send or reads through a recv, and ch_tcp_init
+    // refuses either one (tcp_nonblocking.h): this program owns the socket.
 
     static ch_tcp_priv r;
     int rc = ch_tcp_init(tcp_public(&r), &cfg);
@@ -239,7 +268,7 @@ int main(int argc, char **argv) {
     // clean close, which is what proves the handoff works.
     char line[512];
     if (fgets(line, sizeof line, stdin) != NULL) {
-        if (ch_write(ch_tcp_tls(tcp_public(&r)), (const uint8_t *)line, strlen(line)) != CH_OK) {
+        if (write_line(&r, fd, line, strlen(line)) != 0) {
             return 1;
         }
         if (read_reply(&r, fd, leftover) != 0) {
@@ -247,7 +276,7 @@ int main(int argc, char **argv) {
         }
         (void)fflush(stdout);
     }
-    ch_close(ch_tcp_tls(tcp_public(&r)));
+    close_session(&r, fd);
     (void)close(fd);
     return 0;
 }

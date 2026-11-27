@@ -1,11 +1,12 @@
 invariant: INV-28
 file: src/handshake_post.c
 catches: tcp_nonblocking_loop_test
-reason: inv55-key-update-answer-per-request's edit, with the tcp-nonblocking
-  loop as the catcher: ch_read calls cfg.send to answer a KeyUpdate, which
-  a caller whose send holds only input during ch_read, as colibri's does,
-  does not expect. The connected server reads a request, and the loop
-  requires that read to call cfg.send no time.
+reason: inv55-key-update-answer-per-request's edit in the tcp-nonblocking
+  transport: ch_read_in_place answers a KeyUpdate inside the read, by
+  sealing the answer into a buffer of its own, which no caller holds, so
+  the write key moves and no record reaches the peer. A read writes nothing
+  but the alert of its failure (INV-28), and the answer belongs to the next
+  ch_seal_in_place. The loop's run of requests requires that one answer.
 
 --- old
     if (request == 1 && t->send_epochs < HSPOST_SEND_EPOCHS_MAX) {
@@ -13,5 +14,7 @@ reason: inv55-key-update-answer-per-request's edit, with the tcp-nonblocking
     }
 --- new
     if (request == 1 && t->send_epochs < HSPOST_SEND_EPOCHS_MAX) {
-        (void)hspost_send_key_update(t);
+        uint8_t answer[CH_KEY_UPDATE_RECORD_LEN];
+        size_t answer_len = 0;
+        (void)hspost_seal_key_update(t, answer, sizeof answer, &answer_len);
     }

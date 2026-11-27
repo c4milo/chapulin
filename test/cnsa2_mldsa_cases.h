@@ -97,7 +97,7 @@ static int pinned_handshake(mock_server *s, const ch_cfg *cfg, ch_tls_priv **t) 
     CHECK(s->m.pinned && !s->m.resumed && s->m.client_finished_ok);
     CHECK((*t)->group == CH_GROUP_MLKEM1024 && (*t)->suite == SUITE_AES_256_GCM_SHA384);
     CHECK((*t)->psk_selected == 0);
-    CHECK(ch_write(tls_public(*t), ping, sizeof ping) == CH_OK);
+    CHECK(test_write(tls_public(*t), ping, sizeof ping) == CH_OK);
     CHECK(s->echo_len == sizeof ping && memcmp(s->echo, ping, sizeof ping) == 0);
     uint8_t got[16];
     CHECK(test_read(tls_public(*t), got, sizeof got) == (int)sizeof ping);
@@ -113,14 +113,14 @@ static void test_mldsa_handshake(void) {
     ch_tls_priv *t = NULL;
     CHECK(pinned_handshake(&s, &cfg, &t) == CH_OK);
     CHECK(t->pin_slot == 1);
-    ch_close(tls_public(t));
+    test_close(tls_public(t));
 
     cfg = pinned_cfg(&s);
     cfg.ticket = &saved;
     s.answer = 1;
     CHECK(test_connect(&t, &cfg) == CH_OK);
     CHECK(s.m.resumed && s.m.binder_ok && t->psk_selected == 1);
-    ch_close(tls_public(t));
+    test_close(tls_public(t));
 
     cfg = pinned_cfg(&s);
     cfg.server_pubkey = stranger_key.pk;
@@ -128,7 +128,7 @@ static void test_mldsa_handshake(void) {
     cfg.server_pubkey2_len = MLDSA87_PK_LEN;
     CHECK(pinned_handshake(&s, &cfg, &t) == CH_OK);
     CHECK(t->pin_slot == 2);
-    ch_close(tls_public(t));
+    test_close(tls_public(t));
 }
 
 // Each bad CertificateVerify fails the handshake with CH_EAUTH: another
@@ -196,7 +196,7 @@ static void test_mldsa_floor(void) {
         int rc = pinned_handshake(&s, &cfg, &t);
         if (!over) {
             CHECK(rc == CH_OK);
-            ch_close(tls_public(t));
+            test_close(tls_public(t));
             continue;
         }
 #ifdef CH_TRUST_CA
@@ -218,7 +218,7 @@ static void test_mldsa_chains(void) {
     ch_tls_priv *t = NULL;
     CHECK(pinned_handshake(&s, &cfg, &t) == CH_OK);
     CHECK(t->pin_slot == 1);
-    ch_close(tls_public(t));
+    test_close(tls_public(t));
 
     list_chain(&served, 0, 1);
     cfg = pinned_cfg(&s);

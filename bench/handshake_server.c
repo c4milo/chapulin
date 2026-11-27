@@ -6,7 +6,8 @@
 //
 // It calls the object as colibri's server does: ch_srv_tcp_init and
 // ch_srv_tcp_in until the handshake is complete, then ch_read_in_place,
-// ch_write and ch_close. Its identity is a P-256 leaf and the root that
+// ch_seal_in_place and ch_close_out, and it sends what the last two wrote
+// itself. Its identity is a P-256 leaf and the root that
 // signed it, read from PEM files through ch_chain_from_pem and
 // ch_p256_key_from_pem. It offers ALPN h2 and http/1.1, holds a cookie
 // key and no ticket key, so every handshake is a full one. Each draw of
@@ -40,8 +41,13 @@
 #define CHAIN_MAX 4
 // Room for a whole record of the largest plaintext and its overhead.
 #define RECORD_ROOM (16384 + 256)
+// Room for the response's records at the least record_size_limit a client
+// may set, 64 bytes (RFC 8449 §4), which takes five records.
+#define RESPONSE_ROOM (RESPONSE_LEN + 5 * REC_OVERHEAD)
 
 static uint8_t rx_buf[RECORD_ROOM];
+// The response, written at REC_HDR and sealed into records where it lies.
+static uint8_t tx_buf[RESPONSE_ROOM];
 static uint8_t chain_der[DER_MAX];
 static ch_cert chain[CHAIN_MAX];
 static uint8_t priv[32];
@@ -97,10 +103,6 @@ static int send_all(void *io, const uint8_t *p, size_t n) {
         n -= (size_t)sent;
     }
     return 0;
-}
-
-static int send_bytes(void *io, const uint8_t *p, size_t n) {
-    return send_all(io, p, n) == 0 ? (int)n : -1;
 }
 
 // Opens the next record of wire where it lies, reading the socket until
@@ -165,16 +167,28 @@ __attribute__((noinline)) void bench_exchange(void) {
         }
         have += got;
     }
-    uint8_t response[RESPONSE_LEN];
-    memset(response, 'r', sizeof response);
-    if (ch_write(ch_tcp_tls(tcp_public(&session)), response, sizeof response) != CH_OK) {
-        fail("ch_write failed");
+    memset(tx_buf + REC_HDR, 'r', RESPONSE_LEN);
+    uint8_t side[CH_KEY_UPDATE_RECORD_LEN];
+    ch_seal_result sealed;
+    if (ch_seal_in_place(ch_tcp_tls(tcp_public(&session)), tx_buf, sizeof tx_buf, RESPONSE_LEN,
+                         side, sizeof side, &sealed) != CH_OK) {
+        fail("ch_seal_in_place failed");
+    }
+    if (send_all(NULL, side, sealed.side_len) != 0 ||
+        send_all(NULL, tx_buf, sealed.records_len) != 0) {
+        fail("the socket refused the response");
     }
     size_t got = 0;
     if (read_record(request, sizeof request, &got) != CH_ECLOSED) {
         fail("ch_read_in_place did not return the client's close_notify");
     }
-    ch_close(ch_tcp_tls(tcp_public(&session)));
+    uint8_t close_notify[CH_ALERT_RECORD_LEN];
+    size_t close_len = 0;
+    if (ch_close_out(ch_tcp_tls(tcp_public(&session)), close_notify, sizeof close_notify,
+                     &close_len) != CH_OK ||
+        send_all(NULL, close_notify, close_len) != 0) {
+        fail("ch_close_out wrote no close_notify the socket took");
+    }
     close(wire.fd);
 }
 
@@ -228,7 +242,6 @@ int main(int argc, char **argv) {
 
     cfg.buf = rx_buf;
     cfg.buf_len = sizeof rx_buf;
-    cfg.send = send_bytes;
     cfg.rand_bytes = draw;
     cfg.cpu = cpu;
     cfg.alpn_protocols = alpn;

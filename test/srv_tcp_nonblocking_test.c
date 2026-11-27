@@ -83,12 +83,11 @@ static int sink(void *io, const uint8_t *p, size_t n) {
     return 0;
 }
 
-// INV-28: a tcp-nonblocking server calls no send while the handshake
-// runs. A send is required all the same, because ch_write and ch_close
-// call it once the session is connected (srv.c's transport_ok), so the
-// test supplies one and counts instead of leaving it NULL, which the
-// configuration check would refuse. No call reads through a recv, so the
-// configuration sets none, and init refuses one (tcp_nonblocking.h).
+// INV-28: a tcp-nonblocking server calls no send and reads through no
+// recv, and init refuses a configuration that sets either one
+// (tcp_nonblocking.h). So the configuration sets neither, and
+// server_init sets this send on the session's copy of cfg once init took
+// it, where a call that sent would count.
 //
 // It counts rather than fails on the spot, so every scenario below can
 // state the claim where it checks the rest of its result.
@@ -98,6 +97,15 @@ static int never_send(void *io, const uint8_t *p, size_t n) {
     (void)n;
     seen.io_calls++;
     return -1;
+}
+
+// ch_srv_tcp_init, then never_send on the session's copy of cfg.
+static int server_init(ch_tcp_priv *r, const ch_cfg *cfg) {
+    int rc = ch_srv_tcp_init(tcp_public(r), cfg);
+    if (rc == CH_OK) {
+        r->t.cfg.send = never_send;
+    }
+    return rc;
 }
 
 // A recv for the refusal case alone. Init refuses the configuration
@@ -150,7 +158,6 @@ static void server_config(ch_cfg *cfg) {
     memset(cfg, 0, sizeof *cfg);
     cfg->buf = srv_buf;
     cfg->buf_len = sizeof srv_buf;
-    cfg->send = never_send;
     cfg->alpn_protocols = alpn;
     cfg->alpn_count = 1;
     cfg->srv.cookie_key = cookie_key;
@@ -203,19 +210,24 @@ static void test_init_refuses_a_missing_sink(void) {
     CHECK(seen.count == 0);
 }
 
-// A configuration with a recv names a callback no call of this transport
-// makes, so the driver refuses it before it reads a byte and sends
-// nothing (tcp_nonblocking.h, ch_tcp_init).
-static void test_init_refuses_a_recv(void) {
-    ch_cfg cfg;
-    server_config(&cfg);
-    cfg.recv = refused_recv;
-
-    ch_tcp_priv r;
-    memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_EINVAL);
-    CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_FAILED);
-    CHECK(seen.count == 0 && seen.io_calls == 0);
+// A configuration with a send or a recv names a callback no call of this
+// transport makes, so the driver refuses it before it reads a byte and
+// sends nothing (tcp_nonblocking.h, ch_tcp_init).
+static void test_init_refuses_a_send_or_a_recv(void) {
+    for (int with_send = 0; with_send <= 1; with_send++) {
+        ch_cfg cfg;
+        server_config(&cfg);
+        if (with_send) {
+            cfg.send = never_send;
+        } else {
+            cfg.recv = refused_recv;
+        }
+        ch_tcp_priv r;
+        memset(&seen, 0, sizeof seen);
+        CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_EINVAL);
+        CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_FAILED);
+        CHECK(seen.count == 0 && seen.io_calls == 0);
+    }
 }
 
 // An RSA modulus length the flight's signature buffer holds, SRV_SIG_MAX,
@@ -234,7 +246,7 @@ static void test_init_refuses_an_rsa_modulus_past_the_buffer(void) {
     cfg.srv.rsa_pss.pub_len = SRV_SIG_MAX;
     ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
+    CHECK(server_init(&r, &cfg) == CH_OK);
     size_t consumed = 0;
     CHECK(ch_srv_tcp_in(tcp_public(&r), rec, rec_len, &consumed) == CH_OK);
     CHECK(seen.count >= 5);
@@ -260,7 +272,7 @@ static void test_a_partial_record_is_not_consumed(void) {
     server_config(&cfg);
     ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
+    CHECK(server_init(&r, &cfg) == CH_OK);
 
     size_t consumed = 1;
     CHECK(ch_srv_tcp_in(tcp_public(&r), rec, rec_len - 1, &consumed) == CH_OK);
@@ -284,7 +296,7 @@ static void test_a_refusing_sink_kills_the_session(void) {
     ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
     seen.refuse = 1;
-    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
+    CHECK(server_init(&r, &cfg) == CH_OK);
 
     size_t consumed = 0;
     CHECK(ch_srv_tcp_in(tcp_public(&r), rec, rec_len, &consumed) != CH_OK);
@@ -328,7 +340,7 @@ static void test_a_session_id_draws_the_change_cipher_spec_through_the_sink(void
     server_config(&cfg);
     ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
+    CHECK(server_init(&r, &cfg) == CH_OK);
 
     size_t consumed = 0;
     int rc = ch_srv_tcp_in(tcp_public(&r), rec, rec_len, &consumed);
@@ -348,78 +360,7 @@ static void test_a_session_id_draws_the_change_cipher_spec_through_the_sink(void
     ch_tcp_close(tcp_public(&r));
 }
 
-// The count bound, SRV_CLIENT_HELLO_EXT_MAX, on the record path. This
-// tree's own hello, filled out with empty extensions of distinct unknown
-// types after its last one, draws the server's flight at the bound and
-// illegal_parameter one past it (docs/decisions.md 59). The hello at the
-// bound is larger than srv_buf, so the case gives the server a buffer of
-// its own.
-#define PAD_TYPE 0x1000
-#define PADDED_CAP (CH_HELLO_MAX + 4 * SRV_CLIENT_HELLO_EXT_MAX)
-static uint8_t padded_buf[PADDED_CAP + REC_HDR];
-
-// Fills hello, a message of hello_len bytes in a buffer of PADDED_CAP,
-// out to count extensions, and returns its new length.
-static size_t pad_to(uint8_t *hello, size_t hello_len, size_t count) {
-    rbuf r;
-    rb_init(&r, hello + 4, hello_len - 4);
-    rb_skip(&r, 2 + 32);
-    rb_skip(&r, rb_u8(&r));
-    rb_skip(&r, rb_u16(&r));
-    rb_skip(&r, rb_u8(&r));
-    size_t block_at = 4 + (hello_len - 4 - rb_left(&r));
-    rb_skip(&r, 2);
-    size_t have = 0;
-    while (rb_left(&r) > 0 && !r.err) {
-        (void)rb_u16(&r);
-        rb_skip(&r, rb_u16(&r));
-        have++;
-    }
-    CHECK(!r.err && have < count);
-    wbuf w;
-    wb_init(&w, hello + hello_len, PADDED_CAP - hello_len);
-    for (size_t i = have; i < count; i++) {
-        wb_u16(&w, (uint16_t)(PAD_TYPE + i));
-        wb_u16(&w, 0);
-    }
-    CHECK(!w.err);
-    size_t len = hello_len + w.len;
-    size_t block_len = len - block_at - 2;
-    hello[block_at] = (uint8_t)(block_len >> 8);
-    hello[block_at + 1] = (uint8_t)block_len;
-    hello[1] = (uint8_t)((len - 4) >> 16);
-    hello[2] = (uint8_t)((len - 4) >> 8);
-    hello[3] = (uint8_t)(len - 4);
-    return len;
-}
-
-static void test_extension_count_bound(void) {
-    for (size_t count = SRV_CLIENT_HELLO_EXT_MAX; count <= SRV_CLIENT_HELLO_EXT_MAX + 1; count++) {
-        static uint8_t hello[PADDED_CAP];
-        size_t hello_len = pad_to(hello, build_hello(hello, PADDED_CAP), count);
-        static uint8_t rec[PADDED_CAP + REC_HDR];
-        size_t rec_len = wrap(rec, hello, hello_len);
-
-        ch_cfg cfg;
-        server_config(&cfg);
-        cfg.buf = padded_buf;
-        cfg.buf_len = sizeof padded_buf;
-        ch_tcp_priv r;
-        memset(&seen, 0, sizeof seen);
-        CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
-        size_t consumed = 0;
-        int rc = ch_srv_tcp_in(tcp_public(&r), rec, rec_len, &consumed);
-        if (count <= SRV_CLIENT_HELLO_EXT_MAX) {
-            CHECK(rc == CH_OK && seen.count >= 5);
-        } else {
-            // No ServerHello, and one record through the sink: the alert,
-            // in the clear, because the server holds no key yet.
-            CHECK(rc == CH_EPROTO && r.t.alert_sent == ALERT_ILLEGAL_PARAMETER);
-            CHECK(seen.count == 1 && seen.type[0] == REC_ALERT && seen.len[0] == REC_HDR + 2);
-        }
-        ch_tcp_close(tcp_public(&r));
-    }
-}
+#include "srv_tcp_nonblocking_extension_tests.h"
 
 int main(void) {
     uint8_t hello[CH_HELLO_MAX];
@@ -433,7 +374,7 @@ int main(void) {
 
     ch_tcp_priv r;
     memset(&seen, 0, sizeof seen);
-    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_OK);
+    CHECK(server_init(&r, &cfg) == CH_OK);
     CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_START);
     // A server speaks second: nothing is owed before the hello arrives.
     CHECK(seen.count == 0);
@@ -484,7 +425,7 @@ int main(void) {
     size_t bytes = seen.total;
 
     test_init_refuses_a_missing_sink();
-    test_init_refuses_a_recv();
+    test_init_refuses_a_send_or_a_recv();
     test_init_refuses_an_rsa_modulus_past_the_buffer();
     test_a_partial_record_is_not_consumed();
     test_a_refusing_sink_kills_the_session();

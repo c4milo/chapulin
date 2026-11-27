@@ -29,14 +29,18 @@ static void drain_out(mock_server *s) {
 // client's Finished at the end. A failure's alert record goes to the mock
 // the same way, as cfg.send carries the tcp-blocking client's. The records
 // after the handshake are test_read's, which reads them through the
-// session's recv, mock_recv (test/test_read.h). Returns CH_OK once
-// connected, or the first error.
+// session's recv, mock_recv, and sends an alert through its send,
+// mock_send (test/test_read.h). The test sets mock_send on the session's
+// copy of cfg after init and mock_recv once connected, and the
+// configuration sets neither. Returns CH_OK once connected, or the first
+// error.
 static int connect_session(const ch_cfg *cfg) {
     test_read_reset();
     int rc = ch_tcp_init(tcp_public(&session), cfg);
     if (rc != CH_OK) {
         return rc;
     }
+    session.t.cfg.send = mock_send;
     mock_server *s = cfg->io;
     drain_out(s);
     size_t off = 0;

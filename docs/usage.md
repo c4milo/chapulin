@@ -385,9 +385,10 @@ no `on_ticket` gives no ticket to anyone, also when you set
 ## Sizing buffers in a tcp-nonblocking session
 
 A `TRANSPORT=tcp-nonblocking` caller owns the socket and holds the bytes
-it received in a buffer of its own. Its session reads them in place, and
+it received in a buffer of its own. Its session reads them in place,
+seals the caller's plaintext in place, and calls no callback, and
 `cfg.buf` serves the handshake alone (`tcp_nonblocking.h`,
-docs/decisions.md 247):
+docs/decisions.md 247 and 248):
 
 - `ch_read_in_place(&tls, p, n, reply, reply_cap, &result)` opens the next
   record of the `n` bytes at `p` where it lies, and `result` says where
@@ -403,39 +404,49 @@ docs/decisions.md 247):
   and the session never reads it again. So you can lend one buffer to
   many handshakes, one after another. Two handshakes in flight need two
   buffers: keep a pool of them, and give each handshake a deadline, so a
-  peer that stops halfway gives its buffer back. Leave `cfg.recv` NULL:
-  the init calls refuse one.
+  peer that stops halfway gives its buffer back. Leave `cfg.send` and
+  `cfg.recv` NULL: the init calls refuse either.
 - `ch_tcp_whole_len(p, n)` is the length of the record at the front of
   `p`, header included, or 0 while `p` holds less than that record. The
   handshake calls take whole records, so cut what you pass `ch_tcp_in` or
   `ch_srv_tcp_in` with it. A header whose length field is above
   2^14 + 256, which no peer may send, answers 5, the header alone, and
   the call that reads it refuses it.
-- `ch_write_parts(&tls, parts, part_count)` seals several `ch_part`
-  buffers as one run of plaintext, in the records `ch_write` seals for
-  them joined, so a frame header and its payload need no copy into one
-  buffer first. Its results are `ch_write`'s (docs/decisions.md 167).
-- `ch_writable_len(&tls, cap)` is the most plaintext one `ch_write` seals
-  into `cap` bytes of records, or one `ch_write_parts` seals in all its
-  parts, at the smaller of the peer's
-  `record_size_limit` and `CH_TX_PT` per record. Pass at most that much
-  when your send buffer holds `cap` bytes. Both TCP transports export it.
-  It also counts the KeyUpdate record below when the write sends one, so
-  a buffer sized for your largest write holds 27 bytes more.
-- `CH_ALERT_RECORD_LEN`, 24, is what `ch_close` sends, and what a failing
-  read sends: `ch_read`, or `ch_read_in_place` into its `reply`, unless
-  the peer's fatal alert failed it: that read sends nothing. A handshake that fails once its side's write key is
-  installed gives one too, through `ch_tcp_out` or `on_record_out`;
-  one that fails before it gives the alert in the clear, 7 bytes.
-  `CH_KEY_UPDATE_RECORD_LEN`, 27, is one KeyUpdate record, which only
-  `ch_write` sends. A read sends no record but that alert.
+- `ch_seal_in_place(&tls, buf, cap, n, side, side_cap, &result)` seals
+  `n` bytes of plaintext that you wrote at `buf + REC_HDR`, 5 bytes in, a
+  buffer of `cap` bytes. It cuts them into records of the smaller of the
+  peer's `record_size_limit` and `CH_TX_PT` bytes, and seals each one in
+  `buf`: send the first `result.records_len` bytes of `buf`. A frame header
+  and its payload go in one run, one after the other, so they need no
+  second buffer. A KeyUpdate goes into `side`, which must hold
+  `CH_KEY_UPDATE_RECORD_LEN` bytes: send `result.side_len` bytes of `side`
+  first, then the records. The call seals every record or none.
+- `ch_writable_len(&tls, cap)` is the most plaintext one
+  `ch_seal_in_place` seals in a buffer of `cap` bytes. Pass at most that
+  much: a larger `n` answers `CH_ECAP` and changes nothing. It counts no
+  KeyUpdate record, because that goes into `side`. A
+  `TRANSPORT=tcp-blocking` build exports it too, as the most plaintext
+  one `ch_write` sends in `cap` bytes of records, the KeyUpdate record
+  included.
+- `ch_close_out(&tls, out, cap, &out_len)` writes your close_notify into
+  `out` and closes the session, and `ch_fail_out(&tls, description, out,
+  cap, &out_len)` writes a fatal alert there and fails it. Send that
+  record after every record you sealed before the call.
+- `CH_ALERT_RECORD_LEN`, 24, is what `ch_close_out` and `ch_fail_out`
+  write, and what a failing `ch_read_in_place` writes into its `reply`,
+  unless the peer's fatal alert failed it: that read writes nothing. A
+  handshake that fails once its side's write key is installed gives one
+  too, through `ch_tcp_out` or `on_record_out`; one that fails before it
+  gives the alert in the clear, 7 bytes. `CH_KEY_UPDATE_RECORD_LEN`, 27,
+  is one KeyUpdate record, which only `ch_seal_in_place` writes. A read
+  writes no record but that alert.
 - A peer's KeyUpdate that asks for an answer gets it from your next
-  `ch_write` of one byte or more: one KeyUpdate record before its data,
+  `ch_seal_in_place` of one byte or more: one KeyUpdate record in `side`,
   under the old key, and the data under the next key (RFC 9846 §4.7.3).
   One answer serves every request read since your side's last KeyUpdate.
   A session that never writes again never answers, which §4.7.3 allows:
-  it owes the answer before its next data record, and `ch_close` sends
-  its close_notify alone. A record carries at most one KeyUpdate, as its
+  it owes the answer before its next data record, and `ch_close_out`
+  writes its close_notify alone. A record carries at most one KeyUpdate, as its
   last message (RFC 9846 §5.1), and a record with bytes after a KeyUpdate
   fails the read.
 - A read reads at most `CH_KEY_UPDATE_RUN_MAX`, 16, KeyUpdates in a row
@@ -451,15 +462,16 @@ docs/decisions.md 247):
   alerts fails there with `CH_EPROTO` first. The limit does not bound how
   fast a peer sends KeyUpdates: for a rate bound, count in your own
   protocol, which sees each byte of data.
-- Under `SUITE=aesgcm`, `ch_write` sends one KeyUpdate record of its own,
-  `CH_KEY_UPDATE_RECORD_LEN` bytes, as the last of the
-  `REC_AES_GCM_RECORDS_MAX` records, 2^24, that an AES-GCM write key
-  seals, which RFC 9846 §5.5 requires of a sender. It seals the rest of
-  that write under the next key, and the peer reads across the change.
-  When an answer is owed at that record, the one KeyUpdate is both.
-  RFC 9846 §4.7.3 lets a sender send 2^48 - 1 KeyUpdates, and a session
-  that has sent that many cannot replace a key at its ceiling: that
-  `ch_write` returns `CH_ECAP` and fails the session with internal_error.
+- Under `SUITE=aesgcm`, an AES-GCM write key seals at most
+  `REC_AES_GCM_RECORDS_MAX` records, 2^24, which RFC 9846 §5.5 requires of
+  a sender. When the key cannot seal every record of a write,
+  `ch_seal_in_place` writes one KeyUpdate record into `side` first and
+  seals the whole write under the next key, and the peer reads across the
+  change. When an answer is owed then, the one KeyUpdate is both. RFC
+  9846 §4.7.3 lets a sender send 2^48 - 1 KeyUpdates, and a session that
+  has sent that many cannot replace a key at its ceiling: that call
+  returns `CH_ECAP`, fails the session and writes internal_error into
+  `side`.
   QUIC has no TLS KeyUpdate and counts its own AES-GCM packets instead
   ([`docs/quic.md`](quic.md)).
 

@@ -20524,3 +20524,100 @@ does nothing more.
       plaintext where it lies. The seal side, `ch_write`'s copy into `ch_tls.tx` and out again,
       is [issue 234](https://github.com/c4milo/chapulin/issues/234). Which fields of `ch_tcp`
       a connected session reads, the third question of issue 227, waits on a ruling of its own.
+
+248. **Every tcp-nonblocking session seals in place, and no call of the transport sends.**
+    colibri asked for the write half of entry 247
+    ([issue 234](https://github.com/c4milo/chapulin/issues/234)). `ch_write` and
+    `ch_write_parts` copied each record's plaintext into `ch_tls.tx`, sealed it there and handed
+    the record to `cfg.send`, which copied it into the caller's output. So each record went
+    through two copies, and `tx` took 16,406 of the 20,016 bytes of `ch_tcp` in colibri's object
+    (`TX_RECORD=16384`). Camilo ruled on 2026-11-27 on the five questions of the issue and on
+    the close and the failure.
+
+    - **The call.** `ch_seal_in_place(t, buf, cap, n, side, side_cap, result)`, which
+      `tcp_nonblocking.h` declares, seals the n bytes of plaintext that the caller wrote in one
+      run at `buf + REC_HDR`. It cuts the run into records of at most the smaller of the peer's
+      `record_size_limit` and `CH_TX_PT` bytes (INV-38), moves the plaintext of record i
+      forward by i × `REC_OVERHEAD` bytes, and seals each record where it then lies. `buf`'s
+      first n + ceil(n / limit) × `REC_OVERHEAD` bytes become the records, and
+      `ch_seal_result.records_len` counts them. The question offered three layouts, and Camilo
+      took the one run. Rejected: a caller that leaves the room between the records itself,
+      which moves no byte but makes every caller cut records at a limit the peer sets; and
+      parts with room around each, which keeps `ch_write_parts`'s cursor. A write of one record
+      moves no byte. A write of more moves every record but the first once.
+    - **Each record sealed right after its move.** The call moves and seals from the last
+      record to the first, and gives record i the sequence number first + i, the number it
+      takes front to back, so the peer opens the records in the order they go out. Each
+      record's header and tag land past the plaintext of every record before it, which waits
+      in its first place. The first form moved every record and then sealed them all, and a
+      caller that copied 64 KiB into the buffer first paid 8 to 9% more than `ch_write` for it,
+      because the bytes left the L1 cache between the move and the seal.
+    - **The KeyUpdate goes into a small side buffer.** A KeyUpdate that answers the peer
+      (entry 138), or one that retires an AES-GCM key (entry 78), goes into `side`,
+      `CH_KEY_UPDATE_RECORD_LEN` bytes or more, and `result->side_len` counts it. The caller
+      sends `side`'s record before `buf`'s records. Rejected: 27 bytes the caller reserves
+      before the first record, which moves where the records start; and a KeyUpdate after the
+      records of the old key, which needs a second output.
+    - **The key changes first.** An AES-GCM key that cannot seal every record of a write is
+      retired before the write: the KeyUpdate goes into `side`, and every record of the write
+      goes out under the next key. Rejected: a KeyUpdate between two records of one write,
+      which needs a side buffer in the middle of `buf`; and a call that stops at the ceiling
+      and leaves the rest to the next call. The key gives up at most the records of one write
+      less one, of the 2^24 - 1 it seals.
+    - **`ch_writable_len` keeps its name, with the in-place meaning.** In this transport it
+      answers the most plaintext whose records fit `cap`, and counts no KeyUpdate record,
+      because that goes into `side`. Under an AES-GCM key it answers at most the plaintext of
+      `REC_AES_GCM_RECORDS_MAX - 1` records, the most one key seals. `writable_len_in_place` in
+      `tls_write_rules.h` computes it from three numbers, so `bin/diff` compares it with
+      `Spec.TlsWrite.writableLenInPlace` in every build, and `writableLenInPlace_le_cap` proves
+      that the answer is at most `cap`.
+    - **One write in the transport.** `ch_write`, `ch_write_parts`, `ch_close` and `ch_fail`
+      leave `TRANSPORT=tcp-nonblocking`, as `ch_read` did in entry 247. `ch_tcp_init` and
+      `ch_srv_tcp_init` refuse a `cfg.send` that is set. The transport declares no
+      `io_send_all`, `tlsi_send_alert` or `tlsi_fail`, so a call that would send through
+      `cfg.send` fails to compile, and INV-28 holds at compile time as well as in the tests.
+      The rules both writes keep, the record limit, the KeyUpdate before a write and the fill
+      of a buffer, moved from `tls_write.c` into `tls_write_rules.h`, so the two writes read
+      one copy of each.
+    - **All or nothing.** The call checks everything before it writes a byte. A refusal on
+      entry, `CH_EINVAL` or `CH_EPROTO`, and the `CH_ECAP` of an n above `ch_writable_len`, write
+      nothing and change nothing. A write that no key can seal fails the session: at the cap of
+      KeyUpdates RFC 9846 §4.7.3 sets, or where the sequence number would wrap (RFC 9846 §5.3).
+      `side` then holds internal_error, and `buf` holds the plaintext as the caller wrote it,
+      because the plaintext is the caller's and chapulin opened nothing. Every seal after the
+      checks succeeds, and a `CH_ASSERT` halts if one does not.
+    - **The close and the failure write into the caller's buffer.** `ch_close_out` and
+      `ch_fail_out` seal the alert, `CH_ALERT_RECORD_LEN` bytes, into an `out` the caller
+      passes, and `ch_alert_sent` names a failure's alert. Both refuse a session that is not
+      connected with `CH_EPROTO`, and a caller ends such a session with `ch_tcp_close`, which
+      sends nothing. `ch_close` sealed a close_notify under any live key, a handshake key among
+      them, through `cfg.send`.
+    - **Smaller handshake records.** `ch_tls.tx` in this transport stages the handshake
+      alone: `CH_TX_STAGE` is `CH_TX_HELLO`, and a protected handshake record carries at most
+      `CH_TX_HANDSHAKE_PT` bytes, `CH_TX_PT` or what the array holds of one record where that is
+      less (`session.h`). A build at the default `CH_TX_PT` stages and cuts what it did before.
+      In colibri's object the cut is 2,399 bytes. The Certificate and an ML-DSA-87
+      CertificateVerify go out in records of `SRV_FRAG_MAX`, 512 bytes, as before, and every
+      other message of the handshake fits one record.
+    - **The Zig API.** `tcp.Client` and `tcp.Server` hold no send callback. `seal(buf, pt_len,
+      side_buf)` returns a `Sealed` whose `records` and `side` are slices of the caller's buffers,
+      `plaintext_offset` is `REC_HDR`, and `end` and `fail` take the caller's output and return
+      the alert's length. `write`, `write_parts` and `parts_max` are gone.
+    - **What it saves.** `ch_tcp` in colibri's object, `TRANSPORT=tcp-nonblocking ROLE=both
+      TRUST=webpki SUITE=aesgcm EXPORTER=on RAND=session TX_RECORD=16384` under gcc 14 on
+      x86-64, goes from 20,016 bytes to 6,032, and its `tx` from 16,406 to 2,421. One buffer of
+      colibri's holds the plaintext and then the records, so colibri can drop its engine output
+      or its socket output, 49,161 bytes each.
+    - **What it costs.** On an Intel Xeon with AVX-512 IFMA and VAES, gcc 14 at `-O2`, a seal of
+      plaintext the caller wrote in place takes less time than `ch_write` over a send that
+      copies, as the Zig API's did, at c18fc98: 15 to 22% less for AES-128-GCM and AES-256-GCM
+      from 4 KiB to 64 KiB, 1 to 5% less at 100 bytes and 1 KiB, and 4 to 7% less for
+      ChaCha20-Poly1305 from 4 KiB, with 0.5% less at 100 bytes and 1 KiB. A caller that copies
+      its plaintext into the buffer first takes up to 14% less for one record of 100 bytes to
+      16 KiB, but 0.4% more for ChaCha20-Poly1305 at 1 KiB, and 1.5 to 2.4% more for a write of
+      four 16 KiB records, because the moves add 48 KiB of copies to its own 64 KiB. Such a caller seals one record a call and
+      takes the one-record numbers. Each number is the least of 1,200 rounds of 16 writes, the
+      builds run in turns on one core, three times each. Counted under callgrind as
+      `insn-gate-host` counts them, each gated handshake runs the same number of instructions as
+      at c18fc98, under each of the four `ch_cfg.cpu` values, so
+      `bench/results-insn-host-*.csv` keeps its counts.

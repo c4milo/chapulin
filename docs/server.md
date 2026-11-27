@@ -2022,9 +2022,11 @@ int ch_srv_tcp_in(ch_tcp *r, uint8_t *p, size_t n, size_t *consumed);
 `tcp_nonblocking.h`'s and are not repeated: they read no side, so
 `tcp_nonblocking.c` compiles them in either role and the client driver
 above them is what a `ROLE=server` object guards out
-(`tcp_nonblocking.c:25`). `ch_read`, `ch_write` and `ch_close` are the same
+(`tcp_nonblocking.c:25`). `ch_read_in_place`, `ch_seal_in_place`,
+`ch_writable_len`, `ch_close_out` and `ch_fail_out` are the same
 record-layer calls a client uses, for the reason this section already
-gives.
+gives, and none of them calls `cfg.send`, which the init call refuses
+when it is set (docs/decisions.md 247 and 248).
 
 **Output is a push, not a pull.** There is no `ch_srv_tcp_out`, and the
 certificate chain is why. `srv_flight.c` stages a protected message on the

@@ -1,0 +1,13 @@
+invariant: INV-74
+file: src/tcp_seal.c
+catches: tcp_nonblocking_loop_test
+reason: ch_seal_in_place takes a write whose records the key's sequence
+  numbers cannot hold before the wrap, so the seal of the record at
+  UINT64_MAX refuses after the records before it were sealed, which breaks
+  all or nothing, and RFC 9846 §5.3 forbids the wrap. The loop seals three
+  records two numbers before the wrap and requires internal_error.
+
+--- old
+        if ((uint64_t)count > UINT64_MAX - t->wr.seq) {
+--- new
+        if (0) {

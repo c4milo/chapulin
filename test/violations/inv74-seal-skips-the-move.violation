@@ -1,0 +1,14 @@
+invariant: INV-74
+file: src/tcp_seal.c
+catches: tcp_nonblocking_loop_test
+reason: ch_seal_in_place seals each record where the run of plaintext
+  left it, without moving the plaintext of record i forward by i *
+  REC_OVERHEAD bytes, so every record after the first seals the bytes of
+  the record before it and the header and tag of that record. The peer
+  reads other plaintext than the caller wrote (docs/decisions.md 248).
+
+--- old
+        if (i > 0) {
+            memmove(rec + REC_HDR, buf + i * layout->limit + REC_HDR, len);
+        }
+--- new
