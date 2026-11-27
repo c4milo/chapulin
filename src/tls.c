@@ -191,27 +191,11 @@ int tls_connect(ch_tls_priv *t, const ch_cfg *cfg) {
 #endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif
 #endif // CH_ROLE_SERVER
-// The peer's close_notify closes the peer's direction and no other (RFC
-// 9846 §6, rfc9846.txt:3767-3768). This session reads nothing after it:
-// §6.1 says data after a closure alert MUST be ignored
-// (rfc9846.txt:3837-3839), and ch_read ignores it by never reading it. So
-// the secrets only a read uses die here (INV-17): the read key and its
-// secret, and the resumption master secret, which only taking a
-// NewSessionTicket uses. The write key and its secret stay, because
-// §6.1 leaves this side's writes open (rfc9846.txt:3857-3859): the caller
-// may still ch_write, and ch_close sends this side's close_notify under
-// that key. Nothing is sent here. TLS 1.2 answered a close_notify at
-// once with one of its own, and TLS 1.3 dropped that rule
-// (rfc9846.txt:3860-3864).
-static void close_read_side(ch_tls_priv *t) {
-    ct_wipe(&t->rd, sizeof t->rd);
-    ct_wipe(t->rd_secret, sizeof t->rd_secret);
-    ct_wipe(t->res_master, sizeof t->res_master);
-    t->pt_off = 0;
-    t->pt_len = 0;
-    t->read_closed = 1;
-}
-
+// ch_read, the copy read, serves TRANSPORT=tcp-blocking alone. A
+// TRANSPORT=tcp-nonblocking session reads in place with ch_read_in_place
+// (tcp_read.c), and cfg.buf serves its handshake alone (docs/decisions.md
+// 247).
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 // One protected alert record, pt_len bytes at the front of cfg.buf. The
 // two closure alerts act here: close_notify closes the peer's direction
 // and returns CH_ECLOSED, and user_canceled is read past, because RFC 9846
@@ -222,7 +206,7 @@ static void close_read_side(ch_tls_priv *t) {
 static int read_alert(ch_tls_priv *t, size_t pt_len) {
     const uint8_t *pt = t->cfg.buf;
     if (pt_len == 2 && pt[1] == ALERT_CLOSE_NOTIFY) {
-        close_read_side(t);
+        tlsi_close_read_side(t);
         return CH_ECLOSED;
     }
     if (pt_len == 2 && pt[1] == ALERT_USER_CANCELED) {
@@ -243,20 +227,10 @@ static int read_alert(ch_tls_priv *t, size_t pt_len) {
 // (session.h). An empty one ends no run, so the caller receives a byte of
 // data for each CH_KEY_UPDATE_RUN_MAX KeyUpdates (docs/decisions.md 138).
 static int dispatch_one_record(ch_tls_priv *t) {
-#ifdef CH_TRANSPORT_TCP_NONBLOCKING
-    if (t->post_fill > 0) { // the next record continues a message (session.h)
-        size_t fill = t->post_fill;
-        t->post_fill = 0;
-        return hspost_read(t, fill);
-    }
-#endif
     uint8_t outer = 0;
     size_t record_len = 0;
     uint8_t alert = ALERT_DECODE_ERROR;
     int rc = io_read_record(t, t->cfg.buf, t->cfg.buf_len, &outer, &record_len, &alert);
-    if (rc == CH_TCP_AGAIN) {
-        return rc; // TRANSPORT=tcp-nonblocking alone returns it (tcp_nonblocking.h)
-    }
     if (rc != CH_OK) {
         tlsi_fail(t, alert);
         return rc;
@@ -336,6 +310,7 @@ int tls_read(ch_tls_priv *t, uint8_t *p, size_t n) {
     tlsi_fail(t, ALERT_UNEXPECTED_MESSAGE);
     return CH_EPROTO;
 }
+#endif // CH_TRANSPORT_TCP_NONBLOCKING
 
 void tls_close(ch_tls_priv *t) {
     CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states

@@ -10,7 +10,9 @@
 // The loop below is what a caller with an event loop writes, minus the
 // event loop: collect what chapulin owes, send it, read what arrives,
 // feed it back, and stop when the state says connected. Nothing in it
-// blocks inside chapulin.
+// blocks inside chapulin. Once connected, the program keeps the bytes it
+// reads in in_buf, and ch_read_in_place opens each record there
+// (tcp_nonblocking.h).
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,12 +60,6 @@ static int sock_write_all(int fd, const uint8_t *p, size_t n) {
         n -= (size_t)w;
     }
     return 0;
-}
-
-static int sock_recv(void *io, uint8_t *p, size_t n) {
-    int fd = *(int *)io;
-    ssize_t got = recv(fd, p, n, 0);
-    return got <= 0 ? -1 : (int)got;
 }
 
 static int dial_host(const char *host, const char *port) {
@@ -119,18 +115,30 @@ static int send_staged(ch_tcp_priv *r, int fd) {
     }
 }
 
+// The bytes the peer sent that no call has consumed yet, for the
+// handshake and then for the reads. It is as long as cfg.buf: the session
+// takes no record longer than cfg.buf_len, and the records of one message
+// in parts take no more than that together (tcp_nonblocking.h).
+static uint8_t in_buf[16384];
+
+// The records one read takes at most before it gives up: the records that
+// carry no data, such as a NewSessionTicket, and the recv calls between
+// them.
+#define READ_STEPS_MAX 64
+
 // Drives the handshake to connected. Everything chapulin wants to say
 // leaves through send_staged, and everything the peer says arrives through
-// in_buf; leftover_len holds the bytes of a record that has not all
-// arrived, which ch_tcp_in leaves for the next call.
-static int run_handshake(ch_tcp_priv *r, int fd) {
-    uint8_t in_buf[16384];
+// in_buf; leftover counts the bytes of a record that has not all arrived,
+// which ch_tcp_in leaves for the next call. Once connected, *leftover_out
+// gets that count, and the read after the handshake starts from them.
+static int run_handshake(ch_tcp_priv *r, int fd, size_t *leftover_out) {
     size_t leftover = 0;
     for (;;) {
         if (send_staged(r, fd) != 0) {
             return 1;
         }
         if (ch_tcp_state(tcp_public(r)) == CH_ST_CONNECTED) {
+            *leftover_out = leftover;
             return 0;
         }
         ssize_t got = recv(fd, in_buf + leftover, sizeof in_buf - leftover, 0);
@@ -151,6 +159,38 @@ static int run_handshake(ch_tcp_priv *r, int fd) {
         leftover = have - used;
         memmove(in_buf, in_buf + used, leftover);
     }
+}
+
+// Reads the first record of application data into stdout. Each record is
+// opened where it lies in in_buf, and a record that carries no data is
+// dropped and the read goes on. On a failure the alert that
+// ch_read_in_place wrote goes to the server before the connection closes.
+static int read_reply(ch_tcp_priv *r, int fd, size_t have) {
+    for (int step = 0; step < READ_STEPS_MAX; step++) {
+        uint8_t alert[CH_ALERT_RECORD_LEN];
+        ch_read_result result = {0};
+        int rc =
+            ch_read_in_place(ch_tcp_tls(tcp_public(r)), in_buf, have, alert, sizeof alert, &result);
+        if (rc == CH_OK && result.pt_len > 0) {
+            (void)fwrite(in_buf + result.pt_off, 1, result.pt_len, stdout);
+            return 0;
+        }
+        if (rc == CH_OK) {
+            have -= result.consumed;
+            memmove(in_buf, in_buf + result.consumed, have);
+            continue;
+        }
+        ssize_t got = rc == CH_TCP_AGAIN && have < sizeof in_buf
+                          ? recv(fd, in_buf + have, sizeof in_buf - have, 0)
+                          : -1;
+        if (got <= 0) {
+            (void)fprintf(stderr, "read: %d\n", rc);
+            (void)sock_write_all(fd, alert, result.reply_len);
+            return 1;
+        }
+        have += (size_t)got;
+    }
+    return 1;
 }
 
 int main(int argc, char **argv) {
@@ -177,9 +217,9 @@ int main(int argc, char **argv) {
     cfg.psk_len = psk_len;
     cfg.psk_id = (const uint8_t *)argv[4];
     cfg.psk_id_len = strlen(argv[4]);
-    // Used only after the handshake, by ch_read and ch_write.
+    // Used only after the handshake, by ch_write and ch_close. No call
+    // reads through a recv, and ch_tcp_init refuses one (tcp_nonblocking.h).
     cfg.send = sock_send;
-    cfg.recv = sock_recv;
     cfg.io = &fd;
 
     static ch_tcp_priv r;
@@ -188,7 +228,8 @@ int main(int argc, char **argv) {
         (void)fprintf(stderr, "rec_init: %d\n", rc);
         return 1;
     }
-    if (run_handshake(&r, fd) != 0) {
+    size_t leftover = 0;
+    if (run_handshake(&r, fd, &leftover) != 0) {
         return 1;
     }
     // stderr, because e2e compares stdout against the echoed line alone.
@@ -201,13 +242,9 @@ int main(int argc, char **argv) {
         if (ch_write(ch_tcp_tls(tcp_public(&r)), (const uint8_t *)line, strlen(line)) != CH_OK) {
             return 1;
         }
-        uint8_t reply[512];
-        int got = ch_read(ch_tcp_tls(tcp_public(&r)), reply, sizeof reply);
-        if (got <= 0) {
-            (void)fprintf(stderr, "read: %d\n", got);
+        if (read_reply(&r, fd, leftover) != 0) {
             return 1;
         }
-        (void)fwrite(reply, 1, (size_t)got, stdout);
         (void)fflush(stdout);
     }
     ch_close(ch_tcp_tls(tcp_public(&r)));

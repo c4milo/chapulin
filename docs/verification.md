@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-141 of the 187 C sources in the tree root are compiled into a
+142 of the 188 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -2593,7 +2593,11 @@ The entries are grouped by area:
     `ch_write_parts` copies a record's plaintext and `rec_seal` moves
     nothing;
   - `rec_open` stays safe on fully hostile bytes, into a separate buffer
-    and in place, the shape both shipped callers use.
+    and in place in both shapes the shipped callers use: the plaintext
+    `REC_HDR` bytes below the ciphertext, where `ch_read` opens a record
+    in `cfg.buf`, and over the ciphertext, with a cap of the body's
+    length, where `ch_read_in_place` opens it in the caller's input
+    (docs/decisions.md 247).
 - **Bound:** records ≤ 160 B.
 
 #### record_suite
@@ -2606,9 +2610,11 @@ The entries are grouped by area:
   suite names. The seal runs at any sequence number and refuses exactly
   two kinds: the last one there is, where the next increment would wrap,
   and under AES-GCM every one at or past `REC_AES_GCM_RECORDS_MAX`, the
-  most records one AES-GCM key seals (docs/decisions.md 78). HKDF, the
-  ChaCha20 AEAD and the AES-GCM traffic entries are stubbed to their
-  contracts.
+  most records one AES-GCM key seals (docs/decisions.md 78). The open
+  runs under each suite into a separate buffer and in place in both
+  shapes the shipped callers use, the plaintext `REC_HDR` bytes below the
+  ciphertext and over it (docs/decisions.md 247). HKDF, the ChaCha20 AEAD
+  and the AES-GCM traffic entries are stubbed to their contracts.
 - **Bound:** records ≤ 16 B, secrets one hash long.
 
 #### record_whole_len
@@ -3513,6 +3519,45 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   `hspost_trust_holds` are contract stubs, and `ct_wipe` writes its
   zeros with one `memset`. `bin/tcp_nonblocking_loop_test` and the
   `.violation` mutants test the rest.
+
+#### tcp_read
+
+- **Harness:** `tcp_read` (fast)
+- **Build:** the client, `TRANSPORT=tcp-nonblocking`.
+- **Proves:** `ch_read_in_place` (`tcp_read.c`), with `session.c`'s
+  `tlsi_wipe` and `tlsi_close_read_side` and `buf.c`'s reader real, is
+  memory safe and free of UB over a havocked connected session and
+  caller bytes at the start or at the end of a fixed array, so an access
+  below `p[0]` or at `p[n]` fails a bounds check. Also:
+  - every record it opens, every run of handshake bytes it hands
+    `hspost_handle` and every memmove lies inside `p[0..n)`, and it
+    calls `rec_open` with the plaintext over the ciphertext, `REC_HDR`
+    bytes after the record's start (docs/decisions.md 247);
+  - it returns only the codes `tcp_nonblocking.h` lists, and a refusal
+    on entry changes neither `p`, the session nor the result;
+  - `CH_OK` consumes exactly the bytes it opened, held bytes included,
+    with the plaintext inside them; `CH_TCP_AGAIN` consumes nothing and
+    holds exactly the bytes it opened; a close_notify sets
+    `read_closed` and wipes the read secrets (INV-22);
+  - a message in parts reaches `hspost_handle` as the held bytes and
+    then the new plaintext, and what it leaves ends the held bytes, so
+    `held_fill <= held_len <= cfg.buf_len` holds across calls;
+  - a failure leaves the session dead with no secret and nothing held,
+    seals one alert into `reply` unless the peer's fatal alert arrived,
+    wipes every byte it opened, and changes no byte past them (INV-13,
+    INV-17, INV-73).
+- **Bound:** caller bytes of at most 20 B and four records a call, which
+  unwinding assertions prove; a record's length field is unconstrained,
+  and the stub of `rec_open` opens any body of 1 byte or more, so three
+  whole records or a message in parts fit one call. 145 to 181 s and
+  0.47 GB on a 4-core amd64 host.
+- **Not proved:** `rec_open`, `rec_seal`, `hspost_handle` and
+  `hsr_refuse_alert` are contract stubs, and `ct_wipe` writes its zeros
+  with one `memset`. Inputs past 20 bytes rest on
+  `bin/tcp_nonblocking_loop_test`, which reads records of every length
+  it seals, and `bin/record_in_place_test` holds each AEAD path's open in
+  place. The session's layout is the default client build's; a server
+  role differs only in the struct's layout.
 
 ### QUIC
 

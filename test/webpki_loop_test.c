@@ -57,6 +57,7 @@
 
 #include "test_clock.h"
 #include "test_cpu.h"
+#include "test_read.h"
 #include "test_ticket.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -131,8 +132,8 @@ static int sink(void *io, const uint8_t *p, size_t n) {
     return 0;
 }
 
-// The client's recv once connected: the records the server pushed after
-// the handshake, the ticket among them, and then none (tcp_nonblocking.h).
+// The recv test_read reads through once connected (test/test_read.h): the
+// records the server pushed, the ticket among them, and then none.
 static int held_recv(void *io, uint8_t *p, size_t n) {
     (void)io;
     size_t left = to_client.len - to_client.off;
@@ -191,7 +192,6 @@ static void server_config(ch_cfg *cfg, const uint8_t *key) {
     cfg->buf = srv_buf;
     cfg->buf_len = sizeof srv_buf;
     cfg->send = unused_send;
-    cfg->recv = held_recv;
     cfg->srv.cookie_key = cookie_key;
     cfg->srv.on_record_out = sink;
     cfg->srv.ticket_key = key;
@@ -210,7 +210,6 @@ static void client_config(ch_cfg *cfg, const webpki_corpus_anchor *root, const c
     cfg->buf = cli_buf;
     cfg->buf_len = sizeof cli_buf;
     cfg->send = unused_send;
-    cfg->recv = held_recv;
     cfg->on_ticket = keep_ticket;
     r2_trust(cfg, root, hostname);
 #ifdef CH_CPU_RUNTIME
@@ -261,10 +260,11 @@ static int server_to_client(void) {
 }
 
 // One handshake between fresh sessions, then the ticket the server sent
-// after it, through ch_read. The client is connected once ch_tcp_out
+// after it, through test_read. The client is connected once ch_tcp_out
 // has handed its Finished over, and what the server pushes after that is
-// post-handshake, for ch_read. Returns 1 when both ends connected.
+// post-handshake, for test_read. Returns 1 when both ends connected.
 static int run(const ch_cfg *ccfg, const ch_cfg *scfg) {
+    test_read_reset(); // new sessions in the same storage (test/test_read.h)
     memset(&to_client, 0, sizeof to_client);
     records_pushed = 0;
     CHECK(ch_srv_tcp_init(tcp_public(&server), scfg) == CH_OK);
@@ -285,7 +285,8 @@ static int run(const ch_cfg *ccfg, const ch_cfg *scfg) {
         return 0;
     }
     uint8_t got[16];
-    CHECK(ch_read(ch_tcp_tls(tcp_public(&client)), got, sizeof got) == CH_TCP_AGAIN);
+    client.t.cfg.recv = held_recv;
+    CHECK(test_read(ch_tcp_tls(tcp_public(&client)), got, sizeof got) == CH_TCP_AGAIN);
     return 1;
 }
 
@@ -327,7 +328,6 @@ static void pins_alone_config(ch_cfg *cfg, int present) {
     cfg->buf = cli_buf;
     cfg->buf_len = sizeof cli_buf;
     cfg->send = unused_send;
-    cfg->recv = held_recv;
     cfg->on_ticket = keep_ticket;
     cfg->spki_pins = (const uint8_t *)loop_pin;
     cfg->spki_pin_count = 1;

@@ -144,7 +144,9 @@ run() {
         ;;
     tcp-both)
         # Both TCP transports carry the connected session's calls: refused.
-        pair tcp-both "ch_close ch_fail ch_read ch_writable_len ch_write ch_write_parts" "RAND=extern" \
+        # ch_read is not among them: a tcp-nonblocking object reads with
+        # ch_read_in_place alone (tcp_nonblocking.h).
+        pair tcp-both "ch_close ch_fail ch_writable_len ch_write ch_write_parts" "RAND=extern" \
             "RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking"
         ;;
     *)

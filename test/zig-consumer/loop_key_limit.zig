@@ -114,10 +114,11 @@ fn crossCeiling(writer: anytype, reader: anytype, wire: *loop.Pipe) !void {
     const records = [_]struct { usize, usize }{ .{ whole, per_record }, .{ key_update, 0 }, .{ rest + overhead, rest } };
     var at: usize = 0;
     for (records) |want| {
-        const r = try reader.read(wire.pending(), got[at..], &reply);
+        const r = try reader.read(wire.pending(), &reply);
+        @memcpy(got[at..][0..r.plaintext.len], r.plaintext);
+        at += r.plaintext.len;
         wire.pop(r.consumed);
-        at += r.pt_len;
-        try check(r.consumed == want[0] and r.pt_len == want[1] and r.reply_len == 0, "the reader did not read one record, one KeyUpdate record and one record, or it answered");
+        try check(r.consumed == want[0] and r.plaintext.len == want[1] and r.reply_len == 0, "the reader did not read one record, one KeyUpdate record and one record, or it answered");
     }
     try check(wire.pending().len == 0 and std.mem.eql(u8, got[0..at], &data), "the plaintext read across the ceiling differs from what was written");
     try checkNoAlerts(writer, reader);
@@ -127,10 +128,10 @@ fn crossCeiling(writer: anytype, reader: anytype, wire: *loop.Pipe) !void {
     try check(writer.writable_len(next.len + overhead) == next.len, "writable_len counted a KeyUpdate record under the next key");
     const sent = try writer.write(next, wire.free());
     wire.push(sent);
-    const r = try reader.read(wire.pending(), &got, &reply);
+    const r = try reader.read(wire.pending(), &reply);
+    try check(std.mem.eql(u8, r.plaintext, next), "the write after the ceiling did not read back");
     wire.pop(r.consumed);
     try check(sent == next.len + overhead and r.consumed == sent and r.reply_len == 0, "the write after the ceiling sent more than one record");
-    try check(std.mem.eql(u8, got[0..r.pt_len], next), "the write after the ceiling did not read back");
     try checkNoAlerts(writer, reader);
 }
 

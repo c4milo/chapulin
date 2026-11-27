@@ -19,6 +19,10 @@ int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     return CH_OK;
 }
 
+// A TRANSPORT=tcp-nonblocking build reads no record through recv: its
+// sessions read in place from the caller's input (tcp_read.c), so the
+// reader below is the blocking transport's alone.
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 static int read_exact(const ch_cfg *cfg, uint8_t *p, size_t n) {
     while (n > 0) {
         int got = cfg->recv(cfg->io, p, n);
@@ -59,23 +63,7 @@ int io_read_record(const ch_tls_priv *t, uint8_t *buf, size_t cap, uint8_t *oute
     if (cap < REC_HDR) {
         return CH_ECAP;
     }
-#ifdef CH_TRANSPORT_TCP_NONBLOCKING
-    // A TRANSPORT=tcp-nonblocking caller owns the socket and hands over whole
-    // records, so a recv that returns 0 before a record's first byte says
-    // no record has arrived yet (tcp_nonblocking.h). The caller runs ch_read
-    // again once one has. A 0 after that first byte breaks the whole-record
-    // promise, and read_exact fails it with CH_EIO like any short read.
-    int got = cfg->recv(cfg->io, buf, REC_HDR);
-    if (got == 0) {
-        return CH_TCP_AGAIN;
-    }
-    if (got < 0 || (size_t)got > REC_HDR) {
-        return CH_EIO;
-    }
-    int rc = read_exact(cfg, buf + got, REC_HDR - (size_t)got);
-#else
     int rc = read_exact(cfg, buf, REC_HDR);
-#endif
     if (rc != CH_OK) {
         return rc;
     }
@@ -92,3 +80,4 @@ int io_read_record(const ch_tls_priv *t, uint8_t *buf, size_t cap, uint8_t *oute
     *record_len = REC_HDR + body;
     return CH_OK;
 }
+#endif // CH_TRANSPORT_TCP_NONBLOCKING

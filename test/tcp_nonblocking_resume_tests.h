@@ -70,7 +70,7 @@ static void take_post_handshake(ch_tcp_priv *client) {
     client->t.cfg.recv = held_recv;
     client->t.cfg.on_ticket = keep_ticket;
     uint8_t got[16];
-    CHECK(ch_read(tls_public(&client->t), got, sizeof got) == CH_TCP_AGAIN);
+    CHECK(test_read(tls_public(&client->t), got, sizeof got) == CH_TCP_AGAIN);
     CHECK(held.off == held.len);
 }
 

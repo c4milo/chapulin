@@ -13,11 +13,11 @@
 // server.
 //
 // The post-handshake calls are tcp_nonblocking.h's and are not repeated here.
-// ch_tcp_state and ch_tcp_close read no side, and ch_read, ch_write
-// and ch_close are the same record-layer calls a client uses, because
+// ch_tcp_state and ch_tcp_close read no side, and ch_read_in_place,
+// ch_write and ch_close are the same record-layer calls a client uses, because
 // record.[ch] names no side either. So tcp_nonblocking.h's account of
 // closing holds for a server as written: the client's close_notify makes
-// ch_read return 0 and send nothing, ch_write still sends, and ch_close
+// ch_read_in_place return CH_ECLOSED and send nothing, ch_write still sends, and ch_close
 // sends the server's close_notify. So does its account of alerts, and
 // alert.h's two calls report them on either side.
 //
@@ -55,7 +55,8 @@
 //
 // Returns CH_EINVAL for every configuration ch_srv_accept refuses
 // (srv.h), and additionally when cfg.srv.on_record_out is NULL, because
-// a server whose flight reaches nobody completes no handshake. Nothing
+// a server whose flight reaches nobody completes no handshake, and when
+// cfg.recv is set, because no call reads through it (tcp_nonblocking.h). Nothing
 // was sent and the session is dead.
 //
 // Requires: r and cfg are not NULL, and cfg outlives the session.
@@ -78,7 +79,9 @@ int CH_MUST_USE ch_srv_tcp_init(ch_tcp *r, const ch_cfg *cfg);
 // The call stops after the record that completes the handshake, with
 // *consumed covering it and nothing past it: a client may send its first
 // application record in the same segment as its Finished, and those
-// bytes belong to ch_read once ch_tcp_state reports CH_ST_CONNECTED.
+// bytes belong to ch_read_in_place once ch_tcp_state reports CH_ST_CONNECTED.
+// The server gives cfg.buf back, wiped, in the call that completes the
+// handshake (tcp_nonblocking.h).
 // A record delivered here after that fails the session.
 //
 // Returns CH_OK when the bytes were taken, whether or not they completed

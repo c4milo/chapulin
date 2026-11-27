@@ -757,7 +757,7 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
           test/diff_x509_mldsa_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c test/tls_server.c \
-          src/srv_quic.c src/quic_token.c src/srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c test/exporter_test.c src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c \
+          src/srv_quic.c src/quic_token.c src/srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c test/exporter_test.c src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_read.c src/tcp_nonblocking_step.c \
           test/tcp_blocking_key_limit_test.c \
           test/quic_driver_test.c test/quic_loop_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c test/aes_equiv_arm64.c test/aes_equiv_arm64_eor3.c \
@@ -799,7 +799,7 @@ LINT_C := $(filter-out src/softmul.c,$(SRCS)) src/handshake_groups.c src/drbg.c 
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/hash_host_cpu.h test/ghash_powers_soft.h test/ghash_equiv_stored.h test/ghash_powers_tests.h test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wycheproof_mldsa.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
+TESTH := test/test_read.h test/tcp_nonblocking_buffer_tests.h test/hash_host_cpu.h test/ghash_powers_soft.h test/ghash_equiv_stored.h test/ghash_powers_tests.h test/ct_taint.h test/ct_taint_cases.h test/wycheproof_mlkem.h test/wycheproof_mldsa.h test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
          test/pem_files_bundle_tests.h test/pem_files_parameters_tests.h \
          test/diff_pem_files_calls.h test/timing_pem.h test/timing_mldsa.h test/pem_fixtures_mldsa.h \
          test/diff_webpki_chain_anchors.h \
@@ -1072,14 +1072,17 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 # replaces handshake.c, the blocking driver, and keeps everything under
 # it: the flight handlers, the record layer and the post-handshake
 # messages are the ones TRANSPORT=tcp-blocking compiles. ch_connect goes with
-# handshake.c, and ch_read, ch_write and ch_close stay, because a caller
-# that has finished the handshake holds its bytes and its callbacks no
-# longer block (tcp_nonblocking.h).
+# handshake.c, and ch_read gives way to ch_read_in_place (tcp_read.c), which
+# opens each record in the caller's bytes, so cfg.buf serves the handshake
+# alone (docs/decisions.md 247). ch_write and ch_close stay, because a caller
+# that has finished the handshake holds its bytes and its send no longer
+# blocks (tcp_nonblocking.h).
 TRANSPORT_DEF := -DCH_TRANSPORT_TCP_NONBLOCKING
 TRANSPORT_FILTER := src/handshake.c
-TRANSPORT_ADD := src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c
+TRANSPORT_ADD := src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c \
+                 src/tcp_read.c
 PUBLIC_TRANSPORT := ch_tcp_init ch_tcp_in ch_tcp_out ch_tcp_state ch_tcp_tls ch_tcp_close \
-                    ch_tcp_whole_len ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_ticket_obfuscated_age \
+                    ch_tcp_whole_len ch_read_in_place ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_ticket_obfuscated_age \
                     ch_alert_sent ch_alert_received
 else ifeq ($(TRANSPORT),tcp-blocking)
 TRANSPORT_DEF :=
@@ -1205,7 +1208,7 @@ ROLE_ADD    := $(filter-out src/srv_handshake.c,$(ROLE_ADD)) src/srv_tcp_nonbloc
 # not ch_srv_accept, which is the blocking one.
 PUBLIC_ROLE := ch_srv_tcp_init ch_srv_tcp_in ch_srv_check \
                ch_tcp_state ch_tcp_tls ch_tcp_close ch_tcp_whole_len \
-               ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_alert_sent ch_alert_received
+               ch_read_in_place ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_alert_sent ch_alert_received
 else
 PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail \
                ch_alert_sent ch_alert_received
@@ -2736,7 +2739,7 @@ lint-trust-separation-run:
 	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking" "$$srv_shared src/srv_handshake.c $$role_crypto src/tls.c src/tls_entry.c src/session_report.c src/tls_write.c src/rsa.c src/rsa_mont.c src/p256.c src/sha3.c src/mlkem.c src/mlkem_poly.c" "$$client_only src/srv_quic.c src/srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e src/quic_step.c | tr '\n' ' '); \
 	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off" "$$srv_shared src/srv_quic.c src/quic_token.c $$role_crypto $$quic_srv $$aes_always src/sha3.c src/mlkem.c src/mlkem_poly.c" "$$client_only src/srv_handshake.c src/srv_tcp_nonblocking.c src/quic_step.c src/record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared src/srv_tcp_nonblocking.c $$role_crypto src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/record.c src/sha3.c src/mlkem.c src/mlkem_poly.c" "$$client_only src/srv_handshake.c src/srv_quic.c src/tcp_nonblocking_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared src/srv_tcp_nonblocking.c $$role_crypto src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_read.c src/record.c src/sha3.c src/mlkem.c src/mlkem_poly.c" "$$client_only src/srv_handshake.c src/srv_quic.c src/tcp_nonblocking_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
 	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm HOST_TARGET=yes" "src/aes.c $$instructions src/gcm.c src/sha512.c src/sha512_compress_blocks.c" "src/quic_aes_soft.c src/aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME" "-DCH_AES_EXTERN -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
 	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm EXPORTER=off HOST_TARGET=yes" "src/aes.c $$instructions src/quic_aes_soft.c src/gcm.c src/quic_packet.c src/sha512.c src/sha512_compress_blocks.c" "src/aes_extern.c src/record.c" "-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
 	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=extern HOST_TARGET=" "src/aes.c src/aes_extern.c src/gcm.c src/sha512.c src/sha512_compress.c" "src/quic_aes_soft.c $$instructions" "-DCH_SUITE_AES_GCM -DCH_AES_EXTERN" "-DCH_CPU_RUNTIME -DCH_AES_256_TEST -DCH_AES_EXTERN_CONSTANT_TIME"; \
@@ -2839,7 +2842,7 @@ LIB_HOOKS = ch_assert_fail $(if $(filter extern,$(RAND)),ch_rand_bytes) \
 # lists the names one header declares, under their declared names.
 DECLARES_tls.h := ch_connect ch_read ch_write ch_write_parts ch_writable_len ch_close ch_fail ch_export
 DECLARES_tcp_nonblocking.h := ch_tcp_init ch_tcp_in ch_tcp_out ch_tcp_state ch_tcp_tls \
-                              ch_tcp_close ch_tcp_whole_len
+                              ch_tcp_close ch_tcp_whole_len ch_read_in_place
 DECLARES_quic.h := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_crypto_out \
                    ch_quic_switch_version ch_quic_negotiated_version ch_quic_seal \
                    ch_quic_seal_close ch_quic_open ch_quic_retry_ok ch_quic_key_update \
@@ -3465,6 +3468,13 @@ bin/aes_suite_test: test/aes_suite_test.c test/stack_residue.c $(AES_SUITE_TEST_
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/aes_suite_test.c \
 	  test/stack_residue.c $(AES_SUITE_TEST_SRCS)
+# Every AEAD path opens a record in place, the shape ch_read_in_place opens
+# in, under each ch_cfg.cpu value this CPU holds (INV-73, docs/decisions.md
+# 247).
+bin/record_in_place_test: test/record_in_place_test.c $(AES_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) -Isrc -Iinclude/chapulin -Iinclude -I. -Itest -o $@ \
+	  test/record_in_place_test.c $(AES_SUITE_TEST_SRCS)
 
 # test/aes-runtime-qemu.sh links QUIC_TEST_HW_SRCS too, for x86-64.
 QUIC_TEST_HW_SRCS := $(call host_srcs,src/aes.c $(AES_HW_SRCS) src/quic_aes_soft.c src/gcm.c src/quic_keys.c src/quic_retry.c \
@@ -4495,7 +4505,7 @@ bin/aes_runtime_test: test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_r
 # server builds: srv_tcp_nonblocking.c replaces srv_handshake.c and
 # tcp_nonblocking_frame.c comes with the transport, and no
 # tcp_nonblocking_step.c, which is the client's table.
-SRV_TCP_NONBLOCKING_SRCS := $(filter-out src/srv_handshake.c,$(SRV_SRCS)) src/srv_tcp_nonblocking.c src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c $(KEX_HYBRID_SRCS) \
+SRV_TCP_NONBLOCKING_SRCS := $(filter-out src/srv_handshake.c,$(SRV_SRCS)) src/srv_tcp_nonblocking.c src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_read.c src/handshake_post.c $(KEX_HYBRID_SRCS) \
                 src/handshake_message.c src/handshake_record.c src/record.c src/session.c src/buf.c src/ct.c src/ct_wipe.c src/sha256.c src/hkdf.c src/keysched.c \
                 src/x25519.c src/chacha20.c src/poly1305.c src/aead.c src/io.c src/rsa_sign.c src/p256_sign.c src/p256_ecdh.c \
                 src/p256_scalar.c src/p256_point.c src/p256_field.c src/p256.c src/rsa.c src/rsa_mont.c
@@ -4513,7 +4523,7 @@ bin/srv_tcp_nonblocking_test: test/srv_tcp_nonblocking_test.c $(SRV_TCP_NONBLOCK
 # $(SRCS) whole, like every other test binary, so it also links the
 # certificate parsers a raw-rsa object filters out and this program never
 # reaches.
-TCP_NONBLOCKING_LOOP_SRCS := $(filter-out src/handshake.c,$(SRCS)) src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c \
+TCP_NONBLOCKING_LOOP_SRCS := $(filter-out src/handshake.c,$(SRCS)) src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_read.c src/tcp_nonblocking_step.c \
                  $(filter-out src/srv_handshake.c,$(SRV_SRCS)) src/srv_tcp_nonblocking.c $(KEX_HYBRID_SRCS) \
                  src/rsa_sign.c src/p256_sign.c $(P256_ECDH_SRCS)
 bin/tcp_nonblocking_loop_test: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
@@ -4916,7 +4926,7 @@ bin/webpki_resume_test: test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) $(P256_SIG
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) \
 	  $(P256_SIGN_SRCS)
-WEBPKI_TCP_NONBLOCKING_SRCS := $(filter-out src/handshake.c,$(WEBPKI_TEST_SRCS)) src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c
+WEBPKI_TCP_NONBLOCKING_SRCS := $(filter-out src/handshake.c,$(WEBPKI_TEST_SRCS)) src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_read.c src/tcp_nonblocking_step.c
 bin/webpki_resume_tcp_nonblocking: test/webpki_resume_test.c $(WEBPKI_TCP_NONBLOCKING_SRCS) $(P256_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/webpki_resume_test.c \
@@ -5287,7 +5297,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/rsa_ifma_sign_equiv_test bin/rsa_ifma_sign_equiv_test_384 \
                                  bin/rsa_ifma_sign_residue_test bin/rsa_ifma_sign_residue_test_384 \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test bin/gcm_avx512_equiv_test \
-                                 bin/aes_runtime_test bin/aes_suite_test bin/quic_suite_test bin/srv_flight_test_aes \
+                                 bin/aes_runtime_test bin/aes_suite_test bin/record_in_place_test bin/quic_suite_test bin/srv_flight_test_aes \
                                  bin/webpki_session_aes bin/webpki_loop_aes bin/quic_loop_aes bin/tcp_blocking_loop_aes)
 # The vector binaries, which check runs once for each value of
 # HOST_VECTOR_CPU through a check-run- target of their own.
@@ -5296,7 +5306,7 @@ HOST_VECTOR_BINS := $(if $(HOST_TARGET),$(foreach t,$(HOST_VECTOR_TESTS),bin/$(t
 # The TRANSPORT=tcp-nonblocking client, which owns its socket and lets chapulin
 # touch none of it. test/e2e.sh runs it against the same PSK server
 # bin/tlsclient uses, so the two drivers are compared over one wire.
-TCP_NONBLOCKING_SRCS := $(filter-out src/handshake.c,$(SRCS)) src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c
+TCP_NONBLOCKING_SRCS := $(filter-out src/handshake.c,$(SRCS)) src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_read.c src/tcp_nonblocking_step.c
 bin/tlsclient_tcp_nonblocking: test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -Iinclude/chapulin -Iinclude -I. -o $@ test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_SRCS)
@@ -8074,7 +8084,7 @@ else
 	  test/tls_server.c src/srv_quic.c src/quic_token.c src/srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c \
 	  test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c \
 	  test/tcp_blocking_key_limit_test.c test/quic_loop_test.c test/ticket_epoch_test.c \
-	  test/exporter_test.c src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c src/x25519_wide.c \
+	  test/exporter_test.c src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_read.c src/tcp_nonblocking_step.c src/x25519_wide.c \
 	  test/x25519_equiv_test.c src/x25519_adx.c test/x25519_adx_model.c test/x25519_adx_model_test.c \
 	  test/x25519_adx_equiv_test.c $(P256_WIDE_SRCS) test/p256_equiv_test.c test/hkdf384_test.c \
 	  src/rsa_mont64_adx.c test/rsa_mont64_adx_model.c test/rsa_mont64_adx_test.c \
@@ -8704,7 +8714,7 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# The tcp-nonblocking transport's client driver, behind -DCH_TRANSPORT_TCP_NONBLOCKING,
 	# and the build record's arm for that transport.
-	@$(call TIDY_EACH,src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_nonblocking_step.c src/build.c, \
+	@$(call TIDY_EACH,src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/tcp_read.c src/tcp_nonblocking_step.c src/build.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_TCP_NONBLOCKING -Isrc -Iinclude/chapulin -Iinclude -I.)
 	# Each server driver with the transport it is written for. Neither
 	# reads a declaration the role pass above sets, because both sit
@@ -9369,7 +9379,7 @@ WIDEMUL_CEILING := src/ct.c:0 src/ct_wipe.c:0 src/sha256.c:0 src/sha3.c:0 src/hk
                    src/x25519.c:0 src/p256_field.c:0 src/mlkem.c:0 src/mlkem_poly.c:0 src/buf.c:0 src/record.c:0 src/keysched.c:0 src/io.c:0 \
                    src/session.c:0 src/handshake_message.c:0 src/handshake_parser.c:0 src/handshake_parser_ee.c:0 src/handshake_record.c:0 \
                    src/handshake_auth.c:0 src/handshake_flight.c:0 src/handshake.c:0 src/handshake_post.c:0 \
-                   src/tls.c:0 src/tls_entry.c:0 src/session_report.c:0 src/tls_write.c:0 src/drbg.c:0 src/softmul.c:0 src/tcp_nonblocking.c:0 src/tcp_entry.c:0 src/tcp_nonblocking_frame.c:0 \
+                   src/tls.c:0 src/tls_entry.c:0 src/session_report.c:0 src/tls_write.c:0 src/drbg.c:0 src/softmul.c:0 src/tcp_nonblocking.c:0 src/tcp_entry.c:0 src/tcp_nonblocking_frame.c:0 src/tcp_read.c:0 \
                    src/tcp_nonblocking_step.c:0 \
                    src/quic_keys.c:0 src/quic_packet.c:0 src/quic_config.c:0 src/quic_step.c:0 src/quic.c:0 src/quic_entry.c:0 \
                    src/quic_fail.c:0 src/srv_quic.c:0 src/quic_token.c:0 src/srv_tcp_nonblocking.c:0 \

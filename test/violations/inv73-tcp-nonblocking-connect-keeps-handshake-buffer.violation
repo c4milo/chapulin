@@ -1,0 +1,12 @@
+invariant: INV-73
+file: src/tcp_nonblocking.c
+catches: tcp_nonblocking_loop_test
+reason: a client keeps cfg.buf when it connects, so its handshake plaintext,
+  the server's certificates among it, stays in a buffer the caller gives
+  to the next handshake, and the session still names the buffer.
+
+--- old
+            r->t.state = CH_ST_CONNECTED;
+            tlsi_give_back_buf(&r->t);
+--- new
+            r->t.state = CH_ST_CONNECTED;

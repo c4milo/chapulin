@@ -13,9 +13,17 @@
 #include "cfg.h"
 #include "session.h"
 #include "tls.h"
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+#include "tcp_nonblocking.h"
+#endif
 
 int tls_connect(ch_tls_priv *t, const ch_cfg *cfg);
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int tls_read(ch_tls_priv *t, uint8_t *p, size_t n);
+#else
+int tls_read_in_place(ch_tls_priv *t, uint8_t *p, size_t n, uint8_t *reply, size_t reply_cap,
+                      ch_read_result *result);
+#endif
 int tls_write(ch_tls_priv *t, const uint8_t *p, size_t n);
 int tls_write_parts(ch_tls_priv *t, const ch_part *parts, size_t part_count);
 size_t tls_writable_len(const ch_tls_priv *t, size_t cap);

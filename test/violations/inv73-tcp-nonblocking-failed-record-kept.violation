@@ -1,0 +1,13 @@
+invariant: INV-73
+file: src/tcp_read.c
+catches: tcp_nonblocking_loop_test
+reason: a record whose tag fails stays in the caller's input, the
+  ciphertext where the two-pass ChaCha20-Poly1305 open wrote nothing, so a
+  caller that reads its own buffer after a failure finds the bytes the
+  ruling has the session wipe.
+
+--- old
+    if (w->opened > 0) {
+        ct_wipe(w->p, w->opened);
+    }
+--- new

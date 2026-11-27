@@ -1,0 +1,17 @@
+invariant: INV-13
+file: src/tcp_read.c
+catches: tcp_nonblocking_loop_test
+reason: ch_read_in_place waits on a header whose length field is above what
+  RFC 9846 §5.2 lets a record hold, so a caller waits for a body no peer
+  may send and the session stays live; INV-13 admits CH_TCP_AGAIN only for
+  a record that can still arrive.
+
+--- old
+    if (body > rec_body_max(outer)) {
+        w->alert = ALERT_RECORD_OVERFLOW; // RFC 9846 §5.2 caps the length (rfc9846.txt:3595-3596)
+        return CH_EPROTO;
+    }
+--- new
+    if (body > rec_body_max(outer)) {
+        return CH_TCP_AGAIN;
+    }

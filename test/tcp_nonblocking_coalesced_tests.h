@@ -55,8 +55,8 @@ static void test_finished_and_data_in_one_delivery(ch_tcp_priv *client, ch_tcp_p
     held.off = 0;
     memcpy(held.bytes, wire + consumed, held.len);
     server->t.cfg.recv = held_recv;
-    uint8_t got[16];
-    CHECK(ch_read(tls_public(&server->t), got, sizeof got) == (int)sizeof ping);
+    uint8_t got[16] = {0}; // a failed read writes nothing, and the next check reads got
+    CHECK(test_read(tls_public(&server->t), got, sizeof got) == (int)sizeof ping);
     CHECK(memcmp(got, ping, sizeof ping) == 0);
 }
 

@@ -4,6 +4,8 @@
 #ifndef CH_TEST_WEBPKI_RESUME_SESSION_H
 #define CH_TEST_WEBPKI_RESUME_SESSION_H
 
+#include "test_read.h"
+
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
 static ch_tcp_priv session;
 
@@ -25,9 +27,12 @@ static void drain_out(mock_server *s) {
 // the mock what the client staged after each call: a retry hello after a
 // HelloRetryRequest, which the mock answers onto the same queue, and the
 // client's Finished at the end. A failure's alert record goes to the mock
-// the same way, as cfg.send carries the tcp-blocking client's. Returns
-// CH_OK once connected, or the first error.
+// the same way, as cfg.send carries the tcp-blocking client's. The records
+// after the handshake are test_read's, which reads them through the
+// session's recv, mock_recv (test/test_read.h). Returns CH_OK once
+// connected, or the first error.
 static int connect_session(const ch_cfg *cfg) {
+    test_read_reset();
     int rc = ch_tcp_init(tcp_public(&session), cfg);
     if (rc != CH_OK) {
         return rc;
@@ -49,6 +54,7 @@ static int connect_session(const ch_cfg *cfg) {
         drain_out(s);
     }
     s->queue_off = off;
+    session.t.cfg.recv = mock_recv;
     return ch_tcp_state(tcp_public(&session)) == CH_ST_CONNECTED ? CH_OK : CH_EPROTO;
 }
 #else

@@ -1,7 +1,8 @@
 // Proves: rec_dir_init/update, rec_seal, and rec_open are memory-safe and
 // UB-free — rec_open on FULLY HOSTILE bytes (any string up to 160 bytes
-// presented as a record), both into a separate buffer and in place
-// (pt == rec, the shape both shipped callers use), and rec_seal across
+// presented as a record), both into a separate buffer and in place in
+// the two shapes the shipped callers use (pt == rec, and pt == rec +
+// REC_HDR with cap the body's length, tcp_read.c's), and rec_seal across
 // its size contract, from a separate buffer and in place (pt == out +
 // REC_HDR, the shape ch_write_parts uses), and over the whole rec_dir domain: any key, IV, and
 // sequence number — the seq == UINT64_MAX arm both seal and open refuse
@@ -164,11 +165,22 @@ int main(void) {
     __CPROVER_assume(cap <= sizeof rec);
     (void)rec_seal(&any, nondet_u8(), pt, n, rec, cap, &record_len);
 
-    // Both shipped callers decrypt in place (pt == rec), so the proof
-    // drives that shape from the havocked direction state.
+    // The shipped callers decrypt in place, so the proof drives both of
+    // their shapes from the havocked direction state: pt == rec, which
+    // ch_read, the handshake reader and the post-handshake reader use, and
+    // pt == rec + REC_HDR with cap the body's length, where
+    // ch_read_in_place opens each record over its own ciphertext
+    // (tcp_read.c).
     fill_nondet(evil, sizeof evil);
     evil_len = nondet_size_t();
     __CPROVER_assume(evil_len <= sizeof evil);
-    (void)rec_open(&any, evil, evil_len, evil, sizeof evil, &out_len, &outer_type);
+    uint8_t *opened = evil;
+    size_t opened_cap = sizeof evil;
+    if (nondet_u8() & 1) {
+        __CPROVER_assume(evil_len >= REC_HDR); // the caller passes a header and a body
+        opened = evil + REC_HDR;
+        opened_cap = evil_len - REC_HDR;
+    }
+    (void)rec_open(&any, evil, evil_len, opened, opened_cap, &out_len, &outer_type);
     return 0;
 }

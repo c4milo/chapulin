@@ -29,6 +29,7 @@ static void check_late_on_ticket(void) {
     client_config(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
     ccfg.on_ticket = NULL;
     size_t count = kept.count;
+    test_read_reset();
     memset(&to_client, 0, sizeof to_client);
     CHECK(ch_srv_tcp_init(tcp_public(&server), &scfg) == CH_OK);
     CHECK(ch_tcp_init(tcp_public(&client), &ccfg) == CH_OK);
@@ -41,10 +42,11 @@ static void check_late_on_ticket(void) {
         }
     }
     CHECK(ch_tcp_state(tcp_public(&client)) == CH_ST_CONNECTED);
-    // The ticket record arrives after the handshake, and ch_read reads it.
+    // The ticket record arrives after the handshake, and test_read reads it.
     uint8_t got[16];
     CHECK(to_client.len > to_client.off);
-    CHECK(ch_read(tls_public(&client.t), got, sizeof got) == CH_TCP_AGAIN);
+    client.t.cfg.recv = held_recv;
+    CHECK(test_read(tls_public(&client.t), got, sizeof got) == CH_TCP_AGAIN);
     CHECK(to_client.off == to_client.len);
     CHECK(client.t.takes_tickets == 0 && kept.count == count);
 }

@@ -1,7 +1,8 @@
 // Contract stubs for the five record-layer calls both tcp-nonblocking
 // drivers make: hsr_feed, hsr_check_record_end, hsr_peek_message and
 // hsr_refuse_alert, which handshake_record.c's harness proves, and
-// rec_open, which record.c's harness proves. proof/tcp_nonblocking_harness.c
+// rec_open, which record.c's harness proves, and for session.c's
+// tlsi_give_back_buf. proof/tcp_nonblocking_harness.c
 // and proof/srv_tcp_nonblocking_harness.c include it after their helpers,
 // whose nondet_int and fill_nondet it reads.
 #ifndef CH_TCP_NONBLOCKING_RECORD_STUBS_H
@@ -10,6 +11,24 @@
 #include "handshake_message.h"
 #include "handshake_record.h"
 #include "record.h"
+
+// session.c's give-back of the handshake buffer (docs/decisions.md 247):
+// when the session holds cfg.buf it writes zero over all cfg.buf_len bytes,
+// with one memset as the ct_wipe stub writes, and forgets the pointer.
+// tcp_nonblocking_wipe calls it on every failure and close, and the client
+// driver when it connects.
+void tlsi_give_back_buf(ch_tls_priv *t) {
+    __CPROVER_assert(t != NULL, "give back: session valid");
+    if (t->cfg.buf == NULL) {
+        return;
+    }
+    __CPROVER_assert(__CPROVER_w_ok(t->cfg.buf, t->cfg.buf_len),
+                     "give back: cfg.buf holds cfg.buf_len writable bytes");
+    memset(t->cfg.buf, 0, t->cfg.buf_len);
+    t->cfg.buf = NULL;
+    t->pt_off = 0;
+    t->pt_len = 0;
+}
 
 // Reassembly, proven in handshake_record.c's own harness. It writes
 // nothing outside cfg.buf, pt_off and pt_len, and it cannot fail: a short

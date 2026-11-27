@@ -16,9 +16,16 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 }
 #endif
 
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int ch_read(ch_tls *t, uint8_t *p, size_t n) {
     return tls_read(tls_priv(t), p, n);
 }
+#else
+int ch_read_in_place(ch_tls *t, uint8_t *p, size_t n, uint8_t *reply, size_t reply_cap,
+                     ch_read_result *result) {
+    return tls_read_in_place(tls_priv(t), p, n, reply, reply_cap, result);
+}
+#endif
 
 int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
     return tls_write(tls_priv(t), p, n);

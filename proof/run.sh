@@ -873,6 +873,12 @@ launch fast:4 full mldsa_sign_expanded_commit 258 "" src/ct.c proof/ct_wipe_stub
 # record's plaintext (docs/decisions.md 167), measured on 2026-10-31 on an
 # ubuntu-24.04 runner (PROVE_ONLY=record PROVE_NO_CACHE=1 /usr/bin/time -v,
 # cbmc 6.11.0, kissat): 415 properties, 753 s, 2.9 GB peak.
+# With the last open in place as pt == rec + REC_HDR too, the shape
+# ch_read_in_place uses (tcp_read.c), measured on 2026-11-27 in an amd64
+# Linux container of 4 cores and 16 GB, the formula before and after the
+# change at once, beside other work (PROVE_ONLY=record PROVE_NO_CACHE=1
+# /usr/bin/time -v bash proof/run.sh slow, kissat): before, 415
+# properties, 827 s, 2.94 GB; after, 416 properties, 965 s, 2.99 GB.
 launch slow:4 full record 165 "" src/ct.c proof/ct_wipe_stub.c
 # record_suite: rec_dir_init_suite, rec_dir_update and one seal and one
 # open in the -DCH_SUITE_AES_GCM build, over each of the three suites,
@@ -914,6 +920,12 @@ launch slow:4 full record 165 "" src/ct.c proof/ct_wipe_stub.c
 # 2026-11-14, on an M1 Pro at a load average near 20: 772 properties, 21 s,
 # 0.60 GB. On an ubuntu-26.04 runner (run 43617004553): 37 s, and the
 # largest VmPeak of cbmc and kissat 0.71 GB.
+# With the open in place as pt == rec and as pt == rec + REC_HDR beside
+# its own buffer, the shapes ch_read and ch_read_in_place use, measured on
+# 2026-11-27 in an amd64 Linux container of 4 cores and 16 GB, each run
+# alone (PROVE_ONLY=record_suite PROVE_NO_CACHE=1 /usr/bin/time -v bash
+# proof/run.sh fast, kissat): before, 772 properties, 36 s, 0.69 GB in
+# two runs; after, 773 properties, 59 s and 62 s, 1.04 GB.
 launch fast full record_suite 250 "ct_wipe.0:257,fill_nondet.0:257" src/ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The x25519 ladder keeps its words inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
@@ -2719,6 +2731,18 @@ launch fast:2 full srv_quic 5 "fill_nondet.0:257,drive.0:5,zero_bytes.0:133" -DC
 # tcp_nonblocking_in 1628, 72 s, 1.32 GB.
 launch fast full tcp_nonblocking 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_step.c src/tcp_nonblocking_frame.c src/ct.c src/buf.c
 launch fast:2 full tcp_nonblocking_in 4 "fill_nondet.0:129,no_secret_left.0:33" --object-bits 10 -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_nonblocking.c src/tcp_entry.c src/tcp_nonblocking_frame.c src/ct.c src/buf.c
+# ch_read_in_place's body, tls_read_in_place (tcp_read.c), with session.c's
+# wipes and buf.c's reader real, and rec_open, rec_seal, hspost_handle,
+# hsr_refuse_alert and ct_wipe contract stubs. read_records.0 is the record
+# loop; the global bound of 2 covers the CH_ASSERT macros' one-pass loops.
+# The caller's p sits at either end of a fixed array: as a heap object of
+# n bytes, one record took cbmc past 6 GB before the solver started.
+# Measured on 2026-11-27 in an amd64 Linux container of 4 cores and 16 GB
+# (PROVE_ONLY=tcp_read PROVE_NO_CACHE=1 /usr/bin/time -v bash
+# proof/run.sh fast, and proof/prove-one.sh tcp_read, kissat): 1480
+# properties, 145 s and 181 s in two runs, 0.47 GB peak. At 24 bytes of
+# caller input the same formula took 359 s and 0.77 GB.
+launch fast full tcp_read 2 "read_records.0:4" -DCH_TRANSPORT_TCP_NONBLOCKING src/tcp_read.c src/session.c src/buf.c
 # The ROLE=server flight handlers, with srv_accept's layering turned
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the

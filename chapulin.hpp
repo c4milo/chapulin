@@ -52,8 +52,8 @@ enum class [[nodiscard]] Status : int {
     closed = CH_ECLOSED,
     invalid = CH_EINVAL,
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-    // The code a TRANSPORT=tcp-nonblocking read adds (cfg.h): no record has arrived
-    // yet, and the session stays connected (tcp_nonblocking.h, INV-13).
+    // The code a TRANSPORT=tcp-nonblocking read adds (cfg.h): the input holds no whole
+    // record yet, and the session stays connected (tcp_nonblocking.h, INV-13).
     again = CH_TCP_AGAIN,
 #endif
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -666,9 +666,19 @@ class Session {
         return ch_writable_len(&tls_, cap);
     }
 
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+    // Forwards ch_read_in_place: opens the next record of in where it lies,
+    // and result names its plaintext inside in; a failure's alert goes into
+    // reply (tcp_nonblocking.h). This transport has no ch_read.
+    Status read_in_place(Bytes in, Bytes reply, ch_read_result &result) {
+        return static_cast<Status>(
+            ch_read_in_place(&tls_, in.data, in.size, reply.data, reply.size, &result));
+    }
+#else
     Read read(Bytes into) {
         return Read{ch_read(&tls_, into.data, into.size)};
     }
+#endif
 
     // Which pin authenticated the server: 1 = pinned(), 2 = pinned_next(),
     // 0 before a pinned handshake completes. Public information, for

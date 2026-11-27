@@ -8,6 +8,6 @@ reason: read's error set leaves out KeyUpdateLimit, so CH_KEY_UPDATE_LIMIT
   error.KeyUpdateLimit.
 
 --- old
-pub const ReadError = error{ Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit };
+pub const ReadError = error{ Invalid, Proto, Auth, Cap, KeyUpdateLimit };
 --- new
-pub const ReadError = error{ Invalid, Proto, Auth, Cap, Io };
+pub const ReadError = error{ Invalid, Proto, Auth, Cap };

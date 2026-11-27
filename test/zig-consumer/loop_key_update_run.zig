@@ -29,7 +29,6 @@ const overhead: usize = c.REC_OVERHEAD;
 const write_len = tcp.key_update_record_len + overhead + 1;
 
 var wire: [write_len]u8 = undefined;
-var got: [16]u8 = undefined;
 /// Room for everything one read may send: the alert of a read that fails.
 var reply: [tcp.alert_record_len]u8 = undefined;
 
@@ -46,10 +45,10 @@ pub fn run() !void {
         if (i > 0) fixture.tcpPriv(&loop.server.tcp).t.rd.seq = 1;
         const update = wire[0..tcp.key_update_record_len];
         if (i < run_max) {
-            const r = try loop.server.read(update, &got, &reply);
-            try check(r.consumed == update.len and r.pt_len == 0 and r.reply_len == 0, "the server did not read a KeyUpdate of the run as one record of no plaintext, or it sent a record");
+            const r = try loop.server.read(update, &reply);
+            try check(r.consumed == update.len and r.plaintext.len == 0 and r.reply_len == 0, "the server did not read a KeyUpdate of the run as one record of no plaintext, or it sent a record");
         } else {
-            try check(loop.server.read(update, &got, &reply) == error.KeyUpdateLimit, "the KeyUpdate past a full run did not fail read with error.KeyUpdateLimit");
+            try check(loop.server.read(update, &reply) == error.KeyUpdateLimit, "the KeyUpdate past a full run did not fail read with error.KeyUpdateLimit");
         }
     }
     try check(loop.server.state() == .failed and loop.server.alert_sent() == .unexpected_message, "the run limit did not fail the server with unexpected_message");

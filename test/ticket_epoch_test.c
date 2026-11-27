@@ -97,21 +97,16 @@ static int client_out(uint8_t *out, size_t cap, size_t *out_len) {
 #else
 static ch_tcp_priv session;
 
-// ch_tcp_init requires both callbacks and calls neither, so each
-// counts its calls and fails.
+// ch_tcp_init requires a send and calls none, so this one counts its
+// calls and fails. No call of this transport reads through a recv, so the
+// configuration sets none, and ch_tcp_init refuses one
+// (tcp_nonblocking.h).
 static int io_calls;
 
 static int fail_send(void *io, const uint8_t *p, size_t n) {
     (void)io;
     (void)p;
     (void)n;
-    io_calls++;
-    return -1;
-}
-
-static int fail_recv(void *io, uint8_t *p, size_t n) {
-    (void)io;
-    memset(p, 0, n);
     io_calls++;
     return -1;
 }
@@ -162,7 +157,6 @@ static void configure(ch_cfg *cfg, uint32_t ticket_epoch) {
     cfg->on_level_ready = level_ready;
 #else
     cfg->send = fail_send;
-    cfg->recv = fail_recv;
 #endif
 }
 
@@ -203,8 +197,7 @@ static void test_ticket_epoch_boundary(void) {
     // epoch, and none ran here.
     CHECK(epoch_stores == 0);
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
-    // The caller sends the staged bytes: no init called cfg.send or
-    // cfg.recv.
+    // The caller sends the staged bytes: no init called cfg.send.
     CHECK(io_calls == 0);
 #endif
 }

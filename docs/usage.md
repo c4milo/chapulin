@@ -384,15 +384,33 @@ no `on_ticket` gives no ticket to anyone, also when you set
 
 ## Sizing buffers in a tcp-nonblocking session
 
-A `TRANSPORT=tcp-nonblocking` caller owns the socket and hands records to
-`ch_read` whole (`tcp_nonblocking.h`). Two calls and two lengths tell it
-how to cut and size its bytes:
+A `TRANSPORT=tcp-nonblocking` caller owns the socket and holds the bytes
+it received in a buffer of its own. Its session reads them in place, and
+`cfg.buf` serves the handshake alone (`tcp_nonblocking.h`,
+docs/decisions.md 247):
 
+- `ch_read_in_place(&tls, p, n, reply, reply_cap, &result)` opens the next
+  record of the `n` bytes at `p` where it lies, and `result` says where
+  its plaintext is: `p + result.pt_off`, `result.pt_len` bytes. Drop the
+  first `result.consumed` bytes, and call again while the call answers
+  `CH_OK`. `CH_TCP_AGAIN` says `p` holds less than the next whole record:
+  keep the bytes, unchanged, and call again with more bytes after them.
+  `CH_ECLOSED` says the peer closed its direction. A record that fails is
+  wiped in `p`, and its alert goes into `reply`, which must hold
+  `CH_ALERT_RECORD_LEN` bytes. Send that alert after every record you
+  sealed before the call.
+- `cfg.buf` comes back wiped when the session connects, fails or closes,
+  and the session never reads it again. So you can lend one buffer to
+  many handshakes, one after another. Two handshakes in flight need two
+  buffers: keep a pool of them, and give each handshake a deadline, so a
+  peer that stops halfway gives its buffer back. Leave `cfg.recv` NULL:
+  the init calls refuse one.
 - `ch_tcp_whole_len(p, n)` is the length of the record at the front of
-  `p`, header included, or 0 while `p` holds less than that record. Pass
-  that many bytes to `ch_read`. A header whose length field is above
+  `p`, header included, or 0 while `p` holds less than that record. The
+  handshake calls take whole records, so cut what you pass `ch_tcp_in` or
+  `ch_srv_tcp_in` with it. A header whose length field is above
   2^14 + 256, which no peer may send, answers 5, the header alone, and
-  `ch_read` refuses it.
+  the call that reads it refuses it.
 - `ch_write_parts(&tls, parts, part_count)` seals several `ch_part`
   buffers as one run of plaintext, in the records `ch_write` seals for
   them joined, so a frame header and its payload need no copy into one
@@ -405,12 +423,12 @@ how to cut and size its bytes:
   It also counts the KeyUpdate record below when the write sends one, so
   a buffer sized for your largest write holds 27 bytes more.
 - `CH_ALERT_RECORD_LEN`, 24, is what `ch_close` sends, and what a failing
-  `ch_read` sends, unless the peer's fatal alert failed it: that read
-  sends nothing. A handshake that fails once its side's write key is
+  read sends: `ch_read`, or `ch_read_in_place` into its `reply`, unless
+  the peer's fatal alert failed it: that read sends nothing. A handshake that fails once its side's write key is
   installed gives one too, through `ch_tcp_out` or `on_record_out`;
   one that fails before it gives the alert in the clear, 7 bytes.
   `CH_KEY_UPDATE_RECORD_LEN`, 27, is one KeyUpdate record, which only
-  `ch_write` sends. `ch_read` sends no record but that alert.
+  `ch_write` sends. A read sends no record but that alert.
 - A peer's KeyUpdate that asks for an answer gets it from your next
   `ch_write` of one byte or more: one KeyUpdate record before its data,
   under the old key, and the data under the next key (RFC 9846 §4.7.3).
@@ -420,7 +438,7 @@ how to cut and size its bytes:
   its close_notify alone. A record carries at most one KeyUpdate, as its
   last message (RFC 9846 §5.1), and a record with bytes after a KeyUpdate
   fails the read.
-- `ch_read` reads at most `CH_KEY_UPDATE_RUN_MAX`, 16, KeyUpdates in a row
+- A read reads at most `CH_KEY_UPDATE_RUN_MAX`, 16, KeyUpdates in a row
   (`session.h`). A record of application data with one byte or more ends
   a run, and an empty one does not. The next KeyUpdate fails the read
   with `CH_KEY_UPDATE_LIMIT` and an unexpected_message alert, so your log

@@ -1,12 +1,15 @@
 invariant: INV-13
-file: src/handshake_post.c
+file: src/tcp_read.c
 catches: tcp_nonblocking_loop_test
-reason: hspost_read returns CH_TCP_AGAIN for a message split across
-  records without writing post_fill, so the next ch_read reads the
-  second part as a new message, fails to parse it and kills the session.
+reason: ch_read_in_place returns CH_TCP_AGAIN for a message split across
+  records without writing held_len, so the next call opens the held
+  record a second time, its tag no longer matches, and the session dies
+  on a legal peer (RFC 9846 §5.1, docs/decisions.md 247).
 
 --- old
-            t->post_fill = fill;
-            return rc;
+        t->held_len = w->off;
+    }
+    return CH_TCP_AGAIN;
 --- new
-            return rc;
+    }
+    return CH_TCP_AGAIN;

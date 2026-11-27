@@ -44,7 +44,11 @@ static ch_cfg base_cfg(void) {
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = mock_send;
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
+    // A tcp-nonblocking session reads through no recv, and its init
+    // refuses one (tcp_nonblocking.h).
     cfg.recv = mock_recv;
+#endif
     cfg.io = &mock;
     cfg.on_ticket = keep_ticket;
     cfg.anchors = anchors;
@@ -242,7 +246,7 @@ static void test_resumed_handshake(void) {
     // The session's ticket arrives bound to the same hostname and anchors.
     push_ticket(&mock);
     uint8_t got[8];
-    CHECK(ch_read(tls_public(session_tls()), got, sizeof got) == 2 && memcmp(got, "ok", 2) == 0);
+    CHECK(test_read(tls_public(session_tls()), got, sizeof got) == 2 && memcmp(got, "ok", 2) == 0);
     CHECK(received.count == 1 && received.identity_len == 8 &&
           memcmp(received.identity, "ticket-2", 8) == 0);
     uint8_t hash[SHA256_LEN];

@@ -145,7 +145,7 @@ static void read_alert_after_handshake(ch_tcp_priv *client, ch_tcp_priv *server,
         hold_record(server, REC_ALERT, alert, n, 0);
     }
     uint8_t got[16];
-    CHECK(ch_read(tls_public(&reader->t), got, sizeof got) == CH_EPROTO);
+    CHECK(test_read(tls_public(&reader->t), got, sizeof got) == CH_EPROTO);
     CHECK(ch_tcp_state(tcp_public(reader)) == CH_ST_FAILED);
     uint8_t staged[64];
     CHECK(server_reads || take_client_alert(client, staged, sizeof staged) == 0);
@@ -181,7 +181,7 @@ static void server_reads_client_ticket(ch_tcp_priv *client, ch_tcp_priv *server,
     tickets_seen = 0;
     server->t.cfg.on_ticket = count_ticket;
     uint8_t got[16];
-    CHECK(ch_read(tls_public(&server->t), got, sizeof got) == CH_EPROTO);
+    CHECK(test_read(tls_public(&server->t), got, sizeof got) == CH_EPROTO);
     CHECK(tickets_seen == 0 && ch_tcp_state(tcp_public(server)) == CH_ST_FAILED);
     CHECK(ch_alert_sent(tls_public(&server->t)) == ALERT_UNEXPECTED_MESSAGE && server_sends == 1);
     CHECK(held.len == CH_ALERT_RECORD_LEN);
@@ -223,7 +223,7 @@ static void fail_after_handshake(ch_tcp_priv *client, ch_tcp_priv *server, const
           ch_alert_received(tls_public(&failer->t)) == 0);
     CHECK(ch_fail(tls_public(&failer->t), ALERT_RECORD_OVERFLOW) == CH_EPROTO && *sends == 1);
     uint8_t got[16];
-    CHECK(ch_read(tls_public(&reader->t), got, sizeof got) == CH_EPROTO);
+    CHECK(test_read(tls_public(&reader->t), got, sizeof got) == CH_EPROTO);
     CHECK(ch_alert_received(tls_public(&reader->t)) == ALERT_RECORD_OVERFLOW);
     CHECK(ch_alert_sent(tls_public(&reader->t)) == 0);
     ch_tcp_close(tcp_public(client));

@@ -8,11 +8,11 @@ reason: write seals the part of pt that output holds and reports success,
 
 --- old
             if (pt.len > self.writable_len(output.len)) return error.Cap;
-            self.io.begin(&.{}, output);
+            self.io.begin(output);
             defer self.io.end();
             try chapulin.from_code(WriteError, c.ch_write(self.tls(), pt.ptr, pt.len));
 --- new
             const fits = @min(pt.len, self.writable_len(output.len));
-            self.io.begin(&.{}, output);
+            self.io.begin(output);
             defer self.io.end();
             try chapulin.from_code(WriteError, c.ch_write(self.tls(), pt.ptr, fits));

@@ -95,6 +95,14 @@ ALLOWED = {
         "exactly by io_read_record, which reads REC_HDR bytes and then the "
         "length field's bytes and no others"
     ),
+    ("tcp_read.c", "record_at", "r"): (
+        "its reader runs over the caller's received bytes from the next "
+        "record on, not over one record: it reads that record's header, and "
+        "the bytes after the record are the records after it on purpose. "
+        "open_at then hands rec_open exactly REC_HDR bytes and the length "
+        "field's bytes, which rec_open holds to the header's length "
+        "(record.c, body != n - REC_HDR)"
+    ),
     ("srv_resume.c", "binder_at", "r"): (
         "it reads back the binders list read_psk_binders (srv_parser_ext.c) "
         "framed to its end, with used != binders_len. It stops at the entry "

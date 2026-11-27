@@ -308,16 +308,20 @@ typedef struct {
     // ch_quic_key_update runs and ch_quic.key_phase names.
     uint64_t send_epochs; // KeyUpdates we have sent; capped per §4.7.3
 #endif
-    // Unread plaintext of the current record, inside cfg.buf.
+    // Unread plaintext of the current record, inside cfg.buf. A
+    // TRANSPORT=tcp-nonblocking build reads it during the handshake alone.
     size_t pt_off;
     size_t pt_len;
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-    // The bytes of a post-handshake message that arrived in part when
-    // ch_read returned CH_TCP_AGAIN: they sit at the front of cfg.buf,
-    // and the next ch_read continues the message with the next record
-    // before it reads anything else (hspost_read). 0 when no message is
-    // in part.
-    size_t post_fill;
+    // A post-handshake message that arrived in part (tcp_read.c). held_len
+    // counts the bytes at the front of the caller's input that this
+    // session has opened and the caller has not consumed: the records of
+    // the message so far. The last held_fill bytes of them are the
+    // message's bytes so far. ch_read_in_place returned CH_TCP_AGAIN, and
+    // the caller presents those held_len bytes again, unchanged, at the
+    // front of its next input. Both are 0 when no message is in part.
+    size_t held_len;
+    size_t held_fill;
 #endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // The negotiated version: RFC 9368's QUIC version in use once version
@@ -389,8 +393,25 @@ int tlsi_config_ok(const ch_cfg *cfg);
 // for every refusal, a ticket the stored epoch retired among them. Both client drivers call it.
 int tlsi_epoch_init(ch_tls_priv *t, const ch_cfg *cfg, int psk_ok);
 
-// Wipe all key material and buffered plaintext; keys go dead.
+// Wipe all key material and buffered plaintext; keys go dead. A
+// TRANSPORT=tcp-nonblocking session also gives cfg.buf back here, through
+// tlsi_give_back_buf.
 void tlsi_wipe(ch_tls_priv *t);
+
+// Closes the peer's direction on its close_notify (RFC 9846 §6.1): wipes
+// the read key, its secret and the resumption master secret, and sets
+// read_closed. ch_read and ch_read_in_place both call it.
+void tlsi_close_read_side(ch_tls_priv *t);
+
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+// Gives cfg.buf back to the caller: wipes its cfg.buf_len bytes, then sets
+// this session's copy of the pointer to NULL, so no later call can reach
+// the buffer (docs/decisions.md 247). It keeps cfg.buf_len, which the
+// record size checks read. A session that gave the buffer back already
+// holds NULL, and the call does nothing then. Each driver calls it when
+// the session connects, and tlsi_wipe calls it on every failure and close.
+void tlsi_give_back_buf(ch_tls_priv *t);
+#endif
 
 #ifdef CH_CPU_RUNTIME
 // Writes the session's ch_cfg.cpu, the caller's description of its CPU, into both record

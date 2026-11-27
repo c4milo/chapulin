@@ -1,0 +1,29 @@
+invariant: INV-73
+file: src/gcm_hw.c
+catches: record_in_place_test
+reason: the AES-GCM open of a host object decrypts a pass before it hashes
+  that pass's ciphertext, which out of place gives the same bytes and in
+  place hashes the plaintext, so a record that ch_read_in_place opens
+  where it lies fails its tag.
+
+--- old
+    for (size_t p = 0; p <= passes; p++) {
+        if (p > 0) {
+            size_t at = (p - 1) * GCM_HW_PASS_BYTES;
+            fill_counters(s.keystream, prefix,
+                          count + (uint32_t)((p - 1) * GCM_HW_PASS_BLOCKS) + 1U);
+            cipher_pass(s.keystream, round_keys, rounds);
+            xor_pass_in_place(s.keystream, &in[at], &out[at]);
+        }
+        if (p < passes) {
+            ghash_hash_pass(&s.ghash, &in[p * GCM_HW_PASS_BYTES], 1);
+        }
+    }
+--- new
+    for (size_t p = 0; p < passes; p++) {
+        size_t at = p * GCM_HW_PASS_BYTES;
+        fill_counters(s.keystream, prefix, count + (uint32_t)(p * GCM_HW_PASS_BLOCKS) + 1U);
+        cipher_pass(s.keystream, round_keys, rounds);
+        xor_pass_in_place(s.keystream, &in[at], &out[at]);
+        ghash_hash_pass(&s.ghash, &in[at], 1);
+    }

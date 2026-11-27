@@ -52,7 +52,8 @@ const has_clock = @hasField(c.ch_cfg, "clock_io");
 
 /// One error per ch_err code a call returns, named as chapulin.hpp's Status names it. Each call's
 /// error set is the part of this one its C call returns. CH_TCP_AGAIN and CH_ECLOSED are no
-/// error here: record sessions' read reports the first as pt_len 0, and no call returns the second.
+/// error here: a record session's read reports the first as consumed 0 and the second as
+/// peer_closed.
 /// An object's set holds the codes its headers declare: Discard and AeadLimit in a QUIC object's
 /// alone, and KeyUpdateLimit in a TCP object's alone.
 pub const Error = error{ Io, Proto, Auth, Cap, Invalid } || (if (@hasDecl(c, "CH_QUIC_DISCARD")) error{ Discard, AeadLimit } else error{KeyUpdateLimit});

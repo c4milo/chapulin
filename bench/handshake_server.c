@@ -5,7 +5,7 @@
 // it beside bench/handshake_openssl_server.c.
 //
 // It calls the object as colibri's server does: ch_srv_tcp_init and
-// ch_srv_tcp_in until the handshake is complete, then ch_read,
+// ch_srv_tcp_in until the handshake is complete, then ch_read_in_place,
 // ch_write and ch_close. Its identity is a P-256 leaf and the root that
 // signed it, read from PEM files through ch_chain_from_pem and
 // ch_p256_key_from_pem. It offers ALPN h2 and http/1.1, holds a cookie
@@ -103,19 +103,32 @@ static int send_bytes(void *io, const uint8_t *p, size_t n) {
     return send_all(io, p, n) == 0 ? (int)n : -1;
 }
 
-// ch_read's recv: the bytes left over from the handshake first, then the
-// socket. A blocking read hands over 1 to n bytes.
-static int recv_bytes(void *io, uint8_t *p, size_t n) {
-    (void)io;
-    if (wire.len > 0) {
-        size_t take = wire.len < n ? wire.len : n;
-        memcpy(p, wire.bytes, take);
-        memmove(wire.bytes, wire.bytes + take, wire.len - take);
-        wire.len -= take;
-        return (int)take;
+// Opens the next record of wire where it lies, reading the socket until
+// wire holds one whole, and drops it. Returns the call's result, with the
+// plaintext copied to out: the bytes left over from the handshake first,
+// then the socket's, as colibri's server reads them (tcp_nonblocking.h).
+static int read_record(uint8_t *out, size_t cap, size_t *out_len) {
+    for (;;) {
+        uint8_t reply[CH_ALERT_RECORD_LEN];
+        ch_read_result result;
+        int rc = ch_read_in_place(ch_tcp_tls(tcp_public(&session)), wire.bytes, wire.len, reply,
+                                  sizeof reply, &result);
+        if (rc == CH_OK || rc == CH_ECLOSED) {
+            *out_len = result.pt_len < cap ? result.pt_len : cap;
+            memcpy(out, wire.bytes + result.pt_off, *out_len);
+            memmove(wire.bytes, wire.bytes + result.consumed, wire.len - result.consumed);
+            wire.len -= result.consumed;
+            return rc;
+        }
+        if (rc != CH_TCP_AGAIN) {
+            return rc;
+        }
+        ssize_t got = read(wire.fd, wire.bytes + wire.len, sizeof wire.bytes - wire.len);
+        if (got <= 0) {
+            return CH_EIO;
+        }
+        wire.len += (size_t)got;
     }
-    ssize_t got = read(wire.fd, p, n);
-    return got > 0 ? (int)got : -1;
 }
 
 __attribute__((noinline)) void bench_handshake(void) {
@@ -146,19 +159,20 @@ __attribute__((noinline)) void bench_exchange(void) {
     uint8_t request[REQUEST_LEN];
     size_t have = 0;
     while (have < sizeof request) {
-        int got = ch_read(ch_tcp_tls(tcp_public(&session)), request + have, sizeof request - have);
-        if (got <= 0) {
-            fail("ch_read did not return the request");
+        size_t got = 0;
+        if (read_record(request + have, sizeof request - have, &got) != CH_OK) {
+            fail("ch_read_in_place did not return the request");
         }
-        have += (size_t)got;
+        have += got;
     }
     uint8_t response[RESPONSE_LEN];
     memset(response, 'r', sizeof response);
     if (ch_write(ch_tcp_tls(tcp_public(&session)), response, sizeof response) != CH_OK) {
         fail("ch_write failed");
     }
-    if (ch_read(ch_tcp_tls(tcp_public(&session)), request, sizeof request) != 0) {
-        fail("ch_read did not return the client's close_notify");
+    size_t got = 0;
+    if (read_record(request, sizeof request, &got) != CH_ECLOSED) {
+        fail("ch_read_in_place did not return the client's close_notify");
     }
     ch_close(ch_tcp_tls(tcp_public(&session)));
     close(wire.fd);
@@ -215,7 +229,6 @@ int main(int argc, char **argv) {
     cfg.buf = rx_buf;
     cfg.buf_len = sizeof rx_buf;
     cfg.send = send_bytes;
-    cfg.recv = recv_bytes;
     cfg.rand_bytes = draw;
     cfg.cpu = cpu;
     cfg.alpn_protocols = alpn;

@@ -1,0 +1,11 @@
+invariant: INV-73
+file: src/tcp_read.c
+catches: tcp_nonblocking_loop_test
+reason: a connected session keeps the first part of a split post-handshake
+  message in cfg.buf, as ch_read did before decision 247, so a connected
+  session writes a buffer it gave back.
+
+--- old
+    memmove(w->p + end - left, run + used, left);
+--- new
+    memmove(t->cfg.buf, run + used, left);

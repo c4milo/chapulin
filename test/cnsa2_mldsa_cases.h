@@ -100,7 +100,7 @@ static int pinned_handshake(mock_server *s, const ch_cfg *cfg, ch_tls_priv **t) 
     CHECK(ch_write(tls_public(*t), ping, sizeof ping) == CH_OK);
     CHECK(s->echo_len == sizeof ping && memcmp(s->echo, ping, sizeof ping) == 0);
     uint8_t got[16];
-    CHECK(ch_read(tls_public(*t), got, sizeof got) == (int)sizeof ping);
+    CHECK(test_read(tls_public(*t), got, sizeof got) == (int)sizeof ping);
     CHECK(tickets == 1);
     return rc;
 }

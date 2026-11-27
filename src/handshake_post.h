@@ -151,11 +151,9 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 // between two records of one message, whose error alert is the peer's
 // fatal alert and is answered with nothing. It sends no record but that
 // alert: a KeyUpdate that asks for an answer sets ch_tls.key_update_owed,
-// and ch_write sends the answer. A TRANSPORT=tcp-nonblocking
-// build also returns CH_TCP_AGAIN when the next fragment has not
-// arrived: the fragment bytes so far stay at the front of cfg.buf,
-// t->post_fill counts them, and the caller passes that count back here
-// on its next read. It is not an error, and nothing fails.
+// and ch_write sends the answer. A TRANSPORT=tcp-nonblocking build
+// declares neither this call nor anything under it: its sessions read in
+// place, and hspost_handle below is what ch_read_in_place calls.
 //
 // A TRANSPORT=quic-nonblocking build declares neither this call nor the KeyUpdate
 // handler under it. There is no record run to drain, and a TLS
@@ -163,7 +161,24 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 // transport (RFC 9001 §6, rfc9001.txt:1566-1568), so the only
 // post-handshake message it accepts is a NewSessionTicket and
 // hspost_take_ticket is the one way in.
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int hspost_read(ch_tls_priv *t, size_t pt_len);
+#else
+// Handles the whole post-handshake messages at the front of pt[0..n), a
+// NewSessionTicket or a KeyUpdate each, and writes through used how many
+// bytes they took. A trailing partial message is not an error: the caller
+// keeps it and joins the next record's bytes to it. pt[0..n) ends where
+// the newest record's plaintext ends, so a KeyUpdate that does not end
+// those bytes does not end its record (RFC 9846 §5.1,
+// rfc9846.txt:3464-3470). A message that could never fit, of more than
+// 2^14 bytes or more than cfg.buf_len with its header, is refused.
+//
+// Returns CH_OK, or the code of a refusal hspost_read states, with the
+// alert it owes in *alert where that is another alert than the
+// unexpected_message the caller set. It fails no session and sends
+// nothing: ch_read_in_place does both (tcp_read.c).
+int hspost_handle(ch_tls_priv *t, const uint8_t *pt, size_t n, size_t *used, uint8_t *alert);
+#endif
 
 // The most KeyUpdates one session sends. RFC 9846 §4.7.3 forbids a sender
 // to let the epoch, and with it the number of key updates, pass 2^48 - 1

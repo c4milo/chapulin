@@ -11,7 +11,7 @@
 //   - a peer whose record_size_limit (RFC 8449) is below CH_TX_PT gets
 //     records of that limit, and one byte more takes a second record;
 //   - a transfer of more than two records moves each way, client to server
-//     and server to client, through ch_write and ch_read.
+//     and server to client, through ch_write and test_read (test/test_read.h).
 // The first two sit at the exact boundary: the last size that fits one
 // record, and the first that takes two.
 // The handshakes in main() run in this build too, and their record counts
@@ -32,7 +32,7 @@ static uint8_t tx_cli_buf[TX_LOOP_BUF];
 #define TX_TRANSFER (2 * CH_TX_PT + 100)
 
 // One direction's records once connected: what one end's ch_write sent,
-// for the other end's ch_read. io_send_all hands cfg.send one whole record,
+// for the other end's test_read. io_send_all hands cfg.send one whole record,
 // and pipe_send takes all of it, so send_calls counts records and last_len
 // is the length of the last one.
 typedef struct {
@@ -57,7 +57,7 @@ static int pipe_send(tx_pipe *pipe, const uint8_t *p, size_t n) {
 }
 
 // Hands over what the pipe holds, and 0 when it holds nothing more, which
-// is tcp_nonblocking.h's recv contract.
+// is the recv test_read reads through (test/test_read.h).
 static int pipe_recv(tx_pipe *pipe, uint8_t *p, size_t n) {
     size_t left = pipe->len - pipe->off;
     size_t take = n < left ? n : left;
@@ -110,12 +110,12 @@ static int tx_connect(uint8_t *cli, size_t cli_len) {
     return 1;
 }
 
-// Reads n bytes through ch_read into got and requires them to equal want.
-// ch_read hands over at most one record's plaintext per call.
+// Reads n bytes through test_read into got and requires them to equal
+// want. test_read hands over at most one record's plaintext per call.
 static int read_all(ch_tls_priv *t, uint8_t *got, const uint8_t *want, size_t n) {
     size_t at = 0;
     while (at < n) {
-        int rc = ch_read(tls_public(t), got + at, n - at);
+        int rc = test_read(tls_public(t), got + at, n - at);
         if (rc <= 0) {
             return 0;
         }

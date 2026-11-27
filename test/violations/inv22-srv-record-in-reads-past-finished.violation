@@ -12,6 +12,7 @@ reason: ch_srv_tcp_in keeps taking records after the one that completed
 
 --- old
         if (r->step == SRV_TCP_NONBLOCKING_STEP_COMPLETE) {
+            tlsi_give_back_buf(&r->t);
             return CH_OK;
         }
 --- new

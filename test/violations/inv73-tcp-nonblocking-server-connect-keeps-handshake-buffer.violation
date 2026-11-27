@@ -1,0 +1,14 @@
+invariant: INV-73
+file: src/srv_tcp_nonblocking.c
+catches: tcp_nonblocking_loop_test
+reason: a server keeps cfg.buf when it connects, so the client's handshake
+  plaintext stays in a buffer of the server's pool for the next
+  connection's handshake to read.
+
+--- old
+        if (r->step == SRV_TCP_NONBLOCKING_STEP_COMPLETE) {
+            tlsi_give_back_buf(&r->t);
+            return CH_OK;
+--- new
+        if (r->step == SRV_TCP_NONBLOCKING_STEP_COMPLETE) {
+            return CH_OK;

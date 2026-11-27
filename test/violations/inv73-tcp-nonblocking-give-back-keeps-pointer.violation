@@ -1,0 +1,12 @@
+invariant: INV-73
+file: src/session.c
+catches: tcp_nonblocking_loop_test
+reason: a session wipes cfg.buf when it gives it back but keeps the pointer,
+  so a later path that reached the buffer would read or write another
+  connection's handshake instead of stopping.
+
+--- old
+    ct_wipe(t->cfg.buf, t->cfg.buf_len);
+    t->cfg.buf = NULL;
+--- new
+    ct_wipe(t->cfg.buf, t->cfg.buf_len);

@@ -37,11 +37,12 @@ int tcp_init(ch_tcp_priv *r, const ch_cfg *cfg) {
     memset(r, 0, sizeof *r);
     r->t.cfg = *cfg;
     // A presented ticket becomes the session copy's PSK, which every rule
-    // below and the handshake read (handshake_post.h). The callbacks go
-    // unused until the handshake is done; ch_read and ch_write need them
-    // after it (tcp_nonblocking.h).
+    // below and the handshake read (handshake_post.h). send goes unused
+    // until the handshake is done; ch_write and ch_close need it after it.
+    // No call reads through recv, so one that is set is refused
+    // (tcp_nonblocking.h).
     if (!hspost_present_ticket(&r->t.cfg) || !tlsi_config_ok(&r->t.cfg) || cfg->send == NULL ||
-        cfg->recv == NULL) {
+        cfg->recv != NULL) {
         return tcp_nonblocking_refuse_init(r);
     }
 #ifdef CH_CPU_RUNTIME
@@ -134,17 +135,32 @@ static int drive(ch_tcp_priv *r) {
     }
 }
 
+// The answers tcp_in gives before it reads a byte, or CH_OK when it may
+// read. A staged record the caller has not collected means this endpoint
+// owes the peer bytes, so nothing the peer sent can be an answer yet.
+static int refusal_on_entry(ch_tcp_priv *r) {
+    if (tcp_nonblocking_session_dead(r)) {
+        return CH_EPROTO;
+    }
+    if (r->tx_len != 0) {
+        return CH_EINVAL;
+    }
+    if (r->t.state == CH_ST_CONNECTED) {
+        // The session gave cfg.buf back when it connected, and every record
+        // after the handshake is ch_read_in_place's (tcp_nonblocking.h).
+        r->hs.alert = ALERT_UNEXPECTED_MESSAGE;
+        return fail(r, CH_EPROTO);
+    }
+    return CH_OK;
+}
+
 int tcp_in(ch_tcp_priv *r, uint8_t *p, size_t n, size_t *consumed) {
     CH_ASSERT(r->t.state <= CH_ST_FAILED);
     r->hs.t = &r->t;
     *consumed = 0;
-    if (tcp_nonblocking_session_dead(r)) {
-        return CH_EPROTO;
-    }
-    // A staged record the caller has not collected means this endpoint
-    // owes the peer bytes, so nothing the peer sent can be an answer yet.
-    if (r->tx_len != 0) {
-        return CH_EINVAL;
+    int refused = refusal_on_entry(r);
+    if (refused != CH_OK) {
+        return refused;
     }
     size_t off = 0;
     for (;;) {
@@ -203,8 +219,10 @@ int tcp_out(ch_tcp_priv *r, uint8_t *out, size_t cap, size_t *out_len) {
         if (r->step == TCP_NONBLOCKING_STEP_COMPLETE && r->t.state == CH_ST_START) {
             // These bytes were the client Finished: this endpoint has now
             // sent its own and verified the peer's, which is what the
-            // handshake being done means.
+            // handshake being done means. The handshake buffer goes back
+            // to the caller, wiped (docs/decisions.md 247).
             r->t.state = CH_ST_CONNECTED;
+            tlsi_give_back_buf(&r->t);
         }
     }
     return CH_OK;

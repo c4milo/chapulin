@@ -392,6 +392,7 @@
         "src/tcp_nonblocking_session.h",
         "src/tcp_nonblocking_step.c",
         "src/tcp_nonblocking_step.h",
+        "src/tcp_read.c",
         "include/chapulin/ticket.h",
         "src/tls.c",
         "include/chapulin/tls.h",

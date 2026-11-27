@@ -365,8 +365,16 @@ quic_token 292
 # record rose from 154 to 159 of 167 on 2026-10-31, on an ubuntu-24.04
 # runner with the pinned cbmc: the harness seals in place too, the shape
 # ch_write_parts uses (docs/decisions.md 167).
-record 159
-record_suite 291
+# record rose from 159 of 167 to 163 of 171, and record_suite from 306 of
+# 318 to 311 of 323, on 2026-11-27, measured by `python3 -u
+# proof/coverage.py --reach --only record --only record_suite` in an amd64
+# Linux container with the pinned cbmc. Each harness's open runs in place
+# as pt == rec + REC_HDR too, the shape ch_read_in_place uses
+# (tcp_read.c), and record_suite's open runs in place as pt == rec as
+# well. The locations added are the new choice's, and each harness reaches
+# all of them: neither leaves more locations unreached than before.
+record 163
+record_suite 311
 record_whole_len 59
 # The three rsa_avx2_chain lines took their floors on 2026-10-17 from the
 # nightly runner, under the cover command with --object-bits 10 (run
@@ -640,6 +648,14 @@ srv_quic 586
 # helpers.
 tcp_nonblocking 395
 tcp_nonblocking_in 253
+# tcp_read took its floor on 2026-11-27, measured by `python3 -u
+# proof/coverage.py --reach --only tcp_read` in an amd64 Linux container
+# with the pinned cbmc: 81.2% (406/500). In tcp_read.c it reaches every
+# location but the six CH_ASSERT arms. The other 88 are buf.c's writer
+# and rb_u24, which tcp_read.c does not call, session.c's tlsi_send_alert
+# and tlsi_fail, which it does not call, tlsi_give_back_buf's wipe, which
+# a connected session's NULL cfg.buf skips, and ch_assert_fail.
+tcp_read 406
 # The three srv_out floors were taken on 2026-10-31, measured by
 # proof/coverage.py in the pinned amd64 container: srv_out 90.7%
 # (165/182), srv_out_nonblocking 90.2% (174/193) and srv_out_quic 85.5%

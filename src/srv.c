@@ -220,11 +220,12 @@ static int transport_ok(const ch_cfg *cfg) {
 #elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
     // A tcp-nonblocking server drives no socket while the handshake runs:
     // the caller owns it, and the flight leaves through on_record_out
-    // (srv_cfg.h). send and recv stay required all the same, because
-    // ch_read and ch_write call them once the session is connected, and
-    // by then the caller holds the bytes and they never block
-    // (tcp_nonblocking.h).
-    return cfg->buf != NULL && cfg->send != NULL && cfg->recv != NULL &&
+    // (srv_cfg.h). send stays required all the same, because ch_write and
+    // ch_close call it once the session is connected, and by then the
+    // caller holds the bytes and it never blocks. No call reads through
+    // recv, because ch_read_in_place reads the caller's bytes, so a recv
+    // that is set is refused (tcp_nonblocking.h).
+    return cfg->buf != NULL && cfg->send != NULL && cfg->recv == NULL &&
            cfg->buf_len >= CH_MIN_RXBUF && cfg->srv.on_record_out != NULL;
 #else
     return cfg->buf != NULL && cfg->send != NULL && cfg->recv != NULL &&

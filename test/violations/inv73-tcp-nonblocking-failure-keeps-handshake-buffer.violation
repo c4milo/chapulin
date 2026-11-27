@@ -1,0 +1,11 @@
+invariant: INV-73
+file: src/tcp_nonblocking_frame.c
+catches: tcp_nonblocking_loop_test
+reason: a handshake that fails, or that ch_tcp_close ends, keeps cfg.buf,
+  so the bytes of a handshake that never connected stay for the next one.
+
+--- old
+    tlsi_give_back_buf(&r->t);
+}
+--- new
+}

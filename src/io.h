@@ -27,7 +27,12 @@ int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n);
 //
 // Every other result leaves *alert as the caller set it. A record that
 // fits cfg.buf but not cap, behind a message in part, is one of those.
+//
+// A TRANSPORT=tcp-nonblocking build declares it not: its sessions call no
+// recv, and ch_read_in_place reads the records the caller holds.
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int io_read_record(const ch_tls_priv *t, uint8_t *buf, size_t cap, uint8_t *outer,
                    size_t *record_len, uint8_t *alert);
+#endif
 
 #endif

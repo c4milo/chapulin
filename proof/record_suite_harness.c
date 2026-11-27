@@ -4,7 +4,8 @@
 // hash and key length: every hkdf_expand_label call runs at
 // suite_hash_len(suite), the "key" derive writes suite_key_len(suite)
 // bytes, and the direction keeps its suite across a KeyUpdate. Then one
-// record of up to 16 bytes seals and one opens, which proves the
+// record of up to 16 bytes seals and one opens, into a buffer of its own
+// or in place as pt == rec or pt == rec + REC_HDR, which proves the
 // dispatch to the AEAD the suite names: AES-GCM for the two AES suites
 // and ChaCha20-Poly1305 for the third, each with a key of the right
 // length. The seal runs at any sequence number, and it refuses exactly
@@ -316,7 +317,22 @@ int main(void) {
     uint8_t type = 0;
     aes_ran = 0;
     chacha_ran = 0;
-    (void)rec_open(&d, rec, rec_len, got, sizeof got, &got_len, &type);
+    // Into a buffer of its own, or in place in the two shapes the shipped
+    // callers use: pt == rec, and pt == rec + REC_HDR with cap the body's
+    // length, where ch_read_in_place opens a record (tcp_read.c).
+    uint8_t *opened = got;
+    size_t opened_cap = sizeof got;
+    uint8_t shape = nondet_u8();
+    if (shape == 1) {
+        opened = rec;
+        opened_cap = sizeof rec;
+    }
+    if (shape == 2) {
+        __CPROVER_assume(rec_len >= REC_HDR); // the caller passes a header and a body
+        opened = rec + REC_HDR;
+        opened_cap = rec_len - REC_HDR;
+    }
+    (void)rec_open(&d, rec, rec_len, opened, opened_cap, &got_len, &type);
     __CPROVER_assert(!aes_ran || aes_suite, "open: AES-GCM runs only under an AES suite");
     __CPROVER_assert(!chacha_ran || !aes_suite, "open: ChaCha20 runs only under ChaCha20");
     return 0;

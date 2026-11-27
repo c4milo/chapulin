@@ -295,6 +295,12 @@ int srv_tcp_in(ch_tcp_priv *r, uint8_t *p, size_t n, size_t *consumed) {
     if (tcp_nonblocking_session_dead(r)) {
         return CH_EPROTO;
     }
+    if (r->t.state == CH_ST_CONNECTED) {
+        // The session gave cfg.buf back when it connected, and every record
+        // after the handshake is ch_read_in_place's (srv_tcp_nonblocking.h).
+        r->hs.alert = ALERT_UNEXPECTED_MESSAGE;
+        return fail(r, CH_EPROTO);
+    }
     size_t off = 0;
     for (;;) {
         if (n - off < REC_HDR) {
@@ -323,8 +329,11 @@ int srv_tcp_in(ch_tcp_priv *r, uint8_t *p, size_t n, size_t *consumed) {
         }
         // The record that completed the handshake is the last one this
         // call takes: what follows it is the peer's application data or
-        // alerts, and belongs to ch_read (srv_tcp_nonblocking.h).
+        // alerts, and belongs to ch_read_in_place (srv_tcp_nonblocking.h).
+        // The handshake buffer goes back to the caller here, wiped, after
+        // the drive loop's last read of it (docs/decisions.md 247).
         if (r->step == SRV_TCP_NONBLOCKING_STEP_COMPLETE) {
+            tlsi_give_back_buf(&r->t);
             return CH_OK;
         }
     }

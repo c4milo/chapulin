@@ -10,6 +10,6 @@ reason: ch_tcp_in reads the peer's bytes while a record it staged is
     if (r->tx_len != 0) {
         return CH_EINVAL;
     }
-    size_t off = 0;
+    if (r->t.state == CH_ST_CONNECTED) {
 --- new
-    size_t off = 0;
+    if (r->t.state == CH_ST_CONNECTED) {

@@ -260,20 +260,42 @@ static size_t recopen_seal(const uint8_t *secret, uint64_t seq, uint8_t type, co
 }
 
 // The C's verdict on one record, as the oracle line the spec must match.
+// It comes from the open ch_read_in_place runs, with the plaintext written
+// over the ciphertext of a copy of the record (docs/decisions.md 247). An
+// open into a buffer of its own must give the same verdict and the same
+// bytes, or the two shapes of one open disagree and the run stops.
 static void recopen_verdict(const uint8_t *secret, uint64_t read_seq, const uint8_t *rec,
                             size_t len, char *want, size_t cap) {
+    uint8_t in_place[200 + REC_OVERHEAD];
+    if (len > sizeof in_place || len < REC_HDR) {
+        die("a record longer than the rows seal");
+    }
+    memcpy(in_place, rec, len);
     rec_dir reader;
     diff_dir_init(&reader, secret);
     reader.seq = read_seq;
-    uint8_t got[201];
     size_t got_len = 0;
     uint8_t got_type = 0;
-    if (rec_open(&reader, rec, len, got, sizeof got, &got_len, &got_type) != 0) {
+    int in_place_rc =
+        rec_open(&reader, in_place, len, in_place + REC_HDR, len - REC_HDR, &got_len, &got_type);
+    rec_dir apart;
+    diff_dir_init(&apart, secret);
+    apart.seq = read_seq;
+    uint8_t got[201];
+    size_t apart_len = 0;
+    uint8_t apart_type = 0;
+    int apart_rc = rec_open(&apart, rec, len, got, sizeof got, &apart_len, &apart_type);
+    if ((in_place_rc == 0) != (apart_rc == 0) ||
+        (in_place_rc == 0 && (got_len != apart_len || got_type != apart_type ||
+                              memcmp(in_place + REC_HDR, got, got_len) != 0))) {
+        die("rec_open in place and rec_open into a buffer of its own disagree");
+    }
+    if (in_place_rc != 0) {
         (void)snprintf(want, cap, "ERR rec_open reject");
         return;
     }
     char got_hex[2 * 201 + 1];
-    (void)hex_encode(got_hex, got, got_len);
+    (void)hex_encode(got_hex, in_place + REC_HDR, got_len);
     (void)snprintf(want, cap, "ok %u %s", (unsigned)got_type, got_hex);
 }
 

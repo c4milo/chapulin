@@ -464,15 +464,16 @@ test "RAND=session: init refuses a value with no random, and a session draws fro
     // A host object's init refuses a value without CH_CPU_PROBED, so the
     // value states the probe's bit, and the first refusal is the random's.
     if (comptime has_cpu) values.cpu = .{};
-    var session: chapulin.tcp.Client(c.CH_MIN_RXBUF, .{}) = undefined;
-    try expectError(error.Invalid, session.init(&values));
+    var session: chapulin.tcp.Client(.{}) = undefined;
+    var handshake_buf: [c.CH_MIN_RXBUF]u8 = undefined;
+    try expectError(error.Invalid, session.init(&values, &handshake_buf));
     try expect(session.state() == .failed);
 
     var counting: CountingRandom = .{};
     values.random = counting.random();
     var marker: u8 = 0;
     values.context = &marker;
-    try session.init(&values);
+    try session.init(&values, &handshake_buf);
     // init stores the options' context in the hook, which cfg.io names.
     try expect(session.hook.context == @as(?*anyopaque, &marker));
     try expect(@as(*c.ch_tcp_priv, @ptrCast(@alignCast(&session.tcp))).t.cfg.io == @as(?*anyopaque, @ptrCast(&session.hook)));
@@ -939,8 +940,8 @@ test "every declaration this object has compiles" {
     const record = [_][]const u8{ "init", "record_in", "state", "alert_sent", "alert_received", "read", "write", "writable_len", "end", "close", "fail", "group", "psk_selected", "peer_limit", "read_closed", "reply_len" };
     const quic = [_][]const u8{ "init", "crypto_in", "initial_keys", "keys_ready", "peer_transport_params", "seal", "seal_close", "open", "retry_ok", "negotiated_version", "key_update", "key_phase", "drop_previous_keys", "discard", "state", "alert", "error_code", "close", "alpn_selected", "group", "psk_selected" };
     compile(chapulin.tcp, &.{ "parts_max", "InitError", "RecordInError", "ServerRecordInError", "RecordOutError", "ReadError", "WriteError", "EndError", "FailError", "ExportError" });
-    if (@hasDecl(c, "ch_tcp_init")) compileSession(chapulin.tcp.Client(c.CH_MIN_RXBUF, .{}), &(record ++ .{ "record_out", "take_ticket" }));
-    if (@hasDecl(c, "ch_srv_tcp_init")) compileSession(chapulin.tcp.Server(c.CH_MIN_RXBUF, .{}), &(record ++ .{ "sni", "output_len" }));
+    if (@hasDecl(c, "ch_tcp_init")) compileSession(chapulin.tcp.Client(.{}), &(record ++ .{ "record_out", "take_ticket" }));
+    if (@hasDecl(c, "ch_srv_tcp_init")) compileSession(chapulin.tcp.Server(.{}), &(record ++ .{ "sni", "output_len" }));
     if (has_quic) compile(chapulin.quic, &.{ "Version", "InitError", "CryptoInError", "ServerCryptoInError", "CryptoOutError", "SealError", "OpenError", "TokenMintError" });
     if (@hasDecl(c, "ch_quic_init")) compileSession(chapulin.quic.Client(c.CH_MIN_RXBUF, .{}), &(quic ++ .{ "crypto_out", "take_ticket", "switch_version" }));
     if (@hasDecl(c, "ch_srv_quic_init")) {

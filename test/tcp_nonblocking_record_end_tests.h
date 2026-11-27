@@ -78,6 +78,7 @@ static void check_alert_record(const uint8_t *rec, size_t len, const rec_dir *re
 // Two fresh sessions with the ClientHello not yet taken.
 static void start_pair(ch_tcp_priv *client, ch_tcp_priv *server, const ch_cfg *ccfg,
                        const ch_cfg *scfg) {
+    test_read_reset(); // a new pair reads nothing the last pair left (test/test_read.h)
     to_client.len = 0;
     records_pushed = 0;
     logged_count = 0;
@@ -180,7 +181,7 @@ static int server_reads_record(ch_tcp_priv *client, ch_tcp_priv *server, uint8_t
           0);
     to_server.len = out_len;
     uint8_t got[16];
-    return ch_read(tls_public(&server->t), got, sizeof got);
+    return test_read(tls_public(&server->t), got, sizeof got);
 }
 
 // Opens the record at held.bytes + at under reader, and returns where the

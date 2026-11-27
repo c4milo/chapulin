@@ -83,13 +83,14 @@ static int sink(void *io, const uint8_t *p, size_t n) {
     return 0;
 }
 
-// INV-28: a tcp-nonblocking server calls neither of these while the
-// handshake runs. They are required all the same, because ch_read and
-// ch_write call them once the session is connected (srv.c's
-// transport_ok), so the test supplies both and counts instead of
-// leaving them NULL, which the configuration check would refuse.
+// INV-28: a tcp-nonblocking server calls no send while the handshake
+// runs. A send is required all the same, because ch_write and ch_close
+// call it once the session is connected (srv.c's transport_ok), so the
+// test supplies one and counts instead of leaving it NULL, which the
+// configuration check would refuse. No call reads through a recv, so the
+// configuration sets none, and init refuses one (tcp_nonblocking.h).
 //
-// They count rather than fail on the spot, so every scenario below can
+// It counts rather than fails on the spot, so every scenario below can
 // state the claim where it checks the rest of its result.
 static int never_send(void *io, const uint8_t *p, size_t n) {
     (void)io;
@@ -99,10 +100,10 @@ static int never_send(void *io, const uint8_t *p, size_t n) {
     return -1;
 }
 
-// It poisons the buffer as well as counting: a driver that read the
-// socket would otherwise get whatever was already there, and could still
-// look like it worked.
-static int never_recv(void *io, uint8_t *p, size_t n) {
+// A recv for the refusal case alone. Init refuses the configuration
+// before any call could read through it. It poisons the buffer as well as
+// counting, so a call that read through it could not still look right.
+static int refused_recv(void *io, uint8_t *p, size_t n) {
     (void)io;
     memset(p, 0xEE, n);
     seen.io_calls++;
@@ -150,7 +151,6 @@ static void server_config(ch_cfg *cfg) {
     cfg->buf = srv_buf;
     cfg->buf_len = sizeof srv_buf;
     cfg->send = never_send;
-    cfg->recv = never_recv;
     cfg->alpn_protocols = alpn;
     cfg->alpn_count = 1;
     cfg->srv.cookie_key = cookie_key;
@@ -201,6 +201,21 @@ static void test_init_refuses_a_missing_sink(void) {
     CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_EINVAL);
     CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_FAILED);
     CHECK(seen.count == 0);
+}
+
+// A configuration with a recv names a callback no call of this transport
+// makes, so the driver refuses it before it reads a byte and sends
+// nothing (tcp_nonblocking.h, ch_tcp_init).
+static void test_init_refuses_a_recv(void) {
+    ch_cfg cfg;
+    server_config(&cfg);
+    cfg.recv = refused_recv;
+
+    ch_tcp_priv r;
+    memset(&seen, 0, sizeof seen);
+    CHECK(ch_srv_tcp_init(tcp_public(&r), &cfg) == CH_EINVAL);
+    CHECK(ch_tcp_state(tcp_public(&r)) == CH_ST_FAILED);
+    CHECK(seen.count == 0 && seen.io_calls == 0);
 }
 
 // An RSA modulus length the flight's signature buffer holds, SRV_SIG_MAX,
@@ -469,6 +484,7 @@ int main(void) {
     size_t bytes = seen.total;
 
     test_init_refuses_a_missing_sink();
+    test_init_refuses_a_recv();
     test_init_refuses_an_rsa_modulus_past_the_buffer();
     test_a_partial_record_is_not_consumed();
     test_a_refusing_sink_kills_the_session();

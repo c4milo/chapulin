@@ -66,6 +66,7 @@
 #include "tcp_nonblocking.h"
 #include "test_clock.h"
 #include "test_cpu.h"
+#include "test_read.h"
 #include "test_widemul.h"
 #include "tls.h"
 
@@ -96,9 +97,11 @@ static int failures = 0;
         }                                                                                          \
     } while (0)
 
-// INV-28, both halves. Neither driver may call either of these while the
-// handshake runs; they are required at configuration time because
-// ch_read and ch_write call them once the session is connected.
+// INV-28, both halves. Neither driver may call send while the handshake
+// runs; it is required at configuration time because ch_write and
+// ch_close call it once the session is connected. No call reads through
+// a recv, so each session sets none, and each init refuses one
+// (tcp_nonblocking.h).
 static size_t io_calls;
 
 // Set while the wrong-pin scenario runs, so the refusal it wants does
@@ -110,15 +113,6 @@ static int never_send(void *io, const uint8_t *p, size_t n) {
     (void)io;
     (void)p;
     (void)n;
-    io_calls++;
-    return -1;
-}
-
-// It poisons the buffer as well as counting, so a driver that read the
-// socket cannot still look like it worked.
-static int never_recv(void *io, uint8_t *p, size_t n) {
-    (void)io;
-    memset(p, 0xEE, n);
     io_calls++;
     return -1;
 }
@@ -257,7 +251,6 @@ static void server_config(ch_cfg *cfg) {
     cfg->buf = srv_buf;
     cfg->buf_len = sizeof srv_buf;
     cfg->send = never_send;
-    cfg->recv = never_recv;
     cfg->srv.cookie_key = cookie_key;
     cfg->srv.on_record_out = sink;
     cfg->io = &server_io;
@@ -279,7 +272,6 @@ static void client_config(ch_cfg *cfg) {
     cfg->buf = cli_buf;
     cfg->buf_len = sizeof cli_buf;
     cfg->send = never_send;
-    cfg->recv = never_recv;
     // The pin: the server's own provisioned modulus, so CertificateVerify
     // verifies against the key that signed it.
     cfg->server_pubkey = rsa_sign_2048_n;
@@ -346,6 +338,9 @@ static int server_to_client(ch_tcp_priv *client) {
 // reach. Returns the number of rounds it took.
 static int run_handshake(ch_tcp_priv *client, ch_tcp_priv *server, const ch_cfg *ccfg,
                          const ch_cfg *scfg) {
+    // A new pair of sessions in the same storage reads nothing the last
+    // pair left in test_read's stash.
+    test_read_reset();
     to_client.len = 0;
     records_pushed = 0;
     logged_count = 0;
@@ -380,6 +375,7 @@ static int run_handshake(ch_tcp_priv *client, ch_tcp_priv *server, const ch_cfg 
 }
 
 #include "tcp_nonblocking_alert_tests.h"
+#include "tcp_nonblocking_buffer_tests.h"
 #include "tcp_nonblocking_close_tests.h"
 #include "tcp_nonblocking_coalesced_tests.h"
 #include "tcp_nonblocking_failure_alert_tests.h"
@@ -406,11 +402,11 @@ int main(void) {
     int rounds = run_handshake(&client, &server, &ccfg, &scfg);
     CHECK(ch_tcp_state(tcp_public(&client)) == CH_ST_CONNECTED);
     CHECK(ch_tcp_state(tcp_public(&server)) == CH_ST_CONNECTED);
-    // The claim this binary exists for.
-    CHECK(io_calls == 0);
+    CHECK(io_calls == 0); // the claim this binary exists for
     // Both ends report the group the client's build offers, which the
     // server selected out of the two it holds.
     CHECK(client.t.group == LOOP_GROUP && server.t.group == LOOP_GROUP);
+    test_buffers_given_back(&client, &server); // wiped when each end connected
 
     // RFC 9846 section 7.5: both ends derive exporter_master from the
     // same transcript, so one label and one context give one answer on
@@ -433,7 +429,7 @@ int main(void) {
     static const uint8_t zero[SHA256_LEN] = {0};
     CHECK(memcmp(from_client, zero, SHA256_LEN) != 0);
 
-    // ch_read on the connected client, over records that arrive apart.
+    // ch_read_in_place on the connected client, over records that arrive apart.
     // It ends the client's session, which the run below starts afresh.
     test_read_waits_for_records(&client, &server);
 
@@ -458,6 +454,9 @@ int main(void) {
     client_config(&ccfg);
     test_close_one_direction(&client, &server, &ccfg, &scfg);
 
+    // The handshake buffer's rules, and a header no peer may send (INV-73).
+    test_handshake_buffer(&client, &server);
+
     // The server's group order over hellos no client here writes.
     test_server_group_order();
 
@@ -478,20 +477,22 @@ int main(void) {
     test_cpu_values_at_init();
 
     if (failures == 0) {
-        (void)printf("tcp_nonblocking_loop: a whole handshake over group 0x%04x in %d rounds,"
-                     " 0 socket calls; both ends export one secret and log the same four;"
-                     " ch_read waits between records; ch_tcp_whole_len frames each record;"
-                     " a wrong pin refused; a ticket resumes with no certificate, and a"
-                     " stale one is refused; a close_notify closes one direction and ch_read"
-                     " sends nothing; the server takes secp256r1 only when x25519 is not"
-                     " listed; each end refuses a message before a key change that does not"
-                     " end its record; the server answers a run of KeyUpdates with one, and"
-                     " refuses one past the run limit, which its own answer does not end;"
-                     " each end emits its failure's alert in the clear before its write key"
-                     " and sealed after, sends nothing after the peer's fatal alert and"
-                     " answers a 3-byte one with decode_error; the server refuses a client's"
-                     " NewSessionTicket\n",
-                     (unsigned)LOOP_GROUP, rounds);
+        (void)printf(
+            "tcp_nonblocking_loop: a whole handshake over group 0x%04x in %d rounds,"
+            " 0 socket calls; both ends export one secret and log the same four;"
+            " ch_read_in_place waits, wipes a failed record and touches no handshake buffer;"
+            " ch_tcp_whole_len frames each record;"
+            " a wrong pin refused; a ticket resumes with no certificate, and a"
+            " stale one is refused; a close_notify closes one direction and ch_read"
+            " sends nothing; the server takes secp256r1 only when x25519 is not"
+            " listed; each end refuses a message before a key change that does not"
+            " end its record; the server answers a run of KeyUpdates with one, and"
+            " refuses one past the run limit, which its own answer does not end;"
+            " each end emits its failure's alert in the clear before its write key"
+            " and sealed after, sends nothing after the peer's fatal alert and"
+            " answers a 3-byte one with decode_error; the server refuses a client's"
+            " NewSessionTicket\n",
+            (unsigned)LOOP_GROUP, rounds);
         return 0;
     }
     (void)fprintf(stderr, "tcp_nonblocking_loop: %d failures\n", failures);

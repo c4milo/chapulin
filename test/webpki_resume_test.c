@@ -373,9 +373,9 @@ static int mock_send(void *io, const uint8_t *p, size_t n) {
     return (int)n;
 }
 
-// Hands over what the mock holds. Empty, it returns 0 in a tcp-nonblocking build,
-// where that means no record yet (tcp_nonblocking.h), and -1 over
-// TRANSPORT=tcp-blocking.
+// Hands over what the mock holds. Empty, it returns 0 in a tcp-nonblocking
+// build, where test_read reads that as no record yet (test/test_read.h),
+// and -1 over TRANSPORT=tcp-blocking.
 static int mock_recv(void *io, uint8_t *p, size_t n) {
     mock_server *s = io;
     size_t left = s->queue_len - s->queue_off;

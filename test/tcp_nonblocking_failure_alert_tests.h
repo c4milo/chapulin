@@ -274,7 +274,7 @@ static void connected_client_reads_alert(ch_tcp_priv *client, uint8_t alert) {
     client->t.cfg.send = client_send;
     client->t.cfg.recv = held_recv;
     uint8_t got[16];
-    CHECK(ch_read(tls_public(&client->t), got, sizeof got) == CH_EPROTO);
+    CHECK(test_read(tls_public(&client->t), got, sizeof got) == CH_EPROTO);
     CHECK(ch_alert_received(tls_public(&client->t)) == alert &&
           ch_alert_sent(tls_public(&client->t)) == 0);
     CHECK(client_sends == 0);

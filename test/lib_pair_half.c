@@ -101,13 +101,16 @@ static int keep_send(void *io, const uint8_t *p, size_t n) {
     return (int)n;
 }
 
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 // No peer answers, so every read fails, and a blocking handshake stops
-// at its first read with CH_EIO.
+// at its first read with CH_EIO. A tcp-nonblocking session reads through
+// no recv, and its init refuses one (tcp_nonblocking.h).
 static int fail_recv(void *io, uint8_t *p, size_t n) {
     (void)io;
     memset(p, 0, n);
     return -1;
 }
+#endif
 #endif
 
 // The fields every session here sets, whatever its role. A host object
@@ -129,7 +132,9 @@ static void base_config(ch_cfg *cfg) {
     cfg->alpn_count = 1;
 #else
     cfg->send = keep_send;
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
     cfg->recv = fail_recv;
+#endif
 #endif
 }
 

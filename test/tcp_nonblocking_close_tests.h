@@ -93,11 +93,11 @@ static void test_close_one_direction(ch_tcp_priv *client, ch_tcp_priv *server, c
     // The client reads 0 and sends nothing, however often it asks, and
     // the record after the close_notify stays unread.
     uint8_t got[32];
-    CHECK(ch_read(tls_public(&client->t), got, sizeof got) == 0);
+    CHECK(test_read(tls_public(&client->t), got, sizeof got) == 0);
     CHECK(client_sends == 0);
     CHECK(held.off == close_end);
     CHECK(ch_tcp_state(tcp_public(client)) == CH_ST_CONNECTED && client->t.read_closed == 1);
-    CHECK(ch_read(tls_public(&client->t), got, sizeof got) == 0);
+    CHECK(test_read(tls_public(&client->t), got, sizeof got) == 0);
     CHECK(client_sends == 0 && held.off == close_end);
     // The exporter secret is not a read key, so it lives until ch_close.
     uint8_t exported[SHA256_LEN];
@@ -108,7 +108,7 @@ static void test_close_one_direction(ch_tcp_priv *client, ch_tcp_priv *server, c
     static const uint8_t bye[3] = {'b', 'y', 'e'};
     CHECK(ch_write(tls_public(&client->t), bye, sizeof bye) == CH_OK);
     CHECK(client_sends == 1);
-    CHECK(ch_read(tls_public(&server->t), got, sizeof got) == (int)sizeof bye);
+    CHECK(test_read(tls_public(&server->t), got, sizeof got) == (int)sizeof bye);
     CHECK(memcmp(got, bye, sizeof bye) == 0);
 
     // The client's ch_close sends its close_notify in one call, one record
@@ -121,7 +121,7 @@ static void test_close_one_direction(ch_tcp_priv *client, ch_tcp_priv *server, c
     CHECK(ch_tcp_state(tcp_public(client)) == CH_ST_CLOSED);
     CHECK(ch_export(tls_public(&client->t), "EXPORTER-Channel-Binding", NULL, 0, exported,
                     sizeof exported) == CH_EINVAL);
-    CHECK(ch_read(tls_public(&server->t), got, sizeof got) == 0);
+    CHECK(test_read(tls_public(&server->t), got, sizeof got) == 0);
     CHECK(server_sends == 0);
     CHECK(to_server.off == to_server.len);
     CHECK(ch_tcp_state(tcp_public(server)) == CH_ST_CONNECTED && server->t.read_closed == 1);

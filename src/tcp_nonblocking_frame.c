@@ -67,7 +67,12 @@ void tcp_nonblocking_wipe(ch_tcp_priv *r) {
     r->tx_off = 0;
     r->t.pt_off = 0;
     r->t.pt_len = 0;
+    r->t.held_len = 0;
+    r->t.held_fill = 0;
     r->t.keys = 0;
+    // A failure or a close gives the handshake buffer back, wiped, when the
+    // session still holds it (docs/decisions.md 247).
+    tlsi_give_back_buf(&r->t);
 }
 
 // One fatal alert record, written to rec: sealed under r->t.wr when

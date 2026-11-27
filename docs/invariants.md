@@ -602,18 +602,20 @@ last `ROLE=server` stub, as the entry said it would.
   takes bytes out: a client through `ch_tcp_in` and `ch_tcp_out`,
   a server through `ch_srv_tcp_in` and `ch_srv_cfg.on_record_out`.
   The alert of a handshake failure leaves the same way (INV-13).
-  Both callbacks are still required at configuration time, because
-  `ch_read` and `ch_write` call them once the session is connected, and
-  by then the caller holds the bytes. Once connected, `ch_read` calls
-  `cfg.send` in one case alone: the alert of a failure. A KeyUpdate
-  whose sender asked for an answer gets it from the next `ch_write`
-  (RFC 9846 §4.7.3, INV-55). The peer's close_notify is no failure, and
-  the peer's fatal alert fails the session with no alert sent (INV-22).
-  The `ch_read` that reads either sends nothing, and `ch_close` sends this side's close_notify through
-  `cfg.send` as one record, whenever the caller makes it. A caller whose
-  `cfg.send` holds only input while `ch_read` runs, as colibri's does,
-  therefore sees no send it did not ask for when the peer closes, aborts
-  or asks for a KeyUpdate.
+  `cfg.send` is still required at configuration time, because `ch_write`
+  and `ch_close` call it once the session is connected, and by then the
+  caller holds the bytes. `cfg.recv` must be NULL: no call reads through
+  it, because `ch_read_in_place` opens the records the caller holds
+  (INV-73, docs/decisions.md 247). Once connected, `ch_read_in_place`
+  calls no callback: the alert of its failure goes into the caller's
+  reply. A KeyUpdate whose sender asked for an answer gets it from the
+  next `ch_write` (RFC 9846 §4.7.3, INV-55). The peer's close_notify is
+  no failure, and the peer's fatal alert fails the session with no alert
+  written (INV-22). The `ch_read_in_place` that reads either writes
+  nothing, and `ch_close` sends this side's close_notify through
+  `cfg.send` as one record, whenever the caller makes it. So a caller
+  sees no send it did not ask for when the peer closes, aborts or asks
+  for a KeyUpdate.
 - **Mechanism.** The blocking driver is not in the object. `handshake.c`
   is filtered out by `TRANSPORT_FILTER`, `srv_handshake.c` by the server
   arm, and `tls.c` and `srv.c` guard their accept and connect calls out.
@@ -1743,6 +1745,63 @@ last `ROLE=server` stub, as the entry said it would.
   key with SHA-384: `inv72-hmac-sha512-long-key-hashed-sha384`, which
   `bin/hash_test` catches through RFC 4231's 131-byte keys.
 - See [decisions: Engineering](decisions.md#engineering), entry 246.
+
+### INV-73 — a tcp-nonblocking session reads in place, and its handshake buffer serves the handshake alone
+
+- **Claim.** A connected `TRANSPORT=tcp-nonblocking` session reads each
+  record with `ch_read_in_place`, which opens it where it lies in the
+  caller's input, with the plaintext over the ciphertext, `REC_HDR` bytes
+  after the record's start. A record that fails has every byte wiped
+  there, and a failure of another kind wipes the bytes the call opened,
+  so no unverified plaintext stays in the caller's input. A
+  post-handshake message in parts waits in the caller's input, whose
+  records take at most `cfg.buf_len` bytes together. `cfg.buf` serves the
+  handshake alone: the session wipes all `cfg.buf_len` bytes of it and
+  sets its copy of the pointer to NULL when it connects, when it fails
+  and when `ch_tcp_close` ends it, and a connected session never reads
+  or writes it. Every AEAD path opens in place: ChaCha20-Poly1305 and
+  AES-GCM, on the portable code and on each kernel a `ch_cfg.cpu` value
+  picks (docs/decisions.md 247).
+- **Mechanism.** `tcp_read.c` holds the read. It opens each record with
+  `rec_open` at `pt == rec + REC_HDR`, which `aead.h` and `gcm.h` allow,
+  and its `fail_into` wipes what the call opened before it seals the
+  alert into the caller's reply. `session.c`'s `tlsi_give_back_buf` wipes
+  the buffer and forgets the pointer. The client calls it in `ch_tcp_out`
+  when the session connects, the server in `ch_srv_tcp_in` after the
+  record that completes the handshake, and `tlsi_wipe` and
+  `tcp_nonblocking_wipe` call it on every failure and close. `ch_tcp_in`
+  and `ch_srv_tcp_in` fail a connected session before they read a byte.
+  `tls.h` declares no `ch_read` in this transport.
+- **Check.** `bin/tcp_nonblocking_loop_test` and its two other builds
+  read a ticket, a wait, a partial record, a ticket in two records held
+  in the caller's input, an input shorter than the held bytes, a record
+  whose tag fails and a header no peer may send, each in place, and
+  require each handshake buffer to be all zero and named by no session
+  once the session connects, fails or closes. Then it maps both buffers
+  with `mmap`, takes away every access once both ends connect, and runs
+  data each way, a KeyUpdate, a ticket, a ticket in two records, both
+  closes and `ch_tcp_close`: a path that touched a buffer would stop the
+  binary with SIGSEGV. `bin/record_in_place_test` opens records of each
+  suite in place under each `ch_cfg.cpu` value that picks another kernel,
+  at lengths on both sides of each kernel's threshold, and requires each
+  open with a wrong tag to leave zeros or the ciphertext. The Zig API's
+  `loop.zig` runs a client and a server through `read` (docs/zig.md).
+- **Violation.** A PR keeps the buffer at connect:
+  `inv73-tcp-nonblocking-connect-keeps-handshake-buffer` on the client
+  and `inv73-tcp-nonblocking-server-connect-keeps-handshake-buffer` on the
+  server. A PR gives it back unwiped,
+  `inv73-tcp-nonblocking-give-back-skips-wipe`, or with the pointer kept,
+  `inv73-tcp-nonblocking-give-back-keeps-pointer`. A PR keeps it on a
+  failure or a close, `inv73-tcp-nonblocking-failure-keeps-handshake-buffer`.
+  A PR keeps a split message in the buffer after connect,
+  `inv73-tcp-nonblocking-split-message-waits-in-buffer`. A PR leaves a
+  failed record in the caller's input,
+  `inv73-tcp-nonblocking-failed-record-kept`. `bin/tcp_nonblocking_loop_test`
+  catches each. A PR makes the AES-GCM open of a host object decrypt a
+  pass before it hashes it, which only an open in place meets:
+  `inv73-aes-gcm-open-writes-before-it-hashes`, which
+  `bin/record_in_place_test` catches.
+- See [decisions: Engineering](decisions.md#engineering), entry 247.
 
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
@@ -3866,25 +3925,27 @@ last `ROLE=server` stub, as the entry said it would.
     (`tcp_nonblocking_refuse_init`, `quic_refuse_init`).
   - A call on a session that cannot take it, which changes nothing:
     `CH_EPROTO` for bytes delivered to a session that failed or closed,
-    and from `ch_read` and `ch_write` before the handshake completes,
-    which in a `TRANSPORT=tcp-nonblocking` build leaves the handshake
-    running, and from `ch_fail` on a session that is not connected;
-    `CH_EINVAL` where the call's header says so.
+    and from `ch_read`, `ch_read_in_place` and `ch_write` before the
+    handshake completes, which in a `TRANSPORT=tcp-nonblocking` build
+    leaves the handshake running, and from `ch_fail` on a session that
+    is not connected; `CH_EINVAL` where the call's header says so.
   - The non-blocking transports' results that leave the session live:
     `CH_ECAP` from a call whose own output buffer was short, a packet
-    dropped (`CH_QUIC_DISCARD`, RFC 9001 §5.5), and no record yet
-    (`CH_TCP_AGAIN`).
+    dropped (`CH_QUIC_DISCARD`, RFC 9001 §5.5), no whole record yet
+    (`CH_TCP_AGAIN`), and the peer's direction closed (`CH_ECLOSED` from
+    `ch_read_in_place`).
 
   A failed QUIC session stays dead: it keeps only the write keys INV-17
   names, for one CONNECTION_CLOSE per level, and no call revives it.
 - `CH_TCP_AGAIN` is the one returned after work was done, so its
-  terms are exact. `ch_read` returns it only when `cfg.recv` returns 0
-  before a record's first byte. Every record read before that has been
-  opened and handled: a NewSessionTicket went to `on_ticket`, a
-  KeyUpdate changed the keys, and the first part of a message split
-  across records waits at the front of `cfg.buf`, with
-  `ch_tls.post_fill` counting its bytes. A 0 after a record's first byte
-  is `CH_EIO` and a dead session.
+  terms are exact. `ch_read_in_place` returns it only when the caller's
+  input holds less than the next whole record, after the bytes a
+  message in parts already holds, and it consumes nothing then. Every
+  record opened before that has been handled: a NewSessionTicket went to
+  `on_ticket`, a KeyUpdate changed the keys, and the first part of a
+  message split across records waits in the caller's input, with
+  `ch_tls.held_len` counting the bytes the caller presents again and
+  `held_fill` the message's bytes so far (INV-73).
 - **Mechanism.** Fail-closed policy with one funnel per driver family:
   `tlsi_fail` for the record layer and the blocking drivers,
   `tcp_nonblocking_fail` for the tcp-nonblocking handshake drivers and
@@ -3915,11 +3976,12 @@ last `ROLE=server` stub, as the entry said it would.
 - **Check.** Convention; handshake_sequence's 466k-sequence run asserts no
   sequence revives a failed session. `bin/tcp_nonblocking_loop_test`
   (`test/tcp_nonblocking_read_tests.h`) reads a ticket-only record and
-  then nothing, a ticket split across two records, and a record cut off
-  after three bytes. Three violations each break one term:
+  then nothing, a record of which it holds three bytes, a ticket split
+  across two records and a header no peer may send, each with
+  `ch_read_in_place`. Three violations each break one term:
   `inv13-tcp-nonblocking-read-dies-between-records`,
   `inv13-tcp-nonblocking-read-drops-a-split-message` and
-  `inv13-record-again-inside-a-record`. `inv13-ch-write-soft-io-error`
+  `inv13-tcp-nonblocking-read-waits-on-oversize-header`. `inv13-ch-write-soft-io-error`
   returns a failed send from `ch_write` without the funnel, and
   `bin/unit` fails. The server's flight returns no `CH_EINVAL`:
   `bin/srv_auth_test` and `bin/srv_flight_test` require `CH_EAUTH` from

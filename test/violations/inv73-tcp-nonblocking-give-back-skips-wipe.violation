@@ -1,0 +1,11 @@
+invariant: INV-73
+file: src/session.c
+catches: tcp_nonblocking_loop_test
+reason: a session gives cfg.buf back without wiping it, so one connection's
+  handshake plaintext stays for the next handshake that takes the buffer.
+
+--- old
+    ct_wipe(t->cfg.buf, t->cfg.buf_len);
+    t->cfg.buf = NULL;
+--- new
+    t->cfg.buf = NULL;

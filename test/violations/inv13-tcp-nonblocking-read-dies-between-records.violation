@@ -1,16 +1,17 @@
 invariant: INV-13
-file: src/io.c
+file: src/tcp_read.c
 catches: tcp_nonblocking_loop_test
-reason: a tcp-nonblocking ch_read turns an empty recv at a record boundary
-  into CH_EIO, so a caller that has no record yet loses the session. A
-  caller that received a ticket-only record would have to hold it back
-  until a data record arrived (docs/decisions.md entry 46).
+reason: ch_read_in_place fails the session when the caller holds less than
+  the next whole record, so a caller that has no record yet loses the
+  session. INV-13 makes CH_TCP_AGAIN a result that is not an error, and a
+  caller that read a ticket-only record would have to hold it back until
+  a data record arrived (docs/decisions.md entries 46 and 247).
 
 --- old
-    if (got == 0) {
-        return CH_TCP_AGAIN;
+    if (rc == CH_OK || rc == CH_TCP_AGAIN || rc == CH_ECLOSED) {
+        return rc;
     }
 --- new
-    if (got == 0) {
-        return CH_EIO;
+    if (rc == CH_OK || rc == CH_ECLOSED) {
+        return rc;
     }

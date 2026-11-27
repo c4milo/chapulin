@@ -23,9 +23,11 @@ more:
 - one Zig error per result code;
 - the callbacks C calls, which copy bytes between the caller's slices and
   the session;
-- storage: the receive buffer, the latest ticket, the peer's transport
-  parameters, a P-256 key that a PEM file decodes to and, under
-  `RAND=session`, the session's `std.Random`.
+- storage: a QUIC session's receive buffer, the latest ticket, the peer's
+  transport parameters, a P-256 key that a PEM file decodes to and, under
+  `RAND=session`, the session's `std.Random`. A tcp-nonblocking session
+  holds no receive buffer: its `init` takes the handshake buffer
+  (docs/decisions.md 247).
 
 Every TLS rule stays in C. Where a caller needs a record length, a write
 size or a ticket's age, the API calls the C function that computes it
@@ -617,30 +619,37 @@ result with `from_code(chapulin.Error, code)`.
 
 ## tcp-nonblocking sessions
 
-`TRANSPORT=tcp-nonblocking`. `tcp.Client(receive_len, limits)` and
-`tcp.Server(receive_len, limits)` are types whose size is known at compile
-time, so a program places a session in a static, in a connection struct
-or on the stack, with no allocation. Each holds the C session, `tcp`,
-the receive buffer `cfg.buf`, `receive`, the `hook`, the source `random`
-under `RAND=session`, the slices the callbacks copy between during one
+`TRANSPORT=tcp-nonblocking`. `tcp.Client(limits)` and `tcp.Server(limits)`
+are types whose size is known at compile time, so a program places a
+session in a static, in a connection struct or on the stack, with no
+allocation. Each holds the C session, `tcp`, the `hook`, the source
+`random` under `RAND=session`, the slice the callbacks copy into during one
 call, `io`, the storage of its lists under `limits`, `lists`, and, on the
 client, the latest ticket. Do not move a session after `init`: `cfg.io`
 points at its hook, `cfg.rand_io` at its `random`, and `cfg`'s lists at
-its `lists`. colibri sizes both at 20,480 bytes.
+its `lists`.
+
+A session holds no receive buffer. `init` takes `handshake_buf`, which
+becomes `cfg.buf`, and the handshake alone uses it. The session wipes it
+and gives it back when `state()` is `.connected`, `.failed` or `.closed`,
+and never reads or writes it again (docs/decisions.md 247). One handshake
+uses one buffer at a time, so a program that runs many handshakes at once
+keeps a pool of buffers, one for each handshake in flight, and gives each
+handshake a deadline of its own. colibri sizes each buffer at 20,480 bytes.
 
 | Zig call | C call | Errors |
 |---|---|---|
-| `Client.init(options)` | the options' `ch_cfg`, built into `lists`, then `ch_tcp_init` with the API's `send` and `recv`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the options' `random` | Invalid |
+| `Client.init(options, handshake_buf)` | the options' `ch_cfg`, built into `lists`, with `handshake_buf` as `cfg.buf`, then `ch_tcp_init` with the API's `send`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the options' `random` | Invalid |
 | `Client.record_out(output)` | `ch_tcp_out`; after a failed `record_in`, the failure's alert record, then `error.Invalid` | Invalid, Cap |
 | `Client.record_in(input)` | `ch_tcp_in`; returns the bytes consumed | Invalid, Proto, Auth, Cap |
 | `Client.take_ticket()` | none: moves the slot out and zeroes it | none |
-| `Server.init(options, sni_buf)` | the options' `ch_cfg`, built into `lists`, then `ch_srv_tcp_init` with the API's `send`, `recv` and `on_record_out`, and under `RAND=session` the options' `random`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
+| `Server.init(options, sni_buf, handshake_buf)` | the options' `ch_cfg`, built into `lists`, with `handshake_buf` as `cfg.buf`, then `ch_srv_tcp_init` with the API's `send` and `on_record_out`, and under `RAND=session` the options' `random`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
 | `Server.record_in(input, output)` | `ch_srv_tcp_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Proto, Auth, Cap, Io |
 | `Server.output_len()` | the bytes the last `record_in` wrote into `output`, which a failed `record_in` also sets: `Progress.written` on success | none |
 | `Server.sni()` | `sni_buf[0..ch_sni_len]`, null when 0 | none |
 | `state()` | `ch_tcp_state` | none |
 | `alert_sent()`, `alert_received()` | `ch_alert_sent`, `ch_alert_received` on the session's `ch_tls` (alert.h), as an `AlertDescription`; each null when 0 | none |
-| `read(input, pt, reply)` | `ch_tcp_whole_len`, then `ch_read` | Invalid, Proto, Auth, Cap, Io, KeyUpdateLimit |
+| `read(input, reply)` | `ch_read_in_place` | Invalid, Proto, Auth, Cap, KeyUpdateLimit |
 | `write(pt, output)` | `ch_writable_len`, then `ch_write` | Proto, Cap, Io |
 | `write_parts(parts, output)` | `ch_writable_len` over the parts' lengths together, then `ch_write_parts` over a `c.ch_part` for each slice of `parts`, `parts_max` at most | Proto, Cap, Io |
 | `writable_len(cap)` | `ch_writable_len` | none |
@@ -671,14 +680,15 @@ the last record an AES-GCM write key seals, so no such call is planned
 ### A handshake
 
 ```zig
-var client: chapulin.tcp.Client(20_480, .{}) = undefined;
+var client: chapulin.tcp.Client(.{}) = undefined;
+var handshake_buf: [20_480]u8 = undefined;
 const anchors = [_]chapulin.TrustAnchor{.{ .name = root_name, .spki = root_spki }};
 const alpn = [_][]const u8{"http/1.1"};
 
 try client.init(&.{
     .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "s3.example.test", .clock = .{ .now_seconds = wallClock } } },
     .alpn = &alpn,
-});
+}, &handshake_buf);
 send(output[0..try client.record_out(&output)]); // the ClientHello
 // each time bytes arrive, until state() is .connected:
 const consumed = try client.record_in(input);
@@ -714,35 +724,42 @@ const progress = server.record_in(input, &output) catch |err| {
 
 ### Reading
 
-`read` passes at most one whole record of `input` to `ch_read`:
-`ch_tcp_whole_len` says how many bytes that is, and `ch_read` reads
-them through the API's `recv`. The `Read` it returns says:
+`read(input, reply)` opens the next record of `input` where it lies: that
+is `ch_read_in_place`. `input` is the bytes the caller holds, writable,
+because the call writes each record's plaintext over its ciphertext. The
+`Read` it returns says:
 
-- `consumed`: input bytes taken. 0 while `input` holds less than a
-  record; one whole record; or the 5-byte header of a record whose
-  length field is above 2^14 + 256, which `ch_read` refuses with
-  `error.Proto`.
-- `pt_len`: plaintext written into `pt`. 0 when the record held a
-  ticket or a KeyUpdate. Plaintext `pt` cannot hold stays in the receive
-  buffer, and the next `read` returns it and takes no input.
-- `reply_len`: bytes `ch_read` sent into `reply`, the alert of a read
-  that failed, or 0.
-- `peer_closed`: `ch_read` returned 0, because the peer's close_notify
-  arrived, now or earlier, or because this side closed.
+- `consumed`: input bytes taken, which the caller drops. 0 while `input`
+  holds less than the next whole record; one whole record; or the records
+  that finished a post-handshake message in parts.
+- `plaintext`: the record's plaintext, a slice of `input`, empty when the
+  record held a ticket or a KeyUpdate. It stays valid until the caller
+  drops or overwrites those bytes.
+- `reply_len`: 0 for a read that succeeds. A failed read reports its
+  alert through `reply_len()`.
+- `peer_closed`: the peer's close_notify arrived, now or earlier, or this
+  side closed. The read that reads the close_notify consumes it.
 
-A caller calls `read` until `consumed` and `pt_len` are both 0. An error
-reports no `Read`. It leaves the session dead, except `error.Invalid`
-for an empty `pt` and `error.Proto` for a session that is not
-connected, which change nothing.
+A caller calls `read` until `consumed` is 0, and then waits for more
+bytes. When `consumed` is 0, the caller keeps the bytes it holds,
+unchanged, and calls again with more bytes after them. That holds for the
+records of a NewSessionTicket or a KeyUpdate in parts too: the call joins
+the parts in `input`, and the session keeps no copy of them. The records
+of one such message take at most the handshake buffer's length together.
 
-`reply` takes what `ch_read` sends: one alert record of
-`alert_record_len`, 24 bytes, when the read fails, and `alert_sent` names
-its alert. A read that fails on the peer's fatal alert sends nothing,
-because RFC 9846 §6.2 has both sides close at once, and `alert_received`
-names the peer's alert. So a `reply` of `alert_record_len` bytes is never
-short. A `reply` too short for the alert fails the read with `error.Io`.
-A KeyUpdate that asks for an answer gets it from the next `write`
-(RFC 9846 §4.7.3), and `read` sends nothing for it. `read` takes at most
+An error reports no `Read`. It leaves the session dead, except
+`error.Invalid` for a `reply` shorter than `alert_record_len`, or an
+`input` shorter than the bytes a message in parts holds, and
+`error.Proto` for a session that is not connected, which change nothing.
+A record that fails has every byte wiped in `input`.
+
+`reply` takes the alert of a read that fails, one record of
+`alert_record_len`, 24 bytes, and `alert_sent` names its alert. A read
+that fails on the peer's fatal alert writes nothing, because RFC 9846
+§6.2 has both sides close at once, and `alert_received` names the peer's
+alert. The caller sends the alert after every record it wrote before the
+read. A KeyUpdate that asks for an answer gets it from the next `write`
+(RFC 9846 §4.7.3), and `read` writes nothing for it. `read` takes at most
 `CH_KEY_UPDATE_RUN_MAX` KeyUpdates in a row, and a record of application
 data with one byte or more ends a run. The next one fails the read with
 `error.KeyUpdateLimit` and the session with it, and `alert_sent` names
@@ -934,9 +951,11 @@ held by value. `ch_build_matches` compares `@sizeOf(c.ch_tcp)`,
 `@sizeOf(c.ch_quic)`, `@sizeOf(c.ch_tls)`, `@sizeOf(c.ch_cfg)` and
 `@sizeOf(c.ch_ticket)` with the object's record, so `build_matches`
 covers the C part of every session and every `Ticket`. The rest, the
-receive buffer, the hook, the `std.Random` under `RAND=session`, `io` and
-the ticket's identity bytes, is Zig's alone: C writes the receive buffer
-through `cfg.buf`, and passes `cfg.io`, the hook's address, and
+receive buffer of a QUIC session, the hook, the `std.Random` under
+`RAND=session`, `io` and the ticket's identity bytes, is Zig's alone. A
+tcp-nonblocking session holds no receive buffer, and the handshake buffer
+is the caller's. C writes either through `cfg.buf`, and passes `cfg.io`,
+the hook's address, and
 `cfg.rand_io`, the `std.Random`'s, to the API's callbacks unread.
 
 ## How it is checked

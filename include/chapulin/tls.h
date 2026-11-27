@@ -176,13 +176,12 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 // its close_notify is never read, which is how §6.1's rule to ignore it
 // is kept. ch_read returns 0 after ch_close as well.
 //
-// A TRANSPORT=tcp-nonblocking build may also return CH_TCP_AGAIN (cfg.h): the
-// caller's recv returned 0 at a record boundary, so no record has arrived
-// yet. The session stays connected and every record already read has
-// been handled, a ticket or a KeyUpdate among them; the caller calls
-// ch_read again once it holds the next whole record. tcp_nonblocking.h states
-// the recv contract that goes with it.
+// A TRANSPORT=tcp-nonblocking build declares no ch_read: its sessions read
+// in place with ch_read_in_place, and cfg.buf serves their handshake alone
+// (tcp_nonblocking.h, docs/decisions.md 247).
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int CH_MUST_USE ch_read(ch_tls *t, uint8_t *p, size_t n);
+#endif
 
 #ifdef CH_EXPORTER
 // The longest exporter label this build takes, not counting a

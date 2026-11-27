@@ -1,15 +1,18 @@
 invariant: INV-22
-file: src/tls.c
+file: src/tcp_read.c
 catches: tcp_nonblocking_loop_test
-reason: ch_read answers the peer's close_notify with this side's own, as
-  TLS 1.2 required and RFC 9846 section 6.1 dropped. In TRANSPORT=tcp-nonblocking
-  that send comes from inside ch_read, which colibri's adapter does not
-  expect, so the alert is lost; bin/tcp_nonblocking_loop_test counts the send.
+reason: ch_read_in_place answers the peer's close_notify with this side's
+  own, as TLS 1.2 required and RFC 9846 section 6.1 dropped. The send comes
+  from inside a read that calls no callback (INV-28), which colibri's
+  adapter does not expect, so the alert is lost;
+  bin/tcp_nonblocking_loop_test counts the send.
 
 --- old
-        close_read_side(t);
+        tlsi_close_read_side(t);
+        result->consumed = w->opened;
         return CH_ECLOSED;
 --- new
-        close_read_side(t);
+        tlsi_close_read_side(t);
         (void)tlsi_send_alert(t, 1, ALERT_CLOSE_NOTIFY);
+        result->consumed = w->opened;
         return CH_ECLOSED;

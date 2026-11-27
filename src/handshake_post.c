@@ -366,6 +366,11 @@ static int handle_post_handshake(ch_tls_priv *t, const uint8_t *pt, size_t n, si
     return CH_OK;
 }
 
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+int hspost_handle(ch_tls_priv *t, const uint8_t *pt, size_t n, size_t *used, uint8_t *alert) {
+    return handle_post_handshake(t, pt, n, used, alert);
+}
+#else
 // Opens, in place, the record io_read_record wrote at cfg.buf + fill, of
 // record_len bytes with outer type outer, and writes the length of the
 // handshake bytes it carries to *n. It is the next fragment of a split
@@ -415,15 +420,6 @@ static int drain_run(ch_tls_priv *t, size_t pt_len, uint8_t *alert) {
         uint8_t outer = 0;
         size_t record_len = 0;
         rc = io_read_record(t, buf + fill, t->cfg.buf_len - fill, &outer, &record_len, alert);
-#ifdef CH_TRANSPORT_TCP_NONBLOCKING
-        if (rc == CH_TCP_AGAIN) {
-            // The next fragment has not arrived. The fill bytes stay at
-            // the front of cfg.buf, and the next ch_read continues from
-            // them (session.h, post_fill).
-            t->post_fill = fill;
-            return rc;
-        }
-#endif
         if (rc != CH_OK) {
             return rc;
         }
@@ -443,9 +439,10 @@ static int drain_run(ch_tls_priv *t, size_t pt_len, uint8_t *alert) {
 int hspost_read(ch_tls_priv *t, size_t pt_len) {
     uint8_t alert = ALERT_UNEXPECTED_MESSAGE;
     int rc = drain_run(t, pt_len, &alert);
-    if (rc != CH_OK && rc != CH_TCP_AGAIN) {
+    if (rc != CH_OK) {
         tlsi_fail(t, alert);
     }
     return rc;
 }
+#endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING

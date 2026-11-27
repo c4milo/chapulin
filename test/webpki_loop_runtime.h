@@ -340,12 +340,13 @@ static void check_runtime_stored_powers(void) {
     CHECK(dir_powers_equal(&client.t.wr, &server.t.rd));
     CHECK(dir_powers_equal(&client.t.rd, &server.t.wr));
 
-    // Both ends read through held_recv, so the server's next read takes
-    // this record.
+    // The server reads through held_recv too, so its next read takes this
+    // record.
     memcpy(to_client.bytes + to_client.len, unsealed, sizeof unsealed);
     to_client.len += sizeof unsealed;
+    server.t.cfg.recv = held_recv;
     uint8_t got[16];
-    CHECK(ch_read(ch_tcp_tls(tcp_public(&server)), got, sizeof got) < 0);
+    CHECK(test_read(ch_tcp_tls(tcp_public(&server)), got, sizeof got) < 0);
     CHECK(ch_tcp_state(tcp_public(&server)) == CH_ST_FAILED);
     CHECK(ch_alert_sent(tls_public(&server.t)) == ALERT_BAD_RECORD_MAC);
     CHECK(dir_powers_zero(&server.t.rd) && dir_powers_zero(&server.t.wr));

@@ -20429,3 +20429,98 @@ does nothing more.
     - **Not built.** SHA-1, which `dnssec.h` keeps for DS digests alone. A stream of SHA3-256 or
       SHA3-512: `sha3.c`'s stream pads with SHAKE's suffix, and the axis adds no Keccak code. A
       stream of HMAC. SHA-224, SHA-512/256, HMAC over SHA-3, and a PRK longer than HashLen.
+
+247. **Every tcp-nonblocking session reads in place, and `cfg.buf` serves its handshake
+    alone.** colibri measured what one TLS connection of its server holds
+    ([issue 227](https://github.com/c4milo/chapulin/issues/227)). `ch_read` copied each record
+    into `cfg.buf`, opened it there and copied the plaintext out, so a connection held the
+    record twice and the plaintext twice, and `cfg.buf`'s 20,480 bytes for the whole life of the
+    connection. Camilo ruled on 2026-11-19 in the issue, and on 2026-11-27 on the points the
+    issue left open.
+
+    - **The call.** `ch_read_in_place(t, p, n, reply, reply_cap, result)`, which
+      `tcp_nonblocking.h` declares, opens the next whole record of the caller's `p` where it
+      lies. The plaintext replaces the ciphertext, `REC_HDR` bytes after the record's start,
+      and `ch_read_result` names it by `pt_off` and `pt_len`. No byte is copied out. Each call
+      reads one record, so the caller sees each one, as colibri's server reads them. Every
+      AEAD path already allowed `pt == ct` in its open (`aead.h`, `gcm.h`), and the record
+      layer had run the other overlap the contracts allow, the plaintext 5 bytes below the
+      ciphertext.
+    - **One read in the transport.** `ch_read` leaves `TRANSPORT=tcp-nonblocking`: `tls.h`
+      declares it under `TRANSPORT=tcp-blocking` alone. Rejected: a `ch_cfg` flag, and two
+      init calls of their own. Each leaves two modes in one transport, and a program that
+      lends one buffer to many handshakes could start a session in the mode that keeps the
+      buffer. With one mode no program can mix the two, and there is less to test and audit.
+      The cost is a release that every caller of the transport moves to: stdx, colibri through
+      stdx, cocuyo through colibri, and stompy.
+    - **No recv.** No call reads through `cfg.recv` any more, so `ch_tcp_init` and
+      `ch_srv_tcp_init` refuse one that is set, as chapulin refuses each setting it would
+      ignore. `cfg.send` stays: `ch_write`, `ch_close` and `ch_fail` send through it. The
+      in-place read calls no callback. The alert of its failure goes into the caller's `reply`,
+      `CH_ALERT_RECORD_LEN` bytes that `result->reply_len` counts, and a `reply_cap` below that
+      is refused before the call reads a byte.
+    - **`cfg.buf` for the handshake alone.** A session wipes all `cfg.buf_len` bytes of
+      `cfg.buf` and sets its own copy of the pointer to NULL when it connects, when it fails
+      and when `ch_tcp_close` ends it, through `tlsi_give_back_buf`. It keeps `cfg.buf_len`,
+      which the record size checks read. Before this entry no path wiped `cfg.buf`: after the
+      handshake it held the peer's certificate chain, and after each read that record's
+      plaintext. The ruling named the wipe at connect and at failure, and Camilo added the
+      close before connect, a handshake the caller gives up on, and the NULL pointer, so a
+      later bug crashes rather than writes into another connection's handshake. The keys stay
+      in `ch_tcp`, so the buffer never holds one.
+    - **One handshake per buffer.** Between calls a session may keep the first part of a
+      handshake message in `cfg.buf`, so two handshakes in flight need two buffers. A server
+      keeps a pool of buffers for its handshakes in flight, and gives each handshake a deadline
+      of its own, so a peer that stops halfway gives its buffer back. chapulin cannot see a
+      pool, so `tcp_nonblocking.h` states both rules. A buffer lent to two handshakes at once
+      breaks both, because the transcript, CertificateVerify and the Finished messages cover
+      every byte, and it can leave one connection's handshake bytes where the other reads
+      them. No path copies a byte of `cfg.buf` into a record this side sends, but the fields of
+      the ClientHello, which went out in the clear.
+    - **A record that fails.** Every byte of a record that does not open is wiped where it
+      lies, whether the tag failed or a field is wrong. AES-GCM and the one-pass ChaCha20 kernels
+      write plaintext before they compare the tag and wipe it on a mismatch already; the wipe
+      of the whole record also covers the portable open, which writes nothing, and the record's
+      header and tag. A call that fails for another reason wipes every byte it opened too.
+    - **A post-handshake message in parts.** RFC 9846 §5.1 lets a peer split a
+      NewSessionTicket or a KeyUpdate across records, and it waited in `cfg.buf` before. Now it
+      waits in the caller's input. The call opens each whole record that `p` holds until the
+      message is whole, and moves the parts together where they lie. When `p` ends first it
+      returns `CH_TCP_AGAIN` with nothing consumed, and the caller presents the same bytes
+      again, unchanged, with more after them. `ch_tls.held_len` counts those bytes and
+      `held_fill` the message's bytes so far, at their end. The records of one message take at
+      most `cfg.buf_len` bytes of `p` together, the bound the reassembly in `cfg.buf` had, and a
+      message that needs more fails with unexpected_message. Rejected: refuse a split message,
+      which fails a legal peer; a buffer inside `ch_tcp`, which costs every session up to 16 KB,
+      the memory this entry removes; and a SHA-256 of the held bytes, which would refuse a
+      caller that changes them, at 32 bytes a session. Camilo declined the hash: a forged
+      KeyUpdate breaks the session, and a forged ticket cannot resume, because its PSK comes
+      from the resumption master secret.
+    - **The KeyUpdate answer stays in `ch_write`.** The issue's comment named a KeyUpdate answer
+      among the replies the read returns. Entry 138 gives a run of the peer's requests one
+      answer from the next `ch_write`, so that a peer cannot make the write side rekey for each
+      27-byte record, and Camilo kept that rule. So the reply holds an alert alone, and INV-28
+      stays as written.
+    - **The Zig API.** `tcp.Client(limits)` and `tcp.Server(limits)` hold no receive buffer.
+      Each `init` takes the handshake buffer as a slice, and `read(input, reply)` returns a
+      `Read` whose `plaintext` is a slice of `input`. A `reply` shorter than `alert_record_len`
+      is `error.Invalid`, and `error.Io` left `ReadError`.
+    - **What it costs.** On an Intel Xeon with AVX-512 IFMA and VAES, gcc 14 at `-O2`, a read
+      of one record takes less time than `ch_read` over a recv that copies, as the Zig API's
+      did, at HEAD before this entry: 17 to 26% less for AES-128-GCM and AES-256-GCM from 100
+      bytes to 16 KiB, 3 to 8% less for ChaCha20-Poly1305 from 1 KiB up, and the same at 100
+      bytes. Each number is the least of 1,200 rounds of 64 records, the two builds run in turns
+      on one core. The wipe at connect is the one cost the entry adds: 255 ns for colibri's
+      20,480 bytes. Counted under callgrind as `insn-gate-host` counts them, the gated pinned
+      handshakes run 265 instructions fewer, and the two hybrid ones 1,353 more, 0.024%, because
+      their bench lends buffers sized for the hybrid hello. Camilo kept the whole wipe over one that stops at the
+      bytes the handshake wrote, so the two hybrid rows of `bench/results-insn-host-*.csv` take
+      the counts CI's `insn-gate-host` prints under its own compiler.
+    - **What it saves.** colibri v0.22.0 on arm64 measured four buffers of records and plaintext
+      for one TLS connection of `colibri.Server`, beside its socket input of 41,221 bytes:
+      `cfg.buf`, 20,480; its `plain_in`, 41,221; its engine output, 49,161; and its socket
+      output, 49,161. This entry removes `cfg.buf` from each connected session, and the copy
+      out that `plain_in` received. colibri drops `plain_in` once its own connection reads the
+      plaintext where it lies. The seal side, `ch_write`'s copy into `ch_tls.tx` and out again,
+      is [issue 234](https://github.com/c4milo/chapulin/issues/234). Which fields of `ch_tcp`
+      a connected session reads, the third question of issue 227, waits on a ruling of its own.
