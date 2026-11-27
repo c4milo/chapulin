@@ -26,7 +26,8 @@ from speed_chart import CHARTS, FILLS, IMG, escape, speeds
 
 HISTORY = "bench/history-speed-vs-openssl.csv"
 COLUMNS = ["group", "point", "cpu", "date", "tree", "row", "speed"]
-HEAD = ("# chapulin's speed beside OpenSSL on each column group of docs/performance.md's table:\n"
+HEAD = ("# chapulin's speed beside OpenSSL on each column group of docs/performance-openssl.md's "
+        "table:\n"
         "# OpenSSL's time over chapulin's, one point for each run tools/speed_history.py saw.\n"
         "# tools/speed_chart.py adds the points, and make lint-bench-numbers checks the last.\n")
 
@@ -174,7 +175,8 @@ def draw(names):
     for name, _, pts in drawn:
         desc.append("%s: runs on %d days, from %s to %s." % (
             name, len(pts), pts[0][0] if pts else "none", pts[-1][0] if pts else "none"))
-    a('<desc id="d">Each panel is one row of docs/performance.md\'s table beside OpenSSL. A line '
+    a('<desc id="d">Each panel is one row of docs/performance-openssl.md\'s table beside OpenSSL. '
+      'A line '
       'is chapulin\'s speed in multiples of OpenSSL\'s at each recording. %s</desc>'
       % escape(" ".join(desc)))
     a('''<style>

@@ -9,7 +9,7 @@
 # with the AES bit times the AES-GCM rows, and a value's multiply bit picks
 # the Poly1305 its ChaCha20-Poly1305 rows run. tools/bench_scoreboard.py
 # reads the same CSVs for the AEAD rows of the table that sets chapulin
-# beside OpenSSL.
+# beside OpenSSL, in docs/performance-openssl.md.
 import csv
 import math
 import re

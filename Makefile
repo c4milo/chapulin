@@ -10714,7 +10714,7 @@ BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/cha
 # blocks moved into absorb_whole_blocks (docs/decisions.md 99). It fell
 # to 32, and this gcc's -Os entry from 18 to 17, when lane_to_bytes
 # named a lane's eight bytes in place of a loop over them
-# (docs/performance.md, the pitfalls table). This gcc inlines
+# (docs/performance-pitfalls.md). This gcc inlines
 # lane_to_bytes into block_bytes, and the branch it no longer emits
 # closed that loop: a compare of the shift count with 64. Both entries
 # were read again. At -O2 block_xor and block_bytes hold nine each,
@@ -10743,7 +10743,7 @@ BRANCH_SRCS := src/ct.c src/ct_wipe.c src/sha256.c src/sha3.c src/hkdf.c src/cha
 # them again, because its block starts empty. The branches were read.
 # None reads a lane or a message byte. The three entries are 21 and 22
 # again since lane_to_bytes named a lane's eight bytes in place of a loop
-# over them (docs/performance.md, the pitfalls table): both gccs inline
+# over them (docs/performance-pitfalls.md): both gccs inline
 # it into block_bytes, and the branch they no longer emit closed that
 # loop, a compare of the shift count with 64. The entries were read
 # again. block_xor, block_bytes, squeeze and shake_absorb hold four each,
@@ -11760,8 +11760,8 @@ bench-inplace:
 # under CH_CPU_PROBED alone, with `openssl speed` beside each primitive
 # OpenSSL has. bench/primitives.sh states what it builds and writes
 # bench/results-primitives-<os>-<arch>-<compiler>.csv and the handshake
-# call counts beside it. docs/performance.md, "chapulin beside OpenSSL",
-# renders its table from those files and bench-record's,
+# call counts beside it. docs/performance-openssl.md renders its table
+# from those files and bench-record's,
 # tools/bench_scoreboard.py prints the table a run gives, and
 # bench/notes-primitives.md reads the other rows.
 # `check` does not run it, for the reason it does not run bench-aead, and

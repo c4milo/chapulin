@@ -19,7 +19,7 @@ text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fil
 <text class="title" x="24" y="34">chapulin is faster than OpenSSL 3.6.5 in 26 of 27 rows under gcc and 26 of 27 under clang</text>
 <text class="sub" x="24" y="56">Each bar is chapulin's speed in multiples of OpenSSL 3.6.5's: OpenSSL 3.6.5's time over chapulin's, on the same machine in the same run. A longer bar is faster.</text>
 <text class="sub" x="24" y="74">Intel(R) Xeon(R) 6975P-C, Linux 7.0.0-1014-aws, run on 2026-11-18, tree 6497602-dirty.</text>
-<text class="sub" x="24" y="92">chapulin runs under the widest ch_cfg.cpu value each CSV holds, as docs/performance.md's table does.</text>
+<text class="sub" x="24" y="92">chapulin runs under the widest ch_cfg.cpu value each CSV holds, as docs/performance-openssl.md's table does.</text>
 <rect x="24" y="108" width="12" height="12" rx="2" fill="var(--first)"/>
 <text class="legend" x="42" y="118">chapulin, gcc 13.3.0</text>
 <rect x="206" y="108" width="12" height="12" rx="2" fill="var(--second)"/>

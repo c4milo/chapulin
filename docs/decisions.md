@@ -4103,20 +4103,20 @@ does nothing more.
     (docs/verification.md, "The CHACHA=vector Poly1305").
 
     Gain: in paired runs of the record bench, a filter's figures, a
-    `CHACHA=vector WIDEMUL=native` build took a 16 KiB `rec_seal` from
-    26.2 to 17.4 µs on macOS clang, from 25.5 to 16.8 µs on the Linux VM's
-    clang and from 33.3 to 23.1 µs on gcc 13, and Poly1305 over its
-    ciphertext from 11.6, 11.2 and 12.8 µs to 2.7, 2.6 and 2.7 µs. That
-    record takes 26% to 28% of the packaged portable one's time
-    (docs/performance.md, "Where a record's time goes"). These runs came
-    before the wipe of the powers, one `ct_wipe` of 208 or 352 bytes per
-    call. The runs that performance.md held at d10b6e2, taken with the AES-GCM
-    changes of [#184](https://github.com/c4milo/chapulin/issues/184),
-    measure the code with the wipe: that build's Poly1305 takes 2.8 µs on
-    macOS clang and gcc 13, and its 16 KiB `rec_seal` 17.2 and 18.4 µs.
-    On the VM's clang the Poly1305 takes 4.7 µs in that bench build, where
-    the linker's placement of the function, not its code, causes the
-    difference (docs/performance.md, the pitfalls).
+    `CHACHA=vector WIDEMUL=native` build took a 16 KiB `rec_seal` from 26.2 to
+    17.4 µs on macOS clang, from 25.5 to 16.8 µs on the Linux VM's clang and
+    from 33.3 to 23.1 µs on gcc 13, and Poly1305 over its ciphertext from
+    11.6, 11.2 and 12.8 µs to 2.7, 2.6 and 2.7 µs. That record takes 26% to
+    28% of the packaged portable one's time (docs/performance.md, "Where a
+    record's time goes"). These runs came before the wipe of the powers, one
+    `ct_wipe` of 208 or 352 bytes per call. The runs that performance.md held
+    at d10b6e2, taken with the AES-GCM changes of
+    [#184](https://github.com/c4milo/chapulin/issues/184), measure the code
+    with the wipe: that build's Poly1305 takes 2.8 µs on macOS clang and gcc
+    13, and its 16 KiB `rec_seal` 17.2 and 18.4 µs. On the VM's clang the
+    Poly1305 takes 4.7 µs in that bench build, where the linker's placement of
+    the function, not its code, causes the difference
+    (docs/performance-pitfalls.md).
 
 84. **Every client entry takes a PSK identity of 1 to `CH_TICKET_ID_MAX`
     bytes, refuses a ClientHello it cannot stage before a byte goes out,
@@ -4298,11 +4298,11 @@ does nothing more.
     - **Two groups on NEON.** A pass holds two groups' 32 words, which
       fill arm64's 32 vector registers. The compilers keep a few of them
       on the stack: per double round the loop loads or stores a vector 11
-      times under Apple clang 21, 23 times under clang 18 and 42 under
-      gcc 13, beside 240 vector operations. The pass's three loops over
-      its groups carry `#pragma GCC unroll 2`, for the reason `gcm_hw.c`'s
-      loops carry theirs (docs/performance.md, the pitfalls): gcc keeps
-      an array that a rolled loop indexes in memory.
+      times under Apple clang 21, 23 times under clang 18 and 42 under gcc
+      13, beside 240 vector operations. The pass's three loops over its
+      groups carry `#pragma GCC unroll 2`, for the reason `gcm_hw.c`'s
+      loops carry theirs (docs/performance-pitfalls.md): gcc keeps an
+      array that a rolled loop indexes in memory.
     - **One group on SSE2.** SSE2 has 16 vector registers, which one
       group's 16 words fill. No x86-64 machine here can time a second
       group, and an emulated one says nothing about time, so SSE2 keeps
@@ -5415,19 +5415,18 @@ does nothing more.
     2137f9d and a recipe line of check-script-builds without its `+`.
     Each passes its check on the Mac and fails it in the container, in
     25 to 31 s for a run of that one target.
-93. **A host session whose caller states the CPU's hash instructions
-    runs SHA-256, SHA-384 and SHA-512 on them, and a hash call takes its
+93. **A host session whose caller states the CPU's hash instructions runs
+    SHA-256, SHA-384 and SHA-512 on them, and a hash call takes its
     session's `ch_cfg.cpu` as an argument.** Camilo set the goal on
     2026-10-03: pass OpenSSL on every primitive TLS runs, in C an auditor
     can read, with no assembly. chapulin's SHA-2 is portable C in every
     object. On an M1 Pro `sha256_of` took 78.7 µs for 16 KiB where
     OpenSSL 3.6.5 took 7.14, and 753 ns for 64 bytes where it took 155;
     `sha384_of` took 52.4 µs and 586 ns where it took 12.2 µs and 195 ns
-    (docs/performance.md, "chapulin beside OpenSSL"). Once a session
-    states its multiply, the transcript hashes and the key schedule are
-    0.59 M of a server handshake's 6.95 M instructions
-    (docs/performance.md, "Where a server handshake's instructions go").
-    Camilo ruled on 2026-10-04:
+    (docs/performance-openssl.md). Once a session states its multiply,
+    the transcript hashes and the key schedule are 0.59 M of a server
+    handshake's 6.95 M instructions (docs/performance.md, "Where a server
+    handshake's instructions go"). Camilo ruled on 2026-10-04:
 
     - **Three bits.** `CH_CPU_CONSTANT_TIME_SHA256`,
       `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3` join
@@ -5765,13 +5764,14 @@ does nothing more.
     docs/performance.md holds the measured rows. On x86-64 SHA-384 and
     SHA-512 stay on the portable code.
 
-    **The fourth commit: the measurements.** docs/performance.md's
+    **The fourth commit: the measurements.** docs/performance-openssl.md's
     table beside OpenSSL holds a run of `bench/primitives.sh` on each
     machine at 1f4a922, after entries 94 and 95 landed: an M1 Pro under
     Apple clang 21 at a load average of 2.5 to 4.5, and an AMD EPYC 7763
     under gcc 13.3 at 1.0 (`bench/results-primitives-darwin-arm64-clang.csv`
-    and its x86-64 twin, as the files are named now). One operation under `CH_CPU_PROBED` alone, under every
-    bit the CPU has, and OpenSSL's time for it in the same run:
+    and its x86-64 twin, as the files are named now). One operation under
+    `CH_CPU_PROBED` alone, under every bit the CPU has, and OpenSSL's time
+    for it in the same run:
 
     | one operation | M1 Pro, `0x1` | `0x67` | OpenSSL 3.6.5 | ratio | EPYC 7763, `0x1` | `0x3f` | OpenSSL 3.6.4 | ratio |
     |---|---|---|---|---|---|---|---|---|
@@ -6257,16 +6257,16 @@ does nothing more.
     533,796 instructions, a key exchange 917,577 and a key generation
     232,596, in 159,160, 251,506 and 61,673 cycles.
 
-    `bench/primitives.sh` times the same three calls beside
-    `openssl speed`, and `docs/performance.md`, "chapulin beside OpenSSL",
-    holds its rows. In a run that started at a load average of 72 and
-    ended at 16 it read a key generation at 19.6 µs, a key exchange at
-    82.1 µs and a signature at 50.7 µs: 1.91, 1.91 and 2.72 times
-    OpenSSL's rows in the same run, where the native copies took 62.6,
-    14.6 and 36.4 times. `openssl speed`'s key generation row, 10.3 µs,
-    is faster than the `EVP_PKEY_keygen` call above. In that script's
-    pinned ECDSA P-256 handshake the server's side took 162 µs where it
-    took 784 µs (`bench/notes-primitives.md`).
+    `bench/primitives.sh` times the same three calls beside `openssl
+    speed`, and `docs/performance-openssl.md` holds its rows. In a run
+    that started at a load average of 72 and ended at 16 it read a key
+    generation at 19.6 µs, a key exchange at 82.1 µs and a signature at
+    50.7 µs: 1.91, 1.91 and 2.72 times OpenSSL's rows in the same run,
+    where the native copies took 62.6, 14.6 and 36.4 times. `openssl
+    speed`'s key generation row, 10.3 µs, is faster than the
+    `EVP_PKEY_keygen` call above. In that script's pinned ECDSA P-256
+    handshake the server's side took 162 µs where it took 784 µs
+    (`bench/notes-primitives.md`).
 
     No x86-64 machine here measures time, and the scoreboard's x86-64
     column is a GitHub runner's, recorded before this entry. So the same
@@ -6816,11 +6816,11 @@ does nothing more.
 96. **A host object verifies ECDSA P-256 on the wide files, in every
     session, and a device object keeps its 32-bit words.** After entries
     93 to 95 the two ECDSA verifiers were the widest gaps in
-    `docs/performance.md`'s table beside OpenSSL: `p256_ecdsa_verify`
-    took 1.21 ms on an M1 Pro where OpenSSL 3.6.5 takes 53 µs. A
-    TRUST=webpki client pays it once for each P-256 link of a chain, and
-    every client that pins an ECDSA key once a handshake. Camilo said to
-    start with the verifiers on 2026-10-05.
+    `docs/performance-openssl.md`'s table beside OpenSSL:
+    `p256_ecdsa_verify` took 1.21 ms on an M1 Pro where OpenSSL 3.6.5
+    takes 53 µs. A TRUST=webpki client pays it once for each P-256 link
+    of a chain, and every client that pins an ECDSA key once a
+    handshake. Camilo said to start with the verifiers on 2026-10-05.
 
     - **The arithmetic.** `p256.c` computed a verification on eight
       32-bit words of its own, with a ladder of 256 doublings for each of
@@ -7031,8 +7031,9 @@ does nothing more.
     moved eight at a time, the Cortex-M3 counts stay within 0.05% of the
     old ones. On the M1 Pro under Apple clang 21 it is the reverse: in a
     scratch timing loop SHA3-256 of 16 KiB takes 29.6 µs where it took
-    63.3, and 29.4 µs with the loops kept. `docs/performance.md`'s table
-    beside OpenSSL takes its rows from its next run.
+    63.3, and 29.4 µs with the loops kept.
+    `docs/performance-openssl.md`'s table beside OpenSSL takes its rows
+    from its next run.
 
     **The cost, and an exception to a rule.** `docs/performance.md` keeps
     a change that raises none of SRAM, flash and instructions on the
@@ -7306,7 +7307,7 @@ does nothing more.
     the calls that take no session's value. On the M1 Pro under Apple
     clang 21 the nonce took 22.9 µs of a 48.9 µs signature, and 239,457
     of its 533,835 instructions. The signature was the widest P-256 row
-    of `docs/performance.md`'s table beside OpenSSL: 2.78 times
+    of `docs/performance-openssl.md`'s table beside OpenSSL: 2.78 times
     OpenSSL's time on the M1 Pro and 2.95 times on the x86-64 runner.
 
     - **The entry.** A host object gains `p256_sign_cpu`, which takes
@@ -7773,7 +7774,7 @@ does nothing more.
       generation takes 19.6 µs, an encapsulation 22.2 µs and a
       decapsulation 25.3 µs, where OpenSSL 3.6.4 takes 36.3, 21.9 and
       33.4 µs on a key object that holds its expanded matrix
-      (docs/performance.md, "chapulin beside OpenSSL").
+      (docs/performance-openssl.md).
     - **What holds it.** `bin/mlkem_avx2_equiv_test` holds the four
       streams to `sha3.c` and the copy to `mlkem.c`, `bin/x86_kernels_test`
       counts the copy's calls under every value, and `test/mlkem-builds.sh`
@@ -9989,12 +9990,12 @@ does nothing more.
     bench/record.sh found it. One runner read `rec_seal` of a 16 KiB
     ChaCha20-Poly1305 record as 14.42 µs where another of the same CPU
     model read 9.36, with 0.1% between the five runs of each, because a
-    bench process has one stack address (docs/performance.md, the pitfalls
-    table). With address-space randomization off and the stack moved 16
-    bytes at a time by the size of the environment, the same binary read
-    14.42 µs at one size on two runners and 9.37 at most others, and each
-    of the six rows on the kernel read slow at the sizes its own stack
-    depth predicts. gcc 13 aligns both frames on its own. Camilo ruled on
+    bench process has one stack address (docs/performance-pitfalls.md).
+    With address-space randomization off and the stack moved 16 bytes at a
+    time by the size of the environment, the same binary read 14.42 µs at
+    one size on two runners and 9.37 at most others, and each of the six
+    rows on the kernel read slow at the sizes its own stack depth
+    predicts. gcc 13 aligns both frames on its own. Camilo ruled on
     2026-10-11 to align the frames with an attribute and to hold that with
     a lint and its mutants. This entry amends entries 90 and 107 where
     they say the compilers keep words and lanes on the stack.
@@ -10105,7 +10106,7 @@ does nothing more.
       whose only purpose is the alignment.
     - **A lint over every kernel that holds a wide stack slot.** Camilo
       ruled for the two files. A new AVX2 kernel is held by review and by
-      the rule in docs/performance.md's pitfalls table.
+      the rule in docs/performance-pitfalls.md.
 
 125. **`ct_widemul_s` reads no sign bit by itself, and `mlk_poly_frommsg`
     reads its bit back from a volatile object.** clang for x86-64 wrote
@@ -11178,22 +11179,22 @@ does nothing more.
       time over 16 KiB and 0.61 to 0.77 of it at 64 bytes.
 
       On the EPYC 7763 the 64-byte figure follows the kernel's address.
-      In runs 38184809651 and 38185545665 under clang it read 202 to
-      204 ns at one padding of the four and 230 to 233 at the other
-      three, and the kernel with whole steps 204 to 207 at one and 234
-      to 235 at three, so at like paddings the two texts are 1 to 2
-      percent apart and at unlike ones 12 to 13. Under gcc one padding
-      read 227 to 231 ns where three read 220 to 224
-      (docs/performance.md, the pitfalls table). In run 38187801680
-      under clang two of the 18 runners read the one padding at 217 and
-      222 ns, and the other 16 at 202 to 205. So the kernel does not
-      pass OpenSSL over 16 KiB: OpenSSL's rounds are assembly on RORX
-      and ANDN over two blocks at once, and this one is C with no BMI2.
-      It does pass it for the one-block message a handshake's HMACs are
-      made of. The table "chapulin beside OpenSSL" has held a run of
-      this entry's tree since 2026-10-12, on an EPYC 7763 and a Xeon
-      Platinum 8573C: 1.04 to 1.07 times OpenSSL's time over 16 KiB
-      and 0.62 to 0.73 of it over 64 bytes.
+      In runs 38184809651 and 38185545665 under clang it read 202 to 204
+      ns at one padding of the four and 230 to 233 at the other three,
+      and the kernel with whole steps 204 to 207 at one and 234 to 235
+      at three, so at like paddings the two texts are 1 to 2 percent
+      apart and at unlike ones 12 to 13. Under gcc one padding read 227
+      to 231 ns where three read 220 to 224
+      (docs/performance-pitfalls.md). In run 38187801680 under clang two
+      of the 18 runners read the one padding at 217 and 222 ns, and the
+      other 16 at 202 to 205. So the kernel does not pass OpenSSL over
+      16 KiB: OpenSSL's rounds are assembly on RORX and ANDN over two
+      blocks at once, and this one is C with no BMI2. It does pass it
+      for the one-block message a handshake's HMACs are made of. The
+      table "chapulin beside OpenSSL" has held a run of this entry's
+      tree since 2026-10-12, on an EPYC 7763 and a Xeon Platinum 8573C:
+      1.04 to 1.07 times OpenSSL's time over 16 KiB and 0.62 to 0.73 of
+      it over 64 bytes.
     - **What holds it.** CBMC cannot read an intrinsic, so no harness
       compiles the kernel, and the `sha512_host` harness proves the
       copy's text under `sha512.c`'s own names. On a CPU with AVX2
@@ -13235,14 +13236,13 @@ does nothing more.
 
       The first row is the count of `bench/handshake-n2.sh`, where OpenSSL
       3.6.4's key generation takes 227,086: chapulin's takes 0.58 of
-      OpenSSL's instructions where it took 1.73 times them. The second
-      row times one call of the same code in a loop. The server's
-      handshake under `0xe7` takes 883,086 instructions where it took
-      1,143,505, 0.66 of OpenSSL 3.6.4's (docs/performance.md, "What
-      decision 148 changed"). The callgrind
-      rows count a program of 100 key generations and divide by 100, so
-      each holds about a hundredth of the program's start. The shared
-      secret does not move.
+      OpenSSL's instructions where it took 1.73 times them. The second row
+      times one call of the same code in a loop. The server's handshake
+      under `0xe7` takes 883,086 instructions where it took 1,143,505,
+      0.66 of OpenSSL 3.6.4's (bench/notes-handshake.md, "What decision
+      148 changed"). The callgrind rows count a program of 100 key
+      generations and divide by 100, so each holds about a hundredth of
+      the program's start. The shared secret does not move.
     - **What holds it.** `bin/x25519_equiv_test` holds the key generation
       to the 16-word field's ladder and to the wide field's ladder on 9:
       RFC 7748 section 6.1's two public keys, scalars of one nonzero
@@ -13532,7 +13532,7 @@ does nothing more.
       instructions. `bench/handshake-n2.sh` on the runner counts it at
       345,032 inside the server's handshake, and the handshake under
       `0xe7` at 821,090 where it was 883,086, 0.61 of OpenSSL 3.6.4's
-      (docs/performance.md, "What decision 152 changed").
+      (bench/notes-handshake.md, "What decision 152 changed").
     - **Time on x86-64.** `bench.yml` timed the tree on 2026-10-25 (run
       40209314341), and OpenSSL 3.6.4 in the same jobs, whose x86-64
       ladder is assembly. One shared secret:
@@ -13545,8 +13545,8 @@ does nothing more.
       | Xeon Platinum 8573C, clang 23 | 39.9 µs | 35.9 µs | 35.0 µs | 1.11, 1.03 |
 
       The CSVs under bench/ and the table beside OpenSSL in
-      docs/performance.md keep the run of 2026-10-13 until a whole run
-      records them again.
+      docs/performance-openssl.md keep the run of 2026-10-13 until a
+      whole run records them again.
     - **Constant time.** No branch and no address depends on the scalar
       or a word. cswap selects with the same shift mask as before, and
       the scalar bit reaches it through an exclusive-or alone.
@@ -14042,7 +14042,7 @@ does nothing more.
     3.6.4, for AES-128 and AES-256, seal and open, on a Neoverse N2 and
     on the M1 Pro. Before this entry a 16 KiB record took 1.15 to 1.27
     times OpenSSL's time on the N2, a 1 KiB one 1.29 to 2.05 times, and a
-    16-byte one 1.29 to 3.12 times. docs/performance.md, "arm64 AES-GCM
+    16-byte one 1.29 to 3.12 times. bench/notes-record.md, "arm64 AES-GCM
     beside OpenSSL", holds the tables and the CSVs.
 
     - **Where the time went.** Three parts, measured on the N2 under the
@@ -14093,13 +14093,13 @@ does nothing more.
       the same statement again. The copy without EOR3 runs for every
       other value and stays in every test.
     - **Numbers.** On the N2, under `ch_cfg.cpu 0x83`, every cell takes
-      0.59 to 0.99 of OpenSSL's time on both compilers. Under `0x3` the
-      16 KiB cells take 0.99 to 1.02 of it and the others 0.58 to 0.99.
-      docs/performance.md, "arm64 AES-GCM beside OpenSSL", has the table.
-      On the M1 Pro, against Homebrew's OpenSSL 3.5.9, the 16-byte and
-      1 KiB cells take 0.55 to 0.93 of its time, and the 16 KiB cells 1.00
-      to 1.03 under `0x83` and 1.06 to 1.10 under `0x3`. The goal is not
-      met there yet: the passes keep the order the N2 measured best.
+      0.59 to 0.99 of OpenSSL's time on both compilers. Under `0x3` the 16
+      KiB cells take 0.99 to 1.02 of it and the others 0.58 to 0.99.
+      bench/notes-record.md, "arm64 AES-GCM beside OpenSSL", has the
+      table. On the M1 Pro, against Homebrew's OpenSSL 3.5.9, the 16-byte
+      and 1 KiB cells take 0.55 to 0.93 of its time, and the 16 KiB cells
+      1.00 to 1.03 under `0x83` and 1.06 to 1.10 under `0x3`. The goal is
+      not met there yet: the passes keep the order the N2 measured best.
     - **What holds it.** `bin/aes_equiv_test` holds each copy's seal and
       open to `quic_aes_soft.c` and a bitwise GHASH, at every length from
       0 to 300 bytes, at every length within a block and a byte of 1 to
@@ -14446,7 +14446,7 @@ does nothing more.
       time under `0x83` and 2.6% to 4.5% less under `0x3`. On the N2 the
       16 KiB cells took up to 2.6% less time under gcc 13 and clang 23,
       and under `0x83` take 0.93 to 0.99 of OpenSSL 3.6.4's time.
-      docs/performance.md, "arm64 AES-GCM beside OpenSSL", has the
+      bench/notes-record.md, "arm64 AES-GCM beside OpenSSL", has the
       tables.
     - **What holds it.** The checks of decision 158:
       `bin/aes_equiv_test`, `bin/ghash_equiv_test`,

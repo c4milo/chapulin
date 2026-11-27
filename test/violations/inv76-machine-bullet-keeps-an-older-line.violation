@@ -1,5 +1,5 @@
 invariant: INV-76
-file: docs/performance.md
+file: docs/performance-openssl.md
 catches: test/lint-bench-numbers.sh
 reason: a machine's bullet beside the OpenSSL table keeps a line of an
   older run under the line its CSVs give, as five bullets did until

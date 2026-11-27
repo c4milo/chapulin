@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Draws docs/img/speed-vs-openssl-*.svg: chapulin's speed beside OpenSSL's on each CPU of
-docs/performance.md's table "chapulin beside OpenSSL".
+docs/performance-openssl.md's table.
 
     python3 tools/speed_chart.py
 
@@ -205,7 +205,7 @@ text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fil
         a('<text class="sub" x="%d" y="74">%s, %s, run on %s, tree %s.</text>'
           % (pad_l, escape(cpu), escape(known["os"]), known["date"], escape(known["tree"])))
     a('<text class="sub" x="%d" y="92">chapulin runs under the widest ch_cfg.cpu value each CSV '
-      'holds, as docs/performance.md\'s table does.</text>' % pad_l)
+      'holds, as docs/performance-openssl.md\'s table does.</text>' % pad_l)
     legend_y = 118
     legend_x = pad_l
     for (compiler, _, _), fill in zip(drawn, FILLS):

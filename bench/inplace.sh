@@ -26,8 +26,8 @@
 # the environment wins.
 #
 # A row's time moves from one process to the next. It can move with the
-# address of the process's stack (docs/performance.md, the pitfalls
-# table). On the virtual Intel Xeon of the first run it also moved with
+# address of the process's stack (docs/performance-pitfalls.md).
+# On the virtual Intel Xeon of the first run it also moved with
 # time: an AES-128-GCM read of 100 bytes took about 125 ns in some runs and
 # about 220 ns in others, in streaks of consecutive runs, at stack
 # addresses that setarch held fixed. So the bench pairs the programs and

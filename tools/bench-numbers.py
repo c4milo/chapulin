@@ -19,7 +19,8 @@
 # rule lives here and the documents follow it. tools/bench_record.py does
 # the same for the record tables bench/record.sh's CSVs fill,
 # tools/bench_scoreboard.py for the table that sets chapulin beside
-# OpenSSL, from those CSVs and bench/primitives.sh's, and
+# OpenSSL in docs/performance-openssl.md, from those CSVs and
+# bench/primitives.sh's, and
 # tools/bench_handshake.py for the server handshake tables
 # bench/handshake-n2.sh's CSV fills. tools/speed_chart.py draws that table
 # as one chart for each CPU, and check_charts fails when a committed chart
@@ -35,7 +36,7 @@ import sys
 
 from bench_handshake import check_handshake
 from bench_record import check_record
-from bench_scoreboard import check_scoreboard
+from bench_scoreboard import PAGE as SCOREBOARD_PAGE, check_scoreboard
 from inplace_chart import check_charts as check_inplace_charts
 from speed_chart import check_charts
 from speed_history import check_history
@@ -564,15 +565,16 @@ def main():
     rc |= check_speed_ecdsa(readme)
     rc |= check_decision_x25519()
     rc |= check_record(readme)
-    rc |= check_scoreboard(readme)
+    rc |= check_scoreboard(open(SCOREBOARD_PAGE).read(), readme)
     rc |= check_charts()
     rc |= check_inplace_charts()
     rc |= check_history()
     rc |= check_handshake(readme)
     if rc == 0:
-        print("lint-bench-numbers: docs/performance.md's figures, its record tables, its table "
-              "beside OpenSSL and its charts, its server handshake tables, the README's At a "
-              "glance row and docs/decisions.md's x25519 cost match bench/")
+        print("lint-bench-numbers: docs/performance.md's figures, its record tables, its charts "
+              "and its server handshake tables, docs/performance-openssl.md's table beside "
+              "OpenSSL, the README's At a glance row and docs/decisions.md's x25519 cost match "
+              "bench/")
     return rc
 
 

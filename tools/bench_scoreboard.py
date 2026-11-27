@@ -1,11 +1,11 @@
-# docs/performance.md, "chapulin beside OpenSSL", holds one table: a row per
-# primitive TLS runs, and for each machine chapulin's time, OpenSSL's time
-# and the first over the second. This file renders the table and the line
-# that states each machine from the CSVs bench/primitives.sh and
-# bench/record.sh wrote there. tools/bench-numbers.py calls
-# check_scoreboard, so `make lint-bench-numbers` fails when the document
-# disagrees with the CSVs. Run as a program, it prints what the document
-# must hold, to paste after a run moves a row:
+# docs/performance-openssl.md holds one table: a row per primitive TLS
+# runs, and for each machine chapulin's time, OpenSSL's time and the first
+# over the second. This file renders the table and the line that states
+# each machine from the CSVs bench/primitives.sh and bench/record.sh wrote
+# there. tools/bench-numbers.py calls check_scoreboard, so `make
+# lint-bench-numbers` fails when the page disagrees with the CSVs. Run as a
+# program, it prints what the page must hold, to paste after a run moves a
+# row:
 #
 #   python3 tools/bench_scoreboard.py
 #
@@ -15,14 +15,18 @@
 # Where `openssl speed` times a different operation than chapulin's row,
 # the OpenSSL cell names that operation and the row has no ratio.
 #
-# check_scoreboard also holds one sentence under "Where the time goes" to
-# the first machine's CSV: what the wide X25519 field takes beside the
-# 16-word one, and a client's side of a handshake under the widest value,
-# which the machine's line states, and under CH_CPU_PROBED alone.
+# check_scoreboard also holds one sentence of docs/performance.md, under
+# "Where the time goes", to the first machine's CSV: what the wide X25519
+# field takes beside the 16-word one, and a client's side of a handshake
+# under the widest value, which the machine's line states, and under
+# CH_CPU_PROBED alone.
 import csv
 import os
 import re
 import sys
+
+# The page that holds the table and the machines' lines.
+PAGE = "docs/performance-openssl.md"
 
 # One machine per column group: the name its header cells carry, the CSV
 # bench/primitives.sh wrote on it, and the CSV bench/record.sh wrote on it,
@@ -356,8 +360,9 @@ def table_rows(text):
 # multiply, and the handshake's hashes then run on them.
 FIELD = re.compile(r"a scalar multiplication takes (\S+ \S+) on that field against (\S+ \S+) on "
                    r"the 16-word one over the decomposition, and the client side of a pinned "
-                   r"RSA-3072 handshake takes (\S+ \S+) under the value that machine's line "
-                   r"states below against (\S+ \S+) under `CH_CPU_PROBED` alone")
+                   r"RSA-3072 handshake takes (\S+ \S+) under the value that "
+                   r"\[`docs/performance-openssl\.md`\]\(performance-openssl\.md\) names for "
+                   r"that machine against (\S+ \S+) under `CH_CPU_PROBED` alone")
 
 
 def check_field(prose):
@@ -407,22 +412,24 @@ def check_machine_bullets(text, lines):
     for name, line in lines:
         found = [body for bullet_name, body in bullets if bullet_name == name]
         if len(found) != 1:
-            print("lint-bench-numbers: docs/performance.md holds %d bullets for %s, not one"
-                  % (len(found), name))
+            print("lint-bench-numbers: %s holds %d bullets for %s, not one"
+                  % (PAGE, len(found), name))
             rc = 1
         elif line is not None and found[0] != line:
-            print("lint-bench-numbers: docs/performance.md's bullet for %s is not the line its "
-                  "CSVs give; the page says: %s; the CSVs give: %s" % (name, found[0], line))
+            print("lint-bench-numbers: %s's bullet for %s is not the line its CSVs give; the "
+                  "page says: %s; the CSVs give: %s" % (PAGE, name, found[0], line))
             rc = 1
     return rc
 
 
-def check_scoreboard(text):
+def check_scoreboard(text, performance):
+    """The table and the machines' lines of PAGE, whose text is text, against the CSVs, and the
+    sentence of docs/performance.md, whose text is performance, that check_field reads."""
     table, lines = render()
     rc = 0
     body = table_rows(text)
     if body is None:
-        print("lint-bench-numbers: docs/performance.md has no table headed %r" % HEADER)
+        print("lint-bench-numbers: %s has no table headed %r" % (PAGE, HEADER))
         return 1
     for label, want in table:
         got = body.get(label)
@@ -430,14 +437,13 @@ def check_scoreboard(text):
             print("lint-bench-numbers: %r beside OpenSSL says %s; the CSVs render as %s"
                   % (label, " / ".join(got or ["nothing"]), " / ".join(want)))
             rc = 1
-    prose = re.sub(r"\s+", " ", text)
     for name, line in lines:
         if line is None:
             print("lint-bench-numbers: the two CSVs of %s name two machines, compilers or OpenSSL "
                   "versions, or widest ch_cfg.cpu values that differ in a bit a record reads, so "
                   "its column mixes two runs" % name)
             rc = 1
-    return rc | check_machine_bullets(text, lines) | check_field(prose)
+    return rc | check_machine_bullets(text, lines) | check_field(re.sub(r"\s+", " ", performance))
 
 
 def main():

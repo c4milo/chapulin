@@ -414,7 +414,7 @@ fi
 # or fast. Each binary above is one process, a process has one stack address
 # and one set of physical pages, and the spread between its runs sees
 # neither: under clang a ChaCha20 rec_seal once read 1.54 times its figure by
-# where the stack was (docs/performance.md, the pitfalls table). The other
+# where the stack was (docs/performance-pitfalls.md). The other
 # check lines are left out: a 1 KiB AEAD's whole reads 12% to 19% over its
 # stages on every machine in every run. The CSV keeps the rows, and each
 # check line states its difference.

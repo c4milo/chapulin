@@ -5,7 +5,7 @@
 # one file per machine and compiler, the compiler being clang or gcc as
 # bench/record.sh names its files, and bench/results-primitives-calls.csv, how
 # many times each end of each handshake calls each primitive.
-# docs/performance.md, "chapulin beside OpenSSL", renders its table from the
+# docs/performance-openssl.md renders its table from the
 # per-machine files, and bench/notes-primitives.md reads those and the calls
 # file. That table times chapulin beside OpenSSL on two x86-64 CPUs, one
 # without AVX-512 and one with AVX-512 IFMA, so BENCH_MACHINE from the

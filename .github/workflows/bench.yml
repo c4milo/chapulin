@@ -8,7 +8,7 @@ name: bench
 # bench/results-primitives-linux-x86_64[-avx512]-<compiler>.csv and
 # bench/results-record-linux-x86_64[-avx512]-<compiler>.csv, which fill the
 # four x86-64 column groups, two CPUs under two compilers, of the table in
-# docs/performance.md that sets chapulin beside OpenSSL.
+# docs/performance-openssl.md that sets chapulin beside OpenSSL.
 # Someone starts it by hand and nothing else does: a timing belongs to
 # the machine that ran it, and a shared runner is a loaded machine, so a
 # run is a measurement to read, not a check that passes or fails. No job

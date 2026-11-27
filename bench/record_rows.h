@@ -64,8 +64,7 @@ typedef struct {
     // 7763, and that copy takes 22 times as long with its destination 1 to
     // 31 bytes past its source's offset, and up to 5 times as long 61
     // bytes past it, where these buffers were, in the processes whose
-    // pages' physical frames agree modulo 16 (docs/performance.md, the
-    // pitfalls table).
+    // pages' physical frames agree modulo 16 (docs/performance-pitfalls.md).
     _Alignas(4096) uint8_t app[BENCH_MAX_PLAINTEXT];
     uint8_t apart[BENCH_PAGE / 2];
     // The record buffer every row seals and opens in. It starts on a

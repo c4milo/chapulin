@@ -5,7 +5,7 @@
 // products in place of the rows' sixteen, and the same reduction. The inverse is
 // p256_wide_inverse.c's binary GCD and one product. Every carry chain is written out word by
 // word, with no loop over words and no array of them, so that gcc keeps the words in registers
-// as clang does (docs/performance.md, the pitfalls table). The addition, the subtraction, the
+// as clang does (docs/performance-pitfalls.md). The addition, the subtraction, the
 // final subtraction of p the reduction shares with the addition, and p's words are in
 // p256_wide_field.h, inline (docs/decisions.md 114).
 #include "p256_wide_field.h"

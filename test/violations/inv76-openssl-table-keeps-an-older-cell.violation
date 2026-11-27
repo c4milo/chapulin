@@ -1,0 +1,12 @@
+invariant: INV-76
+file: docs/performance-openssl.md
+catches: test/lint-bench-numbers.sh
+reason: a cell of the table beside OpenSSL keeps a time of an older run
+  after its CSV moved. The table left docs/performance.md for its own page
+  on 2026-11-27. tools/bench_scoreboard.py reads the page its PAGE names
+  and compares each row with the row the CSVs render.
+
+--- old
+| SHA-256, 16 KiB | 6.90 µs |
+--- new
+| SHA-256, 16 KiB | 6.91 µs |

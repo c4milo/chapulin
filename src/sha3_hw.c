@@ -128,7 +128,7 @@ static inline uint64x2_t register_from_bytes(const uint8_t *bytes) {
 // are computed in the order that reads each parity for the last time as early as it can.
 // Both are for the compiler: a helper it kept out of line would store the state every round,
 // and in the standard's order the round needs a 33rd register, which puts a lane on the stack
-// (docs/performance.md, the pitfalls).
+// (docs/performance-pitfalls.md).
 static void permute_blocks(uint64_t state[25], const uint8_t *in, size_t lanes, size_t blocks) {
     uint64x2_t a0 = register_from_lane(state[0]);
     uint64x2_t a1 = register_from_lane(state[1]);

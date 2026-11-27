@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 1020" width="960" height="1020" role="img" aria-labelledby="t d">
 <title id="t">chapulin's speed beside OpenSSL over time on the AMD EPYC 7763 64-Core Processor</title>
-<desc id="d">Each panel is one row of docs/performance.md's table beside OpenSSL. A line is chapulin's speed in multiples of OpenSSL's at each recording. x86-64 gcc: runs on 16 days, from 2026-10-08 to 2026-11-17. x86-64 clang: runs on 16 days, from 2026-10-08 to 2026-11-17.</desc>
+<desc id="d">Each panel is one row of docs/performance-openssl.md's table beside OpenSSL. A line is chapulin's speed in multiples of OpenSSL's at each recording. x86-64 gcc: runs on 16 days, from 2026-10-08 to 2026-11-17. x86-64 clang: runs on 16 days, from 2026-10-08 to 2026-11-17.</desc>
 <style>
 svg { --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984; --grid:#e4e3df; --first:#2a78d6; --second:#eb6834; --unit:#52514e; }
 @media (prefers-color-scheme: dark) {

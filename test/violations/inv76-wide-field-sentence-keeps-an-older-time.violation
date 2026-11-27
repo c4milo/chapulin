@@ -1,0 +1,14 @@
+invariant: INV-76
+file: docs/performance.md
+catches: test/lint-bench-numbers.sh
+reason: the sentence under "Where the time goes" states a time for the wide
+  X25519 field that the M1 Pro's primitives CSV does not hold. The table
+  beside OpenSSL moved to docs/performance-openssl.md on 2026-11-27, and the
+  sentence stayed. tools/bench_scoreboard.py's check_field still reads it
+  from docs/performance.md, which bench-numbers.py hands it apart from the
+  table's page.
+
+--- old
+takes 27.7 µs on that field
+--- new
+takes 27.8 µs on that field

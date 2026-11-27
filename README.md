@@ -95,9 +95,9 @@ the dashed line at 1 is faster than OpenSSL.
 
 </details>
 
-[`docs/performance.md`](docs/performance.md#chapulin-beside-openssl)
-holds the times, how each run was made, each run's machine and load, and
-each row's speed at every run since 2026-10-08. `make lint-bench-numbers`
+[`docs/performance-openssl.md`](docs/performance-openssl.md) holds the
+times, how each run was made, each run's machine and load, and each
+row's speed at every run since 2026-10-08. `make lint-bench-numbers`
 fails when a chart or a sentence above disagrees with the recorded CSVs.
 
 ## Quick start
@@ -343,6 +343,8 @@ platform, start with [`docs/porting.md`](docs/porting.md).
 | [`docs/zig.md`](docs/zig.md) | The Zig API: values, sessions, errors and what it leaves to `chapulin.c` |
 | [`docs/trust-modes.md`](docs/trust-modes.md) | How a client authenticates the server, mode by mode |
 | [`docs/performance.md`](docs/performance.md) | Memory, stack, speed and flash for each build |
+| [`docs/performance-openssl.md`](docs/performance-openssl.md) | chapulin's time beside OpenSSL's for each primitive, on each CPU, and how each figure is taken |
+| [`docs/performance-pitfalls.md`](docs/performance-pitfalls.md) | The performance traps this tree has paid for, each with its cause and the rule it left |
 | [`docs/verification.md`](docs/verification.md) | What is proved, at what bound, and what is only tested |
 | [`docs/porting.md`](docs/porting.md) | How to bring chapulin to a new platform or compiler |
 | [`docs/entropy.md`](docs/entropy.md) | Where randomness comes from, and how to seed the built-in generator |

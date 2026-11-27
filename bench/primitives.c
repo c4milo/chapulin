@@ -39,7 +39,7 @@
 // compiler cannot drop the work. A row consumes one byte and no more: the
 // sink loads, adds and stores for each byte, and over a whole digest that
 // took a fifth as long as a one-block hash, which OpenSSL's row does not
-// pay (docs/performance.md, the pitfalls).
+// pay (docs/performance-pitfalls.md).
 //
 // Each row also prints the instructions one operation retired, where the
 // system counts them for a program: the count over the kept samples,

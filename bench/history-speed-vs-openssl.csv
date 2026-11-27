@@ -1,4 +1,4 @@
-# chapulin's speed beside OpenSSL on each column group of docs/performance.md's table:
+# chapulin's speed beside OpenSSL on each column group of docs/performance-openssl.md's table:
 # OpenSSL's time over chapulin's, one point for each run tools/speed_history.py saw.
 # tools/speed_chart.py adds the points, and make lint-bench-numbers checks the last.
 group,point,cpu,date,tree,row,speed

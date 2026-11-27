@@ -3735,26 +3735,31 @@ last `ROLE=server` stub, as the entry said it would.
   status, `inv75-prove-passes-a-job-without-status`.
   `test/prove-status-check.sh` catches each.
 
-### INV-76 — what docs/performance.md shows of a bench run is what its CSVs give
+### INV-76 — what the performance pages show of a bench run is what its CSVs give
 
 - **Claim.** Each chart of the in-place read and write, `docs/img/inplace-*.svg`, is the SVG
   `tools/inplace_chart.py` draws from its CSV, `bench/results-inplace-*.csv`, and
-  `docs/performance.md` shows each one. Each machine's bullet beside the OpenSSL table is, whole,
-  the line `tools/bench_scoreboard.py` writes from that machine's two CSVs. A run that moves a CSV
-  changes its chart or its bullet in the same commit.
+  `docs/performance.md` shows each one. Each row of the table beside OpenSSL, in
+  `docs/performance-openssl.md`, is the row `tools/bench_scoreboard.py` renders from the CSVs, and
+  each machine's bullet there is, whole, the line it writes from that machine's two CSVs. The
+  sentence of `docs/performance.md` on the wide X25519 field states the M1 Pro's CSV. A run that
+  moves a CSV changes its chart, its row, its bullet or that sentence in the same commit.
 - **Mechanism.** `make lint-bench-numbers` runs `tools/bench-numbers.py`. It calls
   `tools/inplace_chart.py`'s `check_charts`, which draws each CSV's chart and compares the bytes
   with the committed SVG. The drawing reads no clock, so one CSV always draws the same bytes. The
   check fails on an SVG with no CSV, and on a chart that `docs/performance.md` does not show. It
-  calls `tools/bench_scoreboard.py`'s `check_scoreboard`, which joins each machine's bullet with
-  its continuation lines and requires one bullet for each machine, equal to the line its CSVs
-  give. Until 2026-11-27 it found each line as a substring of the page, and lines of older runs
-  sat inside five bullets.
+  calls `tools/bench_scoreboard.py`'s `check_scoreboard` with the text of both pages. It compares
+  each row of the table with its rendered row, and joins each machine's bullet with its
+  continuation lines and requires one bullet for each machine, equal to the line its CSVs give.
+  Until 2026-11-27 it found each line as a substring of the page, and lines of older runs sat
+  inside five bullets. Its `check_field` reads the X25519 sentence from `docs/performance.md`.
 - **Check.** `inv76-inplace-chart-inverts-the-speed` draws the in-place time over the copying
   time, `inv76-inplace-csv-moves-without-its-chart` moves one row of the CSV, and
   `inv76-performance-drops-the-inplace-chart` names another image in `docs/performance.md`.
   `inv76-machine-bullet-keeps-an-older-line` leaves a line of an older run in a bullet, and
   `inv76-machine-line-names-one-aead-value` states one value for AEAD rows that ran under two.
+  `inv76-openssl-table-keeps-an-older-cell` keeps an older time in a cell of the table, and
+  `inv76-wide-field-sentence-keeps-an-older-time` an older time in the X25519 sentence.
   `test/lint-bench-numbers.sh` catches each.
 - **Violation.** A PR commits a CSV from a new run and not the chart or the bullet it gives,
   edits either by hand, or drops a chart from `docs/performance.md`.
@@ -3913,7 +3918,7 @@ last `ROLE=server` stub, as the entry said it would.
   declared with because clang's code does not change. The lint reads the
   three files alone: a new AVX2 kernel with such a loop is held by
   review, and by reading its prologue under clang for `and rsp`
-  (docs/performance.md, the pitfalls table).
+  (docs/performance-pitfalls.md).
 - See [decisions: Engineering](decisions.md#engineering), entries 124
   and 128.
 
